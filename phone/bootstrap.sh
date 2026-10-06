@@ -52,7 +52,8 @@ PROFILE
 deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps"
 
 step hermes "Hermes Agent (10-30 minutes on a phone)"
-if deb "hermes --version >/dev/null 2>&1"; then
+# install-stamp.json is written only when Hermes's installer finished; a crashed install can still leave a working `hermes`.
+if deb "hermes --version >/dev/null 2>&1 && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
   say "hermes already installed, skipping"
 else
   hermes_install() { deb "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive"; }
