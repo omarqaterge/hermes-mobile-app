@@ -53,7 +53,10 @@ deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install
 
 step hermes "Hermes Agent (10-30 minutes on a phone)"
 # install-stamp.json is written only when Hermes's installer finished; a crashed install can still leave a working `hermes`.
-if deb "hermes --version >/dev/null 2>&1 && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
+# An interrupted install can leave EMPTY launchers in ~/.local/bin: they "run" fine (exit 0, no output) and Hermes's
+# installer never replaces files it doesn't recognise as its own. Drop them so the installer writes real ones.
+deb 'find /root/.local/bin -maxdepth 1 -name "hermes*" -type f -size 0 -delete 2>/dev/null; true'
+if deb "hermes --version 2>/dev/null | grep -q Hermes && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
   say "hermes already installed, skipping"
 else
   hermes_install() { deb "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive"; }
@@ -66,7 +69,7 @@ else
     hermes_install
   fi
 fi
-deb "hermes --version"
+deb "hermes --version | grep Hermes"
 
 step plugin "Hermes Mobile plugin and supervisor"
 curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh -o "$HOME/hm-install.sh"
