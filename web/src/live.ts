@@ -5,7 +5,7 @@
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { answerRequest, errText, sendPrompt } from './gateway'
 import { getState, toast } from './store'
-import { liveBridge, onTtsDone, setLiveMuted, setLivePhase, speak, startListening, stopListening, stopSpeaking, voiceInputAvailable } from './voice'
+import { liveBridge, onTtsDone, setLiveMuted, setLivePhase, speak, startListening, stopListening, stopSpeaking, voiceErrorText, voiceInputAvailable } from './voice'
 
 const PAUSE_KEY = 'hm.live.pause'
 /** Seconds of silence after your last words before the message is sent (Settings → Voice). */
@@ -82,7 +82,7 @@ function listen() {
       partial = ''
       if (!pauseTimer) arm() // a phrase that arrived only as a final still counts as speech
     } else if (kind === 'error') {
-      toast(t === 'mic-denied' ? 'Allow the microphone to use live mode' : `Voice input failed (${t})`, 'error')
+      toast(voiceErrorText(t, true), 'error', 8000)
       stopLive()
     } else if (kind === 'end') {
       // The recogniser stopped by itself (not because we sent): start it again.

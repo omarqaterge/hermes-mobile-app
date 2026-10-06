@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fmtPause, getLivePause, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
-import { startListening, stopListening, useVoice, voiceInputAvailable } from '../voice'
+import { startListening, stopListening, useVoice, voiceErrorText, voiceInputAvailable } from '../voice'
 import { attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, unqueueMessage } from '../gateway'
 import { getState, setState, toast, useStore, type Attachment } from '../store'
 import { haptic } from '../bridge'
@@ -468,7 +468,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
                 // Keeps listening until you stop it: each finished phrase is inserted at the cursor, the live one shown there.
                 if (kind === 'final') dictate(t, true)
                 else if (kind === 'partial') dictate(t, false)
-                else if (kind === 'error') toast(t === 'mic-denied' ? 'Allow the microphone to dictate' : `Voice input failed (${t})`, 'error')
+                else if (kind === 'error') toast(voiceErrorText(t), 'error', 8000)
                 else if (kind === 'end') dict.current = null // no focus() here: it popped the keyboard up over the Send button
               })
             }}

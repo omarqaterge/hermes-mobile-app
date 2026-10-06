@@ -238,13 +238,22 @@ final class Voice {
     private final Runnable restart = this::beginRecognition;
     private final Runnable forceEnd = () -> finishListening();
 
+    // Which recogniser to use: null = the phone's default (Settings → voice input). A missing or broken default made every
+    // dictation fail at once ("stt-5" on older Android, "stt-10" on newer), even with a working recogniser installed, so
+    // when the current one fails before it ever listened we try the others (Google's first) and remember the one that works.
+    private android.content.ComponentName recognizer = null;
+    private final ArrayList<android.content.ComponentName> tried = new ArrayList<>();
+    private boolean triedDefault = false;
+    private boolean recognizerWorked = false; // the current recogniser got as far as listening this session
+    private static final String PREF_RECOGNIZER = "recognizer";
+
     void startListening() {
         if (a.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             listenAfterPermission = true;
             a.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
             return;
         }
-        if (!SpeechRecognizer.isRecognitionAvailable(a)) {
+        if (!SpeechRecognizer.isRecognitionAvailable(a) && installedRecognizers().isEmpty()) {
             js("error", "stt-unavailable");
             js("end", "");
             return;
@@ -254,47 +263,130 @@ final class Voice {
         failures = 0;
         main.removeCallbacks(forceEnd);
         main.removeCallbacks(restart);
-        if (sr != null) sr.destroy();
-        sr = SpeechRecognizer.createSpeechRecognizer(a);
-        sr.setRecognitionListener(new RecognitionListener() {
-            @Override public void onReadyForSpeech(Bundle b) { js("ready", ""); }
-            @Override public void onBeginningOfSpeech() {}
-            @Override public void onRmsChanged(float v) {}
-            @Override public void onBufferReceived(byte[] b) {}
-            @Override public void onEndOfSpeech() {}
-            @Override public void onEvent(int t, Bundle b) {}
-            @Override public void onError(int code) {
-                if (!continuous) {
-                    finishListening(); // the user stopped it
-                    return;
-                }
-                // 7 = nothing recognised, 6 = silence: normal while waiting for you to speak, just listen again
-                if (code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    main.postDelayed(restart, 200);
-                    return;
-                }
-                // busy / client hiccups: retry a few times, then give up with the error
-                if ((code == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || code == SpeechRecognizer.ERROR_CLIENT) && ++failures <= 4) {
-                    main.postDelayed(restart, 600);
-                    return;
-                }
-                js("error", "stt-" + code);
-                finishListening();
-            }
-            @Override public void onPartialResults(Bundle b) {
-                String t = first(b);
-                if (t != null) js("partial", t);
-            }
-            @Override public void onResults(Bundle b) {
-                failures = 0;
-                String t = first(b);
-                if (t != null) js("final", t);
-                if (continuous) main.postDelayed(restart, 150); // more to come: stay on until the user stops
-                else finishListening();
-            }
-        });
+        tried.clear();
+        recognizer = savedRecognizer(); // one that worked before, when the default didn't
+        triedDefault = recognizer == null;
+        if (recognizer != null) tried.add(recognizer);
+        newRecognizer();
         beginRecognition();
     }
+
+    private void newRecognizer() {
+        if (sr != null) sr.destroy();
+        recognizerWorked = false;
+        sr = recognizer == null ? SpeechRecognizer.createSpeechRecognizer(a) : SpeechRecognizer.createSpeechRecognizer(a, recognizer);
+        sr.setRecognitionListener(listener);
+    }
+
+    /** Installed speech recognition services, Google's first. */
+    private ArrayList<android.content.ComponentName> installedRecognizers() {
+        ArrayList<android.content.ComponentName> out = new ArrayList<>();
+        try {
+            for (android.content.pm.ResolveInfo r : a.getPackageManager().queryIntentServices(
+                    new Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)) {
+                if (r.serviceInfo != null) out.add(new android.content.ComponentName(r.serviceInfo.packageName, r.serviceInfo.name));
+            }
+        } catch (Exception ignored) { }
+        out.sort((x, y) -> rank(x) - rank(y));
+        return out;
+    }
+
+    private static int rank(android.content.ComponentName c) {
+        String p = c.getPackageName();
+        return p.equals("com.google.android.googlequicksearchbox") ? 0 : p.equals("com.google.android.tts") ? 1 : p.startsWith("com.google.") ? 2 : 3;
+    }
+
+    private android.content.ComponentName defaultRecognizer() {
+        try {
+            String v = android.provider.Settings.Secure.getString(a.getContentResolver(), "voice_recognition_service");
+            return v == null || v.isEmpty() ? null : android.content.ComponentName.unflattenFromString(v);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private android.content.ComponentName savedRecognizer() {
+        String v = a.getSharedPreferences("voice", 0).getString(PREF_RECOGNIZER, null);
+        android.content.ComponentName c = v == null ? null : android.content.ComponentName.unflattenFromString(v);
+        return c != null && installedRecognizers().contains(c) ? c : null;
+    }
+
+    /** The current recogniser can't be used: switch to the next one not tried yet. False when none is left. */
+    private boolean tryNextRecognizer() {
+        android.content.ComponentName next = null;
+        if (!triedDefault) {
+            triedDefault = true;
+            next = null; // the phone's default
+        } else {
+            android.content.ComponentName def = defaultRecognizer();
+            for (android.content.ComponentName c : installedRecognizers()) {
+                if (!tried.contains(c) && !c.equals(def)) { next = c; break; }
+            }
+            if (next == null) return false;
+            tried.add(next);
+        }
+        recognizer = next;
+        failures = 0;
+        newRecognizer();
+        main.postDelayed(restart, 200);
+        return true;
+    }
+
+    private final RecognitionListener listener = new RecognitionListener() {
+        @Override public void onReadyForSpeech(Bundle b) {
+            if (!recognizerWorked) {
+                recognizerWorked = true;
+                // remember a fallback that works; forget it again once the default is the one working
+                a.getSharedPreferences("voice", 0).edit()
+                        .putString(PREF_RECOGNIZER, recognizer == null ? null : recognizer.flattenToString()).apply();
+            }
+            js("ready", "");
+        }
+        @Override public void onBeginningOfSpeech() {}
+        @Override public void onRmsChanged(float v) {}
+        @Override public void onBufferReceived(byte[] b) {}
+        @Override public void onEndOfSpeech() {}
+        @Override public void onEvent(int t, Bundle b) {}
+        @Override public void onError(int code) {
+            if (!continuous) {
+                finishListening(); // the user stopped it
+                return;
+            }
+            // 7 = nothing recognised, 6 = silence: normal while waiting for you to speak, just listen again
+            if (code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                main.postDelayed(restart, 200);
+                return;
+            }
+            // 4 server, 5 client, 9 the recogniser lacks permissions, 10+ can't bind / language missing: this
+            // recogniser is unusable here. If it never listened, move on to another one straight away.
+            boolean unusable = code == SpeechRecognizer.ERROR_CLIENT || code == SpeechRecognizer.ERROR_SERVER
+                    || code == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || code >= 10;
+            if (unusable && !recognizerWorked && tryNextRecognizer()) return;
+            // busy / client hiccups of a recogniser that did work: retry a few times on a fresh instance
+            if ((code == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || code == SpeechRecognizer.ERROR_CLIENT) && ++failures <= 4) {
+                main.postDelayed(() -> {
+                    if (!continuous) return;
+                    newRecognizer();
+                    beginRecognition();
+                }, 600);
+                return;
+            }
+            if (unusable && tryNextRecognizer()) return;
+            js("error", "stt-" + code);
+            finishListening();
+        }
+        @Override public void onPartialResults(Bundle b) {
+            String t = first(b);
+            if (t != null) js("partial", t);
+        }
+        @Override public void onResults(Bundle b) {
+            failures = 0;
+            String t = first(b);
+            if (t != null) js("final", t);
+            if (continuous) main.postDelayed(restart, 150); // more to come: stay on until the user stops
+            else finishListening();
+        }
+    };
 
     private void beginRecognition() {
         if (!continuous || sr == null) return;
@@ -308,6 +400,7 @@ final class Voice {
         try {
             sr.startListening(i);
         } catch (Exception e) {
+            if (!recognizerWorked && tryNextRecognizer()) return;
             js("error", "stt-start");
             finishListening();
         }

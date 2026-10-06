@@ -249,6 +249,7 @@ export function useStore<T>(select: (s: AppState) => T): T {
 
 let toastSeq = 0
 export function toast(text: string, level: Toast['level'] = 'info', ttl = 3500): void {
+  if (state.toasts.some(t => t.text === text)) return // the same message is already on screen: don't stack copies
   const id = ++toastSeq
   setState(s => ({ toasts: [...s.toasts.slice(-2), { id, text, level }] }))
   setTimeout(() => setState(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), ttl)

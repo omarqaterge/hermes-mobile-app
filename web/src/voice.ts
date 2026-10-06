@@ -107,6 +107,21 @@ window.__hmVoice = (kind, text) => {
 
 const native = () => window.HermesAndroid
 
+/** What to tell the user when dictation fails (`code` from Voice.java: stt-<SpeechRecognizer error>, stt-start, …). */
+export function voiceErrorText(code: string, live = false): string {
+  if (code === 'mic-denied') return live ? 'Allow the microphone to use live mode' : 'Allow the microphone to dictate'
+  if (code === 'stt-unavailable')
+    return 'This phone has no speech recognition. Install the Google app (or “Speech Recognition & Synthesis from Google”) to use voice input.'
+  const n = parseInt(code.replace('stt-', ''), 10)
+  if (n === 1 || n === 2) return 'Voice input needs an internet connection (or an offline language pack in your voice input settings).'
+  if (n === 3) return 'The microphone is busy or unavailable. Close other apps using it and try again.'
+  if (n === 9) return 'Your voice input app has no microphone permission. Allow it in Android settings.'
+  if (n === 12 || n === 13) return 'Voice input doesn’t have your language yet. Download it in your voice input settings.'
+  if (n === 4 || n === 5 || n === 10 || n === 11 || code === 'stt-start')
+    return `Voice input isn’t working on this phone (${code}). Install or update the Google app, or choose another voice input in Android settings.`
+  return `Voice input failed (${code})`
+}
+
 /** Markdown → text a voice can read: no code, links, tables, media tokens, or symbols read out loud. */
 export function speakable(md: string): string {
   return md

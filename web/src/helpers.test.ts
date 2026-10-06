@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 // Helpers that live in modules touching window/localStorage at load time.
 import { describe, expect, test } from 'vitest'
-import { speakable } from './voice'
+import { speakable, voiceErrorText } from './voice'
 import { lineDiff } from './canvas'
-import { hydrate, splitAttachments } from './store'
+import { getState, hydrate, splitAttachments, toast } from './store'
 import { findHit, parseSnippet } from './jump'
 import { ago } from './unread'
 import { chatMarkdown } from './export'
@@ -132,5 +132,21 @@ describe('math inside raw HTML', () => {
     expect(out).toContain('<code class="language-math math-display">x^2 &lt; y</code>')
     expect(out).toContain('<div style="color:red">')
     expect(out).toContain('costs $5 and $10')
+  })
+})
+
+describe('voice input errors', () => {
+  test('codes become plain advice', () => {
+    expect(voiceErrorText('stt-5')).toContain('isn’t working on this phone (stt-5)')
+    expect(voiceErrorText('stt-10')).toContain('Google app')
+    expect(voiceErrorText('stt-2')).toContain('internet')
+    expect(voiceErrorText('stt-unavailable')).toContain('no speech recognition')
+    expect(voiceErrorText('mic-denied', true)).toBe('Allow the microphone to use live mode')
+    expect(voiceErrorText('stt-99')).toBe('Voice input failed (stt-99)')
+  })
+  test('the same toast is not stacked twice', () => {
+    toast('Voice input failed (x)', 'error')
+    toast('Voice input failed (x)', 'error')
+    expect(getState().toasts.filter(t => t.text === 'Voice input failed (x)').length).toBe(1)
   })
 })
