@@ -24,7 +24,7 @@ if [ "${1:-}" = model ]; then
     deb "hermes config set '${kv%%=*}' '${kv#*=}' >/dev/null"   # quiet: the key is not echoed back
   done
   deb "hermes config set model.provider '$prov' && hermes config set model.default '$model'"
-  # A running dashboard read .env when it started: restart it (exact PIDs; hermes-services' loop starts it again).
+  # Restart a running dashboard so nothing keeps the old key (exact PIDs; the hermes-services loop starts it again).
   pids=$(pgrep -f "hermes dashboard --host 127.0.0.1 --port 9119" || true)
   if [ -n "$pids" ]; then
     kill -9 $pids 2>/dev/null || true
