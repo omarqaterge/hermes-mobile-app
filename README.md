@@ -95,7 +95,7 @@ sends status and approval events to the app's notification service.
 
 ## Setup
 
-### Easiest: let your AI agent do it
+### Easiest: one command, or let your AI agent do it
 
 Plug your phone into a computer (Mac, Windows or Linux) and give any coding agent (Claude Code, Codex, Cursor, Gemini CLI…) this prompt:
 
@@ -103,12 +103,25 @@ Plug your phone into a computer (Mac, Windows or Linux) and give any coding agen
 Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermes on my Android phone.
 ```
 
-It walks you through turning on USB debugging, then installs Termux, Debian, Hermes Agent, the plugin and the app by itself
+Or run the setup script yourself, no agent needed. **Mac / Linux** (Terminal):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.sh -o setup-phone.sh && bash setup-phone.sh
+```
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
+```
+
+Either way it walks you through turning on USB debugging, then installs Termux, Debian, Hermes Agent, the plugin and the app by itself
 (20-45 minutes, mostly waiting) and asks you for the model and its API key. You need an Android phone (arm64, Android 8+)
 with ~6 GB free. The instructions are in [AGENT_INSTALL.md](AGENT_INSTALL.md) if you want to read what it will do.
 
-> Honest note: each piece was checked on the author's phone, but the full run has not been done on a brand-new phone yet.
-> If something fails, open an issue.
+> Honest note: the script was run on a clean Android emulator up to Hermes's own install (which an emulator on a Mac can't
+> finish: its virtual CPU lacks an instruction a library needs), and each later piece was checked on the author's phone. A
+> brand-new phone hasn't done the whole run yet. If something fails, open an issue.
 
 <details>
 <summary><b>Install by hand instead</b> (about 20 minutes, all on the phone)</summary>

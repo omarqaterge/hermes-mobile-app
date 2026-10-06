@@ -35,6 +35,35 @@ progress to Android's log, so you can follow it with `adb logcat` without seeing
 - On **Windows**, run the commands in PowerShell; they work as written (use `curl.exe`, not `curl`, which is an alias there).
 - When something fails, read the log (step 6 says how), fix the cause, and re-run: every step is safe to repeat.
 
+## Fast path: the setup script
+
+Steps 1-9 below are automated in one script. Use it first; fall back to the manual steps only for the step it fails on.
+
+1. Do step 2's "Ask the user to" part (USB debugging, Allow prompt). The script waits for the phone.
+2. Ask the user for the provider, model and API key (step 7 lists the choices).
+3. Run it **in the background** (it takes 20-45 minutes, longer than most tool timeouts), with the answers in environment variables:
+
+   macOS / Linux:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.sh -o setup-phone.sh
+   HM_PROVIDER=openrouter HM_MODEL=anthropic/claude-sonnet-5-5 HM_KEY_NAME=OPENROUTER_API_KEY HM_KEY=<key> bash setup-phone.sh > setup.log 2>&1
+   ```
+
+   Windows (PowerShell):
+
+   ```powershell
+   irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 -OutFile setup-phone.ps1
+   $env:HM_PROVIDER='openrouter'; $env:HM_MODEL='anthropic/claude-sonnet-5-5'; $env:HM_KEY_NAME='OPENROUTER_API_KEY'; $env:HM_KEY='<key>'
+   powershell -ExecutionPolicy Bypass -File setup-phone.ps1 *> setup.log
+   ```
+
+   No key yet? Use `HM_SKIP_MODEL=1` instead; the user can add it in the app later (Settings → API keys, then Default models).
+4. Read `setup.log` every minute or so. It prints `1/9` … `9/9`, the phone-side progress (`STEP …`), and ends with
+   `Done.` or `ERROR: …`. On an error, fix the cause (the matching step below explains it; a screenshot of Termux is saved
+   in `~/.hermes-mobile-setup/termux-error.png`) and run the script again: finished parts are skipped.
+5. Finish with step 9 (ask the user to say hi, tell them the notes).
+
 ## 1. Get `adb` on the computer
 
 Check `adb version`. If it is missing:
@@ -161,7 +190,10 @@ Steps: `packages` → `debian` → `hermes` (the long one, 10-30 min) → `plugi
 |---|---|
 | any step, "Could not resolve host" / timeouts | Phone has no internet, or a flaky mirror: type `termux-change-repo`, pick another mirror, re-run `bash hm.sh` |
 | `[Process completed (signal 9)]` | Phantom process killer: do the step 4 commands, open a new Termux session (`exit`, reopen), re-run `bash hm.sh` |
-| `hermes` | Hermes's own installer failed. The output above names the stage; fix it inside Debian (`proot-distro login debian`), then re-run `bash hm.sh` |
+| `hermes`, "bootstrap Python lookup failed" | proot quirk; `hm.sh` already retries once with a workaround. If it still fails, re-run `bash hm.sh` |
+| `hermes`, `cpython-…-linux-android` / "Target triple not supported" | Debian is using Termux's Python: check `/etc/profile.d/zz-no-termux-path.sh` exists in Debian (hm.sh writes it), then re-run |
+| `hermes`, exit 132 / "Illegal instruction" | The CPU lacks an instruction a library needs. Seen only on the Android emulator on Apple Silicon, not on phones |
+| `hermes`, anything else | Hermes's own installer failed. The output above names the stage; full log in Debian at `/root/.hermes/logs/install.log`. Fix it inside Debian (`proot-distro login debian`), then re-run `bash hm.sh` |
 | `start` (dashboard not answering) | Look at `~/logs/dashboard.log` in Termux (`tail -50 ~/logs/dashboard.log`) |
 
 To re-run, type `bash hm.sh` + Enter. It skips what is done.
