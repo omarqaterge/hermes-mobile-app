@@ -55,7 +55,15 @@ step hermes "Hermes Agent (10-30 minutes on a phone)"
 if deb "hermes --version >/dev/null 2>&1"; then
   say "hermes already installed, skipping"
 else
-  deb "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive"
+  hermes_install() { deb "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive"; }
+  if ! hermes_install; then
+    # Under proot, uv's freshly downloaded Python reports its real Android path as sys.prefix, so
+    # `uv python find --managed-python` rejects it and Hermes's installer stops ("bootstrap Python lookup failed").
+    # Its fallback looks on PATH, so put that Python there and try once more.
+    say "retrying with uv's Python on PATH (proot workaround)"
+    deb 'p=$(ls -d /root/.local/share/uv/python/cpython-3.*-gnu/bin/python3.[0-9]* 2>/dev/null | grep -v config | sort -V | tail -1); [ -n "$p" ] && ln -sf "$p" /usr/local/bin/'
+    hermes_install
+  fi
 fi
 deb "hermes --version"
 
