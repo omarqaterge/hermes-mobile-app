@@ -39,10 +39,19 @@ apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef
 
 step debian "Debian inside Termux (a few minutes)"
 [ -d "$ROOT" ] || proot-distro install debian
+# proot-distro appends Termux's bin dirs to PATH inside Debian. Termux's binaries are Android builds (its python3.14 made
+# Hermes's installer build for "linux-android" and fail), so Debian's login shells drop them.
+mkdir -p "$ROOT/../etc/profile.d"
+cat > "$ROOT/../etc/profile.d/00-no-termux-path.sh" <<'PROFILE'
+# proot-distro appends Termux bin dirs to PATH; Termux binaries are Android/bionic
+# builds (e.g. its python3.14) and must never be picked up inside Debian.
+PATH=$(printf %s "$PATH" | tr : "\n" | grep -v "^/data/data/com.termux" | paste -sd: -)
+export PATH
+PROFILE
 deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps"
 
 step hermes "Hermes Agent (10-30 minutes on a phone)"
-if deb "command -v hermes >/dev/null"; then
+if deb "hermes --version >/dev/null 2>&1"; then
   say "hermes already installed, skipping"
 else
   deb "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive"
