@@ -43,7 +43,7 @@ find "$ROOT/.hermes/plugins/hermes-mobile" -name __pycache__ -prune -exec rm -rf
 cp "$here/phone/cron_ticker.py" "$ROOT/.hermes/scripts/cron_ticker.py"
 
 echo "4/5 Enabling the plugin in Hermes"
-if proot-distro login debian -- hermes plugins enable hermes-mobile; then :; else
+if proot-distro login debian -- bash -lc 'PATH="$HOME/.local/bin:$PATH" hermes plugins enable hermes-mobile'; then :; else
   echo "Could not enable it automatically. Run inside Debian:  hermes plugins enable hermes-mobile"
 fi
 
@@ -52,6 +52,7 @@ echo "    Adding the Google client libraries for Hermes' Google skill (optional)
 proot-distro login debian -- bash -lc 'apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2' >/dev/null 2>&1 \
   || echo "    Skipped (not needed unless you use Hermes with Google Calendar/Gmail)."
 
+if [ -n "${HM_NO_APK:-}" ]; then echo "Done (app download skipped: HM_NO_APK is set)."; exit 0; fi
 echo "5/5 Downloading the app"
 apk="$HOME/hermes-mobile.apk"
 if curl -fsL -o "$apk" "$REPO/releases/latest/download/hermes-mobile.apk"; then

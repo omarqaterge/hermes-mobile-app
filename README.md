@@ -95,9 +95,23 @@ sends status and approval events to the app's notification service.
 
 ## Setup
 
-**Time:** about 20 minutes, all on the phone. **You need:** an Android phone (arm64, Android 8+).
+### Easiest: let your AI agent do it
 
-> Honest note: this was set up on the author's phone. The pieces were checked there and the installer was tested on a dummy folder, but the whole path has not been run on a brand-new phone. If something fails, open an issue.
+Plug your phone into a computer (Mac, Windows or Linux) and give any coding agent (Claude Code, Codex, Cursor, Gemini CLI…) this prompt:
+
+```text
+Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermes on my Android phone.
+```
+
+It walks you through turning on USB debugging, then installs Termux, Debian, Hermes Agent, the plugin and the app by itself
+(20-45 minutes, mostly waiting) and asks you for the model and its API key. You need an Android phone (arm64, Android 8+)
+with ~6 GB free. The instructions are in [AGENT_INSTALL.md](AGENT_INSTALL.md) if you want to read what it will do.
+
+> Honest note: each piece was checked on the author's phone, but the full run has not been done on a brand-new phone yet.
+> If something fails, open an issue.
+
+<details>
+<summary><b>Install by hand instead</b> (about 20 minutes, all on the phone)</summary>
 
 ### 1. Install Termux and Hermes
 
@@ -127,6 +141,8 @@ It installs the Hermes plugin, lets the app start Hermes, then downloads the app
 Allow the permissions it asks for (notifications, "run commands in Termux"). It starts Hermes by itself; the first start can take a minute. Say hi.
 
 **Recommended:** set **battery to "Unrestricted"** for *Hermes Mobile* and *Termux* (on Xiaomi/HyperOS also turn on *Autostart*), or Android may kill them in the background.
+
+</details>
 
 <details>
 <summary><b>Build the app yourself</b> (instead of the downloaded APK)</summary>
