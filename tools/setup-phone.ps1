@@ -177,7 +177,7 @@ if ($env:HM_SKIP_MODEL) {
   if ("$prov$model$kname" -notmatch '^[A-Za-z0-9._:/+-]+$') { Die 'Provider/model names can only have letters, digits and . _ : / + -' }
   if (-not (TermuxFront)) { Die "Termux isn't in front. Unlock the phone and run this again." }
   TypeLine "bash hm.sh model $prov $model $kname=$key"
-  for ($i = 0; $i -lt 30 -and (LogText) -notmatch 'HMSETUP (MODEL SET|FAIL model)'; $i++) { Start-Sleep 2 }
+  for ($i = 0; $i -lt 120 -and (LogText) -notmatch 'HMSETUP (MODEL SET|FAIL model)'; $i++) { Start-Sleep 2 }
   TypeLine 'history -c && clear'   # the key off the screen and out of the shell history
   $key = $null
   if ((LogText) -notmatch 'HMSETUP MODEL SET') { Die 'Setting the model failed. Set it in the app: Settings > API keys, then Default models.' }

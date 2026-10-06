@@ -185,7 +185,7 @@ else
   [[ "$prov$model$kname" =~ ^[A-Za-z0-9._:/+-]+$ ]] || die "Provider/model names can only have letters, digits and . _ : / + -"
   termux_front || die "Termux isn't in front. Unlock the phone and run this again."
   type_line "bash hm.sh model $prov $model $kname=$key"
-  for _ in $(seq 1 30); do grep -qE 'HMSETUP (MODEL SET|FAIL model)' "$LOG" && break; sleep 2; done
+  for _ in $(seq 1 120); do grep -qE 'HMSETUP (MODEL SET|FAIL model)' "$LOG" && break; sleep 2; done
   type_line "history -c && clear"   # the key off the screen and out of the shell history
   grep -q 'HMSETUP MODEL SET' "$LOG" || die "Setting the model failed. Set it in the app: Settings → API keys, then Default models."
   say "$prov / $model"
