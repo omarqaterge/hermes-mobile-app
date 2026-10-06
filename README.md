@@ -119,9 +119,9 @@ Either way it walks you through turning on USB debugging, then installs Termux, 
 (20-45 minutes, mostly waiting) and asks you for the model and its API key. You need an Android phone (arm64, Android 8+)
 with ~6 GB free. The instructions are in [AGENT_INSTALL.md](AGENT_INSTALL.md) if you want to read what it will do.
 
-> Honest note: the script was run on a clean Android emulator up to Hermes's own install (which an emulator on a Mac can't
-> finish: its virtual CPU lacks an instruction a library needs), and each later piece was checked on the author's phone. A
-> brand-new phone hasn't done the whole run yet. If something fails, open an issue.
+> Honest note: the whole script was run end to end on a clean Android 15 emulator (install, model, app, first message
+> reaching the model provider) and each piece was checked on the author's phone, but not yet on a brand-new real phone.
+> If something fails, open an issue.
 
 <details>
 <summary><b>Install by hand instead</b> (about 20 minutes, all on the phone)</summary>
