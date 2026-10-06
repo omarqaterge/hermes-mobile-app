@@ -41,8 +41,9 @@ step debian "Debian inside Termux (a few minutes)"
 [ -d "$ROOT" ] || proot-distro install debian
 # proot-distro appends Termux's bin dirs to PATH inside Debian. Termux's binaries are Android builds (its python3.14 made
 # Hermes's installer build for "linux-android" and fail), so Debian's login shells drop them.
+# "zz-": it must run after proot-distro's own termux-profile.sh, which appends them.
 mkdir -p "$ROOT/../etc/profile.d"
-cat > "$ROOT/../etc/profile.d/00-no-termux-path.sh" <<'PROFILE'
+cat > "$ROOT/../etc/profile.d/zz-no-termux-path.sh" <<'PROFILE'
 # proot-distro appends Termux bin dirs to PATH; Termux binaries are Android/bionic
 # builds (e.g. its python3.14) and must never be picked up inside Debian.
 PATH=$(printf %s "$PATH" | tr : "\n" | grep -v "^/data/data/com.termux" | paste -sd: -)
