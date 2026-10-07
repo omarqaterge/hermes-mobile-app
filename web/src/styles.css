@@ -224,6 +224,22 @@ textarea {
   white-space: pre-wrap;
   color: var(--dim);
 }
+.cp-folder {
+  margin: 12px 16px 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dim);
+  font-family: var(--mono, monospace);
+  overflow-wrap: anywhere;
+}
+.cp-latest { color: var(--accent); font-size: 0.85em; }
+.cp-file { margin: 0 12px 10px; }
+.cp-file-head { display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
+.cp-name { flex: 1; min-width: 0; font-family: var(--mono, monospace); font-size: 0.85rem; overflow-wrap: anywhere; }
+.cp-file-head .btn { padding: 4px 10px; font-size: 0.78rem; min-height: 0; }
+.cp-status { font-size: 0.7rem; padding: 1px 6px; border-radius: 6px; background: var(--code-bg); color: var(--dim); }
+.cp-status.added { color: var(--ok); }
+.cp-status.deleted { color: var(--err); }
 .rollback-go {
   margin: 12px;
   width: calc(100% - 24px);
@@ -2236,6 +2252,7 @@ input[type='range'] { accent-color: var(--accent, #d9a441); }
 .dialog-icon.danger { color: var(--err); background: color-mix(in srgb, var(--err) 16%, var(--surface-2)); }
 .dialog-title { text-align: center; font-size: 1.08rem; font-weight: 650; padding: 0 6px; overflow-wrap: anywhere; }
 .dialog-msg { text-align: center; color: var(--dim); font-size: 0.9rem; line-height: 1.4; padding: 0 8px; }
+.dialog-list { margin: 8px 4px 0; padding: 8px 12px 8px 28px; max-height: 30vh; overflow-y: auto; font-size: 0.85rem; line-height: 1.45; text-align: left; background: var(--code-bg); border-radius: 10px; overflow-wrap: anywhere; }
 .dialog .sheet-input { text-align: center; margin: 4px 0; }
 .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
 .btn.danger-solid { background: var(--err); border-color: var(--err); color: #1a0705; }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CommandsCatalogResult, ModelOptionsResult, RollbackDiffResult, RollbackListResult, RollbackRestoreResult } from '@hermes/shared/gateway-contract.generated'
+import type { CommandsCatalogResult, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
+import { canRestoreFile, checkpointDiff, folderLabel, listCheckpoints, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { deleteSession, errText, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
 import { openCanvas, useCanvas } from '../canvas'
@@ -459,98 +460,138 @@ const when = (ts?: string) => {
   return Number.isNaN(d.getTime()) ? ts : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-/** Hermes snapshots the files it is about to change (checkpoints): list them, show what changed since, restore. */
+/** Hermes snapshots a folder before it edits a file there (once per turn). This lists the snapshots this chat
+ * caused, grouped by folder, with what changed since each one, and restores a folder or one file. */
 export function RollbackSheet() {
   const a = useStore(s => s.active)
-  const [data, setData] = useState<RollbackListResult | null>(null)
+  const [folders, setFolders] = useState<CheckpointFolder[] | null>(null)
   const [err, setErr] = useState('')
-  const [open, setOpen] = useState<string | null>(null)
-  const [diff, setDiff] = useState<RollbackDiffResult | null>(null)
+  const [open, setOpen] = useState<{ workdir: string; snap: Snapshot } | null>(null)
+  const [diff, setDiff] = useState<DiffFile[] | null>(null)
+  const [diffErr, setDiffErr] = useState('')
   const [busy, setBusy] = useState(false)
   useBackHandler(() => setOpen(null), open != null)
-  useEffect(() => {
+  const load = () => {
     if (!a) return
-    rpc<RollbackListResult>('rollback.list', { session_id: a.runtimeId })
-      .then(setData)
+    listCheckpoints(a.storedId)
+      .then(setFolders)
       .catch(e => setErr(errText(e)))
-  }, [a?.runtimeId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }
+  useEffect(load, [a?.storedId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setDiff(null)
+    setDiffErr('')
     if (!a || !open) return
-    rpc<RollbackDiffResult>('rollback.diff', { session_id: a.runtimeId, hash: open })
+    checkpointDiff(a.storedId, open.workdir, open.snap.id)
       .then(setDiff)
-      .catch(e => setDiff({ stat: errText(e) }))
+      .catch(e => setDiffErr(errText(e)))
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!a) return null
-  const cps = data?.checkpoints ?? []
-  const cp = cps.find(c => c.hash === open)
-  const restore = async () => {
-    if (!open || busy) return
+  const restore = async (only = '') => {
+    if (!open || !diff || busy) return
+    const lines = restoreLines(diff, only)
     const ok = await confirmDialog({
-      title: 'Restore files to this checkpoint?',
-      message: 'Files Hermes changed after it go back to how they were, and the chat rewinds to that point. Changes you made yourself are kept.',
-      confirmLabel: 'Restore',
+      title: only ? `Restore ${only}?` : 'Restore this folder?',
+      message: only
+        ? `It goes back to how it was at ${when(open.snap.date)}.`
+        : `${folderLabel(open.workdir)} goes back to ${when(open.snap.date)}. Files you changed yourself are kept; the chat itself stays as it is.`,
+      list: lines,
+      icon: '↺',
+      confirmLabel: lines.length === 1 ? 'Restore 1 file' : `Restore ${lines.length} files`,
       danger: true
     })
     if (!ok) return
     setBusy(true)
     try {
-      const r = await rpc<RollbackRestoreResult>('rollback.restore', { session_id: a.runtimeId, hash: open }, 120_000)
-      if (!r.success) throw new Error(r.error || r.reason || 'Restore failed')
-      const n = r.restored_files?.length ?? 0
-      const kept = r.skipped_user_edits?.length ?? 0
-      toast(`Restored ${n} file${n === 1 ? '' : 's'}${kept ? ` · kept ${kept} you edited` : ''}`, kept ? 'warn' : 'info', 5000)
-      setState({ sheet: null })
-      if (r.history_removed) await resumeSession(a.storedId)
+      const r = await restoreCheckpoint(a.storedId, open.workdir, open.snap.id, only)
+      const sum = restoreSummary(r, only)
+      toast(sum.text, sum.warn ? 'warn' : 'info', 5000)
+      setOpen(null)
+      load() // Hermes snapshotted the state before the restore: the list changed
     } catch (e) {
       toast(errText(e), 'error')
     } finally {
       setBusy(false)
     }
   }
+  const snap = open?.snap
   return (
-    <Shell title={cp ? cp.message || 'Checkpoint' : 'File checkpoints'}>
+    <Shell title={snap ? `Snapshot · ${when(snap.date)}` : 'File checkpoints'}>
       <div className="sheet-scroll">
         {err ? (
           <div className="dim pad">{err}</div>
-        ) : !data ? (
+        ) : !folders ? (
           <div className="dim pad">
             <span className="spinner small" /> Loading…
           </div>
-        ) : !data.enabled ? (
-          <div className="dim pad">Checkpoints are off for app chats. Hermes takes them only when its backend starts with HERMES_TUI_CHECKPOINTS=1 (the profile's “checkpoints” setting applies to the terminal, not here).</div>
-        ) : open ? (
+        ) : open && snap ? (
           <>
             <button className="menu-item" onClick={() => setOpen(null)}>
               <span className="mi-icon">‹</span>
               All checkpoints
             </button>
-            <div className="dim small pad">{when(cp?.timestamp)} · changed since then:</div>
-            {!diff ? (
+            <div className="dim small pad">
+              {folderLabel(open.workdir)} · before this chat edited {snap.files.join(', ')}. Changed since then:
+            </div>
+            {diffErr ? (
+              <div className="dim pad">{diffErr}</div>
+            ) : !diff ? (
               <div className="dim pad">
                 <span className="spinner small" /> Loading…
               </div>
+            ) : diff.length === 0 ? (
+              <div className="dim pad">Nothing changed since this snapshot.</div>
             ) : (
-              <>
-                {diff.stat && <pre className="rollback-stat">{diff.stat}</pre>}
-                {diff.diff ? <DiffView text={diff.diff} /> : !diff.stat && <div className="dim pad">No changes since this checkpoint.</div>}
-              </>
+              diff.map(f => (
+                <div key={f.file} className="cp-file">
+                  <div className="cp-file-head">
+                    <span className={`cp-status ${f.status}`}>{f.status === 'added' ? 'new' : f.status === 'deleted' ? 'deleted' : 'changed'}</span>
+                    <span className="cp-name">{f.file}</span>
+                    <span className="dim small">
+                      +{f.added} −{f.removed}
+                    </span>
+                    {snap.files.includes(f.file) && canRestoreFile(diff, f.file) && diff.length > 1 && (
+                      <button className="btn" disabled={busy} onClick={() => void restore(f.file)}>
+                        Restore file
+                      </button>
+                    )}
+                  </div>
+                  <DiffView text={f.diff} />
+                </div>
+              ))
             )}
-            <button className="btn danger block rollback-go" disabled={busy} onClick={() => void restore()}>
-              {busy ? 'Restoring…' : 'Restore files to this point'}
-            </button>
+            {diff && diff.length > 0 && (
+              <button className="btn danger block rollback-go" disabled={busy} onClick={() => void restore()}>
+                {busy ? 'Restoring…' : diff.length === 1 ? `Restore ${diff[0].file}` : `Restore these ${diff.length} files`}
+              </button>
+            )}
           </>
-        ) : cps.length === 0 ? (
-          <div className="dim pad">No checkpoints yet. Hermes makes one before it changes files in this chat.</div>
+        ) : folders.length === 0 ? (
+          <div className="dim pad">No checkpoints yet. Hermes snapshots a folder before this chat first edits a file in it, once per turn.</div>
         ) : (
-          cps.map(c => (
-            <button key={c.hash} className="menu-item" onClick={() => c.hash && setOpen(c.hash)}>
-              <span className="mi-icon">⏺</span>
-              <span className="mi-text">
-                {c.message || (c.hash || '').slice(0, 8)}
-                <span className="mi-sub">{when(c.timestamp)}</span>
-              </span>
-            </button>
+          folders.map(f => (
+            <div key={f.workdir}>
+              <div className="cp-folder" title={f.workdir}>
+                {folderLabel(f.workdir)}
+              </div>
+              {f.snapshots.map((c, i) => (
+                <button key={c.id} className="menu-item" onClick={() => setOpen({ workdir: f.workdir, snap: c })}>
+                  <span className="mi-icon">⏺</span>
+                  <span className="mi-text">
+                    {when(c.date)}
+                    {i === 0 && <span className="cp-latest"> · latest</span>}
+                    <span className="mi-sub">
+                      {c.reason.replace(/^before /, 'Before ')} · {c.files.join(', ')}
+                    </span>
+                  </span>
+                </button>
+              ))}
+              {f.pruned > 0 && (
+                <div className="dim small pad">
+                  {f.pruned} older snapshot{f.pruned === 1 ? '' : 's'} pruned (Hermes keeps 20 per folder)
+                </div>
+              )}
+            </div>
           ))
         )}
       </div>

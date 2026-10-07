@@ -8,6 +8,10 @@ import { useSheetDrag } from './components/useSheetDrag'
 interface Base {
   title: string
   message?: string
+  /** Lines shown under the message, left-aligned (e.g. the files a restore changes). */
+  list?: string[]
+  /** Replaces the default icon (🗑 for danger). */
+  icon?: string
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
@@ -62,10 +66,17 @@ function Dialog({ req }: { req: Req }) {
       <div className="sheet dialog" role="alertdialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className={`dialog-icon${req.danger ? ' danger' : ''}`} aria-hidden="true">
-          {req.danger ? '🗑' : req.kind === 'prompt' ? '✎' : '?'}
+          {req.icon ?? (req.danger ? '🗑' : req.kind === 'prompt' ? '✎' : '?')}
         </div>
         <div className="dialog-title">{req.title}</div>
         {req.message && <div className="dialog-msg">{req.message}</div>}
+        {req.list && req.list.length > 0 && (
+          <ul className="dialog-list">
+            {req.list.map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+        )}
         {req.kind === 'prompt' && (
           <input
             ref={input}

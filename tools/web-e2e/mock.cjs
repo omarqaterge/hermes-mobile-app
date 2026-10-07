@@ -89,6 +89,27 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/memory')
       return send({ memory: { target: 'memory', entries: ['x', 'y'], used: 1100, limit: 2200 }, user: { target: 'user', entries: ['z'], used: 10, limit: 1375 } })
     if (p === '/api/status') return send({ version: '0.21.5', components: { dashboard: { status: 'ok' } } })
+    if (p === '/api/plugins/hermes-mobile/checkpoints' && req.method === 'GET') {
+      const d = new Date(Date.now() - 600_000).toISOString()
+      return send({
+        folders: [
+          { workdir: '/root/projects/site', pruned: 1, snapshots: [{ id: 't1@' + d, hash: 'abc1234567', date: d, reason: 'before patch', files: ['app.py', 'notes.md'] }] },
+          { workdir: '/root/.hermes/cache/scratch', pruned: 0, snapshots: [{ id: 't2@' + d, hash: 'def7654321', date: d, reason: 'before write_file', files: ['x.txt'] }] }
+        ]
+      })
+    }
+    if (p === '/api/plugins/hermes-mobile/checkpoints/diff')
+      return send({
+        files: [
+          { file: 'app.py', status: 'modified', added: 1, removed: 1, diff: 'diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old line\n+new line\n' },
+          { file: 'notes.md', status: 'added', added: 2, removed: 0, diff: 'diff --git a/notes.md b/notes.md\nnew file mode 100644\n--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1,2 @@\n+a\n+b\n' }
+        ]
+      })
+    if (p === '/api/plugins/hermes-mobile/checkpoints/restore') {
+      const b = JSON.parse(body || '{}')
+      return send(b.file ? { ok: true, restored_to: 'abc12345', restored_files: [b.file] } : { ok: true, restored_to: 'abc12345', restored_files: ['app.py', 'notes.md'], skipped_user_edits: [] })
+    }
+    if (p === '/api/plugins/hermes-mobile/checkpoints' && req.method === 'DELETE') return send({ ok: true })
     if (p === '/api/plugins/hermes-mobile/canvas') {
       const s = url.searchParams.get('session')
       return send({ docs: (canvasDocs[s] || []).map(({ content, ...m }) => m) })
@@ -267,12 +288,6 @@ wss.on('connection', ws => {
         return reply({ projects: [{ id: 'p1', name: 'Thesis', primary_path: '/root/projects/thesis', folders: [{ path: '/root/projects/thesis' }] }] })
       case 'projects.project_sessions':
         return reply({ project: { previewSessions: [{ id: 's-3', title: 'Chat 3' }, { id: 's-4', title: 'Chat 4' }] } })
-      case 'rollback.list':
-        return reply({ enabled: true, checkpoints: [{ hash: 'abc1234567', timestamp: String(Math.floor(Date.now() / 1000) - 600), message: 'before patch app.py' }] })
-      case 'rollback.diff':
-        return reply({ stat: ' app.py | 2 +-', diff: '--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old line\n+new line\n' })
-      case 'rollback.restore':
-        return reply({ success: true, restored_files: ['app.py'], history_removed: 2 })
       case 'session.compress':
         return later(300, () => reply({ compressed: true, before_messages: 40, after_messages: 6, usage: { context_used: 200, context_max: 1000, context_percent: 20 } }))
       default:

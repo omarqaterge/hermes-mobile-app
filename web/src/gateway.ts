@@ -2,6 +2,7 @@ import { btwDone, openBtw } from './btw'
 import { markSeen, noteSessions } from './unread'
 import { rememberPrompt } from './recent'
 import { api } from './api'
+import { forgetCheckpoints } from './checkpoints'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
 import { canvasCallStarted, canvasToolDone, canvasWritingDone, canvasWritingStarted } from './canvas'
 import { applyDraftRead, autoReadFor, liveBridge, setDraftRead, speak } from './voice'
@@ -555,6 +556,7 @@ export async function deleteSession(storedId: string): Promise<void> {
   // Its photos, attached files and canvas would otherwise stay on the phone forever. Keep whatever is
   // attached in the composer of another open chat: it isn't in any message yet.
   void api('POST', '/api/plugins/hermes-mobile/cleanup', { keep }).catch(() => {})
+  void forgetCheckpoints(storedId)
 }
 
 export async function renameSession(title: string): Promise<void> {
