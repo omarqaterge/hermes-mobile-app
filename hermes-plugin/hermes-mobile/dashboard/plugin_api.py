@@ -524,7 +524,7 @@ def checkpoints_restore(body: CheckpointRestore):
     base, wd, commit, files = _snapshot_of(body.session, body.workdir, body.snap)
     if body.file and body.file not in files:
         raise HTTPException(status_code=400, detail="This chat didn't edit that file in this snapshot.")
-    r = _checkpoints().restore(base, wd, commit, body.file)
+    r = _checkpoints().restore(base, wd, commit, body.file, session=body.session)
     if "error" in r:
         raise HTTPException(status_code=409, detail=r["error"])
     return r

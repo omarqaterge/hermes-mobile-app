@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommandsCatalogResult, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
-import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
+import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, reasonLabel, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { deleteSession, errText, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
 import { openCanvas, useCanvas } from '../canvas'
@@ -583,7 +583,7 @@ export function RollbackSheet() {
                       {i === 0 && <span className="cp-latest"> · latest</span>}
                     </span>
                     <span className="mi-sub">
-                      {c.reason.replace(/^before /, 'Before ')} · {c.files.join(', ')}
+                      {reasonLabel(c.reason)} · {c.files.join(', ')}
                     </span>
                   </span>
                 </button>

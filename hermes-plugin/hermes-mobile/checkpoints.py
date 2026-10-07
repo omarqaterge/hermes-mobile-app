@@ -309,10 +309,11 @@ def diff(base: str, workdir: str, commit: str, limit: int = 300_000) -> dict:
     return {"files": files}
 
 
-def restore(base: str, workdir: str, commit: str, file: str = "") -> dict:
+def restore(base: str, workdir: str, commit: str, file: str = "", session: str = "", path=None) -> dict:
     """Put the folder (or one file) back to the snapshot. Files the user changed by hand after
     Hermes last wrote them are kept (Hermes's safe restore). Hermes snapshots the current state
-    first, so a restore can itself be undone with /rollback."""
+    first; that snapshot joins the chat's list, so the restore itself can be undone."""
+    before = ref_tip(base, workdir)
     with _Home(base) as mgr:
         if file:
             r = mgr.restore(workdir, commit, file_path=file)
@@ -322,6 +323,13 @@ def restore(base: str, workdir: str, commit: str, file: str = "") -> dict:
             r = mgr.restore(workdir, commit, safe=True)
     if not r.get("success"):
         return {"error": r.get("error") or "Restore failed"}
+    after = ref_tip(base, workdir)
+    if session and after and after != before and r.get("restored_files"):
+        info = _git(base, "log", "-1", "--format=%T%x00%aI%x00%s", after).strip().split("\x00")
+        if len(info) == 3:
+            for rel in r["restored_files"]:
+                write_entry(session, {"ts": time.time(), "turn": "", "tool": "restore", "file": str(Path(workdir) / rel),
+                                      "workdir": workdir, "base": base, "tree": info[0], "date": info[1], "reason": info[2]}, path)
     keep = ("restored_to", "restored_files", "skipped_user_edits", "skipped_oversize", "failed_deletes")
     return {"ok": True, **{k: r[k] for k in keep if k in r}}
 

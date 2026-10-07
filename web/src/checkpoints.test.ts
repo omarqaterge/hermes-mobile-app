@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, test } from 'vitest'
-import { canRestoreFile, folderLabel, hunksOnly, restoreLines, restoreSummary, type DiffFile } from './checkpoints'
+import { canRestoreFile, folderLabel, hunksOnly, reasonLabel, restoreLines, restoreSummary, type DiffFile } from './checkpoints'
 
 const f = (file: string, status: DiffFile['status']): DiffFile => ({ file, status, added: 1, removed: 1, diff: '' })
 
@@ -64,5 +64,13 @@ describe('hunksOnly', () => {
   })
   test('a diff without hunks (binary) stays', () => {
     expect(hunksOnly('diff --git a/x b/x\nBinary files differ')).toBe('diff --git a/x b/x\nBinary files differ')
+  })
+})
+
+describe('reasonLabel', () => {
+  test('labels', () => {
+    expect(reasonLabel('before write_file')).toBe('Before write_file')
+    expect(reasonLabel('pre-rollback snapshot (restoring to ef79c0aa)')).toBe('Before a restore')
+    expect(reasonLabel('')).toBe('Snapshot')
   })
 })

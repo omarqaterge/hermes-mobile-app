@@ -85,3 +85,7 @@ export const hunksOnly = (diff: string): string => {
   const i = diff.search(/^@@/m)
   return i < 0 ? diff : diff.slice(i)
 }
+
+/** Hermes's snapshot reason as a label: "before patch" → "Before patch", its pre-restore snapshot → "Before a restore". */
+export const reasonLabel = (reason: string): string =>
+  /^pre-rollback/.test(reason) ? 'Before a restore' : reason.replace(/^before /, 'Before ') || 'Snapshot'

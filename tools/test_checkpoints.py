@@ -129,6 +129,38 @@ for bad in ("../x", "", ".hidden", "a/b"):
 cp.delete_ledger("s2", LEDGER)
 check("delete_ledger", cp.read_ledger("s2", LEDGER) == [])
 
+print("restore joins the pre-restore snapshot to the chat's list")
+
+
+class FakeMgr:
+    """Hermes's restore: snapshot the current state ("pre-rollback"), then check out."""
+
+    def restore(self, wd, commit, file_path=None, safe=False):
+        snapshot(Path(wd), msg=f"pre-rollback snapshot (restoring to {commit[:8]})", date="2026-10-07T12:00:00+02:00")
+        return {"success": True, "restored_files": ["x.py"]} if not file_path else {"success": True}
+
+
+class FakeHome:
+    def __init__(self, base):
+        pass
+
+    def __enter__(self):
+        return FakeMgr()
+
+    def __exit__(self, *e):
+        pass
+
+
+cp._Home = FakeHome
+(A / "x.py").write_text("six\n")
+target = cp.list_for_session("s1", LEDGER)["folders"][1]["snapshots"][0]
+r = cp.restore(str(BASE), str(A), target["hash"], session="s1", path=LEDGER)
+check("restore ok", r.get("ok") and r.get("restored_files") == ["x.py"], r)
+fa = next(f for f in cp.list_for_session("s1", LEDGER)["folders"] if f["workdir"] == str(A))
+check("pre-restore snapshot listed first", fa["snapshots"][0]["reason"].startswith("pre-rollback") and fa["snapshots"][0]["files"] == ["x.py"], fa["snapshots"][0])
+check("no session: nothing recorded", cp.restore(str(BASE), str(A), target["hash"], path=LEDGER).get("ok")
+      and len(cp.read_ledger("s1", LEDGER)) == 5)
+
 print("split_diff")
 d = ("diff --git a/x.py b/x.py\nindex 1..2 100644\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-one\n+four\n"
      "diff --git a/y.py b/y.py\nnew file mode 100644\n--- /dev/null\n+++ b/y.py\n@@ -0,0 +1 @@\n+new\n"
