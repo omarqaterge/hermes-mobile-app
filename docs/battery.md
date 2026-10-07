@@ -2,7 +2,8 @@
 
 Which parts of Hermes Mobile use the most battery, ranked, with what was measured and what is still open.
 Measured on a real phone (Android 16, 8 cores) on 2026-10-07 with `dumpsys batterystats --charged` and
-`/proc/<pid>/stat` CPU ticks (100 ticks = 1 s of one core). See "How to measure" at the end.
+`/proc/<pid>/stat` CPU ticks (100 ticks = 1 s of one core). See "How to measure" at the end. Round 3 (chats and
+cron jobs, with before/after numbers and the benchmark tools) is in `docs/battery-report.md`.
 
 ## The one thing to know: proot doubles the cost of Hermes
 
@@ -16,10 +17,11 @@ about polling less.
 
 | # | Part | Where | Cost (measured) | Status |
 |---|------|-------|-----------------|--------|
-| 1 | **Agent turns** (your chats and scheduled cron jobs): LLM streaming, tool calls, the `hermes:working` wake lock | Hermes in proot, `HermesService.updateWake` | Most of Termux's 59 min CPU / 17 h. Cron jobs run ~8 min each; the wake lock was held 16 min in total | Inherent. Fewer or shorter cron jobs is the lever (see below) |
-| 2 | **Dashboard idle polling** (Hermes Desktop's watcher threads, running even with the app closed) | `hermes dashboard`, `tui_gateway` threads | **274 ticks/min before, 126 after** (2.7 → 1.3 s CPU per minute while the phone is awake) | **Reduced** by `slow_desktop_watchers` in `dashboard/plugin_api.py` |
+| 1 | **Agent turns** (your chats and scheduled cron jobs): LLM streaming, tool calls, the `hermes:working` wake lock | Hermes in proot, `HermesService.updateWake` | Chat turn with tools: 0.41 CPU-s per second, half of it the app redrawing spinners (2026-10-07) | **Reduced** to 0.22 (see `docs/battery-report.md`): spinners on one 8 Hz tick, less polling during a turn. Self-review is the next lever (your call) |
+| 1b | **Cron wake lock** | `HermesService.wakeForCron`, `phone/cron_ticker.py` | 150 s per alarm, ~19 min/18 h; agent jobs crashed the ticker | **Fixed**: the alarm pokes the ticker, `cron_idle` ends the hold (11–27 s); agent jobs run again |
+| 2 | **Dashboard idle polling** (Hermes Desktop's watcher threads, running even with the app closed) | `hermes dashboard`, `tui_gateway` threads | **274 ticks/min before, 126 after** round 2; with the app open 1.13 → 0.74 CPU-s/min in round 3 | **Reduced** by `slow_desktop_watchers` + `slow_background_polls` in `dashboard/plugin_api.py`, and the app's `/api/status` poll (264 ms each) moved from 1 min to 10 min |
 | 3 | **Memory sync loop** | `phone/hermes-services` → `hermes_memory_sync.py` every 10 min | ~5.5 s wall per run (starts a whole proot Debian + a network sync), ~6 runs/hour while awake | Open: run it less often, or only after a turn changed memory |
-| 4 | **The app's WebView** while open | `web/src`: socket ping 15 s, `/activity` 9 s (3 s busy), `/api/status` 60 s, canvas 2–6 s while open | App process 10 ticks/min open and idle, 3 in the background. WebView renderer 3.7 min / 17 h | Fine. Each poll also wakes the dashboard (see 2) |
+| 4 | **The app's WebView** while open | `web/src`: socket ping 15 s, `/activity` 9 s (3 s while the banner shows something), `/api/status` 10 min (ping 1 min), canvas 6 s while its panel is open | App process 10 ticks/min open and idle, 3 in the background. WebView renderer 3.7 min / 17 h | Fine. Each poll also wakes the dashboard (see 2) |
 | 5 | **Screen time in the app** (dark UI, streaming text redraws) | WebView compositing | Part of the phone's screen + display-pipeline cost | Fine. The UI is dark; nothing animates while idle |
 | 6 | **Cron ticker** | `phone/cron_ticker.py` (+ its proot) | 10–14 ticks/min while awake; sleeps with the phone | Fine. Could tick less often (60 s → 120 s) with a small delay to job starts |
 | 7 | **HermesService** (status island, notifications, wake alarms) | `android/.../HermesService.java` | 8 alarm wakeups and 19 notification posts in 17 h | Fine. The wake lock is bounded (Battery #35 rules) |
@@ -71,7 +73,20 @@ Hermes itself (an event instead of a sleep loop).
 - **Low free RAM**: when the phone is short of memory, `kswapd` (the kernel's swapper) burns CPU. Hermes in
   proot uses a few hundred MB; closing heavy apps helps more than anything in Hermes.
 
+## Rules learned in round 3
+
+- **Animations cost more than you think on a 120 Hz screen.** Any infinite CSS animation makes the WebView redraw
+  every frame (~12 ms of app CPU each); several started at different times never share a frame. Use the shared
+  `<Spinner>` tick, and `step-end` for blinks.
+- **Ask what a request costs before polling it.** `python3 tools/battery/reqcost.py` (e.g. `/api/status` 264 ms).
+- **Never import Hermes's `hermes_bootstrap` from a thread** in our own long-running Hermes processes: it may
+  re-exec the process, which kills it under proot (the cron ticker bootstraps in its main thread now).
+
 ## How to measure
+
+Repeatable benchmark (chat via the app or the gateway, cron via a temporary job, idle): `tools/battery/bench.py`,
+method in `docs/battery-report.md`.
+
 
 ```bash
 # per-app battery since the last full charge (look for "Estimated power use" and the UID lines)
