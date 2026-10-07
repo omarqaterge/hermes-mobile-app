@@ -10,6 +10,7 @@ import { Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
 import { formatOutput, memoryDiff, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
+import { Spinner } from './Spinner'
 
 // Stored outputs fetched for cards restored from history (resumed transcripts omit them).
 const outputCache = new Map<string, string>()
@@ -84,7 +85,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
         <span className="tool-name">{item.name}</span>
         <span className="tool-label">{label}</span>
         <span className="tool-state">
-          {item.status === 'generating' || item.status === 'running' ? <span className="spinner" /> : null}
+          {item.status === 'generating' || item.status === 'running' ? <Spinner /> : null}
           {item.status === 'done' ? fmtDuration(item.duration) || '✓' : null}
           {item.status === 'error' ? '✕' : null}
         </span>
@@ -160,7 +161,7 @@ export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }
         {run.errors ? <span className="tool-run-err"> · {run.errors} failed</span> : null}
         <span className="tool-run-names">{run.names.join(', ')}</span>
       </span>
-      {run.running ? <span className="spinner small" /> : null}
+      {run.running ? <Spinner small /> : null}
       <span className="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
     </button>
   )
@@ -184,7 +185,7 @@ function Reasoning({ text, live }: { text: string; live: boolean }) {
   return (
     <div className={`reasoning${open ? ' open' : ''}`}>
       <button className="reasoning-head" onClick={() => setOpen(o => !o)}>
-        <span className="reasoning-dot">{live ? <span className="spinner small" /> : <BrainIcon />}</span>
+        <span className="reasoning-dot">{live ? <Spinner small /> : <BrainIcon />}</span>
         {live ? 'Thinking…' : 'Thought process'}
         <span className="chev">{open ? '▾' : '▸'}</span>
       </button>

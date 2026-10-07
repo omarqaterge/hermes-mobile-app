@@ -4,6 +4,7 @@ import { copyText, haptic, isNative, setupFix, setupState, type NativeSetup } fr
 import { reconnectNow } from '../gateway'
 import { getState, toast, useStore } from '../store'
 import { ScreenShell } from './Screens'
+import { Spinner } from './Spinner'
 
 // Setup check (drawer → Settings, the status sheet, the offline banner, or by itself on a first run that can't
 // connect): every piece the app needs, a ✓ or ✗ each, and a button that fixes it or opens the right Android page.
@@ -177,7 +178,7 @@ export function SetupScreen() {
         {checks.map(c => (
           <li key={c.id} className={`setup-item ${c.state}`}>
             <span className={`setup-mark ${c.state}`} aria-label={c.state === 'ok' ? 'Done' : c.state === 'bad' ? 'Needs fixing' : 'Checking'}>
-              {c.state === 'ok' ? '✓' : c.state === 'bad' ? '✕' : <span className="spinner small" />}
+              {c.state === 'ok' ? '✓' : c.state === 'bad' ? '✕' : <Spinner small />}
             </span>
             <div className="setup-body">
               <div className="setup-title">{c.title}</div>

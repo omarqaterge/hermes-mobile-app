@@ -263,6 +263,14 @@ wss.on('connection', ws => {
           later((t += 40), () => event('message.complete', sid, { text: 'All four done.' }))
           return
         }
+        if (/^wait a while$/.test(params.text)) {
+          // One long command (nothing streams for 7 s): what the app polls meanwhile is what costs battery.
+          later(50, () => event('tool.start', sid, { tool_id: 'call_wait', name: 'terminal', context: 'sleep 7', args: { command: 'sleep 7' } }))
+          later(7000, () => event('tool.complete', sid, { tool_id: 'call_wait', name: 'terminal', duration_s: 7, result_text: '' }))
+          later(7050, () => event('message.start', sid, {}))
+          later(7100, () => event('message.complete', sid, { text: 'Waited.' }))
+          return
+        }
         if (/^write canvas$/.test(params.text)) {
           // A plugin tool streams under the generic name for a while (the model writing a big document), then runs.
           later(50, () => event('tool.generating', sid, { name: 'tool_call' }))

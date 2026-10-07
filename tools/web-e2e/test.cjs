@@ -316,6 +316,22 @@ async function main() {
   await run.click()
   check((await visibleCards()) === 0, 'tap again folds them')
 
+  // ── battery: while the open chat's turn waits on a command, the app doesn't poll the canvas (closed) and
+  //    polls the activity feed at the idle pace, not every 3 s; one poll right after the turn ends ──
+  const waitMark = calls().length
+  await page.getByPlaceholder('Message Hermes').fill('wait a while')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await sleep(6500)
+  const during = calls().slice(waitMark)
+  const canvasPolls = during.filter(c => c.http === 'GET' && c.path === '/api/plugins/hermes-mobile/canvas').length
+  const activityPolls = during.filter(c => c.path === '/api/plugins/hermes-mobile/activity').length
+  check(canvasPolls === 0, `no canvas polling during a turn with the panel closed (${canvasPolls})`)
+  check(activityPolls <= 1, `activity polled at the idle pace during the open chat's own turn (${activityPolls} in 6.5 s)`)
+  await page.locator('.msg.assistant', { hasText: 'Waited.' }).waitFor({ timeout: 5000 })
+  const endMark = calls().length
+  await sleep(3500)
+  check(calls().slice(endMark).some(c => c.path === '/api/plugins/hermes-mobile/activity'), 'activity polled once right after the turn (the review starts then)')
+
   // ── the model Hermes reports sits above the composer; tap opens the picker ──
   const chip = page.locator('.model-chip')
   check(((await chip.textContent()) || '').includes('mock-model'), `model chip shows the chat's model (${await chip.textContent()})`)

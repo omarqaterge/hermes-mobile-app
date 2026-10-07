@@ -22,14 +22,30 @@ async function poll(): Promise<void> {
   }
 }
 
+/** What ActivityBanner shows: everything except the open chat's own live turn (it has the status line). */
+export function bannerItems(items: ActivityItem[], activeId: string | undefined, running: boolean): ActivityItem[] {
+  return items.filter(i => !(running && i.session === activeId && !i.review))
+}
+
+function bannerVisible(items: ActivityItem[], activeId: string | undefined, running: boolean): boolean {
+  return bannerItems(items, activeId, running).length > 0
+}
+
 export function startActivityPolling(): void {
   if (timer) return
   void poll()
-  // Every 3 s while something is going on, every 9 s while the feed is empty.
+  // Every 3 s while the banner shows something (another chat working, the review after a reply), once right after
+  // the open chat's turn ends (its review starts then), every 9 s otherwise: the open chat's own turn is not in
+  // the banner, and each poll also wakes Hermes's dashboard (battery).
   let tick = 0
+  let wasRunning = false
   timer = setInterval(() => {
     tick++
-    if (getState().activity.length || getState().active?.running || tick % 3 === 0) void poll()
+    const s = getState()
+    const running = Boolean(s.active?.running)
+    const ended = wasRunning && !running
+    wasRunning = running
+    if (bannerVisible(s.activity, s.active?.storedId, running) || ended || tick % 3 === 0) void poll()
   }, 3000)
   document.addEventListener('visibilitychange', () => void poll())
 }

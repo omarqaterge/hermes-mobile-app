@@ -4,6 +4,7 @@ import { useBackHandler } from '../backstack'
 import { haptic } from '../bridge'
 import { useSheetDrag } from './useSheetDrag'
 import { Markdown } from './Markdown'
+import { Spinner } from './Spinner'
 
 /** /btw: a small side chat about the open chat, as a bottom sheet over it. */
 export function BtwSheet() {
@@ -36,7 +37,7 @@ function Inner({ msgs }: { msgs: ReturnType<typeof useBtw>['msgs'] }) {
           {msgs.map(m => (
             <div key={m.id}>
               <div className="btw-q">{m.q}</div>
-              <div className={`btw-a${m.error ? ' err' : ''}`}>{m.a === null ? <span className="spinner small" /> : <Markdown text={m.a} />}</div>
+              <div className={`btw-a${m.error ? ' err' : ''}`}>{m.a === null ? <Spinner small /> : <Markdown text={m.a} />}</div>
             </div>
           ))}
           <div ref={end} />

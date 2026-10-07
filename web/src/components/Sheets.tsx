@@ -14,6 +14,7 @@ import { chatMarkdown } from '../export'
 import { useSheetDrag } from './useSheetDrag'
 import { DiffView } from './Diff'
 import { useBackHandler } from '../backstack'
+import { Spinner } from './Spinner'
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   const drag = useSheetDrag(() => setState({ sheet: null }))
@@ -522,7 +523,7 @@ export function RollbackSheet() {
           <div className="dim pad">{err}</div>
         ) : !folders ? (
           <div className="dim pad">
-            <span className="spinner small" /> Loading…
+            <Spinner small /> Loading…
           </div>
         ) : open && snap ? (
           <>
@@ -537,7 +538,7 @@ export function RollbackSheet() {
               <div className="dim pad">{diffErr}</div>
             ) : !diff ? (
               <div className="dim pad">
-                <span className="spinner small" /> Loading…
+                <Spinner small /> Loading…
               </div>
             ) : diff.length === 0 ? (
               <div className="dim pad">Nothing changed since this snapshot.</div>

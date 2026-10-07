@@ -13,6 +13,7 @@ import { closeScreen, getState, setState, toast, useStore } from '../store'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
 import { Row, Section } from './ui'
+import { Spinner } from './Spinner'
 
 interface OAuthStatus {
   logged_in?: boolean
@@ -246,7 +247,7 @@ function DeviceLoginSheet({ provider, profile, onClose, onDone }: { provider: OA
               Copy code and open {hostOf(start.verification_url)}
             </button>
             <div className="device-wait dim small">
-              <span className="spinner small" /> 3. Come back here: this closes by itself once you’re signed in
+              <Spinner small /> 3. Come back here: this closes by itself once you’re signed in
             </div>
           </div>
         )}

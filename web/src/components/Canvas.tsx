@@ -35,6 +35,7 @@ import { DiffView } from './Diff'
 import { Row, Section } from './ui'
 import { setState } from '../store'
 import { useSheetDrag } from './useSheetDrag'
+import { Spinner } from './Spinner'
 
 const TYPE_ICON: Record<DocType, string> = { markdown: '📝', html: '🌐', code: '💻', text: '📄', json: '{ }', csv: '▦', svg: '🖼', mermaid: '⛓' }
 const EXT: Record<DocType, string> = { markdown: 'md', html: 'html', code: 'txt', text: 'txt', json: 'json', csv: 'csv', svg: 'svg', mermaid: 'mmd' }
@@ -462,7 +463,7 @@ function WritingBanner({ since }: { since: number }) {
   const secs = useElapsed(since)
   return (
     <div className="canvas-writing-bar" role="status">
-      <span className="spinner small" /> Hermes is rewriting this document… {secs}s
+      <Spinner small /> Hermes is rewriting this document… {secs}s
     </div>
   )
 }
@@ -473,7 +474,7 @@ function CanvasWriting({ since, title, preview }: { since: number; title?: strin
   return (
     <div className="canvas-writing" role="status" aria-live="polite">
       <div className="canvas-writing-bar">
-        <span className="spinner small" />
+        <Spinner small />
         <span>
           {preview != null ? 'Saving' : 'Hermes is writing'} {title ? <b>“{title}”</b> : 'a document'}… {secs}s
         </span>

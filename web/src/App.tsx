@@ -8,7 +8,7 @@ import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
 import { RequestSheet } from './components/RequestSheet'
 import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, ModelSheet, RollbackSheet, SessionActionsSheet, StatusSheet } from './components/Sheets'
-import { startActivityPolling } from './activity'
+import { bannerItems, startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
 import { BtwSheet } from './components/Btw'
 import { CanvasPanel } from './components/Canvas'
@@ -27,6 +27,7 @@ import { SetupScreen, watchFirstRun } from './components/Setup'
 import { WelcomeScreen, checkFirstRun } from './components/Connect'
 import { BotsScreen } from './components/Bots'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
+import { Spinner } from './components/Spinner'
 
 declare global {
   interface Window {
@@ -139,7 +140,7 @@ function ConnBanner() {
   const label = detail || (conn === 'connecting' ? 'Connecting to Hermes…' : 'Hermes is offline')
   return (
     <div className="conn-banner">
-      <span className="spinner small" />
+      <Spinner small />
       <span className="conn-label">
         {label}
         {secs >= 3 ? ` · ${secs}s` : ''}
@@ -166,7 +167,7 @@ function ActivityBanner() {
   const running = useStore(s => s.active?.running ?? false)
   const sessions = useStore(s => s.sessions)
   // The open chat's own live turn already has the status line.
-  const shown = items.filter(i => !(running && i.session === activeId && !i.review))
+  const shown = bannerItems(items, activeId, running)
   if (shown.length === 0) return null
   const first = shown[0]
   const here = first.session === activeId
@@ -177,7 +178,7 @@ function ActivityBanner() {
       disabled={here}
       onClick={() => !here && void openSessionFromNotification(first.session)}
     >
-      <span className="spinner small" />
+      <Spinner small />
       <span className="activity-text">
         {where ? <b>{where}: </b> : null}
         {first.text}
@@ -217,7 +218,7 @@ function CompressHint() {
             })
         }}
       >
-        {busy ? <span className="spinner small" /> : 'Compress'}
+        {busy ? <Spinner small /> : 'Compress'}
       </button>
       {!busy && (
         <button
@@ -248,7 +249,7 @@ function StatusBar() {
     <div className="statusbar">
       {running && (
         <div className="status-line">
-          <span className="spinner small" /> <span className="status-text">{status || 'Working…'}</span>
+          <Spinner small /> <span className="status-text">{status || 'Working…'}</span>
           {tps ? <span className="dim small">~{tps} tok/s</span> : null}
           {ctx && <span className="dim small">{fmtCtx(ctx).split(' · ')[0]}</span>}
         </div>
@@ -513,7 +514,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     return (
       <div className="chat chat-skeleton" role="status" aria-label="Opening your chat">
         <div className="skeleton-label dim">
-          <span className="spinner small" /> {conn === 'open' ? plainTitle(openingTitle) || 'Opening your chat…' : 'Connecting to Hermes…'}
+          <Spinner small /> {conn === 'open' ? plainTitle(openingTitle) || 'Opening your chat…' : 'Connecting to Hermes…'}
         </div>
         {/* The rough shape of a conversation while it loads, instead of a lone spinner. */}
         {[['user', 46], ['assistant', 88, 72, 54], ['user', 30], ['assistant', 80, 64]].map(([who, ...ws], i) => (
@@ -540,7 +541,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     >
       {start > 0 && (
         <div ref={topSentinel} className="chat-earlier dim">
-          <span className="spinner" /> Earlier messages…
+          <Spinner /> Earlier messages…
         </div>
       )}
       {items.slice(start).map((it, i) => {

@@ -355,14 +355,11 @@ export function startCanvasSync(): void {
   if (timer) return
   subscribe(syncSession)
   syncSession()
-  let tick = 0
+  // Every 6 s while the panel is open (another device or a scheduled job could change a document). Hermes's own
+  // edits need no polling: the canvas tool's completion refreshes at once (canvasToolDone). Nothing while closed.
   timer = setInterval(() => {
-    tick++
-    if (document.visibilityState !== 'visible' || !state.session) return
-    // Every 2 s while a turn runs (Hermes may be writing); every 6 s while the panel is merely open
-    // (another device or a scheduled job could change a document). The canvas tool's completion refreshes at once.
-    if (getState().active?.running || (state.open && tick % 3 === 0)) void refreshDocs()
-  }, 2000)
+    if (document.visibilityState === 'visible' && state.session && state.open) void refreshDocs()
+  }, 6000)
 }
 
 // ── line diff (version history) ──────────────────────────────

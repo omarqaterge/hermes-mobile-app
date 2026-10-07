@@ -7,6 +7,7 @@ import { haptic } from '../bridge'
 import { matchCommands, refreshCommands, useCommandCatalog, type CommandEntry } from '../commands'
 import { PickerSheet, type Option } from './ui'
 import { getDraft, setDraft } from '../drafts'
+import { Spinner } from './Spinner'
 
 const EMPTY: Attachment[] = []
 
@@ -262,7 +263,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           ))}
           {attaching > 0 && (
             <span className="chip">
-              <span className="spinner small" /> Attaching…
+              <Spinner small /> Attaching…
             </span>
           )}
           {attachments.length > 1 && (

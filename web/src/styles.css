@@ -297,7 +297,7 @@ textarea {
   background: var(--ok);
   margin-right: 6px;
   vertical-align: middle;
-  animation: working-blink 1.1s ease-in-out infinite;
+  animation: working-blink 1.1s step-end infinite; /* a blink, not a fade: 2 redraws per cycle */
 }
 @keyframes working-blink {
   0%, 100% { opacity: 1; }
@@ -1467,16 +1467,12 @@ textarea {
   border-top-color: var(--accent);
   border-radius: 50%;
   display: inline-block;
-  animation: spin 0.8s linear infinite;
+  /* Turned by components/Spinner.tsx on one shared 8 Hz tick, not a CSS animation: a smooth spin redraws the
+     WebView every frame on a 120 Hz screen for the whole turn (docs/battery-report.md). */
 }
 .spinner.small {
   width: 11px;
   height: 11px;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .toasts {
   position: fixed;
@@ -2111,7 +2107,7 @@ textarea {
 }
 .conn-dot.wait {
   background: var(--warn);
-  animation: dot-pulse 1.2s ease-in-out infinite;
+  animation: dot-pulse 1.2s step-end infinite; /* blink: 2 redraws per cycle */
 }
 @keyframes dot-pulse {
   50% {
