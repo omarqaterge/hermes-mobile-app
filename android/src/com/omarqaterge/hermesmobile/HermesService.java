@@ -122,16 +122,43 @@ public class HermesService extends Service {
     // Termux no longer holds a permanent wake lock (it kept the phone out of deep sleep around the clock).
     // Hermes runs in Termux, so while a turn, an approval or a due cron job is under way this service holds
     // a partial wake lock for it; a foreground service's wake lock still counts in Doze.
-    static final long CRON_WAKE_MS = 150_000; // the cron ticker ticks every 60 s; the job's status beats take over
+    // Upper bound only: the alarm pokes the ticker (it ticks at once) and the ticker reports cron_idle once no job
+    // is running, which ends the hold early; an agent job's status beats keep the phone awake after that.
+    static final long CRON_WAKE_MS = 150_000;
+    static final int TICKER_PORT = 9122; // phone/cron_ticker.py's poke listener
     PowerManager.WakeLock wakeLock;
-    long alarmAwakeUntil = 0, heldUntil = 0, alarmAt = 0;
+    long alarmAwakeUntil = 0, heldUntil = 0, alarmAt = 0, alarmFor = 0;
 
-    /** WakeReceiver (the cron alarm): stay awake long enough for the ticker to start the due job. */
+    /** WakeReceiver (the cron alarm): stay awake until the ticker has run the due job (at most CRON_WAKE_MS). */
     synchronized void wakeForCron() {
+        long now = System.currentTimeMillis();
+        alarmFor = alarmAt > 0 ? Math.min(alarmAt, now) : now; // a tick cycle starting at/after this saw the job due
         alarmAt = 0;
         getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("wake_at").apply(); // fired: nothing to re-arm
-        alarmAwakeUntil = System.currentTimeMillis() + CRON_WAKE_MS;
+        alarmAwakeUntil = now + CRON_WAKE_MS;
         updateWake();
+        pokeTicker();
+    }
+
+    /** The ticker reports that a tick cycle started at `sinceSec` ended with no job running: the alarm's work is done. */
+    synchronized void cronIdle(double sinceSec) {
+        if (alarmAwakeUntil <= System.currentTimeMillis() || sinceSec * 1000 < alarmFor - 1000) return;
+        alarmAwakeUntil = 0;
+        updateWake();
+    }
+
+    /** Hermes's ticker sleeps on a clock that stops while the phone sleeps: wake it so the due job starts now. */
+    void pokeTicker() {
+        new Thread(() -> {
+            try (Socket s = new Socket()) {
+                s.connect(new java.net.InetSocketAddress("127.0.0.1", TICKER_PORT), 1000);
+                OutputStream out = s.getOutputStream();
+                out.write((key + "\n").getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            } catch (Exception ignored) {
+                // an older ticker without the listener: the job starts on its next tick (≤ 60 s)
+            }
+        }, "hermes-poke").start();
     }
 
     synchronized void updateWake() {
@@ -337,6 +364,9 @@ public class HermesService extends Service {
             }
             case "wake_at":
                 scheduleWake(e.optDouble("at", 0));
+                return;
+            case "cron_idle":
+                cronIdle(e.optDouble("since", 0));
                 return;
             case "flash": {
                 // Momentary chip: done ✅ (green) or a memory/skill update.

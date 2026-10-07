@@ -60,6 +60,71 @@ naive = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now + 120))
 (a / "cron" / "jobs.json").write_text(json.dumps({"jobs": [{"id": "8", "next_run_at": naive}]}))
 check("naive time = phone-local", abs(ct.next_wake([a], now) - (now + 120)) < 2)
 
+# ── cron ticker: poke from the alarm, cron_idle when nothing runs ──
+print("cron_ticker.Ticker")
+ct.JOB_CHECK = 0.05
+busy = [False]
+idles = []
+tk = ct.Ticker(running=lambda: busy[0], idle=lambda since: idles.append(since))
+t0 = time.monotonic()
+check("plain cycle: waits the whole interval", tk.wait(0.3) is False and time.monotonic() - t0 >= 0.28)
+check("plain cycle: no idle report (nothing happened)", idles == [])
+threading.Timer(0.1, tk.poke).start()
+t0 = time.monotonic()
+tk.wait(5)
+check("a poke ends the wait at once", time.monotonic() - t0 < 1)
+poked_cycle = time.time()
+check("…and the cycle it started owes a report", idles == [])
+tk.wait(0.05)
+check("idle reported once, with the poked cycle's start", len(idles) == 1 and abs(idles[0] - poked_cycle) < 0.1, idles)
+tk.wait(0.05)
+check("not again on the next cycle", len(idles) == 1, idles)
+busy[0] = True
+threading.Timer(0.3, lambda: busy.__setitem__(0, False)).start()
+start = time.time()
+t0 = time.monotonic()
+tk.wait(1.0)
+check("job running: reported as soon as it is done, wait still ends on time",
+      len(idles) == 2 and time.monotonic() - t0 >= 0.95, (idles, time.monotonic() - t0))
+check("a job that ran is reported even without a poke", len(idles) == 2 and idles[1] <= start + 0.01)
+import logging  # noqa: E402
+
+logging.disable(logging.CRITICAL)  # the failing hooks below are logged on purpose
+boom = ct.Ticker(running=lambda: 1 / 0, idle=lambda s: 1 / 0)
+check("a failing hook never breaks the loop", boom.wait(0.05) is False)
+logging.disable(logging.NOTSET)
+threading.Timer(0.1, tk.set).start()
+t0 = time.monotonic()
+check("set() still stops a long wait", tk.wait(30) is True and time.monotonic() - t0 < 1)
+
+print("cron_ticker.poke_listener")
+import socket  # noqa: E402
+
+tk2 = ct.Ticker()
+with socket.socket() as probe:
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+threading.Thread(target=ct.poke_listener, args=(tk2, port, lambda: "k3y"), daemon=True).start()
+time.sleep(0.2)
+
+
+def send(text):
+    with socket.create_connection(("127.0.0.1", port), 2) as c:
+        c.sendall(text.encode())
+    time.sleep(0.2)
+
+
+send("wrong\n")
+check("wrong key: no poke", not tk2._poke.is_set())
+send("k3y\n")
+check("the app's key: poked", tk2._poke.is_set())
+sent = []
+wr = ct.WakeReporter(homes=lambda: [b], post=lambda e: sent.append(e) or True)
+wr.report()
+wr.report()
+wr.report(force=True)
+check("wake reporter: only changes, unless forced", len(sent) == 2 and sent[0]["kind"] == "wake_at", sent)
+
 # ── plugin: idle status loop sleeps, active one beats ──
 print("plugin status loop")
 os.environ["HOME"] = str(tmp)
