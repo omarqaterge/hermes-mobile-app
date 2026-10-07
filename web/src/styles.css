@@ -240,7 +240,7 @@ textarea {
 .cp-status { font-size: 0.7rem; padding: 1px 6px; border-radius: 6px; background: var(--code-bg); color: var(--dim); }
 .cp-status.added { color: var(--ok); }
 .cp-status.deleted { color: var(--err); }
-.btn.rollback-go {
+.btn.block.rollback-go {
   margin: 12px;
   width: calc(100% - 24px);
 }
