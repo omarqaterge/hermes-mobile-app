@@ -14,6 +14,7 @@ import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLivePause, setLivePause } from '../live'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
+import { AccountsList } from './Connect'
 
 // ── shared ───────────────────────────────────────────────────
 
@@ -51,17 +52,18 @@ export async function setProfileModel(profile: string, provider: string, model: 
 }
 
 /** Provider → model picker for a profile. `target` is shown in the title. */
-export function ModelPicker({ profile, target, onPick, onClose }: { profile: string; target: string; onPick: (provider: string, model: string, effort: string) => Promise<void>; onClose: () => void }) {
+export function ModelPicker({ profile, target, onPick, onClose, refresh }: { profile: string; target: string; onPick: (provider: string, model: string, effort: string) => Promise<void>; onClose: () => void; refresh?: boolean }) {
   const [data, setData] = useState<ModelOptions | null>(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const [effort, setEffort] = useState('medium')
   useEffect(() => {
-    api<ModelOptions>('GET', `/api/model/options?${qs({ profile })}`, undefined, { profile: false })
+    // `refresh` right after a new sign-in or key: Hermes's 1 h model-list cache doesn't know that provider yet.
+    api<ModelOptions>('GET', `/api/model/options?${qs({ profile, ...(refresh ? { refresh: 'true' } : {}) })}`, undefined, { profile: false })
       .then(setData)
       .catch(e => setErr(errText(e)))
-  }, [profile])
+  }, [profile, refresh])
   const cur = (data?.provider || '').replace(/^custom:/, '')
   const providers = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -84,7 +86,7 @@ export function ModelPicker({ profile, target, onPick, onClose }: { profile: str
       <div className="sheet-scroll">
         {err && <div className="notice notice-error">{err}</div>}
         {!data && !err && <div className="dim pad">Loading models…</div>}
-        {data && !providers.length && !q && <div className="dim pad">No connected providers. Add an API key under Keys first.</div>}
+        {data && !providers.length && !q && <div className="dim pad">No connected providers. Sign in under Subscriptions & accounts, or add an API key.</div>}
         {providers.map(p => (
           <div key={p.slug} className="picker-block">
             <div className="picker-group">
@@ -764,8 +766,8 @@ function AppearancePage() {
 
 // ── screen: a hub of grouped rows, each opening its own page ─
 
-type Page = 'hub' | 'appearance' | 'voice' | 'models' | 'keys' | 'config'
-const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', models: 'Default models', keys: 'API keys', config: 'Advanced settings' }
+type Page = 'hub' | 'appearance' | 'voice' | 'models' | 'accounts' | 'keys' | 'config'
+const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', models: 'Default models', accounts: 'Subscriptions & accounts', keys: 'API keys', config: 'Advanced settings' }
 
 function Hub({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
@@ -785,6 +787,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
       </Section>
       <Section title="Hermes">
         <Row icon="✨" tone="gold" title="Default models" sub="Which model each bot starts with" chevron onClick={() => go('models')} />
+        <Row icon="👤" tone="green" title="Subscriptions & accounts" sub="ChatGPT, Claude, Grok, Nous Portal sign-ins" chevron onClick={() => go('accounts')} />
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
         <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermes option" chevron onClick={() => go('config')} />
       </Section>
@@ -816,6 +819,13 @@ export function SettingsScreen() {
       {page === 'appearance' && <AppearancePage />}
       {page === 'voice' && <VoiceSettings />}
       {page === 'models' && <ModelsTab />}
+      {page === 'accounts' && (
+        <>
+          <ProfileChips value={scope} onChange={setScope} label="Sign-ins for" />
+          <AccountsList profile={scope} title="Use a plan you already pay for" />
+          <div className="dim small pad">ChatGPT, Grok, Nous and MiniMax sign in right here. Claude opens Termux, because Hermes only does that sign-in in a terminal. API keys are under Settings → API keys.</div>
+        </>
+      )}
       {page === 'keys' && <KeysTab scope={scope} setScope={setScope} />}
       {page === 'config' && <ConfigTab scope={scope} setScope={setScope} />}
     </ScreenShell>

@@ -28,7 +28,7 @@ progress to Android's log, so you can follow it with `adb logcat` without seeing
 
 - Tell the user what you are about to do before each numbered step, in one line. Don't ask "continue?" between steps.
 - **Ask first** before: uninstalling anything, changing an existing Termux install, or anything not in this file.
-- **API keys:** ask the user for the key in chat, use it only in the one command in step 7, and never repeat it, write it to a
+- **API keys:** ask the user for the key in chat, use it only in the one command in step 7 (or `HM_KEY`), and never repeat it, write it to a
   file on the computer, or put it in a URL.
 - The phone must stay **unlocked with Termux in front** while you type into it. If a typed command doesn't show up in the log,
   check the screen first (`adb shell dumpsys window | grep mCurrentFocus`) before retrying.
@@ -40,25 +40,27 @@ progress to Android's log, so you can follow it with `adb logcat` without seeing
 Steps 1-9 below are automated in one script. Use it first; fall back to the manual steps only for the step it fails on.
 
 1. Do step 2's "Ask the user to" part (USB debugging, Allow prompt). The script waits for the phone.
-2. Ask the user for the provider, model and API key (step 7 lists the choices).
+2. Ask the user how they pay for a model (step 7): a **subscription** (ChatGPT, Claude, Grok, Nous Portal) or an **API key**.
+   Subscription: use `HM_SKIP_MODEL=1`; they sign in from the app when it opens. API key: ask for the provider, model id and key.
 3. Run it **in the background** (it takes 20-45 minutes, longer than most tool timeouts), with the answers in environment variables:
 
    macOS / Linux:
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.sh -o setup-phone.sh
-   HM_PROVIDER=openrouter HM_MODEL=anthropic/claude-sonnet-5-5 HM_KEY_NAME=OPENROUTER_API_KEY HM_KEY=<key> bash setup-phone.sh > setup.log 2>&1
+   HM_PROVIDER=openrouter HM_MODEL=<model id> HM_KEY_NAME=OPENROUTER_API_KEY HM_KEY=<key> bash setup-phone.sh > setup.log 2>&1
    ```
 
    Windows (PowerShell):
 
    ```powershell
    irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 -OutFile setup-phone.ps1
-   $env:HM_PROVIDER='openrouter'; $env:HM_MODEL='anthropic/claude-sonnet-5-5'; $env:HM_KEY_NAME='OPENROUTER_API_KEY'; $env:HM_KEY='<key>'
+   $env:HM_PROVIDER='openrouter'; $env:HM_MODEL='<model id>'; $env:HM_KEY_NAME='OPENROUTER_API_KEY'; $env:HM_KEY='<key>'
    powershell -ExecutionPolicy Bypass -File setup-phone.ps1 *> setup.log
    ```
 
-   No key yet? Use `HM_SKIP_MODEL=1` instead; the user can add it in the app later (Settings → API keys, then Default models).
+   Subscription, or no key yet? Use `HM_SKIP_MODEL=1` instead (the other `HM_` variables aren't needed): the app opens on
+   **Connect Hermes to a model** the first time.
 4. Read `setup.log` every minute or so. It prints `1/9` … `9/9`, the phone-side progress (`STEP …`), and ends with
    `Done.` or `ERROR: …`. On an error, fix the cause (the matching step below explains it; a screenshot of Termux is saved
    in `~/.hermes-mobile-setup/termux-error.png`) and run the script again: finished parts are skipped.
@@ -200,14 +202,19 @@ To re-run, type `bash hm.sh` + Enter. It skips what is done.
 
 ## 7. Choose the model
 
-Ask the user which provider they want and for its API key. Easy default: **OpenRouter** (one key, every model,
-https://openrouter.ai/keys). Others: `anthropic` (`ANTHROPIC_API_KEY`), `openai` (`OPENAI_API_KEY`), `gemini`
-(`GEMINI_API_KEY`, has a free tier), `deepseek` (`DEEPSEEK_API_KEY`). Model ids are the provider's own, e.g.
-`anthropic/claude-sonnet-5-5` on OpenRouter. Then type (with the real values):
+Ask the user how they want to pay for the model:
+
+- **A subscription** (ChatGPT Plus / Pro or Codex, Claude Pro / Max, SuperGrok / X Premium+, Nous Portal): skip this step. When the
+  app first opens it shows **Connect Hermes to a model**, where the user signs in themselves (ChatGPT, Grok and Nous in the app;
+  Claude opens Termux with Hermes's own `hermes auth add anthropic`). Never handle their account login yourself.
+- **An API key:** ask which provider and for the key. Easy default: **OpenRouter** (one key, every model,
+  https://openrouter.ai/keys). Others: `anthropic` (`ANTHROPIC_API_KEY`), `openai` (`OPENAI_API_KEY`), `gemini`
+  (`GEMINI_API_KEY`, has a free tier), `deepseek` (`DEEPSEEK_API_KEY`). Ask the user which model they want; ids are the
+  provider's own (OpenRouter lists them at https://openrouter.ai/models). Then type (with the real values, `<model>` included):
 
 ```bash
 adb logcat -c
-adb shell "input text 'bash%shm.sh%smodel%sopenrouter%santhropic/claude-sonnet-5-5%sOPENROUTER_API_KEY=<key>'"
+adb shell "input text 'bash%shm.sh%smodel%sopenrouter%s<model>%sOPENROUTER_API_KEY=<key>'"
 adb shell input keyevent 66
 ```
 
@@ -218,8 +225,7 @@ adb shell "input text 'history%s-c%s&&%sclear'"
 adb shell input keyevent 66
 ```
 
-The user can change models and keys later in the app (Settings → Default models / API keys), or sign in with an account-based
-provider instead (inside Debian: `hermes model`).
+The user can change all of this later in the app: Settings → Subscriptions & accounts / API keys / Default models.
 
 ## 8. Install the app
 
@@ -239,18 +245,19 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
 
 1. The app should show the chat screen within a minute, not "Hermes is offline". If it does show offline, it opens a
    **Setup check** screen by itself: take a screenshot and fix what it marks red.
-2. Ask the user to send "hi" in the app. A streamed answer means the install is complete.
-3. Put the phone back:
+2. If step 7 was skipped, the app shows **Connect Hermes to a model**: let the user sign in or paste a key there and pick a model.
+3. Ask the user to send "hi" in the app. A streamed answer means the install is complete.
+4. Put the phone back:
 
    ```bash
    adb shell svc power stayon false
    ```
 
-4. Tell the user, briefly:
+5. Tell the user, briefly:
    - On **Xiaomi/HyperOS** also turn on **Autostart** for Termux and Hermes Mobile (Settings → Apps), or Android may still stop them.
    - The **Termux notification must stay**: Hermes runs inside Termux.
    - Hermes Mobile can be the phone's assistant (long-press power opens voice chat): Settings → Default apps → Digital assistant app.
    - Updating later: in Termux, `bash hm.sh` (phone side) and install the newer APK from the Releases page.
-5. Delete the downloaded `.apk` files from the computer.
+6. Delete the downloaded `.apk` files from the computer.
 
 Report to the user what was installed, the model, and anything you skipped or that didn't work.

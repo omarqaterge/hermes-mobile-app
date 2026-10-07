@@ -30,6 +30,7 @@ interface AndroidBridge {
   shareText?(title: string, text: string): void
   setupState?(): string
   setupFix?(what: string): void
+  signInTermux?(provider: string, profile: string): boolean
 }
 
 declare global {
@@ -178,6 +179,15 @@ export function setupState(): NativeSetup | null {
 /** Open the Android screen that fixes one setup item (fixed list on the Java side). */
 export function setupFix(what: 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'app-settings' | 'open-termux' | 'get-termux'): void {
   native?.setupFix?.(what)
+}
+
+/** Opens Termux on `hermes auth add <provider>` (logins Hermes only does in a terminal). False = not possible here. */
+export function signInTermux(provider: string, profile: string): boolean {
+  try {
+    return Boolean(native?.signInTermux?.(provider, profile))
+  } catch {
+    return false
+  }
 }
 
 export function appVersion(): string {

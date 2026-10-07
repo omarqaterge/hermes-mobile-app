@@ -305,6 +305,33 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Opens Termux in front on `hermes auth add <provider>` inside Debian, for the logins Hermes only does in a terminal
+     *  (Claude subscription). Both names are checked against a strict pattern, so the page can't put anything else in the command. */
+    boolean signInTermux(String provider, String profile) {
+        if (provider == null || !provider.matches("[a-z0-9][a-z0-9-]{0,39}")) return false;
+        if (profile == null) profile = "";
+        if (!profile.isEmpty() && !profile.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,63}")) return false;
+        if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return false;
+        String hermes = profile.isEmpty() || profile.equals("default") ? "hermes" : "hermes -p " + profile;
+        String script = "clear; echo 'Signing in to " + provider + " for Hermes.'; "
+                + "echo 'To open the link: long-press it, More, Select URL. Then paste the code back here.'; echo; "
+                + "proot-distro login debian -- bash -lc '" + hermes + " auth add " + provider + "'; "
+                + "echo; echo 'Finished. Go back to Hermes Mobile: it shows whether the sign-in worked.'; read -r -p 'Press Enter to close. ' _";
+        try {
+            Intent i = new Intent();
+            i.setClassName("com.termux", "com.termux.app.RunCommandService");
+            i.setAction("com.termux.RUN_COMMAND");
+            i.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash");
+            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", script});
+            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", false);
+            i.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0"); // new session, Termux in front
+            startForegroundService(i);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -885,6 +912,13 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return false;
             }
+        }
+
+        /** A provider login that Hermes only does in a terminal: run it in Termux (false = couldn't start it). */
+        @JavascriptInterface
+        public boolean signInTermux(String key, String provider, String profile) {
+            if (!ok(key)) return false;
+            return MainActivity.this.signInTermux(provider, profile);
         }
 
         /** Opens the system page where the digital assistant app is chosen (the role can't be requested directly). */

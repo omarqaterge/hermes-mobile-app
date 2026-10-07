@@ -3002,3 +3002,46 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .btw-a.err { color: var(--danger, #e5604f); }
 .btw-input { display: flex; gap: 8px; align-items: flex-end; }
 .btw-input textarea { flex: 1; resize: none; max-height: 120px; }
+
+/* Connecting a model: first-run welcome and device-code sign-in */
+.welcome-hero {
+  margin: 14px 14px 4px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.welcome-title {
+  font-size: 1.15em;
+  font-weight: 600;
+}
+.welcome-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 14px 24px;
+}
+.device-login {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+}
+.device-code {
+  font-size: 1.6em;
+  letter-spacing: 0.12em;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--accent);
+  background: var(--surface);
+  color: var(--text);
+  text-align: center;
+}
+.device-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

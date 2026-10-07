@@ -4,9 +4,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.sh -o setup-phone.sh && bash setup-phone.sh
 # Windows: tools/setup-phone.ps1. What it does, step by step: AGENT_INSTALL.md (same steps, for AI agents).
 #
-# It asks for the model provider and API key at the end of the install. To run without questions, set them first:
-#   HM_PROVIDER=openrouter HM_MODEL=anthropic/claude-sonnet-5-5 HM_KEY_NAME=OPENROUTER_API_KEY HM_KEY=sk-... bash setup-phone.sh
-# HM_SKIP_MODEL=1 skips the model (set it later in the app: Settings → API keys / Default models).
+# At the end it offers to set an API key. Skip it (Enter) to connect a model in the app instead, which also does
+# subscription sign-ins (ChatGPT, Claude, Grok, Nous Portal). To run without questions, set them first:
+#   HM_PROVIDER=openrouter HM_MODEL=<model id> HM_KEY_NAME=OPENROUTER_API_KEY HM_KEY=sk-... bash setup-phone.sh
+# or HM_SKIP_MODEL=1 to leave the model to the app's first-run screen.
 # Options: -s <serial> picks a device when several are connected. Safe to run again.
 set -euo pipefail
 
@@ -163,22 +164,24 @@ done
 
 # ---------------------------------------------------------------- 7. model
 b "7/9 Model"
-if [ -n "${HM_SKIP_MODEL:-}" ]; then
-  say "Skipped (HM_SKIP_MODEL). Set it in the app: Settings → API keys, then Default models."
+prov=${HM_PROVIDER:-}
+if [ -z "${HM_SKIP_MODEL:-}" ] && [ -z "$prov" ]; then
+  say "Using a subscription (ChatGPT, Claude, Grok, Nous Portal)? Press Enter: the app signs you in when it first opens."
+  say "Using an API key? Type the provider: openrouter (one key for every model), anthropic, openai, gemini (free tier), deepseek."
+  prov=$(ask "Provider [Enter = set it up in the app]:")
+fi
+if [ -n "${HM_SKIP_MODEL:-}" ] || [ -z "$prov" ]; then
+  say "Skipped. The app asks you to connect a model when it first opens."
 else
-  prov=${HM_PROVIDER:-}; model=${HM_MODEL:-}; kname=${HM_KEY_NAME:-}; key=${HM_KEY:-}
-  if [ -z "$prov" ]; then
-    say "Which provider? Easiest: openrouter (one key for every model, https://openrouter.ai/keys)."
-    say "Others: anthropic, openai, gemini (free tier), deepseek."
-    prov=$(ask "Provider [openrouter]:"); prov=${prov:-openrouter}
-  fi
+  model=${HM_MODEL:-}; kname=${HM_KEY_NAME:-}; key=${HM_KEY:-}
   if [ -z "$kname" ]; then
     case "$prov" in openrouter) kname=OPENROUTER_API_KEY ;; anthropic) kname=ANTHROPIC_API_KEY ;; openai) kname=OPENAI_API_KEY ;;
       gemini) kname=GEMINI_API_KEY ;; deepseek) kname=DEEPSEEK_API_KEY ;; *) kname=$(ask "Name of its API key variable (e.g. FOO_API_KEY):") ;; esac
   fi
   if [ -z "$model" ]; then
-    case "$prov" in openrouter) def=anthropic/claude-sonnet-5-5 ;; anthropic) def=claude-sonnet-5-5 ;; *) def="" ;; esac
-    model=$(ask "Model${def:+ [$def]}:"); model=${model:-$def}
+    say "Model id as $prov names it (OpenRouter's list: https://openrouter.ai/models). You can change it in the app later."
+    model=$(ask "Model:")
+    [ -n "$model" ] || die "No model given. Run this again, or press Enter at the provider question and connect it in the app."
   fi
   if [ -z "$key" ]; then read -r -s -p "  $kname (hidden): " key </dev/tty; echo; fi
   [[ "$key" =~ ^[A-Za-z0-9._:/+=-]+$ ]] || die "That key has characters this script can't type into the phone. Set it in the app instead (Settings → API keys)."

@@ -2,7 +2,7 @@
 # debugging on, then in PowerShell:
 #   irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
 # Same steps as tools/setup-phone.sh (macOS/Linux); explained in AGENT_INSTALL.md.
-# Without questions: set $env:HM_PROVIDER, HM_MODEL, HM_KEY_NAME, HM_KEY first (or HM_SKIP_MODEL=1). HM_SERIAL picks a device.
+# Without questions: set $env:HM_PROVIDER, HM_MODEL, HM_KEY_NAME, HM_KEY first, or HM_SKIP_MODEL=1 to connect the model in the app. HM_SERIAL picks a device.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with the progress bar
 
@@ -152,22 +152,24 @@ while ($true) {
 
 # ---------------------------------------------------------------- 7. model
 B '7/9 Model'
-if ($env:HM_SKIP_MODEL) {
-  Say 'Skipped (HM_SKIP_MODEL). Set it in the app: Settings > API keys, then Default models.'
+$prov = $env:HM_PROVIDER
+if (-not $env:HM_SKIP_MODEL -and -not $prov) {
+  Say 'Using a subscription (ChatGPT, Claude, Grok, Nous Portal)? Press Enter: the app signs you in when it first opens.'
+  Say 'Using an API key? Type the provider: openrouter (one key for every model), anthropic, openai, gemini (free tier), deepseek.'
+  $prov = Read-Host '  Provider [Enter = set it up in the app]'
+}
+if ($env:HM_SKIP_MODEL -or -not $prov) {
+  Say 'Skipped. The app asks you to connect a model when it first opens.'
 } else {
-  $prov = $env:HM_PROVIDER; $model = $env:HM_MODEL; $kname = $env:HM_KEY_NAME; $key = $env:HM_KEY
-  if (-not $prov) {
-    Say 'Which provider? Easiest: openrouter (one key for every model, https://openrouter.ai/keys).'
-    Say 'Others: anthropic, openai, gemini (free tier), deepseek.'
-    $prov = Read-Host '  Provider [openrouter]'; if (-not $prov) { $prov = 'openrouter' }
-  }
+  $model = $env:HM_MODEL; $kname = $env:HM_KEY_NAME; $key = $env:HM_KEY
   if (-not $kname) {
     $kname = @{ openrouter = 'OPENROUTER_API_KEY'; anthropic = 'ANTHROPIC_API_KEY'; openai = 'OPENAI_API_KEY'; gemini = 'GEMINI_API_KEY'; deepseek = 'DEEPSEEK_API_KEY' }[$prov]
     if (-not $kname) { $kname = Read-Host '  Name of its API key variable (e.g. FOO_API_KEY)' }
   }
   if (-not $model) {
-    $def = @{ openrouter = 'anthropic/claude-sonnet-5-5'; anthropic = 'claude-sonnet-5-5' }[$prov]
-    $model = Read-Host ("  Model" + $(if ($def) { " [$def]" } else { '' })); if (-not $model) { $model = $def }
+    Say "Model id as $prov names it (OpenRouter's list: https://openrouter.ai/models). You can change it in the app later."
+    $model = Read-Host '  Model'
+    if (-not $model) { Die 'No model given. Run this again, or press Enter at the provider question and connect it in the app.' }
   }
   if (-not $key) {
     $sec = Read-Host "  $kname (hidden)" -AsSecureString

@@ -24,6 +24,7 @@ import { useAutoRead, useDraftAutoRead } from './voice'
 import { dotState, startHealthPolling, checkHealth } from './health'
 import { SettingsScreen } from './components/Settings'
 import { SetupScreen, watchFirstRun } from './components/Setup'
+import { WelcomeScreen, checkFirstRun } from './components/Connect'
 import { BotsScreen } from './components/Bots'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
 
@@ -596,6 +597,7 @@ export function App() {
   useEffect(() => {
     // Health poll starts once connected; each reconnect re-checks so the dot is current.
     if (conn !== 'open') return
+    void checkFirstRun() // a fresh install with no model provider: the welcome walks through connecting one
     startHealthPolling()
     startActivityPolling()
     startCanvasSync()
@@ -625,6 +627,7 @@ export function App() {
       {screen === 'bots' && <BotsScreen />}
       {screen === 'settings' && <SettingsScreen key={screenKey} />}
       {screen === 'setup' && <SetupScreen />}
+      {screen === 'welcome' && <WelcomeScreen />}
       {screen === 'hub' && <HubScreen />}
       <Drawer />
       {sheet === 'model' && <ModelSheet />}

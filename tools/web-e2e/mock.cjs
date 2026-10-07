@@ -25,6 +25,8 @@ const canvasDocs = {} // session -> [doc]
 let activityItems = []
 let refuseUntil = 0
 let pluginEnabled = false
+let providerConfigured = true // false = a fresh install (the welcome opens)
+let codexPolls = 0
 
 const server = http.createServer((req, res) => {
   let body = ''
@@ -53,6 +55,7 @@ const server = http.createServer((req, res) => {
       // Test hooks: set the activity feed, bump a chat's message count (a reply landed there).
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
+      if (b.unconfigured) providerConfigured = false
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
@@ -78,6 +81,30 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/prefs') return send({ order: null })
     if (p === '/api/plugins/hermes-mobile/cleanup') return send({ ok: true, removed: [], freed_bytes: 0 })
     if (p === '/api/model/info') return send({ model: 'mock-model' })
+    // Account sign-ins: ChatGPT is a device-code flow approved on the 2nd poll; Claude is terminal-only ("external").
+    if (p === '/api/providers/oauth' && req.method === 'GET')
+      return send({
+        providers: [
+          { id: 'openai-codex', name: 'ChatGPT or Codex Subscription', flow: 'device_code', cli_command: 'hermes auth add openai-codex', disconnectable: true, status: { logged_in: !!codexPolls && providerConfigured } },
+          { id: 'anthropic', name: 'Anthropic Account', flow: 'external', cli_command: 'hermes auth add anthropic', disconnectable: true, status: { logged_in: false } },
+          { id: 'claude-code', name: 'Anthropic OAuth', flow: 'external', cli_command: 'claude setup-token', disconnectable: false, status: { logged_in: false } }
+        ]
+      })
+    if (p === '/api/providers/oauth/openai-codex/start') {
+      codexPolls = 0
+      return send({ session_id: 'dev1', flow: 'device_code', user_code: 'ABCD-1234', verification_url: 'https://auth.openai.com/codex/device', expires_in: 900, poll_interval: 1 })
+    }
+    if (p === '/api/providers/oauth/openai-codex/poll/dev1') {
+      if (++codexPolls >= 2) providerConfigured = true
+      return send({ session_id: 'dev1', status: codexPolls >= 2 ? 'approved' : 'pending' })
+    }
+    if (p.startsWith('/api/providers/oauth/sessions/')) return send({ ok: true })
+    if (p === '/api/env' && req.method === 'PUT') {
+      providerConfigured = true
+      return send({ ok: true })
+    }
+    if (p === '/api/model/options') return send({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
+    if (p === '/api/model/set') return send({ ok: true })
     if (p === '/api/dashboard/plugins') return send([{ name: 'hermes-mobile' }, { name: 'kanban' }])
     if (p === '/api/config' && req.method === 'GET') return send({ plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })
     if (p === '/api/config' && req.method === 'PUT') {
@@ -168,6 +195,8 @@ wss.on('connection', ws => {
         // Like Hermes: the agent is built in the background and announced by session.info.
         later(600, () => { log({ built: 'rt-new' }); event('session.info', 'rt-new', { model: 'mock-model', provider: 'mock' }) })
         return reply({ session_id: 'rt-new', stored_session_id: 's-new', info: { model: 'mock-model' }, messages: [] })
+      case 'setup.status':
+        return reply({ provider_configured: providerConfigured, ready: true })
       case 'model.options':
         return reply({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
       case 'session.resume': {

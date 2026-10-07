@@ -20,7 +20,8 @@
   <a href="https://x.com/markkeeper2/status/2106873833978540280"><b>𝕏 See the demo release post</b></a>
 </p>
 
-> Unofficial community project. Not affiliated with or endorsed by Nous Research. Hermes itself is never patched.
+> Unofficial community project. Not affiliated with or endorsed by Nous Research. It works with the standard Hermes Agent and
+> doesn't modify Hermes's code, so Hermes updates keep working.
 
 ## Why
 
@@ -109,12 +110,19 @@ flowchart LR
 
 Hermes runs in Termux on the phone, and the app talks to it over localhost the same way Hermes Desktop does (it also starts Hermes
 when it isn't running). A small Hermes plugin sends status, approvals and replies to the app's background service, so the island
-chip and notifications work even when the app is closed. Hermes itself is never changed.
+chip and notifications work even when the app is closed. Everything lives in the app, that plugin and a few scripts: Hermes's own
+code is never modified, so you can update Hermes as usual.
 
 ## Install
 
-You need an Android phone (arm64, Android 8+) with about 6 GB free, and an API key for a model provider (for example
-[OpenRouter](https://openrouter.ai/keys), Anthropic, OpenAI or Gemini). The install takes 15-40 minutes, mostly waiting.
+You need an Android phone (arm64, Android 8+) with about 6 GB free, and access to a model, either of:
+
+- **A subscription you already have:** ChatGPT Plus / Pro (or a Codex plan), Claude Pro / Max, SuperGrok / X Premium+, or a Nous
+  Portal account. You sign in from the app.
+- **An API key:** for example [OpenRouter](https://openrouter.ai/keys) (one key for every model), Anthropic, OpenAI or Gemini
+  (has a free tier).
+
+The install takes 15-40 minutes, mostly waiting.
 
 ### On the phone, no computer
 
@@ -125,15 +133,14 @@ You need an Android phone (arm64, Android 8+) with about 6 GB free, and an API k
    curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh -o hm.sh && bash hm.sh
    ```
 
-   Keep Termux open and the screen on until it prints `HMSETUP DONE`. Then set your model and key:
-
-   ```bash
-   bash hm.sh model openrouter anthropic/claude-sonnet-5-5 OPENROUTER_API_KEY=your-key
-   ```
-
-   Other providers: `anthropic` + `ANTHROPIC_API_KEY`, `openai` + `OPENAI_API_KEY`, `gemini` + `GEMINI_API_KEY`.
+   Keep Termux open and the screen on until it prints `HMSETUP DONE`.
 3. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it
    and open it.
+4. The app opens on **Connect Hermes to a model**: sign in with your subscription or paste an API key, then pick the model new
+   chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
+
+   ChatGPT, Grok and Nous Portal sign in inside the app. Claude opens Termux for its sign-in, because Hermes only allows that one
+   from a terminal: open the link it shows, approve, and paste the code back into Termux.
 
 ### From a computer (Mac, Windows, Linux)
 
@@ -150,7 +157,8 @@ curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/
 irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
 ```
 
-It installs everything on the phone, including the app, and asks for your model and key at the end.
+It installs everything on the phone, including the app. At the end it offers to set an API key; press Enter to skip it and connect a
+subscription or key in the app instead.
 
 **Stuck, or rather not do it yourself?** Give your AI coding agent (Claude Code, Codex, Cursor…) this prompt. It runs the same
 script and fixes what goes wrong:
@@ -198,8 +206,8 @@ HTML runs in an offline sandbox.
 
 **Chats:** full-text search that jumps to the message, unread dots, rename, pin, archive, delete, swipe and drag to reorder or pin.
 
-**Settings:** themes (dark, OLED black, light, system), text size, voice, default model per profile or for all, every API key and every
-Hermes option. Profiles: create, clone, rename, edit SOUL.md, delete. Screens for skills, memory, cron jobs, files and projects.
+**Settings:** themes (dark, OLED black, light, system), text size, voice, subscription sign-ins (ChatGPT, Claude, Grok, Nous Portal), default model per
+profile or for all, every API key and every Hermes option. Profiles: create, clone, rename, edit SOUL.md, delete. Screens for skills, memory, cron jobs, files and projects.
 
 **In the background:** a pinned status notification that becomes an Android 16 Live Update while Hermes works, plus notifications for
 replies, questions and approvals that you can answer without opening the app, learning, and cron results. There are no messaging-channel

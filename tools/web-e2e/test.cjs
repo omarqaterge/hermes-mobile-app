@@ -860,6 +860,31 @@ async function main() {
   await swp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe right on a chat opens the drawer'), () => check(false, 'swipe right on a chat opens the drawer'))
   await swp.close()
 
+  // ── first run: a Hermes with no model provider opens the welcome; sign in, pick a model, it never shows again ──
+  await mock({ unconfigured: true })
+  const wel = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  wel.on('pageerror', e => { console.log('PAGEERROR', e.message); failures++ })
+  await wel.goto('http://127.0.0.1:5180/')
+  await wel.getByText('Connect Hermes to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'fresh install opens the welcome'), () => check(false, 'fresh install opens the welcome'))
+  check((await wel.locator('.set-row', { hasText: 'Anthropic OAuth' }).count()) === 0, 'logins that need another CLI are hidden')
+  check(await wel.getByRole('button', { name: 'Connect one of the above first' }).isDisabled(), 'Pick a model waits for a connected provider')
+  await wel.locator('.set-row', { hasText: 'ChatGPT / Codex' }).getByRole('button', { name: 'Sign in' }).click()
+  await wel.getByText('ABCD-1234').waitFor({ timeout: 5000 }).then(() => check(true, 'device-code sign-in shows the code'), () => check(false, 'device-code sign-in shows the code'))
+  await wel.getByText('Copy this code').waitFor({ state: 'detached', timeout: 8000 }).then(() => check(true, 'sign-in sheet closes once Hermes approves'), () => check(false, 'sign-in sheet closes once Hermes approves'))
+  await wel.getByRole('button', { name: 'Pick a model' }).click({ timeout: 5000 })
+  await wel.locator('.picker-opt', { hasText: 'mock-sonnet' }).click()
+  await wel.getByText('Connect Hermes to a model').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'picking a model closes the welcome'), () => check(false, 'picking a model closes the welcome'))
+  {
+    const set = calls().filter(c => c.path === '/api/model/set').pop()
+    check(set && set.body.model === 'mock-sonnet', 'the welcome sets the default model')
+    check(calls().some(c => c.path === '/api/model/options' && /refresh=true/.test(c.query)), 'the model list is refreshed after a new sign-in')
+  }
+  await wel.reload()
+  await wel.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await sleep(1500)
+  check((await wel.getByText('Connect Hermes to a model').count()) === 0, 'the welcome does not come back')
+  await wel.close()
+
   await browser.close()
   console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED')
   process.exit(failures ? 1 : 0)

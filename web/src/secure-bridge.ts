@@ -11,7 +11,7 @@ const METHODS = [
   'speak', 'setReadAloud', 'openTtsEngineApp', 'shareText', 'listVoices', 'stopSpeaking', 'startListening', 'stopListening',
   'getToken', 'httpAsync', 'openFile', 'getBaseUrl', 'startHermes', 'notify', 'setBackground', 'isSystemDark',
   'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'isInForeground', 'appVersion',
-  'sharedItem', 'mediaBase', 'setLastChat', 'getTokenAsync', 'setupState', 'setupFix', 'isAssistant', 'openAssistantSettings'
+  'sharedItem', 'mediaBase', 'setLastChat', 'getTokenAsync', 'setupState', 'setupFix', 'isAssistant', 'openAssistantSettings', 'signInTermux'
 ]
 
 const w = window as unknown as { HermesAndroid?: unknown }
