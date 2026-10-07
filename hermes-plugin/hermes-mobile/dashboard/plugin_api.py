@@ -467,3 +467,74 @@ def cleanup(body: Optional[CleanupBody] = None, dry_run: bool = False):
         return _chat_search().cleanup(dry_run=dry_run, keep=(body.keep if body else []))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+# ── file checkpoints per chat (snapshots Hermes takes before write_file / patch) ──
+
+def _checkpoints():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_checkpoints")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_checkpoints", Path(__file__).resolve().parent.parent / "checkpoints.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_checkpoints"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+def _snapshot_of(session: str, workdir: str, snap: str):
+    try:
+        found = _checkpoints().find(session, workdir, snap)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not found:
+        raise HTTPException(status_code=404, detail="This snapshot is gone (Hermes keeps 20 per folder).")
+    return found
+
+
+@router.get("/checkpoints")
+def checkpoints_list(session: str):
+    """The chat's snapshots, grouped by the folder Hermes snapshotted (newest first)."""
+    try:
+        return _checkpoints().list_for_session(session)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/checkpoints/diff")
+def checkpoints_diff(session: str, workdir: str, snap: str):
+    base, wd, commit, _ = _snapshot_of(session, workdir, snap)
+    r = _checkpoints().diff(base, wd, commit)
+    if "error" in r:
+        raise HTTPException(status_code=409, detail=r["error"])
+    return r
+
+
+class CheckpointRestore(BaseModel):
+    session: str
+    workdir: str
+    snap: str
+    file: str = ""
+
+
+@router.post("/checkpoints/restore")
+def checkpoints_restore(body: CheckpointRestore):
+    base, wd, commit, files = _snapshot_of(body.session, body.workdir, body.snap)
+    if body.file and body.file not in files:
+        raise HTTPException(status_code=400, detail="This chat didn't edit that file in this snapshot.")
+    r = _checkpoints().restore(base, wd, commit, body.file)
+    if "error" in r:
+        raise HTTPException(status_code=409, detail=r["error"])
+    return r
+
+
+@router.delete("/checkpoints")
+def checkpoints_forget(session: str):
+    """Forget a deleted chat's list (Hermes's folder snapshots stay for other chats)."""
+    try:
+        _checkpoints().delete_ledger(session)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}

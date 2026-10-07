@@ -42,6 +42,7 @@ jobs:
       - run: python3 tools/test_canvas.py
       - run: python3 tools/test_media.py
       - run: python3 tools/test_chat_search.py
+      - run: python3 tools/test_checkpoints.py
       - run: python3 tools/test_battery.py
 
   android:

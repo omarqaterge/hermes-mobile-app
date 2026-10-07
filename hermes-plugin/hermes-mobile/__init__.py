@@ -335,7 +335,12 @@ def _on_stream_end(final_text=None, session_id=None, turn_id=None, finished=None
                 _last_text.pop(next(iter(_last_text)))
 
 
-def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, **_):
+def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, task_id=None, tool_call_id=None, **_):
+    if tool_name in ("write_file", "patch"):
+        try:
+            _checkpoints().pre_tool(tool_name, args, session_id, task_id, tool_call_id)
+        except Exception as e:
+            _dbg(f"checkpoint pre: {type(e).__name__}: {e}")
     if _is_review(turn_id, session_id):
         _set_status(session_id, "Learning · " + _tool_label(tool_name or "tool", args).removeprefix("Using "), "Learning", review=True)
         return None
@@ -361,7 +366,13 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
     return None  # observe only
 
 
-def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, session_id=None, turn_id=None, **_):
+def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, session_id=None, turn_id=None,
+                       tool_call_id=None, **_):
+    if tool_name in ("write_file", "patch"):
+        try:
+            _checkpoints().post_tool(tool_name, args, session_id, turn_id, tool_call_id)
+        except Exception as e:
+            _dbg(f"checkpoint post: {type(e).__name__}: {e}")
     if session_id in _active:
         if _is_review(turn_id, session_id):
             _set_status(session_id, "Learning from this chat (memory & skills)", "Learning", review=True)
@@ -462,6 +473,10 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     _clear_status(session_id)  # always, even without a turn id, or the chip sticks on "Thinking"
     if turn_id is None:
         return
+    try:
+        _checkpoints().maybe_maintain_async()  # daily gc of the checkpoint store, in a thread
+    except Exception:
+        pass
     with _lock:
         text = _last_text.pop(session_id, "")
     if interrupted:
@@ -502,6 +517,11 @@ def _chat_search():
     return _load("hm_chat_search", "chat_search.py")
 
 
+def _checkpoints():
+    """Per-chat file checkpoints (ledger, git speed-up, daily store gc)."""
+    return _load("hm_checkpoints", "checkpoints.py")
+
+
 _CANVAS_PROMPT = (
     "The user talks to you in a phone app that has a CANVAS: a panel next to the chat where they read, edit and keep "
     "documents. For anything document-like (an essay, notes, a plan, a report, a table, a code file, an HTML/SVG page "
@@ -538,6 +558,10 @@ def _canvas_prompt(info) -> str:
 
 
 def register(ctx):
+    try:
+        _checkpoints().install_git_env_shim()
+    except Exception as e:
+        _dbg(f"checkpoint git shim not installed: {type(e).__name__}: {e}")
     try:
         c = _canvas()
         ctx.register_tool(name="canvas", toolset="canvas", schema=c.TOOL_SCHEMA, handler=c.tool_handler,
