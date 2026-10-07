@@ -34,6 +34,8 @@ CHAT_PROMPT = ("Battery benchmark: run the shell command uname -a with the termi
                "its output to /tmp/hm-bench.txt, then reply with one short sentence.")
 CRON_PROMPT = ("Battery benchmark job: run the shell command uname -a with the terminal tool, then use write_file to "
                "save its output to /tmp/hm-cron-bench.txt, then reply with one short sentence.")
+SLEEP_PROMPT = ("Battery benchmark: run the shell command sleep 45 with the terminal tool, then reply with the single "
+                "word done.")
 TAIL = 60  # seconds measured after the turn ends and the wake lock is gone
 
 
@@ -171,7 +173,7 @@ def run_chat(a):
         time.sleep(a.pre)
         marks, client, sid = {}, None, None
         if a.via == "ws":
-            client = subprocess.Popen([sys.executable, str(HERE / "wschat.py"), CHAT_PROMPT], stdin=subprocess.PIPE,
+            client = subprocess.Popen([sys.executable, str(HERE / "wschat.py"), a.prompt_text], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, text=True)
             for line in client.stdout:
                 ev = json.loads(line)
@@ -184,8 +186,14 @@ def run_chat(a):
             x, y = (int(v) for v in a.send.split(",")) if a.send else send_button()
             t_send = time.time()
             sh(f"am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "
-               f"{shlex.quote(shlex.quote(CHAT_PROMPT))} -n {PKG}/.MainActivity")
+               f"{shlex.quote(a.prompt_text)} -n {PKG}/.MainActivity")
+            wait(lambda: PKG in focus(), 15, 0.5)
             time.sleep(2.0)
+            if "mInputShown=true" in sh("dumpsys input_method | grep mInputShown"):
+                sh("input keyevent KEYCODE_BACK")  # the shared draft focuses the composer: close the keyboard first
+                time.sleep(1.0)
+            if PKG not in focus():
+                raise RuntimeError(f"the app is not in front: {focus()}")
             sh(f"input tap {x} {y}")
             wait(cap.lock, 40, 1)
             wait(lambda: not cap.lock(), 600, 2)
@@ -243,7 +251,7 @@ def run_cron(a):
                 runs = api("GET", f"/api/cron/jobs/{jid}/runs")
                 items = runs if isinstance(runs, list) else runs.get("runs") or runs.get("items") or []
                 return any((it.get("status") in ("completed", "failed", "ok", "error")) for it in items if isinstance(it, dict))
-            wait(done, 600, 5)
+            wait(done, 600, 10)
             wait(lambda: not cap.lock(), 300, 2)
             t_unlock = time.time()
             time.sleep(TAIL)
@@ -282,6 +290,8 @@ def main():
     p.add_argument("--pre", type=float, default=10)
     p.add_argument("--send", help="x,y of the send button (default: from the screen size)")
     p.add_argument("--via", choices=("ws", "ui"), default="ws")
+    p.add_argument("--prompt", choices=("tools", "sleep"), default="tools",
+                   help="tools: a terminal call + a file write (default); sleep: one 45 s command (the UI's cost while it waits)")
     p = sub.add_parser("cron")
     p.add_argument("--runs", type=int, default=3)
     p.add_argument("--tag", default="run")
@@ -289,6 +299,7 @@ def main():
     p = sub.add_parser("report")
     p.add_argument("files", nargs="+")
     a = ap.parse_args()
+    a.prompt_text = SLEEP_PROMPT if getattr(a, "prompt", "") == "sleep" else CHAT_PROMPT
     {"idle": run_idle, "chat": run_chat, "cron": run_cron, "report": run_report}[a.cmd](a)
 
 

@@ -86,7 +86,7 @@ def labels(samples):
 def group(st, rend, procs, lab=None):
     if rend and str(st["pid"]) == rend:
         return "app.renderer"
-    if st["comm"].startswith("com.omarqaterge"):
+    if st["comm"].endswith("hermesmobile"):  # the kernel keeps the last 15 chars of the package name
         return "app.main"
     root = root_proot(st, procs)
     if root is None:
