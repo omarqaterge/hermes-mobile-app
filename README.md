@@ -124,34 +124,25 @@ with ~6 GB free. The instructions are in [AGENT_INSTALL.md](AGENT_INSTALL.md) if
 > If something fails, open an issue.
 
 <details>
-<summary><b>Install by hand instead</b> (about 20 minutes, all on the phone)</summary>
-
-### 1. Install Termux and Hermes
+<summary><b>Install by hand instead</b> (only the phone, 3 steps, mostly waiting)</summary>
 
 1. Install **[Termux](https://f-droid.org/packages/com.termux/)** from F-Droid (not the Play Store, that version is outdated).
 2. Open Termux and paste:
 
    ```bash
-   pkg update -y && pkg install -y proot-distro && proot-distro install debian && proot-distro login debian
+   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh -o hm.sh && bash hm.sh
    ```
 
-3. You are now inside Debian. Install **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** with its own guide, run `hermes setup`
-   and add your model provider. When Hermes answers you, type `exit` to get back to Termux.
+   It installs Debian, Hermes Agent and the Hermes plugin, and starts Hermes. It takes 15-40 minutes: keep Termux open and the
+   screen on until it prints `HMSETUP DONE`. Then set your model and key, for example with OpenRouter:
 
-### 2. Run the installer
+   ```bash
+   bash hm.sh model openrouter anthropic/claude-sonnet-5-5 OPENROUTER_API_KEY=your-key
+   ```
 
-In Termux (not Debian), paste:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh | bash
-```
-
-It installs the Hermes plugin, lets the app start Hermes, then downloads the app and opens Android's installer: tap **Install**
-(allow Termux to install apps if Android asks). Safe to run again, also to update.
-
-### 3. Open Hermes Mobile
-
-Allow the permissions it asks for (notifications, "run commands in Termux"). It starts Hermes by itself; the first start can take a minute. Say hi.
+   (Other providers: `anthropic` + `ANTHROPIC_API_KEY`, `openai` + `OPENAI_API_KEY`, `gemini` + `GEMINI_API_KEY`.)
+3. On the phone, download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest),
+   install it, open it and allow what it asks for. Say hi.
 
 **Recommended:** set **battery to "Unrestricted"** for *Hermes Mobile* and *Termux* (on Xiaomi/HyperOS also turn on *Autostart*), or Android may kill them in the background.
 
@@ -181,11 +172,11 @@ First open **Settings → Setup check** in the app (it also opens by itself when
 | What you see | Fix |
 |---|---|
 | "Hermes is offline" for more than a minute | Open Termux, run `~/bin/hermes-services`, go back to the app and tap Reconnect |
-| Installer says "Debian is not installed" or "Hermes is not set up" | Finish step 1 first |
-| Installer says no ready-made app was found | Build it yourself (see above) |
-| No status chip / canvas / approvals | In Termux run `proot-distro login debian -- hermes plugins list` and check `hermes-mobile` says *enabled* (or re-run the installer) |
-| The app can't start Hermes | In Termux run `grep allow-external ~/.termux/termux.properties`, it must say `true`. Re-run the installer, then restart Termux |
-| Hermes's Google Calendar/Gmail script fails with `No module named googleapiclient` | In Termux run `proot-distro login debian -- apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2` (re-running the installer does the same) |
+| Termux stops with `[Process completed (signal 9)]` during the install | Android 12+ killed it. Android 14+: Developer options → *Disable child process restrictions*; or use the setup script from a computer, which fixes this itself. Then run `bash hm.sh` again |
+| The install stops with `HMSETUP FAIL <step>` | Read the error above it, fix it, run `bash hm.sh` again (finished parts are skipped). [AGENT_INSTALL.md](AGENT_INSTALL.md) step 6 lists the usual causes |
+| No status chip / canvas / approvals | In Termux run `proot-distro login debian -- hermes plugins list` and check `hermes-mobile` says *enabled* (or run `bash hm.sh` again) |
+| The app can't start Hermes | In Termux run `grep allow-external ~/.termux/termux.properties`, it must say `true`. Run `bash hm.sh` again, then restart Termux |
+| Hermes's Google Calendar/Gmail script fails with `No module named googleapiclient` | In Termux run `proot-distro login debian -- apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2` (`bash hm.sh` does the same) |
 | Everything stops after a while | Battery is restricted: see the recommended settings above |
 
 Optional: install **Termux:Boot** and put `~/bin/hermes-services` in `~/.termux/boot/10-hermes` so Hermes starts after a reboot.
