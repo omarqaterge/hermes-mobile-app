@@ -44,6 +44,7 @@ jobs:
       - run: python3 tools/test_chat_search.py
       - run: python3 tools/test_checkpoints.py
       - run: python3 tools/test_battery.py
+      - run: python3 tools/test_approval.py
 
   android:
     name: Android Java compiles

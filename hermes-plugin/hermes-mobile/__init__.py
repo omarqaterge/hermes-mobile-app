@@ -422,7 +422,24 @@ def _on_pre_approval_request(command=None, description=None, session_key=None, s
         timeout = 60
     _send("approval", "Approval needed", body, sid, urgent=True, key=session_key or "", timeout=timeout,
           what=description or "", command=command or "",
-          request_id=str(kw.get("request_id") or ""), allow_session=kw.get("allow_session") is not False)
+          request_id=_approval_request_id(session_key, command, kw.get("request_id")),
+          allow_session=kw.get("allow_session") is not False)
+
+
+def _approval_request_id(session_key, command, given=None) -> str:
+    """The id of the approval this hook is about. Hermes doesn't pass it to the hook, but the request is
+    already queued when the hook fires: the newest one for this command (or, coalesced, the one it waits on).
+    Without an id, /approve would answer the session's OLDEST waiting approval, which may not be the
+    command the notification shows, so /approve refuses answers that have none."""
+    if given:
+        return str(given)
+    try:
+        from tools.approval import list_gateway_approvals
+        pending = list_gateway_approvals(session_key or "")
+    except Exception:
+        return ""
+    ids = [str(p.get("request_id") or "") for p in pending if p.get("command") == (command or "")]
+    return ids[-1] if ids else ""
 
 
 def _on_post_approval_response(session_key=None, session_id=None, **_):

@@ -188,6 +188,9 @@ async def approve(body: Approve):
 
     if body.choice not in ("once", "session", "always", "deny"):
         raise HTTPException(status_code=400, detail="bad choice")
+    if not body.request_id:
+        # Without an id Hermes answers the session's oldest waiting approval, which may not be the one shown.
+        raise HTTPException(status_code=409, detail="no request id: answer in the app")
     page = await asyncio.to_thread(lambda: urllib.request.urlopen("http://127.0.0.1:9119/", timeout=5).read().decode())
     m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
     if not m:
