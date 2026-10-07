@@ -275,12 +275,79 @@ async def media(path: str, request: Request):
     return StreamingResponse(body(), status_code=206 if rng else 200, media_type=ctype, headers=headers)
 
 
+# ── battery: Hermes Desktop's file watchers ──
+# The dashboard runs the gateway's poll threads, tuned for Hermes Desktop on a laptop: a change watcher
+# waking every 0.5 s (pet sprite, pairing, platforms, projects, bot relay outbox…), a display lease
+# watcher every 0.5 s and per-chat kanban/bot-mailbox polls every 5 s. Under proot every syscall is
+# traced, so on the phone they cost ~2.5 s of CPU a minute even with the app closed. The app only
+# listens for `sessions.changed`, so that one stays quick and the rest slow down. The threads read
+# these values on every pass from `tui_gateway.server` (bind_module rebinds them there).
+_WATCH_EVERY = {"sessions.changed": 2.0, "cron.changed": 5.0}
+_WATCH_DEFAULT = 30.0
+_POLL_EVERY = {"_LEASE_POLL_S": 5.0, "_KANBAN_POLL_SECONDS": 30.0, "_BOT_DELIVERY_POLL_SECONDS": 30.0}
+_watchers_slowed = False
+
+
+def slow_desktop_watchers(server=None) -> dict:
+    """Raise the poll intervals (never lowers one). Returns what changed; {} once done or not loaded yet."""
+    global _watchers_slowed
+    if server is None:
+        if _watchers_slowed:
+            return {}
+        import sys
+
+        server = sys.modules.get("tui_gateway.server")  # never import it: that's Hermes's call to make
+        if server is None:
+            return {}
+    changed = {}
+    watches = getattr(server, "_CHANGE_WATCHES", None)
+    if isinstance(watches, dict):
+        for event, spec in list(watches.items()):
+            want = _WATCH_EVERY.get(event, _WATCH_DEFAULT)
+            if isinstance(spec, tuple) and spec and isinstance(spec[0], (int, float)) and spec[0] < want:
+                watches[event] = (want, *spec[1:])
+                changed[event] = want
+    for name, want in _POLL_EVERY.items():
+        v = getattr(server, name, None)
+        if isinstance(v, (int, float)) and v < want:
+            setattr(server, name, want)
+            changed[name] = want
+    # The watcher loop also checks the Desktop skin on every 0.5 s wake; the app has no skins.
+    skin = getattr(server, "_broadcast_skin_if_changed", None)
+    if callable(skin) and not getattr(skin, "_hm_slow", False):
+        import time
+
+        last = [0.0]
+
+        def slow_skin():
+            if time.monotonic() - last[0] >= _WATCH_DEFAULT:
+                last[0] = time.monotonic()
+                skin()
+
+        slow_skin._hm_slow = True
+        server._broadcast_skin_if_changed = slow_skin
+        changed["skin"] = _WATCH_DEFAULT
+    _watchers_slowed = True
+    return changed
+
+
+try:
+    slow_desktop_watchers()
+except Exception:
+    pass
+
+
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
 @router.get("/activity")
 async def get_activity():
     """Live work reported by the plugin hooks in every Hermes process, including background self-review."""
     import time
+
+    try:
+        slow_desktop_watchers()  # in case the gateway loaded after this module
+    except Exception:
+        pass
 
     path = Path.home() / ".hermes" / "mobile" / "activity.json"
     try:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Battery checks (no phone needed): the cron ticker's next-wake calculation, the plugin's status loop
-staying asleep while idle, the long-tool stale window and `bots.py off`.
+staying asleep while idle, the long-tool stale window, the dashboard watcher slowdown and `bots.py off`.
     python3 tools/test_battery.py
 """
 import importlib.util
@@ -131,6 +131,45 @@ plugin._on_stream_start(session_id="s-ex", turn_id="s-ex:1")
 plugin._on_api_request_error(session_id="s-ex", turn_id="s-ex:1", status_code=500, retryable=True, retry_count=3, max_retries=3)
 check("retries used up: cleared", "s-ex" not in plugin._active)
 time.sleep(0.5)
+
+# ── dashboard: Hermes Desktop's poll threads slowed down ──
+print("dashboard: slow desktop watchers")
+import types  # noqa: E402
+
+try:
+    import fastapi  # noqa: F401
+except ImportError:  # only the module-level names plugin_api uses
+    class _Router:
+        def __getattr__(self, _):
+            return lambda *a, **k: (lambda f: f)
+    sys.modules["fastapi"] = types.SimpleNamespace(APIRouter=_Router, HTTPException=Exception, Request=object)
+    sys.modules["pydantic"] = types.SimpleNamespace(BaseModel=object)
+sys.modules.pop("tui_gateway.server", None)
+papi = load("plugin_api_battery", ROOT / "hermes-plugin" / "hermes-mobile" / "dashboard" / "plugin_api.py")
+check("gateway not loaded: nothing done, not imported", papi.slow_desktop_watchers() == {} and "tui_gateway.server" not in sys.modules)
+sig = lambda: 0  # noqa: E731
+srv = types.SimpleNamespace(
+    _CHANGE_WATCHES={"sessions.changed": (0.5, sig, sig), "cron.changed": (1.0, sig, sig), "pet.changed": (2.0, sig, sig),
+                     "slow.already": (60.0, sig, sig)},
+    _LEASE_POLL_S=0.5, _KANBAN_POLL_SECONDS=5.0, _BOT_DELIVERY_POLL_SECONDS=5.0, _LOOP_POLL_SECONDS=5.0)
+skins = []
+srv._broadcast_skin_if_changed = lambda: skins.append(1)
+watches = srv._CHANGE_WATCHES
+sys.modules["tui_gateway.server"] = srv
+papi._watchers_slowed = False
+done = papi.slow_desktop_watchers()
+w = {k: v[0] for k, v in watches.items()}
+check("sessions.changed stays quick (2 s)", w["sessions.changed"] == 2.0, w)
+check("cron 5 s, desktop-only watches 30 s", w["cron.changed"] == 5.0 and w["pet.changed"] == 30.0, w)
+check("a slower interval is never lowered", w["slow.already"] == 60.0, w)
+check("same dict object mutated (the thread holds it)", srv._CHANGE_WATCHES is watches and watches["pet.changed"][1] is sig)
+check("lease 5 s, kanban/bot mailbox 30 s, /loop untouched",
+      (srv._LEASE_POLL_S, srv._KANBAN_POLL_SECONDS, srv._BOT_DELIVERY_POLL_SECONDS, srv._LOOP_POLL_SECONDS) == (5.0, 30.0, 30.0, 5.0))
+for _ in range(5):
+    srv._broadcast_skin_if_changed()
+check("skin check throttled (first call runs, the next ones skip)", skins == [1], skins)
+check("runs once", done and papi.slow_desktop_watchers() == {})
+sys.modules.pop("tui_gateway.server", None)
 
 # ── bots.py off ──
 print("bots.py off")
