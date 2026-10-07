@@ -20,8 +20,7 @@
   <a href="https://x.com/markkeeper2/status/2106873833978540280"><b>𝕏 See the demo release post</b></a>
 </p>
 
-> Unofficial community project. Not affiliated with or endorsed by Nous Research. It works with the standard Hermes Agent and
-> doesn't modify Hermes's code, so Hermes updates keep working.
+> Unofficial community project. Not affiliated with or endorsed by Nous Research.
 
 ## Why
 
@@ -110,8 +109,7 @@ flowchart LR
 
 Hermes runs in Termux on the phone, and the app talks to it over localhost the same way Hermes Desktop does (it also starts Hermes
 when it isn't running). A small Hermes plugin sends status, approvals and replies to the app's background service, so the island
-chip and notifications work even when the app is closed. Everything lives in the app, that plugin and a few scripts: Hermes's own
-code is never modified, so you can update Hermes as usual.
+chip and notifications work even when the app is closed.
 
 ## Install
 
