@@ -86,17 +86,30 @@ what Hermes remembers. Dark, OLED black or light.
 
 ```mermaid
 flowchart LR
-  subgraph Phone
+  subgraph phone["📱 All on your phone"]
     direction LR
-    A[Hermes Mobile app] <-->|localhost| B[Hermes Agent<br/>Debian in Termux]
-    B --- P[hermes-mobile plugin]
-    P -->|status, approvals| A
+    ui["💬 <b>Hermes Mobile</b><br/>chat screen"]
+    hermes["🤖 <b>Hermes Agent</b><br/>in Termux → Debian<br/>+ mobile plugin"]
+    svc["🔔 <b>Island &amp; notifications</b><br/>work with the app closed"]
   end
-  B -->|your model provider| M[(LLM API)]
+  llm[("☁️ Your model provider")]
+
+  ui <-->|"chat"| hermes
+  hermes -->|"status · approvals · replies"| svc
+  hermes -->|"HTTPS"| llm
+
+  classDef appNode fill:#2b2418,stroke:#D9A441,stroke-width:2px,color:#f6e7c9
+  classDef hermesNode fill:#1d2530,stroke:#6ea8fe,stroke-width:2px,color:#dbe8ff
+  classDef cloud fill:#1f2a22,stroke:#3DDC84,stroke-width:2px,color:#d6f5e2
+  class ui,svc appNode
+  class hermes hermesNode
+  class llm cloud
+  style phone fill:transparent,stroke:#888,stroke-dasharray:5 5
 ```
 
-Hermes runs in Termux on the phone. The app talks to it the same way Hermes Desktop does, and a small plugin sends it status and
-approvals. Hermes itself is never changed.
+Hermes runs in Termux on the phone, and the app talks to it over localhost the same way Hermes Desktop does (it also starts Hermes
+when it isn't running). A small Hermes plugin sends status, approvals and replies to the app's background service, so the island
+chip and notifications work even when the app is closed. Hermes itself is never changed.
 
 ## Install
 
