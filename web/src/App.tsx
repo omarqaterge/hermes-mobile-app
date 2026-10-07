@@ -602,7 +602,7 @@ export function App() {
     startHealthPolling()
     startActivityPolling()
     startCanvasSync()
-    void checkHealth()
+    void checkHealth(false) // a reconnect (each return from the background) pings; the full status only when stale
   }, [conn])
 
   useEffect(() => {

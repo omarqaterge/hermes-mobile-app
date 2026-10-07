@@ -18,8 +18,14 @@ export interface Health {
 }
 
 let timer: ReturnType<typeof setInterval> | null = null
+// /api/status costs Hermes's dashboard ~0.26 s of CPU per call under proot (it reloads the gateway config and
+// probes every platform), the ping ~1 ms. The minute poll pings; the full status refreshes every 10 min, and
+// at once whenever the status sheet opens (checkHealth()).
+const STATUS_EVERY_MS = 10 * 60_000
+let statusAt = 0
 
-export async function checkHealth(): Promise<Health> {
+export async function checkHealth(full = true): Promise<Health> {
+  const prev = getState().health
   const h: Health = { checkedAt: Date.now(), pingMs: null }
   if (getState().conn === 'open') {
     const t = performance.now()
@@ -30,22 +36,28 @@ export async function checkHealth(): Promise<Health> {
       /* shown as no ping */
     }
   }
-  try {
-    // Machine-wide status (one host gateway serves every profile), not the open profile's view.
-    Object.assign(h, await api<Partial<Health>>('GET', '/api/status', undefined, { profile: false }))
-  } catch (e) {
-    h.error = e instanceof Error ? e.message : String(e)
+  if (full || !prev || prev.error || Date.now() - statusAt >= STATUS_EVERY_MS) {
+    try {
+      // Machine-wide status (one host gateway serves every profile), not the open profile's view.
+      Object.assign(h, await api<Partial<Health>>('GET', '/api/status', undefined, { profile: false }))
+      statusAt = Date.now()
+    } catch (e) {
+      h.error = e instanceof Error ? e.message : String(e)
+    }
+  } else {
+    const { checkedAt: _c, pingMs: _p, ...status } = prev
+    Object.assign(h, status)
   }
   setState({ health: h })
   return h
 }
 
-/** Poll every minute while the app runs (cheap: one ping + one local GET). */
+/** Every minute while the app is in front: a ping, plus the full status when it is 10 min old. */
 export function startHealthPolling(): void {
   if (timer) return
   void checkHealth()
   timer = setInterval(() => {
-    if (!document.hidden) void checkHealth()
+    if (!document.hidden) void checkHealth(false)
   }, 60_000)
 }
 
