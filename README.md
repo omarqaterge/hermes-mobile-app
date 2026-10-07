@@ -69,12 +69,18 @@ what Hermes remembers. Dark, OLED black or light.
 
 | | |
 |---|---|
-| **Voice** | Read replies aloud (any installed TTS engine), dictation, a hands-free Live mode, and Hermes as your phone's assistant (long-press power → Live mode) |
+| **Voice** | Read replies aloud with a player (pause, seek, speed, any installed speech engine), dictation, hands-free Live mode, and Hermes as your phone's assistant |
+| **Control a turn** | Stop or steer a running reply, edit, retry or branch any turn, and `/btw` to ask a side question without interrupting |
+| **See the work** | Live tool cards (long runs fold into one line), sub-agents, the to-do list, speed and context use per reply, and file checkpoints to undo Hermes's file changes |
 | **Skills & commands** | `/` autocomplete for every skill and slash command |
-| **Models** | Switch model and reasoning level per chat; defaults per profile |
+| **Models & profiles** | Switch model and reasoning level per chat; create, clone and edit profiles with their own default model, keys and SOUL.md |
+| **Notifications** | Reply, answer questions and allow commands right from the notification; cron results; a "failed" note when a model call fails |
 | **Cron & files** | Cron jobs (edit, run, results), a file browser and projects |
+| **Share** | "Share to Hermes" from any app; attach photos, camera shots and files; share a chat as Markdown; link chats to each other |
 | **Offline-friendly** | Messages typed offline send on reconnect; the last chat list is cached |
-| **Share** | "Share to Hermes" from any app, attach photos, camera shots and files |
+| **Shortcuts & big screens** | Launcher shortcuts (New chat, Live mode, last chat); a two-column layout on tablets and foldables |
+| **Setup check** | One screen that checks Termux, permissions, the plugin and battery settings, with a fix button for each |
+| **Battery** | No permanent wake lock: the phone sleeps while Hermes is idle |
 
 ## How it fits together
 
