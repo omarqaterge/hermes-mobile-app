@@ -32,6 +32,7 @@ STATUS_MIN_INTERVAL = 1.0  # seconds between status updates sent to the app
 HEARTBEAT = 15  # seconds; the app expires a "working" status after ~3 missed beats
 STALE_AFTER = 180  # a session with no activity for this long is considered finished
 TOOL_STALE_AFTER = 1800  # ... unless it is inside a tool call (a long command fires no hooks until it ends)
+FAIL_GRACE = 6.0  # seconds after a final API error before "failed" is notified (Hermes may still fall back to another provider)
 
 _lock = threading.Lock()
 _last_text: dict = {}  # session_id -> latest final_text
@@ -418,6 +419,40 @@ def _on_post_approval_response(session_key=None, session_id=None, **_):
     _send("clear", session=session_id or session_key or "", what="approval")
 
 
+def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retryable=None, retry_count=None,
+                          max_retries=None, reason=None, error=None, **_):
+    # A turn whose model call fails for good (bad key, quota, unknown model…) ends with this hook and NO
+    # session_end / post_llm_call, so the chip, the activity banner and the app's wake lock used to stay on
+    # "Thinking" until STALE_AFTER. Retryable errors are retried by Hermes (a new stream_start follows).
+    final = retryable is False or (retry_count is not None and max_retries is not None and retry_count >= max_retries)
+    _dbg(f"api_error {session_id} turn={turn_id} status={status_code} retryable={retryable} final={final}")
+    if not final or not session_id or session_id in _subagents:
+        return
+    review = _is_review(turn_id, session_id)
+    _clear_status(session_id)
+    if review:
+        return
+    msg = str((error.get("message") if isinstance(error, dict) else error) or reason or "")
+    inner = re.search(r"""['"]message['"]\s*:\s*['"]([^'"]+)""", msg)  # "Error code: 401 - {'error': {'message': '…'}}"
+    msg = inner.group(1) if inner else msg
+    head = f"HTTP {status_code}" if status_code else ""
+    body = _short(" · ".join(x for x in (head, msg) if x) or "The model call failed", 200)
+    failed_at = time.time()
+
+    def notify():
+        with _lock:
+            again = session_id in _active  # a fallback provider / new attempt took over
+        if again or _last_end.get(session_id, 0) >= failed_at:  # or a session_end already reported it
+            return
+        name = _profile()
+        title = _chat_title(session_id) or ("Hermes" if name == "default" else name)
+        _send("error", f"{title} · failed", body, session_id)
+
+    t = threading.Timer(FAIL_GRACE, notify)
+    t.daemon = True
+    t.start()
+
+
 def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, interrupted=None,
                     turn_exit_reason=None, platform=None, **_):
     _dbg(f"session_end {session_id} turn={turn_id} completed={completed} interrupted={interrupted}")
@@ -534,3 +569,4 @@ def register(ctx):
     ctx.register_hook("pre_approval_request", _on_pre_approval_request)
     ctx.register_hook("post_approval_response", _on_post_approval_response)
     ctx.register_hook("on_session_end", _on_session_end)
+    ctx.register_hook("api_request_error", _on_api_request_error)

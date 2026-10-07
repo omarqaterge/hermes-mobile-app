@@ -107,6 +107,31 @@ time.sleep(1.2)
 check("idle again: no more beats", len(posts) == n, posts[n:])
 check("idle again: waits without a timeout", waits[-1] is None, waits[-3:])
 
+# ── a failed model call (bad key, quota…) must end "working" (it fires no session_end) ──
+print("plugin: final API error")
+plugin.FAIL_GRACE = 0.3
+plugin._on_stream_start(session_id="s-err", turn_id="s-err:1")
+plugin._on_api_request_error(session_id="s-err", turn_id="s-err:1", status_code=429, retryable=True, retry_count=0, max_retries=3)
+check("retryable error: still working", "s-err" in plugin._active)
+plugin._on_api_request_error(session_id="s-err", turn_id="s-err:1", status_code=401, retryable=False,
+                             error={"type": "AuthenticationError",
+                                    "message": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"})
+check("final error: status cleared at once", "s-err" not in plugin._active)
+time.sleep(0.8)
+errs = [e for _, e in posts if e.get("kind") == "error" and e.get("session") == "s-err"]
+check("final error: one 'failed' notification, readable", len(errs) == 1 and errs[0].get("body") == "HTTP 401 · Missing Authentication header", errs)
+check("final error: Ready sent", [e for _, e in posts if e.get("kind") == "status"][-1].get("working") is False)
+plugin._on_stream_start(session_id="s-fb", turn_id="s-fb:1")
+plugin._on_api_request_error(session_id="s-fb", turn_id="s-fb:1", status_code=401, retryable=False)
+plugin._on_stream_start(session_id="s-fb", turn_id="s-fb:1")  # Hermes fell back to another provider
+time.sleep(0.8)
+check("fallback took over: no 'failed'", not [e for _, e in posts if e.get("kind") == "error" and e.get("session") == "s-fb"])
+plugin._on_session_end(session_id="s-fb", turn_id=None, interrupted=True)
+plugin._on_stream_start(session_id="s-ex", turn_id="s-ex:1")
+plugin._on_api_request_error(session_id="s-ex", turn_id="s-ex:1", status_code=500, retryable=True, retry_count=3, max_retries=3)
+check("retries used up: cleared", "s-ex" not in plugin._active)
+time.sleep(0.5)
+
 # ── bots.py off ──
 print("bots.py off")
 os.environ["HERMES_MOBILE_ROOT"] = str(tmp / "hroot")

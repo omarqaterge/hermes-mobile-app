@@ -11,3 +11,4 @@ provides_hooks:
   - subagent_start
   - pre_approval_request
   - on_session_end
+  - api_request_error
