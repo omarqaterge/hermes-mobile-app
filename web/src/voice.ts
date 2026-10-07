@@ -1,6 +1,7 @@
 // Voice: read replies aloud and dictate into the composer. Android does the work (TextToSpeech /
 // SpeechRecognizer, see Voice.java) through the bridge; in a plain browser we fall back to the Web Speech API.
 import { useSyncExternalStore } from 'react'
+import { toast } from './store'
 
 export interface TtsVoice {
   name: string
@@ -93,8 +94,16 @@ window.__hmVoice = (kind, text) => {
       set({ partial: text })
       onSpeech?.('partial', text)
       break
-    case 'final':
     case 'error':
+      if (text.startsWith('tts-') || text === 'voices-failed') {
+        // read-aloud, not dictation: never hand it to the dictation listener (it showed "Voice input failed")
+        set({ speakingId: null, player: null })
+        toast(voiceErrorText(text), 'error', 8000)
+        break
+      }
+      onSpeech?.(kind, text)
+      break
+    case 'final':
     case 'quiet':
       onSpeech?.(kind, text)
       break
@@ -110,6 +119,9 @@ const native = () => window.HermesAndroid
 /** What to tell the user when dictation fails (`code` from Voice.java: stt-<SpeechRecognizer error>, stt-start, …). */
 export function voiceErrorText(code: string, live = false): string {
   if (code === 'mic-denied') return live ? 'Allow the microphone to use live mode' : 'Allow the microphone to dictate'
+  if (code === 'tts-unavailable')
+    return 'Read-aloud isn’t working on this phone: no text-to-speech engine would start. Install “Speech Recognition & Synthesis from Google” (or another text-to-speech app), then pick it in Settings → Voice.'
+  if (code === 'voices-failed') return 'Couldn’t load the voices of this text-to-speech engine.'
   if (code === 'stt-unavailable')
     return 'This phone has no speech recognition. Install the Google app (or “Speech Recognition & Synthesis from Google”) to use voice input.'
   const n = parseInt(code.replace('stt-', ''), 10)

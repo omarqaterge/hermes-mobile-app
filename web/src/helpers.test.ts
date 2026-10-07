@@ -143,10 +143,18 @@ describe('voice input errors', () => {
     expect(voiceErrorText('stt-unavailable')).toContain('no speech recognition')
     expect(voiceErrorText('mic-denied', true)).toBe('Allow the microphone to use live mode')
     expect(voiceErrorText('stt-99')).toBe('Voice input failed (stt-99)')
+    expect(voiceErrorText('tts-unavailable')).toContain('Read-aloud isn’t working')
   })
   test('the same toast is not stacked twice', () => {
     toast('Voice input failed (x)', 'error')
     toast('Voice input failed (x)', 'error')
     expect(getState().toasts.filter(t => t.text === 'Voice input failed (x)').length).toBe(1)
+  })
+})
+
+describe('read-aloud errors', () => {
+  test('a TTS failure is shown as read-aloud, not passed to dictation', () => {
+    window.__hmVoice?.('error', 'tts-unavailable')
+    expect(getState().toasts.some(t => t.text.startsWith('Read-aloud isn’t working'))).toBe(true)
   })
 })

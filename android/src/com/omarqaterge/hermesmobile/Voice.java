@@ -72,43 +72,83 @@ final class Voice {
         }
     }
 
+    // The engine the page asked for (null = phone default) when `tts` was created; `ttsEngine` is the one in use, which
+    // differs when the requested one failed to start and another installed engine took over.
+    private String wantEngine = null;
+    private final ArrayList<String> ttsTried = new ArrayList<>();
+
     /** (Re)creates TextToSpeech when needed, then runs `then` once it is ready. */
     private void withTts(Runnable then) {
-        boolean sameEngine = java.util.Objects.equals(ttsEngine, cfgEngine);
+        boolean sameEngine = tts != null && java.util.Objects.equals(wantEngine, cfgEngine);
         if (tts != null && ttsReady && sameEngine) {
             then.run();
             return;
         }
         afterReady = then;
-        if (tts != null && sameEngine) return; // still initialising
+        if (sameEngine) return; // still initialising
         if (tts != null) {
             tts.shutdown();
             tts = null;
             ttsReady = false;
         }
-        ttsEngine = cfgEngine;
+        wantEngine = cfgEngine;
+        ttsTried.clear();
+        createTts(cfgEngine);
+    }
+
+    private void createTts(String engine) {
+        ttsEngine = engine;
+        ttsTried.add(engine == null ? "" : engine);
         final TextToSpeech[] holder = new TextToSpeech[1];
-        TextToSpeech.OnInitListener init = status -> {
-            TextToSpeech me = holder[0] != null ? holder[0] : tts;
-            ttsReady = status == TextToSpeech.SUCCESS;
-            if (!ttsReady) {
-                js("error", "tts-unavailable");
+        // Handled on the next main-loop turn: with no usable engine Android reports the failure from INSIDE the
+        // constructor, before `tts` holds the new instance.
+        TextToSpeech.OnInitListener init = status -> main.post(() -> onTtsInit(holder[0], status));
+        tts = engine == null ? new TextToSpeech(ctx, init) : new TextToSpeech(ctx, init, engine);
+        holder[0] = tts;
+    }
+
+    private void onTtsInit(TextToSpeech me, int status) {
+        if (me == null || me != tts) return; // an instance we already replaced
+        ttsReady = status == TextToSpeech.SUCCESS;
+        if (!ttsReady) {
+            // A missing/disabled default engine made every read-aloud fail: try the other installed engines first.
+            me.shutdown();
+            String next = nextTtsEngine();
+            if (next != null) {
+                createTts(next);
                 return;
             }
-            me.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override public void onStart(String id) { Integer base = chunkBase.get(id);
-                    Integer len = chunkLen.get(id);
-                    if (base != null && len != null) js("tts-seg", base + "," + len);
-                    js("tts-start", id); }
-                @Override public void onDone(String id) { if (id.endsWith("-last")) js("tts-done", ""); }
-                @Override public void onError(String id) { js("tts-done", ""); }
-            });
-            Runnable r = afterReady;
+            tts = null;
             afterReady = null;
-            if (r != null) r.run();
-        };
-        tts = cfgEngine == null ? new TextToSpeech(ctx, init) : new TextToSpeech(ctx, init, cfgEngine);
-        holder[0] = tts;
+            js("error", "tts-unavailable");
+            js("tts-done", "");
+            return;
+        }
+        me.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override public void onStart(String id) { Integer base = chunkBase.get(id);
+                Integer len = chunkLen.get(id);
+                if (base != null && len != null) js("tts-seg", base + "," + len);
+                js("tts-start", id); }
+            @Override public void onDone(String id) { if (id.endsWith("-last")) js("tts-done", ""); }
+            @Override public void onError(String id) { js("tts-done", ""); }
+        });
+        Runnable r = afterReady;
+        afterReady = null;
+        if (r != null) r.run();
+    }
+
+    /** An installed text-to-speech engine not tried yet in this attempt (Google's first), or null. */
+    private String nextTtsEngine() {
+        ArrayList<String> pkgs = new ArrayList<>();
+        try {
+            for (android.content.pm.ResolveInfo r : ctx.getPackageManager().queryIntentServices(
+                    new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0)) {
+                if (r.serviceInfo != null && !pkgs.contains(r.serviceInfo.packageName)) pkgs.add(r.serviceInfo.packageName);
+            }
+        } catch (Exception ignored) { }
+        pkgs.sort((x, y) -> (x.equals("com.google.android.tts") ? 0 : 1) - (y.equals("com.google.android.tts") ? 0 : 1));
+        for (String p : pkgs) if (!ttsTried.contains(p)) return p;
+        return null;
     }
 
     private void configureTts() {
