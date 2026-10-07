@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, test } from 'vitest'
-import { canRestoreFile, folderLabel, restoreLines, restoreSummary, type DiffFile } from './checkpoints'
+import { canRestoreFile, folderLabel, hunksOnly, restoreLines, restoreSummary, type DiffFile } from './checkpoints'
 
 const f = (file: string, status: DiffFile['status']): DiffFile => ({ file, status, added: 1, removed: 1, diff: '' })
 
@@ -55,5 +55,14 @@ describe('canRestoreFile', () => {
     expect(canRestoreFile(files, 'gone.md')).toBe(true)
     expect(canRestoreFile(files, 'new.txt')).toBe(false)
     expect(canRestoreFile(files, 'unchanged.py')).toBe(false)
+  })
+})
+
+describe('hunksOnly', () => {
+  test('drops the git header lines', () => {
+    expect(hunksOnly('diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b')).toBe('@@ -1 +1 @@\n-a\n+b')
+  })
+  test('a diff without hunks (binary) stays', () => {
+    expect(hunksOnly('diff --git a/x b/x\nBinary files differ')).toBe('diff --git a/x b/x\nBinary files differ')
   })
 })

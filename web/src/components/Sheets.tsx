@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommandsCatalogResult, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
-import { canRestoreFile, checkpointDiff, folderLabel, listCheckpoints, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
+import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { deleteSession, errText, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
 import { openCanvas, useCanvas } from '../canvas'
@@ -556,7 +556,7 @@ export function RollbackSheet() {
                       </button>
                     )}
                   </div>
-                  <DiffView text={f.diff} />
+                  <DiffView text={hunksOnly(f.diff)} />
                 </div>
               ))
             )}
@@ -578,8 +578,10 @@ export function RollbackSheet() {
                 <button key={c.id} className="menu-item" onClick={() => setOpen({ workdir: f.workdir, snap: c })}>
                   <span className="mi-icon">⏺</span>
                   <span className="mi-text">
-                    {when(c.date)}
-                    {i === 0 && <span className="cp-latest"> · latest</span>}
+                    <span>
+                      {when(c.date)}
+                      {i === 0 && <span className="cp-latest"> · latest</span>}
+                    </span>
                     <span className="mi-sub">
                       {c.reason.replace(/^before /, 'Before ')} · {c.files.join(', ')}
                     </span>

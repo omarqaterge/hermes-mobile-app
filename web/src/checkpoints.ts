@@ -79,3 +79,9 @@ export const canRestoreFile = (files: DiffFile[], file: string): boolean => {
   const f = files.find(x => x.file === file)
   return !!f && f.status !== 'added'
 }
+
+/** A file's diff from its first hunk: the git header lines repeat the name the sheet already shows. */
+export const hunksOnly = (diff: string): string => {
+  const i = diff.search(/^@@/m)
+  return i < 0 ? diff : diff.slice(i)
+}
