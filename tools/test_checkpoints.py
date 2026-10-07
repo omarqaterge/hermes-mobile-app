@@ -134,6 +134,10 @@ print("restore joins the pre-restore snapshot to the chat's list")
 
 class FakeMgr:
     """Hermes's restore: snapshot the current state ("pre-rollback"), then check out."""
+    written = []
+
+    def record_agent_write(self, p):
+        FakeMgr.written.append(p)
 
     def restore(self, wd, commit, file_path=None, safe=False):
         snapshot(Path(wd), msg=f"pre-rollback snapshot (restoring to {commit[:8]})", date="2026-10-07T12:00:00+02:00")
@@ -157,6 +161,7 @@ target = cp.list_for_session("s1", LEDGER)["folders"][1]["snapshots"][0]
 r = cp.restore(str(BASE), str(A), target["hash"], session="s1", path=LEDGER)
 check("restore ok", r.get("ok") and r.get("restored_files") == ["x.py"], r)
 fa = next(f for f in cp.list_for_session("s1", LEDGER)["folders"] if f["workdir"] == str(A))
+check("restored files recorded as Hermes-written", FakeMgr.written == [str(A / "x.py")], FakeMgr.written)
 check("pre-restore snapshot listed first", fa["snapshots"][0]["reason"].startswith("pre-rollback") and fa["snapshots"][0]["files"] == ["x.py"], fa["snapshots"][0])
 check("no session: nothing recorded", cp.restore(str(BASE), str(A), target["hash"], path=LEDGER).get("ok")
       and len(cp.read_ledger("s1", LEDGER)) == 5)

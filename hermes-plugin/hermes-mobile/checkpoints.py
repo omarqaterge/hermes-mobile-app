@@ -321,6 +321,10 @@ def restore(base: str, workdir: str, commit: str, file: str = "", session: str =
                 r["restored_files"] = [file]
         else:
             r = mgr.restore(workdir, commit, safe=True)
+        # Hermes put these files back, so they count as Hermes-written: otherwise its safe restore
+        # takes them for the user's own edits next time and keeps them.
+        for rel in r.get("restored_files") or [] if r.get("success") else []:
+            mgr.record_agent_write(str(Path(workdir) / rel))
     if not r.get("success"):
         return {"error": r.get("error") or "Restore failed"}
     after = ref_tip(base, workdir)

@@ -561,7 +561,12 @@ export function RollbackSheet() {
               ))
             )}
             {diff && diff.length > 0 && (
-              <button className="btn danger block rollback-go" disabled={busy} onClick={() => void restore()}>
+              <button
+                className="btn danger block rollback-go"
+                disabled={busy}
+                // One changed file: put exactly that file back. Several: Hermes's safe folder restore (keeps your own edits).
+                onClick={() => void restore(diff.length === 1 && canRestoreFile(diff, diff[0].file) ? diff[0].file : '')}
+              >
                 {busy ? 'Restoring…' : diff.length === 1 ? `Restore ${diff[0].file}` : `Restore these ${diff.length} files`}
               </button>
             )}
