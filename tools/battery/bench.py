@@ -232,7 +232,8 @@ def run_cron(a):
     """A temporary one-shot agent job per run (the alarm path: due in --lead s, app in the background)."""
     for n in range(1, a.runs + 1):
         name = f"{a.tag}-cron-{n}"
-        due = dt.datetime.now().astimezone() + dt.timedelta(seconds=a.lead)
+        phone_now = float(sh("date +%s").strip() or time.time())  # the phone's clock decides when it is due
+        due = dt.datetime.fromtimestamp(phone_now + a.lead).astimezone()
         job = api("POST", "/api/cron/jobs", {"name": f"battery-bench-{n}", "prompt": CRON_PROMPT,
                                               "schedule": due.isoformat(timespec="seconds"), "deliver": "local"})
         jid = job.get("id") or (job.get("job") or {}).get("id")
@@ -244,26 +245,52 @@ def run_cron(a):
         try:
             wait(lambda: cap.lock(), a.lead + 120, 2)  # the alarm fires at the due time
             t_alarm = time.time()
-            runs = {}
+            job_now = {}
 
             def done():
-                nonlocal runs
-                runs = api("GET", f"/api/cron/jobs/{jid}/runs")
-                items = runs if isinstance(runs, list) else runs.get("runs") or runs.get("items") or []
-                return any((it.get("status") in ("completed", "failed", "ok", "error")) for it in items if isinstance(it, dict))
+                nonlocal job_now
+                job_now = api("GET", f"/api/cron/jobs/{jid}")
+                # finished: a status, a terminal state, or gone (a ticker crash loses a one-shot job)
+                return bool(job_now.get("last_status") or job_now.get("state") in ("completed", "error")
+                            or job_now.get("detail"))
             wait(done, 600, 10)
             wait(lambda: not cap.lock(), 300, 2)
             t_unlock = time.time()
             time.sleep(TAIL)
         finally:
             path = cap.stop()
+            runs = api("GET", f"/api/cron/jobs/{jid}/runs").get("runs") or []
             api("DELETE", f"/api/cron/jobs/{jid}")
+            for run in runs:  # the run's session row
+                if str(run.get("id", "")).startswith(f"cron_{jid}_"):
+                    subprocess.run([str(ROOT / "tools" / "gw"), "session.delete", json.dumps({"session_id": run["id"]})],
+                                   capture_output=True, timeout=60)
         r = analyse(path)
         r.update(kind="cron", run=n, job=jid, due=due.timestamp(), t_alarm=t_alarm, t_unlock=t_unlock, net=cap.net(),
-                 runs=runs, run_window=analyse(path, due.timestamp() - 2, t_unlock + 1.5),
+                 job_end=job_now, runs=[r.get("id") for r in runs], run_window=analyse(path, due.timestamp() - 2, t_unlock + 1.5),
                  after=analyse(path, t_unlock + 1.5, None))
         save(name, r)
         print(f"run {n}: cpu {r['cpu_total']:.1f}s lock {r['lock_s']}s")
+
+
+def run_recompute(a):
+    """Re-analyse saved runs from their raw captures (after an analyzer fix)."""
+    for p in a.files:
+        d = json.loads(Path(p).read_text())
+        raw = Path(p).with_suffix(".txt")
+        if not raw.exists():
+            continue
+        d.update({k: v for k, v in analyse(raw).items()})
+        if d.get("kind") == "chat":
+            d["turn"] = analyse(raw, d["t_send"] - 1.5, d["t_end"] + 1.5)
+            d["after"] = analyse(raw, d["t_end"] + 1.5, d.get("t_close"))
+            if d.get("close") is not None:
+                d["close"] = analyse(raw, d["t_close"], None)
+        elif d.get("kind") == "cron":
+            d["run_window"] = analyse(raw, d["due"] - 2, d["t_unlock"] + 1.5)
+            d["after"] = analyse(raw, d["t_unlock"] + 1.5, None)
+        Path(p).write_text(json.dumps(d, indent=1))
+        print("recomputed", p)
 
 
 def run_report(a):
@@ -298,9 +325,11 @@ def main():
     p.add_argument("--lead", type=int, default=100)
     p = sub.add_parser("report")
     p.add_argument("files", nargs="+")
+    p = sub.add_parser("recompute")
+    p.add_argument("files", nargs="+")
     a = ap.parse_args()
     a.prompt_text = SLEEP_PROMPT if getattr(a, "prompt", "") == "sleep" else CHAT_PROMPT
-    {"idle": run_idle, "chat": run_chat, "cron": run_cron, "report": run_report}[a.cmd](a)
+    {"idle": run_idle, "chat": run_chat, "cron": run_cron, "report": run_report, "recompute": run_recompute}[a.cmd](a)
 
 
 if __name__ == "__main__":

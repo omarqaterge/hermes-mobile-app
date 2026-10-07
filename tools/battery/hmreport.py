@@ -101,30 +101,46 @@ def window(samples, t0=None, t1=None):
     return a
 
 
+def ends(samples, kind):
+    """(earliest, latest) record of each process/thread in the window. A process missing from a sample (ps raced
+    it) is not new: its baseline is its first appearance if it started before the window. 'Latest' tolerates
+    one missing final sample; processes gone earlier count through their parent's cutime."""
+    first, latest = {}, {}
+    for s in samples:
+        for k, st in s[kind].items():
+            if k not in first or first[k]["start"] != st["start"]:
+                first[k] = st
+    for s in samples[-2:]:
+        latest.update(s[kind])
+    return first, latest
+
+
+def delta(st, base, t0_up, value):
+    if base is not None and base["start"] == st["start"] and base["start"] / HZ < t0_up + 0.5:
+        return value(st) - value(base)
+    return value(st)  # started during the window
+
+
 def summarize(samples, rend):
     first, last = samples[0], samples[-1]
+    t0_up = first["up"]
     allp = {}
     for s in samples:
         allp.update(s["p"])
     groups = defaultdict(int)
     per = defaultdict(int)
     lab = labels(samples)
-    for pid, st in last["p"].items():
+    pbase, plast = ends(samples, "p")
+    for pid, st in plast.items():
         g = group(st, rend, allp, lab)
-        if pid in first["p"] and first["p"][pid]["start"] == st["start"]:
-            d = total(st) - total(first["p"][pid])
-        else:
-            d = total(st)  # new during the window
+        d = delta(st, pbase.get(pid), t0_up, total)
         groups[g] += d
         per[(g, st["comm"], pid)] += d
-    # Debian python vs its children: python's cutime is the children
     threads = defaultdict(int)
-    for key, st in last["h"].items():
-        if key in first["h"] and first["h"][key]["start"] == st["start"]:
-            d = st["u"] + st["s"] - first["h"][key]["u"] - first["h"][key]["s"]
-        else:
-            d = st["u"] + st["s"]
-        owner = last["p"].get(key[0], {}).get("comm", "?")
+    hbase, hlast = ends(samples, "h")
+    for key, st in hlast.items():
+        d = delta(st, hbase.get(key), t0_up, lambda x: x["u"] + x["s"])
+        owner = plast.get(key[0], {}).get("comm", "?")
         threads[f"{owner}/{key[0]}:{st['comm']}"] += d
     children = defaultdict(int)
     for pid, st in last["p"].items():
@@ -156,12 +172,17 @@ def timeline(samples, rend):
         allp.update(s["p"])
     lab = labels(samples)
     out = []
+    seen = dict(samples[0]["p"]) if samples else {}
     for a, b in zip(samples, samples[1:]):
         g = defaultdict(int)
         for pid, st in b["p"].items():
-            prev = a["p"].get(pid)
-            d = total(st) - total(prev) if prev and prev["start"] == st["start"] else total(st)
+            prev = seen.get(pid)
+            if prev and prev["start"] == st["start"]:
+                d = total(st) - total(prev)
+            else:
+                d = total(st) if st["start"] / HZ >= a["up"] - 0.5 else 0  # new, or just missed by a sample
             g[group(st, rend, allp, lab)] += d
+            seen[pid] = st
         out.append((b["t"], b["lock"], dict(g)))
     return out
 

@@ -335,6 +335,10 @@ def slow_desktop_watchers(server=None) -> dict:
         server._broadcast_skin_if_changed = slow_skin
         changed["skin"] = _WATCH_DEFAULT
     _watchers_slowed = True
+    if changed:
+        import logging
+
+        logging.getLogger("hermes_mobile").info("battery: slowed desktop watchers %s", changed)
     return changed
 
 
@@ -371,14 +375,30 @@ def slow_background_polls(groups=None, registry=None) -> dict:
                 q.get = get
                 changed["notif"] = _NOTIF_QUEUE_WAIT
             _extras_slowed.add("notif")
+    if changed:
+        import logging
+
+        logging.getLogger("hermes_mobile").info("battery: slowed background polls %s", changed)
     return changed
 
 
-try:
-    slow_desktop_watchers()
-    slow_background_polls()
-except Exception:
-    pass
+_slow_failed = False
+
+
+def _slow_all() -> None:
+    global _slow_failed
+    try:
+        slow_desktop_watchers()
+        slow_background_polls()
+    except Exception:
+        if not _slow_failed:  # say it once; the dashboard works the same without these
+            _slow_failed = True
+            import logging
+
+            logging.getLogger("hermes_mobile").exception("battery: slowing background polls failed")
+
+
+_slow_all()
 
 
 # ── what Hermes is doing right now (feeds the app's banner) ──
@@ -388,11 +408,7 @@ async def get_activity():
     """Live work reported by the plugin hooks in every Hermes process, including background self-review."""
     import time
 
-    try:
-        slow_desktop_watchers()  # in case the gateway loaded after this module
-        slow_background_polls()
-    except Exception:
-        pass
+    _slow_all()  # in case the gateway (or a chat's poller) loaded after this module
 
     path = Path.home() / ".hermes" / "mobile" / "activity.json"
     try:
