@@ -28,6 +28,7 @@ import {
   type Attachment,
   type ChatItem,
   type Ctx,
+  addsToScreen,
   getState,
   hydrate,
   newId,
@@ -37,7 +38,8 @@ import {
   updateActive
 } from './store'
 
-export const client = new JsonRpcGatewayClient({ requestTimeoutMs: 120_000 })
+// The client's own heartbeat is off (interval 0): see "liveness" below.
+export const client = new JsonRpcGatewayClient({ requestTimeoutMs: 120_000, heartbeatIntervalMs: 0 })
 
 const SERVER_REQUESTS = new Set(['approval', 'clarify', 'secret', 'sudo', 'otp', 'connection.request'])
 
@@ -50,6 +52,7 @@ let started = false
 client.onState(conn => {
   setState({ conn })
   if (conn === 'open') {
+    aliveAt = Date.now()
     attempt = 0
     setState({ connDetail: '' })
   }
@@ -108,6 +111,46 @@ export async function connectionAlive(): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+// ── liveness ────────────────────────────────────────────────
+// The client's built-in heartbeat dropped the socket after 45 s without an inbound frame, judged by a timer. While
+// the app is hidden Chromium freezes the page (~1 min in), so on return the first late tick saw a minute of
+// "silence" and closed a healthy socket: "offline", a reconnect, and a reload of the chat mid-turn. This one gives
+// the socket a fresh window after a frozen gap, and pings as soon as the page is shown again.
+const BEAT_MS = 15_000
+const DEADLINE_MS = 45_000
+let aliveAt = Date.now()
+let lastBeat = Date.now()
+
+client.onAny(() => {
+  aliveAt = Date.now()
+})
+
+setInterval(() => {
+  const now = Date.now()
+  const slept = now - lastBeat > BEAT_MS * 2
+  lastBeat = now
+  if (getState().conn !== 'open') return
+  if (slept) aliveAt = now
+  else if (now - aliveAt >= DEADLINE_MS) {
+    client.invalidate('WebSocket heartbeat timed out')
+    return
+  }
+  rpc('gateway.ping', {}, DEADLINE_MS).then(
+    () => (aliveAt = Date.now()),
+    () => {}
+  )
+}, BEAT_MS)
+
+/** Back in front: a socket that died while the page was frozen is replaced now, not after the deadline. */
+async function checkSocket(): Promise<void> {
+  if (getState().conn !== 'open') return
+  try {
+    await rpc('gateway.ping', {}, 10_000)
+  } catch {
+    if (getState().conn === 'open') client.invalidate('WebSocket closed')
   }
 }
 
@@ -450,6 +493,10 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   // Draw the chat as it was last seen right away; the resume below replaces it.
   const preview = prev?.storedId === storedId ? null : cachedChat(getState().profile, storedId)
   setState({ opening: storedId, preview, drawer: false })
+  // After a reconnect the client replays the events this chat missed; let them land first, or they would be applied
+  // a second time on top of the reloaded transcript (duplicate tool cards and text).
+  const replay = prev?.storedId === storedId ? client.sessionReplayBarrier(prev.runtimeId) : undefined
+  if (replay) await replay
   let r: SessionResumeResult
   try {
     r = await rpc<SessionResumeResult>('session.resume', { session_id: storedId }, 60_000)
@@ -462,7 +509,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   if (opts.auto && openSeq !== seq) return // the user went elsewhere while this was loading
   const next = baseActive(r, storedId)
   next.items = applySavedStats(next.items, next.storedId)
-  if (opts.keepItemsIfSame && prev && prev.storedId === next.storedId && next.items.length < prev.items.length) {
+  if (opts.keepItemsIfSame && prev && prev.storedId === next.storedId && !addsToScreen(next.items, prev.items)) {
     next.items = prev.items
     // Keep streaming into the reply that was open before the reconnect.
     next.openAssistantId = next.running ? prev.openAssistantId : null
@@ -917,8 +964,10 @@ async function syncRunning(): Promise<void> {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') void syncRunning()
-  else {
+  if (document.visibilityState === 'visible') {
+    void checkSocket()
+    void syncRunning()
+  } else {
     // Kept for the next cold start, so the chat is on screen before Hermes answers.
     const a = getState().active
     if (a) saveChatToDisk(a.profile, a.storedId, a.title, a.items)
@@ -990,6 +1039,11 @@ client.onEvent((ev: GatewayEvent) => {
       // Deferred/plugin tools stream as a generic "tool_call": the real name only arrives with tool.start.
       const gens = [...cur].reverse().filter(i => i.kind === 'tool' && i.status === 'generating')
       const gen = gens.find(i => i.kind === 'tool' && i.name === p.name) ?? gens[0]
+      if (cur.some(i => i.id === p.tool_id)) {
+        // Already shown (a reloaded transcript has it): a replayed start must not add a second card.
+        if (gen) updateActive(x => ({ items: x.items.filter(i => i.id !== gen.id) }))
+        break
+      }
       const tool: ChatItem = {
         kind: 'tool',
         id: p.tool_id,

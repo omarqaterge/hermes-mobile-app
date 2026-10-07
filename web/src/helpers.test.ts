@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import { speakable, voiceErrorText } from './voice'
 import { lineDiff } from './canvas'
-import { getState, hydrate, splitAttachments, toast } from './store'
+import { addsToScreen, getState, hydrate, splitAttachments, toast } from './store'
 import { findHit, parseSnippet } from './jump'
 import { ago } from './unread'
 import { chatMarkdown } from './export'
@@ -45,6 +45,37 @@ describe('hydrate', () => {
     expect(items[0]).toMatchObject({ text: 'hi', rowId: 3 })
     expect(items[1]).toMatchObject({ reasoning: 'thinking' })
     expect(items[2]).toMatchObject({ id: 'call1', name: 'patch', inlineDiff: '--- a' })
+  })
+  test('a mid-turn resume repeating the previous turn tail is shown once', () => {
+    // What Hermes returned on the phone while turn 2 ran: turn 1's tool and reply again after turn 2's tool.
+    const items = hydrate([
+      { role: 'user', text: 'one', row_id: 1 },
+      { role: 'tool', name: 'terminal', tool_call_id: 'c1' },
+      { role: 'assistant', text: 'FIRST REPLY', row_id: 3 },
+      { role: 'user', text: 'two', row_id: 4 },
+      { role: 'tool', name: 'terminal', tool_call_id: 'c2' },
+      { role: 'tool', name: 'terminal', tool_call_id: 'c1' },
+      { role: 'assistant', text: 'FIRST REPLY', row_id: 3 }
+    ] as never)
+    expect(items.map(i => (i.kind === 'tool' ? i.id : i.kind === 'assistant' || i.kind === 'user' ? i.text : ''))).toEqual(['one', 'c1', 'FIRST REPLY', 'two', 'c2'])
+  })
+})
+
+describe('addsToScreen', () => {
+  const user = (id: string) => ({ kind: 'user', id, text: 'q' })
+  const tool = (id: string) => ({ kind: 'tool', id, name: 'terminal', status: 'done' })
+  const reply = (id: string, text: string) => ({ kind: 'assistant', id, text, reasoning: '', streaming: false })
+  const notice = (id: string) => ({ kind: 'notice', id, text: 'n', level: 'info' })
+  test('a tool call missed while away wins over a longer screen', () => {
+    const shown = [user('u'), tool('c1'), notice('n1'), notice('n2')] as never
+    expect(addsToScreen([user('x'), tool('c1'), tool('c2')] as never, shown)).toBe(true)
+  })
+  test('a reply missed while away wins', () => {
+    expect(addsToScreen([user('x'), tool('c1'), reply('b', 'done')] as never, [user('u'), tool('c1')] as never)).toBe(true)
+  })
+  test('nothing new keeps the screen', () => {
+    const shown = [user('u'), tool('c1'), reply('a', 'done'), notice('n1')] as never
+    expect(addsToScreen([user('x'), tool('c1'), reply('b', 'done')] as never, shown)).toBe(false)
   })
 })
 

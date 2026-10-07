@@ -297,8 +297,14 @@ export function splitAttachments(text: string): { text: string; images: string[]
 /** Stored transcript → chat items (user / assistant+reasoning / tool rows). */
 export function hydrate(messages: TranscriptMessage[]): ChatItem[] {
   const out: ChatItem[] = []
+  // Hermes' resume of a chat that is still answering appends the previous turn's tail again (same row ids and
+  // tool call ids) after the live turn's rows. A stored row can't legitimately appear twice: skip repeats.
+  const seen = new Set<string>()
   for (const m of messages) {
     if (m.display_kind === 'hidden') continue
+    const key = m.role === 'tool' ? (typeof m.tool_call_id === 'string' && m.tool_call_id ? `t:${m.tool_call_id}` : '') : typeof m.row_id === 'number' ? `r:${m.row_id}` : ''
+    if (key && seen.has(key)) continue
+    if (key) seen.add(key)
     const text = typeof m.text === 'string' ? m.text : typeof m.content === 'string' ? m.content : ''
     // Seconds on the wire (ms tolerated).
     const at = typeof m.timestamp === 'number' && m.timestamp > 0 ? (m.timestamp > 1e12 ? m.timestamp : m.timestamp * 1000) : undefined
@@ -335,6 +341,17 @@ export function hydrate(messages: TranscriptMessage[]): ChatItem[] {
     }
   }
   return out
+}
+
+/** A reloaded transcript (`fresh`) shows something the screen (`shown`) lacks: a tool call, a message or reply text.
+ * Otherwise the screen is kept on a reconnect, with its local notices, tool timings and live reply. */
+export function addsToScreen(fresh: ChatItem[], shown: ChatItem[]): boolean {
+  const tools = new Set(shown.filter(i => i.kind === 'tool').map(i => i.id))
+  if (fresh.some(i => i.kind === 'tool' && !tools.has(i.id))) return true
+  const count = (items: ChatItem[], kind: ChatItem['kind']) => items.filter(i => i.kind === kind).length
+  if (count(fresh, 'user') > count(shown, 'user')) return true
+  const text = (items: ChatItem[]) => items.reduce((n, i) => n + (i.kind === 'assistant' ? i.text.trim().length : 0), 0)
+  return text(fresh) > text(shown)
 }
 
 /** Close the open full screen: back to the hub when it opened it, else to the chat. */
