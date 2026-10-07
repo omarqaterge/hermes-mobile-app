@@ -285,7 +285,14 @@ async def media(path: str, request: Request):
 _WATCH_EVERY = {"sessions.changed": 2.0, "cron.changed": 5.0}
 _WATCH_DEFAULT = 30.0
 _POLL_EVERY = {"_LEASE_POLL_S": 5.0, "_KANBAN_POLL_SECONDS": 30.0, "_BOT_DELIVERY_POLL_SECONDS": 30.0}
+# Group-chat (hosted room) runtime: its idle fallback poll (5 s) only matters if a write's wakeup() is missed; it
+# must stay under the room lease TTL (30 s) it renews.
+_ROOM_IDLE_POLL = 25.0
+# Each live chat has a notification poller blocking on the process-wide completion queue with a 0.5 s timeout
+# (the app keeps up to 3 chats live). A put still wakes it at once; /loop checks run every 5 s regardless.
+_NOTIF_QUEUE_WAIT = 2.5
 _watchers_slowed = False
+_extras_slowed = set()
 
 
 def slow_desktop_watchers(server=None) -> dict:
@@ -331,8 +338,45 @@ def slow_desktop_watchers(server=None) -> dict:
     return changed
 
 
+def slow_background_polls(groups=None, registry=None) -> dict:
+    """The group-chat runtime and the per-chat notification pollers (see above). Each part runs once, when its
+    module is loaded; returns what changed."""
+    import sys
+
+    changed = {}
+    if "room" not in _extras_slowed:
+        groups = groups or sys.modules.get("tui_gateway.methods_groups")
+        runtime = getattr(getattr(groups, "_service", None), "runtime", None)
+        v = getattr(runtime, "poll_interval_seconds", None)
+        if isinstance(v, (int, float)):
+            if v < _ROOM_IDLE_POLL and getattr(runtime, "lease_ttl_seconds", 30.0) > _ROOM_IDLE_POLL:
+                runtime.poll_interval_seconds = _ROOM_IDLE_POLL
+                changed["room"] = _ROOM_IDLE_POLL
+            _extras_slowed.add("room")
+    if "notif" not in _extras_slowed:
+        if registry is None:
+            mod = sys.modules.get("tools.process_registry")
+            registry = getattr(mod, "process_registry", None)
+        q = getattr(registry, "completion_queue", None)
+        if q is not None and callable(getattr(q, "get", None)):
+            plain = type(q).get
+
+            def get(block=True, timeout=None, _q=q, _get=plain):
+                if block and timeout is not None and 0 < timeout < _NOTIF_QUEUE_WAIT:
+                    timeout = _NOTIF_QUEUE_WAIT  # only the pollers' short sleep; a put wakes it at once
+                return _get(_q, block, timeout)
+
+            get._hm_slow = True
+            if not getattr(q.get, "_hm_slow", False):
+                q.get = get
+                changed["notif"] = _NOTIF_QUEUE_WAIT
+            _extras_slowed.add("notif")
+    return changed
+
+
 try:
     slow_desktop_watchers()
+    slow_background_polls()
 except Exception:
     pass
 
@@ -346,6 +390,7 @@ async def get_activity():
 
     try:
         slow_desktop_watchers()  # in case the gateway loaded after this module
+        slow_background_polls()
     except Exception:
         pass
 

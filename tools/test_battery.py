@@ -236,6 +236,41 @@ check("skin check throttled (first call runs, the next ones skip)", skins == [1]
 check("runs once", done and papi.slow_desktop_watchers() == {})
 sys.modules.pop("tui_gateway.server", None)
 
+print("dashboard: group-chat runtime and notification pollers")
+import queue as _queue  # noqa: E402
+
+check("nothing loaded: nothing done", papi.slow_background_polls(groups=types.SimpleNamespace(_service=None),
+                                                                  registry=types.SimpleNamespace()) == {})
+rt = types.SimpleNamespace(poll_interval_seconds=5.0, lease_ttl_seconds=30.0, active_poll_interval_seconds=0.25)
+reg = types.SimpleNamespace(completion_queue=_queue.Queue())
+got = papi.slow_background_polls(groups=types.SimpleNamespace(_service=types.SimpleNamespace(runtime=rt)), registry=reg)
+check("room idle poll 25 s (under the 30 s lease), active poll untouched",
+      rt.poll_interval_seconds == 25.0 and rt.active_poll_interval_seconds == 0.25 and got.get("room") == 25.0, got)
+q = reg.completion_queue
+t0 = time.monotonic()
+try:
+    q.get(timeout=0.5)
+except _queue.Empty:
+    pass
+check("poller's 0.5 s wait stretched to 2.5 s", 2.3 < time.monotonic() - t0 < 3.5, time.monotonic() - t0)
+threading.Timer(0.2, lambda: q.put({"type": "completion"})).start()
+t0 = time.monotonic()
+check("…but an event still wakes it at once", q.get(timeout=0.5) == {"type": "completion"} and time.monotonic() - t0 < 1)
+q.put(1)
+check("get_nowait / long waits unchanged", q.get_nowait() == 1)
+t0 = time.monotonic()
+try:
+    q.get(timeout=0.1 * 0)  # 0 = non-blocking poll, never stretched
+except _queue.Empty:
+    pass
+check("zero timeout not stretched", time.monotonic() - t0 < 0.5)
+check("runs once (second call changes nothing)", papi.slow_background_polls(
+    groups=types.SimpleNamespace(_service=types.SimpleNamespace(runtime=rt)), registry=reg) == {})
+papi._extras_slowed.clear()
+short = types.SimpleNamespace(poll_interval_seconds=5.0, lease_ttl_seconds=20.0)
+papi.slow_background_polls(groups=types.SimpleNamespace(_service=types.SimpleNamespace(runtime=short)), registry=reg)
+check("a short lease keeps the room poll as it is", short.poll_interval_seconds == 5.0)
+
 # ── bots.py off ──
 print("bots.py off")
 os.environ["HERMES_MOBILE_ROOT"] = str(tmp / "hroot")
