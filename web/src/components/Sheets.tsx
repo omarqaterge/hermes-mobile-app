@@ -10,6 +10,7 @@ import { autoReadFor, hasChatOverride, setAutoReadFor, setDraftRead, useAutoRead
 import { checkHealth, dotState, type Health } from '../health'
 import { setState, toast, useStore } from '../store'
 import { copyText, haptic, shareText } from '../bridge'
+import { refreshLogins } from '../api'
 import { chatMarkdown } from '../export'
 import { useSheetDrag } from './useSheetDrag'
 import { DiffView } from './Diff'
@@ -41,7 +42,8 @@ export function ModelSheet() {
     rpc<ModelOptionsResult>('model.options', { session_id: active?.runtimeId })
       .then(r => !gone && setData(r))
       .catch(e => setErr(errText(e)))
-    rpc<ModelOptionsResult>('model.options', { session_id: active?.runtimeId, refresh: true })
+    refreshLogins()
+      .then(() => rpc<ModelOptionsResult>('model.options', { session_id: active?.runtimeId, refresh: true }))
       .then(r => !gone && setData(r))
       .catch(() => {})
     return () => {

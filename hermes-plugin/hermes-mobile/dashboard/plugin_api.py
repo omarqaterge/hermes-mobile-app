@@ -449,6 +449,25 @@ class OrderPrefs(BaseModel):
     at: int = 0  # client clock, ms: newest wins
 
 
+@router.post("/refresh-logins")
+async def refresh_logins():
+    """Refresh an expired Claude-subscription token so the model picker can ask Anthropic for the live list.
+    Hermes's own list fetch is read-only and never refreshes (only a real Claude request does), so after a day on
+    another model the token is stale, the fetch 401s and the picker falls back to Hermes's built-in (older) list."""
+    import asyncio
+
+    def work() -> dict:
+        try:
+            from agent.credential_pool import load_pool
+
+            available, _pending = load_pool("anthropic")._available_entries(clear_expired=True, refresh=True)
+            return {"ok": True, "anthropic": len(available)}
+        except Exception as e:  # no Anthropic login, or Hermes changed its internals: the picker just shows what it can
+            return {"ok": False, "error": str(e)[:200]}
+
+    return await asyncio.to_thread(work)
+
+
 @router.get("/prefs")
 async def get_prefs(profile: Optional[str] = None):
     return {"order": _read_prefs().get(profile or "default", {}).get("order")}

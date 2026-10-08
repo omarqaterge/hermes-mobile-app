@@ -79,6 +79,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
     if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems })
     if (p === '/api/plugins/hermes-mobile/prefs') return send({ order: null })
+    if (p === '/api/plugins/hermes-mobile/refresh-logins') return send({ ok: true, anthropic: 0 })
     if (p === '/api/plugins/hermes-mobile/cleanup') return send({ ok: true, removed: [], freed_bytes: 0 })
     if (p === '/api/model/info') return send({ model: 'mock-model' })
     // Account sign-ins: ChatGPT is a device-code flow approved on the 2nd poll; Claude is terminal-only ("external").

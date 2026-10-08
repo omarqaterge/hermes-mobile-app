@@ -76,3 +76,7 @@ export const qs = (params: Record<string, string | number | undefined>) =>
     .filter(([, v]) => v !== undefined && v !== '')
     .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
     .join('&')
+
+/** Renews an expired Claude-subscription token on the phone (never throws), so the next model list can be the live one. */
+export const refreshLogins = (): Promise<unknown> =>
+  api('POST', '/api/plugins/hermes-mobile/refresh-logins', {}, { profile: false }).catch(() => null)

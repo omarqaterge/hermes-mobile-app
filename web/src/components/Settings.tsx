@@ -5,7 +5,7 @@ import { savedTheme, setTheme, type Theme } from '../theme'
 import { autoReadOn, loadVoices, saveTtsConfig, setAutoRead, testVoice, ttsAvailable, ttsConfig, useVoice, type TtsConfig } from '../voice'
 import { confirmDialog } from '../dialog'
 import { useEffect, useMemo, useState } from 'react'
-import { api, qs } from '../api'
+import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
@@ -67,7 +67,7 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh }: { pro
     if (refresh) load(true).then(setData).catch(e => setErr(errText(e)))
     else {
       load(false).then(r => !gone && setData(r)).catch(e => setErr(errText(e)))
-      load(true).then(r => !gone && (setData(r), setErr(''))).catch(() => {})
+      refreshLogins().then(() => load(true)).then(r => !gone && (setData(r), setErr(''))).catch(() => {})
     }
     return () => {
       gone = true
