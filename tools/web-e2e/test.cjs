@@ -562,7 +562,7 @@ async function main() {
   const hv = page.locator('.set-row', { hasText: /Hermes.*v0\.21\.5/ }).last()
   await hv.waitFor({ timeout: 5000 })
   check(((await hv.textContent()) || '').includes('v0.21.5'), `About → Hermes version (${await hv.textContent()})`)
-  await hv.getByText('12 changes available').waitFor({ timeout: 5000 }).then(() => check(true, 'About → Hermes offers its update'), () => check(false, 'About → Hermes offers its update'))
+  check(!((await hv.textContent()) || '').includes('Tap to update'), 'About → Hermes has no update button')
   check(!((await hv.textContent()) || '').includes('Different from what the app was made for'), 'a Hermes build equal to the tested one raises no warning')
   await page.evaluate(() => window.hermesBack())
 

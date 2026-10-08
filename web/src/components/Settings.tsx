@@ -11,7 +11,7 @@ import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gatewa
 import { getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic } from '../bridge'
 import { checkForUpdate, startUpdate, useUpdate } from '../update'
-import { checkHermes, compat, startHermesUpdate, useHermesUpdate } from '../hermes-update'
+import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLivePause, setLivePause } from '../live'
@@ -847,48 +847,16 @@ function UpdateRow() {
   )
 }
 
-/** The phone's Hermes: its version, whether it matches the build this app was made for, and a button that runs `hermes update`. */
+/** The phone's Hermes: its version, and a warning when it is a different build than the one this app was made for. */
 function HermesRow({ version }: { version: string }) {
-  const h = useHermesUpdate()
+  const h = useHermesBuild()
+  const app = useUpdate()
   useEffect(() => {
     void checkHermes()
   }, [])
-  const c = compat(h.current)
-  const app = useUpdate()
-  const busy = h.phase === 'checking' || h.phase === 'updating'
-  const mismatch = c === 'newer' || c === 'older'
-  const ahead = mismatch && app.phase === 'available' // a newer app release exists: that is the fix
-  const sub =
-    h.phase === 'updating' ? h.log || 'Updating Hermes…'
-    : h.phase === 'error' ? h.msg
-    : h.phase === 'done' ? h.msg
-    : h.phase === 'checking' ? 'Checking…'
-    : mismatch ? (ahead ? `Different from what the app was made for. Update the app (${app.latest}) first.` : 'Different from what the app was made for. If something breaks, update the app.')
-    : h.canApply ? (h.behind && h.behind > 0 ? `${h.behind} changes available. Tap to update` : 'An update is available. Tap to update')
-    : h.behind === 0 ? "You're on the latest version"
-    : h.msg || undefined
-  return (
-    <Row
-      icon="⚕️"
-      tone={h.canApply || mismatch ? 'gold' : 'teal'}
-      title="Hermes"
-      value={version}
-      sub={sub}
-      disabled={busy}
-      onClick={async () => {
-        haptic()
-        if (!h.canApply || h.phase === 'updating') return void checkHermes(true)
-        const ok = await confirmDialog({
-          title: 'Update Hermes?',
-          message:
-            'Hermes will download the latest version and restart, which takes a few minutes. Chats stay, but anything running stops. ' +
-            (app.phase === 'available' ? `A newer app (${app.latest}) is also available: updating the app first is safer.` : 'A big jump can change how Hermes talks to the app; if something breaks, update the app.'),
-          confirmLabel: 'Update Hermes'
-        })
-        if (ok) void startHermesUpdate()
-      }}
-    />
-  )
+  const mismatch = ['newer', 'older'].includes(compat(h.current))
+  const sub = !mismatch ? undefined : app.phase === 'available' ? `Different from what this app was made for. Update the app (${app.latest}).` : 'Different from what this app was made for. If something breaks, update the app.'
+  return <Row icon="⚕️" tone={mismatch ? 'gold' : 'teal'} title="Hermes" value={version} sub={sub} />
 }
 
 export function SettingsScreen() {
