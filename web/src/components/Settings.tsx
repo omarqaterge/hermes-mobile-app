@@ -10,6 +10,7 @@ import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic } from '../bridge'
+import { checkForUpdate, startUpdate, useUpdate } from '../update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLivePause, setLivePause } from '../live'
@@ -60,9 +61,17 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh }: { pro
   const [effort, setEffort] = useState('medium')
   useEffect(() => {
     // `refresh` right after a new sign-in or key: Hermes's 1 h model-list cache doesn't know that provider yet.
-    api<ModelOptions>('GET', `/api/model/options?${qs({ profile, ...(refresh ? { refresh: 'true' } : {}) })}`, undefined, { profile: false })
-      .then(setData)
-      .catch(e => setErr(errText(e)))
+    // Cached list first (instant), then a live one so models released since the cache was written show up.
+    let gone = false
+    const load = (live: boolean) => api<ModelOptions>('GET', `/api/model/options?${qs({ profile, ...(live ? { refresh: 'true' } : {}) })}`, undefined, { profile: false })
+    if (refresh) load(true).then(setData).catch(e => setErr(errText(e)))
+    else {
+      load(false).then(r => !gone && setData(r)).catch(e => setErr(errText(e)))
+      load(true).then(r => !gone && (setData(r), setErr(''))).catch(() => {})
+    }
+    return () => {
+      gone = true
+    }
   }, [profile, refresh])
   const cur = (data?.provider || '').replace(/^custom:/, '')
   const providers = useMemo(() => {
@@ -798,9 +807,42 @@ function Hub({ go }: { go: (p: Page) => void }) {
       </Section>
       <Section title="About">
         <Row title="App" value={appVersion()} />
+        <UpdateRow />
         <Row title="Hermes" value={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
       </Section>
     </>
+  )
+}
+
+/** "Check for updates" / "Update to x.y.z": one tap downloads the newest release and opens the system installer. */
+function UpdateRow() {
+  const u = useUpdate()
+  useEffect(() => {
+    void checkForUpdate()
+  }, [])
+  const busy = u.phase === 'checking' || u.phase === 'downloading' || u.phase === 'installing'
+  const title = u.phase === 'available' || u.phase === 'permission' ? `Update to ${u.latest}` : 'Check for updates'
+  const sub =
+    u.phase === 'checking' ? 'Checking…'
+    : u.phase === 'uptodate' ? "You're on the latest version"
+    : u.phase === 'available' ? 'A newer version is ready. Tap to download and install'
+    : u.phase === 'downloading' ? `Downloading… ${u.pct}%`
+    : u.phase === 'installing' ? 'Confirm in the Android installer'
+    : u.phase === 'permission' || u.phase === 'error' ? u.msg
+    : undefined
+  return (
+    <Row
+      icon="⬆️"
+      tone={u.phase === 'available' ? 'gold' : 'blue'}
+      title={title}
+      sub={sub}
+      disabled={busy}
+      onClick={() => {
+        haptic()
+        if (u.phase === 'available' || u.phase === 'permission') startUpdate()
+        else void checkForUpdate(true)
+      }}
+    />
   )
 }
 

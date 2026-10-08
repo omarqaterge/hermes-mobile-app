@@ -15,6 +15,7 @@ interface AndroidBridge {
   haptic(): void
   isInForeground(): boolean
   appVersion(): string
+  installUpdate?(url: string): void
   openFile?(path: string): void
   setBackground?(hex: string): void
   speak?(text: string, cfg: string): void
@@ -185,6 +186,17 @@ export function setupFix(what: 'permissions' | 'start' | 'notifications' | 'batt
 export function signInTermux(provider: string, profile: string): boolean {
   try {
     return Boolean(native?.signInTermux?.(provider, profile))
+  } catch {
+    return false
+  }
+}
+
+/** Download + install a release APK (the shell only accepts this project's GitHub release URLs). */
+export function installUpdate(url: string): boolean {
+  try {
+    if (!native?.installUpdate) return false
+    native.installUpdate(url)
+    return true
   } catch {
     return false
   }

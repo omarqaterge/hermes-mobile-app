@@ -18,6 +18,8 @@
     <!-- Setup check: the "let it run in the background" prompt (ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Settings → App update: hands the downloaded release APK to the system installer (you confirm each update). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
         <package android:name="com.termux" />

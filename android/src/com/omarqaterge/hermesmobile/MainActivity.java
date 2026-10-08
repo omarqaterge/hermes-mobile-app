@@ -9,6 +9,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Insets;
@@ -873,6 +874,142 @@ public class MainActivity extends Activity {
                 bridgeKey.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
     }
 
+    // ---- In-app update: download the release APK from this project's GitHub releases, check it, hand it to the system installer ----
+    static final String UPDATE_ACTION = "com.omarqaterge.hermesmobile.UPDATE_RESULT";
+    final java.util.concurrent.atomic.AtomicBoolean updating = new java.util.concurrent.atomic.AtomicBoolean();
+    boolean updateReceiverOn;
+
+    /** Only this project's release assets (https), nothing else is ever downloaded and installed. */
+    static boolean updateUrlOk(Uri u) {
+        String path = u == null ? null : u.getPath();
+        return u != null && "https".equals(u.getScheme()) && "github.com".equals(u.getHost()) && path != null
+                && path.startsWith("/omarqaterge/hermes-mobile-app/releases/download/") && path.endsWith(".apk") && !path.contains("..");
+    }
+
+    void updateState(String state, int pct, String msg) {
+        String js = "window.hermesUpdate && window.hermesUpdate(" + JSONObject.quote(state) + "," + pct + "," + JSONObject.quote(msg == null ? "" : msg) + ")";
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
+    }
+
+    void startUpdate(String url) {
+        Uri u = Uri.parse(url == null ? "" : url);
+        if (!updateUrlOk(u)) { updateState("error", 0, "That isn't an official Hermes Mobile download."); return; }
+        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            updateState("permission", 0, "Allow Hermes to install updates, then tap Update again.");
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
+                } catch (Exception ignored) {
+                }
+            });
+            return;
+        }
+        if (!updating.compareAndSet(false, true)) return;
+        new Thread(() -> {
+            try {
+                java.io.File dir = new java.io.File(getCacheDir(), "update");
+                dir.mkdirs();
+                java.io.File apk = new java.io.File(dir, "hermes-mobile.apk");
+                updateState("downloading", 0, "");
+                download(u, apk);
+                // Must be this app, newer than what is installed. The installer also refuses a different signing key.
+                android.content.pm.PackageInfo got = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+                android.content.pm.PackageInfo mine = getPackageManager().getPackageInfo(getPackageName(), 0);
+                if (got == null || !getPackageName().equals(got.packageName)) throw new Exception("The download isn't a Hermes Mobile app file.");
+                if (got.versionCode <= mine.versionCode) throw new Exception("You already have this version.");
+                updateState("installing", 100, "");
+                commitInstall(apk);
+            } catch (Exception e) {
+                updateState("error", 0, e.getMessage() == null ? "Update failed." : e.getMessage());
+            } finally {
+                updating.set(false);
+            }
+        }, "hm-update").start();
+    }
+
+    void download(Uri start, java.io.File out) throws Exception {
+        URL url = new URL(start.toString());
+        for (int hop = 0; hop < 6; hop++) {
+            HttpURLConnection c = (HttpURLConnection) url.openConnection();
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(30000);
+            int code = c.getResponseCode();
+            if (code >= 300 && code < 400) {
+                String loc = c.getHeaderField("Location");
+                c.disconnect();
+                if (loc == null) throw new Exception("Download failed (redirect).");
+                URL next = new URL(url, loc);
+                String h = next.getHost();
+                if (!"https".equals(next.getProtocol()) || !(h.equals("github.com") || h.endsWith(".githubusercontent.com") || h.equals("githubusercontent.com")))
+                    throw new Exception("Download failed (unexpected host).");
+                url = next;
+                continue;
+            }
+            if (code != 200) { c.disconnect(); throw new Exception("Download failed (HTTP " + code + ")."); }
+            long total = c.getContentLengthLong();
+            if (total > 150L * 1024 * 1024) { c.disconnect(); throw new Exception("Download is too large."); }
+            long done = 0;
+            int lastPct = -1;
+            try (InputStream in = new BufferedInputStream(c.getInputStream()); java.io.FileOutputStream fo = new java.io.FileOutputStream(out)) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    fo.write(buf, 0, n);
+                    done += n;
+                    if (done > 150L * 1024 * 1024) throw new Exception("Download is too large.");
+                    int pct = total > 0 ? (int) (done * 100 / total) : 0;
+                    if (pct != lastPct) { lastPct = pct; updateState("downloading", pct, ""); }
+                }
+            } finally {
+                c.disconnect();
+            }
+            return;
+        }
+        throw new Exception("Download failed (too many redirects).");
+    }
+
+    void commitInstall(java.io.File apk) throws Exception {
+        if (!updateReceiverOn) {
+            android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context ctx, Intent in) {
+                    int st = in.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -1);
+                    if (st == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                        Intent confirm = in.getParcelableExtra(Intent.EXTRA_INTENT);
+                        if (confirm != null) {
+                            try {
+                                startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                            } catch (Exception e) {
+                                updateState("error", 0, "Couldn't open the installer.");
+                            }
+                        }
+                    } else if (st != android.content.pm.PackageInstaller.STATUS_SUCCESS) {
+                        String m = in.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE);
+                        updateState("error", 0, st == android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED ? "Update cancelled." : (m == null ? "Install failed." : m));
+                    }
+                }
+            };
+            IntentFilter f = new IntentFilter(UPDATE_ACTION);
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(rx, f);
+            updateReceiverOn = true;
+        }
+        android.content.pm.PackageInstaller pi = getPackageManager().getPackageInstaller();
+        int id = pi.createSession(new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL));
+        try (android.content.pm.PackageInstaller.Session ses = pi.openSession(id)) {
+            try (InputStream in = new java.io.FileInputStream(apk); OutputStream o = ses.openWrite("hermes-mobile.apk", 0, apk.length())) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                ses.fsync(o);
+            }
+            PendingIntent pend = PendingIntent.getBroadcast(this, id, new Intent(UPDATE_ACTION).setPackage(getPackageName()),
+                    PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            ses.commit(pend.getIntentSender());
+        }
+    }
+
     final class Bridge {
         /** First caller after a page load gets the key (the app's own script runs first); later callers get nothing. */
         @JavascriptInterface
@@ -1166,6 +1303,12 @@ public class MainActivity extends Activity {
         public void setupFix(String key, final String what) {
             if (!ok(key) || what == null) return;
             runOnUiThread(() -> MainActivity.this.setupFix(what));
+        }
+
+        @JavascriptInterface
+        public void installUpdate(String key, final String url) {
+            if (!ok(key)) return;
+            MainActivity.this.startUpdate(url);
         }
 
         @JavascriptInterface
