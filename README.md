@@ -251,7 +251,9 @@ GitHub Actions runs all of them except the last on every push.
 ### After a Hermes update
 
 The app uses Hermes's internal protocol, which can change. Copy the phone's Hermes `apps/shared/src` into `web/vendor/hermes-shared`,
-update `.hermes-commit`, run `npm run typecheck` in `web/` and rebuild.
+update `.hermes-commit` and `.hermes-version` (the `hermes --version` build string, e.g. `0.21.5+4582.gb8a8be1`), run `npm run typecheck` in `web/` and rebuild.
+The app compares the phone's Hermes build with `.hermes-version`: if they differ it shows a notice once and a warning in Settings → About, where
+"Hermes" also has an update button (it runs `hermes update` on the phone).
 
 ## License and credits
 

@@ -2,6 +2,7 @@ import { build, defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 import type { Plugin } from 'vite'
 
 // KaTeX's CSS lists every font as woff2, woff and ttf; everything gets inlined, so the two fallbacks were
@@ -41,8 +42,13 @@ const lazyMermaid: Plugin = {
   }
 }
 
+// The Hermes build the vendored client (and so this app) was written against, e.g. 0.21.5+4582.gb8a8be1.
+// Update it together with .hermes-commit; Settings warns when the phone's Hermes is a different build.
+const hermesTested = readFileSync(fileURLToPath(new URL('./vendor/hermes-shared/.hermes-version', import.meta.url)), 'utf8').trim()
+
 export default defineConfig({
   base: './',
+  define: { __HERMES_TESTED__: JSON.stringify(hermesTested) },
   plugins: [katexWoff2Only, react(), viteSingleFile(), lazyMermaid],
   resolve: {
     alias: { '@hermes/shared': fileURLToPath(new URL('./vendor/hermes-shared', import.meta.url)) }

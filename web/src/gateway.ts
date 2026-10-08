@@ -165,6 +165,7 @@ async function afterConnect(): Promise<void> {
   void loadProfiles()
   void loadSessions()
   void loadDefaultModel()
+  setTimeout(() => void import('./hermes-update').then(m => m.checkHermes()), 5000) // is this Hermes the build the app was made for?
   const a = getState().active
   const last = a?.storedId || rememberedSession()
   const seq0 = openSeq
