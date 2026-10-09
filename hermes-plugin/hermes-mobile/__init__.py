@@ -559,6 +559,33 @@ _LINKS_PROMPT = (
 )
 
 
+RISH_BIN = Path("/data/data/com.termux/files/home/bin/rish")  # Shizuku's shell wrapper, if the user set it up
+
+_PHONE_PROMPT = (
+    "You run ON the user's phone (Termux, inside a Debian container), so questions about the phone itself (battery, "
+    "temperature, storage, apps, logs, screen) are about your own host: answer them from here, don't send the user "
+    "to a computer. The container is an ordinary app: `dumpsys`, `logcat` and `pm` are denied there and there is no "
+    "`adb` device. Use the `termux-*` commands (Termux:API) and /sdcard first. If a skill about phone or Android access "
+    "is in your skill list, load it before you try anything else."
+)
+
+_PHONE_RISH = (
+    " For system-level access (dumpsys, logcat, screencap, uiautomator, input, am, pm) run the command through "
+    f"`{RISH_BIN} -c \"<command>\"`; it runs as the shell user via Shizuku. If it says the server isn't running, say "
+    "so and ask the user to start Shizuku, rather than guessing another route."
+)
+
+
+def _phone_prompt(info) -> str:
+    """Always in the prompt of app chats, so a small model doesn't need to find a skill to know the phone is reachable."""
+    try:
+        if str(info.get("platform", "")) not in ("mobile", "tui"):
+            return ""
+        return _PHONE_PROMPT + (_PHONE_RISH if RISH_BIN.exists() else "")
+    except Exception:
+        return ""
+
+
 def _links_prompt(info) -> str:
     try:
         return _LINKS_PROMPT if str(info.get("platform", "")) in ("mobile", "tui") else ""
@@ -599,6 +626,10 @@ def register(ctx):
         ctx.register_system_prompt_section("hermes-mobile.links", _links_prompt, position="after_memory", max_chars=700)
     except Exception as e:
         _dbg(f"links prompt section not registered: {type(e).__name__}: {e}")
+    try:
+        ctx.register_system_prompt_section("hermes-mobile.phone", _phone_prompt, position="after_memory", max_chars=900)
+    except Exception as e:
+        _dbg(f"phone prompt section not registered: {type(e).__name__}: {e}")
     ctx.register_hook("pre_llm_call", _on_pre_llm_call)
     ctx.register_hook("post_llm_call", _on_post_llm_call)
     ctx.register_hook("on_stream_start", _on_stream_start)
