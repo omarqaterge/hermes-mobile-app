@@ -748,6 +748,17 @@ async function main() {
   check(JSON.stringify(await np.evaluate(() => window.__fixes)) === '["permissions","battery-app"]', `fix buttons ask the shell (${JSON.stringify(await np.evaluate(() => window.__fixes))})`)
   await np.evaluate(() => (window.__setup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' }))
   await np.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'checks again by itself: All set'), () => check(false, 'checks again by itself: All set'))
+  // Hermes's access to the phone: a missing app is told by Android, the rest by the plugin.
+  check((await np.locator('.setup-item.ok', { hasText: 'see and use the screen' }).count()) === 1, 'phone access: Shizuku ✓ from the plugin')
+  await np.evaluate(() => (window.__setup = { ...window.__setup, termuxApi: false, shizuku: true }))
+  await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: false, shizuku: 'off' } }) })
+  await np.locator('.setup-hero-title', { hasText: '3 things to fix' }).waitFor({ timeout: 6000 }).then(() => check(true, 'phone access: files, Termux:API and Shizuku counted'), () => check(false, 'phone access: files, Termux:API and Shizuku counted'))
+  await np.locator('.setup-item.bad', { hasText: 'Termux:API' }).getByRole('button', { name: 'Get Termux:API' }).click()
+  await np.locator('.setup-item.bad', { hasText: 'Shizuku' }).getByRole('button', { name: 'Open Shizuku' }).click()
+  await np.locator('.setup-item.bad', { hasText: 'your files' }).getByRole('button', { name: 'Restart Hermes' }).click()
+  const fx = JSON.stringify((await np.evaluate(() => window.__fixes)).slice(-3))
+  check(fx === '["get-termux-api","open-shizuku","restart-hermes"]', `phone access fix buttons (${fx})`)
+  await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
   await np.close()
 
   // ── player, chat links, dictation, model in the + menu, learning dot (fake native bridge, speech never ends by itself) ──

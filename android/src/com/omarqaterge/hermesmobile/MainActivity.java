@@ -223,6 +223,8 @@ public class MainActivity extends Activity {
     /** Why the last startHermes failed ("" = the intent went through), for the setup check. */
     volatile String startError = "";
 
+    static final String SHIZUKU = "moe.shizuku.privileged.api";
+
     boolean installed(String pkg) {
         try {
             getPackageManager().getPackageInfo(pkg, 0);
@@ -242,6 +244,8 @@ public class MainActivity extends Activity {
             o.put("notifications", Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
             o.put("batteryApp", pm != null && pm.isIgnoringBatteryOptimizations(getPackageName()));
             o.put("batteryTermux", pm != null && pm.isIgnoringBatteryOptimizations("com.termux"));
+            o.put("termuxApi", installed("com.termux.api"));
+            o.put("shizuku", installed(SHIZUKU));
             o.put("startError", startError);
         } catch (Exception ignored) {
         }
@@ -280,6 +284,26 @@ public class MainActivity extends Activity {
                 case "get-termux":
                     i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux/"));
                     break;
+                case "get-termux-api":
+                    i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux.api/"));
+                    break;
+                case "get-shizuku":
+                    i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"));
+                    break;
+                case "open-shizuku":
+                    i = getPackageManager().getLaunchIntentForPackage(SHIZUKU);
+                    if (i == null) return;
+                    break;
+                case "storage":
+                    // Termux asks Android for the files permission ("y": it asks before rebuilding an existing ~/storage).
+                    runTermux("/data/data/com.termux/files/usr/bin/bash", new String[]{"-c", "echo y | termux-setup-storage"});
+                    return;
+                case "restart-hermes":
+                    // The hermes-services loop starts the dashboard again within ~10 s; a new one sees what Termux may
+                    // reach now (e.g. files granted after Hermes started). Exact match, like install.sh.
+                    runTermux("/data/data/com.termux/files/usr/bin/bash", new String[]{"-c",
+                            "pids=$(pgrep -f 'hermes dashboard --host 127.0.0.1 --port 9119'); [ -n \"$pids\" ] && kill -9 $pids"});
+                    return;
                 default:
                     return;
             }
