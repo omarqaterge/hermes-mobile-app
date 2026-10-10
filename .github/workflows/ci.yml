@@ -46,6 +46,13 @@ jobs:
       - run: python3 tools/test_battery.py
       - run: python3 tools/test_approval.py
 
+  hermes-patches:
+    name: Hermes patches apply to the pinned Hermes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tools/test_hermes_patches.sh
+
   android:
     name: Android Java compiles
     runs-on: ubuntu-latest

@@ -216,6 +216,7 @@ Desktop uses. The interface (React, in `web/`) uses Hermes's own client from `ap
 pinned in `.hermes-commit`. The Android part (`android/`) is a thin Java shell around a WebView that does what a web page can't:
 notifications, starting Hermes through Termux's `RUN_COMMAND`, the photo picker and camera, shares, media streaming. The plugin
 (`hermes-plugin/`) sends events to the app and serves the canvas and media; `phone/` has the scripts that keep Hermes running.
+A few fixes to Hermes itself live in `hermes/patches` (applied by the installer, offered upstream; see `hermes/README.md`).
 
 </details>
 
@@ -244,6 +245,7 @@ To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, 
 - `tools/web-e2e/run.sh`: the built interface in headless Chromium against a mock Hermes.
 - `python3 tools/test_canvas.py`, `tools/test_media.py`, `tools/test_chat_search.py`, `tools/test_battery.py`: the plugin and phone scripts.
 - `tools/java-check.sh`: compiles the Java shell without the Android SDK.
+- `tools/test_hermes_patches.sh`: the Hermes patches apply to the pinned Hermes build and revert cleanly.
 - `python3 tools/e2e.py`: end-to-end checks against a real phone.
 
 GitHub Actions runs all of them except the last on every push.
@@ -251,7 +253,7 @@ GitHub Actions runs all of them except the last on every push.
 ### After a Hermes update
 
 The app uses Hermes's internal protocol, which can change. Copy the phone's Hermes `apps/shared/src` into `web/vendor/hermes-shared`,
-update `.hermes-commit` and `.hermes-version` (the `hermes --version` build string, e.g. `0.21.5+4582.gb8a8be1`), run `npm run typecheck` in `web/` and rebuild.
+update `.hermes-commit` and `.hermes-version` (the `hermes --version` build string, e.g. `0.21.5+4582.gb8a8be1`), run `npm run typecheck` in `web/` and rebuild. Then bring `hermes/patches` along: `hermes/README.md` says how.
 The app compares the phone's Hermes build with `.hermes-version`: if they differ it shows a notice once and a warning in Settings → About.
 There is no "update Hermes" button on purpose: Hermes updates ship with an app release, after the app has been adapted to them.
 
