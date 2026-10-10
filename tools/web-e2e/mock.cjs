@@ -19,6 +19,7 @@ const allSessions = Array.from({ length: N_SESSIONS }, (_, i) => ({
   started_at: Math.floor(Date.now() / 1000) - i * 3600,
   source: 'mobile'
 }))
+allSessions.unshift({ id: 's-stale', title: 'Stale edit chat', preview: 'x', message_count: 4, started_at: Math.floor(Date.now() / 1000) - 60, source: 'mobile' })
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
 
 const canvasDocs = {} // session -> [doc]
@@ -178,6 +179,7 @@ function safeJson(t) {
 
 const wss = new WebSocketServer({ server, path: '/api/ws', verifyClient: () => Date.now() > refuseUntil })
 let seq = 0
+let created = 0
 wss.on('connection', ws => {
   const event = (type, session_id, payload) => ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
   const later = (ms, fn) => setTimeout(fn, ms)
@@ -193,10 +195,14 @@ wss.on('connection', ws => {
         return reply({ sessions: allSessions.slice(0, params.limit || 50) })
       case 'profiles.list':
         return reply({ profiles: [{ name: 'default', model: 'mock-model' }] })
-      case 'session.create':
-        // Like Hermes: the agent is built in the background and announced by session.info.
-        later(600, () => { log({ built: 'rt-new' }); event('session.info', 'rt-new', { model: 'mock-model', provider: 'mock' }) })
-        return reply({ session_id: 'rt-new', stored_session_id: 's-new', info: { model: 'mock-model' }, messages: [] })
+      case 'session.create': {
+        // Like Hermes: the agent is built in the background and announced by session.info. A model in the
+        // params is the chat's own model from the start (a per-session override).
+        const n = params.model ? `-m${++created}` : ''
+        const rt = `rt-new${n}`, model = params.model || 'mock-model'
+        later(600, () => { log({ built: rt }); event('session.info', rt, { model, provider: params.provider || 'mock' }) })
+        return reply({ session_id: rt, stored_session_id: `s-new${n}`, info: { model, provider: params.provider || 'mock' }, messages: [] })
+      }
       case 'setup.status':
         return reply({ provider_configured: providerConfigured, ready: true })
       case 'model.options':
@@ -220,6 +226,12 @@ wss.on('connection', ws => {
           later(1200, () => event('message.complete', 'rt-run', { text: 'Streams are a sequence of values over time.' }))
           return
         }
+        if (sid === 's-stale') {
+          // Hermes no longer holds the first question live (row 999 answers 4018 to an edit).
+          return reply({ session_id: 'rt-stale', stored_session_id: sid, info: { title: 'Stale edit chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'stale first question', row_id: 999 }, { role: 'assistant', text: 'stale first answer' },
+            { role: 'user', text: 'stale second question', row_id: 1000 }, { role: 'assistant', text: 'stale second answer' }] })
+        }
         if (sid === 's-slowstart') {
           // Slow start-up resume: the user starts a new chat while this is loading.
           return later(2500, () => reply({ session_id: 'rt-slowstart', stored_session_id: sid, info: { title: 'Slow chat', model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
@@ -242,7 +254,9 @@ wss.on('connection', ws => {
       case 'file.attach':
         return reply({ attached: true, name: params.name, path: `/root/ws/${params.name}`, ref_path: `ws/${params.name}`, ref_text: `@file:ws/${params.name}`, uploaded: true })
       case 'prompt.submit': {
-        reply({ user_row_id: 10 + seq++ })
+        if (params.truncate_before_row_id === 999)
+          return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 4018, message: 'target user message is no longer in session history' } }))
+        reply({ user_row_id: 10 + seq++, ...(params.confirm_truncate ? { survivor_user_row_ids: [] } : {}) })
         const sid = params.session_id
         if (/^run the thing$/.test(params.text)) {
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-approval-1', method: 'approval', params: { session_id: sid, command: 'rm -rf /tmp/x', description: 'delete the temp folder', allow_session: true } })))

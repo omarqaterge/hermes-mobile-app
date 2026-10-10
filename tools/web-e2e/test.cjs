@@ -33,7 +33,8 @@ async function main() {
   await page.goto('http://127.0.0.1:5180/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
 
-  // ── model picked on a new chat applies only after its agent is built (Hermes drops an earlier switch) ──
+  // ── model picked before the first message: the chat is created with it (no switch, so no model-switch marker
+  //    in Hermes's history that would swallow the first message) ──
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await page.locator('.picker-opt', { hasText: 'mock-model' }).click()
   await page.locator('.row', { hasText: 'mock-sonnet' }).click()
@@ -42,11 +43,38 @@ async function main() {
   await page.locator('.msg.user .bubble', { hasText: 'which model?' }).waitFor({ timeout: 5000 })
   for (let i = 0; i < 30 && !rpcs('prompt.submit').length; i++) await sleep(100)
   {
-    const all = calls()
-    const at = f => (all.find(f) || {}).t
-    const built = at(c => c.built === 'rt-new'), set = at(c => c.rpc === 'config.set' && c.params.key === 'model'), sub = at(c => c.rpc === 'prompt.submit')
-    check(built && set && sub && set >= built && sub >= set, `model switch waits for the agent build, send waits for the switch (built ${built}, set ${set}, submit ${sub})`)
+    const cr = rpcs('session.create'), sets = rpcs('config.set').filter(c => c.params.key === 'model'), sub = rpcs('prompt.submit')
+    check(cr.length === 1 && cr[0].params.model === 'mock-sonnet' && cr[0].params.provider === 'mock', `new chat is created with the picked model (${JSON.stringify(cr.map(c => c.params))})`)
+    check(sets.length === 0, 'no config.set model on a chat with no messages')
+    check(sub.length === 1 && sub[0].params.session_id === 'rt-new-m1', `the message goes to that chat (${JSON.stringify(sub.map(c => c.params.session_id))})`)
   }
+  await page.evaluate(() => localStorage.clear())
+  await page.goto('http://127.0.0.1:5180/')
+  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  fs.writeFileSync(LOG, '')
+
+  // ── a model picked on an empty chat (a photo added and removed) replaces it; typed text stays ──
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  {
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.picker-opt', { hasText: 'Photo' }).click()])
+    await chooser.setFiles([{ name: 'x.png', mimeType: 'image/png', buffer: png }])
+  }
+  await page.locator('.attach-thumb img[alt="x.png"]').waitFor({ timeout: 5000 })
+  await page.getByRole('button', { name: 'Remove x.png' }).click()
+  await page.getByPlaceholder('Message Hermes').fill('kept text')
+  await sleep(300)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.locator('.picker-opt', { hasText: 'mock-model' }).click()
+  await page.locator('.row', { hasText: 'mock-sonnet' }).click()
+  await sleep(800)
+  {
+    const cr = rpcs('session.create'), sets = rpcs('config.set').filter(c => c.params.key === 'model')
+    const closed = rpcs('session.close').map(c => c.params.session_id)
+    check(cr.length === 2 && cr[1].params.model === 'mock-sonnet' && sets.length === 0, `empty chat: model pick creates a new chat, no switch (${cr.length} creates, ${sets.length} switches)`)
+    check(closed.includes('rt-new'), `the empty chat is closed (${JSON.stringify(closed)})`)
+    check((await page.getByPlaceholder('Message Hermes').inputValue()) === 'kept text', 'typed text stays in the composer')
+  }
+  await page.getByPlaceholder('Message Hermes').fill('')
   await page.evaluate(() => localStorage.clear())
   await page.goto('http://127.0.0.1:5180/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
@@ -152,6 +180,23 @@ async function main() {
   check(replies.filter(r => r.includes('Streams are')).length === 1, 'no duplicate reply bubble')
   await page.screenshot({ path: path.join(SHOTS, 'hm-shot-inflight.png') })
 
+  // ── editing a message Hermes no longer holds, with later turns: never appended at the end ──
+  fs.writeFileSync(LOG, '')
+  await page.getByRole('button', { name: 'Sessions' }).click()
+  await page.locator('.session-row', { hasText: 'Stale edit chat' }).click()
+  await page.locator('.msg.user .bubble', { hasText: 'stale first question' }).waitFor({ timeout: 5000 })
+  await page.locator('.msg.user', { hasText: 'stale first question' }).getByRole('button', { name: 'Edit' }).click()
+  await page.locator('.edit-box').fill('stale edited question')
+  await page.locator('.edit-send').click()
+  await sleep(1200)
+  {
+    const subs = rpcs('prompt.submit')
+    check(subs.length === 1 && subs[0].params.truncate_before_row_id === 999, `only the truncating submit was sent, no plain append (${JSON.stringify(subs.map(c => c.params))})`)
+    check((await page.locator('.toast', { hasText: "isn't in this chat's history" }).count()) === 1, 'the user is told why')
+    const users = await page.locator('.msg.user .bubble').allInnerTexts()
+    check(users.join('|') === 'stale first question|stale second question', `chat reloaded as Hermes holds it (${JSON.stringify(users)})`)
+  }
+
   // ── #7 show older chats ──────────────────────────────
   await page.getByRole('button', { name: 'Sessions' }).click()
   const olderBtn = page.getByRole('button', { name: 'Show older chats' })
@@ -161,7 +206,7 @@ async function main() {
   await page.waitForFunction(() => document.querySelectorAll('.drawer .session-row').length > 100, null, { timeout: 5000 })
   const after = await page.locator('.drawer .session-row').count()
   const lim = rpcs('session.list').map(c => c.params.limit)
-  check(before === 80 && after === 151 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
+  check(before === 80 && after === 152 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
   check((await olderBtn.count()) === 0, 'button hides when everything is loaded')
 
   // ── deleting a chat also clears its leftover photos/files/canvas on the phone ──

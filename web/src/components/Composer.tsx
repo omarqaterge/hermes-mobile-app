@@ -38,19 +38,23 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const draftKey = useStore(s => s.active?.storedId || `new:${s.profile}`)
   const fresh = useStore(s => (s.active?.items.length ?? 0) === 0)
   const keyRef = useRef(draftKey)
+  const freshRef = useRef(fresh)
   const [text, setText] = useState(() => getDraft(draftKey))
   useLayoutEffect(() => {
     const prev = keyRef.current
+    const wasFresh = freshRef.current
+    freshRef.current = fresh
     if (prev === draftKey) return
     keyRef.current = draftKey
-    // The new-chat screen just became a real chat (first attachment, share…): the text stays with it.
-    if (prev.startsWith('new:') && fresh) {
+    // The new-chat screen just became a real chat (first attachment, share…), or an empty chat was replaced by
+    // one with the picked model: the text stays with it.
+    if ((prev.startsWith('new:') || wasFresh) && fresh) {
       setDraft(prev, '')
       setDraft(draftKey, text)
       return
     }
     setText(getDraft(draftKey))
-  }, [draftKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [draftKey, fresh]) // eslint-disable-line react-hooks/exhaustive-deps
   const listening = useVoice(v => v.listening)
   const live = useVoice(v => v.live)
   const liveMuted = useVoice(v => v.liveMuted)
