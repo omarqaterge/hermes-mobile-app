@@ -165,6 +165,9 @@ export interface NativeSetup {
   notifications: boolean
   batteryApp: boolean
   batteryTermux: boolean
+  /** Older app builds don't report these two: undefined. */
+  termuxApi?: boolean
+  shizuku?: boolean
   startError: string
 }
 
@@ -177,8 +180,12 @@ export function setupState(): NativeSetup | null {
   }
 }
 
+export type SetupFix =
+  | 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'app-settings' | 'open-termux' | 'get-termux'
+  | 'get-termux-api' | 'get-shizuku' | 'open-shizuku' | 'storage' | 'restart-hermes'
+
 /** Open the Android screen that fixes one setup item (fixed list on the Java side). */
-export function setupFix(what: 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'app-settings' | 'open-termux' | 'get-termux'): void {
+export function setupFix(what: SetupFix): void {
   native?.setupFix?.(what)
 }
 

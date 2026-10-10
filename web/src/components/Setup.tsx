@@ -26,18 +26,27 @@ interface Remote {
   plugin: boolean | null // the dashboard knows the plugin
   enabled: boolean | null // …and this profile has it enabled (hooks: status chip, approvals, canvas)
   enabledList: string[]
+  phone: PhoneAccess | null // what of the phone Hermes reaches (null: an older plugin that can't tell)
+}
+
+interface PhoneAccess {
+  files: boolean
+  termux_api: boolean
+  shizuku: 'ok' | 'off' | 'denied' | 'blocked' | 'missing'
 }
 
 async function remote(): Promise<Remote> {
-  const [plugins, config] = await Promise.all([
+  const [plugins, config, phone] = await Promise.all([
     api<{ name: string }[]>('GET', '/api/dashboard/plugins', undefined, { profile: false }).catch(() => null),
-    api<{ plugins?: { enabled?: string[] } }>('GET', '/api/config').catch(() => null)
+    api<{ plugins?: { enabled?: string[] } }>('GET', '/api/config').catch(() => null),
+    api<PhoneAccess>('GET', '/api/plugins/hermes-mobile/phone-access', undefined, { profile: false }).catch(() => null)
   ])
   const list = config?.plugins?.enabled ?? []
   return {
     plugin: plugins ? plugins.some(p => p.name === 'hermes-mobile') : null,
     enabled: config ? list.includes('hermes-mobile') : null,
-    enabledList: list
+    enabledList: list,
+    phone: phone && typeof phone.files === 'boolean' ? phone : null
   }
 }
 
@@ -122,9 +131,73 @@ function build(n: NativeSetup | null, conn: string, r: Remote | null, enable: ()
       state: n && !n.termux ? 'skip' : nat(n?.batteryTermux),
       help: 'Hermes lives in Termux. Open Termux’s app info → Battery → Unrestricted (on Xiaomi also turn on Autostart).',
       fix: { label: 'Open Termux settings', run: () => setupFix('battery-termux') }
-    }
+    },
+    ...phoneChecks(n, online, r)
   ]
   return checks.filter(c => c.state !== 'skip')
+}
+
+/** Hermes's own access to the phone: files, the termux-* commands, and Shizuku's shell (screen, taps, apps, logs).
+ *  None of it needs root. The Android half says whether an app is installed; the plugin says whether Hermes can use it. */
+function phoneChecks(n: NativeSetup | null, online: boolean, r: Remote | null): Check[] {
+  const p = online ? r?.phone ?? null : null
+  const remoteState = (v: boolean | undefined): State => (p ? (v ? 'ok' : 'bad') : 'skip')
+  const apiMissing = n?.termuxApi === false
+  const shizukuMissing = n?.shizuku === false
+  const sh = p?.shizuku
+  return [
+    {
+      id: 'files',
+      title: 'Hermes can use your files',
+      state: remoteState(p?.files),
+      help: 'Termux needs Android’s files permission, and Hermes only sees it after a restart. Tap Allow, then Restart Hermes.',
+      fix: { label: 'Allow', run: () => setupFix('storage') },
+      alt: {
+        label: 'Restart Hermes',
+        run: () => {
+          setupFix('restart-hermes')
+          toast('Restarting Hermes… back in about half a minute')
+        }
+      }
+    },
+    {
+      id: 'termux-api',
+      title: 'Hermes can use the phone’s features (Termux:API)',
+      state: apiMissing ? 'bad' : remoteState(p?.termux_api),
+      help: apiMissing
+        ? 'Battery, location, clipboard, notifications and more go through the Termux:API app. Install it from F-Droid, like Termux.'
+        : 'Termux:API is installed but Hermes can’t reach it yet. Run the installer in Termux again: it adds the termux-* commands.',
+      fix: apiMissing ? { label: 'Get Termux:API', run: () => setupFix('get-termux-api') } : { label: 'Copy installer', run: copyInstall },
+      alt: apiMissing ? undefined : { label: 'Open Termux', run: () => setupFix('open-termux') }
+    },
+    {
+      id: 'shizuku',
+      title: 'Hermes can see and use the screen (Shizuku)',
+      state: shizukuMissing ? 'bad' : !p ? 'skip' : sh === 'ok' ? 'ok' : 'bad',
+      help: shizukuMissing ? (
+        'Shizuku gives Hermes the screen, taps, apps and logs, without root. Install it, then come back.'
+      ) : sh === 'denied' ? (
+        'Shizuku hasn’t allowed Termux yet. Open Shizuku → Application management and turn on Termux.'
+      ) : sh === 'blocked' ? (
+        'Shizuku doesn’t answer Termux. Set Battery to Unrestricted for both Shizuku and Termux (app info → Battery).'
+      ) : sh === 'missing' ? (
+        'Shizuku’s shell isn’t set up for Hermes yet. Run the installer in Termux again.'
+      ) : (
+        <>
+          Shizuku isn’t running: it stops when the phone restarts. Open it and start it. No root: <i>Start via Wireless
+          debugging</i> (pair once; on Android 13+ it then starts by itself after a restart, on Wi-Fi). Rooted: <i>Start</i>.
+        </>
+      ),
+      fix: shizukuMissing
+        ? { label: 'Get Shizuku', run: () => setupFix('get-shizuku') }
+        : sh === 'missing'
+          ? { label: 'Copy installer', run: copyInstall }
+          : sh === 'blocked'
+            ? { label: 'Open Termux settings', run: () => setupFix('battery-termux') }
+            : { label: 'Open Shizuku', run: () => setupFix('open-shizuku') },
+      alt: sh === 'blocked' ? { label: 'Open Shizuku', run: () => setupFix('open-shizuku') } : undefined
+    }
+  ]
 }
 
 export function SetupScreen() {

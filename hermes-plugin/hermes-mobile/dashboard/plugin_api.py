@@ -431,6 +431,66 @@ async def get_activity():
     return {"items": items}
 
 
+# ── what of the phone Hermes can reach (the app's Setup check) ──
+
+_RISH = Path("/data/data/com.termux/files/home/bin/rish")  # Shizuku's shell, put there by the installer
+_phone_cache: dict = {}
+
+
+def phone_access_now() -> dict:
+    """files: /sdcard is readable here (only a Hermes started after Termux got the permission sees it).
+    termux_api: a termux-* command answers (needs the Termux:API app). shizuku: ok | off (not running) |
+    denied (Termux not allowed in Shizuku) | blocked (the Shizuku app doesn't answer: missing or battery-restricted) |
+    missing (no rish: the installer didn't set it up)."""
+    import shutil
+    import subprocess
+
+    try:
+        files = any(True for _ in Path("/sdcard").iterdir())
+    except Exception:
+        files = False
+    api = False
+    cmd = shutil.which("termux-battery-status") or "/usr/local/bin/termux-battery-status"
+    if Path(cmd).exists():
+        try:
+            out = subprocess.run([cmd], capture_output=True, text=True, timeout=10).stdout
+            api = "percentage" in out
+        except Exception:
+            pass
+    shizuku = "missing"
+    if _RISH.exists():
+        try:
+            # A first call makes Shizuku ask whether Termux may use it; rish waits for the answer. A Shizuku app frozen
+            # in the background can miss the first request ("Request timeout"): one retry.
+            text = ""
+            for _ in range(2):
+                r = subprocess.run([str(_RISH), "-c", "id"], capture_output=True, text=True, timeout=20)
+                text = r.stdout + r.stderr
+                if "Request timeout" not in text:
+                    break
+            shizuku = ("ok" if "uid=2000" in text else "denied" if "Permission denied" in text
+                       else "blocked" if "Request timeout" in text else "off")
+        except subprocess.TimeoutExpired:
+            shizuku = "denied"  # still waiting on Shizuku's prompt
+        except Exception:
+            shizuku = "off"
+    return {"files": files, "termux_api": api, "shizuku": shizuku}
+
+
+@router.get("/phone-access")
+async def phone_access():
+    """Runs two short commands; cached 15 s, since the Setup screen asks every few seconds while it is open."""
+    import asyncio
+    import time
+
+    now = time.monotonic()
+    if _phone_cache.get("v") is not None and now - _phone_cache.get("t", 0) < 15:
+        return _phone_cache["v"]
+    v = await asyncio.to_thread(phone_access_now)
+    _phone_cache.update(v=v, t=time.monotonic())
+    return v
+
+
 # ── app preferences that should follow the user across installs (pins + custom chat order) ──
 
 _PREFS = Path.home() / ".hermes" / "mobile" / "prefs.json"

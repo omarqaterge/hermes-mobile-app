@@ -29,6 +29,7 @@ let activityItems = []
 let refuseUntil = 0
 let pluginEnabled = false
 let providerConfigured = true // false = a fresh install (the welcome opens)
+let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
 let codexPolls = 0
 
 const server = http.createServer((req, res) => {
@@ -59,6 +60,7 @@ const server = http.createServer((req, res) => {
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
       if (b.unconfigured) providerConfigured = false
+      if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
@@ -82,6 +84,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
     if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems })
     if (p === '/api/plugins/hermes-mobile/prefs') return send({ order: null })
+    if (p === '/api/plugins/hermes-mobile/phone-access') return send(phoneAccess)
     if (p === '/api/hermes/update/check') return send({ install_method: 'git', current_version: '0.21.5+4582.gb8a8be1', behind: 12, update_available: true, can_apply: true, message: null })
     if (p === '/api/plugins/hermes-mobile/refresh-logins') return send({ ok: true, anthropic: 0 })
     if (p === '/api/plugins/hermes-mobile/cleanup') return send({ ok: true, removed: [], freed_bytes: 0 })

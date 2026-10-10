@@ -23,6 +23,9 @@
 
     <queries>
         <package android:name="com.termux" />
+        <!-- Setup check: Hermes's access to the phone (Termux:API commands, Shizuku's shell). -->
+        <package android:name="com.termux.api" />
+        <package android:name="moe.shizuku.privileged.api" />
         <!-- Voice: bind the system text-to-speech and speech-recognition services (package visibility). -->
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
