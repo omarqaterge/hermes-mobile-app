@@ -34,3 +34,5 @@ contains reads as `upstream` and is skipped. `hermes update` stashes the edits a
   re-make any that read `conflict` on the new build, and update the table.
 - `tools/test_hermes_patches.sh` (also run by CI) checks that every patch applies to the pinned build and reverts cleanly,
   and shows how each one fares on upstream `main`.
+- Checking 0002 by hand: `tools/hermes_repro_model_switch.py` reproduces the lost message on a Hermes checkout with a fake
+  model (no key needed); `tools/probe_model_switch.py` runs the same story against the phone's real Hermes and models.
