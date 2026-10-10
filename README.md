@@ -175,6 +175,33 @@ Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_
 - To start Hermes after a reboot, install **Termux:Boot** from F-Droid and open it once (the computer route does this for you).
 - To update, run the same command again and install the newest APK.
 
+### Optional: let Hermes use the phone itself
+
+The app works without these. They decide how much of the phone Hermes itself can reach. No root needed.
+
+- **Files** (`/sdcard`): run `termux-setup-storage` in Termux and allow it. Then restart Hermes (`~/bin/hermes-services`) so
+  it sees the storage.
+- **Battery, location, clipboard, notifications, SMS…** (`termux-*` commands): install
+  **[Termux:API](https://f-droid.org/packages/com.termux.api/)** from F-Droid, then in Termux:
+
+  ```bash
+  pkg install -y termux-api
+  ROOT=$PREFIX/var/lib/proot-distro/containers/debian/rootfs
+  for f in $PREFIX/bin/termux-*; do ln -sf "$f" "$ROOT/usr/local/bin/"; done
+  ```
+- **Screen, taps, apps, logs** (`screencap`, `input`, `am`, `pm`, `dumpsys`, `logcat`): an app can't do these on a
+  phone that isn't rooted. **[Shizuku](https://shizuku.rikka.app/)** gives Termux the same access adb has:
+  1. Install Shizuku and start it with *Wireless debugging* (Android 11+, pair once), from a computer with
+     `adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh`, or with root if the phone is rooted.
+  2. In Shizuku, *Use Shizuku in terminal apps* → *Export files* to Download. In Termux (after `termux-setup-storage`):
+
+     ```bash
+     mkdir -p ~/bin && cp ~/storage/downloads/rish ~/storage/downloads/rish_shizuku.dex ~/bin/
+     sed -i 's/"PKG"/"com.termux"/' ~/bin/rish && chmod 700 ~/bin/rish && chmod 400 ~/bin/rish_shizuku.dex
+     ~/bin/rish -c id      # allow Termux in Shizuku; it should print uid=2000(shell)
+     ```
+  Hermes finds `~/bin/rish` by itself. Without root, **Shizuku stops on every reboot**: open it and start it again.
+
 ### If something goes wrong
 
 Open **Settings → Setup check** in the app first: it shows what's missing, with a button for each fix.
@@ -186,6 +213,8 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | The install stops with `HMSETUP FAIL <step>` | Read the error above it, fix it and run `bash hm.sh` again; finished parts are skipped. [AGENT_INSTALL.md](AGENT_INSTALL.md) lists the usual causes |
 | No status chip, canvas or approvals | Run `bash hm.sh` again (it re-enables the plugin) |
 | Everything stops after a while | Battery is restricted, see *After installing* |
+| Hermes says Shizuku isn't running | The phone rebooted: open Shizuku and start it again |
+| Hermes can't find `termux-battery-status` (or another `termux-*` command) | See *Optional: let Hermes use the phone itself* |
 
 <details>
 <summary><b>Everything it does, and how it works</b></summary>
