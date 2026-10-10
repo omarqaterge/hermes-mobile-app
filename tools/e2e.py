@@ -6,7 +6,8 @@
     python3 tools/e2e.py --live     # also runs a real (tiny) Hermes turn and drops the WebSocket mid-turn
 
 It sends fake events, so it never touches your chats unless --live is given (that creates one
-"e2e" chat, which it deletes again). Leave the phone unlocked, and the app in the background.
+"e2e" chat, which it deletes again). Leave the phone unlocked. If the app is on screen it is sent to the
+background for the run (it shows approvals in its own sheet then, not as notifications) and brought back after.
 """
 import json
 import os
@@ -58,6 +59,13 @@ def api(path):
         return json.loads(out)
     except Exception:
         return None
+
+
+APP = "com.omarqaterge.hermesmobile"
+
+
+def app_in_front():
+    return f"{APP}/" in sh("adb shell dumpsys window | grep mCurrentFocus")
 
 
 def check(name, ok, detail=""):
@@ -234,6 +242,21 @@ asyncio.run(main())
 def main():
     quick = "--quick" in sys.argv
     pick_device()
+    was_in_front = app_in_front()
+    if was_in_front:
+        sh("adb shell input keyevent KEYCODE_HOME")
+        wait_until(lambda: not app_in_front(), 5, 1)
+    try:
+        run(quick)
+    finally:
+        if was_in_front:
+            sh(f"adb shell monkey -p {APP} -c android.intent.category.LAUNCHER 1")
+    ok = sum(results)
+    print(f"\n{ok}/{len(results)} passed")
+    sys.exit(0 if ok == len(results) else 1)
+
+
+def run(quick):
     t_listener()
     t_chip(quick)
     t_review()
@@ -242,9 +265,6 @@ def main():
     t_approval()
     if "--live" in sys.argv:
         t_live()
-    ok = sum(results)
-    print(f"\n{ok}/{len(results)} passed")
-    sys.exit(0 if ok == len(results) else 1)
 
 
 if __name__ == "__main__":
