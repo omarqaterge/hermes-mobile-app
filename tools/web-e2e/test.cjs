@@ -895,6 +895,22 @@ async function main() {
   check(await slp.locator('.empty .suggestion').count() > 0 && (await slp.locator('.msg').count()) === 0, 'late start-up resume does not replace the new chat you started')
   await slp.close()
 
+  // ── the canvas button while the start-up resume loads: that chat's canvas (loading first), never a new chat ──
+  const scv = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  await scv.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
+  await scv.goto('http://127.0.0.1:5180/')
+  await sleep(600) // connected, the slow resume is in flight
+  check(await scv.evaluate(() => !document.querySelector('.msg.user')), 'slow start-up chat still loading when the canvas is tapped')
+  await scv.locator('.canvas-btn').click()
+  await scv.locator('.canvas-panel').waitFor({ timeout: 3000 })
+  check((await scv.locator('.canvas-panel [aria-busy="true"]').count()) === 1 && (await scv.locator('.canvas-empty-title').count()) === 0, 'canvas opened on a loading chat shows a loading state, not "empty"')
+  await scv.locator('.canvas-tab-title', { hasText: 'Life' }).waitFor({ timeout: 3000 })
+  check(true, 'canvas opened on a loading chat shows that chat\'s documents')
+  await sleep(2800) // the slow resume answers now
+  check((await scv.locator('.msg', { hasText: 'old answer' }).count()) === 1, 'the chat that was loading still opens after tapping the canvas (no new empty chat)')
+  check((await scv.locator('.canvas-panel').count()) === 1 && (await scv.locator('.canvas-tab-title', { hasText: 'Life' }).count()) === 1, 'canvas stays open on the chat once it has loaded')
+  await scv.close()
+
   // ── swipe right on a chat opens the sessions drawer ──
   const swp = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await swp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-5', profile: 'default' })))

@@ -23,6 +23,8 @@ allSessions.unshift({ id: 's-stale', title: 'Stale edit chat', preview: 'x', mes
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
 
 const canvasDocs = {} // session -> [doc]
+// The chat whose start-up resume is slow already has a canvas (opening it while the chat loads must show it).
+canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Life\n\nGlider' }]
 let activityItems = []
 let refuseUntil = 0
 let pluginEnabled = false
@@ -142,7 +144,9 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/checkpoints' && req.method === 'DELETE') return send({ ok: true })
     if (p === '/api/plugins/hermes-mobile/canvas') {
       const s = url.searchParams.get('session')
-      return send({ docs: (canvasDocs[s] || []).map(({ content, ...m }) => m) })
+      const list = () => send({ docs: (canvasDocs[s] || []).map(({ content, ...m }) => m) })
+      if (s === 's-slowstart') return void setTimeout(list, 700) // long enough to see the panel's loading state
+      return list()
     }
     if (p === '/api/plugins/hermes-mobile/canvas/doc') {
       if (req.method === 'GET') {

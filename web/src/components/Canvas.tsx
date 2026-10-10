@@ -502,6 +502,7 @@ export function CanvasPanel() {
   const save = useCanvas(s => s.save)
   const remote = useCanvas(s => s.remote)
   const writing = useCanvas(s => s.writing)
+  const listLoading = useCanvas(s => s.loading)
   const [menu, setMenu] = useState<null | 'doc' | 'new' | 'history'>(null)
   const [sel, setSel] = useState('')
   const [ask, setAsk] = useState('')
@@ -635,6 +636,11 @@ export function CanvasPanel() {
 
         {writing && (!meta || !writing.docId || writing.docId !== meta.id) ? (
           <CanvasWriting since={writing.since} title={writing.title} preview={writing.preview} />
+        ) : !meta && listLoading ? (
+          <div className="canvas-empty" aria-busy="true">
+            <Spinner small />
+            <div className="dim">Loading the canvas…</div>
+          </div>
         ) : !meta ? (
           <div className="canvas-empty">
             <div className="canvas-empty-icon">🗒</div>
