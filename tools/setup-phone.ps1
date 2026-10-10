@@ -91,6 +91,18 @@ if (Has 'com.termux') {
 } else { FdroidInstall 'com.termux' }
 if (-not (Has 'com.termux.boot')) { try { FdroidInstall 'com.termux.boot' } catch { Say 'Termux:Boot skipped' } }
 Sh 'am start -n com.termux.boot/.BootActivity' | Out-Null   # it must be opened once to work
+# Hermes's access to the phone: Termux:API (battery, location, clipboard, notifications...) and Shizuku (screen, taps,
+# apps, logs, without root). Termux:API must come from the same place as Termux (F-Droid), or Android refuses it.
+if (-not (Has 'com.termux.api')) { FdroidInstall 'com.termux.api' }
+$SHIZUKU = 'moe.shizuku.privileged.api'
+if (-not (Has $SHIZUKU)) {
+  $apk = Join-Path $WORK 'shizuku.apk'
+  Say 'Downloading Shizuku from GitHub'
+  Get 'https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk' $apk
+  $o = A install -r $apk
+  Remove-Item $apk -ErrorAction SilentlyContinue
+  if ($script:rc -ne 0) { Die "Installing Shizuku failed (Xiaomi: turn on 'Install via USB' in Developer options).`n$o" }
+}
 
 # ---------------------------------------------------------------- 4. Android settings
 B '4/9 Android settings (keep Termux alive, screen on during the install)'
@@ -98,6 +110,18 @@ Sh 'svc power stayon true' | Out-Null
 Sh 'input keyevent KEYCODE_WAKEUP' | Out-Null; Sh 'wm dismiss-keyguard' | Out-Null   # a PIN/pattern still needs the user
 Sh 'cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow' | Out-Null
 Sh 'dumpsys deviceidle whitelist +com.termux' | Out-Null
+# Files for Hermes (/sdcard), so the installer doesn't stop at Android's prompt.
+Sh 'pm grant com.termux android.permission.READ_EXTERNAL_STORAGE' | Out-Null
+Sh 'pm grant com.termux android.permission.WRITE_EXTERNAL_STORAGE' | Out-Null
+# Start Shizuku the way its own "Start by adb" does. It stops on every reboot without root; see the README.
+function ShizukuUp { ((Sh 'ps -A -o NAME') -split "`n" | ForEach-Object { $_.Trim() }) -contains 'shizuku_server' }
+if (-not (ShizukuUp)) {
+  Sh 'p=$(pm path moe.shizuku.privileged.api | head -1 | cut -d: -f2); "$(dirname "$p")/lib/arm64/libshizuku.so"' | Out-Null
+  Start-Sleep 2
+}
+if (ShizukuUp) { Say 'Shizuku is running' } else { Say "Shizuku didn't start; the installer will say what to do" }
+# Lets Shizuku start itself after a reboot (Android 13+, without root, after one start via Wireless debugging).
+Sh 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' | Out-Null
 if ($sdk -ge 31) {   # Android 12+ kills apps with many child processes ("signal 9" in Termux)
   Sh 'device_config set_sync_disabled_for_tests persistent' | Out-Null
   Sh 'device_config put activity_manager max_phantom_processes 2147483647' | Out-Null
@@ -213,6 +237,9 @@ if ($ok) { Say 'Hermes is running on the phone.' } else { Say "Hermes didn't ans
 Restore
 
 B 'Done. Say hi in Hermes Mobile on the phone.'
+(LogText) -split "`n" | Where-Object { $_ -match 'HMSETUP TODO (.*)' } | ForEach-Object { Say "Still to do: $($Matches[1])" }
 Say 'Xiaomi/HyperOS: also turn on Autostart for Termux and Hermes Mobile (Settings > Apps).'
 Say 'Keep the Termux notification: Hermes runs inside Termux.'
+Say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Without root, start it once via"
+Say '  Shizuku > Start via Wireless debugging: on Android 13+ it then restarts by itself on Wi-Fi. Rooted phones: it always does.'
 Say 'Update later: run this again.'

@@ -243,6 +243,6 @@ b "Done. Say hi in Hermes Mobile on the phone."
 grep 'HMSETUP TODO' "$LOG" | sed 's/.*HMSETUP TODO /  Still to do: /' || true
 say "Xiaomi/HyperOS: also turn on Autostart for Termux and Hermes Mobile (Settings → Apps)."
 say "Keep the Termux notification: Hermes runs inside Termux."
-say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. To start it again by itself: Shizuku →"
-say "  Settings → Start on boot (Android 13+, on a Wi-Fi you trust; rooted phones: always). Otherwise open Shizuku and tap Start."
+say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Without root, start it once via"
+say "  Shizuku → Start via Wireless debugging: on Android 13+ it then restarts by itself on Wi-Fi. Rooted phones: it always does."
 say "Update later: run this script again."

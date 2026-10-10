@@ -102,25 +102,27 @@ adb shell df -h /data
 
 Needs `arm64-v8a`, SDK ≥ 26 (Android 8), and at least **6 GB** free. Stop and tell the user if not.
 
-## 3. Install Termux (and Termux:Boot)
+## 3. Install Termux, Termux:API, Termux:Boot and Shizuku
 
-Check what is there: `adb shell pm list packages com.termux`.
+All four are needed: Termux runs Hermes, Termux:API lets Hermes use the phone (battery, location, clipboard, notifications, SMS…),
+Termux:Boot starts Hermes after a reboot, and Shizuku gives Hermes adb-level access (screen, taps, apps, logs) **without root**.
+Check what is there: `adb shell pm list packages | grep -E 'com.termux|moe.shizuku'`.
 
-- **Not installed:** download the current builds from F-Droid and install them. Find the version code with
-  `https://f-droid.org/api/v1/packages/com.termux` (field `suggestedVersionCode`), then:
+- **Not installed:** download the current builds from F-Droid and install them. Find each version code with
+  `https://f-droid.org/api/v1/packages/<package>` (field `suggestedVersionCode`), then:
 
   ```bash
   curl -fL -o termux.apk https://f-droid.org/repo/com.termux_<suggestedVersionCode>.apk
+  curl -fL -o termux-api.apk https://f-droid.org/repo/com.termux.api_<its suggestedVersionCode>.apk
   curl -fL -o termux-boot.apk https://f-droid.org/repo/com.termux.boot_<its suggestedVersionCode>.apk
-  adb install termux.apk
-  adb install termux-boot.apk
+  curl -fL -o shizuku.apk https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk
+  adb install termux.apk && adb install termux-api.apk && adb install termux-boot.apk && adb install shizuku.apk
   ```
 
-  (Termux is ~110 MB.) Termux:Boot is optional: it restarts Hermes after a phone reboot. Android only lets it do that
-  after it was opened once: `adb shell am start -n com.termux.boot/.BootActivity`.
+  (Termux is ~110 MB.) Termux:Boot only works after it was opened once: `adb shell am start -n com.termux.boot/.BootActivity`.
 - **Already installed:** check `adb shell dumpsys package com.termux | grep versionName`. 0.118 or newer is fine, use it as is.
   Older (e.g. 0.101 from the Play Store) is broken: ask the user before uninstalling it, because that deletes everything in it.
-  Termux:Boot must come from the same source as Termux (F-Droid with F-Droid).
+  Termux:API and Termux:Boot must come from the same source as Termux (F-Droid with F-Droid), or Android refuses to install them.
 
 ## 4. Prepare Android
 
@@ -131,6 +133,17 @@ adb shell dumpsys deviceidle whitelist +com.termux
 ```
 
 Keeps the screen on during the install (undone in step 9) and stops Android from killing Termux in the background.
+
+Give Termux the files permission (Hermes reads and saves files through it), start Shizuku the way its own *Start by connecting
+to a computer* does, and let Shizuku restart itself after a reboot (Android 13+, once the user starts it via Wireless debugging):
+
+```bash
+adb shell pm grant com.termux android.permission.READ_EXTERNAL_STORAGE
+adb shell pm grant com.termux android.permission.WRITE_EXTERNAL_STORAGE
+adb shell 'p=$(pm path moe.shizuku.privileged.api | head -1 | cut -d: -f2); "$(dirname "$p")/lib/arm64/libshizuku.so"'
+adb shell pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS
+adb shell ps -A -o NAME | grep -x shizuku_server    # prints the name when Shizuku runs
+```
 
 Android 12+ also kills apps with "too many" child processes ("[Process completed (signal 9)]" in Termux), which breaks the
 install. Turn that off (SDK ≥ 31):
@@ -184,6 +197,10 @@ adb logcat -d -s 'hmsetup:*'
 
 Run that every 30-60 s (`-d` prints and exits; don't leave `adb logcat` streaming). Lines look like `HMSETUP STEP <name> …`.
 Steps: `packages` → `debian` → `hermes` (the long one, 10-30 min) → `plugin` → `start`, then **`HMSETUP DONE`**.
+
+During `plugin` (`HMSETUP phone: …` lines), Shizuku asks on the phone whether Termux may use it: ask the user to tap **Allow all
+the time** (the installer waits up to a minute). `HMSETUP TODO …` lines just before `DONE` name what Hermes still can't reach
+(files, Termux:API, Shizuku) and how to fix it; fix it and re-run `bash hm.sh`.
 
 **`HMSETUP FAIL <step> (line N)`:** the real error is on the Termux screen. Read it with a screenshot
 (`adb exec-out screencap -p > screen.png`), or scroll back in Termux. Common causes:
@@ -244,7 +261,8 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
 ## 9. Check it works, then clean up
 
 1. The app should show the chat screen within a minute, not "Hermes is offline". If it does show offline, it opens a
-   **Setup check** screen by itself: take a screenshot and fix what it marks red.
+   **Setup check** screen by itself: take a screenshot and fix what it marks red. Otherwise open it (tap the dot next to the
+   chat title → Setup check) and check the last three rows: files, Termux:API, Shizuku.
 2. If step 7 was skipped, the app shows **Connect Hermes to a model**: let the user sign in or paste a key there and pick a model.
 3. Ask the user to send "hi" in the app. A streamed answer means the install is complete.
 4. Put the phone back:
@@ -256,6 +274,9 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
 5. Tell the user, briefly:
    - On **Xiaomi/HyperOS** also turn on **Autostart** for Termux and Hermes Mobile (Settings → Apps), or Android may still stop them.
    - The **Termux notification must stay**: Hermes runs inside Termux.
+   - **Shizuku stops when the phone restarts.** Without root: start it once in Shizuku → *Start via Wireless debugging* (pair
+     once); on Android 13+ it then restarts by itself on Wi-Fi. Rooted: Shizuku → *Start*, and it restarts by itself. The app's
+     Setup check shows when it isn't running. No root is needed for anything.
    - Hermes Mobile can be the phone's assistant (long-press power opens voice chat): Settings → Default apps → Digital assistant app.
    - Updating later: in Termux, `bash hm.sh` (phone side) and install the newer APK from the Releases page.
 6. Delete the downloaded `.apk` files from the computer.

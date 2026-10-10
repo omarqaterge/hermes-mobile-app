@@ -113,6 +113,9 @@ chip and notifications work even when the app is closed.
 
 ## Install
 
+**No root needed.** Hermes Mobile runs on an ordinary phone with a locked bootloader. A rooted phone works too; the only
+difference is how Shizuku starts (see [Rooted or not](#rooted-or-not)).
+
 You need an Android phone (arm64, Android 8+) with about 6 GB free, and access to a model, either of:
 
 - **A subscription you already have:** ChatGPT Plus / Pro (or a Codex plan), Claude Pro / Max, SuperGrok / X Premium+, or a Nous
@@ -120,21 +123,38 @@ You need an Android phone (arm64, Android 8+) with about 6 GB free, and access t
 - **An API key:** for example [OpenRouter](https://openrouter.ai/keys) (one key for every model), Anthropic, OpenAI or Gemini
   (has a free tier).
 
+These apps get installed. Hermes needs all of them to run and to use your phone:
+
+| App | What it is for |
+|---|---|
+| [Termux](https://f-droid.org/packages/com.termux/) | Linux on the phone: Hermes runs in Debian inside it |
+| [Termux:API](https://f-droid.org/packages/com.termux.api/) | Lets Hermes use the phone: battery, location, clipboard, notifications, SMS, camera… |
+| [Termux:Boot](https://f-droid.org/packages/com.termux.boot/) | Starts Hermes again after the phone restarts |
+| [Shizuku](https://shizuku.rikka.app/download/) | Gives Hermes the access adb has, without root: screenshots, taps, apps, logs |
+| Hermes Mobile | This app |
+
+Get the three Termux apps from **F-Droid**, all three: the Play Store builds are outdated and can't be mixed with F-Droid ones.
+
 The install takes 15-40 minutes, mostly waiting.
 
-### On the phone, no computer
+### On the phone, no computer (Android 11+)
 
-1. Install **[Termux](https://f-droid.org/packages/com.termux/)** from F-Droid (not the Play Store version, it is outdated).
-2. Open Termux and paste:
+1. Install **Termux**, **Termux:API** and **Termux:Boot** from F-Droid, and open Termux:Boot once. Install **Shizuku** (Play Store
+   or [GitHub](https://github.com/RikkaApps/Shizuku/releases)).
+2. Start Shizuku. Not rooted: open it, tap *Start via Wireless debugging* and follow its steps (you pair it once: Developer options
+   → Wireless debugging → *Pair device with pairing code*, then type the code into Shizuku's notification). Rooted: tap *Start*.
+3. Open Termux and paste:
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh -o hm.sh && bash hm.sh
    ```
 
-   Keep Termux open and the screen on until it prints `HMSETUP DONE`.
-3. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it
+   Tap **Allow** when Android asks about files, and **Allow all the time** when Shizuku asks about Termux. Keep Termux open and the
+   screen on until it prints `HMSETUP DONE`. `HMSETUP TODO` lines just above it say what is still missing: fix it and run
+   `bash hm.sh` again (finished parts are skipped).
+4. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it
    and open it.
-4. The app opens on **Connect Hermes to a model**: sign in with your subscription or paste an API key, then pick the model new
+5. The app opens on **Connect Hermes to a model**: sign in with your subscription or paste an API key, then pick the model new
    chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
 
    ChatGPT, Grok and Nous Portal sign in inside the app. Claude opens Termux for its sign-in, because Hermes only allows that one
@@ -142,8 +162,8 @@ The install takes 15-40 minutes, mostly waiting.
 
 ### From a computer (Mac, Windows, Linux)
 
-Turn on **USB debugging** on the phone (Settings → About phone → tap *Build number* 7 times, then Developer options → USB debugging),
-plug it in and run:
+Also the route for Android 8-10. Turn on **USB debugging** on the phone (Settings → About phone → tap *Build
+number* 7 times, then Developer options → USB debugging), plug it in and run:
 
 ```bash
 # Mac / Linux
@@ -155,8 +175,9 @@ curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/
 irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
 ```
 
-It installs everything on the phone, including the app. At the end it offers to set an API key; press Enter to skip it and connect a
-subscription or key in the app instead.
+It installs all five apps, gives them their permissions and starts Shizuku over USB. When Shizuku asks whether Termux may use it,
+tap **Allow all the time**. At the end it offers to set an API key; press Enter to skip it and connect a subscription or key in the
+app instead.
 
 **Stuck, or rather not do it yourself?** Give your AI coding agent (Claude Code, Codex, Cursor…) this prompt. It runs the same
 script and fixes what goes wrong:
@@ -168,39 +189,24 @@ Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_
 > Tested end to end on a clean Android 15 emulator and piece by piece on a real phone, but not yet on a brand-new real phone.
 > If something fails, please [open an issue](https://github.com/omarqaterge/hermes-mobile-app/issues).
 
+### Rooted or not
+
+Everything is the same except Shizuku, which Android stops whenever the phone restarts:
+
+| | Not rooted (most phones) | Rooted |
+|---|---|---|
+| First start | *Start via Wireless debugging* in Shizuku (Android 11+), or the computer route does it over USB | *Start* in Shizuku |
+| After a restart | Android 13+: Shizuku starts itself on Wi-Fi, once you have started it via Wireless debugging one time (the installer gives it the permission for this). Android 11-12: open Shizuku → *Start via Wireless debugging*. Android 8-10: from a computer, with the command Shizuku shows under *Start by connecting to a computer* | Shizuku starts itself |
+
+Until Shizuku runs, Hermes can still do everything except see and touch the screen and other apps; it tells you when it needs
+Shizuku, and the app's **Setup check** shows it too.
+
 ### After installing
 
-- Set **battery to Unrestricted** for *Hermes Mobile* and *Termux* (Xiaomi/HyperOS: also turn on *Autostart*), or Android may stop them.
+- Set **battery to Unrestricted** for *Hermes Mobile*, *Termux* and *Shizuku* (Xiaomi/HyperOS: also turn on *Autostart*), or
+  Android may stop them.
 - Keep the Termux notification: Hermes runs inside Termux.
-- To start Hermes after a reboot, install **Termux:Boot** from F-Droid and open it once (the computer route does this for you).
 - To update, run the same command again and install the newest APK.
-
-### Optional: let Hermes use the phone itself
-
-The app works without these. They decide how much of the phone Hermes itself can reach. No root needed.
-
-- **Files** (`/sdcard`): run `termux-setup-storage` in Termux and allow it. Then restart Hermes (`~/bin/hermes-services`) so
-  it sees the storage.
-- **Battery, location, clipboard, notifications, SMS…** (`termux-*` commands): install
-  **[Termux:API](https://f-droid.org/packages/com.termux.api/)** from F-Droid, then in Termux:
-
-  ```bash
-  pkg install -y termux-api
-  ROOT=$PREFIX/var/lib/proot-distro/containers/debian/rootfs
-  for f in $PREFIX/bin/termux-*; do ln -sf "$f" "$ROOT/usr/local/bin/"; done
-  ```
-- **Screen, taps, apps, logs** (`screencap`, `input`, `am`, `pm`, `dumpsys`, `logcat`): an app can't do these on a
-  phone that isn't rooted. **[Shizuku](https://shizuku.rikka.app/)** gives Termux the same access adb has:
-  1. Install Shizuku and start it with *Wireless debugging* (Android 11+, pair once), from a computer with
-     `adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh`, or with root if the phone is rooted.
-  2. In Shizuku, *Use Shizuku in terminal apps* → *Export files* to Download. In Termux (after `termux-setup-storage`):
-
-     ```bash
-     mkdir -p ~/bin && cp ~/storage/downloads/rish ~/storage/downloads/rish_shizuku.dex ~/bin/
-     sed -i 's/"PKG"/"com.termux"/' ~/bin/rish && chmod 700 ~/bin/rish && chmod 400 ~/bin/rish_shizuku.dex
-     ~/bin/rish -c id      # allow Termux in Shizuku; it should print uid=2000(shell)
-     ```
-  Hermes finds `~/bin/rish` by itself. Without root, **Shizuku stops on every reboot**: open it and start it again.
 
 ### If something goes wrong
 
@@ -213,8 +219,9 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | The install stops with `HMSETUP FAIL <step>` | Read the error above it, fix it and run `bash hm.sh` again; finished parts are skipped. [AGENT_INSTALL.md](AGENT_INSTALL.md) lists the usual causes |
 | No status chip, canvas or approvals | Run `bash hm.sh` again (it re-enables the plugin) |
 | Everything stops after a while | Battery is restricted, see *After installing* |
-| Hermes says Shizuku isn't running | The phone rebooted: open Shizuku and start it again |
-| Hermes can't find `termux-battery-status` (or another `termux-*` command) | See *Optional: let Hermes use the phone itself* |
+| Hermes says Shizuku isn't running | The phone restarted: see *Rooted or not* |
+| Hermes can't read your files | Setup check → *Hermes can use your files* → Allow, then Restart Hermes |
+| Termux:API won't install | Termux and Termux:API come from different stores. Install both from F-Droid |
 
 <details>
 <summary><b>Everything it does, and how it works</b></summary>
