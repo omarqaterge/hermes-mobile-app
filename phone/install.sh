@@ -42,10 +42,22 @@ cp -r "$here/hermes-plugin/hermes-mobile" "$ROOT/.hermes/plugins/hermes-mobile"
 find "$ROOT/.hermes/plugins/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 cp "$here/phone/cron_ticker.py" "$ROOT/.hermes/scripts/cron_ticker.py"
 
+# Our fixes to Hermes itself (hermes/README.md). One that no longer fits this Hermes is skipped, never half-applied.
+echo "    Applying the Hermes Mobile fixes to Hermes (hermes/patches)"
+rm -rf "$ROOT/.hermes/hermes-mobile-patches"
+cp -r "$here/hermes/patches" "$ROOT/.hermes/hermes-mobile-patches"
+cp "$here/phone/hermes-patches.sh" "$ROOT/.hermes/scripts/hermes-patches.sh"
+proot-distro login debian -- bash -lc 'bash /root/.hermes/scripts/hermes-patches.sh apply /root/.hermes/hermes-mobile-patches' \
+  || echo "    Some fixes did not fit this Hermes version and were skipped; Hermes runs unchanged there."
+
 echo "4/5 Enabling the plugin in Hermes"
 if proot-distro login debian -- bash -lc 'PATH="$HOME/.local/bin:$PATH" hermes plugins enable hermes-mobile'; then :; else
   echo "Could not enable it automatically. Run inside Debian:  hermes plugins enable hermes-mobile"
 fi
+# A running Hermes still has the old plugin and Hermes files loaded: restart its dashboard (exact PIDs; the
+# hermes-services loop starts it again). Nothing runs yet on a first install.
+pids=$(pgrep -f "hermes dashboard --host 127.0.0.1 --port 9119" || true)
+if [ -n "$pids" ]; then echo "    Restarting Hermes so the changes load"; kill -9 $pids 2>/dev/null || true; fi
 
 # Hermes' google-workspace skill (Gmail/Calendar/Drive) is often run with Debian's system python3, which lacks these.
 echo "    Adding the Google client libraries for Hermes' Google skill (optional)"

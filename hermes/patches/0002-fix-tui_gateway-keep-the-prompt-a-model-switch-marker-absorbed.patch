@@ -1,0 +1,155 @@
+From 3f84cf464e6dffec159b44156df95cb2fe0573d1 Mon Sep 17 00:00:00 2001
+From: omarqaterge <omarqaterge@gmail.com>
+Date: Sat, 10 Oct 2026 06:17:44 +0200
+Subject: [PATCH] fix(tui_gateway): keep the prompt a model-switch marker
+ absorbed when the next switch strips it
+
+The model-switch marker is a role=user row (#48338), so the next real prompt
+forms a user;user pair that alternation repair folds into it in place
+("<marker>\n\n<prompt>"), and that merged dict becomes the live session
+history. The next switch's dedup drops every entry that starts with the
+marker prefix, so it deleted the absorbed prompt too: the transcript still
+shows it, but the model never sees it again. Switching before the first
+message loses the opening prompt (the payload then leads with an assistant
+turn, #131382); switching mid-chat loses the message sent right after the
+previous switch.
+
+The dedup now keeps a merged entry as a copy holding only the absorbed text.
+The mid-turn switch reconciliation in _commit_turn_history compares both
+sides through the same strip, so a switch during the next turn still
+commits it.
+
+Refs #131382
+---
+ .../test_model_switch_marker_role.py          | 44 +++++++++++++++++++
+ tui_gateway/prompt_turn.py                    |  5 ++-
+ tui_gateway/server.py                         |  2 +-
+ tui_gateway/session_history.py                | 24 ++++++++++
+ 4 files changed, 72 insertions(+), 3 deletions(-)
+
+diff --git a/tests/tui_gateway/test_model_switch_marker_role.py b/tests/tui_gateway/test_model_switch_marker_role.py
+index 23dcaeaf3a..df0656282a 100644
+--- a/tests/tui_gateway/test_model_switch_marker_role.py
++++ b/tests/tui_gateway/test_model_switch_marker_role.py
+@@ -9,6 +9,7 @@ sanitize/merge pass already coalesces consecutive user messages.
+ 
+ from __future__ import annotations
+ 
++import threading
+ 
+ from tui_gateway.server import _append_model_switch_marker
+ 
+@@ -93,6 +94,49 @@ class TestModelSwitchMarkerDedup:
+         assert session["history_version"] == 2  # one increment per switch
+ 
+ 
++class TestMarkerMergedWithPrompt:
++    """#131382: the marker is role=user, so the turn loop's alternation repair folds the next real
++    prompt into it (``marker + "\\n\\n" + prompt``). The next switch drops the stale marker, and must
++    keep the prompt it absorbed: the transcript still shows it, so the model must still see it."""
++
++    @staticmethod
++    def _switched_then_prompted() -> dict:
++        from agent.agent_runtime_helpers import repair_message_sequence
++
++        session: dict = {
++            "session_key": "s",
++            "history": [{"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"}],
++        }
++        _append_model_switch_marker(session, model="model-a", provider="p")
++        # What the turn loop does: append the prompt, repair the user;user pair in place, and that
++        # list (plus the reply) becomes the session history.
++        turn = session["history"] + [{"role": "user", "content": "the prompt"}]
++        assert repair_message_sequence(None, turn) == 1
++        session["history"] = turn + [{"role": "assistant", "content": "a2"}]
++        return session
++
++    def test_next_switch_keeps_the_absorbed_prompt(self) -> None:
++        session = self._switched_then_prompted()
++        _append_model_switch_marker(session, model="model-b", provider="p")
++        contents = [h["content"] for h in session["history"]]
++        assert contents[:4] == ["q1", "a1", "the prompt", "a2"]
++        assert len(contents) == 5 and "model-b" in contents[4]
++        assert not any("model-a" in c for c in contents), "the stale marker text is still dropped"
++
++    def test_switch_during_the_next_turn_keeps_both_turns(self) -> None:
++        from tui_gateway.server import _commit_turn_history
++
++        session = self._switched_then_prompted()
++        session.update(history_lock=threading.Lock(), history_version=5)
++        turn_start = list(session["history"])
++        result = {"messages": turn_start + [{"role": "user", "content": "q3"}, {"role": "assistant", "content": "a3"}]}
++        _append_model_switch_marker(session, model="model-b", provider="p")  # lands while the turn runs
++        assert _commit_turn_history(session, result, turn_start, 5) is None
++        contents = [h["content"] for h in session["history"]]
++        assert contents[:4] == ["q1", "a1", "the prompt", "a2"]
++        assert contents[-2:] == ["q3", "a3"]
++
++
+ def _make_marker_entry(model: str) -> dict:
+     from tui_gateway.server import _MODEL_SWITCH_MARKER_PREFIX
+ 
+diff --git a/tui_gateway/prompt_turn.py b/tui_gateway/prompt_turn.py
+index 0cc90dee8a..a79ba4da29 100644
+--- a/tui_gateway/prompt_turn.py
++++ b/tui_gateway/prompt_turn.py
+@@ -287,8 +287,9 @@ def _commit_turn_history(
+         # _append_model_switch_marker strips prior markers in-place then appends a new one, so the delta is
+         # NOT a simple tail-slice — we must compare content, not indices.
+         current_history = list(session["history"])
+-        history_no_markers = [e for e in history if not _is_pivot_marker(e)]
+-        current_no_markers = [e for e in current_history if not _is_pivot_marker(e)]
++        # Both sides through the same marker strip: a prompt folded into the stripped marker stays, as a copy.
++        history_no_markers = [e for e in _without_model_switch_markers(history) if not _is_pivot_marker(e)]
++        current_no_markers = [e for e in _without_model_switch_markers(current_history) if not _is_pivot_marker(e)]
+         if current_no_markers == history_no_markers and any(
+                 _is_pivot_marker(e) for e in current_history):
+             # Auto-compression can leave the result shorter than the turn-start history.
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+index 849d42bfda..90e09520df 100644
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -1840,7 +1840,7 @@ def _append_model_switch_marker(session: dict | None, *, model: str, provider: s
+     entry: dict[str, Any] = {"role": "user", "content": marker, "display_kind": "model_switch"}
+     with session.get("history_lock") or contextlib.nullcontext():
+         history = session.setdefault("history", [])
+-        history[:] = [h for h in history if not _is_model_switch_marker(h)]
++        history[:] = _without_model_switch_markers(history)  # keeps a prompt repair folded into one
+         history.append(entry)
+         session["history_version"] = int(session.get("history_version", 0)) + 1
+     try:
+diff --git a/tui_gateway/session_history.py b/tui_gateway/session_history.py
+index 38d8fccea6..ac30a0b12b 100644
+--- a/tui_gateway/session_history.py
++++ b/tui_gateway/session_history.py
+@@ -381,6 +381,30 @@ def _coerce_seed_history(value: Any) -> list[dict]:
+     return history
+ 
+ 
++def _without_model_switch_marker(entry: Any) -> Any:
++    """``entry`` minus a model-switch marker: None for a bare marker, else the entry itself. The marker is
++    role=user (#48338), so alternation repair folds the next real prompt into it (``_merge_consecutive_users``
++    joins with a blank line); such a row returns as a copy holding only the absorbed text, since dropping it
++    whole would erase a prompt the transcript still shows (#131382). Copies: turn-start lists share these dicts."""
++    if not _is_model_switch_marker(entry):
++        return entry
++    paragraphs = entry["content"].split("\n\n")
++    while paragraphs and paragraphs[0].startswith(_MODEL_SWITCH_MARKER_PREFIX):
++        paragraphs.pop(0)
++    if not paragraphs:
++        return None
++    from agent.message_metadata import MERGED_TURN_PREFIX
++    kept = {k: v for k, v in entry.items() if k != MERGED_TURN_PREFIX}
++    kept["content"] = "\n\n".join(paragraphs)
++    if kept.get("display_kind") == "model_switch":
++        del kept["display_kind"]
++    return kept
++
++
++def _without_model_switch_markers(history: list) -> list:
++    return [kept for entry in history if (kept := _without_model_switch_marker(entry)) is not None]
++
++
+ def _inflight_text(value: Any) -> str:
+     return _content_display_text(value).strip()
+ 
