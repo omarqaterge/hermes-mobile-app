@@ -97,6 +97,18 @@ if ! adb shell pm list packages com.termux.boot | tr -d '\r' | grep -qx package:
   fdroid_install com.termux.boot || true
 fi
 adb shell am start -n com.termux.boot/.BootActivity >/dev/null 2>&1 || true  # it must be opened once to work
+# Hermes's access to the phone: Termux:API (battery, location, clipboard, notifications…) and Shizuku (screen, taps,
+# apps, logs, without root). Termux:API must come from the same place as Termux (F-Droid), or Android refuses it.
+if ! adb shell pm list packages com.termux.api | tr -d '\r' | grep -qx package:com.termux.api; then
+  fdroid_install com.termux.api
+fi
+SHIZUKU=moe.shizuku.privileged.api
+if ! adb shell pm list packages $SHIZUKU | tr -d '\r' | grep -qx package:$SHIZUKU; then
+  say "Downloading Shizuku from GitHub"
+  curl -fL --progress-bar -o "$WORK/shizuku.apk" "https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk"
+  adb install -r "$WORK/shizuku.apk" >/dev/null || die "Installing Shizuku failed (Xiaomi: turn on 'Install via USB' in Developer options)."
+  rm -f "$WORK/shizuku.apk"
+fi
 
 # ---------------------------------------------------------------- 4. Android settings
 b "4/9 Android settings (keep Termux alive, screen on during the install)"
@@ -104,6 +116,17 @@ adb shell svc power stayon true
 adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard >/dev/null 2>&1 || true  # a PIN/pattern still needs the user
 adb shell cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow || true
 adb shell dumpsys deviceidle whitelist +com.termux >/dev/null || true
+# Files for Hermes (/sdcard), so the installer doesn't stop at Android's prompt.
+adb shell pm grant com.termux android.permission.READ_EXTERNAL_STORAGE 2>/dev/null || true
+adb shell pm grant com.termux android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null || true
+# Start Shizuku the way its own "Start by adb" does. It stops on every reboot without root; see the README.
+if ! adb shell ps -A -o NAME | tr -d '\r' | grep -qx shizuku_server; then
+  adb shell 'p=$(pm path moe.shizuku.privileged.api | head -1 | cut -d: -f2); "$(dirname "$p")/lib/arm64/libshizuku.so"' >/dev/null 2>&1 || true
+  sleep 2
+fi
+adb shell ps -A -o NAME | tr -d '\r' | grep -qx shizuku_server && say "Shizuku is running" || say "Shizuku didn't start; the installer will say what to do"
+# Lets Shizuku start itself after a reboot (Android 13+, without root, after one start via Wireless debugging).
+adb shell pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS 2>/dev/null || true
 if [ "$sdk" -ge 31 ]; then  # Android 12+ kills apps with many child processes ("signal 9" in Termux)
   adb shell device_config set_sync_disabled_for_tests persistent >/dev/null 2>&1 || true
   adb shell device_config put activity_manager max_phantom_processes 2147483647 >/dev/null 2>&1 || true
@@ -217,6 +240,9 @@ adb forward --remove "tcp:$port" >/dev/null 2>&1 || true
 [ -n "$ok" ] && say "Hermes is running on the phone." || say "Hermes didn't answer yet; the app's Setup check shows what's missing."
 
 b "Done. Say hi in Hermes Mobile on the phone."
+grep 'HMSETUP TODO' "$LOG" | sed 's/.*HMSETUP TODO /  Still to do: /' || true
 say "Xiaomi/HyperOS: also turn on Autostart for Termux and Hermes Mobile (Settings → Apps)."
 say "Keep the Termux notification: Hermes runs inside Termux."
+say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. To start it again by itself: Shizuku →"
+say "  Settings → Start on boot (Android 13+, on a Wi-Fi you trust; rooted phones: always). Otherwise open Shizuku and tap Start."
 say "Update later: run this script again."
