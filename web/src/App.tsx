@@ -65,6 +65,7 @@ function Header() {
   const title = useStore(s => (s.opening && s.preview?.storedId === s.opening ? s.preview.title : s.active?.title))
   const profile = useStore(s => s.profile)
   const hasActive = useStore(s => Boolean(s.active))
+  const hasChat = useStore(s => Boolean(s.active || s.opening)) // a chat on screen, or one still loading
   const dot = useStore(s => dotState(s.conn, s.health))
   const chatReading = useAutoRead(useStore(s => s.active?.storedId))
   const draftReading = useDraftAutoRead()
@@ -100,8 +101,9 @@ function Header() {
           className={`icon-btn canvas-btn${canvasWriting ? ' writing' : ''}`}
           aria-label={canvasWriting ? 'Canvas (Hermes is writing)' : 'Canvas'}
           onClick={() => {
-            // The canvas belongs to a chat: on the empty screen, start the chat first.
-            if (hasActive) openCanvas()
+            // The canvas belongs to a chat: on the empty screen, start the chat first. A chat still opening (cold
+            // start) has its canvas already: creating a chat here would abandon that resume and land on an empty chat.
+            if (hasChat) openCanvas()
             else void newSession().then(() => openCanvas()).catch(() => {})
           }}
         >

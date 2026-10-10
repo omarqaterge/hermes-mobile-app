@@ -46,10 +46,13 @@ interface CanvasState {
    * page). Hermes sends no text until the call is complete, so the panel shows a "writing" state; `preview` is the
    * document text once the call starts (before the save lands). */
   writing: { since: number; title?: string; preview?: string; docId?: string; autoOpened?: boolean } | null
+  /** This chat's document list hasn't arrived yet (chat still opening, or Hermes not reachable): the panel shows a
+   * loading state, not "empty". */
+  loading: boolean
 }
 
 const P = '/api/plugins/hermes-mobile/canvas'
-let state: CanvasState = { session: '', open: false, size: 'half', docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null }
+let state: CanvasState = { session: '', open: false, size: 'half', docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null, loading: false }
 const subs = new Set<() => void>()
 const set = (p: Partial<CanvasState>) => {
   state = { ...state, ...p }
@@ -66,10 +69,21 @@ const call = <T,>(method: string, path: string, body?: unknown) => api<T>(method
 let dirtyText: { id: string; text: string } | null = null // unsaved edit in the editor
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
+/** The chat the canvas belongs to: the one on screen, or the one still opening (its documents are stored under its
+ * stored id, so they can load before Hermes has resumed it, e.g. right after a cold start). */
+function chatId(): string {
+  const s = getState()
+  return s.opening || s.active?.storedId || ''
+}
+
 /** Follow the open chat: each chat has its own canvas. */
 function syncSession(): void {
-  const id = getState().active?.storedId || ''
-  if (id === state.session) return
+  const id = chatId()
+  if (id === state.session) {
+    // Still waiting for the document list (offline at the time): try again once the panel is open and Hermes is back.
+    if (state.loading && state.open && !listing && getState().conn === 'open') void refreshDocs()
+    return
+  }
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = null
   // An edit typed just before switching chats is still waiting for its autosave: save it to the chat it
@@ -82,19 +96,23 @@ function syncSession(): void {
     )
   }
   dirtyText = null
-  set({ session: id, open: false, docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null })
+  // Opened on a chat that was still loading, the panel stays open once it is on screen: same id, so no reset.
+  set({ session: id, open: false, docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null, loading: Boolean(id) })
   if (id) void refreshDocs()
 }
+
+let listing = 0 // document-list requests in flight
 
 export async function refreshDocs(): Promise<void> {
   const session = state.session
   if (!session) return
+  listing++
   try {
     const r = await call<{ docs: DocMeta[] }>('GET', `${P}?${q({ session })}`)
     if (session !== state.session) return
     const prev = state.docs
     const active = state.active && r.docs.some(d => d.id === state.active) ? state.active : r.docs[0]?.id ?? null
-    set({ docs: r.docs, active })
+    set({ docs: r.docs, active, loading: false })
     // A document changed under us: reload it, unless you have unsaved edits in it (then flag it).
     for (const d of r.docs) {
       const have = state.loaded[d.id]
@@ -104,7 +122,9 @@ export async function refreshDocs(): Promise<void> {
       else if (have || state.active === d.id) void loadDoc(d.id, true)
     }
   } catch {
-    /* offline: keep what we have */
+    /* offline: keep what we have (and keep `loading`: the 6 s poll or the reconnect tries again) */
+  } finally {
+    listing--
   }
 }
 
