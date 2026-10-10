@@ -452,14 +452,21 @@ function addInflight(items: ChatItem[], live: SessionResumeResult['inflight']): 
   return live.streaming ? id : null
 }
 
-export async function newSession(opts: { cwd?: string } = {}): Promise<ActiveSession> {
+/** Folder a chat was started in on purpose (project chats), by runtime id: an empty chat replaced for a model pick keeps it. */
+const chosenCwd = new Map<string, string>()
+
+export async function newSession(opts: { cwd?: string; model?: string; provider?: string; effort?: string } = {}): Promise<ActiveSession> {
   openSeq++ // a chat still loading must not replace this one
   const prev = getState().active
   const r = await rpc<SessionCreateResult>('session.create', {
     source: 'mobile',
-    ...(opts.cwd ? { cwd: opts.cwd, cwd_explicit: true } : {})
+    ...(opts.cwd ? { cwd: opts.cwd, cwd_explicit: true } : {}),
+    // A model picked before the first message is the chat's own model from the start (as Desktop's composer does).
+    ...(opts.model ? { model: opts.model, provider: opts.provider || undefined } : {}),
+    ...(opts.model && opts.effort ? { reasoning_effort: opts.effort } : {})
   })
   const active = baseActive(r, r.stored_session_id)
+  if (opts.cwd) chosenCwd.set(active.runtimeId, opts.cwd)
   trackBuild(active.runtimeId)
   keepPreview(prev)
   setState({ active, opening: null, preview: null, drawer: false })
@@ -606,8 +613,7 @@ export async function sendPrompt(text: string): Promise<void> {
   if (!trimmed) return
   if (getState().opening) throw new Error('Still opening your chat — wait a moment')
   rememberPrompt(trimmed)
-  let a = getState().active
-  if (!a) a = await newSession()
+  const a = await targetChat()
 
   const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(trimmed)
   if (btw) {
@@ -750,8 +756,7 @@ function readDataUrl(file: File): Promise<string> {
  * file (PDF, text, spreadsheet…) is copied into the chat's workspace and referenced as @file: in the message. */
 export async function attachFile(file: File): Promise<void> {
   if (file.size > MAX_ATTACH_MB * 1024 * 1024) throw new Error(`${file.name}: too large (max ${MAX_ATTACH_MB} MB)`)
-  let a = getState().active
-  if (!a) a = await newSession()
+  const a = await targetChat()
   const dataUrl = await readDataUrl(file)
   let att: Attachment
   if (file.type.startsWith('image/')) {
@@ -818,8 +823,50 @@ function markBuilt(runtimeId: string): void {
   b.resolve()
 }
 
+/** True when a model pick should make a new chat instead of switching this one: nothing sent yet. A switch on an
+ * empty chat leaves Hermes's "[System: The active model … changed]" marker as the first history row, Hermes then
+ * folds the first message into it, and the next model switch deletes that marker together with the message (seen
+ * 2026-10-10: the chat lost its first question, and editing it later appended the edit at the end). */
+/** A chat being created for a model pick (from the new-chat screen, or replacing an empty chat). */
+let pendingNew: Promise<ActiveSession> | null = null
+
+/** The chat a send/attach should go to: waits for a chat that a model pick is creating right now. */
+async function targetChat(): Promise<ActiveSession> {
+  if (pendingNew) await pendingNew.catch(() => {})
+  return getState().active ?? (await newSession())
+}
+
+function replaceableForModel(a: ActiveSession | null): boolean {
+  return !!a && !a.running && a.attachments.length === 0 && !a.items.some(i => i.kind === 'user')
+}
+
 export async function setModel(provider: string, model: string, effort?: string): Promise<void> {
-  const a = getState().active ?? (await newSession())
+  if (pendingNew) await pendingNew.catch(() => {}) // a second quick pick goes to the chat the first one made
+  const cur = getState().active
+  if (!cur || replaceableForModel(cur)) {
+    if (cur) updateActive(x => (x.runtimeId === cur.runtimeId ? { info: { ...x.info, model, provider } } : {}))
+    const run = (async () => {
+      const a = await newSession({ cwd: cur ? chosenCwd.get(cur.runtimeId) : undefined, model, provider, effort })
+      if (cur) {
+        unwarm(cur.storedId)
+        chosenCwd.delete(cur.runtimeId)
+        void rpc('session.close', { session_id: cur.runtimeId }).catch(() => {})
+      }
+      return a
+    })()
+    pendingNew = run
+    try {
+      await run
+    } catch (e) {
+      if (cur) updateActive(x => (x.runtimeId === cur.runtimeId ? { info: { ...x.info, model: cur.info.model, provider: cur.info.provider } } : {}))
+      throw e
+    } finally {
+      if (pendingNew === run) pendingNew = null
+    }
+    toast(`Model: ${model}`)
+    return
+  }
+  const a = cur
   // Show the pick at once; Hermes needs a few seconds to rebuild the agent. Undone below if it fails.
   const before = { model: a.info.model, provider: a.info.provider }
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, model, provider } } : {}))
@@ -1189,6 +1236,18 @@ function setUserRowId(itemId: string, rowId: number | null | undefined): void {
   updateActive(a => ({ items: a.items.map(i => (i.id === itemId && i.kind === 'user' ? { ...i, rowId } : i)) }))
 }
 
+/** After an edit/retry Hermes may rewrite the kept turns as new rows and lists their user row ids. Kept user items
+ * take them (matched from the end); one without a live id loses its cached id, so a later edit looks it up again. */
+function rebindKeptRowIds(keptIds: string[], survivors: (number | null)[] | null | undefined): void {
+  if (!Array.isArray(survivors)) return
+  const ids = new Map<string, number | undefined>()
+  keptIds.forEach((id, i) => {
+    const row = survivors[survivors.length - keptIds.length + i]
+    ids.set(id, typeof row === 'number' ? row : undefined)
+  })
+  updateActive(a => ({ items: a.items.map(i => (i.kind === 'user' && ids.has(i.id) ? { ...i, rowId: ids.get(i.id) } : i)) }))
+}
+
 /** Durable row id of the user item (the truncate target). Live items may lack one: read it from the
  * stored history, matching user turns by position (same filter as hydrate). */
 async function userRowId(a: ActiveSession, itemId: string): Promise<number> {
@@ -1213,6 +1272,8 @@ export async function resendFrom(itemId: string, text: string): Promise<void> {
   const cut = a.items.findIndex(i => i.id === itemId)
   if (cut < 0) return
   const rowId = await userRowId(a, itemId)
+  const kept = a.items.slice(0, cut).filter(i => i.kind === 'user').map(i => i.id)
+  const isLast = !a.items.slice(cut + 1).some(i => i.kind === 'user')
   const uid = newId('u')
   updateActive(x => ({
     items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now() }],
@@ -1233,11 +1294,14 @@ export async function resendFrom(itemId: string, text: string): Promise<void> {
         confirm_empty_truncate: !a.items.slice(0, cut).some(i => i.kind === 'user')
       })
     } catch (err) {
-      // A turn that failed (model error, interrupted) is stored but never entered Hermes's live history, so
-      // Hermes can't truncate to it. Nothing live needs dropping then: send the edited text as a normal prompt.
       if (!/no longer in session history/i.test(errText(err))) throw err
+      // A failed LAST turn (model error, interrupted) is stored but never entered Hermes's live history, so Hermes
+      // can't truncate to it. Nothing live needs dropping then: send the edited text as a normal prompt. Anywhere
+      // else that would put the edit after the later turns, so stop and show what Hermes really holds.
+      if (!isLast) throw new Error("That message isn't in this chat's history any more. Start a new chat to begin again")
       r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: trimmed, surface: 'mobile' })
     }
+    rebindKeptRowIds(kept, r?.survivor_user_row_ids)
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
     updateActive(() => ({ running: false }))
