@@ -42,7 +42,7 @@ step packages "Termux packages (a few minutes)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef upgrade
-apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install proot-distro git curl
+apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install proot-distro git curl termux-api unzip
 
 step debian "Debian inside Termux (a few minutes)"
 [ -d "$ROOT" ] || proot-distro install debian
@@ -78,6 +78,48 @@ else
 fi
 deb "hermes --version | grep Hermes"
 
+# Before the plugin step: that one restarts a running dashboard, and only a Hermes started after the storage permission
+# was granted sees /sdcard.
+step phone "Phone access for Hermes: files, Termux:API, Shizuku (no root needed)"
+TODO=()
+storage_ok() { ls /storage/emulated/0/ >/dev/null 2>&1; }
+if ! storage_ok; then
+  say "Tap Allow on Android's prompt: Hermes reads and saves your files through Termux"
+  echo y | termux-setup-storage >/dev/null 2>&1 || true   # "y": it asks before rebuilding an existing ~/storage
+  for _ in $(seq 1 60); do storage_ok && break; sleep 2; done
+fi
+storage_ok || TODO+=("files: allow Termux to access files (Settings → Apps → Termux → Permissions), then run bash hm.sh again")
+# termux-* commands (battery, location, clipboard, notifications, SMS…) inside Debian. Debian's PATH drops Termux's bin
+# dirs (above), so link just these into /usr/local/bin. Re-linked on every run: new termux-api versions add commands.
+for f in "$PREFIX"/bin/termux-*; do ln -sf "$f" "$ROOT/../usr/local/bin/"; done
+timeout 20 termux-battery-status 2>/dev/null | grep -q percentage \
+  || TODO+=("Termux:API: install the Termux:API app from F-Droid (https://f-droid.org/packages/com.termux.api/)")
+# Shizuku's rish: an adb-level shell (screen, taps, apps, logs) for Hermes without root. Both files come from Shizuku's
+# own release APK; "PKG" is the placeholder Shizuku fills in when you export them from its app.
+SHIZUKU_APK="https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk"
+if [ ! -s "$HOME/bin/rish_shizuku.dex" ] || ! grep -q '"com.termux"' "$HOME/bin/rish" 2>/dev/null; then
+  tmp=$(mktemp -d)
+  curl -fsSL -o "$tmp/shizuku.apk" "$SHIZUKU_APK"
+  unzip -qo "$tmp/shizuku.apk" assets/rish assets/rish_shizuku.dex -d "$tmp"
+  mkdir -p "$HOME/bin"
+  sed 's/"PKG"/"com.termux"/' "$tmp/assets/rish" > "$HOME/bin/rish" && chmod 700 "$HOME/bin/rish"
+  rm -f "$HOME/bin/rish_shizuku.dex" && cp "$tmp/assets/rish_shizuku.dex" "$HOME/bin/" && chmod 400 "$HOME/bin/rish_shizuku.dex"  # Android 14+ refuses a writable dex
+  rm -rf "$tmp"
+fi
+# The first call makes Shizuku ask whether Termux may use it. A Shizuku app frozen in the background can miss the first
+# request ("Request timeout"), so try a few times.
+shizuku_ok=""
+for _ in 1 2 3; do
+  timeout 60 "$HOME/bin/rish" -c id 2>/dev/null | grep -q 'uid=2000' && { shizuku_ok=1; break; }
+  sleep 3
+done
+if [ -n "$shizuku_ok" ]; then
+  # Lets Shizuku start itself after a reboot (Android 13+, without root, once it was started via Wireless debugging).
+  "$HOME/bin/rish" -c 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' >/dev/null 2>&1 || true
+else
+  TODO+=("Shizuku: install it (https://shizuku.rikka.app/download/), start it (no root: Wireless debugging, pair once, Start; rooted: Start), allow Termux when it asks, then run bash hm.sh again")
+fi
+
 step plugin "Hermes Mobile plugin and supervisor"
 curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh -o "$HOME/hm-install.sh"
 HM_NO_APK=1 bash "$HOME/hm-install.sh"
@@ -95,4 +137,6 @@ done
 curl -fs -o /dev/null http://127.0.0.1:9119/ || { say "FAIL start (dashboard not answering on 127.0.0.1:9119, see ~/logs/dashboard.log)"; termux-wake-unlock 2>/dev/null || true; exit 1; }
 
 termux-wake-unlock 2>/dev/null || true
+# Hermes works without these, but can't reach that part of the phone until they're done. The app's Setup check lists them too.
+for t in "${TODO[@]}"; do say "TODO $t"; done
 say "DONE"
