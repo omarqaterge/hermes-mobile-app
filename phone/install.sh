@@ -2,8 +2,9 @@
 # One-step phone setup. Run it in TERMUX (not inside Debian):
 #   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh | bash
 # or, from a clone:  bash ~/hermes-mobile/phone/install.sh
-# It lets the app start Hermes, installs the Hermes Mobile plugin into Debian and the supervisor script into ~/bin,
-# then downloads the app and opens Android's installer. Safe to run again (it just refreshes everything).
+# It lets the app start Hermes, installs the Hermes Mobile plugin into Debian and the supervisor script into ~/bin, gives
+# Hermes access to the phone (phone/phone-access.sh: files, Termux:API, Shizuku; no root needed), then downloads the app
+# and opens Android's installer. Safe to run again (it just refreshes everything).
 set -e
 REPO="https://github.com/omarqaterge/hermes-mobile-app"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
@@ -50,6 +51,15 @@ cp "$here/phone/hermes-patches.sh" "$ROOT/.hermes/scripts/hermes-patches.sh"
 proot-distro login debian -- bash -lc 'bash /root/.hermes/scripts/hermes-patches.sh apply /root/.hermes/hermes-mobile-patches' \
   || echo "    Some fixes did not fit this Hermes version and were skipped; Hermes runs unchanged there."
 
+# Before the restart below: only a Hermes started after Termux got the files permission sees /sdcard.
+echo "    Giving Hermes access to the phone: files, Termux:API, Shizuku (no root needed)"
+bash "$here/phone/phone-access.sh"
+show_todo() {
+  [ -s "$HOME/.hermes-mobile/todo" ] || return 0
+  echo; echo "Hermes can't reach all of the phone yet. Still to do:"
+  sed 's/^/  - /' "$HOME/.hermes-mobile/todo"
+}
+
 echo "4/5 Enabling the plugin in Hermes"
 if proot-distro login debian -- bash -lc 'PATH="$HOME/.local/bin:$PATH" hermes plugins enable hermes-mobile'; then :; else
   echo "Could not enable it automatically. Run inside Debian:  hermes plugins enable hermes-mobile"
@@ -64,7 +74,8 @@ echo "    Adding the Google client libraries for Hermes' Google skill (optional)
 proot-distro login debian -- bash -lc 'apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2' >/dev/null 2>&1 \
   || echo "    Skipped (not needed unless you use Hermes with Google Calendar/Gmail)."
 
-if [ -n "${HM_NO_APK:-}" ]; then echo "Done (app download skipped: HM_NO_APK is set)."; exit 0; fi
+if [ -n "${HM_NO_APK:-}" ]; then echo "Done (app download skipped: HM_NO_APK is set)."; exit 0; fi   # bootstrap.sh lists the to-dos itself
+show_todo
 echo "5/5 Downloading the app"
 apk="$HOME/hermes-mobile.apk"
 if curl -fsL -o "$apk" "$REPO/releases/latest/download/hermes-mobile.apk"; then
