@@ -1191,6 +1191,19 @@ async function main() {
   check(await vp.evaluate(() => document.activeElement === document.body || document.activeElement.tagName !== 'TEXTAREA'), 'stopping dictation does not focus the box (no keyboard)')
   await vp.close()
 
+  // ── start-up: the slow profiles.list waits until the chat is open (it competes with session.resume in Hermes) ──
+  const spf = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  await spf.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
+  const nBoot = calls().length
+  await spf.goto('http://127.0.0.1:5180/')
+  await sleep(1200) // connected, the slow resume (2.5 s) is in flight
+  const early = calls().slice(nBoot).map(c => c.rpc)
+  check(early.includes('session.resume') && early.includes('session.list') && !early.includes('profiles.list'), `profiles.list not sent while the chat opens (${early.filter(Boolean).join(',')})`)
+  await spf.locator('.msg', { hasText: 'old answer' }).waitFor({ timeout: 6000 })
+  await sleep(300)
+  check(calls().slice(nBoot).some(c => c.rpc === 'profiles.list'), 'profiles.list sent once the chat is open')
+  await spf.close()
+
   // ── start-up resume must not pull you out of a new chat you started while it was loading ──
   const slp = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await slp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))

@@ -164,9 +164,18 @@ export function queueAndReconnect(chat: string, text: string): void {
 }
 
 async function afterConnect(): Promise<void> {
-  void loadProfiles()
   void loadSessions()
   void loadDefaultModel()
+  // profiles.list walks every profile's skill tree (~2.5 s on a phone) and slowed the chat's own resume and
+  // session.list when sent alongside them; only the drawer's profile switcher needs it, so it goes last.
+  let profilesAsked = false
+  const askProfiles = () => {
+    if (profilesAsked) return
+    profilesAsked = true
+    clearTimeout(profilesTimer)
+    void loadProfiles()
+  }
+  const profilesTimer = setTimeout(askProfiles, 3000)
   setTimeout(() => void import('./hermes-update').then(m => m.checkHermes()), 5000) // is this Hermes the build the app was made for?
   const a = getState().active
   const last = a?.storedId || rememberedSession()
@@ -188,6 +197,7 @@ async function afterConnect(): Promise<void> {
       }
     }
   } else setState({ opening: null })
+  askProfiles()
   void flushOutbox()
 }
 
