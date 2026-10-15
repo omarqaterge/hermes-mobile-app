@@ -158,12 +158,20 @@ def _publish_activity() -> None:
         pass
 
 
-def _set_status(session_id: str, text: str, short: str = "Working", review: bool = False, tool: bool = False) -> None:
+def _set_status(session_id: str, text: str, short: str = "Working", review: bool = False, tool: bool = False,
+                step: bool = False) -> None:
     if not session_id or session_id in _subagents:
         return
+    now = time.time()
     with _lock:
-        _active[session_id] = {"text": text, "short": short, "ts": time.time(), "profile": _profile(), "review": review,
-                               "tool": tool}
+        prev = _active.get(session_id)
+        # Per-turn progress (start time, steps taken, task list) survives each status change of the same turn;
+        # a turn starts when the session isn't active (session_end / stale expiry dropped it) or a review takes over.
+        turn = prev["turn"] if prev and bool(prev.get("review")) == review else {"since": now, "steps": 0, "todo": None}
+        if step:
+            turn["steps"] += 1
+        _active[session_id] = {"text": text, "short": short, "ts": now, "profile": _profile(), "review": review,
+                               "tool": tool, "turn": turn}
     _status_dirty.set()
     _publish_activity()
 
@@ -178,6 +186,46 @@ def _clear_status(session_id: str) -> None:
 
 def _stale_after(v: dict) -> float:
     return REVIEW_STALE if v.get("review") else TOOL_STALE_AFTER if v.get("tool") else STALE_AFTER
+
+
+def _todo_summary(result) -> dict | None:
+    """The todo tool's list after the call, for the chip's progress bar: tasks done / total, the one in progress
+    and one letter per task (d done, a active, p pending, x cancelled). Subtasks are left out when there are
+    top-level tasks. None when the result isn't a task list."""
+    try:
+        data = json.loads(result) if isinstance(result, str) else result
+        items = data.get("todos") if isinstance(data, dict) else None
+    except Exception:
+        return None
+    if not isinstance(items, list):
+        return None
+    items = [t for t in items if isinstance(t, dict)]
+    top = [t for t in items if not t.get("parent")]
+    items = top or items
+    if not items:
+        return {"done": 0, "total": 0, "current": "", "states": ""}
+    code = {"completed": "d", "in_progress": "a", "cancelled": "x"}
+    states = "".join(code.get(str(t.get("status", "")).lower(), "p") for t in items)
+    cur = next((t for t in items if t.get("status") == "in_progress"), None) or \
+        next((t for t in items if t.get("status") == "pending"), None)
+    return {"done": states.count("d"), "total": len(states) - states.count("x"),
+            "current": _short((cur or {}).get("content", ""), 80), "states": states[:40]}
+
+
+_titles: dict = {}  # session_id -> (title, looked up at)
+
+
+def _title_for(session_id: str) -> str:
+    """The chat title for the status chip, cached; an untitled (new) chat is looked up again every 20 s,
+    because Hermes names it after its first reply."""
+    hit = _titles.get(session_id)
+    if hit and (hit[0] or time.time() - hit[1] < 20):
+        return hit[0]
+    title = _chat_title(session_id)
+    _titles[session_id] = (title, time.time())
+    if len(_titles) > 100:
+        _titles.pop(next(iter(_titles)))
+    return title
 
 
 def _status_loop() -> None:
@@ -208,12 +256,16 @@ def _status_loop() -> None:
         if wait > 0:
             time.sleep(wait)
         with _lock:
-            items = sorted(_active.items(), key=lambda kv: kv[1]["ts"], reverse=True)
+            # Oldest turn first, so the chip doesn't hop between chats that run at the same time.
+            items = sorted(_active.items(), key=lambda kv: (kv[1].get("turn") or {}).get("since", kv[1]["ts"]))
         if items:
             sid, cur = items[0]
-            more = f" (+{len(items) - 1} more)" if len(items) > 1 else ""
-            _post({"kind": "status", "working": True, "body": cur["text"] + more, "short": cur.get("short", "Working"),
-                   "session": sid, "profile": cur["profile"]})
+            turn = cur.get("turn") or {}
+            _post({"kind": "status", "working": True, "body": cur["text"], "short": cur.get("short", "Working"),
+                   "session": sid, "profile": cur["profile"], "title": _title_for(sid), "review": bool(cur.get("review")),
+                   "since": turn.get("since", 0), "steps": turn.get("steps", 0), "todo": turn.get("todo"),
+                   "others": [{"session": s, "title": _title_for(s), "text": v["text"]} for s, v in items[1:4]],
+                   "more": len(items) - 1})
         else:
             _post({"kind": "status", "working": False, "body": "Ready", "profile": _profile()})
         last_sent = time.time()
@@ -345,7 +397,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
         _set_status(session_id, "Learning · " + _tool_label(tool_name or "tool", args).removeprefix("Using "), "Learning", review=True)
         return None
     _set_status(session_id, _tool_label(tool_name or "tool", args), _tool_short(tool_name or "tool", args),
-                tool=tool_name != "clarify")  # a question waits on the user: no reason to keep the phone awake
+                tool=tool_name != "clarify", step=True)  # a question waits on the user: no reason to keep the phone awake
     if tool_name == "clarify":
         q, choices, single = "", [], True
         if isinstance(args, dict):
@@ -374,6 +426,11 @@ def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, sess
         except Exception as e:
             _dbg(f"checkpoint post: {type(e).__name__}: {e}")
     if session_id in _active:
+        if tool_name == "todo" and not _is_review(turn_id, session_id):
+            todo = _todo_summary(result)
+            with _lock:
+                if session_id in _active and todo is not None:
+                    _active[session_id]["turn"]["todo"] = todo
         if _is_review(turn_id, session_id):
             _set_status(session_id, "Learning from this chat (memory & skills)", "Learning", review=True)
         else:
@@ -487,6 +544,8 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     if not session_id or session_id in _subagents:
         return
     _last_end[session_id] = time.time()
+    with _lock:
+        turn = (_active.get(session_id) or {}).get("turn") or {}
     _clear_status(session_id)  # always, even without a turn id, or the chip sticks on "Thinking"
     if turn_id is None:
         return
@@ -508,7 +567,9 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     elif completed or text:
         # speak_text: the full reply for read-aloud mode in the app's service (notification bodies are trimmed)
         _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])
-        _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="✅ Done", color="#2E9E5B", done=True)
+        _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="✅ Done", color="#2E9E5B", done=True,
+              reply=_short(text or "", 300), steps=turn.get("steps", 0),
+              secs=round(time.time() - turn["since"]) if turn.get("since") else 0)
 
 
 def _load(name: str, filename: str):

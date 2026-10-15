@@ -214,6 +214,47 @@ async def approve(body: Approve):
     raise HTTPException(status_code=409, detail=f"nothing resolved: {last}")
 
 
+class Stop(BaseModel):
+    session: str
+
+
+@router.post("/stop")
+async def stop(body: Stop):
+    """Stop a running turn from the status chip's Stop button: find the live runtime that holds this stored
+    chat (``session.active_list``) and send it the same ``session.interrupt`` the app's stop button sends."""
+    import asyncio
+    import json
+    import re
+    import urllib.request
+
+    import websockets
+
+    if not body.session:
+        raise HTTPException(status_code=400, detail="no session")
+    page = await asyncio.to_thread(lambda: urllib.request.urlopen("http://127.0.0.1:9119/", timeout=5).read().decode())
+    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
+    if not m:
+        raise HTTPException(status_code=503, detail="no dashboard token")
+
+    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={m.group(1)}", max_size=None) as ws:
+        async def call(n, method, params):
+            await ws.send(json.dumps({"jsonrpc": "2.0", "id": n, "method": method, "params": params}))
+            while True:
+                msg = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                if msg.get("id") == n:
+                    return msg
+
+        live = ((await call(1, "session.active_list", {})).get("result") or {}).get("sessions") or []
+        rts = [s.get("id") for s in live if body.session in (s.get("session_key"), s.get("id")) and s.get("id")]
+        if not rts:
+            raise HTTPException(status_code=404, detail="that chat isn't running here")
+        for n, rt in enumerate(rts, 2):
+            msg = await call(n, "session.interrupt", {"session_id": rt})
+            if (msg.get("result") or {}).get("status") == "interrupted":
+                return {"interrupted": rt}
+    raise HTTPException(status_code=409, detail="not interrupted")
+
+
 # ── media for the app's players (byte ranges, so video can seek) ──
 
 def parse_range(header: Optional[str], size: int):

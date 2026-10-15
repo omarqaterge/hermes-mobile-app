@@ -46,6 +46,7 @@ jobs:
       - run: python3 tools/test_checkpoints.py
       - run: python3 tools/test_battery.py
       - run: python3 tools/test_approval.py
+      - run: python3 tools/test_chip.py
 
   hermes-patches:
     name: Hermes patches apply to the pinned Hermes

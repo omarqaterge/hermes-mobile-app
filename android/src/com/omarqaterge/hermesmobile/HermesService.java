@@ -62,11 +62,20 @@ public class HermesService extends Service {
         lastWorking = false;
         lastShort = "";
         lastStatus = "Ready";
+        stopping = null;
         postStatus();
         updateWake();
     }
     boolean lastWorking = false;
     String lastSub = null;
+    String lastTitle = "";
+    int lastSteps = 0, lastMore = 0;
+    JSONObject lastTodo = null;
+    org.json.JSONArray lastOthers = null;
+    boolean lastReview = false;
+    /** The chat whose Stop button was tapped, until Hermes reports the turn over (or the request fails). */
+    String stopping = null;
+    final java.util.HashMap<String, JSONObject> doneInfo = new java.util.HashMap<>();
     // A short-lived "flash" in the status chip (done ✅, memory/skill updates); reverts after FLASH_MS.
     String flashChip = null, flashTitle = null, flashBody = null;
     int flashColor = 0;
@@ -83,6 +92,7 @@ public class HermesService extends Service {
     static final String ACTION_ANSWER = "com.omarqaterge.hermesmobile.ANSWER";
     static final String ACTION_CLEAR_DONE = "com.omarqaterge.hermesmobile.CLEAR_DONE";
     static final String ACTION_WAKE = "com.omarqaterge.hermesmobile.WAKE";
+    static final String ACTION_STOP = "com.omarqaterge.hermesmobile.STOP";
     static final String REMOTE_TEXT = "text";
     static final int SUMMARY_ID = 3;
     final Handler main = new Handler(Looper.getMainLooper());
@@ -124,6 +134,10 @@ public class HermesService extends Service {
         }
         if (intent != null && ACTION_WAKE.equals(intent.getAction())) {
             wakeForCron();
+            return START_STICKY;
+        }
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            stopTurn(intent.getStringExtra("session"));
             return START_STICKY;
         }
         if (intent != null && TtsMedia.ACTION_TTS.equals(intent.getAction())) {
@@ -378,6 +392,16 @@ public class HermesService extends Service {
                 lastShort = working ? e.optString("short", "Hermes") : "";
                 if (session != null && !session.isEmpty()) lastSession = session;
                 lastSub = profile.isEmpty() || "default".equals(profile) ? null : profile;
+                // The turn's progress for the expanded chip (plugin 0.8.36+; older plugins send none of these).
+                lastTitle = working ? e.optString("title", "") : "";
+                lastSteps = working ? e.optInt("steps", 0) : 0;
+                lastTodo = working ? e.optJSONObject("todo") : null;
+                lastOthers = working ? e.optJSONArray("others") : null;
+                lastMore = working ? e.optInt("more", 0) : 0;
+                lastReview = working && e.optBoolean("review", false);
+                double since = e.optDouble("since", 0);
+                if (working && since > 0) workingSince = (long) (since * 1000);
+                if (!working) stopping = null;
                 lastWorking = working;
                 if (working) flashUntil = 0; // real work beats a flash
                 lastBeat = System.currentTimeMillis();
@@ -398,6 +422,9 @@ public class HermesService extends Service {
                     if (MainActivity.visible) return; // the app is on screen: its own unread dots show it, no sticky chip
                     unseen.remove(session);
                     unseen.put(session, new String[]{title, profile});
+                    // What the expanded Done chip says about the turn (in memory only; a restart shows the title alone).
+                    doneInfo.keySet().retainAll(unseen.keySet());
+                    doneInfo.put(session, e);
                     lastSession = session;
                     saveUnseen();
                     updateBadge();
@@ -672,37 +699,142 @@ public class HermesService extends Service {
         if (pendingApproval != null) return approvalNotification(sub);
         if (pendingAsk != null) return askNotification(sub);
         if (!working && !unseen.isEmpty()) return doneNotification(sub);
+        if (working) return workingNotification(text, sub);
         // Idle = a slim green card on its own channel (so it can be minimised on its own); working = the gold Live Update.
-        Notification.Builder b = new Notification.Builder(this, working ? CH_STATUS : CH_IDLE)
+        Notification.Builder b = new Notification.Builder(this, CH_IDLE)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
-                .setColor(working ? GOLD : GREEN)
+                .setColor(GREEN)
                 .setContentTitle("Status: " + text.replace("`", ""))
-                .setContentText(working ? text : null)
-                .setStyle(working ? new Notification.BigTextStyle().bigText(text) : null)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setShowWhen(working)
+                .setShowWhen(false)
                 .setContentIntent(openApp(lastSession));
-        if (working && workingSince > 0) b.setWhen(workingSince).setUsesChronometer(true);
         if (sub != null) b.setSubText(sub);
-        if (working) {
-            // Android 16 Live Update: a promoted ongoing notification gets a status-bar chip
-            // (HyperOS shows it in the Hyper Island around the camera). Only while working, so
-            // the chip disappears when Hermes is idle. Expanded: a live gold progress sweep.
-            if (Build.VERSION.SDK_INT >= 36) {
-                b.setStyle(new Notification.ProgressStyle()
-                        .setProgressIndeterminate(true)
-                        .setStyledByProgress(false)
-                        .setProgressSegments(java.util.List.of(new Notification.ProgressStyle.Segment(100).setColor(GOLD))));
-                b.setContentText(codeSpans(text));
-            }
-            promote(b, lastShort.isEmpty() ? "Hermes" : lastShort);
-        }
         return b.build();
     }
 
     static final int GOLD = Color.parseColor("#D9A441"), GREEN = Color.parseColor("#3DBE7A"),
             RED = Color.parseColor("#E5564B"), AMBER = Color.parseColor("#E8912D");
+    // Progress bar parts that must read on both the dark and the light shade: faint gold (to do), faint grey (dropped).
+    static final int TODO_DIM = 0x55D9A441, DROPPED = 0x40808080;
+
+    /** Hermes at work, as a Live Update (the chip shows the kind of step: Shell, Web, Files…). Tapped/expanded:
+     *  the chat's title; what it is doing now (`code` in gold monospace); the task it is on; a bar with one segment
+     *  per task when Hermes keeps a task list (green done, gold current, faint to do), otherwise an activity sweep;
+     *  the header says how many tasks/steps and the turn's running time; other busy chats; a Stop button. */
+    Notification workingNotification(String text, String sub) {
+        JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
+        boolean isStopping = stopping != null && stopping.equals(lastSession);
+        String chat = lastTitle.isEmpty() ? "Hermes" : lastTitle;
+
+        android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder();
+        t.append(isStopping ? "Stopping\u2026" : codeSpans(text));
+        String task = todo == null ? "" : todo.optString("current", "");
+        if (!task.isEmpty()) {
+            int st = t.length();
+            t.append("\n\u25B8 ").append(task);
+            t.setSpan(new android.text.style.ForegroundColorSpan(GOLD), st + 1, st + 2, 0);
+        }
+        if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
+            JSONObject o = lastOthers.optJSONObject(k);
+            if (o == null) continue;
+            String ot = o.optString("title", "");
+            t.append("\n").append(ot.isEmpty() ? "Another chat" : ot).append(": ").append(o.optString("text", "").replace("`", ""));
+        }
+
+        java.util.ArrayList<String> head = new java.util.ArrayList<>();
+        if (sub != null) head.add(sub);
+        if (todo != null) head.add(todo.optInt("done", 0) + " of " + todo.optInt("total", 0) + " tasks");
+        else if (lastSteps > 0) head.add(lastSteps == 1 ? "1 step" : lastSteps + " steps");
+        if (lastMore > 0) head.add("+" + lastMore + (lastMore == 1 ? " chat" : " chats"));
+
+        Notification.Builder b = new Notification.Builder(this, CH_STATUS)
+                .setSmallIcon(R.drawable.ic_stat_hermes)
+                .setColor(GOLD)
+                .setContentTitle(chat)
+                .setContentText(t)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setShowWhen(true)
+                .setContentIntent(openApp(lastSession));
+        if (workingSince > 0) b.setWhen(workingSince).setUsesChronometer(true);
+        if (!head.isEmpty()) b.setSubText(String.join(" \u00B7 ", head));
+        if (Build.VERSION.SDK_INT >= 36) {
+            Notification.ProgressStyle ps = new Notification.ProgressStyle().setStyledByProgress(false);
+            if (todo != null) {
+                String states = todo.optString("states", "");
+                java.util.ArrayList<Notification.ProgressStyle.Segment> segs = new java.util.ArrayList<>();
+                int pos = -1;
+                for (int k = 0; k < states.length(); k++) {
+                    char c = states.charAt(k);
+                    segs.add(new Notification.ProgressStyle.Segment(100).setColor(
+                            c == 'd' ? GREEN : c == 'a' ? GOLD : c == 'x' ? DROPPED : TODO_DIM));
+                    if (c == 'a' && pos < 0) pos = k * 100 + 50;
+                }
+                if (pos < 0) pos = states.lastIndexOf('d') * 100 + 100;
+                ps.setProgressSegments(segs).setProgress(Math.max(0, pos))
+                        .setProgressTrackerIcon(android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat_hermes));
+            } else {
+                ps.setProgressIndeterminate(true)
+                        .setProgressSegments(java.util.List.of(new Notification.ProgressStyle.Segment(100).setColor(GOLD)));
+            }
+            b.setStyle(ps);
+        } else {
+            b.setStyle(new Notification.BigTextStyle().bigText(t));
+            if (todo != null) b.setProgress(todo.optInt("total", 0), todo.optInt("done", 0), false);
+            else b.setProgress(0, 0, true);
+        }
+        if (!isStopping && lastSession != null && !lastSession.isEmpty()) {
+            Intent stop = new Intent(this, HermesService.class).setAction(ACTION_STOP).putExtra("session", lastSession);
+            b.addAction(new Notification.Action.Builder(null, colored("\u25A0 Stop", RED),
+                    PendingIntent.getService(this, ("stop:" + lastSession).hashCode(), stop,
+                            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
+        }
+        promote(b, lastShort.isEmpty() ? "Hermes" : lastShort);
+        return b.build();
+    }
+
+    /** The chip's Stop button: the plugin interrupts the turn (session.interrupt, like the app's stop button).
+     *  The chip says "Stopping…" until Hermes reports the turn over; a failure is said plainly. */
+    void stopTurn(String session) {
+        if (session == null || session.isEmpty()) return;
+        synchronized (this) {
+            stopping = session;
+            postStatus();
+        }
+        new Thread(() -> {
+            String err = null;
+            try {
+                String body = new JSONObject().put("session", session).toString();
+                String path = "/api/plugins/hermes-mobile/stop";
+                String[] res = MainActivity.rawHttp("POST", path, dashboardToken(false), body);
+                if ("401".equals(res[0]) || "403".equals(res[0]))
+                    res = MainActivity.rawHttp("POST", path, dashboardToken(true), body);
+                if ("404".equals(res[0])) err = "it isn't running in the app's Hermes";
+                else if (!res[0].startsWith("2")) err = "HTTP " + res[0];
+            } catch (Exception ex) {
+                err = ex.getMessage();
+            }
+            final String failed = err;
+            if (failed == null) return;
+            main.post(() -> {
+                synchronized (HermesService.this) {
+                    if (session.equals(stopping)) stopping = null;
+                    postStatus();
+                }
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                postGrouped(nm, tag("stop", session), alert(CH_ALERT, "Couldn't stop Hermes",
+                        "Open the chat to stop it (" + failed + ")", session, true));
+            });
+        }, "hermes-stop").start();
+    }
+
+    /** "2m 14s", "45s", "1h 3m". */
+    static String took(long secs) {
+        if (secs < 60) return secs + "s";
+        if (secs < 3600) return (secs / 60) + "m " + (secs % 60) + "s";
+        return (secs / 3600) + "h " + (secs % 3600 / 60) + "m";
+    }
 
     void promote(Notification.Builder b, String chip) {
         Bundle extras = new Bundle();
@@ -913,20 +1045,29 @@ public class HermesService extends Service {
         StringBuilder titles = new StringBuilder();
         for (String[] v : unseen.values()) titles.append(titles.length() > 0 ? "\n" : "").append(v[0].isEmpty() ? "Chat" : v[0]);
         String title = n == 1 ? (latest[0].isEmpty() ? "Hermes" : latest[0]) : n + " chats finished";
+        // One chat: the start of the reply, and how long the turn took / how many steps. Several: their titles.
+        JSONObject info = n == 1 ? doneInfo.get(latestId) : null;
+        String reply = info == null ? "" : info.optString("reply", "");
+        String text = n == 1 ? (reply.isEmpty() ? "Done" : reply) : titles.toString();
+        java.util.ArrayList<String> head = new java.util.ArrayList<>();
+        if (sub != null) head.add(sub);
+        head.add("Done");
+        if (info != null && info.optInt("steps", 0) > 0) head.add(info.optInt("steps") == 1 ? "1 step" : info.optInt("steps") + " steps");
+        if (info != null && info.optLong("secs", 0) > 0) head.add(took(info.optLong("secs")));
         Intent clear = new Intent(this, HermesService.class).setAction(ACTION_CLEAR_DONE);
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setColor(GREEN)
                 .setContentTitle(title)
-                .setContentText(n == 1 ? "Done" : titles.toString().replace("\n", " · "))
-                .setStyle(new Notification.BigTextStyle().bigText(titles.toString()))
+                .setContentText(n == 1 ? text : titles.toString().replace("\n", " · "))
+                .setStyle(new Notification.BigTextStyle().bigText(text))
+                .setSubText(String.join(" \u00B7 ", head))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
                 .setContentIntent(openApp(latestId))
                 .addAction(new Notification.Action.Builder(null, "Clear",
                         PendingIntent.getService(this, 7, clear, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
-        if (sub != null) b.setSubText(sub);
         promote(b, n == 1 ? "✅ Done" : "✅ " + n + " done");
         return b.build();
     }
