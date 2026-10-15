@@ -6,7 +6,7 @@ import { copyRich, copyText, haptic } from '../bridge'
 import { PickerSheet } from './ui'
 import { toggleSpeak, useVoice } from '../voice'
 import { api } from '../api'
-import { Media } from './Media'
+import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
 import { formatOutput, memoryDiff, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
@@ -322,7 +322,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
           <div className="attach-row">
             {item.images?.map((n, i) =>
               item.imageUrls?.[i] ? (
-                <img key={`i-${n}-${i}`} className="msg-thumb" src={item.imageUrls[i]} alt={n} />
+                <MsgThumb key={`i-${n}-${i}`} src={item.imageUrls[i]} alt={n} />
               ) : item.imagePaths?.[i] ? (
                 <div key={`i-${n}-${i}`} className="msg-thumb-wrap">
                   <Media src={item.imagePaths[i]} alt={n} />
@@ -355,6 +355,26 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
         </div>
       )}
     </div>
+  )
+}
+
+/** A photo I just sent: tap to see it full screen (zoom, Save, Share). */
+function MsgThumb({ src, alt }: { src: string; alt: string }) {
+  const [zoom, setZoom] = useState(false)
+  return (
+    <>
+      <img
+        className="msg-thumb"
+        src={src}
+        alt={alt}
+        onClick={e => {
+          e.stopPropagation()
+          haptic()
+          setZoom(true)
+        }}
+      />
+      {zoom && <Lightbox src={src} url={src} alt={alt} onClose={() => setZoom(false)} />}
+    </>
   )
 }
 

@@ -109,6 +109,29 @@ async function main() {
   const bubble = page.locator('.msg.user').last()
   check((await bubble.locator('img.msg-thumb[alt="b.png"]').count()) === 1 && (await bubble.locator('img.msg-thumb').evaluate(i => i.naturalWidth > 0)) && (await bubble.locator('.chip', { hasText: 'notes.txt' }).count()) === 1, 'sent bubble shows photo thumbnail + file chip')
   check((await page.locator('.composer-wrap .attach-chip').count()) === 0, 'composer attachments emptied after send')
+  // ── a just-sent photo opens full screen: double-tap zoom, Save (a download in a browser), Share, Back closes ──
+  await bubble.locator('img.msg-thumb[alt="b.png"]').click()
+  const lb = page.locator('.lightbox')
+  await lb.waitFor({ timeout: 3000 }).then(() => check(true, 'tapping a sent photo opens the lightbox'), () => check(false, 'tapping a sent photo opens the lightbox'))
+  if (await lb.count()) {
+    check((await lb.getByRole('button', { name: 'Save' }).count()) === 1 && (await lb.getByRole('button', { name: 'Share' }).count()) === 1, 'the lightbox has Save and Share')
+    check((await page.locator('.msg.user .msg-time').count()) === 0, 'opening the photo does not toggle the message time')
+    await lb.locator('img').dblclick()
+    await sleep(200)
+    check(/scale\(2\.5\)/.test(await lb.locator('img').evaluate(i => i.style.transform)), 'double-tap zooms in')
+    await lb.locator('img').dblclick()
+    await sleep(200)
+    check(/scale\(1\)/.test(await lb.locator('img').evaluate(i => i.style.transform)), 'double-tap again zooms back out')
+    const dl = page.waitForEvent('download', { timeout: 3000 }).catch(() => null)
+    await lb.getByRole('button', { name: 'Save' }).click()
+    const got = await dl
+    check(got && got.suggestedFilename() === 'b.png', `Save downloads the photo in a browser (${got && got.suggestedFilename()})`)
+    await lb.getByRole('button', { name: 'Share' }).click()
+    await page.locator('.toast', { hasText: 'Sharing works in the phone app' }).waitFor({ timeout: 2000 }).then(() => check(true, 'Share explains it needs the phone app'), () => check(false, 'Share explains it needs the phone app'))
+    await page.evaluate(() => window.hermesBack())
+    await sleep(300)
+    check((await page.locator('.lightbox').count()) === 0, 'Back closes the lightbox')
+  }
 
   await attach('Photo', [{ name: 'c.png', mimeType: 'image/png', buffer: png }, { name: 'd.png', mimeType: 'image/png', buffer: png }])
   await page.locator('.attach-thumb img[alt="d.png"]').waitFor({ timeout: 5000 })
