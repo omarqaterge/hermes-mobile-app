@@ -238,6 +238,21 @@ describe('read-aloud controls shared with the notification', async () => {
     v.stopSpeaking()
   })
 
+  test('tts-seek (card back / forward 10 s) moves the player without a pace measurement', () => {
+    setNative(true)
+    v.speak('item3', text)
+    window.__hmVoice?.('tts-seg', '0,50')
+    window.__hmVoice?.('tts-seek', '120')
+    expect(v.voiceState().player?.pos).toBe(120)
+    expect(v.voiceState().player?.paused).toBe(false)
+    window.__hmVoice?.('tts-seek', '99999') // never past the end
+    expect(v.voiceState().player?.pos).toBeLessThanOrEqual(v.voiceState().player?.total ?? 0)
+    window.__hmVoice?.('tts-seek', 'x') // garbage is ignored
+    v.stopSpeaking()
+    window.__hmVoice?.('tts-seek', '5') // no player: nothing happens
+    expect(v.voiceState().player).toBeNull()
+  })
+
   test('the in-app pause / resume go through ttsControl, not a re-speak', () => {
     setNative(true)
     v.speak('item2', text)

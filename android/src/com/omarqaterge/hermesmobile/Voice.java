@@ -21,8 +21,9 @@ import java.util.Locale;
  * final | error | end.
  * All methods must be called on the main thread (TextToSpeech's progress callbacks arrive on a binder thread and are
  * posted to it). Read-aloud owns its playback state here, not in the page, so the media notification (TtsMedia) can
- * pause / resume / skip while the page is frozen in the background. Granularity is one ≤CHUNK utterance: pause and
- * resume restart the current chunk, previous / next move one chunk.
+ * pause / resume / jump while the page is frozen in the background. Granularity is one ≤CHUNK utterance: pause and
+ * resume restart the current chunk. Back / forward 10 s move the reading position by 10 seconds' worth of characters
+ * (Android TTS cannot seek, so the text is split again from the new character and spoken from there).
  */
 final class Voice {
     static final int REQ_MIC = 9;
@@ -40,6 +41,12 @@ final class Voice {
     private final ArrayList<String> chunkText = new ArrayList<>();
     private final ArrayList<int[]> chunks = new ArrayList<>();
     private int cur = 0;
+    private String full = ""; // the whole text of this reading; chunk offsets are positions in it
+    // reading pace (chars/second), measured from the onStart times of consecutive chunks and smoothed like voice.ts does
+    private double cps = 0;
+    private int segIdx = -1; // chunk heard now and when it started (uptime ms); -1 = not known (just jumped / paused)
+    private long segT0 = 0;
+    private static final int JUMP_SECONDS = 10;
     private boolean speaking = false; // between speak() and the end / stop
     private boolean paused = false;
     private String run = ""; // utterance id prefix of the current speakFrom(): callbacks of older runs are ignored
@@ -191,7 +198,10 @@ final class Voice {
         if (active != null && active != this && active.speaking) active.stopSpeaking();
         active = this;
         applyConfig(cfg);
-        split(text);
+        full = text;
+        cps = 0;
+        segIdx = -1;
+        split(text, 0);
         speaking = true;
         paused = false;
         cur = 0;
@@ -221,6 +231,13 @@ final class Voice {
         if (i < 0 || paused) return;
         cur = i;
         int[] c = chunks.get(i);
+        long now = android.os.SystemClock.uptimeMillis();
+        if (segIdx >= 0 && i == segIdx + 1 && now - segT0 > 300) { // the previous chunk was heard whole
+            double measured = chunks.get(segIdx)[1] * 1000.0 / (now - segT0);
+            if (measured >= 2 && measured <= 120) cps = cps > 0 ? cps * 0.5 + measured * 0.5 : measured;
+        }
+        segIdx = i;
+        segT0 = now;
         if (c[0] >= 0) js("tts-seg", c[0] + "," + c[1]);
         js("tts-start", id);
     }
@@ -236,7 +253,7 @@ final class Voice {
     }
 
     private void publish() {
-        if (notify && speaking && active == this) TtsMedia.show(ctx, title, session, !paused, cur > 0, cur < chunks.size() - 1);
+        if (notify && speaking && active == this) TtsMedia.show(ctx, title, session, !paused);
     }
 
     // ── playback controls (page, notification, media buttons) ──
@@ -244,6 +261,7 @@ final class Voice {
     void pause() {
         if (!speaking || paused) return;
         paused = true;
+        segIdx = -1;
         run = ""; // callbacks of what we just stopped don't count
         if (tts != null) tts.stop();
         js("tts-paused", Integer.toString(Math.max(0, chunks.get(cur)[0])));
@@ -261,18 +279,47 @@ final class Voice {
         publish();
     }
 
-    /** Move `d` chunks; paused: only the place moves (resume starts there). */
-    void skip(int d) {
-        if (!speaking || chunks.isEmpty()) return;
-        cur = Math.max(0, Math.min(chunks.size() - 1, cur + d));
-        if (paused) js("tts-paused", Integer.toString(Math.max(0, chunks.get(cur)[0])));
-        else if (tts != null && ttsReady) speakFrom(cur);
+    /** Chars per second: measured when known, else a typical pace scaled by the speech rate. */
+    private double pace() {
+        return cps > 0 ? cps : 14 * cfgRate;
+    }
+
+    /** Where in the whole text the reading is now: start of the chunk heard plus the progress estimated inside it. */
+    private int position() {
+        int[] c = chunks.get(cur);
+        int at = Math.max(0, c[0]);
+        if (paused || segIdx != cur) return at;
+        double inside = (android.os.SystemClock.uptimeMillis() - segT0) / 1000.0 * pace();
+        return at + (int) Math.max(0, Math.min(c[1] - 1, inside));
+    }
+
+    /** Moves the reading `dir` * 10 seconds (-1 back, +1 forward); paused: only the place moves (resume starts there). */
+    void jump(int dir) {
+        if (!speaking || chunks.isEmpty() || full.isEmpty()) return;
+        int to = (int) Math.max(0, Math.min(full.length() - 1, position() + dir * Math.round(pace() * JUMP_SECONDS)));
+        // start on a character that is read: the next one that isn't whitespace, else the last one that isn't
+        int k = to;
+        while (k < full.length() && Character.isWhitespace(full.charAt(k))) k++;
+        if (k >= full.length()) {
+            k = full.length() - 1;
+            while (k > 0 && Character.isWhitespace(full.charAt(k))) k--;
+        }
+        to = k;
+        split(full, to);
+        if (chunks.isEmpty()) return;
+        cur = 0;
+        segIdx = -1;
+        if (paused) js("tts-paused", Integer.toString(to));
+        else {
+            js("tts-seek", Integer.toString(to));
+            if (tts != null && ttsReady) speakFrom(0);
+        }
         publish();
     }
 
     private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
 
-    /** play | pause | toggle | next | prev | stop for the instance reading now. Any thread (runs on the main one). */
+    /** play | pause | toggle | rew | ff | stop for the instance reading now. Any thread (runs on the main one). */
     static void control(String cmd) {
         MAIN.post(() -> {
             Voice v = active;
@@ -284,8 +331,8 @@ final class Voice {
                 case "play": v.play(); break;
                 case "pause": v.pause(); break;
                 case "toggle": if (v.paused) v.play(); else v.pause(); break;
-                case "next": v.skip(1); break;
-                case "prev": v.skip(-1); break;
+                case "ff": v.jump(1); break;
+                case "rew": v.jump(-1); break;
                 case "stop": v.stopSpeaking(true); break;
                 default: break;
             }
@@ -329,11 +376,11 @@ final class Voice {
         });
     }
 
-    /** Splits the whole text once into ≤CHUNK utterances; each knows where it sits in the text (for tts-seg / tts-paused). */
-    private void split(String text) {
+    /** Splits the text from character `from0` on into ≤CHUNK utterances; each knows where it sits in the text (for tts-seg / tts-paused). */
+    private void split(String text, int from0) {
         chunkText.clear();
         chunks.clear();
-        String rest = text.trim();
+        String rest = text.substring(Math.max(0, Math.min(text.length(), from0))).trim();
         ArrayList<String> parts = new ArrayList<>();
         while (rest.length() > CHUNK) {
             int cut = Math.max(rest.lastIndexOf(". ", CHUNK), Math.max(rest.lastIndexOf("\n", CHUNK), rest.lastIndexOf(" ", CHUNK)));
@@ -342,7 +389,7 @@ final class Voice {
             rest = rest.substring(cut + 1).trim();
         }
         if (!rest.isEmpty()) parts.add(rest);
-        int from = 0;
+        int from = from0;
         for (String part : parts) {
             if (part.isEmpty()) continue;
             int at = text.indexOf(part, from);

@@ -12,7 +12,7 @@ import android.media.session.PlaybackState;
 
 /**
  * The "Reading aloud" media card for Voice: a framework MediaSession (so headset buttons, the lock screen and the
- * control centre's player reach it) plus a Notification.MediaStyle notification with ⏮ ⏯ ⏭ ✕. No androidx: this APK is
+ * control centre's player reach it) plus a Notification.MediaStyle notification with ⏪10 ⏯ ⏩10 ✕. No androidx: this APK is
  * built without Gradle. Buttons go to HermesService (ACTION_TTS, extra "cmd") and session callbacks straight to
  * Voice.control(), which acts on the instance reading now. Native on purpose: the page is frozen ~1 min after the app
  * leaves the screen, so controls that went through it would stop working.
@@ -29,15 +29,18 @@ final class TtsMedia {
     private TtsMedia() { }
 
     /** Shows or updates the card. playing = false shows ▶ (paused). */
-    static void show(Context ctx, String title, String chat, boolean playing, boolean hasPrev, boolean hasNext) {
+    static void show(Context ctx, String title, String chat, boolean playing) {
         app = ctx.getApplicationContext();
         if (session == null) {
             session = new MediaSession(app, "hermes-tts");
             session.setCallback(new MediaSession.Callback() {
                 @Override public void onPlay() { Voice.control("play"); }
                 @Override public void onPause() { Voice.control("pause"); }
-                @Override public void onSkipToNext() { Voice.control("next"); }
-                @Override public void onSkipToPrevious() { Voice.control("prev"); }
+                // headsets and the lock screen send skip next / previous: same 10 s jump as the card's buttons
+                @Override public void onSkipToNext() { Voice.control("ff"); }
+                @Override public void onSkipToPrevious() { Voice.control("rew"); }
+                @Override public void onFastForward() { Voice.control("ff"); }
+                @Override public void onRewind() { Voice.control("rew"); }
                 @Override public void onStop() { Voice.control("stop"); }
             });
         }
@@ -48,7 +51,8 @@ final class TtsMedia {
                 .build());
         session.setPlaybackState(new PlaybackState.Builder()
                 .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
-                        | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_STOP)
+                        | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_FAST_FORWARD
+                        | PlaybackState.ACTION_REWIND | PlaybackState.ACTION_STOP)
                 .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
                         PlaybackState.PLAYBACK_POSITION_UNKNOWN, playing ? 1f : 0f)
                 .build());
@@ -69,10 +73,10 @@ final class TtsMedia {
                 .setOngoing(playing) // paused: can be swiped away, which stops the reading
                 .setContentIntent(content)
                 .setDeleteIntent(command("stop", 75))
-                .addAction(action(android.R.drawable.ic_media_previous, "Previous", hasPrev ? command("prev", 71) : null))
+                .addAction(action(android.R.drawable.ic_media_rew, "Back 10 s", command("rew", 71)))
                 .addAction(playing ? action(android.R.drawable.ic_media_pause, "Pause", command("pause", 72))
                         : action(android.R.drawable.ic_media_play, "Play", command("play", 72)))
-                .addAction(action(android.R.drawable.ic_media_next, "Next", hasNext ? command("next", 73) : null))
+                .addAction(action(android.R.drawable.ic_media_ff, "Forward 10 s", command("ff", 73)))
                 .addAction(action(android.R.drawable.ic_menu_close_clear_cancel, "Stop", command("stop", 74)))
                 .setStyle(new Notification.MediaStyle().setMediaSession(session.getSessionToken()).setShowActionsInCompactView(0, 1, 2));
         try {
@@ -97,7 +101,6 @@ final class TtsMedia {
     }
 
     private static Notification.Action action(int icon, String label, PendingIntent pi) {
-        // a null intent = the button shows but does nothing (first / last chunk)
         return new Notification.Action.Builder(Icon.createWithResource(app, icon), label, pi).build();
     }
 

@@ -1033,6 +1033,10 @@ async function main() {
   const total = Number(await vp.locator('.tts-seek').getAttribute('max'))
   const seek0 = Number(await vp.locator('.tts-seek').inputValue())
   check(seek0 >= 30 && seek0 <= 40, `player follows the reading position (${seek0})`)
+  await vp.evaluate(() => window.__hmVoice('tts-seek', '70')) // the card's forward 10 s
+  await sleep(50)
+  const seekd = Number(await vp.locator('.tts-seek').inputValue())
+  check(seekd === 70 && (await vp.locator('.tts-player').count()) === 1, `a native 10 s jump moves the player to its position (${seekd})`)
   await vp.getByRole('button', { name: 'Pause reading' }).click()
   await sleep(200)
   const paused = Number(await vp.locator('.tts-seek').inputValue())

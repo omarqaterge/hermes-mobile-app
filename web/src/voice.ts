@@ -97,6 +97,16 @@ window.__hmVoice = (kind, text) => {
       set({ player: { ...p, paused: true, pos } })
       break
     }
+    case 'tts-seek': {
+      // Voice.java jumped (back / forward 10 s from the card or a headset): `text` = the character it reads on from. The
+      // unfinished stretch must not count as a pace measurement, so the segment is dropped, not closed.
+      const at = Number(text)
+      if (!state.player || !Number.isFinite(at)) break
+      stopSegments()
+      nativePausedAt = null
+      setPos(Math.min(playText.length, playFrom + at))
+      break
+    }
     case 'tts-resumed':
       nativePausedAt = null
       if (state.player?.paused) set({ player: { ...state.player, paused: false } })

@@ -25,7 +25,7 @@ interface AndroidBridge {
   isAssistant?(): boolean // Hermes holds the phone's assistant role
   openAssistantSettings?(): void // system page to pick the digital assistant app
   stopSpeaking?(): void
-  ttsControl?(cmd: 'play' | 'pause' | 'toggle' | 'next' | 'prev' | 'stop'): void // read-aloud, shared with its notification
+  ttsControl?(cmd: 'play' | 'pause' | 'toggle' | 'rew' | 'ff' | 'stop'): void // read-aloud, shared with its notification
   startListening?(): void
   stopListening?(): void
   sharedItem?(index: number): string
