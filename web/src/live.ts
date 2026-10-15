@@ -147,13 +147,16 @@ function stillOpen(req: ServerRequest): boolean {
   return getState().requests.some(r => r.id === req.id)
 }
 
+/** What Live mode says when Hermes asks for approval: just the question (the details are on the screen; reading a
+ * long command out loud took ages). "Allow for this chat" still works when said (voiceChoice). */
+export function approvalPrompt(_choices: string[]): string {
+  return 'Hermes needs your permission. Allow or deny?'
+}
+
 function onApproval(req: ServerRequest) {
   if (phase === 'off') return
   approval = { req, tries: 0 }
-  const p = req.params as Record<string, unknown>
-  const what = String(p.description || p.command || 'run a command').slice(0, 220)
-  const session = approvalChoices(req).includes('session')
-  askAloud(`Hermes wants to ${/^[a-z]/.test(what) ? '' : 'do this: '}${what}. Say allow${session ? ', allow for this chat,' : ''} or deny.`)
+  askAloud(approvalPrompt(approvalChoices(req)))
 }
 
 function askAloud(text: string) {

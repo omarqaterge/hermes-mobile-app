@@ -140,6 +140,15 @@ describe('voiceChoice (live mode approvals)', async () => {
   })
 })
 
+describe('approvalPrompt (live mode)', async () => {
+  const live = await import('./live')
+  test('asks the short question and never reads the command out', () => {
+    const t = live.approvalPrompt(['once', 'session', 'deny'])
+    expect(t).toBe('Hermes needs your permission. Allow or deny?')
+    expect(t).not.toMatch(/\b(rm|chmod|command)\b/) // "permission" contains "rm"
+  })
+})
+
 describe('splitAttachments', () => {
   test('turns stored photo and file references into chips', () => {
     expect(splitAttachments('what colour? One word\n@image:/root/.hermes/images/upload_1.png\n[screenshot]')).toEqual({
