@@ -944,6 +944,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         foreground = false;
         visible = false;
+        HermesService.openChat = null; // nothing is on screen any more: a chat finishing now counts as unseen
         voice.stopListening(); // never leave the microphone open in the background
         super.onPause();
     }
@@ -1489,6 +1490,36 @@ public class MainActivity extends Activity {
             if (id != null && (id.length() > 200 || !id.matches("[A-Za-z0-9_.:-]*"))) return;
             final String t = title == null ? "" : title.length() > 200 ? title.substring(0, 200) : title;
             runOnUiThread(() -> MainActivity.this.setLastChat(id, t));
+        }
+
+        /** The page opened this chat: it is on screen (no sticky Done for it) and no longer unseen. */
+        @JavascriptInterface
+        public void chatSeen(String key, String id) {
+            if (!ok(key)) return;
+            if (id == null || id.isEmpty() || id.length() > 200 || !id.matches("[A-Za-z0-9_.:-]*")) return;
+            HermesService.openChat = id;
+            HermesService.seen(id);
+        }
+
+        /** The page's unread chats for one profile, [{id,title}] (≤ 500). */
+        @JavascriptInterface
+        public void setUnseen(String key, String profile, String json) {
+            if (!ok(key)) return;
+            if (profile == null || profile.length() > 100 || json == null || json.length() > 200_000) return;
+            try {
+                org.json.JSONArray src = new org.json.JSONArray(json);
+                org.json.JSONArray rows = new org.json.JSONArray();
+                for (int k = 0; k < src.length() && rows.length() < 500; k++) {
+                    org.json.JSONObject o = src.optJSONObject(k);
+                    if (o == null) continue;
+                    String id = o.optString("id", "");
+                    if (id.isEmpty() || id.length() > 200 || !id.matches("[A-Za-z0-9_.:-]*")) continue;
+                    String t = o.optString("title", "");
+                    rows.put(new org.json.JSONObject().put("id", id).put("title", t.length() > 200 ? t.substring(0, 200) : t));
+                }
+                HermesService.replaceUnseen(profile, rows);
+            } catch (Exception ignored) {
+            }
         }
 
         @JavascriptInterface

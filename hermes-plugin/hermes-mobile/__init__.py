@@ -508,7 +508,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     elif completed or text:
         # speak_text: the full reply for read-aloud mode in the app's service (notification bodies are trimmed)
         _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])
-        _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="✅ Done", color="#2E9E5B")
+        _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="✅ Done", color="#2E9E5B", done=True)
 
 
 def _load(name: str, filename: str):
