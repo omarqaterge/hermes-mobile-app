@@ -1,0 +1,40 @@
+# What's new
+
+User-facing changes, newest first. Each release section collects what shipped since the previous tag.
+
+## Unreleased (since v0.8.9)
+
+### Notifications and the status chip
+- A sticky green **Done** chip lists the chats that finished while the app was closed ("✅ 3 chats finished", one tap to clear).
+  It goes away by itself once you open the app on that chat.
+- **App-icon badge** with the number of unseen chats (works on Xiaomi/HyperOS launchers).
+- **Read-aloud player** in the notification shade: pause, back 10 s, forward 10 s, stop; media keys work too.
+  The reply being read keeps playing when you leave the app.
+- Approvals answered from a notification apply only to the request they show.
+
+### Chat
+- **Library**: keep canvas documents in categories; Hermes can save into it on request.
+- **Photo viewer**: pinch and double-tap zoom, save to Pictures/Hermes, share, open with another app.
+- **Edit and Retry keep your photos and files**: they are sent again with the edited message.
+- **Links work everywhere**: in your messages, tool cards, thinking, sheets and the canvas; they open in your default app.
+- **/yolo** and **/fast** switch instantly for the current chat (YOLO chip above the composer).
+- Photos and files you attached survive a dropped connection, and go along with a message queued while offline.
+- **File checkpoints**: see every folder a chat changed, the diff per file, and restore a folder or a single file (undoable).
+- Canvas: "Saved ✓" turns back into "<when> · You/Hermes".
+
+### Voice / Live mode
+- Approvals in Live mode are a short spoken question ("Hermes needs your permission. Allow or deny?"), answered by voice.
+- Leaving the app closes the microphone but lets Hermes finish reading.
+
+### Models and setup
+- **Subscription sign-ins** and a first-run "connect a model" screen.
+- The model picker renews an expired Claude login so new models show up.
+- **One-tap app update** from Settings → About (downloads the latest release and opens the installer).
+- **Hermes can use the phone** out of the box (files, Termux:API, Shizuku, no root), with a Setup check that fixes what's missing.
+
+### Faster and lighter
+- **Faster start-up**: opening the app after the phone has been idle no longer waits seconds for the chat (a Hermes fix
+  shipped with the app: skill scans 1.8 s → 0.5 s; the app asks for less at start-up).
+- Coming back to the app no longer drops the connection or repeats the last turn.
+- Battery: no permanent wake lock, far fewer background polls; the phone reaches deep sleep.
+- Fixes to Hermes itself ship with the app (e.g. a message lost after switching models).
