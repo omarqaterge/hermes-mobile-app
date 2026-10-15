@@ -906,9 +906,10 @@ async function main() {
       setLastChat: key => k(key, 'setLastChat'),
       setReadAloud: key => k(key, 'setReadAloud'),
       mediaBase: key => (k(key, 'mediaBase'), ''),
-      speak: (key, text) => {
+      speak: (key, text, cfg) => {
         k(key, 'speak')
         ;(window.__spoken ||= []).push(text)
+        ;(window.__spokenCfg ||= []).push(cfg)
       },
       stopSpeaking: key => {
         k(key, 'stopSpeaking')
@@ -978,6 +979,38 @@ async function main() {
   await vp.evaluate(() => window.__hmVoice('tts-done', ''))
   await sleep(100)
   check((await vp.locator('.tts-player').count()) === 0, 'player closes when the reading ends')
+  // the "Reading aloud" notification: Voice.java owns pause/play; the page follows its tts-paused / tts-resumed
+  const lastCfg = JSON.parse(await vp.evaluate(() => window.__spokenCfg[window.__spokenCfg.length - 1]))
+  check(lastCfg.notify === true && typeof lastCfg.title === 'string' && 'session' in lastCfg, 'read-aloud asks for the notification card ' + JSON.stringify(lastCfg))
+  await vp.evaluate(() => {
+    window.__ctl = []
+    window.HermesAndroid.ttsControl = cmd => {
+      window.__ctl.push(cmd)
+      setTimeout(() => window.__hmVoice(cmd === 'pause' ? 'tts-paused' : 'tts-resumed', cmd === 'pause' ? '20' : ''), 10) // like Voice.java
+    }
+  })
+  await vp.getByRole('button', { name: 'Read aloud' }).last().click()
+  await vp.locator('.tts-player').waitFor({ timeout: 3000 })
+  const spokenBefore = (await said()).length
+  const stopsBefore = await nativeCount('stopSpeaking')
+  const at = Math.floor(Number(await vp.locator('.tts-seek').getAttribute('max')) / 2)
+  await vp.evaluate(x => window.__hmVoice('tts-paused', String(x)), at) // Pause in the notification shade
+  await sleep(100)
+  check((await vp.getByRole('button', { name: 'Resume reading' }).count()) === 1 && Number(await vp.locator('.tts-seek').inputValue()) === at, 'pause from the notification shows the player paused at that chunk (' + (await vp.locator('.tts-seek').inputValue()) + ' of ' + (await vp.locator('.tts-seek').getAttribute('max')) + ')')
+  await vp.evaluate(() => window.__hmVoice('tts-resumed', ''))
+  await sleep(100)
+  check((await vp.getByRole('button', { name: 'Pause reading' }).count()) === 1, 'play from the notification resumes the player')
+  await vp.getByRole('button', { name: 'Pause reading' }).click()
+  await sleep(100)
+  await vp.getByRole('button', { name: 'Resume reading' }).click()
+  await sleep(100)
+  check(JSON.stringify(await vp.evaluate(() => window.__ctl)) === '["pause","play"]' && (await said()).length === spokenBefore && (await nativeCount('stopSpeaking')) === stopsBefore, 'in-app pause / resume go through ttsControl (one state with the notification) ' + JSON.stringify(await vp.evaluate(() => window.__ctl)))
+  await vp.evaluate(() => window.__hmVoice('tts-paused', '0'))
+  await sleep(50)
+  await vp.evaluate(() => window.__hmVoice('tts-done', 'stop')) // ✕ in the notification while paused
+  await sleep(100)
+  check((await vp.locator('.tts-player').count()) === 0, 'stop from the notification closes even a paused player')
+  await vp.evaluate(() => delete window.HermesAndroid.ttsControl)
   // dictation: edits made while dictating are kept, the keyboard is not summoned at the end
   await vp.evaluate(() => window.hermesShortcut('new'))
   await vp.getByRole('button', { name: 'Dictate' }).click()

@@ -114,6 +114,11 @@ public class HermesService extends Service {
             wakeForCron();
             return START_STICKY;
         }
+        if (intent != null && TtsMedia.ACTION_TTS.equals(intent.getAction())) {
+            // a button on the "Reading aloud" card; Voice.control() runs it on the main thread for the active reader
+            Voice.control(intent.getStringExtra("cmd"));
+            return START_STICKY;
+        }
         if (!keyShared) shareKeyWithTermux(); // once per service run: each share spawns a Termux shell
         return START_STICKY;
     }
@@ -327,7 +332,9 @@ public class HermesService extends Service {
             if (!on) return;
             final String speech = Voice.speakable(text);
             if (speech.isEmpty()) return;
-            final String ttsCfg = String.valueOf(cfg.optJSONObject("tts") == null ? "{}" : cfg.optJSONObject("tts"));
+            JSONObject tc = cfg.optJSONObject("tts") == null ? new JSONObject() : new JSONObject(cfg.optJSONObject("tts").toString());
+            tc.put("notify", true).put("title", e.optString("title", "")).put("session", session); // the "Reading aloud" card
+            final String ttsCfg = tc.toString();
             main.post(() -> {
                 if (voice == null) voice = new Voice(this);
                 voice.speak(speech, ttsCfg);
@@ -917,7 +924,10 @@ public class HermesService extends Service {
         learn.setDescription("Skill and memory updates from Hermes's self-improvement");
         NotificationChannel jobs = new NotificationChannel(CH_JOBS, "Scheduled jobs", NotificationManager.IMPORTANCE_DEFAULT);
         jobs.setDescription("Cron job results");
-        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs}) nm.createNotificationChannel(c);
+        NotificationChannel playback = new NotificationChannel(TtsMedia.CH_PLAYBACK, "Reading aloud", NotificationManager.IMPORTANCE_LOW);
+        playback.setDescription("Pause, skip or stop a reply being read aloud");
+        playback.setShowBadge(false);
+        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback}) nm.createNotificationChannel(c);
         nm.deleteNotificationChannel("hermes"); // v0.1 channel, replaced by the ones above
     }
 }

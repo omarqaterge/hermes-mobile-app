@@ -1298,6 +1298,14 @@ public class MainActivity extends Activity {
             runOnUiThread(voice::stopSpeaking);
         }
 
+        /** The in-app player's pause / play, shared with the "Reading aloud" card: play | pause | toggle | next | prev | stop. */
+        @JavascriptInterface
+        public void ttsControl(String key, String cmd) {
+            if (!ok(key)) return;
+            if (cmd == null || !cmd.matches("play|pause|toggle|next|prev|stop")) return;
+            Voice.control(cmd);
+        }
+
         @JavascriptInterface
         public void startListening(String key) {
             if (!ok(key)) return;

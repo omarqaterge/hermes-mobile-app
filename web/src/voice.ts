@@ -1,7 +1,7 @@
 // Voice: read replies aloud and dictate into the composer. Android does the work (TextToSpeech /
 // SpeechRecognizer, see Voice.java) through the bridge; in a plain browser we fall back to the Web Speech API.
 import { useSyncExternalStore } from 'react'
-import { toast } from './store'
+import { getState, toast } from './store'
 
 export interface TtsVoice {
   name: string
@@ -55,6 +55,8 @@ export const liveBridge: {
 const ttsDone = new Set<() => void>()
 export const onTtsDone = (fn: () => void): (() => void) => (ttsDone.add(fn), () => ttsDone.delete(fn))
 
+/** The current voice state (tests, and code outside React). */
+export const voiceState = (): VoiceState => state
 export const useVoice = <T,>(sel: (s: VoiceState) => T): T => useSyncExternalStore(cb => (subs.add(cb), () => subs.delete(cb)), () => sel(state))
 
 type Listener = (kind: 'partial' | 'final' | 'error' | 'quiet' | 'end', text: string) => void
@@ -69,8 +71,11 @@ declare global {
 window.__hmVoice = (kind, text) => {
   switch (kind) {
     case 'tts-done':
-      if (state.player?.paused) break // we stopped it ourselves to pause
-      if (Date.now() < reseekUntil) break // the speech we just replaced (seek / speed) reporting that it ended
+      // 'stop' = the notification's ✕ (or a headset stop): final even while paused
+      if (text !== 'stop' && state.player?.paused) break // we stopped it ourselves to pause
+      if (text !== 'stop' && Date.now() < reseekUntil) break // the speech we just replaced (seek / speed) reporting that it ended
+      nativePausedAt = null
+      stopSegments()
       set({ speakingId: null, player: null })
       ttsDone.forEach(f => f())
       break
@@ -80,6 +85,22 @@ window.__hmVoice = (kind, text) => {
       if (Number.isFinite(at) && Number.isFinite(len)) startSegment(playFrom + at, len)
       break
     }
+    case 'tts-paused': {
+      // Voice.java paused (the in-app button, the notification, a headset) or moved while paused: `text` = where in the
+      // spoken text it will read on from (the start of the chunk). The page may be frozen when it happens; this catches up.
+      const at = Number(text)
+      if (!state.speakingId || !Number.isFinite(at)) break
+      const pos = Math.min(playText.length, playFrom + at)
+      nativePausedAt = pos
+      stopSegments()
+      const p = state.player ?? { id: state.speakingId, total: playText.length, pos, paused: true } // e.g. Live mode
+      set({ player: { ...p, paused: true, pos } })
+      break
+    }
+    case 'tts-resumed':
+      nativePausedAt = null
+      if (state.player?.paused) set({ player: { ...state.player, paused: false } })
+      break
     case 'voices':
       try {
         set({ catalog: JSON.parse(text) as TtsCatalog })
@@ -161,6 +182,9 @@ export function speakable(md: string): string {
 let playText = ''
 let playFrom = 0
 let reseekUntil = 0
+// Where Voice.java holds its paused place (absolute position), so a resume can just say 'play'; null = it has none
+// (not paused natively, or the page moved the place / changed the speed since).
+let nativePausedAt: number | null = null
 const showPlayer = (id: string): boolean => id !== 'live' && id !== 'test'
 
 function setPos(pos: number): void {
@@ -204,9 +228,14 @@ function say(id: string, from: number, reseek = false): void {
   if (!reseek) cps = 0
   const text = playText.slice(from)
   playFrom = from
+  nativePausedAt = null
   set({ speakingId: id, player: showPlayer(id) ? { id, total: playText.length, pos: from, paused: false } : null })
   const n = native()
-  if (n?.speak) n.speak(text, JSON.stringify(ttsConfig()))
+  if (n?.speak) {
+    // notify: the "Reading aloud" card with pause / skip / stop (not for the Settings voice test)
+    const chat = getState().active
+    n.speak(text, JSON.stringify({ ...ttsConfig(), notify: id !== 'test', title: chat?.title || '', session: chat?.storedId || '' }))
+  }
   else if ('speechSynthesis' in window) {
     speechSynthesis.cancel()
     const u = new SpeechSynthesisUtterance(text)
@@ -240,13 +269,21 @@ export function pauseSpeaking(): void {
   if (!p || p.paused) return
   set({ player: { ...p, paused: true } })
   const n = native()
-  if (n?.stopSpeaking) n.stopSpeaking()
+  // Voice.java keeps the place (one state with the notification); its tts-paused moves pos to the chunk start
+  if (n?.ttsControl) n.ttsControl('pause')
+  else if (n?.stopSpeaking) n.stopSpeaking()
   else if ('speechSynthesis' in window) speechSynthesis.cancel()
 }
 
 export function resumeSpeaking(): void {
   const p = state.player
-  if (p?.paused) say(p.id, Math.min(p.pos, Math.max(0, p.total - 1)), true)
+  if (!p?.paused) return
+  const n = native()
+  if (n?.ttsControl && nativePausedAt !== null && Math.abs(p.pos - nativePausedAt) < 1) {
+    nativePausedAt = null
+    set({ player: { ...p, paused: false } })
+    n.ttsControl('play')
+  } else say(p.id, Math.min(p.pos, Math.max(0, p.total - 1)), true)
 }
 
 /** Jump to a character position. Keeps paused if it was paused. */
@@ -264,7 +301,10 @@ export function setReadingSpeed(rate: number): void {
   saveTtsConfig({ ...ttsConfig(), rate })
   const p = state.player
   if (p && !p.paused) say(p.id, p.pos, true)
-  else set({})
+  else {
+    nativePausedAt = null // Voice.java would resume at the old speed: re-speak instead
+    set({})
+  }
 }
 
 export function toggleSpeak(id: string, markdown: string): void {
