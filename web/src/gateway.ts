@@ -35,6 +35,7 @@ import {
   hydrate,
   newId,
   setState,
+  subscribe,
   toast,
   type Todo,
   updateActive
@@ -501,6 +502,17 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
  * can't replace the one the user went to meanwhile (the start-up resume just stops, the others go warm). */
 let openSeq = 0
 
+// Tell the Android service which chat is on screen whenever that changes, however it happened (opened, or a new chat
+// created by the first message): returning to the app then counts as having seen it (sticky Done chip + badge).
+let shownChat: string | null | undefined
+subscribe(() => {
+  const s = getState()
+  const id = s.active?.storedId ?? (s.opening ? shownChat ?? null : null)
+  if (id === shownChat) return
+  shownChat = id
+  chatSeen(id || '')
+})
+
 export function startDraft(): void {
   if (liveBridge.active) liveBridge.stop() // live mode belongs to the chat it started in
   setDraftRead(null)
@@ -509,7 +521,6 @@ export function startDraft(): void {
   const prev = getState().active
   keepPreview(prev)
   rememberSession(null)
-  chatSeen('') // no chat on screen any more: coming back to the app must not mark the previous one seen
   setState({ active: null, opening: null, preview: null, drawer: false })
   retire(prev)
 }

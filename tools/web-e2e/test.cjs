@@ -941,6 +941,7 @@ async function main() {
       notify: key => k(key, 'notify'),
       cancelNotification: key => k(key, 'cancelNotification'),
       setLastChat: key => k(key, 'setLastChat'),
+      chatSeen: (key, id) => (k(key, 'chatSeen'), (window.__seen ||= []).push(id)),
       setReadAloud: key => k(key, 'setReadAloud'),
       mediaBase: key => (k(key, 'mediaBase'), ''),
       // Voice: speaking "finishes" after 50 ms; the test plays the recogniser through window.__hmVoice.
@@ -981,10 +982,14 @@ async function main() {
   await sleep(2800)
   const va = calls().filter(c => c.answer === 'srv-approval-1')
   check(va.length === 1 && va[0].result && va[0].result.choice === 'once', `answered by voice (${JSON.stringify(va)})`)
+  // A chat created by its first message tells the service it is on screen (returning to the app = seen).
+  const seenNew = await np.evaluate(() => window.__seen || [])
+  check(seenNew.some(id => /^s-new/.test(id)), `new chat reported on screen (${JSON.stringify(seenNew)})`)
   // Opening another chat ends live mode (it would otherwise keep listening and send there).
   check(await np.locator('.live-bar').count() === 1, 'live mode still on before switching')
   await np.evaluate(() => window.hermesOpenSession('s-6'))
   await np.locator('.live-bar').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat ends live mode'), () => check(false, 'opening another chat ends live mode'))
+  check(await np.evaluate(() => (window.__seen || []).slice(-1)[0] === 's-6'), 'opened chat reported on screen')
 
   // ── Phone assistant: Settings → Voice opens the system picker and shows the role once Hermes holds it ──
   await np.getByRole('button', { name: /^Sessions/ }).click()
