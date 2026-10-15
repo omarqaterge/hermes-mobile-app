@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fmtPause, getLivePause, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
 import { startListening, stopListening, useVoice, voiceErrorText, voiceInputAvailable } from '../voice'
-import { attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, unqueueMessage } from '../gateway'
+import { attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, setYolo, unqueueMessage } from '../gateway'
 import { getState, setState, toast, useStore, type Attachment } from '../store'
 import { haptic } from '../bridge'
 import { matchCommands, refreshCommands, useCommandCatalog, type CommandEntry } from '../commands'
@@ -74,6 +74,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const running = useStore(s => s.active?.running ?? false)
   const model = useStore(s => s.active?.info.model ?? s.defaultModel)
   const effort = useStore(s => s.active?.info.reasoning_effort || s.defaultEffort)
+  const yolo = useStore(s => s.active?.info.yolo === true)
   const attachments = useStore(s => s.active?.attachments ?? EMPTY)
   const conn = useStore(s => s.conn)
   const opening = useStore(s => s.opening)
@@ -328,6 +329,21 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
             {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
           </button>
+          {yolo && (
+            // This chat runs commands without asking (/yolo). Tap to turn it off.
+            <button
+              className="yolo-chip"
+              aria-label="YOLO is on: Hermes runs commands without asking. Tap to turn it off"
+              onClick={() => {
+                haptic()
+                const a = getState().active
+                if (a) void setYolo(a, false).then(() => toast('YOLO off: Hermes asks before risky commands again'), e => toast(errText(e), 'error'))
+              }}
+              disabled={offline}
+            >
+              ⚡ YOLO
+            </button>
+          )}
         </div>
       )}
       <div className={`composer${live !== 'off' ? ' composer-hidden' : ''}`}>

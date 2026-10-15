@@ -492,8 +492,19 @@ function CanvasWriting({ since, title, preview }: { since: number; title?: strin
   )
 }
 
+/** Re-render every 30 s so "2 min ago" stays true. Bounded: only while the panel is open, no renders while hidden. */
+function useAgoTick(on: boolean): void {
+  const [, set] = useState(0)
+  useEffect(() => {
+    if (!on) return
+    const t = setInterval(() => !document.hidden && set(n => n + 1), 30_000)
+    return () => clearInterval(t)
+  }, [on])
+}
+
 export function CanvasPanel() {
   const open = useCanvas(s => s.open)
+  useAgoTick(open)
   const size = useCanvas(s => s.size)
   const docs = useCanvas(s => s.docs)
   const activeId = useCanvas(s => s.active)
@@ -679,7 +690,7 @@ export function CanvasPanel() {
                   Edit
                 </button>
               </div>
-              <span className={`save-state s-${save}`}>{save === 'saving' ? 'Saving…' : save === 'dirty' ? 'Unsaved' : save === 'saved' ? 'Saved ✓' : save === 'conflict' ? 'Conflict' : save === 'error' ? 'Not saved' : doc ? `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermes' : ''}` : ''}</span>
+              <span className={`save-state s-${save}`}>{save === 'saving' ? 'Saving…' : save === 'dirty' ? 'Unsaved' : save === 'saved' ? 'Saved ✓' : save === 'conflict' ? 'Conflict' : save === 'error' ? 'Not saved' : doc ? `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermes' : doc.by === 'user' ? ' · You' : ''}` : ''}</span>
               {meta.type === 'html' && mode === 'view' && (
                 <button className={`canvas-tool${net[meta.id] ? ' on' : ''}`} title="Allow the page to use the network" onClick={() => setNet(n => ({ ...n, [meta.id]: !n[meta.id] }))}>
                   {net[meta.id] ? '🌐 Online' : '🚫 Offline'}

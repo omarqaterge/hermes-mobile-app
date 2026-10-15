@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { type ChatItem, toast } from '../store'
-import { branchAt, resendFrom, retryTurn } from '../gateway'
+import { branchAt, imagesOf, resendFrom, retryTurn, type MsgImage } from '../gateway'
 import { Markdown } from './Markdown'
 import { copyRich, copyText, haptic } from '../bridge'
 import { PickerSheet } from './ui'
@@ -274,6 +274,7 @@ function CopyBtn({ text, choose }: { text: string; choose?: boolean }) {
 function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'user' }>; actions: boolean; busy: boolean }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
+  const [keep, setKeep] = useState<MsgImage[]>(() => imagesOf(item)) // photos sent again with the edit
   const time = useTimeTap(item.at)
   const ta = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -285,6 +286,18 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
   if (editing)
     return (
       <div className="msg user editing">
+        {keep.length > 0 && (
+          <div className="attach-row edit-images">
+            {keep.map(im => (
+              <div key={im.path} className="attach-thumb">
+                {im.url ? <img src={im.url} alt={im.name} /> : <Media src={im.path} alt={im.name} />}
+                <button className="attach-x" aria-label={`Remove ${im.name}`} onClick={() => setKeep(k => k.filter(x => x.path !== im.path))}>
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={ta}
           className="edit-box"
@@ -306,7 +319,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
             disabled={busy || !draft.trim()}
             onClick={() => {
               setEditing(false)
-              run(() => resendFrom(item.id, draft))
+              run(() => resendFrom(item.id, draft, keep))
             }}
           >
             Send
@@ -344,6 +357,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
             disabled={busy}
             onClick={() => {
               setDraft(item.text)
+              setKeep(imagesOf(item))
               setEditing(true)
               haptic()
             }}

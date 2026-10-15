@@ -147,13 +147,16 @@ function stillOpen(req: ServerRequest): boolean {
   return getState().requests.some(r => r.id === req.id)
 }
 
+/** What Live mode says when Hermes asks for approval: just the question (the details are on the screen; reading a
+ * long command out loud took ages). "Allow for this chat" still works when said (voiceChoice). */
+export function approvalPrompt(_choices: string[]): string {
+  return 'Hermes needs your permission. Allow or deny?'
+}
+
 function onApproval(req: ServerRequest) {
   if (phase === 'off') return
   approval = { req, tries: 0 }
-  const p = req.params as Record<string, unknown>
-  const what = String(p.description || p.command || 'run a command').slice(0, 220)
-  const session = approvalChoices(req).includes('session')
-  askAloud(`Hermes wants to ${/^[a-z]/.test(what) ? '' : 'do this: '}${what}. Say allow${session ? ', allow for this chat,' : ''} or deny.`)
+  askAloud(approvalPrompt(approvalChoices(req)))
 }
 
 function askAloud(text: string) {
@@ -212,7 +215,9 @@ export function setLiveMute(on: boolean): void {
   } else if (phase === 'listening') listen()
 }
 
-export function stopLive(): void {
+/** End Live mode. `keepSpeech`: let a reply that is being read play to the end (Android's TTS engine runs in its own
+ * service, so it carries on with the app off screen). */
+export function stopLive(opts?: { keepSpeech?: boolean }): void {
   if (phase === 'off') return
   muted = false
   setLiveMuted(false)
@@ -223,12 +228,16 @@ export function stopLive(): void {
   unTts = null
   goto('off')
   stopListening()
-  stopSpeaking()
+  if (!opts?.keepSpeech) stopSpeaking()
 }
 
-// The microphone can't stay open once the app is off screen.
+/** Leaving the app ends Live mode: the microphone can't stay open off screen. A reply being read keeps playing;
+ * an approval question is cut (answering it needs the microphone). */
+function onLiveHidden(): void {
+  stopLive({ keepSpeech: phase === 'speaking' && !approval })
+}
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') stopLive()
+  if (document.visibilityState === 'hidden') onLiveHidden()
 })
 
 /** "2 seconds", "1.5 seconds" for hints. */

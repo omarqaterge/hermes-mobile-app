@@ -1,4 +1,5 @@
 import { btwDone, openBtw } from './btw'
+import { bootMark } from './boot'
 import { markSeen, noteSessions } from './unread'
 import { rememberPrompt } from './recent'
 import { api } from './api'
@@ -53,6 +54,7 @@ let started = false
 client.onState(conn => {
   setState({ conn })
   if (conn === 'open') {
+    bootMark('socket')
     aliveAt = Date.now()
     attempt = 0
     setState({ connDetail: '' })
@@ -325,6 +327,7 @@ export async function loadSessions(): Promise<void> {
   setState({ sessionsLoading: true })
   try {
     const r = await rpc<SessionListResult>('session.list', { limit: sessionLimit })
+    bootMark('sessions')
     setState({ sessions: r.sessions ?? [] })
     noteSessions(r.sessions ?? [])
     try {
@@ -495,6 +498,7 @@ export function startDraft(): void {
 export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: boolean; auto?: boolean } = {}): Promise<void> {
   // The automatic start-up resume doesn't count as navigation: if the user goes elsewhere meanwhile, it loses.
   const seq = opts.auto ? openSeq : ++openSeq
+  if (opts.auto) bootMark('resume-start')
   const prev = getState().active
   // Opening another chat ends live mode: it would keep listening and send to the new chat.
   if (liveBridge.active && prev?.storedId !== storedId) liveBridge.stop()
@@ -530,10 +534,13 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     return
   }
   setState({ active: { ...next, title }, opening: null, preview: null, drawer: false })
+  if (opts.auto) bootMark('chat-live')
   if (prev && prev.storedId !== next.storedId) retire(prev)
   rememberSession(next.storedId)
   markSeen(next.storedId)
   setLastChat(next.storedId, title)
+  // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back.
+  if (yoloChats()[next.storedId] && !next.info.yolo) void setYolo(next, true).catch(() => {})
   // Show the chat's context fill under its last reply.
   void refreshCtx(next.usage).then(ctx => {
     const id = lastAssistantId()
@@ -665,6 +672,38 @@ type Dispatch = {
 /** Put text into the composer (dispatch type "prefill"); the Composer listens for this. */
 export const composerPrefill = { set: (_text: string) => {} }
 
+const YOLO_KEY = 'hm.yolo.v1' // stored chat id → true while that chat runs commands without asking
+function yoloChats(): Record<string, boolean> {
+  try {
+    const m = JSON.parse(localStorage.getItem(YOLO_KEY) || '{}')
+    return m && typeof m === 'object' ? m : {}
+  } catch {
+    return {}
+  }
+}
+function rememberYolo(storedId: string, on: boolean): void {
+  const m = yoloChats()
+  if (on) m[storedId] = true
+  else delete m[storedId]
+  try {
+    localStorage.setItem(YOLO_KEY, JSON.stringify(m))
+  } catch {
+    /* quota: the flag still holds until the chat is reopened */
+  }
+}
+
+/** YOLO for one chat, Hermes Desktop's way (config.set, in-process, instant). Through slash.exec it ran in the
+ * slash worker, a separate process: slow to start, and its flag never reached the agent that asks for approvals.
+ * `want` null = toggle. Hermes (b8a8be18) doesn't persist the flag, so it is remembered here and re-applied on resume. */
+export async function setYolo(a: ActiveSession, want: boolean | null): Promise<boolean> {
+  const next = want ?? !a.info.yolo
+  const r = await rpc<{ value?: string | boolean }>('config.set', { session_id: a.runtimeId, key: 'yolo', value: next ? '1' : '0' })
+  const on = r?.value === '1' || r?.value === true
+  updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on } } : {}))
+  rememberYolo(a.storedId, on)
+  return on
+}
+
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
@@ -672,6 +711,17 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   const name = body.split(/\s+/)[0]
   const arg = body.slice(name.length).trim()
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
+  if (name.toLowerCase() === 'yolo') {
+    const w = arg.toLowerCase()
+    const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
+    try {
+      const on = await setYolo(a, want)
+      pushItem({ kind: 'notice', id: newId('n'), text: on ? '⚡ YOLO on for this chat: Hermes runs commands without asking' : 'YOLO off: Hermes asks before risky commands again', level: on ? 'warn' : 'info' })
+    } catch (err) {
+      pushItem({ kind: 'notice', id: newId('n'), text: `/yolo: ${errText(err)}`, level: 'error' })
+    }
+    return
+  }
 
   let r: Dispatch | null = null
   try {
@@ -1263,25 +1313,47 @@ async function userRowId(a: ActiveSession, itemId: string): Promise<number> {
   return row.row_id
 }
 
-/** Edit / regenerate: drop the user turn `itemId` and everything after it, then send `text` in its place. */
-export async function resendFrom(itemId: string, text: string): Promise<void> {
+/** A photo of a sent message: Hermes's path for it (image.attach re-queues it) and the preview shown in the bubble. */
+export interface MsgImage {
+  name: string
+  path: string
+  url?: string
+}
+
+/** The photos of a user message that can be sent again (the ones Hermes has a path for). */
+export function imagesOf(item: ChatItem): MsgImage[] {
+  if (item.kind !== 'user' || !item.imagePaths) return []
+  return item.imagePaths.map((p, i) => ({ name: item.images?.[i] || p.split('/').pop() || 'image', path: p, url: item.imageUrls?.[i] || undefined })).filter(x => x.path)
+}
+
+/** Edit / regenerate: drop the user turn `itemId` and everything after it, then send `text` in its place. The
+ * message's photos go with it (re-queued with image.attach); `images` overrides them (the edit box can drop some). */
+export async function resendFrom(itemId: string, text: string, images?: MsgImage[]): Promise<void> {
   const trimmed = text.trim()
   const a = getState().active
   if (!a || !trimmed) return
   if (a.running) throw new Error('Wait for the current reply to finish')
   const cut = a.items.findIndex(i => i.id === itemId)
   if (cut < 0) return
+  const imgs = images ?? imagesOf(a.items[cut])
   const rowId = await userRowId(a, itemId)
   const kept = a.items.slice(0, cut).filter(i => i.kind === 'user').map(i => i.id)
   const isLast = !a.items.slice(cut + 1).some(i => i.kind === 'user')
   const uid = newId('u')
+  const pics = imgs.length ? { images: imgs.map(x => x.name), imagePaths: imgs.map(x => x.path), imageUrls: imgs.some(x => x.url) ? imgs.map(x => x.url || '') : undefined } : {}
   updateActive(x => ({
-    items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now() }],
+    items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now(), ...pics }],
     running: true,
     status: '',
     openAssistantId: null
   }))
+  const queued: MsgImage[] = []
   try {
+    // Hermes queued the photos for the original turn only: queue them again for this one.
+    for (const im of imgs) {
+      await rpc('image.attach', { session_id: a.runtimeId, path: im.path })
+      queued.push(im)
+    }
     let r: PromptSubmitResult
     try {
       r = await rpc<PromptSubmitResult>('prompt.submit', {
@@ -1305,6 +1377,8 @@ export async function resendFrom(itemId: string, text: string): Promise<void> {
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
     updateActive(() => ({ running: false }))
+    // Not sent: take the photos back out of Hermes's queue, or they would ride along with the next message.
+    for (const im of queued) await rpc('image.detach', { session_id: a.runtimeId, path: im.path }).catch(() => {})
     // The server may have kept the old turns: reload the truth, then say why.
     await resumeSession(a.storedId).catch(() => {})
     toast(`Send failed: ${errText(err)}`, 'error', 6000)

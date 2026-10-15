@@ -32,6 +32,11 @@ async function main() {
   })
   await page.goto('http://127.0.0.1:5180/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await sleep(500)
+  {
+    const stages = await page.evaluate(() => (JSON.parse(localStorage.getItem('hm.boot.v1') || '{}').marks || []).map(m => m[0]))
+    check(['script', 'painted', 'socket', 'sessions'].every(s => stages.includes(s)), `start-up timing marks recorded (${stages.join(', ')})`)
+  }
 
   // ── model picked before the first message: the chat is created with it (no switch, so no model-switch marker
   //    in Hermes's history that would swallow the first message) ──
@@ -48,6 +53,21 @@ async function main() {
     check(sets.length === 0, 'no config.set model on a chat with no messages')
     check(sub.length === 1 && sub[0].params.session_id === 'rt-new-m1', `the message goes to that chat (${JSON.stringify(sub.map(c => c.params.session_id))})`)
   }
+  // ── /yolo goes through config.set (in-process, like Desktop), never the slash worker ──
+  await page.locator('.msg.assistant', { hasText: 'OK' }).first().waitFor({ timeout: 5000 })
+  await page.getByPlaceholder('Message Hermes').fill('/yolo')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await sleep(500)
+  check(rpcs('config.set').some(c => c.params.key === 'yolo' && c.params.value === '1' && c.params.session_id === 'rt-new-m1'), '/yolo → config.set yolo=1 on this chat')
+  check(!rpcs('slash.exec').some(c => /^yolo\b/.test(c.params.command || '')), '/yolo never reaches slash.exec')
+  check((await page.getByText('YOLO on').count()) > 0, '/yolo shows a notice')
+  check((await page.locator('.yolo-chip').count()) === 1, 'YOLO chip shown above the composer')
+  check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['s-new-m1'] === true), 'YOLO remembered for this chat (re-applied on resume)')
+  if (await page.locator('.yolo-chip').count()) await page.locator('.yolo-chip').click()
+  await sleep(400)
+  check(rpcs('config.set').some(c => c.params.key === 'yolo' && c.params.value === '0'), 'tapping the chip turns YOLO off')
+  check((await page.locator('.yolo-chip').count()) === 0, 'chip gone after off')
+  check(await page.evaluate(() => !JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['s-new-m1']), 'YOLO forgotten for this chat after off')
   await page.evaluate(() => localStorage.clear())
   await page.goto('http://127.0.0.1:5180/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
@@ -145,6 +165,35 @@ async function main() {
   check(rpcs('prompt.submit').length === 1, 'nothing is sent by itself')
   await page.getByRole('button', { name: 'clear', exact: true }).click()
   await page.getByPlaceholder('Message Hermes').fill('')
+
+  // ── edit / retry keep the photos of the message (re-queued with image.attach) ──
+  await attach('Photo', [{ name: 'e.png', mimeType: 'image/png', buffer: png }])
+  await page.locator('.attach-thumb img[alt="e.png"]').waitFor({ timeout: 5000 })
+  await page.getByPlaceholder('Message Hermes').fill('what colour?')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
+  await sleep(300)
+  await page.locator('.msg.user', { hasText: 'what colour?' }).last().getByRole('button', { name: 'Edit' }).click()
+  check((await page.locator('.msg.user.editing img[alt="e.png"]').count()) === 1, 'editing shows the message photo')
+  await page.locator('.edit-box').fill('what colour now?')
+  await page.locator('.edit-send').click()
+  await sleep(700)
+  {
+    const att = rpcs('image.attach')
+    const sub = rpcs('prompt.submit').pop()
+    check(att.length === 1 && att[0].params.path === '/root/.hermes/images/e.png', `edit re-queues the photo with image.attach (${JSON.stringify(att.map(a => a.params.path))})`)
+    check(sub && sub.params.text === 'what colour now?' && typeof sub.params.truncate_before_row_id === 'number', 'edited text sent in place of the old turn')
+    const b = page.locator('.msg.user', { hasText: 'what colour now?' }).last()
+    check((await b.locator('img.msg-thumb[alt="e.png"]').count()) === 1, 'edited bubble still shows the photo')
+  }
+  await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
+  await sleep(300)
+  await page.locator('.msg.assistant').last().getByRole('button', { name: 'Retry' }).click()
+  await sleep(700)
+  check(rpcs('image.attach').length === 2, `retry re-queues the photo too (${rpcs('image.attach').length})`)
+  check((await page.locator('.msg.user', { hasText: 'what colour now?' }).last().locator('img.msg-thumb').count()) === 1, 'retried bubble still shows the photo')
+  await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
+  await sleep(300)
 
   // ── #3 streaming a long code reply ───────────────────
   await page.getByPlaceholder('Message Hermes').fill('long code please')
@@ -394,6 +443,17 @@ async function main() {
   await page.locator('.canvas-writing-preview', { hasText: 'Step one' }).waitFor({ timeout: 4000 }).then(() => check(true, 'the text shows once the call starts'), () => check(false, 'the text shows once the call starts'))
   await page.locator('.canvas-tab', { hasText: 'Plan' }).waitFor({ timeout: 5000 }).then(() => check(true, 'then the saved document replaces it'), () => check(false, 'then the saved document replaces it'))
   check((await page.locator('.canvas-writing').count()) === 0 && (await page.locator('.canvas-btn.writing').count()) === 0, 'writing state gone')
+  // ── canvas: "Saved ✓" goes back to "<when> · <who>" (it used to stay forever) ──
+  await sleep(300)
+  check(/just now · Hermes/.test(await page.locator('.save-state').innerText()), `idle label says who wrote it (${await page.locator('.save-state').innerText()})`)
+  await page.locator('.canvas-toolbar .seg button', { hasText: 'Edit' }).click()
+  await page.locator('textarea.editor-text').fill('# Plan\n\nStep one x')
+  await page.locator('.save-state', { hasText: 'Saved ✓' }).waitFor({ timeout: 3000 }).then(() => check(true, 'canvas edit shows Saved ✓'), () => check(false, 'canvas edit shows Saved ✓'))
+  await sleep(2600)
+  {
+    const s = await page.locator('.save-state').innerText()
+    check(/just now · You/.test(s), `"Saved ✓" returns to "just now · You" (${s})`)
+  }
   await page.locator('.canvas-x').click()
 
   // ── #12 media streams through the shell's URL (no base64 through /api/files/read) ──
@@ -703,9 +763,9 @@ async function main() {
   await np.evaluate(() => window.hermesShortcut('live'))
   await np.waitForFunction(() => window.__nativeCalls.includes('startListening'), null, { timeout: 5000 })
   await np.evaluate(() => window.__hmVoice('final', 'run the thing'))
-  await np.waitForFunction(() => (window.__spoken || []).some(t => /Say allow/.test(t)), null, { timeout: 8000 }).catch(() => {})
+  await np.waitForFunction(() => (window.__spoken || []).some(t => /Allow or deny/.test(t)), null, { timeout: 8000 }).catch(() => {})
   const spoken = await np.evaluate(() => (window.__spoken || []).join(' | '))
-  check(/delete the temp folder.*Say allow, allow for this chat, or deny/.test(spoken), `approval read aloud (${spoken})`)
+  check(/Hermes needs your permission\. Allow or deny\?/.test(spoken) && !/temp folder|rm -rf/.test(spoken), `approval asked in one short question, the command isn't read out (${spoken})`)
   await sleep(300)
   await np.evaluate(() => window.__hmVoice('final', 'yes allow it'))
   await sleep(2800)

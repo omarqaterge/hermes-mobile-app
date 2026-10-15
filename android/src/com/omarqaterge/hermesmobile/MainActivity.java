@@ -78,6 +78,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle state) {
+        // Start-up timing (logcat tag hmboot; the page's own marks are in Settings → About → Last start-up).
+        bootT0 = 0; // each launch counts from its own create
+        bootLog("create");
         super.onCreate(state);
         // Last theme background the page chose (OLED black or default), so launch doesn't flash.
         int bg = getSharedPreferences("hm", MODE_PRIVATE).getInt("bg", Color.parseColor("#0E1115"));
@@ -117,11 +120,13 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                bootLog("page-started");
                 newBridgeKey();
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
+                bootLog("page-finished");
                 pageReady = true;
                 openPendingSession();
                 deliverShare();
@@ -178,7 +183,17 @@ public class MainActivity extends Activity {
         pendingShortcut = shortcutOf(getIntent());
         requestRuntimePermissions();
         startHermes(); // no-op if already running; the supervisor script is idempotent
+        bootLog("load-url");
         web.loadUrl("file:///android_asset/www/index.html");
+    }
+
+    private static long bootT0 = 0;
+
+    /** One start-up stage to logcat (`adb logcat -s hmboot`): ms since this process's first mark, plus uptime. */
+    static void bootLog(String stage) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (bootT0 == 0) bootT0 = now;
+        android.util.Log.i("hmboot", stage + " +" + (now - bootT0) + "ms (uptime " + now + ")");
     }
 
     void requestRuntimePermissions() {
@@ -1158,7 +1173,10 @@ public class MainActivity extends Activity {
         public void getTokenAsync(String key, final int id) {
             if (!ok(key)) return;
             new Thread(() -> {
+                long t0 = android.os.SystemClock.uptimeMillis();
+                bootLog("token-start");
                 String t = token(true);
+                bootLog("token-end " + (android.os.SystemClock.uptimeMillis() - t0) + "ms" + (t == null || t.isEmpty() ? " (none)" : ""));
                 String js = "window.__hmToken && window.__hmToken(" + id + "," + JSONObject.quote(t) + ")";
                 runOnUiThread(() -> web.evaluateJavascript(js, null));
             }, "hermes-token").start();

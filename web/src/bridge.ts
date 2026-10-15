@@ -1,6 +1,7 @@
 // The native side of the app. Inside the Android shell `window.HermesAndroid` is a
 // Java object (addJavascriptInterface); in a plain browser (development) the same
 // capabilities come from URL parameters or are no-ops.
+import { bootMark } from './boot'
 
 interface AndroidBridge {
   getToken(): string // dashboard session token, fetched natively (no CORS from file://); blocks the page
@@ -68,6 +69,7 @@ export function fetchToken(): string {
 let tokenSeq = 0
 const tokenWaits = new Map<number, (t: string) => void>()
 ;(window as unknown as { __hmToken?: (id: number, t: string) => void }).__hmToken = (id, t) => {
+  bootMark('token')
   tokenWaits.get(id)?.(t || '')
   tokenWaits.delete(id)
 }
@@ -84,6 +86,7 @@ function nativeToken(): Promise<string> {
       clearTimeout(timer)
       resolve(t)
     })
+    bootMark('token-asked')
     native.getTokenAsync!(id)
   })
 }

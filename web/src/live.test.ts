@@ -1,0 +1,70 @@
+// @vitest-environment happy-dom
+// Live mode leaving the screen: the microphone closes, a reply being read keeps playing.
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+
+const voice = vi.hoisted(() => ({
+  hear: null as null | ((kind: string, t: string) => void),
+  bridge: { active: false, onReply: (_t: string) => {}, onApproval: (_r: unknown) => {}, stop: () => {} }
+}))
+vi.mock('./voice', () => ({
+  liveBridge: voice.bridge,
+  onTtsDone: () => () => {},
+  setLiveMuted: () => {},
+  setLivePhase: () => {},
+  speak: vi.fn(),
+  startListening: (cb: (kind: string, t: string) => void) => {
+    voice.hear = cb
+  },
+  stopListening: vi.fn(),
+  stopSpeaking: vi.fn(),
+  voiceErrorText: (t: string) => t,
+  voiceInputAvailable: () => true
+}))
+vi.mock('./gateway', () => ({ answerRequest: vi.fn(), errText: String, sendPrompt: vi.fn(() => Promise.resolve()) }))
+vi.mock('./store', () => ({ getState: () => ({}), toast: vi.fn() }))
+
+const live = await import('./live')
+const v = await import('./voice')
+
+function hide() {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
+describe('Live mode when the app is hidden', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.mocked(v.stopSpeaking).mockClear()
+    vi.mocked(v.stopListening).mockClear()
+    live.startLive()
+  })
+  afterEach(() => {
+    live.stopLive()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    vi.useRealTimers()
+  })
+
+  test('a reply being read keeps playing; the microphone closes and Live mode ends', () => {
+    voice.hear!('final', 'count slowly to thirty')
+    vi.advanceTimersByTime(live.getLivePause() * 1000 + 10)
+    voice.bridge.onReply('One. Two. Three.')
+    vi.mocked(v.stopListening).mockClear()
+    hide()
+    expect(live.liveOn()).toBe(false)
+    expect(v.stopListening).toHaveBeenCalled()
+    expect(v.stopSpeaking).not.toHaveBeenCalled()
+  })
+
+  test('an approval question is cut (answering it needs the microphone)', () => {
+    voice.bridge.onApproval({ id: 'a1', method: 'approval', params: { command: 'chmod 777 /tmp/x' } })
+    hide()
+    expect(live.liveOn()).toBe(false)
+    expect(v.stopSpeaking).toHaveBeenCalled()
+  })
+
+  test('while listening, leaving stops everything as before', () => {
+    hide()
+    expect(live.liveOn()).toBe(false)
+    expect(v.stopSpeaking).toHaveBeenCalled()
+  })
+})

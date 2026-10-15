@@ -7,6 +7,9 @@ import './styles.css'
 import 'highlight.js/styles/github-dark.css'
 import 'katex/dist/katex.min.css'
 import { applyTheme, savedTheme } from './theme'
+import { bootMark } from './boot'
+
+bootMark('script')
 
 applyTheme(savedTheme())
 
