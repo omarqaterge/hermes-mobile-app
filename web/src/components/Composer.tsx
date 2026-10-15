@@ -222,7 +222,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
     <div className="composer-wrap">
       {queued && (
         <div className="queued-chip">
-          <span className="queued-text">⏳ Sends when Hermes is back: {queued.text.length > 80 ? queued.text.slice(0, 78) + '…' : queued.text}</span>
+          <span className="queued-text">⏳ Sends when Hermes is back: {queued.text.length > 80 ? queued.text.slice(0, 78) + '…' : queued.text}{queued.atts?.length ? ` (📎 ${queued.atts.length} attached)` : ''}</span>
           <button
             className="icon-btn"
             aria-label="Don't send"

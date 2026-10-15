@@ -201,12 +201,14 @@ function saveOutbox(q: AppStateQueued): void {
     /* ignore */
   }
 }
-type AppStateQueued = { chat: string | null; text: string } | null
+type AppStateQueued = { chat: string | null; text: string; atts?: Attachment[]; runtime?: string } | null
 
-/** Offline: keep the message for the chat it was typed in and send it once connected. */
+/** Offline: keep the message for the chat it was typed in and send it once connected. What is attached
+ * goes with it (kept in the composer too; the copy here is for a page that reloads before it is sent). */
 export function queueMessage(text: string): void {
   const s = getState()
-  saveOutbox({ chat: s.active?.storedId || s.opening || null, text })
+  const atts = (s.active?.attachments ?? []).map(({ preview: _p, ...x }) => x)
+  saveOutbox({ chat: s.active?.storedId || s.opening || null, text, ...(atts.length ? { atts, runtime: s.active?.runtimeId } : {}) })
 }
 
 /** Take the queued message back (✕ on its chip): it returns to the composer. */
@@ -223,6 +225,12 @@ async function flushOutbox(): Promise<void> {
   try {
     if (q.chat && getState().active?.storedId !== q.chat) await resumeSession(q.chat)
     if (!q.chat && getState().active) startDraft()
+    // The page reloaded since it was queued: the composer lost what was attached, the outbox kept it.
+    const a = getState().active
+    if (q.atts?.length && a && a.storedId === q.chat && !a.attachments.length) {
+      const atts = await carryAttachments(q.atts, q.runtime, a.runtimeId)
+      updateActive(x => (x.runtimeId === a.runtimeId ? { attachments: atts } : null))
+    }
     await sendPrompt(q.text)
     toast('Sent the message you queued')
   } catch (err) {
@@ -528,6 +536,8 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     next.openAssistantId = next.running ? prev.openAssistantId : null
   }
   const title = next.title || getState().sessions.find(s => s.id === storedId)?.title || ''
+  // Photos/files waiting in the composer stay with the chat across a reconnect.
+  if (prev && prev.storedId === next.storedId && prev.attachments.length) next.attachments = await carryAttachments(prev.attachments, prev.runtimeId, next.runtimeId)
   // Another chat was opened while this one loaded: that one wins, this one just goes warm.
   if (seq !== openSeq) {
     retire({ ...next, title })
@@ -829,6 +839,29 @@ export async function attachFile(file: File): Promise<void> {
   }
   const runtimeId = a.runtimeId
   updateActive(x => (x.runtimeId === runtimeId ? { attachments: [...x.attachments, att] } : null))
+}
+
+/** Things waiting in the composer, moved to the runtime a resume returned. Hermes reattaches a parked runtime
+ * when it can (the photos are still queued there); a new one needs each photo queued again with image.attach.
+ * Files are only their @file: reference, so they always carry over. A photo Hermes can't find any more is dropped. */
+async function carryAttachments(atts: Attachment[], from: string | undefined, to: string): Promise<Attachment[]> {
+  if (from === to) return atts
+  const out: Attachment[] = []
+  for (const att of atts) {
+    if (att.kind === 'file') {
+      if (att.ref) out.push(att)
+      continue
+    }
+    if (!att.path) continue
+    try {
+      await rpc('image.attach', { session_id: to, path: att.path })
+      out.push(att)
+    } catch {
+      /* gone from Hermes: drop it */
+    }
+  }
+  if (out.length < atts.length) toast(`${atts.length - out.length} attachment(s) couldn't be kept`, 'error')
+  return out
 }
 
 /** Take something back out of the next message. A photo must also leave Hermes's queue (image.detach),

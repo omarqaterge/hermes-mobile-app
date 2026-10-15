@@ -796,6 +796,45 @@ async function main() {
   check(qs.length === 1 && qs[0].params.session_id === 'rt-' + openBefore, `sent once, to the chat it was typed in (${JSON.stringify(qs.map(q => q.params.session_id))}, ${openBefore})`)
   check((await page.locator('.queued-chip').count()) === 0, 'chip gone')
 
+  // ── photos/files in the composer survive a reconnect, and go with a message queued offline ──
+  {
+    const sid = openBefore
+    await attach('Photo', [{ name: 'keep.png', mimeType: 'image/png', buffer: png }])
+    await page.locator('.attach-thumb img[alt="keep.png"]').waitFor({ timeout: 5000 })
+    // Hermes reattaches the parked runtime: the photo is still queued there, nothing to redo.
+    let n0 = rpcs('image.attach').length
+    await mock({ drop: 3000 })
+    await page.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
+    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 30000 })
+    await sleep(500)
+    check((await page.locator('.attach-thumb img[alt="keep.png"]').count()) === 1, 'photo chip survives a reconnect')
+    check(rpcs('image.attach').length === n0, 'same runtime: photo not queued twice')
+    // Hermes reaped it: a new runtime gets the photo queued again.
+    await mock({ drop: 3000, newRuntime: true })
+    await page.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
+    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 30000 })
+    await sleep(500)
+    const ra = rpcs('image.attach').slice(n0)
+    check((await page.locator('.attach-thumb img[alt="keep.png"]').count()) === 1 && ra.some(r => r.params.session_id === 'rt1-' + sid && r.params.path === '/root/.hermes/images/keep.png'), `new runtime: photo queued again (${JSON.stringify(ra.map(r => r.params))})`)
+    // Offline with a photo + a file attached: the queued message takes them along.
+    await attach('File', [{ name: 'q.txt', mimeType: 'text/plain', buffer: Buffer.from('q') }])
+    await page.locator('.attach-chip', { hasText: 'q.txt' }).waitFor({ timeout: 5000 })
+    n0 = rpcs('image.attach').length
+    await mock({ drop: 4000, newRuntime: true })
+    await page.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
+    await page.getByPlaceholder(/^Offline/).fill('queued with files')
+    await page.locator('.composer').getByRole('button', { name: 'Send when back online' }).click()
+    check((await page.locator('.queued-chip', { hasText: '2 attached' }).count()) === 1, 'queued chip counts the attachments')
+    await page.locator('.msg.user .bubble', { hasText: 'queued with files' }).waitFor({ timeout: 30000 }).catch(() => {})
+    const qf = rpcs('prompt.submit').filter(r => String(r.params.text).endsWith('queued with files'))
+    check(qf.length === 1 && qf[0].params.text === '@file:ws/q.txt\n\nqueued with files' && qf[0].params.session_id === 'rt2-' + sid, `queued message carries the file (${JSON.stringify(qf.map(q => q.params))})`)
+    check(rpcs('image.attach').slice(n0).some(r => r.params.session_id === 'rt2-' + sid && r.params.path === '/root/.hermes/images/keep.png'), 'queued message carries the photo')
+    const qb = page.locator('.msg.user').last()
+    check((await qb.locator('img.msg-thumb[alt="keep.png"]').count()) === 1 && (await qb.locator('.chip', { hasText: 'q.txt' }).count()) === 1, 'sent bubble shows the photo and the file')
+    check((await page.locator('.attach-thumb, .attach-chip').count()) === 0, 'composer empty after the queued send')
+    await mock({ gen: 0 })
+  }
+
   // ── #29 tap a message to see when it was sent ──
   await page.evaluate(() => window.hermesOpenSession('s-11'))
   const u11 = page.locator('.msg.user', { hasText: 'hello s-11' })
@@ -815,7 +854,7 @@ async function main() {
   await page.locator('.empty .suggestion').first().waitFor({ timeout: 5000 }).then(() => check(true, 'New chat shortcut opens the new-chat screen'), () => check(false, 'New chat shortcut opens the new-chat screen'))
   // #27 the empty screen suggests what you asked lately
   const sugg = await page.locator('.empty .suggestion').allTextContents()
-  check(sugg[0] === 'queued hello' && sugg.includes('show media') && sugg.length === 4, `suggestions start with recent prompts (${JSON.stringify(sugg)})`)
+  check(sugg[0] === 'queued with files' && sugg[1] === 'queued hello' && sugg.includes('show media') && sugg.length === 4, `suggestions start with recent prompts (${JSON.stringify(sugg)})`)
   await page.evaluate(() => window.hermesShortcut('live'))
   await page.locator('.toast', { hasText: 'Live mode needs' }).waitFor({ timeout: 3000 }).then(() => check(true, 'Live shortcut explains itself without voice'), () => check(false, 'Live shortcut explains itself without voice'))
 

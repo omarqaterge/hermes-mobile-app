@@ -28,6 +28,7 @@ const libraryItems = [] // the Library (plugin library.py), newest first
 canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Life\n\nGlider' }]
 let activityItems = []
 let refuseUntil = 0
+let runtimeGen = 0
 let pluginEnabled = false
 let providerConfigured = true // false = a fresh install (the welcome opens)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
@@ -63,6 +64,9 @@ const server = http.createServer((req, res) => {
       if (b.unconfigured) providerConfigured = false
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
+      // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
+      if (b.newRuntime) runtimeGen++
+      if (b.gen !== undefined) runtimeGen = b.gen
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
         refuseUntil = Date.now() + (b.drop || 3000)
@@ -283,7 +287,7 @@ wss.on('connection', ws => {
           for (let i = 0; i < 150; i++) messages.push({ role: 'user', text: `question ${i}`, row_id: i * 2 + 1 }, { role: 'assistant', text: `**answer ${i}**\n\n- point a\n- point b` })
           return reply({ session_id: 'rt-s-long', stored_session_id: sid, info: { title: 'Long chat', model: 'mock-model' }, messages })
         }
-        const res = { session_id: `rt-${sid}`, stored_session_id: sid, info: { title: sid, model: 'mock-model' }, messages: [{ role: 'user', text: `hello ${sid}`, row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: `answer ${sid}`, timestamp: 1790000060 }] }
+        const res = { session_id: runtimeGen ? `rt${runtimeGen}-${sid}` : `rt-${sid}`, stored_session_id: sid, info: { title: sid, model: 'mock-model' }, messages: [{ role: 'user', text: `hello ${sid}`, row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: `answer ${sid}`, timestamp: 1790000060 }] }
         // A slow phone: the cached copy must be on screen long before this answer.
         if (sid === 's-slow') return later(1500, () => reply(res))
         return reply(res)

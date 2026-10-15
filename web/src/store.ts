@@ -149,8 +149,9 @@ export interface AppState {
   jump: import('./jump').Jump | null
   /** In-chat search (header ⋮ → Search): the text typed and which match (0 = newest) is current; null = off. */
   find: { q: string; i: number } | null
-  /** A message typed while Hermes was offline, sent on reconnect (gateway.ts outbox). chat null = a new chat. */
-  queued: { chat: string | null; text: string } | null
+  /** A message typed while Hermes was offline, sent on reconnect (gateway.ts outbox). chat null = a new chat.
+   *  `atts`/`runtime`: what was attached when it was queued (and where), for a page that reloaded meanwhile. */
+  queued: { chat: string | null; text: string; atts?: Attachment[]; runtime?: string } | null
 }
 
 const savedProfile = (() => {
