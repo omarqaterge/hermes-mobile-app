@@ -409,6 +409,17 @@ async function main() {
   await page.locator('.canvas-writing-preview', { hasText: 'Step one' }).waitFor({ timeout: 4000 }).then(() => check(true, 'the text shows once the call starts'), () => check(false, 'the text shows once the call starts'))
   await page.locator('.canvas-tab', { hasText: 'Plan' }).waitFor({ timeout: 5000 }).then(() => check(true, 'then the saved document replaces it'), () => check(false, 'then the saved document replaces it'))
   check((await page.locator('.canvas-writing').count()) === 0 && (await page.locator('.canvas-btn.writing').count()) === 0, 'writing state gone')
+  // ── canvas: "Saved ✓" goes back to "<when> · <who>" (it used to stay forever) ──
+  await sleep(300)
+  check(/just now · Hermes/.test(await page.locator('.save-state').innerText()), `idle label says who wrote it (${await page.locator('.save-state').innerText()})`)
+  await page.locator('.canvas-toolbar .seg button', { hasText: 'Edit' }).click()
+  await page.locator('textarea.editor-text').fill('# Plan\n\nStep one x')
+  await page.locator('.save-state', { hasText: 'Saved ✓' }).waitFor({ timeout: 3000 }).then(() => check(true, 'canvas edit shows Saved ✓'), () => check(false, 'canvas edit shows Saved ✓'))
+  await sleep(2600)
+  {
+    const s = await page.locator('.save-state').innerText()
+    check(/just now · You/.test(s), `"Saved ✓" returns to "just now · You" (${s})`)
+  }
   await page.locator('.canvas-x').click()
 
   // ── #12 media streams through the shell's URL (no base64 through /api/files/read) ──

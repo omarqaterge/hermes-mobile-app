@@ -168,6 +168,8 @@ const server = http.createServer((req, res) => {
         if (!d) return send({ detail: 'not found' }, 404)
         d.content = b.content
         d.rev++
+        d.updated = Date.now() / 1000
+        d.by = 'user'
         const { content, ...meta } = d
         return send(meta)
       }

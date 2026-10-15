@@ -68,6 +68,8 @@ const call = <T,>(method: string, path: string, body?: unknown) => api<T>(method
 
 let dirtyText: { id: string; text: string } | null = null // unsaved edit in the editor
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+/** "Saved ✓" shows for a moment, then the label goes back to "<when> · <who>". */
+let savedTimer: ReturnType<typeof setTimeout> | null = null
 
 /** The chat the canvas belongs to: the one on screen, or the one still opening (its documents are stored under its
  * stored id, so they can load before Hermes has resumed it, e.g. right after a cold start). */
@@ -190,6 +192,11 @@ export async function flushSave(): Promise<void> {
     const r = await call<Doc>('PUT', `${P}/doc`, { session: state.session, id: d.id, content: d.text, base_rev: have.rev })
     if (dirtyText?.text === d.text) dirtyText = null
     set({ loaded: { ...state.loaded, [d.id]: { ...have, ...r, content: d.text } }, docs: state.docs.map(m => (m.id === d.id ? { ...m, ...r } : m)), save: dirtyText ? 'dirty' : 'saved', remote: null })
+    if (savedTimer) clearTimeout(savedTimer)
+    savedTimer = setTimeout(() => {
+      savedTimer = null
+      if (state.save === 'saved') set({ save: 'idle' })
+    }, 2000)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (/conflict|changed/i.test(msg)) set({ save: 'conflict', remote: d.id })
