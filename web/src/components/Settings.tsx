@@ -11,7 +11,7 @@ import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gatewa
 import { getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic } from '../bridge'
 import { bootSummary, lastBoot } from '../boot'
-import { checkForUpdate, startUpdate, useUpdate } from '../update'
+import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
@@ -827,7 +827,10 @@ function UpdateRow() {
   const title = u.phase === 'available' || u.phase === 'permission' ? `Update to ${u.latest}` : 'Check for updates'
   const sub =
     u.phase === 'checking' ? 'Checking…'
-    : u.phase === 'uptodate' ? "You're on the latest version"
+    : u.phase === 'uptodate'
+      ? isNewer(appVersion(), u.latest)
+        ? `You have ${appVersion()}, newer than the latest release (${u.latest})`
+        : `You're on the latest version (${u.latest})`
     : u.phase === 'available' ? 'A newer version is ready. Tap to download and install'
     : u.phase === 'downloading' ? `Downloading… ${u.pct}%`
     : u.phase === 'installing' ? 'Confirm in the Android installer'

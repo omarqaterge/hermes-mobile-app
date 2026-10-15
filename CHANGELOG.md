@@ -34,7 +34,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 ### Models and setup
 - **Subscription sign-ins** and a first-run "connect a model" screen.
 - The model picker renews an expired Claude login so new models show up.
-- **One-tap app update** from Settings → About (downloads the latest release and opens the installer).
+- **One-tap app update** from Settings → About (downloads the latest release and opens the installer); it shows the latest release's number, and says so when you already have a newer build).
 - **Hermes can use the phone** out of the box (files, Termux:API, Shizuku, no root), with a Setup check that fixes what's missing.
 
 ### Faster and lighter
