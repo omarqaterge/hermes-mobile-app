@@ -1,4 +1,5 @@
 import { btwDone, openBtw } from './btw'
+import { bootMark } from './boot'
 import { markSeen, noteSessions } from './unread'
 import { rememberPrompt } from './recent'
 import { api } from './api'
@@ -53,6 +54,7 @@ let started = false
 client.onState(conn => {
   setState({ conn })
   if (conn === 'open') {
+    bootMark('socket')
     aliveAt = Date.now()
     attempt = 0
     setState({ connDetail: '' })
@@ -325,6 +327,7 @@ export async function loadSessions(): Promise<void> {
   setState({ sessionsLoading: true })
   try {
     const r = await rpc<SessionListResult>('session.list', { limit: sessionLimit })
+    bootMark('sessions')
     setState({ sessions: r.sessions ?? [] })
     noteSessions(r.sessions ?? [])
     try {
@@ -495,6 +498,7 @@ export function startDraft(): void {
 export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: boolean; auto?: boolean } = {}): Promise<void> {
   // The automatic start-up resume doesn't count as navigation: if the user goes elsewhere meanwhile, it loses.
   const seq = opts.auto ? openSeq : ++openSeq
+  if (opts.auto) bootMark('resume-start')
   const prev = getState().active
   // Opening another chat ends live mode: it would keep listening and send to the new chat.
   if (liveBridge.active && prev?.storedId !== storedId) liveBridge.stop()
@@ -530,6 +534,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     return
   }
   setState({ active: { ...next, title }, opening: null, preview: null, drawer: false })
+  if (opts.auto) bootMark('chat-live')
   if (prev && prev.storedId !== next.storedId) retire(prev)
   rememberSession(next.storedId)
   markSeen(next.storedId)

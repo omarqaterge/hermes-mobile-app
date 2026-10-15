@@ -28,6 +28,7 @@ import { WelcomeScreen, checkFirstRun } from './components/Connect'
 import { BotsScreen } from './components/Bots'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
 import { Spinner } from './components/Spinner'
+import { bootMark } from './boot'
 
 declare global {
   interface Window {
@@ -587,6 +588,7 @@ export function App() {
   const clearInjected = useCallback(() => setInjected(null), [])
 
   useEffect(() => {
+    bootMark('painted')
     void connect()
   }, [])
   useEffect(() => installSwipeToDrawer(), [])

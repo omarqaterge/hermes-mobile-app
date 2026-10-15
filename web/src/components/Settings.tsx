@@ -10,6 +10,7 @@ import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic } from '../bridge'
+import { bootSummary, lastBoot } from '../boot'
 import { checkForUpdate, startUpdate, useUpdate } from '../update'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
@@ -810,6 +811,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row title="App" value={appVersion()} />
         <UpdateRow />
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
+        <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
       </Section>
     </>
   )

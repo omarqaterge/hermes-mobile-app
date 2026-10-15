@@ -32,6 +32,11 @@ async function main() {
   })
   await page.goto('http://127.0.0.1:5180/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await sleep(500)
+  {
+    const stages = await page.evaluate(() => (JSON.parse(localStorage.getItem('hm.boot.v1') || '{}').marks || []).map(m => m[0]))
+    check(['script', 'painted', 'socket', 'sessions'].every(s => stages.includes(s)), `start-up timing marks recorded (${stages.join(', ')})`)
+  }
 
   // ── model picked before the first message: the chat is created with it (no switch, so no model-switch marker
   //    in Hermes's history that would swallow the first message) ──
