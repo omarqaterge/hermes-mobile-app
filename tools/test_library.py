@@ -16,7 +16,11 @@ PLUGIN = os.path.join(HERE, "..", "hermes-plugin", "hermes-mobile")
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(PLUGIN, f"{name}.py"))
+    return load_path(name, os.path.join(PLUGIN, f"{name}.py"))
+
+
+def load_path(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -73,6 +77,33 @@ old = library.MAX_ITEMS
 library.MAX_ITEMS = len(library.list_items())
 check("item cap refused with a clear error", "full" in (raises(library.save, {"title": "one more", "content": "x"}, "x") or ""))
 library.MAX_ITEMS = old
+
+print("REST routes (dashboard/plugin_api.py)")
+try:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+except ImportError:
+    FastAPI = None
+    print("  [SKIP] fastapi/httpx not installed (CI installs them)")
+if FastAPI:
+    api = load_path("plugin_api", os.path.join(PLUGIN, "dashboard", "plugin_api.py"))
+    app = FastAPI()
+    app.include_router(api.router, prefix="/api/plugins/hermes-mobile")
+    c = TestClient(app)
+    B = "/api/plugins/hermes-mobile"
+    doc = c.post(f"{B}/canvas/doc", json={"session": "rest-chat", "title": "Rest note", "content": "hello rest", "type": "markdown"}).json()
+    r = c.post(f"{B}/library", json={"session": "rest-chat", "id": doc["id"], "category": "Rest"})
+    check("POST /library saves the canvas doc", r.status_code == 200 and r.json()["category"] == "Rest", r.text)
+    iid = r.json()["id"]
+    lst = c.get(f"{B}/library").json()
+    check("GET /library lists items + categories", any(m["id"] == iid for m in lst["items"]) and lst["categories"].get("Rest") == 1, str(lst))
+    check("GET /library/item has the content", c.get(f"{B}/library/item", params={"id": iid}).json()["content"] == "hello rest")
+    u = c.put(f"{B}/library/item", json={"id": iid, "title": "Renamed", "category": "Moved"}).json()
+    check("PUT /library/item renames and moves", u["title"] == "Renamed" and u["category"] == "Moved", str(u))
+    check("DELETE /library/item", c.delete(f"{B}/library/item", params={"id": iid}).json() == {"ok": True})
+    check("missing item is a 400", c.get(f"{B}/library/item", params={"id": iid}).status_code == 400)
+    check("bad id is a 400", c.get(f"{B}/library/item", params={"id": "../x"}).status_code == 400)
+    check("missing canvas doc is a 400", c.post(f"{B}/library", json={"session": "rest-chat", "id": "nope", "category": "x"}).status_code == 400)
 
 print(f"\n{'ALL PASSED' if not fails else str(fails) + ' FAILED'}")
 sys.exit(1 if fails else 0)

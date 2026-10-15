@@ -23,6 +23,7 @@ allSessions.unshift({ id: 's-stale', title: 'Stale edit chat', preview: 'x', mes
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
 
 const canvasDocs = {} // session -> [doc]
+const libraryItems = [] // the Library (plugin library.py), newest first
 // The chat whose start-up resume is slow already has a canvas (opening it while the chat loads must show it).
 canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Life\n\nGlider' }]
 let activityItems = []
@@ -145,6 +146,37 @@ const server = http.createServer((req, res) => {
       return send(b.file ? { ok: true, restored_to: 'abc12345', restored_files: [b.file] } : { ok: true, restored_to: 'abc12345', restored_files: ['app.py', 'notes.md'], skipped_user_edits: [] })
     }
     if (p === '/api/plugins/hermes-mobile/checkpoints' && req.method === 'DELETE') return send({ ok: true })
+    if (p === '/api/plugins/hermes-mobile/library') {
+      const meta = ({ content, ...m }) => m
+      if (req.method === 'POST') {
+        const b = JSON.parse(body)
+        const d = (canvasDocs[b.session] || []).find(x => x.id === b.id)
+        if (!d) return send({ detail: 'no such document' }, 400)
+        const item = { id: `lib-${Date.now()}`, title: d.title, type: d.type, lang: d.lang, category: (b.category || '').trim() || 'Unsorted', saved: Date.now() / 1000, chars: d.content.length, content: d.content, source: { session: b.session, doc: d.id } }
+        libraryItems.unshift(item)
+        return send(meta(item))
+      }
+      const categories = {}
+      for (const i of libraryItems) categories[i.category] = (categories[i.category] || 0) + 1
+      return send({ items: libraryItems.map(meta), categories })
+    }
+    if (p === '/api/plugins/hermes-mobile/library/item') {
+      const id = req.method === 'PUT' ? JSON.parse(body).id : url.searchParams.get('id')
+      const i = libraryItems.findIndex(x => x.id === id)
+      if (req.method === 'DELETE') {
+        if (i >= 0) libraryItems.splice(i, 1)
+        return send({ ok: true })
+      }
+      if (i < 0) return send({ detail: 'no such item' }, 400)
+      if (req.method === 'PUT') {
+        const b = JSON.parse(body)
+        if ((b.title || '').trim()) libraryItems[i].title = b.title.trim()
+        if ((b.category || '').trim()) libraryItems[i].category = b.category.trim()
+        const { content, ...m } = libraryItems[i]
+        return send(m)
+      }
+      return send(libraryItems[i])
+    }
     if (p === '/api/plugins/hermes-mobile/canvas') {
       const s = url.searchParams.get('session')
       const list = () => send({ docs: (canvasDocs[s] || []).map(({ content, ...m }) => m) })
