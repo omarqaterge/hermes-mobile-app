@@ -632,19 +632,161 @@ public class MainActivity extends Activity {
         if (k == null || mediaKey.isEmpty() || !java.security.MessageDigest.isEqual(
                 mediaKey.getBytes(StandardCharsets.UTF_8), k.getBytes(StandardCharsets.UTF_8)))
             return plain(403, "Forbidden");
-        if (path == null || !path.startsWith("/") || path.contains("..") || path.indexOf('\0') >= 0) return plain(400, "Bad Request");
+        if (!safeMediaPath(path)) return plain(400, "Bad Request");
         String range = null;
         if (reqHeaders != null) for (java.util.Map.Entry<String, String> h : reqHeaders.entrySet())
             if ("range".equalsIgnoreCase(h.getKey())) range = h.getValue();
         if (range != null && !range.matches("bytes=\\d*-\\d*")) range = null;
         try {
-            String q = "/api/plugins/hermes-mobile/media?path=" + java.net.URLEncoder.encode(path, "UTF-8").replace("+", "%20");
-            WebResourceResponse r = streamGet(q, token(false), range);
-            if (r.getStatusCode() == 401 || r.getStatusCode() == 403) r = streamGet(q, token(true), range);
-            return r;
+            return mediaGet(path, range);
         } catch (Exception e) {
             return plain(502, "Bad Gateway");
         }
+    }
+
+    /** A file path the page may ask for: absolute, no "..", no NUL. */
+    static boolean safeMediaPath(String path) {
+        return path != null && path.startsWith("/") && !path.contains("..") && path.indexOf('\0') < 0;
+    }
+
+    /** GET a phone file through the plugin's /media (renewing the session token once on 401/403). */
+    WebResourceResponse mediaGet(String path, String range) throws Exception {
+        String q = "/api/plugins/hermes-mobile/media?path=" + java.net.URLEncoder.encode(path, "UTF-8").replace("+", "%20");
+        WebResourceResponse r = streamGet(q, token(false), range);
+        if (r.getStatusCode() == 401 || r.getStatusCode() == 403) r = streamGet(q, token(true), range);
+        return r;
+    }
+
+    /** A whole phone file (same route and checks as media()), or null when it's missing or over maxBytes. */
+    byte[] mediaBytes(String path, int maxBytes) {
+        if (!safeMediaPath(path)) return null;
+        try {
+            WebResourceResponse r = mediaGet(path, null);
+            try (InputStream in = r.getData()) {
+                if (r.getStatusCode() != 200 || in == null) return null;
+                ByteArrayOutputStream all = new ByteArrayOutputStream();
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    all.write(buf, 0, n);
+                    if (all.size() > maxBytes) return null;
+                }
+                return all.toByteArray();
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // ── images from the lightbox: Save (Pictures/Hermes) and Share (a copy in cache/share, served by CameraProvider) ──
+    static final int MAX_IMAGE = 30 * 1024 * 1024;
+
+    /** The image's bytes: base64 from the page (blob:/data: images) or the phone file at `path`. */
+    byte[] imageBytes(String path, String b64) {
+        if (b64 != null && !b64.isEmpty()) {
+            if (b64.length() > MAX_IMAGE / 3 * 4 + 8) return null;
+            try {
+                return android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        }
+        return mediaBytes(path, MAX_IMAGE);
+    }
+
+    /** "jpg", "png", "webp" or "gif" from the file's first bytes, else from the name; null when it isn't one of those. */
+    static String imageExt(byte[] b, String name) {
+        if (b != null && b.length >= 12) {
+            if ((b[0] & 0xff) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') return "png";
+            if ((b[0] & 0xff) == 0xff && (b[1] & 0xff) == 0xd8) return "jpg";
+            if (b[0] == 'G' && b[1] == 'I' && b[2] == 'F') return "gif";
+            if (b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P') return "webp";
+        }
+        String n = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
+        Matcher m = Pattern.compile("\\.(jpe?g|png|webp|gif)$").matcher(n);
+        return m.find() ? (m.group(1).equals("jpeg") ? "jpg" : m.group(1)) : null;
+    }
+
+    static String imageMime(String ext) {
+        return "jpg".equals(ext) ? "image/jpeg" : "image/" + ext;
+    }
+
+    /** A file name safe for the gallery: letters, digits, dot, dash, underscore, space; ends in `ext`. */
+    static String imageName(String name, String ext) {
+        String base = name == null ? "" : name.replaceAll("[^A-Za-z0-9._ -]", "_").replaceAll("^[. ]+", "");
+        base = base.replaceAll("(?i)\\.(jpe?g|png|webp|gif)$", "");
+        if (base.length() > 80) base = base.substring(0, 80);
+        if (base.trim().isEmpty()) base = "hermes-" + System.currentTimeMillis();
+        return base + "." + ext;
+    }
+
+    boolean saveImageNow(String name, String path, String b64) {
+        byte[] data = imageBytes(path, b64);
+        String ext = imageExt(data, name);
+        if (data == null || data.length == 0 || ext == null) return false;
+        android.content.ContentResolver cr = getContentResolver();
+        android.content.ContentValues v = new android.content.ContentValues();
+        v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, imageName(name, ext));
+        v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, imageMime(ext));
+        v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/Hermes");
+        v.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+        Uri uri = null;
+        try {
+            uri = cr.insert(android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
+            if (uri == null) return false;
+            try (OutputStream out = cr.openOutputStream(uri)) {
+                if (out == null) throw new java.io.IOException("no stream");
+                out.write(data);
+            }
+            v.clear();
+            v.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+            cr.update(uri, v, null, null);
+            return true;
+        } catch (Exception e) {
+            if (uri != null) try { cr.delete(uri, null, null); } catch (Exception ignored) { }
+            return false;
+        }
+    }
+
+    boolean shareImageNow(String name, String path, String b64) {
+        byte[] data = imageBytes(path, b64);
+        String ext = imageExt(data, name);
+        if (data == null || data.length == 0 || ext == null) return false;
+        java.io.File dir = CameraProvider.shareDir(this);
+        long now = System.currentTimeMillis();
+        java.io.File[] old = dir.listFiles();
+        if (old != null) for (java.io.File f : old) if (now - f.lastModified() > 3600_000L) f.delete();
+        java.io.File f = new java.io.File(dir, "share-" + now + "." + ext);
+        try (OutputStream out = new java.io.FileOutputStream(f)) {
+            out.write(data);
+        } catch (Exception e) {
+            return false;
+        }
+        Uri uri = CameraProvider.uriFor(f);
+        Intent send = new Intent(Intent.ACTION_SEND).setType(imageMime(ext)).putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(ClipData.newRawUri("image", uri)); // carries the grant through the chooser
+        runOnUiThread(() -> {
+            try {
+                startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception ignored) {
+            }
+        });
+        return true;
+    }
+
+    /** Runs Save/Share off the page's thread and answers through window.__hmImage(id, ok). */
+    void imageJob(int id, java.util.concurrent.Callable<Boolean> job) {
+        HTTP_POOL.execute(() -> {
+            boolean done;
+            try {
+                done = job.call();
+            } catch (Exception e) {
+                done = false;
+            }
+            final String js = "window.__hmImage && window.__hmImage(" + id + "," + done + ")";
+            runOnUiThread(() -> web.evaluateJavascript(js, null));
+        });
     }
 
     static WebResourceResponse plain(int code, String reason) {
@@ -1195,6 +1337,18 @@ public class MainActivity extends Activity {
             if (!ok(key)) return;
             if (path == null || !path.startsWith("/") || path.contains("..") || path.indexOf('\0') >= 0) return;
             runTermux("/data/data/com.termux/files/usr/bin/termux-open", new String[]{hostPath(path)});
+        }
+
+        @JavascriptInterface
+        public void saveImage(String key, int id, String name, String path, String b64) {
+            if (!ok(key)) return;
+            imageJob(id, () -> saveImageNow(name, path, b64));
+        }
+
+        @JavascriptInterface
+        public void shareImage(String key, int id, String name, String path, String b64) {
+            if (!ok(key)) return;
+            imageJob(id, () -> shareImageNow(name, path, b64));
         }
 
         @JavascriptInterface
