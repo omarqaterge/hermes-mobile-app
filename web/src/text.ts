@@ -306,3 +306,23 @@ export const chatLinks = (md: string): string =>
     .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\](?:\([^)\n]*\))?)/)
     .map((part, i) => (i % 2 ? part : part.replace(/(?<![\w-])(?:@session:[\w.-]+\/)?(\d{8}_\d{6}_[0-9a-f]{6})(?![\w-])/g, '[chat $1](hermes-chat:$1)')))
     .join('')
+
+const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi
+const count = (s: string, c: string) => s.split(c).length - 1
+export type LinkPart = { text: string; href?: string }
+/** Split plain text into text and web addresses (trailing punctuation and an unbalanced ")" belong to the sentence). */
+export function linkParts(s: string): LinkPart[] {
+  const out: LinkPart[] = []
+  let last = 0
+  for (const m of s.matchAll(URL_RE)) {
+    let url = m[0]
+    while (/[.,;:!?'"\]]$/.test(url) || (url.endsWith(')') && count(url, ')') > count(url, '('))) url = url.slice(0, -1)
+    const at = m.index ?? 0
+    if (!/^(?:https?:\/\/|www\.)./i.test(url)) continue
+    if (at > last) out.push({ text: s.slice(last, at) })
+    out.push({ text: url, href: /^www\./i.test(url) ? `https://${url}` : url })
+    last = at + url.length
+  }
+  if (last < s.length) out.push({ text: s.slice(last) })
+  return out
+}

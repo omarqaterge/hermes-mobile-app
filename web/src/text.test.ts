@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { backgroundLuminance, joinHtmlBlocks, chatLinks, formatOutput, memoryDiff, mediaKind, parseCsv, plainText, prepare } from './text'
+import { backgroundLuminance, joinHtmlBlocks, chatLinks, linkParts, formatOutput, memoryDiff, mediaKind, parseCsv, plainText, prepare } from './text'
 
 describe('prepare', () => {
   test('MEDIA line with spaces becomes an image', () => {
@@ -190,5 +190,25 @@ describe('tool runs', () => {
     expect(runLabel(toolRuns(items)[0])).toBe('Running 3 tools…')
     expect(m.get(2)).toEqual({ hidden: true })
     expect(m.has(3)).toBe(false)
+  })
+})
+
+describe('linkParts', () => {
+  test('plain text stays one part', () => expect(linkParts('hello')).toEqual([{ text: 'hello' }]))
+  test('trailing punctuation stays outside', () =>
+    expect(linkParts('see https://a.com/x.')).toEqual([{ text: 'see ' }, { text: 'https://a.com/x', href: 'https://a.com/x' }, { text: '.' }]))
+  test('balanced parens kept, sentence paren dropped', () => {
+    const parts = linkParts('(https://en.wikipedia.org/wiki/A_(b))')
+    expect(parts[1]).toEqual({ text: 'https://en.wikipedia.org/wiki/A_(b)', href: 'https://en.wikipedia.org/wiki/A_(b)' })
+    expect(parts[2]).toEqual({ text: ')' })
+  })
+  test('www gets https', () => expect(linkParts('go www.x.org now')[1]).toEqual({ text: 'www.x.org', href: 'https://www.x.org' }))
+  test('two links and text between', () =>
+    expect(linkParts('a http://x.io b https://y.io')).toEqual([
+      { text: 'a ' }, { text: 'http://x.io', href: 'http://x.io' }, { text: ' b ' }, { text: 'https://y.io', href: 'https://y.io' },
+    ]))
+  test('no word boundary inside other words, empty string is empty', () => {
+    expect(linkParts('fooxhttps://a.com')).toEqual([{ text: 'fooxhttps://a.com' }])
+    expect(linkParts('')).toEqual([])
   })
 })
