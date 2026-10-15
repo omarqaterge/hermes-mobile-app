@@ -696,7 +696,7 @@ function rememberYolo(storedId: string, on: boolean): void {
  * slash worker, a separate process: slow to start, and its flag never reached the agent that asks for approvals.
  * `want` null = toggle. Hermes (b8a8be18) doesn't persist the flag, so it is remembered here and re-applied on resume. */
 export async function setYolo(a: ActiveSession, want: boolean | null): Promise<boolean> {
-  const next = want ?? !a.info.yolo
+  const next = want ?? !(a.info.yolo || yoloChats()[a.storedId]) // info.yolo is unknown until Hermes sends session.info after a restart
   const r = await rpc<{ value?: string | boolean }>('config.set', { session_id: a.runtimeId, key: 'yolo', value: next ? '1' : '0' })
   const on = r?.value === '1' || r?.value === true
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on } } : {}))
