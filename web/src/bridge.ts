@@ -33,6 +33,8 @@ interface AndroidBridge {
   setupState?(): string
   setupFix?(what: string): void
   signInTermux?(provider: string, profile: string): boolean
+  saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermes; answers window.__hmImage(id, ok)
+  shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
 }
 
 declare global {
@@ -130,6 +132,30 @@ export function appInBackground(): boolean {
 export function openExternal(url: string): void {
   if (native) native.openExternal(url)
   else window.open(url, '_blank', 'noopener')
+}
+
+let imageSeq = 0
+const imageWaits = new Map<number, (ok: boolean) => void>()
+
+/** True when this app build can save / share images natively. */
+export function canNativeImage(): boolean {
+  return Boolean(native?.saveImage && native?.shareImage)
+}
+
+/** Save or share an image natively: a phone file (`path`) or the bytes (`b64`). Resolves with whether it worked. */
+export function nativeImage(kind: 'save' | 'share', name: string, path: string, b64: string): Promise<boolean> {
+  const fn = kind === 'save' ? native?.saveImage : native?.shareImage
+  if (!native || !fn) return Promise.resolve(false)
+  const w = window as unknown as { __hmImage?: (id: number, ok: boolean) => void }
+  w.__hmImage ??= (id, ok) => {
+    imageWaits.get(id)?.(ok)
+    imageWaits.delete(id)
+  }
+  const id = ++imageSeq
+  return new Promise(resolve => {
+    imageWaits.set(id, resolve)
+    fn.call(native, id, name, path, b64)
+  })
 }
 
 export async function copyText(text: string): Promise<void> {

@@ -320,6 +320,14 @@ wss.on('connection', ws => {
           later(3900, () => event('message.complete', sid, { text: 'Wrote the plan.' }))
           return
         }
+        if (/^see https:\/\/example\.com\/b$/.test(params.text)) {
+          // Web addresses in plain text: a tool's output and inline code in the reply.
+          later(50, () => event('tool.start', sid, { tool_id: 'call_url', name: 'web_extract', context: 'example.com', args: { urls: ['https://example.com/a'] } }))
+          later(100, () => event('tool.complete', sid, { tool_id: 'call_url', name: 'web_extract', duration_s: 0.2, result_text: 'fetched https://example.com/a.' }))
+          later(150, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: 'Read `https://example.com/c` and:\n\n```\nhttps://example.com/d\n```' }))
+          return
+        }
         if (/^show diagram$/.test(params.text)) {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Flow:\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```' }))

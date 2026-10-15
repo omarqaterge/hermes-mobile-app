@@ -12,15 +12,23 @@ import java.io.File;
 import java.io.FileNotFoundException;
 
 /**
- * Hands the camera app one file to write a photo into (no androidx FileProvider in this Gradle-less build).
- * Only files in cache/camera named like "photo-<digits>.jpg" are served; the provider isn't exported, the camera
- * gets access through a one-off URI grant.
+ * Hands the camera app one file to write a photo into, and share targets a copy of an image from the lightbox
+ * (no androidx FileProvider in this Gradle-less build). Only files in cache/camera named like "photo-<digits>.jpg"
+ * and in cache/share named like "share-<digits>.<jpg|jpeg|png|webp|gif>" are served; the provider isn't exported,
+ * the other app gets access through a one-off URI grant.
  */
 public class CameraProvider extends ContentProvider {
     static final String AUTHORITY = "com.omarqaterge.hermesmobile.camera";
+    static final String SHARED = "share-\\d{1,20}\\.(jpg|jpeg|png|webp|gif)";
 
     static File dir(android.content.Context c) {
         File d = new File(c.getCacheDir(), "camera");
+        d.mkdirs();
+        return d;
+    }
+
+    static File shareDir(android.content.Context c) {
+        File d = new File(c.getCacheDir(), "share");
         d.mkdirs();
         return d;
     }
@@ -31,8 +39,9 @@ public class CameraProvider extends ContentProvider {
 
     File fileFor(Uri uri) throws FileNotFoundException {
         String name = uri.getLastPathSegment();
-        if (name == null || !name.matches("photo-\\d{1,20}\\.jpg")) throw new FileNotFoundException("no such photo");
-        return new File(dir(getContext()), name);
+        if (name != null && name.matches("photo-\\d{1,20}\\.jpg")) return new File(dir(getContext()), name);
+        if (name != null && name.matches(SHARED)) return new File(shareDir(getContext()), name);
+        throw new FileNotFoundException("no such file");
     }
 
     @Override
@@ -60,7 +69,9 @@ public class CameraProvider extends ContentProvider {
 
     @Override
     public String getType(Uri uri) {
-        return "image/jpeg";
+        String name = uri.getLastPathSegment();
+        if (name == null || !name.matches(SHARED) || name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        return "image/" + name.substring(name.lastIndexOf('.') + 1);
     }
 
     @Override

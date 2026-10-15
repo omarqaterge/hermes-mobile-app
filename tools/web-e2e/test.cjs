@@ -129,6 +129,29 @@ async function main() {
   const bubble = page.locator('.msg.user').last()
   check((await bubble.locator('img.msg-thumb[alt="b.png"]').count()) === 1 && (await bubble.locator('img.msg-thumb').evaluate(i => i.naturalWidth > 0)) && (await bubble.locator('.chip', { hasText: 'notes.txt' }).count()) === 1, 'sent bubble shows photo thumbnail + file chip')
   check((await page.locator('.composer-wrap .attach-chip').count()) === 0, 'composer attachments emptied after send')
+  // ── a just-sent photo opens full screen: double-tap zoom, Save (a download in a browser), Share, Back closes ──
+  await bubble.locator('img.msg-thumb[alt="b.png"]').click()
+  const lb = page.locator('.lightbox')
+  await lb.waitFor({ timeout: 3000 }).then(() => check(true, 'tapping a sent photo opens the lightbox'), () => check(false, 'tapping a sent photo opens the lightbox'))
+  if (await lb.count()) {
+    check((await lb.getByRole('button', { name: 'Save' }).count()) === 1 && (await lb.getByRole('button', { name: 'Share' }).count()) === 1, 'the lightbox has Save and Share')
+    check((await page.locator('.msg.user .msg-time').count()) === 0, 'opening the photo does not toggle the message time')
+    await lb.locator('img').dblclick()
+    await sleep(200)
+    check(/scale\(2\.5\)/.test(await lb.locator('img').evaluate(i => i.style.transform)), 'double-tap zooms in')
+    await lb.locator('img').dblclick()
+    await sleep(200)
+    check(/scale\(1\)/.test(await lb.locator('img').evaluate(i => i.style.transform)), 'double-tap again zooms back out')
+    const dl = page.waitForEvent('download', { timeout: 3000 }).catch(() => null)
+    await lb.getByRole('button', { name: 'Save' }).click()
+    const got = await dl
+    check(got && got.suggestedFilename() === 'b.png', `Save downloads the photo in a browser (${got && got.suggestedFilename()})`)
+    await lb.getByRole('button', { name: 'Share' }).click()
+    await page.locator('.toast', { hasText: 'Sharing works in the phone app' }).waitFor({ timeout: 2000 }).then(() => check(true, 'Share explains it needs the phone app'), () => check(false, 'Share explains it needs the phone app'))
+    await page.evaluate(() => window.hermesBack())
+    await sleep(300)
+    check((await page.locator('.lightbox').count()) === 0, 'Back closes the lightbox')
+  }
 
   await attach('Photo', [{ name: 'c.png', mimeType: 'image/png', buffer: png }, { name: 'd.png', mimeType: 'image/png', buffer: png }])
   await page.locator('.attach-thumb img[alt="d.png"]').waitFor({ timeout: 5000 })
@@ -409,6 +432,33 @@ async function main() {
   check((await visibleCards()) === 4, `tap shows all four (${await visibleCards()})`)
   await run.click()
   check((await visibleCards()) === 0, 'tap again folds them')
+
+  // ── web addresses in plain text open with the phone's default handler (window.open in a browser) ──
+  await page.getByPlaceholder('Message Hermes').fill('see https://example.com/b')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'Read' }).last().waitFor({ timeout: 5000 })
+  {
+    // openExternal's browser path is window.open; record the calls instead of opening real tabs.
+    await page.evaluate(() => { window.__opened = []; window.__realOpen = window.open; window.open = u => { window.__opened.push(String(u)); return null } })
+    const own = page.locator('.msg.user .bubble a.auto-link', { hasText: 'https://example.com/b' })
+    check((await own.count()) === 1, 'a web address in my own message is a link')
+    if (await own.count()) await own.click()
+    const head = page.locator('.tool-head', { hasText: 'web_extract' }).last()
+    if (await head.count()) await head.click()
+    else await page.locator('.tool-run').last().click().then(() => page.locator('.tool-head', { hasText: 'web_extract' }).last().click())
+    const out = page.locator('.tool-pre a.auto-link', { hasText: 'https://example.com/a' })
+    check((await out.count()) >= 1 && (await out.last().textContent()) === 'https://example.com/a', 'a web address in a tool output is a link (trailing dot left out)')
+    if (await out.count()) await out.last().click()
+    const code = page.locator('.msg.assistant a.code-link code', { hasText: 'https://example.com/c' })
+    check((await code.count()) === 1, 'a web address in inline code is a link')
+    if (await code.count()) await code.click()
+    check((await page.locator('.msg.assistant pre a', { hasText: 'example.com/d' }).count()) === 0, 'a code block stays plain')
+    await sleep(300)
+    const opened = await page.evaluate(() => window.__opened)
+    check(['https://example.com/b', 'https://example.com/a', 'https://example.com/c'].every(u => opened.includes(u)), `tapping each opens it (${JSON.stringify(opened)})`)
+    check((await page.locator('.msg.user .msg-time').count()) === 0, 'a link tap does not toggle the message time')
+    await page.evaluate(() => { window.open = window.__realOpen })
+  }
 
   // ── battery: while the open chat's turn waits on a command, the app doesn't poll the canvas (closed) and
   //    polls the activity feed at the idle pace, not every 3 s; one poll right after the turn ends ──
