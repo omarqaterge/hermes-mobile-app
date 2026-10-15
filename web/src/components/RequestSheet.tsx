@@ -3,6 +3,7 @@ import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-contract.generated'
 import { answerRequest, rejectRequest } from '../gateway'
 import { haptic } from '../bridge'
+import { Linked } from './Linked'
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
   once: 'Allow once',
@@ -19,8 +20,8 @@ function Approval({ req }: { req: ServerRequest }) {
   return (
     <>
       <div className="sheet-title">⚠ Approve {String(p.tool_name || 'command')}?</div>
-      {p.description ? <div className="sheet-desc">{String(p.description)}</div> : null}
-      {p.command ? <pre className="sheet-code">{String(p.command)}</pre> : null}
+      {p.description ? <div className="sheet-desc"><Linked text={String(p.description)} /></div> : null}
+      {p.command ? <pre className="sheet-code"><Linked text={String(p.command)} /></pre> : null}
       <div className="sheet-actions col">
         {choices.map(c => (
           <button
@@ -51,7 +52,7 @@ function OneQuestion({
   const selected = value ? value.split('\n') : []
   return (
     <div className="clarify-q">
-      <div className="sheet-desc strong">{q.question}</div>
+      <div className="sheet-desc strong"><Linked text={q.question} /></div>
       {q.choices?.length ? (
         <div className="choice-list">
           {q.choices.map(c => {
@@ -127,7 +128,7 @@ function MaskedValue({ req }: { req: ServerRequest }) {
   return (
     <>
       <div className="sheet-title">{title}</div>
-      <div className="sheet-desc">{String(p.prompt || p.command || p.message || 'Hermes needs a value to continue.')}</div>
+      <div className="sheet-desc"><Linked text={String(p.prompt || p.command || p.message || 'Hermes needs a value to continue.')} /></div>
       <input
         className="sheet-input"
         type={req.method === 'otp' ? 'text' : 'password'}

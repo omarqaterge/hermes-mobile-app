@@ -569,6 +569,24 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
       ) : (
         <li className={className}>{children}</li>
       ),
+    code: ({ className, children }) => {
+      // Inline code that is just a web address opens it (fenced blocks end in a newline and stay plain, for copying).
+      const url = !className && typeof children === 'string' && /^https?:\/\/\S+$/.test(children) ? children : ''
+      if (!url) return <code className={className}>{children}</code>
+      return (
+        <a
+          href={url}
+          className="code-link"
+          onClick={e => {
+            e.preventDefault()
+            haptic()
+            openExternal(url)
+          }}
+        >
+          <code>{children}</code>
+        </a>
+      )
+    },
     img: ({ src, alt }) => (typeof src === 'string' && src ? <Media src={src} alt={alt} /> : null),
     a: ({ href, children }) => {
       if (href?.startsWith('#')) {

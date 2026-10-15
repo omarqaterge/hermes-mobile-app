@@ -32,6 +32,7 @@ import {
 } from '../canvas'
 import { Markdown } from './Markdown'
 import { DiffView } from './Diff'
+import { Linked } from './Linked'
 import { Row, Section } from './ui'
 import { setState } from '../store'
 import { useSheetDrag } from './useSheetDrag'
@@ -151,7 +152,7 @@ function DocView({ doc, text, network }: { doc: Doc; text: string; network: bool
     case 'svg':
       return <img className="canvas-svg" alt={doc.title} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`} />
     default:
-      return <pre className="canvas-text">{text}</pre>
+      return <pre className="canvas-text"><Linked text={text} /></pre>
   }
 }
 

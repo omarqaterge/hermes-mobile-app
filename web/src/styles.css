@@ -3041,3 +3041,8 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   align-items: center;
   gap: 8px;
 }
+
+/* Web addresses in plain text (bubbles, tool cards, thinking, sheets, canvas text) and in inline code. */
+.auto-link { color: var(--accent); text-decoration: underline; word-break: break-all; }
+.md a.code-link { text-decoration: none; }
+.md a.code-link code { color: var(--accent); text-decoration: underline; word-break: break-all; }

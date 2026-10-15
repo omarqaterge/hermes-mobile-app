@@ -11,6 +11,7 @@ import { DiffView, looksLikeDiff } from './Diff'
 import { formatOutput, memoryDiff, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
 import { Spinner } from './Spinner'
+import { Linked } from './Linked'
 
 // Stored outputs fetched for cards restored from history (resumed transcripts omit them).
 const outputCache = new Map<string, string>()
@@ -96,13 +97,13 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
           {args && Object.keys(args).length > 0 && (
             <>
               <div className="tool-section">Arguments</div>
-              <pre className="tool-pre">{JSON.stringify(args, null, 2)}</pre>
+              <pre className="tool-pre"><Linked text={JSON.stringify(args, null, 2)} /></pre>
             </>
           )}
           {item.summary && (
             <>
               <div className="tool-section">Summary</div>
-              <div className="tool-text">{item.summary}</div>
+              <div className="tool-text"><Linked text={item.summary} /></div>
             </>
           )}
           {item.inlineDiff && (
@@ -135,7 +136,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
               {looksLikeDiff(out.text) ? (
                 <DiffView text={out.text} />
               ) : (
-                <pre className="tool-pre">{out.text.length > 20000 ? out.text.slice(0, 20000) + '\n…' : out.text}</pre>
+                <pre className="tool-pre"><Linked text={out.text.length > 20000 ? out.text.slice(0, 20000) + '\n…' : out.text} /></pre>
               )}
             </>
           )}
@@ -189,7 +190,7 @@ function Reasoning({ text, live }: { text: string; live: boolean }) {
         {live ? 'Thinking…' : 'Thought process'}
         <span className="chev">{open ? '▾' : '▸'}</span>
       </button>
-      {open ? <div className="reasoning-body">{text}</div> : live ? <div className="reasoning-peek">{text.slice(-160)}</div> : null}
+      {open ? <div className="reasoning-body"><Linked text={text} /></div> : live ? <div className="reasoning-peek">{text.slice(-160)}</div> : null}
     </div>
   )
 }
@@ -333,7 +334,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
             {item.files?.map(n => <span key={`f-${n}`} className="chip">📎 {n}</span>)}
           </div>
         ) : null}
-        {item.text}
+        <Linked text={item.text} />
       </div>
       {time.node}
       {actions && (
@@ -429,9 +430,9 @@ function SubagentView({ item }: { item: Extract<ChatItem, { kind: 'subagent' }> 
             <span>⇶ Sub-agent</span>
             <span className="sub-status">{item.status}</span>
           </div>
-          <div className="sub-goal">{item.goal}</div>
-          {item.detail && item.status !== 'done' && item.status !== 'completed' && <div className="sub-detail">{item.detail}</div>}
-          {item.summary && <div className="sub-summary">{item.summary}</div>}
+          <div className="sub-goal"><Linked text={item.goal} /></div>
+          {item.detail && item.status !== 'done' && item.status !== 'completed' && <div className="sub-detail"><Linked text={item.detail} /></div>}
+          {item.summary && <div className="sub-summary"><Linked text={item.summary} /></div>}
         </div>
   )
 }
