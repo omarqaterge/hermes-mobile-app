@@ -17,8 +17,12 @@ import java.util.Locale;
 
 /**
  * Read-aloud (TextToSpeech) and dictation (SpeechRecognizer) for the web UI. Results go back to the page
- * as window.__hmVoice(kind, text): tts-start | tts-done | ready | partial | final | error | end.
- * All methods must be called on the main thread.
+ * as window.__hmVoice(kind, text): tts-start | tts-seg | tts-paused | tts-resumed | tts-done | voices | ready | partial |
+ * final | error | end.
+ * All methods must be called on the main thread (TextToSpeech's progress callbacks arrive on a binder thread and are
+ * posted to it). Read-aloud owns its playback state here, not in the page, so the media notification (TtsMedia) can
+ * pause / resume / skip while the page is frozen in the background. Granularity is one ≤CHUNK utterance: pause and
+ * resume restart the current chunk, previous / next move one chunk.
  */
 final class Voice {
     static final int REQ_MIC = 9;
@@ -32,8 +36,18 @@ final class Voice {
     private boolean ttsReady = false;
     private String ttsEngine = null; // package the current instance was created with (null = system default)
     private String pendingSpeech = null;
-    private final java.util.Map<String, Integer> chunkBase = new java.util.HashMap<>(); // utterance id → offset of its text in the whole
-    private final java.util.Map<String, Integer> chunkLen = new java.util.HashMap<>(); // utterance id → its length
+    // playback model of the current speak(): its chunks (text + {offset in the whole, length}) and the chunk heard now
+    private final ArrayList<String> chunkText = new ArrayList<>();
+    private final ArrayList<int[]> chunks = new ArrayList<>();
+    private int cur = 0;
+    private boolean speaking = false; // between speak() and the end / stop
+    private boolean paused = false;
+    private String run = ""; // utterance id prefix of the current speakFrom(): callbacks of older runs are ignored
+    // notification for this reading: chat title, chat to open, whether to show it at all (not for the voice test)
+    private String title = "", session = null;
+    private boolean notify = false;
+    /** The instance that spoke last: the one the notification and media buttons control. Main thread only. */
+    static Voice active;
     private Runnable afterReady = null;
     // last config from the page: engine package, voice name, speech rate, pitch
     private String cfgEngine = null, cfgVoice = null;
@@ -68,6 +82,10 @@ final class Voice {
             cfgVoice = o.optString("voice", "");
             cfgRate = (float) Math.max(0.3, Math.min(3.0, o.optDouble("rate", 1.0)));
             cfgPitch = (float) Math.max(0.3, Math.min(2.5, o.optDouble("pitch", 1.0)));
+            notify = o.optBoolean("notify", false);
+            title = o.optString("title", "");
+            String ses = o.optString("session", "");
+            session = ses.isEmpty() ? null : ses;
         } catch (Exception ignored) {
         }
     }
@@ -121,16 +139,13 @@ final class Voice {
             tts = null;
             afterReady = null;
             js("error", "tts-unavailable");
-            js("tts-done", "");
+            finished();
             return;
         }
         me.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-            @Override public void onStart(String id) { Integer base = chunkBase.get(id);
-                Integer len = chunkLen.get(id);
-                if (base != null && len != null) js("tts-seg", base + "," + len);
-                js("tts-start", id); }
-            @Override public void onDone(String id) { if (id.endsWith("-last")) js("tts-done", ""); }
-            @Override public void onError(String id) { js("tts-done", ""); }
+            @Override public void onStart(String id) { main.post(() -> onChunkStart(id)); }
+            @Override public void onDone(String id) { main.post(() -> { if (id.endsWith("-last") && ofRun(id) >= 0) finished(); }); }
+            @Override public void onError(String id) { main.post(() -> { if (ofRun(id) >= 0) finished(); }); }
         });
         Runnable r = afterReady;
         afterReady = null;
@@ -172,11 +187,108 @@ final class Voice {
     void speak(String text, String cfg) {
         if (text == null || text.trim().isEmpty()) return;
         if (text.length() > 40000) text = text.substring(0, 40000);
+        // one reader at a time: the page and the background service each have an instance
+        if (active != null && active != this && active.speaking) active.stopSpeaking();
+        active = this;
         applyConfig(cfg);
-        final String t = text;
+        split(text);
+        speaking = true;
+        paused = false;
+        cur = 0;
+        if (!notify) TtsMedia.hide(); // the voice test replaces a reading but shows no card
+        else publish();
         withTts(() -> {
             configureTts();
-            speakNow(t);
+            if (speaking && !paused) speakFrom(cur);
+        });
+    }
+
+    /** Index of the chunk an utterance id of the CURRENT run stands for ("<run>-<i>" or "<run>-<i>-last"), else -1. */
+    private int ofRun(String id) {
+        if (id == null || run.isEmpty() || !id.startsWith(run + "-")) return -1;
+        String rest = id.substring(run.length() + 1);
+        if (rest.endsWith("-last")) rest = rest.substring(0, rest.length() - 5);
+        try {
+            int i = Integer.parseInt(rest);
+            return i >= 0 && i < chunks.size() ? i : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private void onChunkStart(String id) {
+        int i = ofRun(id);
+        if (i < 0 || paused) return;
+        cur = i;
+        int[] c = chunks.get(i);
+        if (c[0] >= 0) js("tts-seg", c[0] + "," + c[1]);
+        js("tts-start", id);
+    }
+
+    /** The reading ended by itself (last chunk heard) or failed. */
+    private void finished() {
+        if (!speaking) return;
+        speaking = false;
+        paused = false;
+        run = "";
+        js("tts-done", "");
+        if (active == this) TtsMedia.hide();
+    }
+
+    private void publish() {
+        if (notify && speaking && active == this) TtsMedia.show(ctx, title, session, !paused, cur > 0, cur < chunks.size() - 1);
+    }
+
+    // ── playback controls (page, notification, media buttons) ──
+    /** Stop now but keep the place: the current chunk is read again on play(). */
+    void pause() {
+        if (!speaking || paused) return;
+        paused = true;
+        run = ""; // callbacks of what we just stopped don't count
+        if (tts != null) tts.stop();
+        js("tts-paused", Integer.toString(Math.max(0, chunks.get(cur)[0])));
+        publish();
+    }
+
+    void play() {
+        if (!speaking || !paused) return;
+        paused = false;
+        withTts(() -> {
+            configureTts();
+            if (speaking && !paused) speakFrom(cur);
+        });
+        js("tts-resumed", "");
+        publish();
+    }
+
+    /** Move `d` chunks; paused: only the place moves (resume starts there). */
+    void skip(int d) {
+        if (!speaking || chunks.isEmpty()) return;
+        cur = Math.max(0, Math.min(chunks.size() - 1, cur + d));
+        if (paused) js("tts-paused", Integer.toString(Math.max(0, chunks.get(cur)[0])));
+        else if (tts != null && ttsReady) speakFrom(cur);
+        publish();
+    }
+
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    /** play | pause | toggle | next | prev | stop for the instance reading now. Any thread (runs on the main one). */
+    static void control(String cmd) {
+        MAIN.post(() -> {
+            Voice v = active;
+            if (v == null || cmd == null) {
+                TtsMedia.hide(); // a card left over without a reader (e.g. the page that read it is gone)
+                return;
+            }
+            switch (cmd) {
+                case "play": v.play(); break;
+                case "pause": v.pause(); break;
+                case "toggle": if (v.paused) v.play(); else v.pause(); break;
+                case "next": v.skip(1); break;
+                case "prev": v.skip(-1); break;
+                case "stop": v.stopSpeaking(true); break;
+                default: break;
+            }
         });
     }
 
@@ -217,9 +329,12 @@ final class Voice {
         });
     }
 
-    private void speakNow(String text) {
-        ArrayList<String> parts = new ArrayList<>();
+    /** Splits the whole text once into ≤CHUNK utterances; each knows where it sits in the text (for tts-seg / tts-paused). */
+    private void split(String text) {
+        chunkText.clear();
+        chunks.clear();
         String rest = text.trim();
+        ArrayList<String> parts = new ArrayList<>();
         while (rest.length() > CHUNK) {
             int cut = Math.max(rest.lastIndexOf(". ", CHUNK), Math.max(rest.lastIndexOf("\n", CHUNK), rest.lastIndexOf(" ", CHUNK)));
             if (cut < CHUNK / 2) cut = CHUNK;
@@ -227,25 +342,42 @@ final class Voice {
             rest = rest.substring(cut + 1).trim();
         }
         if (!rest.isEmpty()) parts.add(rest);
-        chunkBase.clear();
-        chunkLen.clear();
         int from = 0;
-        for (int i = 0; i < parts.size(); i++) {
-            String id = "hm" + System.nanoTime() + (i == parts.size() - 1 ? "-last" : "");
-            int at = text.indexOf(parts.get(i), from);
-            if (at >= 0) {
-                chunkBase.put(id, at);
-                chunkLen.put(id, parts.get(i).length());
-                from = at + parts.get(i).length();
-            }
-            tts.speak(parts.get(i), i == 0 ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, id);
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            int at = text.indexOf(part, from);
+            if (at >= 0) from = at + part.length();
+            chunkText.add(part);
+            chunks.add(new int[]{at, part.length()}); // at = -1: not found (never happens; no tts-seg then)
+        }
+    }
+
+    /** Queues chunks k..end, replacing whatever is being read. */
+    private void speakFrom(int k) {
+        if (chunks.isEmpty()) {
+            finished();
+            return;
+        }
+        run = "hm" + System.nanoTime();
+        for (int i = k; i < chunks.size(); i++) {
+            String id = run + "-" + i + (i == chunks.size() - 1 ? "-last" : "");
+            tts.speak(chunkText.get(i), i == k ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, id);
         }
     }
 
     void stopSpeaking() {
+        stopSpeaking(false);
+    }
+
+    /** byUser = the notification's ✕ / a media stop: tells the page to drop even a paused player ("stop"). */
+    void stopSpeaking(boolean byUser) {
         pendingSpeech = null;
+        speaking = false;
+        paused = false;
+        run = "";
         if (tts != null) tts.stop();
-        js("tts-done", "");
+        js("tts-done", byUser ? "stop" : "");
+        if (active == this) TtsMedia.hide();
     }
 
     /** Markdown → text a voice can read (port of speakable() in voice.ts). */
@@ -488,5 +620,10 @@ final class Voice {
         main.removeCallbacksAndMessages(null);
         if (sr != null) sr.destroy();
         if (tts != null) tts.shutdown();
+        speaking = false;
+        if (active == this) {
+            active = null;
+            TtsMedia.hide();
+        }
     }
 }
