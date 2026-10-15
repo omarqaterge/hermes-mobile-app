@@ -189,3 +189,76 @@ describe('read-aloud errors', () => {
     expect(getState().toasts.some(t => t.text.startsWith('Read-aloud isn’t working'))).toBe(true)
   })
 })
+
+describe('read-aloud controls shared with the notification', async () => {
+  const v = await import('./voice')
+  const calls: string[][] = []
+  const fake = {
+    speak: (text: string, cfg: string) => void calls.push(['speak', text, cfg]),
+    stopSpeaking: () => void calls.push(['stop']),
+    ttsControl: (cmd: string) => void calls.push(['ctl', cmd])
+  }
+  const setNative = (on: boolean) => ((window as unknown as { HermesAndroid?: unknown }).HermesAndroid = on ? fake : undefined)
+  const text = 'One sentence here. ' + 'Another sentence follows. '.repeat(20)
+
+  test('tts-paused from the card pauses the player at that chunk; tts-resumed plays on', () => {
+    setNative(true)
+    calls.length = 0
+    v.speak('item1', text)
+    const cfg = JSON.parse(calls[0][2])
+    expect(cfg.notify).toBe(true)
+    expect(typeof cfg.title).toBe('string')
+    window.__hmVoice?.('tts-paused', '120')
+    expect(v.voiceState().player).toMatchObject({ id: 'item1', paused: true, pos: 120 })
+    window.__hmVoice?.('tts-done', '') // the engine reporting the stop: the player stays
+    expect(v.voiceState().player?.paused).toBe(true)
+    window.__hmVoice?.('tts-resumed', '')
+    expect(v.voiceState().player?.paused).toBe(false)
+    v.stopSpeaking()
+  })
+
+  test('the in-app pause / resume go through ttsControl, not a re-speak', () => {
+    setNative(true)
+    v.speak('item2', text)
+    calls.length = 0
+    v.pauseSpeaking()
+    expect(calls).toEqual([['ctl', 'pause']])
+    expect(v.voiceState().player?.paused).toBe(true)
+    window.__hmVoice?.('tts-paused', '19')
+    calls.length = 0
+    v.resumeSpeaking()
+    expect(calls).toEqual([['ctl', 'play']])
+    window.__hmVoice?.('tts-resumed', '')
+    // a seek while paused moves the place natively unknown to Voice.java: resume re-speaks from there
+    v.pauseSpeaking()
+    window.__hmVoice?.('tts-paused', '19')
+    v.seekSpeaking(200)
+    calls.length = 0
+    v.resumeSpeaking()
+    expect(calls[0][0]).toBe('speak')
+    expect(calls[0][1]).toBe(speakable(text).slice(200))
+    v.stopSpeaking()
+  })
+
+  test('stop from the card drops even a paused player', () => {
+    setNative(true)
+    v.speak('item3', text)
+    window.__hmVoice?.('tts-paused', '0')
+    window.__hmVoice?.('tts-done', 'stop')
+    expect(v.voiceState().player).toBe(null)
+    expect(v.voiceState().speakingId).toBe(null)
+  })
+
+  test('the voice test asks for no notification; a pause in Live mode makes a minimal player', () => {
+    setNative(true)
+    calls.length = 0
+    v.testVoice()
+    expect(JSON.parse(calls[0][2]).notify).toBe(false)
+    v.speak('live', 'Hello there, this is live mode.')
+    expect(v.voiceState().player).toBe(null)
+    window.__hmVoice?.('tts-paused', '6')
+    expect(v.voiceState().player).toMatchObject({ id: 'live', paused: true, pos: 6 })
+    v.stopSpeaking()
+    setNative(false)
+  })
+})
