@@ -309,12 +309,18 @@ public class HermesService extends Service {
             if (l.startsWith("x-hermes-mobile-key:")) gotKey = line.substring(20).trim();
         }
         if (len < 0 || len > 256 * 1024) throw new java.io.IOException("too large");
-        char[] buf = new char[len];
-        int read = 0;
-        while (read < buf.length) {
-            int r = in.read(buf, read, buf.length - read);
+        // Content-Length counts UTF-8 bytes, the reader gives chars: count bytes, or a non-ASCII body waits forever.
+        StringBuilder body = new StringBuilder();
+        int bytes = 0;
+        char[] buf = new char[4096];
+        while (bytes < len) {
+            int r = in.read(buf, 0, Math.min(buf.length, len - bytes));
             if (r < 0) break;
-            read += r;
+            body.append(buf, 0, r);
+            for (int k = 0; k < r; k++) {
+                char c = buf[k];
+                bytes += c < 0x80 ? 1 : c < 0x800 ? 2 : Character.isSurrogate(c) ? 2 : 3;
+            }
         }
         boolean ok = java.security.MessageDigest.isEqual(
                 key.getBytes(StandardCharsets.UTF_8), gotKey.getBytes(StandardCharsets.UTF_8)); // constant time
@@ -322,7 +328,7 @@ public class HermesService extends Service {
         out.write((ok ? "HTTP/1.1 204 No Content\r\n" : "HTTP/1.1 403 Forbidden\r\n")
                 .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         out.flush();
-        if (ok) onEvent(new JSONObject(new String(buf, 0, read)));
+        if (ok) onEvent(new JSONObject(body.toString()));
     }
 
     // ── read-aloud mode: speak replies while the app is closed or the phone is locked ──
@@ -592,6 +598,14 @@ public class HermesService extends Service {
                 String t = sn.getTag();
                 boolean reply = sn.getId() == 2 && t != null && t.startsWith("reply:");
                 if (!reply && sn.getId() != SUMMARY_ID) continue;
+                // Nothing unseen any more (Clear, or every chat opened): HyperOS reads number 0 as "no number"
+                // and counts the cards still showing instead (phone-tested: badge 1), so drop the reply cards.
+                if (n == 0 && reply) {
+                    nm.cancel(t, 2);
+                    dropEmptySummary(nm, t);
+                    continue;
+                }
+                if (n == 0) continue;
                 Notification.Builder b = Notification.Builder.recoverBuilder(this, sn.getNotification()).setOnlyAlertOnce(true);
                 nm.notify(t, sn.getId(), badged(b, n));
             }
