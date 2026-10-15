@@ -913,6 +913,12 @@ public class MainActivity extends Activity {
         foreground = true;
         visible = true;
         handler.removeCallbacks(sleepPage);
+        // Back in the app on the chat that was open: it is seen now (no chat switch tells the service that).
+        String shown = HermesService.lastShownChat;
+        if (shown != null) {
+            HermesService.openChat = shown;
+            HermesService.seen(shown);
+        }
         if (!HermesService.running) HermesService.start(this);
         // Pinned approval popups: the in-app sheet takes over, so none can be left stuck.
         NotificationManager nm = getSystemService(NotificationManager.class);
@@ -1496,8 +1502,14 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void chatSeen(String key, String id) {
             if (!ok(key)) return;
-            if (id == null || id.isEmpty() || id.length() > 200 || !id.matches("[A-Za-z0-9_.:-]*")) return;
+            if (id == null || id.isEmpty()) { // the new-chat screen: no chat on screen
+                HermesService.openChat = null;
+                HermesService.lastShownChat = null;
+                return;
+            }
+            if (id.length() > 200 || !id.matches("[A-Za-z0-9_.:-]*")) return;
             HermesService.openChat = id;
+            HermesService.lastShownChat = id;
             HermesService.seen(id);
         }
 

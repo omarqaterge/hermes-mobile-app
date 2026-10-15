@@ -509,6 +509,7 @@ export function startDraft(): void {
   const prev = getState().active
   keepPreview(prev)
   rememberSession(null)
+  chatSeen('') // no chat on screen any more: coming back to the app must not mark the previous one seen
   setState({ active: null, opening: null, preview: null, drawer: false })
   retire(prev)
 }

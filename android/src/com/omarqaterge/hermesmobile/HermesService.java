@@ -76,6 +76,8 @@ public class HermesService extends Service {
     final java.util.LinkedHashMap<String, String[]> unseen = new java.util.LinkedHashMap<>();
     /** The chat on screen right now (set by the page, cleared when the activity pauses). */
     static volatile String openChat = null;
+    /** The chat the page showed last (kept while the app is hidden, unlike openChat). */
+    static volatile String lastShownChat = null;
     static final String GROUP = "hermes";
     static final String ACTION_APPROVE = "com.omarqaterge.hermesmobile.APPROVE";
     static final String ACTION_ANSWER = "com.omarqaterge.hermesmobile.ANSWER";
@@ -393,7 +395,7 @@ public class HermesService extends Service {
                 return;
             case "flash": {
                 if ((e.optBoolean("done", false) || e.optString("short", "").contains("Done")) && session != null && !session.isEmpty()) {
-                    if (MainActivity.visible && session.equals(openChat)) return; // you're reading it: nothing to flag
+                    if (MainActivity.visible) return; // the app is on screen: its own unread dots show it, no sticky chip
                     unseen.remove(session);
                     unseen.put(session, new String[]{title, profile});
                     lastSession = session;
@@ -553,6 +555,8 @@ public class HermesService extends Service {
         if (s != null) s.replaceUnseenRows(profile, rows);
     }
 
+    /** The page's unread chats for one profile, [{id,title}]. Only REMOVES chips (the chat was read in the app); a chat
+     *  joins the sticky Done chip only when it finished while the app was off screen (the "flash" event). */
     synchronized void replaceUnseenRows(String profile, org.json.JSONArray rows) {
         java.util.LinkedHashMap<String, String[]> old = new java.util.LinkedHashMap<>(unseen);
         java.util.Set<String> keep = new java.util.HashSet<>();
@@ -563,9 +567,9 @@ public class HermesService extends Service {
             if (id.isEmpty()) continue;
             keep.add(id);
             String[] prev = unseen.get(id);
+            if (prev == null) continue;
             String title = o.optString("title", "");
-            if (title.isEmpty() && prev != null) title = prev[0];
-            unseen.put(id, new String[]{title, profile});
+            if (!title.isEmpty()) unseen.put(id, new String[]{title, profile});
         }
         java.util.Iterator<java.util.Map.Entry<String, String[]>> it = unseen.entrySet().iterator();
         while (it.hasNext()) {
