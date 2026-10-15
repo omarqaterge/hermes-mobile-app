@@ -2654,6 +2654,23 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   text-overflow: ellipsis;
   font-family: var(--mono);
 }
+.yolo-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  min-height: 28px;
+  margin-left: 6px;
+  padding: 2px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+.yolo-chip:active {
+  background: var(--press);
+}
 .model-chip-effort {
   flex: none;
   padding: 0 5px;

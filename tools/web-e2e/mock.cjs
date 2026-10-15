@@ -258,6 +258,14 @@ wss.on('connection', ws => {
         return reply({ attached: true, name: params.filename, path: `/root/.hermes/images/${params.filename}` })
       case 'image.detach':
         return reply({ detached: true, count: 0 })
+      case 'config.set':
+        if (params.key === 'yolo') {
+          // Like Hermes's _set_yolo: flips this session's flag in-process and announces it with session.info.
+          const on = params.value === '1'
+          later(50, () => event('session.info', params.session_id, { yolo: on }))
+          return reply({ key: 'yolo', value: on ? '1' : '0', scope: 'session' })
+        }
+        return reply({ key: params.key, value: params.value })
       case 'file.attach':
         return reply({ attached: true, name: params.name, path: `/root/ws/${params.name}`, ref_path: `ws/${params.name}`, ref_text: `@file:ws/${params.name}`, uploaded: true })
       case 'prompt.submit': {

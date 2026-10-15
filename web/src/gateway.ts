@@ -534,6 +534,8 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   rememberSession(next.storedId)
   markSeen(next.storedId)
   setLastChat(next.storedId, title)
+  // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back.
+  if (yoloChats()[next.storedId] && !next.info.yolo) void setYolo(next, true).catch(() => {})
   // Show the chat's context fill under its last reply.
   void refreshCtx(next.usage).then(ctx => {
     const id = lastAssistantId()
@@ -665,6 +667,38 @@ type Dispatch = {
 /** Put text into the composer (dispatch type "prefill"); the Composer listens for this. */
 export const composerPrefill = { set: (_text: string) => {} }
 
+const YOLO_KEY = 'hm.yolo.v1' // stored chat id → true while that chat runs commands without asking
+function yoloChats(): Record<string, boolean> {
+  try {
+    const m = JSON.parse(localStorage.getItem(YOLO_KEY) || '{}')
+    return m && typeof m === 'object' ? m : {}
+  } catch {
+    return {}
+  }
+}
+function rememberYolo(storedId: string, on: boolean): void {
+  const m = yoloChats()
+  if (on) m[storedId] = true
+  else delete m[storedId]
+  try {
+    localStorage.setItem(YOLO_KEY, JSON.stringify(m))
+  } catch {
+    /* quota: the flag still holds until the chat is reopened */
+  }
+}
+
+/** YOLO for one chat, Hermes Desktop's way (config.set, in-process, instant). Through slash.exec it ran in the
+ * slash worker, a separate process: slow to start, and its flag never reached the agent that asks for approvals.
+ * `want` null = toggle. Hermes (b8a8be18) doesn't persist the flag, so it is remembered here and re-applied on resume. */
+export async function setYolo(a: ActiveSession, want: boolean | null): Promise<boolean> {
+  const next = want ?? !a.info.yolo
+  const r = await rpc<{ value?: string | boolean }>('config.set', { session_id: a.runtimeId, key: 'yolo', value: next ? '1' : '0' })
+  const on = r?.value === '1' || r?.value === true
+  updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on } } : {}))
+  rememberYolo(a.storedId, on)
+  return on
+}
+
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
@@ -672,6 +706,17 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   const name = body.split(/\s+/)[0]
   const arg = body.slice(name.length).trim()
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
+  if (name.toLowerCase() === 'yolo') {
+    const w = arg.toLowerCase()
+    const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
+    try {
+      const on = await setYolo(a, want)
+      pushItem({ kind: 'notice', id: newId('n'), text: on ? '⚡ YOLO on for this chat: Hermes runs commands without asking' : 'YOLO off: Hermes asks before risky commands again', level: on ? 'warn' : 'info' })
+    } catch (err) {
+      pushItem({ kind: 'notice', id: newId('n'), text: `/yolo: ${errText(err)}`, level: 'error' })
+    }
+    return
+  }
 
   let r: Dispatch | null = null
   try {
