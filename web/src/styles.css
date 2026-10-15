@@ -1414,6 +1414,41 @@ textarea {
   align-items: flex-start;
   gap: 1px;
 }
+/* model picker: the row is a wrapper, the name picks, the star (★/☆) favourites */
+.row.model-row {
+  padding: 0;
+  gap: 0;
+}
+.model-pick {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.model-name {
+  overflow-wrap: anywhere;
+}
+.model-sub {
+  font-size: 0.75rem;
+}
+.star-btn {
+  width: 44px;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  font-size: 1.15rem;
+  color: var(--dim);
+  border-radius: 10px;
+}
+.star-btn.starred {
+  color: var(--accent);
+}
+.star-btn:active {
+  background: var(--surface-2);
+}
 .effort-row {
   display: flex;
   flex-wrap: wrap;

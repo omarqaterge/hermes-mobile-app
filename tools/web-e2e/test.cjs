@@ -84,6 +84,43 @@ async function main() {
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
+  // ── model picker favourites: ☆ stars a model (without picking it), Favourites shows at the top and survives a reload ──
+  {
+    const openModels = async () => {
+      await page.getByRole('button', { name: 'Add', exact: true }).click()
+      await page.locator('.picker-opt', { hasText: 'mock-model' }).click()
+      await page.locator('.model-row', { hasText: 'mock-sonnet' }).first().waitFor({ timeout: 5000 })
+    }
+    await openModels()
+    check((await page.locator('.fav-group').count()) === 0, 'no Favourites section before anything is starred')
+    await page.getByRole('button', { name: 'Star mock-sonnet' }).click()
+    await sleep(300)
+    check((await page.locator('.sheet .sheet-title', { hasText: 'Model' }).count()) === 1, 'starring keeps the picker open')
+    check(rpcs('session.create').length === 0 && rpcs('config.set').filter(c => c.params.key === 'model').length === 0, 'starring does not pick the model')
+    const titles = await page.locator('.sheet-scroll .group-title').allInnerTexts()
+    check(/favourites/i.test(titles[0] || ''), `Favourites is the first section (${JSON.stringify(titles)})`)
+    check((await page.locator('.fav-group .model-row').allInnerTexts()).join('|').includes('mock-sonnet'), 'the starred model is listed in Favourites with its provider')
+    check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.favModels.v1') || '[]').some(f => f.p === 'mock' && f.m === 'mock-sonnet')), 'favourite saved')
+    await page.getByPlaceholder('Search models…').fill('model')
+    await sleep(200)
+    check((await page.locator('.fav-group').count()) === 0, 'search hides favourites that do not match')
+    await page.reload()
+    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await openModels()
+    check((await page.locator('.fav-group .model-row', { hasText: 'mock-sonnet' }).count()) === 1, 'favourite survives a reload')
+    await page.locator('.fav-group').getByRole('button', { name: 'Unstar mock-sonnet' }).click()
+    await sleep(300)
+    check((await page.locator('.fav-group').count()) === 0, 'unstarring removes it from Favourites')
+    await page.getByRole('button', { name: 'Star mock-sonnet' }).click()
+    await page.locator('.fav-group .model-pick', { hasText: 'mock-sonnet' }).click()
+    await sleep(500)
+    check(rpcs('session.create').some(c => c.params.model === 'mock-sonnet'), 'tapping a favourite picks it')
+  }
+  await page.evaluate(() => localStorage.clear())
+  await page.goto('http://127.0.0.1:5180/')
+  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  fs.writeFileSync(LOG, '')
+
   // ── a model picked on an empty chat (a photo added and removed) replaces it; typed text stays ──
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   {

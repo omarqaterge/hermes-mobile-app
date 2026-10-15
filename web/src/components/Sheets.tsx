@@ -12,6 +12,7 @@ import { setState, toast, useStore } from '../store'
 import { copyText, haptic, shareText } from '../bridge'
 import { refreshLogins } from '../api'
 import { chatMarkdown } from '../export'
+import { isFav, toggleFav, useFavs } from '../favs'
 import { useSheetDrag } from './useSheetDrag'
 import { DiffView } from './Diff'
 import { useBackHandler } from '../backstack'
@@ -62,6 +63,49 @@ export function ModelSheet() {
       .filter(p => p.models.length)
       .sort((a, b) => Number(Boolean(b.is_current) || b.slug === currentProvider?.replace(/^custom:/, '')) - Number(Boolean(a.is_current) || a.slug === currentProvider?.replace(/^custom:/, '')))
   }, [data, q, currentProvider])
+  const favs = useFavs()
+  // Starred models first, in the order starred; only those this profile can use now (and that match the search).
+  const favRows = useMemo(
+    () => favs.flatMap(f => {
+      const p = providers.find(x => x.slug === f.p)
+      return p && p.models.includes(f.m) ? [{ p, m: f.m }] : []
+    }),
+    [favs, providers]
+  )
+  const row = (p: (typeof providers)[number], m: string, sub?: string) => {
+    const on = m === currentModel && (p.slug === currentProvider || `custom:${p.slug}` === currentProvider)
+    const starred = isFav(favs, p.slug, m)
+    return (
+      <div key={`${p.slug}/${m}`} className={`row model-row${on ? ' on' : ''}`}>
+        <button
+          className="model-pick"
+          onClick={() => {
+            haptic()
+            // A new chat's switch waits for its agent (~2 s); a send meanwhile waits for the switch.
+            setState({ sheet: null })
+            setModel(p.slug, m, touched.current ? undefined : 'medium').catch(x => toast(errText(x), 'error'))
+          }}
+        >
+          <span className="model-name">
+            {on ? '● ' : ''}
+            {m}
+          </span>
+          {sub && <span className="dim model-sub">{sub}</span>}
+        </button>
+        <button
+          className={`star-btn${starred ? ' starred' : ''}`}
+          aria-label={starred ? `Unstar ${m}` : `Star ${m}`}
+          aria-pressed={starred}
+          onClick={() => {
+            haptic()
+            toggleFav(p.slug, m)
+          }}
+        >
+          {starred ? '★' : '☆'}
+        </button>
+      </div>
+    )
+  }
   return (
     <Shell title="Model">
       <div className="effort-row">
@@ -83,30 +127,19 @@ export function ModelSheet() {
       <div className="sheet-scroll">
         {err && <div className="notice notice-error">{err}</div>}
         {!data && !err && <div className="dim pad">Loading models…</div>}
+        {favRows.length > 0 && (
+          <div className="group fav-group">
+            <div className="group-title">Favourites</div>
+            {favRows.map(({ p, m }) => row(p, m, p.name))}
+          </div>
+        )}
         {providers.map(p => (
           <div key={p.slug} className="group">
             <div className="group-title">
               {p.name}
               {p.free_tier ? <span className="tag">free</span> : null}
             </div>
-            {p.models.map(m => {
-              const on = m === currentModel && (p.slug === currentProvider || `custom:${p.slug}` === currentProvider)
-              return (
-                <button
-                  key={m}
-                  className={`row${on ? ' on' : ''}`}
-                  onClick={() => {
-                    haptic()
-                    // A new chat's switch waits for its agent (~2 s); a send meanwhile waits for the switch.
-                    setState({ sheet: null })
-                    setModel(p.slug, m, touched.current ? undefined : 'medium').catch(x => toast(errText(x), 'error'))
-                  }}
-                >
-                  {on ? '● ' : ''}
-                  {m}
-                </button>
-              )
-            })}
+            {p.models.map(m => row(p, m))}
           </div>
         ))}
       </div>
