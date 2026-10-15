@@ -22,7 +22,7 @@ export interface ActivityItem {
 export type ToolStatus = 'generating' | 'running' | 'done' | 'error'
 
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string; images?: string[]; imageUrls?: string[]; imagePaths?: string[]; files?: string[]; rowId?: number; /** ms */ at?: number }
+  | { kind: 'user'; id: string; text: string; images?: string[]; imageUrls?: string[]; imagePaths?: string[]; files?: string[]; /** the `@file:` refs sent for `files` (same order; '' when unknown), so Edit/Retry can send them again */ fileRefs?: string[]; rowId?: number; /** ms */ at?: number }
   | {
       kind: 'assistant'
       id: string
@@ -275,15 +275,19 @@ function storedInlineDiff(meta: unknown): string | undefined {
 /** A stored user message carries its attachments as text: `@file:<path>` refs in front (and Hermes's
  *  "--- Attached Context ---" block after the message), `@image:<path>` lines (each with a "[screenshot]"
  *  marker). Split them off so a resumed chat shows chips, like a message sent in this session. */
-export function splitAttachments(text: string): { text: string; images: string[]; files: string[] } {
+export function splitAttachments(text: string): { text: string; images: string[]; files: string[]; fileRefs: string[] } {
   const base = (p: string) => p.trim().split('/').pop() || p.trim()
   let t = text
   const ctx = t.indexOf('\n--- Attached Context ---')
   if (ctx >= 0) t = t.slice(0, ctx)
   const files: string[] = []
+  const fileRefs: string[] = []
   const lead = t.match(/^(?:@file:\S+\s*)+/)
   if (lead) {
-    for (const m of lead[0].matchAll(/@file:(\S+)/g)) files.push(base(m[1]))
+    for (const m of lead[0].matchAll(/@file:(\S+)/g)) {
+      files.push(base(m[1]))
+      fileRefs.push(m[0])
+    }
     t = t.slice(lead[0].length)
   }
   const images: string[] = []
@@ -291,7 +295,7 @@ export function splitAttachments(text: string): { text: string; images: string[]
     images.push(base(p))
     return ''
   })
-  return { text: t.replace(/\n{3,}/g, '\n\n').trim(), images, files }
+  return { text: t.replace(/\n{3,}/g, '\n\n').trim(), images, files, fileRefs }
 }
 
 /** Stored transcript → chat items (user / assistant+reasoning / tool rows). */
@@ -318,6 +322,7 @@ export function hydrate(messages: TranscriptMessage[]): ChatItem[] {
           images: u.images.length ? u.images : undefined,
           imagePaths: u.images.length ? [...text.matchAll(/^@image:(.+)$/gm)].map(m => m[1].trim()) : undefined,
           files: u.files.length ? u.files : undefined,
+          fileRefs: u.fileRefs.length ? u.fileRefs : undefined,
           rowId: typeof m.row_id === 'number' ? m.row_id : undefined,
           at
         })

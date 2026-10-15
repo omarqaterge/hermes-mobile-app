@@ -166,13 +166,23 @@ describe('splitAttachments', () => {
     expect(splitAttachments('what colour? One word\n@image:/root/.hermes/images/upload_1.png\n[screenshot]')).toEqual({
       text: 'what colour? One word',
       images: ['upload_1.png'],
-      files: []
+      files: [],
+      fileRefs: []
     })
     const f = splitAttachments('@file:.hermes/a/codeword.pdf @file:x/b.csv\n\nwhat is in it?\n\n--- Attached Context ---\n\n📎 @file:… binary')
-    expect(f).toEqual({ text: 'what is in it?', images: [], files: ['codeword.pdf', 'b.csv'] })
+    expect(f).toEqual({ text: 'what is in it?', images: [], files: ['codeword.pdf', 'b.csv'], fileRefs: ['@file:.hermes/a/codeword.pdf', '@file:x/b.csv'] })
   })
   test('leaves plain text alone', () => {
-    expect(splitAttachments('mail me @ noon, see @image in docs')).toEqual({ text: 'mail me @ noon, see @image in docs', images: [], files: [] })
+    expect(splitAttachments('mail me @ noon, see @image in docs')).toEqual({ text: 'mail me @ noon, see @image in docs', images: [], files: [], fileRefs: [] })
+  })
+  test('hydrate keeps the refs so Edit/Retry can send the files again', () => {
+    const items = hydrate([{ role: 'user', text: '@file:ws/a.pdf\n\nsummarize' } as never])
+    expect(items[0]).toMatchObject({ kind: 'user', text: 'summarize', files: ['a.pdf'], fileRefs: ['@file:ws/a.pdf'] })
+  })
+  test('filesOf pairs names with refs and skips unknown refs', async () => {
+    const { filesOf } = await import('./gateway')
+    expect(filesOf({ kind: 'user', id: 'u', text: 't', files: ['a.pdf', 'b.txt'], fileRefs: ['@file:ws/a.pdf', ''] })).toEqual([{ name: 'a.pdf', ref: '@file:ws/a.pdf' }])
+    expect(filesOf({ kind: 'user', id: 'u', text: 't', files: ['a.pdf'] })).toEqual([])
   })
 })
 
