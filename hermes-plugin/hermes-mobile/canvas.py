@@ -308,14 +308,16 @@ TOOL_SCHEMA = {
         "everything. Types: markdown, html (runs in a sandbox), code (set lang), text, json, csv, svg, mermaid. "
         "HTML runs OFFLINE in a sandbox: put all CSS and JS inline in one self-contained file (no CDN scripts, "
         "external fonts/images, fetch or localStorage: they are blocked); draw charts with inline SVG or <canvas>; "
-        "make it responsive for a narrow phone screen and readable on both light and dark backgrounds."
+        "make it responsive for a narrow phone screen and readable on both light and dark backgrounds. "
+        "action=save_to_library keeps a copy in the user's Library (separate from chats) under a category: do it when "
+        "the user asks to save or keep something; reuse an existing category when one fits."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["create", "write", "patch", "read", "list", "open_file", "close", "rename"],
-                       "description": "create: new document. write: replace a document's whole content. patch: exact find/replace edits. read: get the current content (including the user's edits). list: documents on the canvas. open_file: show a file from the phone on the canvas. close: remove a document. rename."},
-            "id": {"type": "string", "description": "Document id (from create/list). Optional when the canvas has exactly one document."},
+            "action": {"type": "string", "enum": ["create", "write", "patch", "read", "list", "open_file", "close", "rename", "save_to_library"],
+                       "description": "create: new document. write: replace a document's whole content. patch: exact find/replace edits. read: get the current content (including the user's edits). list: documents on the canvas. open_file: show a file from the phone on the canvas. close: remove a document. rename. save_to_library: save a canvas document to the user's Library under a category (reuse an existing category when one fits; the reply lists them)."},
+            "id": {"type": "string", "description": "Document id (from create/list) or its exact title. Optional when the canvas has exactly one document."},
             "title": {"type": "string", "description": "Document title (create, rename; optional on write)."},
             "type": {"type": "string", "enum": list(TYPES), "description": "Content type (create). Guessed from the title/file when omitted."},
             "lang": {"type": "string", "description": "Programming language when type=code (python, javascript…)."},
@@ -324,6 +326,7 @@ TOOL_SCHEMA = {
                       "items": {"type": "object", "properties": {"find": {"type": "string"}, "replace": {"type": "string"}, "all": {"type": "boolean"}}, "required": ["find", "replace"]}},
             "path": {"type": "string", "description": "Absolute file path on the phone (open_file)."},
             "note": {"type": "string", "description": "Short note for the version history (what changed)."},
+            "category": {"type": "string", "description": "Library category (save_to_library), e.g. Recipes. Reuse an existing one when it fits."},
         },
         "required": ["action"],
     },
@@ -332,6 +335,11 @@ TOOL_SCHEMA = {
 
 def _resolve_id(session: str, doc_id: str) -> str:
     if doc_id:
+        if not (_dir(session) / f"{_safe(doc_id)}.json").exists():
+            # The model sometimes passes the title it chose instead of the id.
+            same = [m["id"] for m in list_docs(session) if m["title"].strip().lower() == doc_id.strip().lower()]
+            if len(same) == 1:
+                return same[0]
         return doc_id
     docs = list_docs(session)
     if len(docs) == 1:
@@ -365,6 +373,30 @@ def _with_lint(sid: str, out: Dict[str, Any]) -> str:
     if w:
         out["warnings"] = w
     return json.dumps(out)
+
+
+def _library():
+    """library.py, loaded by path (the plugin isn't an importable package); shared with the dashboard's loader."""
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_library")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_library", Path(__file__).resolve().parent / "library.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_library"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+def _save_to_library(sid: str, doc_ref: str, category: str) -> str:
+    lib = _library()
+    try:
+        item = lib.save(get(sid, _resolve_id(sid, doc_ref), with_versions=False), category, sid)
+    except (CanvasError, lib.LibraryError) as e:
+        cats = ", ".join(lib.categories()) or "none yet"
+        raise CanvasError(f"{e}. Library categories: {cats}")
+    return json.dumps({"ok": True, "item": item, "categories": lib.categories()})
 
 
 def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", **_: Any) -> str:
@@ -403,7 +435,9 @@ def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", 
         if a == "rename":
             r = rename(sid, _resolve_id(sid, args.get("id", "")), args.get("title", ""))
             return json.dumps({"ok": True, "id": r["id"], "title": r["title"]})
-        raise CanvasError("unknown action: use create, write, patch, read, list, open_file, close or rename")
+        if a == "save_to_library":
+            return _save_to_library(sid, args.get("id", ""), args.get("category", ""))
+        raise CanvasError("unknown action: use create, write, patch, read, list, open_file, close, rename or save_to_library")
     except CanvasError as e:
         return json.dumps({"ok": False, "error": str(e)})
     except Exception as e:  # never let a bug here break the agent's turn

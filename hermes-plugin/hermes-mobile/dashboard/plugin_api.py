@@ -651,6 +651,70 @@ async def canvas_delete(session: str, id: str):
     return {"ok": True}
 
 
+# ── library (canvas documents the user kept, by category; survives deleted chats) ──
+
+def _library():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_library")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_library", Path(__file__).resolve().parent.parent / "library.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_library"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+def _lb(fn, *a, **k):
+    """Run a library call, turning its errors into HTTP 400s."""
+    lib = _library()
+    try:
+        return fn(lib)(*a, **k)
+    except lib.LibraryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class LibrarySave(BaseModel):
+    session: str
+    id: str
+    category: str = ""
+
+
+class LibraryUpdate(BaseModel):
+    id: str
+    title: str = ""
+    category: str = ""
+
+
+@router.get("/library")
+async def library_list():
+    lib = _library()
+    return {"items": lib.list_items(), "categories": lib.categories()}
+
+
+@router.get("/library/item")
+async def library_get(id: str):
+    return _lb(lambda lib: lib.get, id)
+
+
+@router.post("/library")
+async def library_save(body: LibrarySave):
+    doc = _cv(lambda c: c.get, body.session, body.id, with_versions=False)
+    return _lb(lambda lib: lib.save, doc, body.category, body.session)
+
+
+@router.put("/library/item")
+async def library_update(body: LibraryUpdate):
+    return _lb(lambda lib: lib.update, body.id, body.title, body.category)
+
+
+@router.delete("/library/item")
+async def library_delete(id: str):
+    _lb(lambda lib: lib.delete, id)
+    return {"ok": True}
+
+
 def _chat_search():
     import importlib.util
     import sys

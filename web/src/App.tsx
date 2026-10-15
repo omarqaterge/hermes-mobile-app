@@ -26,6 +26,7 @@ import { SettingsScreen } from './components/Settings'
 import { SetupScreen, watchFirstRun } from './components/Setup'
 import { WelcomeScreen, checkFirstRun } from './components/Connect'
 import { BotsScreen } from './components/Bots'
+import { LibraryScreen } from './components/Library'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
 import { Spinner } from './components/Spinner'
 import { bootMark } from './boot'
@@ -629,6 +630,7 @@ export function App() {
       {screen === 'cron' && <CronScreen />}
       {screen === 'files' && <FilesScreen onUse={t => setInjected(t)} />}
       {screen === 'projects' && <ProjectsScreen />}
+      {screen === 'library' && <LibraryScreen />}
       {screen === 'bots' && <BotsScreen />}
       {screen === 'settings' && <SettingsScreen key={screenKey} />}
       {screen === 'setup' && <SetupScreen />}
