@@ -24,7 +24,7 @@ import type {
   TranscriptMessage,
   Usage
 } from '@hermes/shared/gateway-contract.generated'
-import { appInBackground, cancelNotification, notify, setLastChat, startHermes, wsUrl } from './bridge'
+import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, wsUrl } from './bridge'
 import {
   type ActiveSession,
   type Attachment,
@@ -538,6 +538,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   if (prev && prev.storedId !== next.storedId) retire(prev)
   rememberSession(next.storedId)
   markSeen(next.storedId)
+  chatSeen(next.storedId)
   setLastChat(next.storedId, title)
   // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back.
   if (yoloChats()[next.storedId] && !next.info.yolo) void setYolo(next, true).catch(() => {})

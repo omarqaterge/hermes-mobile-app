@@ -40,7 +40,7 @@ public class HermesService extends Service {
     static final int PORT = 9121;
     static final int STATUS_ID = 1;
     static final String CH_STATUS = "status", CH_IDLE = "idle", CH_ALERT = "needs_you", CH_REPLY = "replies",
-            CH_LEARN = "learning", CH_JOBS = "jobs";
+            CH_LEARN = "learning2", CH_JOBS = "jobs2"; // v2 ids: the first ones badged the icon and a channel's badge flag can't change
 
     static volatile boolean running = false;
     static volatile HermesService instance;
@@ -72,9 +72,14 @@ public class HermesService extends Service {
     int flashColor = 0;
     long flashUntil = 0;
     static final long FLASH_MS = 6000;
+    /** Chats that finished while you weren't looking: id → {title, profile}. Persisted; the sticky Done chip and the icon badge. */
+    final java.util.LinkedHashMap<String, String[]> unseen = new java.util.LinkedHashMap<>();
+    /** The chat on screen right now (set by the page, cleared when the activity pauses). */
+    static volatile String openChat = null;
     static final String GROUP = "hermes";
     static final String ACTION_APPROVE = "com.omarqaterge.hermesmobile.APPROVE";
     static final String ACTION_ANSWER = "com.omarqaterge.hermesmobile.ANSWER";
+    static final String ACTION_CLEAR_DONE = "com.omarqaterge.hermesmobile.CLEAR_DONE";
     static final String ACTION_WAKE = "com.omarqaterge.hermesmobile.WAKE";
     static final String REMOTE_TEXT = "text";
     static final int SUMMARY_ID = 3;
@@ -92,6 +97,7 @@ public class HermesService extends Service {
     public void onCreate() {
         super.onCreate();
         createChannels(this);
+        loadUnseen();
         key = ensureKey();
         startForeground(STATUS_ID, statusNotification("Ready", null, false), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         running = true;
@@ -108,6 +114,10 @@ public class HermesService extends Service {
         }
         if (intent != null && ACTION_ANSWER.equals(intent.getAction())) {
             answerFromNotification(intent);
+            return START_STICKY;
+        }
+        if (intent != null && ACTION_CLEAR_DONE.equals(intent.getAction())) {
+            clearUnseen();
             return START_STICKY;
         }
         if (intent != null && ACTION_WAKE.equals(intent.getAction())) {
@@ -376,6 +386,16 @@ public class HermesService extends Service {
                 cronIdle(e.optDouble("since", 0));
                 return;
             case "flash": {
+                if ((e.optBoolean("done", false) || e.optString("short", "").contains("Done")) && session != null && !session.isEmpty()) {
+                    if (MainActivity.visible && session.equals(openChat)) return; // you're reading it: nothing to flag
+                    unseen.remove(session);
+                    unseen.put(session, new String[]{title, profile});
+                    lastSession = session;
+                    saveUnseen();
+                    updateBadge();
+                    postStatus();
+                    return;
+                }
                 // Momentary chip: done ✅ (green) or a memory/skill update.
                 flashChip = e.optString("short", "✅ Done");
                 flashTitle = title;
@@ -430,7 +450,7 @@ public class HermesService extends Service {
                 if (MainActivity.visible) return;
                 Notification.Builder rb = alertBuilder(CH_REPLY, title, body, session, false);
                 if (session != null && !session.isEmpty()) rb.addAction(answerAction("reply", session, "Reply", null));
-                postGrouped(nm, tag("reply", session), rb.build());
+                postGrouped(nm, tag("reply", session), badged(rb, unseen.size() + (session != null && !unseen.containsKey(session) ? 1 : 0)));
                 if ("reply".equals(kind)) readAloud(e, session);
                 return;
             case "learning":
@@ -472,6 +492,126 @@ public class HermesService extends Service {
         }
     }
 
+    // ── unseen chats: sticky Done chip + icon badge ──
+    synchronized void loadUnseen() {
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(getSharedPreferences("hm", MODE_PRIVATE).getString("unseen", "[]"));
+            unseen.clear();
+            for (int k = 0; k < a.length(); k++) {
+                JSONObject o = a.getJSONObject(k);
+                unseen.put(o.getString("id"), new String[]{o.optString("title", ""), o.optString("profile", "")});
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    synchronized void saveUnseen() {
+        try {
+            org.json.JSONArray a = new org.json.JSONArray();
+            for (java.util.Map.Entry<String, String[]> en : unseen.entrySet())
+                a.put(new JSONObject().put("id", en.getKey()).put("title", en.getValue()[0]).put("profile", en.getValue()[1]));
+            getSharedPreferences("hm", MODE_PRIVATE).edit().putString("unseen", a.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    synchronized void clearUnseen() {
+        unseen.clear();
+        saveUnseen();
+        updateBadge();
+        postStatus();
+    }
+
+    /** A chat was opened (page) or its notification handled: forget it, cancel its reply card. */
+    static void seen(String id) {
+        HermesService s = instance;
+        if (s == null || id == null) return;
+        s.markSeen(id);
+    }
+
+    synchronized void markSeen(String id) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        String t = tag("reply", id);
+        nm.cancel(t, 2);
+        dropEmptySummary(nm, t);
+        if (unseen.remove(id) != null) {
+            saveUnseen();
+            updateBadge();
+            postStatus();
+        }
+    }
+
+    /** The page's own unread list for one profile replaces that profile's entries (badge and in-app dots then agree). */
+    static void replaceUnseen(String profile, org.json.JSONArray rows) {
+        HermesService s = instance;
+        if (s != null) s.replaceUnseenRows(profile, rows);
+    }
+
+    synchronized void replaceUnseenRows(String profile, org.json.JSONArray rows) {
+        java.util.LinkedHashMap<String, String[]> old = new java.util.LinkedHashMap<>(unseen);
+        java.util.Set<String> keep = new java.util.HashSet<>();
+        for (int k = 0; k < rows.length(); k++) {
+            JSONObject o = rows.optJSONObject(k);
+            if (o == null) continue;
+            String id = o.optString("id", "");
+            if (id.isEmpty()) continue;
+            keep.add(id);
+            String[] prev = unseen.get(id);
+            String title = o.optString("title", "");
+            if (title.isEmpty() && prev != null) title = prev[0];
+            unseen.put(id, new String[]{title, profile});
+        }
+        java.util.Iterator<java.util.Map.Entry<String, String[]>> it = unseen.entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<String, String[]> en = it.next();
+            if (profile.equals(en.getValue()[1]) && !keep.contains(en.getKey())) it.remove();
+        }
+        boolean same = old.size() == unseen.size();
+        if (same) for (java.util.Map.Entry<String, String[]> en : old.entrySet()) {
+            String[] now = unseen.get(en.getKey());
+            if (now == null || !now[0].equals(en.getValue()[0])) { same = false; break; }
+        }
+        if (same) return;
+        saveUnseen();
+        updateBadge();
+        postStatus();
+    }
+
+    /** App-icon badge number = unseen chats. Isolated so it can be adapted per launcher. Stock Android shows only a
+     *  dot (from any badging notification); HyperOS shows a number taken from setNumber / Xiaomi's message count.
+     *  Every reply notification and the group summary carry the current count; this refreshes the ones on display. */
+    int badgeCount = -1;
+
+    void updateBadge() {
+        int n = unseen.size();
+        if (n == badgeCount) return;
+        badgeCount = n;
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
+                String t = sn.getTag();
+                boolean reply = sn.getId() == 2 && t != null && t.startsWith("reply:");
+                if (!reply && sn.getId() != SUMMARY_ID) continue;
+                Notification.Builder b = Notification.Builder.recoverBuilder(this, sn.getNotification()).setOnlyAlertOnce(true);
+                nm.notify(t, sn.getId(), badged(b, n));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Builds with the badge number set: setNumber, plus Xiaomi's own count by reflection (no-op elsewhere). */
+    Notification badged(Notification.Builder b, int n) {
+        Notification note = b.setNumber(n).build();
+        try {
+            java.lang.reflect.Field f = Notification.class.getDeclaredField("extraNotification");
+            f.setAccessible(true);
+            Object extra = f.get(note);
+            if (extra != null) extra.getClass().getDeclaredMethod("setMessageCount", int.class).invoke(extra, n);
+        } catch (Throwable ignored) {
+        }
+        return note;
+    }
+
     void postStatus() {
         getSystemService(NotificationManager.class).notify(STATUS_ID, statusNotification(lastStatus, lastSub, lastWorking));
     }
@@ -488,7 +628,7 @@ public class HermesService extends Service {
                 .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
                 .setAutoCancel(true)
                 .setContentIntent(openApp(null));
-        nm.notify(SUMMARY_ID, sum.build());
+        nm.notify(SUMMARY_ID, badged(sum, unseen.size()));
     }
 
     void dropEmptySummary(NotificationManager nm, String gone) {
@@ -513,6 +653,7 @@ public class HermesService extends Service {
         if (flash && pendingApproval == null && pendingAsk == null) return flashNotification();
         if (pendingApproval != null) return approvalNotification(sub);
         if (pendingAsk != null) return askNotification(sub);
+        if (!working && !unseen.isEmpty()) return doneNotification(sub);
         // Idle = a slim green card on its own channel (so it can be minimised on its own); working = the gold Live Update.
         Notification.Builder b = new Notification.Builder(this, working ? CH_STATUS : CH_IDLE)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
@@ -742,6 +883,36 @@ public class HermesService extends Service {
         main.postDelayed(this::tickApproval, 1000);
     }
 
+    /** The sticky green chip: stays until the chats are opened (or Clear). */
+    synchronized Notification doneNotification(String sub) {
+        int n = unseen.size();
+        String latestId = null;
+        String[] latest = null;
+        for (java.util.Map.Entry<String, String[]> en : unseen.entrySet()) {
+            latestId = en.getKey();
+            latest = en.getValue();
+        }
+        StringBuilder titles = new StringBuilder();
+        for (String[] v : unseen.values()) titles.append(titles.length() > 0 ? "\n" : "").append(v[0].isEmpty() ? "Chat" : v[0]);
+        String title = n == 1 ? (latest[0].isEmpty() ? "Hermes" : latest[0]) : n + " chats finished";
+        Intent clear = new Intent(this, HermesService.class).setAction(ACTION_CLEAR_DONE);
+        Notification.Builder b = new Notification.Builder(this, CH_STATUS)
+                .setSmallIcon(R.drawable.ic_stat_hermes)
+                .setColor(GREEN)
+                .setContentTitle(title)
+                .setContentText(n == 1 ? "Done" : titles.toString().replace("\n", " · "))
+                .setStyle(new Notification.BigTextStyle().bigText(titles.toString()))
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setShowWhen(false)
+                .setContentIntent(openApp(latestId))
+                .addAction(new Notification.Action.Builder(null, "Clear",
+                        PendingIntent.getService(this, 7, clear, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
+        if (sub != null) b.setSubText(sub);
+        promote(b, n == 1 ? "✅ Done" : "✅ " + n + " done");
+        return b.build();
+    }
+
     Notification flashNotification() {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
@@ -922,12 +1093,16 @@ public class HermesService extends Service {
         reply.setDescription("A reply finished while the app was closed");
         NotificationChannel learn = new NotificationChannel(CH_LEARN, "Learning", NotificationManager.IMPORTANCE_LOW);
         learn.setDescription("Skill and memory updates from Hermes's self-improvement");
+        learn.setShowBadge(false);
         NotificationChannel jobs = new NotificationChannel(CH_JOBS, "Scheduled jobs", NotificationManager.IMPORTANCE_DEFAULT);
         jobs.setDescription("Cron job results");
+        jobs.setShowBadge(false);
         NotificationChannel playback = new NotificationChannel(TtsMedia.CH_PLAYBACK, "Reading aloud", NotificationManager.IMPORTANCE_LOW);
         playback.setDescription("Pause, skip or stop a reply being read aloud");
         playback.setShowBadge(false);
         for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback}) nm.createNotificationChannel(c);
         nm.deleteNotificationChannel("hermes"); // v0.1 channel, replaced by the ones above
+        nm.deleteNotificationChannel("learning"); // replaced by learning2/jobs2, which don't badge the icon
+        nm.deleteNotificationChannel("jobs");
     }
 }

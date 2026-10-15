@@ -30,6 +30,8 @@ interface AndroidBridge {
   stopListening?(): void
   sharedItem?(index: number): string
   setLastChat?(id: string, title: string): void
+  chatSeen?(id: string): void
+  setUnseen?(profile: string, json: string): void
   shareText?(title: string, text: string): void
   setupState?(): string
   setupFix?(what: string): void
@@ -265,6 +267,24 @@ export function sharedItem(index: number): { name?: string; mime?: string; b64?:
 export function setLastChat(id: string, title: string): void {
   try {
     native?.setLastChat?.(id, title)
+  } catch {
+    /* cosmetic */
+  }
+}
+
+/** This chat is on screen: the service drops its sticky Done chip, badge count and reply notification. */
+export function chatSeen(id: string): void {
+  try {
+    window.HermesAndroid?.chatSeen?.(id)
+  } catch {
+    /* cosmetic */
+  }
+}
+
+/** The chats the page shows as unread for a profile; the service mirrors them in the chip and the icon badge. */
+export function setUnseen(profile: string, rows: { id: string; title: string }[]): void {
+  try {
+    window.HermesAndroid?.setUnseen?.(profile, JSON.stringify(rows.slice(0, 500)))
   } catch {
     /* cosmetic */
   }

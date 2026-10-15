@@ -3,9 +3,9 @@
 import { describe, expect, test } from 'vitest'
 import { speakable, voiceErrorText } from './voice'
 import { lineDiff } from './canvas'
-import { addsToScreen, getState, hydrate, splitAttachments, toast } from './store'
+import { addsToScreen, getState, hydrate, setState, splitAttachments, toast } from './store'
 import { findHit, parseSnippet } from './jump'
-import { ago } from './unread'
+import { ago, markSeen, noteSessions } from './unread'
 import { chatMarkdown } from './export'
 
 test('speakable drops code, links, symbols', () => {
@@ -306,5 +306,26 @@ describe('read-aloud controls shared with the notification', async () => {
     expect(v.voiceState().player).toMatchObject({ id: 'live', paused: true, pos: 6 })
     v.stopSpeaking()
     setNative(false)
+  })
+})
+
+describe('unread list is mirrored to the Android service', () => {
+  test('setUnseen is called once per change of the unread list', () => {
+    const calls: unknown[][] = []
+    const w = window as unknown as { HermesAndroid?: unknown }
+    w.HermesAndroid = { setUnseen: (...a: unknown[]) => void calls.push(a) }
+    const profile = getState().profile
+    const row = (id: string, n: number) => ({ id, title: 'T' + id, message_count: n, started_at: 1 }) as never
+    setState({ sessions: [{ id: 'a1', title: 'Chat one' }] as never })
+    noteSessions([row('a1', 2)]) // first list: baseline, nothing unread
+    expect(calls.length).toBe(0)
+    noteSessions([row('a1', 4)]) // grew: unread
+    expect(calls).toEqual([[profile, JSON.stringify([{ id: 'a1', title: 'Chat one' }])]])
+    noteSessions([row('a1', 4)]) // unchanged: no call
+    expect(calls.length).toBe(1)
+    markSeen('a1')
+    expect(calls.length).toBe(2)
+    expect(calls[1][1]).toBe('[]')
+    w.HermesAndroid = undefined
   })
 })
