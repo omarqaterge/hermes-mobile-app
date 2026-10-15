@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from 'react'
 import { api } from './api'
 import { getState, subscribe, toast } from './store'
+import { libraryToolDone } from './library'
 
 export type DocType = 'markdown' | 'html' | 'code' | 'text' | 'json' | 'csv' | 'svg' | 'mermaid'
 
@@ -315,6 +316,7 @@ export function canvasToolDone(resultText: string | null | undefined, args: unkn
     /* not JSON: just refresh */
   }
   const action = (args as { action?: string } | null)?.action || ''
+  if (action === 'save_to_library') return libraryToolDone(resultText)
   void refreshDocs().then(() => {
     if (id && (shown || action === 'write' || action === 'patch')) {
       if (state.open || shown) {
