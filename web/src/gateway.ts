@@ -743,6 +743,18 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     }
     return
   }
+  if (name.toLowerCase() === 'fast') {
+    // Hermes's slash worker runs /fast in another process (slow to start on a phone); config.set applies it to
+    // this chat's live agent directly, the way Desktop's speed switch does. Hermes answers "fast" or "normal".
+    try {
+      const r = await rpc<{ value?: string }>('config.set', { session_id: a.runtimeId, key: 'fast', value: arg.toLowerCase() || 'toggle' })
+      const on = r?.value === 'fast'
+      pushItem({ kind: 'notice', id: newId('n'), text: arg.toLowerCase() === 'status' ? `Fast mode is ${on ? 'on' : 'off'} for this chat` : on ? 'Fast mode on for this chat' : 'Fast mode off for this chat', level: 'info' })
+    } catch (err) {
+      pushItem({ kind: 'notice', id: newId('n'), text: `/fast: ${errText(err)}`, level: 'error' })
+    }
+    return
+  }
 
   let r: Dispatch | null = null
   try {

@@ -29,6 +29,7 @@ canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lan
 let activityItems = []
 let refuseUntil = 0
 let runtimeGen = 0
+let fastMode = 'normal'
 let pluginEnabled = false
 let providerConfigured = true // false = a fresh install (the welcome opens)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
@@ -304,6 +305,11 @@ wss.on('connection', ws => {
           const on = params.value === '1'
           later(50, () => event('session.info', params.session_id, { yolo: on }))
           return reply({ key: 'yolo', value: on ? '1' : '0', scope: 'session' })
+        }
+        if (params.key === 'fast') {
+          // Like Hermes's _set_fast: "toggle"/"on"/"off" → the new mode, "fast" or "normal".
+          fastMode = params.value === 'toggle' ? (fastMode === 'fast' ? 'normal' : 'fast') : ['on', 'fast'].includes(params.value) ? 'fast' : 'normal'
+          return reply({ key: 'fast', value: fastMode })
         }
         return reply({ key: params.key, value: params.value })
       case 'file.attach':
