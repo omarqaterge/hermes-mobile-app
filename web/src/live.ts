@@ -215,7 +215,9 @@ export function setLiveMute(on: boolean): void {
   } else if (phase === 'listening') listen()
 }
 
-export function stopLive(): void {
+/** End Live mode. `keepSpeech`: let a reply that is being read play to the end (Android's TTS engine runs in its own
+ * service, so it carries on with the app off screen). */
+export function stopLive(opts?: { keepSpeech?: boolean }): void {
   if (phase === 'off') return
   muted = false
   setLiveMuted(false)
@@ -226,12 +228,16 @@ export function stopLive(): void {
   unTts = null
   goto('off')
   stopListening()
-  stopSpeaking()
+  if (!opts?.keepSpeech) stopSpeaking()
 }
 
-// The microphone can't stay open once the app is off screen.
+/** Leaving the app ends Live mode: the microphone can't stay open off screen. A reply being read keeps playing;
+ * an approval question is cut (answering it needs the microphone). */
+function onLiveHidden(): void {
+  stopLive({ keepSpeech: phase === 'speaking' && !approval })
+}
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') stopLive()
+  if (document.visibilityState === 'hidden') onLiveHidden()
 })
 
 /** "2 seconds", "1.5 seconds" for hints. */
