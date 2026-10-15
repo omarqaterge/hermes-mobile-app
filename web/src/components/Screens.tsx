@@ -911,7 +911,8 @@ const HUB: { key: Exclude<Screen, null>; icon: string; title: string; tone: stri
   { key: 'memory', icon: '🧠', title: 'Memory', tone: 'purple' },
   { key: 'cron', icon: '⏱', title: 'Scheduled jobs', tone: 'blue' },
   { key: 'files', icon: '📁', title: 'Files', tone: 'teal' },
-  { key: 'projects', icon: '🗂', title: 'Projects', tone: 'green' }
+  { key: 'projects', icon: '🗂', title: 'Projects', tone: 'green' },
+  { key: 'library', icon: '📚', title: 'Library', tone: 'gold' }
 ]
 
 interface HubData {
@@ -920,6 +921,7 @@ interface HubData {
   memPct?: number
   cron?: string
   projects?: string
+  library?: string
 }
 
 /** One loader per card, so a slow one (Hermes busy) doesn't hold the others back. */
@@ -953,6 +955,11 @@ const HUB_LOADERS: (() => Promise<Partial<HubData>>)[] = [
     const r = await rpc<{ projects: Project[] }>('projects.list')
     const n = r.projects.length
     return { projects: n ? `${n} project${n > 1 ? 's' : ''}` : 'None yet' }
+  },
+  async () => {
+    const r = await api<{ items: unknown[]; categories: Record<string, number> }>('GET', '/api/plugins/hermes-mobile/library', undefined, { profile: false })
+    const n = r.items.length, c = Object.keys(r.categories).length
+    return { library: n ? `${n} item${n > 1 ? 's' : ''} · ${c} categor${c > 1 ? 'ies' : 'y'}` : 'Nothing saved yet' }
   }
 ]
 
@@ -977,7 +984,7 @@ export function HubScreen() {
   const sub = (k: string): string => {
     if (k === 'files') return 'Browse, open and upload on the phone'
     const v = data[k as keyof HubData]
-    return typeof v === 'string' ? v : failed.has(['skills', 'memory', 'cron', 'projects'].indexOf(k)) ? 'Couldn’t load' : 'Loading…'
+    return typeof v === 'string' ? v : failed.has(['skills', 'memory', 'cron', 'projects', 'library'].indexOf(k)) ? 'Couldn’t load' : 'Loading…'
   }
   return (
     <ScreenShell title="Hermes">

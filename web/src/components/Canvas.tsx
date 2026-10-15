@@ -36,8 +36,10 @@ import { Row, Section } from './ui'
 import { setState } from '../store'
 import { useSheetDrag } from './useSheetDrag'
 import { Spinner } from './Spinner'
+import { CategoryPicker } from './Library'
+import { saveToLibrary } from '../library'
 
-const TYPE_ICON: Record<DocType, string> = { markdown: '📝', html: '🌐', code: '💻', text: '📄', json: '{ }', csv: '▦', svg: '🖼', mermaid: '⛓' }
+export const TYPE_ICON: Record<DocType, string> = { markdown: '📝', html: '🌐', code: '💻', text: '📄', json: '{ }', csv: '▦', svg: '🖼', mermaid: '⛓' }
 const EXT: Record<DocType, string> = { markdown: 'md', html: 'html', code: 'txt', text: 'txt', json: 'json', csv: 'csv', svg: 'svg', mermaid: 'mmd' }
 const CODE_EXT: Record<string, string> = { python: 'py', javascript: 'js', typescript: 'ts', bash: 'sh', rust: 'rs', go: 'go', java: 'java', kotlin: 'kt', c: 'c', cpp: 'cpp', css: 'css', sql: 'sql', yaml: 'yml' }
 
@@ -123,7 +125,7 @@ function HtmlFrame({ html, network }: { html: string; network: boolean }) {
   )
 }
 
-function DocView({ doc, text, network }: { doc: Doc; text: string; network: boolean }) {
+export function DocView({ doc, text, network }: { doc: Doc; text: string; network: boolean }) {
   switch (doc.type) {
     case 'markdown':
       return (
@@ -337,7 +339,7 @@ const NEW_TYPES: Array<{ type: DocType; label: string; sub: string; lang?: strin
   { type: 'text', label: 'Plain text', sub: 'Just text' }
 ]
 
-function Sheetish({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function Sheetish({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const drag = useSheetDrag(onClose)
   useBackHandler(onClose)
   return (
@@ -373,7 +375,7 @@ function shareText(title: string, text: string): void {
   if (!nativeShare(title, text)) toast('Copied (sharing works in the phone app)')
 }
 
-function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; onClose: () => void; onHistory: () => void }) {
+function DocMenu({ doc, text, onClose, onHistory, onLibrary }: { doc: Doc; text: string; onClose: () => void; onHistory: () => void; onLibrary: () => void }) {
   const run = (fn: () => void) => () => {
     haptic()
     onClose()
@@ -388,6 +390,7 @@ function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; on
       <Section title="Share and save">
         <Row icon="⧉" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
         <Row icon="↗" tone="green" title="Share…" onClick={run(() => shareText(doc.title, text))} />
+        <Row icon="📚" tone="gold" title="Save to library…" sub="Keep a copy under a category, apart from this chat" chevron onClick={run(onLibrary)} />
         <Row icon="⬇" tone="purple" title={`Save a copy to Downloads`} sub={`${doc.title}.${ext(doc)}`} onClick={run(() => void exportCopy(doc, text))} />
         {doc.path && <Row icon="💾" tone="gold" title="Save to the original file" sub={doc.path} onClick={run(() => void saveToFile(doc.id))} />}
       </Section>
@@ -503,7 +506,7 @@ export function CanvasPanel() {
   const remote = useCanvas(s => s.remote)
   const writing = useCanvas(s => s.writing)
   const listLoading = useCanvas(s => s.loading)
-  const [menu, setMenu] = useState<null | 'doc' | 'new' | 'history'>(null)
+  const [menu, setMenu] = useState<null | 'doc' | 'new' | 'history' | 'library'>(null)
   const [sel, setSel] = useState('')
   const [ask, setAsk] = useState('')
   const [net, setNet] = useState<Record<string, boolean>>({})
@@ -756,7 +759,8 @@ export function CanvasPanel() {
           ⤓
         </button>
       )}
-      {menu === 'doc' && doc && <DocMenu doc={doc} text={text} onClose={() => setMenu(null)} onHistory={() => setMenu('history')} />}
+      {menu === 'doc' && doc && <DocMenu doc={doc} text={text} onClose={() => setMenu(null)} onHistory={() => setMenu('history')} onLibrary={() => setMenu('library')} />}
+      {menu === 'library' && doc && <CategoryPicker onClose={() => setMenu(null)} onPick={c => void saveToLibrary(doc.id, c)} />}
       {menu === 'history' && doc && <HistorySheet doc={doc} onClose={() => setMenu(null)} />}
       {menu === 'new' && <NewDocMenu onClose={() => setMenu(null)} />}
     </>
