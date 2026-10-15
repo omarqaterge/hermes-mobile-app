@@ -646,7 +646,7 @@ export async function sendPrompt(text: string): Promise<void> {
   // Photos are already queued inside Hermes; files travel as their @file: references in the text.
   const refs = files.map(f => f.ref).filter(Boolean)
   const body = refs.length ? `${refs.join(' ')}\n\n${trimmed}` : trimmed
-  pushItem({ kind: 'user', id: uid, text: trimmed, images: images.length ? images : undefined, imageUrls: queued.some(x => x.preview) ? queued.filter(x => x.kind === 'image').map(x => x.preview || '') : undefined, imagePaths: queued.some(x => x.path) ? queued.filter(x => x.kind === 'image').map(x => x.path || '') : undefined, files: files.length ? files.map(f => f.name) : undefined, at: Date.now() })
+  pushItem({ kind: 'user', id: uid, text: trimmed, images: images.length ? images : undefined, imageUrls: queued.some(x => x.preview) ? queued.filter(x => x.kind === 'image').map(x => x.preview || '') : undefined, imagePaths: queued.some(x => x.path) ? queued.filter(x => x.kind === 'image').map(x => x.path || '') : undefined, files: files.length ? files.map(f => f.name) : undefined, fileRefs: files.length ? files.map(f => f.ref || '') : undefined, at: Date.now() })
   updateActive(() => ({ running: true, status: '', attachments: [], openAssistantId: null }))
   try {
     await switching.get(a.runtimeId)?.catch(() => {}) // a model picked a moment ago must apply to this turn
@@ -1326,9 +1326,21 @@ export function imagesOf(item: ChatItem): MsgImage[] {
   return item.imagePaths.map((p, i) => ({ name: item.images?.[i] || p.split('/').pop() || 'image', path: p, url: item.imageUrls?.[i] || undefined })).filter(x => x.path)
 }
 
+/** An attached file of a sent message that can be sent again: its chip name and the exact `@file:` ref that went out. */
+export interface MsgFile {
+  name: string
+  ref: string
+}
+
+/** The files of a user message that can be sent again (the ones whose reference is known). */
+export function filesOf(item: ChatItem): MsgFile[] {
+  if (item.kind !== 'user' || !item.fileRefs) return []
+  return item.fileRefs.map((ref, i) => ({ name: item.files?.[i] || ref.replace(/^@file:/, '').split('/').pop() || 'file', ref })).filter(x => x.ref)
+}
+
 /** Edit / regenerate: drop the user turn `itemId` and everything after it, then send `text` in its place. The
  * message's photos go with it (re-queued with image.attach); `images` overrides them (the edit box can drop some). */
-export async function resendFrom(itemId: string, text: string, images?: MsgImage[]): Promise<void> {
+export async function resendFrom(itemId: string, text: string, images?: MsgImage[], files?: MsgFile[]): Promise<void> {
   const trimmed = text.trim()
   const a = getState().active
   if (!a || !trimmed) return
@@ -1336,13 +1348,16 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
   const cut = a.items.findIndex(i => i.id === itemId)
   if (cut < 0) return
   const imgs = images ?? imagesOf(a.items[cut])
+  const fls = files ?? filesOf(a.items[cut])
+  // Files travel as their @file: references in front of the text, exactly like sendPrompt.
+  const body = fls.length ? `${fls.map(f => f.ref).join(' ')}\n\n${trimmed}` : trimmed
   const rowId = await userRowId(a, itemId)
   const kept = a.items.slice(0, cut).filter(i => i.kind === 'user').map(i => i.id)
   const isLast = !a.items.slice(cut + 1).some(i => i.kind === 'user')
   const uid = newId('u')
   const pics = imgs.length ? { images: imgs.map(x => x.name), imagePaths: imgs.map(x => x.path), imageUrls: imgs.some(x => x.url) ? imgs.map(x => x.url || '') : undefined } : {}
   updateActive(x => ({
-    items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now(), ...pics }],
+    items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now(), ...pics, ...(fls.length ? { files: fls.map(f => f.name), fileRefs: fls.map(f => f.ref) } : {}) }],
     running: true,
     status: '',
     openAssistantId: null
@@ -1358,7 +1373,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
     try {
       r = await rpc<PromptSubmitResult>('prompt.submit', {
         session_id: a.runtimeId,
-        text: trimmed,
+        text: body,
         surface: 'mobile',
         truncate_before_row_id: rowId,
         confirm_truncate: true,
@@ -1371,7 +1386,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
       // can't truncate to it. Nothing live needs dropping then: send the edited text as a normal prompt. Anywhere
       // else that would put the edit after the later turns, so stop and show what Hermes really holds.
       if (!isLast) throw new Error("That message isn't in this chat's history any more. Start a new chat to begin again")
-      r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: trimmed, surface: 'mobile' })
+      r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: body, surface: 'mobile' })
     }
     rebindKeptRowIds(kept, r?.survivor_user_row_ids)
     setUserRowId(uid, r?.user_row_id)

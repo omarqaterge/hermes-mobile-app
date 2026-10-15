@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { type ChatItem, toast } from '../store'
-import { branchAt, imagesOf, resendFrom, retryTurn, type MsgImage } from '../gateway'
+import { branchAt, filesOf, imagesOf, resendFrom, retryTurn, type MsgFile, type MsgImage } from '../gateway'
 import { Markdown } from './Markdown'
 import { copyRich, copyText, haptic } from '../bridge'
 import { PickerSheet } from './ui'
@@ -276,6 +276,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
   const [keep, setKeep] = useState<MsgImage[]>(() => imagesOf(item)) // photos sent again with the edit
+  const [keepFiles, setKeepFiles] = useState<MsgFile[]>(() => filesOf(item)) // files sent again with the edit
   const time = useTimeTap(item.at)
   const ta = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -287,6 +288,18 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
   if (editing)
     return (
       <div className="msg user editing">
+        {keepFiles.length > 0 && (
+          <div className="attach-row edit-files">
+            {keepFiles.map((f, i) => (
+              <span key={`${f.ref}-${i}`} className="chip attach-chip">
+                📎 {f.name}
+                <button className="attach-x" aria-label={`Remove ${f.name}`} onClick={() => setKeepFiles(k => k.filter((_, j) => j !== i))}>
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {keep.length > 0 && (
           <div className="attach-row edit-images">
             {keep.map(im => (
@@ -320,7 +333,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
             disabled={busy || !draft.trim()}
             onClick={() => {
               setEditing(false)
-              run(() => resendFrom(item.id, draft, keep))
+              run(() => resendFrom(item.id, draft, keep, keepFiles))
             }}
           >
             Send
@@ -359,6 +372,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
             onClick={() => {
               setDraft(item.text)
               setKeep(imagesOf(item))
+              setKeepFiles(filesOf(item))
               setEditing(true)
               haptic()
             }}
