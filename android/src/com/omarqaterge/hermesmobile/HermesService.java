@@ -715,12 +715,12 @@ public class HermesService extends Service {
 
     static final int GOLD = Color.parseColor("#D9A441"), GREEN = Color.parseColor("#3DBE7A"),
             RED = Color.parseColor("#E5564B"), AMBER = Color.parseColor("#E8912D");
-    // Progress bar parts that must read on both the dark and the light shade: faint gold (to do), faint grey (dropped).
-    static final int TODO_DIM = 0x55D9A441, DROPPED = 0x40808080;
+    /** A dropped task on the progress bar (faint grey, reads on the dark and the light shade). */
+    static final int DROPPED = 0x40808080;
 
     /** Hermes at work, as a Live Update (the chip shows the kind of step: Shell, Web, Files…). Tapped/expanded:
      *  the chat's title; what it is doing now (`code` in gold monospace); the task it is on; a bar with one segment
-     *  per task when Hermes keeps a task list (green done, gold current, faint to do), otherwise an activity sweep;
+     *  per task when Hermes keeps a task list (green done, gold current and to do, faded past the tracker), otherwise an activity sweep;
      *  the header says how many tasks/steps and the turn's running time; other busy chats; a Stop button. */
     Notification workingNotification(String text, String sub) {
         JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
@@ -760,15 +760,17 @@ public class HermesService extends Service {
         if (workingSince > 0) b.setWhen(workingSince).setUsesChronometer(true);
         if (!head.isEmpty()) b.setSubText(String.join(" \u00B7 ", head));
         if (Build.VERSION.SDK_INT >= 36) {
-            Notification.ProgressStyle ps = new Notification.ProgressStyle().setStyledByProgress(false);
+            Notification.ProgressStyle ps = new Notification.ProgressStyle().setStyledByProgress(todo != null);
             if (todo != null) {
+                // Styled by progress: the system fades everything past the tracker, so the current task is half
+                // solid, half faded, and the tasks still to do read as faint.
                 String states = todo.optString("states", "");
                 java.util.ArrayList<Notification.ProgressStyle.Segment> segs = new java.util.ArrayList<>();
                 int pos = -1;
                 for (int k = 0; k < states.length(); k++) {
                     char c = states.charAt(k);
                     segs.add(new Notification.ProgressStyle.Segment(100).setColor(
-                            c == 'd' ? GREEN : c == 'a' ? GOLD : c == 'x' ? DROPPED : TODO_DIM));
+                            c == 'd' ? GREEN : c == 'x' ? DROPPED : GOLD));
                     if (c == 'a' && pos < 0) pos = k * 100 + 50;
                 }
                 if (pos < 0) pos = states.lastIndexOf('d') * 100 + 100;

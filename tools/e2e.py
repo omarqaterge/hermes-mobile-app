@@ -50,7 +50,9 @@ def notifications():
 
 
 def chip_on():
-    return "Status: Thinking" in notifications()
+    """The pinned status notification is the gold working Live Update (channel "status"), not the idle card."""
+    rec = [l for l in notifications().splitlines() if "pkg=com.omarqaterge.hermesmobile" in l and " id=1 " in l]
+    return bool(rec) and "channel=status " in rec[0]
 
 
 def api(path):

@@ -5,6 +5,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 ## Unreleased (since v0.8.9)
 
 ### Notifications and the status chip
+- **Tap the status chip to see the progress**: the chat's name, what Hermes is doing right now, the task it is on,
+  "2 of 5 tasks" with a bar of one segment per task (when Hermes keeps a task list; otherwise the number of steps),
+  how long the turn has been running, and any other chat that is busy. A **Stop** button ends the turn.
+- The Done chip shows the start of the reply, the number of steps and how long it took.
 - A sticky green **Done** chip lists the chats that finished while the app was closed ("✅ 3 chats finished", one tap to clear).
   It goes away by itself once you open the app on that chat.
 - **App-icon badge** with the number of unseen chats (works on Xiaomi/HyperOS launchers).

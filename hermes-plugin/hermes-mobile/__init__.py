@@ -279,7 +279,21 @@ def _short(v, n=70) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def _peel_bridge(tool_name, args):
+    """Hermes's Tool Search bridge: the model calls deferred tools through ``tool_call`` (and looks them up with
+    ``tool_search`` / ``tool_describe``). The status shows the tool underneath, like Hermes's own hooks do."""
+    if tool_name == "tool_call" and isinstance(args, dict) and isinstance(args.get("calls"), list):
+        calls = [c for c in args["calls"] if isinstance(c, dict) and c.get("name")]
+        if len(calls) == 1:
+            inner = calls[0].get("arguments")
+            return str(calls[0]["name"]), inner if isinstance(inner, dict) else {}
+        if calls:
+            return "tool_call", {"name": f"{len(calls)} tools"}
+    return tool_name, args
+
+
 def _tool_label(tool_name: str, args) -> str:
+    tool_name, args = _peel_bridge(tool_name, args)
     a = args if isinstance(args, dict) else {}
     first = a.get("command") or a.get("path") or a.get("query") or a.get("text") or a.get("url") or a.get("name") or a.get("goal") or ""
     labels = {
@@ -288,8 +302,9 @@ def _tool_label(tool_name: str, args) -> str:
         "web_search": "Searching the web: {}", "web_extract": "Reading {}", "browser_navigate": "Browsing {}",
         "skill_view": "Loading skill {}", "skill_manage": "Updating skill {}", "memory": "Updating memory",
         "delegate_task": "Delegating: {}", "clarify": "Waiting for your answer", "todo": "Updating tasks",
-        "vision_analyze": "Looking at an image", "image_generate": "Generating an image",
-        "send_message": "Preparing a message",
+        "todo_list": "Updating tasks", "vision_analyze": "Looking at an image", "image_generate": "Generating an image",
+        "send_message": "Preparing a message", "tool_search": "Looking up tools", "tool_describe": "Looking up tools",
+        "tool_call": "Using {}",
     }
     if tool_name == "canvas":
         verb = {"create": "Writing to the canvas", "write": "Updating the canvas", "patch": "Editing the canvas",
@@ -306,12 +321,13 @@ _SHORT = {
     "terminal": "Shell", "execute_code": "Code", "read_file": "Files", "write_file": "Files", "patch": "Files",
     "search_files": "Files", "web_search": "Web", "web_extract": "Web", "browser_navigate": "Browser",
     "skill_view": "Skill", "skill_manage": "Skill", "memory": "Memory", "delegate_task": "Agents",
-    "clarify": "Asking", "todo": "Tasks", "vision_analyze": "Vision", "image_generate": "Image",
-    "send_message": "Message", "canvas": "Canvas",
+    "clarify": "Asking", "todo": "Tasks", "todo_list": "Tasks", "vision_analyze": "Vision", "image_generate": "Image",
+    "send_message": "Message", "canvas": "Canvas", "tool_search": "Tools", "tool_describe": "Tools", "tool_call": "Tools",
 }
 
 
 def _tool_short(tool_name: str, args) -> str:
+    tool_name, args = _peel_bridge(tool_name, args)
     a = args if isinstance(args, dict) else {}
     if tool_name == "terminal" and "rish" in str(a.get("command", "")):
         return "Phone"  # Shizuku screen/app control
@@ -388,6 +404,7 @@ def _on_stream_end(final_text=None, session_id=None, turn_id=None, finished=None
 
 
 def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, task_id=None, tool_call_id=None, **_):
+    tool_name, args = _peel_bridge(tool_name, args)
     if tool_name in ("write_file", "patch"):
         try:
             _checkpoints().pre_tool(tool_name, args, session_id, task_id, tool_call_id)
@@ -420,14 +437,16 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
 
 def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, session_id=None, turn_id=None,
                        tool_call_id=None, **_):
+    tool_name, args = _peel_bridge(tool_name, args)
     if tool_name in ("write_file", "patch"):
         try:
             _checkpoints().post_tool(tool_name, args, session_id, turn_id, tool_call_id)
         except Exception as e:
             _dbg(f"checkpoint post: {type(e).__name__}: {e}")
     if session_id in _active:
-        if tool_name == "todo" and not _is_review(turn_id, session_id):
+        if tool_name in ("todo", "todo_list") and not _is_review(turn_id, session_id):  # todo_list = its registered name
             todo = _todo_summary(result)
+            _dbg(f"todo {session_id} {(todo or {}).get('states')}")
             with _lock:
                 if session_id in _active and todo is not None:
                     _active[session_id]["turn"]["todo"] = todo

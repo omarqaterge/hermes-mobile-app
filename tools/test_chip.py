@@ -78,12 +78,20 @@ since = e.get("since")
 check("turn start time sent", isinstance(since, float) and abs(since - time.time()) < 5, since)
 plugin._on_pre_tool_call(tool_name="terminal", args={"command": "make"}, session_id="s-a", turn_id="s-a:1")
 plugin._on_post_tool_call(tool_name="terminal", session_id="s-a", turn_id="s-a:1")
-plugin._on_pre_tool_call(tool_name="todo", args={}, session_id="s-a", turn_id="s-a:1")
-plugin._on_post_tool_call(tool_name="todo", result=res, session_id="s-a", turn_id="s-a:1")
+plugin._on_pre_tool_call(tool_name="todo_list", args={}, session_id="s-a", turn_id="s-a:1")  # its registered name
+plugin._on_post_tool_call(tool_name="todo_list", result=res, session_id="s-a", turn_id="s-a:1")
 e = last_status()
 check("each tool call is a step, kept across 'Thinking…'", e.get("steps") == 2 and e.get("body") == "Thinking…", e)
 check("task list kept on the turn", (e.get("todo") or {}).get("states") == "dapx", e.get("todo"))
 check("same turn start", e.get("since") == since, (e.get("since"), since))
+
+print("tools behind Hermes's Tool Search bridge")
+bridged = {"calls": [{"name": "web_search", "arguments": {"query": "trains"}}]}
+check("tool_call shows the tool underneath", plugin._tool_label("tool_call", bridged) == "Searching the web: trains"
+      and plugin._tool_short("tool_call", bridged) == "Web", plugin._tool_label("tool_call", bridged))
+check("a batch says how many", plugin._tool_label("tool_call", {"calls": [{"name": "a"}, {"name": "b"}]}) == "Using 2 tools")
+check("tool lookups have a plain label", plugin._tool_label("tool_describe", {"names": ["x"]}) == "Looking up tools")
+check("todo_list is 'Updating tasks'", plugin._tool_label("todo_list", {"todos": []}) == "Updating tasks")
 
 print("two chats at once")
 plugin._on_stream_start(session_id="s-b", turn_id="s-b:1")
