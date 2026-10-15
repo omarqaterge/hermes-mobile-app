@@ -38,4 +38,4 @@ if [ -f ~/logs/bot-keeper.pid ]; then
 fi
 # Hermes app service (pinned status + notifications); `am` works here, outside Debian. It is costly (a
 # Java VM per call), so only call it when the service's loopback port doesn't answer.
-run_loop app-keeper bash -c "(exec 3<>/dev/tcp/127.0.0.1/9121) 2>/dev/null || am start-foreground-service -n com.omarqaterge.hermesmobile/.HermesService >/dev/null 2>&1; sleep 300"
+run_loop app-keeper bash -c "(exec 3<>/dev/tcp/127.0.0.1/9121) 2>/dev/null || am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver >/dev/null 2>&1; sleep 300"
