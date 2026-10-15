@@ -8,6 +8,7 @@ fixes in `patches/`. Each one is a plain `git format-patch` file, applied on top
 |---|---|---|
 | `0001-fix-agent-keep-marker-merged-user-rows-addressable` | A message merged into a model-switch marker could not be edited or retried ("target user message is no longer in session history") | NousResearch/hermes-agent@696f6e9, already on Hermes main: a backport for the pinned build |
 | `0002-fix-tui_gateway-keep-the-prompt-a-model-switch-marker-absorbed` | The message sent right after a model switch (or the first message, when the model was picked before it) disappeared from the model's history at the next switch, while the chat still showed it | Offered upstream (Refs NousResearch/hermes-agent#131382) |
+| `0003-perf-yaml-reuse-a-per-thread-reader-in-safe_load` | Every YAML read built a new parser (~7 ms each on a phone), so a skill scan took ~1.8 s while holding up the chat's other requests at start-up; now ~0.5 s | To be offered upstream (branch `perf/yaml-reuse-parser`) |
 
 ## On the phone
 
