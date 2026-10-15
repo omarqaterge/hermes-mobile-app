@@ -258,6 +258,8 @@ wss.on('connection', ws => {
       }
       case 'image.attach_bytes':
         return reply({ attached: true, name: params.filename, path: `/root/.hermes/images/${params.filename}` })
+      case 'image.attach':
+        return reply({ attached: true, name: params.path.split('/').pop(), path: params.path })
       case 'image.detach':
         return reply({ detached: true, count: 0 })
       case 'config.set':

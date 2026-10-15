@@ -161,6 +161,35 @@ async function main() {
   await page.getByRole('button', { name: 'clear', exact: true }).click()
   await page.getByPlaceholder('Message Hermes').fill('')
 
+  // ── edit / retry keep the photos of the message (re-queued with image.attach) ──
+  await attach('Photo', [{ name: 'e.png', mimeType: 'image/png', buffer: png }])
+  await page.locator('.attach-thumb img[alt="e.png"]').waitFor({ timeout: 5000 })
+  await page.getByPlaceholder('Message Hermes').fill('what colour?')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
+  await sleep(300)
+  await page.locator('.msg.user', { hasText: 'what colour?' }).last().getByRole('button', { name: 'Edit' }).click()
+  check((await page.locator('.msg.user.editing img[alt="e.png"]').count()) === 1, 'editing shows the message photo')
+  await page.locator('.edit-box').fill('what colour now?')
+  await page.locator('.edit-send').click()
+  await sleep(700)
+  {
+    const att = rpcs('image.attach')
+    const sub = rpcs('prompt.submit').pop()
+    check(att.length === 1 && att[0].params.path === '/root/.hermes/images/e.png', `edit re-queues the photo with image.attach (${JSON.stringify(att.map(a => a.params.path))})`)
+    check(sub && sub.params.text === 'what colour now?' && typeof sub.params.truncate_before_row_id === 'number', 'edited text sent in place of the old turn')
+    const b = page.locator('.msg.user', { hasText: 'what colour now?' }).last()
+    check((await b.locator('img.msg-thumb[alt="e.png"]').count()) === 1, 'edited bubble still shows the photo')
+  }
+  await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
+  await sleep(300)
+  await page.locator('.msg.assistant').last().getByRole('button', { name: 'Retry' }).click()
+  await sleep(700)
+  check(rpcs('image.attach').length === 2, `retry re-queues the photo too (${rpcs('image.attach').length})`)
+  check((await page.locator('.msg.user', { hasText: 'what colour now?' }).last().locator('img.msg-thumb').count()) === 1, 'retried bubble still shows the photo')
+  await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
+  await sleep(300)
+
   // ── #3 streaming a long code reply ───────────────────
   await page.getByPlaceholder('Message Hermes').fill('long code please')
   await page.getByRole('button', { name: 'Send' }).click()

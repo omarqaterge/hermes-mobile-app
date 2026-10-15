@@ -149,6 +149,18 @@ describe('approvalPrompt (live mode)', async () => {
   })
 })
 
+describe('resumed photos can be sent again (edit / retry)', async () => {
+  const { imagesOf } = await import('./gateway')
+  test('a stored @image: line gives the message its Hermes path', () => {
+    const [u] = hydrate([{ role: 'user', text: 'what colour?\n@image:/root/.hermes/images/upload_1.png', row_id: 3 } as never])
+    expect(u.kind === 'user' && u.imagePaths).toEqual(['/root/.hermes/images/upload_1.png'])
+    expect(imagesOf(u)).toEqual([{ name: 'upload_1.png', path: '/root/.hermes/images/upload_1.png', url: undefined }])
+  })
+  test('a message without photos has none to resend', () => {
+    expect(imagesOf({ kind: 'user', id: 'u1', text: 'hi' })).toEqual([])
+  })
+})
+
 describe('splitAttachments', () => {
   test('turns stored photo and file references into chips', () => {
     expect(splitAttachments('what colour? One word\n@image:/root/.hermes/images/upload_1.png\n[screenshot]')).toEqual({

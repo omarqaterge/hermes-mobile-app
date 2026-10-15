@@ -1308,25 +1308,47 @@ async function userRowId(a: ActiveSession, itemId: string): Promise<number> {
   return row.row_id
 }
 
-/** Edit / regenerate: drop the user turn `itemId` and everything after it, then send `text` in its place. */
-export async function resendFrom(itemId: string, text: string): Promise<void> {
+/** A photo of a sent message: Hermes's path for it (image.attach re-queues it) and the preview shown in the bubble. */
+export interface MsgImage {
+  name: string
+  path: string
+  url?: string
+}
+
+/** The photos of a user message that can be sent again (the ones Hermes has a path for). */
+export function imagesOf(item: ChatItem): MsgImage[] {
+  if (item.kind !== 'user' || !item.imagePaths) return []
+  return item.imagePaths.map((p, i) => ({ name: item.images?.[i] || p.split('/').pop() || 'image', path: p, url: item.imageUrls?.[i] || undefined })).filter(x => x.path)
+}
+
+/** Edit / regenerate: drop the user turn `itemId` and everything after it, then send `text` in its place. The
+ * message's photos go with it (re-queued with image.attach); `images` overrides them (the edit box can drop some). */
+export async function resendFrom(itemId: string, text: string, images?: MsgImage[]): Promise<void> {
   const trimmed = text.trim()
   const a = getState().active
   if (!a || !trimmed) return
   if (a.running) throw new Error('Wait for the current reply to finish')
   const cut = a.items.findIndex(i => i.id === itemId)
   if (cut < 0) return
+  const imgs = images ?? imagesOf(a.items[cut])
   const rowId = await userRowId(a, itemId)
   const kept = a.items.slice(0, cut).filter(i => i.kind === 'user').map(i => i.id)
   const isLast = !a.items.slice(cut + 1).some(i => i.kind === 'user')
   const uid = newId('u')
+  const pics = imgs.length ? { images: imgs.map(x => x.name), imagePaths: imgs.map(x => x.path), imageUrls: imgs.some(x => x.url) ? imgs.map(x => x.url || '') : undefined } : {}
   updateActive(x => ({
-    items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now() }],
+    items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now(), ...pics }],
     running: true,
     status: '',
     openAssistantId: null
   }))
+  const queued: MsgImage[] = []
   try {
+    // Hermes queued the photos for the original turn only: queue them again for this one.
+    for (const im of imgs) {
+      await rpc('image.attach', { session_id: a.runtimeId, path: im.path })
+      queued.push(im)
+    }
     let r: PromptSubmitResult
     try {
       r = await rpc<PromptSubmitResult>('prompt.submit', {
@@ -1350,6 +1372,8 @@ export async function resendFrom(itemId: string, text: string): Promise<void> {
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
     updateActive(() => ({ running: false }))
+    // Not sent: take the photos back out of Hermes's queue, or they would ride along with the next message.
+    for (const im of queued) await rpc('image.detach', { session_id: a.runtimeId, path: im.path }).catch(() => {})
     // The server may have kept the old turns: reload the truth, then say why.
     await resumeSession(a.storedId).catch(() => {})
     toast(`Send failed: ${errText(err)}`, 'error', 6000)
