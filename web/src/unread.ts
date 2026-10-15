@@ -2,6 +2,7 @@
 // keeps, per profile, the count you last saw in each chat and when its count last changed (localStorage
 // hm.seen.v1.<profile>). A chat is unread when it has more messages than you saw; the open chat is always read.
 import type { SessionListRow } from '@hermes/shared/gateway-contract.generated'
+import { setUnseen } from './bridge'
 import { getState, setState } from './store'
 
 interface Seen {
@@ -41,7 +42,12 @@ function publish(map: Record<string, Seen>): void {
   const listed = new Set(getState().sessions.map(s => s.id))
   const unread = Object.keys(map).filter(id => id !== SINCE && listed.has(id) && map[id].c > map[id].n)
   const cur = getState().unread
-  if (unread.length !== cur.length || unread.some((id, i) => id !== cur[i])) setState({ unread })
+  if (unread.length !== cur.length || unread.some((id, i) => id !== cur[i])) {
+    setState({ unread })
+    // the Android service mirrors this list as its sticky Done chip and the app-icon badge
+    const { profile, sessions } = getState()
+    setUnseen(profile, unread.map(id => ({ id, title: sessions.find(s => s.id === id)?.title || '' })))
+  }
 }
 
 /** After every session.list: note new counts; the first list ever is the baseline (nothing unread). */
