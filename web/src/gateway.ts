@@ -187,11 +187,15 @@ async function afterConnect(): Promise<void> {
     try {
       await resumeSession(last, { keepItemsIfSame: true, auto: true })
     } catch (err) {
+      const gone = /not found|no such|unknown session|does not exist/i.test(errText(err))
       // Forget the chat only when Hermes says it is gone. A timeout right after start-up must not
       // drop you on an empty home screen: try once more shortly.
-      if (!a && /not found|no such|unknown session|does not exist/i.test(errText(err))) rememberSession(null)
+      if (!a && gone) rememberSession(null)
       setState({ opening: null })
-      if (!/not found|no such|unknown session|does not exist/i.test(errText(err))) {
+      const cur = getState().active
+      if (gone && a && cur?.runtimeId === a.runtimeId && openSeq === seq0 && !cur.items.some(i => i.kind === 'user')) {
+        await recreateDraft(cur).catch(e => toast(`Couldn't reopen the new chat: ${errText(e)}`, 'error', 6000))
+      } else if (!gone) {
         setTimeout(() => {
           if (getState().conn === 'open' && !getState().active && openSeq === seq0) void resumeSession(last, { keepItemsIfSame: true, auto: true }).catch(() => {})
         }, 4000)
@@ -896,6 +900,18 @@ async function carryAttachments(atts: Attachment[], from: string | undefined, to
   }
   if (out.length < atts.length) toast(`${atts.length - out.length} attachment(s) couldn't be kept`, 'error')
   return out
+}
+
+/** A chat with nothing sent yet has no row in Hermes's database (a "draft"): when Hermes restarts it is gone and
+ * resuming it answers "session not found", so the next send failed with that error. Make a fresh chat in the same
+ * folder with the same model and move what was waiting in the composer (and a message queued offline) to it. */
+async function recreateDraft(a: ActiveSession): Promise<void> {
+  const fresh = await newSession({ cwd: chosenCwd.get(a.runtimeId), model: a.info.model, provider: a.info.provider, effort: a.info.reasoning_effort })
+  chosenCwd.delete(a.runtimeId)
+  const atts = a.attachments.length ? await carryAttachments(a.attachments, a.runtimeId, fresh.runtimeId) : []
+  if (atts.length) updateActive(x => (x.runtimeId === fresh.runtimeId ? { attachments: atts } : null))
+  const q = getState().queued
+  if (q && q.chat === a.storedId) saveOutbox({ ...q, chat: fresh.storedId, ...(q.atts ? { runtime: fresh.runtimeId } : {}) })
 }
 
 /** Take something back out of the next message. A photo must also leave Hermes's queue (image.detach),

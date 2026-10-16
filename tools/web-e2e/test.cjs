@@ -906,6 +906,33 @@ async function main() {
   await page.evaluate(() => window.hermesShortcut('live'))
   await page.locator('.toast', { hasText: 'Live mode needs' }).waitFor({ timeout: 3000 }).then(() => check(true, 'Live shortcut explains itself without voice'), () => check(false, 'Live shortcut explains itself without voice'))
 
+  // ── a photo attached on the new-chat screen survives Hermes restarting (the empty chat had no row yet) ──
+  {
+    await attach('Photo', [{ name: 'draft.png', mimeType: 'image/png', buffer: png }])
+    await page.locator('.attach-thumb img[alt="draft.png"]').waitFor({ timeout: 5000 })
+    const draftRt = rpcs('image.attach_bytes').filter(r => r.params.filename === 'draft.png').pop()?.params.session_id
+    const c0 = rpcs('session.create').length
+    await mock({ drop: 3000, forgetDrafts: true })
+    await page.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
+    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 30000 })
+    await sleep(800)
+    const cr = rpcs('session.create').slice(c0)
+    const fresh = cr.length === 1 ? 'rt-new-m' : ''
+    const ra = rpcs('image.attach').filter(r => r.params.path === '/root/.hermes/images/draft.png')
+    check(cr.length === 1 && ra.length === 1 && ra[0].params.session_id !== draftRt && ra[0].params.session_id.startsWith(fresh), `gone empty chat is made again and the photo queued there (${cr.length} creates, ${JSON.stringify(ra.map(r => r.params.session_id))}, was ${draftRt})`)
+    check((await page.locator('.attach-thumb img[alt="draft.png"]').count()) === 1, 'photo chip still in the composer')
+    await page.getByPlaceholder('Message Hermes').fill('draft photo')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await page.locator('.msg.user .bubble', { hasText: 'draft photo' }).waitFor({ timeout: 5000 })
+    await sleep(300)
+    const ps = rpcs('prompt.submit').filter(r => r.params.text === 'draft photo')
+    check(ps.length === 1 && ps[0].params.session_id === ra[0]?.params.session_id, `sent to the new chat (${JSON.stringify(ps.map(p => p.params.session_id))})`)
+    check((await page.locator('.notice', { hasText: 'Send failed' }).count()) === 0, 'no "Send failed: session not found"')
+    await mock({ draftGen: 0 })
+    await page.evaluate(() => window.hermesShortcut('new'))
+    await page.locator('.empty .suggestion').first().waitFor({ timeout: 5000 })
+  }
+
   // ── #30 About shows the Hermes version with no chat open (health check) ──
   await page.evaluate(() => window.hermesShortcut('new'))
   await page.getByRole('button', { name: /^Sessions/ }).click()

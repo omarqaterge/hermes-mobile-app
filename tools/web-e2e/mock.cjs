@@ -29,6 +29,10 @@ canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lan
 let activityItems = []
 let refuseUntil = 0
 let runtimeGen = 0
+// forgetDrafts: Hermes restarted and the empty chats made so far are gone (a chat has no row until its first
+// message); chats created afterwards get a -d<gen> suffix so a recreated chat can be told apart.
+let draftGen = 0
+const goneDraft = id => draftGen > 0 && /^s-new/.test(id) && !id.endsWith(`-d${draftGen}`)
 let fastMode = 'normal'
 let pluginEnabled = false
 let providerConfigured = true // false = a fresh install (the welcome opens)
@@ -68,6 +72,8 @@ const server = http.createServer((req, res) => {
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
       if (b.newRuntime) runtimeGen++
       if (b.gen !== undefined) runtimeGen = b.gen
+      if (b.forgetDrafts) draftGen++
+      if (b.draftGen !== undefined) draftGen = b.draftGen
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
         refuseUntil = Date.now() + (b.drop || 3000)
@@ -244,7 +250,7 @@ wss.on('connection', ws => {
       case 'session.create': {
         // Like Hermes: the agent is built in the background and announced by session.info. A model in the
         // params is the chat's own model from the start (a per-session override).
-        const n = params.model ? `-m${++created}` : ''
+        const n = (params.model ? `-m${++created}` : '') + (draftGen ? `-d${draftGen}` : '')
         const rt = `rt-new${n}`, model = params.model || 'mock-model'
         later(600, () => { log({ built: rt }); event('session.info', rt, { model, provider: params.provider || 'mock' }) })
         return reply({ session_id: rt, stored_session_id: `s-new${n}`, info: { model, provider: params.provider || 'mock' }, messages: [] })
@@ -255,6 +261,7 @@ wss.on('connection', ws => {
         return reply({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
       case 'session.resume': {
         const sid = params.session_id
+        if (goneDraft(sid)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 4007, message: 'session not found' } }))
         if (sid === 's-run') {
           reply({
             session_id: 'rt-run',

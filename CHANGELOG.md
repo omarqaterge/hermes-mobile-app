@@ -23,6 +23,8 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Links work everywhere**: in your messages, tool cards, thinking, sheets and the canvas; they open in your default app.
 - **Favourite models**: star a model in the model picker and it shows in a Favourites section at the top.
 - **/yolo** and **/fast** switch instantly for the current chat (YOLO chip above the composer).
+- A photo attached in a new chat before Hermes restarted is no longer lost: the chat is made again with the same
+  model and the photo, instead of the message failing with "session not found".
 - Photos and files you attached survive a dropped connection, and go along with a message queued while offline.
 - **File checkpoints**: see every folder a chat changed, the diff per file, and restore a folder or a single file (undoable).
 - Canvas: "Saved ✓" turns back into "<when> · You/Hermes".
