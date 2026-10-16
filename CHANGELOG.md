@@ -2,7 +2,11 @@
 
 User-facing changes, newest first. Each release section collects what shipped since the previous tag.
 
-## Unreleased (since v0.8.9)
+## Unreleased
+
+## v0.8.39 (2026-10-16)
+
+Everything since v0.8.9.
 
 ### Notifications and the status chip
 - **Tap the status chip to see the progress**: the chat's name, what Hermes is doing right now, the task it is on,
@@ -30,12 +34,12 @@ User-facing changes, newest first. Each release section collects what shipped si
 - Canvas: "Saved ✓" turns back into "<when> · You/Hermes".
 
 ### Voice / Live mode
-- Approvals in Live mode are a short spoken question ("Hermes needs your permission. Allow or deny?"), answered by voice.
+- Approvals in Live mode are a short spoken question ("Hermes needs your permission. Allow or deny?"), answered by voice (tested in the browser, not yet with a voice on a phone).
 - Leaving the app closes the microphone but lets Hermes finish reading.
 
 ### Models and setup
 - **Subscription sign-ins** and a first-run "connect a model" screen.
-- The model picker renews an expired Claude login so new models show up.
+- The model picker renews an expired Claude login so new models show up (not yet seen with a really expired login).
 - **One-tap app update** from Settings → About (downloads the latest release and opens the installer). It shows the latest release's number and says so when you already have a newer build.
 - **Hermes can use the phone** out of the box (files, Termux:API, Shizuku, no root), with a Setup check that fixes what's missing.
 
