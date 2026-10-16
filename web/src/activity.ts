@@ -2,7 +2,7 @@
 // It covers work the chat stream doesn't show, e.g. the background memory/skills review after a reply.
 import { api } from './api'
 import { loadSessionsSoon } from './gateway'
-import { getState, setState, type ActivityItem } from './store'
+import { getState, setState, subscribe, type ActivityItem } from './store'
 
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -38,14 +38,17 @@ export function startActivityPolling(): void {
   // the open chat's turn ends (its review starts then), every 9 s otherwise: the open chat's own turn is not in
   // the banner, and each poll also wakes Hermes's dashboard (battery).
   let tick = 0
-  let wasRunning = false
   timer = setInterval(() => {
     tick++
     const s = getState()
-    const running = Boolean(s.active?.running)
-    const ended = wasRunning && !running
-    wasRunning = running
-    if (bannerVisible(s.activity, s.active?.storedId, running) || ended || tick % 3 === 0) void poll()
+    if (bannerVisible(s.activity, s.active?.storedId, Boolean(s.active?.running)) || tick % 3 === 0) void poll()
   }, 3000)
+  // The post-turn poll follows the turn's end itself (up to one 3 s tick late before, which made the review show late).
+  let wasRunning = false
+  subscribe(() => {
+    const running = Boolean(getState().active?.running)
+    if (wasRunning && !running) setTimeout(() => void poll(), 300)
+    wasRunning = running
+  })
   document.addEventListener('visibilitychange', () => void poll())
 }

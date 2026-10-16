@@ -524,7 +524,9 @@ async function main() {
   check(atBottom, 'opens at the bottom')
   const firstSeen = await page.locator('.chat .msg').first().textContent()
   await page.locator('.chat').evaluate(el => (el.scrollTop = 0))
-  const topBefore = await page.locator('.chat .msg').first().evaluate(el => el.getBoundingClientRect().top)
+  // Measure the message that WAS first (by its text): the earlier turns may already be in by now, and then
+  // `.first()` would be one of them (seen as a flaky "-3935 → 125").
+  const topBefore = await page.locator('.chat .msg', { hasText: firstSeen }).first().evaluate(el => el.getBoundingClientRect().top)
   await page.waitForFunction(n => document.querySelectorAll('.chat .msg').length > n, drawn, { timeout: 5000 }).catch(() => {})
   await sleep(300)
   const topAfter = await page.locator('.chat .msg', { hasText: firstSeen }).first().evaluate(el => el.getBoundingClientRect().top)

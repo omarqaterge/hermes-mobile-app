@@ -43,5 +43,6 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Faster start-up**: opening the app after the phone has been idle no longer waits seconds for the chat (a Hermes fix
   shipped with the app: skill scans 1.8 s → 0.5 s; the app asks for less at start-up).
 - Coming back to the app no longer drops the connection or repeats the last turn.
+- The "reviewing" banner after a reply shows right away (it could lag up to 3 s).
 - Battery: no permanent wake lock, far fewer background polls; the phone reaches deep sleep.
 - Fixes to Hermes itself ship with the app (e.g. a message lost after switching models).
