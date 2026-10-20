@@ -113,8 +113,8 @@ chip and notifications work even when the app is closed.
 
 ## Install
 
-**No root needed.** Hermes Mobile runs on an ordinary phone with a locked bootloader. A rooted phone works too; the only
-difference is how Shizuku starts (see [Rooted or not](#rooted-or-not)).
+**No root needed.** Hermes Mobile runs on an ordinary phone with a locked bootloader. A rooted phone works too; the
+differences are how Shizuku starts and, if you like, running Debian with chroot-distro (see [Rooted or not](#rooted-or-not)).
 
 You need an Android phone (arm64, Android 8+) with about 6 GB free, and access to a model, either of:
 
@@ -206,6 +206,16 @@ Everything is the same except Shizuku, which Android stops whenever the phone re
 
 Until Shizuku runs, Hermes can still do everything except see and touch the screen and other apps; it tells you when it needs
 Shizuku, and the app's **Setup check** shows it too.
+
+**Rooted: Debian with chroot-distro (optional).** By default Debian runs under proot-distro, which needs no root. On a rooted
+phone it can run under [chroot-distro](https://github.com/sabamdarif/chroot-distro) instead, at native speed: put
+`HM_DISTRO=chroot` in front of the install command (`HM_DISTRO=chroot bash hm.sh` in Termux, or
+`HM_DISTRO=chroot bash setup-phone.sh` from a computer) and tap **Grant** when your root manager asks about Termux. The installer
+adds chroot-distro (`pip install chroot-distro`) and Debian 13 (`chroot-distro install --name debian debian:trixie`); a
+chroot-distro container already named `debian` is used as it is. The choice is remembered, so later runs of `bash hm.sh` and the
+app use the same Debian. To get a shell in it yourself, type `~/bin/hermes-debian` in Termux (it works for both).
+Shizuku is still needed for the screen and other apps (rooted: *Start* in Shizuku). Moving an existing proot-distro install
+over is not automatic.
 
 ### After installing
 

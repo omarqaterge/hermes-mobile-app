@@ -14,7 +14,8 @@ Everything below is for the agent.
 
 Set up, on the user's Android phone, from their computer (macOS, Windows or Linux) over `adb`:
 
-1. **Termux** (a Linux terminal app) with **Debian** inside it (proot-distro).
+1. **Termux** (a Linux terminal app) with **Debian** inside it (proot-distro; on a rooted phone, chroot-distro if the user asks
+   for it: run the setup script with `HM_DISTRO=chroot`, and the user taps Grant when the root manager asks about Termux).
 2. **Hermes Agent** (github.com/NousResearch/hermes-agent) inside Debian, with a model the user chooses.
 3. **Hermes Mobile** (this repo): the Hermes plugin, a supervisor script, and the Android app.
 
@@ -212,7 +213,7 @@ the time** (the installer waits up to a minute). `HMSETUP TODO …` lines just b
 | `hermes`, "bootstrap Python lookup failed" | proot quirk; `hm.sh` already retries once with a workaround. If it still fails, re-run `bash hm.sh` |
 | `hermes`, `cpython-…-linux-android` / "Target triple not supported" | Debian is using Termux's Python: check `/etc/profile.d/zz-no-termux-path.sh` exists in Debian (hm.sh writes it), then re-run |
 | `hermes`, exit 132 / "Illegal instruction" | The CPU lacks an instruction a library needs. Seen only on the Android emulator on Apple Silicon, not on phones |
-| `hermes`, anything else | Hermes's own installer failed. The output above names the stage; full log in Debian at `/root/.hermes/logs/install.log`. Fix it inside Debian (`proot-distro login debian`), then re-run `bash hm.sh` |
+| `hermes`, anything else | Hermes's own installer failed. The output above names the stage; full log in Debian at `/root/.hermes/logs/install.log`. Fix it inside Debian (`proot-distro login debian`, or `chroot-distro login debian` with `HM_DISTRO=chroot`), then re-run `bash hm.sh` |
 | `start` (dashboard not answering) | Look at `~/logs/dashboard.log` in Termux (`tail -50 ~/logs/dashboard.log`) |
 
 To re-run, type `bash hm.sh` + Enter. It skips what is done.
