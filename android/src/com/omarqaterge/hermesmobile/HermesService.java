@@ -443,14 +443,10 @@ public class HermesService extends Service {
                 return;
             }
             case "approval": {
-                if (MainActivity.visible) return; // the app shows its own sheet
-                Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
-                // Answer right from the popup, like the in-app sheet.
-                b.addAction(approveAction(e, "once", "Allow once"));
-                if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
-                b.addAction(approveAction(e, "deny", "Deny"));
                 // HyperOS hides the popup after ~5 s whatever we ask; the island chip keeps the
-                // same buttons (status notification) until the approval is answered.
+                // same buttons (status notification) until the approval is answered. The chip is
+                // armed even while the app is on screen: leaving the app with the sheet unanswered
+                // must still leave a way to answer (it used to return here and the chip had none).
                 boolean ticking = pendingApproval != null;
                 if (!ticking) lastReAlert = -1;
                 pendingApproval = e;
@@ -458,11 +454,23 @@ public class HermesService extends Service {
                 postStatus();
                 updateWake();
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
+                if (MainActivity.visible) return; // no popup: the app shows its own sheet
+                Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
+                // Answer right from the popup, like the in-app sheet.
+                b.addAction(approveAction(e, "once", "Allow once"));
+                if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
+                b.addAction(approveAction(e, "deny", "Deny"));
                 postGrouped(nm, tag(kind, session), b.build());
                 return;
             }
             case "ask": {
-                if (MainActivity.visible) return; // the app shows its own sheet
+                // HyperOS hides the popup after ~5 s: the question and its answers also ride on the island chip,
+                // armed even while the app is on screen so leaving it unanswered still leaves a way to answer.
+                pendingAsk = e;
+                main.removeCallbacks(expireAskTask);
+                main.postDelayed(expireAskTask, ASK_TTL_MS);
+                postStatus();
+                if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
                 // Answer in the notification; a question with choices offers them as quick replies.
                 org.json.JSONArray ch = e.optJSONArray("choices");
@@ -472,11 +480,6 @@ public class HermesService extends Service {
                     if (!c.isEmpty()) choices.add(c.length() > 40 ? c.substring(0, 40) : c);
                 }
                 if (e.optBoolean("single", true)) b.addAction(answerAction("ask", session, "Answer", choices));
-                // HyperOS hides the popup after ~5 s: the question and its answers also ride on the island chip.
-                pendingAsk = e;
-                main.removeCallbacks(expireAskTask);
-                main.postDelayed(expireAskTask, ASK_TTL_MS);
-                postStatus();
                 postGrouped(nm, tag(kind, session), b.build());
                 return;
             }
@@ -951,9 +954,9 @@ public class HermesService extends Service {
         float frac = left / (float) total;
         int barColor = frac > 0.5f ? GOLD : frac > 0.2f ? AMBER : RED;
 
-        String what = a.optString("what", "");
-        String cmd = a.optString("command", "");
-        if (what.isEmpty() && cmd.isEmpty()) what = a.optString("body", "a command");
+        String what = clip(a.optString("what", ""), 280);
+        String cmd = clip(a.optString("command", ""), 400);
+        if (what.isEmpty() && cmd.isEmpty()) what = clip(a.optString("body", "a command"), 400);
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder();
         if (!what.isEmpty()) {
             t.append(what.substring(0, 1).toUpperCase() + what.substring(1));
@@ -997,6 +1000,11 @@ public class HermesService extends Service {
         return b.build();
     }
 
+    /** A notification line kept short enough that the answer buttons stay in view. */
+    static String clip(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max - 1) + "\u2026";
+    }
+
     long approvalDeadline;
     long lastReAlert = -1;
 
@@ -1005,7 +1013,7 @@ public class HermesService extends Service {
         if (e == null) return;
         String session = e.optString("session", null);
         NotificationManager nm = getSystemService(NotificationManager.class);
-        Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermes"), "Still waiting for your answer: " + e.optString("body", ""), session, true);
+        Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermes"), "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
         b.addAction(approveAction(e, "once", "Allow once"));
         if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
         b.addAction(approveAction(e, "deny", "Deny"));

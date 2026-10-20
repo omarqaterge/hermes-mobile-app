@@ -515,6 +515,22 @@ async function main() {
   const rs = rpcs('prompt.submit').pop()
   check(rs && rs.params.text === 'sent from the notification' && rs.params.session_id === 'rt-s-7', `reply goes to its own chat (${JSON.stringify(rs && rs.params)})`)
 
+  // ── A huge approval warning: buttons stay on screen, a repeated finding shows once with its count ──
+  await page.getByPlaceholder('Message Hermes').fill('run the long thing')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.sheet .sheet-title', { hasText: 'Approve' }).waitFor({ timeout: 5000 })
+  const vh = page.viewportSize().height
+  for (const label of ['Allow once', 'Deny']) {
+    const box = await page.locator('.sheet').getByRole('button', { name: label }).boundingBox()
+    check(box && box.y >= 0 && box.y + box.height <= vh, `long approval: "${label}" button on screen (${JSON.stringify(box)})`)
+  }
+  const descText = (await page.locator('.sheet .sheet-desc').textContent()) || ''
+  check(/\(×20\)/.test(descText) && descText.split('[HIGH]').length === 2, `repeated finding shown once with ×20 (${descText.slice(0, 160)})`)
+  await page.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
+  await sleep(400)
+  const la = calls().filter(c => c.answer === 'srv-approval-long')
+  check(la.length === 1 && la[0].result && la[0].result.choice === 'once', `long approval answered from its button (${JSON.stringify(la)})`)
+
   // ── #11 long chats: draw the end first, earlier turns on scroll, without moving what's on screen ──
   await page.evaluate(() => window.hermesOpenSession('s-long'))
   await page.locator('.msg.assistant', { hasText: 'answer 149' }).waitFor({ timeout: 5000 })

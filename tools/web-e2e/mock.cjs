@@ -330,6 +330,13 @@ wss.on('connection', ws => {
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-approval-1', method: 'approval', params: { session_id: sid, command: 'rm -rf /tmp/x', description: 'delete the temp folder', allow_session: true } })))
           return
         }
+        if (/^run the long thing$/.test(params.text)) {
+          // Hermes's security scan can repeat one finding many times; the answer buttons must stay on screen.
+          const f = '[HIGH] Nested executable body could not be resolved: the shell will execute a grouped value, but the scanner cannot prove the complete body.'
+          const description = 'Security scan — ' + Array(20).fill(f).join('; ') + '; ' + 'a very long warning that no dedupe can shorten. '.repeat(40)
+          later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-approval-long', method: 'approval', params: { session_id: sid, command: 'echo ' + 'x'.repeat(3000), description, allow_session: true } })))
+          return
+        }
         if (/^ask me$/.test(params.text)) {
           // Hermes asks a question (clarify, a server → client request) and waits.
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-1', method: 'clarify', params: { session_id: sid, question: 'Which colour?', choices: ['Red', 'Blue'] } })))

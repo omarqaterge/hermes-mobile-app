@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { backgroundLuminance, joinHtmlBlocks, chatLinks, linkParts, formatOutput, memoryDiff, mediaKind, parseCsv, plainText, prepare } from './text'
+import { backgroundLuminance, joinHtmlBlocks, chatLinks, linkParts, formatOutput, memoryDiff, mediaKind, parseCsv, plainText, prepare, tidyApprovalText } from './text'
 
 describe('prepare', () => {
   test('MEDIA line with spaces becomes an image', () => {
@@ -210,5 +210,16 @@ describe('linkParts', () => {
   test('no word boundary inside other words, empty string is empty', () => {
     expect(linkParts('fooxhttps://a.com')).toEqual([{ text: 'fooxhttps://a.com' }])
     expect(linkParts('')).toEqual([])
+  })
+})
+
+describe('tidyApprovalText', () => {
+  test('a security finding repeated many times shows once with a count', () => {
+    const f = '[HIGH] Nested body: cannot prove it.'
+    expect(tidyApprovalText(`Security scan — ${f}; ${f}; ${f}`)).toBe(`Security scan — ${f} (×3)`)
+  })
+  test('different warnings keep their order; plain text is unchanged', () => {
+    expect(tidyApprovalText('Security scan — [HIGH] A; [LOW] B; [HIGH] A; recursive delete')).toBe('Security scan — [HIGH] A (×2); [LOW] B; recursive delete')
+    expect(tidyApprovalText('change permissions')).toBe('change permissions')
   })
 })

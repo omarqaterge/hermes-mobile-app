@@ -484,8 +484,23 @@ def _on_subagent_start(child_session_id=None, parent_session_id=None, child_goal
         _set_status(parent_session_id, f"Sub-agent: {_short(child_goal, 60)}", "Agents")
 
 
+def _tidy_approval_text(s):
+    """Hermes joins approval warnings with "; " and its security scan can repeat one finding many times
+    ("Security scan — [HIGH] X; [HIGH] X; …", seen ×20): each warning once, with a count, so the
+    notification's text stays short enough to show its buttons. Same rule as tidyApprovalText in web/src/text.ts."""
+    seen = {}
+    for part in (s or "").split("; "):
+        k = re.sub(r"^Security scan [—-] ", "", part).strip()
+        if k in seen:
+            seen[k][1] += 1
+        else:
+            seen[k] = [part, 1]
+    return "; ".join(t if n == 1 else f"{t} (×{n})" for t, n in seen.values())
+
+
 def _on_pre_approval_request(command=None, description=None, session_key=None, session_id=None, **kw):
     sid = session_id or session_key or ""
+    description = _tidy_approval_text(description) if description else description
     _set_status(sid, "Waiting for your approval", "Approve?")
     body = description or command or "a command"
     if command and description:
