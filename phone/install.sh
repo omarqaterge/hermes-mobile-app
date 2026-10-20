@@ -8,11 +8,17 @@
 set -e
 REPO="https://github.com/omarqaterge/hermes-mobile-app"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-ROOT="$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root"
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-[ -d "$ROOT" ] || die "Debian is not installed in Termux yet. Run: pkg install -y proot-distro && proot-distro install debian"
-[ -d "$ROOT/.hermes" ] || die "Hermes is not set up in Debian yet. Install Hermes Agent and run 'hermes setup' first (see the README)."
+# Debian runs under proot-distro (no root needed) or, on a rooted phone, chroot-distro. HM_DISTRO=chroot picks chroot-distro;
+# without it a chroot-distro Debian is used only when there is no proot-distro one. Remembered in ~/.hermes-mobile/distro.
+mkdir -p "$HOME/.hermes-mobile"
+HM_DISTRO=${HM_DISTRO:-$(cat "$HOME/.hermes-mobile/distro" 2>/dev/null || true)}  # "|| true": set -e
+if [ -z "$HM_DISTRO" ] && [ ! -d "$PREFIX/var/lib/proot-distro/containers/debian/rootfs" ] && command -v chroot-distro >/dev/null; then
+  HM_DISTRO=chroot
+fi
+[ "$HM_DISTRO" = chroot ] || HM_DISTRO=proot
+echo "$HM_DISTRO" > "$HOME/.hermes-mobile/distro"
 
 # Run from a clone, or (piped through curl) clone/update ~/hermes-mobile first.
 here=""
@@ -31,24 +37,30 @@ grep -qE '^[[:space:]]*allow-external-apps[[:space:]]*=[[:space:]]*true' "$HOME/
   || echo "allow-external-apps = true" >> "$HOME/.termux/termux.properties"
 command -v termux-reload-settings >/dev/null && termux-reload-settings || true
 
-echo "2/5 Installing the supervisor script (~/bin/hermes-services)"
+echo "2/5 Installing the supervisor script (~/bin/hermes-services, ~/bin/hermes-debian)"
 mkdir -p "$HOME/bin"
 cp "$here/phone/hermes-services" "$HOME/bin/hermes-services"
-chmod +x "$HOME/bin/hermes-services"
+cp "$here/phone/hermes-debian" "$HOME/bin/hermes-debian"
+chmod +x "$HOME/bin/hermes-services" "$HOME/bin/hermes-debian"
+DEB="$HOME/bin/hermes-debian"
+if [ "$HM_DISTRO" = chroot ]; then
+  "$DEB" true || die "Debian is not installed with chroot-distro yet (or Termux has no root). Run: chroot-distro install --name debian debian:trixie"
+else
+  [ -d "$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root" ] \
+    || die "Debian is not installed in Termux yet. Run: pkg install -y proot-distro && proot-distro install debian"
+fi
+"$DEB" --exists /root/.hermes || die "Hermes is not set up in Debian yet. Install Hermes Agent and run 'hermes setup' first (see the README)."
 
 echo "3/5 Installing the Hermes Mobile plugin"
-mkdir -p "$ROOT/.hermes/plugins" "$ROOT/.hermes/scripts"
-rm -rf "$ROOT/.hermes/plugins/hermes-mobile"
-cp -r "$here/hermes-plugin/hermes-mobile" "$ROOT/.hermes/plugins/hermes-mobile"
-find "$ROOT/.hermes/plugins/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
-cp "$here/phone/cron_ticker.py" "$ROOT/.hermes/scripts/cron_ticker.py"
+find "$here/hermes-plugin/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+"$DEB" --put "$here/hermes-plugin/hermes-mobile" /root/.hermes/plugins/hermes-mobile
+"$DEB" --put "$here/phone/cron_ticker.py" /root/.hermes/scripts/cron_ticker.py
 
 # Our fixes to Hermes itself (hermes/README.md). One that no longer fits this Hermes is skipped, never half-applied.
 echo "    Applying the Hermes Mobile fixes to Hermes (hermes/patches)"
-rm -rf "$ROOT/.hermes/hermes-mobile-patches"
-cp -r "$here/hermes/patches" "$ROOT/.hermes/hermes-mobile-patches"
-cp "$here/phone/hermes-patches.sh" "$ROOT/.hermes/scripts/hermes-patches.sh"
-proot-distro login debian -- bash -lc 'bash /root/.hermes/scripts/hermes-patches.sh apply /root/.hermes/hermes-mobile-patches' \
+"$DEB" --put "$here/hermes/patches" /root/.hermes/hermes-mobile-patches
+"$DEB" --put "$here/phone/hermes-patches.sh" /root/.hermes/scripts/hermes-patches.sh
+"$DEB" bash -lc 'bash /root/.hermes/scripts/hermes-patches.sh apply /root/.hermes/hermes-mobile-patches' \
   || echo "    Some fixes did not fit this Hermes version and were skipped; Hermes runs unchanged there."
 
 # Before the restart below: only a Hermes started after Termux got the files permission sees /sdcard.
@@ -61,17 +73,17 @@ show_todo() {
 }
 
 echo "4/5 Enabling the plugin in Hermes"
-if proot-distro login debian -- bash -lc 'PATH="$HOME/.local/bin:$PATH" hermes plugins enable hermes-mobile'; then :; else
+if "$DEB" bash -lc 'PATH="$HOME/.local/bin:$PATH" hermes plugins enable hermes-mobile'; then :; else
   echo "Could not enable it automatically. Run inside Debian:  hermes plugins enable hermes-mobile"
 fi
 # A running Hermes still has the old plugin and Hermes files loaded: restart its dashboard (exact PIDs; the
 # hermes-services loop starts it again). Nothing runs yet on a first install.
-pids=$(pgrep -f "hermes dashboard --host 127.0.0.1 --port 9119" || true)
-if [ -n "$pids" ]; then echo "    Restarting Hermes so the changes load"; kill -9 $pids 2>/dev/null || true; fi
+echo "    Restarting Hermes (if it runs) so the changes load"
+"$DEB" --restart
 
 # Hermes' google-workspace skill (Gmail/Calendar/Drive) is often run with Debian's system python3, which lacks these.
 echo "    Adding the Google client libraries for Hermes' Google skill (optional)"
-proot-distro login debian -- bash -lc 'apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2' >/dev/null 2>&1 \
+"$DEB" bash -lc 'apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2' >/dev/null 2>&1 \
   || echo "    Skipped (not needed unless you use Hermes with Google Calendar/Gmail)."
 
 if [ -n "${HM_NO_APK:-}" ]; then echo "Done (app download skipped: HM_NO_APK is set)."; exit 0; fi   # bootstrap.sh lists the to-dos itself

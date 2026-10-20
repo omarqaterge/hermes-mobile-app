@@ -1,0 +1,78 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Runs things in Hermes's Debian, whichever way it is installed: proot-distro (the default, no root needed) or
+# chroot-distro (a rooted phone; picked at install time with HM_DISTRO=chroot and remembered in ~/.hermes-mobile/distro).
+# install.sh puts it in ~/bin; hermes-services, the installers and the app use it, so only this file knows the difference.
+#   hermes-debian [COMMAND [ARG...]]   run COMMAND in Debian as root (no COMMAND: a shell)
+#   hermes-debian --which              print proot or chroot
+#   hermes-debian --rootfs             print Debian's root folder as Termux sees it (under chroot only root can read it)
+#   hermes-debian --exists PATH        exit 0 when PATH (a Debian path) exists
+#   hermes-debian --put SRC DEST       copy a Termux file or folder to DEST in Debian, replacing DEST
+#   hermes-debian --restart            stop Hermes's dashboard (exact command line); the hermes-services loop starts it again
+#   hermes-debian --open PATH          open a file Hermes sees (a Debian path) in an Android app
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+d=$(cat "$HOME/.hermes-mobile/distro" 2>/dev/null)
+[ "$d" = chroot ] || d=proot
+ROOTFS="$PREFIX/var/lib/$d-distro/containers/debian/rootfs"
+DASH='hermes dashboard --host 127.0.0.1 --port 9119'
+
+# chroot-distro gives Debian a fresh /dev. Termux:API's commands (they call Android's `am`) need the property area and
+# /dev/socket from the real one, and /dev/binder links into the binderfs chroot-distro does bring along.
+CD=(chroot-distro login -b /dev/__properties__ -b /dev/socket debian --)
+FIX='for b in binder hwbinder vndbinder; do [ -e /dev/$b ] || [ ! -e /dev/binderfs/$b ] || ln -s /dev/binderfs/$b /dev/$b; done 2>/dev/null; '
+login() {
+  if [ "$d" = chroot ]; then "${CD[@]}" sh -c "$FIX"'exec "$@"' sh "$@"; else proot-distro login debian -- "$@"; fi
+}
+# chroot-distro 3.2 answers 0 for a failed command when stdin is a terminal, so its exit code is passed back in a file
+# (Debian sees Termux's home at the same path; not Termux's tmp folder).
+login_rc() {
+  [ "$d" = chroot ] || exec proot-distro login debian -- "$@"
+  local f rc
+  mkdir -p "$HOME/.hermes-mobile"; f=$(mktemp "$HOME/.hermes-mobile/rc.XXXXXX") || exit 1
+  "${CD[@]}" sh -c "$FIX"'"$@"; echo $? > "$0"' "$f" "$@"
+  rc=$(cat "$f" 2>/dev/null); rm -f "$f"
+  exit "${rc:-1}"
+}
+
+case "${1:-}" in
+  --which) echo "$d" ;;
+  --rootfs) echo "$ROOTFS" ;;
+  --exists)
+    if [ "$d" = chroot ]; then login test -e "$2" </dev/null; else test -e "$ROOTFS$2"; fi ;;
+  --put)
+    src=$(realpath "$2") || exit 1
+    case "$3" in /*) ;; *) echo "hermes-debian: DEST must be an absolute Debian path" >&2; exit 2 ;; esac
+    if [ "$d" = chroot ]; then
+      # Debian's files belong to root here; Debian itself sees Termux's folders (chroot-distro binds /data).
+      login sh -c 'mkdir -p "$(dirname "$2")" && rm -rf "$2" && cp -r "$1" "$2"' sh "$src" "$3" </dev/null
+    else
+      mkdir -p "$(dirname "$ROOTFS$3")" && rm -rf "$ROOTFS$3" && cp -r "$src" "$ROOTFS$3"
+    fi ;;
+  --restart)
+    if [ "$d" = chroot ]; then
+      # The dashboard runs as root, which Termux can neither see nor stop. "[h]" keeps pkill from matching su's own
+      # command line (killed, su would leave the terminal in raw mode).
+      su -c "pkill -9 -f '[h]${DASH#h}'" </dev/null 2>/dev/null
+    else
+      pids=$(pgrep -f "$DASH") && kill -9 $pids 2>/dev/null
+    fi
+    true ;;
+  --open)
+    p=$2
+    case "$p" in
+      /sdcard|/sdcard/*) f="/storage/emulated/0${p#/sdcard}" ;;
+      /root|/root/*)
+        if [ "$d" = chroot ]; then
+          # Termux can't read root's files: open a copy.
+          mkdir -p "$HOME/.cache/hermes-open"
+          f="$HOME/.cache/hermes-open/$(basename "$p")"
+          login cat -- "$p" > "$f" </dev/null || exit 1
+        else
+          f="$ROOTFS$p"
+        fi ;;
+      *) f=$p ;;
+    esac
+    exec termux-open "$f" ;;
+  -*) echo "hermes-debian: unknown option $1" >&2; exit 2 ;;
+  "") if [ "$d" = chroot ]; then exec "${CD[@]}" sh -c "$FIX"'exec bash -l'; else exec proot-distro login debian; fi ;;
+  *) login_rc "$@" ;;
+esac

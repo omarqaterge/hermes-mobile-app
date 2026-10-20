@@ -8,6 +8,8 @@
 # subscription sign-ins (ChatGPT, Claude, Grok, Nous Portal). To run without questions, set them first:
 #   HM_PROVIDER=openrouter HM_MODEL=<model id> HM_KEY_NAME=OPENROUTER_API_KEY HM_KEY=sk-... bash setup-phone.sh
 # or HM_SKIP_MODEL=1 to leave the model to the app's first-run screen.
+# Rooted phone: HM_DISTRO=chroot runs Debian with chroot-distro instead of proot-distro (tap Grant when your root manager
+# asks about Termux).
 # Options: -s <serial> picks a device when several are connected. Safe to run again.
 set -euo pipefail
 
@@ -166,7 +168,8 @@ done
 
 # ---------------------------------------------------------------- 6. install on the phone
 b "6/9 Installing Debian + Hermes on the phone (20-40 minutes)"
-type_line "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && bash hm.sh"
+distro=""; [ "${HM_DISTRO:-}" = chroot ] && distro="HM_DISTRO=chroot "
+type_line "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && ${distro}bash hm.sh"
 seen=0; start=$(date +%s)
 while :; do
   sleep 5

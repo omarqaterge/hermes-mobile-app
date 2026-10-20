@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- Rooted phones can run Debian with chroot-distro instead of proot-distro (`HM_DISTRO=chroot`, see the README's "Rooted or not"). The
+  installer sets it up and a new Termux helper, `~/bin/hermes-debian`, runs commands in whichever Debian is installed. Tested on a
+  rooted Android 15 emulator (install, dashboard, app connection, approvals on the chip); not yet on a real rooted phone. The app's
+  Restart, Claude sign-in and open-file buttons use the helper from the next app release.
 - Hermes's work in the background is always shown for what it is: the memory-and-skills review after a reply shows as
   "Learning" (with its steps) and clears when it ends, however late it starts (in a chat with a photo it showed as
   "Thinking…" for about 3 minutes), and a /btw side question shows as "Answering a side question" without touching

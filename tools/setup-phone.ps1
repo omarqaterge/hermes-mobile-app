@@ -3,6 +3,7 @@
 #   irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
 # Same steps as tools/setup-phone.sh (macOS/Linux); explained in AGENT_INSTALL.md.
 # Without questions: set $env:HM_PROVIDER, HM_MODEL, HM_KEY_NAME, HM_KEY first, or HM_SKIP_MODEL=1 to connect the model in the app. HM_SERIAL picks a device.
+# Rooted phone: $env:HM_DISTRO='chroot' runs Debian with chroot-distro instead of proot-distro.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with the progress bar
 
@@ -158,7 +159,8 @@ if (-not $ready) { Die "Termux didn't respond. Open it on the phone, wait for th
 
 # ---------------------------------------------------------------- 6. install on the phone
 B '6/9 Installing Debian + Hermes on the phone (20-40 minutes)'
-TypeLine "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && bash hm.sh"
+$distro = if ($env:HM_DISTRO -eq 'chroot') { 'HM_DISTRO=chroot ' } else { '' }
+TypeLine "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && ${distro}bash hm.sh"
 $seen = 0; $start = Get-Date
 while ($true) {
   Start-Sleep 5

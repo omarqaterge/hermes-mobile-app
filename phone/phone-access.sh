@@ -29,7 +29,10 @@ storage_ok || todo "files: allow Termux to access files (Settings → Apps → T
 
 # termux-* commands (battery, location, clipboard, notifications, SMS…) inside Debian. Debian's PATH drops Termux's bin
 # dirs (bootstrap.sh), so link just these into /usr/local/bin. Re-linked every run: new termux-api versions add commands.
-if [ -d "$ROOTFS/usr/local/bin" ]; then
+if [ "$("$HOME/bin/hermes-debian" --which 2>/dev/null)" = chroot ]; then
+  # chroot-distro: Debian's files belong to root, so link from inside Debian (it sees Termux's folders).
+  "$HOME/bin/hermes-debian" sh -c 'mkdir -p /usr/local/bin && for f in "$@"; do ln -sf "$f" /usr/local/bin/; done' sh "$PREFIX"/bin/termux-*
+elif [ -d "$ROOTFS/usr/local/bin" ]; then
   for f in "$PREFIX"/bin/termux-*; do ln -sf "$f" "$ROOTFS/usr/local/bin/"; done
 fi
 timeout 20 termux-battery-status 2>/dev/null | grep -q percentage \

@@ -19,22 +19,28 @@ run_loop() {  # name, command...
   local name=$1; shift
   local pidf=~/logs/$name.pid
   if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then return; fi
-  ( while true; do "$@" >> ~/logs/$name.log 2>&1; sleep 10; done ) &
+  ( while true; do "$@" < /dev/null >> ~/logs/$name.log 2>&1; sleep 10; done ) &
   echo $! > "$pidf"
 }
+# Debian runs under proot-distro or (rooted phones) chroot-distro: ~/bin/hermes-debian knows which. An older install
+# without it is proot-distro.
+deb="$HOME/bin/hermes-debian"
+[ -x "$deb" ] || deb="proot-distro login debian --"
 PY='PY=$(ls -t /root/.hermes/installs/*/environments/*/venv/bin/python3 2>/dev/null | head -1)'
-run_loop dashboard proot-distro login debian -- bash -lc "exec hermes dashboard --host 127.0.0.1 --port 9119 --no-open"
+run_loop dashboard $deb bash -lc "exec hermes dashboard --host 127.0.0.1 --port 9119 --no-open"
 # Memory sync is optional (only when its script is installed); without the guard it would start Debian every 10 min for nothing.
-[ -f $PREFIX/var/lib/proot-distro/containers/debian/rootfs/root/.hermes/scripts/hermes_memory_sync.py ] && \
-  run_loop memory-sync bash -c "proot-distro login debian -- python3 /root/.hermes/scripts/hermes_memory_sync.py sync; sleep 590"
-run_loop cron-ticker proot-distro login debian -- bash -lc "$PY; exec \$PY /root/.hermes/scripts/cron_ticker.py"
+ms=/root/.hermes/scripts/hermes_memory_sync.py
+if [ -x "$HOME/bin/hermes-debian" ]; then has_ms() { "$HOME/bin/hermes-debian" --exists $ms; }
+else has_ms() { [ -f $PREFIX/var/lib/proot-distro/containers/debian/rootfs$ms ]; }; fi
+has_ms && run_loop memory-sync bash -c "$deb python3 $ms sync; sleep 590"
+run_loop cron-ticker $deb bash -lc "$PY; exec \$PY /root/.hermes/scripts/cron_ticker.py"
 # The always-on bot keeper (a 4 s loop) and its messaging gateway are retired: the app is the only front
 # end. Stop a keeper left running by an older version of this script, then the keeper process and gateway.
 if [ -f ~/logs/bot-keeper.pid ]; then
   pid=$(cat ~/logs/bot-keeper.pid)
   kill -0 "$pid" 2>/dev/null && kill "$pid"  # the restart loop (exact PID); its keeper is stopped below
   rm -f ~/logs/bot-keeper.pid
-  proot-distro login debian -- bash -lc "$PY; \$PY /root/.hermes/plugins/hermes-mobile/bots.py off" >> ~/logs/bot-keeper.log 2>&1
+  $deb bash -lc "$PY; \$PY /root/.hermes/plugins/hermes-mobile/bots.py off" >> ~/logs/bot-keeper.log 2>&1
 fi
 # Hermes app service (pinned status + notifications); `am` works here, outside Debian. It is costly (a
 # Java VM per call), so only call it when the service's loopback port doesn't answer.
