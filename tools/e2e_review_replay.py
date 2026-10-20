@@ -25,9 +25,18 @@ m._on_stream_start(session_id=sid, turn_id=follow)
 print('normal follow-up: text =', m._active[sid]['text'], '| review flag =', m._active[sid]['review'])
 # a uuid-task turn that starts long after the last end (e.g. another platform) must NOT be a review either
 m._clear_status(sid)
+m._last_end[sid] = time.time() - 90
 other=f'{sid}:11111111-2222-3333-4444-555555555555:bbbb2222'
 m._on_stream_start(session_id=sid, turn_id=other)
-print('uuid turn, 20 s after last end: review flag =', m._active[sid]['review'])
+print('uuid turn, 90 s after last end: review flag =', m._active[sid]['review'])
+# a review whose first hook comes 10 s after the turn ended (it ran the vision tool on a photo first)
+m._clear_status(sid)
+m._last_end[sid] = time.time() - 10
+late=f'{sid}:2859e0e7-fb03-477d-a14c-e8548f1e9906:0c20ee0d'
+m._on_stream_start(session_id=sid, turn_id=late)
+print('late review start: review flag =', m._active[sid]['review'])
+m._on_stream_end(final_text='Nothing to save.', session_id=sid, turn_id=late, finished=True)
+print('after late review final stream_end: active =', sid in m._active)
 
 m._clear_status(sid)  # leave nothing behind in the shared activity file
 print('cleaned up: active =', m._active)
