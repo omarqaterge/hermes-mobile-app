@@ -42,6 +42,9 @@ _last_end: dict = {}  # session_id -> when its last real turn ended (session_end
 _review_turns: set = set()  # turn ids of Hermes's background self-review (memory / skills), not user turns
 ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "activity.json")
 REVIEW_STALE = 60  # a review that stops reporting for this long is over (it fires no session_end)
+# A review's first hook can come well after the turn ends: with a photo in the chat it first runs the vision
+# tool (8 s seen on the phone), so the old 8 s window missed it and the chip stayed on "Thinking" for 3 min.
+REVIEW_START_WINDOW = 60
 _status_dirty = threading.Event()
 _key_cache = {"mtime": 0.0, "key": ""}
 
@@ -347,7 +350,7 @@ _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 def _is_review(turn_id, session_id=None) -> bool:
     """Hermes's background self-review runs on the SAME session right after a turn ends, skips pre_llm_call
     and never sends session_end. Tell it apart: a turn we haven't seen, whose task id is a UUID (app turns
-    use the session id there) and that starts within a few seconds of the last real turn ending."""
+    use the session id there) and that starts within REVIEW_START_WINDOW of the last real turn ending."""
     if not turn_id:
         return False
     if turn_id in _review_turns:
@@ -355,7 +358,7 @@ def _is_review(turn_id, session_id=None) -> bool:
     if session_id:
         parts = str(turn_id).split(":")
         if (len(parts) == 3 and parts[1] != session_id and _UUID_RE.match(parts[1])
-                and time.time() - _last_end.get(session_id, 0) < 8):
+                and time.time() - _last_end.get(session_id, 0) < REVIEW_START_WINDOW):
             _review_turns.add(turn_id)
             _dbg(f"review-detected {session_id} {turn_id}")
             return True

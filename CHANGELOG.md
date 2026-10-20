@@ -4,6 +4,9 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- A reply in a chat with a photo no longer leaves "Thinking…" showing for about 3 minutes after it finished (Hermes's
+  memory-and-skills review after the reply now shows as "Learning" and clears when it ends).
+
 ## v0.8.40 (2026-10-20)
 
 - **Approval buttons are always reachable**: a very long warning no longer pushes Allow/Deny off the screen (the text

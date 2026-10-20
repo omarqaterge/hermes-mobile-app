@@ -149,7 +149,9 @@ def t_review_replay():
     check("review recognised and labelled", "review flag = True" in out and "Learning from this chat" in out, out[-200:])
     check("review cleared by its final stream_end", "after review final stream_end: active = False" in out)
     check("normal follow-up turn not mistaken for a review", "normal follow-up: text = Thinking… | review flag = False" in out)
-    check("late uuid turn not mistaken for a review", "uuid turn, 20 s after last end: review flag = False" in out)
+    check("late uuid turn not mistaken for a review", "uuid turn, 90 s after last end: review flag = False" in out)
+    check("review starting 10 s after the turn (vision first) recognised",
+          "late review start: review flag = True" in out and "after late review final stream_end: active = False" in out)
 
 
 def api_call(method, path, body=None):
