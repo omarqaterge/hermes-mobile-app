@@ -4,8 +4,11 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+## v0.8.40 (2026-10-20)
+
 - **Approval buttons are always reachable**: a very long warning no longer pushes Allow/Deny off the screen (the text
-  scrolls, the buttons stay), and a security warning Hermes repeats many times shows once with a count (×20).
+  scrolls, the buttons stay), and a security warning Hermes repeats many times shows once with a count (×20; not yet
+  seen on a real phone).
 - Leaving the app with an approval or a question still unanswered puts its buttons on the status chip (before, the chip
   only had them when the request arrived while the app was closed).
 
