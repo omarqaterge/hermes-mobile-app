@@ -44,4 +44,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" android/build/hermes-mobile.apk \
             --title "Hermes Mobile $GITHUB_REF_NAME" \
-            --notes "Install: run the one-line installer from the README in Termux, or download hermes-mobile.apk below on your phone. Setup steps: https://github.com/${{ github.repository }}#setup"
+            --notes "Install: run the one-line installer from the README in Termux, or download hermes-mobile.apk below on your phone. Setup steps: https://github.com/${{ github.repository }}#install"
