@@ -123,6 +123,9 @@ You need an Android phone (arm64, Android 8+) with about 6 GB free, and access t
 - **An API key:** for example [OpenRouter](https://openrouter.ai/keys) (one key for every model), Anthropic, OpenAI or Gemini
   (has a free tier).
 
+Sort this out before you start: the install ends by asking for it. A subscription needs only your login. An API key is a long
+code you create on the provider's website (sign in, open its *API keys* page, create one and copy it); you pay that provider per use.
+
 These apps get installed. Hermes needs all of them to run and to use your phone:
 
 | App | What it is for |
@@ -141,8 +144,10 @@ The install takes 15-40 minutes, mostly waiting.
 
 1. Install **Termux**, **Termux:API** and **Termux:Boot** from F-Droid, and open Termux:Boot once. Install **Shizuku** (Play Store
    or [GitHub](https://github.com/RikkaApps/Shizuku/releases)).
-2. Start Shizuku. Not rooted: open it, tap *Start via Wireless debugging* and follow its steps (you pair it once: Developer options
-   → Wireless debugging → *Pair device with pairing code*, then type the code into Shizuku's notification). Rooted: tap *Start*.
+2. Start Shizuku. Not rooted: first turn on Developer options (Settings → About phone → tap *Build number* 7 times; on Xiaomi
+   it is *OS version*) and connect to Wi-Fi, which Wireless debugging needs. Then open Shizuku, tap *Start via Wireless debugging*
+   and follow its steps (you pair it once: Developer options → Wireless debugging → *Pair device with pairing code*, then type the
+   code into Shizuku's notification). Rooted: tap *Start*.
 3. Open Termux and paste:
 
    ```bash
@@ -153,7 +158,8 @@ The install takes 15-40 minutes, mostly waiting.
    screen on until it prints `HMSETUP DONE`. `HMSETUP TODO` lines just above it say what is still missing: fix it and run
    `bash hm.sh` again (finished parts are skipped).
 4. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it
-   and open it.
+   and open it. If Android blocks the install, tap *Settings* in that message and allow your browser to *install unknown apps*
+   (the same applies to F-Droid in step 1).
 5. The app opens on **Connect Hermes to a model**: sign in with your subscription or paste an API key, then pick the model new
    chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
 
