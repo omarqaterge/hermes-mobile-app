@@ -106,7 +106,7 @@ export function AccountsList({ profile, onChange, title }: { profile: string; on
       return
     }
     void copyText(cliFor(p, profile))
-    toast('Couldn’t open Termux. The command is copied: paste it in Termux inside Debian (proot-distro login debian)', 'error', 8000)
+    toast('Couldn’t open Termux. The command is copied: paste it in Termux inside Debian (~/bin/hermes-debian opens it)', 'error', 8000)
   }
 
   const signOut = (p: OAuthProvider) => {
