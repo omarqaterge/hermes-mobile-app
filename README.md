@@ -157,9 +157,10 @@ The install takes 15-40 minutes, mostly waiting.
    Tap **Allow** when Android asks about files, and **Allow all the time** when Shizuku asks about Termux. Keep Termux open and the
    screen on until it prints `HMSETUP DONE`. `HMSETUP TODO` lines just above it say what is still missing: fix it and run
    `bash hm.sh` again (finished parts are skipped).
-4. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it
-   and open it. If Android blocks the install, tap *Settings* in that message and allow your browser to *install unknown apps*
-   (the same applies to F-Droid in step 1).
+4. Android's installer opens by itself at the end of the setup: tap **Install** (if Android blocks it, tap *Settings* in that message
+   and allow Termux to *install unknown apps*, then tap Install again) and open the app. If it doesn't open, download
+   **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it and
+   open it (allow your browser to *install unknown apps* if Android asks; the same applies to F-Droid in step 1).
 5. The app opens on **Connect Hermes to a model**: sign in with your subscription or paste an API key, then pick the model new
    chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
 
@@ -250,7 +251,7 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | What you see | Fix |
 |---|---|
 | "Hermes is offline" for more than a minute | In Termux run `~/bin/hermes-services`, then tap Reconnect in the app |
-| `[Process completed (signal 9)]` in Termux during the install | Android stopped it. Android 14+: Developer options → *Disable child process restrictions* (the computer route does this for you). Then run `bash hm.sh` again |
+| `[Process completed (signal 9)]` in Termux during the install | Android stopped it. Android 14+: Developer options → *Disable child process restrictions* (the computer route does this for you, and so does the phone-only install when Shizuku is running). Then run `bash hm.sh` again |
 | The install stops with `HMSETUP FAIL <step>` | Read the error above it, fix it and run `bash hm.sh` again; finished parts are skipped. [AGENT_INSTALL.md](AGENT_INSTALL.md) lists the usual causes |
 | No status chip, canvas or approvals | Run `bash hm.sh` again (it re-enables the plugin) |
 | Everything stops after a while | Battery is restricted, see *After installing* |
