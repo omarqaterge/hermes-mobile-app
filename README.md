@@ -157,7 +157,8 @@ The install takes 15-40 minutes, mostly waiting.
    Tap **Allow** when Android asks about files, and **Allow all the time** when Shizuku asks about Termux. Keep Termux open and the
    screen on until it prints `HMSETUP DONE`. `HMSETUP TODO` lines just above it say what is still missing: fix it and run
    `bash hm.sh` again (finished parts are skipped).
-4. Android's installer opens by itself at the end of the setup: tap **Install** (if Android blocks it, tap *Settings* in that message
+4. Android's installer opens by itself at the end of the setup: tap **Install** (if Android asks which app to open it with, pick
+   *Package installer*; if it blocks it, tap *Settings* in that message
    and allow Termux to *install unknown apps*, then tap Install again) and open the app. If it doesn't open, download
    **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it and
    open it (allow your browser to *install unknown apps* if Android asks; the same applies to F-Droid in step 1).
