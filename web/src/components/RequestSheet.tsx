@@ -4,6 +4,7 @@ import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-con
 import { answerRequest, rejectRequest } from '../gateway'
 import { haptic } from '../bridge'
 import { Linked } from './Linked'
+import { tidyApprovalText } from '../text'
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
   once: 'Allow once',
@@ -20,8 +21,11 @@ function Approval({ req }: { req: ServerRequest }) {
   return (
     <>
       <div className="sheet-title">⚠ Approve {String(p.tool_name || 'command')}?</div>
-      {p.description ? <div className="sheet-desc"><Linked text={String(p.description)} /></div> : null}
-      {p.command ? <pre className="sheet-code"><Linked text={String(p.command)} /></pre> : null}
+      {/* A long warning or command scrolls; the answer buttons always stay on screen. */}
+      <div className="sheet-scroll">
+        {p.description ? <div className="sheet-desc"><Linked text={tidyApprovalText(String(p.description))} /></div> : null}
+        {p.command ? <pre className="sheet-code"><Linked text={String(p.command)} /></pre> : null}
+      </div>
       <div className="sheet-actions col">
         {choices.map(c => (
           <button
@@ -128,7 +132,9 @@ function MaskedValue({ req }: { req: ServerRequest }) {
   return (
     <>
       <div className="sheet-title">{title}</div>
-      <div className="sheet-desc"><Linked text={String(p.prompt || p.command || p.message || 'Hermes needs a value to continue.')} /></div>
+      <div className="sheet-scroll">
+        <div className="sheet-desc"><Linked text={String(p.prompt || p.command || p.message || 'Hermes needs a value to continue.')} /></div>
+      </div>
       <input
         className="sheet-input"
         type={req.method === 'otp' ? 'text' : 'password'}

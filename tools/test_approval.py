@@ -46,6 +46,15 @@ del sys.modules["tools.approval"]
 approval.list_gateway_approvals = None
 check("Hermes without the queue API → empty, no crash", plugin._approval_request_id("k", "chmod 777 /tmp/a") == "")
 
+print("repeated security findings")
+f = "[HIGH] Nested executable body could not be resolved: cannot prove it."
+plugin._on_pre_approval_request(command="x", description="Security scan — " + "; ".join([f] * 20), session_key="k", session_id="s")
+check("a finding repeated 20 times is sent once, with a count",
+      sent[-1][1].get("what") == f"Security scan — {f} (×20)", sent[-1][1].get("what", "")[:120])
+check("different warnings stay, in order",
+      plugin._tidy_approval_text("Security scan — [HIGH] A; [LOW] B; [HIGH] A; recursive delete")
+      == "Security scan — [HIGH] A (×2); [LOW] B; recursive delete")
+
 api = (ROOT / "hermes-plugin" / "hermes-mobile" / "dashboard" / "plugin_api.py").read_text()
 check("/approve refuses an answer without a request id", "if not body.request_id:" in api)
 

@@ -307,6 +307,20 @@ export const chatLinks = (md: string): string =>
     .map((part, i) => (i % 2 ? part : part.replace(/(?<![\w-])(?:@session:[\w.-]+\/)?(\d{8}_\d{6}_[0-9a-f]{6})(?![\w-])/g, '[chat $1](hermes-chat:$1)')))
     .join('')
 
+/** Hermes joins approval warnings with "; " and its security scan can repeat one finding many times
+ *  ("Security scan — [HIGH] X; [HIGH] X; …"): show each warning once, with a count. */
+export function tidyApprovalText(s: string): string {
+  const key = (p: string) => p.replace(/^Security scan [—-] /, '').trim()
+  const seen = new Map<string, { text: string; n: number }>()
+  for (const part of s.split('; ')) {
+    const k = key(part)
+    const hit = seen.get(k)
+    if (hit) hit.n++
+    else seen.set(k, { text: part, n: 1 })
+  }
+  return [...seen.values()].map(v => (v.n > 1 ? `${v.text} (×${v.n})` : v.text)).join('; ')
+}
+
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi
 const count = (s: string, c: string) => s.split(c).length - 1
 export type LinkPart = { text: string; href?: string }
