@@ -146,12 +146,17 @@ def t_review_replay():
     print("real-format background review (turn ids as Hermes logs them)")
     code = open(os.path.join(HERE, "e2e_review_replay.py")).read()
     out = python_on_phone(code)
-    check("review recognised and labelled", "review flag = True" in out and "Learning from this chat" in out, out[-200:])
+    check("origin read from Hermes itself", "origin source: hermes" in out, out[:120])
+    check("review 90 s after the reply recognised and labelled",
+          "review start: active = Learning from this chat (memory & skills) | review flag = True" in out, out[-300:])
+    check("review tool shown", "review tool: Learning · skills_list" in out)
     check("review cleared by its final stream_end", "after review final stream_end: active = False" in out)
-    check("normal follow-up turn not mistaken for a review", "normal follow-up: text = Thinking… | review flag = False" in out)
-    check("late uuid turn not mistaken for a review", "uuid turn, 90 s after last end: review flag = False" in out)
-    check("review starting 10 s after the turn (vision first) recognised",
-          "late review start: review flag = True" in out and "after late review final stream_end: active = False" in out)
+    check("real turn with a uuid task id not mistaken for background work",
+          "uuid-task real turn: text = Thinking… | review flag = False" in out)
+    check("/btw during a turn leaves the turn's status alone", "btw during a turn: text = Thinking…" in out)
+    check("/btw while idle labelled and cleared",
+          "btw while idle: text = Answering a side question (/btw) | review flag = True" in out
+          and "after btw final stream_end: active = False" in out)
 
 
 def api_call(method, path, body=None):
