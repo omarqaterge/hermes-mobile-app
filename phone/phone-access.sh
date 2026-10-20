@@ -49,19 +49,21 @@ if [ ! -s "$HOME/bin/rish_shizuku.dex" ] || ! grep -q '"com.termux"' "$HOME/bin/
   fi
   rm -rf "$tmp"
 fi
+# rish gets </dev/null: `timeout` runs it in its own process group, and rish reading the terminal then stops it (SIGTTIN)
+# until the timeout kills it, i.e. Shizuku looks off when it isn't.
 # The first call makes Shizuku ask whether Termux may use it (rish waits for the answer). A Shizuku app frozen in the
 # background can miss the first request ("Request timeout"), so try a few times.
 ok=""
 if [ -x "$HOME/bin/rish" ]; then
   say "phone: if Shizuku asks whether Termux may use it, tap Allow all the time"
   for _ in 1 2 3; do
-    timeout 60 "$HOME/bin/rish" -c id 2>/dev/null | grep -q 'uid=2000' && { ok=1; break; }
+    timeout 60 "$HOME/bin/rish" -c id </dev/null 2>/dev/null | grep -q 'uid=2000' && { ok=1; break; }
     sleep 3
   done
 fi
 if [ -n "$ok" ]; then
   # Lets Shizuku start itself after a reboot (Android 13+, without root, once it was started via Wireless debugging).
-  "$HOME/bin/rish" -c 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' >/dev/null 2>&1
+  "$HOME/bin/rish" -c 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' </dev/null >/dev/null 2>&1
 else
   todo "Shizuku: install it (https://shizuku.rikka.app/download/) and start it (no root: Start via Wireless debugging, pair once; rooted: Start), allow Termux when it asks, then run the installer again"
 fi
