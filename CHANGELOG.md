@@ -4,8 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
-- A reply in a chat with a photo no longer leaves "Thinking…" showing for about 3 minutes after it finished (Hermes's
-  memory-and-skills review after the reply now shows as "Learning" and clears when it ends).
+- Hermes's work in the background is always shown for what it is: the memory-and-skills review after a reply shows as
+  "Learning" (with its steps) and clears when it ends, however late it starts (in a chat with a photo it showed as
+  "Thinking…" for about 3 minutes), and a /btw side question shows as "Answering a side question" without touching
+  the status of a reply that is still running.
 
 ## v0.8.40 (2026-10-20)
 

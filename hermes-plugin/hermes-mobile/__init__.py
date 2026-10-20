@@ -41,10 +41,8 @@ _active: dict = {}  # session_id -> {"text", "ts", "profile"}
 _last_end: dict = {}  # session_id -> when its last real turn ended (session_end)
 _review_turns: set = set()  # turn ids of Hermes's background self-review (memory / skills), not user turns
 ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "activity.json")
-REVIEW_STALE = 60  # a review that stops reporting for this long is over (it fires no session_end)
-# A review's first hook can come well after the turn ends: with a photo in the chat it first runs the vision
-# tool (8 s seen on the phone), so the old 8 s window missed it and the chip stayed on "Thinking" for 3 min.
-REVIEW_START_WINDOW = 60
+REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
+_btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
 _key_cache = {"mtime": 0.0, "key": ""}
 
@@ -347,40 +345,86 @@ REVIEW_PREFIX = "Review the conversation above"
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
+def _write_origin() -> str:
+    """Which agent fired this hook. Hermes binds a ContextVar at every turn start ("background_review" for the
+    memory/skills review, "side_question" for /btw, else the normal origin) and runs plugin hooks in a copy of
+    the turn's context, so this is exact, with no timing guesses."""
+    try:
+        from tools.skill_provenance import get_current_write_origin
+        return get_current_write_origin() or ""
+    except Exception:
+        return ""
+
+
+def _remember(turns: set, turn_id) -> None:
+    turns.add(turn_id)
+    if len(turns) > 100:
+        turns.pop()
+
+
 def _is_review(turn_id, session_id=None) -> bool:
-    """Hermes's background self-review runs on the SAME session right after a turn ends, skips pre_llm_call
-    and never sends session_end. Tell it apart: a turn we haven't seen, whose task id is a UUID (app turns
-    use the session id there) and that starts within REVIEW_START_WINDOW of the last real turn ending."""
+    """True for Hermes's background work on a chat: the self-review after a reply and /btw side questions.
+    Both are forks on the SAME session id that skip pre_llm_call and never send session_end. Known by the
+    turn's write origin; on a Hermes without it, by the task id being a UUID (app turns use the session id)."""
     if not turn_id:
         return False
-    if turn_id in _review_turns:
+    if turn_id in _review_turns or turn_id in _btw_turns:
         return True
-    if session_id:
+    if not session_id:
+        return False
+    origin = _write_origin()
+    if origin == "side_question":
+        _remember(_btw_turns, turn_id)
+    elif origin == "background_review":
+        _remember(_review_turns, turn_id)
+    elif origin:
+        return False
+    else:
         parts = str(turn_id).split(":")
-        if (len(parts) == 3 and parts[1] != session_id and _UUID_RE.match(parts[1])
-                and time.time() - _last_end.get(session_id, 0) < REVIEW_START_WINDOW):
-            _review_turns.add(turn_id)
-            _dbg(f"review-detected {session_id} {turn_id}")
-            return True
-    return False
+        if not (len(parts) == 3 and parts[1] != session_id and _UUID_RE.match(parts[1])):
+            return False
+        _remember(_review_turns, turn_id)
+    _dbg(f"background-detected {session_id} {turn_id} origin={origin or '?'}")
+    return True
+
+
+def _bg_status(session_id, turn_id, tool_label: str = "") -> None:
+    """Show background work (review or /btw) for a chat, unless a real turn of that chat is running: a /btw
+    asked mid-turn must not replace or later clear the main turn's status."""
+    with _lock:
+        cur = _active.get(session_id)
+    if cur and not cur.get("review"):
+        return
+    if turn_id in _btw_turns:
+        text, short = "Answering a side question (/btw)", "Side question"
+    else:
+        text, short = "Learning from this chat (memory & skills)", "Learning"
+    if tool_label:
+        text = f"{short} · {tool_label}"
+    _set_status(session_id, text, short, review=True)
+
+
+def _bg_clear(session_id) -> None:
+    with _lock:
+        cur = _active.get(session_id)
+    if cur and cur.get("review"):
+        _clear_status(session_id)
 
 
 def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
     # Hermes runs a background self-review (memory / skills) after a turn, on the same session id.
     # It fires our hooks but never a session_end, so label it and let it expire on its own.
     if turn_id and isinstance(user_message, str) and user_message.lstrip().startswith(REVIEW_PREFIX):
-        _review_turns.add(turn_id)
-        if len(_review_turns) > 100:
-            _review_turns.pop()
+        _remember(_review_turns, turn_id)
         _dbg(f"review-start {session_id} {turn_id}")
-        _set_status(session_id, "Learning from this chat (memory & skills)", "Learning", review=True)
+        _bg_status(session_id, turn_id)
     return None
 
 
 def _on_post_llm_call(session_id=None, turn_id=None, **_):
     if _is_review(turn_id):
         _dbg(f"review-end {session_id} {turn_id}")
-        _clear_status(session_id)
+        _bg_clear(session_id)
     return None
 
 
@@ -388,7 +432,7 @@ def _on_stream_start(session_id=None, turn_id=None, **_):
     rev = _is_review(turn_id, session_id)
     _dbg(f"stream_start {session_id} turn={turn_id} review={rev}")
     if rev:
-        _set_status(session_id, "Learning from this chat (memory & skills)", "Learning", review=True)
+        _bg_status(session_id, turn_id)
         return
     _set_status(session_id, "Thinking…", "Thinking")
 
@@ -396,8 +440,8 @@ def _on_stream_start(session_id=None, turn_id=None, **_):
 def _on_stream_end(final_text=None, session_id=None, turn_id=None, finished=None, **_):
     if _is_review(turn_id, session_id):
         _dbg(f"review stream_end finished={finished} text={bool(final_text)}")
-        if finished and final_text:  # the review's last model call: it is over (it sends no session_end)
-            _clear_status(session_id)
+        if finished and final_text:  # its last model call: it is over (it sends no session_end)
+            _bg_clear(session_id)
         return
     if session_id and final_text:
         with _lock:
@@ -414,7 +458,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
         except Exception as e:
             _dbg(f"checkpoint pre: {type(e).__name__}: {e}")
     if _is_review(turn_id, session_id):
-        _set_status(session_id, "Learning · " + _tool_label(tool_name or "tool", args).removeprefix("Using "), "Learning", review=True)
+        _bg_status(session_id, turn_id, _tool_label(tool_name or "tool", args).removeprefix("Using "))
         return None
     _set_status(session_id, _tool_label(tool_name or "tool", args), _tool_short(tool_name or "tool", args),
                 tool=tool_name != "clarify", step=True)  # a question waits on the user: no reason to keep the phone awake
@@ -454,7 +498,7 @@ def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, sess
                 if session_id in _active and todo is not None:
                     _active[session_id]["turn"]["todo"] = todo
         if _is_review(turn_id, session_id):
-            _set_status(session_id, "Learning from this chat (memory & skills)", "Learning", review=True)
+            _bg_status(session_id, turn_id)
         else:
             _set_status(session_id, "Thinking…", "Thinking")
     if tool_name == "clarify":
@@ -550,10 +594,10 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
     _dbg(f"api_error {session_id} turn={turn_id} status={status_code} retryable={retryable} final={final}")
     if not final or not session_id or session_id in _subagents:
         return
-    review = _is_review(turn_id, session_id)
-    _clear_status(session_id)
-    if review:
+    if _is_review(turn_id, session_id):  # background work failed: drop its label, never the chat's own turn
+        _bg_clear(session_id)
         return
+    _clear_status(session_id)
     msg = str((error.get("message") if isinstance(error, dict) else error) or reason or "")
     inner = re.search(r"""['"]message['"]\s*:\s*['"]([^'"]+)""", msg)  # "Error code: 401 - {'error': {'message': '…'}}"
     msg = inner.group(1) if inner else msg
