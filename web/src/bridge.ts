@@ -200,6 +200,8 @@ export interface NativeSetup {
   /** Older app builds don't report these two: undefined. */
   termuxApi?: boolean
   shizuku?: boolean
+  /** Build.MANUFACTURER, lower case (older builds: undefined). */
+  maker?: string
   startError: string
 }
 
