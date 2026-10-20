@@ -9,6 +9,9 @@
 # Progress goes to the screen AND to Android's log, so a computer can follow it:  adb logcat -s hmsetup
 # The last line is "HMSETUP DONE" or "HMSETUP FAIL <step>". Safe to run again: finished steps are skipped or refreshed.
 set -eE -o pipefail
+# The Hermes this installs = the build the app and hermes/patches are tested against. Bump together with
+# web/vendor/hermes-shared/.hermes-commit and .hermes-version (hermes/README.md; tools/test_bootstrap_pin.sh enforces it in CI).
+HERMES_COMMIT=b8a8be185d6e88b35e0a4fa794fea64fb06ed85b
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 # Debian runs under proot-distro (no root needed) or chroot-distro (rooted phones, HM_DISTRO=chroot). The choice is kept in
 # ~/.hermes-mobile/distro for install.sh, ~/bin/hermes-debian, the supervisor and the app.
@@ -106,7 +109,8 @@ deb 'find /root/.local/bin -maxdepth 1 -name "hermes*" -type f -size 0 -delete 2
 if deb "hermes --version 2>/dev/null | grep -q Hermes && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
   say "hermes already installed, skipping"
 else
-  hermes_install() { deb "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive"; }
+  # The pin's own installer script (not the hosted one), so the install is reproducible: the hosted one changes over time.
+  hermes_install() { deb "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh | bash -s -- --non-interactive --commit $HERMES_COMMIT"; }  # hex only: no quotes (deb() wraps this in bash -lc "...")
   if ! hermes_install; then
     # Under proot, uv's freshly downloaded Python reports its real Android path as sys.prefix, so
     # `uv python find --managed-python` rejects it and Hermes's installer stops ("bootstrap Python lookup failed").
