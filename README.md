@@ -207,6 +207,25 @@ Everything is the same except Shizuku, which Android stops whenever the phone re
 Until Shizuku runs, Hermes can still do everything except see and touch the screen and other apps; it tells you when it needs
 Shizuku, and the app's **Setup check** shows it too.
 
+**Is it worth rooting a phone for Hermes?** For most people, no. Shizuku already gives Hermes what adb can do: screenshots, taps
+and typing, opening and installing apps, logs and most settings. Root adds:
+
+- **Speed:** Debian can run under chroot-distro (below) instead of proot, which slows down every file and process call. Hermes
+  starts and runs tools faster and uses a bit less battery (not measured on a real phone yet).
+- **No Shizuku restarts:** Shizuku starts itself after a reboot, no Wi-Fi or Wireless debugging needed.
+- **Other apps' private data:** Hermes could read what apps keep to themselves (for example a messenger's database).
+- **System-level control:** firewall rules, stopping any process, protected settings and system files.
+
+What it costs:
+
+- **Risk:** under chroot, Hermes runs as the phone's real root user. A bad command or a malicious web page that tricks the
+  model can read or wipe anything, or break the phone. Without root, the worst it can do is what adb can do.
+- **Apps that refuse rooted phones:** banking apps, Google Wallet and some games check for root.
+- **Rooting itself:** unlocking the bootloader wipes the phone (some makers, like Xiaomi, also make you wait), and system
+  updates get harder.
+
+If your phone is already rooted, chroot-distro is an easy speed-up, with the risk above. Don't root a phone just for Hermes.
+
 **Rooted: Debian with chroot-distro (optional).** By default Debian runs under proot-distro, which needs no root. On a rooted
 phone it can run under [chroot-distro](https://github.com/sabamdarif/chroot-distro) instead, at native speed: put
 `HM_DISTRO=chroot` in front of the install command (`HM_DISTRO=chroot bash hm.sh` in Termux, or
