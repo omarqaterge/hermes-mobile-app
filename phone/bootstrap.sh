@@ -75,6 +75,32 @@ else
   apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install proot-distro git curl termux-api unzip
 fi
 
+# Run from a clone: its own scripts (and plugin); otherwise the latest from GitHub.
+src=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || src=""
+RAW=https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main
+
+# Phone access early (it is run again by install.sh): rish exists from here on, and the files / Shizuku prompts come while
+# the user is still looking at the phone. Never fails; what is missing goes to ~/.hermes-mobile/todo.
+step access "Access to the phone (files, Termux:API, Shizuku)"
+if [ -n "$src" ] && [ -f "$src/phone-access.sh" ]; then
+  bash "$src/phone-access.sh" || true
+else
+  curl -fsSL "$RAW/phone/phone-access.sh" -o "$HOME/hm-phone-access.sh" && bash "$HOME/hm-phone-access.sh" || true
+fi
+
+# Android 12+ stops Termux ("signal 9") when it has many child processes, as a long install does. Shizuku's shell lifts
+# the limit, like the computer route does over adb. Keep these three commands identical to tools/setup-phone.sh (and .ps1).
+step android "Android child-process limit"
+sdk=$(getprop ro.build.version.sdk 2>/dev/null || echo 0)
+if [ "${sdk:-0}" -ge 31 ]; then
+  if [ -x "$HOME/bin/rish" ] && timeout 20 "$HOME/bin/rish" -c id 2>/dev/null | grep -q 'uid=2000'; then
+    "$HOME/bin/rish" -c 'device_config set_sync_disabled_for_tests persistent; device_config put activity_manager max_phantom_processes 2147483647; settings put global settings_enable_monitor_phantom_procs false' >/dev/null 2>&1 || true
+    say "android: child-process limit lifted (via Shizuku)"
+  else
+    say "phone: Android may stop this install (\"signal 9\"). To prevent it: Developer options → Disable child process restrictions (Android 14+). Then carry on."
+  fi
+fi
+
 step debian "Debian inside Termux (a few minutes)"
 if [ "$HM_DISTRO" = chroot ]; then
   chroot-distro login debian -- true </dev/null >/dev/null 2>&1 || chroot-distro install --name debian debian:trixie
@@ -123,12 +149,10 @@ fi
 deb "hermes --version | grep Hermes"
 
 step plugin "Hermes Mobile plugin, supervisor, and access to the phone (files, Termux:API, Shizuku; no root needed)"
-# Run from a clone: its own install.sh (and plugin); otherwise the latest from GitHub.
-src=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 if [ -n "$src" ] && [ -f "$src/install.sh" ] && [ -d "$src/../hermes-plugin/hermes-mobile" ]; then
   HM_NO_APK=1 bash "$src/install.sh"
 else
-  curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh -o "$HOME/hm-install.sh"
+  curl -fsSL "$RAW/phone/install.sh" -o "$HOME/hm-install.sh"
   HM_NO_APK=1 bash "$HOME/hm-install.sh"
 fi
 # Termux:Boot (if installed) starts Hermes after a reboot.
@@ -148,4 +172,15 @@ termux-wake-unlock 2>/dev/null || true
 # Hermes's access to the phone (phone/phone-access.sh, run by install.sh): what is still missing. Hermes runs without it, but
 # can't reach that part of the phone until it's done. The app's Setup check lists the same.
 while IFS= read -r t; do [ -n "$t" ] && say "TODO $t"; done < "$HOME/.hermes-mobile/todo" 2>/dev/null || true
+# The app: open Android's installer (the computer routes install it over adb and pass HM_NO_APK=1). Never fails the setup.
+if [ -z "${HM_NO_APK:-}" ]; then
+  apk="$HOME/hermes-mobile.apk"
+  if curl -fsL -o "$apk" "https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"; then
+    say "phone: tap Install (allow Termux to install apps if Android asks), then open Hermes Mobile"
+    termux-open "$apk" 2>/dev/null || say "TODO app: open $apk (termux-open $apk) to install Hermes Mobile"
+  else
+    rm -f "$apk"
+    say "TODO app: download hermes-mobile.apk from the latest release (github.com/omarqaterge/hermes-mobile-app/releases)"
+  fi
+fi
 say "DONE"
