@@ -229,7 +229,7 @@ export function SetupScreen() {
         toast('Enabled. New chats use it.')
         refresh()
       })
-      .catch(() => toast('Couldn’t enable it. In Termux: proot-distro login debian -- hermes plugins enable hermes-mobile', 'error'))
+      .catch(() => toast('Couldn’t enable it. In Termux: ~/bin/hermes-debian bash -lc \'hermes plugins enable hermes-mobile\'', 'error'))
   }
 
   const checks = build(n, conn, r, enable)

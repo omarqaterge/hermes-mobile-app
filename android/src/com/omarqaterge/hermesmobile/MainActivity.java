@@ -315,9 +315,11 @@ public class MainActivity extends Activity {
                     return;
                 case "restart-hermes":
                     // The hermes-services loop starts the dashboard again within ~10 s; a new one sees what Termux may
-                    // reach now (e.g. files granted after Hermes started). Exact match, like install.sh.
+                    // reach now (e.g. files granted after Hermes started). Exact match, like install.sh; ~/bin/hermes-debian
+                    // also knows a chroot-distro Debian, whose root-owned dashboard Termux can't see.
                     runTermux("/data/data/com.termux/files/usr/bin/bash", new String[]{"-c",
-                            "pids=$(pgrep -f 'hermes dashboard --host 127.0.0.1 --port 9119'); [ -n \"$pids\" ] && kill -9 $pids"});
+                            "if [ -x ~/bin/hermes-debian ]; then exec ~/bin/hermes-debian --restart; fi; "
+                            + "pids=$(pgrep -f 'hermes dashboard --host 127.0.0.1 --port 9119'); [ -n \"$pids\" ] && kill -9 $pids"});
                     return;
                 default:
                     return;
@@ -355,7 +357,7 @@ public class MainActivity extends Activity {
         String hermes = profile.isEmpty() || profile.equals("default") ? "hermes" : "hermes -p " + profile;
         String script = "clear; echo 'Signing in to " + provider + " for Hermes.'; "
                 + "echo 'To open the link: long-press it, More, Select URL. Then paste the code back here.'; echo; "
-                + "proot-distro login debian -- bash -lc '" + hermes + " auth add " + provider + "'; "
+                + DEBIAN + " bash -lc '" + hermes + " auth add " + provider + "'; "
                 + "echo; echo 'Finished. Go back to Hermes Mobile: it shows whether the sign-in worked.'; read -r -p 'Press Enter to close. ' _";
         try {
             Intent i = new Intent();
@@ -899,7 +901,11 @@ public class MainActivity extends Activity {
         return out.toByteArray();
     }
 
-    /** Map a path Hermes sees (Debian) to one Termux can open. */
+    /** Runs a command in Debian from a Termux shell: ~/bin/hermes-debian knows proot-distro and chroot-distro; an older
+     *  install without it is proot-distro. */
+    static final String DEBIAN = "$( [ -x ~/bin/hermes-debian ] && echo ~/bin/hermes-debian || echo proot-distro login debian -- )";
+
+    /** Map a path Hermes sees (Debian) to one Termux can open (proot-distro; hermes-debian --open handles both). */
     static String hostPath(String p) {
         if (p.startsWith("/root/") || p.equals("/root"))
             return "/data/data/com.termux/files/usr/var/lib/proot-distro/containers/debian/rootfs" + p;
@@ -1369,7 +1375,10 @@ public class MainActivity extends Activity {
         public void openFile(String key, String path) {
             if (!ok(key)) return;
             if (path == null || !path.startsWith("/") || path.contains("..") || path.indexOf('\0') >= 0) return;
-            runTermux("/data/data/com.termux/files/usr/bin/termux-open", new String[]{hostPath(path)});
+            // "$1"/"$2" are arguments, never part of the script, so the path can't run anything.
+            runTermux("/data/data/com.termux/files/usr/bin/bash", new String[]{"-c",
+                    "if [ -x ~/bin/hermes-debian ]; then exec ~/bin/hermes-debian --open \"$1\"; fi; exec termux-open \"$2\"",
+                    "hm-open", path, hostPath(path)});
         }
 
         @JavascriptInterface
