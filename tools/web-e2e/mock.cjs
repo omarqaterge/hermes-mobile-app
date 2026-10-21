@@ -188,6 +188,31 @@ const server = http.createServer((req, res) => {
       }
       return send(libraryItems[i])
     }
+    // Canvas gallery (plugin gallery.py): every chat's canvas documents, by category (by type when none), with the chat.
+    if (p === '/api/plugins/hermes-mobile/gallery') {
+      const KIND = { markdown: 'Notes', text: 'Notes', html: 'Web pages', code: 'Code', json: 'Code', csv: 'Data', svg: 'Images', mermaid: 'Diagrams' }
+      const chat = sid => {
+        const s = allSessions.find(x => x.id === sid)
+        return s ? { profile: 'default', title: s.title, last_active: s.started_at, archived: false } : null
+      }
+      const items = []
+      for (const [sid, docs] of Object.entries(canvasDocs))
+        for (const d of docs)
+          items.push({ key: `${sid}/${d.id}`, session: sid, doc: d.id, title: d.title, type: d.type, lang: d.lang, category: d.category || KIND[d.type] || 'Notes', auto: !d.category, created: d.created, updated: d.updated, by: d.by, chars: d.content.length, snippet: d.content.replace(/[#*_`>-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140), chat: chat(sid) })
+      for (const i of libraryItems) items.push({ key: `lib:${i.id}`, session: i.source.session, doc: '', lib: i.id, saved: true, title: i.title, type: i.type, lang: i.lang, category: i.category, auto: false, created: i.saved, updated: i.saved, by: '', chars: i.chars, snippet: '', chat: chat(i.source.session) })
+      items.sort((a, b) => b.updated - a.updated)
+      const categories = {}
+      for (const i of items) categories[i.category] = (categories[i.category] || 0) + 1
+      return send({ items, categories: Object.fromEntries(Object.entries(categories).sort((a, b) => a[0].toLowerCase().localeCompare(b[0].toLowerCase()))) })
+    }
+    if (p === '/api/plugins/hermes-mobile/canvas/category') {
+      const b = JSON.parse(body)
+      const d = (canvasDocs[b.session] || []).find(x => x.id === b.id)
+      if (!d) return send({ detail: 'no such document' }, 400)
+      d.category = (b.title || '').trim()
+      const { content, ...meta } = d
+      return send(meta)
+    }
     if (p === '/api/plugins/hermes-mobile/canvas') {
       const s = url.searchParams.get('session')
       const list = () => send({ docs: (canvasDocs[s] || []).map(({ content, ...m }) => m) })
@@ -204,6 +229,11 @@ const server = http.createServer((req, res) => {
         const d = { id: `d${Date.now()}`, title: b.title, type: b.type || 'markdown', lang: b.lang || '', rev: 1, updated: Date.now() / 1000, by: 'user', chars: (b.content || '').length, path: '', created: Date.now() / 1000, content: b.content || '' }
         ;(canvasDocs[b.session] ||= []).push(d)
         return send(d)
+      }
+      if (req.method === 'DELETE') {
+        const s = url.searchParams.get('session')
+        canvasDocs[s] = (canvasDocs[s] || []).filter(x => x.id !== url.searchParams.get('id'))
+        return send({ ok: true })
       }
       if (req.method === 'PUT') {
         const b = JSON.parse(body)

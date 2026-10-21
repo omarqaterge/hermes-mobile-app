@@ -41,6 +41,7 @@ jobs:
       - run: pip install fastapi httpx
       - run: python3 tools/test_canvas.py
       - run: python3 tools/test_library.py
+      - run: python3 tools/test_gallery.py
       - run: python3 tools/test_media.py
       - run: python3 tools/test_chat_search.py
       - run: python3 tools/test_checkpoints.py

@@ -78,23 +78,6 @@ library.MAX_ITEMS = len(library.list_items())
 check("item cap refused with a clear error", "full" in (raises(library.save, {"title": "one more", "content": "x"}, "x") or ""))
 library.MAX_ITEMS = old
 
-print("agent tool (canvas save_to_library)")
-canvas = load("canvas")
-
-
-def call(**kw):
-    return json.loads(canvas.tool_handler(kw, session_id="tool-chat"))
-
-
-c = call(action="create", title="Shopping list", content="- milk", type="markdown")
-r = call(action="save_to_library", id=c["id"], category="Test")
-check("tool saves with the given category", r.get("ok") and r["item"]["category"] == "Test" and r["categories"].get("Test") == 1, str(r))
-check("tool saved the content", library.get(r["item"]["id"])["content"] == "- milk")
-r2 = call(action="save_to_library", id="Shopping list", category="Test")
-check("doc found by its title too", r2.get("ok") and r2["categories"]["Test"] == 2, str(r2))
-r3 = call(action="save_to_library", id="nope")
-check("errors list the existing categories", r3["ok"] is False and "Test" in r3["error"], str(r3))
-
 print("REST routes (dashboard/plugin_api.py)")
 try:
     from fastapi import FastAPI
