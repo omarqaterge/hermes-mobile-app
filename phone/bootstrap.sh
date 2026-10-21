@@ -9,6 +9,9 @@
 # Progress goes to the screen AND to Android's log, so a computer can follow it:  adb logcat -s hmsetup
 # The last line is "HMSETUP DONE" or "HMSETUP FAIL <step>". Safe to run again: finished steps are skipped or refreshed.
 set -eE -o pipefail
+# The Hermes this installs = the build the app and hermes/patches are tested against. Bump together with
+# web/vendor/hermes-shared/.hermes-commit and .hermes-version (hermes/README.md; tools/test_bootstrap_pin.sh enforces it in CI).
+HERMES_COMMIT=b8a8be185d6e88b35e0a4fa794fea64fb06ed85b
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 # Debian runs under proot-distro (no root needed) or chroot-distro (rooted phones, HM_DISTRO=chroot). The choice is kept in
 # ~/.hermes-mobile/distro for install.sh, ~/bin/hermes-debian, the supervisor and the app.
@@ -72,6 +75,34 @@ else
   apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install proot-distro git curl termux-api unzip
 fi
 
+# Run from a clone: its own scripts (and plugin); otherwise the latest from GitHub.
+src=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || src=""
+RAW=https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main
+
+# Phone access early (it is run again by install.sh): rish exists from here on, and the files / Shizuku prompts come while
+# the user is still looking at the phone. Never fails; what is missing goes to ~/.hermes-mobile/todo.
+step access "Access to the phone (files, Termux:API, Shizuku)"
+if [ -n "$src" ] && [ -f "$src/phone-access.sh" ]; then
+  bash "$src/phone-access.sh" || true
+else
+  curl -fsSL "$RAW/phone/phone-access.sh" -o "$HOME/hm-phone-access.sh" && bash "$HOME/hm-phone-access.sh" || true
+fi
+
+# Android 12+ stops Termux ("signal 9") when it has many child processes, as a long install does. Shizuku's shell lifts
+# the limit, like the computer route does over adb. Keep these three commands identical to tools/setup-phone.sh (and .ps1).
+step android "Android child-process limit"
+sdk=$(getprop ro.build.version.sdk 2>/dev/null || echo 0)
+if [ "${sdk:-0}" -ge 31 ]; then
+  # (output into a variable: with pipefail, `... | grep -q` fails when grep exits first and rish dies of SIGPIPE)
+  shizuku_id=""; [ -x "$HOME/bin/rish" ] && shizuku_id=$(timeout 20 "$HOME/bin/rish" -c id </dev/null 2>/dev/null || true)
+  if [ "${shizuku_id#*uid=2000}" != "$shizuku_id" ]; then
+    "$HOME/bin/rish" -c 'device_config set_sync_disabled_for_tests persistent; device_config put activity_manager max_phantom_processes 2147483647; settings put global settings_enable_monitor_phantom_procs false' </dev/null >/dev/null 2>&1 || true
+    say "android: child-process limit lifted (via Shizuku)"
+  else
+    say "phone: Android may stop this install (\"signal 9\"). To prevent it: Developer options → Disable child process restrictions (Android 14+). Then carry on."
+  fi
+fi
+
 step debian "Debian inside Termux (a few minutes)"
 if [ "$HM_DISTRO" = chroot ]; then
   chroot-distro login debian -- true </dev/null >/dev/null 2>&1 || chroot-distro install --name debian debian:trixie
@@ -96,9 +127,11 @@ nopath <<'PROFILE'
 PATH=$(printf %s "$PATH" | tr : "\n" | grep -v "^/data/data/com.termux" | paste -sd: -)
 export PATH
 PROFILE
-deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps"
+deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps libatomic1"
 
 step hermes "Hermes Agent (10-30 minutes on a phone)"
+# libatomic1 (above): the glibc Node.js Hermes downloads links it, minimal Debian lacks it, and the pinned build's installer
+# (unlike the hosted one) does not install it.
 # install-stamp.json is written only when Hermes's installer finished; a crashed install can still leave a working `hermes`.
 # An interrupted install can leave EMPTY launchers in ~/.local/bin: they "run" fine (exit 0, no output) and Hermes's
 # installer never replaces files it doesn't recognise as its own. Drop them so the installer writes real ones.
@@ -106,7 +139,8 @@ deb 'find /root/.local/bin -maxdepth 1 -name "hermes*" -type f -size 0 -delete 2
 if deb "hermes --version 2>/dev/null | grep -q Hermes && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
   say "hermes already installed, skipping"
 else
-  hermes_install() { deb "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive"; }
+  # The pin's own installer script (not the hosted one), so the install is reproducible: the hosted one changes over time.
+  hermes_install() { deb "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh | bash -s -- --non-interactive --commit $HERMES_COMMIT"; }  # hex only: no quotes (deb() wraps this in bash -lc "...")
   if ! hermes_install; then
     # Under proot, uv's freshly downloaded Python reports its real Android path as sys.prefix, so
     # `uv python find --managed-python` rejects it and Hermes's installer stops ("bootstrap Python lookup failed").
@@ -119,12 +153,10 @@ fi
 deb "hermes --version | grep Hermes"
 
 step plugin "Hermes Mobile plugin, supervisor, and access to the phone (files, Termux:API, Shizuku; no root needed)"
-# Run from a clone: its own install.sh (and plugin); otherwise the latest from GitHub.
-src=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 if [ -n "$src" ] && [ -f "$src/install.sh" ] && [ -d "$src/../hermes-plugin/hermes-mobile" ]; then
   HM_NO_APK=1 bash "$src/install.sh"
 else
-  curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh -o "$HOME/hm-install.sh"
+  curl -fsSL "$RAW/phone/install.sh" -o "$HOME/hm-install.sh"
   HM_NO_APK=1 bash "$HOME/hm-install.sh"
 fi
 # Termux:Boot (if installed) starts Hermes after a reboot.
@@ -144,4 +176,15 @@ termux-wake-unlock 2>/dev/null || true
 # Hermes's access to the phone (phone/phone-access.sh, run by install.sh): what is still missing. Hermes runs without it, but
 # can't reach that part of the phone until it's done. The app's Setup check lists the same.
 while IFS= read -r t; do [ -n "$t" ] && say "TODO $t"; done < "$HOME/.hermes-mobile/todo" 2>/dev/null || true
+# The app: open Android's installer (the computer routes install it over adb and pass HM_NO_APK=1). Never fails the setup.
+if [ -z "${HM_NO_APK:-}" ]; then
+  apk="$HOME/hermes-mobile.apk"
+  if curl -fsL -o "$apk" "https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"; then
+    say "phone: tap Install (if Android asks which app to use, pick Package installer; allow Termux to install apps if asked), then open Hermes Mobile"
+    termux-open --content-type application/vnd.android.package-archive "$apk" 2>/dev/null || say "TODO app: open $apk (termux-open $apk) to install Hermes Mobile"
+  else
+    rm -f "$apk"
+    say "TODO app: download hermes-mobile.apk from the latest release (github.com/omarqaterge/hermes-mobile-app/releases)"
+  fi
+fi
 say "DONE"

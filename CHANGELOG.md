@@ -4,6 +4,15 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- New installs get exactly the Hermes build the app is tested against (the same one `hermes/patches` are made for) instead of whatever
+  Hermes's installer serves that day; an existing Hermes is never reinstalled or changed. Tested on a wiped Android 15 emulator
+  (Hermes v0.21.5+4582, browser tools included, dashboard answering).
+- The phone-only install lifts Android's child-process limit through Shizuku before the long Hermes install (so Termux isn't stopped
+  with "signal 9"), when Shizuku is running and Termux is allowed. Without Shizuku it says what to switch on instead. Fixed: Shizuku looked
+  "off" whenever the installer ran from Termux's own terminal (a hang that only happened with a terminal attached).
+- The phone-only install now opens Android's installer for the app by itself at the end (download kept as the fallback). Opening it and
+  installing the app were checked on the emulator.
+
 ## v0.8.41 (2026-10-20)
 
 - Rooted phones can run Debian with chroot-distro instead of proot-distro (`HM_DISTRO=chroot`, see the README's "Rooted or not"). The

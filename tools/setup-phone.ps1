@@ -160,7 +160,7 @@ if (-not $ready) { Die "Termux didn't respond. Open it on the phone, wait for th
 # ---------------------------------------------------------------- 6. install on the phone
 B '6/9 Installing Debian + Hermes on the phone (20-40 minutes)'
 $distro = if ($env:HM_DISTRO -eq 'chroot') { 'HM_DISTRO=chroot ' } else { '' }
-TypeLine "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && ${distro}bash hm.sh"
+TypeLine "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && ${distro}HM_NO_APK=1 bash hm.sh"
 $seen = 0; $start = Get-Date
 while ($true) {
   Start-Sleep 5
