@@ -12,6 +12,13 @@ User-facing changes, newest first. Each release section collects what shipped si
   "off" whenever the installer ran from Termux's own terminal (a hang that only happened with a terminal attached).
 - The phone-only install now opens Android's installer for the app by itself at the end (download kept as the fallback). Opening it and
   installing the app were checked on the emulator.
+- First-run setup is one flow that works out what is already set up and picks up at the first missing step: no model, a missing
+  plugin, Hermes not running (on a first run), then the recommended items (notifications, battery, Termux:API, Shizuku, files) once
+  as "Almost done". A phone where everything already works (installed from a computer) goes straight to the chat. It re-checks
+  when you come back to the app, and moves on by itself when a step turns ✓. Tested in browser tests against a mock Hermes; not
+  yet on a real phone.
+- On Xiaomi, Redmi and POCO phones, Setup check (and the flow) reminds you to turn on Autostart for Termux and Hermes Mobile, with
+  buttons to each app's settings (Android can't say whether it is on, so it is a tip, never a ✓ or ✗).
 
 ## v0.8.41 (2026-10-20)
 

@@ -67,6 +67,8 @@ const server = http.createServer((req, res) => {
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
       if (b.unconfigured) providerConfigured = false
+      if (b.configured) providerConfigured = true
+      if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
@@ -129,7 +131,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/config' && req.method === 'GET') return send({ plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })
     if (p === '/api/config' && req.method === 'PUT') {
       const b = JSON.parse(body || '{}')
-      pluginEnabled = (b.config?.plugins?.enabled || []).includes('hermes-mobile')
+      if (b.config?.plugins?.enabled) pluginEnabled = b.config.plugins.enabled.includes('hermes-mobile') // other config writes (the model) leave it alone
       return send({ ok: true })
     }
     if (p === '/api/skills') return send([{ name: 'a', enabled: true }, { name: 'b', enabled: true }, { name: 'c', enabled: false }])
