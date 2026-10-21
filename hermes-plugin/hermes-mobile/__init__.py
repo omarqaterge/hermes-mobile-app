@@ -163,6 +163,8 @@ def _set_status(session_id: str, text: str, short: str = "Working", review: bool
                 step: bool = False) -> None:
     if not session_id or session_id in _subagents:
         return
+    if not review and short not in ("Approve?", "Asking"):
+        short = _phone_app_short(session_id) or short  # an app open in the background: the chip says "Using <app>"
     now = time.time()
     with _lock:
         prev = _active.get(session_id)
@@ -175,6 +177,16 @@ def _set_status(session_id: str, text: str, short: str = "Working", review: bool
                                "tool": tool, "turn": turn}
     _status_dirty.set()
     _publish_activity()
+
+
+def _phone_app_short(session_id: str) -> str:
+    """ "Using <app>" while this chat has an app open on the hidden screen (only if the tool was loaded)."""
+    import sys
+    m = sys.modules.get("hm_phone_app")
+    st = getattr(m, "_state", None) if m else None
+    if st and st.get("session") == session_id and st.get("label"):
+        return f"Using {st['label']}"
+    return ""
 
 
 def _clear_status(session_id: str) -> None:
