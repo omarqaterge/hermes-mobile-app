@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api } from '../api'
-import { copyText, haptic, isNative, setupFix, setupState, type NativeSetup } from '../bridge'
+import {
+  copySetupCommand, copyText, haptic, installHelperApp, isNative, onSetupEvent, probeTermux, setupFix, setupProgress, setupState,
+  type HelperApp, type InstallState, type NativeSetup
+} from '../bridge'
 import { reconnectNow, rpc } from '../gateway'
 import { closeScreen, getState, setState, toast, useStore } from '../store'
-import { nextStep, recommendedGaps, setupSteps, shouldOpenFlow, type FlowStep, type PhoneAccess, type Remote, type StepId, type StepState } from '../setupflow'
+import {
+  nextStep, probeState, progressView, recommendedGaps, setupSteps, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
+  type ProbeRaw, type Progress, type Remote, type StepId, type StepState
+} from '../setupflow'
 import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
 import { ScreenShell } from './Screens'
 import { Spinner } from './Spinner'
@@ -54,6 +60,77 @@ const copyInstall = () => {
   toast('Installer command copied: paste it in Termux')
 }
 
+// ── App-first setup: the helper apps, installed one after another by the shell ──
+
+export const HELPERS: { id: HelperApp; name: string; what: string; has: (n: NativeSetup) => boolean }[] = [
+  { id: 'termux', name: 'Termux', what: 'Linux on the phone: Hermes runs inside it', has: n => n.termux },
+  { id: 'termux-api', name: 'Termux:API', what: 'Lets Hermes use the phone: battery, location, notifications…', has: n => Boolean(n.termuxApi) },
+  { id: 'termux-boot', name: 'Termux:Boot', what: 'Starts Hermes again after the phone restarts', has: n => Boolean(n.termuxBoot) },
+  { id: 'shizuku', name: 'Shizuku', what: 'Lets Hermes see and use the screen, without root', has: n => Boolean(n.shizuku) }
+]
+
+interface AppStatus {
+  state: InstallState | 'idle'
+  pct: number
+  msg: string
+}
+const IDLE: AppStatus = { state: 'idle', pct: 0, msg: '' }
+let appStatus: Record<HelperApp, AppStatus> = { termux: IDLE, 'termux-api': IDLE, 'termux-boot': IDLE, shizuku: IDLE }
+let installQueue: HelperApp[] = []
+let waitingPermission = false
+const appSubs = new Set<() => void>()
+const setAppStatus = (id: HelperApp, st: AppStatus) => {
+  appStatus = { ...appStatus, [id]: st }
+  appSubs.forEach(f => f())
+}
+const busy = () => Object.values(appStatus).some(a => a.state === 'downloading' || a.state === 'installing')
+function installNext() {
+  if (busy() || waitingPermission) return
+  const n = setupState()
+  while (installQueue.length && n && HELPERS.find(h => h.id === installQueue[0])!.has(n)) installQueue.shift()
+  const next = installQueue.shift()
+  if (!next) return
+  setAppStatus(next, { state: 'downloading', pct: 0, msg: '' })
+  if (!installHelperApp(next)) setAppStatus(next, { state: 'error', pct: 0, msg: 'This app build can’t install apps.' })
+}
+/** Install these apps (missing ones only, in the fixed order: Termux first). One system "Install" dialog each. */
+export function installApps(ids: HelperApp[]) {
+  for (const h of HELPERS) if (ids.includes(h.id) && !installQueue.includes(h.id)) installQueue.push(h.id)
+  installNext()
+}
+onSetupEvent(e => {
+  if (e.kind !== 'install') return
+  setAppStatus(e.which, { state: e.state, pct: e.pct, msg: e.msg })
+  if (e.state === 'permission') {
+    // Android's "Install unknown apps" switch is open: carry on when the user comes back with it on.
+    waitingPermission = true
+    installQueue.unshift(e.which)
+    setAppStatus(e.which, IDLE)
+  } else if (e.state === 'done') installNext()
+  else if (e.state === 'error') installQueue = []
+})
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !waitingPermission) return
+  waitingPermission = false
+  if (setupState()?.canInstall) installNext()
+  else installQueue = []
+})
+const useAppStatus = () => useSyncExternalStore(f => (appSubs.add(f), () => appSubs.delete(f)), () => appStatus)
+
+const SHIZUKU_SKIP = 'hm.shizukuStepDone'
+const shizukuSkipped = () => {
+  try {
+    return localStorage.getItem(SHIZUKU_SKIP) === '1'
+  } catch {
+    return false
+  }
+}
+
+const copyBootstrap = () => {
+  if (copySetupCommand()) toast('Copied. In Termux: long-press, Paste, then Enter')
+  else toast('This app build can’t make the installer command. Use the command from the README.', 'error')
+}
+
 interface Ctx {
   n: NativeSetup | null
   conn: string
@@ -67,6 +144,33 @@ function describe(id: StepId, { n, conn, r, enable }: Ctx): Pick<Check, 'title' 
   const p = online ? r?.phone ?? null : null
   const sh = p?.shizuku
   switch (id) {
+    case 'apps': {
+      const missing = n ? HELPERS.filter(h => !h.has(n)) : []
+      return {
+        title: 'Termux, Termux:API, Termux:Boot and Shizuku are installed',
+        help: `Hermes needs ${missing.length ? missing.map(h => h.name).join(', ') : 'these apps'}. Hermes Mobile downloads and installs them for you: tap Install on each of Android’s prompts.`,
+        fix: missing.length ? { label: 'Install all', run: () => installApps(missing.map(h => h.id)) } : undefined
+      }
+    }
+    case 'shizuku-start':
+      return {
+        title: 'Start Shizuku',
+        help: 'Recommended before the installer: it stops Android from killing the install (“signal 9”) and lets Hermes see and use the screen. Needs Developer options and Wi-Fi.',
+        fix: { label: 'Open Shizuku', run: () => setupFix('open-shizuku') }
+      }
+    case 'installer':
+      return {
+        title: 'Hermes is installed in Termux',
+        help: 'Copy the command, open Termux, long-press, Paste, then Enter. It installs Debian and Hermes (15-40 minutes); keep Termux open.',
+        fix: { label: 'Copy the command', run: copyBootstrap },
+        alt: { label: 'Open Termux', run: () => setupFix('open-termux') }
+      }
+    case 'termux-boot':
+      return {
+        title: 'Termux:Boot was opened once',
+        help: 'Android only starts Termux:Boot after a restart (and with it Hermes) once it has been opened. Open it once, then come back.',
+        fix: { label: 'Open Termux:Boot', run: () => setupFix('open-termux-boot') }
+      }
     case 'termux':
       return {
         title: 'Termux is installed',
@@ -202,32 +306,85 @@ const buildChecks = (steps: FlowStep[], ctx: Ctx, withModel: boolean): Check[] =
 /** Everything the app knows about its setup. Re-checks when the connection or profile changes, when the app comes back
  *  to the foreground (from an Android settings page or Termux) and after a fix; `poll` adds the Setup check screen's
  *  own 4 s refresh while it is open. `loading` until the answers it needs have arrived. */
+let lastProbe = 0
+
 export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   const conn = useStore(s => s.conn)
   const profile = useStore(s => s.profile)
   const [n, setN] = useState<NativeSetup | null>(() => setupState())
   const [r, setR] = useState<Remote | null>(null)
   const [hasModel, setHasModel] = useState<boolean | null>(null)
+  const [probeRaw, setProbeRaw] = useState<ProbeRaw | null>(null)
+  const [progress, setProgress] = useState<Progress | null>(() => setupProgress())
+  const [shSkip, setShSkip] = useState(shizukuSkipped)
   const wantModel = Boolean(opts.model)
-  const refresh = useCallback(() => {
-    setN(setupState())
-    if (getState().conn !== 'open') return
+  /** probe: also ask Termux what is installed (one RUN_COMMAND, only while Hermes is offline; never on the poll). */
+  const refresh = useCallback((probe: unknown = true) => {
+    const nat = setupState()
+    setN(nat)
+    setProgress(setupProgress())
+    setShSkip(shizukuSkipped())
+    if (getState().conn !== 'open') {
+      // at most one probe per 2 s (the return to the app fires both visibilitychange and hermesSetupChanged)
+      if (probe !== false && nat?.probe && nat.termux && Date.now() - lastProbe > 2000) {
+        lastProbe = Date.now()
+        probeTermux()
+      }
+      return
+    }
     void remote().then(setR)
     if (wantModel) void modelConnected().then(v => v != null && setHasModel(v))
   }, [wantModel])
+  useEffect(
+    () =>
+      onSetupEvent(e => {
+        if (e.kind === 'probe') {
+          try {
+            setProbeRaw(JSON.parse(e.json) as ProbeRaw)
+          } catch {
+            /* ignore */
+          }
+        } else if (e.kind === 'line') {
+          setProgress(setupProgress())
+          if (e.line === 'DONE') {
+            // install.sh has started Hermes: connect now instead of waiting for the next retry
+            reconnectNow()
+            refresh(false)
+          }
+        } else if (e.kind === 'changed') refresh(true)
+        else if (e.state === 'done') refresh(false)
+      }),
+    [refresh]
+  )
   useEffect(() => {
     const on = () => document.visibilityState === 'visible' && refresh()
     document.addEventListener('visibilitychange', on)
-    const t = opts.poll ? setInterval(refresh, 4000) : 0
+    const t = opts.poll ? setInterval(() => refresh(false), 4000) : 0
     return () => {
       document.removeEventListener('visibilitychange', on)
       if (t) clearInterval(t)
     }
   }, [refresh, opts.poll])
-  useEffect(refresh, [conn, profile, refresh])
-  const steps = setupSteps(n, conn, r, wantModel ? hasModel : true)
-  const loading = conn === 'connecting' || (conn === 'open' && (r == null || (wantModel && hasModel == null)))
-  return { steps, next: nextStep(steps), loading, refresh, n, r, conn }
+  // The connection retrying (connecting ↔ closed) must not probe: each probe is a Termux command, and before the
+  // installer ran Termux answers every one with an error notification. Probe on open, on return and after a fix only.
+  useEffect(() => refresh(false), [conn, profile, refresh])
+  useEffect(() => refresh(true), [refresh])
+  const installing = Boolean(progress?.active && !progress.done && !progress.fail)
+  const pre: PreHermes = { probe: n?.probe ? probeState(probeRaw, installing) : null, progress, shizukuSkipped: shSkip }
+  const steps = setupSteps(n, conn, r, wantModel ? hasModel : true, pre)
+  // A step before Hermes exists is known without Hermes: never "Checking…" while the connection retries.
+  const pending = nextStep(steps)
+  const preHermes = pending != null && ['apps', 'shizuku-start', 'run', 'installer'].includes(pending.id) && (pending.state === 'bad' || installing)
+  const loading = !preHermes && (conn === 'connecting' || (conn === 'open' && (r == null || (wantModel && hasModel == null))))
+  const skipShizuku = () => {
+    try {
+      localStorage.setItem(SHIZUKU_SKIP, '1')
+    } catch {
+      /* private mode */
+    }
+    setShSkip(true)
+  }
+  return { steps, next: pending, loading, refresh, n, r, conn, progress, skipShizuku }
 }
 
 function useEnable(r: Remote | null, refresh: () => void) {
@@ -265,6 +422,7 @@ const MARK_LABEL: Record<StepState, string> = { ok: 'Done', bad: 'Needs fixing',
 
 export function SetupScreen() {
   const { steps, refresh, n, r, conn } = useSetupState({ poll: true })
+  useAppStatus() // re-render on install progress
   const checks = buildChecks(steps, { n, conn, r, enable: useEnable(r, refresh) }, false)
   const bad = checks.filter(c => c.state === 'bad').length
   const waiting = checks.some(c => c.state === 'wait')
@@ -325,7 +483,7 @@ let flowDismissed = false
 /** Resume at the first missing step: shows that step with its fix, moves on by itself when it turns ✓, then lists the
  *  recommended items that are still missing once, then "All set". Opens from checkSetupFlow() / watchFirstRun(). */
 export function SetupFlow() {
-  const { steps, loading, refresh, n, r, conn } = useSetupState({ model: true })
+  const { steps, loading, refresh, n, r, conn, progress, skipShizuku } = useSetupState({ model: true })
   const enable = useEnable(r, refresh)
   // The model step stays on screen until the user finishes it (connecting a provider turns it ✓ before they pick a model).
   const [modelStarted, setModelStarted] = useState(false)
@@ -337,7 +495,8 @@ export function SetupFlow() {
   if (cur?.id === 'model' && !modelStarted) setModelStarted(true)
   const stateOf = (id: StepId) => steps.find(s => s.id === id)?.state
   const total = todo.current.length
-  const finished = todo.current.filter(id => (stateOf(id) === 'ok' && !(id === 'model' && !modelDone)) || (id === 'model' && modelDone)).length
+  // skip = the step went away (Start Shizuku skipped, or the installer made it unnecessary): counts as finished, no ✓.
+  const finished = todo.current.filter(id => ((stateOf(id) === 'ok' || stateOf(id) === 'skip') && !(id === 'model' && !modelDone)) || (id === 'model' && modelDone)).length
   const ctx: Ctx = { n, conn, r, enable }
   const checkOf = (s: FlowStep): Check => ({ id: s.id, state: s.state, ...describe(s.id, ctx) })
 
@@ -376,6 +535,12 @@ export function SetupFlow() {
         }}
       />
     )
+  } else if (cur?.id === 'apps' && n) {
+    body = <AppsStep n={n} />
+  } else if (cur?.id === 'shizuku-start' && n) {
+    body = <ShizukuStep n={n} onSkip={skipShizuku} />
+  } else if (cur?.id === 'installer') {
+    body = <InstallerStep progress={progress} onCopied={() => refresh(false)} />
   } else if (cur) {
     const c = checkOf(cur)
     body = (
@@ -466,6 +631,177 @@ export function SetupFlow() {
   )
 }
 
+const STATUS_TEXT = (a: AppStatus) =>
+  a.state === 'downloading' ? `Downloading${a.pct ? ` ${a.pct} %` : '…'}`
+    : a.state === 'installing' ? 'Tap Install on Android’s prompt'
+      : a.state === 'error' ? a.msg || 'Install failed'
+        : ''
+
+/** Step 1: the four helper apps, each ✓ or Install, plus Install all. */
+function AppsStep({ n }: { n: NativeSetup }) {
+  const status = useAppStatus()
+  const missing = HELPERS.filter(h => !h.has(n))
+  const otherTermux = n.termuxSigner === 'other'
+  const oldTermux = Boolean(n.termux && n.termuxVersion && /^0\.(\d+)/.test(n.termuxVersion) && Number(n.termuxVersion.split('.')[1]) < 118)
+  const canFix = (h: (typeof HELPERS)[number]) => !(otherTermux && (h.id === 'termux-api' || h.id === 'termux-boot'))
+  const installable = missing.filter(canFix)
+  const working = HELPERS.some(h => status[h.id].state === 'downloading' || status[h.id].state === 'installing')
+  return (
+    <div className="flow-card">
+      <div className="flow-card-title">Get the helper apps</div>
+      <div className="setup-help">
+        Hermes runs inside Termux and uses these apps to reach your phone. Hermes Mobile downloads them (Termux from F-Droid,
+        Shizuku from GitHub) and Android asks you to tap <b>Install</b> for each one.
+        {n.canInstall === false && <> First Android asks you to allow Hermes Mobile to install apps: turn the switch on, then come back.</>}
+      </div>
+      <ul className="setup-list app-list">
+        {HELPERS.map(h => {
+          const has = h.has(n)
+          const a = status[h.id]
+          return (
+            <li key={h.id} className={`setup-item ${has ? 'ok' : 'bad'}`}>
+              <span className={`setup-mark ${has ? 'ok' : 'bad'}`} aria-label={has ? 'Done' : 'Missing'}>
+                {has ? '✓' : a.state === 'downloading' || a.state === 'installing' ? <Spinner small /> : '✕'}
+              </span>
+              <div className="setup-body">
+                <div className="setup-title">{h.name}</div>
+                <div className="dim small">{has ? h.what : STATUS_TEXT(a) || h.what}</div>
+              </div>
+              {!has && canFix(h) && a.state !== 'downloading' && a.state !== 'installing' && (
+                <button className="btn" onClick={() => { haptic(); installApps([h.id]) }}>
+                  {a.state === 'error' ? 'Retry' : 'Install'}
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {otherTermux && (
+        <div className="setup-help">
+          Your Termux doesn’t come from F-Droid, so F-Droid’s Termux:API and Termux:Boot can’t be added to it. Install them from the same
+          place you got Termux (for example its GitHub releases), or uninstall Termux and install all three here.
+        </div>
+      )}
+      {oldTermux && <div className="setup-help">Your Termux is older than 0.118 and can’t run the installer: update it first.</div>}
+      {installable.length > 0 && (
+        <div className="setup-actions">
+          <button className="btn primary" disabled={working} onClick={() => { haptic(); installApps(installable.map(h => h.id)) }}>
+            {installable.length === HELPERS.length ? 'Install all' : `Install ${installable.length === 1 ? installable[0].name : 'the rest'}`}
+          </button>
+          {n.canInstall === false && (
+            <button className="btn" onClick={() => { haptic(); setupFix('install-permission') }}>
+              Allow installing apps
+            </button>
+          )}
+        </div>
+      )}
+      <div className="dim small flow-card-note">This page moves on by itself once all four are installed.</div>
+    </div>
+  )
+}
+
+/** Step 2 (can be skipped): start Shizuku before the installer, all on the phone. */
+function ShizukuStep({ n, onSkip }: { n: NativeSetup; onSkip: () => void }) {
+  const sub = (ok: boolean | undefined, text: ReactNode) => (
+    <li className={`setup-item ${ok ? 'ok' : 'bad'}`}>
+      <span className={`setup-mark ${ok ? 'ok' : 'bad'}`} aria-label={ok ? 'Done' : 'Not yet'}>{ok ? '✓' : '·'}</span>
+      <div className="setup-body">{text}</div>
+    </li>
+  )
+  return (
+    <div className="flow-card">
+      <div className="flow-card-title">Start Shizuku</div>
+      <div className="setup-help">
+        Recommended before the installer: Shizuku lets the installer stop Android from killing it (“signal 9”), and gives Hermes the
+        screen, taps and apps without root. You can skip it and start Shizuku later.
+      </div>
+      <ul className="setup-list">
+        {sub(n.devOptions, <><div className="setup-title">Turn on Developer options</div><div className="dim small">About phone → tap <i>Build number</i> 7 times (on some phones it is under <i>Software information</i>, or called <i>OS version</i>).</div></>)}
+        {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow.</div></>)}
+        {sub(false, <><div className="setup-title">Pair and start Shizuku</div><div className="dim small">In Shizuku: <i>Pairing</i>, then <i>Pair device with pairing code</i> in Wireless debugging and type the code into Shizuku’s notification. Then <i>Start</i>.</div></>)}
+      </ul>
+      <div className="setup-actions">
+        {!n.devOptions ? (
+          <button className="btn primary" onClick={() => { haptic(); setupFix('about-phone') }}>About phone</button>
+        ) : (
+          <button className="btn" onClick={() => { haptic(); setupFix('dev-options') }}>Developer options</button>
+        )}
+        <button className={`btn${n.devOptions ? ' primary' : ''}`} onClick={() => { haptic(); setupFix('open-shizuku') }}>Open Shizuku</button>
+      </div>
+      <div className="setup-actions">
+        <button className="btn" onClick={() => { haptic(); onSkip() }}>Shizuku is running</button>
+        <button className="btn" onClick={() => { haptic(); onSkip() }}>Skip for now</button>
+      </div>
+    </div>
+  )
+}
+
+const MARK_STEP = { ok: '✓', bad: '✕', run: '', todo: '·' } as const
+
+/** Step 3: copy the installer command, run it in Termux, then its progress line by line. */
+function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCopied: () => void }) {
+  const lines = progress?.lines ?? []
+  const v = progressView(lines)
+  const started = lines.some(l => l.startsWith('STEP '))
+  const actions = (
+    <div className="setup-actions">
+      <button className="btn primary" onClick={() => { haptic(); copyBootstrap(); onCopied() }}>Copy the command</button>
+      <button className="btn" onClick={() => { haptic(); setupFix('open-termux') }}>Open Termux</button>
+    </div>
+  )
+  if (!started)
+    return (
+      <div className="flow-card">
+        <div className="flow-card-title">Run the installer</div>
+        <ol className="setup-help flow-steps">
+          <li>Tap <b>Copy the command</b>, then <b>Open Termux</b>.</li>
+          <li>In Termux, long-press, tap <b>Paste</b>, then press Enter.</li>
+          <li>Stay in Termux and tap <b>Allow</b> on what it asks (notifications, battery, files; Shizuku: <i>Allow all the time</i>).</li>
+        </ol>
+        {actions}
+        <div className="dim small flow-card-note">
+          {progress?.active ? 'Waiting for the installer to start… its progress shows here.' : 'It takes 15-40 minutes, mostly waiting. Its progress shows here.'}
+        </div>
+      </div>
+    )
+  return (
+    <div className="flow-card">
+      <div className="flow-card-title">{v.fail ? 'The installer stopped' : 'Installing Hermes'}</div>
+      {v.hint && !v.fail && <div className="setup-help install-hint"><b>{v.hint}</b></div>}
+      <ul className="install-steps">
+        {v.steps.map(s => (
+          <li key={s.id} className={`install-step ${s.state}`}>
+            <span className="install-mark" aria-hidden="true">{s.state === 'run' ? <Spinner small /> : MARK_STEP[s.state]}</span> {s.label}
+          </li>
+        ))}
+      </ul>
+      {v.android && <div className="dim small">{v.android}</div>}
+      {v.todo.length > 0 && (
+        <div className="setup-help">
+          Still to do after the install:
+          <ul className="install-todo">{v.todo.map((t, i) => <li key={i}>{t}</li>)}</ul>
+        </div>
+      )}
+      {v.fail ? (
+        <>
+          <div className="setup-help">
+            The installer stopped at <b>{v.steps.find(s => s.id === v.fail)?.label ?? v.fail}</b>. Open Termux to see why, then paste the same
+            command again: finished steps are skipped.
+          </div>
+          {actions}
+        </>
+      ) : (
+        <>
+          <div className="dim small flow-card-note">Keep Termux open and the screen on. This page moves on by itself when it is done.</div>
+          <div className="setup-actions">
+            <button className="btn" onClick={() => { haptic(); setupFix('open-termux') }}>Open Termux</button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /** Once connected on a first run (neither flag set): work out what is missing and open the flow when something is.
  *  Nothing missing: remember it, so an established install is never checked (or interrupted) again. */
 let flowChecked = false
@@ -499,13 +835,16 @@ export function watchFirstRun(conn: string, open: () => void): () => void {
     firstRunTimer = 0
   }
   if (seen || conn === 'open' || firstRunShown || firstRunTimer) return () => {}
+  // Nothing to wait for when Termux isn't even there, or the installer is running: open the flow at once.
+  const nat = setupState()
+  const now = Boolean(nat && nat.canInstall !== undefined && (!nat.termux || setupProgress()?.active))
   firstRunTimer = window.setTimeout(() => {
     firstRunTimer = 0
     if (getState().conn !== 'open' && !getState().screen && !flowDismissed) {
       firstRunShown = true
       open()
     }
-  }, 15000)
+  }, now ? 0 : 15000)
   return () => {}
 }
 let firstRunShown = false

@@ -3161,3 +3161,19 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .flow-card-title { font-size: 1.1rem; font-weight: 600; }
 .flow-card-wait { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .flow-card-note { margin-top: 12px; }
+
+/* App-first setup steps (Setup.tsx AppsStep / ShizukuStep / InstallerStep) */
+.flow-card .setup-list { margin: 12px 0 0; }
+.app-list .setup-item { align-items: center; }
+.app-list .setup-item .btn { flex: none; }
+.flow-steps { margin: 8px 0 0; padding-left: 20px; }
+.flow-steps li { margin: 4px 0; }
+.install-hint { color: var(--text); padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.install-steps { list-style: none; margin: 12px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; }
+.install-step { display: flex; align-items: center; gap: 8px; }
+.install-step.todo { color: var(--dim); }
+.install-step.run { font-weight: 600; }
+.install-step.bad { color: var(--err); font-weight: 600; }
+.install-mark { width: 18px; display: inline-grid; place-items: center; font-weight: 700; }
+.install-step.ok .install-mark { color: var(--ok); }
+.install-todo { margin: 4px 0 0; padding-left: 18px; }
