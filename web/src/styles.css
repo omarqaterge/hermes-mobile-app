@@ -3138,7 +3138,23 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .md a.code-link { text-decoration: none; }
 .md a.code-link code { color: var(--accent); text-decoration: underline; word-break: break-all; }
 
-/* ── Library (kept canvas documents, by category) ── */
+/* ── Canvas gallery (every chat's canvas documents, by category) ── */
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 6px; }
+.gallery-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px; min-height: 128px; text-align: left; min-width: 0;
+  border-radius: 14px; background: var(--surface); border: 1px solid var(--border); color: inherit; font: inherit;
+}
+.gallery-card:active { background: var(--press); }
+.gallery-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gallery-icon {
+  width: 28px; height: 28px; border-radius: 8px; flex: none; display: grid; place-items: center; font-size: 15px;
+  background: color-mix(in srgb, var(--accent) 17%, var(--surface-2));
+}
+.gallery-cat { font-size: 12px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gallery-title { font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.gallery-snippet { font-size: 13px; opacity: 0.7; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.gallery-from { margin-top: auto; font-size: 12px; opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-viewer-body iframe.html-frame { min-height: 60vh; }
 .lib-cats .seg { margin: 0 0 4px; }
 .lib-cats .chips-row { margin-bottom: 4px; }
 .lib-viewer { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }

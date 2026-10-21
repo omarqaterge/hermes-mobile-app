@@ -692,7 +692,33 @@ async def canvas_delete(session: str, id: str):
     return {"ok": True}
 
 
-# ── library (canvas documents the user kept, by category; survives deleted chats) ──
+@router.post("/canvas/category")
+async def canvas_category(body: CanvasRef):
+    """File a document under a gallery category (`title` carries the category; '' = group it by type)."""
+    return _cv(lambda c: c.set_category, body.session, body.id, body.title)
+
+
+# ── canvas gallery (every chat's canvas documents in one list, by category, with their chat) ──
+
+def _gallery():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_gallery")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_gallery", Path(__file__).resolve().parent.parent / "gallery.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_gallery"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+@router.get("/gallery")
+def gallery_list():
+    return _gallery().list_all()
+
+
+# ── library (saved copies from older app versions; the gallery lists them, nothing new is saved) ──
 
 def _library():
     import importlib.util

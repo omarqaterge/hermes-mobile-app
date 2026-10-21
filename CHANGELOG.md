@@ -4,6 +4,12 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Canvas gallery** (Hermes hub, replaces the Library): every canvas document from every chat and profile shows up on its
+  own, nothing to save. Hermes files each new document under a short topic (Recipes, Study…); documents without one are
+  grouped by type (Notes, Web pages, Code…). Tap one to preview it (web pages run, offline), then **Open canvas** to
+  continue it on its own chat's canvas, or **Go to chat**. Move, rename, copy, share or delete from its ⋮ menu; the
+  canvas's ⋮ menu has "Gallery category…". Items saved to the old Library are still listed.
+
 ## v0.8.41 (2026-10-20)
 
 - Rooted phones can run Debian with chroot-distro instead of proot-distro (`HM_DISTRO=chroot`, see the README's "Rooted or not"). The
