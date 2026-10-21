@@ -55,6 +55,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: tools/test_hermes_patches.sh
       - run: bash tools/test_hermes_debian.sh
+      - run: bash tools/test_bootstrap_pin.sh
 
   android:
     name: Android Java compiles

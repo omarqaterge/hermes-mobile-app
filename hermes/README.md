@@ -31,7 +31,9 @@ contains reads as `upstream` and is skipped. `hermes update` stashes the edits a
 - **New fix:** make the commit in a `hermes-agent` clone checked out at the pinned build, with a test that fails without
   it, then `git format-patch -1 --no-signature -o hermes/patches` and number it after the last one. Open the same fix
   as a PR upstream (rebased onto their `main`) and link it in the table.
-- **Moving to a newer Hermes** (together with `web/vendor/hermes-shared`): delete the patches that read `upstream`,
+- **Moving to a newer Hermes** (together with `web/vendor/hermes-shared`): also set `HERMES_COMMIT` in `phone/bootstrap.sh` to the new
+  full SHA, the same as `.hermes-commit`/`.hermes-version` (new installs get exactly that build; CI's `tools/test_bootstrap_pin.sh`
+  enforces it); delete the patches that read `upstream`,
   re-make any that read `conflict` on the new build, and update the table.
 - `tools/test_hermes_patches.sh` (also run by CI) checks that every patch applies to the pinned build and reverts cleanly,
   and shows how each one fares on upstream `main`.

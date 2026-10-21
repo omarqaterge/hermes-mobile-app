@@ -186,9 +186,12 @@ adb logcat -d -s 'hmsetup:*'
 Once `ready` shows up, type the installer (one line):
 
 ```bash
-adb shell "input text 'curl%s-fsSL%shttps://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh%s-o%shm.sh%s&&%sbash%shm.sh'"
+adb shell "input text 'curl%s-fsSL%shttps://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh%s-o%shm.sh%s&&%sHM_NO_APK=1%sbash%shm.sh'"
 adb shell input keyevent 66
 ```
+
+`HM_NO_APK=1` keeps `hm.sh` from opening Android's installer on the phone at the end (that is the phone-only route's last step):
+you install the app yourself over adb in step 8.
 
 ## 6. Follow the installer
 
