@@ -271,6 +271,19 @@ short = types.SimpleNamespace(poll_interval_seconds=5.0, lease_ttl_seconds=20.0)
 papi.slow_background_polls(groups=types.SimpleNamespace(_service=types.SimpleNamespace(runtime=short)), registry=reg)
 check("a short lease keeps the room poll as it is", short.poll_interval_seconds == 5.0)
 
+# ── app-keeper → StartReceiver ──
+# Termux's `am` has no start-foreground-service and HermesService isn't exported, so the keeper broadcasts to the
+# app's exported StartReceiver, including stopped packages (stock Android drops it after a force stop otherwise).
+print("app-keeper")
+import re
+svc = (ROOT / "phone" / "hermes-services").read_text()
+keeper = next((l for l in svc.splitlines() if l.startswith("run_loop app-keeper")), "")
+manifest = (ROOT / "android" / "AndroidManifest.xml").read_text()
+check("keeper probes the port first, then broadcasts to StartReceiver incl. stopped packages",
+      "/dev/tcp/127.0.0.1/9121" in keeper and "am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32" in keeper, keeper)
+m = re.search(r'<receiver\s+android:name="\.StartReceiver"(.*?)(/>|</receiver>)', manifest, re.S)
+check("manifest: StartReceiver is exported", bool(m) and 'android:exported="true"' in m.group(1), m.group(0) if m else "")
+
 # ── bots.py off ──
 print("bots.py off")
 os.environ["HERMES_MOBILE_ROOT"] = str(tmp / "hroot")

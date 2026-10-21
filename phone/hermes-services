@@ -43,5 +43,7 @@ if [ -f ~/logs/bot-keeper.pid ]; then
   $deb bash -lc "$PY; \$PY /root/.hermes/plugins/hermes-mobile/bots.py off" >> ~/logs/bot-keeper.log 2>&1
 fi
 # Hermes app service (pinned status + notifications); `am` works here, outside Debian. It is costly (a
-# Java VM per call), so only call it when the service's loopback port doesn't answer.
-run_loop app-keeper bash -c "(exec 3<>/dev/tcp/127.0.0.1/9121) 2>/dev/null || am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver >/dev/null 2>&1; sleep 300"
+# Java VM per call), so only call it when the service's loopback port doesn't answer. `-f 32`
+# (FLAG_INCLUDE_STOPPED_PACKAGES): stock Android drops broadcasts to a force-stopped app without it (some vendor
+# builds deliver them anyway); with it the keeper also revives the app after a force stop or a Recents clean-up.
+run_loop app-keeper bash -c "(exec 3<>/dev/tcp/127.0.0.1/9121) 2>/dev/null || am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32 >/dev/null 2>&1; sleep 300"
