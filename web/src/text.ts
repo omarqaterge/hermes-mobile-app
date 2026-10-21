@@ -340,3 +340,39 @@ export function linkParts(s: string): LinkPart[] {
   if (last < s.length) out.push({ text: s.slice(last) })
   return out
 }
+
+/** A phone_app tool call in plain words ("Using Keep", "Tapping in Keep"), for tool cards that carry no label of their own. */
+export function phoneAppLabel(args?: Record<string, unknown> | null): string {
+  if (!args) return ''
+  const str = (k: string) => (typeof args[k] === 'string' ? (args[k] as string).trim() : '')
+  const app = str('app')
+  const action = str('action')
+  const text = str('text')
+  const short = text.length > 40 ? `${text.slice(0, 40)}…` : text
+  const inApp = app ? ` in ${app}` : ''
+  switch (action) {
+    case 'open':
+      return app ? `Using ${app}` : 'Opening an app'
+    case 'capture':
+      return `Looking at the screen${inApp}`
+    case 'tap':
+      return `Tapping${inApp}`
+    case 'set_text':
+    case 'type':
+      return short ? `Typing "${short}"${inApp}` : `Typing${inApp}`
+    case 'key':
+      return text ? `Pressing ${text}${inApp}` : `Pressing a key${inApp}`
+    case 'scroll':
+      return `Scrolling${inApp}`
+    case 'wait':
+      return `Waiting${inApp}`
+    case 'list_apps':
+      return 'Listing apps'
+    case 'hand_over':
+      return app ? `Handing ${app} over to you` : 'Handing the app over to you'
+    case 'close':
+      return app ? `Closing ${app}` : 'Closing the app'
+    default:
+      return app ? `Using ${app}` : ''
+  }
+}
