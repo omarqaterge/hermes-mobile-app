@@ -53,6 +53,56 @@ public class HermesService extends Service {
     long lastBeat = 0;
     static final long WORKING_TTL_MS = 50_000; // the plugin beats every 15 s while working
 
+    /** The app Hermes is driving on the hidden display (event kind "bgapp"); null = none. Port and token never leave Java. */
+    static final class BgApp {
+        final String session, pkg, label, action, token;
+        final int port;
+        final long since;
+
+        BgApp(String session, String pkg, String label, String action, int port, String token, long since) {
+            this.session = session; this.pkg = pkg; this.label = label; this.action = action;
+            this.port = port; this.token = token; this.since = since;
+        }
+
+        /** What the page may see: no port, no token. */
+        String pageJson() {
+            try {
+                return new JSONObject().put("session", session).put("pkg", pkg).put("label", label)
+                        .put("action", action).put("since", since).toString();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+    }
+
+    static volatile BgApp bgApp = null;
+    final Runnable expireBgTask = () -> setBgApp(null);
+
+    /** Every change of the background app reaches the open page (if any) as window.__hmBg(state|null). */
+    void setBgApp(BgApp b) {
+        bgApp = b;
+        main.removeCallbacks(expireBgTask);
+        if (b != null) main.postDelayed(expireBgTask, WORKING_TTL_MS);
+        MainActivity a = MainActivity.current;
+        if (a != null) a.pushBg();
+    }
+
+    void onBgEvent(JSONObject e) {
+        String state = e.optString("state");
+        String session = e.optString("session", "");
+        if ("done".equals(state)) {
+            setBgApp(null);
+            return;
+        }
+        int port = e.optInt("port", 0);
+        String token = e.optString("token", "");
+        if (session.isEmpty() || port < 1024 || port > 65535 || token.isEmpty() || token.length() > 256) return;
+        BgApp old = bgApp;
+        String pkg = e.optString("pkg", "");
+        long since = old != null && old.session.equals(session) && old.pkg.equals(pkg) ? old.since : System.currentTimeMillis();
+        setBgApp(new BgApp(session, pkg, e.optString("label", pkg), e.optString("action", ""), port, token, since));
+    }
+
     /** No status beat for a while: Hermes (or its plugin) died mid-turn, so drop the stuck chip. */
     final Runnable expireWorkingTask = this::expireWorking;
 
@@ -411,6 +461,9 @@ public class HermesService extends Service {
                 updateWake();
                 return;
             }
+            case "bgapp":
+                onBgEvent(e);
+                return;
             case "wake_at":
                 scheduleWake(e.optDouble("at", 0));
                 return;

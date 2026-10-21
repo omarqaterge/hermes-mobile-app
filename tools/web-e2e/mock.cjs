@@ -36,6 +36,7 @@ const goneDraft = id => draftGen > 0 && /^s-new/.test(id) && !id.endsWith(`-d${d
 let fastMode = 'normal'
 let pluginEnabled = false
 let providerConfigured = true // false = a fresh install (the welcome opens)
+let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps (Settings → Background apps)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
 let codexPolls = 0
 
@@ -67,6 +68,7 @@ const server = http.createServer((req, res) => {
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
       if (b.unconfigured) providerConfigured = false
+      if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
@@ -96,6 +98,10 @@ const server = http.createServer((req, res) => {
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
     if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems })
     if (p === '/api/plugins/hermes-mobile/prefs') return send({ order: null })
+    if (p === '/api/plugins/hermes-mobile/bgapps') {
+      if (req.method === 'PUT') bgapps.allow_sensitive = !!JSON.parse(body || '{}').allow_sensitive
+      return send(bgapps)
+    }
     if (p === '/api/plugins/hermes-mobile/phone-access') return send(phoneAccess)
     if (p === '/api/hermes/update/check') return send({ install_method: 'git', current_version: '0.21.5+4582.gb8a8be1', behind: 12, update_available: true, can_apply: true, message: null })
     if (p === '/api/plugins/hermes-mobile/refresh-logins') return send({ ok: true, anthropic: 0 })

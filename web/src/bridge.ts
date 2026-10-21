@@ -31,6 +31,9 @@ interface AndroidBridge {
   sharedItem?(index: number): string
   setLastChat?(id: string, title: string): void
   chatSeen?(id: string): void
+  bgState?(): string // the background app Hermes drives (JSON without port/token) or ""
+  bgFrameAsync?(id: number, maxW: number): void // answers window.__hmBgFrame(id, dataUrl | "")
+  bgAction?(what: 'stop' | 'take_over'): string // "ok" or "error: …"
   setUnseen?(profile: string, json: string): void
   shareText?(title: string, text: string): void
   setupState?(): string
@@ -298,4 +301,33 @@ export function shareText(title: string, text: string): boolean {
   }
   void copyText(text)
   return false
+}
+
+/** The background app's state as the shell holds it ("" = none). */
+export function bgState(): string {
+  try {
+    return window.HermesAndroid?.bgState?.() || ''
+  } catch {
+    return ''
+  }
+}
+
+/** Ask the shell for the hidden display's latest frame; it answers through window.__hmBgFrame(id, dataUrl | ""). */
+export function bgFrameAsync(id: number, maxW: number): boolean {
+  try {
+    if (!window.HermesAndroid?.bgFrameAsync) return false
+    window.HermesAndroid.bgFrameAsync(id, maxW)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Stop the background app (closes its display) or take it over (moves it to the real screen). */
+export function bgAction(what: 'stop' | 'take_over'): string {
+  try {
+    return String(window.HermesAndroid?.bgAction?.(what) ?? 'error: not available')
+  } catch (e) {
+    return `error: ${e instanceof Error ? e.message : e}`
+  }
 }

@@ -1054,7 +1054,26 @@ async function main() {
       setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what)),
       listVoices: key => k(key, 'listVoices'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
-      openAssistantSettings: key => k(key, 'openAssistantSettings')
+      openAssistantSettings: key => k(key, 'openAssistantSettings'),
+      // Background app: the test sets state through window.__hmBg; frames come back 120 ms after each request.
+      bgState: key => (k(key, 'bgState'), window.__bgNative ? JSON.stringify(window.__bgNative) : ''),
+      bgFrameAsync: (key, id, w) => {
+        k(key, 'bgFrameAsync')
+        const log = (window.__bgAsked ||= [])
+        log.push({ t: Date.now(), w })
+        window.__bgInflight = (window.__bgInflight || 0) + 1
+        window.__bgMaxInflight = Math.max(window.__bgMaxInflight || 0, window.__bgInflight)
+        setTimeout(() => {
+          window.__bgInflight--
+          window.__hmBgFrame(id, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+        }, 120)
+      },
+      bgAction: (key, what) => {
+        k(key, 'bgAction')
+        ;(window.__bgActs ||= []).push(what)
+        setTimeout(() => window.__hmBg(null), 30) // the shell clears the state once the host answered
+        return 'ok'
+      }
     }
   })
   const listsBefore = rpcs('session.list').length
@@ -1086,6 +1105,111 @@ async function main() {
   await np.evaluate(() => window.hermesOpenSession('s-6'))
   await np.locator('.live-bar').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat ends live mode'), () => check(false, 'opening another chat ends live mode'))
   check(await np.evaluate(() => (window.__seen || []).slice(-1)[0] === 's-6'), 'opened chat reported on screen')
+
+
+  // ── Hermes working in an app on a hidden display: card above the composer, viewer sheet, bounded frame polling ──
+  {
+    const nAsked = () => np.evaluate(() => (window.__bgAsked || []).length)
+    const setBg = st => np.evaluate(s => window.__hmBg && window.__hmBg(s), st)
+    const mine = a => ({ session: 's-6', pkg: 'com.example.notes', label: 'Notes', action: 'tapping "New note"', since: Date.now(), ...a })
+    await np.evaluate(() => {
+      window.alert = window.confirm = window.prompt = () => ((window.__dialogs ||= []).push(1), null)
+    })
+    await np.locator('.msg').first().waitFor({ timeout: 5000 }).catch(() => {})
+    await setBg(mine({ session: 's-other' }))
+    await sleep(1300)
+    check((await np.locator('.bg-card').count()) === 0 && (await nAsked()) === 0, 'bg app of another chat: no card, no frame requests')
+    await setBg(mine())
+    await np.locator('.bg-card').waitFor({ timeout: 3000 }).then(() => check(true, 'bg app of this chat: card shows'), () => check(false, 'bg app of this chat: card shows'))
+    const ct = (await np.locator('.bg-card').textContent({ timeout: 1500 }).catch(() => '')) || ''
+    check(/Using Notes/.test(ct) && /tapping "New note"/.test(ct), `card names the app and the action (${ct})`)
+    await np.waitForFunction(() => (window.__bgAsked || []).length >= 3, null, { timeout: 5000 }).catch(() => {})
+    await np.locator('.bg-thumb img').waitFor({ timeout: 3000 }).then(() => check(true, 'card shows the live thumbnail'), () => check(false, 'card shows the live thumbnail'))
+    {
+      const asked = await np.evaluate(() => window.__bgAsked || [])
+      const gaps = asked.slice(1).map((a, i) => a.t - asked[i].t)
+      check(asked.length >= 3 && gaps.every(g => g >= 450), `frame requests are at least 500 ms apart (${gaps.join(',')})`)
+      check((await np.evaluate(() => window.__bgMaxInflight)) === 1, 'never two frame requests in flight')
+      check(asked.length > 0 && asked.every(a => a.w <= 240), `the thumbnail asks for a small frame (${asked.length ? asked[0].w : 'none'})`)
+    }
+    await np.locator('.bg-card').click({ timeout: 1500 }).catch(() => {})
+    const viewer = np.locator('.bg-viewer')
+    await viewer.waitFor({ timeout: 3000 }).then(() => check(true, 'tapping the card opens the viewer'), () => check(false, 'tapping the card opens the viewer'))
+    check((await viewer.getByRole('button', { name: 'Take over' }).count()) === 1 && (await viewer.getByRole('button', { name: 'Stop' }).count()) === 1, 'viewer has Take over and Stop')
+    check(/tapping "New note"/.test((await viewer.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'viewer shows the action caption')
+    await np.waitForFunction(() => (window.__bgAsked || []).length > 0 && window.__bgAsked.slice(-1)[0].w >= 400, null, { timeout: 3000 }).then(() => check(true, 'viewer asks for a bigger frame'), () => check(false, 'viewer asks for a bigger frame'))
+    check((await np.locator('.bg-card select, .bg-viewer select, .bg-viewer input, .bg-viewer textarea, .bg-card input, dialog').count()) === 0, 'card and viewer use no native controls')
+    await np.evaluate(() => window.hermesBack())
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'Back closes the viewer'), () => check(false, 'Back closes the viewer'))
+    await sleep(900)
+    check(await np.evaluate(() => (window.__bgAsked || []).slice(-1).every(a => a.w <= 240) && (window.__bgAsked || []).length > 0), 'after closing the viewer only the small thumbnail is requested')
+    check((await np.locator('.bg-card').count()) === 1, 'card stays after closing the viewer')
+    // Page hidden: no more requests; visible again: they resume.
+    await np.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await sleep(500)
+    const hiddenAt = await nAsked()
+    await sleep(1600)
+    check((await nAsked()) === hiddenAt, `no frame requests while the page is hidden (${hiddenAt})`)
+    await np.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await np.waitForFunction(n => (window.__bgAsked || []).length > n, hiddenAt, { timeout: 3000 }).then(() => check(true, 'frame requests resume when the page is visible'), () => check(false, 'frame requests resume when the page is visible'))
+    // Take over: one bridge call; the shell then clears the state, the card goes and the polling stops.
+    await np.locator('.bg-card').click({ timeout: 1500 }).catch(() => {})
+    await viewer.getByRole('button', { name: 'Take over' }).click({ timeout: 1500 }).catch(() => {})
+    await np.locator('.bg-card').waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'card disappears once the state is cleared'), () => check(false, 'card disappears once the state is cleared'))
+    check(JSON.stringify(await np.evaluate(() => window.__bgActs)) === '["take_over"]', `Take over calls bgAction once (${JSON.stringify(await np.evaluate(() => window.__bgActs))})`)
+    check((await viewer.count()) === 0, 'viewer closes after Take over')
+    await sleep(400)
+    const clearedAt = await nAsked()
+    await sleep(1500)
+    check((await nAsked()) === clearedAt, 'no frame requests once there is no bg app')
+    // Stop.
+    await setBg(mine({ action: 'typing' }))
+    await np.locator('.bg-card').click({ timeout: 1500 }).catch(() => {})
+    await viewer.getByRole('button', { name: 'Stop' }).click({ timeout: 1500 }).catch(() => {})
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    check(JSON.stringify(await np.evaluate(() => window.__bgActs)) === '["take_over","stop"]', 'Stop calls bgAction("stop")')
+    // The app comes back (resume push) for this chat, then another chat is opened: card and polling go.
+    await setBg(mine())
+    await np.locator('.bg-card').waitFor({ timeout: 3000 }).catch(() => {})
+    await np.evaluate(() => window.hermesOpenSession('s-5'))
+    await np.locator('.bg-card').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat hides the card'), () => check(false, 'opening another chat hides the card'))
+    await sleep(500)
+    const swAt = await nAsked()
+    await sleep(1500)
+    check((await nAsked()) === swAt, 'no frame requests for a chat without the bg app')
+    await setBg(null)
+    check((await np.evaluate(() => window.__dialogs || [])).length === 0, 'no alert/confirm dialogs')
+    // Settings → Background apps
+    await np.getByRole('button', { name: /^Sessions/ }).click()
+    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    const bgRow = np.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
+    await bgRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the Background apps row'), () => check(false, 'Settings has the Background apps row'))
+    check(/Off: Hermes won't open them in the background/.test((await bgRow.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'row explains what Off means')
+    check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'false', 'switch starts off')
+    await bgRow.click({ timeout: 1500 }).catch(() => {})
+    await sleep(500)
+    {
+      const puts = calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/bgapps')
+      check(puts.length === 1 && puts[0].body.allow_sensitive === true, `toggling PUTs allow_sensitive (${JSON.stringify(puts.map(c => c.body))})`)
+      check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'switch shows on')
+    }
+    await np.evaluate(() => window.hermesBack())
+    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { allow_sensitive: false, available: false, reason: 'Needs Shizuku running' } }) })
+    await np.getByRole('button', { name: /^Sessions/ }).click()
+    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    const noRow = np.locator('.set-row', { hasText: 'Needs Shizuku running' })
+    await noRow.waitFor({ timeout: 5000 }).then(() => check(true, 'unavailable: the reason is the row text'), () => check(false, 'unavailable: the reason is the row text'))
+    check((await noRow.getByRole('switch').count()) === 0, 'unavailable: no switch')
+    check((await np.locator('.set-row select, .set-row input').count()) === 0, 'settings row uses no native controls')
+    await np.evaluate(() => window.hermesBack())
+    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { available: true, reason: undefined } }) })
+  }
 
   // ── Phone assistant: Settings → Voice opens the system picker and shows the role once Hermes holds it ──
   await np.getByRole('button', { name: /^Sessions/ }).click()
