@@ -588,6 +588,46 @@ async def put_prefs(body: OrderPrefs, profile: Optional[str] = None):
     return {"order": data.get(key, {}).get("order")}
 
 
+# ── background apps (the phone_app tool's settings) ──
+
+def _phone_app_mod():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_phone_app")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_phone_app", Path(__file__).resolve().parent.parent / "phone_app.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_phone_app"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+class BgAppPrefs(BaseModel):
+    allow_sensitive: bool = False
+
+
+@router.get("/bgapps")
+async def bgapps_get():
+    m = _phone_app_mod()
+    ok, why = m.availability()
+    out = {"allow_sensitive": bool(m.read_prefs().get("allow_sensitive")), "available": ok}
+    if why:
+        out["reason"] = why
+    return out
+
+
+@router.put("/bgapps")
+async def bgapps_put(body: BgAppPrefs):
+    m = _phone_app_mod()
+    d = m.write_prefs(body.allow_sensitive)
+    ok, why = m.availability()
+    out = {"allow_sensitive": bool(d.get("allow_sensitive")), "available": ok}
+    if why:
+        out["reason"] = why
+    return out
+
+
 # ── canvas (documents shared by Hermes and the user, per chat) ──
 
 def _canvas():
