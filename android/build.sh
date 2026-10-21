@@ -27,10 +27,20 @@ rm -rf build && mkdir -p build/gen build/classes build/dex
 
 # 2. resources + manifest
 "$BT/aapt2" compile --dir res -o build/res.zip
+RES_ZIPS=(build/res.zip)
+# Emulator tests only: the setup flow's installer command fetches this URL instead of main's bootstrap.sh (a working tree
+# served from the Mac). MainActivity accepts only http://10.0.2.2:<port>/… (the emulator's host). Never set for a release.
+if [ -n "${HM_TEST_BOOTSTRAP_URL:-}" ]; then
+  echo "TEST BUILD: installer command uses $HM_TEST_BOOTSTRAP_URL" >&2
+  mkdir -p build/res-test/values
+  printf '<resources><string name="hm_test_bootstrap" translatable="false">%s</string></resources>\n' "$HM_TEST_BOOTSTRAP_URL" > build/res-test/values/test.xml
+  "$BT/aapt2" compile --dir build/res-test -o build/res-test.zip
+  RES_ZIPS+=(build/res-test.zip)
+fi
 "$BT/aapt2" link -I "$ANDROID_JAR" --manifest AndroidManifest.xml -A assets \
   --min-sdk-version 26 --target-sdk-version "$PLATFORM" \
   --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
-  --java build/gen -o build/unsigned.apk build/res.zip
+  --java build/gen -o build/unsigned.apk "${RES_ZIPS[@]}"
 
 # 3. Java → classes → dex
 find src build/gen -name '*.java' > build/sources.txt

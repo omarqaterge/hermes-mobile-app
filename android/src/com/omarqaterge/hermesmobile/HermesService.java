@@ -145,7 +145,10 @@ public class HermesService extends Service {
             Voice.control(intent.getStringExtra("cmd"));
             return START_STICKY;
         }
-        if (!keyShared) shareKeyWithTermux(); // once per service run: each share spawns a Termux shell
+        // Once per service run: each share spawns a Termux shell. Not before Termux has accepted a command once (a fresh
+        // phone before the installer): Termux refuses it with an error notification, and the share is retried when the
+        // probe first succeeds or the installer reports DONE (shareKeyAgain).
+        if (!keyShared && MainActivity.termuxOk(this)) shareKeyWithTermux();
         return START_STICKY;
     }
 
@@ -280,6 +283,67 @@ public class HermesService extends Service {
 
     boolean keyShared = false;
 
+    /** Termux accepts our commands now (first good probe, installer DONE): share the event key if it never got there. */
+    static void shareKeyAgain() {
+        HermesService s = instance;
+        if (s == null) return;
+        s.keyShared = false;
+        s.shareKeyWithTermux();
+    }
+
+    // ── app-first setup: the installer's progress lines (SetupLines has the policy) ──
+    static final SetupLines setup = new SetupLines();
+    static boolean setupLoaded = false;
+
+    /** The progress channel, with the copied command's token restored after a restart (prefs "hermes" setup_token). */
+    static SetupLines setup(Context c) {
+        synchronized (setup) {
+            if (!setupLoaded) {
+                setupLoaded = true;
+                setup.resume(c.getSharedPreferences("hermes", MODE_PRIVATE).getString("setup_token", ""));
+            }
+        }
+        return setup;
+    }
+
+    /** A new installer command was copied: remember its token (memory + prefs, so a service restart mid-install keeps it). */
+    static void startSetup(Context c, String token) {
+        setup(c).start(token);
+        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).apply();
+    }
+
+    /** POST /setup {token, line}: keep it, push it to the page, show the step in the notification. */
+    int setupPost(String body) {
+        String[] tl = SetupLines.parse(body);
+        if (tl == null) return SetupLines.BAD_LINE;
+        SetupLines sl = setup(this);
+        int r = sl.add(tl[0], tl[1]);
+        if (r != SetupLines.OK) return r;
+        String line = tl[1];
+        MainActivity a = MainActivity.current;
+        if (a != null) a.pushSetupLine(line);
+        String text = null;
+        if (line.startsWith("STEP ")) {
+            String[] p = line.split(" ", 3);
+            text = "Setting up: " + (p.length > 2 && !p[2].trim().isEmpty() ? p[2].trim() : p[1]);
+        } else if (line.startsWith("FAIL ")) text = "Setup stopped: open Hermes Mobile";
+        else if (line.equals("DONE")) {
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").apply();
+            MainActivity.setTermuxOk(this);
+            text = "Ready";
+        }
+        if (text != null) {
+            final String t = text;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try {
+                    getSystemService(NotificationManager.class).notify(STATUS_ID, statusNotification(t, null, false));
+                } catch (Exception ignored) {
+                }
+            });
+        }
+        return r;
+    }
+
     void shareKeyWithTermux() {
         if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
         keyShared = true;
@@ -315,6 +379,8 @@ public class HermesService extends Service {
     void handle(Socket s) throws Exception {
         BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
         String line = in.readLine();
+        // POST /setup = the installer's progress (its own one-time token, see SetupLines); everything else is an event.
+        boolean setupReq = line != null && line.startsWith("POST /setup ");
         int len = 0;
         String gotKey = "";
         int headers = 0;
@@ -324,7 +390,7 @@ public class HermesService extends Service {
             if (l.startsWith("content-length:")) len = Integer.parseInt(line.substring(15).trim());
             if (l.startsWith("x-hermes-mobile-key:")) gotKey = line.substring(20).trim();
         }
-        if (len < 0 || len > 256 * 1024) throw new java.io.IOException("too large");
+        if (len < 0 || len > (setupReq ? 1024 : 256 * 1024)) throw new java.io.IOException("too large");
         // Content-Length counts UTF-8 bytes, the reader gives chars: count bytes, or a non-ASCII body waits forever.
         StringBuilder body = new StringBuilder();
         int bytes = 0;
@@ -338,9 +404,16 @@ public class HermesService extends Service {
                 bytes += c < 0x80 ? 1 : c < 0x800 ? 2 : Character.isSurrogate(c) ? 2 : 3;
             }
         }
+        OutputStream out = s.getOutputStream();
+        if (setupReq) {
+            int r = setupPost(body.toString());
+            out.write((r == SetupLines.OK ? "HTTP/1.1 204 No Content\r\n" : r == SetupLines.BAD_TOKEN ? "HTTP/1.1 403 Forbidden\r\n" : "HTTP/1.1 400 Bad Request\r\n")
+                    .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            return;
+        }
         boolean ok = java.security.MessageDigest.isEqual(
                 key.getBytes(StandardCharsets.UTF_8), gotKey.getBytes(StandardCharsets.UTF_8)); // constant time
-        OutputStream out = s.getOutputStream();
         out.write((ok ? "HTTP/1.1 204 No Content\r\n" : "HTTP/1.1 403 Forbidden\r\n")
                 .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         out.flush();
