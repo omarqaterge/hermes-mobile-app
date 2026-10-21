@@ -9,6 +9,11 @@ User-facing changes, newest first. Each release section collects what shipped si
   grouped by type (Notes, Web pages, Code…). Tap one to preview it (web pages run, offline), then **Open canvas** to
   continue it on its own chat's canvas, or **Go to chat**. Move, rename, copy, share or delete from its ⋮ menu; the
   canvas's ⋮ menu has "Gallery category…". Items saved to the old Library are still listed.
+- **Hermes can use an app in the background** on a hidden screen, without taking over yours. While it works, the chat
+  shows a card above the message box ("Using <app>", what it is doing, a live thumbnail); tap it for a bigger live view
+  with **Take over** (brings the app to your screen) and **Stop**. Settings → Background apps decides whether banking,
+  payment, password and 2FA apps are allowed (off by default). The card shows only in the chat that started it, and the
+  live view updates only while it is on screen. (This is the app side; it needs the matching Hermes plugin tool.)
 
 ## v0.8.41 (2026-10-20)
 

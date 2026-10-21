@@ -29,6 +29,8 @@ import { BotsScreen } from './components/Bots'
 import { GalleryScreen } from './components/Gallery'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
 import { Spinner } from './components/Spinner'
+import { BgApp } from './components/BgApp'
+import { refreshBg } from './bgapp'
 import { bootMark } from './boot'
 
 declare global {
@@ -61,6 +63,7 @@ window.hermesOpenSession = (id: string, draft?: string) => openSessionFromNotifi
 // Called by the shell when the app returns to the foreground.
 window.hermesResume = () => {
   if (getState().conn !== 'open') reconnectNow()
+  refreshBg()
 }
 
 function Header() {
@@ -624,6 +627,7 @@ export function App() {
       <StatusBar />
       <CompressHint />
       <TtsPlayer />
+      <BgApp />
       <Composer injected={injected} onInjected={clearInjected} />
       {screen === 'skills' && <SkillsScreen onUse={t => setInjected(t)} />}
       {screen === 'memory' && <MemoryScreen />}
