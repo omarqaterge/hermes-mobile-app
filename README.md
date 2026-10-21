@@ -58,6 +58,13 @@ in hands-free Live mode. Settings → Voice shows whether it is on.
 
 <p align="center"><img src="docs/img/assistant.png" alt="Long-press power opens Hermes in Live mode" width="100%"></p>
 
+### Uses your apps without taking your screen
+
+Ask Hermes to do something in an app ("add milk to my Keep list", "what does the battery page say") and it opens that app on a
+hidden screen, reads it, taps and types, while you keep using your phone. The status chip says **Using <app>**, the chat shows a
+live view, and **Take over** brings the app to your screen. It asks once per app per chat; banking, payment, password and 2FA
+apps stay off unless you allow them in Settings. Needs Android 14+ and Shizuku.
+
 ### Your chats, your memory, your look
 
 Search inside every message, pin, archive, link chats to chats. Every memory write is shown as a diff, and there is a screen to see
