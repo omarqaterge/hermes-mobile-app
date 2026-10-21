@@ -3138,7 +3138,8 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .md a.code-link { text-decoration: none; }
 .md a.code-link code { color: var(--accent); text-decoration: underline; word-break: break-all; }
 
-/* ── Canvas gallery (every chat's canvas documents, by category) ── */
+/* ── Canvas gallery (every chat's canvas documents, by type, searchable) ── */
+.gallery-search { margin-bottom: 8px; }
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 6px; }
 .gallery-card {
   display: flex; flex-direction: column; gap: 6px; padding: 12px; min-height: 128px; text-align: left; min-width: 0;

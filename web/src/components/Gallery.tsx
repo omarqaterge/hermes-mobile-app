@@ -1,47 +1,15 @@
-// Canvas gallery screen: every chat's canvas documents, by category. Tap one to see it; open it on its chat's canvas
-// or go to the chat it was made in. HTML runs here in the same offline sandbox as on the canvas.
+// Canvas gallery screen: every chat's canvas documents, by type, with a search over titles and text. Tap one to see it;
+// open it on its chat's canvas or go to the chat it was made in. HTML runs here in the same offline sandbox as on the canvas.
 import { useEffect, useState } from 'react'
 import { copyText, haptic, shareText as nativeShare } from '../bridge'
 import { confirmDialog, promptDialog } from '../dialog'
 import { ago } from '../unread'
 import { toast } from '../store'
-import { deleteItem, itemContent, loadGallery, moveItem, openItemChat, renameItem, setGalleryFilter, useGallery, type GalleryItem } from '../gallery'
+import { deleteItem, itemContent, loadGallery, openItemChat, renameItem, setGalleryFilter, setGalleryQuery, useGallery, type GalleryItem } from '../gallery'
 import { DocView, Sheetish, TYPE_ICON } from './Canvas'
 import { ScreenShell, Sheet, Status } from './Screens'
-import { PickerSheet, Row, Section, Segmented, type Option } from './ui'
+import { Row, Section, Segmented } from './ui'
 import { Spinner } from './Spinner'
-
-const NEW = '\u0000new'
-const AUTO = '\u0000auto'
-
-/** Pick a gallery category: the ones in use, "by type", or a new one typed in a dialog. */
-export function CategoryPicker({ title = 'Category', current = '', auto = false, onPick, onClose }: { title?: string; current?: string; auto?: boolean; onPick: (category: string) => void; onClose: () => void }) {
-  const categories = useGallery(s => s.categories)
-  const loading = useGallery(s => s.loading)
-  useEffect(() => {
-    void loadGallery()
-  }, [])
-  const options: Option[] = [
-    ...Object.entries(categories).map(([c, n]) => ({ value: c, label: c, sub: `${n} document${n === 1 ? '' : 's'}`, icon: '🗂', tone: 'gold' as const })),
-    ...(auto ? [] : [{ value: AUTO, label: 'By type (automatic)', sub: 'Notes, Web pages, Code…' }]),
-    { value: NEW, label: '＋ New category…', sub: loading && !Object.keys(categories).length ? 'Loading your categories…' : undefined }
-  ]
-  return (
-    <PickerSheet
-      title={title}
-      options={options}
-      value={auto ? '' : current}
-      onClose={onClose}
-      onPick={v => {
-        if (v === AUTO) return onPick('')
-        if (v !== NEW) return onPick(v)
-        void promptDialog({ title: 'New category', placeholder: 'e.g. Recipes', confirmLabel: 'Save' }).then(c => {
-          if (c && c.trim()) onPick(c.trim())
-        })
-      }}
-    />
-  )
-}
 
 function shareText(title: string, text: string): void {
   if (!nativeShare(title, text)) void copyText(text).then(() => toast('Copied (sharing works in the phone app)'))
@@ -49,7 +17,7 @@ function shareText(title: string, text: string): void {
 
 const chatLabel = (i: GalleryItem) => (i.chat ? `“${i.chat.title || 'Untitled chat'}”${i.chat.archived ? ' (archived)' : ''}` : 'a deleted chat')
 
-function ItemMenu({ item, text, onClose, onMove, onGone }: { item: GalleryItem; text: string | null; onClose: () => void; onMove: () => void; onGone: () => void }) {
+function ItemMenu({ item, text, onClose, onGone }: { item: GalleryItem; text: string | null; onClose: () => void; onGone: () => void }) {
   const run = (fn: () => void) => () => {
     haptic()
     onClose()
@@ -58,7 +26,6 @@ function ItemMenu({ item, text, onClose, onMove, onGone }: { item: GalleryItem; 
   return (
     <Sheetish title={item.title} onClose={onClose}>
       <Section>
-        <Row icon="🗂" tone="gold" title="Move to category…" sub={item.auto ? `${item.category} (by type)` : item.category} chevron onClick={run(onMove)} />
         <Row icon="✏️" tone="gold" title="Rename" onClick={run(() => void promptDialog({ title: 'Rename', value: item.title, placeholder: 'Title', confirmLabel: 'Rename' }).then(t => t && void renameItem(item, t)))} />
       </Section>
       {text != null && (
@@ -94,7 +61,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
   const item = useGallery(s => s.items.find(i => i.key === itemKey))
   const [text, setText] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [menu, setMenu] = useState<null | 'item' | 'move'>(null)
+  const [menu, setMenu] = useState<null | 'item'>(null)
   const updated = item?.updated
   useEffect(() => {
     if (!item) return
@@ -146,8 +113,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
           )}
         </div>
       </div>
-      {menu === 'item' && <ItemMenu item={item} text={text} onClose={() => setMenu(null)} onMove={() => setMenu('move')} onGone={onClose} />}
-      {menu === 'move' && <CategoryPicker title="Move to category" current={item.category} auto={item.auto} onClose={() => setMenu(null)} onPick={c => void moveItem(item, c)} />}
+      {menu === 'item' && <ItemMenu item={item} text={text} onClose={() => setMenu(null)} onGone={onClose} />}
     </Sheet>
   )
 }
@@ -158,6 +124,8 @@ export function GalleryScreen() {
   const loading = useGallery(s => s.loading)
   const error = useGallery(s => s.error)
   const filter = useGallery(s => s.filter)
+  const query = useGallery(s => s.query)
+  const shownQuery = useGallery(s => s.shownQuery)
   const [open, setOpen] = useState<string | null>(null)
   useEffect(() => {
     void loadGallery()
@@ -167,6 +135,7 @@ export function GalleryScreen() {
   const tabs = [{ value: '', label: `All ${items.length}` }, ...cats.map(([c, n]) => ({ value: c, label: `${c} ${n}` }))]
   return (
     <ScreenShell title="Canvas gallery">
+      <input className="search gallery-search" type="search" placeholder="Search titles and text…" value={query} onChange={e => setGalleryQuery(e.target.value)} />
       {cats.length > 0 && (
         <div className="lib-cats">
           {tabs.length <= 3 ? (
@@ -182,7 +151,7 @@ export function GalleryScreen() {
           )}
         </div>
       )}
-      <Status loading={loading} error={loading ? error : ''} empty={!items.length} emptyText="Nothing here yet. Everything Hermes or you put on a chat’s canvas shows up here." />
+      <Status loading={loading} error={loading ? error : ''} empty={!items.length} emptyText={shownQuery ? `Nothing matches “${shownQuery}”.` : 'Nothing here yet. Everything Hermes or you put on a chat’s canvas shows up here.'} />
       {shown.length > 0 && (
         <div className="gallery-grid">
           {shown.map(i => (

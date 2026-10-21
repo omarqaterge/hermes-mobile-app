@@ -26,7 +26,6 @@ import {
   takeTheirs,
   unsavedFor,
   useCanvas,
-  canvasState,
   type Doc,
   type DocMeta,
   type DocType
@@ -38,8 +37,6 @@ import { Row, Section } from './ui'
 import { setState } from '../store'
 import { useSheetDrag } from './useSheetDrag'
 import { Spinner } from './Spinner'
-import { CategoryPicker } from './Gallery'
-import { setDocCategory } from '../gallery'
 
 export const TYPE_ICON: Record<DocType, string> = { markdown: '📝', html: '🌐', code: '💻', text: '📄', json: '{ }', csv: '▦', svg: '🖼', mermaid: '⛓' }
 const EXT: Record<DocType, string> = { markdown: 'md', html: 'html', code: 'txt', text: 'txt', json: 'json', csv: 'csv', svg: 'svg', mermaid: 'mmd' }
@@ -377,7 +374,7 @@ function shareText(title: string, text: string): void {
   if (!nativeShare(title, text)) toast('Copied (sharing works in the phone app)')
 }
 
-function DocMenu({ doc, text, onClose, onHistory, onCategory }: { doc: Doc; text: string; onClose: () => void; onHistory: () => void; onCategory: () => void }) {
+function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; onClose: () => void; onHistory: () => void }) {
   const run = (fn: () => void) => () => {
     haptic()
     onClose()
@@ -388,7 +385,6 @@ function DocMenu({ doc, text, onClose, onHistory, onCategory }: { doc: Doc; text
       <Section>
         <Row icon="✏️" tone="gold" title="Rename" onClick={run(() => void promptDialog({ title: 'Rename document', value: doc.title, placeholder: 'Title', confirmLabel: 'Rename' }).then(t => t && void renameDoc(doc.id, t)))} />
         <Row icon="🕘" tone="blue" title="Version history" sub={`${doc.rev} version${doc.rev === 1 ? '' : 's'}`} chevron onClick={run(onHistory)} />
-        <Row icon="🗂" tone="gold" title="Gallery category…" sub={doc.category || 'By type (automatic)'} chevron onClick={run(onCategory)} />
       </Section>
       <Section title="Share and save">
         <Row icon="⧉" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
@@ -519,7 +515,7 @@ export function CanvasPanel() {
   const remote = useCanvas(s => s.remote)
   const writing = useCanvas(s => s.writing)
   const listLoading = useCanvas(s => s.loading)
-  const [menu, setMenu] = useState<null | 'doc' | 'new' | 'history' | 'category'>(null)
+  const [menu, setMenu] = useState<null | 'doc' | 'new' | 'history'>(null)
   const [sel, setSel] = useState('')
   const [ask, setAsk] = useState('')
   const [net, setNet] = useState<Record<string, boolean>>({})
@@ -530,8 +526,6 @@ export function CanvasPanel() {
 
   const meta: DocMeta | undefined = docs.find(d => d.id === activeId)
   const doc = activeId ? loaded[activeId] : undefined
-  // The list has the current gallery category (setting one is not a new version, so the loaded copy isn't refetched).
-  const cat = meta?.category ?? doc?.category ?? ''
   const mode = (activeId && modes[activeId]) || 'view'
 
   // Wide screens put the open canvas in a column beside the chat (styles.css, html[data-canvas]).
@@ -774,8 +768,7 @@ export function CanvasPanel() {
           ⤓
         </button>
       )}
-      {menu === 'doc' && doc && <DocMenu doc={{ ...doc, category: cat }} text={text} onClose={() => setMenu(null)} onHistory={() => setMenu('history')} onCategory={() => setMenu('category')} />}
-      {menu === 'category' && doc && <CategoryPicker title="Gallery category" current={cat} auto={!cat} onClose={() => setMenu(null)} onPick={c => void setDocCategory(canvasState().session, doc.id, c)} />}
+      {menu === 'doc' && doc && <DocMenu doc={doc} text={text} onClose={() => setMenu(null)} onHistory={() => setMenu('history')} />}
       {menu === 'history' && doc && <HistorySheet doc={doc} onClose={() => setMenu(null)} />}
       {menu === 'new' && <NewDocMenu onClose={() => setMenu(null)} />}
     </>

@@ -1,6 +1,6 @@
-"""Canvas gallery: every canvas document of every chat (all profiles) in one list, grouped by category, each with
-the chat it was made in. Nothing is copied: the gallery reads the canvas store (canvas.py) and the chats' state.db
-files read-only. A document's category is the one Hermes (or the user) gave it; without one it is grouped by type.
+"""Canvas gallery: every canvas document of every chat (all profiles) in one list, grouped by type (HTML, Markdown,
+Code…), searchable by title and content, each with the chat it was made in. Nothing is copied: the gallery reads
+the canvas store (canvas.py) and the chats' state.db files read-only.
 
 Older app versions kept saved copies in a separate Library (library.py); those items are listed too
 (`saved: true`) so nobody loses them.
@@ -21,9 +21,9 @@ from typing import Any, Dict, List
 
 HERE = Path(__file__).resolve().parent
 
-# Documents without a category are grouped by what they are.
-KIND = {"markdown": "Notes", "text": "Notes", "html": "Web pages", "code": "Code", "json": "Code", "csv": "Data",
-        "svg": "Images", "mermaid": "Diagrams"}
+# The gallery's categories: what a document is.
+KIND = {"html": "HTML", "markdown": "Markdown", "code": "Code", "text": "Text", "json": "JSON", "csv": "CSV",
+        "svg": "SVG", "mermaid": "Mermaid"}
 
 
 def _mod(name: str, file: str):
@@ -72,9 +72,8 @@ _MD = re.compile(r"[#>*_`~|\[\]()!-]+")
 _TAG = re.compile(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", re.S | re.I)
 
 
-def snippet(doc_type: str, content: str, title: str = "", n: int = 140) -> str:
-    """A line or two of plain text to recognise the document by (none for images and diagrams), without the
-    title repeated at its start (a markdown note usually opens with it as a heading)."""
+def plain_text(doc_type: str, content: str) -> str:
+    """The document's words without markup: what search looks in (none for images and diagrams)."""
     text = content or ""
     if doc_type in ("svg", "mermaid"):
         return ""
@@ -86,20 +85,30 @@ def snippet(doc_type: str, content: str, title: str = "", n: int = 140) -> str:
             text = m.group(1)
     elif doc_type in ("markdown", "text"):
         text = _MD.sub(" ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    if title and text.lower().startswith(title.strip().lower()):
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def snippet(doc_type: str, content: str, title: str = "", n: int = 140, words: List[str] = ()) -> str:
+    """A line or two of plain text to recognise the document by: around the first search word when searching,
+    else its start without the title repeated (a markdown note usually opens with it as a heading)."""
+    if doc_type in ("markdown", "text"):
+        content = re.sub(r"\A\s*#{1,6} [^\n]*\n", "", content or "")
+    text = plain_text(doc_type, content)
+    if words:
+        at = min((i for i in (text.lower().find(w) for w in words) if i >= 0), default=-1)
+        if at > 40:
+            text = "…" + text[at - 30:].lstrip()
+    elif title and text.lower().startswith(title.strip().lower()):
         text = text[len(title.strip()):].lstrip(" :-–")
     return text[:n] + ("…" if len(text) > n else "")
 
 
-def category_of(doc_type: str, category: str) -> str:
-    return canvas().clean_category(category) or KIND.get(doc_type, "Notes")
-
-
-def list_all() -> Dict[str, Any]:
-    """{items, categories}: newest first; categories = {name: count} sorted by name."""
+def list_all(q: str = "") -> Dict[str, Any]:
+    """{items, categories}: newest first; categories = {type label: count}, in KIND order. `q`: every word must be in
+    the title or the text (case-insensitive)."""
     cv = canvas()
     chats = _chats()
+    words = [w for w in (q or "").lower().split() if w]
     items: List[Dict[str, Any]] = []
     root = cv.ROOT
     for p in root.glob("*/*.json") if root.exists() else []:
@@ -109,26 +118,37 @@ def list_all() -> Dict[str, Any]:
             continue
         sid = p.parent.name
         t = d.get("type") or "markdown"
+        title = d.get("title") or "Untitled"
+        content = d.get("content") or ""
+        if words:
+            hay = f"{title} {plain_text(t, content)}".lower()
+            if not all(w in hay for w in words):
+                continue
         versions = d.get("versions") or []
         items.append({
-            "key": f"{sid}/{d.get('id')}", "session": sid, "doc": d.get("id"), "title": d.get("title") or "Untitled",
-            "type": t, "lang": d.get("lang", ""), "category": category_of(t, d.get("category", "")),
-            "auto": not cv.clean_category(d.get("category", "")), "created": d.get("created", 0),
+            "key": f"{sid}/{d.get('id')}", "session": sid, "doc": d.get("id"), "title": title,
+            "type": t, "lang": d.get("lang", ""), "category": KIND.get(t, "Text"), "created": d.get("created", 0),
             "updated": d.get("updated", 0), "by": versions[-1].get("by", "") if versions else "",
-            "chars": len(d.get("content") or ""), "snippet": snippet(t, d.get("content") or "", d.get("title") or ""), "chat": chats.get(sid),
+            "chars": len(content), "snippet": snippet(t, content, title, words=words), "chat": chats.get(sid),
         })
     with contextlib.suppress(Exception):
-        for m in _library().list_items():
-            sid = (m.get("source") or {}).get("session") or ""
+        lib = _library()
+        for m in lib.list_items():
             t = m.get("type") or "markdown"
+            if words:
+                with contextlib.suppress(Exception):
+                    hay = f"{m.get('title', '')} {plain_text(t, lib.get(m['id']).get('content', ''))}".lower()
+                    if not all(w in hay for w in words):
+                        continue
+            sid = (m.get("source") or {}).get("session") or ""
             items.append({
                 "key": f"lib:{m['id']}", "session": sid, "doc": "", "lib": m["id"], "saved": True, "title": m.get("title") or "Untitled",
-                "type": t, "lang": m.get("lang", ""), "category": category_of(t, m.get("category", "")), "auto": False,
-                "created": m.get("saved", 0), "updated": m.get("saved", 0), "by": "", "chars": m.get("chars", 0), "snippet": "",
+                "type": t, "lang": m.get("lang", ""), "category": KIND.get(t, "Text"), "created": m.get("saved", 0),
+                "updated": m.get("saved", 0), "by": "", "chars": m.get("chars", 0), "snippet": "",
                 "chat": chats.get(sid) if sid else None,
             })
     items.sort(key=lambda i: i.get("updated") or 0, reverse=True)
-    counts: Dict[str, int] = {}
+    counts = {label: 0 for label in dict.fromkeys(KIND.values())}
     for i in items:
         counts[i["category"]] = counts.get(i["category"], 0) + 1
-    return {"items": items, "categories": dict(sorted(counts.items(), key=lambda kv: kv[0].lower()))}
+    return {"items": items, "categories": {k: v for k, v in counts.items() if v}}
