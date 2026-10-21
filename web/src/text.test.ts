@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { backgroundLuminance, joinHtmlBlocks, chatLinks, linkParts, formatOutput, memoryDiff, mediaKind, parseCsv, plainText, prepare, tidyApprovalText } from './text'
+import { backgroundLuminance, joinHtmlBlocks, chatLinks, linkParts, formatOutput, memoryDiff, mediaKind, parseCsv, phoneAppLabel, plainText, prepare, tidyApprovalText } from './text'
 
 describe('prepare', () => {
   test('MEDIA line with spaces becomes an image', () => {
@@ -221,5 +221,20 @@ describe('tidyApprovalText', () => {
   test('different warnings keep their order; plain text is unchanged', () => {
     expect(tidyApprovalText('Security scan — [HIGH] A; [LOW] B; [HIGH] A; recursive delete')).toBe('Security scan — [HIGH] A (×2); [LOW] B; recursive delete')
     expect(tidyApprovalText('change permissions')).toBe('change permissions')
+  })
+})
+
+describe('phoneAppLabel', () => {
+  test('says what the call does in plain words', () => {
+    expect(phoneAppLabel({ action: 'open', app: 'Keep' })).toBe('Using Keep')
+    expect(phoneAppLabel({ action: 'tap', app: 'Keep', element: 4 })).toBe('Tapping in Keep')
+    expect(phoneAppLabel({ action: 'set_text', app: 'Keep', text: 'Milk' })).toBe('Typing "Milk" in Keep')
+    expect(phoneAppLabel({ action: 'type', text: 'x'.repeat(60) })).toBe(`Typing "${'x'.repeat(40)}…"`)
+    expect(phoneAppLabel({ action: 'close', app: 'Keep' })).toBe('Closing Keep')
+    expect(phoneAppLabel({ action: 'list_apps' })).toBe('Listing apps')
+  })
+  test('no args or an unknown action without an app is empty', () => {
+    expect(phoneAppLabel(null)).toBe('')
+    expect(phoneAppLabel({ action: 'dance' })).toBe('')
   })
 })
