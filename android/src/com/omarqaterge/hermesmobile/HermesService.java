@@ -76,13 +76,15 @@ public class HermesService extends Service {
     }
 
     static volatile BgApp bgApp = null;
+    /** The host exits after 2 idle minutes; keep the card a little longer than that between plugin events. */
+    static final long BG_TTL_MS = 130_000;
     final Runnable expireBgTask = () -> setBgApp(null);
 
     /** Every change of the background app reaches the open page (if any) as window.__hmBg(state|null). */
     void setBgApp(BgApp b) {
         bgApp = b;
         main.removeCallbacks(expireBgTask);
-        if (b != null) main.postDelayed(expireBgTask, WORKING_TTL_MS);
+        if (b != null) main.postDelayed(expireBgTask, BG_TTL_MS);
         MainActivity a = MainActivity.current;
         if (a != null) a.pushBg();
     }
