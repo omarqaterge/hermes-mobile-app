@@ -56,6 +56,7 @@ jobs:
       - run: tools/test_hermes_patches.sh
       - run: bash tools/test_hermes_debian.sh
       - run: bash tools/test_bootstrap_pin.sh
+      - run: bash tools/test_say_hook.sh
 
   android:
     name: Android Java compiles
@@ -71,3 +72,4 @@ jobs:
           path: ~/.cache/hermes-mobile
           key: android-all-16
       - run: tools/java-check.sh
+      - run: tools/test_setup_lines.sh
