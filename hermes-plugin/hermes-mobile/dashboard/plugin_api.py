@@ -732,13 +732,7 @@ async def canvas_delete(session: str, id: str):
     return {"ok": True}
 
 
-@router.post("/canvas/category")
-async def canvas_category(body: CanvasRef):
-    """File a document under a gallery category (`title` carries the category; '' = group it by type)."""
-    return _cv(lambda c: c.set_category, body.session, body.id, body.title)
-
-
-# ── canvas gallery (every chat's canvas documents in one list, by category, with their chat) ──
+# ── canvas gallery (every chat's canvas documents in one list, by type, searchable, with their chat) ──
 
 def _gallery():
     import importlib.util
@@ -754,8 +748,9 @@ def _gallery():
 
 
 @router.get("/gallery")
-def gallery_list():
-    return _gallery().list_all()
+def gallery_list(q: str = ""):
+    """Every chat's canvas documents by type; `q` searches titles and text."""
+    return _gallery().list_all(q)
 
 
 # ── library (saved copies from older app versions; the gallery lists them, nothing new is saved) ──

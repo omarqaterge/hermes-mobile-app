@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the canvas gallery (hermes-plugin/hermes-mobile/gallery.py) and canvas categories. Temp HOME.
+"""Unit tests for the canvas gallery (hermes-plugin/hermes-mobile/gallery.py). Temp HOME.
     python3 tools/test_gallery.py
 """
 import importlib.util
@@ -50,42 +50,49 @@ A, B, GONE = "20261021_100000_aaaaaa", "20261021_110000_bbbbbb", "20261021_12000
 db(os.path.join(HOME, ".hermes", "state.db"), [(A, "Dinner ideas", 1, 5, 0, 0)])
 db(os.path.join(HOME, ".hermes", "profiles", "work", "state.db"), [(B, "Q3 report", 2, 6, 0, 1)])
 
-print("categories on canvas documents")
-soup = canvas.create(A, "Soup", "# Soup\n\nTomato **and** basil", category="  Recipes ")
-check("create stores a trimmed category", soup["category"] == "Recipes", soup.get("category"))
-page = canvas.create(B, "Chart", "<!doctype html><title>Chart</title><body><h1>Sales</h1><script>x=1</script></body>")
-check("no category = empty", page["category"] == "")
-out = json.loads(canvas.tool_handler({"action": "create", "title": "Stew", "content": "beef", "category": "Recipes"}, session_id=A))
-check("tool create keeps the category and lists the gallery's", out["category"] == "Recipes" and out["gallery_categories"] == ["Recipes"], str(out))
-r = json.loads(canvas.tool_handler({"action": "set_category", "id": "Stew", "category": "Cooking"}, session_id=A))
-check("tool set_category (by title)", r["ok"] and r["category"] == "Cooking", str(r))
-r = json.loads(canvas.tool_handler({"action": "save_to_library", "id": r["id"], "category": "Recipes"}, session_id=A))
-check("old save_to_library files it under a category instead of copying", r["ok"] and r["category"] == "Recipes" and not library.list_items(), str(r))
-rev = canvas.get(A, soup["id"])["rev"]
-canvas.set_category(A, soup["id"], "Food")
-check("set_category is not a new version", canvas.get(A, soup["id"])["rev"] == rev)
-canvas.set_category(A, soup["id"], "Recipes")
+soup = canvas.create(A, "Soup", "# Soup\n\nTomato **and** basil")
+page = canvas.create(B, "Chart", "<!doctype html><title>Chart</title><body><h1>Sales</h1><script>var basil=1</script></body>")
+canvas.create(A, "app.py", "print('hello')", type="code", lang="python")
 canvas.create(GONE, "Orphan", "left over")
+canvas.create(A, "Plan", "# The full plan for May\n\nStep one")
+canvas.create(A, "Long", "intro " * 30 + "the zebra crossing is here")
 
 print("gallery list")
 g = gallery.list_all()
 by = {i["title"]: i for i in g["items"]}
-check("every chat's documents, all profiles", {"Soup", "Stew", "Chart", "Orphan"} <= set(by), str(list(by)))
-check("categories with counts", g["categories"].get("Recipes") == 2 and g["categories"].get("Web pages") == 1, str(g["categories"]))
-check("no category = grouped by type", by["Chart"]["category"] == "Web pages" and by["Chart"]["auto"] and not by["Soup"]["auto"])
+check("every chat's documents, all profiles", {"Soup", "Chart", "app.py", "Orphan", "Plan", "Long"} <= set(by), str(list(by)))
+check("categories are the types, with counts", g["categories"] == {"HTML": 1, "Markdown": 4, "Code": 1}, str(g["categories"]))
+check("category of a document = its type", by["Chart"]["category"] == "HTML" and by["app.py"]["category"] == "Code")
 check("chat of a document (title, profile)", by["Soup"]["chat"]["title"] == "Dinner ideas" and by["Soup"]["chat"]["profile"] == "default")
 check("chat in another profile, archived flag", by["Chart"]["chat"]["profile"] == "work" and by["Chart"]["chat"]["archived"])
 check("a chat that no longer exists has no chat", by["Orphan"]["chat"] is None)
 check("key = chat/doc", by["Soup"]["key"] == f"{A}/{soup['id']}" and by["Soup"]["session"] == A)
-check("markdown snippet is plain text, without the title again", by["Soup"]["snippet"] == "Tomato and basil", by["Soup"]["snippet"])
+check("markdown snippet is plain text, without the title heading", by["Soup"]["snippet"] == "Tomato and basil", by["Soup"]["snippet"])
+check("a leading heading worded differently is skipped too", by["Plan"]["snippet"] == "Step one", by["Plan"]["snippet"])
 check("html snippet skips tags and scripts", by["Chart"]["snippet"] == "Sales", by["Chart"]["snippet"])
 check("no content in the list", all("content" not in i for i in g["items"]))
 check("newest first", [i["updated"] for i in g["items"]] == sorted((i["updated"] for i in g["items"]), reverse=True))
 
+print("search")
+titles = lambda q: sorted(i["title"] for i in gallery.list_all(q)["items"])
+check("by title, any case", titles("SOUP") == ["Soup"], str(titles("SOUP")))
+check("by content", titles("basil") == ["Soup"], str(titles("basil")))
+check("html is searched as text: not its script or tags", titles("sales") == ["Chart"] and titles("script") == [] and titles("var") == [], str(titles("var")))
+check("every word must match", titles("tomato basil") == ["Soup"] and titles("tomato zebra") == [])
+check("categories count the results only", gallery.list_all("hello")["categories"] == {"Code": 1})
+z = gallery.list_all("zebra")["items"][0]["snippet"]
+check("the snippet shows the match", "zebra" in z and z.startswith("…"), z)
+check("no match: empty", gallery.list_all("nothing-like-this") == {"items": [], "categories": {}})
+
 print("saved copies from the old Library")
-library.save({"id": soup["id"], "title": "Old soup", "type": "markdown", "content": "x"}, "Recipes", A)
+library.save({"id": soup["id"], "title": "Old soup", "type": "markdown", "content": "barley"}, "Recipes", A)
 old = next(i for i in gallery.list_all()["items"] if i["title"] == "Old soup")
-check("listed with its chat", old["saved"] and old["key"].startswith("lib:") and old["chat"]["title"] == "Dinner ideas", str(old))
+check("listed with its chat, under its type", old["saved"] and old["key"].startswith("lib:") and old["chat"]["title"] == "Dinner ideas" and old["category"] == "Markdown", str(old))
+check("found by its content", titles("barley") == ["Old soup"])
+
+print("canvas tool")
+r = json.loads(canvas.tool_handler({"action": "save_to_library", "id": soup["id"], "category": "x"}, session_id=A))
+check("old save_to_library: ok, says it's already in the gallery, copies nothing", r["ok"] and "gallery" in r["note"] and len(library.list_items()) == 1, str(r))
 
 print("REST routes (dashboard/plugin_api.py)")
 try:
@@ -101,13 +108,8 @@ if FastAPI:
     c = TestClient(app)
     P = "/api/plugins/hermes-mobile"
     lst = c.get(f"{P}/gallery").json()
-    check("GET /gallery lists items + categories", any(i["title"] == "Soup" for i in lst["items"]) and lst["categories"].get("Recipes") == 3, str(lst["categories"]))
-    r = c.post(f"{P}/canvas/category", json={"session": B, "id": page["id"], "title": "Work"})
-    check("POST /canvas/category files it", r.status_code == 200 and r.json()["category"] == "Work", r.text)
-    check("the gallery follows", c.get(f"{P}/gallery").json()["categories"].get("Work") == 1)
-    r = c.post(f"{P}/canvas/category", json={"session": B, "id": page["id"], "title": ""})
-    check("a blank category groups it by type again", r.json()["category"] == "" and "Work" not in c.get(f"{P}/gallery").json()["categories"])
-    check("missing document is a 400", c.post(f"{P}/canvas/category", json={"session": B, "id": "nope", "title": "x"}).status_code == 400)
+    check("GET /gallery lists items + categories", len(lst["items"]) == 7 and lst["categories"].get("HTML") == 1, str(lst["categories"]))
+    check("GET /gallery?q= searches", [i["title"] for i in c.get(f"{P}/gallery", params={"q": "basil"}).json()["items"]] == ["Soup"])
 
 print("FAILED" if fails else "all passed")
 sys.exit(1 if fails else 0)

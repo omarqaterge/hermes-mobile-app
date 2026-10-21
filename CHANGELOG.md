@@ -5,10 +5,9 @@ User-facing changes, newest first. Each release section collects what shipped si
 ## Unreleased
 
 - **Canvas gallery** (Hermes hub, replaces the Library): every canvas document from every chat and profile shows up on its
-  own, nothing to save. Hermes files each new document under a short topic (Recipes, Study…); documents without one are
-  grouped by type (Notes, Web pages, Code…). Tap one to preview it (web pages run, offline), then **Open canvas** to
-  continue it on its own chat's canvas, or **Go to chat**. Move, rename, copy, share or delete from its ⋮ menu; the
-  canvas's ⋮ menu has "Gallery category…". Items saved to the old Library are still listed.
+  own, nothing to save. Chips group them by type (HTML, Markdown, Code, …) and a search box finds one by its title or
+  text. Tap one to preview it (web pages run, offline), then **Open canvas** to continue it on its own chat's canvas, or
+  **Go to chat**. Rename, copy, share or delete from its ⋮ menu. Items saved to the old Library are still listed.
 - **Hermes can use an app in the background** (new `phone_app` tool): it opens the app on a hidden screen and reads,
   taps and types in it while you keep using your phone (Android 14+, needs Shizuku). It asks once per app per chat
   (`/yolo` skips that). The status chip says **Using <app>** with the current step; the chat shows a card above the

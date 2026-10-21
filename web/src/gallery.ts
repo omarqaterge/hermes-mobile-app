@@ -1,6 +1,6 @@
-// Canvas gallery: every canvas document of every chat (all profiles) in one place, grouped by category, each with the
-// chat it was made in. Nothing is saved or copied: the plugin's /gallery reads the canvas store. A document's
-// category is the one Hermes gave it when it made it (or the one you picked); without one it is grouped by type.
+// Canvas gallery: every canvas document of every chat (all profiles) in one place, grouped by type (HTML, Markdown,
+// Code…), searchable by title and text, each with the chat it was made in. Nothing is saved or copied: the plugin's
+// /gallery reads the canvas store and searches it.
 // Saved copies from the old Library (before the gallery) are listed too, with `saved: true`.
 // The screen is components/Gallery.tsx.
 import { useSyncExternalStore } from 'react'
@@ -24,9 +24,8 @@ export interface GalleryItem {
   title: string
   type: DocType
   lang: string
+  /** Its type, as the gallery shows it: HTML, Markdown, Code… */
   category: string
-  /** No category of its own: grouped by its type. */
-  auto: boolean
   created: number
   updated: number
   by: string
@@ -42,12 +41,15 @@ interface GalleryState {
   loading: boolean
   error: string
   filter: string // category shown, '' = all
+  /** The search box; the list shown is the answer for `shownQuery`. */
+  query: string
+  shownQuery: string
 }
 
 const G = '/api/plugins/hermes-mobile/gallery'
 const C = '/api/plugins/hermes-mobile/canvas'
 const L = '/api/plugins/hermes-mobile/library'
-let state: GalleryState = { items: [], categories: {}, loading: true, error: '', filter: '' }
+let state: GalleryState = { items: [], categories: {}, loading: true, error: '', filter: '', query: '', shownQuery: '' }
 const subs = new Set<() => void>()
 const set = (p: Partial<GalleryState>) => {
   state = { ...state, ...p }
@@ -61,10 +63,12 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const q = (o: Record<string, string>) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
 
 export async function loadGallery(): Promise<void> {
+  const query = state.query.trim()
   try {
-    const r = await call<{ items: GalleryItem[]; categories: Record<string, number> }>('GET', G)
-    // A filter on a category that no longer exists falls back to All.
-    set({ items: r.items, categories: r.categories, loading: false, error: '', filter: state.filter && r.categories[state.filter] ? state.filter : '' })
+    const r = await call<{ items: GalleryItem[]; categories: Record<string, number> }>('GET', query ? `${G}?${q({ q: query })}` : G)
+    if (query !== state.query.trim()) return // typed on meanwhile: the newer search answers
+    // A filter on a category with nothing (left) in it falls back to All.
+    set({ items: r.items, categories: r.categories, loading: false, error: '', shownQuery: query, filter: state.filter && r.categories[state.filter] ? state.filter : '' })
   } catch (e) {
     // Keep `loading` until a real answer: an unreachable Hermes is not an empty gallery.
     set({ error: errText(e) })
@@ -73,36 +77,21 @@ export async function loadGallery(): Promise<void> {
 
 export const setGalleryFilter = (filter: string): void => set({ filter })
 
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+/** Search titles and text (Hermes searches; asked 300 ms after the last keystroke). */
+export function setGalleryQuery(query: string): void {
+  set({ query })
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    searchTimer = null
+    void loadGallery()
+  }, 300)
+}
+
 /** The document's text (a canvas document, or an old saved copy). */
 export async function itemContent(item: GalleryItem): Promise<string> {
   if (item.lib) return (await call<{ content: string }>('GET', `${L}/item?${q({ id: item.lib })}`)).content
   return (await call<{ content: string }>('GET', `${C}/doc?${q({ session: item.session, id: item.doc })}`)).content
-}
-
-/** Put a canvas document under a category ('' = back to its type's group). Also used by the canvas's own menu. */
-export async function setDocCategory(session: string, doc: string, category: string): Promise<boolean> {
-  try {
-    await call('POST', `${C}/category`, { session, id: doc, title: category })
-  } catch (e) {
-    toast(errText(e), 'error')
-    return false
-  }
-  if (canvasState().session === session) void refreshDocs()
-  if (!state.loading) void loadGallery()
-  return true
-}
-
-export async function moveItem(item: GalleryItem, category: string): Promise<void> {
-  if (!item.lib) {
-    await setDocCategory(item.session, item.doc, category)
-    return
-  }
-  try {
-    await call('PUT', `${L}/item`, { id: item.lib, title: '', category })
-  } catch (e) {
-    toast(errText(e), 'error')
-  }
-  await loadGallery()
 }
 
 export async function renameItem(item: GalleryItem, title: string): Promise<void> {
@@ -143,7 +132,7 @@ export async function openItemChat(item: GalleryItem, withCanvas: boolean): Prom
   return true
 }
 
-/** Hermes filed a document under a category with its canvas tool: refresh a list that is already loaded. */
+/** Hermes made a canvas document: refresh a list that is already loaded. */
 export function galleryToolDone(): void {
   if (!state.loading) void loadGallery()
 }

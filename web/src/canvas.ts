@@ -19,8 +19,6 @@ export interface DocMeta {
   chars: number
   path: string
   created: number
-  /** Canvas gallery category ('' or missing = grouped by type). */
-  category?: string
 }
 export interface Version {
   rev: number
@@ -325,7 +323,7 @@ export function canvasToolDone(resultText: string | null | undefined, args: unkn
     /* not JSON: just refresh */
   }
   const action = (args as { action?: string } | null)?.action || ''
-  if (action === 'set_category' || action === 'save_to_library' || action === 'create') galleryToolDone()
+  if (action === 'create') galleryToolDone()
   void refreshDocs().then(() => {
     if (id && (shown || action === 'write' || action === 'patch')) {
       if (state.open || shown) {
