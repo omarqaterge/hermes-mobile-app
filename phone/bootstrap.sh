@@ -92,7 +92,10 @@ fi
 # the limit, like the computer route does over adb. Keep these three commands identical to tools/setup-phone.sh (and .ps1).
 step android "Android child-process limit"
 sdk=$(getprop ro.build.version.sdk 2>/dev/null || echo 0)
-if [ "${sdk:-0}" -ge 31 ]; then
+if [ -n "${HM_NO_APK:-}" ]; then
+  # HM_NO_APK=1 = run by a computer route (tools/setup-phone.sh / .ps1), which already did this over adb.
+  say "android: child-process limit already lifted by the computer"
+elif [ "${sdk:-0}" -ge 31 ]; then
   # (output into a variable: with pipefail, `... | grep -q` fails when grep exits first and rish dies of SIGPIPE)
   shizuku_id=""; [ -x "$HOME/bin/rish" ] && shizuku_id=$(timeout 20 "$HOME/bin/rish" -c id </dev/null 2>/dev/null || true)
   if [ "${shizuku_id#*uid=2000}" != "$shizuku_id" ]; then
@@ -127,7 +130,10 @@ nopath <<'PROFILE'
 PATH=$(printf %s "$PATH" | tr : "\n" | grep -v "^/data/data/com.termux" | paste -sd: -)
 export PATH
 PROFILE
-deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps libatomic1"
+# CHROMIUM_LIBS: the shared libraries Hermes's browser (Chromium, downloaded by its installer) needs to start; minimal Debian
+# has none of them and neither installer adds them (without them: "libglib-2.0.so.0: cannot open shared object file").
+CHROMIUM_LIBS="libglib2.0-0t64 libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 libcups2t64 libdbus-1-3 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64"
+deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps libatomic1 && apt-get install -y --no-install-recommends $CHROMIUM_LIBS"
 
 step hermes "Hermes Agent (10-30 minutes on a phone)"
 # libatomic1 (above): the glibc Node.js Hermes downloads links it, minimal Debian lacks it, and the pinned build's installer
@@ -151,6 +157,13 @@ else
   fi
 fi
 deb "hermes --version | grep Hermes"
+# The browser tools are an optional package for Hermes's installer: a failed Chromium download (a CDN outage did this)
+# still ends without an error and without a browser. Try once more here; never fail the setup over it.
+if ! deb "command -v agent-browser >/dev/null"; then
+  say "browser tools missing, installing them again"
+  deb "hermes pm install agent-browser" || true
+  deb "command -v agent-browser >/dev/null" || say "TODO browser: Hermes has no web browser yet. Run the installer again later (bash hm.sh)"
+fi
 
 step plugin "Hermes Mobile plugin, supervisor, and access to the phone (files, Termux:API, Shizuku; no root needed)"
 if [ -n "$src" ] && [ -f "$src/install.sh" ] && [ -d "$src/../hermes-plugin/hermes-mobile" ]; then

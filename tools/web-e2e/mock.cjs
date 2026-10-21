@@ -36,6 +36,9 @@ const goneDraft = id => draftGen > 0 && /^s-new/.test(id) && !id.endsWith(`-d${d
 let fastMode = 'normal'
 let pluginEnabled = false
 let providerConfigured = true // false = a fresh install (the welcome opens)
+// true = like the pinned Hermes on a fresh install: setup.status scoped to a profile says a provider is configured although
+// none is (its loose probe); setup.runtime_check still says ok: false.
+let looseStatus = false
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
 let codexPolls = 0
 
@@ -69,6 +72,7 @@ const server = http.createServer((req, res) => {
       if (b.unconfigured) providerConfigured = false
       if (b.configured) providerConfigured = true
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
+      if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
@@ -258,7 +262,9 @@ wss.on('connection', ws => {
         return reply({ session_id: rt, stored_session_id: `s-new${n}`, info: { model, provider: params.provider || 'mock' }, messages: [] })
       }
       case 'setup.status':
-        return reply({ provider_configured: providerConfigured, ready: true })
+        return reply({ provider_configured: providerConfigured || (looseStatus && !!params.profile), ready: true })
+      case 'setup.runtime_check':
+        return reply(providerConfigured ? { ok: true } : { ok: false, error: 'Hermes is not connected to any AI provider yet.' })
       case 'model.options':
         return reply({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
       case 'session.resume': {
