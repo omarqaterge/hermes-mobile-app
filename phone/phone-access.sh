@@ -6,7 +6,16 @@
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 ROOTFS="$PREFIX/var/lib/proot-distro/containers/debian/rootfs"
 SHIZUKU_APK="https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk"
-say() { echo "    $*"; /system/bin/log -t hmsetup "HMSETUP $*" 2>/dev/null || true; }
+# The "phone:" hints also go to the app's setup flow when the app's installer command set HM_APP_TOKEN (same as
+# bootstrap.sh's say(); 2 s timeout, never fails).
+say() {
+  echo "    $*"; /system/bin/log -t hmsetup "HMSETUP $*" 2>/dev/null || true
+  if [ -n "${HM_APP_TOKEN:-}" ]; then
+    local l="$*"; l=${l//\\/\\\\}; l=${l//\"/\\\"}
+    printf '{"token":"%s","line":"%s"}' "$HM_APP_TOKEN" "$l" | curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' \
+      --data-binary @- http://127.0.0.1:9121/setup 2>/dev/null || true
+  fi
+}
 mkdir -p "$HOME/.hermes-mobile" "$HOME/bin"
 TODO="$HOME/.hermes-mobile/todo"
 : > "$TODO"
