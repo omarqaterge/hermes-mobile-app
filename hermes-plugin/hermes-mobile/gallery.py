@@ -68,7 +68,8 @@ def _chats() -> Dict[str, Dict[str, Any]]:
     return out
 
 
-_MD = re.compile(r"[#>*_`~|\[\]()!-]+")
+# markup characters; "-" and "_" only when not inside a word (so "zebra-probe" and "snake_case" stay searchable)
+_MD = re.compile(r"[#>*`~|\[\]()!]+|(?<!\w)[-_]+|[-_]+(?!\w)")
 _TAG = re.compile(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", re.S | re.I)
 
 
@@ -135,16 +136,19 @@ def list_all(q: str = "") -> Dict[str, Any]:
         lib = _library()
         for m in lib.list_items():
             t = m.get("type") or "markdown"
+            body = ""
+            with contextlib.suppress(Exception):
+                body = lib.get(m["id"]).get("content", "") or ""
             if words:
-                with contextlib.suppress(Exception):
-                    hay = f"{m.get('title', '')} {plain_text(t, lib.get(m['id']).get('content', ''))}".lower()
-                    if not all(w in hay for w in words):
-                        continue
+                hay = f"{m.get('title', '')} {plain_text(t, body)}".lower()
+                if not all(w in hay for w in words):
+                    continue
             sid = (m.get("source") or {}).get("session") or ""
             items.append({
                 "key": f"lib:{m['id']}", "session": sid, "doc": "", "lib": m["id"], "saved": True, "title": m.get("title") or "Untitled",
                 "type": t, "lang": m.get("lang", ""), "category": KIND.get(t, "Text"), "created": m.get("saved", 0),
-                "updated": m.get("saved", 0), "by": "", "chars": m.get("chars", 0), "snippet": "",
+                "updated": m.get("saved", 0), "by": "", "chars": m.get("chars", 0),
+                "snippet": snippet(t, body, m.get("title") or "", words=words),
                 "chat": chats.get(sid) if sid else None,
             })
     items.sort(key=lambda i: i.get("updated") or 0, reverse=True)
