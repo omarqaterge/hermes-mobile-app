@@ -1561,7 +1561,8 @@ async function main() {
     await ff.locator('.conn-dot').click()
     await ff.getByRole('button', { name: 'Setup check' }).click()
     await ff.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: Setup check is All set with the new rows'), () => check(false, 'app-first: Setup check is All set with the new rows'))
-    check((await ff.locator('.setup-item', { hasText: /Start Shizuku|Run the installer/ }).count()) === 0, 'app-first: no Start Shizuku / installer rows on a set-up phone')
+    check((await ff.locator('.setup-item', { hasText: 'Start Shizuku' }).count()) === 0, 'app-first: no Start Shizuku row on a set-up phone')
+    check((await ff.locator('.setup-item.ok', { hasText: 'Hermes is installed' }).count()) === 1 && (await ff.locator('.setup-item.ok', { hasText: 'Shizuku are installed' }).count()) === 1, 'app-first: the apps and installer rows are ✓ on a set-up phone')
     check((await ff.evaluate(() => window.__probes || 0)) === 0, 'app-first: Termux is not probed while Hermes answers')
     await ff.close()
   }

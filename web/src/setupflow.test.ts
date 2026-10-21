@@ -162,9 +162,9 @@ describe('probeState', () => {
 })
 
 describe('progressView', () => {
-  test('steps get done / current marks, the latest phone hint and the TODO lines', () => {
+  test('every step is listed: done, the current one, those still to come; the latest phone hint and the TODO lines', () => {
     const v = progressView(['STEP packages Termux packages', 'STEP access Access', 'phone: tap Allow', 'STEP android limit', 'android: lifted', 'TODO files: allow', 'STEP debian Debian'])
-    expect(v.steps.map(s => [s.id, s.state])).toEqual([['packages', 'ok'], ['access', 'ok'], ['android', 'ok'], ['debian', 'run']])
+    expect(v.steps.map(s => [s.id, s.state])).toEqual([['packages', 'ok'], ['access', 'ok'], ['android', 'ok'], ['debian', 'run'], ['hermes', 'todo'], ['plugin', 'todo'], ['start', 'todo']])
     expect(v.hint).toBe('tap Allow')
     expect(v.todo).toEqual(['files: allow'])
     expect(v.fail).toBe('')
