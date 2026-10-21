@@ -55,13 +55,14 @@ page = canvas.create(B, "Chart", "<!doctype html><title>Chart</title><body><h1>S
 canvas.create(A, "app.py", "print('hello')", type="code", lang="python")
 canvas.create(GONE, "Orphan", "left over")
 canvas.create(A, "Plan", "# The full plan for May\n\nStep one")
+canvas.create(A, "Notes", "# Notes\n\n- first-item uses snake_case names\n- **bold** end-")
 canvas.create(A, "Long", "intro " * 30 + "the zebra crossing is here")
 
 print("gallery list")
 g = gallery.list_all()
 by = {i["title"]: i for i in g["items"]}
 check("every chat's documents, all profiles", {"Soup", "Chart", "app.py", "Orphan", "Plan", "Long"} <= set(by), str(list(by)))
-check("categories are the types, with counts", g["categories"] == {"HTML": 1, "Markdown": 4, "Code": 1}, str(g["categories"]))
+check("categories are the types, with counts", g["categories"] == {"HTML": 1, "Markdown": 5, "Code": 1}, str(g["categories"]))
 check("category of a document = its type", by["Chart"]["category"] == "HTML" and by["app.py"]["category"] == "Code")
 check("chat of a document (title, profile)", by["Soup"]["chat"]["title"] == "Dinner ideas" and by["Soup"]["chat"]["profile"] == "default")
 check("chat in another profile, archived flag", by["Chart"]["chat"]["profile"] == "work" and by["Chart"]["chat"]["archived"])
@@ -82,6 +83,7 @@ check("every word must match", titles("tomato basil") == ["Soup"] and titles("to
 check("categories count the results only", gallery.list_all("hello")["categories"] == {"Code": 1})
 z = gallery.list_all("zebra")["items"][0]["snippet"]
 check("the snippet shows the match", "zebra" in z and z.startswith("…"), z)
+check("hyphenated and snake_case words are searchable", titles("first-item") == ["Notes"] and titles("snake_case") == ["Notes"] and titles("bold end") == ["Notes"], str(titles("first-item")))
 check("no match: empty", gallery.list_all("nothing-like-this") == {"items": [], "categories": {}})
 
 print("saved copies from the old Library")
@@ -89,6 +91,7 @@ library.save({"id": soup["id"], "title": "Old soup", "type": "markdown", "conten
 old = next(i for i in gallery.list_all()["items"] if i["title"] == "Old soup")
 check("listed with its chat, under its type", old["saved"] and old["key"].startswith("lib:") and old["chat"]["title"] == "Dinner ideas" and old["category"] == "Markdown", str(old))
 check("found by its content", titles("barley") == ["Old soup"])
+check("a saved copy shows a text snippet", old["snippet"] == "barley", old["snippet"])
 
 print("canvas tool")
 r = json.loads(canvas.tool_handler({"action": "save_to_library", "id": soup["id"], "category": "x"}, session_id=A))
@@ -108,7 +111,7 @@ if FastAPI:
     c = TestClient(app)
     P = "/api/plugins/hermes-mobile"
     lst = c.get(f"{P}/gallery").json()
-    check("GET /gallery lists items + categories", len(lst["items"]) == 7 and lst["categories"].get("HTML") == 1, str(lst["categories"]))
+    check("GET /gallery lists items + categories", len(lst["items"]) == 8 and lst["categories"].get("HTML") == 1, str(lst["categories"]))
     check("GET /gallery?q= searches", [i["title"] for i in c.get(f"{P}/gallery", params={"q": "basil"}).json()["items"]] == ["Soup"])
 
 print("FAILED" if fails else "all passed")
