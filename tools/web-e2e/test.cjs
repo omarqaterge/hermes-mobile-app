@@ -1407,8 +1407,9 @@ async function main() {
     check(await fa.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1' && localStorage.getItem('hm.welcomeDone') === '1'), 'flow: nothing missing is remembered (not checked again)')
     await fa.close()
   }
-  // b. everything fine but no model: the model step, then the recommended items once ("Almost done")
-  await mock({ unconfigured: true, pluginEnabled: true })
+  // b. everything fine but no model: the model step, then the recommended items once ("Almost done").
+  // looseStatus: like the pinned Hermes on a fresh install, setup.status for a profile wrongly says a provider is there.
+  await mock({ unconfigured: true, pluginEnabled: true, looseStatus: true })
   {
     const fb = await flowPage({ ...OK, batteryApp: false })
     await fb.goto('http://127.0.0.1:5180/')
@@ -1436,6 +1437,7 @@ async function main() {
     check(!(await flowShown(fb)), 'flow: not shown again after Done')
     check(await fb.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1'), 'flow: hm.setupFlowDone is set')
     await fb.close()
+    await mock({ looseStatus: false })
   }
   // c. Hermes not running on a first run: opens at "Start Hermes" and moves on by itself once Hermes answers
   await mock({ configured: true, pluginEnabled: true, drop: 19000 })
