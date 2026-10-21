@@ -51,6 +51,9 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
       (e.g. add a Keep note). Expected: the video keeps playing, no keyboard pops up, the chip says "Using <app>",
       the task gets done.
 - [ ] **Locked phone.** Same with the screen locked (it worked in a test with the screen off; a real task not yet).
-- [ ] **App lock.** An app behind HyperOS's app lock is refused with "protected by an app lock": decide whether to
-      take it out of the lock for Hermes.
+- [ ] **App lock.** An app behind the phone's app lock (HyperOS, Samsung, OnePlus/ColorOS… each has one) is refused
+      with "another app opened instead … app lock": decide whether to take it out of the lock for Hermes.
+- [ ] **Other phone makers.** Tested on a Xiaomi (Android 16) and an AOSP emulator (Android 15) only. On a Samsung,
+      Pixel, OnePlus or Motorola with Android 14+: open an app, tap, type, Take over. Android 11-13: Settings →
+      Background apps should say "Needs Android 14 or newer".
 - [ ] **A banking app with the Settings toggle on** (opens; FLAG_SECURE screens may show black in the live view).

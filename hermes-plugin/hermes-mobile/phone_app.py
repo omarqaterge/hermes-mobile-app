@@ -29,11 +29,16 @@ RISH_BIN = Path("/data/data/com.termux/files/home/bin/rish")
 PREFS = Path.home() / ".hermes" / "mobile" / "bgapps.json"
 SHOT_DIR = Path.home() / ".hermes" / "cache" / "phone_app"
 
-# Apps refused unless the user allowed them (Settings → Background apps). Matched on package name and label.
+# Apps refused unless the user allowed them (Settings → Background apps). Matched on package name and label, so it is
+# best effort: generic words (bank, pay, wallet, authenticator, password…) plus well-known apps from many countries
+# whose names don't say what they are.
 SENSITIVE = re.compile(
-    r"bank|banking|\bpay\b|payment|paypal|wallet|walletnfc|venmo|cash ?app|revolut|bunq|monzo|\bn26\b|\bwise\b|tikkie"
-    r"|\bing\b|\.ing\.|trading|trade|invest|broker|stock|crypto|coin|binance|kraken|authenticator|\bauthy\b|\b2fa\b"
-    r"|\botp\b|password|passkey|keepass|bitwarden|1password|lastpass|dashlane|\bkeeper\b|vault|credential|digid",
+    r"bank|banco|banque|\bpay\b|payment|pay\b|paypal|wallet|money|finance|venmo|zelle|cash ?app|squareup\.cash|klarna"
+    r"|affirm|afterpay|chime|sofi|revolut|bunq|monzo|starling|\bn26\b|\bwise\b|transferwise|tikkie|chase|wellsfargo"
+    r"|bofa|citibank|citimobile|hsbc|barclays|santander|lloyds|natwest|nubank|mercadopago|paytm|phonepe|paisa|\bupi\b|bhim|alipay|kakaopay"
+    r"|\bing\b|\.ing\.|trading|trade|invest|broker|stock|robinhood|etoro|crypto|coin|binance|kraken|metamask|trustwallet"
+    r"|ledger|authenticator|\bauthy\b|\b2fa\b|\botp\b|totp|password|passkey|keepass|bitwarden|1password|lastpass"
+    r"|dashlane|\bkeeper\b|proton ?pass|enpass|vault|credential|digid|\beid\b|bankid|itsme",
     re.I)
 
 # Set by the plugin's register(): notify(kind, title, body, session, **extra) and log(msg).
@@ -76,9 +81,27 @@ def is_sensitive(pkg: str, label: str = "") -> bool:
     return bool(SENSITIVE.search(pkg.replace("_", " ")) or SENSITIVE.search(label or ""))
 
 
+MIN_SDK = 34  # VIRTUAL_DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED: without it every tap would pull focus off the user's screen
+
+
+def android_sdk() -> int:
+    """The phone's API level (0 = unknown). getprop works from Termux and from the Debian container."""
+    for exe in ("/system/bin/getprop", "getprop"):
+        try:
+            out = subprocess.run([exe, "ro.build.version.sdk"], capture_output=True, text=True, timeout=3).stdout.strip()
+            if out.isdigit():
+                return int(out)
+        except Exception:
+            continue
+    return 0
+
+
 def availability() -> Tuple[bool, str]:
     if not RISH_BIN.exists():
         return False, "Needs Shizuku (rish isn't set up)"
+    sdk = android_sdk()
+    if 0 < sdk < MIN_SDK:
+        return False, "Needs Android 14 or newer"
     return True, ""
 
 

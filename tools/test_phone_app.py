@@ -127,7 +127,23 @@ check("banking/2FA/password apps count as sensitive",
                                             ("com.x8bit.bitwarden", "Bitwarden"), ("com.google.android.apps.walletnfcrel", "Wallet")]))
 check("ordinary apps are not sensitive",
       not any(pa.is_sensitive(p, l) for p, l in [("com.google.android.keep", "Keep notes"), ("com.miui.calculator", "Calculator"),
-                                                  ("com.spotify.music", "Spotify"), ("com.whatsapp", "WhatsApp")]))
+                                                  ("com.spotify.music", "Spotify"), ("com.whatsapp", "WhatsApp"),
+                                                  ("com.citymapper.app.release", "Citymapper"), ("com.android.chrome", "Chrome"),
+                                                  ("com.google.android.apps.maps", "Maps"), ("com.netflix.mediaclient", "Netflix"),
+                                                  ("com.android.vending", "Play Store"), ("com.ubercab.eats", "Uber Eats")]))
+check("well-known finance/2FA apps from many countries are sensitive",
+      all(pa.is_sensitive(p, l) for p, l in [("com.chase.sig.android", "Chase"), ("com.wf.wellsfargomobile", "Wells Fargo"),
+                                            ("net.one97.paytm", "Paytm"), ("com.phonepe.app", "PhonePe"),
+                                            ("com.google.android.apps.nbu.paisa.user", "Google Pay"), ("com.coinbase.android", "Coinbase"),
+                                            ("com.nu.production", "Nubank"), ("com.eg.android.AlipayGphone", "Alipay"),
+                                            ("com.squareup.cash", "Cash App"), ("com.klarna.android", "Klarna"),
+                                            ("com.authy.authy", "Authy"), ("com.robinhood.android", "Robinhood")]))
+real_sdk = pa.android_sdk
+pa.android_sdk = lambda: 33
+check("Android 13 is reported as unsupported", pa.availability() == (False, "Needs Android 14 or newer"))
+pa.android_sdk = lambda: 0
+check("unknown Android version still allowed (the host checks too)", pa.availability()[0])
+pa.android_sdk = real_sdk
 
 r = run({"action": "capture"})
 check("capture before open says to open first", not r["ok"] and "open" in r["error"])

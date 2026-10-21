@@ -305,9 +305,18 @@ public final class BgHost {
         return ok().put("apps", out);
     }
 
-    /** The package of the window the owner is looking at (display 0), or "" if unknown. */
+    /** The package of the app the user is looking at (top task of display 0), or "" if unknown. */
     static String ownerForeground() {
-        try {
+        try { // public-ish API first: works the same on every vendor build
+            Object atm = atm();
+            List<?> infos = (List<?>) atm.getClass().getMethod("getAllRootTaskInfosOnDisplay", int.class).invoke(atm, 0);
+            for (Object info : infos) {
+                if (!info.getClass().getField("visible").getBoolean(info)) continue;
+                Object cn = info.getClass().getField("topActivity").get(info);
+                if (cn instanceof android.content.ComponentName) return ((android.content.ComponentName) cn).getPackageName();
+            }
+        } catch (Throwable t) { System.out.println("ownerForeground: " + t); }
+        try { // fallback: dumpsys text (format differs between versions/vendors, so only a fallback)
             String d = exec("dumpsys", "window", "displays");
             int i = d.indexOf("Display: mDisplayId=0");
             if (i < 0) return "";
@@ -321,6 +330,28 @@ public final class BgHost {
         return "";
     }
 
+    /**
+     * Start the app on the hidden display. IActivityTaskManager.startActivity's parameter list changes between Android
+     * versions and some vendors add overloads, so fall back to `am start --display` (also shell) when it isn't the
+     * 11-argument form we know.
+     */
+    static String launch(Intent it) throws Exception {
+        android.app.ActivityOptions o = android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId);
+        try {
+            Object atm = atm();
+            for (Method m : atm.getClass().getMethods()) {
+                Class<?>[] t = m.getParameterTypes();
+                if (!m.getName().equals("startActivity") || t.length != 11 || t[3] != Intent.class || t[10] != Bundle.class) continue;
+                int res = (Integer) m.invoke(atm, null, "com.android.shell", null, it, null, null, null, 0, 0, null, o.toBundle());
+                return res >= 0 ? "" : "launch failed (" + res + ")";
+            }
+        } catch (Throwable t) { System.out.println("startActivity: " + t + " -> am start"); }
+        android.content.ComponentName cn = it.getComponent();
+        if (cn == null) return "no launch activity";
+        String out = exec("am", "start", "--display", String.valueOf(displayId), "-f", String.valueOf(it.getFlags()), "-n", cn.flattenToShortString());
+        return out.contains("Error") ? out.trim() : "";
+    }
+
     static JSONObject open(String p) throws Exception {
         if (p == null || !p.matches("[A-Za-z0-9_.]+")) return err("bad package name");
         PackageManager pm = ctx.getPackageManager();
@@ -331,31 +362,44 @@ public final class BgHost {
         try { label = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(p, 0))); } catch (Throwable t) { label = p; }
         ensureDisplay();
         it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-        android.app.ActivityOptions o = android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId);
-        Object atm = atm();
-        Method sm = null;
-        for (Method m : atm.getClass().getMethods()) if (m.getName().equals("startActivity") && m.getParameterTypes().length == 11) sm = m;
-        if (sm == null) return err("startActivity not found");
-        int res = (Integer) sm.invoke(atm, null, "com.android.shell", null, it, null, null, null, 0, 0, null, o.toBundle());
-        if (res < 0) return err("launch failed (" + res + ")");
+        String failed = launch(it);
+        if (!failed.isEmpty()) return err(failed);
         pkg = p;
-        // Wait (bounded) until the app has a window on our display.
-        long end = SystemClock.elapsedRealtime() + 8000;
+        // Wait (bounded) until the app shows something readable: slow starters (browsers, first-run screens) have a
+        // window long before they have content.
+        long end = SystemClock.elapsedRealtime() + 10000;
         while (SystemClock.elapsedRealtime() < end) {
-            if (!windows().isEmpty()) break;
-            SystemClock.sleep(200);
+            if (hasContent()) break;
+            SystemClock.sleep(250);
         }
         SystemClock.sleep(400);
         String top = topPackage();
         if (!top.isEmpty() && !top.equals(p)) {
-            String why = top.contains("securitycenter") || top.contains("applock") || top.contains("lock")
-                    ? label + " is protected by an app lock (" + top + "); the user has to unlock it on the real screen or remove it from the app lock"
-                    : "another app (" + top + ") opened instead of " + label;
+            // Usually the phone's own app lock (each vendor has one) or a sign-in/permission screen of another package.
+            String why = "another app (" + top + ") opened instead of " + label + ": most likely the phone's app lock or a "
+                    + "sign-in screen. The user has to open " + label + " once themselves, or take it out of the app lock.";
             release();
             pkg = "";
             return err(why);
         }
         return ok().put("display", displayId).put("label", label).put("pkg", p);
+    }
+
+    /** True once a window on the hidden display has at least one node with text, a description or an action. */
+    static boolean hasContent() {
+        try {
+            for (AccessibilityWindowInfo wi : windows()) {
+                JSONArray probe = new JSONArray();
+                int before = nodes.size();
+                walk(wi.getRoot(), 0, probe);
+                while (nodes.size() > before) nodes.remove(nodes.size() - 1);
+                for (int i = 0; i < probe.length(); i++) { // a bare scroll container isn't content yet
+                    JSONObject e = probe.getJSONObject(i);
+                    if (e.has("text") || e.has("desc") || e.has("click") || e.has("edit")) return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     /** Package of the top activity on the hidden display, or "" if none/unknown. */
@@ -375,6 +419,7 @@ public final class BgHost {
         if (vd == null) return err("no app open");
         Object atm = atm();
         List<?> infos = (List<?>) atm.getClass().getMethod("getAllRootTaskInfosOnDisplay", int.class).invoke(atm, displayId);
+        if (infos.isEmpty()) return gone();
         int moved = 0;
         for (Object info : infos) {
             int taskId = info.getClass().getField("taskId").getInt(info);
@@ -437,6 +482,7 @@ public final class BgHost {
 
     static JSONObject capture(boolean tree, boolean image, int maxW) throws Exception {
         if (vd == null) return err("no app open: use open first");
+        if (appGone()) return gone();
         JSONObject r = ok().put("w", W).put("h", H).put("pkg", pkg);
         if (tree) {
             nodes.clear();
@@ -488,6 +534,17 @@ public final class BgHost {
 
     // ── input ────────────────────────────────────────────────────────────────────────────────────────────
 
+    /** The app on the hidden display closed itself (back on its first screen, a crash, a finished flow). */
+    static boolean appGone() {
+        try {
+            Object atm = atm();
+            List<?> infos = (List<?>) atm.getClass().getMethod("getAllRootTaskInfosOnDisplay", int.class).invoke(atm, displayId);
+            return infos.isEmpty();
+        } catch (Throwable t) { return false; }
+    }
+
+    static JSONObject gone() { return err("the app closed itself (or left the hidden screen); open it again"); }
+
     static void inject(InputEvent ev) throws Exception {
         Method sd = ev.getClass().getMethod("setDisplayId", int.class);
         sd.invoke(ev, displayId);
@@ -521,6 +578,7 @@ public final class BgHost {
 
     static JSONObject tap(JSONObject a) throws Exception {
         if (vd == null) return err("no app open: use open first");
+        if (appGone()) return gone();
         if (a.has("n")) {
             AccessibilityNodeInfo n = node(a.getInt("n"));
             for (AccessibilityNodeInfo c = n; c != null; c = c.getParent()) {
@@ -553,6 +611,7 @@ public final class BgHost {
 
     static JSONObject setText(int idx, String text) throws Exception {
         if (vd == null) return err("no app open: use open first");
+        if (appGone()) return gone();
         AccessibilityNodeInfo n = node(idx);
         if (!n.isEditable()) {
             n.performAction(AccessibilityNodeInfo.ACTION_CLICK);
@@ -570,6 +629,7 @@ public final class BgHost {
 
     static JSONObject type(String text) throws Exception {
         if (vd == null) return err("no app open: use open first");
+        if (appGone()) return gone();
         AccessibilityNodeInfo f = focusedInput();
         if (f != null) {
             CharSequence cur = f.getText();
@@ -586,6 +646,7 @@ public final class BgHost {
 
     static JSONObject key(String name) throws Exception {
         if (vd == null) return err("no app open: use open first");
+        if (appGone()) return gone();
         int code;
         switch (name.toLowerCase(Locale.ROOT)) {
             case "back": code = KeyEvent.KEYCODE_BACK; break;
@@ -610,6 +671,7 @@ public final class BgHost {
 
     static JSONObject scroll(String dir, int idx) throws Exception {
         if (vd == null) return err("no app open: use open first");
+        if (appGone()) return gone();
         boolean fwd = dir.equals("down") || dir.equals("right");
         AccessibilityNodeInfo target = null;
         if (idx > 0) target = node(idx);
