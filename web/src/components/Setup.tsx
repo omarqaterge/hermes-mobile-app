@@ -39,8 +39,12 @@ async function remote(): Promise<Remote> {
   }
 }
 
-/** Is a model provider connected? null provider_configured (an older Hermes) counts as yes: never block on it. */
+/** Can Hermes serve a model? setup.runtime_check runs the same resolver as a new chat. setup.status is not enough: scoped
+ *  to a profile it answers with a loose probe that says yes on a fresh install with no provider (seen on the pinned
+ *  Hermes). An older Hermes without runtime_check falls back to setup.status, where null counts as yes: never block. */
 async function modelConnected(): Promise<boolean | null> {
+  const c = await rpc<{ ok?: boolean }>('setup.runtime_check').catch(() => null)
+  if (typeof c?.ok === 'boolean') return c.ok
   const r = await rpc<{ provider_configured?: boolean | null }>('setup.status').catch(() => null)
   return r ? r.provider_configured !== false : null
 }

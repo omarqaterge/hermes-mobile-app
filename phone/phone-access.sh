@@ -65,7 +65,7 @@ if [ -n "$ok" ]; then
   # Lets Shizuku start itself after a reboot (Android 13+, without root, once it was started via Wireless debugging).
   "$HOME/bin/rish" -c 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' </dev/null >/dev/null 2>&1
 else
-  todo "Shizuku: install it (https://shizuku.rikka.app/download/) and start it (no root: Start via Wireless debugging, pair once; rooted: Start), allow Termux when it asks, then run the installer again"
+  todo "Shizuku: start it and tap Allow when it asks whether Termux may use it (no root: Start via Wireless debugging, pair once; rooted: Start; not installed: https://shizuku.rikka.app/download/), then run the installer again"
 fi
 
 if [ -s "$TODO" ]; then say "phone: $(wc -l < "$TODO") thing(s) still to do (listed at the end)"; else say "phone: files, Termux:API and Shizuku ok"; fi
