@@ -247,7 +247,7 @@ def _capture(mode: str) -> dict:
     if want_tree:
         els = r.get("elements", [])
         _names.clear()
-        _names.update({e["n"]: str(e.get("text") or e.get("desc") or e.get("id") or "") for e in els})
+        _names.update({e["n"]: str(e.get("text") or e.get("desc") or "") for e in els})
         out["elements"] = format_elements(els)
     if want_img and r.get("image_b64"):
         out["screenshot_path"] = _save_image(r["image_b64"])
