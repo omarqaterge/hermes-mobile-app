@@ -138,7 +138,7 @@ restore() { adb shell svc power stayon false >/dev/null 2>&1 || true; [ -n "${LO
 trap restore EXIT
 
 # ---------------------------------------------------------------- 5. Termux ready
-b "5/9 Opening Termux (keep the phone unlocked; don't touch it while this runs)"
+b "5/9 Opening Termux (keep the phone unlocked; don't touch it while this runs, except Allow when Shizuku asks)"
 type_line() {  # text without ' or %; typed into the app in front, then Enter
   adb shell "input text '${1// /%s}'"
   adb shell input keyevent 66

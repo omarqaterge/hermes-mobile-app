@@ -12,6 +12,10 @@ User-facing changes, newest first. Each release section collects what shipped si
   "off" whenever the installer ran from Termux's own terminal (a hang that only happened with a terminal attached).
 - The phone-only install now opens Android's installer for the app by itself at the end (download kept as the fallback). Opening it and
   installing the app were checked on the emulator.
+- New installs get a working web browser for Hermes: the installer adds the system libraries Chromium needs (it couldn't start
+  without them) and tries the browser download once more when Hermes's own installer couldn't fetch it. NOT YET TESTED.
+- Installing from a computer no longer tells you to change a developer option the computer already set, and the Shizuku
+  to-do says to tap Allow (Shizuku was running, Termux just wasn't allowed yet) instead of "install it".
 
 ## v0.8.41 (2026-10-20)
 

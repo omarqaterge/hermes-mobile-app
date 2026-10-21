@@ -191,7 +191,8 @@ adb shell input keyevent 66
 ```
 
 `HM_NO_APK=1` keeps `hm.sh` from opening Android's installer on the phone at the end (that is the phone-only route's last step):
-you install the app yourself over adb in step 8.
+you install the app yourself over adb in step 8. It also skips the installer's own child-process step, which you already did
+over adb above.
 
 ## 6. Follow the installer
 

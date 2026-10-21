@@ -130,7 +130,7 @@ if ($sdk -ge 31) {   # Android 12+ kills apps with many child processes ("signal
 }
 
 # ---------------------------------------------------------------- 5. Termux ready
-B "5/9 Opening Termux (keep the phone unlocked; don't touch it while this runs)"
+B "5/9 Opening Termux (keep the phone unlocked; don't touch it while this runs, except Allow when Shizuku asks)"
 function TypeLine([string]$t) {   # text without ' or %; typed into the app in front, then Enter
   Sh ("input text '" + ($t -replace ' ', '%s') + "'") | Out-Null
   Sh 'input keyevent 66' | Out-Null
