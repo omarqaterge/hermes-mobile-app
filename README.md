@@ -142,31 +142,45 @@ The install takes 15-40 minutes, mostly waiting.
 
 ### On the phone, no computer (Android 11+)
 
-1. Install **Termux**, **Termux:API** and **Termux:Boot** from F-Droid, and open Termux:Boot once. Install **Shizuku** (Play Store
-   or [GitHub](https://github.com/RikkaApps/Shizuku/releases)).
-2. Start Shizuku. Not rooted: first turn on Developer options (Settings → About phone → tap *Build number* 7 times; on Xiaomi
-   it is *OS version*) and connect to Wi-Fi, which Wireless debugging needs. Then open Shizuku, tap *Start via Wireless debugging*
-   and follow its steps (you pair it once: Developer options → Wireless debugging → *Pair device with pairing code*, then type the
-   code into Shizuku's notification). Rooted: tap *Start*.
-3. Open Termux and paste:
+Install only Hermes Mobile; the app walks you through the rest and picks up wherever you stopped.
 
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh -o hm.sh && bash hm.sh
-   ```
-
-   Tap **Allow** when Android asks about files, and **Allow all the time** when Shizuku asks about Termux. Keep Termux open and the
-   screen on until it prints `HMSETUP DONE`. `HMSETUP TODO` lines just above it say what is still missing: fix it and run
-   `bash hm.sh` again (finished parts are skipped).
-4. Android's installer opens by itself at the end of the setup: tap **Install** (if Android asks which app to open it with, pick
-   *Package installer*; if it blocks it, tap *Settings* in that message
-   and allow Termux to *install unknown apps*, then tap Install again) and open the app. If it doesn't open, download
-   **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest), install it and
-   open it (allow your browser to *install unknown apps* if Android asks; the same applies to F-Droid in step 1).
-5. The app opens on **Connect Hermes to a model**: sign in with your subscription or paste an API key, then pick the model new
+1. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest) on
+   the phone, install it and open it (allow your browser to *install unknown apps* if Android asks).
+2. **Get the helper apps:** tap **Install all**. Android first asks you to allow Hermes Mobile to *install unknown apps*: turn
+   the switch on and go back. Then tap **Install** on Android's prompt for each app: Termux, Termux:API and Termux:Boot (from
+   F-Droid) and Shizuku (from GitHub). The app checks that each one comes from its maker before installing it.
+3. **Start Shizuku** (recommended, you can skip it and do it later): it keeps Android from stopping the long install ("signal 9")
+   and lets Hermes use the screen. Turn on Developer options (Settings → About phone → tap *Build number* 7 times; on some phones
+   it is under *Software information* or called *OS version*), connect to Wi-Fi, which Wireless debugging needs, then open Shizuku,
+   tap *Pairing* and follow its steps (Developer options → Wireless debugging → *Pair device with pairing code*, then type the code
+   into Shizuku's notification), and tap *Start*. Rooted: just tap *Start* in Shizuku.
+4. Allow Hermes Mobile to *run commands in Termux* when Android asks.
+5. **Run the installer:** tap **Copy the command**, then **Open Termux**. In Termux, long-press, tap **Paste**, then press Enter.
+   Stay in Termux and tap **Allow** on what it asks (notifications, running in the background, files; Shizuku: **Allow all the
+   time**). The app follows the install step by step; it takes 15-40 minutes, mostly waiting. Keep the screen on. If it stops, the
+   app says where: paste the same command again (finished parts are skipped). Android may offer to install Hermes Mobile again at
+   the end: you already have it, so you can cancel that.
+6. Back in the app: **Connect Hermes to a model**. Sign in with your subscription or paste an API key, then pick the model new
    chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
 
    ChatGPT, Grok and Nous Portal sign in inside the app. Claude opens Termux for its sign-in, because Hermes only allows that one
    from a terminal: open the link it shows, approve, and paste the code back into Termux.
+
+<details>
+<summary>Without the app's help (by hand in Termux)</summary>
+
+Install Termux, Termux:API and Termux:Boot from F-Droid (open Termux:Boot once) and Shizuku, start Shizuku as in step 3, then
+paste this in Termux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh -o hm.sh && bash hm.sh
+```
+
+Keep Termux open until it prints `HMSETUP DONE`; `HMSETUP TODO` lines just above it say what is still missing. At the end
+Android's installer opens for Hermes Mobile: tap **Install** (pick *Package installer* if asked; allow Termux to *install unknown
+apps* if it blocks it).
+
+</details>
 
 ### From a computer (Mac, Windows, Linux)
 

@@ -80,6 +80,7 @@ const server = http.createServer((req, res) => {
       if (b.gen !== undefined) runtimeGen = b.gen
       if (b.forgetDrafts) draftGen++
       if (b.draftGen !== undefined) draftGen = b.draftGen
+      if (b.up) refuseUntil = 0 // Hermes is back now (ends a drop early)
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
         refuseUntil = Date.now() + (b.drop || 3000)

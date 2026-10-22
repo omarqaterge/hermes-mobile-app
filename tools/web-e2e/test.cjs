@@ -59,6 +59,31 @@ const nativeShell = () => {
       // Setup check: the test sets window.__setup; fixes are recorded in window.__fixes.
       setupState: key => (k(key, 'setupState'), JSON.stringify(window.__setup || { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })),
       setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what)),
+      // App-first setup: installs "succeed" after a moment and flip the app to installed in window.__setup; the probe
+      // answers window.__probe; window.__progress is the installer's progress (the test pushes lines itself).
+      installHelperApp: (key, which) => {
+        k(key, 'installHelperApp')
+        ;(window.__installs ||= []).push(which)
+        const field = { termux: 'termux', 'termux-api': 'termuxApi', 'termux-boot': 'termuxBoot', shizuku: 'shizuku' }[which]
+        setTimeout(() => window.hermesSetupInstall(which, 'downloading', 40, ''), 30)
+        setTimeout(() => window.hermesSetupInstall(which, 'installing', 100, ''), 80)
+        setTimeout(() => {
+          window.__setup = { ...window.__setup, [field]: true }
+          window.hermesSetupInstall(which, 'done', 100, '')
+        }, 150)
+      },
+      probeTermux: key => {
+        k(key, 'probeTermux')
+        window.__probes = (window.__probes || 0) + 1
+        if (window.__probe) setTimeout(() => window.hermesTermuxProbe(JSON.stringify(window.__probe)), 20)
+      },
+      setupCommand: key => {
+        k(key, 'setupCommand')
+        window.__copied = (window.__copied || 0) + 1
+        window.__progress = { active: true, lines: [], done: false, fail: '' }
+        return true
+      },
+      setupProgress: key => (k(key, 'setupProgress'), window.__progress ? JSON.stringify(window.__progress) : ''),
       listVoices: key => k(key, 'listVoices'),
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
@@ -1475,6 +1500,71 @@ async function main() {
     await fg.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 })
     check((await fg.locator('.setup-item', { hasText: 'Autostart' }).count()) === 0, 'setup: other makers have no Autostart row')
     await fg.close()
+  }
+  // e. app-first: only Hermes Mobile is installed. The flow opens at once at the helper apps, installs all four in order,
+  // offers Start Shizuku (skippable), asks for the Termux permission, copies the installer command, shows its progress
+  // lines, and after DONE connects and lands on the model step.
+  await mock({ unconfigured: true, pluginEnabled: true, drop: 600000 })
+  {
+    const FRESH = { ...OK, termux: false, runCommand: false, termuxApi: false, termuxBoot: false, termuxBootStopped: false, shizuku: false, canInstall: true, devOptions: false, wirelessDebugging: false, termuxSigner: '', probe: true, maker: 'google' }
+    const fe = await flowPage(FRESH)
+    await fe.goto('http://127.0.0.1:5180/')
+    await fe.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: no Termux → the flow opens at once at the helper apps'), () => check(false, 'app-first: no Termux → the flow opens at once at the helper apps'))
+    check((await fe.locator('.app-list .setup-item.bad').count()) === 4, 'app-first: four install rows (Termux, Termux:API, Termux:Boot, Shizuku)')
+    check((await fe.evaluate(() => window.__probes || 0)) === 0, 'app-first: no Termux command is sent while Termux is missing')
+    await fe.getByRole('button', { name: 'Install all' }).click()
+    await fe.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).then(() => check(true, 'app-first: once all four are installed the flow moves on to Start Shizuku'), () => check(false, 'app-first: once all four are installed the flow moves on to Start Shizuku'))
+    check(JSON.stringify(await fe.evaluate(() => window.__installs)) === JSON.stringify(['termux', 'termux-api', 'termux-boot', 'shizuku']), `app-first: Install all installs them one after another, Termux first (${JSON.stringify(await fe.evaluate(() => window.__installs))})`)
+    await fe.getByRole('button', { name: 'Open Shizuku' }).click()
+    check((await fe.evaluate(() => window.__fixes || [])).includes('open-shizuku'), 'app-first: Open Shizuku opens it')
+    await fe.getByRole('button', { name: 'Skip for now' }).click()
+    await fe.getByRole('button', { name: 'Allow' }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: after Shizuku, the Termux permission comes before the installer'), () => check(false, 'app-first: after Shizuku, the Termux permission comes before the installer'))
+    await fe.getByRole('button', { name: 'Allow' }).click()
+    await fe.evaluate(() => {
+      window.__setup = { ...window.__setup, runCommand: true }
+      window.__probe = { result: 'not-allowed' }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await fe.getByText('Run the installer', { exact: true }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: Termux refuses commands → Run the installer'), () => check(false, 'app-first: Termux refuses commands → Run the installer'))
+    check((await fe.evaluate(() => window.__probes || 0)) >= 1, 'app-first: the flow probed Termux once it was allowed to')
+    await fe.getByRole('button', { name: 'Copy the command' }).click()
+    check((await fe.evaluate(() => window.__copied)) === 1, 'app-first: Copy the command asks the shell for the command (the page never builds it)')
+    await fe.getByText('Waiting for the installer to start', { exact: false }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: after copying it waits for the installer'), () => check(false, 'app-first: after copying it waits for the installer'))
+    const push = (lines, extra = {}) => fe.evaluate(([ls, ex]) => {
+      for (const l of ls) {
+        window.__progress = { ...window.__progress, ...ex, lines: [...window.__progress.lines, l], fail: l.startsWith('FAIL ') ? l.split(' ')[1] : l.startsWith('STEP ') ? '' : window.__progress.fail }
+        window.hermesSetupLine(l)
+      }
+    }, [lines, extra])
+    await push(['STEP packages Termux packages', 'STEP access Access', 'phone: tap Allow on Android’s prompt, so Hermes can read and save your files', 'STEP android limit', 'android: child-process limit lifted (via Shizuku)', 'STEP debian Debian'])
+    await fe.locator('.install-step.run', { hasText: 'Debian' }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: progress lines show the running step'), () => check(false, 'app-first: progress lines show the running step'))
+    check((await fe.locator('.install-step.ok').count()) === 3, 'app-first: finished installer steps are ticked')
+    check((await fe.locator('.install-hint', { hasText: 'tap Allow on Android' }).count()) === 1, 'app-first: the latest “phone:” hint is shown')
+    check(!(await fe.evaluate(() => window.__fixes || [])).includes('start'), 'app-first: Start Hermes is never asked for while the installer runs')
+    await push(['FAIL debian (line 120)'])
+    await fe.getByText('The installer stopped', { exact: true }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: FAIL says where it stopped, with Copy again'), () => check(false, 'app-first: FAIL says where it stopped, with Copy again'))
+    check((await fe.getByRole('button', { name: 'Copy the command' }).count()) === 1, 'app-first: FAIL offers the command again')
+    await push(['STEP debian Debian', 'STEP hermes Hermes', 'STEP plugin Plugin', 'STEP start Start'])
+    await mock({ up: true })
+    await push(['DONE'], { done: true, active: false })
+    await fe.getByText('Connect Hermes to a model').waitFor({ timeout: 20000 }).then(() => check(true, 'app-first: DONE → connects → the model step'), () => check(false, 'app-first: DONE → connects → the model step'))
+    await fe.close()
+  }
+  // f. a PC-installed phone on a new app build: the new rows never show, and Termux is not probed while Hermes answers
+  await mock({ configured: true, pluginEnabled: true })
+  {
+    const ff = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, termuxBootStopped: false, shizuku: true, canInstall: true, devOptions: true, wirelessDebugging: true, termuxSigner: 'fdroid', probe: true, maker: 'google' })
+    await ff.goto('http://127.0.0.1:5180/')
+    await ff.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await sleep(2000)
+    check(!(await flowShown(ff)), 'app-first: a set-up phone goes straight to chat')
+    await ff.locator('.conn-dot').click()
+    await ff.getByRole('button', { name: 'Setup check' }).click()
+    await ff.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: Setup check is All set with the new rows'), () => check(false, 'app-first: Setup check is All set with the new rows'))
+    check((await ff.locator('.setup-item', { hasText: 'Start Shizuku' }).count()) === 0, 'app-first: no Start Shizuku row on a set-up phone')
+    check((await ff.locator('.setup-item.ok', { hasText: 'Hermes is installed' }).count()) === 1 && (await ff.locator('.setup-item.ok', { hasText: 'Shizuku are installed' }).count()) === 1, 'app-first: the apps and installer rows are ✓ on a set-up phone')
+    check((await ff.evaluate(() => window.__probes || 0)) === 0, 'app-first: Termux is not probed while Hermes answers')
+    await ff.close()
   }
   await mock({ configured: true, pluginEnabled: true })
 
