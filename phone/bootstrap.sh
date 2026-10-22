@@ -12,6 +12,12 @@ set -eE -o pipefail
 # The Hermes this installs = the build the app and hermes/patches are tested against. Bump together with
 # web/vendor/hermes-shared/.hermes-commit and .hermes-version (hermes/README.md; tools/test_bootstrap_pin.sh enforces it in CI).
 HERMES_COMMIT=b8a8be185d6e88b35e0a4fa794fea64fb06ed85b
+# A ready-made Debian with this Hermes in it (tools/build-image.sh; .github/workflows/image.yml publishes it as release
+# hermes-image-<first 12 of HERMES_COMMIT>): a NEW install downloads it instead of installing Debian and running Hermes's
+# installer here. Found by the pin alone; when there is none for this pin (404) the normal install runs. MB = free space
+# the restore needs (download + unpacked + margin; build-image.sh prints the real number).
+HERMES_IMAGE_BASE=https://github.com/omarqaterge/hermes-mobile-app/releases/download
+HERMES_IMAGE_MB=5200
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 # Debian runs under proot-distro (no root needed) or chroot-distro (rooted phones, HM_DISTRO=chroot). The choice is kept in
 # ~/.hermes-mobile/distro for install.sh, ~/bin/hermes-debian, the supervisor and the app.
@@ -106,11 +112,58 @@ elif [ "${sdk:-0}" -ge 31 ]; then
   fi
 fi
 
+# --- ready-made image (keep this block together) ------------------------------------------------------------------
+# The ready-made Debian + Hermes for this pin, for a NEW Debian only: existing installs never download it. Any problem
+# (no image for this pin, HM_IMAGE=0, not arm64, too little space, download, sha256, restore) logs one line, removes what
+# it left behind and returns 1: the normal install then runs. Tests: HM_IMAGE_URL = another image (its sha256 is read
+# from HM_IMAGE_URL.sha256), tools/test_bootstrap_image.sh.
+image_restore() {
+  local name="hermes-debian-${HERMES_COMMIT:0:12}-arm64.tar.zst" url sum got free img="$HOME/hm-debian-image.tar.zst"
+  url=${HM_IMAGE_URL:-$HERMES_IMAGE_BASE/hermes-image-${HERMES_COMMIT:0:12}/$name}
+  [ "${HM_IMAGE:-1}" != 0 ] || { say "image: HM_IMAGE=0, installing Debian normally"; return 1; }
+  if [ "$HM_DISTRO" = chroot ]; then
+    say "image: not used with chroot-distro yet, installing Debian normally"; return 1
+  fi
+  [ "$(uname -m)" = aarch64 ] || { say "image: only for arm64 phones, installing Debian normally"; return 1; }
+  # The .sha256 next to the image: a small download that also tells whether an image exists for this pin.
+  sum=$(curl -fsSL --retry 2 "$url.sha256" 2>/dev/null | head -1 | cut -c1-64 || true)
+  case "$sum" in
+    *[!0-9a-f]* | "") say "image: none for this Hermes ($url), installing Debian normally"; return 1 ;;
+  esac
+  [ ${#sum} = 64 ] || { say "image: bad sha256 file, installing Debian normally"; return 1; }
+  free=$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {print int($4/1024)}' || true)
+  [ "${free:-0}" -ge "${HM_IMAGE_MB:-$HERMES_IMAGE_MB}" ] || {
+    say "image: ${free:-?} MB free, it needs ${HM_IMAGE_MB:-$HERMES_IMAGE_MB} MB; installing Debian normally"; return 1; }
+  say "image: downloading the ready-made Debian + Hermes (about 900 MB)"
+  rm -f "$img"
+  if ! curl -fL --retry 3 --retry-delay 5 -o "$img" "$url"; then
+    rm -f "$img"; say "image: download failed, installing Debian normally"; return 1
+  fi
+  got=$(sha256sum "$img" 2>/dev/null | cut -c1-64 || true)
+  if [ "$got" != "$sum" ]; then
+    rm -f "$img"; say "image: sha256 does not match, installing Debian normally"; return 1
+  fi
+  say "image: unpacking (a few minutes)"
+  if ! proot-distro restore "$img" </dev/null || [ ! -f "$ROOT/.hermes/hermes-agent/install-stamp.json" ]; then
+    rm -f "$img"; say "image: unpacking failed, installing Debian normally"
+    proot-distro remove debian </dev/null >/dev/null 2>&1 || true
+    # a restore that stopped early may leave a rootfs without a manifest, which `remove` doesn't know
+    local c="$PREFIX/var/lib/proot-distro/containers/debian"
+    [ ! -e "$c" ] || { chmod -R u+rwX "$c" 2>/dev/null; rm -rf "$c"; } || true
+    return 1
+  fi
+  rm -f "$img"
+  # The image has the patches of its build; install.sh applies this installer's own set, so take the image's out first.
+  deb "bash /root/.hermes/scripts/hermes-patches.sh revert /root/.hermes/hermes-mobile-patches" >/dev/null 2>&1 || true
+  say "image: using the ready-made Debian + Hermes (Debian and Hermes install steps skipped)"
+}
+# --- end of ready-made image -----------------------------------------------------------------------------------------
+
 step debian "Debian inside Termux (a few minutes)"
 if [ "$HM_DISTRO" = chroot ]; then
-  chroot-distro login debian -- true </dev/null >/dev/null 2>&1 || chroot-distro install --name debian debian:trixie
+  chroot-distro login debian -- true </dev/null >/dev/null 2>&1 || image_restore || chroot-distro install --name debian debian:trixie
 else
-  [ -d "$ROOT" ] || proot-distro install debian
+  [ -d "$ROOT" ] || image_restore || proot-distro install debian
 fi
 # proot-distro appends Termux's bin dirs to PATH inside Debian. Termux's binaries are Android builds (its python3.14 made
 # Hermes's installer build for "linux-android" and fail), so Debian's login shells drop them.
@@ -159,10 +212,12 @@ fi
 deb "hermes --version | grep Hermes"
 # The browser tools are an optional package for Hermes's installer: a failed Chromium download (a CDN outage did this)
 # still ends without an error and without a browser. Try once more here; never fail the setup over it.
-if ! deb "command -v agent-browser >/dev/null"; then
+# Hermes keeps agent-browser in its own package store (~/.hermes/tools/agent-browser-<version>-<target>/bin), not on PATH.
+has_browser='ls /root/.hermes/tools/agent-browser-*/bin/agent-browser-* >/dev/null 2>&1 || command -v agent-browser >/dev/null'
+if ! deb "$has_browser"; then
   say "browser tools missing, installing them again"
   deb "hermes pm install agent-browser" || true
-  deb "command -v agent-browser >/dev/null" || say "TODO browser: Hermes has no web browser yet. Run the installer again later (bash hm.sh)"
+  deb "$has_browser" || say "TODO browser: Hermes has no web browser yet. Run the installer again later (bash hm.sh)"
 fi
 
 step plugin "Hermes Mobile plugin, supervisor, and access to the phone (files, Termux:API, Shizuku; no root needed)"
