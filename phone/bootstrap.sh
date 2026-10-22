@@ -27,7 +27,18 @@ HM_DISTRO=${HM_DISTRO:-$(cat "$HOME/.hermes-mobile/distro" 2>/dev/null || true)}
 echo "$HM_DISTRO" > "$HOME/.hermes-mobile/distro"
 ROOT="$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root"
 STEP=start
-say() { echo "== HMSETUP $*"; /system/bin/log -t hmsetup "HMSETUP $*" 2>/dev/null || true; }
+# HM_APP_TOKEN (set by the command the app copies): each line also goes to the app's setup flow, HermesService on
+# 127.0.0.1:9121/setup (2 s timeout, never fails the install, the token is never printed). DONE also writes
+# ~/.hermes-mobile/installed, which the app's probe reads as "the install finished" (every route).
+say() {
+  echo "== HMSETUP $*"; /system/bin/log -t hmsetup "HMSETUP $*" 2>/dev/null || true
+  if [ "$*" = DONE ]; then : > "$HOME/.hermes-mobile/installed" 2>/dev/null || true; fi
+  if [ -n "${HM_APP_TOKEN:-}" ]; then
+    local l="$*"; l=${l//\\/\\\\}; l=${l//\"/\\\"}
+    printf '{"token":"%s","line":"%s"}' "$HM_APP_TOKEN" "$l" | curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' \
+      --data-binary @- http://127.0.0.1:9121/setup 2>/dev/null || true
+  fi
+}
 step() { STEP=$1; shift; say "STEP $STEP $*"; }
 if [ "$HM_DISTRO" = chroot ]; then
   # chroot-distro 3.2 answers 0 for a failed command when stdin is a terminal: pass the exit code back in a file instead.

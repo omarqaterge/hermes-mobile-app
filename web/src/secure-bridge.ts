@@ -12,7 +12,7 @@ const METHODS = [
   'getToken', 'httpAsync', 'openFile', 'getBaseUrl', 'startHermes', 'notify', 'setBackground', 'isSystemDark',
   'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'isInForeground', 'appVersion',
   'sharedItem', 'mediaBase', 'setLastChat', 'getTokenAsync', 'setupState', 'setupFix', 'isAssistant', 'openAssistantSettings', 'signInTermux', 'installUpdate',
-  'saveImage', 'shareImage', 'chatSeen', 'setUnseen'
+  'saveImage', 'shareImage', 'chatSeen', 'setUnseen', 'installHelperApp', 'probeTermux', 'setupCommand', 'setupProgress'
 ]
 
 const w = window as unknown as { HermesAndroid?: unknown }

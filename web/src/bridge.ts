@@ -35,6 +35,10 @@ interface AndroidBridge {
   shareText?(title: string, text: string): void
   setupState?(): string
   setupFix?(what: string): void
+  installHelperApp?(which: string): void // answers window.hermesSetupInstall(which, state, pct, msg)
+  probeTermux?(): void // answers window.hermesTermuxProbe(json)
+  setupCommand?(): boolean // copies the installer command with a fresh progress token
+  setupProgress?(): string // {active, lines, done, fail}; new lines also come through window.hermesSetupLine(line)
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermes; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
@@ -203,6 +207,18 @@ export interface NativeSetup {
   /** Build.MANUFACTURER, lower case (older builds: undefined). */
   maker?: string
   startError: string
+  /** App-first setup (older builds: undefined). canInstall = Android lets this app install apps. */
+  termuxBoot?: boolean
+  /** Termux:Boot was never opened: Android doesn't start it after a reboot until it is. */
+  termuxBootStopped?: boolean
+  /** Who signed Termux: 'fdroid', 'other' (GitHub/Play builds can't mix with F-Droid's add-ons) or '' (not installed). */
+  termuxSigner?: string
+  termuxVersion?: string
+  canInstall?: boolean
+  devOptions?: boolean
+  wirelessDebugging?: boolean
+  /** The shell can probe Termux (probeTermux) and run the installer's progress channel. */
+  probe?: boolean
 }
 
 export function setupState(): NativeSetup | null {
@@ -217,10 +233,74 @@ export function setupState(): NativeSetup | null {
 export type SetupFix =
   | 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'app-settings' | 'open-termux' | 'get-termux'
   | 'get-termux-api' | 'get-shizuku' | 'open-shizuku' | 'storage' | 'restart-hermes'
+  | 'install-permission' | 'about-phone' | 'dev-options' | 'open-termux-boot'
 
 /** Open the Android screen that fixes one setup item (fixed list on the Java side). */
 export function setupFix(what: SetupFix): void {
   native?.setupFix?.(what)
+}
+
+/** The helper apps the shell can install (fixed sources and signers on the Java side). */
+export type HelperApp = 'termux' | 'termux-api' | 'termux-boot' | 'shizuku'
+export type InstallState = 'permission' | 'downloading' | 'installing' | 'done' | 'error'
+
+type SetupListener =
+  | { kind: 'install'; which: HelperApp; state: InstallState; pct: number; msg: string }
+  | { kind: 'probe'; json: string }
+  | { kind: 'line'; line: string }
+  | { kind: 'changed' }
+const setupListeners = new Set<(e: SetupListener) => void>()
+/** Native setup events (install status, probe answers, installer lines) for whoever shows the setup. */
+export function onSetupEvent(fn: (e: SetupListener) => void): () => void {
+  setupListeners.add(fn)
+  return () => setupListeners.delete(fn)
+}
+const emitSetup = (e: SetupListener) => setupListeners.forEach(fn => fn(e))
+const sw = window as unknown as Record<string, unknown>
+sw.hermesSetupInstall = (which: HelperApp, state: InstallState, pct: number, msg: string) => emitSetup({ kind: 'install', which, state, pct, msg })
+sw.hermesTermuxProbe = (json: string) => emitSetup({ kind: 'probe', json })
+sw.hermesSetupLine = (line: string) => emitSetup({ kind: 'line', line })
+// The app came back to the front or a permission was answered (a dialog doesn't always change the page's visibility).
+sw.hermesSetupChanged = () => emitSetup({ kind: 'changed' })
+
+/** Download + install one helper app (Termux first). False = this shell can't. */
+export function installHelperApp(which: HelperApp): boolean {
+  try {
+    if (!native?.installHelperApp) return false
+    native.installHelperApp(which)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Ask Termux (through the shell) whether Hermes is installed and running; the answer arrives as a 'probe' event. */
+export function probeTermux(): boolean {
+  try {
+    if (!native?.probeTermux) return false
+    native.probeTermux()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Copy the installer command (built by the shell with a new one-time progress token). */
+export function copySetupCommand(): boolean {
+  try {
+    return Boolean(native?.setupCommand?.())
+  } catch {
+    return false
+  }
+}
+
+export function setupProgress(): { active: boolean; lines: string[]; done: boolean; fail: string } | null {
+  try {
+    const raw = native?.setupProgress?.()
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
 }
 
 /** Opens Termux on `hermes auth add <provider>` (logins Hermes only does in a terminal). False = not possible here. */
