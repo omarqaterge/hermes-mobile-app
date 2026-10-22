@@ -44,3 +44,16 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
       drawer and loads the next ones.
 - [ ] **Compress (#17).** In a long chat whose context is at least 80% full, tap the Compress suggestion.
       Expected: a notice like "Context compressed: N → M messages" and the chat continues normally.
+
+## Background apps (phone_app)
+
+- [ ] **While you use the phone.** Watch a video, then by voice or from a chat ask Hermes to do something in an app
+      (e.g. add a Keep note). Expected: the video keeps playing, no keyboard pops up, the chip says "Using <app>",
+      the task gets done.
+- [ ] **Locked phone.** Same with the screen locked (it worked in a test with the screen off; a real task not yet).
+- [ ] **App lock.** An app behind the phone's app lock (HyperOS, Samsung, OnePlus/ColorOS… each has one) is refused
+      with "another app opened instead … app lock": decide whether to take it out of the lock for Hermes.
+- [ ] **Other phone makers.** Tested on a Xiaomi (Android 16) and an AOSP emulator (Android 15) only. On a Samsung,
+      Pixel, OnePlus or Motorola with Android 14+: open an app, tap, type, Take over. Android 11-13: Settings →
+      Background apps should say "Needs Android 14 or newer".
+- [ ] **A banking app with the Settings toggle on** (opens; FLAG_SECURE screens may show black in the live view).

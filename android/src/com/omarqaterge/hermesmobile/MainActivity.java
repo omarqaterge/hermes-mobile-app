@@ -1289,11 +1289,54 @@ public class MainActivity extends Activity {
             if (n.getId() == 2 && n.getTag() != null && n.getTag().startsWith("approval:")) nm.cancel(n.getTag(), 2);
         web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
         setupChanged();
+        pushBg();
     }
 
     /** The setup flow re-checks (a permission dialog or a settings page may have changed something). */
     void setupChanged() {
         if (web != null) web.evaluateJavascript("window.hermesSetupChanged && window.hermesSetupChanged()", null);
+    }
+
+    /** Tell the page which app Hermes drives in the background (state without port/token) or null. Any thread. */
+    void pushBg() {
+        HermesService.BgApp b = HermesService.bgApp;
+        final String js = "window.__hmBg && window.__hmBg(" + (b == null ? "null" : b.pageJson()) + ")";
+        runOnUiThread(() -> web.evaluateJavascript(js, null));
+    }
+
+    /** One request to the background host on 127.0.0.1 with the token in a header (never in the URL, never logged). */
+    static byte[] bgRequest(HermesService.BgApp b, String method, String path, int[] status) throws Exception {
+        try (Socket sock = new Socket()) {
+            sock.connect(new InetSocketAddress("127.0.0.1", b.port), 2000);
+            sock.setSoTimeout(8000);
+            StringBuilder h = new StringBuilder();
+            h.append(method).append(' ').append(path).append(" HTTP/1.1\r\nHost: 127.0.0.1:").append(b.port)
+             .append("\r\nConnection: close\r\nX-HM-Token: ").append(b.token).append("\r\n");
+            if ("POST".equals(method)) h.append("Content-Type: application/json\r\nContent-Length: 2\r\n\r\n{}");
+            else h.append("\r\n");
+            OutputStream out = sock.getOutputStream();
+            out.write(h.toString().getBytes(StandardCharsets.ISO_8859_1));
+            out.flush();
+            InputStream in = new BufferedInputStream(sock.getInputStream());
+            ByteArrayOutputStream all = new ByteArrayOutputStream();
+            byte[] buf = new byte[32768];
+            int r;
+            while ((r = in.read(buf)) > 0) {
+                all.write(buf, 0, r);
+                if (all.size() > 4_000_000) throw new Exception("response too large");
+            }
+            byte[] data = all.toByteArray();
+            int sep = -1;
+            for (int k = 0; k + 3 < data.length; k++)
+                if (data[k] == 13 && data[k + 1] == 10 && data[k + 2] == 13 && data[k + 3] == 10) { sep = k; break; }
+            if (sep < 0) throw new Exception("bad response");
+            String head = new String(data, 0, sep, StandardCharsets.ISO_8859_1);
+            String[] parts = head.split(" ", 3);
+            status[0] = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 502;
+            byte[] rest = java.util.Arrays.copyOfRange(data, sep + 4, data.length);
+            if (head.toLowerCase().contains("transfer-encoding: chunked")) rest = dechunk(rest);
+            return rest;
+        }
     }
 
     /** Dark icons on light bars and the reverse, decided from the page background. */
@@ -1734,6 +1777,56 @@ public class MainActivity extends Activity {
                 final String js = "window.__hmHttp && window.__hmHttp(" + id + "," + res[0] + "," + JSONObject.quote(res[1]) + ")";
                 runOnUiThread(() -> web.evaluateJavascript(js, null));
             });
+        }
+
+        /** The background app's state (no port/token) as JSON, or "" when none. */
+        @JavascriptInterface
+        public String bgState(String key) {
+            if (!ok(key)) return "";
+            HermesService.BgApp b = HermesService.bgApp;
+            return b == null ? "" : b.pageJson();
+        }
+
+        /** The latest frame of the hidden display as window.__hmBgFrame(id, "data:image/jpeg;base64,…"), "" on none/error. */
+        @JavascriptInterface
+        public void bgFrameAsync(String key, final int id, final int maxW) {
+            if (!ok(key)) return;
+            final HermesService.BgApp b = HermesService.bgApp;
+            HTTP_POOL.execute(() -> {
+                String data = "";
+                try {
+                    if (b != null) {
+                        int[] st = new int[1];
+                        byte[] img = bgRequest(b, "GET", "/frame?w=" + Math.max(120, Math.min(maxW, 1080)), st);
+                        if (st[0] == 200 && img.length > 0) data = "data:image/jpeg;base64," + android.util.Base64.encodeToString(img, android.util.Base64.NO_WRAP);
+                    }
+                } catch (Exception ignored) {
+                }
+                final String js = "window.__hmBgFrame && window.__hmBgFrame(" + id + "," + JSONObject.quote(data) + ")";
+                runOnUiThread(() -> web.evaluateJavascript(js, null));
+            });
+        }
+
+        /** "stop" closes the hidden display, "take_over" moves the app to the real screen. Returns "ok" at once or "error: …". */
+        @JavascriptInterface
+        public String bgAction(String key, String what) {
+            if (!ok(key)) return "error: denied";
+            final String path = "stop".equals(what) ? "/close" : "take_over".equals(what) ? "/hand_over" : null;
+            if (path == null) return "error: unknown action";
+            final HermesService.BgApp b = HermesService.bgApp;
+            if (b == null) return "error: no background app";
+            HTTP_POOL.execute(() -> {
+                try {
+                    int[] st = new int[1];
+                    bgRequest(b, "POST", path, st);
+                    if (st[0] != 200) return;
+                } catch (Exception ignored) {
+                    return; // the host did not answer: keep the card, the plugin's "done" clears it
+                }
+                HermesService s = HermesService.instance;
+                if (s != null) s.main.post(() -> s.setBgApp(null));
+            });
+            return "ok";
         }
 
         @JavascriptInterface

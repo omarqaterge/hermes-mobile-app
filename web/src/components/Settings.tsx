@@ -802,6 +802,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
         <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermes option" chevron onClick={() => go('config')} />
       </Section>
+      <BgAppsSection />
       <Section title="Connection">
         <Row icon="📶" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
         <Row icon="↻" tone="blue" title="Reconnect / start Hermes" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
@@ -814,6 +815,44 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
       </Section>
     </>
+  )
+}
+
+/** Hermes working in an app on a hidden screen: whether banking, payment, password and 2FA apps are allowed (plugin /bgapps). */
+const BGAPPS = '/api/plugins/hermes-mobile/bgapps'
+interface BgApps {
+  allow_sensitive: boolean
+  available: boolean
+  reason?: string
+}
+function BgAppsSection() {
+  const [cfg, setCfg] = useState<BgApps | null>(null)
+  useEffect(() => {
+    let live = true
+    api<BgApps>('GET', BGAPPS, undefined, { profile: false })
+      .then(r => live && setCfg({ allow_sensitive: Boolean(r.allow_sensitive), available: r.available !== false, reason: r.reason }))
+      .catch(() => {}) // an older plugin: no section
+    return () => {
+      live = false
+    }
+  }, [])
+  if (!cfg) return null
+  const set = (v: boolean) => {
+    const prev = cfg
+    setCfg({ ...cfg, allow_sensitive: v })
+    api('PUT', BGAPPS, { allow_sensitive: v }, { profile: false }).catch(e => {
+      setCfg(prev)
+      toast(`Couldn’t save: ${errText(e)}`, 'error')
+    })
+  }
+  return (
+    <Section title="Background apps">
+      {cfg.available ? (
+        <ToggleRow icon="📱" tone="teal" title="Allow banking, payment, password and 2FA apps" sub="Off: Hermes won't open them in the background" on={cfg.allow_sensitive} onChange={set} />
+      ) : (
+        <Row icon="📱" tone="gray" title="Allow banking, payment, password and 2FA apps" sub={cfg.reason || 'Hermes can’t use apps in the background on this phone'} />
+      )}
+    </Section>
   )
 }
 

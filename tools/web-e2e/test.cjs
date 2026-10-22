@@ -87,7 +87,26 @@ const nativeShell = () => {
       listVoices: key => k(key, 'listVoices'),
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
-      openAssistantSettings: key => k(key, 'openAssistantSettings')
+      openAssistantSettings: key => k(key, 'openAssistantSettings'),
+      // Background app: the test sets state through window.__hmBg; frames come back 120 ms after each request.
+      bgState: key => (k(key, 'bgState'), window.__bgNative ? JSON.stringify(window.__bgNative) : ''),
+      bgFrameAsync: (key, id, w) => {
+        k(key, 'bgFrameAsync')
+        const log = (window.__bgAsked ||= [])
+        log.push({ t: Date.now(), w })
+        window.__bgInflight = (window.__bgInflight || 0) + 1
+        window.__bgMaxInflight = Math.max(window.__bgMaxInflight || 0, window.__bgInflight)
+        setTimeout(() => {
+          window.__bgInflight--
+          window.__hmBgFrame(id, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+        }, 120)
+      },
+      bgAction: (key, what) => {
+        k(key, 'bgAction')
+        ;(window.__bgActs ||= []).push(what)
+        setTimeout(() => window.__hmBg(null), 30) // the shell clears the state once the host answered
+        return 'ok'
+      }
     }
 }
 
@@ -498,78 +517,94 @@ async function main() {
   await linkDlg.locator('button', { hasText: 'Cancel' }).click()
   await page.screenshot({ path: path.join(SHOTS, 'hm-shot-canvas.png') })
 
-  // ── Library: save canvas documents under a category, browse them from the Hermes hub, move, open, delete ──
+  // ── Canvas gallery: every chat's canvas documents by type, searchable, opened on their own chat's canvas ──
   await page.getByRole('button', { name: 'New document' }).first().click()
   await page.locator('.picker-opt, .set-row', { hasText: 'Notes / document' }).click()
   await page.locator('.dialog input').fill('Soup')
   await page.locator('.dialog button', { hasText: 'Create' }).click()
   await editor.waitFor({ timeout: 5000 })
   await editor.fill('# Soup\n\nTomato and basil')
+  await sleep(1200) // autosave
   await page.getByRole('button', { name: 'More' }).click()
-  await page.locator('.set-row', { hasText: 'Save to library…' }).click()
-  await page.locator('.sheet-title', { hasText: 'Category' }).waitFor({ timeout: 3000 })
-  await page.locator('.picker-opt', { hasText: 'New category…' }).click()
-  await page.locator('.dialog input').fill('Recipes')
-  await page.locator('.dialog button', { hasText: 'Save' }).click()
-  await page.locator('.toast', { hasText: 'Saved to Library · Recipes' }).waitFor({ timeout: 5000 }).then(() => check(true, 'library: saved into a new category'), () => check(false, 'library: saved into a new category'))
-  {
-    const lib = await fetch('http://127.0.0.1:9119/api/plugins/hermes-mobile/library').then(r => r.json())
-    const soup = lib.items.find(i => i.title === 'Soup')
-    const full = soup && (await fetch(`http://127.0.0.1:9119/api/plugins/hermes-mobile/library/item?id=${soup.id}`).then(r => r.json()))
-    check(full?.content === '# Soup\n\nTomato and basil', `library: the text typed just before saving is what gets saved (${JSON.stringify(full?.content)})`)
-  }
-  await page.locator('.canvas-tab', { hasText: 'Page' }).click()
-  await page.getByRole('button', { name: 'More' }).click()
-  await page.locator('.set-row', { hasText: 'Save to library…' }).click()
-  await page.locator('.picker-opt', { hasText: 'Recipes' }).click()
-  await page.locator('.toast', { hasText: 'Saved to Library · Recipes' }).nth(0).waitFor({ timeout: 5000 })
-  await page.getByRole('button', { name: 'Close canvas' }).click()
-  await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
-  await page.locator('.hub-card', { hasText: '2 items' }).waitFor({ timeout: 5000 }).then(() => check(true, 'hub: library summary'), () => check(false, 'hub: library summary'))
-  await page.locator('.hub-card', { hasText: 'Library' }).click()
-  await page.locator('.lib-cats button', { hasText: 'Recipes 2' }).waitFor({ timeout: 5000 }).then(() => check(true, 'library: category chip with its count'), () => check(false, 'library: category chip with its count'))
-  check((await page.locator('.lib-row').count()) === 2, 'library: both items listed')
-  await page.locator('.lib-row', { hasText: 'Page' }).click()
-  await page.locator('.lib-viewer', { hasText: 'Open it in a chat’s canvas to run it' }).waitFor({ timeout: 5000 }).then(() => check(true, 'library: HTML is not run in the preview'), () => check(false, 'library: HTML is not run in the preview'))
-  check((await page.locator('.lib-viewer iframe').count()) === 0, 'library: no frame in the preview')
+  check((await page.locator('.set-row', { hasText: /Save to library|Gallery category/ }).count()) === 0, 'gallery: nothing to save or file from the canvas menu')
   await page.evaluate(() => window.hermesBack())
-  await page.locator('.lib-row', { hasText: 'Soup' }).click()
-  await page.locator('.lib-viewer .canvas-md', { hasText: 'Tomato and basil' }).waitFor({ timeout: 5000 }).then(() => check(true, 'library: markdown preview'), () => check(false, 'library: markdown preview'))
-  await page.getByRole('button', { name: 'Item options' }).click()
-  await page.locator('.set-row', { hasText: 'Move to category…' }).click()
-  await page.locator('.picker-opt', { hasText: 'New category…' }).click()
-  await page.locator('.dialog input').fill('Notes')
-  await page.locator('.dialog button', { hasText: 'Save' }).click()
-  await page.locator('.lib-cats button', { hasText: 'Notes 1' }).waitFor({ timeout: 5000 }).then(() => check(true, 'library: moved to another category'), () => check(false, 'library: moved to another category'))
-  check((await page.locator('.lib-cats button', { hasText: 'Recipes 1' }).count()) === 1, 'library: the old category count drops')
-  if (await page.locator('.lib-viewer').count()) await page.evaluate(() => window.hermesBack())
-  await page.locator('.lib-row', { hasText: 'Page' }).click()
-  await page.getByRole('button', { name: 'Item options' }).click()
-  await page.locator('.set-row', { hasText: 'Delete' }).click()
-  await page.locator('.dialog button', { hasText: 'Delete' }).click()
-  await page.locator('.lib-row', { hasText: 'Page' }).waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'library: delete'), () => check(false, 'library: delete'))
-  await page.locator('.lib-row', { hasText: 'Soup' }).click()
-  await page.getByRole('button', { name: 'Open in this chat’s canvas' }).click()
-  await page.locator('.canvas-panel').waitFor({ timeout: 5000 })
-  {
-    const posts = calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/canvas/doc' && c.body.title === 'Soup')
-    check(posts.length === 2 && posts[1].body.content === '# Soup\n\nTomato and basil' && posts[1].body.type === 'markdown', `library: opened as a new document in this chat's canvas (${posts.length})`)
-    check((await page.locator('.screen').count()) === 0, 'library: the screen closes for the canvas')
-  }
   await page.getByRole('button', { name: 'Close canvas' }).click()
   await page.getByRole('button', { name: /^Sessions/ }).click()
   await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
-  await page.locator('.hub-card', { hasText: 'Library' }).click()
-  await page.locator('.lib-row', { hasText: 'Soup' }).click()
+  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).filter({ hasText: /\d+ documents/ }).waitFor({ timeout: 5000 }).then(() => check(true, 'hub: gallery summary'), () => check(false, 'hub: gallery summary'))
+  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  await page.locator('.lib-cats button', { hasText: 'HTML 1' }).waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: categories are the types, with counts'), () => check(false, 'gallery: categories are the types, with counts'))
+  check((await page.locator('.lib-cats button', { hasText: /^Markdown \d/ }).count()) === 1, 'gallery: a Markdown category')
+  check((await page.locator('.gallery-card', { hasText: 'Plan' }).count()) === 1 && (await page.locator('.gallery-card', { hasText: 'Page' }).count()) === 1, 'gallery: documents from every chat, nothing saved by hand')
+  check((await page.locator('.gallery-card', { hasText: 'Soup' }).locator('.gallery-from', { hasText: 'Chat 5' }).count()) === 1, 'gallery: each card names its chat')
+  await page.screenshot({ path: path.join(SHOTS, 'hm-shot-gallery.png') })
+  await page.locator('.lib-cats button', { hasText: 'HTML 1' }).click()
+  check((await page.locator('.gallery-card').count()) === 1 && (await page.locator('.gallery-card', { hasText: 'Page' }).count()) === 1, 'gallery: a type chip filters the list')
+  await page.locator('.lib-cats button', { hasText: /^All/ }).click()
+  // Search: by content (Soup's text), then by title, then no match.
+  await page.getByPlaceholder('Search titles and text…').fill('basil')
+  await page.waitForFunction(() => document.querySelectorAll('.gallery-card').length === 1, null, { timeout: 5000 }).then(() => check(true, 'gallery: search finds a document by its text'), () => check(false, 'gallery: search finds a document by its text'))
+  check((await page.locator('.gallery-card', { hasText: 'Soup' }).count()) === 1, 'gallery: the right one')
+  {
+    const s = calls().filter(c => c.http === 'GET' && c.path === '/api/plugins/hermes-mobile/gallery' && /q=/.test(c.query))
+    check(s.length >= 1 && new URLSearchParams(s[s.length - 1].query).get('q') === 'basil', `gallery: Hermes is asked to search (${s.map(c => c.query).join(' ')})`)
+    check(s.length <= 2, `gallery: typing doesn't send a search per key (${s.length})`)
+  }
+  await page.getByPlaceholder('Search titles and text…').fill('plan')
+  await page.waitForFunction(() => [...document.querySelectorAll('.gallery-card .gallery-title')].map(e => e.textContent).join() === 'Plan', null, { timeout: 5000 }).then(() => check(true, 'gallery: search by title'), () => check(false, 'gallery: search by title'))
+  await page.getByPlaceholder('Search titles and text…').fill('zzz-nothing')
+  await page.getByText('Nothing matches “zzz-nothing”').waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: no match says so'), () => check(false, 'gallery: no match says so'))
+  await page.getByPlaceholder('Search titles and text…').fill('')
+  await page.waitForFunction(() => document.querySelectorAll('.gallery-card').length >= 3, null, { timeout: 5000 })
+  await page.locator('.gallery-card', { hasText: 'Page' }).click()
+  await page.locator('.lib-viewer iframe.html-frame').waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: a web page runs in the preview (offline sandbox)'), () => check(false, 'gallery: a web page runs in the preview (offline sandbox)'))
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.gallery-card', { hasText: 'Soup' }).click()
+  await page.locator('.lib-viewer .canvas-md', { hasText: 'Tomato and basil' }).waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: markdown preview'), () => check(false, 'gallery: markdown preview'))
+  check((await page.locator('.lib-viewer-bar', { hasText: 'from “Chat 5”' }).count()) === 1, 'gallery: the preview says which chat it is from')
+  await page.getByRole('button', { name: 'Item options' }).click()
+  check((await page.locator('.set-row', { hasText: 'Move to category' }).count()) === 0, 'gallery: no hand-made categories')
+  await page.evaluate(() => window.hermesBack())
+  await sleep(300)
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.lib-viewer').waitFor({ state: 'detached', timeout: 3000 })
+  // Open canvas: goes to the chat the document was made in (not the one on screen) with its canvas on it.
+  await page.locator('.gallery-card', { hasText: 'Plan' }).click()
+  await page.getByRole('button', { name: 'Open canvas' }).click()
+  await page.locator('.canvas-panel').waitFor({ timeout: 5000 })
+  await sleep(800)
+  {
+    const now = await page.evaluate(() => JSON.parse(localStorage.getItem('hm.lastSession') || '{}').id)
+    check(now === storedBefore, `gallery: Open canvas went to the document's own chat (${now}, want ${storedBefore})`)
+    check((await page.locator('.screen').count()) === 0, 'gallery: the screen closes for the canvas')
+    check((await page.locator('.canvas-tab.on', { hasText: 'Plan' }).count()) === 1, 'gallery: the canvas shows that document')
+  }
+  await page.getByRole('button', { name: 'Close canvas' }).click()
+  // Go to chat: back to Chat 5 without the canvas.
+  await page.getByRole('button', { name: /^Sessions/ }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  await page.locator('.gallery-card', { hasText: 'Soup' }).click()
+  await page.getByRole('button', { name: 'Go to chat' }).click()
+  await page.locator('.msg.assistant', { hasText: 'answer s-5' }).waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: Go to chat opens the chat it was made in'), () => check(false, 'gallery: Go to chat opens the chat it was made in'))
+  check((await page.locator('.canvas-panel').count()) === 0 && (await page.locator('.screen').count()) === 0, 'gallery: Go to chat leaves the canvas closed')
+  // Delete removes it from its chat's canvas.
+  await page.getByRole('button', { name: /^Sessions/ }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  await page.locator('.gallery-card', { hasText: 'Plan' }).click()
   await page.getByRole('button', { name: 'Item options' }).click()
   await page.locator('.set-row', { hasText: 'Delete' }).click()
   await page.locator('.dialog button', { hasText: 'Delete' }).click()
-  await page.getByText('Nothing saved yet').waitFor({ timeout: 5000 }).then(() => check(true, 'library: empty after deleting everything'), () => check(false, 'library: empty after deleting everything'))
+  await page.locator('.gallery-card', { hasText: 'Plan' }).waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'gallery: delete'), () => check(false, 'gallery: delete'))
+  {
+    const del = calls().filter(c => c.http === 'DELETE' && c.path === '/api/plugins/hermes-mobile/canvas/doc')
+    check(del.length === 1 && new URLSearchParams(del[0].query).get('session') === storedBefore, `gallery: delete removes it from its own chat's canvas (${JSON.stringify(del.map(d => d.query))})`)
+  }
   await page.evaluate(() => window.hermesBack())
   await page.evaluate(() => window.hermesBack())
   await sleep(300)
-  check((await page.locator('.screen').count()) === 0, 'library: Back returns to the hub, then the chat')
+  check((await page.locator('.screen').count()) === 0, 'gallery: Back returns to the hub, then the chat')
   await page.getByRole('button', { name: 'Canvas' }).first().click()
   await page.locator('.canvas-panel').waitFor({ timeout: 5000 })
 
@@ -1045,7 +1080,7 @@ async function main() {
   check((await page.locator('.hub-card', { hasText: '2 notes · 50% full · 1 about you' }).count()) === 1, 'hub: memory summary')
   check((await page.locator('.hub-card', { hasText: '1 active' }).count()) === 1, 'hub: cron summary')
   check((await page.locator('.hub-card', { hasText: '1 project' }).count()) === 1, 'hub: projects summary')
-  check((await page.locator('.hub-card', { hasText: 'Nothing saved yet' }).count()) === 1, 'hub: library summary when empty')
+  check((await page.locator('.hub-card', { hasText: 'Canvas gallery' }).filter({ hasText: /\d+ documents? · \d+ categor/ }).count()) === 1, 'hub: gallery summary counts every chat\'s documents')
   await page.locator('.hub-card', { hasText: 'Memory' }).click()
   await page.locator('.screen .title', { hasText: 'Memory' }).waitFor({ timeout: 3000 })
   await page.getByRole('button', { name: 'Back' }).last().click()
@@ -1101,6 +1136,111 @@ async function main() {
   await np.evaluate(() => window.hermesOpenSession('s-6'))
   await np.locator('.live-bar').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat ends live mode'), () => check(false, 'opening another chat ends live mode'))
   check(await np.evaluate(() => (window.__seen || []).slice(-1)[0] === 's-6'), 'opened chat reported on screen')
+
+
+  // ── Hermes working in an app on a hidden display: card above the composer, viewer sheet, bounded frame polling ──
+  {
+    const nAsked = () => np.evaluate(() => (window.__bgAsked || []).length)
+    const setBg = st => np.evaluate(s => window.__hmBg && window.__hmBg(s), st)
+    const mine = a => ({ session: 's-6', pkg: 'com.example.notes', label: 'Notes', action: 'tapping "New note"', since: Date.now(), ...a })
+    await np.evaluate(() => {
+      window.alert = window.confirm = window.prompt = () => ((window.__dialogs ||= []).push(1), null)
+    })
+    await np.locator('.msg').first().waitFor({ timeout: 5000 }).catch(() => {})
+    await setBg(mine({ session: 's-other' }))
+    await sleep(1300)
+    check((await np.locator('.bg-card').count()) === 0 && (await nAsked()) === 0, 'bg app of another chat: no card, no frame requests')
+    await setBg(mine())
+    await np.locator('.bg-card').waitFor({ timeout: 3000 }).then(() => check(true, 'bg app of this chat: card shows'), () => check(false, 'bg app of this chat: card shows'))
+    const ct = (await np.locator('.bg-card').textContent({ timeout: 1500 }).catch(() => '')) || ''
+    check(/Using Notes/.test(ct) && /tapping "New note"/.test(ct), `card names the app and the action (${ct})`)
+    await np.waitForFunction(() => (window.__bgAsked || []).length >= 3, null, { timeout: 5000 }).catch(() => {})
+    await np.locator('.bg-thumb img').waitFor({ timeout: 3000 }).then(() => check(true, 'card shows the live thumbnail'), () => check(false, 'card shows the live thumbnail'))
+    {
+      const asked = await np.evaluate(() => window.__bgAsked || [])
+      const gaps = asked.slice(1).map((a, i) => a.t - asked[i].t)
+      check(asked.length >= 3 && gaps.every(g => g >= 450), `frame requests are at least 500 ms apart (${gaps.join(',')})`)
+      check((await np.evaluate(() => window.__bgMaxInflight)) === 1, 'never two frame requests in flight')
+      check(asked.length > 0 && asked.every(a => a.w <= 240), `the thumbnail asks for a small frame (${asked.length ? asked[0].w : 'none'})`)
+    }
+    await np.locator('.bg-card').click({ timeout: 1500 }).catch(() => {})
+    const viewer = np.locator('.bg-viewer')
+    await viewer.waitFor({ timeout: 3000 }).then(() => check(true, 'tapping the card opens the viewer'), () => check(false, 'tapping the card opens the viewer'))
+    check((await viewer.getByRole('button', { name: 'Take over' }).count()) === 1 && (await viewer.getByRole('button', { name: 'Stop' }).count()) === 1, 'viewer has Take over and Stop')
+    check(/tapping "New note"/.test((await viewer.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'viewer shows the action caption')
+    await np.waitForFunction(() => (window.__bgAsked || []).length > 0 && window.__bgAsked.slice(-1)[0].w >= 400, null, { timeout: 3000 }).then(() => check(true, 'viewer asks for a bigger frame'), () => check(false, 'viewer asks for a bigger frame'))
+    check((await np.locator('.bg-card select, .bg-viewer select, .bg-viewer input, .bg-viewer textarea, .bg-card input, dialog').count()) === 0, 'card and viewer use no native controls')
+    await np.evaluate(() => window.hermesBack())
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'Back closes the viewer'), () => check(false, 'Back closes the viewer'))
+    await sleep(900)
+    check(await np.evaluate(() => (window.__bgAsked || []).slice(-1).every(a => a.w <= 240) && (window.__bgAsked || []).length > 0), 'after closing the viewer only the small thumbnail is requested')
+    check((await np.locator('.bg-card').count()) === 1, 'card stays after closing the viewer')
+    // Page hidden: no more requests; visible again: they resume.
+    await np.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await sleep(500)
+    const hiddenAt = await nAsked()
+    await sleep(1600)
+    check((await nAsked()) === hiddenAt, `no frame requests while the page is hidden (${hiddenAt})`)
+    await np.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await np.waitForFunction(n => (window.__bgAsked || []).length > n, hiddenAt, { timeout: 3000 }).then(() => check(true, 'frame requests resume when the page is visible'), () => check(false, 'frame requests resume when the page is visible'))
+    // Take over: one bridge call; the shell then clears the state, the card goes and the polling stops.
+    await np.locator('.bg-card').click({ timeout: 1500 }).catch(() => {})
+    await viewer.getByRole('button', { name: 'Take over' }).click({ timeout: 1500 }).catch(() => {})
+    await np.locator('.bg-card').waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'card disappears once the state is cleared'), () => check(false, 'card disappears once the state is cleared'))
+    check(JSON.stringify(await np.evaluate(() => window.__bgActs)) === '["take_over"]', `Take over calls bgAction once (${JSON.stringify(await np.evaluate(() => window.__bgActs))})`)
+    check((await viewer.count()) === 0, 'viewer closes after Take over')
+    await sleep(400)
+    const clearedAt = await nAsked()
+    await sleep(1500)
+    check((await nAsked()) === clearedAt, 'no frame requests once there is no bg app')
+    // Stop.
+    await setBg(mine({ action: 'typing' }))
+    await np.locator('.bg-card').click({ timeout: 1500 }).catch(() => {})
+    await viewer.getByRole('button', { name: 'Stop' }).click({ timeout: 1500 }).catch(() => {})
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    check(JSON.stringify(await np.evaluate(() => window.__bgActs)) === '["take_over","stop"]', 'Stop calls bgAction("stop")')
+    // The app comes back (resume push) for this chat, then another chat is opened: card and polling go.
+    await setBg(mine())
+    await np.locator('.bg-card').waitFor({ timeout: 3000 }).catch(() => {})
+    await np.evaluate(() => window.hermesOpenSession('s-5'))
+    await np.locator('.bg-card').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat hides the card'), () => check(false, 'opening another chat hides the card'))
+    await sleep(500)
+    const swAt = await nAsked()
+    await sleep(1500)
+    check((await nAsked()) === swAt, 'no frame requests for a chat without the bg app')
+    await setBg(null)
+    check((await np.evaluate(() => window.__dialogs || [])).length === 0, 'no alert/confirm dialogs')
+    // Settings → Background apps
+    await np.getByRole('button', { name: /^Sessions/ }).click()
+    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    const bgRow = np.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
+    await bgRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the Background apps row'), () => check(false, 'Settings has the Background apps row'))
+    check(/Off: Hermes won't open them in the background/.test((await bgRow.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'row explains what Off means')
+    check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'false', 'switch starts off')
+    await bgRow.click({ timeout: 1500 }).catch(() => {})
+    await sleep(500)
+    {
+      const puts = calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/bgapps')
+      check(puts.length === 1 && puts[0].body.allow_sensitive === true, `toggling PUTs allow_sensitive (${JSON.stringify(puts.map(c => c.body))})`)
+      check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'switch shows on')
+    }
+    await np.evaluate(() => window.hermesBack())
+    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { allow_sensitive: false, available: false, reason: 'Needs Shizuku running' } }) })
+    await np.getByRole('button', { name: /^Sessions/ }).click()
+    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    const noRow = np.locator('.set-row', { hasText: 'Needs Shizuku running' })
+    await noRow.waitFor({ timeout: 5000 }).then(() => check(true, 'unavailable: the reason is the row text'), () => check(false, 'unavailable: the reason is the row text'))
+    check((await noRow.getByRole('switch').count()) === 0, 'unavailable: no switch')
+    check((await np.locator('.set-row select, .set-row input').count()) === 0, 'settings row uses no native controls')
+    await np.evaluate(() => window.hermesBack())
+    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { available: true, reason: undefined } }) })
+  }
 
   // ── Phone assistant: Settings → Voice opens the system picker and shows the role once Hermes holds it ──
   await np.getByRole('button', { name: /^Sessions/ }).click()

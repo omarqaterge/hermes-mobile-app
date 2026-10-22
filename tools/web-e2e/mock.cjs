@@ -39,6 +39,7 @@ let providerConfigured = true // false = a fresh install (the welcome opens)
 // true = like the pinned Hermes on a fresh install: setup.status scoped to a profile says a provider is configured although
 // none is (its loose probe); setup.runtime_check still says ok: false.
 let looseStatus = false
+let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps (Settings → Background apps)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
 let codexPolls = 0
 
@@ -73,6 +74,7 @@ const server = http.createServer((req, res) => {
       if (b.configured) providerConfigured = true
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
+      if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
@@ -103,6 +105,10 @@ const server = http.createServer((req, res) => {
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
     if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems })
     if (p === '/api/plugins/hermes-mobile/prefs') return send({ order: null })
+    if (p === '/api/plugins/hermes-mobile/bgapps') {
+      if (req.method === 'PUT') bgapps.allow_sensitive = !!JSON.parse(body || '{}').allow_sensitive
+      return send(bgapps)
+    }
     if (p === '/api/plugins/hermes-mobile/phone-access') return send(phoneAccess)
     if (p === '/api/hermes/update/check') return send({ install_method: 'git', current_version: '0.21.5+4582.gb8a8be1', behind: 12, update_available: true, can_apply: true, message: null })
     if (p === '/api/plugins/hermes-mobile/refresh-logins') return send({ ok: true, anthropic: 0 })
@@ -195,6 +201,26 @@ const server = http.createServer((req, res) => {
       }
       return send(libraryItems[i])
     }
+    // Canvas gallery (plugin gallery.py): every chat's canvas documents, by type, searchable, with the chat.
+    if (p === '/api/plugins/hermes-mobile/gallery') {
+      const KIND = { html: 'HTML', markdown: 'Markdown', code: 'Code', text: 'Text', json: 'JSON', csv: 'CSV', svg: 'SVG', mermaid: 'Mermaid' }
+      const words = (url.searchParams.get('q') || '').toLowerCase().split(/\s+/).filter(Boolean)
+      const plain = d => (d.type === 'html' ? d.content.replace(/<[^>]+>/g, ' ') : d.content.replace(/[#*_`>-]+/g, ' ')).replace(/\s+/g, ' ').trim()
+      const chat = sid => {
+        const s = allSessions.find(x => x.id === sid)
+        return s ? { profile: 'default', title: s.title, last_active: s.started_at, archived: false } : null
+      }
+      const items = []
+      for (const [sid, docs] of Object.entries(canvasDocs))
+        for (const d of docs) {
+          if (words.length && !words.every(w => `${d.title} ${plain(d)}`.toLowerCase().includes(w))) continue
+          items.push({ key: `${sid}/${d.id}`, session: sid, doc: d.id, title: d.title, type: d.type, lang: d.lang, category: KIND[d.type] || 'Text', created: d.created, updated: d.updated, by: d.by, chars: d.content.length, snippet: plain(d).slice(0, 140), chat: chat(sid) })
+        }
+      items.sort((a, b) => b.updated - a.updated)
+      const categories = {}
+      for (const k of Object.values(KIND)) for (const i of items) if (i.category === k) categories[k] = (categories[k] || 0) + 1
+      return send({ items, categories })
+    }
     if (p === '/api/plugins/hermes-mobile/canvas') {
       const s = url.searchParams.get('session')
       const list = () => send({ docs: (canvasDocs[s] || []).map(({ content, ...m }) => m) })
@@ -211,6 +237,11 @@ const server = http.createServer((req, res) => {
         const d = { id: `d${Date.now()}`, title: b.title, type: b.type || 'markdown', lang: b.lang || '', rev: 1, updated: Date.now() / 1000, by: 'user', chars: (b.content || '').length, path: '', created: Date.now() / 1000, content: b.content || '' }
         ;(canvasDocs[b.session] ||= []).push(d)
         return send(d)
+      }
+      if (req.method === 'DELETE') {
+        const s = url.searchParams.get('session')
+        canvasDocs[s] = (canvasDocs[s] || []).filter(x => x.id !== url.searchParams.get('id'))
+        return send({ ok: true })
       }
       if (req.method === 'PUT') {
         const b = JSON.parse(body)

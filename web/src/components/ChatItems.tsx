@@ -8,7 +8,7 @@ import { toggleSpeak, useVoice } from '../voice'
 import { api } from '../api'
 import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
-import { formatOutput, memoryDiff, plainText } from '../text'
+import { formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
@@ -38,7 +38,8 @@ const TOOL_ICONS: Record<string, string> = {
   clarify: '?',
   vision_analyze: '👁',
   image_generate: '🎨',
-  send_message: '✉'
+  send_message: '✉',
+  phone_app: '📱'
 }
 
 function fmtDuration(s?: number | null): string {
@@ -73,7 +74,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
   // Media produced by a tool (image generation, screenshots, recordings…).
   const mediaSrc =
     /(https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp|gif|mp4|webm|mp3|m4a|wav)|(?:\/|~\/)[^\s"')]+\.(?:png|jpe?g|webp|gif|mp4|webm|mp3|m4a|wav))/i.exec(rawOut)?.[1] || null
-  const label = item.context || argsPreview(item.args) || ''
+  const label = item.context || (item.name === 'phone_app' ? phoneAppLabel(item.args) : '') || argsPreview(item.args) || ''
   const memDiff = item.name === 'memory' && item.status !== 'error' ? memoryDiff(item.args, rawOut) : undefined
   // With a diff on screen, the file body / replaced strings in the args are just a noisier copy.
   const hasDiff = Boolean(item.inlineDiff || out?.diff || memDiff)
