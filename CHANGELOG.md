@@ -10,6 +10,9 @@ User-facing changes, newest first. Each release section collects what shipped si
   **Full access** (/yolo: nothing is asked; a warning comes first). Hermes's catastrophic list (wiping the disk, shutting
   down) stays blocked in every mode. The setting is per chat and comes back when you reopen the chat. The composer's
   "YOLO" chip is now "Full access".
+- **See the app Hermes is using from the status chip.** While Hermes works in an app on the hidden screen, the chip's
+  expanded card shows a small picture of that screen, refreshed after each step. The lock screen shows the card without
+  the picture.
 
 ## v0.8.46 (2026-10-22)
 

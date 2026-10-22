@@ -85,8 +85,62 @@ public class HermesService extends Service {
         bgApp = b;
         main.removeCallbacks(expireBgTask);
         if (b != null) main.postDelayed(expireBgTask, BG_TTL_MS);
+        else {
+            main.removeCallbacks(bgThumbTask);
+            if (bgThumb != null) {
+                bgThumb = null;
+                synchronized (this) {
+                    if (lastWorking) postStatus();
+                }
+            }
+        }
         MainActivity a = MainActivity.current;
         if (a != null) a.pushBg();
+    }
+
+    /** A small picture of the hidden screen for the working chip's expanded card (its large icon); null = none.
+     *  Fetched once per plugin event (open / each action), so it costs nothing while Hermes isn't using an app. */
+    volatile android.graphics.Bitmap bgThumb = null;
+    final Runnable bgThumbTask = this::fetchBgThumb;
+    static final int THUMB_PX = 256;
+
+    void fetchBgThumb() {
+        final BgApp b = bgApp;
+        if (b == null) return;
+        new Thread(() -> {
+            android.graphics.Bitmap got = null;
+            try {
+                int[] st = new int[1];
+                byte[] img = MainActivity.bgRequest(b, "GET", "/frame?w=" + THUMB_PX * 2, st);
+                if (st[0] == 200 && img.length > 0) {
+                    android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeByteArray(img, 0, img.length);
+                    if (bm != null) got = squareThumb(bm, THUMB_PX);
+                }
+            } catch (Exception ignored) {
+                // the host is gone or busy: keep the last picture, the next event tries again
+            }
+            final android.graphics.Bitmap thumb = got;
+            main.post(() -> {
+                BgApp cur = bgApp;
+                if (thumb == null || cur == null || !cur.session.equals(b.session) || !cur.pkg.equals(b.pkg)) return;
+                bgThumb = thumb;
+                synchronized (HermesService.this) {
+                    if (lastWorking) postStatus();
+                }
+            });
+        }, "hermes-bgthumb").start();
+    }
+
+    /** The whole (tall) screen fitted into a square on black, so the notification's square icon shows all of it. */
+    static android.graphics.Bitmap squareThumb(android.graphics.Bitmap src, int px) {
+        android.graphics.Bitmap out = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas c = new android.graphics.Canvas(out);
+        c.drawColor(Color.BLACK);
+        float s = Math.min(px / (float) src.getWidth(), px / (float) src.getHeight());
+        float w = src.getWidth() * s, h = src.getHeight() * s;
+        android.graphics.RectF dst = new android.graphics.RectF((px - w) / 2f, (px - h) / 2f, (px + w) / 2f, (px + h) / 2f);
+        c.drawBitmap(src, null, dst, new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+        return out;
     }
 
     void onBgEvent(JSONObject e) {
@@ -102,7 +156,11 @@ public class HermesService extends Service {
         BgApp old = bgApp;
         String pkg = e.optString("pkg", "");
         long since = old != null && old.session.equals(session) && old.pkg.equals(pkg) ? old.since : System.currentTimeMillis();
+        if (old == null || !old.session.equals(session) || !old.pkg.equals(pkg)) bgThumb = null; // another app: no stale picture
         setBgApp(new BgApp(session, pkg, e.optString("label", pkg), e.optString("action", ""), port, token, since));
+        // The event comes right after the action: give the app a moment to draw its result, then take the picture.
+        main.removeCallbacks(bgThumbTask);
+        main.postDelayed(bgThumbTask, 700);
     }
 
     /** No status beat for a while: Hermes (or its plugin) died mid-turn, so drop the stuck chip. */
@@ -924,6 +982,14 @@ public class HermesService extends Service {
                             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
         }
         promote(b, lastShort.isEmpty() ? "Hermes" : lastShort);
+        // Hermes is using an app on the hidden screen for this chat: the expanded card shows a picture of it.
+        // The lock screen gets the same card without the picture (it can show the user's own data).
+        BgApp bg = bgApp;
+        android.graphics.Bitmap thumb = bgThumb;
+        if (bg != null && thumb != null && bg.session.equals(lastSession)) {
+            b.setPublicVersion(b.build());
+            b.setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(thumb));
+        }
         return b.build();
     }
 
