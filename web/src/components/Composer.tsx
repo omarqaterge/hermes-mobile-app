@@ -74,7 +74,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const running = useStore(s => s.active?.running ?? false)
   const model = useStore(s => s.active?.info.model ?? s.defaultModel)
   const effort = useStore(s => s.active?.info.reasoning_effort || s.defaultEffort)
-  const yolo = useStore(s => s.active?.info.yolo === true)
+  const yolo = useStore(s => s.active?.info.yolo === true && !s.active.autoAccess)
   const attachments = useStore(s => s.active?.attachments ?? EMPTY)
   const conn = useStore(s => s.conn)
   const opening = useStore(s => s.opening)
@@ -330,18 +330,18 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
           </button>
           {yolo && (
-            // This chat runs commands without asking (/yolo). Tap to turn it off.
+            // Full access (/yolo): commands run without asking. Tap to turn it off (Auto access shows only in the header).
             <button
               className="yolo-chip"
-              aria-label="YOLO is on: Hermes runs commands without asking. Tap to turn it off"
+              aria-label="Full access is on: Hermes runs commands without asking. Tap to turn it off"
               onClick={() => {
                 haptic()
                 const a = getState().active
-                if (a) void setYolo(a, false).then(() => toast('YOLO off: Hermes asks before risky commands again'), e => toast(errText(e), 'error'))
+                if (a) void setYolo(a, false).then(() => toast('Full access off: Hermes asks before risky commands again'), e => toast(errText(e), 'error'))
               }}
               disabled={offline}
             >
-              ⚡ YOLO
+              ⚡ Full access
             </button>
           )}
         </div>

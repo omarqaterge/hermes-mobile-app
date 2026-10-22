@@ -628,6 +628,40 @@ async def bgapps_put(body: BgAppPrefs):
     return out
 
 
+# ── Auto access (the app's Auto button; which chats block Hermes's dangerous-command list under /yolo) ──
+
+def _auto_mod():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_auto_mode")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_auto_mode", Path(__file__).resolve().parent.parent / "auto_mode.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_auto_mode"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+class AutoMode(BaseModel):
+    session: str
+    mode: str = ""
+
+
+@router.get("/auto")
+async def auto_get(session: str = ""):
+    return {"session": session, "mode": _auto_mod().mode_of(session)}
+
+
+@router.put("/auto")
+async def auto_put(body: AutoMode):
+    try:
+        mode = _auto_mod().set_mode(body.session, body.mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"session": body.session, "mode": mode}
+
+
 # ── canvas (documents shared by Hermes and the user, per chat) ──
 
 def _canvas():

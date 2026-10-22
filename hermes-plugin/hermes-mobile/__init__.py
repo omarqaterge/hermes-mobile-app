@@ -473,6 +473,14 @@ def _on_stream_end(final_text=None, session_id=None, turn_id=None, finished=None
 
 
 def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, task_id=None, tool_call_id=None, **_):
+    try:
+        verdict = _auto_mode().check(tool_name, args, session_id)  # Auto access: Hermes's dangerous list never runs
+    except Exception as e:
+        verdict = None
+        _dbg(f"auto mode check: {type(e).__name__}: {e}")
+    if verdict is not None:
+        _dbg(f"auto mode blocked {tool_name} in {session_id}")
+        return verdict
     tool_name, args = _peel_bridge(tool_name, args)
     if tool_name in ("write_file", "patch"):
         try:
@@ -701,6 +709,11 @@ def _chat_search():
 def _phone_app():
     """The phone_app tool (an app on a hidden screen, driven through the app's background host)."""
     return _load("hm_phone_app", "phone_app.py")
+
+
+def _auto_mode():
+    """Auto access (the app's Auto button): which chats block Hermes's dangerous-command list under /yolo."""
+    return _load("hm_auto_mode", "auto_mode.py")
 
 
 def _checkpoints():

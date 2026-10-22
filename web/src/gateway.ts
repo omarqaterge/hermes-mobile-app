@@ -576,8 +576,11 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   markSeen(next.storedId)
   chatSeen(next.storedId)
   setLastChat(next.storedId, title)
-  // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back.
-  if (yoloChats()[next.storedId] && !next.info.yolo) void setYolo(next, true).catch(() => {})
+  // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back (Auto access: the plugin's list first).
+  const want = rememberedAccess(next.storedId)
+  if (want === 'auto') updateActive(x => (x.runtimeId === next.runtimeId ? { autoAccess: true } : {}))
+  if (want !== 'off' && !next.info.yolo) void setAccess(next, want).catch(() => {})
+  else if (want === 'auto') void setPluginAuto(next.storedId, true).catch(() => {})
   // Show the chat's context fill under its last reply.
   void refreshCtx(next.usage).then(ctx => {
     const id = lastAssistantId()
@@ -709,8 +712,8 @@ type Dispatch = {
 /** Put text into the composer (dispatch type "prefill"); the Composer listens for this. */
 export const composerPrefill = { set: (_text: string) => {} }
 
-const YOLO_KEY = 'hm.yolo.v1' // stored chat id → true while that chat runs commands without asking
-function yoloChats(): Record<string, boolean> {
+const YOLO_KEY = 'hm.yolo.v1' // stored chat id → true (Full access) or 'auto' (Auto access); absent = asks as usual
+function yoloChats(): Record<string, boolean | 'auto'> {
   try {
     const m = JSON.parse(localStorage.getItem(YOLO_KEY) || '{}')
     return m && typeof m === 'object' ? m : {}
@@ -718,9 +721,10 @@ function yoloChats(): Record<string, boolean> {
     return {}
   }
 }
-function rememberYolo(storedId: string, on: boolean): void {
+function rememberYolo(storedId: string, mode: Access): void {
   const m = yoloChats()
-  if (on) m[storedId] = true
+  if (mode === 'full') m[storedId] = true
+  else if (mode === 'auto') m[storedId] = 'auto'
   else delete m[storedId]
   try {
     localStorage.setItem(YOLO_KEY, JSON.stringify(m))
@@ -729,16 +733,60 @@ function rememberYolo(storedId: string, on: boolean): void {
   }
 }
 
+/** How much a chat may do without asking (the header's Auto button):
+ *  off = Hermes asks before risky commands; auto = no prompts, but Hermes's dangerous-command list is blocked (plugin);
+ *  full = no prompts at all (/yolo; Hermes's hardline floor still blocks rm -rf /, mkfs, shutdown…). */
+export type Access = 'off' | 'auto' | 'full'
+export function accessOf(a: ActiveSession | null | undefined): Access {
+  if (!a?.info.yolo) return 'off'
+  return a.autoAccess ? 'auto' : 'full'
+}
+/** The mode this chat should be in after a resume (Hermes b8a8be18 forgets /yolo). */
+function rememberedAccess(storedId: string): Access {
+  const v = yoloChats()[storedId]
+  return v === 'auto' ? 'auto' : v ? 'full' : 'off'
+}
+
+const AUTO_API = '/api/plugins/hermes-mobile/auto'
+async function setPluginAuto(storedId: string, on: boolean): Promise<void> {
+  await api('PUT', AUTO_API, { session: storedId, mode: on ? 'auto' : '' }, { profile: false })
+}
+
+async function yoloRpc(a: ActiveSession, on: boolean): Promise<boolean> {
+  const r = await rpc<{ value?: string | boolean }>('config.set', { session_id: a.runtimeId, key: 'yolo', value: on ? '1' : '0' })
+  return r?.value === '1' || r?.value === true
+}
+
+/** Switch a chat's access. Ordered so the chat is never in Full access by accident: Auto writes the plugin's
+ *  block list BEFORE /yolo goes on, and leaving Auto turns /yolo off (or keeps it for Full) before the entry goes. */
+export async function setAccess(a: ActiveSession, mode: Access): Promise<Access> {
+  let on: boolean
+  if (mode === 'auto') {
+    try {
+      await setPluginAuto(a.storedId, true)
+    } catch (e) {
+      throw new Error(`Auto access needs the updated Hermes Mobile plugin (${errText(e)})`)
+    }
+    on = await yoloRpc(a, true)
+    if (!on) await setPluginAuto(a.storedId, false).catch(() => {})
+  } else {
+    on = await yoloRpc(a, mode === 'full')
+    await setPluginAuto(a.storedId, false).catch(() => {}) // an older plugin has no /auto: nothing to remove
+  }
+  const got: Access = !on ? 'off' : mode === 'auto' ? 'auto' : 'full'
+  updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on }, autoAccess: got === 'auto' } : {}))
+  rememberYolo(a.storedId, got)
+  return got
+}
+
 /** YOLO for one chat, Hermes Desktop's way (config.set, in-process, instant). Through slash.exec it ran in the
  * slash worker, a separate process: slow to start, and its flag never reached the agent that asks for approvals.
- * `want` null = toggle. Hermes (b8a8be18) doesn't persist the flag, so it is remembered here and re-applied on resume. */
+ * `want` null = toggle. Hermes (b8a8be18) doesn't persist the flag, so it is remembered here and re-applied on resume.
+ * /yolo on = Full access; off (or toggling from Auto) = asks again. */
 export async function setYolo(a: ActiveSession, want: boolean | null): Promise<boolean> {
-  const next = want ?? !(a.info.yolo || yoloChats()[a.storedId]) // info.yolo is unknown until Hermes sends session.info after a restart
-  const r = await rpc<{ value?: string | boolean }>('config.set', { session_id: a.runtimeId, key: 'yolo', value: next ? '1' : '0' })
-  const on = r?.value === '1' || r?.value === true
-  updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on } } : {}))
-  rememberYolo(a.storedId, on)
-  return on
+  const cur = a.info.yolo ? accessOf(a) : rememberedAccess(a.storedId) // info.yolo is unknown until Hermes sends session.info after a restart
+  const next = want ?? cur === 'off'
+  return (await setAccess(a, next ? 'full' : 'off')) !== 'off'
 }
 
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
@@ -753,7 +801,7 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
     try {
       const on = await setYolo(a, want)
-      pushItem({ kind: 'notice', id: newId('n'), text: on ? '⚡ YOLO on for this chat: Hermes runs commands without asking' : 'YOLO off: Hermes asks before risky commands again', level: on ? 'warn' : 'info' })
+      pushItem({ kind: 'notice', id: newId('n'), text: on ? '⚡ Full access on for this chat (/yolo): Hermes runs commands without asking' : 'Full access off: Hermes asks before risky commands again', level: on ? 'warn' : 'info' })
     } catch (err) {
       pushItem({ kind: 'notice', id: newId('n'), text: `/yolo: ${errText(err)}`, level: 'error' })
     }

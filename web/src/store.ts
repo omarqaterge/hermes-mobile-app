@@ -96,6 +96,8 @@ export interface ActiveSession {
   todos: Todo[]
   openAssistantId: string | null
   attachments: Attachment[] // queued for the next prompt
+  /** Auto access (header's Auto button): with info.yolo, the plugin still blocks Hermes's dangerous-command list. */
+  autoAccess?: boolean
 }
 
 export interface Ctx {

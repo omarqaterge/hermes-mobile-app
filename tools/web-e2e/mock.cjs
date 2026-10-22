@@ -105,6 +105,12 @@ const server = http.createServer((req, res) => {
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
     if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems })
     if (p === '/api/plugins/hermes-mobile/prefs') return send({ order: null })
+    if (p === '/api/plugins/hermes-mobile/auto') {
+      // Auto access: the plugin's list of chats whose dangerous commands are blocked under /yolo.
+      const b = JSON.parse(body || '{}')
+      if (req.method === 'PUT') return send({ session: b.session, mode: b.mode === 'auto' ? 'auto' : '' })
+      return send({ session: url.searchParams.get('session') || '', mode: '' })
+    }
     if (p === '/api/plugins/hermes-mobile/bgapps') {
       if (req.method === 'PUT') bgapps.allow_sensitive = !!JSON.parse(body || '{}').allow_sensitive
       return send(bgapps)
