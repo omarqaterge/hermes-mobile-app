@@ -77,6 +77,15 @@ export async function loadGallery(): Promise<void> {
 
 export const setGalleryFilter = (filter: string): void => set({ filter })
 
+/** The screen opens: a fresh list with an empty search box (the last search is not kept). */
+export function openGallery(): void {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = null
+  // The list left over is the answer to the old search: don't show it as the whole gallery.
+  set(state.shownQuery ? { query: '', shownQuery: '', items: [], categories: {}, loading: true } : { query: '' })
+  void loadGallery()
+}
+
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 /** Search titles and text (Hermes searches; asked 300 ms after the last keystroke). */
 export function setGalleryQuery(query: string): void {

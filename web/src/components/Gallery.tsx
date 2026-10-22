@@ -5,7 +5,7 @@ import { copyText, haptic, shareText as nativeShare } from '../bridge'
 import { confirmDialog, promptDialog } from '../dialog'
 import { ago } from '../unread'
 import { toast } from '../store'
-import { deleteItem, itemContent, loadGallery, openItemChat, renameItem, setGalleryFilter, setGalleryQuery, useGallery, type GalleryItem } from '../gallery'
+import { deleteItem, itemContent, openGallery, openItemChat, renameItem, setGalleryFilter, setGalleryQuery, useGallery, type GalleryItem } from '../gallery'
 import { DocView, Sheetish, TYPE_ICON } from './Canvas'
 import { ScreenShell, Sheet, Status } from './Screens'
 import { Row, Section, Segmented } from './ui'
@@ -16,6 +16,8 @@ function shareText(title: string, text: string): void {
 }
 
 const chatLabel = (i: GalleryItem) => (i.chat ? `“${i.chat.title || 'Untitled chat'}”${i.chat.archived ? ' (archived)' : ''}` : 'a deleted chat')
+/** An old Library copy saved without a chat never had one: it isn't a "deleted chat". */
+const noChat = (i: GalleryItem) => !!i.lib && !i.session
 
 function ItemMenu({ item, text, onClose, onGone }: { item: GalleryItem; text: string | null; onClose: () => void; onGone: () => void }) {
   const run = (fn: () => void) => () => {
@@ -76,6 +78,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemKey, updated])
   if (!item) return null
+  const canOpen = !item.lib && !!item.chat
   const go = (canvas: boolean) => () => {
     haptic()
     void openItemChat(item, canvas)
@@ -83,11 +86,12 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
   return (
     <Sheet title={item.title} onClose={onClose}>
       <div className="lib-viewer">
-        <div className="lib-viewer-bar">
+        {/* No chat buttons (old saved copies, deleted chats): the ⋮ shares the label's row instead of sitting alone. */}
+        <div className={`lib-viewer-bar${item.chat ? '' : ' solo'}`}>
           <span className="dim small">
-            {TYPE_ICON[item.type] ?? '📄'} {item.category} · from {chatLabel(item)} · {ago(item.updated * 1000)}
+            {TYPE_ICON[item.type] ?? '📄'} {item.category} · {noChat(item) ? 'saved copy' : `from ${chatLabel(item)}`} · {ago(item.updated * 1000)}
           </span>
-          {!item.lib && item.chat && (
+          {canOpen && (
             <button className="btn primary" onClick={go(true)}>
               Open canvas
             </button>
@@ -128,7 +132,7 @@ export function GalleryScreen() {
   const shownQuery = useGallery(s => s.shownQuery)
   const [open, setOpen] = useState<string | null>(null)
   useEffect(() => {
-    void loadGallery()
+    openGallery()
   }, [])
   const cats = Object.entries(categories)
   const shown = filter ? items.filter(i => i.category === filter) : items
@@ -163,7 +167,7 @@ export function GalleryScreen() {
               <span className="gallery-title">{i.title}</span>
               {i.snippet && <span className="gallery-snippet">{i.snippet}</span>}
               <span className="gallery-from">
-                {i.chat ? `💬 ${i.chat.title || 'Untitled chat'}` : 'Chat deleted'} · {ago(i.updated * 1000)}
+                {i.chat ? `💬 ${i.chat.title || 'Untitled chat'}` : noChat(i) ? 'Saved copy' : 'Chat deleted'} · {ago(i.updated * 1000)}
               </span>
             </button>
           ))}

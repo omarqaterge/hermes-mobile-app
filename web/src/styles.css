@@ -3189,6 +3189,8 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .lib-viewer { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .lib-viewer-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .lib-viewer-bar > span { flex: 1 1 100%; }
+.lib-viewer-bar.solo { flex-wrap: nowrap; }
+.lib-viewer-bar.solo > span { flex: 1 1 0; min-width: 0; }
 .lib-viewer-bar .btn { flex: 1; }
 .lib-viewer-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 
