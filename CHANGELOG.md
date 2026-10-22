@@ -13,6 +13,9 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **See the app Hermes is using from the status chip.** While Hermes works in an app on the hidden screen, the chip's
   expanded card shows a small picture of that screen, refreshed after each step. The lock screen shows the card without
   the picture.
+- **Canvas gallery fixes.** The search box starts empty each time you open the gallery (it kept your last search).
+  Copies saved in the old Library without a chat say "Saved copy" instead of "Chat deleted". In a preview without the
+  Open canvas / Go to chat buttons, the ⋮ menu sits on the same line as the details instead of alone on its own row.
 
 ## v0.8.46 (2026-10-22)
 

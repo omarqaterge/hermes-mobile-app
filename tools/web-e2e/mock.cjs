@@ -24,6 +24,8 @@ allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_
 
 const canvasDocs = {} // session -> [doc]
 const libraryItems = [] // the Library (plugin library.py), newest first
+// An old Library copy saved without a chat (no source): the gallery lists it as a saved copy.
+libraryItems.push({ id: 'lib-old', title: 'Old notes', type: 'markdown', lang: '', category: 'Unsorted', saved: Math.floor(Date.now() / 1000) - 86400, chars: 16, content: 'Kept from before', source: null })
 // The chat whose start-up resume is slow already has a canvas (opening it while the chat loads must show it).
 canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Life\n\nGlider' }]
 let activityItems = []
@@ -222,6 +224,12 @@ const server = http.createServer((req, res) => {
           if (words.length && !words.every(w => `${d.title} ${plain(d)}`.toLowerCase().includes(w))) continue
           items.push({ key: `${sid}/${d.id}`, session: sid, doc: d.id, title: d.title, type: d.type, lang: d.lang, category: KIND[d.type] || 'Text', created: d.created, updated: d.updated, by: d.by, chars: d.content.length, snippet: plain(d).slice(0, 140), chat: chat(sid) })
         }
+      for (const m of libraryItems) {
+        const d = { type: m.type, content: m.content }
+        if (words.length && !words.every(w => `${m.title} ${plain(d)}`.toLowerCase().includes(w))) continue
+        const sid = (m.source && m.source.session) || ''
+        items.push({ key: `lib:${m.id}`, session: sid, doc: '', lib: m.id, saved: true, title: m.title, type: m.type, lang: m.lang, category: KIND[m.type] || 'Text', created: m.saved, updated: m.saved, by: '', chars: m.chars, snippet: plain(d).slice(0, 140), chat: sid ? chat(sid) : null })
+      }
       items.sort((a, b) => b.updated - a.updated)
       const categories = {}
       for (const k of Object.values(KIND)) for (const i of items) if (i.category === k) categories[k] = (categories[k] || 0) + 1

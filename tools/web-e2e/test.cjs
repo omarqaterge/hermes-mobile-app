@@ -590,7 +590,27 @@ async function main() {
   await page.waitForFunction(() => [...document.querySelectorAll('.gallery-card .gallery-title')].map(e => e.textContent).join() === 'Plan', null, { timeout: 5000 }).then(() => check(true, 'gallery: search by title'), () => check(false, 'gallery: search by title'))
   await page.getByPlaceholder('Search titles and text…').fill('zzz-nothing')
   await page.getByText('Nothing matches “zzz-nothing”').waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: no match says so'), () => check(false, 'gallery: no match says so'))
-  await page.getByPlaceholder('Search titles and text…').fill('')
+  // Leaving and coming back starts with an empty search box and the whole gallery.
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  check((await page.getByPlaceholder('Search titles and text…').inputValue()) === '', 'gallery: the last search is not kept')
+  await page.waitForFunction(() => document.querySelectorAll('.gallery-card').length >= 3, null, { timeout: 5000 }).then(() => check(true, 'gallery: back to the whole list'), () => check(false, 'gallery: back to the whole list'))
+  check((await page.getByText(/Nothing matches/).count()) === 0, 'gallery: no stale "Nothing matches"')
+  // An old Library copy saved without a chat: "Saved copy", not "Chat deleted"; its ⋮ shares the label's row.
+  check((await page.locator('.gallery-card', { hasText: 'Old notes' }).locator('.gallery-from', { hasText: 'Saved copy' }).count()) === 1, 'gallery: a copy saved without a chat says Saved copy')
+  check((await page.locator('.gallery-card', { hasText: 'Old notes' }).locator('.gallery-from', { hasText: 'Chat deleted' }).count()) === 0, 'gallery: no "Chat deleted" for it')
+  await page.locator('.gallery-card', { hasText: 'Old notes' }).click()
+  await page.locator('.lib-viewer .canvas-md', { hasText: 'Kept from before' }).waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: saved copy preview'), () => check(false, 'gallery: saved copy preview'))
+  {
+    const bar = page.locator('.lib-viewer-bar')
+    check((await bar.getByRole('button', { name: /Open canvas|Go to chat/ }).count()) === 0, 'gallery: a saved copy has no chat buttons')
+    check((await bar.locator('span', { hasText: 'saved copy' }).count()) === 1, 'gallery: the preview says saved copy')
+    const label = await bar.locator('> span').boundingBox()
+    const dots = await bar.getByRole('button', { name: 'Item options' }).boundingBox()
+    check(!!label && !!dots && dots.y < label.y + label.height && dots.x > label.x, `gallery: the ⋮ sits on the label's row, not alone (${JSON.stringify({ label, dots })})`)
+  }
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.lib-viewer').waitFor({ state: 'detached', timeout: 3000 })
   await page.waitForFunction(() => document.querySelectorAll('.gallery-card').length >= 3, null, { timeout: 5000 })
   await page.locator('.gallery-card', { hasText: 'Page' }).click()
   await page.locator('.lib-viewer iframe.html-frame').waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: a web page runs in the preview (offline sandbox)'), () => check(false, 'gallery: a web page runs in the preview (offline sandbox)'))
