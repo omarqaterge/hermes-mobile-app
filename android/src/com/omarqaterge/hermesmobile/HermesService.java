@@ -987,7 +987,8 @@ public class HermesService extends Service {
         BgApp bg = bgApp;
         android.graphics.Bitmap thumb = bgThumb;
         if (bg != null && thumb != null && bg.session.equals(lastSession)) {
-            b.setPublicVersion(b.build());
+            // build() hands back the builder's own Notification: clone it, or the card becomes its own public version.
+            b.setPublicVersion(b.build().clone());
             b.setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(thumb));
         }
         return b.build();
