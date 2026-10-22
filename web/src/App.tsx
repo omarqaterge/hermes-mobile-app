@@ -23,8 +23,7 @@ import { Title, plainTitle } from './components/Title'
 import { useAutoRead, useDraftAutoRead } from './voice'
 import { dotState, startHealthPolling, checkHealth } from './health'
 import { SettingsScreen } from './components/Settings'
-import { SetupScreen, watchFirstRun } from './components/Setup'
-import { WelcomeScreen, checkFirstRun } from './components/Connect'
+import { SetupFlow, SetupScreen, checkSetupFlow, watchFirstRun } from './components/Setup'
 import { BotsScreen } from './components/Bots'
 import { GalleryScreen } from './components/Gallery'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
@@ -602,11 +601,11 @@ export function App() {
     // Leaving the screens for the chat (a skill used, a chat opened…) forgets the way back to the hub.
     if (!screen && getState().screenBack) setState({ screenBack: null })
   }, [screen])
-  useEffect(() => watchFirstRun(conn, () => setState({ screen: 'setup' })), [conn])
+  useEffect(() => watchFirstRun(conn, () => setState({ screen: 'welcome' })), [conn])
   useEffect(() => {
     // Health poll starts once connected; each reconnect re-checks so the dot is current.
     if (conn !== 'open') return
-    void checkFirstRun() // a fresh install with no model provider: the welcome walks through connecting one
+    void checkSetupFlow() // a first run with something missing (no model, no plugin…): the setup flow resumes at it
     startHealthPolling()
     startActivityPolling()
     startCanvasSync()
@@ -638,7 +637,7 @@ export function App() {
       {screen === 'bots' && <BotsScreen />}
       {screen === 'settings' && <SettingsScreen key={screenKey} />}
       {screen === 'setup' && <SetupScreen />}
-      {screen === 'welcome' && <WelcomeScreen />}
+      {screen === 'welcome' && <SetupFlow />}
       {screen === 'hub' && <HubScreen />}
       <Drawer />
       {sheet === 'model' && <ModelSheet />}

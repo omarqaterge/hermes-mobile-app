@@ -3164,6 +3164,36 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .lib-viewer-bar .btn { flex: 1; }
 .lib-viewer-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 
+/* ── First-run setup flow (Setup.tsx SetupFlow) ── */
+.setup-hero.wait { border-color: var(--border); }
+.setup-mark.info { color: var(--dim); border: 1.5px solid var(--border); font-style: italic; }
+.flow-wait { display: flex; align-items: center; gap: 8px; margin: 24px 16px; }
+.flow-progress { margin: 14px 14px 0; display: flex; flex-direction: column; gap: 6px; }
+.flow-progress-label { font-size: 0.82rem; color: var(--dim); }
+.flow-progress-bar { display: block; height: 4px; border-radius: 2px; background: var(--press); overflow: hidden; }
+.flow-progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.flow-done { list-style: none; margin: 10px 16px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 0.86rem; }
+.flow-done-mark { color: var(--ok); font-weight: 700; margin-right: 4px; }
+.flow-card { margin: 12px 14px 24px; padding: 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+.flow-card-title { font-size: 1.1rem; font-weight: 600; }
+.flow-card-wait { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.flow-card-note { margin-top: 12px; }
+
+/* App-first setup steps (Setup.tsx AppsStep / ShizukuStep / InstallerStep) */
+.flow-card .setup-list { margin: 12px 0 0; }
+.app-list .setup-item { align-items: center; }
+.app-list .setup-item .btn { flex: none; }
+.flow-steps { margin: 8px 0 0; padding-left: 20px; }
+.flow-steps li { margin: 4px 0; }
+.install-hint { color: var(--text); padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.install-steps { list-style: none; margin: 12px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; }
+.install-step { display: flex; align-items: center; gap: 8px; }
+.install-step.todo { color: var(--dim); }
+.install-step.run { font-weight: 600; }
+.install-step.bad { color: var(--err); font-weight: 600; }
+.install-mark { width: 18px; display: inline-grid; place-items: center; font-weight: 700; }
+.install-step.ok .install-mark { color: var(--ok); }
+.install-todo { margin: 4px 0 0; padding-left: 18px; }
 /* Background app (Hermes driving an app on a hidden display): card above the composer + full-screen viewer */
 .bg-card {
   display: flex; align-items: center; gap: 10px; width: calc(100% - 24px); margin: 0 12px 6px; padding: 8px 10px;

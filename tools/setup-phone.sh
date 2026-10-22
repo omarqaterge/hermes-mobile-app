@@ -138,7 +138,7 @@ restore() { adb shell svc power stayon false >/dev/null 2>&1 || true; [ -n "${LO
 trap restore EXIT
 
 # ---------------------------------------------------------------- 5. Termux ready
-b "5/9 Opening Termux (keep the phone unlocked; don't touch it while this runs)"
+b "5/9 Opening Termux (keep the phone unlocked; don't touch it while this runs, except Allow when Shizuku asks)"
 type_line() {  # text without ' or %; typed into the app in front, then Enter
   adb shell "input text '${1// /%s}'"
   adb shell input keyevent 66
@@ -169,7 +169,7 @@ done
 # ---------------------------------------------------------------- 6. install on the phone
 b "6/9 Installing Debian + Hermes on the phone (20-40 minutes)"
 distro=""; [ "${HM_DISTRO:-}" = chroot ] && distro="HM_DISTRO=chroot "
-type_line "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && ${distro}bash hm.sh"
+type_line "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && ${distro}HM_NO_APK=1 bash hm.sh"
 seen=0; start=$(date +%s)
 while :; do
   sleep 5

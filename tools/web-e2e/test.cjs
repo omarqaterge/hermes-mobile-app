@@ -16,6 +16,100 @@ const check = (ok, what) => {
 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
+// The app shell's bridge, faked (injected before the page loads): window.__setup / __fixes drive the Setup check.
+const nativeShell = () => {
+    const calls = (window.__nativeCalls = [])
+    let taken = false
+    const k = (key, name) => {
+      calls.push(name)
+      if (key !== 'K') throw new Error('bridge call without the key: ' + name)
+    }
+    window.HermesAndroid = {
+      handshake: () => (taken ? '' : ((taken = true), 'K')),
+      getBaseUrl: key => (k(key, 'getBaseUrl'), 'http://127.0.0.1:9119'),
+      getToken: key => (k(key, 'getToken'), 'tok'),
+      getTokenAsync: (key, id) => {
+        k(key, 'getTokenAsync')
+        setTimeout(() => window.__hmToken(id, 'tok'), 50)
+      },
+      httpAsync: (key, id, m, p, b) => {
+        k(key, 'httpAsync')
+        fetch('/__api' + p, { method: m, headers: b != null ? { 'Content-Type': 'application/json' } : undefined, body: b ?? undefined }).then(async r => window.__hmHttp(id, r.status, await r.text()))
+      },
+      isInForeground: key => (k(key, 'isInForeground'), true),
+      appVersion: key => (k(key, 'appVersion'), 'test'),
+      isSystemDark: key => (k(key, 'isSystemDark'), true),
+      setBackground: key => k(key, 'setBackground'),
+      haptic: key => k(key, 'haptic'),
+      notify: key => k(key, 'notify'),
+      cancelNotification: key => k(key, 'cancelNotification'),
+      setLastChat: key => k(key, 'setLastChat'),
+      chatSeen: (key, id) => (k(key, 'chatSeen'), (window.__seen ||= []).push(id)),
+      setReadAloud: key => k(key, 'setReadAloud'),
+      mediaBase: key => (k(key, 'mediaBase'), ''),
+      // Voice: speaking "finishes" after 50 ms; the test plays the recogniser through window.__hmVoice.
+      speak: (key, text) => {
+        k(key, 'speak')
+        ;(window.__spoken ||= []).push(text)
+        setTimeout(() => window.__hmVoice('tts-done', ''), 50)
+      },
+      stopSpeaking: key => k(key, 'stopSpeaking'),
+      startListening: key => k(key, 'startListening'),
+      stopListening: key => k(key, 'stopListening'),
+      // Setup check: the test sets window.__setup; fixes are recorded in window.__fixes.
+      setupState: key => (k(key, 'setupState'), JSON.stringify(window.__setup || { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })),
+      setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what)),
+      // App-first setup: installs "succeed" after a moment and flip the app to installed in window.__setup; the probe
+      // answers window.__probe; window.__progress is the installer's progress (the test pushes lines itself).
+      installHelperApp: (key, which) => {
+        k(key, 'installHelperApp')
+        ;(window.__installs ||= []).push(which)
+        const field = { termux: 'termux', 'termux-api': 'termuxApi', 'termux-boot': 'termuxBoot', shizuku: 'shizuku' }[which]
+        setTimeout(() => window.hermesSetupInstall(which, 'downloading', 40, ''), 30)
+        setTimeout(() => window.hermesSetupInstall(which, 'installing', 100, ''), 80)
+        setTimeout(() => {
+          window.__setup = { ...window.__setup, [field]: true }
+          window.hermesSetupInstall(which, 'done', 100, '')
+        }, 150)
+      },
+      probeTermux: key => {
+        k(key, 'probeTermux')
+        window.__probes = (window.__probes || 0) + 1
+        if (window.__probe) setTimeout(() => window.hermesTermuxProbe(JSON.stringify(window.__probe)), 20)
+      },
+      setupCommand: key => {
+        k(key, 'setupCommand')
+        window.__copied = (window.__copied || 0) + 1
+        window.__progress = { active: true, lines: [], done: false, fail: '' }
+        return true
+      },
+      setupProgress: key => (k(key, 'setupProgress'), window.__progress ? JSON.stringify(window.__progress) : ''),
+      listVoices: key => k(key, 'listVoices'),
+      startHermes: key => k(key, 'startHermes'),
+      isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
+      openAssistantSettings: key => k(key, 'openAssistantSettings'),
+      // Background app: the test sets state through window.__hmBg; frames come back 120 ms after each request.
+      bgState: key => (k(key, 'bgState'), window.__bgNative ? JSON.stringify(window.__bgNative) : ''),
+      bgFrameAsync: (key, id, w) => {
+        k(key, 'bgFrameAsync')
+        const log = (window.__bgAsked ||= [])
+        log.push({ t: Date.now(), w })
+        window.__bgInflight = (window.__bgInflight || 0) + 1
+        window.__bgMaxInflight = Math.max(window.__bgMaxInflight || 0, window.__bgInflight)
+        setTimeout(() => {
+          window.__bgInflight--
+          window.__hmBgFrame(id, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+        }, 120)
+      },
+      bgAction: (key, what) => {
+        k(key, 'bgAction')
+        ;(window.__bgActs ||= []).push(what)
+        setTimeout(() => window.__hmBg(null), 30) // the shell clears the state once the host answered
+        return 'ok'
+      }
+    }
+}
+
 async function main() {
   // Never drive the real phone: 9119 must be the mock (an adb forward to the phone uses the same port).
   const home = await fetch('http://127.0.0.1:9119/').then(r => r.text(), () => '')
@@ -1012,72 +1106,7 @@ async function main() {
     console.log('PAGEERROR (native page)', e.message)
     failures++
   })
-  await np.addInitScript(() => {
-    const calls = (window.__nativeCalls = [])
-    let taken = false
-    const k = (key, name) => {
-      calls.push(name)
-      if (key !== 'K') throw new Error('bridge call without the key: ' + name)
-    }
-    window.HermesAndroid = {
-      handshake: () => (taken ? '' : ((taken = true), 'K')),
-      getBaseUrl: key => (k(key, 'getBaseUrl'), 'http://127.0.0.1:9119'),
-      getToken: key => (k(key, 'getToken'), 'tok'),
-      getTokenAsync: (key, id) => {
-        k(key, 'getTokenAsync')
-        setTimeout(() => window.__hmToken(id, 'tok'), 50)
-      },
-      httpAsync: (key, id, m, p, b) => {
-        k(key, 'httpAsync')
-        fetch('/__api' + p, { method: m, headers: b != null ? { 'Content-Type': 'application/json' } : undefined, body: b ?? undefined }).then(async r => window.__hmHttp(id, r.status, await r.text()))
-      },
-      isInForeground: key => (k(key, 'isInForeground'), true),
-      appVersion: key => (k(key, 'appVersion'), 'test'),
-      isSystemDark: key => (k(key, 'isSystemDark'), true),
-      setBackground: key => k(key, 'setBackground'),
-      haptic: key => k(key, 'haptic'),
-      notify: key => k(key, 'notify'),
-      cancelNotification: key => k(key, 'cancelNotification'),
-      setLastChat: key => k(key, 'setLastChat'),
-      chatSeen: (key, id) => (k(key, 'chatSeen'), (window.__seen ||= []).push(id)),
-      setReadAloud: key => k(key, 'setReadAloud'),
-      mediaBase: key => (k(key, 'mediaBase'), ''),
-      // Voice: speaking "finishes" after 50 ms; the test plays the recogniser through window.__hmVoice.
-      speak: (key, text) => {
-        k(key, 'speak')
-        ;(window.__spoken ||= []).push(text)
-        setTimeout(() => window.__hmVoice('tts-done', ''), 50)
-      },
-      stopSpeaking: key => k(key, 'stopSpeaking'),
-      startListening: key => k(key, 'startListening'),
-      stopListening: key => k(key, 'stopListening'),
-      // Setup check: the test sets window.__setup; fixes are recorded in window.__fixes.
-      setupState: key => (k(key, 'setupState'), JSON.stringify(window.__setup || { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })),
-      setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what)),
-      listVoices: key => k(key, 'listVoices'),
-      isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
-      openAssistantSettings: key => k(key, 'openAssistantSettings'),
-      // Background app: the test sets state through window.__hmBg; frames come back 120 ms after each request.
-      bgState: key => (k(key, 'bgState'), window.__bgNative ? JSON.stringify(window.__bgNative) : ''),
-      bgFrameAsync: (key, id, w) => {
-        k(key, 'bgFrameAsync')
-        const log = (window.__bgAsked ||= [])
-        log.push({ t: Date.now(), w })
-        window.__bgInflight = (window.__bgInflight || 0) + 1
-        window.__bgMaxInflight = Math.max(window.__bgMaxInflight || 0, window.__bgInflight)
-        setTimeout(() => {
-          window.__bgInflight--
-          window.__hmBgFrame(id, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
-        }, 120)
-      },
-      bgAction: (key, what) => {
-        k(key, 'bgAction')
-        ;(window.__bgActs ||= []).push(what)
-        setTimeout(() => window.__hmBg(null), 30) // the shell clears the state once the host answered
-        return 'ok'
-      }
-    }
-  })
+  await np.addInitScript(nativeShell)
   const listsBefore = rpcs('session.list').length
   await np.goto('http://127.0.0.1:5180/')
   await np.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
@@ -1521,6 +1550,163 @@ async function main() {
   await sleep(1500)
   check((await wel.getByText('Connect Hermes to a model').count()) === 0, 'the welcome does not come back')
   await wel.close()
+
+  // ── the setup flow: works out what is set up and resumes at the first missing step ──
+  const OK = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' }
+  const flowPage = async setup => {
+    const fp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    fp.on('pageerror', e => { console.log('PAGEERROR (flow page)', e.message); failures++ })
+    await fp.addInitScript(s => { window.__setup = s }, setup)
+    await fp.addInitScript(nativeShell)
+    return fp
+  }
+  const flowShown = fp => fp.getByText('Set up Hermes', { exact: true }).count().then(n => n > 0)
+  // a. PC-installed phone, everything working: straight to chat, no flow, and it is not checked again
+  await mock({ configured: true, pluginEnabled: true })
+  {
+    const fa = await flowPage(OK)
+    await fa.goto('http://127.0.0.1:5180/')
+    await fa.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fa.waitForFunction(() => localStorage.getItem('hm.setupFlowDone') === '1', null, { timeout: 8000 }).catch(() => {})
+    check(!(await flowShown(fa)), 'flow: everything set up → straight to chat, no setup flow')
+    check(await fa.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1' && localStorage.getItem('hm.welcomeDone') === '1'), 'flow: nothing missing is remembered (not checked again)')
+    await fa.close()
+  }
+  // b. everything fine but no model: the model step, then the recommended items once ("Almost done").
+  // looseStatus: like the pinned Hermes on a fresh install, setup.status for a profile wrongly says a provider is there.
+  await mock({ unconfigured: true, pluginEnabled: true, looseStatus: true })
+  {
+    const fb = await flowPage({ ...OK, batteryApp: false })
+    await fb.goto('http://127.0.0.1:5180/')
+    await fb.getByText('Connect Hermes to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'flow: no model → opens at the model step'), () => check(false, 'flow: no model → opens at the model step'))
+    check((await fb.locator('.flow-progress-label').textContent()) === 'Step 1 of 1', `flow: progress counts only the missing required steps (${await fb.locator('.flow-progress-label').textContent()})`)
+    await fb.locator('.set-row', { hasText: 'ChatGPT / Codex' }).getByRole('button', { name: 'Sign in' }).click()
+    await fb.getByText('Copy this code').waitFor({ state: 'detached', timeout: 12000 })
+    await fb.getByRole('button', { name: 'Pick a model' }).click({ timeout: 5000 })
+    await fb.locator('.picker-opt', { hasText: 'mock-sonnet' }).click()
+    await fb.locator('.setup-hero-title', { hasText: 'Almost done' }).waitFor({ timeout: 8000 }).then(() => check(true, 'flow: after the model, the recommended items are shown once (Almost done)'), () => check(false, 'flow: after the model, the recommended items are shown once (Almost done)'))
+    check((await fb.locator('.setup-item.bad').count()) === 1, 'flow: only the missing recommended item is listed')
+    check((await fb.locator('.flow-done', { hasText: 'A model is connected' }).count()) === 1, 'flow: the finished step is collapsed with ✓')
+    await fb.locator('.setup-item.bad', { hasText: 'run in the background' }).getByRole('button', { name: 'Allow' }).click()
+    check((await fb.evaluate(() => window.__fixes || [])).includes('battery-app'), 'flow: Allow asks the shell for the battery exemption')
+    await fb.evaluate(() => {
+      window.__setup = { ...window.__setup, batteryApp: true }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await fb.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'flow: coming back to the app re-checks: All set'), () => check(false, 'flow: coming back to the app re-checks: All set'))
+    await fb.getByRole('button', { name: 'Done', exact: true }).click()
+    await fb.getByText('Set up Hermes', { exact: true }).waitFor({ state: 'detached', timeout: 4000 }).then(() => check(true, 'flow: Done goes to the chat'), () => check(false, 'flow: Done goes to the chat'))
+    await fb.reload()
+    await fb.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await sleep(2000)
+    check(!(await flowShown(fb)), 'flow: not shown again after Done')
+    check(await fb.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1'), 'flow: hm.setupFlowDone is set')
+    await fb.close()
+    await mock({ looseStatus: false })
+  }
+  // c. Hermes not running on a first run: opens at "Start Hermes" and moves on by itself once Hermes answers
+  await mock({ configured: true, pluginEnabled: true, drop: 19000 })
+  {
+    const fc = await flowPage(OK)
+    await fc.goto('http://127.0.0.1:5180/')
+    await fc.getByRole('button', { name: 'Start Hermes' }).waitFor({ timeout: 30000 }).then(() => check(true, 'flow: Hermes not running → opens at Start Hermes'), () => check(false, 'flow: Hermes not running → opens at Start Hermes'))
+    await fc.getByRole('button', { name: 'Start Hermes' }).click().catch(() => {})
+    check((await fc.evaluate(() => window.__fixes || [])).includes('start'), 'flow: Start Hermes asks the shell to start it')
+    await fc.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 40000 }).then(() => check(true, 'flow: moves on by itself once Hermes is back (All set)'), () => check(false, 'flow: moves on by itself once Hermes is back (All set)'))
+    check((await fc.locator('.flow-done', { hasText: 'Hermes is running' }).count()) === 1, 'flow: Hermes is running is ticked off')
+    await fc.close()
+  }
+  // d. Xiaomi family: a tip with a button to the app settings, never ✓/✗, and it does not open the flow by itself
+  await mock({ configured: true, pluginEnabled: true })
+  {
+    const fd = await flowPage({ ...OK, maker: 'xiaomi' })
+    await fd.goto('http://127.0.0.1:5180/')
+    await fd.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await sleep(2500)
+    check(!(await flowShown(fd)), 'flow: the Autostart tip alone does not open the flow')
+    await fd.locator('.conn-dot').click()
+    await fd.getByRole('button', { name: 'Setup check' }).click()
+    const tip = fd.locator('.setup-item.info', { hasText: 'Autostart' })
+    await tip.waitFor({ timeout: 5000 }).then(() => check(true, 'setup: Xiaomi shows the Autostart tip'), () => check(false, 'setup: Xiaomi shows the Autostart tip'))
+    check((await fd.locator('.setup-item.ok, .setup-item.bad', { hasText: 'Autostart' }).count()) === 0, 'setup: the Autostart tip is neither ✓ nor ✗')
+    await tip.getByRole('button', { name: 'Hermes Mobile settings' }).click()
+    check((await fd.evaluate(() => window.__fixes || [])).includes('app-settings'), 'setup: the Autostart button opens the app settings')
+    await fd.close()
+    const fg = await flowPage({ ...OK, maker: 'google' })
+    await fg.goto('http://127.0.0.1:5180/')
+    await fg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fg.locator('.conn-dot').click()
+    await fg.getByRole('button', { name: 'Setup check' }).click()
+    await fg.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 })
+    check((await fg.locator('.setup-item', { hasText: 'Autostart' }).count()) === 0, 'setup: other makers have no Autostart row')
+    await fg.close()
+  }
+  // e. app-first: only Hermes Mobile is installed. The flow opens at once at the helper apps, installs all four in order,
+  // offers Start Shizuku (skippable), asks for the Termux permission, copies the installer command, shows its progress
+  // lines, and after DONE connects and lands on the model step.
+  await mock({ unconfigured: true, pluginEnabled: true, drop: 600000 })
+  {
+    const FRESH = { ...OK, termux: false, runCommand: false, termuxApi: false, termuxBoot: false, termuxBootStopped: false, shizuku: false, canInstall: true, devOptions: false, wirelessDebugging: false, termuxSigner: '', probe: true, maker: 'google' }
+    const fe = await flowPage(FRESH)
+    await fe.goto('http://127.0.0.1:5180/')
+    await fe.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: no Termux → the flow opens at once at the helper apps'), () => check(false, 'app-first: no Termux → the flow opens at once at the helper apps'))
+    check((await fe.locator('.app-list .setup-item.bad').count()) === 4, 'app-first: four install rows (Termux, Termux:API, Termux:Boot, Shizuku)')
+    check((await fe.evaluate(() => window.__probes || 0)) === 0, 'app-first: no Termux command is sent while Termux is missing')
+    await fe.getByRole('button', { name: 'Install all' }).click()
+    await fe.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).then(() => check(true, 'app-first: once all four are installed the flow moves on to Start Shizuku'), () => check(false, 'app-first: once all four are installed the flow moves on to Start Shizuku'))
+    check(JSON.stringify(await fe.evaluate(() => window.__installs)) === JSON.stringify(['termux', 'termux-api', 'termux-boot', 'shizuku']), `app-first: Install all installs them one after another, Termux first (${JSON.stringify(await fe.evaluate(() => window.__installs))})`)
+    await fe.getByRole('button', { name: 'Open Shizuku' }).click()
+    check((await fe.evaluate(() => window.__fixes || [])).includes('open-shizuku'), 'app-first: Open Shizuku opens it')
+    await fe.getByRole('button', { name: 'Skip for now' }).click()
+    await fe.getByRole('button', { name: 'Allow' }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: after Shizuku, the Termux permission comes before the installer'), () => check(false, 'app-first: after Shizuku, the Termux permission comes before the installer'))
+    await fe.getByRole('button', { name: 'Allow' }).click()
+    await fe.evaluate(() => {
+      window.__setup = { ...window.__setup, runCommand: true }
+      window.__probe = { result: 'not-allowed' }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await fe.getByText('Run the installer', { exact: true }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: Termux refuses commands → Run the installer'), () => check(false, 'app-first: Termux refuses commands → Run the installer'))
+    check((await fe.evaluate(() => window.__probes || 0)) >= 1, 'app-first: the flow probed Termux once it was allowed to')
+    await fe.getByRole('button', { name: 'Copy the command' }).click()
+    check((await fe.evaluate(() => window.__copied)) === 1, 'app-first: Copy the command asks the shell for the command (the page never builds it)')
+    await fe.getByText('Waiting for the installer to start', { exact: false }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: after copying it waits for the installer'), () => check(false, 'app-first: after copying it waits for the installer'))
+    const push = (lines, extra = {}) => fe.evaluate(([ls, ex]) => {
+      for (const l of ls) {
+        window.__progress = { ...window.__progress, ...ex, lines: [...window.__progress.lines, l], fail: l.startsWith('FAIL ') ? l.split(' ')[1] : l.startsWith('STEP ') ? '' : window.__progress.fail }
+        window.hermesSetupLine(l)
+      }
+    }, [lines, extra])
+    await push(['STEP packages Termux packages', 'STEP access Access', 'phone: tap Allow on Android’s prompt, so Hermes can read and save your files', 'STEP android limit', 'android: child-process limit lifted (via Shizuku)', 'STEP debian Debian'])
+    await fe.locator('.install-step.run', { hasText: 'Debian' }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: progress lines show the running step'), () => check(false, 'app-first: progress lines show the running step'))
+    check((await fe.locator('.install-step.ok').count()) === 3, 'app-first: finished installer steps are ticked')
+    check((await fe.locator('.install-hint', { hasText: 'tap Allow on Android' }).count()) === 1, 'app-first: the latest “phone:” hint is shown')
+    check(!(await fe.evaluate(() => window.__fixes || [])).includes('start'), 'app-first: Start Hermes is never asked for while the installer runs')
+    await push(['FAIL debian (line 120)'])
+    await fe.getByText('The installer stopped', { exact: true }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: FAIL says where it stopped, with Copy again'), () => check(false, 'app-first: FAIL says where it stopped, with Copy again'))
+    check((await fe.getByRole('button', { name: 'Copy the command' }).count()) === 1, 'app-first: FAIL offers the command again')
+    await push(['STEP debian Debian', 'STEP hermes Hermes', 'STEP plugin Plugin', 'STEP start Start'])
+    await mock({ up: true })
+    await push(['DONE'], { done: true, active: false })
+    await fe.getByText('Connect Hermes to a model').waitFor({ timeout: 20000 }).then(() => check(true, 'app-first: DONE → connects → the model step'), () => check(false, 'app-first: DONE → connects → the model step'))
+    await fe.close()
+  }
+  // f. a PC-installed phone on a new app build: the new rows never show, and Termux is not probed while Hermes answers
+  await mock({ configured: true, pluginEnabled: true })
+  {
+    const ff = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, termuxBootStopped: false, shizuku: true, canInstall: true, devOptions: true, wirelessDebugging: true, termuxSigner: 'fdroid', probe: true, maker: 'google' })
+    await ff.goto('http://127.0.0.1:5180/')
+    await ff.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await sleep(2000)
+    check(!(await flowShown(ff)), 'app-first: a set-up phone goes straight to chat')
+    await ff.locator('.conn-dot').click()
+    await ff.getByRole('button', { name: 'Setup check' }).click()
+    await ff.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: Setup check is All set with the new rows'), () => check(false, 'app-first: Setup check is All set with the new rows'))
+    check((await ff.locator('.setup-item', { hasText: 'Start Shizuku' }).count()) === 0, 'app-first: no Start Shizuku row on a set-up phone')
+    check((await ff.locator('.setup-item.ok', { hasText: 'Hermes is installed' }).count()) === 1 && (await ff.locator('.setup-item.ok', { hasText: 'Shizuku are installed' }).count()) === 1, 'app-first: the apps and installer rows are ✓ on a set-up phone')
+    check((await ff.evaluate(() => window.__probes || 0)) === 0, 'app-first: Termux is not probed while Hermes answers')
+    await ff.close()
+  }
+  await mock({ configured: true, pluginEnabled: true })
 
   await browser.close()
   console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED')

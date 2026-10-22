@@ -212,10 +212,18 @@ public class MainActivity extends Activity {
             return;
         }
         startHermes();
+        setupChanged();
     }
 
-    /** Ask Termux to run ~/bin/hermes-services (sshd + dashboard + memory sync; idempotent). */
+    /** Ask Termux to run ~/bin/hermes-services (sshd + dashboard + memory sync; idempotent). Automatic starts (launch,
+     *  permission answer, the page's reconnects) wait until Termux has accepted a command once: on a fresh phone before
+     *  the installer, Termux refuses each one with an error notification. None either while the installer runs. */
     void startHermes() {
+        if (!termuxOk(this) || HermesService.setup(this).installing()) return;
+        startHermesNow();
+    }
+
+    void startHermesNow() {
         long now = System.currentTimeMillis();
         if (now - lastStartRequest < 8000) return;
         lastStartRequest = now;
@@ -261,10 +269,345 @@ public class MainActivity extends Activity {
             o.put("batteryTermux", pm != null && pm.isIgnoringBatteryOptimizations("com.termux"));
             o.put("termuxApi", installed("com.termux.api"));
             o.put("shizuku", installed(SHIZUKU));
+            o.put("maker", Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT)); // the setup flow's Xiaomi Autostart tip
             o.put("startError", startError);
+            // App-first setup
+            o.put("termuxBoot", installed(TERMUX_BOOT));
+            o.put("termuxBootStopped", stopped(TERMUX_BOOT));
+            o.put("termuxSigner", installed("com.termux") ? (FDROID_SIGNER.equals(signer("com.termux")) ? "fdroid" : "other") : "");
+            o.put("termuxVersion", versionName("com.termux"));
+            o.put("canInstall", getPackageManager().canRequestPackageInstalls());
+            o.put("devOptions", android.provider.Settings.Global.getInt(getContentResolver(), android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) == 1);
+            o.put("wirelessDebugging", android.provider.Settings.Global.getInt(getContentResolver(), "adb_wifi_enabled", 0) == 1);
+            o.put("probe", true);
         } catch (Exception ignored) {
         }
         return o.toString();
+    }
+
+    static final String TERMUX_BOOT = "com.termux.boot";
+
+    /** Installed but never opened (Android keeps such an app from getting BOOT_COMPLETED). */
+    boolean stopped(String pkg) {
+        try {
+            return (getPackageManager().getApplicationInfo(pkg, 0).flags & android.content.pm.ApplicationInfo.FLAG_STOPPED) != 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    String versionName(String pkg) {
+        try {
+            String v = getPackageManager().getPackageInfo(pkg, 0).versionName;
+            return v == null ? "" : v;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** SHA-256 of an installed app's signing certificate (hex), "" if unknown. */
+    String signer(String pkg) {
+        try {
+            if (Build.VERSION.SDK_INT >= 28) {
+                android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES);
+                return certSha(pi.signingInfo.getApkContentsSigners());
+            }
+            return certSha(getPackageManager().getPackageInfo(pkg, PackageManager.GET_SIGNATURES).signatures);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    static String certSha(android.content.pm.Signature[] sigs) throws Exception {
+        if (sigs == null || sigs.length != 1) return ""; // one signer expected for all four apps
+        byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(sigs[0].toByteArray());
+        StringBuilder b = new StringBuilder();
+        for (byte x : d) b.append(String.format("%02x", x));
+        return b.toString();
+    }
+
+    // ── app-first setup: Termux accepts commands? (gates every automatic RUN_COMMAND) ──
+
+    /** True once Termux has run one of our commands (a probe, the dashboard answering, installer DONE). A fresh install
+     *  starts false; an update from a build that predates this flag starts true (that phone was set up already). */
+    static boolean termuxOk(Context c) {
+        android.content.SharedPreferences p = c.getSharedPreferences("hermes", MODE_PRIVATE);
+        if (!p.contains("termux_ok")) {
+            boolean updated = false;
+            try {
+                android.content.pm.PackageInfo pi = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+                updated = pi.firstInstallTime != pi.lastUpdateTime;
+            } catch (Exception ignored) {
+            }
+            p.edit().putBoolean("termux_ok", updated).apply();
+            return updated;
+        }
+        return p.getBoolean("termux_ok", false);
+    }
+
+    static void setTermuxOk(Context c) {
+        android.content.SharedPreferences p = c.getSharedPreferences("hermes", MODE_PRIVATE);
+        if (p.getBoolean("termux_ok", false)) return;
+        p.edit().putBoolean("termux_ok", true).apply();
+        HermesService.shareKeyAgain(); // the one try at service start was refused (or skipped) on an app-first install
+    }
+
+    // ── app-first setup: the probe (what is installed in Termux) ──
+    static final String PROBE_ACTION = "com.omarqaterge.hermesmobile.PROBE_RESULT";
+    /** Fixed: nothing from the page reaches it. installed = the marker bootstrap writes at DONE. */
+    static final String PROBE_SCRIPT = "test -x ~/bin/hermes-services && echo services=yes; test -f ~/.hermes-mobile/installed && echo installed=yes; "
+            + "curl -s -m 2 -o /dev/null -w 'dash=%{http_code}' http://127.0.0.1:9119/ 2>/dev/null; true";
+    boolean probeReceiverOn = false;
+    long probeSentAt = 0;
+
+    void probeAnswer(String json) {
+        String js = "window.hermesTermuxProbe && window.hermesTermuxProbe(" + JSONObject.quote(json) + ")";
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
+    }
+
+    /** RUN_COMMAND with a result PendingIntent: Termux answers in ~30-200 ms. At most one in flight (10 s). */
+    void probeTermux() {
+        if (!installed("com.termux")) { probeAnswer("{\"result\":\"error\"}"); return; }
+        if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) { probeAnswer("{\"result\":\"denied\"}"); return; }
+        long now = System.currentTimeMillis();
+        if (now - probeSentAt < 10_000) return;
+        probeSentAt = now;
+        if (!probeReceiverOn) {
+            android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context ctx, Intent in) {
+                    probeSentAt = 0;
+                    Bundle b = in.getBundleExtra("result");
+                    String out = b == null ? "" : String.valueOf(b.getString("stdout", ""));
+                    String errmsg = b == null ? "" : String.valueOf(b.getString("errmsg", ""));
+                    int err = b == null ? 1 : b.getInt("err", -1);
+                    org.json.JSONObject o = new org.json.JSONObject();
+                    try {
+                        if (b == null || err > 0 || errmsg.contains("allow-external-apps")) {
+                            o.put("result", "not-allowed");
+                        } else {
+                            o.put("result", "ran");
+                            o.put("services", out.contains("services=yes"));
+                            o.put("installed", out.contains("installed=yes"));
+                            Matcher m = Pattern.compile("dash=(\\d{3})").matcher(out);
+                            o.put("dash", m.find() ? Integer.parseInt(m.group(1)) : 0);
+                            setTermuxOk(MainActivity.this);
+                        }
+                    } catch (Exception ignored) {
+                    }
+                    probeAnswer(o.toString());
+                }
+            };
+            IntentFilter f = new IntentFilter(PROBE_ACTION);
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(rx, f);
+            probeReceiverOn = true;
+        }
+        try {
+            PendingIntent pend = PendingIntent.getBroadcast(this, 4711, new Intent(PROBE_ACTION).setPackage(getPackageName()),
+                    PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            Intent i = new Intent();
+            i.setClassName("com.termux", "com.termux.app.RunCommandService");
+            i.setAction("com.termux.RUN_COMMAND");
+            i.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash");
+            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", PROBE_SCRIPT});
+            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
+            i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", pend);
+            startForegroundService(i);
+        } catch (SecurityException e) {
+            probeSentAt = 0;
+            probeAnswer("{\"result\":\"denied\"}");
+        } catch (Exception e) {
+            probeSentAt = 0;
+            probeAnswer("{\"result\":\"error\"}");
+        }
+    }
+
+    // ── app-first setup: the installer command and its progress ──
+    static final String BOOTSTRAP_URL = "https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh";
+
+    /** The bootstrap URL. Emulator test builds only (android/build.sh HM_TEST_BOOTSTRAP_URL): a URL on the emulator's
+     *  host (10.0.2.2) serving a working tree. Release builds have no such resource. */
+    String bootstrapUrl() {
+        try {
+            int id = getResources().getIdentifier("hm_test_bootstrap", "string", getPackageName());
+            if (id != 0) {
+                String u = getString(id);
+                if (u.matches("http://10\\.0\\.2\\.2:[0-9]{2,5}/[A-Za-z0-9._/-]+")) return u;
+            }
+        } catch (Exception ignored) {
+        }
+        return BOOTSTRAP_URL;
+    }
+
+    /** A new one-time token (24 random bytes), registered with the service, and the command on the clipboard. */
+    boolean copySetupCommand() {
+        byte[] r = new byte[24];
+        new java.security.SecureRandom().nextBytes(r);
+        StringBuilder t = new StringBuilder();
+        for (byte x : r) t.append(String.format("%02x", x));
+        HermesService.startSetup(this, t.toString());
+        String cmd = "curl -fsSL " + bootstrapUrl() + " -o hm.sh && HM_APP_TOKEN=" + t + " bash hm.sh";
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("Hermes installer", cmd);
+            if (Build.VERSION.SDK_INT >= 33) {
+                android.os.PersistableBundle extras = new android.os.PersistableBundle();
+                extras.putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true); // no preview of the token
+                clip.getDescription().setExtras(extras);
+            }
+            cm.setPrimaryClip(clip);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    void pushSetupLine(String line) {
+        String js = "window.hermesSetupLine && window.hermesSetupLine(" + JSONObject.quote(line) + ")";
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
+    }
+
+    // ── app-first setup: the helper apps (fixed sources and signers; the page only names one of four) ──
+    static final String FDROID_SIGNER = "228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42";
+    static final String SHIZUKU_SIGNER = "268b5590e868fb08bae7e0ac413564cd1ff88f5ccff74af9dbd0dc918e30db30";
+    /** Same file as phone/phone-access.sh and tools/setup-phone.sh. */
+    static final String SHIZUKU_APK = "https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk";
+    static final String HELPER_ACTION = "com.omarqaterge.hermesmobile.HELPER_RESULT";
+    final java.util.concurrent.atomic.AtomicBoolean helperBusy = new java.util.concurrent.atomic.AtomicBoolean();
+    boolean helperReceiverOn;
+
+    static String helperPackage(String which) {
+        switch (which == null ? "" : which) {
+            case "termux": return "com.termux";
+            case "termux-api": return "com.termux.api";
+            case "termux-boot": return TERMUX_BOOT;
+            case "shizuku": return SHIZUKU;
+            default: return null;
+        }
+    }
+
+    void helperState(String which, String state, int pct, String msg) {
+        String js = "window.hermesSetupInstall && window.hermesSetupInstall(" + JSONObject.quote(which) + "," + JSONObject.quote(state) + "," + pct + ","
+                + JSONObject.quote(msg == null ? "" : msg) + ")";
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
+    }
+
+    static boolean fdroidHost(String h) {
+        return h.equals("f-droid.org") || h.endsWith(".f-droid.org");
+    }
+
+    static boolean githubHost(String h) {
+        return h.equals("github.com") || h.endsWith(".githubusercontent.com") || h.equals("githubusercontent.com");
+    }
+
+    /** F-Droid's suggested version of a package (not the newest: that may be a beta). */
+    static long fdroidVersion(String pkg) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL("https://f-droid.org/api/v1/packages/" + pkg).openConnection();
+        c.setInstanceFollowRedirects(false);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(30000);
+        try {
+            if (c.getResponseCode() != 200) throw new Exception("F-Droid didn't answer (HTTP " + c.getResponseCode() + ").");
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            try (InputStream in = c.getInputStream()) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    bo.write(buf, 0, n);
+                    if (bo.size() > 256 * 1024) throw new Exception("F-Droid's answer is too large.");
+                }
+            }
+            long v = new JSONObject(bo.toString("UTF-8")).optLong("suggestedVersionCode", 0);
+            if (v <= 0) throw new Exception("F-Droid has no version of " + pkg + ".");
+            return v;
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    void installHelper(final String which) {
+        final String pkg = helperPackage(which);
+        if (pkg == null) return; // not one of the four: ignored
+        if (!getPackageManager().canRequestPackageInstalls()) {
+            helperState(which, "permission", 0, "Allow Hermes Mobile to install apps, then come back.");
+            runOnUiThread(() -> setupFix("install-permission"));
+            return;
+        }
+        if (!helperBusy.compareAndSet(false, true)) return; // one at a time
+        new Thread(() -> {
+            java.io.File apk = null;
+            try {
+                boolean shizuku = SHIZUKU.equals(pkg);
+                Uri src = Uri.parse(shizuku ? SHIZUKU_APK : "https://f-droid.org/repo/" + pkg + "_" + fdroidVersion(pkg) + ".apk");
+                java.io.File dir = new java.io.File(getCacheDir(), "helpers");
+                dir.mkdirs();
+                apk = new java.io.File(dir, pkg + ".apk");
+                helperState(which, "downloading", 0, "");
+                final java.io.File out = apk;
+                download(src, out, shizuku ? MainActivity::githubHost : MainActivity::fdroidHost, pct -> helperState(which, "downloading", pct, ""));
+                // The right app from the right signer, or nothing is installed.
+                int flags = Build.VERSION.SDK_INT >= 28 ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
+                android.content.pm.PackageInfo got = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+                if (got == null || !pkg.equals(got.packageName)) throw new Exception("The download isn't the expected app.");
+                String sha = Build.VERSION.SDK_INT >= 28 ? (got.signingInfo == null ? "" : certSha(got.signingInfo.getApkContentsSigners())) : certSha(got.signatures);
+                if (!(shizuku ? SHIZUKU_SIGNER : FDROID_SIGNER).equals(sha)) throw new Exception("The download isn't signed by its maker.");
+                helperState(which, "installing", 100, "");
+                commitHelper(which, pkg, apk);
+            } catch (Exception e) {
+                helperState(which, "error", 0, e.getMessage() == null ? "Install failed." : e.getMessage());
+            } finally {
+                if (apk != null) apk.delete();
+                helperBusy.set(false);
+            }
+        }, "hm-helper").start();
+    }
+
+    void commitHelper(String which, String pkg, java.io.File apk) throws Exception {
+        if (!helperReceiverOn) {
+            android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context ctx, Intent in) {
+                    String w = in.getStringExtra("which");
+                    if (helperPackage(w) == null) return;
+                    int st = in.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -1);
+                    if (st == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                        Intent confirm = in.getParcelableExtra(Intent.EXTRA_INTENT);
+                        if (confirm != null) {
+                            try {
+                                startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                            } catch (Exception e) {
+                                helperState(w, "error", 0, "Couldn't open Android's installer.");
+                            }
+                        }
+                    } else if (st == android.content.pm.PackageInstaller.STATUS_SUCCESS) {
+                        helperState(w, "done", 100, "");
+                    } else {
+                        String m = in.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE);
+                        helperState(w, "error", 0, st == android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED ? "Cancelled." : (m == null ? "Install failed." : m));
+                    }
+                }
+            };
+            IntentFilter f = new IntentFilter(HELPER_ACTION);
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(rx, f);
+            helperReceiverOn = true;
+        }
+        android.content.pm.PackageInstaller pi = getPackageManager().getPackageInstaller();
+        android.content.pm.PackageInstaller.SessionParams params = new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(pkg);
+        int id = pi.createSession(params);
+        try (android.content.pm.PackageInstaller.Session ses = pi.openSession(id)) {
+            try (InputStream in = new java.io.FileInputStream(apk); OutputStream o = ses.openWrite(pkg + ".apk", 0, apk.length())) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                ses.fsync(o);
+            }
+            PendingIntent pend = PendingIntent.getBroadcast(this, 5000 + id % 1000, new Intent(HELPER_ACTION).setPackage(getPackageName()).putExtra("which", which),
+                    PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            ses.commit(pend.getIntentSender());
+        }
     }
 
     /** Open the place that fixes one setup item. Only these fixed targets: nothing from the page reaches an intent. */
@@ -277,8 +620,21 @@ public class MainActivity extends Activity {
                     return;
                 case "start":
                     lastStartRequest = 0;
-                    startHermes();
+                    startHermesNow(); // the user asked: no gate
                     return;
+                case "install-permission":
+                    i = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()));
+                    break;
+                case "about-phone":
+                    i = new Intent(android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS);
+                    break;
+                case "dev-options":
+                    i = new Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS);
+                    break;
+                case "open-termux-boot":
+                    i = getPackageManager().getLaunchIntentForPackage(TERMUX_BOOT);
+                    if (i == null) i = new Intent().setClassName(TERMUX_BOOT, TERMUX_BOOT + ".BootActivity");
+                    break;
                 case "notifications":
                     i = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                             .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName());
@@ -576,6 +932,7 @@ public class MainActivity extends Activity {
             String html = httpGet(BASE_URL + "/");
             Matcher m = html == null ? null : TOKEN.matcher(html);
             cachedToken = (m != null && m.find()) ? m.group(1) : "";
+            if (!cachedToken.isEmpty()) setTermuxOk(this); // the dashboard answers: Termux runs Hermes
         }
         return cachedToken;
     }
@@ -931,7 +1288,13 @@ public class MainActivity extends Activity {
         for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())
             if (n.getId() == 2 && n.getTag() != null && n.getTag().startsWith("approval:")) nm.cancel(n.getTag(), 2);
         web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
+        setupChanged();
         pushBg();
+    }
+
+    /** The setup flow re-checks (a permission dialog or a settings page may have changed something). */
+    void setupChanged() {
+        if (web != null) web.evaluateJavascript("window.hermesSetupChanged && window.hermesSetupChanged()", null);
     }
 
     /** Tell the page which app Hermes drives in the background (state without port/token) or null. Any thread. */
@@ -1148,7 +1511,7 @@ public class MainActivity extends Activity {
                 dir.mkdirs();
                 java.io.File apk = new java.io.File(dir, "hermes-mobile.apk");
                 updateState("downloading", 0, "");
-                download(u, apk);
+                download(u, apk, MainActivity::githubHost, pct -> updateState("downloading", pct, ""));
                 // Must be this app, newer than what is installed. The installer also refuses a different signing key.
                 android.content.pm.PackageInfo got = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
                 android.content.pm.PackageInfo mine = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -1164,8 +1527,10 @@ public class MainActivity extends Activity {
         }, "hm-update").start();
     }
 
-    void download(Uri start, java.io.File out) throws Exception {
+    /** https download with a redirect host allowlist and a 150 MB cap; pct gets the progress (0-100). */
+    void download(Uri start, java.io.File out, java.util.function.Predicate<String> hostOk, java.util.function.IntConsumer pct) throws Exception {
         URL url = new URL(start.toString());
+        if (!"https".equals(url.getProtocol()) || !hostOk.test(url.getHost())) throw new Exception("Download failed (unexpected host).");
         for (int hop = 0; hop < 6; hop++) {
             HttpURLConnection c = (HttpURLConnection) url.openConnection();
             c.setInstanceFollowRedirects(false);
@@ -1178,7 +1543,7 @@ public class MainActivity extends Activity {
                 if (loc == null) throw new Exception("Download failed (redirect).");
                 URL next = new URL(url, loc);
                 String h = next.getHost();
-                if (!"https".equals(next.getProtocol()) || !(h.equals("github.com") || h.endsWith(".githubusercontent.com") || h.equals("githubusercontent.com")))
+                if (!"https".equals(next.getProtocol()) || !hostOk.test(h))
                     throw new Exception("Download failed (unexpected host).");
                 url = next;
                 continue;
@@ -1195,8 +1560,8 @@ public class MainActivity extends Activity {
                     fo.write(buf, 0, n);
                     done += n;
                     if (done > 150L * 1024 * 1024) throw new Exception("Download is too large.");
-                    int pct = total > 0 ? (int) (done * 100 / total) : 0;
-                    if (pct != lastPct) { lastPct = pct; updateState("downloading", pct, ""); }
+                    int p = total > 0 ? (int) (done * 100 / total) : 0;
+                    if (p != lastPct) { lastPct = p; pct.accept(p); }
                 }
             } finally {
                 c.disconnect();
@@ -1652,6 +2017,34 @@ public class MainActivity extends Activity {
         public void setupFix(String key, final String what) {
             if (!ok(key) || what == null) return;
             runOnUiThread(() -> MainActivity.this.setupFix(what));
+        }
+
+        /** App-first setup: install one of four helper apps (anything else is ignored); status via window.hermesSetupInstall. */
+        @JavascriptInterface
+        public void installHelperApp(String key, final String which) {
+            if (!ok(key) || helperPackage(which) == null) return;
+            runOnUiThread(() -> MainActivity.this.installHelper(which));
+        }
+
+        /** App-first setup: ask Termux what is installed (fixed script); answer via window.hermesTermuxProbe. */
+        @JavascriptInterface
+        public void probeTermux(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(MainActivity.this::probeTermux);
+        }
+
+        /** App-first setup: copy the installer command with a new one-time progress token. The page never sees it. */
+        @JavascriptInterface
+        public boolean setupCommand(String key) {
+            if (!ok(key)) return false;
+            return MainActivity.this.copySetupCommand();
+        }
+
+        /** App-first setup: the installer's progress so far ({active, lines, done, fail}). */
+        @JavascriptInterface
+        public String setupProgress(String key) {
+            if (!ok(key)) return "";
+            return HermesService.setup(MainActivity.this).json();
         }
 
         @JavascriptInterface

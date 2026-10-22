@@ -1,0 +1,69 @@
+name: Ready-made Debian image
+
+# Builds the ready-made Debian + Hermes image for the Hermes pinned in phone/bootstrap.sh (tools/build-image.sh) and,
+# when "publish" is ticked, attaches it with its .sha256 to the release hermes-image-<first 12 of the pin>, which
+# bootstrap.sh downloads on a NEW install (and falls back to the normal install when it isn't there).
+# Manual only: run it after moving the Hermes pin. The release is a prerelease and never "latest", so the app's update
+# check and bootstrap's releases/latest APK download keep pointing at the app release.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Attach the image to the hermes-image-<pin> release (otherwise only a workflow artifact)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin and patches are consistent
+        run: |
+          bash tools/test_bootstrap_pin.sh
+          bash tools/test_bootstrap_image.sh
+      - name: zstd
+        run: sudo apt-get update -q && sudo apt-get install -y -q zstd
+      - name: Build (arm64 debian:trixie container)
+        run: |
+          bash tools/build-image.sh image-out 2>&1 | grep -v '^+' | tail -40
+          ls -l image-out
+          (cd image-out && sha256sum -c ./*.sha256)
+      - name: Name
+        id: name
+        run: |
+          echo "file=$(bash tools/build-image.sh --name)" >> "$GITHUB_OUTPUT"
+          pin=$(sed -n 's/^HERMES_COMMIT=\([0-9a-f]\{40\}\).*/\1/p' phone/bootstrap.sh)
+          echo "tag=hermes-image-${pin:0:12}" >> "$GITHUB_OUTPUT"
+          echo "pin=$pin" >> "$GITHUB_OUTPUT"
+      - name: Keep as artifact
+        if: ${{ !inputs.publish }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.file }}
+          path: |
+            image-out/${{ steps.name.outputs.file }}
+            image-out/${{ steps.name.outputs.file }}.sha256
+            image-out/build.log
+          retention-days: 7
+          compression-level: 0
+      - name: Publish to the release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.name.outputs.tag }}
+          FILE: ${{ steps.name.outputs.file }}
+          PIN: ${{ steps.name.outputs.pin }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Ready-made Debian + Hermes ($TAG)" \
+              --notes "Debian 13 (arm64) with Hermes Agent $PIN and the Hermes Mobile patches, for phone/bootstrap.sh on new installs. Built by .github/workflows/image.yml from $GITHUB_SHA."
+          fi
+          # image first, sha256 second: a half-replaced pair fails bootstrap's sha256 check, which then installs normally
+          gh release upload "$TAG" "image-out/$FILE" --clobber
+          gh release upload "$TAG" "image-out/$FILE.sha256" --clobber
