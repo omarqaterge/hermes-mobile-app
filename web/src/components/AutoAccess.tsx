@@ -37,6 +37,7 @@ export function AutoButton() {
         message:
           'Hermes will run every command in this chat without asking you first: deleting or overwriting files, killing apps and processes, installing software, changing settings, sending data over the network. A wrong step can lose your data, and nothing is checked before it runs. Only Hermes’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. Use it only for a task you trust, and turn it off afterwards.',
         confirmLabel: 'Allow full access',
+        icon: '⚠️',
         danger: true
       })
       if (!ok) return
