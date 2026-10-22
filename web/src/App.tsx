@@ -29,6 +29,7 @@ import { GalleryScreen } from './components/Gallery'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
 import { Spinner } from './components/Spinner'
 import { BgApp } from './components/BgApp'
+import { AutoButton } from './components/AutoAccess'
 import { refreshBg } from './bgapp'
 import { bootMark } from './boot'
 
@@ -100,6 +101,7 @@ function Header() {
           {profile !== 'default' ? profile : 'Hermes Agent'}
         </span>
       </button>
+      <AutoButton />
       {(
         <button
           className={`icon-btn canvas-btn${canvasWriting ? ' writing' : ''}`}

@@ -100,6 +100,34 @@ textarea {
 .icon-btn:active {
   background: var(--surface-2);
 }
+/* The header's Auto button: off = outlined and dim; Auto access = green; Full access = red. */
+.auto-btn {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.auto-btn.auto {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
+}
+.auto-btn.full {
+  border-color: var(--err-border);
+  background: color-mix(in srgb, var(--err) 18%, transparent);
+  color: var(--err);
+}
+.auto-btn:active {
+  background: var(--press);
+}
+.auto-btn:disabled {
+  opacity: 0.5;
+}
 .title-btn {
   flex: 1;
   min-width: 0;

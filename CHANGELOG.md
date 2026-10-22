@@ -4,6 +4,13 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Auto button in the header.** One tap sets how much Hermes may do in this chat without asking: Off (asks before
+  risky commands), **Auto access** (runs everything without asking, but the commands on Hermes's own dangerous-command
+  list are blocked and Hermes tells you what it wanted to run; patterns you already allowed "always" still run), or
+  **Full access** (/yolo: nothing is asked; a warning comes first). Hermes's catastrophic list (wiping the disk, shutting
+  down) stays blocked in every mode. The setting is per chat and comes back when you reopen the chat. The composer's
+  "YOLO" chip is now "Full access".
+
 ## v0.8.46 (2026-10-22)
 
 Install changes were tested on wiped Android 15 emulators, not yet on a brand-new real phone.
