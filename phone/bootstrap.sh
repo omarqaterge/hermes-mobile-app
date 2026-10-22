@@ -102,7 +102,7 @@ step access "Access to the phone (files, Termux:API, Shizuku)"
 if [ -n "$src" ] && [ -f "$src/phone-access.sh" ]; then
   bash "$src/phone-access.sh" || true
 else
-  curl -fsSL "$RAW/phone/phone-access.sh" -o "$HOME/hm-phone-access.sh" && bash "$HOME/hm-phone-access.sh" || true
+  curl -fsSL --retry 4 --retry-delay 15 "$RAW/phone/phone-access.sh" -o "$HOME/hm-phone-access.sh" && bash "$HOME/hm-phone-access.sh" || true
 fi
 
 # Android 12+ stops Termux ("signal 9") when it has many child processes, as a long install does. Shizuku's shell lifts
@@ -210,7 +210,9 @@ if deb "hermes --version 2>/dev/null | grep -q Hermes && test -f /root/.hermes/h
   say "hermes already installed, skipping"
 else
   # The pin's own installer script (not the hosted one), so the install is reproducible: the hosted one changes over time.
-  hermes_install() { deb "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh | bash -s -- --non-interactive --commit $HERMES_COMMIT"; }  # hex only: no quotes (deb() wraps this in bash -lc "...")
+  # Downloaded to a file first: piped into bash, a failed download (GitHub answers 429 when busy) ran an empty script and
+  # "succeeded". --retry also covers 429/5xx.
+  hermes_install() { deb "curl -fsSL --retry 4 --retry-delay 15 -o /root/hermes-install.sh https://raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh && bash /root/hermes-install.sh --non-interactive --commit $HERMES_COMMIT"; }  # hex only: no quotes (deb() wraps this in bash -lc "...")
   if ! hermes_install; then
     # Under proot, uv's freshly downloaded Python reports its real Android path as sys.prefix, so
     # `uv python find --managed-python` rejects it and Hermes's installer stops ("bootstrap Python lookup failed").
@@ -235,7 +237,7 @@ step plugin "Hermes Mobile plugin, supervisor, and access to the phone (files, T
 if [ -n "$src" ] && [ -f "$src/install.sh" ] && [ -d "$src/../hermes-plugin/hermes-mobile" ]; then
   HM_NO_APK=1 bash "$src/install.sh"
 else
-  curl -fsSL "$RAW/phone/install.sh" -o "$HOME/hm-install.sh"
+  curl -fsSL --retry 4 --retry-delay 15 "$RAW/phone/install.sh" -o "$HOME/hm-install.sh"
   HM_NO_APK=1 bash "$HOME/hm-install.sh"
 fi
 # Termux:Boot (if installed) starts Hermes after a reboot.
