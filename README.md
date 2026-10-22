@@ -157,9 +157,10 @@ Install only Hermes Mobile; the app walks you through the rest and picks up wher
 4. Allow Hermes Mobile to *run commands in Termux* when Android asks.
 5. **Run the installer:** tap **Copy the command**, then **Open Termux**. In Termux, long-press, tap **Paste**, then press Enter.
    Stay in Termux and tap **Allow** on what it asks (notifications, running in the background, files; Shizuku: **Allow all the
-   time**). The app follows the install step by step; it takes 15-40 minutes, mostly waiting. Keep the screen on. If it stops, the
-   app says where: paste the same command again (finished parts are skipped). Android may offer to install Hermes Mobile again at
-   the end: you already have it, so you can cancel that.
+   time**). The app follows the install step by step; it takes 10-40 minutes, mostly waiting (shorter when a ready-made Debian +
+   Hermes is available for this version: the installer downloads it, about 900 MB, and falls back to the normal install by
+   itself otherwise). Keep the screen on. If it stops, the app says where: paste the same command again (finished parts are
+   skipped).
 6. Back in the app: **Connect Hermes to a model**. Sign in with your subscription or paste an API key, then pick the model new
    chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
 

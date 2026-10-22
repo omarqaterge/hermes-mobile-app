@@ -45,5 +45,7 @@ env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" CURL_LOG="$T/log" bash -c "set
 check "[ ! -e '$T/home/.hermes-mobile/installed' ]" "bootstrap: no installed marker before DONE"
 env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" CURL_LOG="$T/log" bash -c "set -eE; source '$T/say-bootstrap.sh'; say DONE" >/dev/null
 check "[ -e '$T/home/.hermes-mobile/installed' ]" "bootstrap: DONE writes ~/.hermes-mobile/installed (also without a token)"
+# On the app route the app is already installed: bootstrap must not download and offer it again.
+check "grep -q 'if \\[ -z \"\\\${HM_NO_APK:-}\\\${HM_APP_TOKEN:-}\" \\]' phone/bootstrap.sh" "bootstrap: no APK prompt on the app route (HM_APP_TOKEN)"
 echo
 [ $fails -eq 0 ] && echo "ALL PASSED" || { echo "$fails FAILED"; exit 1; }

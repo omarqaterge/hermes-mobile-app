@@ -255,8 +255,9 @@ termux-wake-unlock 2>/dev/null || true
 # Hermes's access to the phone (phone/phone-access.sh, run by install.sh): what is still missing. Hermes runs without it, but
 # can't reach that part of the phone until it's done. The app's Setup check lists the same.
 while IFS= read -r t; do [ -n "$t" ] && say "TODO $t"; done < "$HOME/.hermes-mobile/todo" 2>/dev/null || true
-# The app: open Android's installer (the computer routes install it over adb and pass HM_NO_APK=1). Never fails the setup.
-if [ -z "${HM_NO_APK:-}" ]; then
+# The app: open Android's installer (the computer routes install it over adb and pass HM_NO_APK=1; on the app route,
+# HM_APP_TOKEN, the app is already installed and running this). Never fails the setup.
+if [ -z "${HM_NO_APK:-}${HM_APP_TOKEN:-}" ]; then
   apk="$HOME/hermes-mobile.apk"
   if curl -fsL -o "$apk" "https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"; then
     say "phone: tap Install (if Android asks which app to use, pick Package installer; allow Termux to install apps if asked), then open Hermes Mobile"
