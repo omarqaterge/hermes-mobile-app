@@ -36,6 +36,9 @@ const goneDraft = id => draftGen > 0 && /^s-new/.test(id) && !id.endsWith(`-d${d
 let fastMode = 'normal'
 let pluginEnabled = false
 let providerConfigured = true // false = a fresh install (the welcome opens)
+// true = like the pinned Hermes on a fresh install: setup.status scoped to a profile says a provider is configured although
+// none is (its loose probe); setup.runtime_check still says ok: false.
+let looseStatus = false
 let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps (Settings → Background apps)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
 let codexPolls = 0
@@ -68,6 +71,9 @@ const server = http.createServer((req, res) => {
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
       if (b.unconfigured) providerConfigured = false
+      if (b.configured) providerConfigured = true
+      if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
+      if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
@@ -76,6 +82,7 @@ const server = http.createServer((req, res) => {
       if (b.gen !== undefined) runtimeGen = b.gen
       if (b.forgetDrafts) draftGen++
       if (b.draftGen !== undefined) draftGen = b.draftGen
+      if (b.up) refuseUntil = 0 // Hermes is back now (ends a drop early)
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
         refuseUntil = Date.now() + (b.drop || 3000)
@@ -135,7 +142,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/config' && req.method === 'GET') return send({ plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })
     if (p === '/api/config' && req.method === 'PUT') {
       const b = JSON.parse(body || '{}')
-      pluginEnabled = (b.config?.plugins?.enabled || []).includes('hermes-mobile')
+      if (b.config?.plugins?.enabled) pluginEnabled = b.config.plugins.enabled.includes('hermes-mobile') // other config writes (the model) leave it alone
       return send({ ok: true })
     }
     if (p === '/api/skills') return send([{ name: 'a', enabled: true }, { name: 'b', enabled: true }, { name: 'c', enabled: false }])
@@ -287,7 +294,9 @@ wss.on('connection', ws => {
         return reply({ session_id: rt, stored_session_id: `s-new${n}`, info: { model, provider: params.provider || 'mock' }, messages: [] })
       }
       case 'setup.status':
-        return reply({ provider_configured: providerConfigured, ready: true })
+        return reply({ provider_configured: providerConfigured || (looseStatus && !!params.profile), ready: true })
+      case 'setup.runtime_check':
+        return reply(providerConfigured ? { ok: true } : { ok: false, error: 'Hermes is not connected to any AI provider yet.' })
       case 'model.options':
         return reply({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
       case 'session.resume': {

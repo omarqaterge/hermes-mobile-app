@@ -4,6 +4,25 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- New installs get exactly the Hermes build the app is tested against (the same one `hermes/patches` are made for) instead of whatever
+  Hermes's installer serves that day; an existing Hermes is never reinstalled or changed. Tested on a wiped Android 15 emulator
+  (Hermes v0.21.5+4582, browser tools included, dashboard answering).
+- The phone-only install lifts Android's child-process limit through Shizuku before the long Hermes install (so Termux isn't stopped
+  with "signal 9"), when Shizuku is running and Termux is allowed. Without Shizuku it says what to switch on instead. Fixed: Shizuku looked
+  "off" whenever the installer ran from Termux's own terminal (a hang that only happened with a terminal attached).
+- The phone-only install now opens Android's installer for the app by itself at the end (download kept as the fallback). Opening it and
+  installing the app were checked on the emulator.
+- New installs get a working web browser for Hermes: the installer adds the system libraries Chromium needs (it couldn't start
+  without them) and tries the browser download once more when Hermes's own installer couldn't fetch it. NOT YET TESTED.
+- Installing from a computer no longer tells you to change a developer option the computer already set, and the Shizuku
+  to-do says to tap Allow (Shizuku was running, Termux just wasn't allowed yet) instead of "install it".
+- First-run setup is one flow that works out what is already set up and picks up at the first missing step: no model, a missing
+  plugin, Hermes not running (on a first run), then the recommended items (notifications, battery, Termux:API, Shizuku, files) once
+  as "Almost done". A phone where everything already works (installed from a computer) goes straight to the chat. It re-checks
+  when you come back to the app, and moves on by itself when a step turns ✓. Tested in browser tests against a mock Hermes; not
+  yet on a real phone.
+- On Xiaomi, Redmi and POCO phones, Setup check (and the flow) reminds you to turn on Autostart for Termux and Hermes Mobile, with
+  buttons to each app's settings (Android can't say whether it is on, so it is a tip, never a ✓ or ✗).
 - **Canvas gallery** (Hermes hub, replaces the Library): every canvas document from every chat and profile shows up on its
   own, nothing to save. Chips group them by type (HTML, Markdown, Code, …) and a search box finds one by its title or
   text. Tap one to preview it (web pages run, offline), then **Open canvas** to continue it on its own chat's canvas, or

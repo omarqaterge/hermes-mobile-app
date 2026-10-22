@@ -6,7 +6,16 @@
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 ROOTFS="$PREFIX/var/lib/proot-distro/containers/debian/rootfs"
 SHIZUKU_APK="https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk"
-say() { echo "    $*"; /system/bin/log -t hmsetup "HMSETUP $*" 2>/dev/null || true; }
+# The "phone:" hints also go to the app's setup flow when the app's installer command set HM_APP_TOKEN (same as
+# bootstrap.sh's say(); 2 s timeout, never fails).
+say() {
+  echo "    $*"; /system/bin/log -t hmsetup "HMSETUP $*" 2>/dev/null || true
+  if [ -n "${HM_APP_TOKEN:-}" ]; then
+    local l="$*"; l=${l//\\/\\\\}; l=${l//\"/\\\"}
+    printf '{"token":"%s","line":"%s"}' "$HM_APP_TOKEN" "$l" | curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' \
+      --data-binary @- http://127.0.0.1:9121/setup 2>/dev/null || true
+  fi
+}
 mkdir -p "$HOME/.hermes-mobile" "$HOME/bin"
 TODO="$HOME/.hermes-mobile/todo"
 : > "$TODO"
@@ -49,21 +58,23 @@ if [ ! -s "$HOME/bin/rish_shizuku.dex" ] || ! grep -q '"com.termux"' "$HOME/bin/
   fi
   rm -rf "$tmp"
 fi
+# rish gets </dev/null: `timeout` runs it in its own process group, and rish reading the terminal then stops it (SIGTTIN)
+# until the timeout kills it, i.e. Shizuku looks off when it isn't.
 # The first call makes Shizuku ask whether Termux may use it (rish waits for the answer). A Shizuku app frozen in the
 # background can miss the first request ("Request timeout"), so try a few times.
 ok=""
 if [ -x "$HOME/bin/rish" ]; then
   say "phone: if Shizuku asks whether Termux may use it, tap Allow all the time"
   for _ in 1 2 3; do
-    timeout 60 "$HOME/bin/rish" -c id 2>/dev/null | grep -q 'uid=2000' && { ok=1; break; }
+    timeout 60 "$HOME/bin/rish" -c id </dev/null 2>/dev/null | grep -q 'uid=2000' && { ok=1; break; }
     sleep 3
   done
 fi
 if [ -n "$ok" ]; then
   # Lets Shizuku start itself after a reboot (Android 13+, without root, once it was started via Wireless debugging).
-  "$HOME/bin/rish" -c 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' >/dev/null 2>&1
+  "$HOME/bin/rish" -c 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' </dev/null >/dev/null 2>&1
 else
-  todo "Shizuku: install it (https://shizuku.rikka.app/download/) and start it (no root: Start via Wireless debugging, pair once; rooted: Start), allow Termux when it asks, then run the installer again"
+  todo "Shizuku: start it and tap Allow when it asks whether Termux may use it (no root: Start via Wireless debugging, pair once; rooted: Start; not installed: https://shizuku.rikka.app/download/), then run the installer again"
 fi
 
 if [ -s "$TODO" ]; then say "phone: $(wc -l < "$TODO") thing(s) still to do (listed at the end)"; else say "phone: files, Termux:API and Shizuku ok"; fi

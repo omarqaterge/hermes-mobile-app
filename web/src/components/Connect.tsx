@@ -1,5 +1,5 @@
 // Connecting Hermes to a model: subscription / account sign-ins (Settings → Accounts) and the first-run
-// welcome that walks a fresh install through signing in or pasting a key, then picking a model.
+// welcome (the model step of the SetupFlow) that walks a fresh install through signing in or pasting a key, then picking a model.
 //
 // Sign-ins use the dashboard's own /api/providers/oauth routes (the ones Hermes's web dashboard uses):
 // device-code providers (ChatGPT/Codex, Nous Portal, xAI Grok, MiniMax) run entirely in the app. Hermes
@@ -9,8 +9,8 @@ import { useEffect, useRef, useState } from 'react'
 import { api, qs } from '../api'
 import { copyText, haptic, openExternal, signInTermux } from '../bridge'
 import { errText, loadDefaultModel, rpc } from '../gateway'
-import { closeScreen, getState, setState, toast, useStore } from '../store'
-import { ScreenShell, Sheet, Status, useLoader } from './Screens'
+import { toast, useStore } from '../store'
+import { Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
 import { Row, Section } from './ui'
 import { Spinner } from './Spinner'
@@ -313,14 +313,14 @@ function KeyEntrySheet({ p, profile, onClose, onSaved }: { p: (typeof KEY_PROVID
 // ── First run ────────────────────────────────────────────────
 
 const DONE = 'hm.welcomeDone'
-const welcomeDone = () => {
+export const welcomeDone = () => {
   try {
     return localStorage.getItem(DONE) === '1'
   } catch {
     return false
   }
 }
-const markWelcomeDone = () => {
+export const markWelcomeDone = () => {
   try {
     localStorage.setItem(DONE, '1')
   } catch {
@@ -328,31 +328,26 @@ const markWelcomeDone = () => {
   }
 }
 
-/** Once connected: a Hermes with no model provider at all (a fresh install) opens the welcome by itself. */
-export async function checkFirstRun(): Promise<void> {
-  if (welcomeDone() || getState().screen) return
-  const r = await rpc<{ provider_configured?: boolean | null }>('setup.status').catch(() => null)
-  if (!r || r.provider_configured == null) return
-  if (r.provider_configured) return markWelcomeDone() // an existing setup never sees it
-  if (!getState().screen) setState({ screen: 'welcome' })
-}
-
-export function WelcomeScreen() {
+/** The "model" step of the first-run SetupFlow (Setup.tsx): sign in or paste a key, then pick the model.
+ *  `onChange` runs when a provider was connected, `onFinish` when the user picked a model, kept the current one or skipped. */
+export function WelcomeBody({ onChange, onFinish }: { onChange?: () => void; onFinish: () => void }) {
   const profile = useStore(s => s.profile)
   const [ready, setReady] = useState(false)
   const [keyFor, setKeyFor] = useState<(typeof KEY_PROVIDERS)[number] | null>(null)
   const [picking, setPicking] = useState(false)
-  const recheck = () =>
+  const recheck = () => {
     void rpc<{ provider_configured?: boolean }>('setup.status')
       .then(r => setReady(Boolean(r?.provider_configured)))
       .catch(() => {})
+    onChange?.()
+  }
   useEffect(recheck, [profile])
   const finish = () => {
     markWelcomeDone()
-    closeScreen()
+    onFinish()
   }
   return (
-    <ScreenShell title="Welcome" onBack={finish}>
+    <>
       <div className="welcome-hero">
         <div className="welcome-title">Connect Hermes to a model</div>
         <div className="dim">Hermes runs on this phone, but it thinks with a model in the cloud. Sign in with a subscription you already pay for, or paste an API key.</div>
@@ -385,6 +380,6 @@ export function WelcomeScreen() {
           }}
         />
       )}
-    </ScreenShell>
+    </>
   )
 }

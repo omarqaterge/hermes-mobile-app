@@ -1,0 +1,180 @@
+import { describe, expect, test } from 'vitest'
+import type { NativeSetup } from './bridge'
+import { nextStep, probeState, progressView, recommendedGaps, setupSteps, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
+
+const native: NativeSetup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, termuxApi: true, shizuku: true, startError: '', maker: 'google' }
+const remote: Remote = { plugin: true, enabled: true, enabledList: ['hermes-mobile'], phone: { files: true, termux_api: true, shizuku: 'ok' } }
+const st = (steps: ReturnType<typeof setupSteps>, id: string) => steps.find(s => s.id === id)?.state
+
+describe('setupSteps / nextStep', () => {
+  test('a PC-installed phone with everything working has no next step', () => {
+    const steps = setupSteps(native, 'open', remote, true)
+    expect(nextStep(steps)).toBeNull()
+    expect(steps.every(s => s.state === 'ok' || s.state === 'skip')).toBe(true)
+  })
+  test('Hermes not running → the next step is hermes', () => {
+    expect(nextStep(setupSteps(native, 'closed', null, null))?.id).toBe('hermes')
+    expect(nextStep(setupSteps(native, 'connecting', null, null))?.id).toBe('hermes') // still being checked
+  })
+  test('running, no model → model', () => {
+    expect(nextStep(setupSteps(native, 'open', remote, false))?.id).toBe('model')
+  })
+  test('the plugin comes before the model, installed before enabled', () => {
+    expect(nextStep(setupSteps(native, 'open', { ...remote, plugin: false, enabled: null }, false))?.id).toBe('plugin')
+    expect(nextStep(setupSteps(native, 'open', { ...remote, enabled: false }, false))?.id).toBe('enabled')
+  })
+  test('answers that have not arrived are waiting, never missing', () => {
+    const steps = setupSteps(native, 'open', null, null)
+    expect(st(steps, 'plugin')).toBe('wait')
+    expect(st(steps, 'model')).toBe('wait')
+    expect(st(steps, 'files')).toBe('skip')
+  })
+  test('no native bridge (a browser): Android rows are skipped, never bad', () => {
+    const steps = setupSteps(null, 'open', remote, true)
+    for (const id of ['termux', 'run', 'notif', 'bat-app', 'bat-termux', 'autostart']) expect(st(steps, id)).toBe('skip')
+    expect(nextStep(steps)).toBeNull()
+  })
+  test('recommended rows are listed but never block', () => {
+    const steps = setupSteps({ ...native, batteryApp: false }, 'open', remote, true)
+    expect(st(steps, 'bat-app')).toBe('bad')
+    expect(nextStep(steps)).toBeNull()
+    expect(recommendedGaps(steps).map(s => s.id)).toEqual(['bat-app'])
+  })
+  test('Autostart is an info row on Xiaomi-family phones only', () => {
+    for (const maker of ['xiaomi', 'redmi', 'poco']) expect(st(setupSteps({ ...native, maker }, 'open', remote, true), 'autostart')).toBe('info')
+    expect(st(setupSteps(native, 'open', remote, true), 'autostart')).toBe('skip')
+    expect(recommendedGaps(setupSteps({ ...native, maker: 'xiaomi' }, 'open', remote, true))).toEqual([])
+  })
+  test('Termux:API and Shizuku missing on Android are bad even before Hermes answers', () => {
+    const steps = setupSteps({ ...native, termuxApi: false, shizuku: false }, 'closed', null, null)
+    expect(st(steps, 'termux-api')).toBe('bad')
+    expect(st(steps, 'shizuku')).toBe('bad')
+  })
+})
+
+describe('shouldOpenFlow', () => {
+  const none = { welcomeDone: false, flowDone: false }
+  test('everything fine → never opens', () => {
+    expect(shouldOpenFlow(setupSteps(native, 'open', remote, true), none)).toBe(false)
+  })
+  test('no model on a first run → opens', () => {
+    expect(shouldOpenFlow(setupSteps(native, 'open', remote, false), none)).toBe(true)
+  })
+  test('a recommended gap opens it once, on a first run only', () => {
+    const steps = setupSteps({ ...native, batteryTermux: false }, 'open', remote, true)
+    expect(shouldOpenFlow(steps, none)).toBe(true)
+    expect(shouldOpenFlow(steps, { welcomeDone: false, flowDone: true })).toBe(false)
+    expect(shouldOpenFlow(steps, { welcomeDone: true, flowDone: false })).toBe(false)
+  })
+  test('a plugin that is installed but not enabled for this profile does not interrupt', () => {
+    expect(shouldOpenFlow(setupSteps(native, 'open', { ...remote, enabled: false }, true), none)).toBe(false)
+  })
+  test('plugin not installed on a first run → opens', () => {
+    expect(shouldOpenFlow(setupSteps(native, 'open', { ...remote, plugin: false }, true), none)).toBe(true)
+  })
+})
+
+// App-first setup: the steps before Hermes exists (get the apps, start Shizuku, run the installer, its progress).
+describe('app-first steps', () => {
+  const fresh: NativeSetup = {
+    ...native, termux: false, runCommand: false, termuxApi: false, termuxBoot: false, termuxBootStopped: false, shizuku: false,
+    canInstall: false, devOptions: false, wirelessDebugging: false, termuxSigner: ''
+  }
+  const allApps: NativeSetup = { ...fresh, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, canInstall: true, termuxSigner: 'fdroid' }
+  const pre = (p: Partial<PreHermes> = {}): PreHermes => ({ probe: 'unknown', progress: null, shizukuSkipped: false, ...p })
+  const active = { active: true, lines: ['STEP packages Termux packages'], done: false, fail: '' }
+  test('no Termux → the next step is apps', () => {
+    expect(nextStep(setupSteps(fresh, 'closed', null, null, pre()))?.id).toBe('apps')
+  })
+  test('one helper app missing → still apps (all four are required)', () => {
+    for (const k of ['termuxApi', 'termuxBoot', 'shizuku'] as const) expect(nextStep(setupSteps({ ...allApps, [k]: false }, 'closed', null, null, pre()))?.id).toBe('apps')
+  })
+  test('apps present → Start Shizuku comes before the installer, and Skip moves on', () => {
+    expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'not-allowed' })))?.id).toBe('shizuku-start')
+    expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'not-allowed', shizukuSkipped: true })))?.id).toBe('installer')
+  })
+  test('apps present, no dashboard, Termux refuses commands (start fails) → installer', () => {
+    const steps = setupSteps({ ...allApps, startError: 'refused' }, 'closed', null, null, pre({ probe: 'not-allowed', shizukuSkipped: true }))
+    expect(nextStep(steps)?.id).toBe('installer')
+    expect(st(steps, 'installer')).toBe('bad')
+  })
+  test('a half-finished install (Termux allows us, not finished) → installer', () => {
+    expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', shizukuSkipped: true })))?.id).toBe('installer')
+  })
+  test('Termux there but Hermes Mobile may not run commands → run, before the installer', () => {
+    expect(nextStep(setupSteps({ ...allApps, runCommand: false }, 'closed', null, null, pre({ probe: 'denied', shizukuSkipped: true })))?.id).toBe('run')
+  })
+  test('installed but stopped → hermes (Start Hermes); the Shizuku step is not shown any more', () => {
+    const steps = setupSteps(allApps, 'closed', null, null, pre({ probe: 'stopped' }))
+    expect(nextStep(steps)?.id).toBe('hermes')
+    expect(st(steps, 'shizuku-start')).toBe('skip')
+    expect(st(steps, 'installer')).toBe('ok')
+  })
+  test('the installer is running → installer, waiting (the progress view), never Start Hermes', () => {
+    const steps = setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', progress: active }))
+    expect(nextStep(steps)?.id).toBe('installer')
+    expect(st(steps, 'installer')).toBe('wait')
+  })
+  test('the installer failed → installer is bad again', () => {
+    expect(st(setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', progress: { ...active, fail: 'debian' } })), 'installer')).toBe('bad')
+  })
+  test('DONE → installer ok; once Hermes answers the model step is next', () => {
+    const done = pre({ probe: 'no-services', progress: { active: false, lines: ['DONE'], done: true, fail: '' } })
+    expect(st(setupSteps(allApps, 'connecting', null, null, done), 'installer')).toBe('ok')
+    expect(nextStep(setupSteps(allApps, 'open', remote, false, done))?.id).toBe('model')
+  })
+  test('the probe has not answered yet → installer waits', () => {
+    expect(st(setupSteps(allApps, 'closed', null, null, pre({ shizukuSkipped: true })), 'installer')).toBe('wait')
+  })
+  test('a PC-installed phone with everything working never sees the new rows', () => {
+    const steps = setupSteps(allApps, 'open', remote, true, pre())
+    expect(nextStep(steps)).toBeNull()
+    for (const id of ['shizuku-start', 'termux']) expect(st(steps, id)).toBe('skip')
+    expect(st(steps, 'apps')).toBe('ok')
+    expect(st(steps, 'installer')).toBe('ok')
+    expect(shouldOpenFlow(steps, { welcomeDone: false, flowDone: false })).toBe(false)
+  })
+  test('an older app build (no install support, no probe) keeps the old rows', () => {
+    const steps = setupSteps(native, 'closed', null, null)
+    for (const id of ['apps', 'shizuku-start', 'installer']) expect(st(steps, id)).toBe('skip')
+    expect(st(steps, 'termux')).toBe('ok')
+  })
+  test('Termux:Boot never opened is a recommended gap, not a blocker', () => {
+    const steps = setupSteps({ ...allApps, termuxBootStopped: true }, 'open', remote, true, pre())
+    expect(st(steps, 'termux-boot')).toBe('bad')
+    expect(nextStep(steps)).toBeNull()
+  })
+})
+
+describe('probeState', () => {
+  test('maps the native probe answer', () => {
+    expect(probeState({ result: 'denied' }, false)).toBe('denied')
+    expect(probeState({ result: 'not-allowed' }, false)).toBe('not-allowed')
+    expect(probeState({ result: 'ran', services: false, installed: false, dash: 0 }, false)).toBe('no-services')
+    expect(probeState({ result: 'ran', services: true, installed: true, dash: 0 }, false)).toBe('stopped')
+    expect(probeState({ result: 'ran', services: true, installed: false, dash: 200 }, true)).toBe('running')
+    expect(probeState(null, false)).toBe('unknown')
+  })
+  test('the supervisor exists mid-install: stopped only when no installer is running (older installs have no marker)', () => {
+    expect(probeState({ result: 'ran', services: true, installed: false, dash: 0 }, false)).toBe('stopped')
+    expect(probeState({ result: 'ran', services: true, installed: false, dash: 0 }, true)).toBe('no-services')
+  })
+})
+
+describe('progressView', () => {
+  test('every step is listed: done, the current one, those still to come; the latest phone hint and the TODO lines', () => {
+    const v = progressView(['STEP packages Termux packages', 'STEP access Access', 'phone: tap Allow', 'STEP android limit', 'android: lifted', 'TODO files: allow', 'STEP debian Debian'])
+    expect(v.steps.map(s => [s.id, s.state])).toEqual([['packages', 'ok'], ['access', 'ok'], ['android', 'ok'], ['debian', 'run'], ['hermes', 'todo'], ['plugin', 'todo'], ['start', 'todo']])
+    expect(v.hint).toBe('tap Allow')
+    expect(v.todo).toEqual(['files: allow'])
+    expect(v.fail).toBe('')
+  })
+  test('FAIL marks the step that stopped; DONE ticks every step', () => {
+    const f = progressView(['STEP packages x', 'STEP debian y', 'FAIL debian (line 120)'])
+    expect(f.fail).toBe('debian')
+    expect(f.steps.find(s => s.id === 'debian')?.state).toBe('bad')
+    const d = progressView(['STEP packages x', 'STEP start y', 'DONE'])
+    expect(d.done).toBe(true)
+    expect(d.steps.every(s => s.state === 'ok')).toBe(true)
+  })
+})
