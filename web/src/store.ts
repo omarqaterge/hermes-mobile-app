@@ -106,7 +106,7 @@ export interface Ctx {
 
 export type Sheet = null | 'model' | 'commands' | 'session-actions' | 'chat-menu' | 'draft-menu' | 'status' | 'rollback'
 
-export type Screen = null | 'skills' | 'memory' | 'cron' | 'files' | 'projects' | 'settings' | 'bots' | 'setup' | 'hub' | 'welcome' | 'library'
+export type Screen = null | 'skills' | 'memory' | 'cron' | 'files' | 'projects' | 'settings' | 'bots' | 'setup' | 'hub' | 'welcome' | 'gallery'
 
 export interface Toast {
   id: number
@@ -151,6 +151,8 @@ export interface AppState {
   find: { q: string; i: number } | null
   /** A message typed while Hermes was offline, sent on reconnect (gateway.ts outbox). chat null = a new chat.
    *  `atts`/`runtime`: what was attached when it was queued (and where), for a page that reloaded meanwhile. */
+  /** The app Hermes drives on a hidden display (bgapp.ts); null = none. */
+  bg: import('./bgapp').BgState | null
   queued: { chat: string | null; text: string; atts?: Attachment[]; runtime?: string } | null
 }
 
@@ -193,6 +195,7 @@ let state: AppState = {
   unread: [],
   jump: null,
   find: null,
+  bg: null,
   queued: (() => {
     try {
       return JSON.parse(localStorage.getItem('hm.outbox.v1') || 'null')

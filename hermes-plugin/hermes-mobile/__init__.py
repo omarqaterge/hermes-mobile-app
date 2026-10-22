@@ -163,6 +163,8 @@ def _set_status(session_id: str, text: str, short: str = "Working", review: bool
                 step: bool = False) -> None:
     if not session_id or session_id in _subagents:
         return
+    if not review and short not in ("Approve?", "Asking"):
+        short = _phone_app_short(session_id) or short  # an app open in the background: the chip says "Using <app>"
     now = time.time()
     with _lock:
         prev = _active.get(session_id)
@@ -175,6 +177,16 @@ def _set_status(session_id: str, text: str, short: str = "Working", review: bool
                                "tool": tool, "turn": turn}
     _status_dirty.set()
     _publish_activity()
+
+
+def _phone_app_short(session_id: str) -> str:
+    """ "Using <app>" while this chat has an app open on the hidden screen (only if the tool was loaded)."""
+    import sys
+    m = sys.modules.get("hm_phone_app")
+    st = getattr(m, "_state", None) if m else None
+    if st and st.get("session") == session_id and st.get("label"):
+        return f"Using {st['label']}"
+    return ""
 
 
 def _clear_status(session_id: str) -> None:
@@ -307,6 +319,11 @@ def _tool_label(tool_name: str, args) -> str:
         "send_message": "Preparing a message", "tool_search": "Looking up tools", "tool_describe": "Looking up tools",
         "tool_call": "Using {}",
     }
+    if tool_name == "phone_app":
+        try:
+            return _phone_app().action_label(a)
+        except Exception:
+            return "Using an app in the background"
     if tool_name == "canvas":
         verb = {"create": "Writing to the canvas", "write": "Updating the canvas", "patch": "Editing the canvas",
                 "read": "Reading the canvas", "open_file": "Opening a file on the canvas"}.get(str(a.get("action", "")), "Using the canvas")
@@ -330,6 +347,11 @@ _SHORT = {
 def _tool_short(tool_name: str, args) -> str:
     tool_name, args = _peel_bridge(tool_name, args)
     a = args if isinstance(args, dict) else {}
+    if tool_name == "phone_app":
+        try:
+            return _phone_app().chip_label(a)
+        except Exception:
+            return "Phone"
     if tool_name == "terminal" and "rish" in str(a.get("command", "")):
         return "Phone"  # Shizuku screen/app control
     if tool_name.startswith("browser"):
@@ -676,6 +698,11 @@ def _chat_search():
     return _load("hm_chat_search", "chat_search.py")
 
 
+def _phone_app():
+    """The phone_app tool (an app on a hidden screen, driven through the app's background host)."""
+    return _load("hm_phone_app", "phone_app.py")
+
+
 def _checkpoints():
     """Per-chat file checkpoints (ledger, git speed-up, daily store gc)."""
     return _load("hm_checkpoints", "checkpoints.py")
@@ -714,7 +741,9 @@ _PHONE_PROMPT = (
 _PHONE_RISH = (
     " For system-level access (dumpsys, logcat, screencap, uiautomator, input, am, pm) run the command through "
     f"`{RISH_BIN} -c \"<command>\"`; it runs as the shell user via Shizuku. If it says the server isn't running, say "
-    "so and ask the user to start Shizuku, rather than guessing another route."
+    "so and ask the user to start Shizuku, rather than guessing another route. To DO something in an app (add a note, "
+    "look something up, fill a form), use the phone_app tool: it works on a hidden screen so the user keeps their own; "
+    "only start apps on the real screen (`am start`) when the user wants to see them."
 )
 
 
@@ -761,6 +790,14 @@ def register(ctx):
     except Exception as e:
         _dbg(f"find_chats not registered: {type(e).__name__}: {e}")
     try:
+        pa = _phone_app()
+        pa.notify, pa.log = _send, _dbg
+        if pa.availability()[0]:
+            ctx.register_tool(name="phone_app", toolset="canvas", schema=pa.TOOL_SCHEMA, handler=pa.tool_handler,
+                              description="Use a phone app on a hidden screen without taking the user's screen", emoji="📱")
+    except Exception as e:
+        _dbg(f"phone_app not registered: {type(e).__name__}: {e}")
+    try:
         ctx.register_system_prompt_section("hermes-mobile.canvas", _canvas_prompt, position="after_memory", max_chars=900)
     except Exception as e:
         _dbg(f"canvas prompt section not registered: {type(e).__name__}: {e}")
@@ -769,7 +806,7 @@ def register(ctx):
     except Exception as e:
         _dbg(f"links prompt section not registered: {type(e).__name__}: {e}")
     try:
-        ctx.register_system_prompt_section("hermes-mobile.phone", _phone_prompt, position="after_memory", max_chars=900)
+        ctx.register_system_prompt_section("hermes-mobile.phone", _phone_prompt, position="after_memory", max_chars=1200)
     except Exception as e:
         _dbg(f"phone prompt section not registered: {type(e).__name__}: {e}")
     ctx.register_hook("pre_llm_call", _on_pre_llm_call)

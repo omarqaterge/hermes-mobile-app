@@ -85,6 +85,19 @@ check("each tool call is a step, kept across 'Thinking…'", e.get("steps") == 2
 check("task list kept on the turn", (e.get("todo") or {}).get("states") == "dapx", e.get("todo"))
 check("same turn start", e.get("since") == since, (e.get("since"), since))
 
+print("an app open in the background")
+pa = plugin._phone_app()
+pa._state.update({"session": "s-a", "pkg": "com.example.notes", "label": "Notes"})
+plugin._on_post_tool_call(tool_name="phone_app", session_id="s-a", turn_id="s-a:1")
+e = last_status()
+check("the chip says 'Using <app>' while thinking", e.get("short") == "Using Notes" and e.get("body") == "Thinking…", e)
+check("an action's line names the app and the action",
+      plugin._tool_label("phone_app", {"action": "key", "key": "back"}) == "Notes: pressing back"
+      and plugin._tool_short("phone_app", {"action": "key"}) == "Using Notes")
+pa._state.clear()
+plugin._on_post_tool_call(tool_name="phone_app", session_id="s-a", turn_id="s-a:1")
+check("back to the normal chip once the app is closed", last_status().get("short") != "Using Notes")
+
 print("tools behind Hermes's Tool Search bridge")
 bridged = {"calls": [{"name": "web_search", "arguments": {"query": "trains"}}]}
 check("tool_call shows the tool underneath", plugin._tool_label("tool_call", bridged) == "Searching the web: trains"

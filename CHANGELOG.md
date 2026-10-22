@@ -23,6 +23,15 @@ User-facing changes, newest first. Each release section collects what shipped si
   yet on a real phone.
 - On Xiaomi, Redmi and POCO phones, Setup check (and the flow) reminds you to turn on Autostart for Termux and Hermes Mobile, with
   buttons to each app's settings (Android can't say whether it is on, so it is a tip, never a ✓ or ✗).
+- **Canvas gallery** (Hermes hub, replaces the Library): every canvas document from every chat and profile shows up on its
+  own, nothing to save. Chips group them by type (HTML, Markdown, Code, …) and a search box finds one by its title or
+  text. Tap one to preview it (web pages run, offline), then **Open canvas** to continue it on its own chat's canvas, or
+  **Go to chat**. Rename, copy, share or delete from its ⋮ menu. Items saved to the old Library are still listed.
+- **Hermes can use an app in the background** (new `phone_app` tool): it opens the app on a hidden screen and reads,
+  taps and types in it while you keep using your phone (Android 14+, needs Shizuku). It asks once per app per chat
+  (`/yolo` skips that). The status chip says **Using <app>** with the current step; the chat shows a card above the
+  message box with a live thumbnail; tap it for a bigger live view with **Take over** (moves the app to your screen) and
+  **Stop**. Banking, payment, password and 2FA apps are refused unless you allow them in Settings → Background apps.
 
 ## v0.8.41 (2026-10-20)
 
