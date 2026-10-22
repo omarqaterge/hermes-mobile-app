@@ -4,6 +4,19 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+## v0.8.46 (2026-10-22)
+
+Install changes were tested on wiped Android 15 emulators, not yet on a brand-new real phone.
+
+- **Install only Hermes Mobile, it sets up the rest.** On a phone without Termux, the app downloads and installs Termux,
+  Termux:API, Termux:Boot and Shizuku (Android asks you to tap Install for each), helps you start Shizuku, asks for the
+  Termux permission, copies the installer command for you to paste in Termux, and shows the install's progress step by
+  step; when it's done it goes on to connecting a model. Emulator: about 10 minutes from paste to the model step.
+- **Faster installs with a ready-made Debian + Hermes.** When one is published for the app's Hermes version, a new install
+  downloads it (about 900 MB, checked by its sha256) instead of building Debian and Hermes on the phone; any problem falls
+  back to the normal install by itself. Existing installs never download it. Emulator: 10 minutes instead of about 24. None is published yet, so for
+  now every install takes the normal route.
+- A busy GitHub no longer breaks the Hermes step of the install (the download is retried instead of running an empty script).
 - New installs get exactly the Hermes build the app is tested against (the same one `hermes/patches` are made for) instead of whatever
   Hermes's installer serves that day; an existing Hermes is never reinstalled or changed. Tested on a wiped Android 15 emulator
   (Hermes v0.21.5+4582, browser tools included, dashboard answering).
@@ -13,14 +26,15 @@ User-facing changes, newest first. Each release section collects what shipped si
 - The phone-only install now opens Android's installer for the app by itself at the end (download kept as the fallback). Opening it and
   installing the app were checked on the emulator.
 - New installs get a working web browser for Hermes: the installer adds the system libraries Chromium needs (it couldn't start
-  without them) and tries the browser download once more when Hermes's own installer couldn't fetch it. NOT YET TESTED.
+  without them) and tries the browser download once more when Hermes's own installer couldn't fetch it (checked on the
+  emulator: Hermes's browser opened a page).
 - Installing from a computer no longer tells you to change a developer option the computer already set, and the Shizuku
   to-do says to tap Allow (Shizuku was running, Termux just wasn't allowed yet) instead of "install it".
 - First-run setup is one flow that works out what is already set up and picks up at the first missing step: no model, a missing
   plugin, Hermes not running (on a first run), then the recommended items (notifications, battery, Termux:API, Shizuku, files) once
   as "Almost done". A phone where everything already works (installed from a computer) goes straight to the chat. It re-checks
-  when you come back to the app, and moves on by itself when a step turns ✓. Tested in browser tests against a mock Hermes; not
-  yet on a real phone.
+  when you come back to the app, and moves on by itself when a step turns ✓. A set-up phone (the test phone, installed from a
+  computer) opens straight to the chat.
 - On Xiaomi, Redmi and POCO phones, Setup check (and the flow) reminds you to turn on Autostart for Termux and Hermes Mobile, with
   buttons to each app's settings (Android can't say whether it is on, so it is a tip, never a ✓ or ✗).
 - **Canvas gallery** (Hermes hub, replaces the Library): every canvas document from every chat and profile shows up on its
@@ -32,6 +46,8 @@ User-facing changes, newest first. Each release section collects what shipped si
   (`/yolo` skips that). The status chip says **Using <app>** with the current step; the chat shows a card above the
   message box with a live thumbnail; tap it for a bigger live view with **Take over** (moves the app to your screen) and
   **Stop**. Banking, payment, password and 2FA apps are refused unless you allow them in Settings → Background apps.
+  Tested on one phone (Android 16) and an Android 15 emulator; other phone makers not yet.
+- If Android or a cleaner app force-stops Hermes Mobile, Termux now brings its notification service back on stock Android too.
 
 ## v0.8.41 (2026-10-20)
 
