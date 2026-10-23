@@ -17,6 +17,7 @@ import { toast } from '../store'
 import { createDoc } from '../canvas'
 import { useBackHandler } from '../backstack'
 import { hashText, setTask, subscribeTasks, useTask } from '../tasks'
+import { runLazy } from '../lazy'
 
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -37,21 +38,7 @@ let mermaidReady: Promise<MermaidApi> | null = null
 function getMermaid() {
   mermaidReady ||= import.meta.env.DEV
     ? import('mermaid').then(m => m.default)
-    : new Promise<MermaidApi>((resolve, reject) => {
-        // The built page carries Mermaid as inert text (vite.config.ts lazyMermaid): run it now, once.
-        const src = document.getElementById('hm-mermaid')?.textContent
-        if (!src) return reject(new Error('Mermaid is not bundled'))
-        setTimeout(() => {
-          try {
-            new Function(src)()
-            const m = (window as unknown as { __hmMermaid?: MermaidApi }).__hmMermaid
-            if (m) resolve(m)
-            else reject(new Error('Mermaid did not load'))
-          } catch (e) {
-            reject(e)
-          }
-        })
-      })
+    : runLazy<MermaidApi>('hm-mermaid', '__hmMermaid') // the built page carries Mermaid as inert text (lazy.ts)
   mermaidReady.catch(() => (mermaidReady = null))
   return mermaidReady
 }
