@@ -666,6 +666,10 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
         pass
     with _lock:
         text = _last_text.pop(session_id, "")
+    try:
+        text = _openui().strip_ui(text)  # notifications and read-aloud say [card], not openui-lang code
+    except Exception:
+        pass
     if interrupted:
         return
     name = _profile()
@@ -701,6 +705,11 @@ def _canvas():
     return _load("hm_canvas", "canvas.py")
 
 
+def _openui():
+    """Cards in replies: prompt section, openui_reference tool, setting."""
+    return _load("hm_openui", "openui.py")
+
+
 def _chat_search():
     """The find_chats tool module."""
     return _load("hm_chat_search", "chat_search.py")
@@ -723,12 +732,12 @@ def _checkpoints():
 
 _CANVAS_PROMPT = (
     "The user talks to you in a phone app that has a CANVAS: a panel next to the chat where they read, edit and keep "
-    "documents. For anything document-like (an essay, notes, a plan, a report, a table, a code file, an HTML/SVG page "
-    "or small web app, or a file they want to look at) put it on the canvas with the `canvas` tool (create / write / "
-    "patch / open_file) instead of pasting it into the chat, and keep the chat reply to a sentence or two. If the tool "
-    "isn't loaded yet, load its description with tool_describe first. The user can edit the canvas: read it before you "
-    "change it, and prefer small patch edits. HTML on the canvas runs offline in a sandbox: keep it one self-contained "
-    "file with everything inline (no CDN or network), and make it fit a narrow phone screen."
+    "documents. When the user asks you to build, make or write something (an essay, notes, a plan, a report, a code "
+    "file, an HTML/SVG page or small web app) or wants to look at a file, put it on the canvas with the `canvas` tool "
+    "(create / write / patch / open_file) instead of pasting it into the chat, and keep the chat reply to a sentence "
+    "or two. If the tool isn't loaded yet, load its description with tool_describe first. The user can edit the "
+    "canvas: read it before you change it, and prefer small patch edits. HTML on the canvas runs offline in a sandbox: "
+    "keep it one self-contained file with everything inline (no CDN or network), and make it fit a narrow phone screen."
 )
 
 
@@ -810,6 +819,13 @@ def register(ctx):
                               description="Use a phone app on a hidden screen without taking the user's screen", emoji="📱")
     except Exception as e:
         _dbg(f"phone_app not registered: {type(e).__name__}: {e}")
+    try:
+        ou = _openui()
+        ctx.register_tool(name="openui_reference", toolset="canvas", schema=ou.TOOL_SCHEMA, handler=ou.tool_handler,
+                          description="The openui-lang reference for cards, tables, charts and forms in a reply", emoji="🧩")
+        ctx.register_system_prompt_section("hermes-mobile.openui", ou.prompt_section, position="after_memory", max_chars=900)
+    except Exception as e:
+        _dbg(f"openui not registered: {type(e).__name__}: {e}")
     try:
         ctx.register_system_prompt_section("hermes-mobile.canvas", _canvas_prompt, position="after_memory", max_chars=900)
     except Exception as e:
