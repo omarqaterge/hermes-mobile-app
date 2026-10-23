@@ -117,6 +117,12 @@ export function phaseOf(s: UninstallNative | null, termuxThere: boolean, go: { c
   return 'review'
 }
 
+/** Open the uninstall sheet when the app starts: something was already removed. Uninstalling Termux makes Android kill
+ *  this app (RUN_COMMAND is Termux's permission, "permissions revoked"), so the last step happens after a reopen. */
+export function resumeOnStart(s: UninstallNative | null): boolean {
+  return Boolean(s?.removed)
+}
+
 /** Did the Termux side finish? Termux may then be uninstalled without a warning. */
 export function cleanupOk(s: UninstallNative | null): boolean {
   return Boolean(s?.result && s.result.exit === 0)
