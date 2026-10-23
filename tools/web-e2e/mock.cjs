@@ -80,7 +80,14 @@ const server = http.createServer((req, res) => {
       if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.openui) openui = { ...openui, ...b.openui }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
-      if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
+      if (b.bump) {
+        // Like Hermes: session.list is sorted by last activity, so a chat that got a message moves to the front of the list.
+        const i = allSessions.findIndex(x => x.id === b.bump)
+        allSessions[i].message_count += 2
+        allSessions.unshift(...allSessions.splice(i, 1))
+      }
+      // A brand-new chat made elsewhere (started now; session.list only has started_at, no separate last-active field).
+      if (b.newChat) allSessions.unshift({ id: b.newChat, title: 'Brand new chat', preview: 'x', message_count: 0, started_at: Math.floor(Date.now() / 1000) + 5, source: 'mobile' })
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
       if (b.newRuntime) runtimeGen++
       if (b.gen !== undefined) runtimeGen = b.gen
