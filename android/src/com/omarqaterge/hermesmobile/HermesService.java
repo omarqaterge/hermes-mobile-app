@@ -427,7 +427,7 @@ public class HermesService extends Service {
         String[] tl = SetupLines.parse(body);
         if (tl == null) return SetupLines.BAD_LINE;
         SetupLines sl = setup(this);
-        int r = sl.add(tl[0], tl[1]);
+        int r = sl.add(tl[0], tl[1], tl[2], System.currentTimeMillis() / 1000);
         if (r != SetupLines.OK) return r;
         String line = tl[1];
         MainActivity a = MainActivity.current;

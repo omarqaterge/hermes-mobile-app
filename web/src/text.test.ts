@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { backgroundLuminance, joinHtmlBlocks, chatLinks, linkParts, formatOutput, memoryDiff, mediaKind, parseCsv, phoneAppLabel, plainText, prepare, tidyApprovalText } from './text'
+import { backgroundLuminance, joinHtmlBlocks, chatLinks, linkParts, formatOutput, memoryDiff, mediaKind, formatDuration, parseCsv, phoneAppLabel, plainText, prepare, tidyApprovalText } from './text'
 
 describe('prepare', () => {
   test('MEDIA line with spaces becomes an image', () => {
@@ -236,5 +236,18 @@ describe('phoneAppLabel', () => {
   test('no args or an unknown action without an app is empty', () => {
     expect(phoneAppLabel(null)).toBe('')
     expect(phoneAppLabel({ action: 'dance' })).toBe('')
+  })
+})
+
+describe('formatDuration', () => {
+  test('m:ss under an hour, h:mm:ss above, junk is 0:00', () => {
+    expect(formatDuration(0)).toBe('0:00')
+    expect(formatDuration(9)).toBe('0:09')
+    expect(formatDuration(102)).toBe('1:42')
+    expect(formatDuration(190.9)).toBe('3:10')
+    expect(formatDuration(3599)).toBe('59:59')
+    expect(formatDuration(3725)).toBe('1:02:05')
+    expect(formatDuration(-4)).toBe('0:00')
+    expect(formatDuration(NaN)).toBe('0:00')
   })
 })

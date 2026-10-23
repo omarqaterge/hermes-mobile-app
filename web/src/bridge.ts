@@ -41,7 +41,7 @@ interface AndroidBridge {
   installHelperApp?(which: string): void // answers window.hermesSetupInstall(which, state, pct, msg)
   probeTermux?(): void // answers window.hermesTermuxProbe(json)
   setupCommand?(): boolean // copies the installer command with a fresh progress token
-  setupProgress?(): string // {active, lines, done, fail}; new lines also come through window.hermesSetupLine(line)
+  setupProgress?(): string // {active, lines, times?, done, fail}; new lines also come through window.hermesSetupLine(line)
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermes; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
@@ -297,7 +297,7 @@ export function copySetupCommand(): boolean {
   }
 }
 
-export function setupProgress(): { active: boolean; lines: string[]; done: boolean; fail: string } | null {
+export function setupProgress(): { active: boolean; lines: string[]; done: boolean; fail: string; times?: number[] } | null {
   try {
     const raw = native?.setupProgress?.()
     return raw ? JSON.parse(raw) : null
