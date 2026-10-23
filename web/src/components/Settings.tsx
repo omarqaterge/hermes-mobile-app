@@ -18,6 +18,7 @@ import { useBackHandler } from '../backstack'
 import { getLivePause, setLivePause } from '../live'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { AccountsList } from './Connect'
+import { UninstallSection } from './Uninstall'
 
 // ── shared ───────────────────────────────────────────────────
 
@@ -815,6 +816,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
       </Section>
+      <UninstallSection />
     </>
   )
 }
