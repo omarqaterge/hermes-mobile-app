@@ -628,6 +628,7 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
         _bg_clear(session_id)
         return
     _clear_status(session_id)
+    _end_phone_app(session_id)
     msg = str((error.get("message") if isinstance(error, dict) else error) or reason or "")
     inner = re.search(r"""['"]message['"]\s*:\s*['"]([^'"]+)""", msg)  # "Error code: 401 - {'error': {'message': '…'}}"
     msg = inner.group(1) if inner else msg
@@ -649,12 +650,28 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
     t.start()
 
 
+def _end_phone_app(session_id):
+    """An app Hermes had open in this chat ends with the turn (off the hook's thread: closing talks to the host)."""
+    import sys
+    pa = sys.modules.get("hm_phone_app")
+    if pa is None or not getattr(pa, "_state", None):
+        return
+    t = threading.Thread(target=lambda: pa.end_session(session_id), name="hm-bgapp-end", daemon=True)
+    t.start()
+    _bgapp_enders.append(t)
+    del _bgapp_enders[:-8]
+
+
+_bgapp_enders: list = []
+
+
 def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, interrupted=None,
                     turn_exit_reason=None, platform=None, **_):
     _dbg(f"session_end {session_id} turn={turn_id} completed={completed} interrupted={interrupted}")
     if not session_id or session_id in _subagents:
         return
     _last_end[session_id] = time.time()
+    _end_phone_app(session_id)
     with _lock:
         turn = (_active.get(session_id) or {}).get("turn") or {}
     _clear_status(session_id)  # always, even without a turn id, or the chip sticks on "Thinking"

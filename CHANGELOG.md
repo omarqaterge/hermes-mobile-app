@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **The app card goes away when Hermes is done.** If Hermes finished a turn (or was stopped, or failed) without closing the app it was using in the background, the "Using <app>" card with Take over / Stop stayed on screen for a couple of minutes. It now closes the app and removes the card when the turn ends.
 - **Auto button in the header.** One tap sets how much Hermes may do in this chat without asking: Off (asks before
   risky commands), **Auto access** (runs everything without asking, but the commands on Hermes's own dangerous-command
   list are blocked and Hermes tells you what it wanted to run; patterns you already allowed "always" still run), or
