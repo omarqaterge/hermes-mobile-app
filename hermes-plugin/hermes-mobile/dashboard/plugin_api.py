@@ -1013,3 +1013,61 @@ async def openui_call(body: OpenUICall):
         raise HTTPException(status_code=504, detail="timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
+
+
+# ── Claude (Pro/Max) sign-in in the app's own UI: the PKCE login `hermes auth add anthropic` runs in a terminal,
+# as two calls (claude_login.py). Saved to the ?profile= profile's credential pool; tokens are never returned. ──
+
+
+def _claude_login_mod():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_claude_login")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_claude_login", Path(__file__).resolve().parent.parent / "claude_login.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_claude_login"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+async def _in_profile(profile: Optional[str], fn):
+    """Run fn on a worker thread inside the profile's home + secret scope, like Hermes's own credential routes."""
+    try:
+        from hermes_cli.web_routers._common import config_scoped_to_thread
+    except Exception:  # older Hermes: the plugin route's own ?profile= scope still applies (copied into the thread)
+        import asyncio
+
+        return await asyncio.to_thread(fn)
+    return await config_scoped_to_thread(profile, fn)
+
+
+class ClaudeFinish(BaseModel):
+    session_id: str
+    code: str
+
+
+@router.post("/claude-login/start")
+async def claude_login_start(profile: Optional[str] = None):
+    m = _claude_login_mod()
+    try:
+        return await _in_profile(profile, lambda: m.start(profile))
+    except Exception as e:  # Hermes moved its helpers: the app falls back to Termux
+        raise HTTPException(status_code=501, detail=f"In-app Claude sign-in isn't available with this Hermes ({str(e)[:120]})")
+
+
+@router.post("/claude-login/finish")
+async def claude_login_finish(body: ClaudeFinish, profile: Optional[str] = None):
+    m = _claude_login_mod()
+    try:
+        return await _in_profile(profile, lambda: m.finish(body.session_id, body.code, profile))
+    except m.LoginError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Saving the Claude login failed ({type(e).__name__})")
+
+
+@router.post("/claude-login/cancel")
+async def claude_login_cancel(body: dict):
+    return {"ok": _claude_login_mod().cancel(str((body or {}).get("session_id") or ""))}

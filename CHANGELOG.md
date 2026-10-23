@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Claude signs in inside the app, and the app shows it worked.** Settings → Subscriptions & accounts (and the first-run model step) now sign in to Claude Pro / Max in the app: open claude.ai, approve, paste the code back. Termux is still there as **Use Termux instead**. A Claude login made with `hermes auth add anthropic` (Termux) used to stay "not signed in" in the app; it now shows as signed in, and coming back from Termux says whether it worked.
 - **Another chat can use the phone again.** After one chat used a phone app, other chats were told "another chat is using it" (or to wait 2 minutes) until the app timed out. Now a chat whose turn is over, or that has been silent for about 2 minutes, lets go and the next chat takes over; a leftover background host holding the port is stopped and restarted instead of failing.
 - **The app card goes away when Hermes is done.** If Hermes finished a turn (or was stopped, or failed) without closing the app it was using in the background, the "Using <app>" card with Take over / Stop stayed on screen for a couple of minutes. It now closes the app and removes the card when the turn ends.
 - **Chats keep their place in the drawer.** Sending a message, getting a reply or a background run no longer moves a chat to the top. New chats appear on top; the list is ordered (and grouped by day) by when each chat was created. **Sort by recent** now sorts once, by latest activity, instead of switching live re-sorting on.

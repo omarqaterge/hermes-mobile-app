@@ -171,8 +171,8 @@ Install only Hermes Mobile; the app walks you through the rest and picks up wher
 6. Back in the app: **Connect Hermes to a model**. Sign in with your subscription or paste an API key, then pick the model new
    chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
 
-   ChatGPT, Grok and Nous Portal sign in inside the app. Claude opens Termux for its sign-in, because Hermes only allows that one
-   from a terminal: open the link it shows, approve, and paste the code back into Termux.
+   ChatGPT, Claude, Grok and Nous Portal sign in inside the app. For Claude, tap **Open claude.ai**, approve, and paste the code
+   Claude shows back into the app (it runs the same login as `hermes auth add anthropic`; **Use Termux instead** does it there).
 
 <details>
 <summary>Without the app's help (by hand in Termux)</summary>
