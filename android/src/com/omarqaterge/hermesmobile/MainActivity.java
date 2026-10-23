@@ -177,6 +177,7 @@ public class MainActivity extends Activity {
         HermesService.createChannels(this);
         HermesService.start(this);
         current = this;
+        if (getIntent().getBooleanExtra("clearDone", false)) { getIntent().removeExtra("clearDone"); HermesService.clearDoneChip(); }
         pendingSession = getIntent().getStringExtra("session");
         pendingDraft = getIntent().getStringExtra("draft");
         takeShare(getIntent());
@@ -735,6 +736,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (intent.getBooleanExtra("clearDone", false)) { intent.removeExtra("clearDone"); HermesService.clearDoneChip(); }
         String s = intent.getStringExtra("session");
         if (s != null) {
             pendingSession = s;
