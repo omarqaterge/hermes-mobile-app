@@ -2,6 +2,9 @@
 // Imported ONLY by openui-entry.tsx (the lazy bundle) and openui-lib.test.ts. Importing it anywhere else would pull
 // OpenUI's ~4 MB into the main bundle that runs at every start.
 import { openuiChatLibrary, openuiChatPromptOptions } from '@openuidev/react-ui/genui-lib'
+import type { ToolSpec } from '@openuidev/react-lang'
+// The read-only tools a card's Query() may call; the plugin enforces the same list (openui_query.py).
+import TOOLS from '../../hermes-plugin/hermes-mobile/openui_tools.json'
 
 /** OpenUI's chat component library, unchanged (owner's pick, 2026-10-23). Root component: Card. */
 export const library = openuiChatLibrary
@@ -22,7 +25,9 @@ const OURS = [
   'Buttons, list items and follow-ups use @ToAssistant("...") with the exact words the user would send. The app sends that text as the user\'s next message, with any form values listed under it as "- name: value" lines.',
   '@OpenUrl only takes full https:// links.',
   'The screen is a phone, about 380 px wide: at most 4 table columns, short labels, and Tabs, Carousel or SectionBlock instead of very long cards.',
-  'The examples show what goes INSIDE a ```openui-lang fence; in your reply always wrap the code in that fence.'
+  'The examples show what goes INSIDE a ```openui-lang fence; in your reply always wrap the code in that fence.',
+  'Never give Query a refresh interval (its 4th argument). Add a Refresh button with @Run(query) instead.',
+  'Cards can only read. For any change, use a Button with @ToAssistant("...") so you do it in the chat with the user\'s approval. Never use Mutation.'
 ]
 
 /** OpenUI's chat rules minus "generate realistic/plausible data", plus ours. */
@@ -33,6 +38,7 @@ export const EXAMPLES: string[] = [...(openuiChatPromptOptions.examples ?? [])].
 
 /** What the plugin's openui_reference tool returns (hermes-plugin/hermes-mobile/openui_reference.txt). */
 export function referenceText(): string {
-  // bindings: $variables, @Set/@Reset and the built-in functions (@Count, @Filter, @Sort…) run in the app, no backend.
-  return library.prompt({ preamble: PREAMBLE, additionalRules: RULES, examples: EXAMPLES, bindings: true })
+  // tools: Query() live data through the plugin (read-only). bindings: $variables, @Set/@Reset and the built-in
+  // functions (@Count, @Filter, @Sort…) run in the app.
+  return library.prompt({ preamble: PREAMBLE, additionalRules: RULES, examples: EXAMPLES, tools: TOOLS as ToolSpec[], bindings: true })
 }

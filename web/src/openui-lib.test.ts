@@ -22,9 +22,16 @@ describe('openui reference', () => {
     const t = referenceText()
     expect(t).toContain('```openui-lang')
     expect(t).not.toContain('Your ENTIRE response must be valid openui-lang')
-    expect(t.length).toBeLessThan(45_000)
+    expect(t.length).toBeLessThan(52_000)
   })
   test('root is Card (the chat library)', () => {
     expect(library.root).toBe('Card')
+  })
+  test('teaches live data from the read-only tools, and no writes', () => {
+    const t = referenceText()
+    expect(t).toContain('Query(')
+    for (const name of ['web_search', 'find_chats', 'read_file', 'search_files']) expect(t).toContain(name)
+    expect(RULES.some(r => /Never use Mutation/.test(r))).toBe(true)
+    expect(RULES.some(r => /refresh interval/.test(r))).toBe(true)
   })
 })

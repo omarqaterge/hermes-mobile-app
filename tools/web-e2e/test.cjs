@@ -798,6 +798,14 @@ async function main() {
     await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
     await page.locator('.msg.assistant .codeblock', { hasText: 'openui-lang (not shown)' }).waitFor({ timeout: 15000 }).then(() => check(true, 'broken openui-lang falls back to the code'), () => check(false, 'broken openui-lang falls back to the code'))
     await idle()
+    // live data: a Query() card asks the plugin once (POST /openui/call) and draws the answer
+    const qcalls = () => calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/openui/call')
+    await page.getByPlaceholder('Message Hermes').fill('show live ui')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const liveCard = page.locator('.msg.assistant .hm-openui').last()
+    await liveCard.getByText('Mock result one').waitFor({ timeout: 15000 }).then(() => check(true, 'a Query card draws the tool answer'), () => check(false, 'a Query card draws the tool answer'))
+    check(qcalls().length === 1 && qcalls()[0].body.name === 'web_search' && qcalls()[0].body.args.query === 'openui', `one call to /openui/call with the card's args (${JSON.stringify(qcalls().map(c => c.body))})`)
+    await idle()
   }
 
   // ── tool calls fold into one "Ran N tools" line; tap opens them ──
