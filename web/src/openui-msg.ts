@@ -38,12 +38,14 @@ export function formFields(state: unknown): [string, string][] {
   return out
 }
 
-/** The user turn a card button sends: its words, then any form values as "- field: value" lines. */
+/** The user turn a card button sends: its words, then its form's values as "- field: value" lines. OpenUI hands
+ *  every button the whole card's state, so only a button inside a form (formName set) sends values, and only that
+ *  form's. */
 export function actionMessage(e: UiAction): string {
   const parts: string[] = []
   const head = (e.humanFriendlyMessage || '').trim()
   if (head) parts.push(head)
-  const fields = formFields(e.formState)
+  const fields = e.formName ? formFields(e.formState?.[e.formName]) : []
   if (fields.length) parts.push(fields.map(([k, v]) => `- ${k}: ${v}`).join('\n'))
   const ctx = e.params?.context
   if (ctx !== undefined && ctx !== null && ctx !== '') parts.push(`(${typeof ctx === 'string' ? ctx : JSON.stringify(ctx)})`)

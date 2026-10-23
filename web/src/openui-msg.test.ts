@@ -23,6 +23,12 @@ describe('actionMessage', () => {
     expect(actionMessage({ type: 'continue_conversation', humanFriendlyMessage: 'Here are my details', formName: 'contact', formState: { contact: { name: { value: 'Omar' } } } }))
       .toBe('Here are my details\n\n- name: Omar')
   })
+  test('a button outside the form sends only its words (OpenUI passes every form\'s values to every button)', () => {
+    expect(actionMessage({ type: 'continue_conversation', humanFriendlyMessage: 'Pick A', formState: { contact: { name: { value: 'Omar' } } } })).toBe('Pick A')
+  })
+  test('only the pressed form\'s values', () => {
+    expect(actionMessage({ type: 'continue_conversation', humanFriendlyMessage: 'Go', formName: 'b', formState: { a: { x: { value: '1' } }, b: { y: { value: '2' } } } })).toBe('Go\n\n- y: 2')
+  })
   test('action context is kept, in brackets', () => {
     expect(actionMessage({ type: 'continue_conversation', humanFriendlyMessage: 'More', params: { context: { id: 7 } } })).toBe('More\n\n({"id":7})')
   })
