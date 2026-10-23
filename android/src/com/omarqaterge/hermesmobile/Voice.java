@@ -22,7 +22,7 @@ import java.util.Locale;
  * All methods must be called on the main thread (TextToSpeech's progress callbacks arrive on a binder thread and are
  * posted to it). Read-aloud owns its playback state here, not in the page, so the media notification (TtsMedia) can
  * pause / resume / jump while the page is frozen in the background. Granularity is one ≤CHUNK utterance: pause and
- * resume restart the current chunk. Back / forward 10 s move the reading position by 10 seconds' worth of characters
+ * resume restart the current chunk. Back / forward 5 s move the reading position by 5 seconds' worth of characters
  * (Android TTS cannot seek, so the text is split again from the new character and spoken from there).
  */
 final class Voice {
@@ -46,7 +46,8 @@ final class Voice {
     private double cps = 0;
     private int segIdx = -1; // chunk heard now and when it started (uptime ms); -1 = not known (just jumped / paused)
     private long segT0 = 0;
-    private static final int JUMP_SECONDS = 10;
+    private static final int JUMP_SECONDS = 5;
+    private int base = 0; // characters of the page text before `full` (a reading restarted from the middle by the page)
     private boolean speaking = false; // between speak() and the end / stop
     private boolean paused = false;
     private String run = ""; // utterance id prefix of the current speakFrom(): callbacks of older runs are ignored
@@ -90,6 +91,7 @@ final class Voice {
             cfgRate = (float) Math.max(0.3, Math.min(3.0, o.optDouble("rate", 1.0)));
             cfgPitch = (float) Math.max(0.3, Math.min(2.5, o.optDouble("pitch", 1.0)));
             notify = o.optBoolean("notify", false);
+            base = Math.max(0, o.optInt("base", 0));
             title = o.optString("title", "");
             String ses = o.optString("session", "");
             session = ses.isEmpty() ? null : ses;
@@ -239,7 +241,9 @@ final class Voice {
         segIdx = i;
         segT0 = now;
         if (c[0] >= 0) js("tts-seg", c[0] + "," + c[1]);
+        js("tts-pace", Double.toString(Math.round(pace() * 100) / 100.0));
         js("tts-start", id);
+        publish(); // the pace may have been re-measured: re-anchor the system's progress bar
     }
 
     /** The reading ended by itself (last chunk heard) or failed. */
@@ -253,7 +257,7 @@ final class Voice {
     }
 
     private void publish() {
-        if (notify && speaking && active == this) TtsMedia.show(ctx, title, session, !paused);
+        if (notify && speaking && active == this) TtsMedia.show(ctx, title, session, !paused, positionMs(), durationMs());
     }
 
     // ── playback controls (page, notification, media buttons) ──
@@ -293,10 +297,30 @@ final class Voice {
         return at + (int) Math.max(0, Math.min(c[1] - 1, inside));
     }
 
-    /** Moves the reading `dir` * 10 seconds (-1 back, +1 forward); paused: only the place moves (resume starts there). */
+    /** Position / length of the whole reading in ms at the current pace (time model: chars / pace). */
+    private long positionMs() {
+        if (chunks.isEmpty()) return 0;
+        return Math.round((base + position()) / pace() * 1000);
+    }
+
+    private long durationMs() {
+        return Math.round((base + full.length()) / pace() * 1000);
+    }
+
+    /** Moves the reading `dir` * 5 seconds (-1 back, +1 forward); paused: only the place moves (resume starts there). */
     void jump(int dir) {
         if (!speaking || chunks.isEmpty() || full.isEmpty()) return;
-        int to = (int) Math.max(0, Math.min(full.length() - 1, position() + dir * Math.round(pace() * JUMP_SECONDS)));
+        moveTo(position() + dir * (int) Math.round(pace() * JUMP_SECONDS));
+    }
+
+    /** Seek bar of the system player: `ms` into the whole reading. */
+    void seekMs(long ms) {
+        if (!speaking || chunks.isEmpty() || full.isEmpty()) return;
+        moveTo((int) Math.round(ms / 1000.0 * pace()) - base);
+    }
+
+    private void moveTo(int target) {
+        int to = Math.max(0, Math.min(full.length() - 1, target));
         // start on a character that is read: the next one that isn't whitespace, else the last one that isn't
         int k = to;
         while (k < full.length() && Character.isWhitespace(full.charAt(k))) k++;
@@ -311,6 +335,7 @@ final class Voice {
         segIdx = -1;
         if (paused) js("tts-paused", Integer.toString(to));
         else {
+            js("tts-pace", Double.toString(Math.round(pace() * 100) / 100.0));
             js("tts-seek", Integer.toString(to));
             if (tts != null && ttsReady) speakFrom(0);
         }
@@ -319,10 +344,16 @@ final class Voice {
 
     private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
 
-    /** play | pause | toggle | rew | ff | stop for the instance reading now. Any thread (runs on the main one). */
+    /** play | pause | toggle | rew | ff | seek:<ms> | stop for the instance reading now. Any thread (runs on the main one). */
     static void control(String cmd) {
         MAIN.post(() -> {
             Voice v = active;
+            if (v != null && cmd != null && cmd.startsWith("seek:")) {
+                try {
+                    v.seekMs(Long.parseLong(cmd.substring(5)));
+                } catch (NumberFormatException ignored) { }
+                return;
+            }
             if (v == null || cmd == null) {
                 TtsMedia.hide(); // a card left over without a reader (e.g. the page that read it is gone)
                 return;

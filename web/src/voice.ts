@@ -85,6 +85,12 @@ window.__hmVoice = (kind, text) => {
       if (Number.isFinite(at) && Number.isFinite(len)) startSegment(playFrom + at, len)
       break
     }
+    case 'tts-pace': {
+      // Voice.java's reading pace (chars/second): the page uses the same one so the bar and the time label agree with the card
+      const v = Number(text)
+      if (Number.isFinite(v) && v >= 2 && v <= 120) cps = v
+      break
+    }
     case 'tts-paused': {
       // Voice.java paused (the in-app button, the notification, a headset) or moved while paused: `text` = where in the
       // spoken text it will read on from (the start of the chunk). The page may be frozen when it happens; this catches up.
@@ -98,7 +104,7 @@ window.__hmVoice = (kind, text) => {
       break
     }
     case 'tts-seek': {
-      // Voice.java jumped (back / forward 10 s from the card or a headset): `text` = the character it reads on from. The
+      // Voice.java jumped (back / forward 5 s from the card or a headset): `text` = the character it reads on from. The
       // unfinished stretch must not count as a pace measurement, so the segment is dropped, not closed.
       const at = Number(text)
       if (!state.player || !Number.isFinite(at)) break
@@ -209,6 +215,26 @@ let seg: { at: number; len: number; t0: number } | null = null
 let cps = 0
 let segTimer: ReturnType<typeof setInterval> | undefined
 
+/** m:ss (h:mm:ss from an hour) for a number of seconds. */
+export function fmtClock(sec: number): string {
+  const s = Math.max(0, Math.round(Number.isFinite(sec) ? sec : 0))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = String(s % 60).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+}
+
+/** Characters per second the reading runs at: what Voice.java measured (tts-pace), else a typical pace scaled by the speed. */
+export function readingPace(): number {
+  return cps > 0 ? cps : 14 * (ttsConfig().rate || 1)
+}
+
+/** '0:12 / ~1:40': time read so far / estimated total (the '~' marks the total as an estimate from the pace). */
+export function readingClock(pos: number, total: number, pace = readingPace()): string {
+  const p = pace > 0 ? pace : 14
+  return `${fmtClock(pos / p)} / ~${fmtClock(total / p)}`
+}
+
 function stopSegments(): void {
   seg = null
   clearInterval(segTimer)
@@ -245,7 +271,7 @@ function say(id: string, from: number, reseek = false): void {
   if (n?.speak) {
     // notify: the "Reading aloud" card with pause / skip / stop (not for the Settings voice test)
     const chat = getState().active
-    n.speak(text, JSON.stringify({ ...ttsConfig(), notify: id !== 'test', title: chat?.title || '', session: chat?.storedId || '' }))
+    n.speak(text, JSON.stringify({ ...ttsConfig(), base: from, notify: id !== 'test', title: chat?.title || '', session: chat?.storedId || '' }))
   }
   else if ('speechSynthesis' in window) {
     speechSynthesis.cancel()
@@ -304,6 +330,18 @@ export function seekSpeaking(pos: number): void {
   const to = Math.max(0, Math.min(p.total - 1, Math.round(pos)))
   if (p.paused) set({ player: { ...p, pos: to } })
   else say(p.id, to, true)
+}
+
+export const JUMP_SECONDS = 5
+
+/** Back (-1) / forward (+1) 5 s. In the app it is the card's own path (Voice.java), so there is one state; else the browser voice. */
+export function jumpSpeaking(dir: -1 | 1): void {
+  const p = state.player
+  if (!p) return
+  const n = native()
+  const shared = n?.ttsControl && (!p.paused || (nativePausedAt !== null && Math.abs(p.pos - nativePausedAt) < 1))
+  if (shared && n?.ttsControl) n.ttsControl(dir < 0 ? 'rew' : 'ff')
+  else seekSpeaking(p.pos + dir * JUMP_SECONDS * readingPace())
 }
 
 /** Reading speed from the player: saved like the Settings slider, applied from the current position. */
