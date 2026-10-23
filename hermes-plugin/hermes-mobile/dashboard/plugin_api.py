@@ -628,6 +628,35 @@ async def bgapps_put(body: BgAppPrefs):
     return out
 
 
+# ── cards in replies (OpenUI): on/off for new chats ──
+
+def _openui_mod():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_openui")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_openui", Path(__file__).resolve().parent.parent / "openui.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_openui"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+class OpenUIPrefs(BaseModel):
+    enabled: bool = True
+
+
+@router.get("/openui")
+async def openui_get():
+    return {"enabled": _openui_mod().enabled()}
+
+
+@router.put("/openui")
+async def openui_put(body: OpenUIPrefs):
+    return {"enabled": _openui_mod().set_enabled(body.enabled)}
+
+
 # ── Auto access (the app's Auto button; which chats block Hermes's dangerous-command list under /yolo) ──
 
 def _auto_mod():
