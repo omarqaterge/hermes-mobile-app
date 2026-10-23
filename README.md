@@ -294,6 +294,9 @@ per-chat drafts; messages typed offline are sent on reconnect; turn stats; file 
 **Voice:** read replies aloud (any installed speech engine, voice, speed, pitch), dictation, hands-free Live mode, and Hermes as your
 phone's assistant.
 
+**Cards in replies:** Hermes can answer with interactive cards, tables, charts, tabs, steps, buttons and forms drawn by OpenUI;
+tapping a button or sending a form answers in the chat. Off switch in Settings → Replies.
+
 **Canvas:** documents you and Hermes share per chat (Markdown, HTML, code, CSV, SVG, Mermaid…) with version history, diffs and restore;
 HTML runs in an offline sandbox.
 
