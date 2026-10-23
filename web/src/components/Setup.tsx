@@ -7,7 +7,7 @@ import {
 import { reconnectNow, rpc } from '../gateway'
 import { closeScreen, getState, setState, toast, useStore } from '../store'
 import {
-  nextStep, probeState, progressView, recommendedGaps, setupSteps, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
+  SHIZUKU_WATCH_EVERY_MS, nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuWatchActive, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
   type ProbeRaw, type Progress, type Remote, type StepId, type StepState
 } from '../setupflow'
 import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
@@ -539,7 +539,7 @@ export function SetupFlow() {
   } else if (cur?.id === 'apps' && n) {
     body = <AppsStep n={n} />
   } else if (cur?.id === 'shizuku-start' && n) {
-    body = <ShizukuStep n={n} onSkip={skipShizuku} />
+    body = <ShizukuStep n={n} onSkip={skipShizuku} onCheck={() => refresh(false)} />
   } else if (cur?.id === 'installer') {
     body = <InstallerStep progress={progress} onCopied={() => refresh(false)} />
   } else if (cur) {
@@ -712,7 +712,37 @@ function AppsStep({ n }: { n: NativeSetup }) {
 }
 
 /** Step 2 (can be skipped): start Shizuku before the installer, all on the phone. */
-function ShizukuStep({ n, onSkip }: { n: NativeSetup; onSkip: () => void }) {
+function ShizukuStep({ n, onSkip, onCheck }: { n: NativeSetup; onSkip: () => void; onCheck: () => void }) {
+  const running = n.shizukuRunning === true
+  // Ask the app every 3 s while this step is on screen and visible (stops on success, step change, app hidden, after 10 min;
+  // coming back to the app re-checks through the visibilitychange handler of useSetupState). Once running: show ✓, then move on.
+  useEffect(() => {
+    if (running) {
+      const t = setTimeout(onSkip, 1500)
+      return () => clearTimeout(t)
+    }
+    const startedAt = Date.now()
+    let timer = 0
+    const stop = () => {
+      clearInterval(timer)
+      timer = 0
+    }
+    const tick = () => {
+      if (!shizukuWatchActive({ visible: document.visibilityState === 'visible', running: false, startedAt, now: Date.now() })) return stop()
+      onCheck()
+    }
+    const sync = () => {
+      stop()
+      if (shizukuWatchActive({ visible: document.visibilityState === 'visible', running: false, startedAt, now: Date.now() })) timer = window.setInterval(tick, SHIZUKU_WATCH_EVERY_MS)
+    }
+    sync()
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', sync)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running])
   const sub = (ok: boolean | undefined, text: ReactNode) => (
     <li className={`setup-item ${ok ? 'ok' : 'bad'}`}>
       <span className={`setup-mark ${ok ? 'ok' : 'bad'}`} aria-label={ok ? 'Done' : 'Not yet'}>{ok ? '✓' : '·'}</span>
@@ -728,8 +758,8 @@ function ShizukuStep({ n, onSkip }: { n: NativeSetup; onSkip: () => void }) {
       </div>
       <ul className="setup-list">
         {sub(n.devOptions, <><div className="setup-title">Turn on Developer options</div><div className="dim small">About phone → tap <i>Build number</i> 7 times (on some phones it is under <i>Software information</i>, or called <i>OS version</i>).</div></>)}
-        {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow. Why: Shizuku uses Android’s own wireless debugging to start itself on the phone, with no computer and no root. That gives Hermes the screen, taps and apps, and lets the installer stop Android killing it. It only works locally on your phone (over your own Wi-Fi); nothing goes to the internet. Once Shizuku is running you can usually turn Wireless debugging off again: Shizuku keeps running until the phone restarts.</div></>)}
-        {sub(false, <><div className="setup-title">Pair and start Shizuku</div><div className="dim small">In Shizuku: <i>Pairing</i>, then <i>Pair device with pairing code</i> in Wireless debugging and type the code into Shizuku’s notification. Then <i>Start</i>.</div></>)}
+        {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow. Why: Shizuku uses Android’s own wireless debugging to start itself on the phone, with no computer and no root. That gives Hermes the screen, taps and apps, and lets the installer stop Android killing it. It only works locally on your phone (over your own Wi-Fi); nothing goes to the internet.</div></>)}
+        {sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Pair and start Shizuku</div><div className="dim small">In Shizuku: <i>Pairing</i>, then <i>Pair device with pairing code</i> in Wireless debugging and type the code into Shizuku’s notification. Then <i>Start</i>.</div></>)}
       </ul>
       <div className="setup-actions">
         {!n.devOptions ? (
@@ -740,7 +770,7 @@ function ShizukuStep({ n, onSkip }: { n: NativeSetup; onSkip: () => void }) {
         <button className={`btn${n.devOptions ? ' primary' : ''}`} onClick={() => { haptic(); setupFix('open-shizuku') }}>Open Shizuku</button>
       </div>
       <div className="setup-actions">
-        <button className="btn" onClick={() => { haptic(); onSkip() }}>Shizuku is running</button>
+        <button className="btn" onClick={() => { haptic(); onSkip() }}>Continue</button>
         <button className="btn" onClick={() => { haptic(); onSkip() }}>Skip for now</button>
       </div>
     </div>

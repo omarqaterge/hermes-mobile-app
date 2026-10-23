@@ -215,6 +215,13 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
   ]
 }
 
+/** The Start Shizuku step re-asks the app whether Shizuku runs, but only while it is on screen and for at most 10 minutes. */
+export const SHIZUKU_WATCH_MS = 10 * 60 * 1000
+export const SHIZUKU_WATCH_EVERY_MS = 3000
+export function shizukuWatchActive(s: { visible: boolean; running: boolean; startedAt: number; now: number }): boolean {
+  return s.visible && !s.running && s.now - s.startedAt < SHIZUKU_WATCH_MS
+}
+
 /** The first required step that isn't done (bad, or still being checked), else null. */
 export function nextStep(steps: FlowStep[]): FlowStep | null {
   return steps.find(s => s.required && (s.state === 'bad' || s.state === 'wait')) ?? null
