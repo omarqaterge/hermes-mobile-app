@@ -13,7 +13,8 @@ const METHODS = [
   'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'isInForeground', 'appVersion',
   'sharedItem', 'mediaBase', 'setLastChat', 'getTokenAsync', 'setupState', 'setupFix', 'isAssistant', 'openAssistantSettings', 'signInTermux', 'installUpdate',
   'saveImage', 'shareImage', 'chatSeen', 'setUnseen', 'installHelperApp', 'probeTermux', 'setupCommand', 'setupProgress',
-  'bgState', 'bgFrameAsync', 'bgAction'
+  'bgState', 'bgFrameAsync', 'bgAction',
+  'uninstallStart', 'uninstallState', 'uninstallApp'
 ]
 
 const w = window as unknown as { HermesAndroid?: unknown }

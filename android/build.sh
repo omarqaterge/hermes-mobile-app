@@ -22,6 +22,9 @@ KS="${KEYSTORE:-$HOME/.android/hermes-mobile.keystore}"  # CI passes the release
 ( cd ../web && npx vite build >/dev/null )
 mkdir -p assets/www
 cp ../web/dist/index.html assets/www/index.html
+# Settings → Uninstall Hermes runs this in Termux (Uninstall.java); shipped in the APK so it matches the app.
+mkdir -p assets/phone
+cp ../phone/uninstall.sh assets/phone/uninstall.sh
 
 rm -rf build && mkdir -p build/gen build/classes build/dex
 

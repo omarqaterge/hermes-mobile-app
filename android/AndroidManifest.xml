@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- Lets the app start Hermes inside Termux (needs allow-external-apps=true in Termux). -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- Settings → Uninstall Hermes: Android's uninstall prompt for the helper apps and this app (normal permission). -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Battery: a partial wake lock only while Hermes works, and an alarm that wakes the phone for a due cron job. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
