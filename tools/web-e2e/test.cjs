@@ -1789,7 +1789,13 @@ async function main() {
     await fe.getByRole('button', { name: 'Open Shizuku' }).click()
     check((await fe.evaluate(() => window.__fixes || [])).includes('open-shizuku'), 'app-first: Open Shizuku opens it')
     check((await fe.getByText('Shizuku uses Android’s own wireless debugging to start itself').count()) === 1, 'Wireless debugging step explains why it is needed')
-    await fe.getByRole('button', { name: 'Skip for now' }).click()
+    // Shizuku auto-detect: the step stays put while the app says Shizuku is not running, then shows a green row and moves on by itself
+    await fe.waitForTimeout(3600)
+    check((await fe.getByRole('button', { name: 'Skip for now' }).count()) === 1, 'shizuku-check: the step waits while Shizuku is not running')
+    check((await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).count()) === 0, 'shizuku-check: no green row before it runs')
+    check((await fe.getByRole('button', { name: 'Continue' }).count()) === 1 && (await fe.getByRole('button', { name: 'Shizuku is running' }).count()) === 0, 'shizuku-check: the manual button is now “Continue”')
+    await fe.evaluate(() => (window.__setup = { ...window.__setup, shizukuRunning: true }))
+    await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku-check: detected → green “Shizuku is running” row (no tap)'), () => check(false, 'shizuku-check: detected → green “Shizuku is running” row (no tap)'))
     await fe.getByRole('button', { name: 'Allow' }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: after Shizuku, the Termux permission comes before the installer'), () => check(false, 'app-first: after Shizuku, the Termux permission comes before the installer'))
     await fe.getByRole('button', { name: 'Allow' }).click()
     await fe.evaluate(() => {

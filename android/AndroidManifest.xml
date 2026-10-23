@@ -21,6 +21,9 @@
     <!-- Settings → App update: hands the downloaded release APK to the system installer (you confirm each update). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Setup flow: lets Shizuku's server tell this app it is running (see ShizukuProvider). Only listed: no prompt, nothing is requested from Shizuku. -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+
     <queries>
         <package android:name="com.termux" />
         <!-- Setup check: Hermes's access to the phone (Termux:API commands, Shizuku's shell). -->
@@ -85,6 +88,13 @@
             android:authorities="com.omarqaterge.hermesmobile.camera"
             android:exported="false"
             android:grantUriPermissions="true" />
+        <!-- Shizuku's server calls this when it starts (and when this process starts while it runs): "is Shizuku running" for the setup flow. -->
+        <provider
+            android:name=".ShizukuProvider"
+            android:authorities="com.omarqaterge.hermesmobile.shizuku"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
         <receiver android:name=".WakeReceiver" android:exported="false" />
         <receiver android:name=".StartReceiver" android:exported="true" />
         <receiver android:name=".BootReceiver" android:exported="false">
