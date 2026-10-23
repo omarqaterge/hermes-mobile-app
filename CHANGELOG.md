@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Setup explains itself.** The Wireless debugging step now says why it is needed (Shizuku starts itself through it, no computer or root) and that you can usually turn it off afterwards. Each helper app in setup has a link to its official page (F-Droid or Shizuku's GitHub releases) if you prefer to install it yourself, with a note that the Termux apps must all come from F-Droid.
 - **Auto button in the header.** One tap sets how much Hermes may do in this chat without asking: Off (asks before
   risky commands), **Auto access** (runs everything without asking, but the commands on Hermes's own dangerous-command
   list are blocked and Hermes tells you what it wanted to run; patterns you already allowed "always" still run), or
