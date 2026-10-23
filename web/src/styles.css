@@ -3254,3 +3254,8 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .bg-viewer .sheet-actions .btn { flex: 1; }
 
 .app-own-link { display: block; margin-top: 4px; padding: 0; background: none; border: 0; color: var(--accent); text-decoration: underline; font-size: 12px; text-align: left; }
+
+/* Model providers list (Providers.tsx) */
+.provider-key { display: flex; gap: 8px; align-items: center; padding: 10px 12px; }
+.provider-key input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; outline: none; color: inherit; font: inherit; }
+.providers .set-value { white-space: nowrap; font-size: 0.78rem; }
