@@ -32,6 +32,8 @@ export interface PreHermes {
   progress: Progress | null
   /** The user skipped (or finished) the Start Shizuku step. */
   shizukuSkipped: boolean
+  /** The user tapped Done on the Autostart step (Android can't tell whether the switch is on). */
+  autostartDone?: boolean
 }
 
 /** The native probe's raw answer. */
@@ -165,9 +167,6 @@ export interface Remote {
   phone: PhoneAccess | null // null: an older plugin that can't tell
 }
 
-/** Xiaomi's Autostart switch can't be read, so it is only a tip on these makers. */
-export const AUTOSTART_MAKERS = ['xiaomi', 'redmi', 'poco']
-
 /** @param hasModel true = a provider is connected, false = none, null = not asked / no answer yet. */
 export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null, hasModel: boolean | null, pre?: PreHermes): FlowStep[] {
   const online = conn === 'open'
@@ -190,7 +189,6 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
   const nat = (v: boolean | undefined): StepState => (n ? (v ? 'ok' : 'bad') : 'skip')
   const p = online ? r?.phone ?? null : null
   const remoteState = (v: boolean | undefined): StepState => (p ? (v ? 'ok' : 'bad') : 'skip')
-  const maker = (n?.maker || '').toLowerCase()
   const row = (id: StepId, required: boolean, state: StepState): FlowStep => ({ id, required, state })
   return [
     row('apps', true, appFirst ? (allApps ? 'ok' : 'bad') : 'skip'),
@@ -211,7 +209,9 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     row('files', false, remoteState(p?.files)),
     row('termux-api', false, n?.termuxApi === false ? 'bad' : remoteState(p?.termux_api)),
     row('shizuku', false, n?.shizuku === false ? 'bad' : !p ? 'skip' : p.shizuku === 'ok' ? 'ok' : 'bad'),
-    row('autostart', false, n && AUTOSTART_MAKERS.includes(maker) ? 'info' : 'skip')
+    // Only on phones whose maker adds an Autostart switch (the shell knows which); it can't be read, so it stays a tip
+    // until the user says it is done.
+    row('autostart', false, !n?.autostart ? 'skip' : pre?.autostartDone ? 'ok' : 'info')
   ]
 }
 

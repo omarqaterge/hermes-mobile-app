@@ -84,3 +84,4 @@ jobs:
           key: android-all-16
       - run: tools/java-check.sh
       - run: tools/test_setup_lines.sh
+      - run: tools/test_autostart.sh
