@@ -58,6 +58,7 @@ const nativeShell = () => {
       stopListening: key => k(key, 'stopListening'),
       // Setup check: the test sets window.__setup; fixes are recorded in window.__fixes.
       setupState: key => (k(key, 'setupState'), JSON.stringify(window.__setup || { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })),
+      openExternal: (key, u) => (k(key, 'openExternal'), (window.__opened ||= []).push(String(u))),
       setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what)),
       // App-first setup: installs "succeed" after a moment and flip the app to installed in window.__setup; the probe
       // answers window.__probe; window.__progress is the installer's progress (the test pushes lines itself).
@@ -1766,11 +1767,22 @@ async function main() {
     await fe.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: no Termux → the flow opens at once at the helper apps'), () => check(false, 'app-first: no Termux → the flow opens at once at the helper apps'))
     check((await fe.locator('.app-list .setup-item.bad').count()) === 4, 'app-first: four install rows (Termux, Termux:API, Termux:Boot, Shizuku)')
     check((await fe.evaluate(() => window.__probes || 0)) === 0, 'app-first: no Termux command is sent while Termux is missing')
+    {
+      // each missing helper app has a link to its official page; Termux apps must share one source
+      await fe.evaluate(() => { window.__opened = [] })
+      const links = fe.locator('.app-list .app-own-link')
+      check((await links.count()) === 4, 'helper apps: every missing app has an "install it yourself" link')
+      for (let i = 0; i < (await links.count()); i++) await links.nth(i).click()
+      const opened = await fe.evaluate(() => window.__opened)
+      check(JSON.stringify(opened) === JSON.stringify(['https://f-droid.org/packages/com.termux/', 'https://f-droid.org/packages/com.termux.api/', 'https://f-droid.org/packages/com.termux.boot/', 'https://github.com/RikkaApps/Shizuku/releases']), `helper apps: links go to the F-Droid pages and Shizuku's releases (${JSON.stringify(opened)})`)
+      check((await fe.getByText('must all come from the same source (F-Droid)').count()) === 1, 'helper apps: note that Termux apps must share one source')
+    }
     await fe.getByRole('button', { name: 'Install all' }).click()
     await fe.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).then(() => check(true, 'app-first: once all four are installed the flow moves on to Start Shizuku'), () => check(false, 'app-first: once all four are installed the flow moves on to Start Shizuku'))
     check(JSON.stringify(await fe.evaluate(() => window.__installs)) === JSON.stringify(['termux', 'termux-api', 'termux-boot', 'shizuku']), `app-first: Install all installs them one after another, Termux first (${JSON.stringify(await fe.evaluate(() => window.__installs))})`)
     await fe.getByRole('button', { name: 'Open Shizuku' }).click()
     check((await fe.evaluate(() => window.__fixes || [])).includes('open-shizuku'), 'app-first: Open Shizuku opens it')
+    check((await fe.getByText('Shizuku uses Android’s own wireless debugging to start itself').count()) === 1, 'Wireless debugging step explains why it is needed')
     await fe.getByRole('button', { name: 'Skip for now' }).click()
     await fe.getByRole('button', { name: 'Allow' }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: after Shizuku, the Termux permission comes before the installer'), () => check(false, 'app-first: after Shizuku, the Termux permission comes before the installer'))
     await fe.getByRole('button', { name: 'Allow' }).click()
