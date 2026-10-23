@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Running the installer again after it was interrupted works.** If Termux was killed or the phone restarted while Hermes was being installed, the next run stopped at once ("exists and is not a Hermes git checkout"). The installer now moves the half-installed folder aside and installs fresh.
 ## v0.8.56 (2026-10-24)
 
 Tested on one phone (Android 16) and Android 15 emulators; not yet on other phone makers.

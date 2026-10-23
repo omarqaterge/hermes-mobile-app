@@ -207,6 +207,10 @@ step hermes "Hermes Agent (10-30 minutes on a phone)"
 # An interrupted install can leave EMPTY launchers in ~/.local/bin: they "run" fine (exit 0, no output) and Hermes's
 # installer never replaces files it doesn't recognise as its own. Drop them so the installer writes real ones.
 deb 'find /root/.local/bin -maxdepth 1 -name "hermes*" -type f -size 0 -delete 2>/dev/null; true'
+# An interrupted install (Termux killed, phone restarted) can leave /root/.hermes/hermes-agent without a git checkout
+# (no .git). Hermes's installer then stops at once: "exists and is not a Hermes git checkout. Move it aside". Do that
+# here, like the installer itself does for a clone with no commits: moved aside, never deleted.
+deb 'd=/root/.hermes/hermes-agent; if [ -d "$d" ] && [ ! -L "$d" ] && [ ! -e "$d/.git" ] && [ ! -f "$d/install-stamp.json" ] && [ -n "$(ls -A "$d")" ]; then mv "$d" "$d.broken-$(date -u +%Y%m%d-%H%M%S)"; fi; true'
 if deb "hermes --version 2>/dev/null | grep -q Hermes && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
   say "hermes already installed, skipping"
 else
