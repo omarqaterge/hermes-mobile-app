@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appInstalled, cleanupOk, nextApp, parseCleanup, phaseOf, settingsSnapshot, type UninstallNative } from './uninstall'
+import { appInstalled, cleanupOk, nextApp, parseCleanup, phaseOf, resumeOnStart, settingsSnapshot, type UninstallNative } from './uninstall'
 import type { NativeSetup } from './bridge'
 
 const base: NativeSetup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '', termuxApi: true, termuxBoot: true, shizuku: true }
@@ -109,5 +109,17 @@ describe('settingsSnapshot', () => {
     const ls: Record<string, string> = { 'hm.theme': 'oled', 'hm.textScale': '1.1', 'hm.chatcache.v1': 'BIG', 'hm.drafts.v1': '{"a":"secret draft"}', 'hm.boot.v1': '{}' }
     const o = JSON.parse(settingsSnapshot(k => ls[k] ?? null))
     expect(o).toEqual({ app: 'hermes-mobile', settings: { 'hm.theme': 'oled', 'hm.textScale': '1.1' } })
+  })
+})
+
+describe('resumeOnStart', () => {
+  it('reopens the sheet once something was removed (Android kills the app when Termux goes)', () => {
+    expect(resumeOnStart(st({ started: true, removed: true, result: { exit: 0, stdout: '' } }))).toBe(true)
+    expect(resumeOnStart(st({ started: true, removed: true, result: { exit: 1, stdout: '' } }))).toBe(true)
+  })
+  it('not before, not after a backup failure that removed nothing, not in a browser', () => {
+    expect(resumeOnStart(st({}))).toBe(false)
+    expect(resumeOnStart(st({ result: { exit: 3, stdout: '' } }))).toBe(false)
+    expect(resumeOnStart(null)).toBe(false)
   })
 })
