@@ -278,6 +278,7 @@ public class MainActivity extends Activity {
             o.put("termuxSigner", installed("com.termux") ? (FDROID_SIGNER.equals(signer("com.termux")) ? "fdroid" : "other") : "");
             o.put("termuxVersion", versionName("com.termux"));
             o.put("canInstall", getPackageManager().canRequestPackageInstalls());
+            o.put("installing", helperInFlight()); // a helper app download/prompt in flight
             o.put("devOptions", android.provider.Settings.Global.getInt(getContentResolver(), android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) == 1);
             o.put("wirelessDebugging", android.provider.Settings.Global.getInt(getContentResolver(), "adb_wifi_enabled", 0) == 1);
             o.put("probe", true);
@@ -475,8 +476,98 @@ public class MainActivity extends Activity {
     /** Same file as phone/phone-access.sh and tools/setup-phone.sh. */
     static final String SHIZUKU_APK = "https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk";
     static final String HELPER_ACTION = "com.omarqaterge.hermesmobile.HELPER_RESULT";
-    final java.util.concurrent.atomic.AtomicBoolean helperBusy = new java.util.concurrent.atomic.AtomicBoolean();
     boolean helperReceiverOn;
+    /** The helper app being installed, from its download until Android's final answer (null = none). Main thread. One
+     *  at a time: a second session while the first prompt is open would stack two installers. */
+    volatile String helperWhich;
+    volatile int helperSession = -1;
+    /** Android's "Install" prompt for helperWhich, kept until the final answer, and whether it was put on screen. Android
+     *  10+ refuses to open an activity from an app that isn't on screen ("Background activity launch blocked"): when
+     *  the prompt arrives while the user is elsewhere (a full-screen installer still showing the previous app, Home), it
+     *  waits here and opens when Hermes Mobile comes back (onResume). */
+    Intent helperConfirm;
+    boolean helperPromptShown;
+
+    void helperFinished() {
+        helperWhich = null;
+        helperSession = -1;
+        helperConfirm = null;
+        helperPromptShown = false;
+        handler.removeCallbacks(helperPromptCheck);
+    }
+
+    void showHelperPrompt() {
+        if (helperConfirm == null || helperWhich == null) return;
+        try {
+            startActivity(new Intent(helperConfirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            helperPromptShown = true;
+        } catch (Exception e) {
+            String w = helperWhich;
+            abandonHelperSession();
+            helperFinished();
+            helperState(w, "error", 0, "Couldn't open Android's installer.");
+        }
+    }
+
+    void abandonHelperSession() {
+        int id = helperSession;
+        if (id < 0) return;
+        try {
+            getPackageManager().getPackageInstaller().abandonSession(id);
+        } catch (Exception ignored) { // already finished or gone
+        }
+    }
+
+    /** Back in the app with the prompt shown earlier and still no answer: the user left it (Home, another app) or it
+     *  closed without telling us. The page offers Retry, which opens the same prompt again. Runs once per return. */
+    final Runnable helperPromptCheck = () -> {
+        if (foreground && helperWhich != null && helperConfirm != null && helperPromptShown)
+            helperState(helperWhich, "prompt", 100, "");
+    };
+
+    /** onResume: open a prompt that arrived while the app was in the background, or check on one shown earlier. */
+    void resumeHelperInstall() {
+        handler.removeCallbacks(helperPromptCheck);
+        finishIfInstalled();
+        if (helperWhich == null) return;
+        if (helperSession >= 0 && helperConfirm == null && !helperDownloading) {
+            // committed but no answer at all: if Android dropped the session, nothing is in flight any more
+            android.content.pm.PackageInstaller.SessionInfo si = null;
+            try {
+                si = getPackageManager().getPackageInstaller().getSessionInfo(helperSession);
+            } catch (Exception ignored) {
+            }
+            if (si == null) {
+                String w = helperWhich;
+                helperFinished();
+                if (!installed(helperPackage(w))) helperState(w, "error", 0, "Android didn't finish the install.");
+                return;
+            }
+        }
+        if (helperConfirm == null) return;
+        if (!helperPromptShown) showHelperPrompt();
+        else handler.postDelayed(helperPromptCheck, 4000);
+    }
+
+    volatile boolean helperDownloading;
+    /** Asked for by the page but not yet started on the main thread: a re-check in between must not call it stopped. */
+    volatile String helperRequested;
+
+    /** The helper app still in flight for the page ('' = none). Its package already installed means Android's answer is
+     *  only late (it can arrive after onResume when the app was in the background): that one counts as finished. */
+    String helperInFlight() {
+        String w = helperWhich;
+        if (w != null && !(!helperDownloading && installed(helperPackage(w)))) return w;
+        String r = helperRequested;
+        return r == null ? "" : r;
+    }
+
+    /** helperWhich got installed but its result hasn't arrived (yet): let the next one start. Main thread. */
+    void finishIfInstalled() {
+        if (helperWhich != null && !helperDownloading && installed(helperPackage(helperWhich))) {
+            helperFinished();
+        }
+    }
 
     static String helperPackage(String which) {
         switch (which == null ? "" : which) {
@@ -530,12 +621,21 @@ public class MainActivity extends Activity {
     void installHelper(final String which) {
         final String pkg = helperPackage(which);
         if (pkg == null) return; // not one of the four: ignored
+        if (which.equals(helperRequested)) helperRequested = null;
         if (!getPackageManager().canRequestPackageInstalls()) {
             helperState(which, "permission", 0, "Allow Hermes Mobile to install apps, then come back.");
             runOnUiThread(() -> setupFix("install-permission"));
             return;
         }
-        if (!helperBusy.compareAndSet(false, true)) return; // one at a time
+        finishIfInstalled();
+        if (helperWhich != null) {
+            // One at a time. The same app again (the page's Retry): open its prompt again instead of a new download.
+            if (helperWhich.equals(which) && helperConfirm != null) showHelperPrompt();
+            else helperState(helperWhich, helperDownloading ? "downloading" : "installing", 0, "");
+            return;
+        }
+        helperWhich = which;
+        helperDownloading = true;
         new Thread(() -> {
             java.io.File apk = null;
             try {
@@ -555,11 +655,19 @@ public class MainActivity extends Activity {
                 if (!(shizuku ? SHIZUKU_SIGNER : FDROID_SIGNER).equals(sha)) throw new Exception("The download isn't signed by its maker.");
                 helperState(which, "installing", 100, "");
                 commitHelper(which, pkg, apk);
+                helperDownloading = false;
             } catch (Exception e) {
-                helperState(which, "error", 0, e.getMessage() == null ? "Install failed." : e.getMessage());
+                final String msg = e.getMessage() == null ? "Install failed." : e.getMessage();
+                runOnUiThread(() -> {
+                    if (which.equals(helperWhich)) {
+                        abandonHelperSession();
+                        helperFinished();
+                    }
+                    helperDownloading = false;
+                    helperState(which, "error", 0, msg);
+                });
             } finally {
                 if (apk != null) apk.delete();
-                helperBusy.set(false);
             }
         }, "hm-helper").start();
     }
@@ -574,16 +682,16 @@ public class MainActivity extends Activity {
                     int st = in.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -1);
                     if (st == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
                         Intent confirm = in.getParcelableExtra(Intent.EXTRA_INTENT);
-                        if (confirm != null) {
-                            try {
-                                startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                            } catch (Exception e) {
-                                helperState(w, "error", 0, "Couldn't open Android's installer.");
-                            }
-                        }
+                        if (confirm == null || !w.equals(helperWhich)) return;
+                        helperConfirm = confirm;
+                        helperPromptShown = false;
+                        // Only from the screen: Android blocks it from the background, and onResume opens it then.
+                        if (foreground) showHelperPrompt();
                     } else if (st == android.content.pm.PackageInstaller.STATUS_SUCCESS) {
+                        if (w.equals(helperWhich)) helperFinished();
                         helperState(w, "done", 100, "");
                     } else {
+                        if (w.equals(helperWhich)) helperFinished();
                         String m = in.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE);
                         helperState(w, "error", 0, st == android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED ? "Cancelled." : (m == null ? "Install failed." : m));
                     }
@@ -598,6 +706,7 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInstaller.SessionParams params = new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
         params.setAppPackageName(pkg);
         int id = pi.createSession(params);
+        helperSession = id;
         try (android.content.pm.PackageInstaller.Session ses = pi.openSession(id)) {
             try (InputStream in = new java.io.FileInputStream(apk); OutputStream o = ses.openWrite(pkg + ".apk", 0, apk.length())) {
                 byte[] buf = new byte[64 * 1024];
@@ -1289,6 +1398,8 @@ public class MainActivity extends Activity {
         for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())
             if (n.getId() == 2 && n.getTag() != null && n.getTag().startsWith("approval:")) nm.cancel(n.getTag(), 2);
         web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
+        resumeHelperInstall();
+        showUpdatePrompt();
         setupChanged();
         pushBg();
     }
@@ -1479,6 +1590,19 @@ public class MainActivity extends Activity {
     static final String UPDATE_ACTION = "com.omarqaterge.hermesmobile.UPDATE_RESULT";
     final java.util.concurrent.atomic.AtomicBoolean updating = new java.util.concurrent.atomic.AtomicBoolean();
     boolean updateReceiverOn;
+    /** The update's "Install" prompt, waiting for the app to be on screen (main thread). */
+    Intent updateConfirm;
+
+    void showUpdatePrompt() {
+        Intent i = updateConfirm;
+        updateConfirm = null;
+        if (i == null) return;
+        try {
+            startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) {
+            updateState("error", 0, "Couldn't open the installer.");
+        }
+    }
 
     /** Only this project's release assets (https), nothing else is ever downloaded and installed. */
     static boolean updateUrlOk(Uri u) {
@@ -1581,13 +1705,13 @@ public class MainActivity extends Activity {
                     if (st == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
                         Intent confirm = in.getParcelableExtra(Intent.EXTRA_INTENT);
                         if (confirm != null) {
-                            try {
-                                startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                            } catch (Exception e) {
-                                updateState("error", 0, "Couldn't open the installer.");
-                            }
+                            // Android blocks opening it from the background: the user left during the download, so it
+                            // opens when the app is back on screen (onResume).
+                            updateConfirm = confirm;
+                            if (foreground) showUpdatePrompt();
                         }
                     } else if (st != android.content.pm.PackageInstaller.STATUS_SUCCESS) {
+                        updateConfirm = null;
                         String m = in.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE);
                         updateState("error", 0, st == android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED ? "Update cancelled." : (m == null ? "Install failed." : m));
                     }
@@ -2024,6 +2148,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void installHelperApp(String key, final String which) {
             if (!ok(key) || helperPackage(which) == null) return;
+            helperRequested = which;
             runOnUiThread(() -> MainActivity.this.installHelper(which));
         }
 

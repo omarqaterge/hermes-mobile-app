@@ -76,47 +76,98 @@ interface AppStatus {
   msg: string
 }
 const IDLE: AppStatus = { state: 'idle', pct: 0, msg: '' }
-let appStatus: Record<HelperApp, AppStatus> = { termux: IDLE, 'termux-api': IDLE, 'termux-boot': IDLE, shizuku: IDLE }
-let installQueue: HelperApp[] = []
+interface Installs {
+  apps: Record<HelperApp, AppStatus>
+  /** Still to install, in HELPERS order (the app being installed is no longer in it). */
+  queue: HelperApp[]
+}
+let installs: Installs = { apps: { termux: IDLE, 'termux-api': IDLE, 'termux-boot': IDLE, shizuku: IDLE }, queue: [] }
+/** An install failed or was cancelled: the queue waits for Retry / Install the rest instead of going on by itself. */
+let stopped = false
 let waitingPermission = false
 const appSubs = new Set<() => void>()
+const emitInstalls = () => appSubs.forEach(f => f())
 const setAppStatus = (id: HelperApp, st: AppStatus) => {
-  appStatus = { ...appStatus, [id]: st }
-  appSubs.forEach(f => f())
+  installs = { ...installs, apps: { ...installs.apps, [id]: st } }
+  emitInstalls()
 }
-const busy = () => Object.values(appStatus).some(a => a.state === 'downloading' || a.state === 'installing')
+const setQueue = (q: HelperApp[]) => {
+  installs = { ...installs, queue: q }
+  emitInstalls()
+}
+const order = (ids: HelperApp[]) => HELPERS.map(h => h.id).filter(id => ids.includes(id))
+const working = (a: AppStatus) => a.state === 'downloading' || a.state === 'installing'
+const busy = () => Object.values(installs.apps).some(working)
+const helper = (id: HelperApp) => HELPERS.find(h => h.id === id)!
 function installNext() {
-  if (busy() || waitingPermission) return
+  if (busy() || waitingPermission || stopped) return
   const n = setupState()
-  while (installQueue.length && n && HELPERS.find(h => h.id === installQueue[0])!.has(n)) installQueue.shift()
-  const next = installQueue.shift()
+  let q = installs.queue
+  while (q.length && n && helper(q[0]).has(n)) q = q.slice(1)
+  // The shell is still busy with another app (e.g. the page was reloaded meanwhile): follow it, start nothing.
+  const inFlight = (n?.installing || '') as HelperApp | ''
+  if (inFlight && inFlight !== q[0] && n && !helper(inFlight).has(n)) {
+    setQueue(q)
+    // keep "prompt closed: tap Retry" (its prompt is still pending in the shell); otherwise show it as installing
+    if (installs.apps[inFlight].state !== 'prompt') setAppStatus(inFlight, { state: 'installing', pct: 100, msg: '' })
+    return
+  }
+  const next = q[0]
+  setQueue(q.slice(1))
   if (!next) return
-  setAppStatus(next, { state: 'downloading', pct: 0, msg: '' })
+  // Retry while its prompt is still open: the shell shows that prompt again, no new download.
+  setAppStatus(next, { state: inFlight === next ? 'installing' : 'downloading', pct: inFlight === next ? 100 : 0, msg: '' })
   if (!installHelperApp(next)) setAppStatus(next, { state: 'error', pct: 0, msg: 'This app build can’t install apps.' })
 }
-/** Install these apps (missing ones only, in the fixed order: Termux first). One system "Install" dialog each. */
+/** Install these apps (missing ones only, in the fixed order: Termux first). One system "Install" dialog each. Retry of one
+ *  app puts it first and keeps the rest of the queue behind it. */
 export function installApps(ids: HelperApp[]) {
-  for (const h of HELPERS) if (ids.includes(h.id) && !installQueue.includes(h.id)) installQueue.push(h.id)
+  stopped = false
+  setQueue(order([...installs.queue, ...ids]))
+  installNext()
+}
+/** Back in the app (or a setup re-check): go by what is really installed and what the shell still has in flight, never by
+ *  events alone. Android can drop the next prompt while the app is in the background, and an answer can miss the page. */
+function syncInstalls() {
+  const n = setupState()
+  if (!n) return
+  const known = typeof n.installing === 'string' // older shells don't say
+  for (const h of HELPERS) {
+    const a = installs.apps[h.id]
+    if (a.state === 'idle' || a.state === 'done' || a.state === 'permission') continue
+    if (h.has(n)) setAppStatus(h.id, IDLE) // installed: ticked
+    else if (known && n.installing !== h.id && a.state !== 'error') {
+      setAppStatus(h.id, { state: 'error', pct: 0, msg: 'Not installed: tap Retry.' })
+      stopped = true
+    }
+  }
   installNext()
 }
 onSetupEvent(e => {
+  if (e.kind === 'changed') return syncInstalls()
   if (e.kind !== 'install') return
   setAppStatus(e.which, { state: e.state, pct: e.pct, msg: e.msg })
   if (e.state === 'permission') {
     // Android's "Install unknown apps" switch is open: carry on when the user comes back with it on.
     waitingPermission = true
-    installQueue.unshift(e.which)
+    setQueue(order([...installs.queue, e.which]))
     setAppStatus(e.which, IDLE)
   } else if (e.state === 'done') installNext()
-  else if (e.state === 'error') installQueue = []
+  else if (e.state === 'error') stopped = true
 })
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible' || !waitingPermission) return
-  waitingPermission = false
-  if (setupState()?.canInstall) installNext()
-  else installQueue = []
+  if (document.visibilityState !== 'visible') return
+  if (waitingPermission) {
+    waitingPermission = false
+    if (!setupState()?.canInstall) {
+      setQueue([])
+      return
+    }
+  }
+  syncInstalls()
 })
-const useAppStatus = () => useSyncExternalStore(f => (appSubs.add(f), () => appSubs.delete(f)), () => appStatus)
+const useInstalls = () => useSyncExternalStore(f => (appSubs.add(f), () => appSubs.delete(f)), () => installs)
+const useAppStatus = () => useInstalls().apps
 
 const SHIZUKU_SKIP = 'hm.shizukuStepDone'
 const shizukuSkipped = () => {
@@ -635,18 +686,21 @@ export function SetupFlow() {
 const STATUS_TEXT = (a: AppStatus) =>
   a.state === 'downloading' ? `Downloading${a.pct ? ` ${a.pct} %` : '…'}`
     : a.state === 'installing' ? 'Tap Install on Android’s prompt'
-      : a.state === 'error' ? a.msg || 'Install failed'
-        : ''
+      : a.state === 'prompt' ? 'Android’s Install prompt was closed: tap Retry'
+        : a.state === 'error' ? a.msg || 'Install failed'
+          : ''
 
 /** Step 1: the four helper apps, each ✓ or Install, plus Install all. */
 function AppsStep({ n }: { n: NativeSetup }) {
-  const status = useAppStatus()
+  const { apps: status, queue } = useInstalls()
   const missing = HELPERS.filter(h => !h.has(n))
   const otherTermux = n.termuxSigner === 'other'
   const oldTermux = Boolean(n.termux && n.termuxVersion && /^0\.(\d+)/.test(n.termuxVersion) && Number(n.termuxVersion.split('.')[1]) < 118)
   const canFix = (h: (typeof HELPERS)[number]) => !(otherTermux && (h.id === 'termux-api' || h.id === 'termux-boot'))
   const installable = missing.filter(canFix)
   const working = HELPERS.some(h => status[h.id].state === 'downloading' || status[h.id].state === 'installing')
+  // which app the queue installs next (shown while Install all runs or waits for a Retry)
+  const queueNext = queue.find(id => !helper(id).has(n) && status[id].state !== 'downloading' && status[id].state !== 'installing')
   return (
     <div className="flow-card">
       <div className="flow-card-title">Get the helper apps</div>
@@ -675,13 +729,18 @@ function AppsStep({ n }: { n: NativeSetup }) {
               </div>
               {!has && canFix(h) && a.state !== 'downloading' && a.state !== 'installing' && (
                 <button className="btn" onClick={() => { haptic(); installApps([h.id]) }}>
-                  {a.state === 'error' ? 'Retry' : 'Install'}
+                  {a.state === 'error' || a.state === 'prompt' ? 'Retry' : 'Install'}
                 </button>
               )}
             </li>
           )
         })}
       </ul>
+      {queueNext && (
+        <div className="dim small app-next">
+          Next: {helper(queueNext).name}
+        </div>
+      )}
       <div className="setup-help">
         Prefer to install them yourself? Use the page link under each app, then come back: this list ticks an app by itself once it is
         installed. Termux, Termux:API and Termux:Boot must all come from the same source (F-Droid): apps from different sources are
