@@ -100,9 +100,13 @@ check("back to the normal chip once the app is closed", last_status().get("short
 
 ended = []
 pa.end_session = lambda sid: ended.append(sid)
+pa._state.update({"session": "s-x", "pkg": "com.example.notes", "label": "Notes"})
 plugin._on_session_end(session_id="s-x", turn_id=None, interrupted=True)
+for t in list(plugin._bgapp_enders):
+    t.join(5)
 check("a turn's end (even interrupted) ends its background app", ended == ["s-x"], ended)
 del pa.end_session
+pa._state.clear()
 
 print("tools behind Hermes's Tool Search bridge")
 bridged = {"calls": [{"name": "web_search", "arguments": {"query": "trains"}}]}

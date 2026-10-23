@@ -286,6 +286,22 @@ def chip_label(args: Optional[dict] = None) -> str:
     return f"Using {_state['label']}" if _state.get("label") else "Phone"
 
 
+def end_session(sid: str) -> None:
+    """The chat's turn is over (finished, failed or interrupted): close its app and take the card away.
+
+    The tool only said "done" when the model called close/hand_over. A model that just stops talking left the app
+    open and the card on screen until the app's own 130 s timer. Nothing is done for another chat's app."""
+    with _lock:
+        if not _state or (_state.get("session") and _state["session"] != sid):
+            return
+        try:
+            _request("/close", {}, timeout=5)
+        except Exception as e:  # the host is gone or busy: the card must go anyway
+            log(f"phone_app end_session close: {type(e).__name__}: {e}")
+        _event("done", "Finished")
+        _state.clear()
+
+
 def _event(state: str, action: str = "") -> None:
     if notify is None or not _state:
         return
