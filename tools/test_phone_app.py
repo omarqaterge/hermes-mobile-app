@@ -232,6 +232,45 @@ EVENTS.clear()
 pa.end_session("chat9")
 check("a dead host still ends the card", [kw.get("state") for _, _, kw in EVENTS] == ["done"] and pa._state == {}, EVENTS)
 
+print("another chat after the owner let go")
+import time as _t
+pa.turn_running = None
+run({"action": "open", "app": "Calculator"}, sid="chatA")
+r = run({"action": "open", "app": "Keep notes"}, sid="chatB")
+check("a chat whose app is in use (turn running, recent) still blocks others", not r["ok"] and "another chat" in r["error"], r)
+pa.end_session("chatA")  # turn ended without close
+r = run({"action": "open", "app": "Keep notes"}, sid="chatB")
+check("after A's turn ends, B can open an app at once", r["ok"] and HOST["open"] == "com.google.android.keep", r)
+pa.turn_running = lambda sid: False
+pa._state["at"] -= 25  # A's turn is over and it has been quiet a while, but no end hook arrived
+r = run({"action": "open", "app": "Calculator"}, sid="chatC")
+check("an owner whose turn is gone and quiet is replaced", r["ok"] and HOST["open"] == "com.miui.calculator", r)
+pa.turn_running = lambda sid: True
+pa._state["at"] -= 200  # silent past the bound, turn claims to run
+r = run({"action": "open", "app": "Keep notes"}, sid="chatD")
+check("an owner idle past the bound is replaced, the old app closed first",
+      r["ok"] and HOST["open"] == "com.google.android.keep" and [c[0] for c in HOST["calls"] if c[0] == "/close"], r)
+pa.turn_running = None
+pa.end_session("chatD")
+bound = []
+def rish2(cmd, stdin="", timeout=20):  # the old host holds the port until pkill; its log says so
+    bound.append(cmd)
+    if cmd.startswith("tail"):
+        return "java.net.BindException: Address already in use\n"
+    if "app_process" in cmd and not any("pkill" in c for c in bound):
+        return ""  # the new host failed to bind: nothing answers with the new token
+    return rish(cmd, stdin, timeout)
+pa._rish = rish2
+pa._token = ""
+HOST["token"] = "old-host-token"
+pa.DEADLINE_S = 0.5
+try:
+    pa.ensure_host()
+    ok = True
+except Exception as e:
+    ok = False
+check("a leftover host holding the port is stopped and a fresh one started", ok and any("pkill" in c for c in bound), bound)
+pa._rish = rish
 pa.RISH_BIN = tmp / "missing"
 check("unavailable without rish", pa.availability() == (False, "Needs Shizuku (rish isn't set up)"))
 
