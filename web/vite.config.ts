@@ -31,8 +31,9 @@ function lazyBundle(id: string, entry: string): Plugin {
         configFile: false,
         logLevel: 'warn',
         plugins: [react()],
-        // Library mode doesn't replace process.env.NODE_ENV; React reads it.
-        define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+        // Library mode doesn't replace process.env.NODE_ENV; React reads it, and OpenUI also reads
+        // process.env["NODE_ENV"] (no `process` in a WebView: it threw at load), hence the whole object too.
+        define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'process.env': JSON.stringify({ NODE_ENV: 'production' }) },
         build: {
           write: false,
           target: 'es2022',
