@@ -1,4 +1,4 @@
-// Connecting Hermes to a model: subscription / account sign-ins (Settings → Accounts) and the first-run
+// Connecting Hermes to a model: the device-code sign-in sheet (used by Settings → Model providers) and the first-run
 // welcome (the model step of the SetupFlow) that walks a fresh install through signing in or pasting a key, then picking a model.
 //
 // Sign-ins use the dashboard's own /api/providers/oauth routes (the ones Hermes's web dashboard uses):
@@ -7,15 +7,13 @@
 // runs that login in its own sheet through the plugin, with Termux as the fallback (SignIn.tsx).
 import { useEffect, useRef, useState } from 'react'
 import { api, qs } from '../api'
-import { copyText, haptic, openExternal, signInTermux } from '../bridge'
-import { errText, loadDefaultModel, rpc } from '../gateway'
+import { copyText, haptic, openExternal } from '../bridge'
+import { errText, rpc } from '../gateway'
 import { toast, useStore } from '../store'
-import { Sheet, Status, useLoader } from './Screens'
+import { Sheet } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
 import { ProviderList } from './Providers'
-import { Row, Section } from './ui'
 import { Spinner } from './Spinner'
-import { ClaudeSignInSheet, afterSignIn, loadPool, withPoolStatus } from './SignIn'
 
 interface OAuthStatus {
   logged_in?: boolean
@@ -44,14 +42,7 @@ interface Poll {
   error_message?: string | null
 }
 
-/** What each sign-in is, in words a phone user knows. Unknown providers just show their name. */
-const BLURB: Record<string, string> = {
-  'openai-codex': 'ChatGPT Plus / Pro or a Codex plan',
-  anthropic: 'Claude Pro / Max',
-  nous: 'Nous Portal account',
-  'xai-oauth': 'SuperGrok or X Premium+',
-  'minimax-oauth': 'MiniMax account'
-}
+/** Provider names in words a phone user knows. Unknown providers just show their name. */
 const NAME: Record<string, string> = {
   'openai-codex': 'ChatGPT / Codex',
   anthropic: 'Claude',
@@ -59,153 +50,6 @@ const NAME: Record<string, string> = {
   'minimax-oauth': 'MiniMax',
   'qwen-oauth': 'Qwen'
 }
-const ORDER = ['openai-codex', 'anthropic', 'xai-oauth', 'nous', 'minimax-oauth', 'qwen-oauth']
-
-/** A sign-in the app can run: in-app device code, or `hermes auth add <id>` in Termux. */
-// Only Claude: Qwen's "external" login just imports the Qwen CLI's credentials, which a phone doesn't have.
-const IN_TERMUX = new Set(['anthropic'])
-const termuxCommand = (p: OAuthProvider) => p.flow === 'external' && IN_TERMUX.has(p.id) && p.cli_command === `hermes auth add ${p.id}`
-const usable = (p: OAuthProvider) => p.flow === 'device_code' || termuxCommand(p)
-
-export const loadAccounts = (profile: string) =>
-  Promise.all([api<{ providers: OAuthProvider[] }>('GET', `/api/providers/oauth?${qs({ profile })}`, undefined, { profile: false }), loadPool(profile)]).then(([r, pool]) =>
-    withPoolStatus(r.providers || [], pool)
-      // Logins that need another CLI (Copilot, Claude Code's setup-token) can't run on the phone: only show them when already signed in.
-      .filter(p => usable(p) || p.status?.logged_in)
-      .sort((a, b) => (ORDER.indexOf(a.id) + 1 || 99) - (ORDER.indexOf(b.id) + 1 || 99))
-  )
-
-/** The list of sign-ins for one profile, each with Sign in / Sign out. `onChange` runs after a login or logout. */
-export function AccountsList({ profile, onChange, title }: { profile: string; onChange?: () => void; title?: string }) {
-  const { data, error, loading, reload } = useLoader(() => loadAccounts(profile), [profile])
-  const [device, setDevice] = useState<OAuthProvider | null>(null)
-  const [claude, setClaude] = useState<OAuthProvider | null>(null)
-  const waitingTermux = useRef<OAuthProvider | null>(null)
-
-  // Back from Termux: see whether the login landed, and say so.
-  useEffect(() => {
-    const on = () => {
-      const p = waitingTermux.current
-      if (document.visibilityState !== 'visible' || !p) return
-      waitingTermux.current = null
-      const name = NAME[p.id] || p.name
-      void loadAccounts(profile)
-        .then(list => {
-          if (list.find(x => x.id === p.id)?.status?.logged_in) {
-            toast(`Signed in to ${name}`)
-            afterSignIn()
-          } else toast(`${name} is not signed in. If Termux showed an error, try again.`, 'error', 6000)
-        })
-        .catch(() => {})
-        .finally(() => {
-          reload()
-          onChange?.()
-        })
-    }
-    document.addEventListener('visibilitychange', on)
-    return () => document.removeEventListener('visibilitychange', on)
-  }, [reload, onChange, profile])
-
-  const changed = () => {
-    reload()
-    onChange?.()
-    void loadDefaultModel()
-  }
-
-  const signIn = (p: OAuthProvider) => {
-    haptic()
-    if (p.flow === 'device_code') return setDevice(p)
-    if (p.id === 'anthropic') return setClaude(p)
-    termux(p)
-  }
-
-  const termux = (p: OAuthProvider) => {
-    if (signInTermux(p.id, profile)) {
-      waitingTermux.current = p
-      toast('Follow the steps in Termux, then come back here')
-      return
-    }
-    void copyText(cliFor(p, profile))
-    toast('Couldn’t open Termux. The command is copied: paste it in Termux inside Debian (~/bin/hermes-debian opens it)', 'error', 8000)
-  }
-
-  const signOut = (p: OAuthProvider) => {
-    haptic()
-    api('DELETE', `/api/providers/oauth/${encodeURIComponent(p.id)}?${qs({ profile })}`, undefined, { profile: false })
-      .then(() => {
-        toast(`Signed out of ${NAME[p.id] || p.name}`)
-        changed()
-      })
-      .catch(e => toast(errText(e), 'error', 6000))
-  }
-
-  return (
-    <>
-      <Status loading={loading} error={error} empty={!data?.length} emptyText="This Hermes has no account sign-ins." />
-      {data && data.length > 0 && (
-        <Section title={title}>
-          {data.map(p => {
-            const on = Boolean(p.status?.logged_in)
-            return (
-              <Row
-                key={p.id}
-                title={
-                  <span className="key-line">
-                    <span className={on ? 'dot-set' : 'dot-unset'} />
-                    <span>{NAME[p.id] || p.name}</span>
-                  </span>
-                }
-                sub={on ? `Signed in${p.status.source_label ? ` · ${p.status.source_label}` : ''}` : BLURB[p.id] || p.name}
-                trailing={
-                  on ? (
-                    p.disconnectable ? (
-                      <button className="btn" onClick={() => signOut(p)}>
-                        Sign out
-                      </button>
-                    ) : undefined
-                  ) : usable(p) ? (
-                    <button className="btn primary" onClick={() => signIn(p)}>
-                      Sign in
-                    </button>
-                  ) : undefined
-                }
-              />
-            )
-          })}
-        </Section>
-      )}
-      {device && (
-        <DeviceLoginSheet
-          provider={device}
-          profile={profile}
-          onClose={() => setDevice(null)}
-          onDone={() => {
-            setDevice(null)
-            changed()
-          }}
-        />
-      )}
-      {claude && (
-        <ClaudeSignInSheet
-          profile={profile}
-          onClose={() => setClaude(null)}
-          onTermux={() => {
-            const p = claude
-            setClaude(null)
-            termux(p)
-          }}
-          onDone={() => {
-            setClaude(null)
-            reload()
-            onChange?.()
-            afterSignIn()
-          }}
-        />
-      )}
-    </>
-  )
-}
-
 export const cliFor = (p: OAuthProvider, profile: string) => (profile && profile !== 'default' ? p.cli_command.replace(/^hermes /, `hermes -p ${profile} `) : p.cli_command)
 
 /** Device-code login: show the code, open the provider's page, wait until Hermes says it's approved. */

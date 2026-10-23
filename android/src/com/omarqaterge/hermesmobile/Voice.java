@@ -462,6 +462,8 @@ final class Voice {
     static String speakable(String md) {
         if (md == null) return "";
         String t = md;
+        t = t.replaceAll("(?s)```openui(?:-lang)?.*?(?:```|$)", " (card shown in the app). ");
+        t = t.replace("[card]", " (card shown in the app). "); // the plugin's strip_ui() marker in reply events
         t = t.replaceAll("(?s)```.*?```", " (code omitted). ");
         t = t.replaceAll("(?m)^\\s*MEDIA:.*$", "");
         t = t.replaceAll("!\\[[^\\]]*\\]\\([^)]*\\)", "");
