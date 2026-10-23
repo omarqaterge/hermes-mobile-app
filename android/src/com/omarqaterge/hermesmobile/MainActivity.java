@@ -224,6 +224,7 @@ public class MainActivity extends Activity {
     }
 
     void startHermesNow() {
+        if (Uninstall.started(this)) return; // Settings → Uninstall Hermes removed (or is removing) it
         long now = System.currentTimeMillis();
         if (now - lastStartRequest < 8000) return;
         lastStartRequest = now;
@@ -2039,6 +2040,27 @@ public class MainActivity extends Activity {
         public boolean setupCommand(String key) {
             if (!ok(key)) return false;
             return MainActivity.this.copySetupCommand();
+        }
+
+        /** Settings → Uninstall Hermes: run phone/uninstall.sh in Termux (fixed flags + the app's settings JSON). */
+        @JavascriptInterface
+        public String uninstallStart(String key, boolean backup, boolean keys, String settings) {
+            if (!ok(key)) return "error";
+            return Uninstall.run(MainActivity.this, backup, keys, settings);
+        }
+
+        /** {started, running, removed, result}; a finished cleanup also calls window.hermesUninstallDone(). */
+        @JavascriptInterface
+        public String uninstallState(String key) {
+            if (!ok(key)) return "";
+            return Uninstall.state(MainActivity.this);
+        }
+
+        /** Android's uninstall prompt for termux-api, termux-boot, shizuku, termux or self (nothing else). */
+        @JavascriptInterface
+        public boolean uninstallApp(String key, String which) {
+            if (!ok(key)) return false;
+            return Uninstall.uninstallApp(MainActivity.this, which);
         }
 
         /** App-first setup: the installer's progress so far ({active, lines, done, fail}). */
