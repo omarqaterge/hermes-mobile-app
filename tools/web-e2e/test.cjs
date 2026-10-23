@@ -1800,6 +1800,13 @@ async function main() {
       await fs.getByRole('button', { name: 'Install all' }).click()
       const apiRow = fs.locator('.app-list .setup-item', { hasText: 'Termux:API' })
       await apiRow.getByText('Tap Install on Android’s prompt').waitFor({ timeout: 4000 }).then(() => check(true, 'install-all: the 2nd app waits on Android’s prompt'), () => check(false, 'install-all: the 2nd app waits on Android’s prompt'))
+      // the shell says its prompt was left unanswered (user went Home): Retry shows and a later re-check doesn't hide it
+      await fs.evaluate(() => {
+        window.hermesSetupInstall('termux-api', 'prompt', 100, '')
+        window.hermesSetupChanged()
+      })
+      await apiRow.getByRole('button', { name: 'Retry' }).waitFor({ timeout: 4000 }).then(() => check(true, 'install-all: a prompt left unanswered gets a Retry button'), () => check(false, 'install-all: a prompt left unanswered gets a Retry button'))
+      check((await apiRow.getByText('Android’s Install prompt was closed', { exact: false }).count()) === 1, 'install-all: the row says the prompt was closed')
       // the user installed it, but the result never reached the page; back in the app:
       await fs.evaluate(() => {
         window.__setup = { ...window.__setup, termuxApi: true, installing: '' }
