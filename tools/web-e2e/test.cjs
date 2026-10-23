@@ -66,10 +66,13 @@ const nativeShell = () => {
         k(key, 'installHelperApp')
         ;(window.__installs ||= []).push(which)
         const field = { termux: 'termux', 'termux-api': 'termuxApi', 'termux-boot': 'termuxBoot', shizuku: 'shizuku' }[which]
+        window.__setup = { ...window.__setup, installing: which }
         setTimeout(() => window.hermesSetupInstall(which, 'downloading', 40, ''), 30)
         setTimeout(() => window.hermesSetupInstall(which, 'installing', 100, ''), 80)
+        // window.__installStall: these apps stop at "installing" (Android's prompt was blocked or its answer never reached the page)
+        if ((window.__installStall || []).includes(which)) return
         setTimeout(() => {
-          window.__setup = { ...window.__setup, [field]: true }
+          window.__setup = { ...window.__setup, [field]: true, installing: '' }
           window.hermesSetupInstall(which, 'done', 100, '')
         }, 150)
       },
@@ -1788,6 +1791,37 @@ async function main() {
   await mock({ unconfigured: true, pluginEnabled: true, drop: 600000 })
   {
     const FRESH = { ...OK, termux: false, runCommand: false, termuxApi: false, termuxBoot: false, termuxBootStopped: false, shizuku: false, canInstall: true, devOptions: false, wirelessDebugging: false, termuxSigner: '', probe: true, maker: 'google' }
+    {
+      // Install all stalls after the first app (Android blocked the next prompt while the app was in the background, or its
+      // answer never reached the page): coming back to the app re-checks what is really installed and carries on.
+      const fs = await flowPage(FRESH)
+      await fs.addInitScript(() => { window.__installStall = ['termux-api', 'termux-boot'] })
+      await fs.goto('http://127.0.0.1:5180/')
+      await fs.getByRole('button', { name: 'Install all' }).click()
+      const apiRow = fs.locator('.app-list .setup-item', { hasText: 'Termux:API' })
+      await apiRow.getByText('Tap Install on Android’s prompt').waitFor({ timeout: 4000 }).then(() => check(true, 'install-all: the 2nd app waits on Android’s prompt'), () => check(false, 'install-all: the 2nd app waits on Android’s prompt'))
+      // the user installed it, but the result never reached the page; back in the app:
+      await fs.evaluate(() => {
+        window.__setup = { ...window.__setup, termuxApi: true, installing: '' }
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      await fs.waitForFunction(() => (window.__installs || []).includes('termux-boot'), null, { timeout: 4000 }).then(() => check(true, 'install-all: back in the app, an app that got installed is ticked and the next one starts'), () => check(false, 'install-all: back in the app, an app that got installed is ticked and the next one starts'))
+      // Termux:Boot stalls too, and this time it is neither installed nor in flight (its prompt was closed): Retry + what's next
+      await fs.locator('.app-list .setup-item', { hasText: 'Termux:Boot' }).getByText('Tap Install on Android’s prompt').waitFor({ timeout: 4000 }).catch(() => {})
+      await fs.evaluate(() => {
+        window.__setup = { ...window.__setup, installing: '' }
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      const bootRow = fs.locator('.app-list .setup-item', { hasText: 'Termux:Boot' })
+      await bootRow.getByRole('button', { name: 'Retry' }).waitFor({ timeout: 4000 }).then(() => check(true, 'install-all: an app whose install stopped gets a Retry button'), () => check(false, 'install-all: an app whose install stopped gets a Retry button'))
+      check((await fs.getByText('Next: Shizuku', { exact: false }).count()) === 1, 'install-all: the list says which app comes next')
+      await fs.evaluate(() => { window.__installStall = [] })
+      if (await bootRow.getByRole('button', { name: 'Retry' }).count()) await bootRow.getByRole('button', { name: 'Retry' }).click()
+      await fs.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).then(() => check(true, 'install-all: Retry installs it and the rest of the queue follows'), () => check(false, 'install-all: Retry installs it and the rest of the queue follows'))
+      const got = await fs.evaluate(() => window.__installs)
+      check(JSON.stringify(got) === JSON.stringify(['termux', 'termux-api', 'termux-boot', 'termux-boot', 'shizuku']), `install-all: installs in order, each once more only on Retry (${JSON.stringify(got)})`)
+      await fs.close()
+    }
     const fe = await flowPage(FRESH)
     await fe.goto('http://127.0.0.1:5180/')
     await fe.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: no Termux → the flow opens at once at the helper apps'), () => check(false, 'app-first: no Termux → the flow opens at once at the helper apps'))
