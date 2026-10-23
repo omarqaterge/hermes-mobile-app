@@ -15,13 +15,16 @@ export const QUERY_TOO_OFTEN = 'This card asked for data too often. Ask Hermes t
 
 const err = (text: string): McpResult => ({ isError: true, content: [{ type: 'text', text }] })
 
-export function makeToolClient(call: ToolCall, cacheKey: string, store: ToolStore, now: () => number = Date.now) {
+export function makeToolClient(call: ToolCall, cacheKey: string | (() => string), store: ToolStore, now: () => number = Date.now) {
   let calls = 0
+  const served = new Set<string>() // keys whose saved answer this card already got: a repeat is a refresh
   return {
     async callTool({ name, arguments: args = {} }: { name: string; arguments?: Record<string, unknown> }): Promise<McpResult> {
-      const key = `q:${cacheKey}|${name}|${JSON.stringify(args)}`
+      const key = `q:${typeof cacheKey === 'function' ? cacheKey() : cacheKey}|${name}|${JSON.stringify(args)}`
       const hit = store.load(key) as { at?: unknown; v?: unknown } | null | undefined
-      if (hit && typeof hit === 'object' && typeof hit.at === 'number' && now() - hit.at < QUERY_FRESH_MS) return { structuredContent: hit.v, content: [] }
+      const first = !served.has(key)
+      served.add(key)
+      if (first && hit && typeof hit === 'object' && typeof hit.at === 'number' && now() - hit.at < QUERY_FRESH_MS) return { structuredContent: hit.v, content: [] }
       if (++calls > QUERY_MAX_CALLS) return err(QUERY_TOO_OFTEN)
       try {
         const v = await call(name, args)

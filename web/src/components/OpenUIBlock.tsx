@@ -57,7 +57,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   const tools = useRef<ReturnType<typeof makeToolClient> | null>(null)
   tools.current ||= makeToolClient(
     (name, args) => api('POST', '/api/plugins/hermes-mobile/openui/call', { name, args }, { profile: false }),
-    chatId(),
+    chatId, // read at call time: a chat created by this very reply has no stored id when the card first mounts
     { load: loadUiState, save: (k, v, at) => saveUiState(k, v, at) }
   )
 
