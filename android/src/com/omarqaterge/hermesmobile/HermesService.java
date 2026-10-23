@@ -455,6 +455,7 @@ public class HermesService extends Service {
     }
 
     void shareKeyWithTermux() {
+        if (Uninstall.started(this)) return; // Settings → Uninstall Hermes: nothing more goes into Termux
         if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
         keyShared = true;
         try {

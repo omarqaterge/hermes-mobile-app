@@ -32,6 +32,7 @@ import { BgApp } from './components/BgApp'
 import { AutoButton } from './components/AutoAccess'
 import { refreshBg } from './bgapp'
 import { bootMark } from './boot'
+import { UninstallResume } from './components/Uninstall'
 
 declare global {
   interface Window {
@@ -657,6 +658,7 @@ export function App() {
       {sheet === 'status' && <StatusSheet />}
       {sheet === 'rollback' && <RollbackSheet />}
       {request && <RequestSheet key={request.id} req={request} />}
+      <UninstallResume />
       <CanvasPanel />
       <BtwSheet />
       <DialogHost />
