@@ -1,0 +1,434 @@
+[
+  {
+    "name": "web_search",
+    "description": "Search the web. Returns {success, data: {web: [{url, title, description}]}}; on failure {error}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search query to look up on the web. You may include backend-supported operators such as site:example.com, filetype:pdf, intitle:word, -term, or \"exact phrase\"."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of results to return. Defaults to 5.",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 5
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "web": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "find_chats",
+    "description": "Find the user's chats by words and/or by the images, videos, audio or files in them, newest first. Returns {ok, chats_found, chats: [{id, title, profile, last_active, link, snippets: [{who, snippet}], items: [{kind, path}]}]}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Words to find (all must appear in one message or the title). Optional."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "file",
+            "media"
+          ],
+          "description": "Only chats containing this: image, video, audio, file (documents etc.) or media (any of them). Omit for a text-only search; with neither text nor kind, image is assumed."
+        },
+        "who": {
+          "type": "string",
+          "enum": [
+            "user",
+            "agent",
+            "any"
+          ],
+          "description": "user = sent/written by the user, agent = by you (default any)."
+        },
+        "profile": {
+          "type": "string",
+          "description": "Profile name, or 'all' (default)."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max chats to return (default 30)."
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "who": {
+          "type": "string"
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "chats_found": {
+          "type": "integer"
+        },
+        "chats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "last_active": {
+                "type": "number"
+              },
+              "link": {
+                "type": "string"
+              },
+              "title_match": {
+                "type": "boolean"
+              },
+              "text_hits": {
+                "type": "integer"
+              },
+              "snippets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "msg_id": {
+                      "type": "integer"
+                    },
+                    "who": {
+                      "type": "string"
+                    },
+                    "snippet": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "from_user": {
+                "type": "integer"
+              },
+              "from_agent": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "who": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "canvas": {
+                      "type": "string"
+                    },
+                    "canvas_type": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "more_items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "more_chats": {
+          "type": "integer"
+        },
+        "unreferenced_uploads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "read_file",
+    "description": "Read a text file (Hermes's read denylist applies). Returns {content: '1|first line\\n2|...', total_lines, file_size, truncated, next_offset}; on failure {error}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to read (absolute, relative, or ~/path)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Line number to start reading from (1-indexed, default: 1)",
+          "default": 1,
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.",
+          "default": 2000,
+          "maximum": 2000
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "total_lines": {
+          "type": "integer"
+        },
+        "file_size": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "next_offset": {
+          "type": "integer"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "is_binary": {
+          "type": "boolean"
+        },
+        "is_image": {
+          "type": "boolean"
+        },
+        "not_found": {
+          "type": "boolean"
+        },
+        "similar_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "search_files",
+    "description": "Find files by name (target 'files': returns {total_count, files: [path]}) or search inside them (target 'content': returns {total_count, matches: [{path, line, content}]}, or matches_text when there are 5 or more); on failure {error}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "content",
+            "files"
+          ],
+          "description": "'content' searches inside file contents, 'files' searches for files by name",
+          "default": "content"
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory or file to search in (default: current working directory)",
+          "default": "."
+        },
+        "file_glob": {
+          "type": "string",
+          "description": "Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of results to return (default: 50)",
+          "default": 50
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Skip first N results for pagination (default: 0)",
+          "default": 0
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "discovery",
+            "modified"
+          ],
+          "description": "File-search order: 'discovery' is fast bounded traversal order; 'modified' is exact global newest-first and may scan the full tree; ignored for content",
+          "default": "discovery"
+        },
+        "output_mode": {
+          "type": "string",
+          "enum": [
+            "content",
+            "files_only",
+            "count"
+          ],
+          "description": "Output format for grep mode: 'content' shows matching lines with line numbers, 'files_only' lists file paths, 'count' shows match counts per file",
+          "default": "content"
+        },
+        "context": {
+          "type": "integer",
+          "description": "Number of context lines before and after each match (grep mode only)",
+          "default": 0
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "total_count": {
+          "type": "integer"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "content": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "matches_format": {
+          "type": "string"
+        },
+        "matches_text": {
+          "type": "string"
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "total_count_is_lower_bound": {
+          "type": "boolean"
+        },
+        "limit_reason": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  }
+]

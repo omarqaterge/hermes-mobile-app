@@ -977,3 +977,39 @@ def checkpoints_forget(session: str):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
+
+
+# ── live data in cards (OpenUI Query): read-only, allow-listed tools (openui_tools.json) ──
+
+def _openui_query_mod():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_openui_query")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_openui_query", Path(__file__).resolve().parent.parent / "openui_query.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_openui_query"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+class OpenUICall(BaseModel):
+    name: str
+    args: dict = {}
+
+
+@router.post("/openui/call")
+async def openui_call(body: OpenUICall):
+    """A card's Query(): 403 for a tool not on the list, 504 after 30 s, 502 when the tool itself failed."""
+    import asyncio
+
+    m = _openui_query_mod()
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(m.call_tool, body.name, body.args), timeout=30)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:300])
