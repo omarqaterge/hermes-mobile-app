@@ -16,6 +16,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Canvas gallery fixes.** The search box starts empty each time you open the gallery (it kept your last search).
   Copies saved in the old Library without a chat say "Saved copy" instead of "Chat deleted". In a preview without the
   Open canvas / Go to chat buttons, the ⋮ menu sits on the same line as the details instead of alone on its own row.
+- **Cards, charts and forms in replies.** Hermes can answer with interactive UI right in the chat (OpenUI): tables,
+  charts, metric cards, tabs, steps, buttons and follow-ups you tap to answer, and forms that send your answers back in
+  one message. Hermes decides when a card helps; turn it off in Settings → Replies (new chats). Documents and things
+  you ask Hermes to build still open on the canvas.
 
 ## v0.8.46 (2026-10-22)
 
