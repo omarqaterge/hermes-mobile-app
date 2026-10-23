@@ -287,6 +287,7 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 In the app: **Settings → Danger zone → Uninstall Hermes**. It lists what goes, offers a backup, asks you to type `uninstall`, then
 removes Hermes with all chats, memory, skills, settings and keys, Debian, the installer's files and its phone setting (inside Termux, with
 `phone/uninstall.sh`). After that Android asks you to confirm each app: Termux:API, Termux:Boot, Shizuku, Termux, and Hermes Mobile last.
+Removing Termux makes Android close the app; open it again and it shows the last step.
 
 **Backup** (on by default): `Download/hermes-backup-<date>.tar.gz` with Hermes's chats (`state.db`), memory, skills, cron jobs, canvas
 documents, config, profiles and this app's settings (`hermes-mobile-settings.json`); no program files, caches or logs. API keys (`.env`)
