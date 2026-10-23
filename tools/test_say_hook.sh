@@ -35,7 +35,7 @@ for script in phone/bootstrap.sh phone/phone-access.sh; do
   check "grep -qx 'http://127.0.0.1:9121/setup' '$T/log/0.args'" "$script: posts to 127.0.0.1:9121/setup"
   check "grep -qx -- '-m' '$T/log/0.args' && grep -qx 2 '$T/log/0.args'" "$script: 2 s timeout (-m 2)"
   check "grep -qx -- '--data-binary' '$T/log/0.args' && grep -qx '@-' '$T/log/0.args'" "$script: body on stdin (not on the command line)"
-  check "python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d == {\"token\": \"abc123\", \"line\": \"phone: tap \\\"Allow\\\" \\\\ then Install\"} else 1)' '$T/log/0.body'" "$script: JSON body with quotes and backslashes escaped"
+  check "python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop(\"ts\", None); sys.exit(0 if d == {\"token\": \"abc123\", \"line\": \"phone: tap \\\"Allow\\\" \\\\ then Install\"} else 1)' '$T/log/0.body'" "$script: JSON body with quotes and backslashes escaped"
   check "! grep -q abc123 <<< '$out'" "$script: the token never reaches the screen"
   out=$(run abc123 7 'STEP debian Debian')
   check "[[ '$out' == *AFTER* ]] && [[ '$out' != *TRAPPED* ]]" "$script: a failing curl (app not running) never fails the install"
