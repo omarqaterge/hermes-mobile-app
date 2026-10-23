@@ -7,9 +7,13 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:openui": "OPENUI_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 UPDATE_OPENUI=1 vitest run src/openui-lib.test.ts"
   },
   "dependencies": {
+    "@openuidev/react-headless": "0.18.1",
+    "@openuidev/react-lang": "1.0.1",
+    "@openuidev/react-ui": "0.18.1",
     "katex": "^0.16.47",
     "mermaid": "^11.17.2",
     "react": "^19.3.0",
@@ -20,7 +24,9 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "zod": "4.6.7",
+    "zustand": "4.5.7"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

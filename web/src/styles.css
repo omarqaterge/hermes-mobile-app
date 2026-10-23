@@ -1910,6 +1910,8 @@ textarea {
   max-width: 100%;
   height: auto;
 }
+/* ```openui-lang cards (OpenUIBlock): OpenUI draws inside a shadow root; only the host is styled here. */
+.hm-openui { display: block; margin: 10px 0; max-width: 100%; }
 .media {
   display: block;
   max-width: 100%;

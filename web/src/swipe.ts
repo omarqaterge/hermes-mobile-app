@@ -3,7 +3,7 @@ import { getState, setState } from './store'
 // Swipe right anywhere on a chat to open the sessions drawer (the same menu as ☰).
 // Ignored when the finger starts on something that scrolls or drags sideways itself (tables, code blocks,
 // diagrams, the canvas, sliders, text fields, the drawer) or while a sheet, dialog or screen is open.
-const SKIP = 'input,textarea,select,[contenteditable],[role=dialog],.sheet-backdrop,.canvas-panel,.drawer,.drawer-backdrop,.lightbox,.slider,.tts-player,.find-bar,pre,table,.katex-display,.mermaid,.diagram'
+const SKIP = 'input,textarea,select,[contenteditable],[role=dialog],.sheet-backdrop,.canvas-panel,.drawer,.drawer-backdrop,.lightbox,.slider,.tts-player,.find-bar,pre,table,.katex-display,.mermaid,.diagram,.hm-openui'
 
 function scrollsSideways(el: Element | null): boolean {
   for (let n = el; n && n !== document.body; n = n.parentElement) {

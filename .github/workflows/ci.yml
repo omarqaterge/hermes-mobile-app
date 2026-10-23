@@ -1,5 +1,10 @@
 name: CI
 
+# OpenUI's install script sends telemetry unless one of these is set.
+env:
+  OPENUI_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
+
 on:
   push:
   pull_request:

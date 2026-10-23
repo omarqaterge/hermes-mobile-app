@@ -168,6 +168,7 @@ export function voiceErrorText(code: string, live = false): string {
 /** Markdown → text a voice can read: no code, links, tables, media tokens, or symbols read out loud. */
 export function speakable(md: string): string {
   return md
+    .replace(/```openui(?:-lang)?[\s\S]*?(?:```|$)/g, ' (card shown in the app). ')
     .replace(/```[\s\S]*?```/g, ' (code omitted). ')
     .replace(/^\s*MEDIA:.*$/gm, '')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
