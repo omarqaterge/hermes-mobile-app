@@ -1712,7 +1712,10 @@ async function main() {
     check(JSON.stringify(all) === JSON.stringify([...all].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))), 'providers: the rest is A–Z')
     check((await section('Connected').count()) === 0, 'providers: nothing is marked connected on a fresh Hermes')
     await pv.getByPlaceholder('Search providers (e.g. deepseek, groq)').fill('deep')
-    check(JSON.stringify(await pv.locator('.providers .set-row .key-line').allTextContents()) === JSON.stringify(['DeepSeek']), 'providers: search narrows the list')
+    {
+      const found = await pv.locator('.providers .set-row .key-line').allTextContents()
+      check(JSON.stringify(found) === JSON.stringify(['DeepSeek', 'DeepInfra']), `providers: search narrows the list (${found.join(', ')})`)
+    }
     // Paste a key: it goes to this profile's .env in a JSON body, never in a URL
     await pv.locator('.providers .set-row', { hasText: 'DeepSeek' }).click()
     const sheet = pv.locator('.sheet', { has: pv.locator('.sheet-title', { hasText: 'DeepSeek' }) })
@@ -1740,7 +1743,10 @@ async function main() {
     await closeTop() // the DeepSeek sheet
     await pv.getByPlaceholder('Search providers (e.g. deepseek, groq)').fill('')
     await section('Connected').locator('.set-row', { hasText: 'DeepSeek' }).waitFor({ timeout: 5000 }).then(() => check(true, 'providers: DeepSeek moves to Connected with its dot'), () => check(false, 'providers: DeepSeek moves to Connected with its dot'))
-    check((await section('Connected').locator('.dot-set').count()) === 1, 'providers: one connected dot')
+    {
+      const on = await names('Connected')
+      check(JSON.stringify(on) === JSON.stringify(['DeepSeek']) && (await section('Connected').locator('.dot-set').count()) === 1, `providers: only DeepSeek is connected, with one dot (${on.join(', ')})`)
+    }
     // Claude: Pro / Max sign-in opens Termux through the shell; Claude Code's token login is a command to copy
     await pv.locator('.providers .set-row', { hasText: 'Anthropic (Claude)' }).click()
     const cl = pv.locator('.sheet', { has: pv.locator('.sheet-title', { hasText: 'Anthropic (Claude)' }) })

@@ -84,6 +84,7 @@ const server = http.createServer((req, res) => {
         providerConfigured = false
         envSet = {}
         endpoints = []
+        codexPolls = 0 // nobody signed in to ChatGPT any more either
       }
       if (b.configured) providerConfigured = true
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
@@ -155,7 +156,7 @@ const server = http.createServer((req, res) => {
     // Account sign-ins: the pinned Hermes's list; ChatGPT is a device-code flow approved on the 2nd poll.
     if (p === '/api/providers/oauth' && req.method === 'GET')
       return send({
-        providers: providerFixture.oauth.providers.map(x => (x.id === 'openai-codex' ? { ...x, status: { ...x.status, logged_in: !!codexPolls && providerConfigured } } : x))
+        providers: providerFixture.oauth.providers.map(x => (x.id === 'openai-codex' ? { ...x, status: { ...x.status, logged_in: codexPolls >= 2 } } : x))
       })
     if (p === '/api/env' && req.method === 'GET') {
       const out = {}
