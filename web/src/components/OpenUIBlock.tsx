@@ -35,7 +35,7 @@ function useThemeMode() {
 
 const chatId = () => {
   const s = getState()
-  return s.active?.storedId || s.opening || ''
+  return s.opening || s.active?.storedId || '' // while a chat opens, the screen shows IT (active is still the previous chat)
 }
 
 /** A ```openui-lang block: OpenUI draws it (lazy bundle, own shadow root); `fallback` shows if it can't. */
