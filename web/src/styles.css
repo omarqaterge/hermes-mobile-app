@@ -3252,3 +3252,5 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .bg-view img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
 .bg-caption { font-size: 0.9rem; color: var(--dim); text-align: center; overflow-wrap: anywhere; }
 .bg-viewer .sheet-actions .btn { flex: 1; }
+
+.app-own-link { display: block; margin-top: 4px; padding: 0; background: none; border: 0; color: var(--accent); text-decoration: underline; font-size: 12px; text-align: left; }
