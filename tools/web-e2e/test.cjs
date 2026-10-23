@@ -107,6 +107,20 @@ const nativeShell = () => {
         ;(window.__bgActs ||= []).push(what)
         setTimeout(() => window.__hmBg(null), 30) // the shell clears the state once the host answered
         return 'ok'
+      },
+      // Settings → Uninstall Hermes: every call goes to window.__unLog in order; the test answers through
+      // window.__un (the native state) + window.hermesUninstallDone(), like Uninstall.java does.
+      uninstallState: key => (k(key, 'uninstallState'), JSON.stringify(window.__un || { started: false, running: false, removed: false, result: null })),
+      uninstallStart: (key, backup, keys, settings) => {
+        k(key, 'uninstallStart')
+        ;(window.__unLog ||= []).push({ start: { backup, keys, settings } })
+        window.__un = { started: true, running: true, removed: false, result: null }
+        return 'ok'
+      },
+      uninstallApp: (key, which) => {
+        k(key, 'uninstallApp')
+        ;(window.__unLog ||= []).push({ app: which })
+        return true
       }
     }
 }
@@ -1426,6 +1440,92 @@ async function main() {
   const fx = JSON.stringify((await np.evaluate(() => window.__fixes)).slice(-3))
   check(fx === '["get-termux-api","open-shizuku","restart-hermes"]', `phone access fix buttons (${fx})`)
   await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
+
+  // ── Settings → Uninstall Hermes: what goes is listed, backup offered (keys off), typed confirm, the Termux cleanup
+  //    first (a failed backup removes nothing and can be retried), then each app in order, this app last ──
+  {
+    await np.evaluate(() => {
+      window.__setup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '', termuxApi: true, termuxBoot: true, shizuku: true }
+      localStorage.setItem('hm.theme', 'oled')
+      window.hermesBack && window.hermesBack()
+    })
+    await np.getByRole('button', { name: /^Sessions/ }).click()
+    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    const unRow = np.locator('.set-row', { hasText: 'Uninstall Hermes' })
+    await unRow.waitFor({ timeout: 5000 }).then(() => check(true, 'uninstall: Settings has the Uninstall Hermes row'), () => check(false, 'uninstall: Settings has the Uninstall Hermes row'))
+    check((await np.locator('.set-heading', { hasText: 'Danger zone' }).count()) === 1, 'uninstall: in its own Danger zone section')
+    await unRow.click()
+    const sheet = np.locator('.sheet', { hasText: 'Uninstall Hermes' }).last()
+    await sheet.locator('.setup-title', { hasText: 'Debian' }).first().waitFor({ timeout: 3000 }).catch(() => {})
+    const listed = (await sheet.locator('.setup-list .setup-title').allTextContents()).join(' | ')
+    check(['Hermes, with all chats', 'Debian', 'installer’s files', 'phone setting', 'Termux:API', 'Termux:Boot', 'Shizuku', 'App: Termux', 'Hermes Mobile'].every(t => listed.includes(t)), `uninstall: lists everything that goes (${listed})`)
+    const bk = sheet.locator('.set-row', { hasText: 'Save a backup to Downloads' })
+    const ky = sheet.locator('.set-row', { hasText: 'Include API keys and sign-ins' })
+    check((await bk.getByRole('switch').getAttribute('aria-checked')) === 'true', 'uninstall: backup offered, on by default')
+    check((await ky.getByRole('switch').getAttribute('aria-checked')) === 'false', 'uninstall: keys left out by default')
+    check(/left out/.test((await ky.textContent()) || ''), 'uninstall: says .env/auth.json are left out')
+    check((await sheet.locator('select, input[type=checkbox], input[type=radio]').count()) === 0, 'uninstall: no native controls')
+    check(!(await np.evaluate(() => window.__unLog || [])).length, 'uninstall: nothing called before confirming')
+    await sheet.getByRole('button', { name: 'Uninstall…' }).click()
+    const dlg = np.locator('.dialog', { hasText: 'Uninstall Hermes?' })
+    await dlg.waitFor({ timeout: 3000 })
+    const okBtn = dlg.getByRole('button', { name: 'Uninstall', exact: true })
+    check(await okBtn.isDisabled(), 'uninstall: confirm disabled until typed')
+    await dlg.locator('input').fill('uninst')
+    check(await okBtn.isDisabled(), 'uninstall: a partial word does not confirm')
+    await dlg.locator('input').fill('uninstall')
+    await okBtn.click()
+    await sheet.locator('.uninstall-running').waitFor({ timeout: 3000 }).then(() => check(true, 'uninstall: progress shown while Termux works'), () => check(false, 'uninstall: progress shown while Termux works'))
+    let log = await np.evaluate(() => window.__unLog || [])
+    const st0 = log[0] && log[0].start
+    check(log.length === 1 && st0 && st0.backup === true && st0.keys === false, `uninstall: cleanup started with backup, without keys (${JSON.stringify(log)})`)
+    check(st0 && JSON.parse(st0.settings).settings['hm.theme'] === 'oled', 'uninstall: the app settings go into the backup')
+    // the backup fails: nothing removed, the reason, Try again
+    await np.evaluate(() => {
+      window.__un = { started: false, running: false, removed: false, result: { exit: 3, stdout: "HMUNINSTALL STEP stop Stopping Hermes\nHMUNINSTALL OK stop 1\nHMUNINSTALL STEP backup x\nHMUNINSTALL FAIL backup can't write to Downloads (does Termux have access to files?); nothing was removed\n" } }
+      window.hermesUninstallDone()
+    })
+    await sheet.locator('.uninstall-err', { hasText: 'Stopped before removing anything' }).waitFor({ timeout: 3000 }).then(() => check(true, 'uninstall: failed backup says nothing was removed'), () => check(false, 'uninstall: failed backup says nothing was removed'))
+    check((await sheet.locator('.uninstall-apps').count()) === 0, 'uninstall: no app buttons after a failed backup')
+    await sheet.getByRole('button', { name: 'Try again' }).click()
+    log = await np.evaluate(() => window.__unLog || [])
+    check(log.length === 2 && log[1].start && log[1].start.backup === true, 'uninstall: Try again runs the cleanup again (with the backup)')
+    await np.evaluate(() => {
+      window.__un = { started: true, running: false, removed: true, result: { exit: 0, stdout: [
+        'HMUNINSTALL STEP stop Stopping Hermes', 'HMUNINSTALL OK stop 3', 'HMUNINSTALL STEP backup x',
+        'HMUNINSTALL BACKUP /storage/emulated/0/Download/hermes-backup-20261023-101500.tar.gz', 'HMUNINSTALL OK backup ok',
+        'HMUNINSTALL STEP android x', "HMUNINSTALL SKIP android Shizuku isn't running", 'HMUNINSTALL STEP debian x', 'HMUNINSTALL OK debian removed',
+        'HMUNINSTALL STEP files x', 'HMUNINSTALL OK files', 'HMUNINSTALL STEP termux x', 'HMUNINSTALL OK termux', 'HMUNINSTALL DONE'].join('\n') } }
+      window.hermesUninstallDone()
+    })
+    await sheet.locator('.uninstall-apps').waitFor({ timeout: 3000 }).then(() => check(true, 'uninstall: after the cleanup the apps are next'), () => check(false, 'uninstall: after the cleanup the apps are next'))
+    check(/hermes-backup-20261023-101500\.tar\.gz/.test((await sheet.textContent()) || ''), 'uninstall: names the backup file')
+    check((await sheet.locator('[data-step=debian][data-state=ok]').count()) === 1 && (await sheet.locator('[data-step=android][data-state=skip]').count()) === 1, 'uninstall: each step’s outcome (Debian ✓, phone setting skipped)')
+    const field = { 'termux-api': 'termuxApi', 'termux-boot': 'termuxBoot', shizuku: 'shizuku', termux: 'termux' }
+    for (const [id, name] of [['termux-api', 'Termux:API'], ['termux-boot', 'Termux:Boot'], ['shizuku', 'Shizuku'], ['termux', 'Termux']]) {
+      const b = sheet.locator(`[data-app="${id}"]`).getByRole('button', { name: `Uninstall ${name}`, exact: true })
+      check(/danger-solid/.test((await b.getAttribute('class')) || ''), `uninstall: ${name} is the next one`)
+      await b.click()
+      await sleep(100)
+      // Android's prompt removed it; back in the app the shell says so
+      await np.evaluate(f => {
+        window.__setup = { ...window.__setup, [f]: false }
+        window.hermesSetupChanged()
+      }, field[id])
+      await sheet.locator(`[data-app="${id}"]`, { hasText: 'Removed' }).waitFor({ timeout: 3000 }).catch(() => {})
+    }
+    const self = sheet.locator('[data-app="self"]')
+    check(/Removed so far: Hermes, its chats and Debian, the installer’s files, Termux:API, Termux:Boot, Shizuku, Termux/.test((await self.textContent()) || ''), `uninstall: the last screen says what was removed (${await self.textContent()})`)
+    check((await np.locator('.dialog').count()) === 0, 'uninstall: Termux after a finished cleanup needs no extra warning')
+    await self.getByRole('button', { name: 'Uninstall Hermes Mobile' }).click()
+    log = await np.evaluate(() => window.__unLog || [])
+    check(JSON.stringify(log.slice(2).map(x => x.app)) === '["termux-api","termux-boot","shizuku","termux","self"]', `uninstall: apps in order, this app last (${JSON.stringify(log.slice(2))})`)
+    check((await np.evaluate(() => window.__dialogs || [])).length === 0, 'uninstall: no alert/confirm dialogs')
+    await np.evaluate(() => {
+      window.hermesBack()
+      delete window.__un
+    })
+  }
   await np.close()
 
   // ── player, chat links, dictation, model in the + menu, learning dot (fake native bridge, speech never ends by itself) ──
