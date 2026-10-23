@@ -802,6 +802,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
         <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermes option" chevron onClick={() => go('config')} />
       </Section>
+      <OpenUISection />
       <BgAppsSection />
       <Section title="Connection">
         <Row icon="📶" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
@@ -815,6 +816,35 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
       </Section>
     </>
+  )
+}
+
+/** Hermes answering with OpenUI cards, tables, charts and forms in the chat (plugin /openui). New chats only:
+ *  Hermes freezes its system prompt per chat. Cards already in chats keep showing either way. */
+const OPENUI = '/api/plugins/hermes-mobile/openui'
+function OpenUISection() {
+  const [on, setOn] = useState<boolean | null>(null)
+  useEffect(() => {
+    let live = true
+    api<{ enabled?: boolean }>('GET', OPENUI, undefined, { profile: false })
+      .then(r => live && setOn(r.enabled !== false))
+      .catch(() => {}) // an older plugin: no section
+    return () => {
+      live = false
+    }
+  }, [])
+  if (on === null) return null
+  const set = (v: boolean) => {
+    setOn(v)
+    api('PUT', OPENUI, { enabled: v }, { profile: false }).catch(e => {
+      setOn(!v)
+      toast(`Couldn’t save: ${errText(e)}`, 'error')
+    })
+  }
+  return (
+    <Section title="Replies">
+      <ToggleRow icon="🧩" tone="green" title="Cards and buttons in replies" sub="Tables, charts and forms you can tap. Applies to new chats" on={on} onChange={set} />
+    </Section>
   )
 }
 
