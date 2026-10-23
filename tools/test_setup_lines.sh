@@ -42,6 +42,22 @@ public class SetupLinesTest {
         check(r.add("tok", "STEP hermes x") == SetupLines.OK, "resume (service restart) keeps accepting the copied token");
         StringBuilder q = new StringBuilder(); SetupLines.quote(q, "a\"b\\c\u2028");
         check(q.toString().equals("\"a\\\"b\\\\c\\u2028\""), "json quoting");
+        SetupLines t = new SetupLines();
+        t.start("tk");
+        t.add("tk", "STEP packages x", "1000000100", 1000000200L);
+        t.add("tk", "STEP debian x", null, 1000000300L);
+        t.add("tk", "STEP hermes x", "abc", 1000000400L);
+        t.add("tk", "STEP plugin x", "1999999999", 1000000500L);
+        t.add("tk", "STEP start x", "1000000590", 1000000600L);
+        check(t.json().contains("\"times\":[1000000100,1000000300,1000000400,1000000500,1000000590]"), "times: installer clock kept; missing, junk or >1 day off falls back to the receive time");
+        String[] q3 = SetupLines.parse("{\"token\":\"abc\",\"line\":\"STEP debian x\",\"ts\":\"1761200000\"}");
+        check(q3 != null && q3[2].equals("1761200000") && q3[1].equals("STEP debian x"), "parse: ts field");
+        String[] q4 = SetupLines.parse("{\"token\":\"abc\",\"line\":\"DONE\"}");
+        check(q4 != null && q4[2] == null && q4[1].equals("DONE"), "parse: an older bootstrap (no ts) still parses");
+        SetupLines u = new SetupLines();
+        u.start("u");
+        for (int i = 0; i < 60; i++) u.add("u", "TODO line " + i, "" + (1000000000L + i), 1000000000L + i);
+        check(u.json().contains("\"times\":[1000000010,") && u.json().contains(",1000000059]"), "times stay parallel to the 50 kept lines");
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }
