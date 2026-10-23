@@ -227,6 +227,8 @@ export interface NativeSetup {
   termuxSigner?: string
   termuxVersion?: string
   canInstall?: boolean
+  /** The helper app whose download or Android "Install" prompt is in flight ('' = none; missing on older shells). */
+  installing?: string
   devOptions?: boolean
   wirelessDebugging?: boolean
   /** The shell can probe Termux (probeTermux) and run the installer's progress channel. */
@@ -258,7 +260,8 @@ export function setupFix(what: SetupFix): void {
 
 /** The helper apps the shell can install (fixed sources and signers on the Java side). */
 export type HelperApp = 'termux' | 'termux-api' | 'termux-boot' | 'shizuku'
-export type InstallState = 'permission' | 'downloading' | 'installing' | 'done' | 'error'
+/** prompt = Android's Install prompt was shown but the user came back without answering it (Retry opens it again). */
+export type InstallState = 'permission' | 'downloading' | 'installing' | 'prompt' | 'done' | 'error'
 
 type SetupListener =
   | { kind: 'install'; which: HelperApp; state: InstallState; pct: number; msg: string }
