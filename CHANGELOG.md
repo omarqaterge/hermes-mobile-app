@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Chats keep their place in the drawer.** Sending a message, getting a reply or a background run no longer moves a chat to the top. New chats appear on top; the list is ordered (and grouped by day) by when each chat was created. **Sort by recent** now sorts once, by latest activity, instead of switching live re-sorting on.
 - **Auto button in the header.** One tap sets how much Hermes may do in this chat without asking: Off (asks before
   risky commands), **Auto access** (runs everything without asking, but the commands on Hermes's own dangerous-command
   list are blocked and Hermes tells you what it wanted to run; patterns you already allowed "always" still run), or
