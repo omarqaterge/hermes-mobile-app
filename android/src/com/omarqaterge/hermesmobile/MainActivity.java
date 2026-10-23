@@ -270,7 +270,14 @@ public class MainActivity extends Activity {
             o.put("termuxApi", installed("com.termux.api"));
             o.put("shizuku", installed(SHIZUKU));
             o.put("shizukuRunning", ShizukuProvider.running()); // the binder Shizuku's server sent to ShizukuProvider is alive
-            o.put("maker", Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT)); // the setup flow's Xiaomi Autostart tip
+            o.put("maker", Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT));
+            // The Autostart step: "" = this phone has no such switch (step hidden); list/app/settings = the kind of page
+            // the button opens; "info" = a maker with the switch but none of its pages opens (App info fallback).
+            Autostart.Vendor av = Autostart.vendor(Build.MANUFACTURER, Build.BRAND);
+            Autostart.Page ap = av == null ? null : autostartPage(av);
+            o.put("autostart", av == null ? "" : ap == null ? "info" : ap.kind);
+            o.put("autostartName", av == null ? "" : av.name);
+            o.put("autostartWhere", av == null ? "" : av.where);
             o.put("startError", startError);
             // App-first setup
             o.put("termuxBoot", installed(TERMUX_BOOT));
@@ -649,6 +656,12 @@ public class MainActivity extends Activity {
                 case "app-settings":
                     i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
                     break;
+                case "autostart":
+                    openAutostart(getPackageName());
+                    return;
+                case "autostart-termux":
+                    openAutostart("com.termux");
+                    return;
                 case "open-termux":
                     i = getPackageManager().getLaunchIntentForPackage("com.termux");
                     if (i == null) return;
@@ -688,6 +701,53 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    /** The intent for one of Autostart's pages; an "app" page gets the package it is for. */
+    static Intent autostartIntent(Autostart.Page p, String pkg) {
+        Intent i = p.cls != null ? new Intent().setClassName(p.pkg, p.cls) : new Intent(p.action);
+        if (p.cls == null && p.pkg != null) i.setPackage(p.pkg);
+        if ("app".equals(p.kind)) i.putExtra("packageName", pkg).putExtra("package_name", pkg);
+        return i;
+    }
+
+    /** Android has this page and lets us open it (exported, no permission we lack). A Settings action counts as there. */
+    boolean canOpen(Autostart.Page p) {
+        if (p.pkg == null) return true;
+        try {
+            android.content.pm.ResolveInfo ri = getPackageManager().resolveActivity(autostartIntent(p, getPackageName()), PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri == null || ri.activityInfo == null || !ri.activityInfo.exported) return false;
+            String perm = ri.activityInfo.permission;
+            return perm == null || checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The first page of this maker's that opens, or null. */
+    Autostart.Page autostartPage(Autostart.Vendor v) {
+        for (Autostart.Page p : v.pages) if (canOpen(p)) return p;
+        return null;
+    }
+
+    /** Open this phone's Autostart page (for pkg, where the page is per app); else pkg's App info page. */
+    void openAutostart(String pkg) {
+        Autostart.Vendor v = Autostart.vendor(Build.MANUFACTURER, Build.BRAND);
+        if (v != null) {
+            for (Autostart.Page p : v.pages) {
+                if (!canOpen(p)) continue;
+                try {
+                    startActivity(autostartIntent(p, pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    return;
+                } catch (Exception ignored) {
+                    // listed but refused (SecurityException) or gone: try the next one
+                }
+            }
+        }
+        try {
+            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception ignored) {
+        }
+    }
 
     /** Run a command inside Termux (needs RUN_COMMAND permission + allow-external-apps). */
     void runTermux(String path, String[] args) {

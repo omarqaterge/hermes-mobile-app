@@ -40,10 +40,14 @@ describe('setupSteps / nextStep', () => {
     expect(nextStep(steps)).toBeNull()
     expect(recommendedGaps(steps).map(s => s.id)).toEqual(['bat-app'])
   })
-  test('Autostart is an info row on Xiaomi-family phones only', () => {
-    for (const maker of ['xiaomi', 'redmi', 'poco']) expect(st(setupSteps({ ...native, maker }, 'open', remote, true), 'autostart')).toBe('info')
-    expect(st(setupSteps(native, 'open', remote, true), 'autostart')).toBe('skip')
-    expect(recommendedGaps(setupSteps({ ...native, maker: 'xiaomi' }, 'open', remote, true))).toEqual([])
+  test('Autostart: a tip only where the shell found an Autostart page, ✓ once the user says Done', () => {
+    for (const autostart of ['list', 'app', 'settings', 'info'] as const) expect(st(setupSteps({ ...native, autostart }, 'open', remote, true), 'autostart')).toBe('info')
+    // no such switch on this phone (Pixel/AOSP, Samsung…), or an older shell that doesn't say: no row, whatever the maker
+    expect(st(setupSteps({ ...native, autostart: '' }, 'open', remote, true), 'autostart')).toBe('skip')
+    expect(st(setupSteps({ ...native, maker: 'xiaomi' }, 'open', remote, true), 'autostart')).toBe('skip')
+    expect(recommendedGaps(setupSteps({ ...native, autostart: 'list' }, 'open', remote, true))).toEqual([])
+    const pre = { probe: null, progress: null, shizukuSkipped: false, autostartDone: true }
+    expect(st(setupSteps({ ...native, autostart: 'list' }, 'open', remote, true, pre), 'autostart')).toBe('ok')
   })
   test('Termux:API and Shizuku missing on Android are bad even before Hermes answers', () => {
     const steps = setupSteps({ ...native, termuxApi: false, shizuku: false }, 'closed', null, null)

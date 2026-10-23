@@ -1757,10 +1757,12 @@ async function main() {
     check((await fc.locator('.flow-done', { hasText: 'Hermes is running' }).count()) === 1, 'flow: Hermes is running is ticked off')
     await fc.close()
   }
-  // d. Xiaomi family: a tip with a button to the app settings, never ✓/✗, and it does not open the flow by itself
+  // d. Autostart: only on phones whose maker has the switch (the shell says which page it opens), never ✓/✗ until the
+  // user taps Done (remembered), and it does not open the flow by itself. AOSP/Pixel: no row at all.
   await mock({ configured: true, pluginEnabled: true })
   {
-    const fd = await flowPage({ ...OK, maker: 'xiaomi' })
+    const XIAOMI = { ...OK, maker: 'xiaomi', autostart: 'list', autostartName: 'Autostart', autostartWhere: 'Settings → Apps → Background autostart' }
+    const fd = await flowPage(XIAOMI)
     await fd.goto('http://127.0.0.1:5180/')
     await fd.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await sleep(2500)
@@ -1768,18 +1770,40 @@ async function main() {
     await fd.locator('.conn-dot').click()
     await fd.getByRole('button', { name: 'Setup check' }).click()
     const tip = fd.locator('.setup-item.info', { hasText: 'Autostart' })
-    await tip.waitFor({ timeout: 5000 }).then(() => check(true, 'setup: Xiaomi shows the Autostart tip'), () => check(false, 'setup: Xiaomi shows the Autostart tip'))
+    await tip.waitFor({ timeout: 5000 }).then(() => check(true, 'setup: a phone with an Autostart page shows the Autostart tip'), () => check(false, 'setup: a phone with an Autostart page shows the Autostart tip'))
     check((await fd.locator('.setup-item.ok, .setup-item.bad', { hasText: 'Autostart' }).count()) === 0, 'setup: the Autostart tip is neither ✓ nor ✗')
-    await tip.getByRole('button', { name: 'Hermes Mobile settings' }).click()
-    check((await fd.evaluate(() => window.__fixes || [])).includes('app-settings'), 'setup: the Autostart button opens the app settings')
+    const help = (await tip.locator('.setup-help').textContent().catch(() => '')) || ''
+    check(/list of apps that may start by themselves \(Autostart\): switch on Termux and Hermes Mobile/.test(help) && help.includes('tap Done'), `setup: the tip names the page that opens (${help.slice(0, 90)}…)`)
+    await tip.getByRole('button', { name: 'Open Autostart' }).click()
+    const fx = await fd.evaluate(() => window.__fixes || [])
+    check(fx.includes('autostart') && !fx.includes('app-settings'), `setup: the Autostart button opens the phone's Autostart page (${JSON.stringify(fx)})`)
+    await tip.getByRole('button', { name: 'Done' }).click()
+    await fd.locator('.setup-item.ok', { hasText: 'Autostart' }).waitFor({ timeout: 5000 }).then(() => check(true, 'setup: Done ticks the Autostart row'), () => check(false, 'setup: Done ticks the Autostart row'))
+    check(await fd.evaluate(() => localStorage.getItem('hm.autostartDone') === '1'), 'setup: Done on Autostart is remembered')
     await fd.close()
-    const fg = await flowPage({ ...OK, maker: 'google' })
+    // A maker whose page is per app, or none of whose pages opens: one button per app (Hermes Mobile, Termux)
+    const fi = await flowPage({ ...OK, maker: 'xiaomi', autostart: 'info', autostartName: 'Autostart', autostartWhere: 'Settings → Apps → Background autostart' })
+    await fi.goto('http://127.0.0.1:5180/')
+    await fi.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fi.locator('.conn-dot').click()
+    await fi.getByRole('button', { name: 'Setup check' }).click()
+    const tipI = fi.locator('.setup-item.info', { hasText: 'Autostart' })
+    await tipI.waitFor({ timeout: 5000 }).catch(() => {})
+    const helpI = (await tipI.locator('.setup-help').textContent().catch(() => '')) || ''
+    check(helpI.includes('App info') && helpI.includes('Settings → Apps → Background autostart'), `setup: App info fallback says where else to look (${helpI.slice(0, 90)}…)`)
+    await tipI.getByRole('button', { name: 'Termux', exact: true }).click().catch(() => {})
+    await tipI.getByRole('button', { name: 'Hermes Mobile', exact: true }).click().catch(() => {})
+    const fxI = await fi.evaluate(() => window.__fixes || [])
+    check(fxI.includes('autostart-termux') && fxI.includes('autostart'), `setup: per-app Autostart buttons ask for each app (${JSON.stringify(fxI)})`)
+    await fi.close()
+    // AOSP emulator / Pixel: the shell reports no Autostart page → no row, even before any Done
+    const fg = await flowPage({ ...OK, maker: 'google', autostart: '', autostartName: '', autostartWhere: '' })
     await fg.goto('http://127.0.0.1:5180/')
     await fg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await fg.locator('.conn-dot').click()
     await fg.getByRole('button', { name: 'Setup check' }).click()
     await fg.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 })
-    check((await fg.locator('.setup-item', { hasText: 'Autostart' }).count()) === 0, 'setup: other makers have no Autostart row')
+    check((await fg.locator('.setup-item', { hasText: 'Autostart' }).count()) === 0, 'setup: AOSP (no Autostart page) has no Autostart row')
     await fg.close()
   }
   // e. app-first: only Hermes Mobile is installed. The flow opens at once at the helper apps, installs all four in order,
