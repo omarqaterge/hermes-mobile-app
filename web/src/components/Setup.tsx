@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api } from '../api'
 import {
-  copySetupCommand, copyText, haptic, installHelperApp, isNative, onSetupEvent, probeTermux, setupFix, setupProgress, setupState,
+  copySetupCommand, copyText, haptic, installHelperApp, openExternal, isNative, onSetupEvent, probeTermux, setupFix, setupProgress, setupState,
   type HelperApp, type InstallState, type NativeSetup
 } from '../bridge'
 import { reconnectNow, rpc } from '../gateway'
@@ -62,11 +62,11 @@ const copyInstall = () => {
 
 // ── App-first setup: the helper apps, installed one after another by the shell ──
 
-export const HELPERS: { id: HelperApp; name: string; what: string; has: (n: NativeSetup) => boolean }[] = [
-  { id: 'termux', name: 'Termux', what: 'Linux on the phone: Hermes runs inside it', has: n => n.termux },
-  { id: 'termux-api', name: 'Termux:API', what: 'Lets Hermes use the phone: battery, location, notifications…', has: n => Boolean(n.termuxApi) },
-  { id: 'termux-boot', name: 'Termux:Boot', what: 'Starts Hermes again after the phone restarts', has: n => Boolean(n.termuxBoot) },
-  { id: 'shizuku', name: 'Shizuku', what: 'Lets Hermes see and use the screen, without root', has: n => Boolean(n.shizuku) }
+export const HELPERS: { id: HelperApp; name: string; what: string; has: (n: NativeSetup) => boolean; url: string }[] = [
+  { id: 'termux', name: 'Termux', what: 'Linux on the phone: Hermes runs inside it', has: n => n.termux, url: 'https://f-droid.org/packages/com.termux/' },
+  { id: 'termux-api', name: 'Termux:API', what: 'Lets Hermes use the phone: battery, location, notifications…', has: n => Boolean(n.termuxApi), url: 'https://f-droid.org/packages/com.termux.api/' },
+  { id: 'termux-boot', name: 'Termux:Boot', what: 'Starts Hermes again after the phone restarts', has: n => Boolean(n.termuxBoot), url: 'https://f-droid.org/packages/com.termux.boot/' },
+  { id: 'shizuku', name: 'Shizuku', what: 'Lets Hermes see and use the screen, without root', has: n => Boolean(n.shizuku), url: 'https://github.com/RikkaApps/Shizuku/releases' }
 ]
 
 interface AppStatus {
@@ -666,6 +666,11 @@ function AppsStep({ n }: { n: NativeSetup }) {
               <div className="setup-body">
                 <div className="setup-title">{h.name}</div>
                 <div className="dim small">{has ? h.what : STATUS_TEXT(a) || h.what}</div>
+                {!has && (
+                  <button className="app-own-link" onClick={() => { haptic(); openExternal(h.url) }}>
+                    Or install it yourself: {h.id === 'shizuku' ? 'GitHub page' : 'F-Droid page'}
+                  </button>
+                )}
               </div>
               {!has && canFix(h) && a.state !== 'downloading' && a.state !== 'installing' && (
                 <button className="btn" onClick={() => { haptic(); installApps([h.id]) }}>
@@ -676,6 +681,11 @@ function AppsStep({ n }: { n: NativeSetup }) {
           )
         })}
       </ul>
+      <div className="setup-help">
+        Prefer to install them yourself? Use the page link under each app, then come back: this list ticks an app by itself once it is
+        installed. Termux, Termux:API and Termux:Boot must all come from the same source (F-Droid): apps from different sources are
+        signed differently and won’t work together.
+      </div>
       {otherTermux && (
         <div className="setup-help">
           Your Termux doesn’t come from F-Droid, so F-Droid’s Termux:API and Termux:Boot can’t be added to it. Install them from the same
@@ -717,7 +727,7 @@ function ShizukuStep({ n, onSkip }: { n: NativeSetup; onSkip: () => void }) {
       </div>
       <ul className="setup-list">
         {sub(n.devOptions, <><div className="setup-title">Turn on Developer options</div><div className="dim small">About phone → tap <i>Build number</i> 7 times (on some phones it is under <i>Software information</i>, or called <i>OS version</i>).</div></>)}
-        {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow.</div></>)}
+        {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow. Why: Shizuku uses Android’s own wireless debugging to start itself on the phone, with no computer and no root. That gives Hermes the screen, taps and apps, and lets the installer stop Android killing it. It only works locally on your phone (over your own Wi-Fi); nothing goes to the internet. Once Shizuku is running you can usually turn Wireless debugging off again: Shizuku keeps running until the phone restarts.</div></>)}
         {sub(false, <><div className="setup-title">Pair and start Shizuku</div><div className="dim small">In Shizuku: <i>Pairing</i>, then <i>Pair device with pairing code</i> in Wireless debugging and type the code into Shizuku’s notification. Then <i>Start</i>.</div></>)}
       </ul>
       <div className="setup-actions">

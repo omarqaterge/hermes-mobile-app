@@ -155,10 +155,10 @@ Install only Hermes Mobile; the app walks you through the rest and picks up wher
    the phone, install it and open it (allow your browser to *install unknown apps* if Android asks).
 2. **Get the helper apps:** tap **Install all**. Android first asks you to allow Hermes Mobile to *install unknown apps*: turn
    the switch on and go back. Then tap **Install** on Android's prompt for each app: Termux, Termux:API and Termux:Boot (from
-   F-Droid) and Shizuku (from GitHub). The app checks that each one comes from its maker before installing it.
+   F-Droid) and Shizuku (from GitHub). Each app row links to its official page (F-Droid or Shizuku's releases) if you prefer to install it yourself; the Termux apps must all come from F-Droid. The app checks that each one comes from its maker before installing it.
 3. **Start Shizuku** (recommended, you can skip it and do it later): it keeps Android from stopping the long install ("signal 9")
    and lets Hermes use the screen. Turn on Developer options (Settings → About phone → tap *Build number* 7 times; on some phones
-   it is under *Software information* or called *OS version*), connect to Wi-Fi, which Wireless debugging needs, then open Shizuku,
+   it is under *Software information* or called *OS version*), connect to Wi-Fi, which Wireless debugging needs (Shizuku uses Android's own wireless debugging to start itself without a computer or root; it is local only, and you can usually turn it off once Shizuku runs), then open Shizuku,
    tap *Pairing* and follow its steps (Developer options → Wireless debugging → *Pair device with pairing code*, then type the code
    into Shizuku's notification), and tap *Start*. Rooted: just tap *Start* in Shizuku.
 4. Allow Hermes Mobile to *run commands in Termux* when Android asks.

@@ -91,7 +91,7 @@ Then `adb devices` must show one device as `device` (`unauthorized` = the prompt
 cable/port). If several are listed, pick one and pass `-s <serial>` to every adb command (or set `ANDROID_SERIAL`).
 
 No cable? Android 11+: Developer options → **Wireless debugging** → *Pair device with pairing code*, then
-`adb pair <ip:port> <code>` and `adb connect <ip:port>` (the port on the Wireless debugging screen, not the pairing one).
+`adb pair <ip:port> <code>` and `adb connect <ip:port>` (the port on the Wireless debugging screen, not the pairing one). Why: Android's own wireless debugging lets Shizuku start itself on the phone without root; it is local only and can usually be turned off once Shizuku runs (it keeps running until a restart).
 
 Check the phone fits:
 
