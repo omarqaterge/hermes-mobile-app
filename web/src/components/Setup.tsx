@@ -13,6 +13,7 @@ import {
 import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
 import { ScreenShell } from './Screens'
 import { Spinner } from './Spinner'
+import { formatDuration } from '../text'
 
 // Setup check (drawer → Settings, the status sheet, the offline banner) and the first-run SetupFlow. Both draw the same
 // rows from setupSteps() (setupflow.ts): the check lists every row with a ✓ or ✗ and a button that fixes it or opens
@@ -736,12 +737,36 @@ function ShizukuStep({ n, onSkip }: { n: NativeSetup; onSkip: () => void }) {
   )
 }
 
+/** Epoch seconds, re-read every second while `on` (the installer is running) and the page is visible; stops after 3 h. */
+function useInstallClock(on: boolean): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    if (!on) return
+    let ticks = 0
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return
+      setNow(Math.floor(Date.now() / 1000))
+      if (++ticks >= 10800) clearInterval(id)
+    }
+    const id = setInterval(tick, 1000)
+    const vis = () => document.visibilityState === 'visible' && setNow(Math.floor(Date.now() / 1000))
+    document.addEventListener('visibilitychange', vis)
+    tick()
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', vis)
+    }
+  }, [on])
+  return now
+}
+
 const MARK_STEP = { ok: '✓', bad: '✕', run: '', todo: '·' } as const
 
 /** Step 3: copy the installer command, run it in Termux, then its progress line by line. */
 function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCopied: () => void }) {
   const lines = progress?.lines ?? []
-  const v = progressView(lines)
+  const now = useInstallClock(Boolean(progress?.times) && !progress?.done && !progress?.fail && lines.some(l => l.startsWith('STEP ')))
+  const v = progressView(lines, progress?.times, now)
   const started = lines.some(l => l.startsWith('STEP '))
   const actions = (
     <div className="setup-actions">
@@ -772,9 +797,11 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
         {v.steps.map(s => (
           <li key={s.id} className={`install-step ${s.state}`}>
             <span className="install-mark" aria-hidden="true">{s.state === 'run' ? <Spinner small /> : MARK_STEP[s.state]}</span> {s.label}
+            {s.secs != null && s.state !== 'todo' && <span className="install-time">{formatDuration(s.secs)}</span>}
           </li>
         ))}
       </ul>
+      {v.total != null && <div className="dim small install-total">{v.done ? 'Total' : 'So far'} {formatDuration(v.total)}</div>}
       {v.android && <div className="dim small">{v.android}</div>}
       {v.todo.length > 0 && (
         <div className="setup-help">
