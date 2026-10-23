@@ -27,7 +27,8 @@ User-facing changes, newest first. Each release section collects what shipped si
   one message. Cards can also show live data: a web search, your chats, or a file on the phone, read when the card
   is drawn (read-only; anything that changes something goes through the chat as usual). Hermes decides when a card
   helps; turn it off in Settings → Replies (new chats). Documents and things you ask Hermes to build still open on
-  the canvas.
+  the canvas. Reopening a chat with a live card uses the data it already fetched, and its Refresh button always fetches
+  again.
 
 ## v0.8.46 (2026-10-22)
 
