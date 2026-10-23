@@ -831,6 +831,7 @@ def register(ctx):
     try:
         pa = _phone_app()
         pa.notify, pa.log = _send, _dbg
+        pa.turn_running = lambda sid: sid in _active  # dropped by session_end / stale expiry
         if pa.availability()[0]:
             ctx.register_tool(name="phone_app", toolset="canvas", schema=pa.TOOL_SCHEMA, handler=pa.tool_handler,
                               description="Use a phone app on a hidden screen without taking the user's screen", emoji="📱")

@@ -47,7 +47,11 @@ log: Callable[[str], None] = lambda m: None
 
 _lock = threading.RLock()
 _token = ""
-_state: Dict[str, Any] = {}          # {session, pkg, label}
+_state: Dict[str, Any] = {}          # {session, pkg, label, at}  (at = owner's last phone_app call)
+DEADLINE_S = 10.0                    # how long to wait for a started host to answer
+STALE_S = 130.0                      # same as the host's idle timeout: an owner silent this long has let go
+STALE_IDLE_S = 20.0                  # owner's turn is over and it has been quiet this long: let go sooner
+turn_running: Optional[Callable[[str], bool]] = None   # set by the plugin: is this chat's turn still running?
 _granted: set = set()                # (session, pkg) already approved in this chat
 _names: Dict[int, str] = {}          # element number -> its text, from the last capture (for the status line)
 _apps_cache: Tuple[float, List[dict]] = (0.0, [])
@@ -140,7 +144,7 @@ def _apk_path() -> str:
     raise PhoneAppError("The Hermes Mobile app isn't installed (or Shizuku can't see it).")
 
 
-def ensure_host() -> None:
+def ensure_host(_retry: bool = False) -> None:
     """Start the background host if it isn't running (it exits by itself after 2 idle minutes)."""
     global _token
     with _lock:
@@ -159,13 +163,18 @@ def ensure_host() -> None:
         except subprocess.TimeoutExpired:
             pass
         _token = tok
-        deadline = time.time() + 10
+        deadline = time.time() + DEADLINE_S
         while time.time() < deadline:
             if _alive():
                 return
             time.sleep(0.4)
         _token = ""
         tail = _rish("tail -5 /data/local/tmp/hm-bghost.log")
+        if ("Address already in use" in tail or "BindException" in tail) and not _retry:
+            # A host from before (the plugin restarted and lost its token, or a close never reached it) still holds
+            # the port. It is ours and nobody can use it without the token: stop it and start a fresh one.
+            _rish("pkill -f 'app_process.*[B]gHost'; sleep 1")
+            return ensure_host(_retry=True)
         if "Address already in use" in tail or "BindException" in tail:
             raise PhoneAppError("Another background-app session is still running; wait 2 minutes and try again.")
         if "Android 14" in tail:
@@ -382,6 +391,24 @@ def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", 
         return json.dumps({"ok": False, "action": act, "error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)
 
 
+def _free_if_stale(sid: str) -> None:
+    """Another chat owns the app but has let go: its turn is over (and quiet a while) or it was silent for STALE_S.
+    Close the old app so this chat can use the phone. A chat that is still working keeps it."""
+    owner = _state.get("session")
+    if not _state or not owner or owner == sid:
+        return
+    age = time.time() - float(_state.get("at") or 0)
+    running = True
+    if turn_running is not None:
+        try:
+            running = bool(turn_running(owner))
+        except Exception:
+            running = True
+    if age > STALE_S or (not running and age > STALE_IDLE_S):
+        log(f"phone_app: taking over from {owner} (idle {age:.0f}s, turn running={running})")
+        end_session(owner)
+
+
 def _need_open(sid: str) -> None:
     if not _state or not _alive():
         _state.clear()
@@ -392,6 +419,9 @@ def _need_open(sid: str) -> None:
 
 def _run(act: str, a: dict, sid: str) -> dict:
     with _lock:
+        _free_if_stale(sid)
+        if _state and _state.get("session") == sid:
+            _state["at"] = time.time()
         if act == "list_apps":
             return {"ok": True, "apps": [f"{x['label']} ({x['pkg']})" for x in list_apps()]}
         if act == "open":
@@ -410,7 +440,7 @@ def _run(act: str, a: dict, sid: str) -> dict:
             ensure_host()
             r = call("/open", {"pkg": pkg})
             _state.clear()
-            _state.update({"session": sid, "pkg": pkg, "label": r.get("label") or label})
+            _state.update({"session": sid, "pkg": pkg, "label": r.get("label") or label, "at": time.time()})
             _event("open", f"Opened {_state['label']}")
             out = {"ok": True, "opened": _state["label"], "package": pkg}
             out.update(_capture("ax"))
