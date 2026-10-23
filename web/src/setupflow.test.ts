@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { NativeSetup } from './bridge'
-import { nextStep, probeState, progressView, recommendedGaps, setupSteps, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
+import { nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuWatchActive, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
 
 const native: NativeSetup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, termuxApi: true, shizuku: true, startError: '', maker: 'google' }
 const remote: Remote = { plugin: true, enabled: true, enabledList: ['hermes-mobile'], phone: { files: true, termux_api: true, shizuku: 'ok' } }
@@ -176,5 +176,19 @@ describe('progressView', () => {
     const d = progressView(['STEP packages x', 'STEP start y', 'DONE'])
     expect(d.done).toBe(true)
     expect(d.steps.every(s => s.state === 'ok')).toBe(true)
+  })
+})
+
+// The Start Shizuku step re-asks the app whether Shizuku runs, but only while it is on screen (battery).
+describe('shizukuWatchActive', () => {
+  const base = { visible: true, running: false, startedAt: 1000, now: 1000 + 5000 }
+  test('polls while the step is visible and Shizuku is not running yet', () => {
+    expect(shizukuWatchActive(base)).toBe(true)
+  })
+  test('stops when Shizuku is running, when the app is hidden and after 10 minutes', () => {
+    expect(shizukuWatchActive({ ...base, running: true })).toBe(false)
+    expect(shizukuWatchActive({ ...base, visible: false })).toBe(false)
+    expect(shizukuWatchActive({ ...base, now: 1000 + 10 * 60 * 1000 - 1 })).toBe(true)
+    expect(shizukuWatchActive({ ...base, now: 1000 + 10 * 60 * 1000 })).toBe(false)
   })
 })
