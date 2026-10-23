@@ -18,8 +18,10 @@ User-facing changes, newest first. Each release section collects what shipped si
   Open canvas / Go to chat buttons, the ⋮ menu sits on the same line as the details instead of alone on its own row.
 - **Cards, charts and forms in replies.** Hermes can answer with interactive UI right in the chat (OpenUI): tables,
   charts, metric cards, tabs, steps, buttons and follow-ups you tap to answer, and forms that send your answers back in
-  one message. Hermes decides when a card helps; turn it off in Settings → Replies (new chats). Documents and things
-  you ask Hermes to build still open on the canvas.
+  one message. Cards can also show live data: a web search, your chats, or a file on the phone, read when the card
+  is drawn (read-only; anything that changes something goes through the chat as usual). Hermes decides when a card
+  helps; turn it off in Settings → Replies (new chats). Documents and things you ask Hermes to build still open on
+  the canvas.
 
 ## v0.8.46 (2026-10-22)
 

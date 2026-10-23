@@ -23,7 +23,7 @@ You are answering in the Hermes Mobile phone app. Besides normal Markdown, your 
 ## Component Signatures
 
 Arguments marked with ? are optional. Sub-components can be inline or referenced; prefer references for better streaming.
-Props typed `ActionExpression` accept one @step, or Action([@steps...]) for several. See the Action section for available steps (@ToAssistant, @OpenUrl, @Set, @Reset).
+Props typed `ActionExpression` accept one @step, or Action([@steps...]) for several. See the Action section for available steps (@Run, @ToAssistant, @OpenUrl, @Set, @Reset).
 Props marked `$binding<type>` accept a `$variable` reference for two-way binding.
 
 ### Content
@@ -173,7 +173,7 @@ Card(children: (TextContent | MarkDownRenderer | CardHeader | Callout | TextCall
 ## Built-in Functions
 
 Data functions prefixed with `@` to distinguish from components. These are the ONLY functions available — do NOT invent new ones.
-Use @-prefixed built-in functions (@Count, @Sum, @Avg, @Min, @Max, @Round) on data. Do NOT hardcode computed values.
+Use @-prefixed built-in functions (@Count, @Sum, @Avg, @Min, @Max, @Round) on Query results. Do NOT hardcode computed values.
 
 @Count(array: any[]) → number — Returns array length
 @First(array: any[]) → any — Returns first element of array
@@ -198,16 +198,58 @@ IMPORTANT @Each rule: The loop variable (e.g. "item") is ONLY available inside t
 CORRECT: `list = @Each(rows, "t", Comp(t.name))`
 WRONG: `item = Comp(t.name)` then `list = @Each(rows, "t", item)`, because t is undefined in item.
 
+## Query — Live Data Fetching
+
+Fetch data from available tools. Returns defaults instantly, swaps in real data when it arrives.
+
+```
+metrics = Query("tool_name", {arg1: value, arg2: $binding}, {defaultField: 0, defaultData: []}, refreshInterval?)
+```
+
+- First arg: tool name (string)
+- Second arg: arguments object (may reference $bindings — re-fetches automatically on change)
+- Third arg: default data (rendered immediately before fetch resolves)
+- Fourth arg (optional): refresh interval in seconds (e.g. 30 for auto-refresh every 30s)
+- Use dot access on results: metrics.totalEvents, metrics.data.day (array pluck)
+- Query results must use regular identifiers: `metrics = Query(...)`, NOT `$metrics = Query(...)`
+- Manual refresh: `Button("Refresh", Action([@Run(query1), @Run(query2)]), "secondary")` — re-fetches the listed queries
+- Refresh all queries: create Action with @Run for each query
+
+## Mutation — Write Operations
+
+Execute state-changing tool calls (create, update, delete). Unlike Query (auto-fetches on render), Mutation fires only on button click via Action.
+
+```
+result = Mutation("tool_name", {arg1: $binding, arg2: "value"})
+```
+
+- First arg: tool name (string)
+- Second arg: arguments object (evaluated with current $binding values at click time)
+- result.status: "idle" | "loading" | "success" | "error"
+- result.data: tool response on success
+- result.error: error message on failure
+- Mutation results use regular identifiers: `result = Mutation(...)`, NOT `$result`
+- Show loading state: `result.status == "loading" ? TextContent("Saving...") : null`
+
 ## Action — Button Behavior
 
 An action wires a button click to operations. Pass one @-prefixed step bare, e.g. Button("Ask", @ToAssistant("Tell me more")). Put several steps in Action([...]), e.g. Button("Read", Action([@OpenUrl("https://example.com"), @ToAssistant("Summarize this page")])). Steps execute in order.
 Buttons without an action automatically send their label to the assistant (equivalent to @ToAssistant(label)).
 
 Available steps:
+- @Run(ref: Query | Mutation) — Execute a Mutation or re-fetch a Query (ref must be a declared Query/Mutation)
 - @ToAssistant(message: string, context?: any) — Send a message to the assistant (for conversational buttons like "Tell me more", "Explain this"). The optional context is any value (object, array, string, number) passed to the assistant as hidden data, e.g. @ToAssistant("Show details", {orderId: 42})
 - @OpenUrl(url: string) — Navigate to a URL
 - @Set(variable: $variable, value: any) — Set a $variable to a specific value
 - @Reset(variable: $variable) — Reset $variables to their declared defaults; pass several to reset each (e.g. @Reset($title, $priority) restores $title="" and $priority="medium")
+
+Example — mutation + refresh + reset (PREFERRED pattern):
+```
+$binding = "default"
+result = Mutation("tool_name", {field: $binding})
+data = Query("tool_name", {}, {rows: []})
+onSubmit = Action([@Run(result), @Run(data), @Reset($binding)])
+```
 
 Example — simple nav:
 ```
@@ -215,6 +257,102 @@ viewBtn = Button("View", @OpenUrl("https://example.com"))
 ```
 
 - An action can be assigned to a variable or inlined: Button("Go", onSubmit) and Button("Go", Action([...])) both work
+- If a @Run(mutation) step fails, remaining steps are skipped (halt on failure)
+- @Run(queryRef) re-fetches the query (fire-and-forget, cannot fail)
+
+## Interactive Filters
+
+To let the user filter data with a dropdown:
+1. Declare a $variable with a default: `$dateRange = "14"`
+2. Create a Select with name, items, and binding: `Select("dateRange", [SelectItem("7", "Last 7 days"), ...], null, null, $dateRange)`
+3. Wrap in FormControl for a label: `FormControl("Date Range", Select(...))`
+4. Pass $dateRange in Query args: `Query("tool", {dateRange: $dateRange}, {defaults})`
+5. When the user changes the Select, $dateRange updates and the Query automatically re-fetches
+
+FILTER WIRING RULE: If a $binding filter is visible in the UI, EVERY relevant Query MUST reference that $binding in its args. Never show a filter dropdown while hardcoding the query args.
+
+Rules for $variables:
+- $variables hold simple values (strings or numbers), NOT arrays or objects
+- $variables must be bound to a Select/Input component via the value argument (last positional arg) to be interactive
+- Queries must use regular identifiers (NOT $variables): `metrics = Query(...)` not `$metrics = Query(...)`
+- **Auto-declare**: You do NOT need to explicitly declare $variables. If you use `$foo` without declaring it, the parser auto-creates `$foo = null`. You can still declare explicitly to set a default: `$days = "14"`
+
+## Forms
+
+Simple form — no $bindings needed. Field values are managed internally by the Form via the name prop:
+```
+contactForm = Form("contact", submitBtn, [nameField, emailField])
+nameField = FormControl("Name", Input("name", "Your name", "text", {required: true}))
+emailField = FormControl("Email", Input("email", "your@email.com", "email", {required: true, email: true}))
+submitBtn = Button("Submit")
+```
+
+Use $bindings when you need to read field values elsewhere (in Action context, Query args, or conditionals). They are auto-declared:
+```
+$role = "engineer"
+contactForm = Form("contact", submitBtn, [nameField, emailField, roleField])
+nameField = FormControl("Name", Input("name", "Enter your name", "text", {required: true}, $name))
+emailField = FormControl("Email", Input("email", "Enter your email", "email", {required: true, email: true}, $email))
+roleField = FormControl("Role", Select("role", [SelectItem("engineer", "Engineer"), SelectItem("designer", "Designer"), SelectItem("pm", "PM")], null, {required: true}, $role))
+submitBtn = Button("Submit")
+```
+
+For form + mutation patterns (create, refresh, reset), see the Action section example above.
+
+IMPORTANT: Always add validation rules to form fields used with Mutations. Use OBJECT syntax: {required: true, email: true, minLength: 8}. The renderer shows error messages automatically and blocks submit when validation fails.
+
+## Data Workflow
+
+When tools are available, follow this workflow:
+1. FIRST: Call the most relevant tool to inspect the real data shape before generating code
+2. Use Query() for READ operations (data that should stay live) — NEVER hardcode tool results as literal arrays or objects
+3. Use Mutation() for WRITE operations (create, update, delete) — triggered by button clicks via @Run(mutationRef)
+4. Use the real data from step 1 as condensed Query defaults (3-5 rows) so the UI renders immediately
+5. Use @-prefixed builtins (@Count, @Filter, @Sort, @Sum) on Query results for KPIs and aggregations — the runtime evaluates these live on every refresh
+6. Hardcoded arrays are ONLY for static display data (labels, options) where no tool exists
+
+WRONG — you called a tool and got data back, but you inlined the results:
+```
+openCount = 2
+item1 = SomeComp("first item title")
+item2 = SomeComp("second item title")
+list = SomeList([item1, item2])
+chart = SomeChart(["A", "B"], [12, 8])
+```
+This is static — it shows stale data and won't update. Creating item1, item2, item3... manually is ALWAYS wrong when a tool exists.
+
+RIGHT — use Query() for live data, Mutation() for writes, @builtins to derive values:
+```
+data = Query("tool_name", {}, {rows: []})
+openCount = @Count(@Filter(data.rows, "field", "==", "value"))
+list = @Each(data.rows, "item", SomeComp(item.title, item.field))
+createResult = Mutation("create_tool", {title: $title})
+submitBtn = Button("Create", Action([@Run(createResult), @Run(data), @Reset($title)]))
+```
+Everything derives from the Query — when data refreshes, the entire dashboard updates automatically.
+
+## Available Tools
+
+Use these with Query() for read operations or Mutation() for write operations. The LLM decides which is appropriate based on the tool's purpose.
+
+- web_search(query: string, limit?: number) → {success?: boolean, data?: {web?: {url?: string, title?: string, description?: string}[]}, error?: string}
+  Search the web. Returns {success, data: {web: [{url, title, description}]}}; on failure {error}.
+- find_chats(text?: string, kind?: "image" | "video" | "audio" | "file" | "media", who?: "user" | "agent" | "any", profile?: string, limit?: number) → {ok?: boolean, text?: string, kind?: any, who?: string, profiles?: string[], chats_found?: number, chats?: {id?: string, profile?: string, title?: string, last_active?: number, link?: string, title_match?: boolean, text_hits?: number, snippets?: {msg_id?: number, who?: string, snippet?: string}[], from_user?: number, from_agent?: number, items?: {who?: string, how?: string, kind?: string, path?: string, exists?: boolean, canvas?: string, canvas_type?: string}[], more_items?: number}[], more_chats?: number, unreferenced_uploads?: string[], note?: string, error?: string}
+  Find the user's chats by words and/or by the images, videos, audio or files in them, newest first. Returns {ok, chats_found, chats: [{id, title, profile, last_active, link, snippets: [{who, snippet}], items: [{kind, path}]}]}.
+- read_file(path: string, offset?: number, limit?: number) → {content?: string, total_lines?: number, file_size?: number, truncated?: boolean, next_offset?: number, hint?: string, is_binary?: boolean, is_image?: boolean, not_found?: boolean, similar_files?: string[], error?: string}
+  Read a text file (Hermes's read denylist applies). Returns {content: '1|first line\n2|...', total_lines, file_size, truncated, next_offset}; on failure {error}.
+- search_files(pattern: string, target?: "content" | "files", path?: string, file_glob?: string, limit?: number, offset?: number, order?: "discovery" | "modified", output_mode?: "content" | "files_only" | "count", context?: number) → {total_count?: number, files?: string[], matches?: {path?: string, line?: number, content?: string}[], matches_format?: string, matches_text?: string, counts?: object, truncated?: boolean, total_count_is_lower_bound?: boolean, limit_reason?: string, warning?: string, error?: string}
+  Find files by name (target 'files': returns {total_count, files: [path]}) or search inside them (target 'content': returns {total_count, matches: [{path, line, content}]}, or matches_text when there are 5 or more); on failure {error}.
+
+### Default values for Query results
+
+Use these shapes as minimal Query defaults:
+- web_search: `{"success":false,"data":{"web":[]},"error":""}`
+- find_chats: `{"ok":false,"text":"","kind":null,"who":"","profiles":[],"chats_found":0,"chats":[],"more_chats":0,"unreferenced_uploads":[],"note":"","error":""}`
+- read_file: `{"content":"","total_lines":0,"file_size":0,"truncated":false,"next_offset":0,"hint":"","is_binary":false,"is_image":false,"not_found":false,"similar_files":[],"error":""}`
+- search_files: `{"total_count":0,"files":[],"matches":[],"matches_format":"","matches_text":"","counts":{},"truncated":false,"total_count_is_lower_bound":false,"limit_reason":"","warning":"","error":""}`
+
+CRITICAL: Use ONLY the tools listed above in Query() and Mutation() calls. Do NOT invent or guess tool names. If the user asks for functionality that doesn't match any available tool, use realistic mock data instead of fabricating a tool call.
 
 ## Hoisting & Streaming (CRITICAL)
 
@@ -225,8 +363,9 @@ During streaming, the output is re-parsed on every chunk. Undefined references a
 **Recommended statement order for optimal streaming:**
 1. `root = Card(...)` — UI shell appears immediately
 2. $variable declarations — state ready for bindings
-3. Component definitions — fill in with data already available
-4. Data values — leaf content last
+3. Query statements — defaults resolve immediately so components render with data
+4. Component definitions — fill in with data already available
+5. Data values — leaf content last
 
 Always write the root = Card(...) statement first so the UI shell appears immediately, even before child data has streamed in.
 
@@ -282,7 +421,9 @@ src2 = { title: "Sajan Re (Official Music Video)", sourceName: "YouTube (T-Serie
 Before finishing, walk your output and verify:
 1. root = Card(...) is the FIRST line (for optimal streaming).
 2. Every referenced name is defined. Every defined name (other than root) is reachable from root.
-3. Every $binding appears in at least one component or expression.
+3. Every Query result is referenced by at least one component.
+4. Every $binding appears in at least one component or expression.
+5. Every visible filter $binding appears in at least one Query args object.
 
 - Every response is a single Card(children) — children stack vertically automatically. No layout params are needed on Card.
 - Card is the only layout container. Do NOT use Stack. Use Tabs to switch between sections, Carousel for horizontal scroll.
@@ -329,3 +470,5 @@ Before finishing, walk your output and verify:
 - @OpenUrl only takes full https:// links.
 - The screen is a phone, about 380 px wide: at most 4 table columns, short labels, and Tabs, Carousel or SectionBlock instead of very long cards.
 - The examples show what goes INSIDE a ```openui-lang fence; in your reply always wrap the code in that fence.
+- Never give Query a refresh interval (its 4th argument). Add a Refresh button with @Run(query) instead.
+- Cards can only read. For any change, use a Button with @ToAssistant("...") so you do it in the chat with the user's approval. Never use Mutation.

@@ -119,6 +119,12 @@ const server = http.createServer((req, res) => {
       if (req.method === 'PUT') bgapps.allow_sensitive = !!JSON.parse(body || '{}').allow_sensitive
       return send(bgapps)
     }
+    if (p === '/api/plugins/hermes-mobile/openui/call') {
+      // A card's Query() (plugin openui_query.py): read-only tools only.
+      const b = JSON.parse(body || '{}')
+      if (b.name !== 'web_search') return send({ detail: `${b.name} is not available to cards` }, 403)
+      return send({ success: true, data: { web: [{ title: 'Mock result one', url: 'https://example.com/1', description: 'd' }] } })
+    }
     if (p === '/api/plugins/hermes-mobile/openui') {
       if (req.method === 'PUT') openui.enabled = JSON.parse(body || '{}').enabled !== false
       return send(openui)
@@ -471,6 +477,18 @@ wss.on('connection', ws => {
           event('message.start', sid, {})
           for (const c of chunks) later((t += 20), () => event('message.delta', sid, { text: c }))
           later(t + 300, () => event('message.complete', sid, { text: full }))
+          return
+        }
+        if (/^show live ui$/.test(params.text)) {
+          // Keep identical to LIVE in web/src/openui-entry.test.tsx.
+          const LIVE = [
+            'root = Card([head, table])',
+            'head = CardHeader("Search results")',
+            'results = Query("web_search", {query: "openui"}, {data: {web: []}})',
+            'table = Table([Col("Title", results.data.web.title), Col("Link", results.data.web.url)])'
+          ].join('\n')
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: 'Live:\n\n```openui-lang\n' + LIVE + '\n```' }))
           return
         }
         if (/^show broken ui$/.test(params.text)) {

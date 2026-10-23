@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { BlockHandle, BlockProps, OpenUIApi } from '../openui-entry' // types only: erased, OpenUI stays lazy
 import { runLazy } from '../lazy'
 import { actionMessage, loadUiState, safeHttpUrl, saveUiState, type UiAction } from '../openui-msg'
+import { makeToolClient } from '../openui-query'
+import { api } from '../api'
 import { haptic, openExternal } from '../bridge'
 import { sendPrompt } from '../gateway'
 import { getState, toast } from '../store'
@@ -50,6 +52,14 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   const key = streaming ? '' : `${chatId()}:${hashText(code)}`
   const initial = useRef(key ? loadUiState(key) : undefined) // a reopened chat: what you typed before
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Query() live data: read-only tools through the plugin (POST /openui/call). Answers are saved with the card's
+  // state for 15 min and one card makes at most 30 calls (openui-query.ts), so a refresh interval can't poll forever.
+  const tools = useRef<ReturnType<typeof makeToolClient> | null>(null)
+  tools.current ||= makeToolClient(
+    (name, args) => api('POST', '/api/plugins/hermes-mobile/openui/call', { name, args }, { profile: false }),
+    chatId(),
+    { load: loadUiState, save: (k, v, at) => saveUiState(k, v, at) }
+  )
 
   const onAction = (e: UiAction) => {
     if (e.type === 'open_url') {
@@ -72,6 +82,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
     streaming,
     mode,
     initialState: initial.current,
+    toolProvider: tools.current,
     onAction: e => onAction(e as UiAction),
     onState: s => {
       if (!key) return

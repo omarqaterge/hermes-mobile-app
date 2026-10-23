@@ -5,6 +5,7 @@ import { act } from 'react'
 import { beforeAll, expect, test } from 'vitest'
 import type { BlockHandle, BlockProps, OpenUIApi } from './openui-entry'
 import { actionMessage, type UiAction } from './openui-msg'
+import { makeToolClient } from './openui-query'
 
 // Keep identical to the "show ui" reply in tools/web-e2e/mock.cjs.
 const CODE = `root = Card([head, intro, plans, form, more])
@@ -74,5 +75,29 @@ test('code that isn’t openui-lang reports an error once streaming is done', as
   const errs: string[] = []
   const { h } = await mount(props({ code: 'this is not openui at all', onErrors: e => errs.push(...e.map(x => x.code)) }))
   expect(errs.length).toBeGreaterThan(0)
+  await act(async () => h.unmount())
+})
+
+// Keep identical to the "show live ui" reply in tools/web-e2e/mock.cjs.
+const LIVE = `root = Card([head, table])
+head = CardHeader("Search results")
+results = Query("web_search", {query: "openui"}, {data: {web: []}})
+table = Table([Col("Title", results.data.web.title), Col("Link", results.data.web.url)])`
+
+test('a Query card draws what the tool client returns', async () => {
+  const seen: string[] = []
+  const saved = new Map<string, unknown>()
+  const client = makeToolClient(
+    async name => {
+      seen.push(name)
+      return { data: { web: [{ title: 'Mock result one', url: 'https://example.com/1' }] } }
+    },
+    'chat1',
+    { load: k => saved.get(k), save: (k, v) => void saved.set(k, v) }
+  )
+  const { h, root } = await mount(props({ code: LIVE, toolProvider: client }))
+  await settle()
+  expect(root.textContent).toContain('Mock result one')
+  expect(seen).toEqual(['web_search'])
   await act(async () => h.unmount())
 })

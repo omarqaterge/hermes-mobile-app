@@ -54,7 +54,7 @@ check("section fits its 900-char budget", len(ou.PROMPT) <= 900, len(ou.PROMPT))
 check("section names the fence and the tool", "```openui-lang" in ou.PROMPT and "openui_reference" in ou.PROMPT)
 ref = ou.tool_handler({})
 check("tool returns the reference", "```openui-lang" in ref and "Card(" in ref, ref[:80])
-check("reference within budget", len(ref) < 45_000, len(ref))
+check("reference within budget", len(ref) < 52_000, len(ref))
 check("schema name", ou.TOOL_SCHEMA["name"] == "openui_reference")
 real_ref = ou.REFERENCE
 ou.REFERENCE = tmp / "missing.txt"

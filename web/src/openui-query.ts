@@ -4,7 +4,8 @@
 // refresh interval can't poll forever.
 
 export type ToolCall = (name: string, args: Record<string, unknown>) => Promise<unknown>
-export type McpResult = { structuredContent?: unknown; isError?: boolean; content?: { type: 'text'; text: string }[] }
+/** OpenUI's McpClientLike result: `content` is required (empty when the answer is in structuredContent). */
+export type McpResult = { structuredContent?: unknown; isError?: boolean; content: { type: 'text'; text: string }[] }
 /** Where saved answers live (the card's saved UI state in the app); passed in so this module stays pure. */
 export type ToolStore = { load(k: string): unknown; save(k: string, v: Record<string, unknown>, now: number): void }
 
@@ -20,13 +21,13 @@ export function makeToolClient(call: ToolCall, cacheKey: string, store: ToolStor
     async callTool({ name, arguments: args = {} }: { name: string; arguments?: Record<string, unknown> }): Promise<McpResult> {
       const key = `q:${cacheKey}|${name}|${JSON.stringify(args)}`
       const hit = store.load(key) as { at?: unknown; v?: unknown } | null | undefined
-      if (hit && typeof hit === 'object' && typeof hit.at === 'number' && now() - hit.at < QUERY_FRESH_MS) return { structuredContent: hit.v }
+      if (hit && typeof hit === 'object' && typeof hit.at === 'number' && now() - hit.at < QUERY_FRESH_MS) return { structuredContent: hit.v, content: [] }
       if (++calls > QUERY_MAX_CALLS) return err(QUERY_TOO_OFTEN)
       try {
         const v = await call(name, args)
         const t = now()
         store.save(key, { at: t, v }, t)
-        return { structuredContent: v }
+        return { structuredContent: v, content: [] }
       } catch (e) {
         return err(e instanceof Error ? e.message : String(e))
       }
