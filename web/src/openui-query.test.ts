@@ -30,14 +30,15 @@ test('missing arguments are sent as {}', async () => {
   expect(s.seen).toEqual([['session_search', {}]])
 })
 
-test('the same call within 15 min returns the saved answer without calling', async () => {
+test('a new client within 15 min gets the saved answer without calling; a repeat from the same client (Refresh) calls', async () => {
   const s = setup()
-  const c = makeToolClient(s.call, 'chat1', s.store, s.clock.now)
-  const first = await c.callTool({ name: 'web_search', arguments: { query: 'x' } })
+  const first = await makeToolClient(s.call, 'chat1', s.store, s.clock.now).callTool({ name: 'web_search', arguments: { query: 'x' } })
   s.clock.advance(15 * MIN - 1)
-  const second = await c.callTool({ name: 'web_search', arguments: { query: 'x' } })
-  expect(second).toEqual(first)
+  const c = makeToolClient(s.call, 'chat1', s.store, s.clock.now)
+  expect(await c.callTool({ name: 'web_search', arguments: { query: 'x' } })).toEqual(first)
   expect(s.seen.length).toBe(1)
+  await c.callTool({ name: 'web_search', arguments: { query: 'x' } })
+  expect(s.seen.length).toBe(2)
 })
 
 test('the saved answer survives a new client (reopening the chat) with the same cache key', async () => {
@@ -49,16 +50,17 @@ test('the saved answer survives a new client (reopening the chat) with the same 
   expect(s.seen.length).toBe(1)
 })
 
-test('after 15 min it calls again and saves the new answer', async () => {
+test('after 15 min a new client calls again and saves the new answer', async () => {
   const s = setup()
-  const c = makeToolClient(s.call, 'chat1', s.store, s.clock.now)
-  await c.callTool({ name: 'web_search', arguments: { query: 'x' } })
+  const mk = () => makeToolClient(s.call, 'chat1', s.store, s.clock.now)
+  const args = { name: 'web_search', arguments: { query: 'x' } }
+  await mk().callTool(args)
   s.clock.advance(15 * MIN)
   s.setAnswer(() => ({ fresh: true }))
-  expect(await c.callTool({ name: 'web_search', arguments: { query: 'x' } })).toEqual({ structuredContent: { fresh: true }, content: [] })
+  expect(await mk().callTool(args)).toEqual({ structuredContent: { fresh: true }, content: [] })
   expect(s.seen.length).toBe(2)
   s.clock.advance(MIN)
-  expect(await c.callTool({ name: 'web_search', arguments: { query: 'x' } })).toEqual({ structuredContent: { fresh: true }, content: [] })
+  expect(await mk().callTool(args)).toEqual({ structuredContent: { fresh: true }, content: [] })
   expect(s.seen.length).toBe(2)
 })
 
@@ -89,8 +91,8 @@ test('the 31st network call of one client is refused without calling', async () 
   const r = await c.callTool({ name: 'web_search', arguments: { query: 'q30' } })
   expect(r).toEqual({ isError: true, content: [{ type: 'text', text: 'This card asked for data too often. Ask Hermes to refresh it.' }] })
   expect(s.seen.length).toBe(30)
-  // saved answers are still served after the cap, and a new client (page reload) has its own budget
-  expect(await c.callTool({ name: 'web_search', arguments: { query: 'q0' } })).toEqual({ structuredContent: { name: 'web_search', args: { query: 'q0' } }, content: [] })
+  // a new client (page reload) has its own budget and is served the saved answer
+  expect(await makeToolClient(s.call, 'chat1', s.store, s.clock.now).callTool({ name: 'web_search', arguments: { query: 'q0' } })).toEqual({ structuredContent: { name: 'web_search', args: { query: 'q0' } }, content: [] })
   expect((await makeToolClient(s.call, 'chat1', s.store, s.clock.now).callTool({ name: 'web_search', arguments: { query: 'q30' } })).isError).toBeUndefined()
   expect(s.seen.length).toBe(31)
 })
@@ -125,4 +127,14 @@ test('a broken saved entry is ignored', async () => {
   for (const k of s.map.keys()) s.map.set(k, 'junk')
   await c.callTool({ name: 'web_search', arguments: { query: 'x' } })
   expect(s.seen.length).toBe(2)
+})
+
+test('a cache key given as a function is read at call time (a new chat learns its id after the card mounted)', async () => {
+  const s = setup()
+  let id = ''
+  const c = makeToolClient(s.call, () => id, s.store, s.clock.now)
+  id = 'chat1' // the id arrives before the first call
+  await c.callTool({ name: 'web_search', arguments: { query: 'x' } })
+  await makeToolClient(s.call, 'chat1', s.store, s.clock.now).callTool({ name: 'web_search', arguments: { query: 'x' } })
+  expect(s.seen.length).toBe(1)
 })
