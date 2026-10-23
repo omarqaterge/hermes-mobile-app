@@ -915,13 +915,19 @@ async function main() {
   // The feed is polled every 9 s while empty (#34), then every 3 s while something runs.
   await page.locator('.activity-banner').first().waitFor({ timeout: 12000 }).then(() => check(true, 'activity banner within one idle poll'), () => check(false, 'activity banner within one idle poll'))
   await sleep(500)
-  await mock({ activity: [], bump: 's-9' })
+  await mock({ activity: [], bump: 's-9', newChat: 's-fresh' }) // a reply lands in s-9 and a new chat appears
   await page.locator('.unread-dot.on-menu').waitFor({ timeout: 8000 }).then(() => check(true, 'menu button shows an unread dot'), () => check(false, 'menu button shows an unread dot'))
   await page.getByRole('button', { name: /^Sessions/ }).click()
   const row9 = page.locator('.session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 9$/ }) })
   check((await row9.locator('.unread-dot').count()) === 1, 'the chat with the new reply has a dot')
   check(/^now · 4 msgs/.test((await row9.locator('.dim.small').textContent()) || ''), `row shows when it changed (${await row9.locator('.dim.small').textContent()})`)
   check(/^\d+ h · /.test((await page.locator('.session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 12$/ }) }).locator('.dim.small').textContent()) || ''), 'older chats show hours ago')
+  // A chat that got a reply (or a message) keeps its place: Hermes lists it first, the drawer must not.
+  const titles = async () => page.locator('.drawer .session-row .session-title').allInnerTexts()
+  let tl = await titles()
+  const i9 = tl.indexOf('Chat 9')
+  check(i9 > 0 && tl[i9 - 1] === 'Chat 8' && tl[i9 + 1] === 'Chat 10', `a chat with new activity keeps its place (${tl.slice(0, 4)}…)`)
+  check(tl[0] === 'Brand new chat' && tl.indexOf('Chat 9') === tl.indexOf('Chat 8') + 1, `a new chat appears on top, the others stay (${tl.slice(0, 4)}…)`)
   await row9.click()
   await page.locator('.msg.assistant', { hasText: 'answer s-9' }).waitFor({ timeout: 5000 })
   check((await page.locator('.unread-dot').count()) === 0, 'opening the chat clears the dot')
