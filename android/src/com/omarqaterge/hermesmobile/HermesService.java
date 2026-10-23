@@ -739,6 +739,12 @@ public class HermesService extends Service {
         }
     }
 
+    /** The Done chip was tapped: forget every unseen chat, whether or not it still exists. */
+    static void clearDoneChip() {
+        HermesService s = instance;
+        if (s != null) s.clearUnseen();
+    }
+
     synchronized void clearUnseen() {
         unseen.clear();
         saveUnseen();
@@ -876,9 +882,15 @@ public class HermesService extends Service {
     }
 
     PendingIntent openApp(String session) {
+        return openApp(session, false);
+    }
+
+    /** clearDone: tapping the card also clears the sticky Done chip (all of it), even when the chat it names is gone. */
+    PendingIntent openApp(String session, boolean clearDone) {
         Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         if (session != null && !session.isEmpty()) open.putExtra("session", session);
-        int code = session == null ? 0 : session.hashCode();
+        if (clearDone) open.putExtra("clearDone", true);
+        int code = (session == null ? 0 : session.hashCode()) + (clearDone ? 31 : 0);
         return PendingIntent.getActivity(this, code, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
@@ -1270,7 +1282,7 @@ public class HermesService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
-                .setContentIntent(openApp(latestId))
+                .setContentIntent(openApp(latestId, true))
                 .addAction(new Notification.Action.Builder(null, "Clear",
                         PendingIntent.getService(this, 7, clear, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
         promote(b, n == 1 ? "✅ Done" : "✅ " + n + " done");
