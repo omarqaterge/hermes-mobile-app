@@ -29,6 +29,8 @@ interface Check {
   help?: ReactNode
   fix?: { label: string; run: () => void }
   alt?: { label: string; run: () => void }
+  /** A "Done" button for what Android can't check (the user says it is done; remembered). */
+  done?: () => void
 }
 
 async function remote(): Promise<Remote> {
@@ -127,6 +129,15 @@ const shizukuSkipped = () => {
   }
 }
 
+const AUTOSTART_DONE = 'hm.autostartDone'
+const autostartConfirmed = () => {
+  try {
+    return localStorage.getItem(AUTOSTART_DONE) === '1'
+  } catch {
+    return false
+  }
+}
+
 const copyBootstrap = () => {
   if (copySetupCommand()) toast('Copied. In Termux: long-press, Paste, then Enter')
   else toast('This app build can’t make the installer command. Use the command from the README.', 'error')
@@ -137,10 +148,11 @@ interface Ctx {
   conn: string
   r: Remote | null
   enable: () => void
+  autostartDone: () => void
 }
 
 /** The words and buttons of one row. */
-function describe(id: StepId, { n, conn, r, enable }: Ctx): Pick<Check, 'title' | 'help' | 'fix' | 'alt'> {
+function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<Check, 'title' | 'help' | 'fix' | 'alt' | 'done'> {
   const online = conn === 'open'
   const p = online ? r?.phone ?? null : null
   const sh = p?.shizuku
@@ -236,7 +248,7 @@ function describe(id: StepId, { n, conn, r, enable }: Ctx): Pick<Check, 'title' 
     case 'bat-termux':
       return {
         title: 'Termux may run in the background',
-        help: 'Hermes lives in Termux. Open Termux’s app info → Battery → Unrestricted (on Xiaomi also turn on Autostart).',
+        help: 'Hermes lives in Termux. Open Termux’s app info → Battery → Unrestricted.',
         fix: { label: 'Open Termux settings', run: () => setupFix('battery-termux') }
       }
     case 'files':
@@ -291,13 +303,31 @@ function describe(id: StepId, { n, conn, r, enable }: Ctx): Pick<Check, 'title' 
         alt: sh === 'blocked' ? { label: 'Open Shizuku', run: () => setupFix('open-shizuku') } : undefined
       }
     }
-    case 'autostart':
+    case 'autostart': {
+      // Shown only on phones whose maker adds an Autostart switch; the shell picks the page (Autostart.java).
+      const kind = n?.autostart || 'info'
+      const name = n?.autostartName || 'Autostart'
+      const where = n?.autostartWhere || ''
+      const why = 'This phone stops apps that may not start by themselves, so Hermes and its notifications would stop after a while or a restart.'
+      const note = ' Android can’t tell us whether it is on: tap Done once both are on.'
+      const perApp = kind === 'app' || kind === 'info'
       return {
-        title: 'Turn on Autostart for Termux and Hermes Mobile',
-        help: 'Xiaomi phones stop apps that are not allowed to autostart. Android can’t tell us whether it is on, so this is only a reminder: open each app’s settings → Autostart.',
-        fix: { label: 'Hermes Mobile settings', run: () => setupFix('app-settings') },
-        alt: { label: 'Termux settings', run: () => setupFix('battery-termux') }
+        title: `Turn on ${name} for Termux and Hermes Mobile`,
+        help:
+          `${why} ` +
+          (kind === 'list'
+            ? `The button opens the list of apps that may start by themselves (${name}): switch on Termux and Hermes Mobile.`
+            : kind === 'settings'
+              ? `The button opens Settings. Go to ${where} and switch on Termux and Hermes Mobile.`
+              : kind === 'app'
+                ? `Each button opens that app’s page: switch on ${name}.`
+                : `Each button opens that app’s App info. Look for ${name} there${where ? ` (or: ${where})` : ''} and switch it on.`) +
+          note,
+        fix: perApp ? { label: 'Hermes Mobile', run: () => setupFix('autostart') } : { label: `Open ${name}`, run: () => setupFix('autostart') },
+        alt: perApp ? { label: 'Termux', run: () => setupFix('autostart-termux') } : undefined,
+        done: autostartDone
       }
+    }
   }
 }
 
@@ -318,6 +348,7 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   const [probeRaw, setProbeRaw] = useState<ProbeRaw | null>(null)
   const [progress, setProgress] = useState<Progress | null>(() => setupProgress())
   const [shSkip, setShSkip] = useState(shizukuSkipped)
+  const [autoDone, setAutoDone] = useState(autostartConfirmed)
   const wantModel = Boolean(opts.model)
   /** probe: also ask Termux what is installed (one RUN_COMMAND, only while Hermes is offline; never on the poll). */
   const refresh = useCallback((probe: unknown = true) => {
@@ -371,7 +402,7 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   useEffect(() => refresh(false), [conn, profile, refresh])
   useEffect(() => refresh(true), [refresh])
   const installing = Boolean(progress?.active && !progress.done && !progress.fail)
-  const pre: PreHermes = { probe: n?.probe ? probeState(probeRaw, installing) : null, progress, shizukuSkipped: shSkip }
+  const pre: PreHermes = { probe: n?.probe ? probeState(probeRaw, installing) : null, progress, shizukuSkipped: shSkip, autostartDone: autoDone }
   const steps = setupSteps(n, conn, r, wantModel ? hasModel : true, pre)
   // A step before Hermes exists is known without Hermes: never "Checking…" while the connection retries.
   const pending = nextStep(steps)
@@ -385,7 +416,15 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
     }
     setShSkip(true)
   }
-  return { steps, next: pending, loading, refresh, n, r, conn, progress, skipShizuku }
+  const autostartDone = () => {
+    try {
+      localStorage.setItem(AUTOSTART_DONE, '1')
+    } catch {
+      /* private mode */
+    }
+    setAutoDone(true)
+  }
+  return { steps, next: pending, loading, refresh, n, r, conn, progress, skipShizuku, autostartDone }
 }
 
 function useEnable(r: Remote | null, refresh: () => void) {
@@ -414,6 +453,11 @@ function CheckActions({ c }: { c: Check }) {
           {c.alt.label}
         </button>
       )}
+      {c.done && (
+        <button className="btn" onClick={() => { haptic(); c.done!() }}>
+          Done
+        </button>
+      )}
     </div>
   )
 }
@@ -422,9 +466,9 @@ const MARK: Record<StepState, string> = { ok: '✓', bad: '✕', info: 'i', wait
 const MARK_LABEL: Record<StepState, string> = { ok: 'Done', bad: 'Needs fixing', info: 'Tip', wait: 'Checking', skip: '' }
 
 export function SetupScreen() {
-  const { steps, refresh, n, r, conn } = useSetupState({ poll: true })
+  const { steps, refresh, n, r, conn, autostartDone } = useSetupState({ poll: true })
   useAppStatus() // re-render on install progress
-  const checks = buildChecks(steps, { n, conn, r, enable: useEnable(r, refresh) }, false)
+  const checks = buildChecks(steps, { n, conn, r, enable: useEnable(r, refresh), autostartDone }, false)
   const bad = checks.filter(c => c.state === 'bad').length
   const waiting = checks.some(c => c.state === 'wait')
   return (
@@ -484,7 +528,7 @@ let flowDismissed = false
 /** Resume at the first missing step: shows that step with its fix, moves on by itself when it turns ✓, then lists the
  *  recommended items that are still missing once, then "All set". Opens from checkSetupFlow() / watchFirstRun(). */
 export function SetupFlow() {
-  const { steps, loading, refresh, n, r, conn, progress, skipShizuku } = useSetupState({ model: true })
+  const { steps, loading, refresh, n, r, conn, progress, skipShizuku, autostartDone } = useSetupState({ model: true })
   const enable = useEnable(r, refresh)
   // The model step stays on screen until the user finishes it (connecting a provider turns it ✓ before they pick a model).
   const [modelStarted, setModelStarted] = useState(false)
@@ -498,7 +542,7 @@ export function SetupFlow() {
   const total = todo.current.length
   // skip = the step went away (Start Shizuku skipped, or the installer made it unnecessary): counts as finished, no ✓.
   const finished = todo.current.filter(id => ((stateOf(id) === 'ok' || stateOf(id) === 'skip') && !(id === 'model' && !modelDone)) || (id === 'model' && modelDone)).length
-  const ctx: Ctx = { n, conn, r, enable }
+  const ctx: Ctx = { n, conn, r, enable, autostartDone }
   const checkOf = (s: FlowStep): Check => ({ id: s.id, state: s.state, ...describe(s.id, ctx) })
 
   const finish = () => {

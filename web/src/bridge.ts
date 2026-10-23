@@ -211,6 +211,13 @@ export interface NativeSetup {
   shizukuRunning?: boolean
   /** Build.MANUFACTURER, lower case (older builds: undefined). */
   maker?: string
+  /** The Autostart step (Autostart.java): '' = this phone has no Autostart switch; otherwise the page the button opens:
+   *  'list' (one list of apps), 'app' (each app's own page), 'settings' (a Settings page to look in), 'info' (none of
+   *  the maker's pages opens: the App info fallback). autostartName = the switch's name there, autostartWhere = where
+   *  to look by hand. Older builds: undefined (no step). */
+  autostart?: AutostartPage
+  autostartName?: string
+  autostartWhere?: string
   startError: string
   /** App-first setup (older builds: undefined). canInstall = Android lets this app install apps. */
   termuxBoot?: boolean
@@ -235,10 +242,14 @@ export function setupState(): NativeSetup | null {
   }
 }
 
+export type AutostartPage = '' | 'list' | 'app' | 'settings' | 'info'
+
 export type SetupFix =
   | 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'app-settings' | 'open-termux' | 'get-termux'
   | 'get-termux-api' | 'get-shizuku' | 'open-shizuku' | 'storage' | 'restart-hermes'
   | 'install-permission' | 'about-phone' | 'dev-options' | 'open-termux-boot'
+  /** This phone's Autostart page (for Hermes Mobile / for Termux where the page is per app), else that app's App info. */
+  | 'autostart' | 'autostart-termux'
 
 /** Open the Android screen that fixes one setup item (fixed list on the Java side). */
 export function setupFix(what: SetupFix): void {
