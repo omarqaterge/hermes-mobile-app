@@ -89,6 +89,8 @@ const nativeShell = () => {
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
       openAssistantSettings: key => k(key, 'openAssistantSettings'),
+      // Claude in Termux: recorded; window.__noTermux = the shell can't open Termux.
+      signInTermux: (key, provider, profile) => (k(key, 'signInTermux'), (window.__termuxSignins ||= []).push([provider, profile]), !window.__noTermux),
       // Background app: the test sets state through window.__hmBg; frames come back 120 ms after each request.
       bgState: key => (k(key, 'bgState'), window.__bgNative ? JSON.stringify(window.__bgNative) : ''),
       bgFrameAsync: (key, id, w) => {
@@ -1427,6 +1429,73 @@ async function main() {
   check(fx === '["get-termux-api","open-shizuku","restart-hermes"]', `phone access fix buttons (${fx})`)
   await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
   await np.close()
+
+  // ── Claude sign-in (Settings → Subscriptions & accounts). Like the pinned Hermes, a Claude login (Termux's
+  // `hermes auth add anthropic` or the plugin's in-app login) only lands in the credential pool: the app must read it there. ──
+  {
+    const cs = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    cs.on('pageerror', e => { console.log('PAGEERROR (claude page)', e.message); failures++ })
+    await cs.addInitScript(nativeShell)
+    await mock({ claudeSignedIn: true })
+    await cs.goto('http://127.0.0.1:5180/')
+    await cs.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    const openAccounts = async () => {
+      await cs.getByRole('button', { name: /^Sessions/ }).click()
+      await cs.locator('.nav-tile', { hasText: 'Settings' }).click()
+      await cs.locator('.set-row', { hasText: 'Subscriptions & accounts' }).click()
+    }
+    const claudeRow = cs.locator('.set-row', { hasText: /^Claude/ })
+    await openAccounts()
+    await claudeRow.locator('text=Signed in').waitFor({ timeout: 5000 }).then(() => check(true, 'claude: a login in the credential pool shows as Signed in'), () => check(false, 'claude: a login in the credential pool shows as Signed in'))
+    check(/anthropic-oauth-1/.test((await claudeRow.textContent({ timeout: 1000 }).catch(() => '')) || ''), 'claude: the row names the login')
+    // Sign out clears it (Hermes's DELETE), then the in-app sign-in
+    await claudeRow.getByRole('button', { name: 'Sign out' }).click({ timeout: 3000 }).catch(() => {})
+    await claudeRow.getByRole('button', { name: 'Sign in' }).waitFor({ timeout: 5000 }).then(() => check(true, 'claude: Sign out → Sign in'), () => check(false, 'claude: Sign out → Sign in'))
+    await claudeRow.getByRole('button', { name: 'Sign in' }).click({ timeout: 3000 }).catch(() => {})
+    const sheet = cs.locator('.sheet', { hasText: 'Sign in to Claude' })
+    await sheet.getByRole('button', { name: /Open claude\.ai/ }).click({ timeout: 5000 }).then(() => check(true, 'claude: in-app sheet with Open claude.ai'), () => check(false, 'claude: in-app sheet with Open claude.ai'))
+    check((await cs.evaluate(() => window.__opened || [])).some(u => u.startsWith('https://claude.ai/oauth/authorize')), 'claude: opens the authorize link in the browser')
+    check((await cs.evaluate(() => window.__termuxSignins || [])).length === 0, 'claude: Termux is not opened')
+    const field = sheet.getByPlaceholder('Paste the code here')
+    const liveLists = () => rpcs('model.options').filter(c => c.params && c.params.refresh).length
+    const listsAt = liveLists()
+    await field.fill('wrong-code')
+    await sheet.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await sheet.locator('.notice-error', { hasText: 'whole code' }).waitFor({ timeout: 3000 }).then(() => check(true, 'claude: a wrong code shows Hermes’s reason'), () => check(false, 'claude: a wrong code shows Hermes’s reason'))
+    await field.fill('  the-code#st-cl1 \n')
+    await sheet.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await sheet.waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'claude: the sheet closes once signed in'), () => check(false, 'claude: the sheet closes once signed in'))
+    await cs.locator('.toast', { hasText: 'Signed in to Claude' }).waitFor({ timeout: 3000 }).then(() => check(true, 'claude: toast Signed in to Claude'), () => check(false, 'claude: toast Signed in to Claude'))
+    await claudeRow.locator('text=Signed in').waitFor({ timeout: 5000 }).then(() => check(true, 'claude: row shows Signed in after the in-app login'), () => check(false, 'claude: row shows Signed in after the in-app login'))
+    {
+      const fin = calls().filter(c => c.path === '/api/plugins/hermes-mobile/claude-login/finish')
+      check(fin.length === 2 && /profile=default/.test(fin[1].query) && !/code/.test(fin[1].query) && fin[1].body.code === 'the-code#st-cl1', `claude: the code goes in the body, trimmed, for this profile (${JSON.stringify(fin.map(c => [c.query, c.body]))})`)
+      check(liveLists() > listsAt, 'claude: the live model list is fetched after the sign-in (Claude models show up)')
+    }
+    // Termux fallback (button in the sheet): back from Termux, the app re-checks and says how it went
+    await claudeRow.getByRole('button', { name: 'Sign out' }).click({ timeout: 3000 }).catch(() => {})
+    await claudeRow.getByRole('button', { name: 'Sign in' }).click({ timeout: 5000 }).catch(() => {})
+    await sheet.getByRole('button', { name: /Termux/ }).click({ timeout: 5000 }).catch(() => {})
+    check(JSON.stringify(await cs.evaluate(() => window.__termuxSignins || [])) === '[["anthropic","default"]]', `claude: Termux fallback runs auth add anthropic for this profile (${JSON.stringify(await cs.evaluate(() => window.__termuxSignins))})`)
+    await cs.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))) // back without signing in
+    await cs.locator('.toast', { hasText: 'not signed in' }).waitFor({ timeout: 3000 }).then(() => check(true, 'claude: back from Termux without a login says so'), () => check(false, 'claude: back from Termux without a login says so'))
+    await claudeRow.getByRole('button', { name: 'Sign in' }).click({ timeout: 3000 }).catch(() => {})
+    await sheet.getByRole('button', { name: /Termux/ }).click({ timeout: 5000 }).catch(() => {})
+    await mock({ claudeSignedIn: true }) // `hermes auth add anthropic` finished in Termux
+    await cs.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await cs.locator('.toast', { hasText: 'Signed in to Claude' }).waitFor({ timeout: 3000 }).then(() => check(true, 'claude: back from Termux after auth add → Signed in to Claude'), () => check(false, 'claude: back from Termux after auth add → Signed in to Claude'))
+    await claudeRow.locator('text=Signed in').waitFor({ timeout: 5000 }).then(() => check(true, 'claude: row shows Signed in after Termux'), () => check(false, 'claude: row shows Signed in after Termux'))
+    // An older plugin without the in-app login: the sheet offers Termux instead
+    await mock({ claudeSignedIn: false, claudeLoginMissing: true })
+    await cs.evaluate(() => window.hermesBack())
+    await cs.locator('.set-row', { hasText: 'Subscriptions & accounts' }).click()
+    await claudeRow.getByRole('button', { name: 'Sign in' }).click({ timeout: 5000 }).catch(() => {})
+    await sheet.getByText('Termux').first().waitFor({ timeout: 5000 }).then(() => check(true, 'claude: without the plugin route the sheet offers Termux'), () => check(false, 'claude: without the plugin route the sheet offers Termux'))
+    check((await sheet.getByRole('button', { name: /Open claude\.ai/ }).count()) === 0, 'claude: no dead Open claude.ai button then')
+    check((await cs.locator('.sheet input[type=checkbox], .sheet select').count()) === 0, 'claude: no native form controls')
+    await mock({ claudeLoginMissing: false })
+    await cs.close()
+  }
 
   // ── player, chat links, dictation, model in the + menu, learning dot (fake native bridge, speech never ends by itself) ──
   const vp = await browser.newPage({ viewport: { width: 375, height: 812 } })
