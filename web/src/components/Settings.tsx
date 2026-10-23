@@ -954,7 +954,7 @@ export function SettingsScreen() {
         <>
           <ProfileChips value={scope} onChange={setScope} label="Sign-ins for" />
           <AccountsList profile={scope} title="Use a plan you already pay for" />
-          <div className="dim small pad">ChatGPT, Grok, Nous and MiniMax sign in right here. Claude opens Termux, because Hermes only does that sign-in in a terminal. API keys are under Settings → API keys.</div>
+          <div className="dim small pad">ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). API keys are under Settings → API keys.</div>
         </>
       )}
       {page === 'keys' && <KeysTab scope={scope} setScope={setScope} />}

@@ -46,6 +46,12 @@ let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps
 let openui = { enabled: true } // the plugin's /openui (Settings → Replies)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
 let codexPolls = 0
+// Claude sign-in, like the pinned Hermes: `hermes auth add anthropic` (Termux) and the plugin's in-app login only add an
+// entry to the profile's credential pool; /api/providers/oauth keeps saying logged_in: false for the Anthropic card
+// (its status reads ~/.hermes/.anthropic_oauth.json and env vars only), /api/credentials/pool lists the entry.
+let claudePool = []
+let claudeLoginMissing = false // true = an older plugin without /claude-login (404)
+const claudeEntry = () => ({ index: claudePool.length + 1, id: 'c0ffee', label: 'anthropic-oauth-1', auth_type: 'oauth', source: 'manual:hermes_pkce', priority: 0, last_status: null, request_count: 0, token_preview: 'sk-a...abcd', has_refresh: true })
 
 const server = http.createServer((req, res) => {
   let body = ''
@@ -78,6 +84,8 @@ const server = http.createServer((req, res) => {
       if (b.configured) providerConfigured = true
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
+      if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
+      if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
       if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.openui) openui = { ...openui, ...b.openui }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
@@ -160,6 +168,26 @@ const server = http.createServer((req, res) => {
       return send({ session_id: 'dev1', status: codexPolls >= 2 ? 'approved' : 'pending' })
     }
     if (p.startsWith('/api/providers/oauth/sessions/')) return send({ ok: true })
+    // Hermes's DELETE clears the PKCE file and the whole credential_pool.anthropic (clear_provider_auth).
+    if (p === '/api/providers/oauth/anthropic' && req.method === 'DELETE') {
+      if (!claudePool.length) return send({ detail: 'No stored credentials were removed for Anthropic Account.' }, 409)
+      claudePool = []
+      return send({ ok: true, provider: 'anthropic' })
+    }
+    if (p === '/api/credentials/pool') return send({ providers: claudePool.length ? [{ provider: 'anthropic', entries: claudePool }] : [] })
+    // The plugin's in-app Claude login (claude_login.py): start gives the claude.ai link, finish takes the pasted code#state.
+    if (p.startsWith('/api/plugins/hermes-mobile/claude-login/')) {
+      if (claudeLoginMissing) return send({ detail: 'Not Found' }, 404)
+      const b = JSON.parse(body || '{}')
+      if (p.endsWith('/start')) return send({ session_id: 'cl1', url: 'https://claude.ai/oauth/authorize?code=true&client_id=x&state=st-cl1', expires_in: 600 })
+      if (p.endsWith('/finish')) {
+        if (b.session_id !== 'cl1') return send({ detail: 'This sign-in expired. Start again.' }, 400)
+        if (!String(b.code || '').endsWith('#st-cl1')) return send({ detail: 'That isn’t the code from this sign-in. Copy the whole code Claude shows (it has a # in the middle).' }, 400)
+        claudePool = [claudeEntry()]
+        providerConfigured = true
+        return send({ ok: true, label: 'anthropic-oauth-1' })
+      }
+    }
     if (p === '/api/env' && req.method === 'PUT') {
       providerConfigured = true
       return send({ ok: true })
