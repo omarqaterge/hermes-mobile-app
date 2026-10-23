@@ -10,6 +10,7 @@ import { haptic } from '../bridge'
 import { Title, keepBranch, plainTitle } from './Title'
 import { confirmDialog } from '../dialog'
 import { ago, lastActive } from '../unread'
+import { orderChats, recentIds } from '../chatorder'
 
 function dayLabel(ms?: number): string {
   if (!ms) return 'Older'
@@ -471,11 +472,8 @@ export function SessionList({ query }: { query: string }) {
 
   const chats = useMemo(() => {
     const others = sessions.filter(s => !order.pinned.includes(s.id) && match(s))
-    if (!order.manual) return [...others].sort((a, b) => lastActive(b) - lastActive(a)) // same value the headings and "2 d" use
-    const pos = new Map(order.manual.map((id, i) => [id, i]))
-    // Chats not placed yet (new ones) go on top, newest first.
-    const key = (s: SessionListRow) => pos.get(s.id) ?? -1e12 - (s.started_at || 0)
-    return [...others].sort((a, b) => key(a) - key(b))
+    // Creation order (or the saved custom one): a message sent or received never moves a chat.
+    return orderChats(others, order.manual)
   }, [sessions, order.pinned, order.manual, needle]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const drag = useDrag((list, ids) => {
@@ -626,7 +624,7 @@ export function SessionList({ query }: { query: string }) {
   let lastLabel = ''
   chats.forEach((s, i) => {
     if (grouped) {
-      const label = dayLabel(lastActive(s))
+      const label = dayLabel((s.started_at || 0) * 1000) // creation day: activity must not move a chat between groups
       if (label !== lastLabel) {
         chatChildren.push(
           <div key={`h:${label}`} className="group-title">
@@ -658,7 +656,7 @@ export function SessionList({ query }: { query: string }) {
         <div className="group-title">
           Chats
           {order.manual && (
-            <button className="mini" onClick={() => setOrder(o => ({ ...o, manual: null }))}>
+            <button className="mini" onClick={() => setOrder(o => ({ ...o, manual: recentIds(sessions.filter(x => !o.pinned.includes(x.id)), lastActive) }))}>
               Sort by recent
             </button>
           )}
