@@ -761,6 +761,45 @@ async function main() {
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant svg', { hasText: 'Start' }).first().waitFor({ timeout: 15000 }).then(() => check(true, 'diagram renders from the lazy Mermaid'), () => check(false, 'diagram renders from the lazy Mermaid'))
 
+  // ── OpenUI: ```openui-lang blocks render as cards from the lazy bundle; buttons and forms answer ──
+  check(await page.evaluate(() => document.getElementById('hm-openui')?.type === 'text/hm-lazy' && !window.__hmOpenUI), 'OpenUI not run at start')
+  {
+    const idle = () => page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+    const lastSubmit = () => rpcs('prompt.submit').pop()?.params.text
+    await page.getByPlaceholder('Message Hermes').fill('show ui')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const card = page.locator('.msg.assistant .hm-openui').last()
+    await card.getByText('Pick a plan').waitFor({ timeout: 15000 }).then(() => check(true, 'openui card renders'), () => check(false, 'openui card renders'))
+    check((await page.locator('.msg.assistant .codeblock', { hasText: 'Pick a plan' }).count()) === 0, 'the card replaces the code')
+    await idle()
+    let n = rpcs('prompt.submit').length
+    await card.getByRole('button', { name: 'Option A' }).click({ timeout: 5000 }).catch(() => {})
+    for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
+    check(lastSubmit() === 'Pick A', `a card button sends its words (${lastSubmit()})`)
+    await idle()
+    n = rpcs('prompt.submit').length
+    await card.locator('input[name="name"]').fill('Omar', { timeout: 5000 }).catch(() => {})
+    await card.getByRole('button', { name: 'Send' }).click({ timeout: 5000 }).catch(() => {})
+    for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
+    check(lastSubmit() === 'Here are my details\n\n- name: Omar', `a form sends its values (${JSON.stringify(lastSubmit())})`)
+    await idle()
+    n = rpcs('prompt.submit').length
+    await card.getByText('Compare both').click({ timeout: 5000 }).catch(() => {})
+    for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
+    check(lastSubmit() === 'Compare both', `a follow-up sends its words, without the form's values (${JSON.stringify(lastSubmit())})`)
+    await idle()
+    await page.getByPlaceholder('Message Hermes').fill('show ui streaming')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const card2 = page.locator('.msg.assistant .hm-openui').last()
+    await card2.getByText('Pick a plan').waitFor({ timeout: 15000 }).then(() => check(true, 'a streamed card renders'), () => check(false, 'a streamed card renders'))
+    await idle()
+    check((await page.locator('.msg.assistant', { hasText: 'Streaming plans' }).locator('.codeblock').count()) === 0, 'no "not shown" fallback after a streamed card')
+    await page.getByPlaceholder('Message Hermes').fill('show broken ui')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await page.locator('.msg.assistant .codeblock', { hasText: 'openui-lang (not shown)' }).waitFor({ timeout: 15000 }).then(() => check(true, 'broken openui-lang falls back to the code'), () => check(false, 'broken openui-lang falls back to the code'))
+    await idle()
+  }
+
   // ── tool calls fold into one "Ran N tools" line; tap opens them ──
   await page.getByPlaceholder('Message Hermes').fill('use tools')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
@@ -1286,6 +1325,17 @@ async function main() {
       check(puts.length === 1 && puts[0].body.allow_sensitive === true, `toggling PUTs allow_sensitive (${JSON.stringify(puts.map(c => c.body))})`)
       check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'switch shows on')
     }
+    // Settings → Replies: cards in replies (plugin /openui), on by default
+    const ouiRow = np.locator('.set-row', { hasText: 'Cards and buttons in replies' })
+    await ouiRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the cards row'), () => check(false, 'Settings has the cards row'))
+    check((await ouiRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'cards: on by default')
+    await ouiRow.click({ timeout: 1500 }).catch(() => {})
+    await sleep(500)
+    {
+      const puts = calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/openui')
+      check(puts.length === 1 && puts[0].body.enabled === false, `cards toggle PUTs enabled:false (${JSON.stringify(puts.map(c => c.body))})`)
+    }
+    await ouiRow.click({ timeout: 1500 }).catch(() => {}) // back on for the rest of the run
     await np.evaluate(() => window.hermesBack())
     await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { allow_sensitive: false, available: false, reason: 'Needs Shizuku running' } }) })
     await np.getByRole('button', { name: /^Sessions/ }).click()

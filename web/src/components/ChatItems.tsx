@@ -447,7 +447,7 @@ function AssistantMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind:
   return (
         <div className="msg assistant" onClick={time.toggle}>
           <Reasoning text={item.reasoning} live={item.streaming && !item.text} />
-          {item.text && <Markdown text={item.text} streaming={item.streaming} />}
+          {item.text && <Markdown text={item.text} streaming={item.streaming} interactive />}
           {item.streaming && item.text && <span className="caret" />}
           {item.warning && <div className="warn-line">⚠ {item.warning}</div>}
           {!item.streaming && item.text && actions && (
