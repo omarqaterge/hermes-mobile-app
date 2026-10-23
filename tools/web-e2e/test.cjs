@@ -1786,11 +1786,24 @@ async function main() {
     await fe.getByText('Waiting for the installer to start', { exact: false }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: after copying it waits for the installer'), () => check(false, 'app-first: after copying it waits for the installer'))
     const push = (lines, extra = {}) => fe.evaluate(([ls, ex]) => {
       for (const l of ls) {
-        window.__progress = { ...window.__progress, ...ex, lines: [...window.__progress.lines, l], fail: l.startsWith('FAIL ') ? l.split(' ')[1] : l.startsWith('STEP ') ? '' : window.__progress.fail }
+        window.__t = (window.__t || Math.floor(Date.now() / 1000) - 400) + (window.__dt || 0)
+        window.__progress = { ...window.__progress, ...ex, lines: [...window.__progress.lines, l], times: [...(window.__progress.times || []), window.__t], fail: l.startsWith('FAIL ') ? l.split(' ')[1] : l.startsWith('STEP ') ? '' : window.__progress.fail }
         window.hermesSetupLine(l)
       }
     }, [lines, extra])
-    await push(['STEP packages Termux packages', 'STEP access Access', 'phone: tap Allow on Android’s prompt, so Hermes can read and save your files', 'STEP android limit', 'android: child-process limit lifted (via Shizuku)', 'STEP debian Debian'])
+    await fe.evaluate(() => (window.__dt = 0))
+    await push(['STEP packages Termux packages'])
+    await fe.evaluate(() => (window.__dt = 102))
+    await push(['STEP access Access'])
+    await fe.evaluate(() => (window.__dt = 10))
+    await push([ 'phone: tap Allow on Android’s prompt, so Hermes can read and save your files', 'STEP android limit', 'android: child-process limit lifted (via Shizuku)', 'STEP debian Debian'])
+    check((await fe.locator('.install-step', { hasText: 'Termux packages' }).locator('.install-time').textContent()) === '1:42', 'step times: a finished step shows how long it took (1:42)')
+    const t0 = await fe.locator('.install-step.run .install-time').textContent()
+    await sleep(2300)
+    const t1 = await fe.locator('.install-step.run .install-time').textContent()
+    check(t0 !== t1 && /^\d+:\d\d$/.test(t1), `step times: the running step counts up live (${t0} → ${t1})`)
+    check(/^So far \d+:\d\d$/.test(((await fe.locator('.install-total').textContent()) || '').trim()), 'step times: a running total is shown')
+    check((await fe.locator('.install-step.todo .install-time').count()) === 0, 'step times: steps still to come show no time')
     await fe.locator('.install-step.run', { hasText: 'Debian' }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: progress lines show the running step'), () => check(false, 'app-first: progress lines show the running step'))
     check((await fe.locator('.install-step.ok').count()) === 3, 'app-first: finished installer steps are ticked')
     check((await fe.locator('.install-hint', { hasText: 'tap Allow on Android' }).count()) === 1, 'app-first: the latest “phone:” hint is shown')
@@ -1801,6 +1814,7 @@ async function main() {
     await push(['STEP debian Debian', 'STEP hermes Hermes', 'STEP plugin Plugin', 'STEP start Start'])
     await mock({ up: true })
     await push(['DONE'], { done: true, active: false })
+    check(/^Total \d+:\d\d$/.test(((await fe.locator('.install-total').textContent().catch(() => '')) || '').trim()) || (await fe.locator('.install-total').count()) === 0, 'step times: after DONE the total stops (or the view has moved on)')
     await fe.getByText('Connect Hermes to a model').waitFor({ timeout: 20000 }).then(() => check(true, 'app-first: DONE → connects → the model step'), () => check(false, 'app-first: DONE → connects → the model step'))
     await fe.close()
   }
