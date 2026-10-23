@@ -40,7 +40,7 @@ export const loadPool = (profile: string): Promise<Record<string, PoolEntry[]>> 
 const claudeLogin = (pool: Record<string, PoolEntry[]>) => (pool.anthropic || []).find(e => e.auth_type === 'oauth' && e.source !== 'claude_code')
 
 /** Fills in "signed in" for logins Hermes's account list doesn't see (Claude in the credential pool). */
-export function withPoolStatus<P extends { id: string; status: Status }>(providers: P[], pool: Record<string, PoolEntry[]>): P[] {
+export function withPoolStatus<P extends { id: string; status?: Status }>(providers: P[], pool: Record<string, PoolEntry[]>): P[] {
   return providers.map(p => {
     if (p.id !== 'anthropic' || p.status?.logged_in) return p
     const e = claudeLogin(pool)

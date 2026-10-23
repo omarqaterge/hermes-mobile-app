@@ -3266,3 +3266,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .uninstall-note { margin: 4px 4px 12px; }
 .uninstall-err { margin: 4px 4px 12px; color: var(--err); }
 .uninstall-running { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; text-align: center; }
+/* Model providers list (Providers.tsx) */
+.provider-key { display: flex; gap: 8px; align-items: center; padding: 10px 12px; }
+.provider-key input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; outline: none; color: inherit; font: inherit; }
+.providers .set-value { white-space: nowrap; font-size: 0.78rem; }

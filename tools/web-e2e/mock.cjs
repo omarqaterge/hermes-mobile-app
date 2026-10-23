@@ -52,6 +52,12 @@ let codexPolls = 0
 let claudePool = []
 let claudeLoginMissing = false // true = an older plugin without /claude-login (404)
 const claudeEntry = () => ({ index: claudePool.length + 1, id: 'c0ffee', label: 'anthropic-oauth-1', auth_type: 'oauth', source: 'manual:hermes_pkce', priority: 0, last_status: null, request_count: 0, token_preview: 'sk-a...abcd', has_refresh: true })
+// Provider catalog: the pinned Hermes's REAL answers (tools/hermes-provider-fixture.py), plus what the test saved.
+const providerFixture = require('./fixtures/hermes-providers.json')
+let envSet = {} // KEY -> value written by PUT /api/env (the profile's .env)
+let endpoints = [] // POST /api/providers/custom-endpoints
+// Like Hermes's redacted_credential_preview: first 4 + last 4 of a long value.
+const redact = v => (v.length >= 12 ? `«redacted:${v.slice(0, 4)}...${v.slice(-4)}»` : '«redacted:***»')
 
 const server = http.createServer((req, res) => {
   let body = ''
@@ -80,7 +86,12 @@ const server = http.createServer((req, res) => {
       // Test hooks: set the activity feed, bump a chat's message count (a reply landed there).
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
-      if (b.unconfigured) providerConfigured = false
+      if (b.unconfigured) {
+        providerConfigured = false
+        envSet = {}
+        endpoints = []
+        codexPolls = 0 // nobody signed in to ChatGPT any more either
+      }
       if (b.configured) providerConfigured = true
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
@@ -150,15 +161,44 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/refresh-logins') return send({ ok: true, anthropic: 0 })
     if (p === '/api/plugins/hermes-mobile/cleanup') return send({ ok: true, removed: [], freed_bytes: 0 })
     if (p === '/api/model/info') return send({ model: 'mock-model' })
-    // Account sign-ins: ChatGPT is a device-code flow approved on the 2nd poll; Claude is terminal-only ("external").
+    // Account sign-ins: the pinned Hermes's list; ChatGPT is a device-code flow approved on the 2nd poll.
     if (p === '/api/providers/oauth' && req.method === 'GET')
       return send({
-        providers: [
-          { id: 'openai-codex', name: 'ChatGPT or Codex Subscription', flow: 'device_code', cli_command: 'hermes auth add openai-codex', disconnectable: true, status: { logged_in: !!codexPolls && providerConfigured } },
-          { id: 'anthropic', name: 'Anthropic Account', flow: 'external', cli_command: 'hermes auth add anthropic', disconnectable: true, status: { logged_in: false } },
-          { id: 'claude-code', name: 'Anthropic OAuth', flow: 'external', cli_command: 'claude setup-token', disconnectable: false, status: { logged_in: false } }
-        ]
+        providers: providerFixture.oauth.providers.map(x => (x.id === 'openai-codex' ? { ...x, status: { ...x.status, logged_in: codexPolls >= 2 } } : x))
       })
+    if (p === '/api/env' && req.method === 'GET') {
+      const out = {}
+      for (const [k, v] of Object.entries(providerFixture.env)) out[k] = envSet[k] ? { ...v, is_set: true, redacted_value: redact(envSet[k]) } : v
+      return send(out)
+    }
+    if (p === '/api/env' && req.method === 'DELETE') {
+      const k = JSON.parse(body || '{}').key
+      if (!envSet[k]) return send({ detail: `${k} not found in .env` }, 404)
+      delete envSet[k]
+      return send({ ok: true, key: k, removed: true })
+    }
+    if (p === '/api/providers/custom-endpoints/validate') {
+      // Hermes asks <base_url>/models; here every https URL "answers" with two models.
+      const b = JSON.parse(body || '{}')
+      if (!/^https:/.test(b.base_url || '')) return send({ ok: false, reachable: false, message: `Could not reach ${b.base_url}/models.`, models: [] })
+      return send({ ok: true, reachable: true, message: '', models: ['mistral-large-latest', 'mistral-small-latest'], model_details: [], transport_checked: 'chat_completions', resolved_base_url: b.base_url })
+    }
+    if (p === '/api/providers/custom-endpoints' && req.method === 'POST') {
+      // Same shape as the pinned Hermes (config_env.py _endpoint_row / _custom_endpoint_response).
+      const b = JSON.parse(body || '{}')
+      if (!b.name || !b.base_url || !b.model) return send({ detail: 'model required' }, 400)
+      const id = b.name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
+      endpoints = endpoints.filter(e => e.id !== id)
+      endpoints.push({ id, name: b.name, base_url: b.base_url, model: b.model, models: b.models || [b.model], api_mode: '', context_length: null, discover_models: true, has_api_key: !!b.api_key, api_key_preview: b.api_key ? `\${HERMES_CUSTOM_${id.toUpperCase()}_API_KEY}` : null, is_current: false, source: 'providers' })
+      providerConfigured = true
+      return send({ endpoints, current: { provider: '', model: '', base_url: '' }, ok: true, id })
+    }
+    if (p.startsWith('/api/providers/custom-endpoints/') && req.method === 'DELETE') {
+      const id = decodeURIComponent(p.split('/').pop())
+      endpoints = endpoints.filter(e => e.id !== id)
+      return send({ endpoints, current: { provider: '', model: '', base_url: '' }, ok: true })
+    }
+    if (p === '/api/providers/custom-endpoints' && req.method === 'GET') return send({ endpoints, current: { provider: '', model: '', base_url: '' } })
     if (p === '/api/providers/oauth/openai-codex/start') {
       codexPolls = 0
       return send({ session_id: 'dev1', flow: 'device_code', user_code: 'ABCD-1234', verification_url: 'https://auth.openai.com/codex/device', expires_in: 900, poll_interval: 1 })
@@ -189,10 +229,17 @@ const server = http.createServer((req, res) => {
       }
     }
     if (p === '/api/env' && req.method === 'PUT') {
+      const b = JSON.parse(body || '{}')
+      envSet[b.key] = b.value
       providerConfigured = true
-      return send({ ok: true })
+      return send({ ok: true, key: b.key, config_updates: [] })
     }
-    if (p === '/api/model/options') return send({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
+    if (p === '/api/model/options') {
+      const providers = [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }]
+      if (envSet.DEEPSEEK_API_KEY) providers.push({ slug: 'deepseek', name: 'DeepSeek', authenticated: true, models: ['deepseek-chat', 'deepseek-reasoner'] })
+      for (const e of endpoints) providers.push({ slug: e.id, name: e.name, authenticated: true, models: e.models })
+      return send({ model: 'mock-model', provider: 'mock', providers })
+    }
     if (p === '/api/model/set') return send({ ok: true })
     if (p === '/api/dashboard/plugins') return send([{ name: 'hermes-mobile' }, { name: 'kanban' }])
     if (p === '/api/config' && req.method === 'GET') return send({ plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })

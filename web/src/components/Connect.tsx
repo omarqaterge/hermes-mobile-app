@@ -12,6 +12,7 @@ import { errText, loadDefaultModel, rpc } from '../gateway'
 import { toast, useStore } from '../store'
 import { Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
+import { ProviderList } from './Providers'
 import { Row, Section } from './ui'
 import { Spinner } from './Spinner'
 import { ClaudeSignInSheet, afterSignIn, loadPool, withPoolStatus } from './SignIn'
@@ -205,10 +206,10 @@ export function AccountsList({ profile, onChange, title }: { profile: string; on
   )
 }
 
-const cliFor = (p: OAuthProvider, profile: string) => (profile && profile !== 'default' ? p.cli_command.replace(/^hermes /, `hermes -p ${profile} `) : p.cli_command)
+export const cliFor = (p: OAuthProvider, profile: string) => (profile && profile !== 'default' ? p.cli_command.replace(/^hermes /, `hermes -p ${profile} `) : p.cli_command)
 
 /** Device-code login: show the code, open the provider's page, wait until Hermes says it's approved. */
-function DeviceLoginSheet({ provider, profile, onClose, onDone }: { provider: OAuthProvider; profile: string; onClose: () => void; onDone: () => void }) {
+export function DeviceLoginSheet({ provider, profile, onClose, onDone }: { provider: OAuthProvider; profile: string; onClose: () => void; onDone: () => void }) {
   const [start, setStart] = useState<DeviceStart | null>(null)
   const [err, setErr] = useState('')
   const done = useRef(false)
@@ -300,52 +301,6 @@ const hostOf = (u: string) => {
   }
 }
 
-// ── API keys, the short list (everything else is under Settings → API keys) ──
-
-const KEY_PROVIDERS: { env: string; name: string; sub: string; url: string }[] = [
-  { env: 'OPENROUTER_API_KEY', name: 'OpenRouter', sub: 'One key for hundreds of models', url: 'https://openrouter.ai/keys' },
-  { env: 'ANTHROPIC_API_KEY', name: 'Anthropic', sub: 'Claude API key', url: 'https://console.anthropic.com/settings/keys' },
-  { env: 'OPENAI_API_KEY', name: 'OpenAI', sub: 'OpenAI API key', url: 'https://platform.openai.com/api-keys' },
-  { env: 'GEMINI_API_KEY', name: 'Google AI Studio', sub: 'Gemini, has a free tier', url: 'https://aistudio.google.com/apikey' }
-]
-
-function KeyEntrySheet({ p, profile, onClose, onSaved }: { p: (typeof KEY_PROVIDERS)[number]; profile: string; onClose: () => void; onSaved: () => void }) {
-  const [key, setKey] = useState('')
-  const [busy, setBusy] = useState(false)
-  const save = () => {
-    haptic()
-    setBusy(true)
-    // Same route as Settings → API keys: this profile's .env (the gateway's model.save_key has no profile parameter).
-    api('PUT', `/api/env?${qs({ profile })}`, { key: p.env, value: key.trim() }, { profile: false })
-      .then(() => {
-        toast(`${p.name} connected`)
-        onSaved()
-        onClose()
-      })
-      .catch(e => toast(errText(e), 'error', 6000))
-      .finally(() => setBusy(false))
-  }
-  return (
-    <Sheet title={`${p.name} API key`} onClose={onClose}>
-      <div className="sheet-scroll">
-        <button className="btn" onClick={() => openExternal(p.url)}>
-          Get a key ↗
-        </button>
-        <label className="field">
-          <span>API key</span>
-          <input className="mono" type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} placeholder="Paste here" />
-        </label>
-        <div className="dim small">Saved in Hermes’s .env on this phone. It never leaves the phone except to call {p.name}.</div>
-      </div>
-      <div className="sheet-actions">
-        <button className="btn primary" disabled={busy || !key.trim()} onClick={save}>
-          Save
-        </button>
-      </div>
-    </Sheet>
-  )
-}
-
 // ── First run ────────────────────────────────────────────────
 
 const DONE = 'hm.welcomeDone'
@@ -369,7 +324,6 @@ export const markWelcomeDone = () => {
 export function WelcomeBody({ onChange, onFinish }: { onChange?: () => void; onFinish: () => void }) {
   const profile = useStore(s => s.profile)
   const [ready, setReady] = useState(false)
-  const [keyFor, setKeyFor] = useState<(typeof KEY_PROVIDERS)[number] | null>(null)
   const [picking, setPicking] = useState(false)
   const recheck = () => {
     void rpc<{ provider_configured?: boolean }>('setup.status')
@@ -386,23 +340,17 @@ export function WelcomeBody({ onChange, onFinish }: { onChange?: () => void; onF
     <>
       <div className="welcome-hero">
         <div className="welcome-title">Connect Hermes to a model</div>
-        <div className="dim">Hermes runs on this phone, but it thinks with a model in the cloud. Sign in with a subscription you already pay for, or paste an API key.</div>
+        <div className="dim">Hermes runs on this phone, but it thinks with a model in the cloud. Pick a provider: sign in with a subscription you already pay for, or paste an API key.</div>
       </div>
-      <AccountsList profile={profile} onChange={recheck} title="Sign in with a subscription" />
-      <Section title="Or use an API key" footer="Other providers (DeepSeek, xAI, Mistral, local models…) are under Settings → API keys.">
-        {KEY_PROVIDERS.map(p => (
-          <Row key={p.env} title={p.name} sub={p.sub} chevron onClick={() => setKeyFor(p)} />
-        ))}
-      </Section>
+      <ProviderList profile={profile} onChange={recheck} onPicked={finish} />
       <div className="welcome-actions">
         <button className="btn primary block" disabled={!ready} onClick={() => setPicking(true)}>
-          {ready ? 'Pick a model' : 'Connect one of the above first'}
+          {ready ? 'Pick a model' : 'Connect a provider first'}
         </button>
         <button className="btn block" onClick={finish}>
           {ready ? 'Keep the current model' : 'Skip for now'}
         </button>
       </div>
-      {keyFor && <KeyEntrySheet p={keyFor} profile={profile} onClose={() => setKeyFor(null)} onSaved={recheck} />}
       {picking && (
         <ModelPicker
           profile={profile}
