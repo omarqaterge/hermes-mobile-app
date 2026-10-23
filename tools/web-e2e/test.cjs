@@ -110,7 +110,7 @@ const nativeShell = () => {
       },
       // Settings → Uninstall Hermes: every call goes to window.__unLog in order; the test answers through
       // window.__un (the native state) + window.hermesUninstallDone(), like Uninstall.java does.
-      uninstallState: key => (k(key, 'uninstallState'), JSON.stringify(window.__un || { started: false, running: false, removed: false, result: null })),
+      uninstallState: key => (k(key, 'uninstallState'), JSON.stringify(window.__un || JSON.parse(localStorage.getItem('__hmUn') || 'null') || { started: false, running: false, removed: false, result: null })),
       uninstallStart: (key, backup, keys, settings) => {
         k(key, 'uninstallStart')
         ;(window.__unLog ||= []).push({ start: { backup, keys, settings } })
@@ -1458,6 +1458,8 @@ async function main() {
     const sheet = np.locator('.sheet', { hasText: 'Uninstall Hermes' }).last()
     await sheet.locator('.setup-title', { hasText: 'Debian' }).first().waitFor({ timeout: 3000 }).catch(() => {})
     const listed = (await sheet.locator('.setup-list .setup-title').allTextContents()).join(' | ')
+    const squeezed = await sheet.locator('.setup-list').first().evaluate(el => el.scrollHeight - el.clientHeight)
+    check(squeezed <= 1, `uninstall: the list is shown whole, not squeezed into a scroll box (${squeezed}px hidden)`)
     check(['Hermes, with all chats', 'Debian', 'installer’s files', 'phone setting', 'Termux:API', 'Termux:Boot', 'Shizuku', 'App: Termux', 'Hermes Mobile'].every(t => listed.includes(t)), `uninstall: lists everything that goes (${listed})`)
     const bk = sheet.locator('.set-row', { hasText: 'Save a backup to Downloads' })
     const ky = sheet.locator('.set-row', { hasText: 'Include API keys and sign-ins' })
@@ -1525,6 +1527,13 @@ async function main() {
       window.hermesBack()
       delete window.__un
     })
+    // Uninstalling Termux makes Android kill this app (RUN_COMMAND is Termux's permission): opened again, the
+    // app goes straight back to the uninstall sheet so the last steps aren't lost.
+    await np.evaluate(() => localStorage.setItem('__hmUn', JSON.stringify({ started: true, running: false, removed: true, result: { exit: 0, stdout: 'HMUNINSTALL STEP debian x\nHMUNINSTALL OK debian removed\nHMUNINSTALL DONE' } })))
+    await np.reload()
+    await np.locator('.sheet', { hasText: 'Uninstall Hermes' }).locator('.uninstall-apps').waitFor({ timeout: 8000 }).then(() => check(true, 'uninstall: reopened after a cleanup, the app shows the remaining apps'), () => check(false, 'uninstall: reopened after a cleanup, the app shows the remaining apps'))
+    check(/open Hermes Mobile again/.test((await np.locator('.sheet', { hasText: 'Uninstall Hermes' }).textContent()) || ''), 'uninstall: says Android closes the app when Termux goes')
+    await np.evaluate(() => localStorage.removeItem('__hmUn'))
   }
   await np.close()
 
