@@ -4,6 +4,9 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Reading-aloud card shows real progress.** The player in the notification shade, lock screen and the status island used to sit at 0:00. It now shows the position and an estimated length, moves while the app is closed, and its bar can be dragged to seek.
+- **5-second back and forward** replace previous/next on that card, and the in-app player has the same two buttons, a flash of -5 s / +5 s when you press, and a time label (0:12 / ~1:40). The jump is 5 seconds of speech at the reading speed measured so far, so the total is an estimate (marked ~).
+
 ## v0.8.52 (2026-10-23)
 
 Tested on one phone (Android 16) and Android 15 emulators; not yet on other phone makers.

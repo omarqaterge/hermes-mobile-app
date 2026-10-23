@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Helpers that live in modules touching window/localStorage at load time.
 import { describe, expect, test } from 'vitest'
-import { speakable, voiceErrorText } from './voice'
+import { fmtClock, readingClock, speakable, voiceErrorText } from './voice'
 import { lineDiff } from './canvas'
 import { addsToScreen, getState, hydrate, setState, splitAttachments, toast } from './store'
 import { findHit, parseSnippet } from './jump'
@@ -334,5 +334,17 @@ describe('unread list is mirrored to the Android service', () => {
     expect(calls.length).toBe(2)
     expect(calls[1][1]).toBe('[]')
     w.HermesAndroid = undefined
+  })
+})
+
+describe('reading clock', () => {
+  test('fmtClock formats m:ss and h:mm:ss', () => {
+    expect(fmtClock(0)).toBe('0:00')
+    expect(fmtClock(72.4)).toBe('1:12')
+    expect(fmtClock(3725)).toBe('1:02:05')
+    expect(fmtClock(NaN)).toBe('0:00')
+  })
+  test('readingClock = elapsed / ~total at the given pace', () => {
+    expect(readingClock(120, 1000, 10)).toBe('0:12 / ~1:40')
   })
 })
