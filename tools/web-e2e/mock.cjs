@@ -20,6 +20,7 @@ const allSessions = Array.from({ length: N_SESSIONS }, (_, i) => ({
   source: 'mobile'
 }))
 allSessions.unshift({ id: 's-stale', title: 'Stale edit chat', preview: 'x', message_count: 4, started_at: Math.floor(Date.now() / 1000) - 60, source: 'mobile' })
+allSessions.unshift({ id: 's-card', title: 'Card chat', preview: 'x', message_count: 2, started_at: Math.floor(Date.now() / 1000) - 30, source: 'mobile' })
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
 
 const canvasDocs = {} // session -> [doc]
@@ -351,6 +352,12 @@ wss.on('connection', ws => {
           later(700, () => event('message.delta', 'rt-run', { text: ' values over time.' }))
           later(1200, () => event('message.complete', 'rt-run', { text: 'Streams are a sequence of values over time.' }))
           return
+        }
+        if (sid === 's-card') {
+          // A saved chat holding a Query() card (same code as LIVE below).
+          const code = ['root = Card([head, table])', 'head = CardHeader("Search results")', 'results = Query("web_search", {query: "openui"}, {data: {web: []}})', 'table = Table([Col("Title", results.data.web.title), Col("Link", results.data.web.url)])'].join('\n')
+          return reply({ session_id: 'rt-card', stored_session_id: sid, info: { title: 'Card chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'show live ui', row_id: 1 }, { role: 'assistant', text: 'Live:\n\n```openui-lang\n' + code + '\n```' }] })
         }
         if (sid === 's-stale') {
           // Hermes no longer holds the first question live (row 999 answers 4018 to an edit).

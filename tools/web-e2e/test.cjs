@@ -491,7 +491,7 @@ async function main() {
   await page.waitForFunction(() => document.querySelectorAll('.drawer .session-row').length > 100, null, { timeout: 5000 })
   const after = await page.locator('.drawer .session-row').count()
   const lim = rpcs('session.list').map(c => c.params.limit)
-  check(before === 80 && after === 152 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
+  check(before === 80 && after === 153 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
   check((await olderBtn.count()) === 0, 'button hides when everything is loaded')
 
   // ── deleting a chat also clears its leftover photos/files/canvas on the phone ──
@@ -806,6 +806,7 @@ async function main() {
     const liveCard = page.locator('.msg.assistant .hm-openui').last()
     await liveCard.getByText('Mock result one').waitFor({ timeout: 15000 }).then(() => check(true, 'a Query card draws the tool answer'), () => check(false, 'a Query card draws the tool answer'))
     check(qcalls().length === 1 && qcalls()[0].body.name === 'web_search' && qcalls()[0].body.args.query === 'openui', `one call to /openui/call with the card's args (${JSON.stringify(qcalls().map(c => c.body))})`)
+    await idle()
     await idle()
   }
 
@@ -1134,6 +1135,25 @@ async function main() {
   check((await page.locator('.msg.assistant .msg-time').count()) === 1, 'replies too')
   await u11.locator('.bubble').click()
   check((await u11.locator('.msg-time').count()) === 0, 'tap again hides it')
+
+  {
+  // Reopening a chat from another chat: its card must find the saved answer (the chat id at mount time is the
+    // OTHER chat's while the cached copy is drawn), so no new call is made.
+    const row = n => page.locator('.session-row', { hasText: n })
+    const qcalls = () => calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/openui/call')
+    await page.getByRole('button', { name: 'Sessions' }).click()
+    await row('Card chat').click()
+    await page.locator('.msg.assistant .hm-openui').last().getByText('Mock result one').waitFor({ timeout: 15000 })
+    const afterFirst = qcalls().length
+    await page.getByRole('button', { name: 'Sessions' }).click()
+    await row('Stale edit chat').click()
+    await page.locator('.msg.assistant', { hasText: 'stale second answer' }).waitFor({ timeout: 5000 })
+    await page.getByRole('button', { name: 'Sessions' }).click()
+    await row('Card chat').click()
+    await page.locator('.msg.assistant .hm-openui').last().getByText('Mock result one').waitFor({ timeout: 15000 })
+    await page.waitForTimeout(800)
+    check(qcalls().length === afterFirst, `reopening a card chat from another chat makes no new /openui/call (${afterFirst} → ${qcalls().length})`)
+  }
 
   // ── #15 launcher shortcut "New chat" (the shell calls hermesShortcut) ──
   await page.evaluate(() => window.hermesShortcut('new'))
