@@ -20,6 +20,8 @@ final class SetupLines {
     static final int OK = 204, BAD_TOKEN = 403, BAD_LINE = 400;
 
     private final ArrayDeque<String> lines = new ArrayDeque<>();
+    /** Epoch seconds of each line (parallel to lines): the installer's own clock, else the receive time. */
+    private final ArrayDeque<Long> times = new ArrayDeque<>();
     private String token = "";
     private boolean done = false;
     private String fail = "";
@@ -29,6 +31,7 @@ final class SetupLines {
     synchronized void start(String tok) {
         token = tok == null ? "" : tok;
         lines.clear();
+        times.clear();
         done = false;
         fail = "";
         step = "";
@@ -58,12 +61,21 @@ final class SetupLines {
 
     /** OK (kept), BAD_TOKEN (no or wrong token: ignored) or BAD_LINE (unknown shape: dropped). */
     synchronized int add(String tok, String line) {
+        return add(tok, line, null, System.currentTimeMillis() / 1000);
+    }
+
+    /** ts = the installer's epoch seconds as text (null/odd/more than a day from nowSec: nowSec is used instead). */
+    synchronized int add(String tok, String line, String ts, long nowSec) {
         if (token.isEmpty() || tok == null
                 || !MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8), tok.getBytes(StandardCharsets.UTF_8)))
             return BAD_TOKEN;
         if (line == null || !LINE.matcher(line).matches()) return BAD_LINE;
         lines.addLast(line);
-        while (lines.size() > MAX) lines.removeFirst();
+        times.addLast(stamp(ts, nowSec));
+        while (lines.size() > MAX) {
+            lines.removeFirst();
+            times.removeFirst();
+        }
         if (line.startsWith("STEP ")) {
             step = line.split(" ", 3)[1];
             fail = "";
@@ -76,7 +88,13 @@ final class SetupLines {
         return OK;
     }
 
-    /** {"active":…, "lines":[…], "done":…, "fail":"…"} for the page. */
+    static long stamp(String ts, long nowSec) {
+        if (ts == null || !ts.matches("[0-9]{9,11}")) return nowSec;
+        long t = Long.parseLong(ts);
+        return Math.abs(t - nowSec) > 86400 ? nowSec : t;
+    }
+
+    /** {"active":…, "lines":[…], "times":[…], "done":…, "fail":"…"} for the page. */
     synchronized String json() {
         StringBuilder b = new StringBuilder("{\"active\":").append(!token.isEmpty()).append(",\"lines\":[");
         boolean first = true;
@@ -84,6 +102,13 @@ final class SetupLines {
             if (!first) b.append(',');
             first = false;
             quote(b, l);
+        }
+        b.append("],\"times\":[");
+        first = true;
+        for (Long t : times) {
+            if (!first) b.append(',');
+            first = false;
+            b.append(t.longValue());
         }
         b.append("],\"done\":").append(done).append(",\"fail\":");
         quote(b, fail);
@@ -101,11 +126,12 @@ final class SetupLines {
         b.append('"');
     }
 
-    /** {"token":"…","line":"…"} as bootstrap's say() writes it (printf with \ and " escaped). Null if it isn't that. */
+    /** {"token":"…","line":"…","ts":"…"} as bootstrap's say() writes it (printf with \ and " escaped): {token, line, ts};
+     *  ts is null from an older bootstrap. Null if it isn't that. */
     static String[] parse(String body) {
         if (body == null || body.length() > 1024) return null;
         String tok = field(body, "token"), line = field(body, "line");
-        return tok == null || line == null ? null : new String[]{tok, line};
+        return tok == null || line == null ? null : new String[]{tok, line, field(body, "ts")};
     }
 
     private static String field(String body, String name) {

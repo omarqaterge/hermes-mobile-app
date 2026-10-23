@@ -178,3 +178,35 @@ describe('progressView', () => {
     expect(d.steps.every(s => s.state === 'ok')).toBe(true)
   })
 })
+
+describe('progressView step times', () => {
+  const L = ['STEP packages P', 'STEP access A', 'phone: tap', 'STEP debian D']
+  test('finished steps get their own duration, the running one counts up to now, total spans the first STEP to now', () => {
+    const v = progressView(L, [1000, 1102, 1110, 1130], 1190)
+    expect(v.steps.map(s => [s.id, s.secs])).toEqual([['packages', 102], ['access', 28], ['android', null], ['debian', 60], ['hermes', null], ['plugin', null], ['start', null]])
+    expect(v.total).toBe(190)
+  })
+  test('DONE and FAIL stop the clock (now is ignored afterwards)', () => {
+    const d = progressView([...L, 'DONE'], [1000, 1102, 1110, 1130, 1400], 9999)
+    expect(d.steps.find(s => s.id === 'debian')?.secs).toBe(270)
+    expect(d.total).toBe(400)
+    const f = progressView([...L, 'FAIL debian x'], [1000, 1102, 1110, 1130, 1200], 9999)
+    expect(f.steps.find(s => s.id === 'debian')?.secs).toBe(70)
+    expect(f.total).toBe(200)
+  })
+  test('a step run again after a FAIL adds its segments', () => {
+    const v = progressView(['STEP debian a', 'FAIL debian x', 'STEP debian a'], [100, 160, 500], 530)
+    expect(v.steps.find(s => s.id === 'debian')?.secs).toBe(60 + 30)
+  })
+  test('no times (older app build) or a length mismatch: no durations, nothing breaks', () => {
+    for (const t of [undefined, [1, 2]]) {
+      const v = progressView(L, t, 5000)
+      expect(v.total).toBeNull()
+      expect(v.steps.every(s => s.secs === null)).toBe(true)
+      expect(v.steps.find(s => s.id === 'debian')?.state).toBe('run')
+    }
+  })
+  test('a clock that went backwards never gives a negative time', () => {
+    expect(progressView(['STEP packages P'], [500], 100).steps[0].secs).toBe(0)
+  })
+})

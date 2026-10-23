@@ -3223,6 +3223,8 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .install-step.todo { color: var(--dim); }
 .install-step.run { font-weight: 600; }
 .install-step.bad { color: var(--err); font-weight: 600; }
+.install-time { margin-left: auto; color: var(--dim); font-variant-numeric: tabular-nums; font-weight: 400; }
+.install-total { text-align: right; }
 .install-mark { width: 18px; display: inline-grid; place-items: center; font-weight: 700; }
 .install-step.ok .install-mark { color: var(--ok); }
 .install-todo { margin: 4px 0 0; padding-left: 18px; }

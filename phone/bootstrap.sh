@@ -35,7 +35,8 @@ say() {
   if [ "$*" = DONE ]; then : > "$HOME/.hermes-mobile/installed" 2>/dev/null || true; fi
   if [ -n "${HM_APP_TOKEN:-}" ]; then
     local l="$*"; l=${l//\\/\\\\}; l=${l//\"/\\\"}
-    printf '{"token":"%s","line":"%s"}' "$HM_APP_TOKEN" "$l" | curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' \
+    # "ts" = this phone's epoch seconds (step times survive the app being closed); older apps ignore the extra field.
+    printf '{"token":"%s","line":"%s","ts":"%s"}' "$HM_APP_TOKEN" "$l" "$(date +%s 2>/dev/null || true)" | curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' \
       --data-binary @- http://127.0.0.1:9121/setup 2>/dev/null || true
   fi
 }

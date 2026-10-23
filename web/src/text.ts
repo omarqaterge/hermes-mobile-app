@@ -376,3 +376,13 @@ export function phoneAppLabel(args?: Record<string, unknown> | null): string {
       return app ? `Using ${app}` : ''
   }
 }
+
+/** 102 → "1:42", 3725 → "1:02:05" (installer step times). Negative or non-finite → "0:00". */
+export function formatDuration(secs: number): string {
+  const t = Number.isFinite(secs) && secs > 0 ? Math.floor(secs) : 0
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
+  const s = t % 60
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+}
