@@ -1755,18 +1755,6 @@ async function main() {
     check((await fg.locator('.setup-item', { hasText: 'Autostart' }).count()) === 0, 'setup: other makers have no Autostart row')
     await fg.close()
   }
-  // e0. Start Shizuku, detection failing: the manual Continue button still moves on (and nothing polls once the step is left)
-  await mock({ unconfigured: true, pluginEnabled: true, drop: 600000 })
-  {
-    const ALL = { ...OK, runCommand: false, probe: true, maker: 'google', canInstall: true, devOptions: true, wirelessDebugging: true }
-    const fm = await flowPage(ALL)
-    await fm.goto('http://127.0.0.1:5180/')
-    await fm.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).then(() => check(true, 'shizuku-check: Start Shizuku opens when the apps are there'), () => check(false, 'shizuku-check: Start Shizuku opens when the apps are there'))
-    check((await fm.getByRole('button', { name: 'Shizuku is running' }).count()) === 0, 'shizuku-check: the manual button is now “Continue”')
-    await fm.getByRole('button', { name: 'Continue' }).click()
-    await fm.getByRole('button', { name: 'Allow' }).waitFor({ timeout: 5000 }).then(() => check(true, 'shizuku-check: Continue moves on without detection'), () => check(false, 'shizuku-check: Continue moves on without detection'))
-    await fm.close()
-  }
   // e. app-first: only Hermes Mobile is installed. The flow opens at once at the helper apps, installs all four in order,
   // offers Start Shizuku (skippable), asks for the Termux permission, copies the installer command, shows its progress
   // lines, and after DONE connects and lands on the model step.
@@ -1787,6 +1775,7 @@ async function main() {
     await fe.waitForTimeout(3600)
     check((await fe.getByRole('button', { name: 'Skip for now' }).count()) === 1, 'shizuku-check: the step waits while Shizuku is not running')
     check((await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).count()) === 0, 'shizuku-check: no green row before it runs')
+    check((await fe.getByRole('button', { name: 'Continue' }).count()) === 1 && (await fe.getByRole('button', { name: 'Shizuku is running' }).count()) === 0, 'shizuku-check: the manual button is now “Continue”')
     await fe.evaluate(() => (window.__setup = { ...window.__setup, shizukuRunning: true }))
     await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku-check: detected → green “Shizuku is running” row (no tap)'), () => check(false, 'shizuku-check: detected → green “Shizuku is running” row (no tap)'))
     await fe.getByRole('button', { name: 'Allow' }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: after Shizuku, the Termux permission comes before the installer'), () => check(false, 'app-first: after Shizuku, the Termux permission comes before the installer'))

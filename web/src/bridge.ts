@@ -207,6 +207,8 @@ export interface NativeSetup {
   /** Older app builds don't report these two: undefined. */
   termuxApi?: boolean
   shizuku?: boolean
+  /** Shizuku's server is running (it handed this app its binder, which still answers). Older builds: undefined. */
+  shizukuRunning?: boolean
   /** Build.MANUFACTURER, lower case (older builds: undefined). */
   maker?: string
   startError: string

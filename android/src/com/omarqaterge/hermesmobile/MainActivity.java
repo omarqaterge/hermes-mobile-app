@@ -269,6 +269,7 @@ public class MainActivity extends Activity {
             o.put("batteryTermux", pm != null && pm.isIgnoringBatteryOptimizations("com.termux"));
             o.put("termuxApi", installed("com.termux.api"));
             o.put("shizuku", installed(SHIZUKU));
+            o.put("shizukuRunning", ShizukuProvider.running()); // the binder Shizuku's server sent to ShizukuProvider is alive
             o.put("maker", Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT)); // the setup flow's Xiaomi Autostart tip
             o.put("startError", startError);
             // App-first setup
