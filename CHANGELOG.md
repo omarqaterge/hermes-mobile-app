@@ -9,6 +9,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Reading-aloud card shows real progress.** The player in the notification shade, lock screen and the status island used to sit at 0:00. It now shows the position and an estimated length, moves while the app is closed, and its bar can be dragged to seek.
 - **5-second back and forward** replace previous/next on that card, and the in-app player has the same two buttons, a flash of -5 s / +5 s when you press, and a time label (0:12 / ~1:40). The jump is 5 seconds of speech at the reading speed measured so far, so the total is an estimate (marked ~).
 - **The Autostart step looks for the right page.** It used to open each app's App info, which on newer phones (e.g. Xiaomi HyperOS) has no Autostart switch. It now tries the phone maker's own Autostart list where the phone has one (several makers' pages are known, App info with where-to-look text otherwise), says what you'll see there, has a **Done** button that is remembered, and no longer shows on phones without such a switch (Pixel and other stock Android, Samsung).
+- **Install all no longer gets stuck after the first app.** If you left the app while Android installed one helper app, the next app's Install prompt was blocked and setup waited forever. Coming back to Hermes Mobile now opens that prompt, an app that did get installed is ticked, and an app whose prompt was closed or that didn't install gets a Retry button, with the next app named below the list.
 
 ## v0.8.52 (2026-10-23)
 
