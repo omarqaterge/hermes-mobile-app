@@ -214,6 +214,24 @@ HOST["token"] = "rotated"  # the host died and another started: our token no lon
 r = run({"action": "capture"})
 check("a dead host is reported, not retried blindly", not r["ok"])
 
+print("the turn ends while an app is open")
+run({"action": "open", "app": "Calculator"}, sid="chat9")
+EVENTS.clear()
+pa.end_session("other-chat")
+check("another chat's turn ending leaves the app open", HOST["open"] == "com.miui.calculator" and not EVENTS, EVENTS)
+pa.end_session("chat9")
+check("the turn ending closes the app on the host", HOST["open"] is None)
+check("and tells the phone app it is done (no token)", [(k, kw.get("state"), kw.get("token")) for k, _, kw in EVENTS] == [("bgapp", "done", "")], EVENTS)
+check("and forgets the app", pa._state == {})
+EVENTS.clear()
+pa.end_session("chat9")
+check("ending twice sends nothing", not EVENTS)
+run({"action": "open", "app": "Calculator"}, sid="chat9")
+HOST["token"] = "rotated"  # host gone: still clears the card
+EVENTS.clear()
+pa.end_session("chat9")
+check("a dead host still ends the card", [kw.get("state") for _, _, kw in EVENTS] == ["done"] and pa._state == {}, EVENTS)
+
 pa.RISH_BIN = tmp / "missing"
 check("unavailable without rish", pa.availability() == (False, "Needs Shizuku (rish isn't set up)"))
 

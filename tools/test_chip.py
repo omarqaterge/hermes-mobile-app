@@ -98,6 +98,12 @@ pa._state.clear()
 plugin._on_post_tool_call(tool_name="phone_app", session_id="s-a", turn_id="s-a:1")
 check("back to the normal chip once the app is closed", last_status().get("short") != "Using Notes")
 
+ended = []
+pa.end_session = lambda sid: ended.append(sid)
+plugin._on_session_end(session_id="s-x", turn_id=None, interrupted=True)
+check("a turn's end (even interrupted) ends its background app", ended == ["s-x"], ended)
+del pa.end_session
+
 print("tools behind Hermes's Tool Search bridge")
 bridged = {"calls": [{"name": "web_search", "arguments": {"query": "trains"}}]}
 check("tool_call shows the tool underneath", plugin._tool_label("tool_call", bridged) == "Searching the web: trains"
