@@ -10,7 +10,7 @@ import { Row, Section, ToggleRow } from './ui'
 import { Spinner } from './Spinner'
 import {
   APPS, appInstalled, backupName, canUninstall, cleanupOk, nextApp, onCleanupDone, parseCleanup, phaseOf, settingsSnapshot,
-  startCleanup, uninstallApp, uninstallState, type AppId, type UninstallNative
+  resumeOnStart, startCleanup, uninstallApp, uninstallState, type AppId, type UninstallNative
 } from '../uninstall'
 
 export function UninstallSection() {
@@ -24,6 +24,12 @@ export function UninstallSection() {
       {open && <UninstallSheet onClose={() => setOpen(false)} />}
     </>
   )
+}
+
+/** Mounted at the app root: after a cleanup removed something, opening the app goes straight back to the sheet. */
+export function UninstallResume() {
+  const [open, setOpen] = useState(() => isNative && canUninstall() && resumeOnStart(uninstallState()))
+  return open ? <UninstallSheet onClose={() => setOpen(false)} /> : null
 }
 
 const get = (k: string) => {
@@ -242,7 +248,7 @@ function Apps({ n, s }: { n: NativeSetup | null; s: UninstallNative | null }) {
   const gone = APPS.filter(a => a.id !== 'self' && !appInstalled(n, a.id))
   return (
     <>
-      <div className="setup-help uninstall-note">Android asks before removing each app. Tap Uninstall, then OK on Android’s screen.</div>
+      <div className="setup-help uninstall-note">Android asks before removing each app. Tap Uninstall, then OK on Android’s screen. Removing Termux makes Android close this app: open Hermes Mobile again to finish.</div>
       <ul className="setup-list uninstall-apps">
         {APPS.map(a => {
           const there = appInstalled(n, a.id)
