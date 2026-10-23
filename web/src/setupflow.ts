@@ -21,6 +21,9 @@ export interface Progress {
   done: boolean
   /** The step named by the last FAIL line ('' = none). */
   fail: string
+  /** Epoch seconds of each line, same length as `lines` (the installer's own clock; app receive time if it sent none).
+   *  Absent from an older app build: no durations are shown then. */
+  times?: number[]
 }
 
 /** The pre-Hermes facts. probe null = this app build can't probe (older shell): those rows are skipped. */
@@ -62,7 +65,7 @@ export const INSTALL_STEPS: { id: string; label: string }[] = [
 ]
 
 export interface ProgressView {
-  steps: { id: string; label: string; state: 'ok' | 'run' | 'bad' | 'todo' }[]
+  steps: { id: string; label: string; state: 'ok' | 'run' | 'bad' | 'todo'; secs: number | null }[]
   /** The latest "phone: …" line: what the user has to do on the phone right now. */
   hint: string
   todo: string[]
@@ -70,10 +73,12 @@ export interface ProgressView {
   done: boolean
   /** The latest android: line (whether the child-process limit was lifted). */
   android: string
+  /** Seconds from the first STEP to now (running) or to DONE/FAIL; null when the lines carry no times. */
+  total: number | null
 }
 
 /** Turns the progress lines into the view: finished steps, the one running, the latest hint, TODO lines, FAIL/DONE. */
-export function progressView(lines: string[]): ProgressView {
+export function progressView(lines: string[], times?: number[], nowSec: number = Math.floor(Date.now() / 1000)): ProgressView {
   let cur = ''
   let fail = ''
   let hint = ''
@@ -81,7 +86,29 @@ export function progressView(lines: string[]): ProgressView {
   let done = false
   const seen: string[] = []
   const todo: string[] = []
-  for (const l of lines) {
+  // Time per step: a segment runs from its STEP line to the next STEP/FAIL/DONE line (or to now while it is the last).
+  // A step run again (pasted after a FAIL) adds its segments up.
+  const timed = Boolean(times && times.length === lines.length)
+  const spent: Record<string, number> = {}
+  let open: { id: string; at: number } | null = null
+  let first = -1
+  let last = -1
+  const close = (at: number) => {
+    if (open) spent[open.id] = (spent[open.id] ?? 0) + Math.max(0, at - open.at)
+    open = null
+    last = at
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]
+    const at = timed ? (times as number[])[i] : 0
+    if (timed && (l.startsWith('STEP ') || l.startsWith('FAIL ') || l === 'DONE')) {
+      close(at)
+      const sm = l.match(/^STEP ([a-z-]+)/)
+      if (sm) {
+        open = { id: sm[1], at }
+        if (first < 0) first = at
+      }
+    }
     let m: RegExpMatchArray | null
     if ((m = l.match(/^STEP ([a-z-]+)/))) {
       cur = m[1]
@@ -96,15 +123,21 @@ export function progressView(lines: string[]): ProgressView {
   const known = INSTALL_STEPS.map(s => s.id)
   const ids = [...known, ...seen.filter(id => !known.includes(id))]
   const at = ids.indexOf(cur)
+  const secsOf = (id: string): number | null => {
+    if (!timed || !(id in spent || open?.id === id)) return null
+    const o = open as { id: string; at: number } | null
+    return (spent[id] ?? 0) + (o && o.id === id ? Math.max(0, nowSec - o.at) : 0)
+  }
+  const total = timed && first >= 0 ? (open ? Math.max(0, nowSec - first) : Math.max(0, last - first)) : null
   const steps = ids
     .map(id => ({ id, label: INSTALL_STEPS.find(s => s.id === id)?.label ?? id }))
     .filter(s => known.includes(s.id) || seen.includes(s.id))
     .map(s => {
       const i = ids.indexOf(s.id)
       const state: 'ok' | 'run' | 'bad' | 'todo' = done ? 'ok' : s.id === fail ? 'bad' : i < at ? 'ok' : i === at ? (fail ? 'bad' : 'run') : 'todo'
-      return { ...s, state }
+      return { ...s, state, secs: secsOf(s.id) }
     })
-  return { steps, hint, todo, fail, done, android }
+  return { steps, hint, todo, fail, done, android, total }
 }
 
 /** ok: in place · bad: missing · wait: answer not here yet · skip: can't be known here (browser, Hermes offline) ·
