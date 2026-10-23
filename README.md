@@ -282,6 +282,42 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | Hermes can't read your files | Setup check → *Hermes can use your files* → Allow, then Restart Hermes |
 | Termux:API won't install | Termux and Termux:API come from different stores. Install both from F-Droid |
 
+### Uninstall
+
+In the app: **Settings → Danger zone → Uninstall Hermes**. It lists what goes, offers a backup, asks you to type `uninstall`, then
+removes Hermes with all chats, memory, skills, settings and keys, Debian, the installer's files and its phone setting (inside Termux, with
+`phone/uninstall.sh`). After that Android asks you to confirm each app: Termux:API, Termux:Boot, Shizuku, Termux, and Hermes Mobile last.
+
+**Backup** (on by default): `Download/hermes-backup-<date>.tar.gz` with Hermes's chats (`state.db`), memory, skills, cron jobs, canvas
+documents, config, profiles and this app's settings (`hermes-mobile-settings.json`); no program files, caches or logs. API keys (`.env`)
+and sign-ins (`auth.json`, `*token*.json`) are left out unless you switch on *Include API keys and sign-ins*: any app that may read your
+Downloads could read them. A key typed straight into `config.yaml` is not filtered. To restore on a new install, unpack it into Hermes's
+folder in Debian (`~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermes-backup-<date>.tar.gz -C /root/.hermes'`) and restart Hermes.
+
+Kept: files Hermes saved to your storage (Downloads, Pictures/Hermes). The phone setting needs Shizuku running; without it Android's
+child-process limit stays lifted, which is harmless (Android 14+: Developer options → *Disable child process restrictions* → off).
+
+<details>
+<summary><b>By hand, without the app</b></summary>
+
+In Termux: `curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/uninstall.sh -o un.sh && bash un.sh --backup`
+(leave out `--backup` to skip the backup; add `--keys` to include keys). It is safe to run again. What it does, step by step, if you'd
+rather type it yourself:
+
+1. Stop Hermes: `kill` the PIDs in `~/logs/*.pid` (the supervisor's loops) and the dashboard (`pkill -f 'hermes dashboard --host 127.0.0.1 --port 9119'`).
+2. Optional backup: copy what you want out of Debian's `/root/.hermes` (proot: `$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root/.hermes`).
+3. With Shizuku running: `~/bin/rish -c 'device_config delete activity_manager max_phantom_processes; device_config set_sync_disabled_for_tests none; settings delete global settings_enable_monitor_phantom_procs'`
+   (the computer route did the same over `adb shell`).
+4. Remove Debian: `proot-distro remove debian` (rooted, chroot-distro: `chroot-distro kill debian && chroot-distro remove debian`; never
+   delete a chroot's folder by hand, it can still have the phone's storage mounted inside).
+5. Remove the installer's files: `rm -rf ~/.hermes-mobile ~/bin/hermes-services ~/bin/hermes-debian ~/bin/rish ~/bin/rish_shizuku.dex
+   ~/.termux/boot/10-hermes ~/hermes-mobile ~/hermes-mobile.apk ~/hm.sh`, and the `allow-external-apps = true` line in
+   `~/.termux/termux.properties`.
+6. Uninstall the apps in Android's settings: Termux:API, Termux:Boot, Shizuku, Termux, Hermes Mobile. Uninstalling Termux alone also
+   deletes steps 1-5 (except the phone setting of step 3) with it; on a rooted phone using chroot-distro, restart the phone first.
+
+</details>
+
 <details>
 <summary><b>Everything it does, and how it works</b></summary>
 
