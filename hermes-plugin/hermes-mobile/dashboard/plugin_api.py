@@ -493,11 +493,16 @@ def phone_access_now() -> dict:
     api = False
     cmd = shutil.which("termux-battery-status") or "/usr/local/bin/termux-battery-status"
     if Path(cmd).exists():
-        try:
-            out = subprocess.run([cmd], capture_output=True, text=True, timeout=10).stdout
-            api = "percentage" in out
-        except Exception:
-            pass
+        # The Termux:API app may be asleep (frozen in the background) and miss the first call: one retry, so the
+        # Setup check doesn't flash "Hermes can't reach it" for one round.
+        for _ in range(2):
+            try:
+                out = subprocess.run([cmd], capture_output=True, text=True, timeout=10).stdout
+                api = "percentage" in out
+            except Exception:
+                api = False
+            if api:
+                break
     shizuku = "missing"
     if _RISH.exists():
         try:
