@@ -885,8 +885,10 @@ public class MainActivity extends Activity {
         String hermes = profile.isEmpty() || profile.equals("default") ? "hermes" : "hermes -p " + profile;
         String script = "clear; echo 'Signing in to " + provider + " for Hermes.'; "
                 + "echo 'To open the link: long-press it, More, Select URL. Then paste the code back here.'; echo; "
-                + DEBIAN + " bash -lc '" + hermes + " auth add " + provider + "'; "
-                + "echo; echo 'Finished. Go back to Hermes Mobile: it shows whether the sign-in worked.'; read -r -p 'Press Enter to close. ' _";
+                + "if " + DEBIAN + " bash -lc '" + hermes + " auth add " + provider + "'; "
+                + "then echo; echo 'Signed in. Go back to Hermes Mobile: it shows the login under Subscriptions & accounts.'; "
+                + "else echo; echo 'The sign-in did not finish (see the message above). Go back to Hermes Mobile and try again.'; fi; "
+                + "read -r -p 'Press Enter to close. ' _";
         try {
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");

@@ -57,6 +57,7 @@ jobs:
       - run: python3 tools/test_auto_mode.py
       - run: python3 tools/test_openui.py
       - run: python3 tools/test_openui_query.py
+      - run: python3 tools/test_claude_login.py
 
   hermes-patches:
     name: Hermes patches apply to the pinned Hermes

@@ -227,8 +227,8 @@ To re-run, type `bash hm.sh` + Enter. It skips what is done.
 Ask the user how they want to pay for the model:
 
 - **A subscription** (ChatGPT Plus / Pro or Codex, Claude Pro / Max, SuperGrok / X Premium+, Nous Portal): skip this step. When the
-  app first opens it shows **Connect Hermes to a model**, where the user signs in themselves (ChatGPT, Grok and Nous in the app;
-  Claude opens Termux with Hermes's own `hermes auth add anthropic`). Never handle their account login yourself.
+  app first opens it shows **Connect Hermes to a model**, where the user signs in themselves (ChatGPT, Claude, Grok and Nous in
+  the app; Claude can also use Termux with Hermes's own `hermes auth add anthropic`). Never handle their account login yourself.
 - **An API key:** ask which provider and for the key. Easy default: **OpenRouter** (one key, every model,
   https://openrouter.ai/keys). Others: `anthropic` (`ANTHROPIC_API_KEY`), `openai` (`OPENAI_API_KEY`), `gemini`
   (`GEMINI_API_KEY`, has a free tier), `deepseek` (`DEEPSEEK_API_KEY`). Ask the user which model they want; ids are the

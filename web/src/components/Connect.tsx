@@ -3,8 +3,8 @@
 //
 // Sign-ins use the dashboard's own /api/providers/oauth routes (the ones Hermes's web dashboard uses):
 // device-code providers (ChatGPT/Codex, Nous Portal, xAI Grok, MiniMax) run entirely in the app. Hermes
-// deliberately has no in-dashboard login for a Claude subscription, only `hermes auth add anthropic` in a
-// terminal, so for those "external" providers the app opens Termux on that command.
+// has no in-dashboard login for a Claude subscription, only `hermes auth add anthropic` in a terminal: the app
+// runs that login in its own sheet through the plugin, with Termux as the fallback (SignIn.tsx).
 import { useEffect, useRef, useState } from 'react'
 import { api, qs } from '../api'
 import { copyText, haptic, openExternal, signInTermux } from '../bridge'
@@ -14,6 +14,7 @@ import { Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
 import { Row, Section } from './ui'
 import { Spinner } from './Spinner'
+import { ClaudeSignInSheet, afterSignIn, loadPool, withPoolStatus } from './SignIn'
 
 interface OAuthStatus {
   logged_in?: boolean
@@ -45,7 +46,7 @@ interface Poll {
 /** What each sign-in is, in words a phone user knows. Unknown providers just show their name. */
 const BLURB: Record<string, string> = {
   'openai-codex': 'ChatGPT Plus / Pro or a Codex plan',
-  anthropic: 'Claude Pro / Max · signs in from Termux',
+  anthropic: 'Claude Pro / Max',
   nous: 'Nous Portal account',
   'xai-oauth': 'SuperGrok or X Premium+',
   'minimax-oauth': 'MiniMax account'
@@ -66,8 +67,8 @@ const termuxCommand = (p: OAuthProvider) => p.flow === 'external' && IN_TERMUX.h
 const usable = (p: OAuthProvider) => p.flow === 'device_code' || termuxCommand(p)
 
 export const loadAccounts = (profile: string) =>
-  api<{ providers: OAuthProvider[] }>('GET', `/api/providers/oauth?${qs({ profile })}`, undefined, { profile: false }).then(r =>
-    (r.providers || [])
+  Promise.all([api<{ providers: OAuthProvider[] }>('GET', `/api/providers/oauth?${qs({ profile })}`, undefined, { profile: false }), loadPool(profile)]).then(([r, pool]) =>
+    withPoolStatus(r.providers || [], pool)
       // Logins that need another CLI (Copilot, Claude Code's setup-token) can't run on the phone: only show them when already signed in.
       .filter(p => usable(p) || p.status?.logged_in)
       .sort((a, b) => (ORDER.indexOf(a.id) + 1 || 99) - (ORDER.indexOf(b.id) + 1 || 99))
@@ -77,19 +78,32 @@ export const loadAccounts = (profile: string) =>
 export function AccountsList({ profile, onChange, title }: { profile: string; onChange?: () => void; title?: string }) {
   const { data, error, loading, reload } = useLoader(() => loadAccounts(profile), [profile])
   const [device, setDevice] = useState<OAuthProvider | null>(null)
-  const waitingTermux = useRef(false)
+  const [claude, setClaude] = useState<OAuthProvider | null>(null)
+  const waitingTermux = useRef<OAuthProvider | null>(null)
 
-  // Back from Termux: see whether the login landed.
+  // Back from Termux: see whether the login landed, and say so.
   useEffect(() => {
     const on = () => {
-      if (document.visibilityState !== 'visible' || !waitingTermux.current) return
-      waitingTermux.current = false
-      reload()
-      onChange?.()
+      const p = waitingTermux.current
+      if (document.visibilityState !== 'visible' || !p) return
+      waitingTermux.current = null
+      const name = NAME[p.id] || p.name
+      void loadAccounts(profile)
+        .then(list => {
+          if (list.find(x => x.id === p.id)?.status?.logged_in) {
+            toast(`Signed in to ${name}`)
+            afterSignIn()
+          } else toast(`${name} is not signed in. If Termux showed an error, try again.`, 'error', 6000)
+        })
+        .catch(() => {})
+        .finally(() => {
+          reload()
+          onChange?.()
+        })
     }
     document.addEventListener('visibilitychange', on)
     return () => document.removeEventListener('visibilitychange', on)
-  }, [reload, onChange])
+  }, [reload, onChange, profile])
 
   const changed = () => {
     reload()
@@ -100,8 +114,13 @@ export function AccountsList({ profile, onChange, title }: { profile: string; on
   const signIn = (p: OAuthProvider) => {
     haptic()
     if (p.flow === 'device_code') return setDevice(p)
+    if (p.id === 'anthropic') return setClaude(p)
+    termux(p)
+  }
+
+  const termux = (p: OAuthProvider) => {
     if (signInTermux(p.id, profile)) {
-      waitingTermux.current = true
+      waitingTermux.current = p
       toast('Follow the steps in Termux, then come back here')
       return
     }
@@ -162,6 +181,23 @@ export function AccountsList({ profile, onChange, title }: { profile: string; on
           onDone={() => {
             setDevice(null)
             changed()
+          }}
+        />
+      )}
+      {claude && (
+        <ClaudeSignInSheet
+          profile={profile}
+          onClose={() => setClaude(null)}
+          onTermux={() => {
+            const p = claude
+            setClaude(null)
+            termux(p)
+          }}
+          onDone={() => {
+            setClaude(null)
+            reload()
+            onChange?.()
+            afterSignIn()
           }}
         />
       )}
