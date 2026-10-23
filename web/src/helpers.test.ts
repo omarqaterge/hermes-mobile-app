@@ -16,6 +16,13 @@ test('speakable drops code, links, symbols', () => {
   expect(s).not.toMatch(/[#`✅\[\]]|https?:/)
 })
 
+test('speakable says a card is shown instead of reading openui-lang', () => {
+  const s = speakable('Hi\n```openui-lang\nroot = Card([])\n```')
+  expect(s).toContain('card shown in the app')
+  expect(s).not.toContain('code omitted')
+  expect(speakable('Hi\n```openui-lang\nroot = Card([')).not.toContain('Card')
+})
+
 describe('lineDiff', () => {
   test('changed line with context', () => {
     expect(lineDiff('a\nb\nc', 'a\nB\nc')).toBe(' a\n-b\n+B\n c')

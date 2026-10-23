@@ -42,6 +42,7 @@ let providerConfigured = true // false = a fresh install (the welcome opens)
 // none is (its loose probe); setup.runtime_check still says ok: false.
 let looseStatus = false
 let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps (Settings → Background apps)
+let openui = { enabled: true } // the plugin's /openui (Settings → Replies)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
 let codexPolls = 0
 
@@ -77,6 +78,7 @@ const server = http.createServer((req, res) => {
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
+      if (b.openui) openui = { ...openui, ...b.openui }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bump) allSessions.find(x => x.id === b.bump).message_count += 2
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
@@ -116,6 +118,10 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/bgapps') {
       if (req.method === 'PUT') bgapps.allow_sensitive = !!JSON.parse(body || '{}').allow_sensitive
       return send(bgapps)
+    }
+    if (p === '/api/plugins/hermes-mobile/openui') {
+      if (req.method === 'PUT') openui.enabled = JSON.parse(body || '{}').enabled !== false
+      return send(openui)
     }
     if (p === '/api/plugins/hermes-mobile/phone-access') return send(phoneAccess)
     if (p === '/api/hermes/update/check') return send({ install_method: 'git', current_version: '0.21.5+4582.gb8a8be1', behind: 12, update_available: true, can_apply: true, message: null })
@@ -436,6 +442,40 @@ wss.on('connection', ws => {
           later(100, () => event('tool.complete', sid, { tool_id: 'call_url', name: 'web_extract', duration_s: 0.2, result_text: 'fetched https://example.com/a.' }))
           later(150, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Read `https://example.com/c` and:\n\n```\nhttps://example.com/d\n```' }))
+          return
+        }
+        // OpenUI cards (```openui-lang). Keep OUI identical to CODE in web/src/openui-entry.test.tsx.
+        const OUI = [
+          'root = Card([head, intro, plans, form, more])',
+          'head = CardHeader("Pick a plan", "Two options")',
+          'intro = TextContent("Both include **support**.")',
+          'plans = Buttons([a, b], "row")',
+          'a = Button("Option A", @ToAssistant("Pick A"), "primary")',
+          'b = Button("Option B", @ToAssistant("Pick B"), "secondary")',
+          'form = Form("contact", formBtns, [nameField])',
+          'nameField = FormControl("Name", Input("name", "Your name", "text", {required: true}))',
+          'formBtns = Buttons([send])',
+          'send = Button("Send", @ToAssistant("Here are my details"), "primary")',
+          'more = FollowUpBlock([f1])',
+          'f1 = FollowUpItem("Compare both")'
+        ].join('\n')
+        if (/^show ui$/.test(params.text)) {
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: 'Here are the plans:\n\n```openui-lang\n' + OUI + '\n```\n\nPick one.' }))
+          return
+        }
+        if (/^show ui streaming$/.test(params.text)) {
+          const full = 'Streaming plans:\n\n```openui-lang\n' + OUI + '\n```\n'
+          const chunks = full.match(/[\s\S]{1,12}/g)
+          let t = 100
+          event('message.start', sid, {})
+          for (const c of chunks) later((t += 20), () => event('message.delta', sid, { text: c }))
+          later(t + 300, () => event('message.complete', sid, { text: full }))
+          return
+        }
+        if (/^show broken ui$/.test(params.text)) {
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: 'Oops:\n\n```openui-lang\nthis is not openui at all\n```' }))
           return
         }
         if (/^show diagram$/.test(params.text)) {

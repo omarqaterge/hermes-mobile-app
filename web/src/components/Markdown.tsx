@@ -17,6 +17,8 @@ import { toast } from '../store'
 import { createDoc } from '../canvas'
 import { useBackHandler } from '../backstack'
 import { hashText, setTask, subscribeTasks, useTask } from '../tasks'
+import { runLazy } from '../lazy'
+import { OpenUIBlock, OpenUICtx } from './OpenUIBlock'
 
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -37,21 +39,7 @@ let mermaidReady: Promise<MermaidApi> | null = null
 function getMermaid() {
   mermaidReady ||= import.meta.env.DEV
     ? import('mermaid').then(m => m.default)
-    : new Promise<MermaidApi>((resolve, reject) => {
-        // The built page carries Mermaid as inert text (vite.config.ts lazyMermaid): run it now, once.
-        const src = document.getElementById('hm-mermaid')?.textContent
-        if (!src) return reject(new Error('Mermaid is not bundled'))
-        setTimeout(() => {
-          try {
-            new Function(src)()
-            const m = (window as unknown as { __hmMermaid?: MermaidApi }).__hmMermaid
-            if (m) resolve(m)
-            else reject(new Error('Mermaid did not load'))
-          } catch (e) {
-            reject(e)
-          }
-        })
-      })
+    : runLazy<MermaidApi>('hm-mermaid', '__hmMermaid') // the built page carries Mermaid as inert text (lazy.ts)
   mermaidReady.catch(() => (mermaidReady = null))
   return mermaidReady
 }
@@ -153,6 +141,20 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const [wrap, setWrap] = useState(false)
   const lang = langOf(children)
   if (lang === 'mermaid') return <Mermaid code={textOf(children)} />
+  if (lang === 'openui-lang' || lang === 'openui') {
+    const src = textOf(children)
+    return (
+      <OpenUIBlock
+        code={src}
+        fallback={
+          <div className="codeblock">
+            <div className="codeblock-bar"><span>openui-lang (not shown)</span></div>
+            <pre>{src}</pre>
+          </div>
+        }
+      />
+    )
+  }
   const code = textOf(children)
   const isDiff = lang === 'diff' || lang === 'patch' || (!lang && looksLikeDiff(code))
   const lines = code.split('\n').length
@@ -497,7 +499,9 @@ const REHYPE_LIVE = rehypeFor(false)
 // Keep local paths (react-markdown would otherwise strip unknown schemes but leaves /paths alone).
 const urlTransform = (url: string) => (isLocal(url) || CHAT_HREF.test(url) ? url : defaultUrlTransform(url))
 
-export const Markdown = memo(function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+// interactive: card buttons may send (chat replies only; canvas, files and /btw just show cards).
+export const Markdown = memo(function Markdown({ text, streaming = false, interactive = false }: { text: string; streaming?: boolean; interactive?: boolean }) {
+  const ui = useMemo(() => ({ streaming, interactive }), [streaming, interactive])
   const seed = useRef('')
   seed.current = useMemo(() => hashText(text), [text])
   const nextBox = useRef(0)
@@ -506,12 +510,13 @@ export const Markdown = memo(function Markdown({ text, streaming = false }: { te
   // block, table and diagram on each streamed update (losing "Show all", Wrap, a drawn diagram…).
   const components = useMemo<Components>(() => mdComponents(seed, nextBox), [])
   return (
+    <OpenUICtx.Provider value={ui}>
     <div
       className="md"
       onClick={e => {
         // Tap inline code or a formula to copy it (a selection in progress is left alone).
         const t = e.target as HTMLElement
-        if (t.closest('a, button, summary') || window.getSelection()?.toString()) return
+        if (t.closest('a, button, summary, .hm-openui') || window.getSelection()?.toString()) return
         const code = t.closest('code')
         if (code && !code.closest('pre')) {
           void copyText(code.textContent || '')
@@ -539,6 +544,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false }: { te
         {prepare(chatLinks(text))}
       </ReactMarkdown>
     </div>
+    </OpenUICtx.Provider>
   )
 })
 
