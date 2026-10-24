@@ -39,6 +39,8 @@ import java.security.SecureRandom;
 public class HermesService extends Service {
     static final int PORT = 9121;
     static final int STATUS_ID = 1;
+    static final int SHIZUKU_ID = 9;
+    static final String CH_PHONE = "phone", SHIZUKU_PKG = "moe.shizuku.privileged.api";
     static final String CH_STATUS = "status", CH_IDLE = "idle", CH_ALERT = "needs_you", CH_REPLY = "replies",
             CH_LEARN = "learning2", CH_JOBS = "jobs2"; // v2 ids: the first ones badged the icon and a channel's badge flag can't change
 
@@ -226,6 +228,59 @@ public class HermesService extends Service {
         instance = this;
         new Thread(this::serve, "hermes-events").start();
         rearmWake();
+        main.postDelayed(shizukuCheck, 90_000); // once: after a reboot Shizuku doesn't start by itself, so no binder ever arrives
+    }
+
+    private final Runnable shizukuCheck = () -> {
+        if (shouldWarn(shizukuInstalled(this), ShizukuProvider.running(), setup(this).installing()))
+            shizukuNotice(this, "Shizuku isn\u2019t running");
+    };
+
+    /** Warn when Shizuku is installed but not running, and the first-run installer is not busy. */
+    static boolean shouldWarn(boolean installed, boolean running, boolean installing) {
+        return installed && !running && !installing;
+    }
+
+    static boolean shizukuInstalled(Context ctx) {
+        try {
+            ctx.getPackageManager().getPackageInfo(SHIZUKU_PKG, 0);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Shizuku's binder died (called from ShizukuProvider, any thread). */
+    static void shizukuDown(Context ctx) {
+        Context app = ctx.getApplicationContext();
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (shouldWarn(shizukuInstalled(app), false, false)) shizukuNotice(app, "Shizuku stopped");
+        });
+    }
+
+    /** Shizuku runs (again): the notice goes away. */
+    static void shizukuUp(Context ctx) {
+        Context app = ctx.getApplicationContext();
+        new Handler(Looper.getMainLooper()).post(() -> app.getSystemService(NotificationManager.class).cancel(SHIZUKU_ID));
+    }
+
+    static void shizukuNotice(Context ctx, String title) {
+        try {
+            createChannels(ctx);
+            Intent open = ctx.getPackageManager().getLaunchIntentForPackage(SHIZUKU_PKG);
+            if (open == null) open = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+            Notification.Builder b = new Notification.Builder(ctx, CH_PHONE)
+                    .setSmallIcon(R.drawable.ic_stat_hermes)
+                    .setContentTitle(title)
+                    .setContentText("Hermes can\u2019t see or use the screen until you start Shizuku again.")
+                    .setOnlyAlertOnce(true)
+                    .setAutoCancel(true);
+            if (open != null)
+                b.setContentIntent(PendingIntent.getActivity(ctx, SHIZUKU_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+            ctx.getSystemService(NotificationManager.class).notify(SHIZUKU_ID, b.build());
+        } catch (Exception ignored) {
+            // notifications not allowed: nothing to do
+        }
     }
 
     @Override
@@ -362,6 +417,7 @@ public class HermesService extends Service {
     public void onDestroy() {
         running = false;
         instance = null;
+        main.removeCallbacks(shizukuCheck);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         try {
@@ -1477,7 +1533,10 @@ public class HermesService extends Service {
         NotificationChannel playback = new NotificationChannel(TtsMedia.CH_PLAYBACK, "Reading aloud", NotificationManager.IMPORTANCE_LOW);
         playback.setDescription("Pause, skip or stop a reply being read aloud");
         playback.setShowBadge(false);
-        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback}) nm.createNotificationChannel(c);
+        NotificationChannel phone = new NotificationChannel(CH_PHONE, "Phone access", NotificationManager.IMPORTANCE_DEFAULT);
+        phone.setDescription("Shizuku stopped or not running");
+        phone.setShowBadge(false);
+        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback, phone}) nm.createNotificationChannel(c);
         nm.deleteNotificationChannel("hermes"); // v0.1 channel, replaced by the ones above
         nm.deleteNotificationChannel("learning"); // replaced by learning2/jobs2, which don't badge the icon
         nm.deleteNotificationChannel("jobs");
