@@ -31,12 +31,17 @@ export interface Doc extends DocMeta {
   versions?: Version[]
 }
 
+/** How the open canvas shows: `side` = a panel from the right (on phones it covers the chat; on wide screens a column
+ * beside it), `max` = the whole screen. */
+export type CanvasSize = 'side' | 'max'
+
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'conflict' | 'error'
 
 interface CanvasState {
   session: string // stored chat id the docs belong to ('' = no chat yet)
   open: boolean
-  size: 'half' | 'full' | 'max'
+  /** side = the panel (a column beside the chat on wide screens), max = fills the whole screen */
+  size: CanvasSize
   docs: DocMeta[]
   active: string | null
   loaded: Record<string, Doc> // full documents we have fetched
@@ -53,7 +58,7 @@ interface CanvasState {
 }
 
 const P = '/api/plugins/hermes-mobile/canvas'
-let state: CanvasState = { session: '', open: false, size: 'half', docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null, loading: false }
+let state: CanvasState = { session: '', open: false, size: 'side', docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null, loading: false }
 const subs = new Set<() => void>()
 const set = (p: Partial<CanvasState>) => {
   state = { ...state, ...p }
@@ -148,7 +153,7 @@ export async function loadDoc(id: string, force = false): Promise<Doc | null> {
 
 // ── panel ────────────────────────────────────────────────────
 
-export function openCanvas(id?: string, size?: 'half' | 'full' | 'max'): void {
+export function openCanvas(id?: string, size?: CanvasSize): void {
   syncSession()
   if (!state.session) return
   set({ open: true, size: size ?? state.size, active: id ?? state.active ?? state.docs[0]?.id ?? null })
@@ -158,7 +163,7 @@ export const closeCanvas = (): void => {
   void flushSave()
   set({ open: false })
 }
-export const setCanvasSize = (size: 'half' | 'full' | 'max'): void => set({ size })
+export const setCanvasSize = (size: CanvasSize): void => set({ size })
 export function selectDoc(id: string): void {
   void flushSave()
   set({ active: id, remote: null })

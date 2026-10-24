@@ -9,6 +9,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Shizuku is now a required setup step (no more Skip).** The step says Hermes needs it; a "Shizuku is running: continue" button is only for a Shizuku that was started before the app opened, and Setup check still verifies it afterwards. On Android 10 and older the step explains how to start Shizuku from a computer and links Shizuku's guide. (Web-tested; not yet tried on a real phone.)
 - Hermes Mobile tells you when Shizuku stops, and the notice goes away once Shizuku runs again (not yet tried on a real phone).
 - **Pull up past the last message to open a side question (/btw) about the chat.** The list stretches like a rubber band; about 110 px of pull shows “Release for a side question”. A lighter pull springs back. (Browser-tested; not yet tried on a real phone.)
+- **The canvas opens as a panel from the right:** tap the canvas button or swipe left on the chat; swipe right on its top bar, tap ✕ or press Back to close it. Fill-the-screen stays; wide screens keep it beside the chat. (Browser-tested; not yet tried on a real phone.)
 
 ## v0.8.57 (2026-10-24)
 

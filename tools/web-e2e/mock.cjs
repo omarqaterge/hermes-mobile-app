@@ -29,6 +29,8 @@ const libraryItems = [] // the Library (plugin library.py), newest first
 libraryItems.push({ id: 'lib-old', title: 'Old notes', type: 'markdown', lang: '', category: 'Unsorted', saved: Math.floor(Date.now() / 1000) - 86400, chars: 16, content: 'Kept from before', source: null })
 // The chat whose start-up resume is slow already has a canvas (opening it while the chat loads must show it).
 canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Life\n\nGlider' }]
+// A chat with a canvas and things that scroll sideways (code, table, card): the swipe-left-to-canvas checks.
+canvasDocs['s-panel'] = [{ id: 'dside', title: 'Side', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Side\n\nPanel text' }]
 let activityItems = []
 let refuseUntil = 0
 let runtimeGen = 0
@@ -439,6 +441,12 @@ wss.on('connection', ws => {
           return reply({ session_id: 'rt-stale', stored_session_id: sid, info: { title: 'Stale edit chat', model: 'mock-model' }, messages: [
             { role: 'user', text: 'stale first question', row_id: 999 }, { role: 'assistant', text: 'stale first answer' },
             { role: 'user', text: 'stale second question', row_id: 1000 }, { role: 'assistant', text: 'stale second answer' }] })
+        }
+        if (sid === 's-panel') {
+          const card = ['root = Card([head, intro])', 'head = CardHeader("Swipe card")', 'intro = TextContent("Inside a card.")'].join('\n')
+          return reply({ session_id: 'rt-panel', stored_session_id: sid, info: { title: 'Panel chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'show me things', row_id: 1 },
+            { role: 'assistant', text: 'Plain words to swipe on.\n\n```js\nconst a = 1\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```openui-lang\n' + card + '\n```\n\nMore plain words.' }] })
         }
         if (sid === 's-slowstart') {
           // Slow start-up resume: the user starts a new chat while this is loading.
