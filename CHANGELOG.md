@@ -4,6 +4,8 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- Hermes Mobile tells you when Shizuku stops, and the notice goes away once Shizuku runs again (not yet tried on a real phone).
+
 ## v0.8.57 (2026-10-24)
 
 Tested on one phone (Android 16) and Android 15 emulators; not yet on other phone makers. The installer fix for an interrupted install was not re-run on an emulator.
