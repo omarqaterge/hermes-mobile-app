@@ -1,0 +1,5 @@
+name: antigravity-provider
+kind: model-provider
+version: 1.0.0
+description: Google Antigravity model provider profile for Hermes Agent
+author: mrhisyammm

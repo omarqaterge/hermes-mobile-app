@@ -2,6 +2,8 @@
 
 - `web/vendor/hermes-shared/`: client code copied from NousResearch/hermes-agent (`apps/shared`), pinned in `.hermes-commit`.
   Licensed MIT, Copyright (c) Nous Research. Source: https://github.com/NousResearch/hermes-agent
+- `hermes-plugin-extras/antigravity/`: Hermes plugins from https://github.com/mrhisyammm/hermes-antigravity-auth (MIT, Copyright (c) 2026
+  mrhisyammm; licence in that folder), with a small login change. Optional, see its README.
 - `web/vendor/desktop-slash-registry.json`: derived from Hermes Desktop's slash command registry (same project, MIT).
 - OpenUI (`@openuidev/react-lang`, `@openuidev/lang-core`, `@openuidev/react-ui`, `@openuidev/react-headless`), which draws the
   cards in replies: MIT, Copyright (c) Thesys Inc. Source: https://github.com/thesysdev/openui. It and the parts it uses of

@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Optional: Gemini models through an Antigravity login.** `phone/antigravity.sh` installs the Antigravity login proxy and an `antigravity` model provider into Hermes; log in once with `hermes antigravity login` (the Google link is printed and opened through Termux:API) and pick a `gemini-*` model. Off by default, and against Google's terms (accounts have been banned): see `hermes-plugin-extras/antigravity/README.md`. (Re-run on a phone that already had it and a Gemini answer came back; a first login on a fresh phone is not tested yet.)
 - **No more Termux error popups during setup.** Before the installer had run, every return to the app made Termux show "RunCommandService requires allow-external-apps". The app no longer sends Termux anything until Termux has accepted a command once (installer finished, or Hermes answering). Reinstalled the app on a phone that already has Hermes? **Hermes already installed? Check** on the installer step finds it and setup moves on.
 - **Running the installer again after it was interrupted works.** If Termux was killed or the phone restarted while Hermes was being installed, the next run stopped at once ("exists and is not a Hermes git checkout"). The installer now moves the half-installed folder aside and installs fresh.
 ## v0.8.56 (2026-10-24)
