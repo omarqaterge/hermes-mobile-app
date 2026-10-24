@@ -784,7 +784,14 @@ async function yoloRpc(a: ActiveSession, on: boolean): Promise<boolean> {
 
 /** Switch a chat's access. Ordered so the chat is never in Full access by accident: Auto writes the plugin's
  *  block list BEFORE /yolo goes on, and leaving Auto turns /yolo off (or keeps it for Full) before the entry goes. */
-export async function setAccess(a: ActiveSession, mode: Access, remember = true): Promise<Access> {
+export function setAccess(a: ActiveSession, mode: Access, remember = true): Promise<Access> {
+  // One at a time: a chat that starts in the default mode is still being switched when its Auto button is tapped.
+  const run = accessQueue.catch(() => {}).then(() => setAccessNow(a, mode, remember))
+  accessQueue = run
+  return run
+}
+let accessQueue: Promise<unknown> = Promise.resolve()
+async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean): Promise<Access> {
   let on: boolean
   if (mode === 'auto') {
     try {

@@ -24,7 +24,8 @@ const DONE: Record<Access, string> = {
 
 /** The header's Auto button: how much this chat may do without asking (off / Auto access / Full access). */
 export function AutoButton() {
-  const mode = useStore(s => accessOf(s.active))
+  // On the empty screen no chat exists yet: it shows the mode the chat will start in (Settings → Auto for all chats).
+  const mode = useStore(s => (s.active ? accessOf(s.active) : s.opening ? 'off' : defaultAccess()))
   const offline = useStore(s => s.conn !== 'open')
   const [open, setOpen] = useState(false)
 
