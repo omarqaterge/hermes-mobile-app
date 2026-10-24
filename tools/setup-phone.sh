@@ -118,6 +118,7 @@ adb shell svc power stayon true
 adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard >/dev/null 2>&1 || true  # a PIN/pattern still needs the user
 adb shell cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow || true
 adb shell dumpsys deviceidle whitelist +com.termux >/dev/null || true
+adb shell dumpsys deviceidle whitelist +moe.shizuku.privileged.api >/dev/null || true  # Android may stop Shizuku in the background otherwise (Shizuku is installed above)
 # Files for Hermes (/sdcard), so the installer doesn't stop at Android's prompt.
 adb shell pm grant com.termux android.permission.READ_EXTERNAL_STORAGE 2>/dev/null || true
 adb shell pm grant com.termux android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null || true

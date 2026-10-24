@@ -51,12 +51,15 @@ Install only Hermes Mobile; the app walks you through the rest and picks up wher
    F-Droid) and Shizuku (from GitHub). Each app row links to its official page (F-Droid or Shizuku's releases) if you prefer to
    install it yourself; the Termux apps must all come from F-Droid. The app checks that each one comes from its maker before
    installing it.
-3. **Start Shizuku** (recommended, you can skip it and do it later): it keeps Android from stopping the long install ("signal 9")
-   and lets Hermes use the screen. Turn on Developer options (Settings → About phone → tap *Build number* 7 times; on some phones
+3. **Start Shizuku** (needed, there is no skip): it keeps Android from stopping the long install ("signal 9")
+   and gives Hermes the screen, taps and apps. Turn on Developer options (Settings → About phone → tap *Build number* 7 times; on some phones
    it is under *Software information* or called *OS version*), connect to Wi-Fi, which Wireless debugging needs (Shizuku uses
    Android's own wireless debugging to start itself without a computer or root; it is local only), then open Shizuku, tap
    *Pairing* and follow its steps (Developer options → Wireless debugging → *Pair device with pairing code*, then type the code
-   into Shizuku's notification), and tap *Start*. Rooted: just tap *Start* in Shizuku.
+   into Shizuku's notification), and tap *Start*. Rooted: just tap *Start* in Shizuku. On Android 10 and older there is no
+   Wireless debugging: Shizuku is started from a computer (run the Hermes Mobile setup script, or follow
+   [Shizuku's guide](https://shizuku.rikka.app/guide/setup/)). If Shizuku was already running before you opened the app, tap
+   *Shizuku is running: continue*; Setup check still verifies it after the install.
 4. Allow Hermes Mobile to *run commands in Termux* when Android asks.
 5. **Run the installer:** tap **Copy the command**, then **Open Termux**. In Termux, long-press, tap **Paste**, then press Enter.
    Stay in Termux and tap **Allow** on what it asks (notifications, running in the background, files; Shizuku: **Allow all the
@@ -156,7 +159,8 @@ over is not automatic.
 ## After installing
 
 - Set **battery to Unrestricted** for *Hermes Mobile*, *Termux* and *Shizuku* (Xiaomi/HyperOS: also turn on *Autostart*), or
-  Android may stop them.
+  Android may stop them. The computer setup script and the installer already take Shizuku off the battery limits; Setup check
+  has a step for it if that did not work (Shizuku's app info → Battery).
 - Keep the Termux notification: Hermes runs inside Termux.
 - To update, run the same command again and install the newest APK.
 

@@ -99,7 +99,7 @@ free tier). It takes 15-40 minutes, mostly waiting.
 1. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest),
    install it and open it.
 2. Tap **Install all** to get Termux, Termux:API, Termux:Boot (from F-Droid) and Shizuku.
-3. Start Shizuku with Wireless debugging (recommended; the app shows how).
+3. Start Shizuku with Wireless debugging (needed: it gives Hermes the screen and apps; the app shows how).
 4. Tap **Copy the command**, then **Open Termux**, paste it and press Enter. Allow what Termux asks and keep the screen on.
 5. Back in the app, sign in with your subscription or paste an API key.
 

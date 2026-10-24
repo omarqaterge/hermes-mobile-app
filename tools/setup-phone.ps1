@@ -111,6 +111,7 @@ Sh 'svc power stayon true' | Out-Null
 Sh 'input keyevent KEYCODE_WAKEUP' | Out-Null; Sh 'wm dismiss-keyguard' | Out-Null   # a PIN/pattern still needs the user
 Sh 'cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow' | Out-Null
 Sh 'dumpsys deviceidle whitelist +com.termux' | Out-Null
+Sh 'dumpsys deviceidle whitelist +moe.shizuku.privileged.api' | Out-Null   # Android may stop Shizuku in the background otherwise (installed above)
 # Files for Hermes (/sdcard), so the installer doesn't stop at Android's prompt.
 Sh 'pm grant com.termux android.permission.READ_EXTERNAL_STORAGE' | Out-Null
 Sh 'pm grant com.termux android.permission.WRITE_EXTERNAL_STORAGE' | Out-Null

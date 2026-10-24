@@ -131,9 +131,11 @@ Check what is there: `adb shell pm list packages | grep -E 'com.termux|moe.shizu
 adb shell svc power stayon true
 adb shell cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow
 adb shell dumpsys deviceidle whitelist +com.termux
+adb shell dumpsys deviceidle whitelist +moe.shizuku.privileged.api
 ```
 
-Keeps the screen on during the install (undone in step 9) and stops Android from killing Termux in the background.
+Keeps the screen on during the install (undone in step 9) and stops Android from killing Termux and Shizuku in the background
+(Shizuku is needed: if Android stops it, Hermes loses the screen).
 
 Give Termux the files permission (Hermes reads and saves files through it), start Shizuku the way its own *Start by connecting
 to a computer* does, and let Shizuku restart itself after a reboot (Android 13+, once the user starts it via Wireless debugging):
