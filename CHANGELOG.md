@@ -7,6 +7,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **The status sheet shows whether Shizuku is running and Hermes can use it.** Tap the dot under the chat title: a Shizuku row says Running, Not running, Not installed or what to fix, and tapping it opens Shizuku or the Setup check. (Browser-tested; not yet tried on a real phone.)
 - **Setup check has a step to let Shizuku run in the background, and the computer install sets it for you.** Without it Android can stop Shizuku and Hermes loses the screen. The phone installer also does it through Shizuku. (Web-tested and shell-script syntax-checked; not yet tried on a real phone.)
 - **Shizuku is now a required setup step (no more Skip).** The step says Hermes needs it; a "Shizuku is running: continue" button is only for a Shizuku that was started before the app opened, and Setup check still verifies it afterwards. On Android 10 and older the step explains how to start Shizuku from a computer and links Shizuku's guide. (Web-tested; not yet tried on a real phone.)
+- Hermes Mobile tells you when Shizuku stops, and the notice goes away once Shizuku runs again (not yet tried on a real phone).
 
 ## v0.8.57 (2026-10-24)
 
