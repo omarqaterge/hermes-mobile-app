@@ -255,6 +255,8 @@ async function main() {
     await page.evaluate(() => window.hermesBack())
     const before = autoPuts().length
     await page.evaluate(() => window.hermesShortcut('new'))
+    await sleep(300)
+    check((await page.locator('.auto-btn.auto').count()) === 1, 'the empty new-chat screen already shows the default (Auto access)')
     await page.getByPlaceholder('Message Hermes').fill('hello default auto')
     await page.getByRole('button', { name: 'Send' }).click()
     await sleep(1200)
