@@ -22,18 +22,18 @@
 
 > Unofficial community project. Not affiliated with or endorsed by Nous Research.
 
-## Why
-
 Hermes Agent is a powerful agent, but it lives in a terminal. Hermes Mobile gives it a proper phone interface: streaming chat,
 live tool cards, approvals you can answer from the status bar, a canvas for building things together, and notifications that work
 while the app is closed. Hermes runs in Termux on the same phone, so the whole thing is self-contained.
+
+**[Install](#install)** · **[Full install guide](docs/install.md)** · **[What's new](CHANGELOG.md)**
 
 ## Highlights
 
 ### Answer from the island
 
 Approvals and questions show up on the status chip (an Android 16 Live Update; older versions get a normal notification).
-One tap on the chip, pick an answer, done. The app does not need to be open.
+One tap, pick an answer, done. The app does not need to be open.
 
 <p align="center"><img src="docs/img/island.png" alt="An approval and a question on the island chip" width="100%"></p>
 
@@ -53,17 +53,16 @@ unless you allow it. Every change is a version with a diff you can restore.
 
 ### Your phone's assistant
 
-Pick Hermes under Default apps → Digital assistant app and long-pressing the power button (or the assist gesture) opens it straight
-in hands-free Live mode. Settings → Voice shows whether it is on.
+Pick Hermes as your *Digital assistant app* (under Default apps) and long-pressing the power button opens it in hands-free
+Live mode.
 
 <p align="center"><img src="docs/img/assistant.png" alt="Long-press power opens Hermes in Live mode" width="100%"></p>
 
 ### Uses your apps without taking your screen
 
-Ask Hermes to do something in an app ("add milk to my Keep list", "what does the battery page say") and it opens that app on a
-hidden screen, reads it, taps and types, while you keep using your phone. The status chip says **Using <app>**, the chat shows a
-live view, and **Take over** brings the app to your screen. It asks once per app per chat; banking, payment, password and 2FA
-apps stay off unless you allow them in Settings. Needs Android 14+ and Shizuku.
+Ask Hermes to do something in an app ("add milk to my Keep list") and it opens that app on a hidden screen, reads it, taps and
+types, while you keep using your phone. The status chip says **Using <app>** and **Take over** brings the app to your screen.
+It asks once per app per chat; banking, payment, password and 2FA apps stay off unless you allow them. Needs Android 14+ and Shizuku.
 
 ### Your chats, your memory, your look
 
@@ -76,20 +75,76 @@ what Hermes remembers. Dark, OLED black or light.
 
 | | |
 |---|---|
-| **Voice** | Read replies aloud with a player (pause, seek, speed, any installed speech engine), dictation, hands-free Live mode, and Hermes as your phone's assistant |
-| **Control a turn** | Stop or steer a running reply, edit, retry or branch any turn, and `/btw` to ask a side question without interrupting |
-| **See the work** | Live tool cards (long runs fold into one line), sub-agents, the to-do list, speed and context use per reply, and file checkpoints to undo Hermes's file changes |
-| **Skills & commands** | `/` autocomplete for every skill and slash command |
-| **Models & profiles** | Switch model and reasoning level per chat; create, clone and edit profiles with their own default model, keys and SOUL.md |
+| **Chat** | Stop or steer a running reply; edit, retry or branch any turn; `/btw` side questions; `/` autocomplete for every skill and command; per-chat drafts |
+| **See the work** | Reasoning, live tool cards, sub-agents, the to-do list, speed and context use per reply, and file checkpoints to undo Hermes's file changes |
+| **Cards in replies** | Hermes can answer with interactive cards (tables, charts, tabs, buttons, forms) drawn by OpenUI; a card can show live, read-only data. Off switch in Settings → Replies |
+| **Voice** | Read replies aloud with a player (pause, seek, speed, any installed speech engine), dictation and hands-free Live mode |
+| **Models & profiles** | Sign in with ChatGPT, Claude, Grok or Nous Portal, or use API keys; switch model and reasoning level per chat; profiles with their own default model, keys and SOUL.md |
 | **Notifications** | Reply, answer questions and allow commands right from the notification; cron results; a "failed" note when a model call fails |
-| **Cron & files** | Cron jobs (edit, run, results), a file browser and projects |
-| **Share** | "Share to Hermes" from any app; attach photos, camera shots and files; share a chat as Markdown; link chats to each other |
+| **Screens** | Skills, memory, cron jobs, files, projects, a canvas gallery, and every Hermes setting |
+| **Share** | "Share to Hermes" from any app; attach photos, camera shots and files; share a chat as Markdown |
 | **Offline-friendly** | Messages typed offline send on reconnect; the last chat list is cached |
 | **Shortcuts & big screens** | Launcher shortcuts (New chat, Live mode, last chat); a two-column layout on tablets and foldables |
 | **Setup check** | One screen that checks Termux, permissions, the plugin and battery settings, with a fix button for each |
 | **Battery** | No permanent wake lock: the phone sleeps while Hermes is idle |
 
-## How it fits together
+## Install
+
+You need an arm64 Android phone (Android 8+) with about 6 GB free, **no root**, and a model: a subscription you already have
+(ChatGPT, Claude, SuperGrok, Nous Portal) or an API key (for example [OpenRouter](https://openrouter.ai/keys), or Gemini's free
+tier). It takes 15-40 minutes, mostly waiting.
+
+**On the phone (Android 11+):**
+
+1. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest),
+   install it and open it.
+2. Tap **Install all** to get Termux, Termux:API, Termux:Boot (from F-Droid) and Shizuku.
+3. Start Shizuku with Wireless debugging (recommended; the app shows how).
+4. Tap **Copy the command**, then **Open Termux**, paste it and press Enter. Allow what Termux asks and keep the screen on.
+5. Back in the app, sign in with your subscription or paste an API key.
+
+The app follows each step and picks up wherever you stopped.
+
+**From a computer** (also for Android 8-10): turn on USB debugging, plug the phone in and run
+
+```bash
+# Mac / Linux
+curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.sh -o setup-phone.sh && bash setup-phone.sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
+```
+
+Or let your AI coding agent (Claude Code, Codex, Cursor…) do it, with this prompt:
+
+```text
+Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermes on my Android phone.
+```
+
+**Afterwards:** set battery to *Unrestricted* for Hermes Mobile, Termux and Shizuku, or Android may stop them. If something
+doesn't work, open **Settings → Setup check** in the app.
+
+The [full install guide](docs/install.md) has every step in detail, the by-hand route, rooted phones (chroot-distro),
+a troubleshooting table and uninstalling.
+
+> Tested end to end on a clean Android 15 emulator and piece by piece on a real phone, but not yet on a brand-new real phone.
+> If something fails, please [open an issue](https://github.com/omarqaterge/hermes-mobile-app/issues).
+
+### Uninstall
+
+**Settings → Danger zone → Uninstall Hermes** removes Hermes and its data, then the helper apps, after an optional backup to
+`Download/hermes-backup-<date>.tar.gz` (API keys and sign-ins are left out unless you include them). To restore it on a new
+install, run this in Termux and restart Hermes:
+
+```bash
+~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermes-backup-<date>.tar.gz -C /root/.hermes'
+```
+
+What is kept and how to uninstall by hand: [docs/install.md](docs/install.md#uninstall).
+
+## How it works
 
 ```mermaid
 flowchart LR
@@ -114,250 +169,19 @@ flowchart LR
   style phone fill:transparent,stroke:#888,stroke-dasharray:5 5
 ```
 
-Hermes runs in Termux on the phone, and the app talks to it over localhost the same way Hermes Desktop does (it also starts Hermes
-when it isn't running). A small Hermes plugin sends status, approvals and replies to the app's background service, so the island
-chip and notifications work even when the app is closed.
+Hermes's dashboard runs on the phone at `127.0.0.1:9119`, and the app talks to it over the same `tui_gateway` JSON-RPC connection
+Hermes Desktop uses (it also starts Hermes when it isn't running). A small Hermes plugin sends status, approvals and replies to
+the app's background service, so the island chip and notifications work even when the app is closed.
 
-## Install
-
-**No root needed.** Hermes Mobile runs on an ordinary phone with a locked bootloader. A rooted phone works too; the
-differences are how Shizuku starts and, if you like, running Debian with chroot-distro (see [Rooted or not](#rooted-or-not)).
-
-You need an Android phone (arm64, Android 8+) with about 6 GB free, and access to a model, either of:
-
-- **A subscription you already have:** ChatGPT Plus / Pro (or a Codex plan), Claude Pro / Max, SuperGrok / X Premium+, or a Nous
-  Portal account. You sign in from the app.
-- **An API key:** for example [OpenRouter](https://openrouter.ai/keys) (one key for every model), Anthropic, OpenAI or Gemini
-  (has a free tier).
-
-Sort this out before you start: the install ends by asking for it. A subscription needs only your login. An API key is a long
-code you create on the provider's website (sign in, open its *API keys* page, create one and copy it); you pay that provider per use.
-
-These apps get installed. Hermes needs all of them to run and to use your phone:
-
-| App | What it is for |
+| Folder | What it is |
 |---|---|
-| [Termux](https://f-droid.org/packages/com.termux/) | Linux on the phone: Hermes runs in Debian inside it |
-| [Termux:API](https://f-droid.org/packages/com.termux.api/) | Lets Hermes use the phone: battery, location, clipboard, notifications, SMS, camera… |
-| [Termux:Boot](https://f-droid.org/packages/com.termux.boot/) | Starts Hermes again after the phone restarts |
-| [Shizuku](https://shizuku.rikka.app/download/) | Gives Hermes the access adb has, without root: screenshots, taps, apps, logs |
-| Hermes Mobile | This app |
+| `web/` | The interface (React + TypeScript), using Hermes's own client from `apps/shared`, copied into `web/vendor/hermes-shared` |
+| `android/` | A thin Java shell around a WebView for what a web page can't do: notifications, starting Hermes through Termux, photo picker and camera, shares, media |
+| `hermes-plugin/` | Sends events to the app and serves the canvas and media |
+| `phone/` | The installer and the scripts that keep Hermes running |
+| `hermes/patches` | A few fixes to Hermes itself, applied by the installer and offered upstream ([hermes/README.md](hermes/README.md)) |
 
-Get the three Termux apps from **F-Droid**, all three: the Play Store builds are outdated and can't be mixed with F-Droid ones.
-
-The install takes 15-40 minutes, mostly waiting.
-
-### On the phone, no computer (Android 11+)
-
-Install only Hermes Mobile; the app walks you through the rest and picks up wherever you stopped.
-
-1. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest) on
-   the phone, install it and open it (allow your browser to *install unknown apps* if Android asks).
-2. **Get the helper apps:** tap **Install all**. Android first asks you to allow Hermes Mobile to *install unknown apps*: turn
-   the switch on and go back. Then tap **Install** on Android's prompt for each app: Termux, Termux:API and Termux:Boot (from
-   F-Droid) and Shizuku (from GitHub). Each app row links to its official page (F-Droid or Shizuku's releases) if you prefer to install it yourself; the Termux apps must all come from F-Droid. The app checks that each one comes from its maker before installing it.
-3. **Start Shizuku** (recommended, you can skip it and do it later): it keeps Android from stopping the long install ("signal 9")
-   and lets Hermes use the screen. Turn on Developer options (Settings → About phone → tap *Build number* 7 times; on some phones
-   it is under *Software information* or called *OS version*), connect to Wi-Fi, which Wireless debugging needs (Shizuku uses Android's own wireless debugging to start itself without a computer or root; it is local only), then open Shizuku,
-   tap *Pairing* and follow its steps (Developer options → Wireless debugging → *Pair device with pairing code*, then type the code
-   into Shizuku's notification), and tap *Start*. Rooted: just tap *Start* in Shizuku.
-4. Allow Hermes Mobile to *run commands in Termux* when Android asks.
-5. **Run the installer:** tap **Copy the command**, then **Open Termux**. In Termux, long-press, tap **Paste**, then press Enter.
-   Stay in Termux and tap **Allow** on what it asks (notifications, running in the background, files; Shizuku: **Allow all the
-   time**). The app follows the install step by step; it takes 10-40 minutes, mostly waiting (shorter when a ready-made Debian +
-   Hermes is available for this version: the installer downloads it, about 900 MB, and falls back to the normal install by
-   itself otherwise). Keep the screen on. If it stops, the app says where: paste the same command again (finished parts are
-   skipped).
-6. Back in the app: **Connect Hermes to a model**. Sign in with your subscription or paste an API key, then pick the model new
-   chats use. You can change all of this later in **Settings → Subscriptions & accounts / API keys / Default models**.
-
-   ChatGPT, Claude, Grok and Nous Portal sign in inside the app. For Claude, tap **Open claude.ai**, approve, and paste the code
-   Claude shows back into the app (it runs the same login as `hermes auth add anthropic`; **Use Termux instead** does it there).
-
-<details>
-<summary>Without the app's help (by hand in Termux)</summary>
-
-Install Termux, Termux:API and Termux:Boot from F-Droid (open Termux:Boot once) and Shizuku, start Shizuku as in step 3, then
-paste this in Termux:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh -o hm.sh && bash hm.sh
-```
-
-Keep Termux open until it prints `HMSETUP DONE`; `HMSETUP TODO` lines just above it say what is still missing. At the end
-Android's installer opens for Hermes Mobile: tap **Install** (pick *Package installer* if asked; allow Termux to *install unknown
-apps* if it blocks it).
-
-</details>
-
-### From a computer (Mac, Windows, Linux)
-
-Also the route for Android 8-10. Turn on **USB debugging** on the phone (Settings → About phone → tap *Build
-number* 7 times, then Developer options → USB debugging), plug it in and run:
-
-```bash
-# Mac / Linux
-curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.sh -o setup-phone.sh && bash setup-phone.sh
-```
-
-```powershell
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
-```
-
-It installs all five apps, gives them their permissions and starts Shizuku over USB. When Shizuku asks whether Termux may use it,
-tap **Allow all the time**. At the end it offers to set an API key; press Enter to skip it and connect a subscription or key in the
-app instead.
-
-**Stuck, or rather not do it yourself?** Give your AI coding agent (Claude Code, Codex, Cursor…) this prompt. It runs the same
-script and fixes what goes wrong:
-
-```text
-Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermes on my Android phone.
-```
-
-> Tested end to end on a clean Android 15 emulator and piece by piece on a real phone, but not yet on a brand-new real phone.
-> If something fails, please [open an issue](https://github.com/omarqaterge/hermes-mobile-app/issues).
-
-### Rooted or not
-
-Everything is the same except Shizuku, which Android stops whenever the phone restarts:
-
-| | Not rooted (most phones) | Rooted |
-|---|---|---|
-| First start | *Start via Wireless debugging* in Shizuku (Android 11+), or the computer route does it over USB | *Start* in Shizuku |
-| After a restart | Android 13+: Shizuku starts itself on Wi-Fi, once you have started it via Wireless debugging one time (the installer gives it the permission for this). Android 11-12: open Shizuku → *Start via Wireless debugging*. Android 8-10: from a computer, with the command Shizuku shows under *Start by connecting to a computer* | Shizuku starts itself |
-
-Until Shizuku runs, Hermes can still do everything except see and touch the screen and other apps; it tells you when it needs
-Shizuku, and the app's **Setup check** shows it too.
-
-**Is it worth rooting a phone for Hermes?** For most people, no. Shizuku already gives Hermes what adb can do: screenshots, taps
-and typing, opening and installing apps, logs and most settings. Root adds:
-
-- **Speed:** Debian can run under chroot-distro (below) instead of proot, which slows down every file and process call. Hermes
-  starts and runs tools faster and uses a bit less battery (not measured on a real phone yet).
-- **No Shizuku restarts:** Shizuku starts itself after a reboot, no Wi-Fi or Wireless debugging needed.
-- **Other apps' private data:** Hermes could read what apps keep to themselves (for example a messenger's database).
-- **System-level control:** firewall rules, stopping any process, protected settings and system files.
-
-What it costs:
-
-- **Risk:** under chroot, Hermes runs as the phone's real root user. A bad command or a malicious web page that tricks the
-  model can read or wipe anything, or break the phone. Without root, the worst it can do is what adb can do.
-- **Apps that refuse rooted phones:** banking apps, Google Wallet and some games check for root.
-- **Rooting itself:** unlocking the bootloader wipes the phone (some makers, like Xiaomi, also make you wait), and system
-  updates get harder.
-
-If your phone is already rooted, chroot-distro is an easy speed-up, with the risk above. Don't root a phone just for Hermes.
-
-**Rooted: Debian with chroot-distro (optional).** By default Debian runs under proot-distro, which needs no root. On a rooted
-phone it can run under [chroot-distro](https://github.com/sabamdarif/chroot-distro) instead, at native speed: put
-`HM_DISTRO=chroot` in front of the install command (`HM_DISTRO=chroot bash hm.sh` in Termux, or
-`HM_DISTRO=chroot bash setup-phone.sh` from a computer) and tap **Grant** when your root manager asks about Termux. The installer
-adds chroot-distro (`pip install chroot-distro`) and Debian 13 (`chroot-distro install --name debian debian:trixie`); a
-chroot-distro container already named `debian` is used as it is. The choice is remembered, so later runs of `bash hm.sh` and the
-app use the same Debian. To get a shell in it yourself, type `~/bin/hermes-debian` in Termux (it works for both).
-Shizuku is still needed for the screen and other apps (rooted: *Start* in Shizuku). Moving an existing proot-distro install
-over is not automatic.
-
-### After installing
-
-- Set **battery to Unrestricted** for *Hermes Mobile*, *Termux* and *Shizuku* (Xiaomi/HyperOS: also turn on *Autostart*), or
-  Android may stop them.
-- Keep the Termux notification: Hermes runs inside Termux.
-- To update, run the same command again and install the newest APK.
-
-### If something goes wrong
-
-Open **Settings → Setup check** in the app first: it shows what's missing, with a button for each fix.
-
-| What you see | Fix |
-|---|---|
-| "Hermes is offline" for more than a minute | In Termux run `~/bin/hermes-services`, then tap Reconnect in the app |
-| `[Process completed (signal 9)]` in Termux during the install | Android stopped it. Android 14+: Developer options → *Disable child process restrictions* (the computer route does this for you, and so does the phone-only install when Shizuku is running). Then run `bash hm.sh` again |
-| The install stops with `HMSETUP FAIL <step>` | Read the error above it, fix it and run `bash hm.sh` again; finished parts are skipped. [AGENT_INSTALL.md](AGENT_INSTALL.md) lists the usual causes |
-| No status chip, canvas or approvals | Run `bash hm.sh` again (it re-enables the plugin) |
-| Everything stops after a while | Battery is restricted, see *After installing* |
-| Hermes says Shizuku isn't running | The phone restarted: see *Rooted or not* |
-| Hermes can't read your files | Setup check → *Hermes can use your files* → Allow, then Restart Hermes |
-| Termux:API won't install | Termux and Termux:API come from different stores. Install both from F-Droid |
-
-### Uninstall
-
-In the app: **Settings → Danger zone → Uninstall Hermes**. It lists what goes, offers a backup, asks you to type `uninstall`, then
-removes Hermes with all chats, memory, skills, settings and keys, Debian, the installer's files and its phone setting (inside Termux, with
-`phone/uninstall.sh`). After that Android asks you to confirm each app: Termux:API, Termux:Boot, Shizuku, Termux, and Hermes Mobile last.
-Removing Termux makes Android close the app; open it again and it shows the last step.
-
-**Backup** (on by default): `Download/hermes-backup-<date>.tar.gz` with Hermes's chats (`state.db`), memory, skills, cron jobs, canvas
-documents, config, profiles and this app's settings (`hermes-mobile-settings.json`); no program files, caches or logs. API keys (`.env`)
-and sign-ins (`auth.json`, `*token*.json`) are left out unless you switch on *Include API keys and sign-ins*: any app that may read your
-Downloads could read them. A key typed straight into `config.yaml` is not filtered. To restore on a new install, unpack it into Hermes's
-folder in Debian (`~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermes-backup-<date>.tar.gz -C /root/.hermes'`) and restart Hermes.
-
-Kept: files Hermes saved to your storage (Downloads, Pictures/Hermes). The phone setting needs Shizuku running; without it Android's
-child-process limit stays lifted, which is harmless (Android 14+: Developer options → *Disable child process restrictions* → off).
-
-<details>
-<summary><b>By hand, without the app</b></summary>
-
-In Termux: `curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/uninstall.sh -o un.sh && bash un.sh --backup`
-(leave out `--backup` to skip the backup; add `--keys` to include keys). It is safe to run again. What it does, step by step, if you'd
-rather type it yourself:
-
-1. Stop Hermes: `kill` the PIDs in `~/logs/*.pid` (the supervisor's loops) and the dashboard (`pkill -f 'hermes dashboard --host 127.0.0.1 --port 9119'`).
-2. Optional backup: copy what you want out of Debian's `/root/.hermes` (proot: `$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root/.hermes`).
-3. With Shizuku running: `~/bin/rish -c 'device_config delete activity_manager max_phantom_processes; device_config set_sync_disabled_for_tests none; settings delete global settings_enable_monitor_phantom_procs'`
-   (the computer route did the same over `adb shell`).
-4. Remove Debian: `proot-distro remove debian` (rooted, chroot-distro: `chroot-distro kill debian && chroot-distro remove debian`; never
-   delete a chroot's folder by hand, it can still have the phone's storage mounted inside).
-5. Remove the installer's files: `rm -rf ~/.hermes-mobile ~/bin/hermes-services ~/bin/hermes-debian ~/bin/rish ~/bin/rish_shizuku.dex
-   ~/.termux/boot/10-hermes ~/hermes-mobile ~/hermes-mobile.apk ~/hm.sh`, and the `allow-external-apps = true` line in
-   `~/.termux/termux.properties`.
-6. Uninstall the apps in Android's settings: Termux:API, Termux:Boot, Shizuku, Termux, Hermes Mobile. Uninstalling Termux alone also
-   deletes steps 1-5 (except the phone setting of step 3) with it; on a rooted phone using chroot-distro, restart the phone first.
-
-</details>
-
-<details>
-<summary><b>Everything it does, and how it works</b></summary>
-
-**Chat:** streaming replies with Markdown, LaTeX, Mermaid diagrams (full screen, pinch to zoom), highlighted code (collapse, wrap,
-copy, open in canvas), sortable tables, tick-able task lists, coloured diffs, and images, video and audio from Hermes. Reasoning, live
-tool cards, sub-agent cards, the to-do list; approvals, questions and secret, sudo and one-time-code prompts; stop and steer a running
-turn; edit, retry and branch a turn; `/` commands and skills; attach photos, camera shots and files; "Share to Hermes" from other apps;
-per-chat drafts; messages typed offline are sent on reconnect; turn stats; file checkpoints; share a chat as Markdown.
-
-**Voice:** read replies aloud (any installed speech engine, voice, speed, pitch), dictation, hands-free Live mode, and Hermes as your
-phone's assistant.
-
-**Cards in replies:** Hermes can answer with interactive cards, tables, charts, tabs, steps, buttons and forms drawn by OpenUI;
-tapping a button or sending a form answers in the chat, and a card can show live, read-only data (web search, chats, files). Off switch in Settings → Replies.
-
-**Canvas:** documents you and Hermes share per chat (Markdown, HTML, code, CSV, SVG, Mermaid…) with version history, diffs and restore;
-HTML runs in an offline sandbox.
-
-**Chats:** full-text search that jumps to the message, unread dots, rename, pin, archive, delete, swipe and drag to reorder or pin.
-
-**Settings:** themes (dark, OLED black, light, system), text size, voice, subscription sign-ins (ChatGPT, Claude, Grok, Nous Portal), default model per
-profile or for all, every API key and every Hermes option. Profiles: create, clone, rename, edit SOUL.md, delete. Screens for skills, memory, cron jobs, files and projects.
-
-**In the background:** a pinned status notification that becomes an Android 16 Live Update while Hermes works, plus notifications for
-replies, questions and approvals that you can answer without opening the app, learning, and cron results. There are no messaging-channel
-(Telegram, Discord…) settings: this app is the only front end.
-
-**How it works:** Hermes's dashboard runs on the phone at `127.0.0.1:9119` and exposes the `tui_gateway` JSON-RPC connection that Hermes
-Desktop uses. The interface (React, in `web/`) uses Hermes's own client from `apps/shared`, copied into `web/vendor/hermes-shared` and
-pinned in `.hermes-commit`. The Android part (`android/`) is a thin Java shell around a WebView that does what a web page can't:
-notifications, starting Hermes through Termux's `RUN_COMMAND`, the photo picker and camera, shares, media streaming. The plugin
-(`hermes-plugin/`) sends events to the app and serves the canvas and media; `phone/` has the scripts that keep Hermes running.
-A few fixes to Hermes itself live in `hermes/patches` (applied by the installer, offered upstream; see `hermes/README.md`).
-
-</details>
-
-## Development
-
-### Build the app yourself
+## Build the app yourself
 
 You need **Node 20+**, **JDK 17** and the [Android command-line tools](https://developer.android.com/studio#command-line-tools-only)
 (`sdkmanager "platforms;android-36" "build-tools;35.0.0"`). No Gradle:
@@ -374,23 +198,7 @@ downloaded one, because the keys differ: uninstall that first.
 
 To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open http://127.0.0.1:5180.
 
-### Tests
-
-- `cd web && npm test`: unit tests.
-- `tools/web-e2e/run.sh`: the built interface in headless Chromium against a mock Hermes.
-- `python3 tools/test_canvas.py`, `tools/test_media.py`, `tools/test_chat_search.py`, `tools/test_battery.py`: the plugin and phone scripts.
-- `tools/java-check.sh`: compiles the Java shell without the Android SDK.
-- `tools/test_hermes_patches.sh`: the Hermes patches apply to the pinned Hermes build and revert cleanly.
-- `python3 tools/e2e.py`: end-to-end checks against a real phone.
-
-GitHub Actions runs all of them except the last on every push.
-
-### After a Hermes update
-
-The app uses Hermes's internal protocol, which can change. Copy the phone's Hermes `apps/shared/src` into `web/vendor/hermes-shared`,
-update `.hermes-commit` and `.hermes-version` (the `hermes --version` build string, e.g. `0.21.5+4582.gb8a8be1`), run `npm run typecheck` in `web/` and rebuild. Then bring `hermes/patches` along: `hermes/README.md` says how.
-The app compares the phone's Hermes build with `.hermes-version`: if they differ it shows a notice once and a warning in Settings → About.
-There is no "update Hermes" button on purpose: Hermes updates ship with an app release, after the app has been adapted to them.
+Tests, project rules and what to do after a Hermes update: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License and credits
 
