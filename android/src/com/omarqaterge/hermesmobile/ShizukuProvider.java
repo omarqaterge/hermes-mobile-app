@@ -14,11 +14,20 @@ import moe.shizuku.api.BinderContainer;
  * When Shizuku's server starts, and whenever this app's process starts while it runs, the server calls "sendBinder" on
  * the provider "&lt;package&gt;.shizuku" of every app that lists moe.shizuku.manager.permission.API_V23 in its manifest
  * (listed, not granted: the user is never asked). We only keep the binder and ping it; we never use it. A dead binder
- * (Shizuku stopped) pings false. The provider permission is one only the shell/system holds, so other apps can't call it.
+ * (Shizuku stopped) pings false, and a death recipient (linkToDeath) tells HermesService, which shows or clears the
+ * "Shizuku stopped" notice, so nothing polls. The provider permission is one only the shell/system holds, so other apps can't call it.
  */
 public class ShizukuProvider extends ContentProvider {
     private static final String EXTRA_BINDER = "moe.shizuku.privileged.api.intent.extra.BINDER";
     private static volatile IBinder binder;
+    private static final IBinder.DeathRecipient DEATH = new IBinder.DeathRecipient() {
+        @Override
+        public void binderDied() {
+            binder = null;
+            if (ctx != null) HermesService.shizukuDown(ctx);
+        }
+    };
+    private static volatile android.content.Context ctx;
 
     /** True while the binder Shizuku's server handed us is alive. */
     static boolean running() {
@@ -37,7 +46,24 @@ public class ShizukuProvider extends ContentProvider {
         extras.setClassLoader(BinderContainer.class.getClassLoader());
         try {
             BinderContainer c = extras.getParcelable(EXTRA_BINDER);
-            if (c != null && c.binder != null) binder = c.binder;
+            if (c != null && c.binder != null) {
+                android.content.Context app = getContext() == null ? null : getContext().getApplicationContext();
+                ctx = app;
+                IBinder old = binder;
+                if (old != null) {
+                    try {
+                        old.unlinkToDeath(DEATH, 0);
+                    } catch (Exception ignored) {
+                    }
+                }
+                binder = c.binder;
+                try {
+                    c.binder.linkToDeath(DEATH, 0);
+                    if (app != null) HermesService.shizukuUp(app);
+                } catch (android.os.RemoteException dead) {
+                    DEATH.binderDied();
+                }
+            }
         } catch (Exception ignored) {
             return null;
         }
