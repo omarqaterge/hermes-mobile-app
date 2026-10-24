@@ -46,8 +46,28 @@ describe('setupSteps / nextStep', () => {
     expect(st(setupSteps({ ...native, autostart: '' }, 'open', remote, true), 'autostart')).toBe('skip')
     expect(st(setupSteps({ ...native, maker: 'xiaomi' }, 'open', remote, true), 'autostart')).toBe('skip')
     expect(recommendedGaps(setupSteps({ ...native, autostart: 'list' }, 'open', remote, true))).toEqual([])
-    const pre = { probe: null, progress: null, shizukuSkipped: false, autostartDone: true }
+    const pre = { probe: null, progress: null, shizukuDone: false, autostartDone: true }
     expect(st(setupSteps({ ...native, autostart: 'list' }, 'open', remote, true, pre), 'autostart')).toBe('ok')
+  })
+  test('Shizuku battery: bad when installed but limited, ok when unrestricted, skipped when not installed or an older build', () => {
+    const rowOf = (n: NativeSetup) => setupSteps(n, 'open', remote, true).find(s => s.id === 'bat-shizuku')
+    expect(rowOf({ ...native, shizuku: true, batteryShizuku: false })).toEqual({ id: 'bat-shizuku', required: false, state: 'bad' })
+    expect(rowOf({ ...native, shizuku: true, batteryShizuku: true })).toEqual({ id: 'bat-shizuku', required: false, state: 'ok' })
+    expect(rowOf({ ...native, shizuku: false, batteryShizuku: false })?.state).toBe('skip')
+    expect(rowOf({ ...native, shizuku: true })?.state).toBe('skip') // older app build: not reported
+    expect(setupSteps(null, 'open', remote, true).find(s => s.id === 'bat-shizuku')?.state).toBe('skip')
+  })
+  test('Shizuku battery limit is recommended: listed, never blocks', () => {
+    const steps = setupSteps({ ...native, batteryShizuku: false }, 'open', remote, true)
+    expect(nextStep(steps)).toBeNull()
+    expect(recommendedGaps(steps).map(s => s.id)).toEqual(['bat-shizuku'])
+  })
+  test('Shizuku (what Hermes can do with it) is a required row, not a recommendation', () => {
+    const steps = setupSteps(native, 'open', remote, true)
+    expect(steps.find(s => s.id === 'shizuku')?.required).toBe(true)
+    const off = setupSteps(native, 'open', { ...remote, phone: { files: true, termux_api: true, shizuku: 'off' } }, true)
+    expect(nextStep(off)?.id).toBe('shizuku')
+    expect(recommendedGaps(off).map(s => s.id)).not.toContain('shizuku')
   })
   test('Termux:API and Shizuku missing on Android are bad even before Hermes answers', () => {
     const steps = setupSteps({ ...native, termuxApi: false, shizuku: false }, 'closed', null, null)
@@ -85,7 +105,7 @@ describe('app-first steps', () => {
     canInstall: false, devOptions: false, wirelessDebugging: false, termuxSigner: ''
   }
   const allApps: NativeSetup = { ...fresh, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, canInstall: true, termuxSigner: 'fdroid' }
-  const pre = (p: Partial<PreHermes> = {}): PreHermes => ({ probe: 'unknown', progress: null, shizukuSkipped: false, ...p })
+  const pre = (p: Partial<PreHermes> = {}): PreHermes => ({ probe: 'unknown', progress: null, shizukuDone: false, ...p })
   const active = { active: true, lines: ['STEP packages Termux packages'], done: false, fail: '' }
   test('no Termux → the next step is apps', () => {
     expect(nextStep(setupSteps(fresh, 'closed', null, null, pre()))?.id).toBe('apps')
@@ -93,20 +113,28 @@ describe('app-first steps', () => {
   test('one helper app missing → still apps (all four are required)', () => {
     for (const k of ['termuxApi', 'termuxBoot', 'shizuku'] as const) expect(nextStep(setupSteps({ ...allApps, [k]: false }, 'closed', null, null, pre()))?.id).toBe('apps')
   })
-  test('apps present → Start Shizuku comes before the installer, and Skip moves on', () => {
+  test('apps present → Start Shizuku comes before the installer, and moves on once Shizuku was seen running', () => {
     expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'not-allowed' })))?.id).toBe('shizuku-start')
-    expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'not-allowed', shizukuSkipped: true })))?.id).toBe('installer')
+    expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'not-allowed', shizukuDone: true })))?.id).toBe('installer')
+  })
+  test('no skip: without a stored "done" the Start Shizuku step stays, whatever else is known', () => {
+    for (const probe of ['unknown', 'not-allowed', 'no-services', 'denied'] as const) {
+      expect(st(setupSteps(allApps, 'closed', null, null, pre({ probe, shizukuDone: false })), 'shizuku-start')).toBe('bad')
+    }
+    expect(st(setupSteps(allApps, 'closed', null, null, pre({ probe: 'not-allowed', shizukuDone: true })), 'shizuku-start')).toBe('ok')
+    // Shizuku seen running: the step stays up for its tick; the page then stores "done" itself
+    expect(st(setupSteps({ ...allApps, shizukuRunning: true }, 'closed', null, null, pre({ probe: 'not-allowed' })), 'shizuku-start')).toBe('bad')
   })
   test('apps present, no dashboard, Termux refuses commands (start fails) → installer', () => {
-    const steps = setupSteps({ ...allApps, startError: 'refused' }, 'closed', null, null, pre({ probe: 'not-allowed', shizukuSkipped: true }))
+    const steps = setupSteps({ ...allApps, startError: 'refused' }, 'closed', null, null, pre({ probe: 'not-allowed', shizukuDone: true }))
     expect(nextStep(steps)?.id).toBe('installer')
     expect(st(steps, 'installer')).toBe('bad')
   })
   test('a half-finished install (Termux allows us, not finished) → installer', () => {
-    expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', shizukuSkipped: true })))?.id).toBe('installer')
+    expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', shizukuDone: true })))?.id).toBe('installer')
   })
   test('Termux there but Hermes Mobile may not run commands → run, before the installer', () => {
-    expect(nextStep(setupSteps({ ...allApps, runCommand: false }, 'closed', null, null, pre({ probe: 'denied', shizukuSkipped: true })))?.id).toBe('run')
+    expect(nextStep(setupSteps({ ...allApps, runCommand: false }, 'closed', null, null, pre({ probe: 'denied', shizukuDone: true })))?.id).toBe('run')
   })
   test('installed but stopped → hermes (Start Hermes); the Shizuku step is not shown any more', () => {
     const steps = setupSteps(allApps, 'closed', null, null, pre({ probe: 'stopped' }))
@@ -128,7 +156,7 @@ describe('app-first steps', () => {
     expect(nextStep(setupSteps(allApps, 'open', remote, false, done))?.id).toBe('model')
   })
   test('the probe has not answered yet → installer waits', () => {
-    expect(st(setupSteps(allApps, 'closed', null, null, pre({ shizukuSkipped: true })), 'installer')).toBe('wait')
+    expect(st(setupSteps(allApps, 'closed', null, null, pre({ shizukuDone: true })), 'installer')).toBe('wait')
   })
   test('a PC-installed phone with everything working never sees the new rows', () => {
     const steps = setupSteps(allApps, 'open', remote, true, pre())
