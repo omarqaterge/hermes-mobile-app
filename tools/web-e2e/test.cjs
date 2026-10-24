@@ -2183,8 +2183,13 @@ async function main() {
     }
     {
       // Android 10 and older have no Wireless debugging: the step says Shizuku starts from a computer, links the guide, no Skip.
-      const fo = await flowPage({ ...FRESH, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid', sdk: 29 })
+      const fo = await flowPage({ ...FRESH, sdk: 29 })
       await fo.goto('http://127.0.0.1:5180/')
+      await fo.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 }) // the flow opens at once while Termux is missing
+      await fo.evaluate(() => {
+        window.__setup = { ...window.__setup, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid' }
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
       await fo.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 })
       check((await fo.getByText('started from a computer', { exact: false }).count()) === 1, 'shizuku sdk<30: the step explains Shizuku is started from a computer')
       check((await fo.getByText('Turn on Wireless debugging').count()) === 0 && (await fo.getByText('Turn on Developer options').count()) === 0, 'shizuku sdk<30: no Developer options / Wireless debugging sub-items')
@@ -2199,8 +2204,13 @@ async function main() {
     }
     {
       // Android 11+ keeps the Developer options / Wireless debugging items
-      const fo = await flowPage({ ...FRESH, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid', sdk: 34 })
+      const fo = await flowPage({ ...FRESH, sdk: 34 })
       await fo.goto('http://127.0.0.1:5180/')
+      await fo.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 }) // the flow opens at once while Termux is missing
+      await fo.evaluate(() => {
+        window.__setup = { ...window.__setup, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid' }
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
       await fo.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 })
       check((await fo.getByText('Turn on Wireless debugging').count()) === 1 && (await fo.getByText('started from a computer', { exact: false }).count()) === 0, 'shizuku sdk>=30: Wireless debugging item stays, no computer note')
       await fo.close()
