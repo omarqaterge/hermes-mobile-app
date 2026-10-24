@@ -4,6 +4,9 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Setup check has a step to let Shizuku run in the background, and the computer install sets it for you.** Without it Android can stop Shizuku and Hermes loses the screen. The phone installer also does it through Shizuku. (Web-tested and shell-script syntax-checked; not yet tried on a real phone.)
+- **Shizuku is now a required setup step (no more Skip).** The step says Hermes needs it; a "Shizuku is running: continue" button is only for a Shizuku that was started before the app opened, and Setup check still verifies it afterwards. On Android 10 and older the step explains how to start Shizuku from a computer and links Shizuku's guide. (Web-tested; not yet tried on a real phone.)
+
 ## v0.8.57 (2026-10-24)
 
 Tested on one phone (Android 16) and Android 15 emulators; not yet on other phone makers. The installer fix for an interrupted install was not re-run on an emulator.

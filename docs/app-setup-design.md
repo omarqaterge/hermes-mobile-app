@@ -131,7 +131,7 @@ the `DONE` line.
 |---|---|---|---|---|
 | 1 | Get the apps (`apps`) | Termux: yes. Termux:API, Termux:Boot, Shizuku: see open question 1 | each package present (`setupState()`: `termux`, `termuxApi`, `termuxBoot`, `shizuku`, plus `termuxSigner`) | Four lines with a ✓ or an **Install** button, and **Install all** (one after another, one system dialog each, Termux first). Before the first install, if `canInstall` is false: "Allow Hermes Mobile to install apps" → the system toggle; the flow re-checks on return (B's `visibilitychange`) and only then commits a session (Back on the toggle page cancels a pending session). Download progress per app from the native callback. |
 | 2 | Termux:Boot opened once (part of `apps`) | no | `termuxBootStopped == false` (`ApplicationInfo.FLAG_STOPPED`) | "Open Termux:Boot once" button (`setupFix('open-termux-boot')`); Android only delivers BOOT_COMPLETED to an app that was opened. |
-| 3 | Start Shizuku (`shizuku-start`) | no (recommended, shown once before the installer) | can't be known before Hermes exists → `info` with sub-checks: Developer options on (`devOptions`), Wireless debugging on (`wirelessDebugging`) | Three short steps with buttons: **Turn on Developer options** (About phone; "tap Build number 7 times"; Xiaomi: "OS version"), **Open Shizuku** (Pairing → its notification → Start), **Skip**. Says why: it lets the installer stop Android from killing the install ("signal 9") and gives Hermes screen/app control. The installer's `android:` line later says whether it worked. |
+| 3 | Start Shizuku (`shizuku-start`) | yes (needed; no Skip) | can't be known before Hermes exists → `info` with sub-checks: Developer options on (`devOptions`), Wireless debugging on (`wirelessDebugging`) | Three short steps with buttons: **Turn on Developer options** (About phone; "tap Build number 7 times"; Xiaomi: "OS version"), **Open Shizuku** (Pairing → its notification → Start), **Shizuku is running: continue** (a fallback for a Shizuku started before the app's first launch; the required `shizuku` row still checks it later). Android 10 and older (no Wireless debugging) get a note to start it from a computer and a guide link. Says why: it lets the installer stop Android from killing the install ("signal 9") and gives Hermes screen/app control. The installer's `android:` line later says whether it worked. |
 | 4 | Allow Hermes Mobile to run Termux commands (`run`, exists) | yes once Termux is present | RUN_COMMAND granted | B's existing row, moved before the installer: the probe needs it. |
 | 5 | Run the installer (`installer`) | yes | probe (above): `installed=yes` | **Copy the command** (native builds it with a fresh token and copies it), **Open Termux**, then "long-press → Paste → Enter. Stay in Termux and tap Allow on what it asks (notifications, battery, files, Shizuku: Allow all the time)." Once lines arrive, the view turns into the progress list below. |
 | 6 | Installing (substate of `installer`) | — | `DONE` line, or probe `installed=yes` | Steps with ✓ / spinner (packages, access, android, debian, hermes 10-30 min, plugin, start), the latest `phone:` hint in bold (e.g. "tap Allow…"), `TODO` lines listed, `FAIL <step>` → "The installer stopped at <step>. Open Termux to see why, then paste the same command again (finished steps are skipped)." with Copy + Open Termux. The service also puts the current step into its existing notification while the user is in Termux. |
@@ -223,10 +223,10 @@ own `termux-wake-lock` is unchanged (bounded by the script).
 ## Open questions for the owner
 
 1. Are Termux:API, Termux:Boot and Shizuku required in the `apps` step (the owner's rule: phone access is part of the
-   install), or recommended with Skip (Hermes runs without them)? Proposal: offered with **Install all** and required,
-   except Shizuku's *start* (step 3), which can be skipped.
+   install), or recommended with Skip (Hermes runs without them)? Decided (owner, 2026-10-24): all four are required,
+   including Shizuku's *start* (step 3); there is no Skip.
 2. Shizuku before the installer (recommended, prevents "signal 9") or after it (fewer steps before the user sees progress)?
-   Proposal: before, skippable.
+   Before, not skippable.
 3. Rooted phones: offer the `HM_DISTRO=chroot` command as a second "Copy" button in the installer step, or keep it a README
    option? Proposal: README only (one install path, root as an option).
 

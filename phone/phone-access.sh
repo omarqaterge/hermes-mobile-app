@@ -73,6 +73,9 @@ fi
 if [ -n "$ok" ]; then
   # Lets Shizuku start itself after a reboot (Android 13+, without root, once it was started via Wireless debugging).
   "$HOME/bin/rish" -c 'pm grant moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS' </dev/null >/dev/null 2>&1
+  # Take Shizuku off Android's battery limits (it would be stopped in the background and Hermes would lose the screen).
+  # Same list the computer route fills; the shell user may do it. Never fails the installer.
+  "$HOME/bin/rish" -c 'dumpsys deviceidle whitelist +moe.shizuku.privileged.api' </dev/null >/dev/null 2>&1 || true
 else
   todo "Shizuku: start it and tap Allow when it asks whether Termux may use it (no root: Start via Wireless debugging, pair once; rooted: Start; not installed: https://shizuku.rikka.app/download/), then run the installer again"
 fi
