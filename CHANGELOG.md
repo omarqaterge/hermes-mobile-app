@@ -4,6 +4,8 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Pull up past the last message to open a side question (/btw) about the chat.** The list stretches like a rubber band; about 110 px of pull shows “Release for a side question”. A lighter pull springs back. (Browser-tested; not yet tried on a real phone.)
+
 ## v0.8.57 (2026-10-24)
 
 Tested on one phone (Android 16) and Android 15 emulators; not yet on other phone makers. The installer fix for an interrupted install was not re-run on an emulator.

@@ -34,6 +34,8 @@ export function openBtw(question = ''): void {
   if (question.trim()) void askBtw(question)
 }
 
+export const btwOpen = (): boolean => state.open
+
 export function closeBtw(): void {
   set({ open: false })
 }

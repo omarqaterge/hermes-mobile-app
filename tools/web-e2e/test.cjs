@@ -1215,6 +1215,71 @@ async function main() {
     check(qcalls().length === afterFirst, `reopening a card chat from another chat makes no new /openui/call (${afterFirst} → ${qcalls().length})`)
   }
 
+  // ── pull up past the last message opens the /btw side chat ──
+  {
+    const pp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await pp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-5', profile: 'default' })))
+    await pp.goto('http://127.0.0.1:5180/')
+    await pp.locator('.msg.assistant').first().waitFor({ timeout: 8000 })
+    // Touch events on .chat: start near the bottom, move up `dy` px in steps, optionally report mid-gesture state, end.
+    const pull = (dy, peek) => pp.evaluate(async ([dy, peek]) => {
+      const el = document.querySelector('.chat')
+      const r = el.getBoundingClientRect()
+      const x = r.left + 60, y = r.bottom - 40
+      const mk = (type, py) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: x, clientY: py })] })
+      const wait = () => new Promise(res => setTimeout(res, 30))
+      el.dispatchEvent(mk('touchstart', y))
+      let mid = null
+      for (let i = 1; i <= 6; i++) {
+        el.dispatchEvent(mk('touchmove', y - (dy * i) / 6))
+        await wait()
+      }
+      if (peek) mid = { pulling: el.classList.contains('pulling'), armed: el.classList.contains('pull-armed'), pull: el.style.getPropertyValue('--pull'), moved: getComputedStyle(el.querySelector('.msg')).transform }
+      el.dispatchEvent(mk('touchend', y - dy))
+      return mid
+    }, [dy, peek])
+    const btw = () => pp.locator('.sheet.btw').count()
+    await pull(40)
+    await sleep(400)
+    check((await btw()) === 0, 'a short pull up at the bottom does not open the side chat')
+    check((await pp.evaluate(() => document.querySelector('.chat').className)) === 'chat', 'a short pull springs back and leaves no pull classes')
+    const mid = await pull(150, true)
+    check(mid && mid.pulling && mid.armed && parseFloat(mid.pull) < -20 && mid.moved !== 'none', `a firm pull stretches the list and arms the hint (${JSON.stringify(mid)})`)
+    await pp.locator('.sheet.btw').waitFor({ timeout: 3000 }).then(() => check(true, 'a firm pull up at the bottom opens the side chat'), () => check(false, 'a firm pull up at the bottom opens the side chat'))
+    await pull(150)
+    await sleep(300)
+    check((await btw()) === 1, 'the gesture does nothing while the side chat is open')
+    await pp.locator('.sheet.btw').evaluate(() => window.history.back()).catch(() => {})
+    await pp.keyboard.press('Escape').catch(() => {})
+    await pp.evaluate(() => { document.querySelector('.sheet-backdrop')?.click() })
+    await sleep(400)
+    // Not at the bottom: make the list taller than the screen and scroll to the top.
+    await pp.evaluate(() => {
+      const el = document.querySelector('.chat')
+      el.querySelector('.chat-pad').style.height = '2000px'
+      el.scrollTop = 0
+    })
+    await sleep(200)
+    await pull(150)
+    await sleep(400)
+    check((await btw()) === 0, 'a pull when the list is not at the bottom does not open the side chat')
+    await pp.close()
+    const pe = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await pe.goto('http://127.0.0.1:5180/')
+    await pe.locator('.empty .suggestion').first().waitFor({ timeout: 8000 })
+    await pe.evaluate(() => {
+      const el = document.querySelector('.empty')
+      const mk = (type, py) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: 100, clientY: py })] })
+      el.dispatchEvent(mk('touchstart', 600))
+      el.dispatchEvent(mk('touchmove', 500))
+      el.dispatchEvent(mk('touchmove', 400))
+      el.dispatchEvent(mk('touchend', 400))
+    })
+    await sleep(400)
+    check((await pe.locator('.sheet.btw').count()) === 0 && (await pe.locator('.chat').count()) === 0, 'a pull on the empty new-chat screen does not open the side chat')
+    await pe.close()
+  }
+
   // ── #15 launcher shortcut "New chat" (the shell calls hermesShortcut) ──
   await page.evaluate(() => window.hermesShortcut('new'))
   await page.locator('.empty .suggestion').first().waitFor({ timeout: 5000 }).then(() => check(true, 'New chat shortcut opens the new-chat screen'), () => check(false, 'New chat shortcut opens the new-chat screen'))
