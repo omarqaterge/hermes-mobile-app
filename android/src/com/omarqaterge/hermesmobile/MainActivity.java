@@ -376,10 +376,15 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
     }
 
-    /** RUN_COMMAND with a result PendingIntent: Termux answers in ~30-200 ms. At most one in flight (10 s). */
-    void probeTermux() {
+    /** RUN_COMMAND with a result PendingIntent: Termux answers in ~30-200 ms. At most one in flight (10 s).
+     *  Not sent until Termux has accepted a command once (termuxOk: installer DONE, the dashboard answering, an earlier
+     *  probe): before the installer has set allow-external-apps, Termux refuses it with an error notification
+     *  ("RunCommandService requires allow-external-apps") on every return to the app. The answer is then "not-allowed"
+     *  without asking, which is what Termux would say. `force` = the user tapped "Already installed? Check". */
+    void probeTermux(boolean force) {
         if (!installed("com.termux")) { probeAnswer("{\"result\":\"error\"}"); return; }
         if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) { probeAnswer("{\"result\":\"denied\"}"); return; }
+        if (!force && !termuxOk(this)) { probeAnswer("{\"result\":\"not-allowed\",\"asked\":false}"); return; }
         long now = System.currentTimeMillis();
         if (now - probeSentAt < 10_000) return;
         probeSentAt = now;
@@ -2221,7 +2226,14 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void probeTermux(String key) {
             if (!ok(key)) return;
-            runOnUiThread(MainActivity.this::probeTermux);
+            runOnUiThread(() -> MainActivity.this.probeTermux(false));
+        }
+
+        /** The user asked: really send the probe, even before Termux has accepted a command (may show Termux's error). */
+        @JavascriptInterface
+        public void probeTermuxNow(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> MainActivity.this.probeTermux(true));
         }
 
         /** App-first setup: copy the installer command with a new one-time progress token. The page never sees it. */

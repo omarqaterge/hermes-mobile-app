@@ -3270,3 +3270,6 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .provider-key { display: flex; gap: 8px; align-items: center; padding: 10px 12px; }
 .provider-key input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; outline: none; color: inherit; font: inherit; }
 .providers .set-value { white-space: nowrap; font-size: 0.78rem; }
+
+/* Setup flow: "Hermes already installed? Check" under the installer step (Setup.tsx InstallerStep) */
+.flow-check { margin-top: 10px; align-self: flex-start; }

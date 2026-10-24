@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api } from '../api'
 import {
-  copySetupCommand, copyText, haptic, installHelperApp, openExternal, isNative, onSetupEvent, probeTermux, setupFix, setupProgress, setupState,
+  canProbeNow, copySetupCommand, copyText, haptic, installHelperApp, openExternal, isNative, onSetupEvent, probeTermux, setupFix, setupProgress, setupState,
   type HelperApp, type InstallState, type NativeSetup
 } from '../bridge'
 import { reconnectNow, rpc } from '../gateway'
@@ -911,6 +911,30 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
   const now = useInstallClock(Boolean(progress?.times) && !progress?.done && !progress?.fail && lines.some(l => l.startsWith('STEP ')))
   const v = progressView(lines, progress?.times, now)
   const started = lines.some(l => l.startsWith('STEP '))
+  // "Already installed? Check": the one probe sent to Termux before it has accepted a command (e.g. the app was
+  // reinstalled on a phone that has Hermes). Found → the flow moves on by itself (the hook gets the same answer).
+  const checking = useRef(false)
+  useEffect(
+    () =>
+      onSetupEvent(e => {
+        if (e.kind !== 'probe' || !checking.current) return
+        checking.current = false
+        let raw: { result?: string; installed?: boolean; services?: boolean } = {}
+        try {
+          raw = JSON.parse(e.json)
+        } catch {
+          /* ignore */
+        }
+        if (raw.result !== 'ran') toast('Termux doesn’t take commands from the app yet, so Hermes isn’t set up. Run the installer: it skips what is already there.', 'info', 7000)
+        else if (!raw.installed && !raw.services) toast('Hermes isn’t installed in Termux yet. Run the installer.', 'info', 5000)
+      }),
+    []
+  )
+  const check = () => {
+    haptic()
+    checking.current = true
+    probeTermux(true)
+  }
   const actions = (
     <div className="setup-actions">
       <button className="btn primary" onClick={() => { haptic(); copyBootstrap(); onCopied() }}>Copy the command</button>
@@ -930,6 +954,9 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
         <div className="dim small flow-card-note">
           {progress?.active ? 'Waiting for the installer to start… its progress shows here.' : 'It takes 15-40 minutes, mostly waiting. Its progress shows here.'}
         </div>
+        {!progress?.active && canProbeNow() && (
+          <button className="btn flow-check" onClick={check}>Hermes already installed? Check</button>
+        )}
       </div>
     )
   return (

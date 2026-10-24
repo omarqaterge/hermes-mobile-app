@@ -39,7 +39,8 @@ interface AndroidBridge {
   setupState?(): string
   setupFix?(what: string): void
   installHelperApp?(which: string): void // answers window.hermesSetupInstall(which, state, pct, msg)
-  probeTermux?(): void // answers window.hermesTermuxProbe(json)
+  probeTermux?(): void // answers window.hermesTermuxProbe(json); not sent to Termux before it accepted a command once
+  probeTermuxNow?(): void // same, always sent (a user tap)
   setupCommand?(): boolean // copies the installer command with a fresh progress token
   setupProgress?(): string // {active, lines, times?, done, fail}; new lines also come through window.hermesSetupLine(line)
   signInTermux?(provider: string, profile: string): boolean
@@ -293,9 +294,17 @@ export function installHelperApp(which: HelperApp): boolean {
   }
 }
 
-/** Ask Termux (through the shell) whether Hermes is installed and running; the answer arrives as a 'probe' event. */
-export function probeTermux(): boolean {
+/** The shell can ask Termux on a tap even before Termux accepted a command ("Already installed? Check"). */
+export const canProbeNow = (): boolean => Boolean(native?.probeTermuxNow)
+
+/** Ask Termux (through the shell) whether Hermes is installed and running; the answer arrives as a 'probe' event.
+ *  `force`: a user tap; otherwise the shell answers "not-allowed" itself until Termux has accepted a command once. */
+export function probeTermux(force = false): boolean {
   try {
+    if (force && native?.probeTermuxNow) {
+      native.probeTermuxNow()
+      return true
+    }
     if (!native?.probeTermux) return false
     native.probeTermux()
     return true

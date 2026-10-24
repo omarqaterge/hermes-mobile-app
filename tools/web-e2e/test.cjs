@@ -82,6 +82,11 @@ const nativeShell = () => {
         window.__probes = (window.__probes || 0) + 1
         if (window.__probe) setTimeout(() => window.hermesTermuxProbe(JSON.stringify(window.__probe)), 20)
       },
+      probeTermuxNow: key => {
+        k(key, 'probeTermuxNow')
+        window.__probesNow = (window.__probesNow || 0) + 1
+        if (window.__probe) setTimeout(() => window.hermesTermuxProbe(JSON.stringify(window.__probe)), 20)
+      },
       setupCommand: key => {
         k(key, 'setupCommand')
         window.__copied = (window.__copied || 0) + 1
@@ -2169,6 +2174,12 @@ async function main() {
     })
     await fe.getByText('Run the installer', { exact: true }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: Termux refuses commands → Run the installer'), () => check(false, 'app-first: Termux refuses commands → Run the installer'))
     check((await fe.evaluate(() => window.__probes || 0)) >= 1, 'app-first: the flow probed Termux once it was allowed to')
+    // "Hermes already installed? Check": the only probe the shell sends before Termux accepted a command (a user tap)
+    check((await fe.evaluate(() => window.__probesNow || 0)) === 0, 'app-first: no forced Termux probe without a tap')
+    await fe.getByRole('button', { name: 'Hermes already installed? Check' }).click({ timeout: 3000 }).catch(() => {})
+    check((await fe.evaluate(() => window.__probesNow || 0)) === 1, 'app-first: Check sends the one forced probe')
+    await fe.locator('.toast', { hasText: 'Run the installer' }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: Check, Termux still refuses → says to run the installer'), () => check(false, 'app-first: Check, Termux still refuses → says to run the installer'))
+    check((await fe.getByText('Run the installer', { exact: true }).count()) === 1, 'app-first: Check without Hermes keeps the installer step')
     await fe.getByRole('button', { name: 'Copy the command' }).click()
     check((await fe.evaluate(() => window.__copied)) === 1, 'app-first: Copy the command asks the shell for the command (the page never builds it)')
     await fe.getByText('Waiting for the installer to start', { exact: false }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: after copying it waits for the installer'), () => check(false, 'app-first: after copying it waits for the installer'))
