@@ -7,7 +7,7 @@ import type { NativeSetup } from './bridge'
 
 export type StepId =
   | 'apps' | 'termux' | 'shizuku-start' | 'run' | 'installer' | 'hermes' | 'plugin' | 'enabled' | 'model'
-  | 'notif' | 'bat-app' | 'bat-termux' | 'termux-boot' | 'files' | 'termux-api' | 'shizuku' | 'autostart'
+  | 'notif' | 'bat-app' | 'bat-termux' | 'bat-shizuku' | 'termux-boot' | 'files' | 'termux-api' | 'shizuku' | 'autostart'
 
 /** What Termux said to the shell's probe (MainActivity.probeTermux). unknown: not asked / no answer yet · denied: no
  *  RUN_COMMAND permission · not-allowed: Termux refuses commands (the installer never got far) · no-services: Termux runs
@@ -30,8 +30,9 @@ export interface Progress {
 export interface PreHermes {
   probe: Probe | null
   progress: Progress | null
-  /** The user skipped (or finished) the Start Shizuku step. */
-  shizukuSkipped: boolean
+  /** The Start Shizuku step is finished: the app saw Shizuku running, or the user said it runs (a Shizuku started before
+   *  the app's first launch isn't seen until the app restarts). Not a skip: the later `shizuku` row still has to turn ✓. */
+  shizukuDone: boolean
   /** The user tapped Done on the Autostart step (Android can't tell whether the switch is on). */
   autostartDone?: boolean
 }
@@ -148,7 +149,7 @@ export type StepState = 'ok' | 'bad' | 'wait' | 'skip' | 'info'
 
 export interface FlowStep {
   id: StepId
-  /** Hermes can't work without it (running, plugin, a model). The rest is recommended and never blocks. */
+  /** Hermes can't work without it (running, plugin, a model, Shizuku). The rest is recommended and never blocks. */
   required: boolean
   state: StepState
 }
@@ -185,7 +186,7 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
             : prog?.fail ? 'bad'
               : probe === 'unknown' ? 'wait'
                 : 'bad'
-  const shizukuState: StepState = !appFirst || probe == null || installed || installing || pre?.shizukuSkipped ? 'skip' : 'bad'
+  const shizukuState: StepState = !appFirst || probe == null || installed || installing ? 'skip' : pre?.shizukuDone ? 'ok' : 'bad'
   const nat = (v: boolean | undefined): StepState => (n ? (v ? 'ok' : 'bad') : 'skip')
   const p = online ? r?.phone ?? null : null
   const remoteState = (v: boolean | undefined): StepState => (p ? (v ? 'ok' : 'bad') : 'skip')
@@ -205,10 +206,12 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     row('notif', false, nat(n?.notifications)),
     row('bat-app', false, nat(n?.batteryApp)),
     row('bat-termux', false, n && !n.termux ? 'skip' : nat(n?.batteryTermux)),
+    // Android can stop Shizuku in the background and Hermes loses the screen. Older builds don't report it: no row.
+    row('bat-shizuku', false, !n || !n.shizuku || n.batteryShizuku === undefined ? 'skip' : n.batteryShizuku ? 'ok' : 'bad'),
     row('termux-boot', false, n?.termuxBoot && n.termuxBootStopped ? 'bad' : n?.termuxBoot && n.termuxBootStopped === false ? 'ok' : 'skip'),
     row('files', false, remoteState(p?.files)),
     row('termux-api', false, n?.termuxApi === false ? 'bad' : remoteState(p?.termux_api)),
-    row('shizuku', false, n?.shizuku === false ? 'bad' : !p ? 'skip' : p.shizuku === 'ok' ? 'ok' : 'bad'),
+    row('shizuku', true, n?.shizuku === false ? 'bad' : !p ? 'skip' : p.shizuku === 'ok' ? 'ok' : 'bad'),
     // Only on phones whose maker adds an Autostart switch (the shell knows which); it can't be read, so it stays a tip
     // until the user says it is done.
     row('autostart', false, !n?.autostart ? 'skip' : pre?.autostartDone ? 'ok' : 'info')
@@ -235,11 +238,11 @@ export interface FlowFlags {
   flowDone: boolean
 }
 
-/** Should the flow open by itself at start-up? Only on a first run (neither flag set): a missing plugin, no model, or
+/** Should the flow open by itself at start-up? Only on a first run (neither flag set): a missing plugin, no model, Shizuku not working, or
  *  a recommended item that is missing, once. An established setup is never interrupted. (Hermes not running on a first
  *  run is handled by watchFirstRun.) */
 export function shouldOpenFlow(steps: FlowStep[], f: FlowFlags): boolean {
   if (f.welcomeDone || f.flowDone) return false
   const bad = (id: StepId) => steps.find(s => s.id === id)?.state === 'bad'
-  return bad('plugin') || bad('model') || recommendedGaps(steps).length > 0
+  return bad('plugin') || bad('model') || bad('shizuku') || recommendedGaps(steps).length > 0
 }
