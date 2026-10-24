@@ -3273,3 +3273,48 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 
 /* Setup flow: "Hermes already installed? Check" under the installer step (Setup.tsx InstallerStep) */
 .flow-check { margin-top: 10px; align-self: flex-start; }
+
+/* pull up for /btw: the list stretches while the finger pulls past the last message (pullbtw.ts) */
+.chat.pulling > :not(.pull-hint):not(.jump) {
+  transform: translateY(var(--pull, 0px));
+  will-change: transform;
+}
+.chat.pull-release > :not(.pull-hint):not(.jump) {
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.chat .pull-hint {
+  position: sticky;
+  bottom: 0;
+  height: 0;
+  margin-top: -10px; /* cancels the list's row gap so the hint adds no scroll height */
+  pointer-events: none;
+  opacity: 0;
+}
+.chat.pulling .pull-hint {
+  opacity: calc(var(--pull-ratio, 0) * 0.8);
+}
+.chat.pull-armed .pull-hint {
+  opacity: 1;
+}
+.pull-hint span {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 12px;
+}
+.chat.pull-armed .pull-hint span {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat.pull-release > :not(.pull-hint):not(.jump) {
+    transition: none;
+  }
+}

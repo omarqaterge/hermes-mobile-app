@@ -15,6 +15,7 @@ import { CanvasPanel } from './components/Canvas'
 import { openCanvas, startCanvasSync, useCanvas } from './canvas'
 import { backTop } from './backstack'
 import { installSwipeToDrawer } from './swipe'
+import { installPullToBtw } from './pullbtw'
 import { findHit, findMatches, firstRange, highlightWords } from './jump'
 import { useBackHandler } from './backstack'
 import { recentPrompts } from './recent'
@@ -519,6 +520,12 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   const conn = useStore(s => s.conn)
   const openingActive = useStore(s => s.active?.storedId)
   const openingTitle = useStore(s => s.sessions.find(x => x.id === s.opening)?.title || '')
+  // The pull-up gesture lives on the list element, which is a different element in the skeleton / empty / list states.
+  const hasList = Boolean(items && items.length)
+  useEffect(() => {
+    const el = scroller.current
+    return el ? installPullToBtw(el) : undefined
+  }, [hasList, opening, openingActive])
   if (opening && !previewing && (!(items && items.length) || opening !== openingActive))
     return (
       <div className="chat chat-skeleton" role="status" aria-label="Opening your chat">
@@ -579,6 +586,9 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
           ↓
         </button>
       )}
+      <div className="pull-hint" aria-hidden="true">
+        <span>Release for a side question</span>
+      </div>
     </div>
   )
 }

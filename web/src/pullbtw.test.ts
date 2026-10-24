@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { expect, test } from 'vitest'
 import { PULL_MAX_PX, PULL_TRIGGER_PX, rubber, shouldOpen } from './pullbtw'
 
