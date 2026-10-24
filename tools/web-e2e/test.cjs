@@ -1913,9 +1913,11 @@ async function main() {
   await cvp.locator('.msg.assistant pre').first().waitFor({ timeout: 5000 })
   await cvp.locator('.msg.assistant table').first().waitFor({ timeout: 5000 })
   // A synthetic touch swipe from (x, y at the element's middle) by dx/dy; the target is what is under the finger.
+  // x null = just inside the element's left edge.
   const cswipe = (sel, x, dx, dy = 0) => cvp.evaluate(([sel, x, dx, dy]) => {
     const r = document.querySelector(sel).getBoundingClientRect()
     const y = r.top + Math.min(r.height / 2, 30)
+    if (x === null) x = r.left + 10
     const el = document.elementFromPoint(x, y)
     const mk = (type, px, py) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: px, clientY: py })], changedTouches: [new Touch({ identifier: 1, target: el, clientX: px, clientY: py })] })
     el.dispatchEvent(mk('touchstart', x, y))
@@ -1925,13 +1927,13 @@ async function main() {
     return el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').join('.') : '')
   }, [sel, x, dx, dy])
   const panelOpen = async () => (await cvp.locator('.canvas-panel').count()) === 1
-  for (const [sel, what] of [['.msg.assistant pre', 'a code block'], ['.msg.assistant table', 'a table'], ['.msg.assistant .hm-openui', 'a card']]) {
+  for (const [sel, what] of [['.msg.assistant pre', 'a code block'], ['.msg.assistant table td', 'a table'], ['.msg.assistant .hm-openui', 'a card']]) {
     await cvp.locator(sel).first().scrollIntoViewIfNeeded()
-    const on = await cswipe(sel, 120, -100)
+    const on = await cswipe(sel, null, -100)
     await sleep(300)
     check(!(await panelOpen()), `a swipe left that starts on ${what} does not open the canvas (${on})`)
   }
-  await cvp.locator('.msg.assistant p', { hasText: 'Plain words' }).scrollIntoViewIfNeeded()
+  await cvp.locator('.msg.assistant p', { hasText: 'Plain words to swipe' }).scrollIntoViewIfNeeded()
   await cswipe('.msg.assistant p', 300, -40)
   await sleep(300)
   check(!(await panelOpen()), 'a short swipe left does not open the canvas')
