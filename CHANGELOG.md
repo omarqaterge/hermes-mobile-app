@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Choose the default Auto mode for all chats.** Settings → Permissions → Auto for all chats: Off, Auto access or Full access (Full asks for confirmation first). Every chat without its own choice starts in it; a chat you set with its Auto button, including Off, keeps your choice. (Browser-tested; not yet tried on a real phone.)
 - **No more Termux error popups during setup.** Before the installer had run, every return to the app made Termux show "RunCommandService requires allow-external-apps". The app no longer sends Termux anything until Termux has accepted a command once (installer finished, or Hermes answering). Reinstalled the app on a phone that already has Hermes? **Hermes already installed? Check** on the installer step finds it and setup moves on.
 - **Running the installer again after it was interrupted works.** If Termux was killed or the phone restarted while Hermes was being installed, the next run stopped at once ("exists and is not a Hermes git checkout"). The installer now moves the half-installed folder aside and installs fresh.
 ## v0.8.56 (2026-10-24)

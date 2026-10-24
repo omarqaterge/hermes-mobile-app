@@ -17,6 +17,7 @@ import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLivePause, setLivePause } from '../live'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
+import { DefaultAccessRow } from './AutoAccess'
 import { UninstallSection } from './Uninstall'
 import { ProviderList } from './Providers'
 import { onlySlugs } from '../providers'
@@ -802,6 +803,9 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row icon="👤" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
         <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermes option" chevron onClick={() => go('config')} />
+      </Section>
+      <Section title="Permissions" footer="What new and existing chats start in. A chat you set with its own Auto button keeps that choice.">
+        <DefaultAccessRow />
       </Section>
       <OpenUISection />
       <BgAppsSection />

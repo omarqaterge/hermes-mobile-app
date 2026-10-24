@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { accessOf, errText, newSession, setAccess, type Access } from '../gateway'
+import { accessOf, defaultAccess, errText, newSession, setAccess, setDefaultAccess, type Access } from '../gateway'
 import { getState, toast, useStore } from '../store'
 import { confirmDialog } from '../dialog'
-import { PickerSheet, type Option } from './ui'
+import { PickerSheet, SelectRow, type Option } from './ui'
 
 const OPTIONS: Option[] = [
   { value: 'off', label: 'Off', sub: 'Hermes asks before risky commands', icon: '✋', tone: 'gray' },
@@ -64,4 +64,25 @@ export function AutoButton() {
       {open && <PickerSheet title="Auto: run without asking" options={OPTIONS} value={mode} onPick={v => void pick(v)} onClose={() => setOpen(false)} />}
     </>
   )
+}
+
+/** Settings → "Auto for all chats": the mode every chat starts in (a chat you set yourself keeps its own). */
+export function DefaultAccessRow() {
+  const [mode, setMode] = useState<Access>(defaultAccess())
+  const pick = async (v: string) => {
+    const want = v as Access
+    if (want === 'full') {
+      const ok = await confirmDialog({
+        title: 'Full access in every chat?',
+        message: 'Hermes will run every command in every chat without asking you first: deleting or overwriting files, killing apps, installing software, sending data over the network. Nothing is checked before it runs. Only Hermes’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. You can still turn it off for a single chat from its Auto button.',
+        confirmLabel: 'Allow in all chats',
+        icon: '⚠️',
+        danger: true
+      })
+      if (!ok) return
+    }
+    setDefaultAccess(want)
+    setMode(want)
+  }
+  return <SelectRow icon="⚡" tone="teal" title="Auto for all chats" options={OPTIONS} value={mode} onChange={v => void pick(v)} />
 }
