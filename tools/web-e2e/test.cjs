@@ -1249,8 +1249,6 @@ async function main() {
     await pull(150)
     await sleep(300)
     check((await btw()) === 1, 'the gesture does nothing while the side chat is open')
-    await pp.locator('.sheet.btw').evaluate(() => window.history.back()).catch(() => {})
-    await pp.keyboard.press('Escape').catch(() => {})
     await pp.evaluate(() => { document.querySelector('.sheet-backdrop')?.click() })
     await sleep(400)
     // Not at the bottom: make the list taller than the screen and scroll to the top.
