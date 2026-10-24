@@ -137,7 +137,7 @@ export async function openItemChat(item: GalleryItem, withCanvas: boolean): Prom
   if (chat.profile && chat.profile !== getState().profile) await switchProfile(chat.profile)
   openSessionFromNotification(item.session)
   // The resume has set `opening` to this chat: the canvas follows it and stays open once the chat is live.
-  if (withCanvas && item.doc) openCanvas(item.doc, 'full')
+  if (withCanvas && item.doc) openCanvas(item.doc, 'side')
   return true
 }
 

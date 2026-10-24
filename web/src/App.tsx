@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { compressChat, connect, errText, fmtCtx, newSession, openSessionFromNotification, reconnectNow } from './gateway'
+import { compressChat, connect, errText, fmtCtx, openSessionFromNotification, reconnectNow } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { foldMap } from './fold'
@@ -12,9 +12,9 @@ import { bannerItems, startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
 import { BtwSheet } from './components/Btw'
 import { CanvasPanel } from './components/Canvas'
-import { openCanvas, startCanvasSync, useCanvas } from './canvas'
+import { startCanvasSync, useCanvas } from './canvas'
 import { backTop } from './backstack'
-import { installSwipeToDrawer } from './swipe'
+import { installSwipeToDrawer, openChatCanvas } from './swipe'
 import { findHit, findMatches, firstRange, highlightWords } from './jump'
 import { useBackHandler } from './backstack'
 import { recentPrompts } from './recent'
@@ -71,7 +71,6 @@ function Header() {
   const title = useStore(s => (s.opening && s.preview?.storedId === s.opening ? s.preview.title : s.active?.title))
   const profile = useStore(s => s.profile)
   const hasActive = useStore(s => Boolean(s.active))
-  const hasChat = useStore(s => Boolean(s.active || s.opening)) // a chat on screen, or one still loading
   const dot = useStore(s => dotState(s.conn, s.health))
   const chatReading = useAutoRead(useStore(s => s.active?.storedId))
   const draftReading = useDraftAutoRead()
@@ -107,12 +106,7 @@ function Header() {
         <button
           className={`icon-btn canvas-btn${canvasWriting ? ' writing' : ''}`}
           aria-label={canvasWriting ? 'Canvas (Hermes is writing)' : 'Canvas'}
-          onClick={() => {
-            // The canvas belongs to a chat: on the empty screen, start the chat first. A chat still opening (cold
-            // start) has its canvas already: creating a chat here would abandon that resume and land on an empty chat.
-            if (hasChat) openCanvas()
-            else void newSession().then(() => openCanvas()).catch(() => {})
-          }}
+          onClick={openChatCanvas}
         >
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="3" />
