@@ -121,7 +121,7 @@ adb shell dumpsys deviceidle whitelist +com.termux >/dev/null || true
 # Files for Hermes (/sdcard), so the installer doesn't stop at Android's prompt.
 adb shell pm grant com.termux android.permission.READ_EXTERNAL_STORAGE 2>/dev/null || true
 adb shell pm grant com.termux android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null || true
-# Start Shizuku the way its own "Start by adb" does. It stops on every reboot without root; see the README.
+# Start Shizuku the way its own "Start by adb" does. It stops on every reboot without root; see docs/install.md.
 if ! adb shell ps -A -o NAME | tr -d '\r' | grep -qx shizuku_server; then
   adb shell 'p=$(pm path moe.shizuku.privileged.api | head -1 | cut -d: -f2); "$(dirname "$p")/lib/arm64/libshizuku.so"' >/dev/null 2>&1 || true
   sleep 2

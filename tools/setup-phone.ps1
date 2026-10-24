@@ -114,7 +114,7 @@ Sh 'dumpsys deviceidle whitelist +com.termux' | Out-Null
 # Files for Hermes (/sdcard), so the installer doesn't stop at Android's prompt.
 Sh 'pm grant com.termux android.permission.READ_EXTERNAL_STORAGE' | Out-Null
 Sh 'pm grant com.termux android.permission.WRITE_EXTERNAL_STORAGE' | Out-Null
-# Start Shizuku the way its own "Start by adb" does. It stops on every reboot without root; see the README.
+# Start Shizuku the way its own "Start by adb" does. It stops on every reboot without root; see docs/install.md.
 function ShizukuUp { ((Sh 'ps -A -o NAME') -split "`n" | ForEach-Object { $_.Trim() }) -contains 'shizuku_server' }
 if (-not (ShizukuUp)) {
   Sh 'p=$(pm path moe.shizuku.privileged.api | head -1 | cut -d: -f2); "$(dirname "$p")/lib/arm64/libshizuku.so"' | Out-Null
