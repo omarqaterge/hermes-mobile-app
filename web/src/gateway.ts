@@ -499,6 +499,11 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
   retire(prev)
   rememberSession(active.storedId)
   applyDraftRead(active.storedId) // a read-aloud choice made on the empty screen
+  const want = defaultAccess() // Settings → Auto for all chats
+  if (want !== 'off') {
+    if (want === 'auto') updateActive(x => (x.runtimeId === active.runtimeId ? { autoAccess: true } : {}))
+    void setAccess(active, want).catch(() => {})
+  }
   return active
 }
 
@@ -725,7 +730,7 @@ function rememberYolo(storedId: string, mode: Access): void {
   const m = yoloChats()
   if (mode === 'full') m[storedId] = true
   else if (mode === 'auto') m[storedId] = 'auto'
-  else delete m[storedId]
+  else m[storedId] = false // an explicit Off beats the default in Settings
   try {
     localStorage.setItem(YOLO_KEY, JSON.stringify(m))
   } catch {
@@ -744,7 +749,27 @@ export function accessOf(a: ActiveSession | null | undefined): Access {
 /** The mode this chat should be in after a resume (Hermes b8a8be18 forgets /yolo). */
 function rememberedAccess(storedId: string): Access {
   const v = yoloChats()[storedId]
+  if (v === undefined) return defaultAccess() // never set for this chat: Settings → Auto: default for all chats
   return v === 'auto' ? 'auto' : v ? 'full' : 'off'
+}
+
+const DEFAULT_ACCESS_KEY = 'hm.defaultAccess.v1'
+/** Settings → "Auto for all chats": what a chat starts in when you haven't set Auto for it yourself. */
+export function defaultAccess(): Access {
+  try {
+    const v = localStorage.getItem(DEFAULT_ACCESS_KEY)
+    return v === 'auto' || v === 'full' ? v : 'off'
+  } catch {
+    return 'off'
+  }
+}
+export function setDefaultAccess(v: Access): void {
+  try {
+    if (v === 'off') localStorage.removeItem(DEFAULT_ACCESS_KEY)
+    else localStorage.setItem(DEFAULT_ACCESS_KEY, v)
+  } catch {
+    /* quota: the choice is lost on restart */
+  }
 }
 
 const AUTO_API = '/api/plugins/hermes-mobile/auto'
