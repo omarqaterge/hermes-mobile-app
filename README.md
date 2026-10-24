@@ -90,9 +90,9 @@ what Hermes remembers. Dark, OLED black or light.
 
 ## Install
 
-You need an arm64 Android phone (Android 8+) with about 6 GB free, **no root**, and a model: a subscription you already have
-(ChatGPT, Claude, SuperGrok, Nous Portal) or an API key (for example [OpenRouter](https://openrouter.ai/keys), or Gemini's free
-tier). It takes 15-40 minutes, mostly waiting.
+**No root needed.** You need an arm64 Android phone (Android 8+) with about 6 GB free, and a model: a subscription you already
+have (ChatGPT, Claude, SuperGrok, Nous Portal) or an API key (for example [OpenRouter](https://openrouter.ai/keys), or Gemini's
+free tier). It takes 15-40 minutes, mostly waiting.
 
 **On the phone (Android 11+):**
 
