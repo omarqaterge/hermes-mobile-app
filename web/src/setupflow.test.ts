@@ -93,6 +93,11 @@ describe('shouldOpenFlow', () => {
   test('a plugin that is installed but not enabled for this profile does not interrupt', () => {
     expect(shouldOpenFlow(setupSteps(native, 'open', { ...remote, enabled: false }, true), none)).toBe(false)
   })
+  test('Shizuku not working on a first run → opens (it is required)', () => {
+    const off = setupSteps(native, 'open', { ...remote, phone: { files: true, termux_api: true, shizuku: 'off' } }, true)
+    expect(shouldOpenFlow(off, none)).toBe(true)
+    expect(shouldOpenFlow(off, { welcomeDone: false, flowDone: true })).toBe(false)
+  })
   test('plugin not installed on a first run → opens', () => {
     expect(shouldOpenFlow(setupSteps(native, 'open', { ...remote, plugin: false }, true), none)).toBe(true)
   })
