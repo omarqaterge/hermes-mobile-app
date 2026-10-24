@@ -502,7 +502,7 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
   const want = defaultAccess() // Settings → Auto for all chats
   if (want !== 'off') {
     if (want === 'auto') updateActive(x => (x.runtimeId === active.runtimeId ? { autoAccess: true } : {}))
-    void setAccess(active, want).catch(() => {})
+    void setAccess(active, want, false).catch(() => {})
   }
   return active
 }
@@ -584,7 +584,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back (Auto access: the plugin's list first).
   const want = rememberedAccess(next.storedId)
   if (want === 'auto') updateActive(x => (x.runtimeId === next.runtimeId ? { autoAccess: true } : {}))
-  if (want !== 'off' && !next.info.yolo) void setAccess(next, want).catch(() => {})
+  if (want !== 'off' && !next.info.yolo) void setAccess(next, want, yoloChats()[next.storedId] !== undefined).catch(() => {})
   else if (want === 'auto') void setPluginAuto(next.storedId, true).catch(() => {})
   // Show the chat's context fill under its last reply.
   void refreshCtx(next.usage).then(ctx => {
@@ -784,7 +784,7 @@ async function yoloRpc(a: ActiveSession, on: boolean): Promise<boolean> {
 
 /** Switch a chat's access. Ordered so the chat is never in Full access by accident: Auto writes the plugin's
  *  block list BEFORE /yolo goes on, and leaving Auto turns /yolo off (or keeps it for Full) before the entry goes. */
-export async function setAccess(a: ActiveSession, mode: Access): Promise<Access> {
+export async function setAccess(a: ActiveSession, mode: Access, remember = true): Promise<Access> {
   let on: boolean
   if (mode === 'auto') {
     try {
@@ -800,7 +800,7 @@ export async function setAccess(a: ActiveSession, mode: Access): Promise<Access>
   }
   const got: Access = !on ? 'off' : mode === 'auto' ? 'auto' : 'full'
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on }, autoAccess: got === 'auto' } : {}))
-  rememberYolo(a.storedId, got)
+  if (remember) rememberYolo(a.storedId, got) // the default from Settings isn't the chat's own choice: it follows the default
   return got
 }
 
