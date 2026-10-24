@@ -4,6 +4,8 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **The status sheet shows whether Shizuku is running and Hermes can use it.** Tap the dot under the chat title: a Shizuku row says Running, Not running, Not installed or what to fix, and tapping it opens Shizuku or the Setup check. (Browser-tested; not yet tried on a real phone.)
+
 ## v0.8.57 (2026-10-24)
 
 Tested on one phone (Android 16) and Android 15 emulators; not yet on other phone makers. The installer fix for an interrupted install was not re-run on an emulator.

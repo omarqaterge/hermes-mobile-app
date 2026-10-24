@@ -9,7 +9,10 @@ import { Title, keepBranch, plainTitle } from './Title'
 import { autoReadFor, hasChatOverride, setAutoReadFor, setDraftRead, useAutoRead, useDraftAutoRead } from '../voice'
 import { checkHealth, dotState, type Health } from '../health'
 import { setState, toast, useStore } from '../store'
-import { copyText, haptic, shareText } from '../bridge'
+import { copyText, haptic, setupFix, setupState, shareText } from '../bridge'
+import { api } from '../api'
+import { shizukuRow } from '../statusrows'
+import type { PhoneAccess } from '../setupflow'
 import { refreshLogins } from '../api'
 import { chatMarkdown } from '../export'
 import { isFav, toggleFav, useFavs } from '../favs'
@@ -410,9 +413,9 @@ const ago = (t: number) => {
   return s < 5 ? 'just now' : s < 60 ? `${s}s ago` : `${Math.round(s / 60)} min ago`
 }
 
-function Row({ label, value, state, note }: { label: string; value: string; state?: string; note?: string | null }) {
+function Row({ label, value, state, note, onClick }: { label: string; value: string; state?: string; note?: string | null; onClick?: () => void }) {
   return (
-    <div className="status-row">
+    <div className="status-row" {...(onClick ? { role: 'button', tabIndex: 0, onClick, style: { cursor: 'pointer' } } : {})}>
       <span className={`conn-dot ${state || ''}`} />
       <div className="status-main">
         <div className="status-label">{label}</div>
@@ -428,11 +431,23 @@ export function StatusSheet() {
   const detail = useStore(s => s.connDetail)
   const h = useStore(s => s.health) as Health | null
   const [busy, setBusy] = useState(false)
+  // What Hermes can do with Shizuku: undefined = asking, null = no answer. One call per open / "Check again"; a late answer after close is dropped.
+  const [shz, setShz] = useState<PhoneAccess['shizuku'] | null | undefined>(undefined)
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => void (alive.current = false)
+  }, [])
   const refresh = () => {
     setBusy(true)
+    setShz(undefined)
     void checkHealth().finally(() => setBusy(false))
+    void api<PhoneAccess>('GET', '/api/plugins/hermes-mobile/phone-access', undefined, { profile: false })
+      .then(p => (p && typeof p.shizuku === 'string' ? p.shizuku : null), () => null)
+      .then(v => alive.current && setShz(v))
   }
   useEffect(refresh, [])
+  const shRow = shizukuRow(setupState(), shz)
   const dot = dotState(conn, h)
   const headline =
     dot === 'ok' ? 'Everything is working' : dot === 'wait' ? 'Connecting to Hermes…' : dot === 'err' ? 'Hermes is offline' : 'Hermes is up, with problems'
@@ -467,6 +482,21 @@ export function StatusSheet() {
           />
         )}
         {h?.disk && <Row label="Storage" value={h.disk.free_mb != null ? `${Math.round(h.disk.free_mb / 1024)} GB free` : word(h.disk.pressure)} state={tone(h.disk.pressure)} />}
+        {shRow && (
+          <Row
+            label="Shizuku"
+            value={shRow.value}
+            state={shRow.state}
+            note={shRow.note}
+            onClick={
+              shRow.fix === 'open-shizuku'
+                ? () => setupFix('open-shizuku')
+                : shRow.fix === 'setup'
+                  ? () => setState({ sheet: null, screen: 'setup' })
+                  : undefined
+            }
+          />
+        )}
         <div className="sheet-actions col">
           <button className="btn primary" disabled={busy} onClick={refresh}>
             {busy ? 'Checking…' : 'Check again'}
