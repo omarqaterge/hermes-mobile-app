@@ -1477,6 +1477,15 @@ async function main() {
   await np.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'checks again by itself: All set'), () => check(false, 'checks again by itself: All set'))
   // Hermes's access to the phone: a missing app is told by Android, the rest by the plugin.
   check((await np.locator('.setup-item.ok', { hasText: 'see and use the screen' }).count()) === 1, 'phone access: Shizuku ✓ from the plugin')
+  // Shizuku battery step: Android can stop Shizuku in the background; a recommended row with a button to its app info.
+  await np.evaluate(() => (window.__setup = { ...window.__setup, shizuku: true, batteryShizuku: false }))
+  const batRow = np.locator('.setup-item', { hasText: 'Shizuku may run in the background' })
+  await batRow.waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku battery: the row appears when Shizuku is limited'), () => check(false, 'shizuku battery: the row appears when Shizuku is limited'))
+  check((await np.locator('.setup-item.bad', { hasText: 'Shizuku may run in the background' }).count()) === 1, 'shizuku battery: the row is not ✓ while Shizuku is limited')
+  await batRow.getByRole('button', { name: 'Open Shizuku settings' }).click()
+  check((await np.evaluate(() => window.__fixes)).slice(-1)[0] === 'battery-shizuku', `shizuku battery: the button asks the shell for battery-shizuku (${JSON.stringify((await np.evaluate(() => window.__fixes)).slice(-1))})`)
+  await np.evaluate(() => (window.__setup = { ...window.__setup, batteryShizuku: true }))
+  await np.locator('.setup-item.ok', { hasText: 'Shizuku may run in the background' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku battery: ✓ once Shizuku is unrestricted'), () => check(false, 'shizuku battery: ✓ once Shizuku is unrestricted'))
   await np.evaluate(() => (window.__setup = { ...window.__setup, termuxApi: false, shizuku: true }))
   await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: false, shizuku: 'off' } }) })
   await np.locator('.setup-hero-title', { hasText: '3 things to fix' }).waitFor({ timeout: 6000 }).then(() => check(true, 'phone access: files, Termux:API and Shizuku counted'), () => check(false, 'phone access: files, Termux:API and Shizuku counted'))
@@ -2129,7 +2138,7 @@ async function main() {
     await fg.close()
   }
   // e. app-first: only Hermes Mobile is installed. The flow opens at once at the helper apps, installs all four in order,
-  // offers Start Shizuku (skippable), asks for the Termux permission, copies the installer command, shows its progress
+  // requires Start Shizuku (no Skip), asks for the Termux permission, copies the installer command, shows its progress
   // lines, and after DONE connects and lands on the model step.
   await mock({ unconfigured: true, pluginEnabled: true, drop: 600000 })
   {
@@ -2172,6 +2181,40 @@ async function main() {
       check(JSON.stringify(got) === JSON.stringify(['termux', 'termux-api', 'termux-boot', 'termux-boot', 'shizuku']), `install-all: installs in order, each once more only on Retry (${JSON.stringify(got)})`)
       await fs.close()
     }
+    {
+      // Android 10 and older have no Wireless debugging: the step says Shizuku starts from a computer, links the guide, no Skip.
+      const fo = await flowPage({ ...FRESH, sdk: 29 })
+      await fo.goto('http://127.0.0.1:5180/')
+      await fo.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 }) // the flow opens at once while Termux is missing
+      await fo.evaluate(() => {
+        window.__setup = { ...window.__setup, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid' }
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      await fo.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 })
+      check((await fo.getByText('started from a computer', { exact: false }).count()) === 1, 'shizuku sdk<30: the step explains Shizuku is started from a computer')
+      check((await fo.getByText('Turn on Wireless debugging').count()) === 0 && (await fo.getByText('Turn on Developer options').count()) === 0, 'shizuku sdk<30: no Developer options / Wireless debugging sub-items')
+      check((await fo.getByRole('button', { name: /skip/i }).count()) === 0, 'shizuku sdk<30: no Skip button')
+      await fo.evaluate(() => { window.__opened = [] })
+      await fo.getByRole('button', { name: 'Shizuku’s guide' }).click()
+      check(JSON.stringify(await fo.evaluate(() => window.__opened)) === JSON.stringify(['https://shizuku.rikka.app/guide/setup/']), 'shizuku sdk<30: the guide button opens Shizuku’s setup guide')
+      // the fallback moves on (Shizuku started before the app's first launch is never seen by the app)
+      await fo.getByRole('button', { name: 'Shizuku is running: continue' }).click()
+      await fo.getByText('Run the installer', { exact: true }).waitFor({ timeout: 5000 }).then(() => check(true, 'shizuku fallback: “Shizuku is running: continue” moves on to the installer'), () => check(false, 'shizuku fallback: “Shizuku is running: continue” moves on to the installer'))
+      await fo.close()
+    }
+    {
+      // Android 11+ keeps the Developer options / Wireless debugging items
+      const fo = await flowPage({ ...FRESH, sdk: 34 })
+      await fo.goto('http://127.0.0.1:5180/')
+      await fo.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 }) // the flow opens at once while Termux is missing
+      await fo.evaluate(() => {
+        window.__setup = { ...window.__setup, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid' }
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      await fo.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 })
+      check((await fo.getByText('Turn on Wireless debugging').count()) === 1 && (await fo.getByText('started from a computer', { exact: false }).count()) === 0, 'shizuku sdk>=30: Wireless debugging item stays, no computer note')
+      await fo.close()
+    }
     const fe = await flowPage(FRESH)
     await fe.goto('http://127.0.0.1:5180/')
     await fe.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: no Termux → the flow opens at once at the helper apps'), () => check(false, 'app-first: no Termux → the flow opens at once at the helper apps'))
@@ -2195,9 +2238,11 @@ async function main() {
     check((await fe.getByText('Shizuku uses Android’s own wireless debugging to start itself').count()) === 1, 'Wireless debugging step explains why it is needed')
     // Shizuku auto-detect: the step stays put while the app says Shizuku is not running, then shows a green row and moves on by itself
     await fe.waitForTimeout(3600)
-    check((await fe.getByRole('button', { name: 'Skip for now' }).count()) === 1, 'shizuku-check: the step waits while Shizuku is not running')
+    check((await fe.getByRole('button', { name: /skip/i }).count()) === 0, 'shizuku required: no Skip button on Start Shizuku')
+    check((await fe.getByText('Hermes needs Shizuku', { exact: false }).count()) === 1 && (await fe.getByText(/recommended|optional|skip it/i).count()) === 0, 'shizuku required: the step says Hermes needs Shizuku, never recommended/optional')
     check((await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).count()) === 0, 'shizuku-check: no green row before it runs')
-    check((await fe.getByRole('button', { name: 'Continue' }).count()) === 1 && (await fe.getByRole('button', { name: 'Shizuku is running' }).count()) === 0, 'shizuku-check: the manual button is now “Continue”')
+    check((await fe.getByRole('button', { name: 'Shizuku is running: continue' }).count()) === 1, 'shizuku-check: the fallback button is “Shizuku is running: continue”')
+    check((await fe.getByText('Rooted phone: open Shizuku and tap Start.').count()) === 1, 'shizuku required: rooted phones get their one line')
     await fe.evaluate(() => (window.__setup = { ...window.__setup, shizukuRunning: true }))
     await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku-check: detected → green “Shizuku is running” row (no tap)'), () => check(false, 'shizuku-check: detected → green “Shizuku is running” row (no tap)'))
     await fe.getByRole('button', { name: 'Allow' }).waitFor({ timeout: 5000 }).then(() => check(true, 'app-first: after Shizuku, the Termux permission comes before the installer'), () => check(false, 'app-first: after Shizuku, the Termux permission comes before the installer'))

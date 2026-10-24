@@ -70,6 +70,7 @@ jobs:
       - run: bash tools/test_bootstrap_pin.sh
       - run: bash tools/test_bootstrap_image.sh
       - run: bash tools/test_say_hook.sh
+      - run: bash tools/test_install_routes.sh
       - run: bash tools/test_uninstall.sh
 
   android:
