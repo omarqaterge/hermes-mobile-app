@@ -205,6 +205,10 @@ export interface NativeSetup {
   notifications: boolean
   batteryApp: boolean
   batteryTermux: boolean
+  /** Shizuku is exempt from battery limits (older builds: undefined). */
+  batteryShizuku?: boolean
+  /** Android version (Build.VERSION.SDK_INT); Wireless debugging exists from 30 (older builds: undefined). */
+  sdk?: number
   /** Older app builds don't report these two: undefined. */
   termuxApi?: boolean
   shizuku?: boolean
@@ -248,7 +252,7 @@ export function setupState(): NativeSetup | null {
 export type AutostartPage = '' | 'list' | 'app' | 'settings' | 'info'
 
 export type SetupFix =
-  | 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'app-settings' | 'open-termux' | 'get-termux'
+  | 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'battery-shizuku' | 'app-settings' | 'open-termux' | 'get-termux'
   | 'get-termux-api' | 'get-shizuku' | 'open-shizuku' | 'storage' | 'restart-hermes'
   | 'install-permission' | 'about-phone' | 'dev-options' | 'open-termux-boot'
   /** This phone's Autostart page (for Hermes Mobile / for Termux where the page is per app), else that app's App info. */

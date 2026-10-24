@@ -171,14 +171,17 @@ document.addEventListener('visibilitychange', () => {
 const useInstalls = () => useSyncExternalStore(f => (appSubs.add(f), () => appSubs.delete(f)), () => installs)
 const useAppStatus = () => useInstalls().apps
 
-const SHIZUKU_SKIP = 'hm.shizukuStepDone'
-const shizukuSkipped = () => {
+// Set when Shizuku was seen running (or the user said it runs). Same key as the old Skip, so installs that finished the step stay finished.
+const SHIZUKU_DONE = 'hm.shizukuStepDone'
+const shizukuStepDone = () => {
   try {
-    return localStorage.getItem(SHIZUKU_SKIP) === '1'
+    return localStorage.getItem(SHIZUKU_DONE) === '1'
   } catch {
     return false
   }
 }
+
+const SHIZUKU_GUIDE = 'https://shizuku.rikka.app/guide/setup/'
 
 const AUTOSTART_DONE = 'hm.autostartDone'
 const autostartConfirmed = () => {
@@ -219,7 +222,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
     case 'shizuku-start':
       return {
         title: 'Start Shizuku',
-        help: 'Recommended before the installer: it stops Android from killing the install (“signal 9”) and lets Hermes see and use the screen. Needs Developer options and Wi-Fi.',
+        help: 'Hermes needs Shizuku: it gives Hermes the screen, taps and apps without root, and stops Android from killing the installer (“signal 9”). Also set Shizuku’s Battery to Unrestricted (app info → Battery), or Android may stop it.',
         fix: { label: 'Open Shizuku', run: () => setupFix('open-shizuku') }
       }
     case 'installer':
@@ -301,6 +304,12 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         title: 'Termux may run in the background',
         help: 'Hermes lives in Termux. Open Termux’s app info → Battery → Unrestricted.',
         fix: { label: 'Open Termux settings', run: () => setupFix('battery-termux') }
+      }
+    case 'bat-shizuku':
+      return {
+        title: 'Shizuku may run in the background',
+        help: 'Without this Android can stop Shizuku, and Hermes loses the screen until you start Shizuku again. Open Shizuku’s app info → Battery → Unrestricted.',
+        fix: { label: 'Open Shizuku settings', run: () => setupFix('battery-shizuku') }
       }
     case 'files':
       return {
@@ -398,7 +407,7 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   const [hasModel, setHasModel] = useState<boolean | null>(null)
   const [probeRaw, setProbeRaw] = useState<ProbeRaw | null>(null)
   const [progress, setProgress] = useState<Progress | null>(() => setupProgress())
-  const [shSkip, setShSkip] = useState(shizukuSkipped)
+  const [shDone, setShDone] = useState(shizukuStepDone)
   const [autoDone, setAutoDone] = useState(autostartConfirmed)
   const wantModel = Boolean(opts.model)
   /** probe: also ask Termux what is installed (one RUN_COMMAND, only while Hermes is offline; never on the poll). */
@@ -406,7 +415,7 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
     const nat = setupState()
     setN(nat)
     setProgress(setupProgress())
-    setShSkip(shizukuSkipped())
+    setShDone(shizukuStepDone())
     if (getState().conn !== 'open') {
       // at most one probe per 2 s (the return to the app fires both visibilitychange and hermesSetupChanged)
       if (probe !== false && nat?.probe && nat.termux && Date.now() - lastProbe > 2000) {
@@ -453,19 +462,19 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   useEffect(() => refresh(false), [conn, profile, refresh])
   useEffect(() => refresh(true), [refresh])
   const installing = Boolean(progress?.active && !progress.done && !progress.fail)
-  const pre: PreHermes = { probe: n?.probe ? probeState(probeRaw, installing) : null, progress, shizukuSkipped: shSkip, autostartDone: autoDone }
+  const pre: PreHermes = { probe: n?.probe ? probeState(probeRaw, installing) : null, progress, shizukuDone: shDone, autostartDone: autoDone }
   const steps = setupSteps(n, conn, r, wantModel ? hasModel : true, pre)
   // A step before Hermes exists is known without Hermes: never "Checking…" while the connection retries.
   const pending = nextStep(steps)
   const preHermes = pending != null && ['apps', 'shizuku-start', 'run', 'installer'].includes(pending.id) && (pending.state === 'bad' || installing)
   const loading = !preHermes && (conn === 'connecting' || (conn === 'open' && (r == null || (wantModel && hasModel == null))))
-  const skipShizuku = () => {
+  const shizukuDone = () => {
     try {
-      localStorage.setItem(SHIZUKU_SKIP, '1')
+      localStorage.setItem(SHIZUKU_DONE, '1')
     } catch {
       /* private mode */
     }
-    setShSkip(true)
+    setShDone(true)
   }
   const autostartDone = () => {
     try {
@@ -475,7 +484,7 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
     }
     setAutoDone(true)
   }
-  return { steps, next: pending, loading, refresh, n, r, conn, progress, skipShizuku, autostartDone }
+  return { steps, next: pending, loading, refresh, n, r, conn, progress, shizukuDone, autostartDone }
 }
 
 function useEnable(r: Remote | null, refresh: () => void) {
@@ -579,7 +588,7 @@ let flowDismissed = false
 /** Resume at the first missing step: shows that step with its fix, moves on by itself when it turns ✓, then lists the
  *  recommended items that are still missing once, then "All set". Opens from checkSetupFlow() / watchFirstRun(). */
 export function SetupFlow() {
-  const { steps, loading, refresh, n, r, conn, progress, skipShizuku, autostartDone } = useSetupState({ model: true })
+  const { steps, loading, refresh, n, r, conn, progress, shizukuDone, autostartDone } = useSetupState({ model: true })
   const enable = useEnable(r, refresh)
   // The model step stays on screen until the user finishes it (connecting a provider turns it ✓ before they pick a model).
   const [modelStarted, setModelStarted] = useState(false)
@@ -591,7 +600,7 @@ export function SetupFlow() {
   if (cur?.id === 'model' && !modelStarted) setModelStarted(true)
   const stateOf = (id: StepId) => steps.find(s => s.id === id)?.state
   const total = todo.current.length
-  // skip = the step went away (Start Shizuku skipped, or the installer made it unnecessary): counts as finished, no ✓.
+  // skip = the step went away (the installer made it unnecessary): counts as finished, no ✓.
   const finished = todo.current.filter(id => ((stateOf(id) === 'ok' || stateOf(id) === 'skip') && !(id === 'model' && !modelDone)) || (id === 'model' && modelDone)).length
   const ctx: Ctx = { n, conn, r, enable, autostartDone }
   const checkOf = (s: FlowStep): Check => ({ id: s.id, state: s.state, ...describe(s.id, ctx) })
@@ -634,7 +643,7 @@ export function SetupFlow() {
   } else if (cur?.id === 'apps' && n) {
     body = <AppsStep n={n} />
   } else if (cur?.id === 'shizuku-start' && n) {
-    body = <ShizukuStep n={n} onSkip={skipShizuku} onCheck={() => refresh(false)} />
+    body = <ShizukuStep n={n} onDone={shizukuDone} onCheck={() => refresh(false)} />
   } else if (cur?.id === 'installer') {
     body = <InstallerStep progress={progress} onCopied={() => refresh(false)} />
   } else if (cur) {
@@ -814,14 +823,16 @@ function AppsStep({ n }: { n: NativeSetup }) {
   )
 }
 
-/** Step 2 (can be skipped): start Shizuku before the installer, all on the phone. */
-function ShizukuStep({ n, onSkip, onCheck }: { n: NativeSetup; onSkip: () => void; onCheck: () => void }) {
+/** Step 2 (required, no skip): start Shizuku before the installer, all on the phone. */
+function ShizukuStep({ n, onDone, onCheck }: { n: NativeSetup; onDone: () => void; onCheck: () => void }) {
   const running = n.shizukuRunning === true
+  // Wireless debugging (how Shizuku starts itself on the phone) exists from Android 11; before that Shizuku needs a computer or root.
+  const needsComputer = n.sdk !== undefined && n.sdk < 30
   // Ask the app every 3 s while this step is on screen and visible (stops on success, step change, app hidden, after 10 min;
   // coming back to the app re-checks through the visibilitychange handler of useSetupState). Once running: show ✓, then move on.
   useEffect(() => {
     if (running) {
-      const t = setTimeout(onSkip, 1500)
+      const t = setTimeout(onDone, 1500)
       return () => clearTimeout(t)
     }
     const startedAt = Date.now()
@@ -856,25 +867,38 @@ function ShizukuStep({ n, onSkip, onCheck }: { n: NativeSetup; onSkip: () => voi
     <div className="flow-card">
       <div className="flow-card-title">Start Shizuku</div>
       <div className="setup-help">
-        Recommended before the installer: Shizuku lets the installer stop Android from killing it (“signal 9”), and gives Hermes the
-        screen, taps and apps without root. You can skip it and start Shizuku later.
+        Hermes needs Shizuku: it gives Hermes the screen, taps and apps without root, and stops Android from killing the installer
+        (“signal 9”). Also set Shizuku’s Battery to Unrestricted (app info → Battery), or Android may stop it.
       </div>
       <ul className="setup-list">
+        {needsComputer ? sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Start Shizuku from a computer</div><div className="dim small">On this Android version Shizuku is started from a computer (or with root). On a computer, run the Hermes Mobile setup script, or follow Shizuku’s guide.</div></>) : <>
         {sub(n.devOptions, <><div className="setup-title">Turn on Developer options</div><div className="dim small">About phone → tap <i>Build number</i> 7 times (on some phones it is under <i>Software information</i>, or called <i>OS version</i>).</div></>)}
         {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow. Why: Shizuku uses Android’s own wireless debugging to start itself on the phone, with no computer and no root. That gives Hermes the screen, taps and apps, and lets the installer stop Android killing it. It only works locally on your phone (over your own Wi-Fi); nothing goes to the internet.</div></>)}
         {sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Pair and start Shizuku</div><div className="dim small">In Shizuku: <i>Pairing</i>, then <i>Pair device with pairing code</i> in Wireless debugging and type the code into Shizuku’s notification. Then <i>Start</i>.</div></>)}
+        </>}
       </ul>
+      <div className="dim small">Rooted phone: open Shizuku and tap Start.</div>
       <div className="setup-actions">
-        {!n.devOptions ? (
-          <button className="btn primary" onClick={() => { haptic(); setupFix('about-phone') }}>About phone</button>
+        {needsComputer ? (
+          <>
+            <button className="btn primary" onClick={() => { haptic(); openExternal(SHIZUKU_GUIDE) }}>Shizuku’s guide</button>
+            <button className="btn" onClick={() => { haptic(); setupFix('open-shizuku') }}>Open Shizuku</button>
+          </>
         ) : (
-          <button className="btn" onClick={() => { haptic(); setupFix('dev-options') }}>Developer options</button>
+          <>
+            {!n.devOptions ? (
+              <button className="btn primary" onClick={() => { haptic(); setupFix('about-phone') }}>About phone</button>
+            ) : (
+              <button className="btn" onClick={() => { haptic(); setupFix('dev-options') }}>Developer options</button>
+            )}
+            <button className={`btn${n.devOptions ? ' primary' : ''}`} onClick={() => { haptic(); setupFix('open-shizuku') }}>Open Shizuku</button>
+          </>
         )}
-        <button className={`btn${n.devOptions ? ' primary' : ''}`} onClick={() => { haptic(); setupFix('open-shizuku') }}>Open Shizuku</button>
       </div>
+      {/* Not a skip: a Shizuku started before this app's first launch isn't seen until the app restarts. The required
+          Shizuku row (the plugin runs rish) still has to turn ✓ after the installer. */}
       <div className="setup-actions">
-        <button className="btn" onClick={() => { haptic(); onSkip() }}>Continue</button>
-        <button className="btn" onClick={() => { haptic(); onSkip() }}>Skip for now</button>
+        <button className="btn" onClick={() => { haptic(); onDone() }}>Shizuku is running: continue</button>
       </div>
     </div>
   )

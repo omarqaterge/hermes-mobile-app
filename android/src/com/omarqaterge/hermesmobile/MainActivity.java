@@ -269,6 +269,9 @@ public class MainActivity extends Activity {
             o.put("notifications", Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
             o.put("batteryApp", pm != null && pm.isIgnoringBatteryOptimizations(getPackageName()));
             o.put("batteryTermux", pm != null && pm.isIgnoringBatteryOptimizations("com.termux"));
+            // Shizuku is exempt from battery limits (Android may otherwise stop its server in the background)
+            o.put("batteryShizuku", pm != null && installed(SHIZUKU) && pm.isIgnoringBatteryOptimizations(SHIZUKU));
+            o.put("sdk", Build.VERSION.SDK_INT); // Wireless debugging (Shizuku start on the phone itself) needs 30
             o.put("termuxApi", installed("com.termux.api"));
             o.put("shizuku", installed(SHIZUKU));
             o.put("shizukuRunning", ShizukuProvider.running()); // the binder Shizuku's server sent to ShizukuProvider is alive
@@ -768,6 +771,9 @@ public class MainActivity extends Activity {
                     break;
                 case "battery-termux":
                     i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:com.termux"));
+                    break;
+                case "battery-shizuku":
+                    i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + SHIZUKU));
                     break;
                 case "app-settings":
                     i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
