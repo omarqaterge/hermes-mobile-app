@@ -435,20 +435,6 @@ const ACTIONS: Array<[string, string]> = [
   ['Explain', 'Explain this to me in the chat (do not change the document).']
 ]
 
-let safeTop = -1
-/** Resting heights (px) of the half and full panel; full leaves the status bar area free. */
-function snapHeights() {
-  if (safeTop < 0) {
-    const probe = document.createElement('div')
-    probe.style.cssText = 'position:fixed;top:0;visibility:hidden;padding-top:env(safe-area-inset-top)'
-    document.body.appendChild(probe)
-    safeTop = probe.offsetHeight
-    probe.remove()
-  }
-  const vh = window.innerHeight
-  return { half: vh * 0.58, full: vh - safeTop }
-}
-
 const WIDE = window.matchMedia('(min-width: 840px)')
 
 function useElapsed(since: number): number {
@@ -520,9 +506,8 @@ export function CanvasPanel() {
   const [ask, setAsk] = useState('')
   const [net, setNet] = useState<Record<string, boolean>>({})
   const body = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ y: number; h: number; lastY: number; lastT: number; v: number; cap: boolean } | null>(null)
+  const drag = useRef<{ x: number; y: number; dx: number; lastX: number; lastT: number; v: number; on: boolean } | null>(null)
   const panel = useRef<HTMLDivElement>(null)
-  const sizeBeforeEdit = useRef<'half' | 'full' | 'max' | null>(null)
 
   const meta: DocMeta | undefined = docs.find(d => d.id === activeId)
   const doc = activeId ? loaded[activeId] : undefined
@@ -532,7 +517,7 @@ export function CanvasPanel() {
   useEffect(() => {
     document.documentElement.dataset.canvas = open ? size : ''
   }, [open, size])
-  useBackHandler(() => (size === 'max' ? setCanvasSize('full') : size === 'full' ? setCanvasSize('half') : closeCanvas()), open && menu === null)
+  useBackHandler(() => (size === 'max' ? setCanvasSize('side') : closeCanvas()), open && menu === null)
   useEffect(() => {
     if (open && activeId && !loaded[activeId]) void loadDoc(activeId)
   }, [open, activeId, loaded])
@@ -566,70 +551,68 @@ export function CanvasPanel() {
     window.getSelection()?.removeAllRanges()
   }
 
-  const resetPanel = () => {
-    if (panel.current) {
-      panel.current.style.transition = ''
-      panel.current.style.height = ''
-    }
-  }
-  /** Drag from the handle or the tab row: the panel follows the finger, then snaps to the nearest rest position. */
-  const dragProps = {
-    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
-      if (!panel.current || (e.target as HTMLElement).closest('.canvas-x')) return
-      const now = performance.now()
-      drag.current = { y: e.clientY, h: panel.current.offsetHeight, lastY: e.clientY, lastT: now, v: 0, cap: false }
-    },
-    onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
-      const d = drag.current
-      if (!d || !panel.current || WIDE.matches) return // a side column on wide screens: no height to drag
-      if (!d.cap) {
-        if (Math.abs(e.clientY - d.y) < 8) return
-        d.cap = true
-        e.currentTarget.setPointerCapture(e.pointerId)
-      }
-      const now = performance.now()
-      if (now > d.lastT) d.v = (e.clientY - d.lastY) / (now - d.lastT)
-      d.lastY = e.clientY
-      d.lastT = now
-      const h = Math.min(snapHeights().full, Math.max(40, d.h - (e.clientY - d.y)))
-      panel.current.style.transition = 'none'
-      panel.current.style.height = `${h}px`
-    },
-    onPointerCancel: () => {
+  /** Swipe right on the header (phones): the panel follows the finger; let go past 30 % of its width or with a quick
+   * flick and it closes, otherwise it slides back. The tab row scrolls sideways itself, so a swipe there only drags the
+   * panel when the row is at its start. Wide screens show a fixed column: nothing to drag. */
+  const swipeProps = {
+    onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
       drag.current = null
-      resetPanel()
+      if (WIDE.matches || e.touches.length !== 1 || !panel.current) return
+      const tabs = (e.target as Element).closest('.canvas-tabs')
+      if (tabs && tabs.scrollLeft > 1) return
+      const { clientX: x, clientY: y } = e.touches[0]
+      drag.current = { x, y, dx: 0, lastX: x, lastT: performance.now(), v: 0, on: false }
     },
-    onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
+    onTouchMove: (e: React.TouchEvent<HTMLElement>) => {
+      const d = drag.current
+      const el = panel.current
+      if (!d || !el || e.touches.length !== 1) return
+      const { clientX: x, clientY: y } = e.touches[0]
+      const dx = x - d.x
+      if (!d.on) {
+        if (Math.abs(dx) < 10 && Math.abs(y - d.y) < 10) return
+        // Leftwards scrolls the tabs, mostly vertical is not a close swipe.
+        if (dx <= 0 || Math.abs(y - d.y) > dx) {
+          drag.current = null
+          return
+        }
+        d.on = true
+      }
+      // Finger speed over the last stretch (≥ 10 ms, so two events in the same frame don't look like a flick).
+      const now = performance.now()
+      if (now - d.lastT >= 10) {
+        d.v = (x - d.lastX) / (now - d.lastT)
+        d.lastX = x
+        d.lastT = now
+      }
+      d.dx = Math.max(0, dx)
+      el.style.transition = 'none'
+      el.style.transform = `translateX(${d.dx}px)`
+    },
+    onTouchEnd: () => {
       const d = drag.current
       drag.current = null
       const el = panel.current
-      if (!d || !el) return
+      if (!d || !d.on || !el) return
       el.style.transition = ''
-      if (!d.cap) {
-        el.style.height = ''
-        if (e.currentTarget.classList.contains('canvas-grip')) setCanvasSize(size === 'full' ? 'half' : 'full')
-        return
-      }
-      // Magnetic snap: project a little ahead with the finger's speed, then go to the nearest rest position.
-      const { half, full } = snapHeights()
-      const projected = el.offsetHeight - d.v * 160
-      if (projected < half * 0.55 && (size === 'half' || el.offsetHeight < half * 0.75)) {
-        el.style.height = '0px'
+      if (d.dx > el.offsetWidth * 0.3 || d.v > 0.5) {
+        el.style.transform = 'translateX(100%)'
         window.setTimeout(() => closeCanvas(), 200)
-        return
+      } else el.style.transform = ''
+    },
+    onTouchCancel: () => {
+      drag.current = null
+      if (panel.current) {
+        panel.current.style.transition = ''
+        panel.current.style.transform = ''
       }
-      setCanvasSize(projected > (half + full) / 2 - full * 0.04 ? 'full' : 'half')
-      el.style.height = ''
     }
   }
 
   return (
     <>
       <div ref={panel} className={`canvas-panel size-${size}`} role="dialog" aria-label="Canvas">
-        <div className="canvas-grip" {...dragProps}>
-          <span />
-        </div>
-        <div className="canvas-head" {...dragProps}>
+        <div className="canvas-head" {...swipeProps}>
           <div className="canvas-tabs">
             {docs.map(d => (
               <button key={d.id} className={`canvas-tab${d.id === activeId ? ' on' : ''}`} onClick={() => selectDoc(d.id)}>
@@ -671,23 +654,11 @@ export function CanvasPanel() {
                   onClick={() => {
                     void flushSave()
                     setMode(meta.id, 'view')
-                    // Editing takes the whole screen (the keyboard needs the room); go back to how it was.
-                    if (sizeBeforeEdit.current) setCanvasSize(sizeBeforeEdit.current)
-                    sizeBeforeEdit.current = null
                   }}
                 >
                   {meta.type === 'html' ? 'Run' : 'View'}
                 </button>
-                <button
-                  className={mode === 'edit' ? 'on' : ''}
-                  onClick={() => {
-                    setMode(meta.id, 'edit')
-                    if (size !== 'full') {
-                      sizeBeforeEdit.current = size
-                      setCanvasSize('full')
-                    }
-                  }}
-                >
+                <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode(meta.id, 'edit')}>
                   Edit
                 </button>
               </div>
@@ -764,7 +735,7 @@ export function CanvasPanel() {
         )}
       </div>
       {size === 'max' && (
-        <button className="canvas-exit" aria-label="Exit full screen" onClick={() => setCanvasSize('full')}>
+        <button className="canvas-exit" aria-label="Exit full screen" onClick={() => setCanvasSize('side')}>
           ⤓
         </button>
       )}

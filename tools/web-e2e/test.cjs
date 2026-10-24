@@ -1976,6 +1976,91 @@ async function main() {
   await swp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe right on a chat opens the drawer'), () => check(false, 'swipe right on a chat opens the drawer'))
   await swp.close()
 
+  // ── the canvas is a panel from the right: swipe left on the chat opens it, swipe right on its header / Back closes it ──
+  const cvp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  cvp.on('pageerror', e => { console.log('PAGEERROR', e.message); failures++ })
+  await cvp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
+  await cvp.goto('http://127.0.0.1:5180/')
+  await cvp.locator('.msg.assistant .hm-openui', { hasText: 'Swipe card' }).waitFor({ timeout: 15000 })
+  await cvp.locator('.msg.assistant pre').first().waitFor({ timeout: 5000 })
+  await cvp.locator('.msg.assistant table').first().waitFor({ timeout: 5000 })
+  // A synthetic touch swipe from (x, y at the element's middle) by dx/dy; the target is what is under the finger.
+  // x null = just inside the element's left edge.
+  const cswipe = (sel, x, dx, dy = 0) => cvp.evaluate(([sel, x, dx, dy]) => {
+    const r = document.querySelector(sel).getBoundingClientRect()
+    const y = r.top + Math.min(r.height / 2, 30)
+    if (x === null) x = r.left + 10
+    const el = document.elementFromPoint(x, y)
+    const mk = (type, px, py) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: px, clientY: py })], changedTouches: [new Touch({ identifier: 1, target: el, clientX: px, clientY: py })] })
+    el.dispatchEvent(mk('touchstart', x, y))
+    el.dispatchEvent(mk('touchmove', x + dx / 2, y + dy / 2))
+    el.dispatchEvent(mk('touchmove', x + dx, y + dy))
+    el.dispatchEvent(mk('touchend', x + dx, y + dy))
+    return el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').join('.') : '')
+  }, [sel, x, dx, dy])
+  const panelOpen = async () => (await cvp.locator('.canvas-panel').count()) === 1
+  for (const [sel, what] of [['.msg.assistant pre', 'a code block'], ['.msg.assistant table td', 'a table'], ['.msg.assistant .hm-openui', 'a card']]) {
+    await cvp.locator(sel).first().scrollIntoViewIfNeeded()
+    const on = await cswipe(sel, null, -100)
+    await sleep(300)
+    check(!(await panelOpen()), `a swipe left that starts on ${what} does not open the canvas (${on})`)
+  }
+  await cvp.locator('.msg.assistant p', { hasText: 'Plain words to swipe' }).scrollIntoViewIfNeeded()
+  await cswipe('.msg.assistant p', 300, -40)
+  await sleep(300)
+  check(!(await panelOpen()), 'a short swipe left does not open the canvas')
+  await cswipe('.msg.assistant p', 300, -220)
+  await cvp.locator('.canvas-panel').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe left on a chat opens the canvas'), () => check(false, 'swipe left on a chat opens the canvas'))
+  if (await panelOpen()) {
+    await cvp.locator('.canvas-tab-title', { hasText: 'Side' }).waitFor({ timeout: 3000 }).catch(() => {})
+    check((await cvp.locator('.canvas-tab-title', { hasText: 'Side' }).count()) === 1, 'it is the chat\'s own canvas')
+    const look = await cvp.locator('.canvas-panel').evaluate(el => ({ cls: el.className, anim: getComputedStyle(el).animationName }))
+    check(/\bsize-side\b/.test(look.cls) && look.anim === 'canvas-in', `the panel slides in from the right (${look.cls}, ${look.anim})`)
+    await sleep(400) // let the slide-in end
+    const box = await cvp.locator('.canvas-panel').boundingBox()
+    check(box && Math.abs(box.x) <= 1 && Math.abs(box.x + box.width - 375) <= 1, `the panel covers the chat full width (${JSON.stringify(box)})`)
+    check((await cvp.locator('.canvas-grip').count()) === 0, 'no bottom-sheet grip any more')
+    // Editing keeps the panel as it is (no forced size change).
+    await cvp.locator('.canvas-toolbar .seg button', { hasText: 'Edit' }).click()
+    check(/\bsize-side\b/.test(await cvp.locator('.canvas-panel').getAttribute('class')), 'editing keeps the side panel')
+    await cvp.locator('.canvas-toolbar .seg button', { hasText: 'View' }).click()
+    // A short swipe right on the header snaps back; a long one closes the panel.
+    await cswipe('.canvas-head', 60, 50)
+    await sleep(450)
+    check(await panelOpen(), 'a short swipe right on the panel header leaves it open')
+    check(await cvp.locator('.canvas-panel').evaluate(el => !el.style.transform || el.style.transform === 'translateX(0px)'), 'and it snaps back')
+    await cswipe('.canvas-head', 60, 200)
+    await cvp.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 2000 }).then(() => check(true, 'swipe right on the panel header closes it'), () => check(false, 'swipe right on the panel header closes it'))
+  }
+  // Back closes it; from fill-the-screen Back goes back to the panel first.
+  await cswipe('.msg.assistant p', 300, -220)
+  if (!(await cvp.locator('.canvas-panel').waitFor({ timeout: 2000 }).then(() => true, () => false))) await cvp.locator('.canvas-btn').click()
+  await cvp.getByRole('button', { name: 'Fill the whole screen' }).click()
+  check((await cvp.locator('.canvas-panel.size-max').count()) === 1, 'fill the whole screen still works')
+  await cvp.evaluate(() => window.hermesBack())
+  await sleep(200)
+  check((await cvp.locator('.canvas-panel.size-side').count()) === 1, 'Back from the whole screen returns to the panel')
+  await cvp.evaluate(() => window.hermesBack())
+  await cvp.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 2000 }).then(() => check(true, 'Back closes the canvas panel'), () => check(false, 'Back closes the canvas panel'))
+  // With the canvas closed, swipe right still opens the drawer.
+  await cswipe('.msg.assistant p', 60, 200)
+  await cvp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe right still opens the drawer with the canvas closed'), () => check(false, 'swipe right still opens the drawer with the canvas closed'))
+  await cvp.close()
+  // Wide screens keep the canvas as a column beside the chat.
+  const cvw = await browser.newPage({ viewport: { width: 1100, height: 800 } })
+  await cvw.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
+  await cvw.goto('http://127.0.0.1:5180/')
+  await cvw.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+  await cvw.locator('.canvas-btn').click()
+  await cvw.locator('.canvas-panel').waitFor({ timeout: 3000 })
+  await sleep(400)
+  {
+    const b = await cvw.locator('.canvas-panel').boundingBox()
+    const mr = await cvw.locator('.app').evaluate(el => parseFloat(getComputedStyle(el).marginRight))
+    check(b && b.x > 400 && Math.abs(b.x + b.width - 1100) <= 1 && mr > 0 && Math.abs(mr - b.width) <= 2, `wide screen: the canvas is a column beside the chat (${JSON.stringify(b)}, chat margin ${mr})`)
+  }
+  await cvw.close()
+
   // ── first run: a Hermes with no model provider opens the welcome; sign in, pick a model, it never shows again ──
   await mock({ unconfigured: true })
   const wel = await browser.newPage({ viewport: { width: 375, height: 812 } })
