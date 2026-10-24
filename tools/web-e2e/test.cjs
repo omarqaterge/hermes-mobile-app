@@ -261,6 +261,7 @@ async function main() {
     const put = autoPuts().slice(before).pop()
     check(put && put.body.mode === 'auto', `a new chat starts in Auto access (${JSON.stringify(put && put.body)})`)
     check((await page.locator('.auto-btn.auto').count()) === 1, 'header shows Auto access on the new chat')
+    check(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')).every(k => k !== 's-new')), 'the default is not stored as the chat\'s own choice')
     // an explicit Off on this chat survives a reopen even though the default is Auto
     await page.locator('.auto-btn').click()
     await page.getByText('Off', { exact: true }).click()
