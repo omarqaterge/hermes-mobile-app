@@ -210,7 +210,7 @@ fi
 # ── 5. the installer's files in Termux ──
 say "STEP files Removing the installer's files in Termux"
 rmp "$HOME/.hermes-mobile"
-for f in hermes-services hermes-debian rish rish_shizuku.dex; do rmp "$HOME/bin/$f"; done
+for f in hermes-services hermes-debian hm-shizuku rish rish_shizuku.dex; do rmp "$HOME/bin/$f"; done
 rmdir_empty "$HOME/bin"
 rmp "$HOME/.termux/boot/10-hermes"
 rmdir_empty "$HOME/.termux/boot"

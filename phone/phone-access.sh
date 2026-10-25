@@ -24,7 +24,8 @@ todo() { echo "$*" >> "$TODO"; }
 need=()
 command -v termux-battery-status >/dev/null || need+=(termux-api)
 command -v unzip >/dev/null || need+=(unzip)
-[ ${#need[@]} -eq 0 ] || apt-get -y -o Dpkg::Options::=--force-confold install "${need[@]}" >/dev/null 2>&1 || true
+command -v adb >/dev/null || need+=(android-tools)   # Termux's own adb: Shizuku starts again by itself (hm-shizuku)
+[ ${#need[@]} -eq 0 ] || apt-get -y -o Dpkg::Options::=--force-confold install "${need[@]}" </dev/null >/dev/null 2>&1 || true
 
 # Files. Android asks once; the computer route grants it beforehand. Only a Hermes started after this sees /sdcard (the
 # installers restart it).
@@ -76,6 +77,21 @@ if [ -n "$ok" ]; then
   # Take Shizuku off Android's battery limits (it would be stopped in the background and Hermes would lose the screen).
   # Same list the computer route fills; the shell user may do it. Never fails the installer.
   "$HOME/bin/rish" -c 'dumpsys deviceidle whitelist +moe.shizuku.privileged.api' </dev/null >/dev/null 2>&1 || true
+  # Lets Hermes Mobile turn Wireless debugging on when Shizuku is down, so Shizuku starts again by itself. An app
+  # version that doesn't ask for this permission yet just refuses the grant.
+  "$HOME/bin/rish" -c 'pm grant com.omarqaterge.hermesmobile android.permission.WRITE_SECURE_SETTINGS' </dev/null >/dev/null 2>&1 || true
+  # Pair Termux's own adb with Wireless debugging once (Android 11+, Wi-Fi): afterwards Shizuku starts again by itself
+  # after a restart. hm-shizuku opens Settings for a few seconds and reads the pairing code from the screen.
+  hms="$HOME/bin/hm-shizuku"; [ -x "$hms" ] || hms="$(dirname "${BASH_SOURCE[0]}")/hm-shizuku"
+  sdk=$(getprop ro.build.version.sdk 2>/dev/null || echo 0)
+  if [ -f "$hms" ] && [ "${sdk:-0}" -ge 30 ] 2>/dev/null && ! bash "$hms" status 2>/dev/null | grep -qx paired; then
+    say "phone: pairing Termux with Wireless debugging (Settings opens for a few seconds; don't touch the screen)"
+    out=$(timeout 240 bash "$hms" pair </dev/null 2>&1); rc=$?
+    if [ "$rc" = 0 ]; then say "phone: Shizuku can now start again by itself after a restart (on Wi-Fi)"
+    elif [ "$rc" = 3 ]; then todo "Shizuku can't start by itself yet: connect to Wi-Fi, then open Hermes Mobile → Setup check → Set up"
+    else todo "Shizuku can't start by itself yet: open Hermes Mobile → Setup check → Set up ($(echo "$out" | tail -1 | sed -E 's/^hm-shizuku: (FAIL \([a-z-]*\) )?//'))"
+    fi
+  fi
 else
   todo "Shizuku: start it and tap Allow when it asks whether Termux may use it (no root: Start via Wireless debugging, pair once; rooted: Start; not installed: https://shizuku.rikka.app/download/), then run the installer again"
 fi

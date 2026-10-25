@@ -84,13 +84,13 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef upgrade
 if [ "$HM_DISTRO" = chroot ]; then
-  apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install python git curl termux-api unzip
+  apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install python git curl termux-api unzip android-tools
   command -v chroot-distro >/dev/null || pip install chroot-distro
   step root "Root access for Termux (chroot-distro)"
   say "phone: if your root manager (Magisk, KernelSU…) asks whether Termux may have root, tap Grant"
   su -c id 2>/dev/null | grep -q 'uid=0' || { say "FAIL root (Termux has no root: grant it in your root manager, or run without HM_DISTRO=chroot)"; exit 1; }
 else
-  apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install proot-distro git curl termux-api unzip
+  apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef install proot-distro git curl termux-api unzip android-tools
 fi
 
 # Run from a clone: its own scripts (and plugin); otherwise the latest from GitHub.

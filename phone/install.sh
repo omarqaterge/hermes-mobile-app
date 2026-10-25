@@ -37,11 +37,13 @@ grep -qE '^[[:space:]]*allow-external-apps[[:space:]]*=[[:space:]]*true' "$HOME/
   || echo "allow-external-apps = true" >> "$HOME/.termux/termux.properties"
 command -v termux-reload-settings >/dev/null && termux-reload-settings || true
 
-echo "2/5 Installing the supervisor script (~/bin/hermes-services, ~/bin/hermes-debian)"
+echo "2/5 Installing the supervisor scripts (~/bin/hermes-services, ~/bin/hermes-debian, ~/bin/hm-shizuku)"
 mkdir -p "$HOME/bin"
 cp "$here/phone/hermes-services" "$HOME/bin/hermes-services"
 cp "$here/phone/hermes-debian" "$HOME/bin/hermes-debian"
-chmod +x "$HOME/bin/hermes-services" "$HOME/bin/hermes-debian"
+# hm-shizuku: lets Shizuku start again by itself after a restart (Termux's own adb; phone-access.sh pairs it).
+cp "$here/phone/hm-shizuku" "$HOME/bin/hm-shizuku"
+chmod +x "$HOME/bin/hermes-services" "$HOME/bin/hermes-debian" "$HOME/bin/hm-shizuku"
 DEB="$HOME/bin/hermes-debian"
 if [ "$HM_DISTRO" = chroot ]; then
   "$DEB" true || die "Debian is not installed with chroot-distro yet (or Termux has no root). Run: chroot-distro install --name debian debian:trixie"

@@ -232,6 +232,9 @@ fi
 rm -f "$WORK/hermes-mobile.apk"
 adb shell pm grant $APP com.termux.permission.RUN_COMMAND || true
 adb shell pm grant $APP android.permission.POST_NOTIFICATIONS 2>/dev/null || true
+# Lets the app turn Wireless debugging on when Shizuku is down, so Shizuku starts again by itself (Termux's adb, paired
+# by the installer). Best effort: an app version that doesn't ask for it refuses the grant.
+adb shell pm grant $APP android.permission.WRITE_SECURE_SETTINGS 2>/dev/null || true
 adb shell dumpsys deviceidle whitelist +$APP >/dev/null || true
 adb shell am start -n $APP/.MainActivity >/dev/null
 
@@ -247,6 +250,7 @@ b "Done. Say hi in Hermes Mobile on the phone."
 grep 'HMSETUP TODO' "$LOG" | sed 's/.*HMSETUP TODO /  Still to do: /' || true
 say "Xiaomi/HyperOS: also turn on Autostart for Termux and Hermes Mobile (Settings → Apps)."
 say "Keep the Termux notification: Hermes runs inside Termux."
-say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Without root, start it once via"
-say "  Shizuku → Start via Wireless debugging: on Android 13+ it then restarts by itself on Wi-Fi. Rooted phones: it always does."
+say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Android 11+: on Wi-Fi it now starts again"
+say "  by itself (on a new Wi-Fi, tap Always allow + Allow when Android asks about wireless debugging). If it doesn't:"
+say "  Hermes Mobile → Setup check → Set up. Android 10 and older: start it from a computer after a restart. Rooted: it always does."
 say "Update later: run this script again."
