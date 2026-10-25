@@ -25,6 +25,8 @@ final class KeeperPlan {
     static final long READBACK_MS = 2_000;
     /** NsdManager discovery + resolve, at most. */
     static final long NSD_MS = 10_000;
+    /** Only stale ports so far: resolve the found services again after this long (inside NSD_MS). */
+    static final long NSD_RETRY_MS = 1_000;
     /** Wi-Fi just came up: give Android a moment before asking for Wireless debugging. */
     static final long WIFI_SETTLE_MS = 3_000;
     /** Wireless debugging is turned off again this long after Shizuku is up (its start script may still be checking). */
@@ -110,7 +112,16 @@ final class KeeperPlan {
     /** The connect port of this phone's own Wireless debugging among NsdManager results {host, port}; 0 = none
      *  (another phone on the same Wi-Fi advertises the same service type; hm-shizuku then scans). */
     static int pickPort(List<String[]> services, Set<String> localHosts) {
-        for (String[] s : services) {
+        List<Integer> l = localPorts(services, localHosts);
+        return l.isEmpty() ? 0 : l.get(0);
+    }
+
+    /** Every distinct port this phone advertises, newest result first: NsdManager can still hold the port of an earlier
+     *  Wireless debugging session (seen on the emulator), so ShizukuKeeper checks each one on loopback. */
+    static List<Integer> localPorts(List<String[]> services, Set<String> localHosts) {
+        java.util.ArrayList<Integer> out = new java.util.ArrayList<>();
+        for (int k = services.size() - 1; k >= 0; k--) {
+            String[] s = services.get(k);
             if (s == null || s.length < 2 || s[0] == null || s[1] == null) continue;
             String host = s[0].startsWith("/") ? s[0].substring(1) : s[0];
             int pct = host.indexOf('%');
@@ -121,10 +132,10 @@ final class KeeperPlan {
             } catch (NumberFormatException e) {
                 continue;
             }
-            if (port < 1 || port > 65535) continue;
-            if (localHosts.contains(host)) return port;
+            if (port < 1 || port > 65535 || !localHosts.contains(host) || out.contains(port)) continue;
+            out.add(port);
         }
-        return 0;
+        return out;
     }
 
     /** The fixed command Termux runs; only a number from NsdManager is added. */

@@ -28,6 +28,8 @@
     <!-- Shizuku starts by itself (ShizukuKeeper): turns Wireless debugging on to restart Shizuku, and off again afterwards.
          A development permission: never asked for, only granted by the installer (adb / Shizuku's shell `pm grant`). -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <!-- ShizukuKeeper: is the phone on Wi-Fi, and one callback for when it gets there (normal permission). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <queries>
         <package android:name="com.termux" />
