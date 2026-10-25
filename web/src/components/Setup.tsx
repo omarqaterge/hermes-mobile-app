@@ -363,6 +363,8 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         alt: sh === 'blocked' ? { label: 'Open Shizuku', run: () => setupFix('open-shizuku') } : undefined
       }
     }
+    case 'shizuku-auto':
+      return { title: 'Shizuku starts by itself' } // words follow
     case 'autostart': {
       // Shown only on phones whose maker adds an Autostart switch; the shell picks the page (Autostart.java).
       const kind = n?.autostart || 'info'

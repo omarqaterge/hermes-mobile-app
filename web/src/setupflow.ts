@@ -3,11 +3,11 @@
 // from there. The rows are in the order the flow walks them. The steps before Hermes exists on the phone (get the apps,
 // start Shizuku, run the installer and follow its progress) come first, so an app-first install, a computer install and a
 // half-finished one all resume at whatever is missing.
-import type { NativeSetup } from './bridge'
+import type { NativeSetup, ShizukuAuto } from './bridge'
 
 export type StepId =
   | 'apps' | 'termux' | 'shizuku-start' | 'run' | 'installer' | 'hermes' | 'plugin' | 'enabled' | 'model'
-  | 'notif' | 'bat-app' | 'bat-termux' | 'bat-shizuku' | 'termux-boot' | 'files' | 'termux-api' | 'shizuku' | 'autostart'
+  | 'notif' | 'bat-app' | 'bat-termux' | 'bat-shizuku' | 'termux-boot' | 'files' | 'termux-api' | 'shizuku' | 'shizuku-auto' | 'autostart'
 
 /** What Termux said to the shell's probe (MainActivity.probeTermux). unknown: not asked / no answer yet · denied: no
  *  RUN_COMMAND permission · not-allowed: Termux refuses commands (the installer never got far) · no-services: Termux runs
@@ -216,6 +216,12 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     // until the user says it is done.
     row('autostart', false, !n?.autostart ? 'skip' : pre?.autostartDone ? 'ok' : 'info')
   ]
+}
+
+/** What the "Shizuku starts by itself" row tells the user: ok, the app lacks the permission only the installer can grant, or
+ *  Termux has to be paired (the keeper's last result 'untrusted-network' adds a hint in the row's text). */
+export function shizukuAutoKind(a: ShizukuAuto): 'ok' | 'installer' | 'pair' {
+  return !a.wss ? 'installer' : a.paired ? 'ok' : 'pair'
 }
 
 /** The Start Shizuku step re-asks the app whether Shizuku runs, but only while it is on screen and for at most 10 minutes. */
