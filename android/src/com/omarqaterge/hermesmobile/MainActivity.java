@@ -276,6 +276,8 @@ public class MainActivity extends Activity {
             o.put("termuxApi", installed("com.termux.api"));
             o.put("shizuku", installed(SHIZUKU));
             o.put("shizukuRunning", ShizukuProvider.running()); // the binder Shizuku's server sent to ShizukuProvider is alive
+            // "Shizuku starts by itself": Android 11+, WRITE_SECURE_SETTINGS granted, Termux's adb paired, the keeper's last outcome
+            o.put("shizukuAuto", ShizukuKeeper.state(this));
             o.put("maker", Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT));
             // The Autostart step: "" = this phone has no such switch (step hidden); list/app/settings = the kind of page
             // the button opens; "info" = a maker with the switch but none of its pages opens (App info fallback).
@@ -802,6 +804,12 @@ public class MainActivity extends Activity {
                     i = getPackageManager().getLaunchIntentForPackage(SHIZUKU);
                     if (i == null) return;
                     break;
+                case "shizuku-pair":
+                    // "Shizuku starts by itself" → Set up: Termux pairs its own adb with Wireless debugging (opens Settings
+                    // for a few seconds through Shizuku; the script reports back with a shizuku-auto event). User tap only.
+                    if (Uninstall.started(this)) return;
+                    runTermux("/data/data/com.termux/files/usr/bin/bash", new String[]{"-c", KeeperPlan.PAIR_SCRIPT});
+                    return;
                 case "storage":
                     // Termux asks Android for the files permission ("y": it asks before rebuilding an existing ~/storage).
                     runTermux("/data/data/com.termux/files/usr/bin/bash", new String[]{"-c", "echo y | termux-setup-storage"});

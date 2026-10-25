@@ -241,15 +241,10 @@ public class HermesService extends Service {
         }
     };
 
+    /** Not running 90 s after start: the keeper restarts it, or says in the notice why it can't (ShizukuKeeper). */
     private final Runnable shizukuCheck = () -> {
-        if (shouldWarn(shizukuInstalled(this), ShizukuProvider.running(), setup(this).installing()))
-            shizukuNotice(this, "Shizuku isn\u2019t running");
+        if (shizukuInstalled(this) && !ShizukuProvider.running()) ShizukuKeeper.onDown(this, true);
     };
-
-    /** Warn when Shizuku is installed but not running, and the first-run installer is not busy. */
-    static boolean shouldWarn(boolean installed, boolean running, boolean installing) {
-        return installed && !running && !installing;
-    }
 
     static boolean shizukuInstalled(Context ctx) {
         try {
@@ -260,29 +255,27 @@ public class HermesService extends Service {
         }
     }
 
-    /** Shizuku's binder died (called from ShizukuProvider, any thread). */
+    /** Shizuku's binder died (called from ShizukuProvider, any thread): the keeper restarts it or shows why it can't. */
     static void shizukuDown(Context ctx) {
-        Context app = ctx.getApplicationContext();
-        new Handler(Looper.getMainLooper()).post(() -> {
-            if (shouldWarn(shizukuInstalled(app), false, false)) shizukuNotice(app, "Shizuku stopped");
-        });
+        ShizukuKeeper.onDown(ctx, false);
     }
 
-    /** Shizuku runs (again): the notice goes away. */
+    /** Shizuku runs (again): the keeper stops and the notice goes away. */
     static void shizukuUp(Context ctx) {
-        Context app = ctx.getApplicationContext();
-        new Handler(Looper.getMainLooper()).post(() -> app.getSystemService(NotificationManager.class).cancel(SHIZUKU_ID));
+        ShizukuKeeper.onUp(ctx);
     }
 
-    static void shizukuNotice(Context ctx, String title) {
+    /** The Shizuku notice; text = the keeper's reason. Opens Shizuku, or this app when the set-up must be finished. */
+    static void shizukuNotice(Context ctx, String title, String text, boolean openApp) {
         try {
             createChannels(ctx);
-            Intent open = ctx.getPackageManager().getLaunchIntentForPackage(SHIZUKU_PKG);
+            Intent open = openApp ? null : ctx.getPackageManager().getLaunchIntentForPackage(SHIZUKU_PKG);
             if (open == null) open = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
             Notification.Builder b = new Notification.Builder(ctx, CH_PHONE)
                     .setSmallIcon(R.drawable.ic_stat_hermes)
                     .setContentTitle(title)
-                    .setContentText("Hermes can\u2019t see or use the screen until you start Shizuku again.")
+                    .setContentText(text)
+                    .setStyle(new Notification.BigTextStyle().bigText(text))
                     .setOnlyAlertOnce(true)
                     .setAutoCancel(true);
             if (open != null)
@@ -428,6 +421,7 @@ public class HermesService extends Service {
         running = false;
         instance = null;
         main.removeCallbacks(shizukuCheck);
+        ShizukuKeeper.stop();
         main.removeCallbacks(updateCheck);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
@@ -670,6 +664,9 @@ public class HermesService extends Service {
                 return;
             case "cron_idle":
                 cronIdle(e.optDouble("since", 0));
+                return;
+            case "shizuku-auto": // Termux's hm-shizuku after pair/start: {paired, result, detail}
+                ShizukuKeeper.onEvent(this, e);
                 return;
             case "flash": {
                 if ((e.optBoolean("done", false) || e.optString("short", "").contains("Done")) && session != null && !session.isEmpty()) {

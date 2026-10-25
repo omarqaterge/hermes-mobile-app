@@ -75,14 +75,14 @@ public class KeeperPlanTest {
 
         // NsdManager result → port: only a service on this phone; none → 0 (the script scans)
         Set<String> local = new HashSet<>(Arrays.asList("10.0.2.16", "127.0.0.1", "fe80::1"));
-        check(KeeperPlan.pickPort(Arrays.asList(new String[]{"10.0.2.16", "37709"}), local) == 37709, "this phone's service → its port");
+        check(KeeperPlan.pickPort(Collections.singletonList(new String[]{"10.0.2.16", "37709"}), local) == 37709, "this phone's service → its port");
         check(KeeperPlan.pickPort(Arrays.asList(new String[]{"192.168.1.9", "40001"}, new String[]{"10.0.2.16", "37709"}), local) == 37709,
                 "another phone's service on the Wi-Fi is skipped");
-        check(KeeperPlan.pickPort(Arrays.asList(new String[]{"192.168.1.9", "40001"}), local) == 0, "only other phones → 0 (scan)");
+        check(KeeperPlan.pickPort(Collections.singletonList(new String[]{"192.168.1.9", "40001"}), local) == 0, "only other phones → 0 (scan)");
         check(KeeperPlan.pickPort(Collections.emptyList(), local) == 0, "nothing found → 0 (scan)");
         check(KeeperPlan.pickPort(Arrays.asList(new String[]{"10.0.2.16", "99999"}, new String[]{"10.0.2.16", "x"}, new String[]{null, "5555"}), local) == 0,
                 "bad ports / hosts ignored");
-        check(KeeperPlan.pickPort(Arrays.asList(new String[]{"/10.0.2.16", "41000"}), local) == 41000, "InetAddress.toString() form (/ip) matches");
+        check(KeeperPlan.pickPort(Collections.singletonList(new String[]{"/10.0.2.16", "41000"}), local) == 41000, "InetAddress.toString() form (/ip) matches");
 
         // the Termux command: fixed text + a number, nothing else
         check(eq(KeeperPlan.startScript(37709), "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku start 37709"), "start with the port");
