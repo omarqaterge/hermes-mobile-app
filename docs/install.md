@@ -132,8 +132,9 @@ way its own *Start by connecting to a computer* does, and turns Wireless debuggi
 the phone. The first time on a new Wi-Fi Android asks *Allow wireless debugging on this network?*: tick *Always allow on this
 network* and tap *Allow*. Without Wi-Fi it waits until the phone is on Wi-Fi. If pairing didn't work (no Wi-Fi during the
 install, or a Settings screen that looks different from Android's own), Setup check shows *Shizuku starts by itself* with a
-*Set up* button that runs the pairing again. Pairing and starting were tested on an Android 15 emulator, not yet on other
-phone makers' Settings.
+*Set up* button that runs the pairing again. Shizuku forgets that Termux may use it each time its server starts again
+(seen on the emulator with Shizuku 13.6.0), so it asks *Allow Termux to access Shizuku?* the next time Hermes uses it: tap
+*Allow all the time*. Pairing and starting were tested on an Android 15 emulator, not yet on other phone makers' Settings.
 
 Until Shizuku runs, Hermes can still do everything except see and touch the screen and other apps; it tells you when it needs
 Shizuku, and the app's **Setup check** shows it too.
