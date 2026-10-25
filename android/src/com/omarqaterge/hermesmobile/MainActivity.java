@@ -177,6 +177,7 @@ public class MainActivity extends Activity {
         HermesService.createChannels(this);
         HermesService.start(this);
         current = this;
+        startUpdateFromIntent(getIntent());
         if (getIntent().getBooleanExtra("clearDone", false)) { getIntent().removeExtra("clearDone"); HermesService.clearDoneChip(); }
         pendingSession = getIntent().getStringExtra("session");
         pendingDraft = getIntent().getStringExtra("draft");
@@ -919,6 +920,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        startUpdateFromIntent(intent);
         if (intent.getBooleanExtra("clearDone", false)) { intent.removeExtra("clearDone"); HermesService.clearDoneChip(); }
         String s = intent.getStringExtra("session");
         if (s != null) {
@@ -1690,6 +1692,14 @@ public class MainActivity extends Activity {
     void updateState(String state, int pct, String msg) {
         String js = "window.hermesUpdate && window.hermesUpdate(" + JSONObject.quote(state) + "," + pct + "," + JSONObject.quote(msg == null ? "" : msg) + ")";
         runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
+    }
+
+    /** The "update available" notification carries the release APK URL; startUpdate re-checks that it is official. */
+    void startUpdateFromIntent(Intent in) {
+        String url = in == null ? null : in.getStringExtra("updateUrl");
+        if (url == null) return;
+        in.removeExtra("updateUrl");
+        startUpdate(url);
     }
 
     void startUpdate(String url) {
