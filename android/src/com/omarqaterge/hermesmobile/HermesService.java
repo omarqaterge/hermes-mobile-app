@@ -229,7 +229,17 @@ public class HermesService extends Service {
         new Thread(this::serve, "hermes-events").start();
         rearmWake();
         main.postDelayed(shizukuCheck, 90_000); // once: after a reboot Shizuku doesn't start by itself, so no binder ever arrives
+        main.postDelayed(updateCheck, 120_000);
     }
+
+    /** New-release notice: one GitHub request every 12 h at most (UpdateNotice throttles); the timer does not wake the CPU. */
+    private final Runnable updateCheck = new Runnable() {
+        @Override
+        public void run() {
+            UpdateNotice.check(HermesService.this, false);
+            main.postDelayed(this, UpdateNotice.CHECK_MS);
+        }
+    };
 
     private final Runnable shizukuCheck = () -> {
         if (shouldWarn(shizukuInstalled(this), ShizukuProvider.running(), setup(this).installing()))
@@ -418,6 +428,7 @@ public class HermesService extends Service {
         running = false;
         instance = null;
         main.removeCallbacks(shizukuCheck);
+        main.removeCallbacks(updateCheck);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         try {
@@ -1536,7 +1547,10 @@ public class HermesService extends Service {
         NotificationChannel phone = new NotificationChannel(CH_PHONE, "Phone access", NotificationManager.IMPORTANCE_DEFAULT);
         phone.setDescription("Shizuku stopped or not running");
         phone.setShowBadge(false);
-        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback, phone}) nm.createNotificationChannel(c);
+        NotificationChannel upd = new NotificationChannel(UpdateNotice.CH_UPDATE, "App updates", NotificationManager.IMPORTANCE_DEFAULT);
+        upd.setDescription("A newer Hermes Mobile version is available");
+        upd.setShowBadge(false);
+        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback, phone, upd}) nm.createNotificationChannel(c);
         nm.deleteNotificationChannel("hermes"); // v0.1 channel, replaced by the ones above
         nm.deleteNotificationChannel("learning"); // replaced by learning2/jobs2, which don't badge the icon
         nm.deleteNotificationChannel("jobs");

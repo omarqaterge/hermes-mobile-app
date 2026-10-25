@@ -4,6 +4,8 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Hermes Mobile now notifies you when a new version is out.** It checks GitHub at most every 12 hours while the app's background service runs (about 2 minutes after it starts, then every 12 h), and posts one "App updates" notification per release; tap it, then Settings → About → Update. The notice goes away once you install the version. You can turn it off in the app's notification settings (App updates). Seen on an Android 15 emulator running an older build; not yet seen on a real phone.
+
 ## v0.8.59 (2026-10-25)
 
 Tested on one phone (Android 16) with real taps; the Android 10-and-older setup step, a fresh install and the Windows script were not tried on a device.
