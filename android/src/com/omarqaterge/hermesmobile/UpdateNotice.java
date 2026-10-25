@@ -15,7 +15,7 @@ import org.json.JSONObject;
 /**
  * Tells the user once per release that a newer app version is on GitHub. One small HTTPS request at most every
  * CHECK_MS (the service asks at start-up and then on a timer that does not wake the CPU); no wake lock, no alarm.
- * Tapping the notice opens the app; the update itself is Settings → About (system installer confirms).
+ * Tapping the notice opens the app and starts the same download + install as Settings → About → Update (the system installer still asks to confirm).
  */
 final class UpdateNotice {
     static final String CH_UPDATE = "update";
@@ -86,29 +86,31 @@ final class UpdateNotice {
         JSONObject rel = new JSONObject(sb.toString());
         String latest = rel.optString("tag_name", "").replaceFirst("^[vV]", "");
         JSONArray assets = rel.optJSONArray("assets");
-        boolean hasApk = false;
+        String apkUrl = "";
         for (int i = 0; assets != null && i < assets.length(); i++)
-            if (assets.getJSONObject(i).optString("name").toLowerCase().endsWith(".apk")) hasApk = true;
+            if (assets.getJSONObject(i).optString("name").toLowerCase().endsWith(".apk"))
+                apkUrl = assets.getJSONObject(i).optString("browser_download_url", "");
+        boolean hasApk = !apkUrl.isEmpty();
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         if (latest.isEmpty() || !isNewer(latest, current)) {
             nm.cancel(UPDATE_ID); // installed (or the release was pulled): the notice has nothing left to say
             return;
         }
         if (!hasApk || latest.equals(sp.getString("notified", ""))) return; // no file yet / already told for this version
-        if (notify(ctx, latest)) sp.edit().putString("notified", latest).apply();
+        if (notify(ctx, latest, apkUrl)) sp.edit().putString("notified", latest).apply();
     }
 
-    private static boolean notify(Context ctx, String latest) {
+    private static boolean notify(Context ctx, String latest, String apkUrl) {
         try {
             HermesService.createChannels(ctx);
-            Intent open = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+            Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+            open.putExtra("updateUrl", apkUrl); // MainActivity checks it is an official release URL
             Notification.Builder b = new Notification.Builder(ctx, CH_UPDATE)
                     .setSmallIcon(R.drawable.ic_stat_hermes)
                     .setContentTitle("Hermes Mobile " + latest + " is available")
-                    .setContentText("Open the app, then Settings \u2192 About \u2192 Update.")
+                    .setContentText("Tap to download and install it.")
                     .setAutoCancel(true);
-            if (open != null)
-                b.setContentIntent(PendingIntent.getActivity(ctx, UPDATE_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+            b.setContentIntent(PendingIntent.getActivity(ctx, UPDATE_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
             ctx.getSystemService(NotificationManager.class).notify(UPDATE_ID, b.build());
             return true;
         } catch (Exception e) {
