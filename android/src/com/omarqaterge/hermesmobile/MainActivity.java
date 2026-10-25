@@ -1050,6 +1050,11 @@ public class MainActivity extends Activity {
         try {
             if (i < 0 || i >= sharedUris.size()) return o.put("error", "gone").toString();
             Uri u = sharedUris.get(i);
+            if (!ShareSource.ok(u.getScheme(), u.getEncodedAuthority(), getPackageName())) {
+                String n = u.getLastPathSegment();
+                return o.put("name", n == null || n.isEmpty() ? "shared" : n.replaceAll("[/\\\\\\x00-\\x1f]", "_"))
+                        .put("error", "can't be shared from there").toString();
+            }
             String name = null;
             long size = -1;
             try (android.database.Cursor c = getContentResolver().query(u, null, null, null, null)) {

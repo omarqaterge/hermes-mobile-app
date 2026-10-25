@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **"Share to Hermes" only opens files another app shares from its own storage.** An app could share a `file://` path or one of Hermes Mobile's own files (its settings, which hold the key it shares with Hermes) and the app would attach it to a new chat. Those now show "can't be shared from there". (Unit-tested; not yet tried on a phone.)
 - **Allowing a command or answering Hermes from a notification on the lock screen asks you to unlock first** (Android 12+). Anyone holding a locked phone could tap "Allow once" on a waiting command; Deny and Stop stay one tap. (Compile-checked; not yet tried on a phone.)
 - **Tablets: hide the chat list.** On wide screens (tablets, unfolded foldables, landscape) ☰ in the chat header now
   hides or shows the chat list on the left, and « at the top of the list hides it from any page; the app remembers it.
