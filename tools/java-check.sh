@@ -29,3 +29,6 @@ javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -nowarn -classpath "
   $(find src "$OUT/gen" -name '*.java') 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS'
 rc=${PIPESTATUS[0]}
 [ "$rc" = 0 ] && echo "java-check: OK" || { echo "java-check: FAILED"; exit 1; }
+# The Shizuku keeper's decision logic (plain JVM, no Android classes); the cwd is android/ here.
+../tools/test_shizuku_keeper.sh > "$OUT/keeper.txt" 2>&1 || { grep -v '^PASS' "$OUT/keeper.txt"; echo "java-check: keeper test FAILED"; exit 1; }
+echo "java-check: keeper test $(tail -1 "$OUT/keeper.txt")"
