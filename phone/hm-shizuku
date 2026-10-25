@@ -51,6 +51,8 @@ r() {
   return 1
 }
 A() { timeout -s KILL "${TO:-10}" adb "$@" </dev/null 2>&1; }   # Termux's adb, bounded
+# A read through rish: rish now and then exits 0 with no output at all, so an empty answer is tried again too.
+rv() { local i out; for i in 1 2 3 4 5; do out=$(r "$1") && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }; nap 1; done; return 1; }
 have_adb() { command -v adb >/dev/null 2>&1; }
 keysum() { [ -s "$KEYDIR/adbkey.pub" ] && cksum < "$KEYDIR/adbkey.pub" | awk '{print $1}'; }
 # Paired = this script (or a start) saw the phone accept the adb key that is in ~/.android now.
@@ -84,8 +86,8 @@ finish() {
 # uiautomator's XML, one <node …> per line.
 dump() {
   local d
-  d=$(r 'uiautomator dump /dev/stdout 2>/dev/null')
-  case "$d" in *"<hierarchy"*) ;; *) d=$(r 'f=/data/local/tmp/hm-shizuku-ui.xml; uiautomator dump $f >/dev/null 2>&1 && cat $f; rm -f $f') ;; esac
+  d=$(rv 'uiautomator dump /dev/stdout 2>/dev/null')
+  case "$d" in *"<hierarchy"*) ;; *) d=$(rv 'f=/data/local/tmp/hm-shizuku-ui.xml; uiautomator dump $f >/dev/null 2>&1 && cat $f; rm -f $f') ;; esac
   printf '%s\n' "$d" | tr '>' '\n'
 }
 attr() { sed -n "s/.* $1=\"\([^\"]*\)\".*/\1/p"; }            # attribute of each node line on stdin
@@ -96,16 +98,18 @@ tap_node() {   # tap the middle of the first node line on stdin
        awk '{printf "%d %d", ($1+$3)/2, ($2+$4)/2}')
   [ -n "$xy" ] && r "input tap $xy" >/dev/null
 }
-settings_in_front() { r 'dumpsys window | grep -E "mCurrentFocus|mFocusedApp"; true' | head -1 | grep -q "$SETTINGS_PKG/"; }
-wd_state() { r 'settings get global adb_wifi_enabled' | tr -d '\r '; }
+settings_in_front() { rv 'dumpsys window | grep -E "mCurrentFocus|mFocusedApp"; true' | head -1 | grep -q "$SETTINGS_PKG/"; }
+wd_state() { rv 'settings get global adb_wifi_enabled' | tr -d '\r '; }
 wait_wd_on() { local i; for i in 1 2 3 4; do nap 1; [ "$(wd_state)" = 1 ] && return 0; done; return 1; }
 
 OPENED=""; WE_TURNED_ON=""; RESTORED=""
 restore() {
   [ -z "$RESTORED" ] || return 0; RESTORED=1
-  if [ -n "$OPENED" ]; then
-    local i
-    for i in 1 2 3; do settings_in_front || break; r 'input keyevent BACK' >/dev/null; nap 0.5; done
+  # Close the Settings screen this run opened, only if it is still in front. Not with Back: Settings opened through the
+  # tile intent shows Wireless debugging again on Back. Stopping Settings closes it (and the pairing dialog) and brings
+  # back the app that was in front before; Home only if Settings is somehow still there.
+  if [ -n "$OPENED" ] && settings_in_front; then
+    r "am force-stop $SETTINGS_PKG" >/dev/null; nap 1
     settings_in_front && r 'input keyevent HOME' >/dev/null
   fi
   # Turn Wireless debugging off again only if this run turned it on (Shizuku keeps running without it).
@@ -135,12 +139,12 @@ cmd_pair() {
   A start-server >/dev/null   # makes ~/.android/adbkey on first use
   if [ -z "$force" ] && paired_now; then finish ok 0 "already paired"; fi
   [ -x "$RISH" ] || finish failed 2 "rish is missing: run the Hermes Mobile installer again"
-  r id | grep -q 'uid=2000' || finish failed 2 "Shizuku isn't running, or Termux isn't allowed to use it"
-  out=$(r 'cmd wifi status')
+  rv id | grep -q 'uid=2000' || finish failed 2 "Shizuku isn't running, or Termux isn't allowed to use it"
+  out=$(rv 'cmd wifi status')
   if echo "$out" | grep -qi 'wifi is connected'; then :
   elif echo "$out" | grep -qi 'wifi is'; then finish no-wifi 3 "not on Wi-Fi: connect to Wi-Fi and try again"
   fi   # other output: carry on, Android itself refuses Wireless debugging off Wi-Fi
-  [ "$(r 'settings get global development_settings_enabled' | tr -d '\r ')" = 1 ] ||
+  [ "$(rv 'settings get global development_settings_enabled' | tr -d '\r ')" = 1 ] ||
     { r 'settings put global development_settings_enabled 1' >/dev/null; log "developer options turned on"; }
 
   if [ "$(wd_state)" != 1 ]; then
@@ -151,8 +155,9 @@ cmd_pair() {
   fi
 
   # Settings → Wireless debugging. The Quick Settings tile's "long press" intent opens it directly (Settings' inner
-  # screens can't be started from the shell). It needs developer options on.
-  r "am start -a android.service.quicksettings.action.QS_TILE_PREFERENCES -n '$SETTINGS_PKG/.Settings\$DevelopmentSettingsActivity' --ecn android.intent.extra.COMPONENT_NAME '$SETTINGS_PKG/.development.qstile.DevelopmentTiles\$WirelessDebugging'" >/dev/null
+  # screens can't be started from the shell). It needs developer options on. A fresh task each time (clear-task), so
+  # Back closes it again instead of uncovering screens left over from an earlier run.
+  r "am start --activity-clear-task -a android.service.quicksettings.action.QS_TILE_PREFERENCES -n '$SETTINGS_PKG/.Settings\$DevelopmentSettingsActivity' --ecn android.intent.extra.COMPONENT_NAME '$SETTINGS_PKG/.development.qstile.DevelopmentTiles\$WirelessDebugging'" >/dev/null
   OPENED=1
   # The list fills in after the screen shows: wait for the "IP address & Port" value.
   connect=""
@@ -249,7 +254,7 @@ lock() {
   local L="$HM/hm-shizuku.lock" pid
   if ! mkdir "$L" 2>/dev/null; then
     pid=$(cat "$L/pid" 2>/dev/null)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then log "busy: another hm-shizuku run ($pid)"; emit failed "another hm-shizuku run is busy"; exit 10; fi
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -o args= -p "$pid" 2>/dev/null | grep -q hm-shizuku; then log "busy: another hm-shizuku run ($pid) reports the result"; exit 10; fi
     rm -rf "$L"; mkdir "$L" 2>/dev/null || exit 10
   fi
   echo $$ > "$L/pid"
