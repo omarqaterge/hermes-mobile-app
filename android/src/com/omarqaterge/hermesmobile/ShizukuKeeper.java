@@ -530,11 +530,17 @@ final class ShizukuKeeper {
         stopRun();
         setLast("failed");
         notice("failed");
+        restoreWirelessDebugging(); // no reason to leave it on (Shizuku's own Start turns it on again when used)
     }
 
     /** Shizuku is up again: Wireless debugging goes back off if the keeper turned it on (owner decision D2). */
     private static void wirelessDebuggingOff() {
-        if (app == null || !prefs(app).getBoolean(P_WD_OURS, false) || !ShizukuProvider.running()) return;
+        if (app == null || !ShizukuProvider.running()) return;
+        restoreWirelessDebugging();
+    }
+
+    private static void restoreWirelessDebugging() {
+        if (app == null || !prefs(app).getBoolean(P_WD_OURS, false)) return;
         try {
             Settings.Global.putInt(app.getContentResolver(), ADB_WIFI, 0);
             Log.i(TAG, "Wireless debugging turned off again");
