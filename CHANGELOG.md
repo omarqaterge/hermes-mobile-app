@@ -4,12 +4,17 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
-- **The status sheet shows whether Shizuku is running and Hermes can use it.** Tap the dot under the chat title: a Shizuku row says Running, Not running, Not installed or what to fix, and tapping it opens Shizuku or the Setup check. (Browser-tested; not yet tried on a real phone.)
-- **Setup check has a step to let Shizuku run in the background, and the computer install sets it for you.** Without it Android can stop Shizuku and Hermes loses the screen. The phone installer also does it through Shizuku. (Web-tested and shell-script syntax-checked; not yet tried on a real phone.)
-- **Shizuku is now a required setup step (no more Skip).** The step says Hermes needs it; a "Shizuku is running: continue" button is only for a Shizuku that was started before the app opened, and Setup check still verifies it afterwards. On Android 10 and older the step explains how to start Shizuku from a computer and links Shizuku's guide. (Web-tested; not yet tried on a real phone.)
-- Hermes Mobile tells you when Shizuku stops, and the notice goes away once Shizuku runs again (not yet tried on a real phone).
-- **Pull up past the last message to open a side question (/btw) about the chat.** The list stretches like a rubber band; about 110 px of pull shows “Release for a side question”. A lighter pull springs back. (Browser-tested; not yet tried on a real phone.)
-- **The canvas opens as a panel from the right:** tap the canvas button or swipe left on the chat; swipe right on its top bar, tap ✕ or press Back to close it. Fill-the-screen stays; wide screens keep it beside the chat. (Browser-tested; not yet tried on a real phone.)
+## v0.8.59 (2026-10-25)
+
+Tested on one phone (Android 16) with real taps; the Android 10-and-older setup step, a fresh install and the Windows script were not tried on a device.
+
+- **Shizuku is now a required setup step (no more Skip).** The step says Hermes needs it; a "Shizuku is running: continue" button is only for a Shizuku that was started before the app opened, and Setup check still verifies it afterwards. On Android 10 and older the step explains how to start Shizuku from a computer and links Shizuku's guide. (Browser-tested; the fresh-install flow was not run on a device.)
+- **Setup check has a step to let Shizuku run in the background, and the computer install sets it for you.** Without it Android can stop Shizuku and Hermes loses the screen. The phone installer also tries it through Shizuku (not checked on a device).
+- **Hermes Mobile tells you when Shizuku stops.** A "Shizuku stopped" notification appears within seconds; tap it to open Shizuku, and it goes away by itself once Shizuku runs again. After a restart of the phone, a "Shizuku isn't running" notice comes about 90 s after Hermes Mobile starts (the restart case is not yet seen on a real phone).
+- **The status sheet shows whether Shizuku is running and Hermes can use it.** Tap the dot under the chat title: a Shizuku row says Running, Not running, Not installed or what to fix, and tapping it opens Shizuku or the Setup check.
+- **The canvas opens as a panel from the right:** tap the canvas button or swipe left on the chat; swipe right on its top bar, tap ✕ or press Back to close it. Fill-the-screen stays; wide screens keep it beside the chat (wide screens browser-tested only).
+- **Pull up past the last message to open a side question (/btw) about the chat.** The list stretches like a rubber band; about 110 px of pull shows "Release for a side question". A lighter pull springs back.
+- **The Auto button on an empty new chat shows the default mode** the chat will start in, instead of Auto off.
 
 ## v0.8.57 (2026-10-24)
 
