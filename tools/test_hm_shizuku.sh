@@ -61,6 +61,9 @@ fx() { # fixture for the current screen
 case "$c" in
   id) echo "uid=2000(shell) gid=2000(shell) groups=2000(shell)" ;;
   "cmd wifi status") echo "Wifi is enabled"; if [ -f "$S/no_wifi" ]; then echo "Wifi is disconnected"; else echo 'Wifi is connected to "AndroidWifi"'; fi ;;
+  "settings get global adb_wifi_enabled") if [ -s "$S/empty_wd_get" ] && [ "$(cat "$S/empty_wd_get")" -gt 0 ]; then
+      echo $(( $(cat "$S/empty_wd_get") - 1 )) > "$S/empty_wd_get"; exit 0; fi   # rish sometimes answers nothing, exit 0
+    cat "$S/set_adb_wifi_enabled" ;;
   "settings get global "*) cat "$S/set_${c##* }" 2>/dev/null || echo null ;;
   "settings put global "*) set -- $c; k=$4; v=$5
     if [ "$k" = adb_wifi_enabled ] && [ "$v" = 1 ] && [ -f "$S/untrusted" ]; then echo 0 > "$S/set_$k"; echo trust > "$S/screen"
@@ -75,6 +78,7 @@ case "$c" in
     esac ;;
   "input keyevent BACK") case $screen in pair) echo wd ;; *) echo home ;; esac > "$S/screen" ;;
   "input keyevent HOME") echo home > "$S/screen" ;;
+  "am force-stop com.android.settings") echo home > "$S/screen" ;;
   "dumpsys window"*) case $screen in wd|pair) echo "  mCurrentFocus=Window{a1 u0 com.android.settings/com.android.settings.SubSettings}" ;;
     trust) echo "  mCurrentFocus=Window{b2 u0 com.android.systemui/com.android.systemui.wifi.WifiDebuggingActivity}" ;;
     *) echo "  mCurrentFocus=Window{c3 u0 com.android.launcher3/com.android.launcher3.Launcher}" ;; esac ;;
@@ -93,7 +97,8 @@ echo "$*" >> "$S/adb.log"
 case "$1" in
   start-server) mkdir -p "$K"; [ -f "$K/adbkey.pub" ] || echo "key-$$-$RANDOM" > "$K/adbkey.pub" ;;
   kill-server) : ;;
-  pair) if [ "$2" = "127.0.0.1:40367" ] && [ "$3" = 182068 ]; then cp "$K/adbkey.pub" "$S/trusted_key"; echo "Successfully paired to $2 [guid=adb-FAKE]"
+  pair) [ -f "$S/user_leaves" ] && echo home > "$S/screen"   # the user switched away meanwhile
+        if [ "$2" = "127.0.0.1:40367" ] && [ "$3" = 182068 ]; then cp "$K/adbkey.pub" "$S/trusted_key"; echo "Successfully paired to $2 [guid=adb-FAKE]"
         else echo "Failed: Unable to start pairing client."; exit 1; fi ;;
   connect) p=${2##*:}
     if [ "$p" = "$(cat "$S/adbport" 2>/dev/null)" ]; then
@@ -164,7 +169,8 @@ check "[ \"\$(cat '$S/set_development_settings_enabled')\" = 1 ]" "pair: develop
 check "grep -qx 'settings put global adb_wifi_enabled 1' '$S/rish.log'" "pair: Wireless debugging turned on"
 check "[ \"\$(cat '$S/set_adb_wifi_enabled')\" = 0 ]" "pair: Wireless debugging off again (this run turned it on)"
 check "[ \"\$(cat '$S/screen')\" = home ]" "pair: Settings closed again"
-check "grep -q 'keyevent BACK' '$S/rish.log'" "pair: left Settings with Back"
+check "grep -qx 'am force-stop com.android.settings' '$S/rish.log' && ! grep -q 'keyevent' '$S/rish.log'" "pair: closed the Settings it opened (not with Back, which reopens it)"
+check "grep -q 'am start --activity-clear-task ' '$S/rish.log'" "pair: Settings opened in a fresh task"
 check "[ -s '$H/.hermes-mobile/adb-paired' ]" "pair: writes ~/.hermes-mobile/adb-paired"
 check "ev 'e==dict(kind=\"shizuku-auto\",paired=True,result=\"ok\",detail=e[\"detail\"]) and isinstance(e[\"detail\"],str)'" "pair: event {kind:shizuku-auto, paired:true, result:ok, detail}"
 check "grep -qx 'http://127.0.0.1:9121/event' '$S/curl.0.args'" "pair: event goes to 127.0.0.1:9121/event"
@@ -185,10 +191,16 @@ check "[ \$RC = 0 ] && grep -q 'am start' '$S/rish.log'" "pair --force: pairs ag
 rm -f "$H/.android/adbkey.pub"; hm status
 check "echo \"\$OUT\" | grep -qx unpaired" "status: unpaired when the adb key changed"
 
+# the user switched to another app meanwhile: Settings isn't in front, nothing is closed
+fresh away; touch "$S/user_leaves"; hm pair
+check "[ \$RC = 0 ] && ! grep -q 'force-stop\\|keyevent' '$S/rish.log'" "pair: Settings no longer in front → nothing closed, no keys pressed"
+
 # ── Wireless debugging already on: stays on ──
 fresh wdon; echo 1 > "$S/set_adb_wifi_enabled"; echo 1 > "$S/set_development_settings_enabled"; hm pair
 check "[ \$RC = 0 ] && [ \"\$(cat '$S/set_adb_wifi_enabled')\" = 1 ]" "pair: Wireless debugging that was on stays on"
 check "! grep -q 'settings put global development_settings_enabled' '$S/rish.log'" "pair: developer options already on: not written"
+fresh empty; echo 1 > "$S/set_adb_wifi_enabled"; echo 2 > "$S/empty_wd_get"; hm pair
+check "[ \$RC = 0 ] && ! grep -q 'adb_wifi_enabled 1' '$S/rish.log' && [ \"\$(cat '$S/set_adb_wifi_enabled')\" = 1 ]" "pair: an empty rish answer is read again (Wireless debugging that was on is not turned off)"
 
 # ── the list fills in late: waits for the ip:port summary ──
 fresh late; echo 2 > "$S/wd_empty"; hm pair
@@ -256,6 +268,13 @@ rm -f "$S/server"; SCAN_FROM=61010 SCAN_TO=61020 hm start
 check "[ \$RC = 7 ] && ev 'e[\"result\"]==\"no-port\"'" "start, nothing listening: exit 7, result no-port"
 touch "$S/starter_broken"; SCAN_FROM=$((lo-5)) SCAN_TO=$((hi+5)) hm start "$P"
 check "[ \$RC = 8 ] && ev 'e[\"result\"]==\"failed\"'" "start, server doesn't come up: exit 8, failed"
+# one run at a time: a live run holds the lock → exit 10 and no event (that run reports); a stale lock is taken over
+printf 'sleep 30\n' > "$T/hm-shizuku-busy.sh"; bash "$T/hm-shizuku-busy.sh" & BUSY=$!; disown $BUSY 2>/dev/null; LISTENERS="$LISTENERS $BUSY"
+fresh busy; mkdir "$H/.hermes-mobile/hm-shizuku.lock"; echo "$BUSY" > "$H/.hermes-mobile/hm-shizuku.lock/pid"; hm start 41234
+check "[ \$RC = 10 ] && [ \$(nevents) = 0 ]" "start while another run holds the lock: exit 10, no event"
+check "[ \"\$(cat '$H/.hermes-mobile/hm-shizuku.lock/pid')\" = $BUSY ]" "busy: the other run's lock is left alone"
+echo 999999 > "$H/.hermes-mobile/hm-shizuku.lock/pid"; hm pair
+check "[ \$RC = 0 ] && [ ! -e '$H/.hermes-mobile/hm-shizuku.lock' ]" "a stale lock is taken over and removed afterwards"
 hm start abc; check "[ \$RC = 64 ]" "start with a bad port: usage error"
 hm frobnicate; check "[ \$RC = 64 ]" "unknown command: usage error"
 
