@@ -84,6 +84,11 @@ public class KeeperPlanTest {
                 "bad ports / hosts ignored");
         check(KeeperPlan.pickPort(Collections.singletonList(new String[]{"/10.0.2.16", "41000"}), local) == 41000, "InetAddress.toString() form (/ip) matches");
 
+        check(eq(KeeperPlan.localPorts(Arrays.asList(new String[]{"10.0.2.16", "39899"}, new String[]{"192.168.1.9", "40001"},
+                new String[]{"10.0.2.16", "38755"}, new String[]{"10.0.2.16", "38755"}), local), Arrays.asList(38755, 39899)),
+                "localPorts: this phone's ports, newest first, no duplicates (a stale port stays a candidate)");
+        check(KeeperPlan.NSD_RETRY_MS > 0 && KeeperPlan.NSD_RETRY_MS < KeeperPlan.NSD_MS && KeeperPlan.NSD_MS <= 10_000, "NSD bounded to 10 s, re-resolve inside it");
+
         // the Termux command: fixed text + a number, nothing else
         check(eq(KeeperPlan.startScript(37709), "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku start 37709"), "start with the port");
         check(eq(KeeperPlan.startScript(0), "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku start"), "no port → the script scans");

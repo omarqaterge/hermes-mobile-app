@@ -135,6 +135,7 @@ final class ShizukuKeeper {
                 HermesService.setup(a).installing(), Build.VERSION.SDK_INT, wss(a), MainActivity.termuxOk(a),
                 prefs(a).getBoolean(P_PAIRED, false));
         if (why != null) {
+            Log.i(TAG, "down (" + (check ? "90 s check" : "binder died") + "): can't act: " + why);
             setLast(why);
             if (KeeperPlan.userMustAct(why)) notice(why);
             return;
@@ -148,6 +149,7 @@ final class ShizukuKeeper {
         runs.add(now);
         while (runs.size() > KeeperPlan.MAX_RUNS_PER_HOUR) runs.remove(0);
         cancelNotice();
+        Log.i(TAG, "down (" + (check ? "90 s check" : "binder died") + "): restarting Shizuku");
         if (!onWifi()) {
             waitForWifi();
             return;
@@ -195,7 +197,8 @@ final class ShizukuKeeper {
                 NetworkCapabilities c = cm.getNetworkCapabilities(n);
                 if (c != null && c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return true;
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "Wi-Fi check failed: " + e);
         }
         return false;
     }
@@ -226,6 +229,7 @@ final class ShizukuKeeper {
             app.getSystemService(ConnectivityManager.class).registerNetworkCallback(req, wifiCb);
             Log.i(TAG, "not on Wi-Fi: waiting for it");
         } catch (Exception e) {
+            Log.w(TAG, "Wi-Fi callback failed: " + e);
             wifiCb = null;
         }
     }
@@ -326,98 +330,152 @@ final class ShizukuKeeper {
         allowObserver = null;
     }
 
-    /** Find this phone's Wireless debugging port (bounded), then start; no port → the script scans for it. */
+    /** Find this phone's Wireless debugging port (bounded by NSD_MS), then start; no port → the script scans for it.
+     *  Each candidate is checked on loopback first: NsdManager may still hold an earlier session's port. */
     private static void discover(final int g) {
         stopNsd();
+        new Discovery(g).start();
+    }
+
+    private static final class Discovery {
+        final int g;
         final NsdManager nsd = app.getSystemService(NsdManager.class);
         final long t0 = android.os.SystemClock.uptimeMillis();
         final Set<String> local = localHosts();
+        final ArrayList<NsdServiceInfo> seen = new ArrayList<>();
         final ArrayDeque<NsdServiceInfo> queue = new ArrayDeque<>();
         final ArrayList<String[]> found = new ArrayList<>();
-        final boolean[] resolving = {false}, done = {false};
-        final Runnable[] resolveNext = new Runnable[1];
-        final Runnable finish = new Runnable() {
-            @Override
-            public void run() {
-                if (done[0]) return;
-                done[0] = true;
-                H.removeCallbacks(this);
-                stopNsd();
-                if (g != gen) return;
-                int port = KeeperPlan.pickPort(found, local);
-                Log.i(TAG, "NsdManager: " + found.size() + " resolved, port " + (port > 0 ? port : "none (script scans)")
-                        + " after " + (android.os.SystemClock.uptimeMillis() - t0) + " ms");
-                startInTermux(port);
-            }
+        final Set<Integer> dead = new HashSet<>();
+        boolean resolving = false, checking = false, done = false;
+        final Runnable finish = () -> finish(0);
+        final Runnable again = () -> {
+            for (NsdServiceInfo s : seen) if (!queue.contains(s)) queue.add(s);
+            resolveNext();
         };
-        nsdTimeout = finish;
-        resolveNext[0] = () -> {
-            if (done[0] || resolving[0] || queue.isEmpty()) return;
-            resolving[0] = true;
+
+        Discovery(int g) {
+            this.g = g;
+        }
+
+        void start() {
+            nsdTimeout = finish;
+            nsdListener = new NsdManager.DiscoveryListener() {
+                @Override
+                public void onStartDiscoveryFailed(String type, int err) {
+                    H.post(finish);
+                }
+
+                @Override
+                public void onStopDiscoveryFailed(String type, int err) {
+                }
+
+                @Override
+                public void onDiscoveryStarted(String type) {
+                }
+
+                @Override
+                public void onDiscoveryStopped(String type) {
+                }
+
+                @Override
+                public void onServiceFound(NsdServiceInfo s) {
+                    H.post(() -> {
+                        seen.add(s);
+                        queue.add(s);
+                        resolveNext();
+                    });
+                }
+
+                @Override
+                public void onServiceLost(NsdServiceInfo s) {
+                }
+            };
+            try {
+                nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, nsdListener);
+            } catch (Exception e) {
+                nsdListener = null;
+                H.post(finish);
+                return;
+            }
+            H.postDelayed(finish, KeeperPlan.NSD_MS);
+        }
+
+        void resolveNext() {
+            if (done || resolving || queue.isEmpty()) return;
+            resolving = true;
             NsdServiceInfo s = queue.poll();
             try {
                 nsd.resolveService(s, new NsdManager.ResolveListener() {
                     @Override
                     public void onResolveFailed(NsdServiceInfo si, int err) {
                         H.post(() -> {
-                            resolving[0] = false;
-                            resolveNext[0].run();
+                            resolving = false;
+                            resolveNext();
                         });
                     }
 
                     @Override
                     public void onServiceResolved(NsdServiceInfo si) {
                         H.post(() -> {
-                            resolving[0] = false;
+                            resolving = false;
                             InetAddress h = si.getHost();
                             found.add(new String[]{h == null ? null : h.getHostAddress(), String.valueOf(si.getPort())});
-                            if (KeeperPlan.pickPort(found, local) > 0) finish.run();
-                            else resolveNext[0].run();
+                            check();
+                            resolveNext();
                         });
                     }
                 });
             } catch (Exception e) {
-                resolving[0] = false;
+                resolving = false;
             }
-        };
-        nsdListener = new NsdManager.DiscoveryListener() {
-            @Override
-            public void onStartDiscoveryFailed(String type, int err) {
-                H.post(finish);
-            }
-
-            @Override
-            public void onStopDiscoveryFailed(String type, int err) {
-            }
-
-            @Override
-            public void onDiscoveryStarted(String type) {
-            }
-
-            @Override
-            public void onDiscoveryStopped(String type) {
-            }
-
-            @Override
-            public void onServiceFound(NsdServiceInfo s) {
-                H.post(() -> {
-                    queue.add(s);
-                    resolveNext[0].run();
-                });
-            }
-
-            @Override
-            public void onServiceLost(NsdServiceInfo s) {
-            }
-        };
-        try {
-            nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, nsdListener);
-        } catch (Exception e) {
-            nsdListener = null;
-            H.post(finish);
-            return;
         }
-        H.postDelayed(finish, KeeperPlan.NSD_MS);
+
+        /** Try each untested local port on loopback (off the main thread); the first that accepts wins. */
+        void check() {
+            if (done || checking) return;
+            final ArrayList<Integer> todo = new ArrayList<>();
+            for (Integer p : KeeperPlan.localPorts(found, local)) if (!dead.contains(p)) todo.add(p);
+            if (todo.isEmpty()) return;
+            checking = true;
+            new Thread(() -> {
+                int open = 0;
+                ArrayList<Integer> closed = new ArrayList<>();
+                for (int p : todo) {
+                    try (java.net.Socket so = new java.net.Socket()) {
+                        so.connect(new java.net.InetSocketAddress("127.0.0.1", p), 500);
+                        open = p;
+                        break;
+                    } catch (Exception e) {
+                        closed.add(p);
+                    }
+                }
+                final int port = open;
+                H.post(() -> {
+                    checking = false;
+                    dead.addAll(closed);
+                    if (!closed.isEmpty()) Log.i(TAG, "NsdManager port(s) " + closed + " not open (an earlier session)");
+                    if (port > 0) {
+                        finish(port);
+                        return;
+                    }
+                    check(); // results that came in meanwhile
+                    H.removeCallbacks(again);
+                    if (!done) H.postDelayed(again, KeeperPlan.NSD_RETRY_MS); // resolve again: the record may update
+                });
+            }, "hermes-keeper-port").start();
+        }
+
+        void finish(int port) {
+            if (done) return;
+            done = true;
+            H.removeCallbacks(finish);
+            H.removeCallbacks(again);
+            stopNsd();
+            if (g != gen) return;
+            Log.i(TAG, "NsdManager: " + found.size() + " resolved, port " + (port > 0 ? port : "none (script scans)")
+                    + " after " + (android.os.SystemClock.uptimeMillis() - t0) + " ms");
+            startInTermux(port);
+        }
     }
 
     private static void stopNsd() {
