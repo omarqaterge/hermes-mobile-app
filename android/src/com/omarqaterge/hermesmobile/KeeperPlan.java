@@ -1,0 +1,141 @@
+package com.omarqaterge.hermesmobile;
+
+import java.util.List;
+import java.util.Set;
+
+/**
+ * The Shizuku keeper's decisions as plain functions (no Android classes), so tools/test_shizuku_keeper.sh can test
+ * them with a plain JDK. ShizukuKeeper does the Android side (settings, Wi-Fi callback, NsdManager, Termux).
+ *
+ * "last" words (stored in prefs, shown to the page as setupState.shizukuAuto.last): the first failing precondition
+ * (not-installed, uninstalling, installing, old-android, no-permission, no-termux, unpaired), or what happened on the
+ * last try: no-wifi, untrusted-network, starting, ok, failed, too-many, or the result word of the last shizuku-auto
+ * event from Termux's hm-shizuku script (ok, no-wifi, no-port, failed…).
+ */
+final class KeeperPlan {
+    private KeeperPlan() {
+    }
+
+    static final int ATTEMPTS = 3;
+    /** Attempt i runs this long after the previous one (the first at once): 0, 30, 120 s after the down event. */
+    private static final long[] GAP_MS = {0, 30_000, 90_000};
+    /** After the last attempt: still no Shizuku → "failed" and the notice. */
+    static final long FINAL_CHECK_MS = 60_000;
+    /** Wait this long after putInt(adb_wifi_enabled, 1) before reading it back. */
+    static final long READBACK_MS = 2_000;
+    /** NsdManager discovery + resolve, at most. */
+    static final long NSD_MS = 10_000;
+    /** Wi-Fi just came up: give Android a moment before asking for Wireless debugging. */
+    static final long WIFI_SETTLE_MS = 3_000;
+    /** Wireless debugging is turned off again this long after Shizuku is up (its start script may still be checking). */
+    static final long WD_OFF_MS = 10_000;
+    /** Down events handled per hour, at most: a Shizuku that dies right after each start can't make the keeper loop. */
+    static final int MAX_RUNS_PER_HOUR = 5;
+
+    static final String PAIR_SCRIPT = "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku pair";
+
+    /** Why the keeper can't restart Shizuku by itself, or null when it can (checked in this order). */
+    static String blocker(boolean installed, boolean uninstalling, boolean installing, int sdk, boolean wss,
+                          boolean termuxOk, boolean paired) {
+        if (!installed) return "not-installed";
+        if (uninstalling) return "uninstalling";
+        if (installing) return "installing";
+        if (sdk < 30) return "old-android"; // Wireless debugging is Android 11+
+        if (!wss) return "no-permission";
+        if (!termuxOk) return "no-termux";
+        if (!paired) return "unpaired";
+        return null;
+    }
+
+    /** True when this outcome means the user has to do something: show the Shizuku notice with the reason. */
+    static boolean userMustAct(String last) {
+        if (last == null) return false;
+        switch (last) {
+            case "old-android":
+            case "no-permission":
+            case "no-termux":
+            case "unpaired":
+            case "no-wifi":
+            case "untrusted-network":
+            case "failed":
+            case "too-many":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /** The notice's text for a reason (title stays "Shizuku stopped" / "Shizuku isn't running"). */
+    static String noticeText(String last) {
+        switch (last == null ? "" : last) {
+            case "no-wifi":
+                return "Not on Wi-Fi. It starts again by itself once the phone is on Wi-Fi.";
+            case "untrusted-network":
+                return "Allow wireless debugging on this network (tick Always allow), then Shizuku starts by itself next time.";
+            case "no-permission":
+            case "no-termux":
+            case "unpaired":
+                return "Shizuku isn\u2019t set up to start by itself. Open Hermes Mobile \u2192 Setup check \u2192 Set up.";
+            case "failed":
+                return "Hermes couldn\u2019t start it by itself. Tap to open Shizuku and start it.";
+            case "too-many":
+                return "It stopped again right after each start. Tap to open Shizuku and start it.";
+            default:
+                return "Hermes can\u2019t see or use the screen until you start Shizuku again.";
+        }
+    }
+
+    /** The notice opens Hermes Mobile (to finish the set-up) instead of Shizuku. */
+    static boolean opensApp(String last) {
+        return "no-permission".equals(last) || "no-termux".equals(last) || "unpaired".equals(last);
+    }
+
+    /** Delay before attempt i (0-based) counted from the previous attempt; -1 = no such attempt. */
+    static long delayBefore(int i) {
+        return i < 0 || i >= ATTEMPTS ? -1 : GAP_MS[i];
+    }
+
+    /** Another down event may start attempts: fewer than MAX_RUNS_PER_HOUR started in the last hour. */
+    static boolean runAllowed(List<Long> starts, long now) {
+        int n = 0;
+        for (Long t : starts) if (t != null && now - t < 3_600_000L) n++;
+        return n < MAX_RUNS_PER_HOUR;
+    }
+
+    /** adb_wifi_enabled read back after we set it: 0 = Android asked the user first (a network not allowed yet). */
+    static boolean untrusted(int readBack) {
+        return readBack != 1;
+    }
+
+    /** The connect port of this phone's own Wireless debugging among NsdManager results {host, port}; 0 = none
+     *  (another phone on the same Wi-Fi advertises the same service type; hm-shizuku then scans). */
+    static int pickPort(List<String[]> services, Set<String> localHosts) {
+        for (String[] s : services) {
+            if (s == null || s.length < 2 || s[0] == null || s[1] == null) continue;
+            String host = s[0].startsWith("/") ? s[0].substring(1) : s[0];
+            int pct = host.indexOf('%');
+            if (pct > 0) host = host.substring(0, pct);
+            int port;
+            try {
+                port = Integer.parseInt(s[1]);
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            if (port < 1 || port > 65535) continue;
+            if (localHosts.contains(host)) return port;
+        }
+        return 0;
+    }
+
+    /** The fixed command Termux runs; only a number from NsdManager is added. */
+    static String startScript(int port) {
+        String base = "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku start";
+        return port >= 1 && port <= 65535 ? base + " " + port : base;
+    }
+
+    /** The result word of a shizuku-auto event, kept as "last": a short lowercase word, else "failed". */
+    static String eventLast(String result) {
+        if (result == null || result.isEmpty()) return "";
+        return result.matches("[a-z][a-z-]{0,23}") ? result : "failed";
+    }
+}
