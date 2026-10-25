@@ -1363,6 +1363,52 @@ public class MainActivity extends Activity {
         return true;
     }
 
+    // ── web images in replies: the page's CSP (index.html) lets <img> load only data:/blob:/hm-media, so an image a
+    // reply links to is fetched here when the user taps it and handed back as a data: URL ──
+    static final int MAX_REMOTE_IMAGE = 15 * 1024 * 1024;
+
+    /** data:image/… for an https image (redirects stay https, ≤ 15 MB, png/jpg/gif/webp by its bytes), else "". */
+    static String remoteImage(String url) {
+        try {
+            URL u = new URL(url);
+            for (int hop = 0; hop < 5; hop++) {
+                if (!"https".equals(u.getProtocol()) || u.getHost().isEmpty()) return "";
+                HttpURLConnection c = (HttpURLConnection) u.openConnection();
+                c.setInstanceFollowRedirects(false);
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(20000);
+                c.setRequestProperty("Accept", "image/*");
+                try {
+                    int code = c.getResponseCode();
+                    if (code >= 300 && code < 400) {
+                        String loc = c.getHeaderField("Location");
+                        if (loc == null) return "";
+                        u = new URL(u, loc);
+                        continue;
+                    }
+                    if (code != 200 || c.getContentLengthLong() > MAX_REMOTE_IMAGE) return "";
+                    ByteArrayOutputStream all = new ByteArrayOutputStream();
+                    try (InputStream in = c.getInputStream()) {
+                        byte[] buf = new byte[65536];
+                        int n;
+                        while ((n = in.read(buf)) > 0) {
+                            all.write(buf, 0, n);
+                            if (all.size() > MAX_REMOTE_IMAGE) return "";
+                        }
+                    }
+                    byte[] b = all.toByteArray();
+                    String ext = imageExt(b, null);
+                    if (ext == null) return "";
+                    return "data:" + imageMime(ext) + ";base64," + android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP);
+                } finally {
+                    c.disconnect();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
     /** Runs Save/Share off the page's thread and answers through window.__hmImage(id, ok). */
     void imageJob(int id, java.util.concurrent.Callable<Boolean> job) {
         HTTP_POOL.execute(() -> {
@@ -2092,6 +2138,16 @@ public class MainActivity extends Activity {
         public void shareImage(String key, int id, String name, String path, String b64) {
             if (!ok(key)) return;
             imageJob(id, () -> shareImageNow(name, path, b64));
+        }
+
+        /** A web image a reply shows, fetched on the user's tap: answers window.__hmRemoteImg(id, "data:image/…" | ""). */
+        @JavascriptInterface
+        public void remoteImageAsync(String key, final int id, final String url) {
+            if (!ok(key) || url == null || url.length() > 4096) return;
+            HTTP_POOL.execute(() -> {
+                final String js = "window.__hmRemoteImg && window.__hmRemoteImg(" + id + "," + JSONObject.quote(remoteImage(url)) + ")";
+                runOnUiThread(() -> web.evaluateJavascript(js, null));
+            });
         }
 
         @JavascriptInterface

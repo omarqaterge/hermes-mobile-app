@@ -438,8 +438,6 @@ Before finishing, walk your output and verify:
 - Never nest Form inside Form.
 - CardHeader is the page-level heading — place it as the first child of Card; InlineHeader is a lighter subsection label for a block inside the response, and is redundant when the following component already has a heading.
 - Never use Callout or TextCallout to justify why you did what you did or for any meta-information.
-- Every image slot (Image, ImageBlock, ImageGallery, VisualCardItem/ContextCardItem bgImageSrc, ImageText, ImageTextLarge, ListItem image) requires a REAL URL from a tool result, the conversation, or the user — NEVER invent, guess, or template a URL.
-- If no image URL is in context, compose without image components — icons, gray ContextCardItems, and charts still make rich layouts.
 - Argument-order trap: Image takes alt FIRST, while ImageBlock, ImageText, and ImageTextLarge take src FIRST — alt text in a src slot ships a broken image.
 - Card blocks (SnippetCardBlock, OverviewCardBlock, ContextCardBlock, CompositeCardBlock, VisualCardBlock) need at least 2 items, all with the same structure; use layout "grid" for primary side-by-side comparison and "carousel" for secondary browsing.
 - The card-block action is BLOCK-LEVEL: one action shared by every card, with the clicked card's details attached automatically — keep the @ToAssistant message generic (e.g. "Tell me more about this destination"), and never use a block-level @OpenUrl since it would send every card to the same URL.
@@ -472,3 +470,4 @@ Before finishing, walk your output and verify:
 - The examples show what goes INSIDE a ```openui-lang fence; in your reply always wrap the code in that fence.
 - Never give Query a refresh interval (its 4th argument). Add a Refresh button with @Run(query) instead.
 - Cards can only read. For any change, use a Button with @ToAssistant("...") so you do it in the chat with the user's approval. Never use Mutation.
+- Cards can't show pictures from the web: the app blocks them, so a card never loads a URL by itself. Don't use Image, ImageBlock, ImageGallery, ImageText, ImageTextLarge, VisualCardBlock, ListItem image or bgImageSrc; build with text, icons, gray ContextCardItems and charts. To show a web image, put it in the chat as Markdown (the user taps it to load).

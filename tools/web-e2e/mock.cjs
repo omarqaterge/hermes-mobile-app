@@ -603,6 +603,12 @@ wss.on('connection', ws => {
           later(200, () => event('message.complete', sid, { text: 'Earlier we talked in [Old chat](hermes-chat:s-6) and in 20260929_194711_8c8b2a, plus some more words to read out loud for the player.' }))
           return
         }
+        if (/^show web image$/.test(params.text)) {
+          // A reply naming web images (Markdown and raw HTML): the page must not fetch either until a tap.
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: 'Look:\n\n![cat](https://img.example.test/cat.png?d=SECRET)\n\n<img src="https://img.example.test/raw.png?d=SECRET2">' }))
+          return
+        }
         if (/^show media$/.test(params.text)) {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Here it is:\n\nMEDIA:/root/pics/my pic.png' }))

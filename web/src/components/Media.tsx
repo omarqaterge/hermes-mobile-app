@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../api'
 import { useBackHandler } from '../backstack'
-import { canNativeImage, haptic, nativeImage, openExternal, openFile } from '../bridge'
+import { canNativeImage, haptic, nativeImage, openExternal, openFile, remoteImage } from '../bridge'
 import { toast } from '../store'
 
 export { mediaKind, type MediaKind } from '../text'
@@ -297,6 +297,56 @@ function AudioPlayer({ url, name, onError }: { url: string; name: string; onErro
 }
 
 export function Media({ src, alt }: { src: string; alt?: string }) {
+  return /^https?:/i.test(src) ? <WebMedia src={src} alt={alt} /> : <PhoneMedia src={src} alt={alt} />
+}
+
+const hostOf = (src: string) => {
+  try {
+    return new URL(src).host
+  } catch {
+    return src
+  }
+}
+
+/** Media from the web. Nothing loads by itself (the page's CSP blocks it): a URL in a reply can carry what the model
+ *  read to whoever runs that server. An image loads on a tap that names its site; video and audio open in the browser. */
+function WebMedia({ src, alt }: { src: string; alt?: string }) {
+  const kind = mediaKind(src)
+  const [url, setUrl] = useState<string | null>(null)
+  const [state, setLoad] = useState<'' | 'loading' | 'failed'>('')
+  const [zoom, setZoom] = useState(false)
+  useEffect(() => {
+    setUrl(null)
+    setLoad('')
+  }, [src])
+  if (kind !== 'image') return <FileChip src={src} label={`${alt || src.split(/[?#]/)[0].split('/').pop() || kind} · ${hostOf(src)}`} />
+  if (url)
+    return (
+      <>
+        <img className="media" src={url} alt={alt || ''} onClick={() => setZoom(true)} />
+        {zoom && <Lightbox src={url} url={url} alt={alt} onClose={() => setZoom(false)} />}
+      </>
+    )
+  return (
+    <button
+      className="file-chip web-image"
+      disabled={state === 'loading'}
+      onClick={() => {
+        haptic()
+        if (state === 'failed') return openExternal(src)
+        setLoad('loading')
+        void remoteImage(src).then(u => {
+          if (u) setUrl(u)
+          setLoad(u ? '' : 'failed')
+        })
+      }}
+    >
+      🖼 <span>{alt ? `${alt} · ` : ''}{state === 'loading' ? 'Loading…' : state === 'failed' ? `Couldn’t load it. Open ${hostOf(src)}` : `Image from ${hostOf(src)}: tap to load`}</span>
+    </button>
+  )
+}
+
+function PhoneMedia({ src, alt }: { src: string; alt?: string }) {
   const kind = mediaKind(src)
   const { url, error } = useSrc(kind === 'file' ? '' : src)
   const [zoom, setZoom] = useState(false)

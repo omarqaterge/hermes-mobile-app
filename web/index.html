@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0f1216" />
+    <!-- Nothing a reply writes (Markdown, raw HTML, cards, inline styles) may fetch a URL by itself: a link or image
+         URL can carry what the model read (prompt injection). Images and media come only from the app (data:, blob:,
+         the shell's hm-media stream); a web image in a reply loads on a tap (Media.tsx WebImage). Canvas frames
+         (srcdoc) inherit this too. -->
+    <meta http-equiv="Content-Security-Policy" content="img-src 'self' data: blob: https://hm-media.invalid; media-src 'self' data: blob: https://hm-media.invalid; object-src 'none'" />
     <title>Hermes</title>
   </head>
   <body>

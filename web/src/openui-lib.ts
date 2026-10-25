@@ -27,11 +27,15 @@ const OURS = [
   'The screen is a phone, about 380 px wide: at most 4 table columns, short labels, and Tabs, Carousel or SectionBlock instead of very long cards.',
   'The examples show what goes INSIDE a ```openui-lang fence; in your reply always wrap the code in that fence.',
   'Never give Query a refresh interval (its 4th argument). Add a Refresh button with @Run(query) instead.',
-  'Cards can only read. For any change, use a Button with @ToAssistant("...") so you do it in the chat with the user\'s approval. Never use Mutation.'
+  'Cards can only read. For any change, use a Button with @ToAssistant("...") so you do it in the chat with the user\'s approval. Never use Mutation.',
+  'Cards can\'t show pictures from the web: the app blocks them, so a card never loads a URL by itself. Don\'t use Image, ImageBlock, ImageGallery, ImageText, ImageTextLarge, VisualCardBlock, ListItem image or bgImageSrc; build with text, icons, gray ContextCardItems and charts. To show a web image, put it in the chat as Markdown (the user taps it to load).'
 ]
 
-/** OpenUI's chat rules minus "generate realistic/plausible data", plus ours. */
-export const RULES: string[] = [...(openuiChatPromptOptions.additionalRules ?? []).filter(r => !/plausible data/i.test(r)), ...OURS]
+/** OpenUI's chat rules minus "generate realistic/plausible data" and its rules for image URLs (cards show none), plus ours. */
+export const RULES: string[] = [
+  ...(openuiChatPromptOptions.additionalRules ?? []).filter(r => !/plausible data|image slot|image URL is in context/i.test(r)),
+  ...OURS
+]
 
 /** The two shortest of OpenUI's chat examples: enough to show the shape without ~20K chars of samples. */
 export const EXAMPLES: string[] = [...(openuiChatPromptOptions.examples ?? [])].sort((a, b) => a.length - b.length).slice(0, 2)

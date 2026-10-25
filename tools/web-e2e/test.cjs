@@ -1004,7 +1004,9 @@ async function main() {
   await page.locator('.canvas-x').click()
 
   // ── #12 media streams through the shell's URL (no base64 through /api/files/read) ──
-  await page.evaluate(() => (window.HermesAndroid = { mediaBase: () => 'http://127.0.0.1:9119/m?k=K&p=' }))
+  // The shell's own origin (the page's CSP allows images only from it), served here by the mock.
+  await page.route('https://hm-media.invalid/**', async r => r.fulfill({ response: await r.fetch({ url: r.request().url().replace('https://hm-media.invalid', 'http://127.0.0.1:9119') }) }))
+  await page.evaluate(() => (window.HermesAndroid = { mediaBase: () => 'https://hm-media.invalid/m?k=K&p=' }))
   await page.getByPlaceholder('Message Hermes').fill('show media')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   const img = page.locator('img.media').last()
@@ -1012,10 +1014,37 @@ async function main() {
   await img.evaluate(i => i.scrollIntoView())
   await page.waitForFunction(() => { const i = [...document.querySelectorAll('img.media')].pop(); return i && i.complete && i.naturalWidth > 0 }, null, { timeout: 5000 }).catch(() => {})
   const src = await img.getAttribute('src')
-  check(src === 'http://127.0.0.1:9119/m?k=K&p=' + encodeURIComponent('/root/pics/my pic.png'), `image uses the streamed URL (${src})`)
+  check(src === 'https://hm-media.invalid/m?k=K&p=' + encodeURIComponent('/root/pics/my pic.png'), `image uses the streamed URL (${src})`)
   check(await img.evaluate(i => i.naturalWidth > 0), 'streamed image loads')
   check(!calls().some(c => c.path === '/api/files/read'), 'nothing read as base64')
   await page.evaluate(() => delete window.HermesAndroid)
+  await page.unroute('https://hm-media.invalid/**')
+
+  // ── web images in a reply: nothing is fetched until a tap (CSP + tap-to-load), then it shows ──
+  {
+    const hits = []
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    await page.route('https://img.example.test/**', r => {
+      hits.push(r.request().url())
+      return r.fulfill({ status: 200, contentType: 'image/png', body: png, headers: { 'Access-Control-Allow-Origin': '*' } })
+    })
+    await page.getByPlaceholder('Message Hermes').fill('show web image')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const chip = page.locator('.msg.assistant button.web-image').first()
+    await chip.waitFor({ timeout: 5000 }).catch(() => {})
+    await sleep(800)
+    check((await page.locator('.msg.assistant button.web-image').count()) === 2, 'both web images (Markdown and raw <img>) show as tap-to-load chips')
+    check(/img\.example\.test/.test(await chip.innerText()), `the chip names the site (${await chip.innerText().catch(() => '')})`)
+    check(hits.length === 0, `nothing was fetched before a tap (${JSON.stringify(hits)})`)
+    check(await page.evaluate(() => { const i = new Image(); i.src = 'https://img.example.test/csp-probe.png'; return new Promise(r => { i.onload = () => r(false); i.onerror = () => r(true) }) }), 'the page CSP blocks an <img> pointing at the web')
+    check(!hits.some(u => u.includes('csp-probe')), 'the blocked probe never reached the network')
+    await chip.click()
+    const shown = page.locator('.msg.assistant img.media[src^="blob:"]')
+    await shown.waitFor({ timeout: 5000 }).catch(() => {})
+    check((await shown.count()) === 1 && (await shown.evaluate(i => i.complete && i.naturalWidth > 0).catch(() => false)), 'a tap loads and shows it (blob: image)')
+    check(hits.length === 1 && hits[0].includes('cat.png'), `the tap fetched only that image (${JSON.stringify(hits)})`)
+    await page.unroute('https://img.example.test/**')
+  }
 
   // ── #13 unread dot + time ago: a reply finishes in another chat while the app is open ──
   const mock = b => fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify(b) })
@@ -1330,7 +1359,7 @@ async function main() {
   await page.locator('.empty .suggestion').first().waitFor({ timeout: 5000 }).then(() => check(true, 'New chat shortcut opens the new-chat screen'), () => check(false, 'New chat shortcut opens the new-chat screen'))
   // #27 the empty screen suggests what you asked lately
   const sugg = await page.locator('.empty .suggestion').allTextContents()
-  check(sugg[0] === 'queued with files' && sugg[1] === 'queued hello' && sugg.includes('show media') && sugg.length === 4, `suggestions start with recent prompts (${JSON.stringify(sugg)})`)
+  check(sugg[0] === 'queued with files' && sugg[1] === 'queued hello' && sugg.includes('show web image') && sugg.length === 4, `suggestions start with recent prompts (${JSON.stringify(sugg)})`)
   await page.evaluate(() => window.hermesShortcut('live'))
   await page.locator('.toast', { hasText: 'Live mode needs' }).waitFor({ timeout: 3000 }).then(() => check(true, 'Live shortcut explains itself without voice'), () => check(false, 'Live shortcut explains itself without voice'))
 

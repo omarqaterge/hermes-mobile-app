@@ -46,6 +46,7 @@ interface AndroidBridge {
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermes; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
+  remoteImageAsync?(id: number, url: string): void // a web image fetched on a tap; answers window.__hmRemoteImg(id, dataUrl | "")
 }
 
 declare global {
@@ -166,6 +167,31 @@ export function nativeImage(kind: 'save' | 'share', name: string, path: string, 
   return new Promise(resolve => {
     imageWaits.set(id, resolve)
     fn.call(native, id, name, path, b64)
+  })
+}
+
+let remoteSeq = 0
+const remoteWaits = new Map<number, (url: string) => void>()
+
+/** A web image the user tapped to load, as a URL the page's CSP allows (data: from the shell, blob: in a browser);
+ *  null when it couldn't be loaded. */
+export function remoteImage(url: string): Promise<string | null> {
+  if (!native?.remoteImageAsync) {
+    // Development (plain browser): only hosts that allow CORS; anything else opens in a tab.
+    return fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' })
+      .then(r => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then(b => (b.type.startsWith('image/') ? URL.createObjectURL(b) : null))
+      .catch(() => null)
+  }
+  const w = window as unknown as { __hmRemoteImg?: (id: number, url: string) => void }
+  w.__hmRemoteImg ??= (id, u) => {
+    remoteWaits.get(id)?.(u)
+    remoteWaits.delete(id)
+  }
+  const id = ++remoteSeq
+  return new Promise(resolve => {
+    remoteWaits.set(id, u => resolve(u || null))
+    native.remoteImageAsync!(id, url)
   })
 }
 
