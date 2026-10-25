@@ -206,8 +206,12 @@ Run that every 30-60 s (`-d` prints and exits; don't leave `adb logcat` streamin
 Steps: `packages` → `debian` → `hermes` (the long one, 10-30 min) → `plugin` → `start`, then **`HMSETUP DONE`**.
 
 During `plugin` (`HMSETUP phone: …` lines), Shizuku asks on the phone whether Termux may use it: ask the user to tap **Allow all
-the time** (the installer waits up to a minute). `HMSETUP TODO …` lines just before `DONE` name what Hermes still can't reach
-(files, Termux:API, Shizuku) and how to fix it; fix it and re-run `bash hm.sh`.
+the time** (the installer waits up to a minute). On Android 11+ the installer then pairs Termux's own adb with Wireless
+debugging so Shizuku can start again by itself after a restart (`HMSETUP phone: pairing Termux with Wireless debugging…`): it
+opens Settings → Wireless debugging for a few seconds and reads the pairing code from the screen; don't touch the phone meanwhile.
+It needs the phone on Wi-Fi; on a Wi-Fi Android hasn't seen before it ticks *Always allow on this network* and *Allow* itself.
+`HMSETUP TODO …` lines just before `DONE` name what Hermes still can't reach (files, Termux:API, Shizuku, Shizuku starting by
+itself) and how to fix it; fix it and re-run `bash hm.sh`.
 
 **`HMSETUP FAIL <step> (line N)`:** the real error is on the Termux screen. Read it with a screenshot
 (`adb exec-out screencap -p > screen.png`), or scroll back in Termux. Common causes:
@@ -258,6 +262,7 @@ curl -fL -o hermes-mobile.apk https://github.com/omarqaterge/hermes-mobile-app/r
 adb install -r hermes-mobile.apk
 adb shell pm grant com.omarqaterge.hermesmobile com.termux.permission.RUN_COMMAND
 adb shell pm grant com.omarqaterge.hermesmobile android.permission.POST_NOTIFICATIONS
+adb shell pm grant com.omarqaterge.hermesmobile android.permission.WRITE_SECURE_SETTINGS
 adb shell dumpsys deviceidle whitelist +com.omarqaterge.hermesmobile
 adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
 ```
@@ -281,9 +286,11 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
 5. Tell the user, briefly:
    - On **Xiaomi/HyperOS** also turn on **Autostart** for Termux and Hermes Mobile (Settings → Apps), or Android may still stop them.
    - The **Termux notification must stay**: Hermes runs inside Termux.
-   - **Shizuku stops when the phone restarts.** Without root: start it once in Shizuku → *Start via Wireless debugging* (pair
-     once); on Android 13+ it then restarts by itself on Wi-Fi. Rooted: Shizuku → *Start*, and it restarts by itself. The app's
-     Setup check shows when it isn't running. No root is needed for anything.
+   - **Shizuku stops when the phone restarts.** Android 11+: Hermes Mobile starts it again by itself once the phone is on Wi-Fi
+     (Termux's adb was paired during the install; on a new Wi-Fi Android asks once to allow wireless debugging there: tick
+     *Always allow on this network* and tap *Allow*). If it doesn't come back: Hermes Mobile → Setup check → *Set up*.
+     Android 10 and older: start it from a computer after each restart. Rooted: Shizuku → *Start*, and it restarts by itself.
+     No root is needed for anything.
    - Hermes Mobile can be the phone's assistant (long-press power opens voice chat): Settings → Default apps → Digital assistant app.
    - Updating later: in Termux, `bash hm.sh` (phone side) and install the newer APK from the Releases page.
 6. Delete the downloaded `.apk` files from the computer.
