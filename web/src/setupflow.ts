@@ -212,6 +212,9 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     row('files', false, remoteState(p?.files)),
     row('termux-api', false, n?.termuxApi === false ? 'bad' : remoteState(p?.termux_api)),
     row('shizuku', true, n?.shizuku === false ? 'bad' : !p ? 'skip' : p.shizuku === 'ok' ? 'ok' : 'bad'),
+    // Needs Android 11+ (the app says so), and is meaningful only once Shizuku itself works with Hermes: before that (or
+    // before the installer ran) the row stays out of the way. Older app builds don't report it: no row.
+    row('shizuku-auto', true, !n?.shizukuAuto?.sdk || n.shizuku === false || p?.shizuku !== 'ok' ? 'skip' : shizukuAutoKind(n.shizukuAuto) === 'ok' ? 'ok' : 'bad'),
     // Only on phones whose maker adds an Autostart switch (the shell knows which); it can't be read, so it stays a tip
     // until the user says it is done.
     row('autostart', false, !n?.autostart ? 'skip' : pre?.autostartDone ? 'ok' : 'info')

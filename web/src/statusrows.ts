@@ -9,6 +9,12 @@ export interface ShizukuRow {
   fix: 'open-shizuku' | 'setup' | null
 }
 
+/** Sub-line under a working Shizuku: does it come back by itself? Nothing when the app doesn't report it (older builds). */
+function restartNote(a: NativeSetup['shizukuAuto']): string | null {
+  if (!a) return null
+  return a.sdk && a.wss && a.paired ? 'Restarts by itself' : 'Start it by hand after a restart'
+}
+
 /** The Shizuku row of the status sheet. Shizuku is required, so everything but "running and Hermes can use it"
  * is a problem (red), except "Not installed" (not started yet) and while the check is still running.
  * @param native what the app knows at once (null outside the app)
@@ -30,7 +36,7 @@ export function shizukuRow(native: Pick<NativeSetup, 'shizuku' | 'shizukuRunning
   if (plugin === null) return knowsNative ? { value: 'Checking…', state: 'wait', note: null, fix: null } : null
   switch (plugin) {
     case 'ok':
-      return { value: 'Running', state: 'ok', note: null, fix: null }
+      return { value: 'Running', state: 'ok', note: restartNote(native?.shizukuAuto), fix: null }
     case 'denied':
       return { value: 'Termux not allowed', state: 'err', note: 'In Shizuku, allow Termux.', fix }
     case 'blocked':

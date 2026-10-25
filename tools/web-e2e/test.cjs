@@ -1570,10 +1570,10 @@ async function main() {
     await np.locator('.setup-item.bad', { hasText: 'Run the installer again' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku auto: ✗ with "Run the installer again" when the app lacks the permission'), () => check(false, 'shizuku auto: ✗ with "Run the installer again" when the app lacks the permission'))
     check((await autoRow.getByRole('button', { name: 'Set up' }).count()) === 0, 'shizuku auto: no Set up button when only the installer can fix it')
     await setAuto({ sdk: false, wss: false, paired: false, last: '' })
-    await sleep(500)
-    check((await autoRow.count()) === 0, 'shizuku auto: hidden on Android 10 and older')
+    await autoRow.waitFor({ state: 'detached', timeout: 6000 }).then(() => check(true, 'shizuku auto: hidden on Android 10 and older'), () => check(false, 'shizuku auto: hidden on Android 10 and older'))
     // On Android 10 and older the Shizuku row says it has to be started from a computer after each restart.
     await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'off' } }) })
+    await setAuto({ sdk: true, wss: true, paired: true, last: 'ok' })
     await np.locator('.setup-item.bad', { hasText: 'see and use the screen' }).waitFor({ timeout: 6000 }).catch(() => {})
     check(!((await np.locator('.setup-item.bad', { hasText: 'see and use the screen' }).textContent().catch(() => '')) || '').includes('Android 10'), 'shizuku auto: no Android 10 sentence on Android 11+')
     await setAuto({ sdk: false, wss: false, paired: false, last: '' })
