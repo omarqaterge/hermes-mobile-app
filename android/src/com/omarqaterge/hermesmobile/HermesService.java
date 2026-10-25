@@ -1212,7 +1212,7 @@ public class HermesService extends Service {
                 .putExtra("kind", "ask").putExtra("session", session == null ? "" : session).putExtra("text", choice);
         PendingIntent pi = PendingIntent.getService(this, ("choice:" + session + ":" + k).hashCode(), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Action.Builder(null, colored(choice.length() > 18 ? choice.substring(0, 17) + "\u2026" : choice, GOLD), pi).build();
+        return unlockFirst(new Notification.Action.Builder(null, colored(choice.length() > 18 ? choice.substring(0, 17) + "\u2026" : choice, GOLD), pi)).build();
     }
 
     JSONObject pendingAsk;
@@ -1272,9 +1272,9 @@ public class HermesService extends Service {
         } else {
             b.setStyle(new Notification.BigTextStyle().bigText(t));
         }
-        b.addAction(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once")).build());
+        b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once"))).build());
         if (a.optBoolean("allow_session", true))
-            b.addAction(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session")).build());
+            b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
         b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
         promote(b, secs + "s");
         return b.build();
@@ -1385,7 +1385,15 @@ public class HermesService extends Service {
     }
 
     Notification.Action approveAction(JSONObject e, String choice, String label) {
-        return new Notification.Action.Builder(null, label, approveIntent(e, choice)).build();
+        Notification.Action.Builder b = new Notification.Action.Builder(null, label, approveIntent(e, choice));
+        return ("deny".equals(choice) ? b : unlockFirst(b)).build();
+    }
+
+    /** On the lock screen, Android asks to unlock before this answer goes through (API 31+): whoever holds a locked
+     *  phone can't allow a command or tell Hermes what to do. Deny stays one tap. */
+    static Notification.Action.Builder unlockFirst(Notification.Action.Builder b) {
+        if (Build.VERSION.SDK_INT >= 31) b.setAuthenticationRequired(true);
+        return b;
     }
 
     PendingIntent approveIntent(JSONObject e, String choice) {
@@ -1450,7 +1458,7 @@ public class HermesService extends Service {
                 .putExtra("session", session == null ? "" : session);
         PendingIntent pi = PendingIntent.getService(this, ("answer:" + kind + ":" + session).hashCode(), i,
                 PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Action.Builder(null, label, pi).addRemoteInput(ri.build()).setAllowGeneratedReplies(false).build();
+        return unlockFirst(new Notification.Action.Builder(null, label, pi).addRemoteInput(ri.build()).setAllowGeneratedReplies(false)).build();
     }
 
     /** Hand a typed answer to the app's page (it holds the connection Hermes asked on). If the app isn't

@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Allowing a command or answering Hermes from a notification on the lock screen asks you to unlock first** (Android 12+). Anyone holding a locked phone could tap "Allow once" on a waiting command; Deny and Stop stay one tap. (Compile-checked; not yet tried on a phone.)
 - **Tablets: hide the chat list.** On wide screens (tablets, unfolded foldables, landscape) ☰ in the chat header now
   hides or shows the chat list on the left, and « at the top of the list hides it from any page; the app remembers it.
   Sheets opened from Settings and other pages (like Uninstall Hermes) now cover the whole width instead of sitting
