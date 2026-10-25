@@ -14,7 +14,7 @@ export interface ShizukuRow {
  * @param native what the app knows at once (null outside the app)
  * @param plugin what Hermes can do with it; undefined = still asking, null = no answer (old plugin, offline)
  * @returns null when nothing is known (desktop browser, old plugin): the row is hidden */
-export function shizukuRow(native: Pick<NativeSetup, 'shizuku' | 'shizukuRunning'> | null, plugin: PhoneAccess['shizuku'] | null | undefined): ShizukuRow | null {
+export function shizukuRow(native: Pick<NativeSetup, 'shizuku' | 'shizukuRunning' | 'shizukuAuto'> | null, plugin: PhoneAccess['shizuku'] | null | undefined): ShizukuRow | null {
   const installed = native?.shizuku
   if (installed === false) {
     return { value: 'Not installed', state: 'wait', note: 'Lets Hermes see and use the screen. Install it from Setup check.', fix: 'setup' }

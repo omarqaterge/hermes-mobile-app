@@ -214,6 +214,10 @@ export interface NativeSetup {
   shizuku?: boolean
   /** Shizuku's server is running (it handed this app its binder, which still answers). Older builds: undefined. */
   shizukuRunning?: boolean
+  /** "Shizuku starts by itself" (Android 11+): sdk = Android 11 or newer, wss = this app may switch Wireless debugging on and off
+   *  (WRITE_SECURE_SETTINGS), paired = Termux's adb is paired, last = the keeper's last result ('', 'ok', 'no-wifi',
+   *  'untrusted-network', 'no-port', 'failed', 'not-paired'). Older app builds: undefined (nothing new is shown). */
+  shizukuAuto?: ShizukuAuto
   /** Build.MANUFACTURER, lower case (older builds: undefined). */
   maker?: string
   /** The Autostart step (Autostart.java): '' = this phone has no Autostart switch; otherwise the page the button opens:
@@ -240,6 +244,13 @@ export interface NativeSetup {
   probe?: boolean
 }
 
+export interface ShizukuAuto {
+  sdk: boolean
+  wss: boolean
+  paired: boolean
+  last: string
+}
+
 export function setupState(): NativeSetup | null {
   try {
     const raw = native?.setupState?.()
@@ -255,6 +266,8 @@ export type SetupFix =
   | 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'battery-shizuku' | 'app-settings' | 'open-termux' | 'get-termux'
   | 'get-termux-api' | 'get-shizuku' | 'open-shizuku' | 'storage' | 'restart-hermes'
   | 'install-permission' | 'about-phone' | 'dev-options' | 'open-termux-boot'
+  /** Pairs Termux's adb with Wireless debugging (native runs `hm-shizuku pair` in Termux; Settings opens for a few seconds). Explicit tap only. */
+  | 'shizuku-pair'
   /** This phone's Autostart page (for Hermes Mobile / for Termux where the page is per app), else that app's App info. */
   | 'autostart' | 'autostart-termux'
 
