@@ -227,7 +227,8 @@ def t_live():
     code = r'''
 import asyncio, json, re, urllib.request, websockets
 page = urllib.request.urlopen("http://127.0.0.1:9119/").read().decode()
-token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
+m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
+token = m.group(1) if m else open("/data/data/com.termux/files/home/.hermes-mobile/dash-token").read().strip()  # not in the page: hermes/patches/0004
 async def main():
     async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         async def call(i, m, p):

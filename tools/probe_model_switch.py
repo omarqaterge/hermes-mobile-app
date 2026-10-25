@@ -7,7 +7,8 @@
 import asyncio, json, re, sys, urllib.request
 import websockets
 page = urllib.request.urlopen("http://127.0.0.1:9119/").read().decode()
-token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
+m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
+token = m.group(1) if m else open("/data/data/com.termux/files/home/.hermes-mobile/dash-token").read().strip()  # not in the page: hermes/patches/0004
 A, B = (v if "--session" in v else v + " --session" for v in sys.argv[1:3])
 
 async def main():

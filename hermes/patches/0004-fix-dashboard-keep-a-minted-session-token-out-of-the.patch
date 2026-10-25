@@ -1,0 +1,116 @@
+From 5c2733bea9649c6de02e201f5b368c102881d8de Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 25 Oct 2026 16:03:46 +0000
+Subject: [PATCH] fix(dashboard): keep a minted session token out of the SPA
+ page on request
+
+On a host where other local users or apps can reach loopback (Android: every installed app can open
+127.0.0.1), GET / hands window.__HERMES_SESSION_TOKEN__ to anyone who asks, and with it the whole
+dashboard API. An embedder that mints the token itself (HERMES_DASHBOARD_SESSION_TOKEN) already knows it
+and can now set HERMES_DASHBOARD_TOKEN_IN_PAGE=0: index.html and the headless root page then carry no
+token, while the API keeps accepting it. Without a minted token the setting is ignored (the random token
+would be unusable).
+---
+ hermes_cli/web_server_dashboard.py  | 19 +++++++++++++--
+ tests/hermes_cli/test_web_server.py | 37 +++++++++++++++++++++++++++++
+ 2 files changed, 54 insertions(+), 2 deletions(-)
+
+diff --git a/hermes_cli/web_server_dashboard.py b/hermes_cli/web_server_dashboard.py
+index ae014fc538..1cbe025f3c 100644
+--- a/hermes_cli/web_server_dashboard.py
++++ b/hermes_cli/web_server_dashboard.py
+@@ -90,6 +90,21 @@ _HEADLESS_MSG = (
+ )
+ 
+ 
++def _token_in_page() -> bool:
++    """Whether ``/`` may carry ``window.__HERMES_SESSION_TOKEN__``.
++
++    False when the embedder that minted the token (``HERMES_DASHBOARD_SESSION_TOKEN``) also hands it to its
++    own client and asks for it to stay out of the page (``HERMES_DASHBOARD_TOKEN_IN_PAGE=0``). On a host
++    where other local users or apps can reach loopback (Android: every installed app), the page would give
++    the token to anyone who asks for ``/``. Without a minted token the setting is ignored: nobody else could
++    learn it, and the dashboard would be unusable.
++    """
++    return not (
++        os.environ.get("HERMES_DASHBOARD_TOKEN_IN_PAGE") == "0"
++        and bool(os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN"))
++    )
++
++
+ def mount_spa(application: FastAPI):
+     """Mount the built SPA; unmatched paths fall back to index.html for client-side routing.
+ 
+@@ -118,7 +133,7 @@ def mount_spa(application: FastAPI):
+             # gate is off: on a gated serve the token must never be readable without auth.
+             # See #94227, #95575.
+             gated = bool(getattr(application.state, "auth_required", False))
+-            if full_path == "" and not gated:
++            if full_path == "" and not gated and _token_in_page():
+                 return HTMLResponse(
+                     "<!doctype html><html><head><script>"
+                     f"window.__HERMES_SESSION_TOKEN__={json.dumps(_server()._SESSION_TOKEN)};"
+@@ -152,7 +167,7 @@ def mount_spa(application: FastAPI):
+             return JSONResponse({"error": "Frontend not built. Run: cd web && npm run build"}, status_code=404)
+         chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
+         gated = bool(getattr(app.state, "auth_required", False))
+-        token_js = "" if gated else f'window.__HERMES_SESSION_TOKEN__="{_server()._SESSION_TOKEN}";'
++        token_js = "" if gated or not _token_in_page() else f'window.__HERMES_SESSION_TOKEN__="{_server()._SESSION_TOKEN}";'
+         # Launcher-preselected profile (``--open-profile``): the SPA's fallback scope when the URL
+         # omits ``?profile=`` (#73085). ``</`` escaped so a hostile name cannot close the script tag.
+         initial_profile_js = json.dumps(str(getattr(application.state, "initial_profile", "") or "")).replace("</", "<\\/")
+diff --git a/tests/hermes_cli/test_web_server.py b/tests/hermes_cli/test_web_server.py
+index 913455c2e9..a2fbaed337 100644
+--- a/tests/hermes_cli/test_web_server.py
++++ b/tests/hermes_cli/test_web_server.py
+@@ -5247,6 +5247,34 @@ class TestServeIndexMissingIndex:
+         assert 'window.__HERMES_SESSION_TOKEN__="after-mount"' in resp.text
+ 
+ 
++    def test_index_leaves_minted_token_out_when_asked(self, tmp_path, monkeypatch):
++        """HERMES_DASHBOARD_TOKEN_IN_PAGE=0 with a minted token: the page carries no token, the API still takes it."""
++        import hermes_cli.web_server as ws
++
++        monkeypatch.setenv("HERMES_DASHBOARD_SESSION_TOKEN", "minted-secret")
++        monkeypatch.setenv("HERMES_DASHBOARD_TOKEN_IN_PAGE", "0")
++        monkeypatch.setattr(ws, "_SESSION_TOKEN", "minted-secret")
++        client, _dist = self._client_with_dist(tmp_path, monkeypatch, write_index=True)
++
++        resp = client.get("/")
++        assert resp.status_code == 200
++        assert "__HERMES_SESSION_TOKEN__" not in resp.text
++        assert "minted-secret" not in resp.text
++        assert "window.__HERMES_AUTH_REQUIRED__=false" in resp.text
++
++    def test_index_keeps_token_without_a_minted_one(self, tmp_path, monkeypatch):
++        """The setting alone (no minted token) changes nothing: the random token is unknown to anyone else."""
++        import hermes_cli.web_server as ws
++
++        monkeypatch.delenv("HERMES_DASHBOARD_SESSION_TOKEN", raising=False)
++        monkeypatch.setenv("HERMES_DASHBOARD_TOKEN_IN_PAGE", "0")
++        monkeypatch.setattr(ws, "_SESSION_TOKEN", "random-one")
++        client, _dist = self._client_with_dist(tmp_path, monkeypatch, write_index=True)
++
++        resp = client.get("/")
++        assert 'window.__HERMES_SESSION_TOKEN__="random-one"' in resp.text
++
++
+ class TestHeadlessServeTokenPage:
+     """Headless `hermes serve` must serve the Desktop token handshake page
+     at `/` when the dashboard auth gate is off (#94227).
+@@ -5310,6 +5338,15 @@ class TestHeadlessServeTokenPage:
+         assert match, resp.text
+         assert json.loads(match.group(1)) == "after-mount"
+ 
++    def test_root_has_no_token_page_when_minted_token_stays_out(self, monkeypatch):
++        monkeypatch.setenv("HERMES_DASHBOARD_SESSION_TOKEN", "minted-secret")
++        monkeypatch.setenv("HERMES_DASHBOARD_TOKEN_IN_PAGE", "0")
++        client, ws = self._headless_client(monkeypatch, gated=False)
++        monkeypatch.setattr(ws, "_SESSION_TOKEN", "minted-secret")
++        resp = client.get("/")
++        assert resp.status_code == 404
++        assert "minted-secret" not in resp.text
++
+     def test_root_stays_404_json_when_auth_gated(self, monkeypatch):
+         client, ws = self._headless_client(monkeypatch, gated=True)
+         resp = client.get("/")

@@ -9,6 +9,7 @@ fixes in `patches/`. Each one is a plain `git format-patch` file, applied on top
 | `0001-fix-agent-keep-marker-merged-user-rows-addressable` | A message merged into a model-switch marker could not be edited or retried ("target user message is no longer in session history") | NousResearch/hermes-agent@696f6e9, already on Hermes main: a backport for the pinned build |
 | `0002-fix-tui_gateway-keep-the-prompt-a-model-switch-marker-absorbed` | The message sent right after a model switch (or the first message, when the model was picked before it) disappeared from the model's history at the next switch, while the chat still showed it | Offered upstream (Refs NousResearch/hermes-agent#131382) |
 | `0003-perf-yaml-reuse-a-per-thread-reader-in-safe_load` | Every YAML read built a new parser (~7 ms each on a phone), so a skill scan took ~1.8 s while holding up the chat's other requests at start-up; now ~0.5 s | To be offered upstream (branch `perf/yaml-reuse-parser`) |
+| `0004-fix-dashboard-keep-a-minted-session-token-out-of-the` | Security: any app on the phone can open `127.0.0.1:9119`, and the dashboard's page handed it the session token (and so all of Hermes). With a token the launcher minted (`HERMES_DASHBOARD_SESSION_TOKEN`, `phone/hermes-services`) and `HERMES_DASHBOARD_TOKEN_IN_PAGE=0`, the page carries none; the app reads the token from Termux (`DashToken.java`). Without the patch the page still carries the same token, so nothing breaks | To be offered upstream; conflicts with upstream `main` (re-make it at the next Hermes update) |
 
 ## On the phone
 

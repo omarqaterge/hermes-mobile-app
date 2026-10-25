@@ -36,6 +36,24 @@ check("reversed → 416", pr("bytes=20-10", 100) == "bad")
 check("multi-range ignored (whole file)", pr("bytes=0-1,5-6", 100) is None)
 check("garbage ignored", pr("items=0-5", 100) is None)
 
+# The plugin's own WebSocket calls (/approve, /stop) take the token from the dashboard process, not from its page.
+import types  # noqa: E402
+
+page_calls = []
+fake_page = lambda: page_calls.append(1) or '<script>window.__HERMES_SESSION_TOKEN__="from-page";</script>'
+os.environ.pop("HERMES_DASHBOARD_SESSION_TOKEN", None)
+saved = sys.modules.get("hermes_cli.web_server")
+sys.modules["hermes_cli.web_server"] = types.SimpleNamespace(_SESSION_TOKEN="in-process")
+check("token: the dashboard process's own, page untouched", api.dashboard_token(fake_page) == "in-process" and not page_calls)
+sys.modules.pop("hermes_cli.web_server")
+os.environ["HERMES_DASHBOARD_SESSION_TOKEN"] = "minted"
+check("token: the minted env token when the module isn't loaded", api.dashboard_token(fake_page) == "minted" and not page_calls)
+os.environ.pop("HERMES_DASHBOARD_SESSION_TOKEN")
+check("token: an older Hermes's page as the last resort", api.dashboard_token(fake_page) == "from-page")
+check("token: none at all → empty (503)", api.dashboard_token(lambda: "<html></html>") == "" and api.dashboard_token() == "")
+if saved is not None:
+    sys.modules["hermes_cli.web_server"] = saved
+
 app = FastAPI()
 app.include_router(api.router, prefix="/api/plugins/hermes-mobile")
 c = TestClient(app)

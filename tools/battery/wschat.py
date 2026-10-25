@@ -22,10 +22,24 @@ def out(ev, **kw):
     print(json.dumps({"t": time.time(), "ev": ev, **kw}), flush=True)
 
 
+def phone_dash_token(page: str) -> str:
+    """The dashboard token: from its page (older Hermes), else $HM_DASH_TOKEN, else Termux's
+    ~/.hermes-mobile/dash-token over tools/phone (ssh). The page no longer carries it: hermes/patches/0004."""
+    import os
+    import pathlib
+    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
+    if m:
+        return m.group(1)
+    if os.environ.get("HM_DASH_TOKEN"):
+        return os.environ["HM_DASH_TOKEN"]
+    phone = pathlib.Path(__file__).resolve().parents[2] / "tools" / "phone"
+    return subprocess.run([str(phone), "cat ~/.hermes-mobile/dash-token"], capture_output=True, text=True, timeout=30).stdout.strip()
+
+
 async def main(prompt):
     subprocess.run(["adb", "forward", "tcp:9119", "tcp:9119"], capture_output=True)
     page = urllib.request.urlopen(HERMES + "/", timeout=15).read().decode()
-    token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
+    token = phone_dash_token(page)
     async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         ids = iter(range(1, 10**6))
         pending = {}

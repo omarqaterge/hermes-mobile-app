@@ -1139,12 +1139,7 @@ public class MainActivity extends Activity {
     };
 
     String token(boolean refresh) {
-        if (refresh || cachedToken.isEmpty()) {
-            String html = httpGet(BASE_URL + "/");
-            Matcher m = html == null ? null : TOKEN.matcher(html);
-            cachedToken = (m != null && m.find()) ? m.group(1) : "";
-            if (!cachedToken.isEmpty()) setTermuxOk(this); // the dashboard answers: Termux runs Hermes
-        }
+        if (refresh || cachedToken.isEmpty()) cachedToken = DashToken.get(this, refresh);
         return cachedToken;
     }
 
@@ -2045,10 +2040,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getToken(String key) {
             if (!ok(key)) return "";
-            String html = httpGet(BASE_URL + "/");
-            if (html == null) return "";
-            Matcher m = TOKEN.matcher(html);
-            return m.find() ? m.group(1) : "";
+            return token(true);
         }
 
 

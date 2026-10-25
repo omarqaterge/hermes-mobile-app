@@ -27,7 +27,22 @@ run_loop() {  # name, command...
 deb="$HOME/bin/hermes-debian"
 [ -x "$deb" ] || deb="proot-distro login debian --"
 PY='PY=$(ls -t /root/.hermes/installs/*/environments/*/venv/bin/python3 2>/dev/null | head -1)'
-run_loop dashboard $deb bash -lc "exec hermes dashboard --host 127.0.0.1 --port 9119 --no-open"
+# The dashboard's session token is minted here (0600, kept across restarts) and stays out of its page
+# (hermes/patches/0004): any app on the phone can open 127.0.0.1:9119, and the page used to hand the token, and with it
+# all of Hermes, to whoever asked. The app reads it through Termux (MainActivity.DashToken), the plugin from its own
+# process. An empty file would leave Hermes's own random token, in the page as before.
+tokf=$HOME/.hermes-mobile/dash-token  # Debian sees Termux's home at the same path (proot and chroot)
+[ -s "$tokf" ] || ( umask 077 && head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$tokf.tmp" && mv "$tokf.tmp" "$tokf" )
+# A dashboard loop an older copy of this script started runs Hermes without the token (and would start it again so
+# after install.sh's restart): stop that loop and its dashboard once; the loop below starts it with the token.
+if [ "$(cat ~/logs/dashboard.loop 2>/dev/null)" != token ] && [ -f ~/logs/dashboard.pid ] && kill -0 "$(cat ~/logs/dashboard.pid)" 2>/dev/null; then
+  kill "$(cat ~/logs/dashboard.pid)" 2>/dev/null
+  rm -f ~/logs/dashboard.pid
+  if [ -x "$HOME/bin/hermes-debian" ]; then "$HOME/bin/hermes-debian" --restart
+  else pids=$(pgrep -f 'hermes dashboard --host 127.0.0.1 --port 9119') && kill -9 $pids; fi
+fi
+run_loop dashboard $deb bash -lc "export HERMES_DASHBOARD_SESSION_TOKEN=\$(cat $tokf 2>/dev/null) HERMES_DASHBOARD_TOKEN_IN_PAGE=0; exec hermes dashboard --host 127.0.0.1 --port 9119 --no-open"
+echo token > ~/logs/dashboard.loop
 # Memory sync is optional (only when its script is installed); without the guard it would start Debian every 10 min for nothing.
 ms=/root/.hermes/scripts/hermes_memory_sync.py
 if [ -x "$HOME/bin/hermes-debian" ]; then has_ms() { "$HOME/bin/hermes-debian" --exists $ms; }

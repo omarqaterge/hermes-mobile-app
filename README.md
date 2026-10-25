@@ -220,6 +220,8 @@ The first build creates a signing key in `~/.android/hermes-mobile.keystore` (ne
 downloaded one, because the keys differ: uninstall that first.
 
 To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open http://127.0.0.1:5180.
+The dashboard's token isn't in its page (any app on the phone could read it there): devserver reads it from Termux over
+`tools/phone` (ssh), or set `HM_DASH_TOKEN` to the contents of `~/.hermes-mobile/dash-token` in Termux.
 
 Tests, project rules and what to do after a Hermes update: [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents follow [AGENTS.md](AGENTS.md) (keep [docs/SPEC.md](docs/SPEC.md) current with every change).
 

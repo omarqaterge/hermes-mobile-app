@@ -5,21 +5,37 @@ dashboard session token (read from http://127.0.0.1:9119, e.g. the phone via
 bridge does. The token never appears in a URL. Loopback only."""
 import http.server
 import json
+import os
 import re
+import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 DIST = Path(__file__).resolve().parent / "dist" / "index.html"
 HERMES = "http://127.0.0.1:9119"
+_phone_token = None  # read once from the phone (an ssh round trip)
 
 
 def hermes_token() -> str:
     try:
         html = urllib.request.urlopen(HERMES + "/", timeout=5).read().decode()
-        return re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', html).group(1)
+        m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', html)
+        if m:  # an older Hermes: the token is in its page
+            return m.group(1)
     except Exception:
         return ""
+    # The page no longer carries it (hermes/patches/0004): $HM_DASH_TOKEN, else Termux's file over tools/phone (ssh).
+    if os.environ.get("HM_DASH_TOKEN"):
+        return os.environ["HM_DASH_TOKEN"]
+    global _phone_token
+    if _phone_token is None:
+        try:
+            phone = Path(__file__).resolve().parent.parent / "tools" / "phone"
+            _phone_token = subprocess.run([str(phone), "cat ~/.hermes-mobile/dash-token"], capture_output=True, text=True, timeout=30).stdout.strip()
+        except Exception:
+            _phone_token = ""
+    return _phone_token
 
 
 class Handler(http.server.BaseHTTPRequestHandler):

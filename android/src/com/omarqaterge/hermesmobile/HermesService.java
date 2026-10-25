@@ -1512,11 +1512,7 @@ public class HermesService extends Service {
     JSONObject pendingApproval;
 
     synchronized String dashboardToken(boolean refresh) {
-        if (refresh || dashToken.isEmpty()) {
-            String html = MainActivity.httpGet(MainActivity.BASE_URL + "/");
-            java.util.regex.Matcher m = html == null ? null : MainActivity.TOKEN.matcher(html);
-            dashToken = (m != null && m.find()) ? m.group(1) : "";
-        }
+        if (refresh || dashToken.isEmpty()) dashToken = DashToken.get(this, refresh);
         return dashToken;
     }
 

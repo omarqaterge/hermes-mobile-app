@@ -76,6 +76,7 @@ jobs:
       - run: bash tools/test_install_routes.sh
       - run: bash tools/test_uninstall.sh
       - run: bash tools/test_hm_shizuku.sh
+      - run: bash tools/test_dash_token.sh
 
   android:
     name: Android Java compiles

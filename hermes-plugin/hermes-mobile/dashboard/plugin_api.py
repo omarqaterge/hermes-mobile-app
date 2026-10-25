@@ -167,6 +167,28 @@ async def get_bots_log():
 
 # ── approvals from the notification ────────────────────────
 
+def dashboard_token(page=None) -> str:
+    """This dashboard's session token, for the plugin's own calls to its WebSocket. Read from this process (the
+    dashboard runs this module): its page no longer carries the token (hermes/patches/0004, phone/hermes-services).
+    Never imports hermes_cli.web_server, which outside the dashboard would mint a token of its own. `page` (a
+    callable returning GET / of the dashboard) is the fallback for a Hermes that still puts it in its page."""
+    import os
+    import re
+    import sys
+
+    tok = getattr(sys.modules.get("hermes_cli.web_server"), "_SESSION_TOKEN", "") or os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN", "")
+    if tok or page is None:
+        return tok or ""
+    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page())
+    return m.group(1) if m else ""
+
+
+def _page() -> str:
+    import urllib.request
+
+    return urllib.request.urlopen("http://127.0.0.1:9119/", timeout=5).read().decode()
+
+
 class Approve(BaseModel):
     session: str
     key: Optional[str] = None
@@ -181,8 +203,6 @@ async def approve(body: Approve):
     the gateway offers every client, over this dashboard's own WebSocket."""
     import asyncio
     import json
-    import re
-    import urllib.request
 
     import websockets
 
@@ -191,12 +211,11 @@ async def approve(body: Approve):
     if not body.request_id:
         # Without an id Hermes answers the session's oldest waiting approval, which may not be the one shown.
         raise HTTPException(status_code=409, detail="no request id: answer in the app")
-    page = await asyncio.to_thread(lambda: urllib.request.urlopen("http://127.0.0.1:9119/", timeout=5).read().decode())
-    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
-    if not m:
+    token = await asyncio.to_thread(dashboard_token, _page)
+    if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
     last = None
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={m.group(1)}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         for n, sid in enumerate(dict.fromkeys(x for x in (body.session, body.key) if x), 1):
             params = {"session_id": sid, "choice": body.choice}
             if body.request_id:
@@ -224,19 +243,16 @@ async def stop(body: Stop):
     chat (``session.active_list``) and send it the same ``session.interrupt`` the app's stop button sends."""
     import asyncio
     import json
-    import re
-    import urllib.request
 
     import websockets
 
     if not body.session:
         raise HTTPException(status_code=400, detail="no session")
-    page = await asyncio.to_thread(lambda: urllib.request.urlopen("http://127.0.0.1:9119/", timeout=5).read().decode())
-    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
-    if not m:
+    token = await asyncio.to_thread(dashboard_token, _page)
+    if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
 
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={m.group(1)}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         async def call(n, method, params):
             await ws.send(json.dumps({"jsonrpc": "2.0", "id": n, "method": method, "params": params}))
             while True:
