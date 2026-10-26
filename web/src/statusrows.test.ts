@@ -12,6 +12,14 @@ describe('shizukuRow', () => {
     expect(shizukuRow(run, 'missing')).toMatchObject({ value: 'Not set up for Hermes', state: 'err' })
     expect(shizukuRow(run, 'off')).toMatchObject({ value: 'Not running', state: 'err' })
   })
+  it('says whether Shizuku restarts by itself, only when the app reports it', () => {
+    const a = { sdk: true, wss: true, paired: true, last: 'ok' }
+    expect(shizukuRow({ ...run, shizukuAuto: a }, 'ok')).toMatchObject({ value: 'Running', note: 'Restarts by itself' })
+    expect(shizukuRow({ ...run, shizukuAuto: { ...a, paired: false } }, 'ok')).toMatchObject({ note: 'Start it by hand after a restart' })
+    expect(shizukuRow({ ...run, shizukuAuto: { ...a, wss: false } }, 'ok')).toMatchObject({ note: 'Start it by hand after a restart' })
+    expect(shizukuRow({ ...run, shizukuAuto: { ...a, sdk: false } }, 'ok')).toMatchObject({ note: 'Start it by hand after a restart' })
+    expect(shizukuRow(run, 'ok')).toMatchObject({ note: null })
+  })
   it('checking while the plugin has not answered', () => expect(shizukuRow(run, undefined)).toMatchObject({ value: 'Checking…', state: 'wait' }))
   it('unknown native + plugin ok still shows', () => expect(shizukuRow(null, 'ok')).toMatchObject({ value: 'Running' }))
   it('unknown native, no plugin answer: hidden', () => {
