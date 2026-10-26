@@ -1076,3 +1076,51 @@ async def claude_login_finish(body: ClaudeFinish, profile: Optional[str] = None)
 @router.post("/claude-login/cancel")
 async def claude_login_cancel(body: dict):
     return {"ok": _claude_login_mod().cancel(str((body or {}).get("session_id") or ""))}
+
+
+# ── the plugin in every profile ──
+# Each Hermes profile loads plugins from its own plugins/ folder, so a profile made later (Bots page, `hermes profile
+# create`) has no status chip, approvals or canvas until ours is linked in. phone/install.sh links it into the profiles
+# that exist at install time; this covers the ones made after (on every dashboard start and after the app creates one).
+
+
+def link_profiles(root: Optional[Path] = None) -> list[str]:
+    """Point <profile>/plugins/hermes-mobile at the main home's copy in every profile; returns the profiles changed.
+    A copy left there (a cloned profile) is replaced: it would never be updated."""
+    import shutil
+
+    root = root or _home(None)
+    target = root / "plugins" / "hermes-mobile"
+    changed: list[str] = []
+    if not target.is_dir():
+        return changed
+    try:
+        profiles = sorted(p for p in (root / "profiles").iterdir() if p.is_dir())
+    except OSError:
+        return changed
+    for p in profiles:
+        link = p / "plugins" / "hermes-mobile"
+        try:
+            if link.is_symlink() and link.resolve() == target.resolve():
+                continue
+            if link.is_symlink() or link.is_file():
+                link.unlink()
+            elif link.is_dir():
+                shutil.rmtree(link)
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(target)
+            changed.append(p.name)
+        except OSError:
+            continue
+    return changed
+
+
+@router.post("/profiles/link")
+async def profiles_link():
+    return {"linked": link_profiles()}
+
+
+try:  # the dashboard imports this file once at start
+    link_profiles()
+except Exception:
+    pass

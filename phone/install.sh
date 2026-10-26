@@ -57,6 +57,12 @@ echo "3/5 Installing the Hermes Mobile plugin"
 find "$here/hermes-plugin/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 "$DEB" --put "$here/hermes-plugin/hermes-mobile" /root/.hermes/plugins/hermes-mobile
 "$DEB" --put "$here/phone/cron_ticker.py" /root/.hermes/scripts/cron_ticker.py
+# Every Hermes profile has its own plugins folder. Link ours into each one, so a profile (also one made the active
+# profile with `hermes profile use`, which `hermes` and the dashboard then run in) loads the same, current plugin.
+# Replaces an old copy there: it would never be updated.
+"$DEB" sh -c 'for p in /root/.hermes/profiles/*/; do [ -d "$p" ] || continue; mkdir -p "${p}plugins"
+  rm -rf "${p}plugins/hermes-mobile" && ln -s /root/.hermes/plugins/hermes-mobile "${p}plugins/hermes-mobile"; done' \
+  || echo "    Could not add the plugin to every Hermes profile."
 
 # Our fixes to Hermes itself (hermes/README.md). One that no longer fits this Hermes is skipped, never half-applied.
 echo "    Applying the Hermes Mobile fixes to Hermes (hermes/patches)"
@@ -75,8 +81,16 @@ show_todo() {
 }
 
 echo "4/5 Enabling the plugin in Hermes"
-if "$DEB" bash -lc 'PATH="$HOME/.local/bin:$PATH" hermes plugins enable hermes-mobile'; then :; else
-  echo "Could not enable it automatically. Run inside Debian:  hermes plugins enable hermes-mobile"
+enable_in() {  # $1 = "" (the profile `hermes` runs in) or "-p default"
+  "$DEB" bash -lc "PATH=\"\$HOME/.local/bin:\$PATH\" hermes $1 plugins enable hermes-mobile" && return 0
+  echo "Could not enable it automatically. Run inside Debian:  hermes $1 plugins enable hermes-mobile" | tr -s ' '
+}
+enable_in ""
+# After `hermes profile use <name>` the command above went to that profile; the app starts in the main one.
+active=$("$DEB" sh -c 'cat /root/.hermes/active_profile 2>/dev/null' </dev/null || true)
+if [ -n "$active" ] && [ "$active" != default ]; then
+  echo "    Hermes's active profile is \"$active\": enabling the plugin for the main profile too"
+  enable_in "-p default"
 fi
 # A running Hermes still has the old plugin and Hermes files loaded: restart its dashboard (exact PIDs; the
 # hermes-services loop starts it again). Nothing runs yet on a first install.

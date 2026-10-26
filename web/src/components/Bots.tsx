@@ -103,6 +103,8 @@ function CreateSheet({ profiles, onClose, onCreated }: { profiles: Profile[]; on
     try {
       await api('POST', '/api/profiles', { name, clone_from: cloneFrom || null, description: description.trim() || null }, { profile: false })
       if (soul.trim()) await api('PUT', `/api/profiles/${enc(name)}/soul`, { content: soul }, { profile: false })
+      // A new profile has its own empty plugins folder: link the Hermes Mobile plugin in (status chip, approvals…).
+      await api('POST', '/api/plugins/hermes-mobile/profiles/link', {}, { profile: false }).catch(() => {})
       toast(`Created ${name}`)
       onCreated(name)
     } catch (e) {
