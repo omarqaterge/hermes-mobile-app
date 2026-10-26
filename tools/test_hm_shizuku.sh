@@ -259,7 +259,7 @@ s=socket.socket(); s.bind(("127.0.0.1",0)); s.listen(5); print(s.getsockname()[1
   for _ in $(seq 1 50); do [ -s "$T/port.$1" ] && break; sleep 0.1; done; cat "$T/port.$1"; }
 P=$(listen a); Q=$(listen b)
 lo=$P; hi=$Q; [ "$lo" -gt "$hi" ] && { lo=$Q; hi=$P; }
-if [ $((hi - lo)) -gt 3000 ]; then hi=$lo; fi   # keep the scan short; the other listener stays a non-adb port if in range
+if [ $((hi - lo)) -gt 3000 ]; then lo=$P; hi=$P; fi   # keep the scan short (around adbd's port P); the other listener stays a non-adb port if in range
 fresh scan; hm pair; echo "$P" > "$S/adbport"; SCAN_FROM=$((lo-5)) SCAN_TO=$((hi+5)) hm start
 check "[ \$RC = 0 ] && grep -qx \"connect 127.0.0.1:$P\" '$S/adb.log' && [ -f '$S/server' ]" "start without a port: loopback scan finds adbd's port, starts"
 rm -f "$S/server"; : > "$S/adb.log"; SCAN_FROM=$((lo-5)) SCAN_TO=$((hi+5)) hm start 40001
