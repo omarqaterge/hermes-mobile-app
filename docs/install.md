@@ -186,6 +186,7 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | `[Process completed (signal 9)]` in Termux during the install | Android stopped it. Android 14+: Developer options → *Disable child process restrictions* (the computer route does this for you, and so does the phone-only install when Shizuku is running). Then run `bash hm.sh` again |
 | The install stops with `HMSETUP FAIL <step>` | Read the error above it, fix it and run `bash hm.sh` again; finished parts are skipped. [AGENT_INSTALL.md](../AGENT_INSTALL.md) lists the usual causes |
 | No status chip, canvas or approvals | Run `bash hm.sh` again (it re-enables the plugin) |
+| The installer says `No plugin named 'hermes-mobile'` | You switched Hermes to another profile (`hermes profile use`). Update to the newest installer and run it again: it adds the plugin to every profile |
 | Everything stops after a while | Battery is restricted, see [After installing](#after-installing) |
 | Hermes says Shizuku isn't running | The phone restarted: see [Rooted or not](#rooted-or-not) |
 | Shizuku doesn't come back after a restart | The phone must be on Wi-Fi. On a new Wi-Fi, tap *Allow* (with *Always allow on this network*) when Android asks about wireless debugging. Still not: Hermes Mobile → Setup check → *Shizuku starts by itself* → *Set up* (pairs again; Settings opens for a few seconds). In Termux, `~/bin/hm-shizuku status` says `paired` or `unpaired` and `~/.hermes-mobile/hm-shizuku.log` has the last attempts. Android 10 and older: start it from a computer |
