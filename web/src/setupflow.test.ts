@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { NativeSetup } from './bridge'
-import { nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuWatchActive, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
+import { nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
 
 const native: NativeSetup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, termuxApi: true, shizuku: true, startError: '', maker: 'google' }
 const remote: Remote = { plugin: true, enabled: true, enabledList: ['hermes-mobile'], phone: { files: true, termux_api: true, shizuku: 'ok' } }
@@ -56,6 +56,24 @@ describe('setupSteps / nextStep', () => {
     expect(rowOf({ ...native, shizuku: false, batteryShizuku: false })?.state).toBe('skip')
     expect(rowOf({ ...native, shizuku: true })?.state).toBe('skip') // older app build: not reported
     expect(setupSteps(null, 'open', remote, true).find(s => s.id === 'bat-shizuku')?.state).toBe('skip')
+  })
+  test('Shizuku starts by itself: required on Android 11+, only once Shizuku works, hidden on 10 and older or older builds', () => {
+    const auto = { sdk: true, wss: true, paired: true, last: 'ok' }
+    const rowOf = (n: NativeSetup, r = remote) => setupSteps(n, 'open', r, true).find(s => s.id === 'shizuku-auto')
+    expect(rowOf({ ...native, shizukuAuto: auto })).toEqual({ id: 'shizuku-auto', required: true, state: 'ok' })
+    expect(rowOf({ ...native, shizukuAuto: { ...auto, paired: false } })?.state).toBe('bad')
+    expect(rowOf({ ...native, shizukuAuto: { ...auto, wss: false } })?.state).toBe('bad')
+    expect(rowOf({ ...native, shizukuAuto: { ...auto, sdk: false, paired: false } })?.state).toBe('skip')
+    expect(rowOf({ ...native })?.state).toBe('skip') // older app build
+    expect(rowOf({ ...native, shizukuAuto: { ...auto, paired: false } }, { ...remote, phone: { ...remote.phone!, shizuku: 'off' } })?.state).toBe('skip') // Shizuku not working yet
+    expect(rowOf({ ...native, shizuku: false, shizukuAuto: { ...auto, paired: false } })?.state).toBe('skip')
+    expect(setupSteps(null, 'open', remote, true).find(s => s.id === 'shizuku-auto')?.state).toBe('skip')
+  })
+  test('shizukuAutoKind: what the row says', () => {
+    expect(shizukuAutoKind({ sdk: true, wss: true, paired: true, last: 'ok' })).toBe('ok')
+    expect(shizukuAutoKind({ sdk: true, wss: false, paired: false, last: '' })).toBe('installer')
+    expect(shizukuAutoKind({ sdk: true, wss: true, paired: false, last: 'not-paired' })).toBe('pair')
+    expect(shizukuAutoKind({ sdk: true, wss: true, paired: false, last: 'untrusted-network' })).toBe('pair')
   })
   test('Shizuku battery limit is recommended: listed, never blocks', () => {
     const steps = setupSteps({ ...native, batteryShizuku: false }, 'open', remote, true)

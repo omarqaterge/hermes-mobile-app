@@ -7,7 +7,7 @@ import {
 import { reconnectNow, rpc } from '../gateway'
 import { closeScreen, getState, setState, toast, useStore } from '../store'
 import {
-  SHIZUKU_WATCH_EVERY_MS, nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuWatchActive, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
+  SHIZUKU_WATCH_EVERY_MS, nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
   type ProbeRaw, type Progress, type Remote, type StepId, type StepState
 } from '../setupflow'
 import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
@@ -351,6 +351,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
           <>
             Shizuku isn’t running: it stops when the phone restarts. Open it and start it. No root: <i>Start via Wireless
             debugging</i> (pair once; on Android 13+ it then starts by itself after a restart, on Wi-Fi). Rooted: <i>Start</i>.
+            {(n?.shizukuAuto?.sdk === false || (n?.sdk != null && n.sdk < 30)) && ' On Android 10 and older Shizuku has to be started from a computer after each restart.'}
           </>
         ),
         fix: missing
@@ -361,6 +362,23 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
               ? { label: 'Open Termux settings', run: () => setupFix('battery-termux') }
               : { label: 'Open Shizuku', run: () => setupFix('open-shizuku') },
         alt: sh === 'blocked' ? { label: 'Open Shizuku', run: () => setupFix('open-shizuku') } : undefined
+      }
+    }
+    case 'shizuku-auto': {
+      const a = n?.shizukuAuto
+      const kind = a ? shizukuAutoKind(a) : 'ok'
+      const trust = a?.last === 'untrusted-network'
+      return {
+        title: 'Shizuku starts by itself',
+        help:
+          kind === 'ok'
+            ? 'Hermes Mobile restarts Shizuku after a restart or a crash, as long as the phone is on Wi-Fi.'
+            : kind === 'installer'
+              ? 'Hermes Mobile needs one more permission to do this, which the installer gives it. Run the installer again in Termux.'
+              : 'Hermes Mobile pairs Termux with Wireless debugging once, so Shizuku can start again by itself after a restart. Settings opens for a few seconds; the phone must be on Wi-Fi.' +
+                (trust ? ' Android asks “Allow wireless debugging on this network?”: tap Allow (tick Always allow on this network).' : ''),
+        fix: kind === 'installer' ? { label: 'Copy installer', run: copyInstall } : kind === 'pair' ? { label: 'Set up', run: () => setupFix('shizuku-pair') } : undefined,
+        alt: kind === 'installer' ? { label: 'Open Termux', run: () => setupFix('open-termux') } : undefined
       }
     }
     case 'autostart': {
