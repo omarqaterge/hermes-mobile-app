@@ -349,8 +349,9 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
           'Shizuku’s shell isn’t set up for Hermes yet. Run the installer in Termux again.'
         ) : (
           <>
-            Shizuku isn’t running: it stops when the phone restarts. Open it and start it. No root: <i>Start via Wireless
-            debugging</i> (pair once; on Android 13+ it then starts by itself after a restart, on Wi-Fi). Rooted: <i>Start</i>.
+            Shizuku isn’t running. Open it and start it. No root: <i>Start via Wireless debugging</i> (pair once).
+            Rooted: <i>Start</i>. Once “Shizuku starts by itself” below is ✓, Hermes Mobile starts it again after a
+            restart, on Wi-Fi.
             {(n?.shizukuAuto?.sdk === false || (n?.sdk != null && n.sdk < 30)) && ' On Android 10 and older Shizuku has to be started from a computer after each restart.'}
           </>
         ),

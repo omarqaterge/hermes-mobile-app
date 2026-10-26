@@ -80,6 +80,12 @@ if [ -n "$ok" ]; then
   # Lets Hermes Mobile turn Wireless debugging on when Shizuku is down, so Shizuku starts again by itself. An app
   # version that doesn't ask for this permission yet just refuses the grant.
   "$HOME/bin/rish" -c 'pm grant com.omarqaterge.hermesmobile android.permission.WRITE_SECURE_SETTINGS' </dev/null >/dev/null 2>&1 || true
+  # Shizuku remembers "Termux may use Shizuku" properly only when Allow was tapped while rish was still waiting. A late
+  # tap saves the entry without Termux's package name, and Shizuku drops such an entry at its next start (it asks again).
+  cfg=$("$HOME/bin/rish" -c 'cat /data/user_de/0/com.android.shell/shizuku.json' </dev/null 2>/dev/null || true)
+  if printf '%s' "$cfg" | grep -q "\"uid\":$(id -u),\"flags\":[0-9]*,\"packages\":\[\]"; then
+    todo "Shizuku will ask once more whether Termux may use it after its next restart: tap Allow all the time right away then"
+  fi
   # Pair Termux's own adb with Wireless debugging once (Android 11+, Wi-Fi): afterwards Shizuku starts again by itself
   # after a restart. hm-shizuku opens Settings for a few seconds and reads the pairing code from the screen.
   hms="$HOME/bin/hm-shizuku"; [ -x "$hms" ] || hms="$(dirname "${BASH_SOURCE[0]}")/hm-shizuku"
