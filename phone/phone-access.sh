@@ -25,7 +25,9 @@ need=()
 command -v termux-battery-status >/dev/null || need+=(termux-api)
 command -v unzip >/dev/null || need+=(unzip)
 command -v adb >/dev/null || need+=(android-tools)   # Termux's own adb: Shizuku starts again by itself (hm-shizuku)
-[ ${#need[@]} -eq 0 ] || apt-get -y -o Dpkg::Options::=--force-confold install "${need[@]}" </dev/null >/dev/null 2>&1 || true
+# An older install's package index can point at files the mirror no longer has (404): refresh it once and retry.
+pkg_add() { apt-get -y -o Dpkg::Options::=--force-confold install "$@" </dev/null >/dev/null 2>&1; }
+[ ${#need[@]} -eq 0 ] || pkg_add "${need[@]}" || { apt-get update </dev/null >/dev/null 2>&1; pkg_add "${need[@]}"; } || true
 
 # Files. Android asks once; the computer route grants it beforehand. Only a Hermes started after this sees /sdcard (the
 # installers restart it).
