@@ -4,6 +4,8 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **A fresh install opens the setup straight away, full screen.** Until Hermes has answered once (or setup was finished), the app now starts in the setup flow instead of an empty chat that keeps trying to reach a Hermes that isn't installed yet; before, with Termux already on the device, the setup only appeared after about 15 s on screen. On tablets and other wide screens it also covers the chat list. Reinstalling the app on a phone where Hermes already works shows the setup for a moment, then the chat.
+
 ## v0.8.61 (2026-10-28)
 
 Tested on an Android 15 emulator and one real phone (Android 16); not yet on other makers' phones, after a real phone restart, or with the Windows setup script.

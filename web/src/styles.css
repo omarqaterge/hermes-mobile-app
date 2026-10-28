@@ -1577,6 +1577,10 @@ textarea {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* The setup flow covers the whole window, above the chat list that stays open on wide screens (drawer z-index 21). */
+.screen.takeover {
+  z-index: 22;
+}
 .screen-body {
   flex: 1;
   min-height: 0;
@@ -3038,6 +3042,9 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   }
   .screen {
     left: var(--side);
+  }
+  .screen.takeover {
+    left: 0;
   }
   /* Keep reading lines a comfortable length. */
   .chat {

@@ -11,9 +11,9 @@ import { Markdown } from './Markdown'
 
 // ── shared building blocks ──────────────────────────────────
 
-export function ScreenShell({ title, actions, children, onBack }: { title: string; actions?: ReactNode; children: ReactNode; onBack?: () => void }) {
+export function ScreenShell({ title, actions, children, onBack, className }: { title: string; actions?: ReactNode; children: ReactNode; onBack?: () => void; className?: string }) {
   return (
-    <div className="screen">
+    <div className={className ? `screen ${className}` : 'screen'}>
       <header className="topbar">
         <button className="back-btn" aria-label="Back" onClick={() => (onBack ? onBack() : closeScreen())}>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

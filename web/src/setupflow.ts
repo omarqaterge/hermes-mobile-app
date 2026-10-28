@@ -199,7 +199,8 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     // answering means it works without the app starting it, so then it is only recommended.
     row('run', Boolean(appFirst && n?.termux && !online), n && !n.termux ? 'skip' : nat(n?.runCommand)),
     row('installer', true, installerState),
-    row('hermes', true, online ? 'ok' : conn === 'connecting' ? 'wait' : 'bad'),
+    // idle = the app has only just started and not tried yet (a fresh install's setup flow is on screen before that)
+    row('hermes', true, online ? 'ok' : conn === 'connecting' || conn === 'idle' ? 'wait' : 'bad'),
     row('plugin', true, !online || !r || r.plugin == null ? (online ? 'wait' : 'skip') : r.plugin ? 'ok' : 'bad'),
     row('enabled', true, !online || !r?.plugin || r.enabled == null ? 'skip' : r.enabled ? 'ok' : 'bad'),
     row('model', true, !online ? 'skip' : hasModel == null ? 'wait' : hasModel ? 'ok' : 'bad'),
