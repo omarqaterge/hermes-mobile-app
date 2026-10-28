@@ -15,6 +15,8 @@ describe('setupSteps / nextStep', () => {
   test('Hermes not running → the next step is hermes', () => {
     expect(nextStep(setupSteps(native, 'closed', null, null))?.id).toBe('hermes')
     expect(nextStep(setupSteps(native, 'connecting', null, null))?.id).toBe('hermes') // still being checked
+    // the app has not tried yet (the setup flow opens before the first connection attempt): being checked, not missing
+    expect(setupSteps(native, 'idle', null, null).find(r => r.id === 'hermes')?.state).toBe('wait')
   })
   test('running, no model → model', () => {
     expect(nextStep(setupSteps(native, 'open', remote, false))?.id).toBe('model')

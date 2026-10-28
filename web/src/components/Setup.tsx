@@ -418,6 +418,8 @@ const buildChecks = (steps: FlowStep[], ctx: Ctx, withModel: boolean): Check[] =
  *  own 4 s refresh while it is open. `loading` until the answers it needs have arrived. */
 let lastProbe = 0
 
+/** The app's first connection attempt this launch has ended (open, closed or failed). */
+let firstTryOver = false
 export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   const conn = useStore(s => s.conn)
   const profile = useStore(s => s.profile)
@@ -435,9 +437,12 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
     setN(nat)
     setProgress(setupProgress())
     setShDone(shizukuStepDone())
-    if (getState().conn !== 'open') {
-      // at most one probe per 2 s (the return to the app fires both visibilitychange and hermesSetupChanged)
-      if (probe !== false && nat?.probe && nat.termux && Date.now() - lastProbe > 2000) {
+    const c = getState().conn
+    if (c !== 'open') {
+      // at most one probe per 2 s (the return to the app fires both visibilitychange and hermesSetupChanged); none while
+      // the app's first connection attempt is still under way (the flow is on screen from the start on a fresh install,
+      // and a Hermes that answers needs no probe)
+      if (probe !== false && (firstTryOver || (c !== 'idle' && c !== 'connecting')) && nat?.probe && nat.termux && Date.now() - lastProbe > 2000) {
         lastProbe = Date.now()
         probeTermux()
       }
@@ -478,7 +483,14 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   }, [refresh, opts.poll])
   // The connection retrying (connecting ↔ closed) must not probe: each probe is a Termux command, and before the
   // installer ran Termux answers every one with an error notification. Probe on open, on return and after a fix only.
-  useEffect(() => refresh(false), [conn, profile, refresh])
+  // The one exception: the first time this screen sees Hermes not answering (a fresh launch's takeover opened before the
+  // first attempt, so its mount-time probe was skipped).
+  const probedDown = useRef(false)
+  useEffect(() => {
+    const down = conn === 'closed' || conn === 'error'
+    refresh(down && !probedDown.current)
+    if (down) probedDown.current = true
+  }, [conn, profile, refresh])
   useEffect(() => refresh(true), [refresh])
   const installing = Boolean(progress?.active && !progress.done && !progress.fail)
   const pre: PreHermes = { probe: n?.probe ? probeState(probeRaw, installing) : null, progress, shizukuDone: shDone, autostartDone: autoDone }
@@ -486,7 +498,12 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   // A step before Hermes exists is known without Hermes: never "Checking…" while the connection retries.
   const pending = nextStep(steps)
   const preHermes = pending != null && ['apps', 'shizuku-start', 'run', 'installer'].includes(pending.id) && (pending.state === 'bad' || installing)
-  const loading = !preHermes && (conn === 'connecting' || (conn === 'open' && (r == null || (wantModel && hasModel == null))))
+  // The app's first connection attempt hasn't ended yet and Termux is there: Hermes may well be installed, so don't show a
+  // pre-Hermes step (Start Shizuku, the installer) that would only flash before the chat (the setup flow is on screen from
+  // the start on a fresh launch). Later retries never bring "Checking…" back.
+  if (conn !== 'idle' && conn !== 'connecting') firstTryOver = true
+  const firstTry = !firstTryOver && Boolean(n?.termux) && !installing
+  const loading = firstTry || (!preHermes && (conn === 'connecting' || conn === 'idle' || (conn === 'open' && (r == null || (wantModel && hasModel == null)))))
   const shizukuDone = () => {
     try {
       localStorage.setItem(SHIZUKU_DONE, '1')
@@ -603,6 +620,9 @@ const markFlowDone = () => {
 }
 /** "Not now" on a required step: don't open it again until the app is restarted. */
 let flowDismissed = false
+/** The flow showed a step before Hermes answered (Start Hermes, the installer…): the start-up takeover then stays when
+ *  Hermes connects, and ends at "All set" instead of vanishing. */
+let flowShowedStep = false
 
 /** Resume at the first missing step: shows that step with its fix, moves on by itself when it turns ✓, then lists the
  *  recommended items that are still missing once, then "All set". Opens from checkSetupFlow() / watchFirstRun(). */
@@ -617,6 +637,7 @@ export function SetupFlow() {
   if (!loading) for (const s of steps) if (s.required && s.state === 'bad' && !todo.current.includes(s.id)) todo.current.push(s.id)
   const cur = modelStarted && !modelDone ? (steps.find(s => s.id === 'model') ?? null) : nextStep(steps.filter(s => !(s.id === 'model' && modelDone)))
   if (cur?.id === 'model' && !modelStarted) setModelStarted(true)
+  if (!loading && cur && conn !== 'open') flowShowedStep = true // e.g. Start Hermes, the installer
   const stateOf = (id: StepId) => steps.find(s => s.id === id)?.state
   const total = todo.current.length
   // skip = the step went away (the installer made it unnecessary): counts as finished, no ✓.
@@ -730,7 +751,7 @@ export function SetupFlow() {
   }
 
   return (
-    <ScreenShell title="Set up Hermes" onBack={back}>
+    <ScreenShell title="Set up Hermes" onBack={back} className="takeover">
       {!loading && cur && total > 0 && (
         <div className="flow-progress" aria-label={`Step ${Math.min(finished + 1, total)} of ${total}`}>
           <span className="flow-progress-label">
@@ -1046,7 +1067,8 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
  *  Nothing missing: remember it, so an established install is never checked (or interrupted) again. */
 let flowChecked = false
 export async function checkSetupFlow(): Promise<void> {
-  if (flowChecked || flowDismissed || welcomeDone() || flowDone() || getState().screen) return
+  const takeover = () => takenOver && getState().screen === 'welcome'
+  if (flowChecked || flowDismissed || welcomeDone() || flowDone() || (getState().screen && !takeover())) return
   const [hasModel, r] = await Promise.all([modelConnected(), remote()])
   if (hasModel == null || getState().conn !== 'open') return // no answer: try again on the next connect
   flowChecked = true
@@ -1054,10 +1076,31 @@ export async function checkSetupFlow(): Promise<void> {
   if (!shouldOpenFlow(steps, { welcomeDone: false, flowDone: false })) {
     markWelcomeDone()
     markFlowDone()
+    // The app was reinstalled on a phone where Hermes already works (the flow only said "Checking…"): the start-up
+    // takeover steps aside for the chat. Once it showed a missing step, it stays and ends at "All set".
+    if (takeover() && !flowShowedStep) setState({ screen: null })
   } else if (!getState().screen) setState({ screen: 'welcome' })
 }
 
 const SEEN = 'hm.connectedOnce'
+
+/** A fresh install (Hermes never answered, setup never finished): the setup flow is the first thing on screen, before
+ *  any connection attempt, instead of the chat trying to reach a Hermes that isn't there. Called once before the first
+ *  render. Returns whether it took over. */
+let takenOver = false
+export function openFirstRun(): boolean {
+  let seen = false
+  try {
+    seen = localStorage.getItem(SEEN) === '1'
+  } catch {
+    /* private mode */
+  }
+  if (seen || welcomeDone() || flowDone()) return false
+  takenOver = true
+  firstRunShown = true
+  setState({ screen: 'welcome' })
+  return true
+}
 
 /** First run that can't reach Hermes: open the setup flow (at "Start Hermes") by itself once per launch, after a grace
  *  period. The timer is not restarted by the connection flapping between connecting and closed while it retries. */

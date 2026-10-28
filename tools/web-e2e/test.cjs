@@ -145,6 +145,15 @@ async function main() {
   }
   fs.writeFileSync(LOG, '')
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined })
+  // Pages until the first-run section play an app that has reached Hermes before: a fresh install now opens the setup
+  // flow over everything at start-up (openFirstRun), which those checks are not about.
+  let established = true
+  const newPage = browser.newPage.bind(browser)
+  browser.newPage = async opts => {
+    const p = await newPage(opts)
+    if (established) await p.addInitScript(() => { try { if (!localStorage.getItem('hm.connectedOnce')) localStorage.setItem('hm.connectedOnce', '1') } catch { /* */ } })
+    return p
+  }
   const page = await browser.newPage({ viewport: { width: 375, height: 812 } })
   page.on('pageerror', e => {
     console.log('PAGEERROR', e.message)
@@ -747,6 +756,8 @@ async function main() {
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.sheet .sheet-title', { hasText: 'Approve' }).waitFor({ timeout: 5000 })
   const vh = page.viewportSize().height
+  // measure where the sheet comes to rest, not mid-way through its 0.18 s slide-up (that made this check flaky)
+  await page.locator('.sheet').evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)))
   for (const label of ['Allow once', 'Deny']) {
     const box = await page.locator('.sheet').getByRole('button', { name: label }).boundingBox()
     check(box && box.y >= 0 && box.y + box.height <= vh, `long approval: "${label}" button on screen (${JSON.stringify(box)})`)
@@ -2094,6 +2105,7 @@ async function main() {
   await cvw.close()
 
   // ── first run: a Hermes with no model provider opens the welcome; sign in, pick a model, it never shows again ──
+  established = false
   await mock({ unconfigured: true })
   const wel = await browser.newPage({ viewport: { width: 375, height: 812 } })
   wel.on('pageerror', e => { console.log('PAGEERROR', e.message); failures++ })
@@ -2255,6 +2267,29 @@ async function main() {
     check(await fb.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1'), 'flow: hm.setupFlowDone is set')
     await fb.close()
     await mock({ looseStatus: false })
+  }
+  // c0. fresh install with Termux already there and Hermes not answering (a tablet/phone that was given Termux first):
+  // the setup flow is on screen from the first moment, not after a 15 s wait over a chat retrying to connect, and on a
+  // wide screen it covers the chat list too
+  await mock({ configured: true, pluginEnabled: true, drop: 600000 })
+  for (const vp of [{ width: 375, height: 812 }, { width: 1280, height: 800 }]) {
+    const f0 = await browser.newPage({ viewport: vp })
+    f0.on('pageerror', e => { console.log('PAGEERROR (takeover)', e.message); failures++ })
+    await f0.addInitScript(s => { window.__setup = s }, { ...OK, shizuku: false })
+    await f0.addInitScript(nativeShell)
+    const t0 = Date.now()
+    await f0.goto('http://127.0.0.1:5180/')
+    const shown = await f0.locator('.screen.takeover').waitFor({ timeout: 3000 }).then(() => true, () => false)
+    check(shown, `takeover (${vp.width}px): a fresh install opens the setup flow at once (${Date.now() - t0} ms)`)
+    if (shown) {
+      const b = await f0.locator('.screen.takeover').boundingBox()
+      check(b && b.x === 0 && Math.abs(b.width - vp.width) <= 1, `takeover (${vp.width}px): the flow covers the whole window (${JSON.stringify(b)})`)
+      const top = await f0.evaluate(() => { const e = document.elementFromPoint(20, 300); return e && e.closest('.screen.takeover') ? 'flow' : (e && e.className) || '' })
+      check(top === 'flow', `takeover (${vp.width}px): nothing (chat list, composer) is drawn over it (${top})`)
+      const step = await f0.locator('.screen.takeover .flow-card-title').first().waitFor({ timeout: 10000 }).then(() => f0.locator('.screen.takeover .flow-card-title').first().textContent(), () => '')
+      check(Boolean(step), `takeover (${vp.width}px): once Hermes doesn't answer, it moves from Checking… to the first missing step (${step})`)
+    }
+    await f0.close()
   }
   // c. Hermes not running on a first run: opens at "Start Hermes" and moves on by itself once Hermes answers
   await mock({ configured: true, pluginEnabled: true, drop: 19000 })
