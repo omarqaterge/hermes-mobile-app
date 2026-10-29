@@ -270,6 +270,8 @@ export type SetupFix =
   | 'shizuku-pair'
   /** This phone's Autostart page (for Hermes Mobile / for Termux where the page is per app), else that app's App info. */
   | 'autostart' | 'autostart-termux'
+  /** Android's uninstall prompt for a Termux that isn't F-Droid's (the shell refuses it for F-Droid's). Explicit tap only. */
+  | 'replace-termux'
 
 /** Open the Android screen that fixes one setup item (fixed list on the Java side). */
 export function setupFix(what: SetupFix): void {

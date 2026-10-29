@@ -3,7 +3,7 @@
 // from there. The rows are in the order the flow walks them. The steps before Hermes exists on the phone (get the apps,
 // start Shizuku, run the installer and follow its progress) come first, so an app-first install, a computer install and a
 // half-finished one all resume at whatever is missing.
-import type { NativeSetup, ShizukuAuto } from './bridge'
+import type { HelperApp, NativeSetup, ShizukuAuto } from './bridge'
 
 export type StepId =
   | 'apps' | 'termux' | 'shizuku-start' | 'run' | 'installer' | 'hermes' | 'plugin' | 'enabled' | 'model'
@@ -255,4 +255,42 @@ export function shouldOpenFlow(steps: FlowStep[], f: FlowFlags): boolean {
   if (f.welcomeDone || f.flowDone) return false
   const bad = (id: StepId) => steps.find(s => s.id === id)?.state === 'bad'
   return bad('plugin') || bad('model') || bad('shizuku') || recommendedGaps(steps).length > 0
+}
+
+/** The helper apps in install order (Termux first: the other Termux apps join it). */
+export const HELPER_ORDER: HelperApp[] = ['termux', 'termux-api', 'termux-boot', 'shizuku']
+
+export function helperInstalled(n: NativeSetup, id: HelperApp): boolean {
+  return id === 'termux' ? Boolean(n.termux) : id === 'termux-api' ? Boolean(n.termuxApi) : id === 'termux-boot' ? Boolean(n.termuxBoot) : Boolean(n.shizuku)
+}
+
+export interface AppsPlan {
+  /** Not installed, in install order. */
+  missing: HelperApp[]
+  /** How many of the four are installed. */
+  installed: number
+  /** What Install all does: install = the missing apps one by one · replace-termux = this Termux isn't F-Droid's and
+   *  Termux:API / Termux:Boot can't join it: Android's uninstall prompt for it first, then the F-Droid set · none. */
+  action: 'install' | 'replace-termux' | 'none'
+}
+
+export function appsPlan(n: NativeSetup): AppsPlan {
+  const missing = HELPER_ORDER.filter(id => !helperInstalled(n, id))
+  const other = Boolean(n.termux) && n.termuxSigner === 'other'
+  const addOnsMissing = missing.includes('termux-api') || missing.includes('termux-boot')
+  const action = other && addOnsMissing ? 'replace-termux' : missing.length ? 'install' : 'none'
+  return { missing, installed: HELPER_ORDER.length - missing.length, action }
+}
+
+/** How long "replace Termux" waits for the user to finish Android's uninstall prompt. */
+export const REPLACE_TTL_MS = 10 * 60 * 1000
+
+/** The user confirmed "replace Termux" at markedAt (ms). install = Termux is gone now: install the missing set ·
+ *  wait = not yet (prompt still open, or no native state) · drop = forget the mark · none = no mark. */
+export function replaceDue(markedAt: number | null, n: NativeSetup | null, now: number): 'install' | 'wait' | 'drop' | 'none' {
+  if (markedAt == null) return 'none'
+  if (now - markedAt > REPLACE_TTL_MS) return 'drop'
+  if (!n) return 'wait'
+  if (!n.termux) return 'install'
+  return n.termuxSigner === 'other' ? 'wait' : 'drop'
 }

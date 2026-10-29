@@ -2397,6 +2397,52 @@ async function main() {
       await fs.close()
     }
     {
+      // Termux from another source (Play Store / GitHub): F-Droid's Termux:API / Termux:Boot can't join it. Install all is
+      // still the button: it asks, opens Android's uninstall prompt for Termux, and once Termux is gone installs all four.
+      const fr = await flowPage({ ...FRESH, termux: true, termuxSigner: 'other', termuxVersion: '0.118.3' })
+      await fr.goto('http://127.0.0.1:5180/')
+      await fr.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 })
+      const all = fr.getByRole('button', { name: 'Install all' })
+      check((await all.count()) === 1, 'other Termux: Install all is offered (was “Install Shizuku”, then no button)')
+      if (!(await all.count())) { await fr.close() } else {
+      // Cancel in the explanation: nothing happens
+      await all.click()
+      await fr.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+      check(!(await fr.evaluate(() => window.__fixes || [])).includes('replace-termux'), 'other Termux: Cancel opens nothing')
+      await all.click()
+      await fr.locator('.dialog').getByRole('button', { name: 'Uninstall Termux' }).click()
+      check((await fr.evaluate(() => window.__fixes || [])).includes('replace-termux'), 'other Termux: confirming opens Android’s uninstall prompt for Termux')
+      check(((await fr.evaluate(() => window.__installs)) || []).length === 0, 'other Termux: nothing is installed while the other Termux is still there')
+      // Android's uninstall prompt was answered with OK; back in the app Termux is gone
+      await fr.evaluate(() => {
+        window.__setup = { ...window.__setup, termux: false, termuxSigner: '', termuxVersion: '' }
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      await fr.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).then(() => check(true, 'other Termux: once it is gone, all four install one by one and the flow moves on'), () => check(false, 'other Termux: once it is gone, all four install one by one and the flow moves on'))
+      check(JSON.stringify(await fr.evaluate(() => window.__installs)) === JSON.stringify(['termux', 'termux-api', 'termux-boot', 'shizuku']), `other Termux: installs in order, Termux first (${JSON.stringify(await fr.evaluate(() => window.__installs))})`)
+      check((await fr.evaluate(() => localStorage.getItem('hm.replaceTermux'))) === null, 'other Termux: the replace mark is cleared')
+      await fr.close()
+      }
+    }
+    {
+      // Android killed the app while Termux was uninstalled: the next launch finishes the job by itself
+      const fk = await flowPage({ ...FRESH })
+      await fk.addInitScript(() => localStorage.setItem('hm.replaceTermux', String(Date.now() - 5000)))
+      await fk.goto('http://127.0.0.1:5180/')
+      await fk.waitForFunction(() => (window.__installs || []).length === 4, null, { timeout: 8000 }).then(() => check(true, 'other Termux: after the app was killed, the next launch installs the set'), () => check(false, 'other Termux: after the app was killed, the next launch installs the set'))
+      await fk.close()
+    }
+    {
+      // F-Droid Termux, only Shizuku missing: the button still says Install all (owner: one button for every install)
+      const fs1 = await flowPage({ ...FRESH, termux: true, termuxSigner: 'fdroid', termuxApi: true, termuxBoot: true })
+      await fs1.goto('http://127.0.0.1:5180/')
+      await fs1.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 })
+      await fs1.getByRole('button', { name: 'Install all' }).waitFor({ timeout: 4000 }).then(() => fs1.getByRole('button', { name: 'Install all' }).click()).then(() => check(true, 'one missing app: the button is Install all'), () => check(false, 'one missing app: the button is Install all'))
+      await fs1.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).catch(() => {})
+      check(JSON.stringify(await fs1.evaluate(() => window.__installs)) === JSON.stringify(['shizuku']), 'one missing app: Install all installs just that one')
+      await fs1.close()
+    }
+    {
       // Android 10 and older have no Wireless debugging: the step says Shizuku starts from a computer, links the guide, no Skip.
       const fo = await flowPage({ ...FRESH, sdk: 29 })
       await fo.goto('http://127.0.0.1:5180/')
