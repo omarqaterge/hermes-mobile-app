@@ -266,7 +266,7 @@ export type SetupFix =
   | 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'battery-shizuku' | 'app-settings' | 'open-termux' | 'get-termux'
   | 'get-termux-api' | 'get-shizuku' | 'open-shizuku' | 'storage' | 'restart-hermes'
   | 'install-permission' | 'about-phone' | 'dev-options' | 'open-termux-boot'
-  /** Pairs Termux's adb with Wireless debugging (native runs `hm-shizuku pair` in Termux; Settings opens for a few seconds). Explicit tap only. */
+  /** Start pairing: posts the Pairing notification (the user types the code there) and opens Settings at Wireless debugging. Explicit tap only. */
   | 'shizuku-pair'
   /** This phone's Autostart page (for Hermes Mobile / for Termux where the page is per app), else that app's App info. */
   | 'autostart' | 'autostart-termux'
