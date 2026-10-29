@@ -2128,6 +2128,9 @@ async function main() {
   // Wide screens keep the canvas as a column beside the chat.
   const cvw = await browser.newPage({ viewport: { width: 1100, height: 800 } })
   await cvw.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
+  // The native shell (Settings → Uninstall Hermes needs it), with setup complete so no setup flow takes over.
+  await cvw.addInitScript(s => { window.__setup = s }, { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '', termuxApi: true, termuxBoot: true, shizuku: true })
+  await cvw.addInitScript(nativeShell)
   await cvw.goto('http://127.0.0.1:5180/')
   await cvw.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
   await cvw.locator('.canvas-btn').click()
@@ -2137,6 +2140,48 @@ async function main() {
     const b = await cvw.locator('.canvas-panel').boundingBox()
     const mr = await cvw.locator('.app').evaluate(el => parseFloat(getComputedStyle(el).marginRight))
     check(b && b.x > 400 && Math.abs(b.x + b.width - 1100) <= 1 && mr > 0 && Math.abs(mr - b.width) <= 2, `wide screen: the canvas is a column beside the chat (${JSON.stringify(b)}, chat margin ${mr})`)
+  }
+  await cvw.evaluate(() => window.hermesBack())
+  await cvw.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 2000 }).catch(() => {})
+  // Wide screens: a sheet opened on a page (Settings → Uninstall Hermes) covers the docked chat list, not under it.
+  {
+    const listX = async () => (await cvw.locator('.drawer').boundingBox())?.x ?? -9999
+    check((await listX()) >= 0, 'wide screen: the chat list is docked by default')
+    await cvw.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await cvw.locator('.set-row', { hasText: 'Uninstall Hermes' }).click()
+    const sh = cvw.locator('.sheet', { hasText: 'Uninstall Hermes' }).last()
+    await sh.waitFor({ timeout: 3000 })
+    await sleep(300)
+    const top = await cvw.evaluate(() => {
+      const s = [...document.querySelectorAll('.sheet')].pop()
+      const r = s.getBoundingClientRect()
+      const el = document.elementFromPoint(r.left + 40, r.top + r.height / 2)
+      return { inSheet: Boolean(el && el.closest('.sheet')), left: r.left, width: r.width }
+    })
+    check(top.inSheet && top.left < 50, `wide screen: a page's sheet is on top of the docked chat list (${JSON.stringify(top)})`)
+    for (let i = 0; i < 4 && (await cvw.locator('.screen, .sheet').count()); i++) {
+      await cvw.evaluate(() => window.hermesBack())
+      await sleep(250)
+    }
+    // ☰ hides the list (the chat gets the whole width), the choice survives a reload, ☰ docks it again.
+    const menu = cvw.getByRole('button', { name: 'Hide chat list' })
+    await menu.waitFor({ timeout: 3000 }).then(() => check(true, 'wide screen: ☰ offers Hide chat list'), () => check(false, 'wide screen: ☰ offers Hide chat list'))
+    await menu.click()
+    await sleep(400)
+    const ml = await cvw.locator('.app').evaluate(el => parseFloat(getComputedStyle(el).marginLeft))
+    check((await listX()) < 0 && ml === 0, `wide screen: ☰ hides the chat list and the chat takes the width (list x ${await listX()}, margin ${ml})`)
+    await cvw.reload()
+    await cvw.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(300)
+    check((await listX()) < 0, 'wide screen: the hidden chat list stays hidden after a restart')
+    await cvw.getByRole('button', { name: 'Show chat list' }).click()
+    await sleep(400)
+    check((await listX()) >= 0, 'wide screen: ☰ docks the chat list again')
+    // « at the top of the docked list hides it too.
+    await cvw.getByRole('button', { name: 'Hide the chat list' }).click()
+    await sleep(400)
+    check((await listX()) < 0 && (await cvw.locator('.drawer-backdrop.show').count()) === 0, 'wide screen: « hides the docked list, no backdrop left')
+    await cvw.evaluate(() => localStorage.removeItem('hm.sideHidden.v1'))
   }
   await cvw.close()
 

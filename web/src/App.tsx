@@ -34,6 +34,7 @@ import { AutoButton } from './components/AutoAccess'
 import { refreshBg } from './bgapp'
 import { bootMark } from './boot'
 import { UninstallResume } from './components/Uninstall'
+import { toggleSide, useSidePanel } from './sidepanel'
 
 declare global {
   interface Window {
@@ -79,9 +80,12 @@ function Header() {
   const canvasDocs = useCanvas(c => c.docs.length)
   const canvasWriting = useCanvas(c => Boolean(c.writing))
   const unread = useStore(s => s.unread.length > 0)
+  const [wide, sideHidden] = useSidePanel()
+  // Wide screens: ☰ hides or shows the docked chat list (sidepanel.ts); phones: it opens the drawer.
+  const menuLabel = wide ? (sideHidden ? 'Show chat list' : 'Hide chat list') : unread ? 'Sessions (unread chats)' : 'Sessions'
   return (
     <header className="topbar">
-      <button className="icon-btn menu-btn" aria-label={unread ? 'Sessions (unread chats)' : 'Sessions'} onClick={() => setState({ drawer: true })}>
+      <button className="icon-btn menu-btn" aria-label={menuLabel} onClick={() => (wide ? toggleSide() : setState({ drawer: true }))}>
         ☰{unread && <span className="unread-dot on-menu" />}
       </button>
       <button className="title-btn" onClick={() => hasActive && setState({ sheet: 'chat-menu' })}>

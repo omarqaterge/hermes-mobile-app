@@ -554,6 +554,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.draft` | `drafts.ts` | Legacy single draft (before `hm.drafts.v1`); moved into `hm.drafts.v1` as `new:<profile>` and deleted on first read. | No |
 | `hm.drafts.v1` | `drafts.ts` | Unsent composer text: `{chatId: text}`, plus `new:<profile>` for the new-chat screen; newest 100 kept. | Mixed (new-chat drafts per profile) |
 | `hm.favModels.v1` | `favs.ts` | Starred models `[{p: provider, m: model}]` in starring order. | No (shared by all profiles) |
+| `hm.sideHidden.v1` | `sidepanel.ts` | `1` while the user has hidden the docked chat list on a wide screen; absent = docked. | No |
 | `hm.customModels.v1` | `custommodels.ts` | Model ids typed into a model picker and picked once `[{p: provider, m: model}]`; shown as normal rows under their provider. | No (shared by all profiles) |
 | `hm.hermesSeen` | `hermes-update.ts` | The Hermes version already warned about ("This Hermes is a different version…"), so the toast shows once per version. | No |
 | `hm.lastSession` | `gateway.ts`, `store.ts` | The chat to reopen on start: `{id, profile}`; used only when the profile matches. | Records the profile |
@@ -905,7 +906,7 @@ Pulling the chat up past its end opens the By the way sheet (`web/src/pullbtw.ts
 
 #### Wide screens (tablets, unfolded foldables, landscape)
 
-One CSS rule in `web/src/styles.css` (`@media (min-width: 840px)`) turns the layout into columns; no code path is different. The drawer becomes a fixed 320 px column on the left (`--side`) that is always shown, the menu button and the drawer backdrop are hidden, and full-screen pages (`screen`) open to the right of that column. The setup flow ("Set up Hermes", class `takeover`) still covers the whole width. The chat's text column is kept at about 820 px. An open canvas at its side size becomes a right-hand column (`--canvas-w` = `min(46vw, 640px)`); full size still covers everything (3.7).
+One CSS rule in `web/src/styles.css` (`@media (min-width: 840px)`) turns the layout into columns; no code path is different. The drawer becomes a docked 320 px column on the left (`--side`) and full-screen pages (`screen`) open to the right of that column, above it (z-index 22 over the drawer's 21), so a sheet or dialog a page opens (they sit inside the page's stacking context, e.g. Settings → Uninstall Hermes) covers the whole width instead of being cut off by the column. The user can hide the column: the menu button `☰` (`aria-label` "Hide chat list" / "Show chat list" on wide screens) toggles it, and a `«` button at the top of the docked column (`aria-label` "Hide the chat list", class `side-hide`, shown only while docked) hides it from any page. `web/src/sidepanel.ts` (`setSideHidden`, `toggleSide`, `useSidePanel`) keeps the choice in localStorage `hm.sideHidden.v1` and sets `html[data-side="hidden"]` at start-up, before the first paint; every docked rule is scoped to `html:not([data-side='hidden'])`, so a hidden column means the phone layout (swipe right opens the drawer over the chat, its backdrop closes it). The setup flow ("Set up Hermes", class `takeover`) still covers the whole width. The chat's text column is kept at about 820 px. An open canvas at its side size becomes a right-hand column (`--canvas-w` = `min(46vw, 640px)`); full size still covers everything (3.7).
 
 #### Entry points from outside the page
 
@@ -936,7 +937,7 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
 |---|---|---|---|---|
-| Menu button `☰` (`Header`) | Icon at the left. A small dot on it when any chat is unread. Its label is Sessions, or Sessions (unread chats). | Opens the drawer. | Swipe right anywhere on the chat does the same. | Always enabled. |
+| Menu button `☰` (`Header`) | Icon at the left. A small dot on it when any chat is unread. Its label is Sessions, or Sessions (unread chats); on wide screens Hide chat list / Show chat list. | Opens the drawer; on wide screens hides or docks the chat list column (`toggleSide`, 3.1 Wide screens). | Swipe right anywhere on the chat does the same. | Always enabled. |
 | Title and subtitle (`Header`, `Title.tsx`) | Chat title, and under it: the status dot, a 🔊 badge while read-aloud is on for this chat, then the profile name (or "Hermes Agent" for the default profile). A branched chat shows a branch icon (aria-label Branch) before its title. | Title: opens the chat menu (3.5) when a chat exists, does nothing on the empty screen. While a chat is opening the title shows the cached title. | none | Fallback title is "New chat" (chat exists, no title yet) or "Hermes" (empty screen). |
 | Status dot (aria-label Backend status) | Small coloured circle. Green = ok, amber = Hermes up with problems, red = offline, blinking amber = connecting (`dotState` in `health.ts`). | Opens the Backend status sheet (3.5). The tap does not also open the chat menu. | none | none |
 | Auto button | Pill labelled Auto. Grey = off, green = Auto access, red with ⚡ = Full access. | Opens the Auto picker (see "Auto button" below). | none | Disabled while Hermes is not connected. |
@@ -1457,6 +1458,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `recent.ts` | Recent prompts. |
 | `commands.ts` | Slash-command and skill catalog for autocomplete. |
 | `favs.ts` | Starred models. |
+| `sidepanel.ts` | Wide screens: hide or dock the chat list column (`hm.sideHidden.v1`, `html[data-side]`). |
 | `custommodels.ts` | Model ids typed into a model picker (Hermes Desktop's "Custom model"): candidate check, remembered ids per provider. |
 | `activity.ts` | Polling of `GET /activity` for the activity banner. |
 | `tasks.ts` | Tick state of Markdown task lists. |
