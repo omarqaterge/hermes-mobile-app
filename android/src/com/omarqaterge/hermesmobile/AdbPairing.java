@@ -239,9 +239,10 @@ final class AdbPairing {
             PendingIntent pi = PendingIntent.getService(app, NTAG.hashCode(),
                     new Intent(app, HermesService.class).setAction(ACTION_CODE),
                     PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            b.addAction(new Notification.Action.Builder(null, "Enter code", pi)
+            // A code pairs Termux with adb: like an approval, only from an unlocked phone (HermesService.unlockFirst).
+            b.addAction(HermesService.unlockFirst(new Notification.Action.Builder(null, "Enter code", pi)
                     .addRemoteInput(new RemoteInput.Builder(REMOTE).setLabel("6-digit code").build())
-                    .setAllowGeneratedReplies(false).build());
+                    .setAllowGeneratedReplies(false)).build());
         }
         notify(b.build());
     }
