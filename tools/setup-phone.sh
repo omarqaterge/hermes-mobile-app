@@ -168,7 +168,7 @@ done
 [ -n "$ready" ] || die "Termux didn't respond. Open it on the phone, wait for the \$ prompt, and run this again."
 
 # ---------------------------------------------------------------- 6. install on the phone
-b "6/9 Installing Debian + Hermes on the phone (20-40 minutes)"
+b "6/9 Installing Debian + Hermes on the phone (about 15 minutes)"
 distro=""; [ "${HM_DISTRO:-}" = chroot ] && distro="HM_DISTRO=chroot "
 type_line "curl -fsSL $RAW/phone/bootstrap.sh -o hm.sh && ${distro}HM_NO_APK=1 bash hm.sh"
 seen=0; start=$(date +%s)
