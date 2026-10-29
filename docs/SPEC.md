@@ -2556,7 +2556,7 @@ The same port also serves `POST /setup` (the app-first installer's progress, 4.7
 | `bgapp` | `state` (`open`, `act`, `done`), `session`, `pkg`, `label`, `action`, `port`, `token` | Tracks the app Hermes drives on the hidden screen (`BgApp`). `done` clears it. Other states need a session, a port 1024–65535 and a token of at most 256 characters, otherwise the event is ignored. The port and token never leave Java; the page only sees `{session, pkg, label, action, since}` through `window.__hmBg` and bridge `bgState`. 700 ms after the event a 256 px picture of the hidden screen is fetched for the working chip. If no new event comes in 130 s (`BG_TTL_MS`) the card is dropped (the host itself exits after 2 idle minutes). |
 | `wake_at` | `at` (epoch seconds of the next due cron job, 0 = none) | `scheduleWake`: stores `wake_at`, sets an exact (or inexact) wake-up alarm for `WakeReceiver`. Sent by `phone/cron_ticker.py`. |
 | `cron_idle` | `since` (epoch seconds the tick cycle started) | `cronIdle`: the ticker ran and no job is running, so the alarm's wake lock ends early. Sent by `phone/cron_ticker.py`. |
-| `shizuku-auto` | `paired` (bool), `result` (a lowercase word such as `ok`, `no-wifi`, `no-port`, `failed`), `detail` | `ShizukuKeeper.onEvent`: stores whether Termux's adb is paired and the last result. Sent by `phone/hm-shizuku`. |
+| `shizuku-auto` | `cmd` (`pair` or `start`), `paired` (bool), `result` (a lowercase word such as `ok`, `no-port`, `failed`), `detail` | `ShizukuKeeper.onEvent`: stores whether Termux's adb is paired and the last result. Sent by `phone/hm-shizuku`. |
 
 An unknown `kind` does nothing.
 
@@ -2977,11 +2977,11 @@ Everything on the phone side runs in **Termux** (the Android side) or in **Debia
 |---|---|---|---|
 | `bootstrap.sh` | Termux | the user, the app (pasted command), the computer scripts | The whole phone-side install, no questions (steps below). Also `bash hm.sh model <provider> <model> [ENV_NAME=key]` to set a model. |
 | `install.sh` | Termux | `bootstrap.sh`, or by hand to repair/refresh | Plugin, supervisor scripts, patches, phone access, enabling the plugin; downloads the APK unless `HM_NO_APK` is set. |
-| `phone-access.sh` | Termux | `bootstrap.sh` (early) and `install.sh` | Hermes's access to the phone: files, Termux:API links, Shizuku `rish`, Shizuku self-start pairing. |
+| `phone-access.sh` | Termux | `bootstrap.sh` (early) and `install.sh` | Hermes's access to the phone: files, Termux:API links, Shizuku `rish`. |
 | `hermes-services` | Termux | Termux:Boot, the app (`startHermes`), the installer, by hand | The supervisor (6.2). Idempotent. |
 | `hermes-debian` | Termux | `hermes-services`, installers, the app | One front for "run something in Debian" that hides proot vs chroot. |
 | `hermes-patches.sh` | Debian | `install.sh`, `bootstrap.sh`, `tools/build-image.sh` | Applies, checks or reverts `hermes/patches` (6.4). |
-| `hm-shizuku` | Termux | `phone-access.sh` (pair), the app's `ShizukuKeeper` (start) | Lets Shizuku start again by itself without root. |
+| `hm-shizuku` | Termux | the app (pair, from the code the user typed; start) | Lets Shizuku start again by itself without root. |
 | `cron_ticker.py` | Debian | `hermes-services` loop `cron-ticker` | Runs Hermes's cron scheduler and tells the app when to wake the phone. |
 | `hermes_memory_sync.py` | Debian | `hermes-services` loop `memory-sync` (only if the file exists) | Two-device memory sync through a private git repo. |
 | `keep_note.py` | Debian or Termux | the model/skills by hand | Creates a Google Keep note by driving Keep's share sheet. |
@@ -3027,15 +3027,15 @@ Never fails the install; what is missing goes to `~/.hermes-mobile/todo`, one li
 2. **Files**: if `/storage/emulated/0` is not readable, asks for `termux-setup-storage` and waits up to 2 minutes.
 3. **Termux:API**: links every `termux-*` command into Debian's `/usr/local/bin` (Debian's PATH drops Termux's dirs); a `termux-battery-status` check decides the TODO.
 4. **Shizuku `rish`**: downloads Shizuku 13.6.0's release APK, extracts `assets/rish` (with `"PKG"` replaced by `"com.termux"`) and `rish_shizuku.dex` (read-only, Android 14 refuses a writable dex) into `~/bin`. Calls `rish -c id` up to 3 times (the first call makes Shizuku ask whether Termux may use it).
-5. If Shizuku answers: grants Shizuku `WRITE_SECURE_SETTINGS`, takes Shizuku off the battery limits (`dumpsys deviceidle whitelist`), grants the app `WRITE_SECURE_SETTINGS` (so it can turn Wireless debugging on), warns when Shizuku saved its "allow Termux" entry without the package name, and on Android 11+ runs `hm-shizuku pair` once (Settings opens for a few seconds; exit codes map to a TODO such as "connect to Wi-Fi"). If Shizuku does not answer it adds a TODO that says how to start it.
+5. If Shizuku answers: grants Shizuku `WRITE_SECURE_SETTINGS`, takes Shizuku off the battery limits (`dumpsys deviceidle whitelist`), grants the app `WRITE_SECURE_SETTINGS` (so it can turn Wireless debugging on), warns when Shizuku saved its "allow Termux" entry without the package name, and does nothing about pairing Termux's adb (the user does that once in the app after the install; the installer never opens or taps the screen and prints no TODO for it). If Shizuku does not answer it adds a TODO that says how to start it.
 
 #### `hm-shizuku`
 
-`pair [--force]`, `start [port]`, `status`. One run at a time (a lock folder). Every `rish` call is bounded (`timeout`, 3 tries) and gets `</dev/null`.
+`pair PORT CODE`, `start [port]`, `status`. One run at a time (a lock folder). Every `adb` call is bounded (`timeout`) and gets `</dev/null`. No `rish` and no screen code at all.
 
-- `pair` needs Shizuku, Wi-Fi and Android 11+: turns on developer options and Wireless debugging if needed (answers Android's "Allow wireless debugging on this network?" dialog), opens Settings → Wireless debugging through the Quick Settings tile intent, reads the pairing code and port from the screen by Android's resource ids, runs `adb pair 127.0.0.1:<port> <code>`, records the key in `~/.hermes-mobile/adb-paired`, then closes Settings and turns Wireless debugging off again if this run turned it on.
+- `pair PORT CODE` (PORT 1-65535, CODE exactly 6 digits, leading zeros kept; anything else exits 64 without calling adb): needs `adb` and Android 11+; runs `adb start-server`, then `adb pair 127.0.0.1:<port> <code>` (20 s), and records the key in `~/.hermes-mobile/adb-paired`. The user opened Settings → Wireless debugging → "Pair device with pairing code" and typed the code into the app; the app found the port. A bare `pair` (an older app) exits 64 with the detail "update Hermes Mobile: pairing is done from the app now".
 - `start [port]` connects Termux's adb to `127.0.0.1:<port>` (scans loopback ports 32768-60999 if no port or no answer), checks for the shell user, and starts Shizuku's server with its own `libshizuku.so`. Exit 0 only when `shizuku_server` runs.
-- After `pair`/`start` it posts `{"kind":"shizuku-auto","paired":bool,"result":...,"detail":...}` to the app (`ok`, `no-wifi`, `untrusted-network`, `no-port`, `failed`, `not-paired`). Exit codes: 0 ok, 2 missing Shizuku/rish/adb or Android 10 and older, 3 not on Wi-Fi, 4 network not allowed, 5 screen not recognised, 6 pair failed, 7 no port, 8 server did not start, 9 not paired, 10 busy, 64 usage. Log: `~/.hermes-mobile/hm-shizuku.log` (last 300 lines).
+- After `pair`/`start` it posts `{"kind":"shizuku-auto","cmd":"pair|start","paired":bool,"result":...,"detail":...}` to the app (`ok`, `no-port`, `failed`, `not-paired`). Exit codes: 0 ok, 2 missing adb or Android 10 and older, 6 pair failed, 7 no port, 8 server did not start, 9 not paired, 10 busy, 64 usage. Log: `~/.hermes-mobile/hm-shizuku.log` (last 300 lines).
 
 #### `hermes-debian`
 
@@ -3245,7 +3245,7 @@ Emulator-only switch: when `HM_TEST_BOOTSTRAP_URL` is set, a string resource `hm
 | `test_say_hook.sh` | `say()` in `bootstrap.sh` and `phone-access.sh`: posts each line to `127.0.0.1:9121/setup` only when `HM_APP_TOKEN` is set, JSON escaping, 2 s timeout, failing `curl` never fails the install, `DONE` writes `~/.hermes-mobile/installed`. |
 | `test_install_routes.sh` | Static check that every install route takes Shizuku off battery limits (`dumpsys deviceidle whitelist +moe.shizuku.privileged.api`) after installing it, and that the phone-side installer does it through `rish` without failing. |
 | `test_uninstall.sh` | `phone/uninstall.sh` on a fake Termux: deletes exactly the installer's paths, safe to repeat, failed backup removes nothing, backup leaves keys out unless asked, stops loops by exact PID, refuses a non-Termux `HOME`, partial states still finish. |
-| `test_hm_shizuku.sh` | `phone/hm-shizuku` with fake `rish`, `adb`, `curl`, `getprop`; the fake `rish` answers `uiautomator dump` with the real screen dumps in `tools/fixtures/hm-shizuku/`. Covers pairing, the "Allow wireless debugging on this network?" dialog, restoring the screen, retries, start with port / scan / not paired, exit codes and the `shizuku-auto` event JSON. |
+| `test_hm_shizuku.sh` | `phone/hm-shizuku` with fake `adb`, `curl`, `getprop` and a `rish` that fails the test if called. Covers `pair PORT CODE` (adb call, no screen, usage errors, wrong code, Android 10, no adb), start with port / scan / not paired, exit codes, the `shizuku-auto` event JSON, and that the installer has no pairing code. |
 | `test_bghost.sh` | Needs `adb`: smoke test of the background host `bg/BgHost` on an emulator or phone (token check, status, display lifecycle). Not in CI. |
 
 **Android tests (plain JDK, no Android SDK)**
@@ -3260,7 +3260,6 @@ Emulator-only switch: when `HM_TEST_BOOTSTRAP_URL` is set, a string resource `hm
 
 **Battery tools (`tools/battery/`, a folder, not counted in the 45)**: `bench.py` (idle / chat / cron benchmarks and a `report` mode; method in `docs/battery-report.md`), `hmsamp.sh` (sampler run as the adb shell user: wake lock and `/proc` ticks per process and thread), `hmreport.py` (summarises a sampler capture), `hmnet.sh` (network bytes per UID), `reqcost.py` (CPU cost of one request to the dashboard), `wschat.py` (one benchmark chat turn over the gateway WebSocket, then deletes the chat).
 
-**`tools/fixtures/hm-shizuku/`**: real AOSP screen dumps (`home.xml`, `pair-dialog.xml`, `trust-dialog.xml`, `wd-screen.xml`) used by `test_hm_shizuku.sh`.
 
 ### 7.3 Browser e2e (`tools/web-e2e/`)
 

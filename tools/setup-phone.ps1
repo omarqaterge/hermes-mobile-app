@@ -226,7 +226,7 @@ if ($script:rc -ne 0) {
 Sh "pm grant $APP com.termux.permission.RUN_COMMAND" | Out-Null
 Sh "pm grant $APP android.permission.POST_NOTIFICATIONS" | Out-Null
 # Lets the app turn Wireless debugging on when Shizuku is down, so Shizuku starts again by itself (Termux's adb, paired
-# by the installer). Best effort: an app version that doesn't ask for it refuses the grant.
+# once by the user from the app). Best effort: an app version that doesn't ask for it refuses the grant.
 Sh "pm grant $APP android.permission.WRITE_SECURE_SETTINGS" | Out-Null
 Sh "dumpsys deviceidle whitelist +$APP" | Out-Null
 Sh "am start -n $APP/.MainActivity" | Out-Null
@@ -246,7 +246,9 @@ B 'Done. Say hi in Hermes Mobile on the phone.'
 (LogText) -split "`n" | Where-Object { $_ -match 'HMSETUP TODO (.*)' } | ForEach-Object { Say "Still to do: $($Matches[1])" }
 Say 'Xiaomi/HyperOS: also turn on Autostart for Termux and Hermes Mobile (Settings > Apps).'
 Say 'Keep the Termux notification: Hermes runs inside Termux.'
-Say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Android 11+: on Wi-Fi it now starts again"
-Say '  by itself (on a new Wi-Fi, tap Always allow + Allow when Android asks about wireless debugging). If it does not:'
-Say '  Hermes Mobile > Setup check > Set up. Android 10 and older: start it from a computer after a restart. Rooted: it always does.'
+Say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Android 10 and older: start it from a computer"
+Say '  after a restart. Rooted: it always does.'
+if ([int]((Sh 'getprop ro.build.version.sdk') -join '').Trim() -ge 30) {
+  Say 'On the phone, Hermes Mobile now asks you to pair Termux with Wireless debugging once (about a minute, on Wi-Fi): then Shizuku starts by itself after a restart.'
+}
 Say 'Update later: run this again.'

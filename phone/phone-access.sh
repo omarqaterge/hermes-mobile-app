@@ -88,18 +88,9 @@ if [ -n "$ok" ]; then
   if printf '%s' "$cfg" | grep -q "\"uid\":$(id -u),\"flags\":[0-9]*,\"packages\":\[\]"; then
     todo "Shizuku will ask once more whether Termux may use it after its next restart: tap Allow all the time right away then"
   fi
-  # Pair Termux's own adb with Wireless debugging once (Android 11+, Wi-Fi): afterwards Shizuku starts again by itself
-  # after a restart. hm-shizuku opens Settings for a few seconds and reads the pairing code from the screen.
-  hms="$HOME/bin/hm-shizuku"; [ -x "$hms" ] || hms="$(dirname "${BASH_SOURCE[0]}")/hm-shizuku"
-  sdk=$(getprop ro.build.version.sdk 2>/dev/null || echo 0)
-  if [ -f "$hms" ] && [ "${sdk:-0}" -ge 30 ] 2>/dev/null && ! bash "$hms" status 2>/dev/null | grep -qx paired; then
-    say "phone: pairing Termux with Wireless debugging (Settings opens for a few seconds; don't touch the screen)"
-    out=$(timeout 240 bash "$hms" pair </dev/null 2>&1); rc=$?
-    if [ "$rc" = 0 ]; then say "phone: Shizuku can now start again by itself after a restart (on Wi-Fi)"
-    elif [ "$rc" = 3 ]; then todo "Shizuku can't start by itself yet: connect to Wi-Fi, then open Hermes Mobile → Setup check → Set up"
-    else todo "Shizuku can't start by itself yet: open Hermes Mobile → Setup check → Set up ($(echo "$out" | tail -1 | sed -E 's/^hm-shizuku: (FAIL \([a-z-]*\) )?//'))"
-    fi
-  fi
+  # Pairing Termux's own adb with Wireless debugging (Android 11+, lets Shizuku start again by itself) is done by the
+  # user, once, in Hermes Mobile after the install (Setup -> "Shizuku starts by itself"). The installer never opens or
+  # taps the screen, and prints no TODO for it (re-running the installer can't pair).
 else
   todo "Shizuku: start it and tap Allow when it asks whether Termux may use it (no root: Start via Wireless debugging, pair once; rooted: Start; not installed: https://shizuku.rikka.app/download/), then run the installer again"
 fi
