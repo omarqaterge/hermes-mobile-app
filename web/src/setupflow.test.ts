@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { NativeSetup } from './bridge'
-import { nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
+import { appsPlan, nextStep, probeState, progressView, recommendedGaps, replaceDue, REPLACE_TTL_MS, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
 
 const native: NativeSetup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, termuxApi: true, shizuku: true, startError: '', maker: 'google' }
 const remote: Remote = { plugin: true, enabled: true, enabledList: ['hermes-mobile'], phone: { files: true, termux_api: true, shizuku: 'ok' } }
@@ -280,4 +280,37 @@ describe('shizukuWatchActive', () => {
     expect(shizukuWatchActive({ ...base, now: 1000 + 10 * 60 * 1000 - 1 })).toBe(true)
     expect(shizukuWatchActive({ ...base, now: 1000 + 10 * 60 * 1000 })).toBe(false)
   })
+})
+
+describe('appsPlan: what Install all does', () => {
+  const none: NativeSetup = { ...native, termux: false, termuxApi: false, termuxBoot: false, shizuku: false, termuxSigner: '' }
+  test('nothing installed → all four, Termux first', () => {
+    expect(appsPlan(none)).toEqual({ missing: ['termux', 'termux-api', 'termux-boot', 'shizuku'], installed: 0, action: 'install' })
+  })
+  test('only Shizuku missing → still Install all, just Shizuku', () => {
+    expect(appsPlan({ ...none, termux: true, termuxSigner: 'fdroid', termuxApi: true, termuxBoot: true })).toEqual({ missing: ['shizuku'], installed: 3, action: 'install' })
+  })
+  test('Termux from another source without its add-ons → replace Termux first (also once Shizuku is in)', () => {
+    expect(appsPlan({ ...none, termux: true, termuxSigner: 'other' }).action).toBe('replace-termux')
+    expect(appsPlan({ ...none, termux: true, termuxSigner: 'other', shizuku: true }).action).toBe('replace-termux')
+  })
+  test('Termux from another source with Termux:API and Termux:Boot from the same place → only Shizuku, no replace', () => {
+    expect(appsPlan({ ...none, termux: true, termuxSigner: 'other', termuxApi: true, termuxBoot: true })).toEqual({ missing: ['shizuku'], installed: 3, action: 'install' })
+  })
+  test('all four installed → nothing to do', () => {
+    expect(appsPlan({ ...none, termux: true, termuxSigner: 'fdroid', termuxApi: true, termuxBoot: true, shizuku: true }).action).toBe('none')
+  })
+})
+
+describe('replaceDue: after Android uninstalled the other Termux', () => {
+  const now = 1_000_000_000
+  test('no mark → none', () => expect(replaceDue(null, native, now)).toBe('none'))
+  test('Termux gone → install the set', () => expect(replaceDue(now - 5000, { ...native, termux: false }, now)).toBe('install'))
+  test('other Termux still there (prompt open or cancelled) → wait', () =>
+    expect(replaceDue(now - 5000, { ...native, termux: true, termuxSigner: 'other' }, now)).toBe('wait'))
+  test('an F-Droid Termux is there now → drop the mark', () =>
+    expect(replaceDue(now - 5000, { ...native, termux: true, termuxSigner: 'fdroid' }, now)).toBe('drop'))
+  test('older than the TTL → drop (a later Uninstall-Hermes must never reinstall Termux)', () =>
+    expect(replaceDue(now - REPLACE_TTL_MS - 1, { ...native, termux: false }, now)).toBe('drop'))
+  test('no native state yet → wait', () => expect(replaceDue(now - 5000, null, now)).toBe('wait'))
 })
