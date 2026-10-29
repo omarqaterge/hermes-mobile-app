@@ -2,7 +2,8 @@
 // next. Setup check (Settings) lists every row; SetupFlow (first run) shows the first missing required one and resumes
 // from there. The rows are in the order the flow walks them. The steps before Hermes exists on the phone (get the apps,
 // start Shizuku, run the installer and follow its progress) come first, so an app-first install, a computer install and a
-// half-finished one all resume at whatever is missing.
+// half-finished one all resume at whatever is missing. Shizuku and its self-start come right after the install, before the
+// model (owner, 2026-10-29).
 import type { HelperApp, NativeSetup, ShizukuAuto } from './bridge'
 
 export type StepId =
@@ -62,7 +63,7 @@ export const INSTALL_STEPS: { id: string; label: string }[] = [
   { id: 'access', label: 'Access to the phone' },
   { id: 'android', label: 'Android child-process limit' },
   { id: 'debian', label: 'Debian' },
-  { id: 'hermes', label: 'Hermes Agent (10-30 minutes)' },
+  { id: 'hermes', label: 'Hermes Agent (most of the wait)' },
   { id: 'plugin', label: 'Hermes Mobile plugin' },
   { id: 'start', label: 'Starting Hermes' }
 ]
@@ -203,6 +204,10 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     row('hermes', true, online ? 'ok' : conn === 'connecting' || conn === 'idle' ? 'wait' : 'bad'),
     row('plugin', true, !online || !r || r.plugin == null ? (online ? 'wait' : 'skip') : r.plugin ? 'ok' : 'bad'),
     row('enabled', true, !online || !r?.plugin || r.enabled == null ? 'skip' : r.enabled ? 'ok' : 'bad'),
+    row('shizuku', true, n?.shizuku === false ? 'bad' : !p ? 'skip' : p.shizuku === 'ok' ? 'ok' : 'bad'),
+    // Needs Android 11+ (the app says so), and is meaningful only once Shizuku itself works with Hermes: before that (or
+    // before the installer ran) the row stays out of the way. Older app builds don't report it: no row.
+    row('shizuku-auto', true, !n?.shizukuAuto?.sdk || n.shizuku === false || p?.shizuku !== 'ok' ? 'skip' : shizukuAutoKind(n.shizukuAuto) === 'ok' ? 'ok' : 'bad'),
     row('model', true, !online ? 'skip' : hasModel == null ? 'wait' : hasModel ? 'ok' : 'bad'),
     row('notif', false, nat(n?.notifications)),
     row('bat-app', false, nat(n?.batteryApp)),
@@ -212,10 +217,6 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     row('termux-boot', false, n?.termuxBoot && n.termuxBootStopped ? 'bad' : n?.termuxBoot && n.termuxBootStopped === false ? 'ok' : 'skip'),
     row('files', false, remoteState(p?.files)),
     row('termux-api', false, n?.termuxApi === false ? 'bad' : remoteState(p?.termux_api)),
-    row('shizuku', true, n?.shizuku === false ? 'bad' : !p ? 'skip' : p.shizuku === 'ok' ? 'ok' : 'bad'),
-    // Needs Android 11+ (the app says so), and is meaningful only once Shizuku itself works with Hermes: before that (or
-    // before the installer ran) the row stays out of the way. Older app builds don't report it: no row.
-    row('shizuku-auto', true, !n?.shizukuAuto?.sdk || n.shizuku === false || p?.shizuku !== 'ok' ? 'skip' : shizukuAutoKind(n.shizukuAuto) === 'ok' ? 'ok' : 'bad'),
     // Only on phones whose maker adds an Autostart switch (the shell knows which); it can't be read, so it stays a tip
     // until the user says it is done.
     row('autostart', false, !n?.autostart ? 'skip' : pre?.autostartDone ? 'ok' : 'info')
@@ -254,7 +255,7 @@ export interface FlowFlags {
 export function shouldOpenFlow(steps: FlowStep[], f: FlowFlags): boolean {
   if (f.welcomeDone || f.flowDone) return false
   const bad = (id: StepId) => steps.find(s => s.id === id)?.state === 'bad'
-  return bad('plugin') || bad('model') || bad('shizuku') || recommendedGaps(steps).length > 0
+  return bad('plugin') || bad('model') || bad('shizuku') || bad('shizuku-auto') || recommendedGaps(steps).length > 0
 }
 
 /** The helper apps in install order (Termux first: the other Termux apps join it). */
@@ -293,4 +294,34 @@ export function replaceDue(markedAt: number | null, n: NativeSetup | null, now: 
   if (!n) return 'wait'
   if (!n.termux) return 'install'
   return n.termuxSigner === 'other' ? 'wait' : 'drop'
+}
+
+/** A page of the first-run flow: a required step, or 'end' (Almost done / All set). */
+export type FlowPage = StepId | 'end'
+
+/** The flow's pages in step order: the required steps that were missing while it was open, the current step, then 'end'. */
+export function flowPages(todo: StepId[], steps: FlowStep[], cur: StepId | null): FlowPage[] {
+  const order = steps.map(s => s.id)
+  const ids = [...new Set([...todo, ...(cur ? [cur] : [])])].sort((a, b) => order.indexOf(a) - order.indexOf(b))
+  return [...ids, 'end']
+}
+
+export interface FlowNav {
+  page: FlowPage
+  index: number
+  /** Pages that are steps (the "Step i of n" count). */
+  steps: number
+  prev: FlowPage | null
+  next: FlowPage | null
+  /** The page shown is the current step (or the end): it moves on by itself. */
+  atCurrent: boolean
+}
+
+/** Which page to show. view = the page the user went back to (null = follow the current step). Next stops at the
+ *  current step: required steps can't be skipped. */
+export function flowNav(pages: FlowPage[], cur: StepId | null, view: FlowPage | null): FlowNav {
+  const limit = Math.max(0, pages.indexOf(cur ?? 'end'))
+  let i = view == null ? limit : pages.indexOf(view)
+  if (i < 0 || i > limit) i = limit
+  return { page: pages[i], index: i, steps: pages.length - 1, prev: i > 0 ? pages[i - 1] : null, next: i < limit ? pages[i + 1] : null, atCurrent: i === limit }
 }

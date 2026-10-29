@@ -3201,6 +3201,9 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .flow-progress-label { font-size: 0.82rem; color: var(--dim); }
 .flow-progress-bar { display: block; height: 4px; border-radius: 2px; background: var(--press); overflow: hidden; }
 .flow-progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.flow-nav { display: flex; justify-content: space-between; gap: 8px; margin: 10px 14px 0; }
+.flow-nav .btn:disabled { opacity: 0.4; }
+.flow-page-done { color: var(--ok); font-weight: 600; margin-bottom: 8px; }
 .flow-done { list-style: none; margin: 10px 16px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 0.86rem; }
 .flow-done-mark { color: var(--ok); font-weight: 700; margin-right: 4px; }
 .flow-card { margin: 12px 14px 24px; padding: 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }

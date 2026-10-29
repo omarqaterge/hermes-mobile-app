@@ -6,9 +6,10 @@ import {
 } from '../bridge'
 import { reconnectNow, rpc } from '../gateway'
 import { confirmDialog } from '../dialog'
+import { useBackHandler } from '../backstack'
 import { closeScreen, getState, setState, toast, useStore } from '../store'
 import {
-  SHIZUKU_WATCH_EVERY_MS, appsPlan, nextStep, probeState, progressView, recommendedGaps, replaceDue, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
+  SHIZUKU_WATCH_EVERY_MS, appsPlan, flowNav, flowPages, nextStep, probeState, progressView, recommendedGaps, replaceDue, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowPage, type FlowStep, type PhoneAccess, type PreHermes,
   type ProbeRaw, type Progress, type Remote, type StepId, type StepState
 } from '../setupflow'
 import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
@@ -274,7 +275,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
     case 'installer':
       return {
         title: 'Hermes is installed in Termux',
-        help: 'Copy the command, open Termux, long-press, Paste, then Enter. It installs Debian and Hermes (15-40 minutes); keep Termux open.',
+        help: 'Copy the command, open Termux, long-press, Paste, then Enter. It installs Debian and Hermes (about 15 minutes); keep Termux open.',
         fix: { label: 'Copy the command', run: copyBootstrap },
         alt: { label: 'Open Termux', run: () => setupFix('open-termux') }
       }
@@ -422,9 +423,20 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
             ? 'Hermes Mobile restarts Shizuku after a restart or a crash, as long as the phone is on Wi-Fi.'
             : kind === 'installer'
               ? 'Hermes Mobile needs one more permission to do this, which the installer gives it. Run the installer again in Termux.'
-              : 'Hermes Mobile pairs Termux with Wireless debugging once, so Shizuku can start again by itself after a restart. Settings opens for a few seconds; the phone must be on Wi-Fi.' +
-                (trust ? ' Android asks “Allow wireless debugging on this network?”: tap Allow (tick Always allow on this network).' : ''),
-        fix: kind === 'installer' ? { label: 'Copy installer', run: copyInstall } : kind === 'pair' ? { label: 'Set up', run: () => setupFix('shizuku-pair') } : undefined,
+              : (
+                <>
+                  After a restart Android stops Shizuku. Pair Termux with Wireless debugging once and Hermes Mobile starts
+                  Shizuku again by itself (Android 11+, on Wi-Fi). You do the taps yourself, as when you paired Shizuku.
+                  <ol className="setup-help flow-steps">
+                    <li>Tap <b>Start pairing</b>. Settings opens at <i>Wireless debugging</i> (on some phones at Developer options: tap <i>Wireless debugging</i>), and Hermes Mobile shows a <i>Pairing</i> notification.</li>
+                    <li>Turn Wireless debugging on if it is off, then tap <i>Pair device with pairing code</i>.</li>
+                    <li>Pull down the notifications, tap <b>Enter code</b> on Hermes Mobile’s notification and type the 6-digit code.</li>
+                    <li>When it says <i>Termux is paired</i>, come back here.</li>
+                  </ol>
+                  {trust && 'Android asks “Allow wireless debugging on this network?”: tap Allow (tick Always allow on this network).'}
+                </>
+              ),
+        fix: kind === 'installer' ? { label: 'Copy installer', run: copyInstall } : kind === 'pair' ? { label: 'Start pairing', run: () => setupFix('shizuku-pair') } : undefined,
         alt: kind === 'installer' ? { label: 'Open Termux', run: () => setupFix('open-termux') } : undefined
       }
     }
@@ -684,9 +696,26 @@ export function SetupFlow() {
   if (!loading) for (const s of steps) if (s.required && s.state === 'bad' && !todo.current.includes(s.id)) todo.current.push(s.id)
   const cur = modelStarted && !modelDone ? (steps.find(s => s.id === 'model') ?? null) : nextStep(steps.filter(s => !(s.id === 'model' && modelDone)))
   if (cur?.id === 'model' && !modelStarted) setModelStarted(true)
+  // Back/Next between the pages already reached (owner, 2026-10-29). null = follow the current step.
+  const [view, setView] = useState<FlowPage | null>(null)
+  const pages = flowPages(todo.current, steps, cur?.id ?? null)
+  const nav = flowNav(pages, cur?.id ?? null, view)
+  if (view !== null && nav.atCurrent) setView(null) // caught up with the current step: follow it again
+  const goPrev = () => {
+    if (nav.prev) {
+      haptic()
+      setView(nav.prev)
+    }
+  }
+  const goNext = () => {
+    if (nav.next) {
+      haptic()
+      setView(nav.next)
+    }
+  }
+  useBackHandler(goPrev, !loading && nav.prev !== null)
   if (!loading && cur && conn !== 'open') flowShowedStep = true // e.g. Start Hermes, the installer
   const stateOf = (id: StepId) => steps.find(s => s.id === id)?.state
-  const total = todo.current.length
   // skip = the step went away (the installer made it unnecessary): counts as finished, no ✓.
   const finished = todo.current.filter(id => ((stateOf(id) === 'ok' || stateOf(id) === 'skip') && !(id === 'model' && !modelDone)) || (id === 'model' && modelDone)).length
   const ctx: Ctx = { n, conn, r, enable, autostartDone }
@@ -698,6 +727,7 @@ export function SetupFlow() {
     closeScreen()
   }
   const back = () => {
+    if (!loading && nav.prev) return goPrev()
     if (cur) {
       flowDismissed = true
       if (cur.id === 'model') markWelcomeDone() // as the old welcome's back arrow did: never ask again
@@ -717,40 +747,51 @@ export function SetupFlow() {
         <Spinner small /> Checking what is already set up…
       </div>
     )
-  } else if (cur?.id === 'model') {
-    body = (
-      <WelcomeBody
-        onChange={refresh}
-        onFinish={() => {
-          refresh()
-          setModelDone(true)
-        }}
-      />
-    )
-  } else if (cur?.id === 'apps' && n) {
-    body = <AppsStep n={n} />
-  } else if (cur?.id === 'shizuku-start' && n) {
-    body = <ShizukuStep n={n} onDone={shizukuDone} onCheck={() => refresh(false)} />
-  } else if (cur?.id === 'installer') {
-    body = <InstallerStep progress={progress} onCopied={() => refresh(false)} />
-  } else if (cur) {
-    const c = checkOf(cur)
-    body = (
-      <div className="flow-card">
-        <div className="flow-card-title">{c.title}</div>
-        {cur.state === 'wait' ? (
-          <div className="dim flow-card-wait">
-            <Spinner small /> Checking…
-          </div>
-        ) : (
-          <>
-            {c.help && <div className="setup-help">{c.help}</div>}
-            <CheckActions c={c} />
-            <div className="dim small flow-card-note">This page moves on by itself once it is fixed.</div>
-          </>
-        )}
+  } else if (nav.page !== 'end') {
+    const id: StepId = nav.page
+    const s = steps.find(x => x.id === id)
+    const past = !nav.atCurrent && (s?.state === 'ok' || s?.state === 'skip')
+    const doneMark = past && (
+      <div className="flow-page-done">
+        <span aria-hidden="true">✓</span> Done
       </div>
     )
+    if (id === 'model') {
+      body = (
+        <WelcomeBody
+          onChange={refresh}
+          onFinish={() => {
+            refresh()
+            setModelDone(true)
+          }}
+        />
+      )
+    } else if (id === 'apps' && n) {
+      body = <AppsStep n={n} />
+    } else if (id === 'shizuku-start' && n) {
+      body = <ShizukuStep n={n} onDone={shizukuDone} onCheck={() => refresh(false)} />
+    } else if (id === 'installer') {
+      body = <InstallerStep progress={progress} onCopied={() => refresh(false)} />
+    } else if (s) {
+      const c = checkOf(s)
+      body = (
+        <div className="flow-card">
+          {doneMark}
+          <div className="flow-card-title">{c.title}</div>
+          {s.state === 'wait' && !past ? (
+            <div className="dim flow-card-wait">
+              <Spinner small /> Checking…
+            </div>
+          ) : (
+            <>
+              {c.help && <div className="setup-help">{c.help}</div>}
+              <CheckActions c={c} />
+              {nav.atCurrent && <div className="dim small flow-card-note">This page moves on by itself once it is fixed.</div>}
+            </>
+          )}
+        </div>
+      )
+    }
   } else {
     body = (
       <>
@@ -799,14 +840,20 @@ export function SetupFlow() {
 
   return (
     <ScreenShell title="Set up Hermes" onBack={back} className="takeover">
-      {!loading && cur && total > 0 && (
-        <div className="flow-progress" aria-label={`Step ${Math.min(finished + 1, total)} of ${total}`}>
+      {!loading && nav.page !== 'end' && nav.steps > 0 && (
+        <div className="flow-progress" aria-label={`Step ${nav.index + 1} of ${nav.steps}`}>
           <span className="flow-progress-label">
-            Step {Math.min(finished + 1, total)} of {total}
+            Step {nav.index + 1} of {nav.steps}
           </span>
           <span className="flow-progress-bar">
-            <span style={{ width: `${(finished / total) * 100}%` }} />
+            <span style={{ width: `${(finished / Math.max(1, nav.steps)) * 100}%` }} />
           </span>
+        </div>
+      )}
+      {!loading && (nav.prev || nav.next) && (
+        <div className="flow-nav">
+          <button className="btn" aria-label="Previous step" disabled={!nav.prev} onClick={goPrev}>‹ Back</button>
+          <button className="btn" aria-label="Next step" disabled={!nav.next} onClick={goNext}>Next ›</button>
         </div>
       )}
       {!loading && doneRows.length > 0 && (
@@ -1064,7 +1111,7 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
         </ol>
         {actions}
         <div className="dim small flow-card-note">
-          {progress?.active ? 'Waiting for the installer to start… its progress shows here.' : 'It takes 15-40 minutes, mostly waiting. Its progress shows here.'}
+          {progress?.active ? 'Waiting for the installer to start… its progress shows here.' : 'It takes about 15 minutes, mostly waiting. Its progress shows here.'}
         </div>
         {!progress?.active && canProbeNow() && (
           <button className="btn flow-check" onClick={check}>Hermes already installed? Check</button>
