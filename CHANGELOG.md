@@ -4,6 +4,11 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+
+## v0.8.64 (2026-10-29)
+
+Tested on an Android 8.0 emulator (start-up) and an Android 15 emulator; not yet seen on a real phone.
+
 - **Android 8 to 10 no longer crash at start.** The app opened and closed at once on Android 8.0 to 10 (and the
   wake-up alarm needed Android 12); every newer call now has a version check, and CI fails when one is missing.
   Checked on an Android 8.0 emulator; not on Android 9/10 or a real older phone. Saving a picture needs Android 10
@@ -11,6 +16,8 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **A clear note instead of a blank screen when the phone's WebView is too old.** If Android System WebView was never
   updated (older than Chrome 100) and the app can't run, it now says so and asks you to update Android System WebView
   or Chrome.
+- **The README lists what needs which Android version** (setup on the phone needs Android 11, background apps 14, the
+  Live Update chip 16, and so on).
 
 
 ## v0.8.63 (2026-10-29)
