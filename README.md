@@ -182,6 +182,8 @@ the app's background service, so the island chip and notifications work even whe
 | `phone/` | The installer and the scripts that keep Hermes running |
 | `hermes/patches` | A few fixes to Hermes itself, applied by the installer and offered upstream ([hermes/README.md](hermes/README.md)) |
 
+Full specification (architecture, every feature, every screen): [docs/SPEC.md](docs/SPEC.md).
+
 ## Build the app yourself
 
 You need **Node 20+**, **JDK 17** and the [Android command-line tools](https://developer.android.com/studio#command-line-tools-only)
