@@ -48,6 +48,7 @@ final class AdbPairing {
     private static boolean waiting;          // a code went to Termux, its event hasn't come yet
     private static long windowEnd;           // uptime when this tap's window ends
     private static final ArrayDeque<NsdServiceInfo> queue = new ArrayDeque<>();
+    private static final ArrayList<NsdServiceInfo> seen = new ArrayList<>(); // this discovery's services, by name
     private static boolean resolving;
     private static final Runnable endTask = AdbPairing::stopDiscovery;
     private static final Runnable noAnswer = () -> {
@@ -74,6 +75,18 @@ final class AdbPairing {
                         .putExtra(Settings.EXTRA_APP_PACKAGE, app.getPackageName()));
             } catch (Exception e) {
                 Log.w(TAG, "notification settings: " + e);
+            }
+            return;
+        }
+        if (Settings.Global.getInt(app.getContentResolver(), Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 1) {
+            // Settings closes its Developer options pages at once while they are off (seen on AOSP).
+            Log.i(TAG, "developer options off: opening About phone");
+            android.widget.Toast.makeText(a, "Turn on Developer options first (tap Build number 7 times)",
+                    android.widget.Toast.LENGTH_LONG).show();
+            try {
+                a.startActivity(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS));
+            } catch (Exception e) {
+                Log.w(TAG, "about phone: " + e);
             }
             return;
         }
@@ -123,27 +136,26 @@ final class AdbPairing {
             ask("That wasn\u2019t a 6-digit code", "Type the 6 digits shown under Pair with device.", true);
             return;
         }
-        final int found = port;
-        final int p = r.port > 0 ? r.port : found;
-        if (p == 0) {
-            notFound();
-            return;
-        }
         if (r.port > 0) {
-            send(p, r.code);
+            send(r.port, r.code);
             return;
         }
-        // NsdManager's port: the dialog may have closed since (its port then no longer answers).
+        // NsdManager's port: the dialog may have closed since (its port then no longer answers), and a reopened dialog
+        // keeps the same service name, so discovery doesn't report it again: check, and resolve the services again.
+        final int p = port;
         new Thread(() -> {
-            boolean open = openOnLoopback(p);
+            boolean open = p > 0 && openOnLoopback(p);
             main.post(() -> {
                 if (open) {
                     send(p, r.code);
-                } else {
-                    Log.i(TAG, "pairing port " + p + " no longer open");
-                    if (port == p) port = 0;
-                    notFound();
+                    return;
                 }
+                if (p > 0) Log.i(TAG, "pairing port " + p + " no longer open");
+                if (port == p) port = 0;
+                reresolve(q -> {
+                    if (q > 0) send(q, r.code);
+                    else notFound();
+                });
             });
         }, "hermes-pair-check").start();
     }
@@ -214,6 +226,7 @@ final class AdbPairing {
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setOnlyAlertOnce(false)
+                .setGroup(NTAG) // its own group: not folded into the app's other notifications, so Enter code shows at once
                 .setContentIntent(open);
     }
 
@@ -281,6 +294,9 @@ final class AdbPairing {
             public void onServiceFound(NsdServiceInfo s) {
                 main.post(() -> {
                     if (disc != this) return;
+                    for (int k = seen.size() - 1; k >= 0; k--)
+                        if (seen.get(k).getServiceName().equals(s.getServiceName())) seen.remove(k);
+                    seen.add(s);
                     queue.add(s);
                     resolveNext(nsd, this);
                 });
@@ -363,6 +379,68 @@ final class AdbPairing {
         }, "hermes-pair-port").start();
     }
 
+    /** One more pass over the services this discovery saw (the user typed a code but no open port is known): resolve
+     *  each again, keep this phone's, take the newest that answers on 127.0.0.1. Bounded: one pass, 5 s at most. */
+    @SuppressWarnings("deprecation")
+    private static void reresolve(final java.util.function.IntConsumer then) {
+        final ArrayList<NsdServiceInfo> list = new ArrayList<>(seen);
+        if (list.isEmpty() || app == null) {
+            then.accept(0);
+            return;
+        }
+        final NsdManager nsd = app.getSystemService(NsdManager.class);
+        final ArrayList<String[]> found = new ArrayList<>();
+        final boolean[] over = {false};
+        final Runnable[] next = new Runnable[1];
+        final Runnable finish = () -> {
+            if (over[0]) return;
+            over[0] = true;
+            final java.util.List<Integer> ports = KeeperPlan.localPorts(found, ShizukuKeeper.localHosts());
+            new Thread(() -> {
+                int open = 0;
+                for (int q : ports) if (openOnLoopback(q)) { open = q; break; }
+                final int o = open;
+                main.post(() -> {
+                    Log.i(TAG, "resolved again: " + found.size() + " service(s), open port " + (o > 0 ? o : "none"));
+                    if (o > 0) port = o;
+                    then.accept(o);
+                });
+            }, "hermes-pair-port").start();
+        };
+        final int[] i = {0};
+        next[0] = () -> {
+            if (over[0]) return;
+            if (i[0] >= list.size()) {
+                main.removeCallbacks(finish);
+                finish.run();
+                return;
+            }
+            NsdServiceInfo s = list.get(i[0]++);
+            try {
+                nsd.resolveService(s, new NsdManager.ResolveListener() {
+                    @Override
+                    public void onResolveFailed(NsdServiceInfo si, int err) {
+                        main.post(next[0]);
+                    }
+
+                    @Override
+                    public void onServiceResolved(NsdServiceInfo si) {
+                        InetAddress h = si.getHost();
+                        final String[] hp = {h == null ? null : h.getHostAddress(), String.valueOf(si.getPort())};
+                        main.post(() -> {
+                            found.add(hp);
+                            next[0].run();
+                        });
+                    }
+                });
+            } catch (Exception e) {
+                main.post(next[0]);
+            }
+        };
+        main.postDelayed(finish, 5000);
+        next[0].run();
+    }
+
     private static boolean openOnLoopback(int p) {
         try (java.net.Socket so = new java.net.Socket()) {
             so.connect(new java.net.InetSocketAddress("127.0.0.1", p), 300);
@@ -376,6 +454,7 @@ final class AdbPairing {
         NsdManager.DiscoveryListener l = disc;
         disc = null;
         queue.clear();
+        seen.clear();
         resolving = false;
         if (l == null || app == null) return;
         try {

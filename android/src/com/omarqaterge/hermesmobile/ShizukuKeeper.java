@@ -512,8 +512,12 @@ final class ShizukuKeeper {
      *  never accepted a command, no RUN_COMMAND permission, or Android refused the intent). Also used by AdbPairing. */
     static boolean runInTermux(Context c, String script, String what) {
         if (c == null || script == null) return false;
-        if (Uninstall.started(c) || !MainActivity.termuxOk(c)) return false;
-        if (c.checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return false;
+        String no = Uninstall.started(c) ? "an uninstall was started" : !MainActivity.termuxOk(c) ? "Termux hasn't accepted a command yet"
+                : c.checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED ? "no RUN_COMMAND permission" : null;
+        if (no != null) {
+            Log.i(TAG, "not asking Termux (" + what + "): " + no);
+            return false;
+        }
         try {
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");
