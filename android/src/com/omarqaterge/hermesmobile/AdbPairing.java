@@ -252,6 +252,14 @@ final class AdbPairing {
         notify(base(title, text).setAutoCancel(true).setTimeoutAfter(15_000).build());
     }
 
+    private static void cancelNotice() {
+        try {
+            app.getSystemService(NotificationManager.class).cancel(NTAG, NID);
+        } catch (Exception e) {
+            Log.w(TAG, "cancel: " + e);
+        }
+    }
+
     private static void notify(Notification n) {
         try {
             app.getSystemService(NotificationManager.class).notify(NTAG, NID, n);
@@ -370,8 +378,17 @@ final class AdbPairing {
             main.post(() -> {
                 if (disc != owner) return;
                 if (open) {
+                    boolean fresh = p != port;
                     port = p;
                     Log.i(TAG, "pairing port " + p + " found, open on 127.0.0.1");
+                    // The pairing dialog is open now: post again so the notification alerts (a heads-up over Settings with
+                    // its Enter code field where the phone shows them). The first post came while Settings was opening and
+                    // can sit collapsed lower in the shade, where its field is hidden (seen on HyperOS).
+                    if (fresh && !waiting) {
+                        // A NEW post (cancel first): an update of the same notification doesn't pop up again on every phone.
+                        cancelNotice();
+                        ask("Enter the pairing code", "Type the 6-digit code shown in Settings here.", true);
+                    }
                 } else {
                     Log.i(TAG, "pairing port " + p + " not open (an earlier dialog)");
                 }
