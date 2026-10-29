@@ -130,7 +130,7 @@ export function cleanupOk(s: UninstallNative | null): boolean {
 
 /** The app's own settings for the backup (no caches, drafts or chat data; nothing secret lives in localStorage). */
 export const SETTINGS_KEYS = [
-  'hm.theme', 'hm.oled', 'hm.textScale', 'hm.tts', 'hm.autoread', 'hm.autoread.chats', 'hm.favModels.v1', 'hm.live.pause',
+  'hm.theme', 'hm.oled', 'hm.textScale', 'hm.tts', 'hm.autoread', 'hm.autoread.chats', 'hm.favModels.v1', 'hm.customModels.v1', 'hm.live.pause',
   'hm.profile', 'hm.yolo.v1'
 ]
 export function settingsSnapshot(get: (k: string) => string | null): string {

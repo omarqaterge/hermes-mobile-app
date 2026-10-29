@@ -323,6 +323,39 @@ async function main() {
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
+  // ── a model the catalog lacks: typing its id offers it per connected provider; picked once, it stays as a row ──
+  {
+    const openModels = async () => {
+      await page.getByRole('button', { name: 'Add', exact: true }).click()
+      await page.locator('.picker-opt', { hasText: 'mock-model' }).click()
+      await page.locator('.model-row', { hasText: 'mock-sonnet' }).first().waitFor({ timeout: 5000 })
+    }
+    await openModels()
+    check((await page.locator('.typed-group').count()) === 0, 'no typed-id rows without a search')
+    await page.getByPlaceholder('Search models…').fill('mock-sonnet')
+    await sleep(200)
+    check((await page.locator('.typed-group').count()) === 0, 'an id the catalog lists exactly is not offered again')
+    await page.getByPlaceholder('Search models…').fill('org/brand-new:1')
+    await sleep(200)
+    check((await page.locator('.typed-group .group-title').textContent().catch(() => '') || '').includes('org/brand-new:1'), 'a typed id is offered')
+    await page.getByRole('button', { name: 'Use org/brand-new:1 with Mock' }).click()
+    await sleep(600)
+    check(rpcs('session.create').some(c => c.params.model === 'org/brand-new:1' && (c.params.provider || 'mock') === 'mock'), 'picking the typed id starts the chat with it')
+    check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.customModels.v1') || '[]').some(c => c.p === 'mock' && c.m === 'org/brand-new:1')), 'the typed id is remembered')
+    await page.goto('http://127.0.0.1:5180/')
+    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await openModels()
+    check((await page.locator('.model-row', { hasText: 'org/brand-new:1' }).count()) === 1, 'the remembered id is a normal row under its provider')
+    await page.getByRole('button', { name: 'Forget org/brand-new:1' }).click()
+    await sleep(300)
+    check((await page.locator('.model-row', { hasText: 'org/brand-new:1' }).count()) === 0, 'Forget removes it')
+    await page.keyboard.press('Escape').catch(() => {})
+  }
+  await page.evaluate(() => localStorage.clear())
+  await page.goto('http://127.0.0.1:5180/')
+  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  fs.writeFileSync(LOG, '')
+
   // ── a model picked on an empty chat (a photo added and removed) replaces it; typed text stays ──
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   {

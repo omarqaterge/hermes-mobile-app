@@ -192,6 +192,7 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | Shizuku doesn't come back after a restart | The phone must be on Wi-Fi. On a new Wi-Fi, tap *Allow* (with *Always allow on this network*) when Android asks about wireless debugging. Still not: Hermes Mobile → Setup check → *Shizuku starts by itself* → *Set up* (pairs again; Settings opens for a few seconds). In Termux, `~/bin/hm-shizuku status` says `paired` or `unpaired` and `~/.hermes-mobile/hm-shizuku.log` has the last attempts. Android 10 and older: start it from a computer |
 | Hermes can't read your files | Setup check → *Hermes can use your files* → Allow, then Restart Hermes |
 | Termux:API won't install | Termux and Termux:API come from different stores. Install both from F-Droid |
+| Android says the update conflicts with the installed app, or asks you to uninstall it first | Every APK on the [Releases page](https://github.com/omarqaterge/hermes-mobile-app/releases) has the same signature and updates in place. This message means the installed copy is not from there (built yourself or by your coding agent: a different key), or is newer than the one you are installing. Uninstalling only Hermes Mobile keeps your chats, keys, memory and skills (they live in Hermes, inside Termux); you lose the app's own settings (theme, favourite models) and allow its permissions again on first start. Don't uninstall Termux |
 
 ## Uninstall
 

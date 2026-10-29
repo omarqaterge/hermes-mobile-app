@@ -16,6 +16,7 @@ import type { PhoneAccess } from '../setupflow'
 import { refreshLogins } from '../api'
 import { chatMarkdown } from '../export'
 import { isFav, toggleFav, useFavs } from '../favs'
+import { addCustom, customCandidate, isCustom, removeCustom, useCustoms, withCustoms } from '../custommodels'
 import { useSheetDrag } from './useSheetDrag'
 import { DiffView } from './Diff'
 import { useBackHandler } from '../backstack'
@@ -58,14 +59,21 @@ export function ModelSheet() {
   const currentProvider = active?.info.provider || data?.provider
   const effort = active?.info.reasoning_effort || 'medium'
   const touched = useRef(false) // a level picked in this sheet wins over the medium reset on a model switch
+  const customs = useCustoms()
+  // Connected providers (current first) with the model ids typed in earlier added to their lists. A provider whose
+  // catalog lists nothing stays here: it can still take a typed id.
+  const connected = useMemo(() => {
+    const isCur = (p: { slug: string; is_current?: boolean | null }) => Number(Boolean(p.is_current) || p.slug === currentProvider?.replace(/^custom:/, ''))
+    return withCustoms((data?.providers || []).filter(p => p.authenticated !== false || p.is_current), customs).sort((a, b) => isCur(b) - isCur(a))
+  }, [data, customs, currentProvider])
   const providers = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    return (data?.providers || [])
-      .filter(p => p.authenticated !== false || p.is_current)
+    return connected
       .map(p => ({ ...p, models: (p.models || []).filter(m => !needle || m.toLowerCase().includes(needle) || p.name.toLowerCase().includes(needle)) }))
       .filter(p => p.models.length)
-      .sort((a, b) => Number(Boolean(b.is_current) || b.slug === currentProvider?.replace(/^custom:/, '')) - Number(Boolean(a.is_current) || a.slug === currentProvider?.replace(/^custom:/, '')))
-  }, [data, q, currentProvider])
+  }, [connected, q])
+  // A typed id no provider lists: offer it under every connected provider (Hermes Desktop's "Custom model").
+  const typed = data ? customCandidate(q, connected) : null
   const favs = useFavs()
   // Starred models first, in the order starred; only those this profile can use now (and that match the search).
   const favRows = useMemo(
@@ -75,26 +83,38 @@ export function ModelSheet() {
     }),
     [favs, providers]
   )
+  const pick = (slug: string, m: string, remember = false) => {
+    haptic()
+    // A new chat's switch waits for its agent (~2 s); a send meanwhile waits for the switch.
+    setState({ sheet: null })
+    setModel(slug, m, touched.current ? undefined : 'medium')
+      .then(() => remember && addCustom(slug, m))
+      .catch(x => toast(errText(x), 'error'))
+  }
   const row = (p: (typeof providers)[number], m: string, sub?: string) => {
     const on = m === currentModel && (p.slug === currentProvider || `custom:${p.slug}` === currentProvider)
     const starred = isFav(favs, p.slug, m)
     return (
       <div key={`${p.slug}/${m}`} className={`row model-row${on ? ' on' : ''}`}>
-        <button
-          className="model-pick"
-          onClick={() => {
-            haptic()
-            // A new chat's switch waits for its agent (~2 s); a send meanwhile waits for the switch.
-            setState({ sheet: null })
-            setModel(p.slug, m, touched.current ? undefined : 'medium').catch(x => toast(errText(x), 'error'))
-          }}
-        >
+        <button className="model-pick" onClick={() => pick(p.slug, m)}>
           <span className="model-name">
             {on ? '● ' : ''}
             {m}
           </span>
           {sub && <span className="dim model-sub">{sub}</span>}
         </button>
+        {!sub && isCustom(customs, p.slug, m) && (
+          <button
+            className="star-btn"
+            aria-label={`Forget ${m}`}
+            onClick={() => {
+              haptic()
+              removeCustom(p.slug, m)
+            }}
+          >
+            ✕
+          </button>
+        )}
         <button
           className={`star-btn${starred ? ' starred' : ''}`}
           aria-label={starred ? `Unstar ${m}` : `Star ${m}`}
@@ -145,6 +165,20 @@ export function ModelSheet() {
             {p.models.map(m => row(p, m))}
           </div>
         ))}
+        {typed && connected.length > 0 && (
+          <div className="group typed-group">
+            <div className="group-title">Use “{typed}”</div>
+            {connected.map(p => (
+              <div key={p.slug} className="row model-row">
+                <button className="model-pick" aria-label={`Use ${typed} with ${p.name}`} onClick={() => pick(p.slug, typed, true)}>
+                  <span className="model-name">{typed}</span>
+                  <span className="dim model-sub">{p.name}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {data && !q && <div className="dim small pad">Missing a model? Type its exact name in the search box to use it.</div>}
       </div>
     </Shell>
   )

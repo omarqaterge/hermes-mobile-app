@@ -21,6 +21,7 @@ import { DefaultAccessRow } from './AutoAccess'
 import { UninstallSection } from './Uninstall'
 import { ProviderList } from './Providers'
 import { onlySlugs } from '../providers'
+import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 
 // ── shared ───────────────────────────────────────────────────
 
@@ -79,13 +80,27 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only }:
     }
   }, [profile, refresh])
   const cur = (data?.provider || '').replace(/^custom:/, '')
+  const customs = useCustoms()
+  const connected = useMemo(
+    () => withCustoms(onlySlugs((data?.providers || []).filter(p => p.authenticated !== false), only), customs).sort((a, b) => Number(b.slug === cur) - Number(a.slug === cur)),
+    [data, only, customs, cur]
+  )
   const providers = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    return onlySlugs((data?.providers || []).filter(p => p.authenticated !== false), only)
+    return connected
       .map(p => ({ ...p, models: (p.models || []).filter(m => !needle || m.toLowerCase().includes(needle) || p.name.toLowerCase().includes(needle)) }))
       .filter(p => p.models.length)
-      .sort((a, b) => Number(b.slug === cur) - Number(a.slug === cur))
-  }, [data, q, cur, only])
+  }, [connected, q])
+  // A typed id no provider lists: offer it under every connected provider; remembered once picked.
+  const typed = data ? customCandidate(q, connected) : null
+  const pick = (slug: string, m: string, remember = false) => {
+    haptic()
+    setBusy(true)
+    onPick(slug, m, effort)
+      .then(() => (remember && addCustom(slug, m), onClose()))
+      .catch(e => errText(e) !== 'Cancelled' && toast(errText(e), 'error', 6000))
+      .finally(() => setBusy(false))
+  }
   return (
     <Sheet title={`Model · ${target}`} onClose={onClose}>
       <div className="effort-row">
@@ -113,14 +128,7 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only }:
                   key={m}
                   className={`picker-opt${on ? ' on' : ''}`}
                   disabled={busy}
-                  onClick={() => {
-                    haptic()
-                    setBusy(true)
-                    onPick(p.slug, m, effort)
-                      .then(onClose)
-                      .catch(e => errText(e) !== 'Cancelled' && toast(errText(e), 'error', 6000))
-                      .finally(() => setBusy(false))
-                  }}
+                  onClick={() => pick(p.slug, m)}
                 >
                   <span className="set-text">
                     <span className="set-title">{m}</span>
@@ -131,6 +139,20 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only }:
             })}
           </div>
         ))}
+        {typed && connected.length > 0 && (
+          <div className="picker-block typed-group">
+            <div className="picker-group">Use “{typed}”</div>
+            {connected.map(p => (
+              <button key={p.slug} className="picker-opt" disabled={busy} aria-label={`Use ${typed} with ${p.name}`} onClick={() => pick(p.slug, typed, true)}>
+                <span className="set-text">
+                  <span className="set-title">{typed}</span>
+                  <span className="set-sub">{p.name}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {data && !q && providers.length > 0 && <div className="dim small pad">Missing a model? Type its exact name in the search box to use it.</div>}
       </div>
     </Sheet>
   )
@@ -331,10 +353,16 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
           </a>
         )}
         {!keyName && (
-          <label className="field">
-            <span>Name</span>
-            <input className="mono" value={name} onChange={e => setName(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="MY_API_KEY" autoCapitalize="characters" />
-          </label>
+          <>
+            <div className="notice">
+              For a model provider, connect it under Settings → Model providers instead (or “Add an OpenAI-compatible endpoint” there if it isn’t listed): a
+              key added here doesn’t put any models in the model menu.
+            </div>
+            <label className="field">
+              <span>Name</span>
+              <input className="mono" value={name} onChange={e => setName(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="MY_API_KEY" autoCapitalize="characters" />
+            </label>
+          </>
         )}
         {row?.is_set && (
           <div className="kv">
