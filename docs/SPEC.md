@@ -554,6 +554,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.draft` | `drafts.ts` | Legacy single draft (before `hm.drafts.v1`); moved into `hm.drafts.v1` as `new:<profile>` and deleted on first read. | No |
 | `hm.drafts.v1` | `drafts.ts` | Unsent composer text: `{chatId: text}`, plus `new:<profile>` for the new-chat screen; newest 100 kept. | Mixed (new-chat drafts per profile) |
 | `hm.favModels.v1` | `favs.ts` | Starred models `[{p: provider, m: model}]` in starring order. | No (shared by all profiles) |
+| `hm.customModels.v1` | `custommodels.ts` | Model ids typed into a model picker and picked once `[{p: provider, m: model}]`; shown as normal rows under their provider. | No (shared by all profiles) |
 | `hm.hermesSeen` | `hermes-update.ts` | The Hermes version already warned about ("This Hermes is a different version…"), so the toast shows once per version. | No |
 | `hm.lastSession` | `gateway.ts`, `store.ts` | The chat to reopen on start: `{id, profile}`; used only when the profile matches. | Records the profile |
 | `hm.live.pause` (inventory name `hm.live`) | `live.ts` (`PAUSE_KEY`) | Live mode: seconds of silence before sending (0.5–10, default 2). | No |
@@ -578,7 +579,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 
 Settings → Danger zone → Uninstall Hermes can put a settings snapshot into the backup: `uninstall.ts`
 `SETTINGS_KEYS` (`hm.theme`, `hm.oled`, `hm.textScale`, `hm.tts`, `hm.autoread`, `hm.autoread.chats`,
-`hm.favModels.v1`, `hm.live.pause`, `hm.profile`, `hm.yolo.v1`). Caches, drafts and chat data are left out (3.19).
+`hm.favModels.v1`, `hm.customModels.v1`, `hm.live.pause`, `hm.profile`, `hm.yolo.v1`). Caches, drafts and chat data are left out (3.19).
 
 In-memory page state (`store.ts` `AppState`, not persisted): connection state, the open chat (`active`) and the
 one being opened (`opening`, `preview`), pending server requests, open sheet/screen/drawer, toasts, health,
@@ -1268,10 +1269,13 @@ All the sheets below share the `Shell` frame in `web/src/components/Sheets.tsx` 
 | Search field | "Search models…" | Filters models by model name or provider name. | none | |
 | Favourites group | "Favourites" with a row per starred model that this profile can use now and that matches the search. Each row also names its provider. | As a model row. | none | Hidden when empty. |
 | Provider groups | Provider name (with a "free" tag for free tiers), then its models. The current provider comes first. A ● marks the current model. | Picks the model, closes the sheet. | none | Providers that are not signed in are left out unless current. A provider with no matching model is hidden. |
+| Typed-id block | "Use “<id>”" when the search text is a model id (no spaces) that no provider lists exactly; one row per connected provider (current first, also providers whose list is empty), each naming the provider (aria-label "Use <id> with <provider>"). | Picks that id for that provider like a model row; once the switch succeeded the id is remembered (`hm.customModels.v1`) and shows from then on as a normal row under its provider. | none | Hidden without a search or when the id is listed. |
+| Forget button | ✕ on a remembered typed id's row (aria-label "Forget <model>") | Removes the id from `hm.customModels.v1`. | none | Only on remembered ids. |
+| Hint | "Missing a model? Type its exact name in the search box to use it." | | | Only without a search. |
 | Star button per row | ☆ / ★ (aria-label "Star <model>" / "Unstar <model>") | Toggles the favourite. | none | |
 | Status text | "Loading models…" until the first answer; an error box if `model.options` failed. | | | |
 
-**Data:** `model.options` (twice: first the catalog Hermes has cached, so the list shows at once; then, after the plugin's `POST /refresh-logins` has renewed an expired subscription token, again with `refresh: true` for the live list), `config.set` (keys `model`, `reasoning`), `session.create`, `session.close`; `hm.favModels.v1`.
+**Data:** `model.options` (twice: first the catalog Hermes has cached, so the list shows at once; then, after the plugin's `POST /refresh-logins` has renewed an expired subscription token, again with `refresh: true` for the live list), `config.set` (keys `model`, `reasoning`), `session.create`, `session.close`; `hm.favModels.v1`, `hm.customModels.v1`.
 **Rules:** favourites are shared by all profiles and keyed by provider + model (`web/src/favs.ts`); a favourite whose provider is not signed in on this profile simply does not show.
 
 How picking works (`setModel` in `gateway.ts`):
@@ -1453,6 +1457,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `recent.ts` | Recent prompts. |
 | `commands.ts` | Slash-command and skill catalog for autocomplete. |
 | `favs.ts` | Starred models. |
+| `custommodels.ts` | Model ids typed into a model picker (Hermes Desktop's "Custom model"): candidate check, remembered ids per provider. |
 | `activity.ts` | Polling of `GET /activity` for the activity banner. |
 | `tasks.ts` | Tick state of Markdown task lists. |
 | `unread.ts` | Unread chats and "time ago". |
@@ -2066,7 +2071,7 @@ Outside the Android app (no `listVoices` bridge call) the page shows one section
 
 **Layout, top to bottom:** a section (footer "The model each bot starts new chats with. Change the model of a single chat from the chip in its header.") with the row "Set one model for all bots" (✨); then the section Bots with one row per bot: avatar letter, name, sub "<model> · <provider>" or "no model set". Tapping a row opens the model picker for that bot (or for every bot).
 
-**Model picker** (sheet "Model · <bot name | all bots>"): reasoning-level pills (the values of `REASONING_EFFORT_VALUES`, default medium), a search field "Search models…", then the connected providers with their models (a "free" tag on free tiers; the current provider first). Loading shows "Loading models…"; with no connected provider the sheet says "No connected providers. Connect one under Settings → Model providers." Tapping a model calls `setProfileModel`:
+**Model picker** (sheet "Model · <bot name | all bots>"): reasoning-level pills (the values of `REASONING_EFFORT_VALUES`, default medium), a search field "Search models…", then the connected providers with their models (a "free" tag on free tiers; the current provider first). A search that is a model id no provider lists exactly (no spaces) adds a block "Use “<id>”" with one row per connected provider, including providers whose list is empty (aria-label "Use <id> with <provider>"); picking one sets that id the same way and, once it succeeded, remembers it in `hm.customModels.v1` (`web/src/custommodels.ts`), so it shows from then on as a normal row under its provider. Without a search, a hint "Missing a model? Type its exact name in the search box to use it." follows the list. Loading shows "Loading models…"; with no connected provider the sheet says "No connected providers. Connect one under Settings → Model providers." Tapping a model calls `setProfileModel`:
 1. `POST /api/model/set` with `{ scope: "main", provider, model, profile }`. If Hermes answers `confirm_required` (an expensive model) a dialog "Use <model>?" asks, button "Use it"; confirming repeats the call with `confirm_expensive_model: true`.
 2. `PUT /api/config` sets `agent.reasoning_effort` and a per-model `reasoning_overrides` entry to the chosen level, so new chats start at that level.
 3. `loadDefaultModel()` refreshes the header of the empty new-chat screen.
@@ -2088,7 +2093,7 @@ For "all bots" the call runs once per profile and failures are gathered into one
 | Groups "<Category> · N" | Model providers first, then Tools, Settings, Custom keys and others A–Z. Each key row: a dot (filled when set), the variable name, sub "<provider> · <redacted value>" or its description / "not set" | Opens the key sheet | |
 
 Messaging keys (`TELEGRAM_`, `DISCORD_`, `SLACK_`, `WHATSAPP_`, `SIGNAL_`, `MATRIX_`, `MATTERMOST_`, anything in the messaging category or marked `channel_managed`) are hidden: the app has no messaging-channel UI.
-**Key sheet** (title = variable name, or "Add a key"): the description; a "Get a key ↗" link when Hermes knows a sign-up page; a Name field for new keys (letters, digits and `_`, forced to upper case); "Current" with the redacted value (a Show button asks `POST /api/env/reveal` and shows the real one); the input "Replace with" or "Value" (password type unless Hermes says the value is not secret; placeholder "Paste here"); a section with the switch "Apply to all bots" and the footer "Saved to <bot>’s .env on the phone. New chats pick it up." Buttons: Remove (confirms "Remove <KEY>?"; `DELETE /api/env`; a key already missing on another bot is ignored), Show, Save (`PUT /api/env` with `{ key, value }`, disabled until there is a name and a value). With "Apply to all bots" the call runs for every profile.
+**Key sheet** (title = variable name, or "Add a key"): the description; a "Get a key ↗" link when Hermes knows a sign-up page; for a new key, a notice that a model provider belongs under Settings → Model providers (or its "Add an OpenAI-compatible endpoint" when it isn't listed), because a key added here puts no models in the model menu, then a Name field (letters, digits and `_`, forced to upper case); "Current" with the redacted value (a Show button asks `POST /api/env/reveal` and shows the real one); the input "Replace with" or "Value" (password type unless Hermes says the value is not secret; placeholder "Paste here"); a section with the switch "Apply to all bots" and the footer "Saved to <bot>’s .env on the phone. New chats pick it up." Buttons: Remove (confirms "Remove <KEY>?"; `DELETE /api/env`; a key already missing on another bot is ignored), Show, Save (`PUT /api/env` with `{ key, value }`, disabled until there is a name and a value). With "Apply to all bots" the call runs for every profile.
 
 #### Advanced settings (page)
 **Opens from:** Settings main page, row Advanced settings. **Closes with:** Back. **Source:** `Settings.tsx` `ConfigTab`, `ConfigSheet`.
@@ -2289,7 +2294,7 @@ One flow removes Hermes, Debian, the data and chats, the installer's changes, th
 Pressing Uninstall… opens a prompt: "Uninstall Hermes?", the text says what is deleted (including "(after saving the backup)" when chosen), and the user must type `uninstall`. Only then does the cleanup start (`uninstallStart` bridge call with the backup and keys choices and a settings snapshot). If the app may not run commands in Termux (`no-permission`), the sheet shows why with the buttons Allow and Skip to the apps (uninstalling Termux also deletes Debian and Hermes, but leaves the phone setting changed).
 
 The cleanup steps, in order, as reported by the script's `HMUNINSTALL …` lines (`parseCleanup`): Stop Hermes; Backup to Downloads; Phone settings the installer changed; Debian, Hermes, chats and keys; The installer’s files in Termux; Termux taking commands from this app. Each shows ✓, – (skipped), ✕ or ·; the saved backup file name appears at the end ("Backup saved: Download/<file>"). Removing an app calls `uninstallApp(id)`, which opens Android's own uninstall screen. Uninstalling Termux before its cleanup finished asks "Uninstall Termux anyway?". Removing Termux makes Android close this app, so the last step happens after reopening it (`resumeOnStart`).
-**Data:** bridge calls `uninstallStart`, `uninstallState`, `uninstallApp` and the page callback `window.hermesUninstallDone`; the app settings in the backup are the keys in `SETTINGS_KEYS` (`hm.theme`, `hm.oled`, `hm.textScale`, `hm.tts`, `hm.autoread`, `hm.autoread.chats`, `hm.favModels.v1`, `hm.live.pause`, `hm.profile`, `hm.yolo.v1`; no caches, drafts or chat data).
+**Data:** bridge calls `uninstallStart`, `uninstallState`, `uninstallApp` and the page callback `window.hermesUninstallDone`; the app settings in the backup are the keys in `SETTINGS_KEYS` (`hm.theme`, `hm.oled`, `hm.textScale`, `hm.tts`, `hm.autoread`, `hm.autoread.chats`, `hm.favModels.v1`, `hm.customModels.v1`, `hm.live.pause`, `hm.profile`, `hm.yolo.v1`; no caches, drafts or chat data).
 
 ---
 

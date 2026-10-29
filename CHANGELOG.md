@@ -4,6 +4,13 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Use any model, not only the ones in the list.** Type a model's exact name in the model menu's search (in a chat
+  or under Settings → Default models): "Use “<name>”" offers it with each connected provider. Once picked it stays in
+  the menu under that provider (✕ forgets it). Like Hermes Desktop's "Custom model".
+- **Adding a custom key explains where provider keys go.** A key added under Settings → API keys puts no models in the
+  model menu; the sheet now says to connect the provider under Settings → Model providers (or add it as an
+  OpenAI-compatible endpoint there when it isn't listed).
+
 
 ## v0.8.64 (2026-10-29)
 
