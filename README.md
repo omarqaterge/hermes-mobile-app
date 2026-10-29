@@ -133,6 +133,26 @@ a troubleshooting table and uninstalling.
 > Tested end to end on a clean Android 15 emulator and piece by piece on a real phone, but not yet on a brand-new real phone.
 > If something fails, please [open an issue](https://github.com/omarqaterge/hermes-mobile-app/issues).
 
+### Android versions
+
+The app installs on Android 8.0 and newer (arm64). Some parts need a newer Android:
+
+| Android | What you get |
+|---|---|
+| 8.0 - 10 | The app and Hermes. Set up from a computer, and start Shizuku from a computer again after every restart (Wireless debugging, which lets the phone start it by itself, only exists from Android 11). |
+| 10+ | Save pictures from a chat to Pictures/Hermes (on 8-9 only Share) |
+| 11+ | Setup on the phone itself, no computer needed; Shizuku starts again by itself after a restart (on Wi-Fi) |
+| 13+ | The app asks for the notification permission (older Android allows notifications from the start) |
+| 14+ | Hermes using your apps in the background, without taking your screen |
+| 16 | The status chip as an Android Live Update (on older Android it is a normal pinned notification) |
+
+**Android System WebView must be up to date** (Chrome 100 or newer). The app draws its screens with it. Phones with the
+Play Store update it by themselves. If it was never updated, the app says "Hermes Mobile can't start": update
+*Android System WebView* (or *Chrome*) from your app store and reopen the app.
+
+> Tested on Android 15 (clean emulator install) and Android 16 (a real phone). On Android 8.0 (emulator) only the
+> start-up was checked: the app opens and its background service runs. Android 9-14: not tested yet; reports are welcome.
+
 ### Uninstall
 
 **Settings → Danger zone → Uninstall Hermes** removes Hermes and its data, then the helper apps, after an optional backup to
@@ -201,7 +221,7 @@ downloaded one, because the keys differ: uninstall that first.
 
 To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open http://127.0.0.1:5180.
 
-Tests, project rules and what to do after a Hermes update: [CONTRIBUTING.md](CONTRIBUTING.md).
+Tests, project rules and what to do after a Hermes update: [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents follow [AGENTS.md](AGENTS.md) (keep [docs/SPEC.md](docs/SPEC.md) current with every change).
 
 ## License and credits
 

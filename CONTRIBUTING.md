@@ -3,13 +3,16 @@
 Pull requests and issues are welcome.
 
 1. Fork the repo and create a branch from `main`.
-2. Make your change. Keep it focused; one idea per PR.
+2. Make your change. Keep it focused; one idea per PR. Update [docs/SPEC.md](docs/SPEC.md) (the full specification) in the
+   same commit, and add a line to [CHANGELOG.md](CHANGELOG.md) for anything users notice. Coding agents: see [AGENTS.md](AGENTS.md).
 3. Run the checks (CI runs the same on every PR):
    - `cd web && npm ci && npm test && npm run build`: unit tests and the build
    - `tools/web-e2e/run.sh`: the built interface in headless Chromium against a mock Hermes
    - `python3 tools/test_canvas.py`, `tools/test_media.py`, `tools/test_chat_search.py`, `tools/test_battery.py` if you touched
      the plugin or the phone scripts
    - `tools/java-check.sh` if you touched `android/` (compiles the Java shell without the Android SDK)
+   - `tools/api-check.sh` if you touched `android/` (Android lint: every call newer than Android 8.0 needs a version check)
+   - `python3 tools/check_spec.py`: [docs/SPEC.md](docs/SPEC.md) mentions everything the code has
    - `tools/test_hermes_patches.sh` if you touched `hermes/patches` (they apply to the pinned Hermes build and revert cleanly)
    - `python3 tools/e2e.py`: end-to-end checks against a real phone (not run by CI)
 4. Open a pull request and fill in the template. Add a screenshot for UI changes.
