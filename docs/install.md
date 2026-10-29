@@ -38,7 +38,7 @@ These apps get installed. Hermes needs all of them to run and to use your phone:
 
 Get the three Termux apps from **F-Droid**, all three: the Play Store builds are outdated and can't be mixed with F-Droid ones.
 
-The install takes 15-40 minutes, mostly waiting.
+The install takes about 15 minutes, mostly waiting.
 
 ## On the phone, no computer (Android 11+)
 
@@ -63,7 +63,7 @@ Install only Hermes Mobile; the app walks you through the rest and picks up wher
 4. Allow Hermes Mobile to *run commands in Termux* when Android asks.
 5. **Run the installer:** tap **Copy the command**, then **Open Termux**. In Termux, long-press, tap **Paste**, then press Enter.
    Stay in Termux and tap **Allow** on what it asks (notifications, running in the background, files; Shizuku: **Allow all the
-   time**). The app follows the install step by step; it takes 10-40 minutes, mostly waiting (shorter when a ready-made Debian +
+   time**). The app follows the install step by step; it takes about 15 minutes, mostly waiting (less when a ready-made Debian +
    Hermes is available for this version: the installer downloads it, about 900 MB, and falls back to the normal install by
    itself otherwise). Keep the screen on. If it stops, the app says where: paste the same command again (finished parts are
    skipped).
@@ -124,15 +124,14 @@ Everything is the same except Shizuku, which Android stops whenever the phone re
 | First start | *Start via Wireless debugging* in Shizuku, or the computer route does it over USB | The computer route (over USB) | *Start* in Shizuku |
 | After a restart or if Shizuku stops | Hermes Mobile starts it again by itself once the phone is on Wi-Fi (see below) | From a computer, with the command Shizuku shows under *Start by connecting to a computer* | Shizuku starts itself |
 
-How it starts by itself without root: the installer gives Termux its own adb (`android-tools`) and pairs it once with the phone's
-Wireless debugging (`~/bin/hm-shizuku pair`, run by the installer: Settings opens for a few seconds and the pairing code is read
-from the screen). When Shizuku is down and the phone is on Wi-Fi, Hermes Mobile turns Wireless debugging on (the installer
+How it starts by itself without root: the installer gives Termux its own adb (`android-tools`); after the install the app asks you to pair it once
+with the phone's Wireless debugging (the "Shizuku starts by itself" step: tap *Start pairing*, then type the 6-digit code into
+Hermes Mobile's notification; needs Wi-Fi). The installer itself never pairs, taps or reads the screen. When Shizuku is down and the phone is on Wi-Fi, Hermes Mobile turns Wireless debugging on (the installer
 grants it `WRITE_SECURE_SETTINGS` for this), runs `~/bin/hm-shizuku start` in Termux, which starts Shizuku's server the same
 way its own *Start by connecting to a computer* does, and turns Wireless debugging off again if it was off. Everything stays on
 the phone. The first time on a new Wi-Fi Android asks *Allow wireless debugging on this network?*: tick *Always allow on this
-network* and tap *Allow*. Without Wi-Fi it waits until the phone is on Wi-Fi. If pairing didn't work (no Wi-Fi during the
-install, or a Settings screen that looks different from Android's own), Setup check shows *Shizuku starts by itself* with a
-*Set up* button that runs the pairing again. Shizuku forgets that Termux may use it each time its server starts again
+network* and tap *Allow*. Without Wi-Fi it waits until the phone is on Wi-Fi. If you skipped the pairing or it didn't work (no Wi-Fi), Setup check shows *Shizuku starts by itself* with a
+*Start pairing* button that asks for the code again. Shizuku forgets that Termux may use it each time its server starts again
 (seen on the emulator with Shizuku 13.6.0), so it asks *Allow Termux to access Shizuku?* the next time Hermes uses it: tap
 *Allow all the time*. Pairing and starting were tested on an Android 15 emulator, not yet on other phone makers' Settings.
 
@@ -189,7 +188,7 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | The installer says `No plugin named 'hermes-mobile'` | You switched Hermes to another profile (`hermes profile use`). Update to the newest installer and run it again: it adds the plugin to every profile |
 | Everything stops after a while | Battery is restricted, see [After installing](#after-installing) |
 | Hermes says Shizuku isn't running | The phone restarted: see [Rooted or not](#rooted-or-not) |
-| Shizuku doesn't come back after a restart | The phone must be on Wi-Fi. On a new Wi-Fi, tap *Allow* (with *Always allow on this network*) when Android asks about wireless debugging. Still not: Hermes Mobile → Setup check → *Shizuku starts by itself* → *Set up* (pairs again; Settings opens for a few seconds). In Termux, `~/bin/hm-shizuku status` says `paired` or `unpaired` and `~/.hermes-mobile/hm-shizuku.log` has the last attempts. Android 10 and older: start it from a computer |
+| Shizuku doesn't come back after a restart | The phone must be on Wi-Fi. On a new Wi-Fi, tap *Allow* (with *Always allow on this network*) when Android asks about wireless debugging. Still not: Hermes Mobile → Setup check → *Shizuku starts by itself* → *Start pairing* (pair again with the code). In Termux, `~/bin/hm-shizuku status` says `paired` or `unpaired` and `~/.hermes-mobile/hm-shizuku.log` has the last attempts. Android 10 and older: start it from a computer |
 | Hermes can't read your files | Setup check → *Hermes can use your files* → Allow, then Restart Hermes |
 | Termux:API won't install | Termux and Termux:API come from different stores. Install both from F-Droid |
 | Android says the update conflicts with the installed app, or asks you to uninstall it first | Every APK on the [Releases page](https://github.com/omarqaterge/hermes-mobile-app/releases) has the same signature and updates in place. This message means the installed copy is not from there (built yourself or by your coding agent: a different key), or is newer than the one you are installing. Uninstalling only Hermes Mobile keeps your chats, keys, memory and skills (they live in Hermes, inside Termux); you lose the app's own settings (theme, favourite models) and allow its permissions again on first start. Don't uninstall Termux |

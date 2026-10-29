@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **The install time now says about 15 minutes** (README, install guide, app), measured on clean emulator installs. The docs now say the installer no longer pairs Termux by itself: the app asks you to pair once after the install.
 - **Settings → Replies: the cards switch is now called "Dynamic UI".** Same switch, new name.
 - **The model menu shows your real reasoning level in a new chat.** With a default of High set in Settings, the menu
   showed Medium until the first message, and picking a model reset the level to Medium. It now shows and keeps the
