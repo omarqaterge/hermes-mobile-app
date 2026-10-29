@@ -4,8 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
-- **The installer no longer opens Settings or taps the screen.** It used to pair Termux with Wireless debugging by itself while asking you not to touch the phone; you now do that once in the app after the install (see the next line). Tested with fakes only; not yet on a real phone.
-- **Pair Termux yourself, once, after the install.** The setup's "Shizuku starts by itself" step has a Start pairing button: Settings opens at Wireless debugging and Hermes Mobile shows a Pairing notification; tap Pair device with pairing code and type the code into that notification. Then Shizuku starts again by itself after a restart (Android 11+, on Wi-Fi). Seen on an Android 15 emulator; not yet on a real phone.
+## v0.8.66 (2026-10-29)
+
+- **The installer no longer opens Settings or taps the screen.** It used to pair Termux with Wireless debugging by itself while asking you not to touch the phone; you now do that once in the app after the install (see the next line). Seen on the test phone (Android 16): the new pairing worked there. A fresh install with this installer was not yet run.
+- **Pair Termux yourself, once, after the install.** The setup's "Shizuku starts by itself" step has a Start pairing button: Settings opens at Wireless debugging and Hermes Mobile shows a Pairing notification; tap Pair device with pairing code and type the code into that notification. Then Shizuku starts again by itself after a restart (Android 11+, on Wi-Fi). Seen on an Android 15 emulator and on the test phone (Android 16): paired, and Shizuku came back within seconds after being stopped. On that phone the notification shows no pop-up and sits further down the shade, so you may have to expand it to see Enter code. Not yet tried after a restart or on other phone makers.
 - **Go back and forward in the setup.** Back and Next under the step counter (and Android's Back) show the steps you
   already finished; Next stops at the step you're on, since the required steps can't be skipped. Shizuku's "starts by
   itself" step now comes right after the install, before the model, with new text and a **Start pairing** button. Web tests
@@ -14,13 +16,13 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Settings → Replies: the cards switch is now called "Dynamic UI".** Same switch, new name.
 - **The model menu shows your real reasoning level in a new chat.** With a default of High set in Settings, the menu
   showed Medium until the first message, and picking a model reset the level to Medium. It now shows and keeps the
-  default.
+  default. Not yet seen on a real phone.
 - **Use any model, not only the ones in the list.** Type a model's exact name in the model menu's search (in a chat
   or under Settings → Default models): "Use “<name>”" offers it with each connected provider. Once picked it stays in
-  the menu under that provider (✕ forgets it). Like Hermes Desktop's "Custom model".
+  the menu under that provider (✕ forgets it). Like Hermes Desktop's "Custom model". Not yet seen on a real phone.
 - **Adding a custom key explains where provider keys go.** A key added under Settings → API keys puts no models in the
   model menu; the sheet now says to connect the provider under Settings → Model providers (or add it as an
-  OpenAI-compatible endpoint there when it isn't listed).
+  OpenAI-compatible endpoint there when it isn't listed). Not yet seen on a real phone.
 
 
 ## v0.8.64 (2026-10-29)
