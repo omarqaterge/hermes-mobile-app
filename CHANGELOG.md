@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Go back and forward in the setup.** Back and Next under the step counter (and Android's Back) show the steps you
+  already finished; Next stops at the step you're on, since the required steps can't be skipped. Shizuku's "starts by
+  itself" step now comes right after the install, before the model, with new text and a **Start pairing** button; the
+  installer texts say about 15 minutes. Web tests only; not yet on a real phone.
 - **Settings → Replies: the cards switch is now called "Dynamic UI".** Same switch, new name.
 - **The model menu shows your real reasoning level in a new chat.** With a default of High set in Settings, the menu
   showed Medium until the first message, and picking a model reset the level to Medium. It now shows and keeps the
