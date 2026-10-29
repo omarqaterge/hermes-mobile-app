@@ -8,6 +8,24 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Plain ES5 on purpose: the app is built for modern WebViews (es2022). When an old one can't run it, the page
+      // would stay blank; say why instead. main.tsx sets __hmRan once the app has started.
+      setTimeout(function () {
+        if (window.__hmRan) return
+        var m = /Chrome\/(\d+)/.exec(navigator.userAgent || '')
+        var v = m ? parseInt(m[1], 10) : 0
+        if (!v || v >= 100) return
+        var d = document.createElement('div')
+        d.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;overflow:auto;padding:32px 24px;' +
+          'font:16px/1.5 sans-serif;background:var(--bg,#0e1115);color:var(--text,#e8e6e1)'
+        d.innerHTML = '<h2 style="font-size:20px;margin:0 0 12px">Hermes Mobile can\u2019t start</h2>' +
+          '<p>This phone\u2019s Android System WebView (Chrome ' + v + ') is too old for the app.</p>' +
+          '<p>Update <b>Android System WebView</b> (or <b>Chrome</b>) from the Play Store or your phone\u2019s ' +
+          'app store, then reopen Hermes Mobile.</p>'
+        document.body.appendChild(d)
+      }, 8000)
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

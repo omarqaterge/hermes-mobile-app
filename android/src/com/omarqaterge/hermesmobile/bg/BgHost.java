@@ -63,6 +63,7 @@ import java.util.Locale;
  * passthrough). Battery: exits after IDLE_MS without a request or MAX_MS in total, and releases the display on every
  * exit path. Requires Android 14 (VIRTUAL_DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED keeps focus on the owner's screen).
  */
+@android.annotation.TargetApi(34) // main() exits below Android 14, so every call here may assume it
 public final class BgHost {
     static final long IDLE_MS = 120_000, MAX_MS = 30 * 60_000;
     static final int W = 720, H = 1600, DPI = 320, MAX_ELEMENTS = 300;

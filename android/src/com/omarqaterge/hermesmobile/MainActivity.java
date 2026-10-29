@@ -100,6 +100,11 @@ public class MainActivity extends Activity {
 
         // Edge-to-edge (enforced from targetSdk 35): pad for system bars and the keyboard.
         root.setOnApplyWindowInsetsListener((v, insets) -> {
+            if (Build.VERSION.SDK_INT < 30) { // WindowInsets.Type and Insets fields are API 29/30
+                v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+                return insets.consumeSystemWindowInsets();
+            }
             Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
             Insets ime = insets.getInsets(WindowInsets.Type.ime());
             v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
@@ -1297,6 +1302,9 @@ public class MainActivity extends Activity {
     }
 
     boolean saveImageNow(String name, String path, String b64) {
+        // MediaStore's RELATIVE_PATH / IS_PENDING / VOLUME_EXTERNAL_PRIMARY are API 29; older Android would need the
+        // storage permission, which the app doesn't ask for. Share still works there.
+        if (Build.VERSION.SDK_INT < 29) return false;
         byte[] data = imageBytes(path, b64);
         String ext = imageExt(data, name);
         if (data == null || data.length == 0 || ext == null) return false;
@@ -1546,6 +1554,12 @@ public class MainActivity extends Activity {
     /** Dark icons on light bars and the reverse, decided from the page background. */
     void setBarIcons(int bg) {
         boolean lightBg = (0.299 * Color.red(bg) + 0.587 * Color.green(bg) + 0.114 * Color.blue(bg)) > 153;
+        if (Build.VERSION.SDK_INT < 30) { // getInsetsController is API 30; the old flags do the same
+            View d = getWindow().getDecorView();
+            int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            d.setSystemUiVisibility(lightBg ? d.getSystemUiVisibility() | flags : d.getSystemUiVisibility() & ~flags);
+            return;
+        }
         int mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
         try {
             android.view.WindowInsetsController c = getWindow().getInsetsController();

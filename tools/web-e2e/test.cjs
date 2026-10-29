@@ -165,6 +165,8 @@ async function main() {
   {
     const stages = await page.evaluate(() => (JSON.parse(localStorage.getItem('hm.boot.v1') || '{}').marks || []).map(m => m[0]))
     check(['script', 'painted', 'socket', 'sessions'].every(s => stages.includes(s)), `start-up timing marks recorded (${stages.join(', ')})`)
+    // index.html's old-WebView note relies on this flag: without it an old WebView would show "can't start"
+    check(await page.evaluate(() => window.__hmRan === true), 'app start flag set (no old-WebView note)')
   }
 
   // ── model picked before the first message: the chat is created with it (no switch, so no model-switch marker
