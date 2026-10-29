@@ -298,6 +298,10 @@ public class HermesService extends Service {
             answerFromNotification(intent);
             return START_STICKY;
         }
+        if (intent != null && AdbPairing.ACTION_CODE.equals(intent.getAction())) {
+            AdbPairing.onReply(this, intent); // the code typed into the Pairing notification
+            return START_STICKY;
+        }
         if (intent != null && ACTION_CLEAR_DONE.equals(intent.getAction())) {
             clearUnseen();
             return START_STICKY;
@@ -668,8 +672,9 @@ public class HermesService extends Service {
             case "cron_idle":
                 cronIdle(e.optDouble("since", 0));
                 return;
-            case "shizuku-auto": // Termux's hm-shizuku after pair/start: {paired, result, detail}
+            case "shizuku-auto": // Termux's hm-shizuku after pair/start: {cmd, paired, result, detail}
                 ShizukuKeeper.onEvent(this, e);
+                AdbPairing.onEvent(this, e); // the answer to a code typed into the Pairing notification
                 return;
             case "flash": {
                 if ((e.optBoolean("done", false) || e.optString("short", "").contains("Done")) && session != null && !session.isEmpty()) {
@@ -1550,7 +1555,10 @@ public class HermesService extends Service {
         NotificationChannel upd = new NotificationChannel(UpdateNotice.CH_UPDATE, "App updates", NotificationManager.IMPORTANCE_DEFAULT);
         upd.setDescription("A newer Hermes Mobile version is available");
         upd.setShowBadge(false);
-        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback, phone, upd}) nm.createNotificationChannel(c);
+        NotificationChannel pair = new NotificationChannel(AdbPairing.CH_PAIR, "Pairing", NotificationManager.IMPORTANCE_HIGH);
+        pair.setDescription("The Wireless debugging pairing code, while you set up Hermes Mobile");
+        pair.setShowBadge(false);
+        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback, phone, upd, pair}) nm.createNotificationChannel(c);
         nm.deleteNotificationChannel("hermes"); // v0.1 channel, replaced by the ones above
         nm.deleteNotificationChannel("learning"); // replaced by learning2/jobs2, which don't badge the icon
         nm.deleteNotificationChannel("jobs");

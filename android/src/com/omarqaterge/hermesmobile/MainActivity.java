@@ -816,10 +816,9 @@ public class MainActivity extends Activity {
                     if (i == null) return;
                     break;
                 case "shizuku-pair":
-                    // "Shizuku starts by itself" → Set up: Termux pairs its own adb with Wireless debugging (opens Settings
-                    // for a few seconds through Shizuku; the script reports back with a shizuku-auto event). User tap only.
+                    // Start pairing: the user pairs Termux himself (notification + Settings); nothing is tapped for him.
                     if (Uninstall.started(this)) return;
-                    runTermux("/data/data/com.termux/files/usr/bin/bash", new String[]{"-c", KeeperPlan.PAIR_SCRIPT});
+                    AdbPairing.begin(this);
                     return;
                 case "storage":
                     // Termux asks Android for the files permission ("y": it asks before rebuilding an existing ~/storage).

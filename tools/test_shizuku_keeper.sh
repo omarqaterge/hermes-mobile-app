@@ -93,7 +93,30 @@ public class KeeperPlanTest {
         check(eq(KeeperPlan.startScript(37709), "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku start 37709"), "start with the port");
         check(eq(KeeperPlan.startScript(0), "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku start"), "no port → the script scans");
         check(eq(KeeperPlan.startScript(70000), KeeperPlan.startScript(0)) && eq(KeeperPlan.startScript(-3), KeeperPlan.startScript(0)), "out-of-range port dropped");
-        check(eq(KeeperPlan.PAIR_SCRIPT, "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku pair"), "pair command");
+        // pairing: the Termux command only ever gets two validated numbers
+        check(eq(KeeperPlan.pairScript(37123, "123456"), "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku pair 37123 123456"), "pairScript: fixed command + port + code");
+        check(eq(KeeperPlan.pairScript(37123, "012345"), "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku pair 37123 012345"), "pairScript: keeps a leading zero");
+        check(KeeperPlan.pairScript(0, "123456") == null && KeeperPlan.pairScript(70000, "123456") == null, "pairScript: port out of range → null");
+        check(KeeperPlan.pairScript(37123, "12345") == null && KeeperPlan.pairScript(37123, "12345a") == null && KeeperPlan.pairScript(37123, "123456; rm") == null
+                && KeeperPlan.pairScript(37123, null) == null, "pairScript: anything but 6 digits → null");
+        // what the user types into the notification
+        KeeperPlan.PairReply r = KeeperPlan.parsePairReply("123456");
+        check(r != null && eq(r.code, "123456") && r.port == 0, "reply: just the code");
+        r = KeeperPlan.parsePairReply(" 123 456 ");
+        check(r != null && eq(r.code, "123456") && r.port == 0, "reply: code typed with a space");
+        r = KeeperPlan.parsePairReply("123456 37123");
+        check(r != null && eq(r.code, "123456") && r.port == 37123, "reply: code + port");
+        r = KeeperPlan.parsePairReply("192.168.1.5:37123 123456");
+        check(r != null && eq(r.code, "123456") && r.port == 37123, "reply: ip:port pasted before the code");
+        r = KeeperPlan.parsePairReply("012345");
+        check(r != null && eq(r.code, "012345"), "reply: leading zero kept");
+        check(KeeperPlan.parsePairReply("12345") == null && KeeperPlan.parsePairReply("") == null && KeeperPlan.parsePairReply(null) == null
+                && KeeperPlan.parsePairReply("abc") == null, "reply: no 6-digit code → null");
+        // the event from hm-shizuku pair
+        check(KeeperPlan.pairResult("pair", "ok", true) == 1 && KeeperPlan.pairResult("pair", "failed", false) == -1, "pairResult: ok / failed");
+        check(KeeperPlan.pairResult("pair", "ok", false) == -1, "pairResult: ok without paired is not a success");
+        check(KeeperPlan.pairResult("start", "ok", true) == 0 && KeeperPlan.pairResult("", "ok", true) == 0 && KeeperPlan.pairResult(null, "ok", true) == 0,
+                "pairResult: other commands (and old scripts without cmd) are not a pairing answer");
 
         // shizuku-auto event → stored last (only known words; anything else is kept short and safe)
         check(eq(KeeperPlan.eventLast("ok"), "ok") && eq(KeeperPlan.eventLast("no-wifi"), "no-wifi") && eq(KeeperPlan.eventLast("no-port"), "no-port")
