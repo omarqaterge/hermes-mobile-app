@@ -34,7 +34,48 @@ final class KeeperPlan {
     /** Down events handled per hour, at most: a Shizuku that dies right after each start can't make the keeper loop. */
     static final int MAX_RUNS_PER_HOUR = 5;
 
-    static final String PAIR_SCRIPT = "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku pair";
+    /** What the user typed into the Pairing notification (AdbPairing). */
+    static final class PairReply {
+        final String code;
+        final int port; // 0 = not typed
+
+        PairReply(String code, int port) {
+            this.code = code;
+            this.port = port;
+        }
+    }
+
+    /** The Termux command for one pairing; null unless port is 1-65535 and code is exactly 6 digits. */
+    static String pairScript(int port, String code) {
+        if (port < 1 || port > 65535 || code == null || !code.matches("[0-9]{6}")) return null;
+        return "[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku pair " + port + " " + code;
+    }
+
+    /** What the user typed into the Pairing notification: the 6-digit code, optionally the port (the number after the
+     *  colon under the code). A code typed with spaces ("123 456") counts. null = no code in it. */
+    static PairReply parsePairReply(String text) {
+        if (text == null) return null;
+        String[] parts = text.trim().split("[^0-9]+");
+        String code = null;
+        for (String p : parts) if (p.length() == 6) { code = p; break; }
+        if (code == null) {
+            String all = text.replaceAll("[^0-9]", "");
+            if (all.length() == 6) code = all; else return null;
+        }
+        int port = 0;
+        for (String p : parts) {
+            if (p.equals(code) || p.length() < 4 || p.length() > 5) continue;
+            int v = Integer.parseInt(p);
+            if (v >= 1024 && v <= 65535) port = v; // the last one wins (ip:port pasted)
+        }
+        return new PairReply(code, port);
+    }
+
+    /** A shizuku-auto event as the answer to a pairing: 1 paired, -1 failed, 0 not a pairing answer. */
+    static int pairResult(String cmd, String result, boolean paired) {
+        if (!"pair".equals(cmd)) return 0;
+        return "ok".equals(result) && paired ? 1 : -1;
+    }
 
     /** Why the keeper can't restart Shizuku by itself, or null when it can (checked in this order). */
     static String blocker(boolean installed, boolean uninstalling, boolean installing, int sdk, boolean wss,

@@ -505,19 +505,28 @@ final class ShizukuKeeper {
 
     /** RUN_COMMAND, in the background, like HermesService.shareKeyWithTermux. Only a number is added to a fixed command. */
     private static void startInTermux(int port) {
-        if (Uninstall.started(app) || !MainActivity.termuxOk(app)) return;
-        if (app.checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
+        runInTermux(app, KeeperPlan.startScript(port), "hm-shizuku start " + (port > 0 ? port : ""));
+    }
+
+    /** Run a fixed KeeperPlan command in Termux (background RUN_COMMAND); false = not sent (Uninstall started, Termux
+     *  never accepted a command, no RUN_COMMAND permission, or Android refused the intent). Also used by AdbPairing. */
+    static boolean runInTermux(Context c, String script, String what) {
+        if (c == null || script == null) return false;
+        if (Uninstall.started(c) || !MainActivity.termuxOk(c)) return false;
+        if (c.checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return false;
         try {
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");
             i.setAction("com.termux.RUN_COMMAND");
             i.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash");
-            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", KeeperPlan.startScript(port)});
+            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", script});
             i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
-            app.startForegroundService(i);
-            Log.i(TAG, "asked Termux: hm-shizuku start " + (port > 0 ? port : ""));
+            c.startForegroundService(i);
+            Log.i(TAG, "asked Termux: " + what);
+            return true;
         } catch (Exception e) {
             Log.w(TAG, "RUN_COMMAND failed: " + e);
+            return false;
         }
     }
 
