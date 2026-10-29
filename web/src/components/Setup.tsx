@@ -5,9 +5,10 @@ import {
   type HelperApp, type InstallState, type NativeSetup
 } from '../bridge'
 import { reconnectNow, rpc } from '../gateway'
+import { confirmDialog } from '../dialog'
 import { closeScreen, getState, setState, toast, useStore } from '../store'
 import {
-  SHIZUKU_WATCH_EVERY_MS, nextStep, probeState, progressView, recommendedGaps, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
+  SHIZUKU_WATCH_EVERY_MS, appsPlan, nextStep, probeState, progressView, recommendedGaps, replaceDue, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowStep, type PhoneAccess, type PreHermes,
   type ProbeRaw, type Progress, type Remote, type StepId, type StepState
 } from '../setupflow'
 import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
@@ -84,7 +85,7 @@ interface Installs {
   queue: HelperApp[]
 }
 let installs: Installs = { apps: { termux: IDLE, 'termux-api': IDLE, 'termux-boot': IDLE, shizuku: IDLE }, queue: [] }
-/** An install failed or was cancelled: the queue waits for Retry / Install the rest instead of going on by itself. */
+/** An install failed or was cancelled: the queue waits for Retry / Install all instead of going on by itself. */
 let stopped = false
 let waitingPermission = false
 const appSubs = new Set<() => void>()
@@ -171,6 +172,51 @@ document.addEventListener('visibilitychange', () => {
 const useInstalls = () => useSyncExternalStore(f => (appSubs.add(f), () => appSubs.delete(f)), () => installs)
 const useAppStatus = () => useInstalls().apps
 
+// "Replace Termux": the user confirmed removing a Termux that isn't F-Droid's. Android may kill this app while Termux is
+// uninstalled (it held Termux's RUN_COMMAND), so the wish lives in localStorage with its time; refresh() finishes it.
+const REPLACE_TERMUX = 'hm.replaceTermux'
+const replaceMark = (): number | null => {
+  try {
+    const v = Number(localStorage.getItem(REPLACE_TERMUX))
+    return v > 0 ? v : null
+  } catch {
+    return null
+  }
+}
+const setReplaceMark = (at: number | null) => {
+  try {
+    if (at) localStorage.setItem(REPLACE_TERMUX, String(at))
+    else localStorage.removeItem(REPLACE_TERMUX)
+  } catch {
+    /* private mode */
+  }
+}
+/** Termux is gone after "replace": install the F-Droid set (and Shizuku if missing), Termux first. */
+function resumeReplace(n: NativeSetup | null) {
+  const due = replaceDue(replaceMark(), n, Date.now())
+  if (due === 'drop' || due === 'install') setReplaceMark(null)
+  if (due === 'install' && n) installApps(appsPlan(n).missing)
+}
+async function replaceTermux() {
+  const ok = await confirmDialog({
+    title: 'Replace Termux?',
+    message:
+      'Your Termux didn’t come from F-Droid, so Termux:API and Termux:Boot can’t work with it. Android will ask you to uninstall it: everything inside Termux is deleted, including Hermes if it is installed there. Then Hermes Mobile installs Termux and the other missing apps from their makers, one after another.',
+    confirmLabel: 'Uninstall Termux',
+    icon: '⚠️',
+    danger: true
+  })
+  if (!ok) return
+  setReplaceMark(Date.now())
+  setupFix('replace-termux')
+}
+/** The one primary action of the helper-apps step and of the Setup check row. */
+function installAll(n: NativeSetup) {
+  const plan = appsPlan(n)
+  if (plan.action === 'replace-termux') void replaceTermux()
+  else if (plan.action === 'install') installApps(plan.missing)
+}
+
 // Set when Shizuku was seen running (or the user said it runs). Same key as the old Skip, so installs that finished the step stay finished.
 const SHIZUKU_DONE = 'hm.shizukuStepDone'
 const shizukuStepDone = () => {
@@ -216,7 +262,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       return {
         title: 'Termux, Termux:API, Termux:Boot and Shizuku are installed',
         help: `Hermes needs ${missing.length ? missing.map(h => h.name).join(', ') : 'these apps'}. Hermes Mobile downloads and installs them for you: tap Install on each of Android’s prompts.`,
-        fix: missing.length ? { label: 'Install all', run: () => installApps(missing.map(h => h.id)) } : undefined
+        fix: n && appsPlan(n).action !== 'none' ? { label: 'Install all', run: () => installAll(n) } : undefined
       }
     }
     case 'shizuku-start':
@@ -435,6 +481,7 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
   const refresh = useCallback((probe: unknown = true) => {
     const nat = setupState()
     setN(nat)
+    resumeReplace(nat)
     setProgress(setupProgress())
     setShDone(shizukuStepDone())
     const c = getState().conn
@@ -790,7 +837,7 @@ function AppsStep({ n }: { n: NativeSetup }) {
   const otherTermux = n.termuxSigner === 'other'
   const oldTermux = Boolean(n.termux && n.termuxVersion && /^0\.(\d+)/.test(n.termuxVersion) && Number(n.termuxVersion.split('.')[1]) < 118)
   const canFix = (h: (typeof HELPERS)[number]) => !(otherTermux && (h.id === 'termux-api' || h.id === 'termux-boot'))
-  const installable = missing.filter(canFix)
+  const plan = appsPlan(n)
   const working = HELPERS.some(h => status[h.id].state === 'downloading' || status[h.id].state === 'installing')
   // which app the queue installs next (shown while Install all runs or waits for a Retry)
   const queueNext = queue.find(id => !helper(id).has(n) && status[id].state !== 'downloading' && status[id].state !== 'installing')
@@ -813,7 +860,7 @@ function AppsStep({ n }: { n: NativeSetup }) {
               </span>
               <div className="setup-body">
                 <div className="setup-title">{h.name}</div>
-                <div className="dim small">{has ? h.what : STATUS_TEXT(a) || h.what}</div>
+                <div className="dim small">{has ? h.what : !canFix(h) ? 'Can’t join your Termux (it isn’t from F-Droid). Install all replaces Termux first.' : STATUS_TEXT(a) || h.what}</div>
                 {!has && (
                   <button className="app-own-link" onClick={() => { haptic(); openExternal(h.url) }}>
                     Or install it yourself: {h.id === 'shizuku' ? 'GitHub page' : 'F-Droid page'}
@@ -841,15 +888,16 @@ function AppsStep({ n }: { n: NativeSetup }) {
       </div>
       {otherTermux && (
         <div className="setup-help">
-          Your Termux doesn’t come from F-Droid, so F-Droid’s Termux:API and Termux:Boot can’t be added to it. Install them from the same
-          place you got Termux (for example its GitHub releases), or uninstall Termux and install all three here.
+          Your Termux doesn’t come from F-Droid, so F-Droid’s Termux:API and Termux:Boot can’t be added to it. Install all replaces it
+          with F-Droid’s Termux first (Android asks you to uninstall it; everything inside Termux is deleted). Or install Termux:API and
+          Termux:Boot yourself from the place you got Termux, then come back.
         </div>
       )}
       {oldTermux && <div className="setup-help">Your Termux is older than 0.118 and can’t run the installer: update it first.</div>}
-      {installable.length > 0 && (
+      {plan.action !== 'none' && (
         <div className="setup-actions">
-          <button className="btn primary" disabled={working} onClick={() => { haptic(); installApps(installable.map(h => h.id)) }}>
-            {installable.length === HELPERS.length ? 'Install all' : `Install ${installable.length === 1 ? installable[0].name : 'the rest'}`}
+          <button className="btn primary" disabled={working} onClick={() => { haptic(); installAll(n) }}>
+            {working ? `Installing ${Math.min(plan.installed + 1, 4)} of 4…` : 'Install all'}
           </button>
           {n.canInstall === false && (
             <button className="btn" onClick={() => { haptic(); setupFix('install-permission') }}>
