@@ -1265,7 +1265,7 @@ All the sheets below share the `Shell` frame in `web/src/components/Sheets.tsx` 
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
 |---|---|---|---|---|
 | Title | "Model" | | Drag down closes. | |
-| Reasoning pills | A row of pills: none, minimal, low, medium, high, xhigh, max, ultra (`REASONING_EFFORT_VALUES`). The current level is highlighted ("medium" when the chat reports none). | Sets the reasoning level for this chat (`setReasoning`: `config.set` key `reasoning`; toast "Reasoning: <level>"). On the empty screen it first creates the chat. | none | A level picked here wins over the automatic reset below. |
+| Reasoning pills | A row of pills: none, minimal, low, medium, high, xhigh, max, ultra (`REASONING_EFFORT_VALUES`). The current level is highlighted (the chat's level, else the profile default from Settings, else "medium"). | Sets the reasoning level for this chat (`setReasoning`: `config.set` key `reasoning`; toast "Reasoning: <level>"). On the empty screen it first creates the chat. | none | A level picked here wins over the automatic reset below. |
 | Search field | "Search models…" | Filters models by model name or provider name. | none | |
 | Favourites group | "Favourites" with a row per starred model that this profile can use now and that matches the search. Each row also names its provider. | As a model row. | none | Hidden when empty. |
 | Provider groups | Provider name (with a "free" tag for free tiers), then its models. The current provider comes first. A ● marks the current model. | Picks the model, closes the sheet. | none | Providers that are not signed in are left out unless current. A provider with no matching model is hidden. |
@@ -1281,7 +1281,7 @@ All the sheets below share the `Shell` frame in `web/src/components/Sheets.tsx` 
 How picking works (`setModel` in `gateway.ts`):
 
 - **Empty chat, or no chat yet:** a model switch on a chat with nothing sent would leave a "model changed" marker as its first history row, which breaks later edits. So the app creates a new chat with the model (and the level) set from the start, closes the old empty one in the background, and toasts "Model: <name>". A chat that is "replaceable" has nothing sent, nothing attached and no reply running. Its folder (project chats) is kept.
-- **Chat with messages:** the pick shows at once; `config.set` key `model` with `<model> --provider <provider> --session` is sent after the chat's agent has finished building (a new chat's agent takes about 2 s; a switch before that is lost). Then, unless the user chose a level in the sheet, the level is reset to `medium` with `config.set` key `reasoning`. A send right after a pick waits for the switch. On failure the old model is shown again and the error toasted.
+- **Chat with messages:** the pick shows at once; `config.set` key `model` with `<model> --provider <provider> --session` is sent after the chat's agent has finished building (a new chat's agent takes about 2 s; a switch before that is lost). Then, unless the user chose a level in the sheet, the level is reset to the profile default (`medium` when none is set) with `config.set` key `reasoning`. A send right after a pick waits for the switch. On failure the old model is shown again and the error toasted.
 - **Fast mode** is not in this sheet. It is the `/fast` command (3.4).
 
 #### Commands sheet
