@@ -794,6 +794,12 @@ public class MainActivity extends Activity {
                 case "get-termux":
                     i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux/"));
                     break;
+                case "replace-termux":
+                    // Termux from another source (Play Store, GitHub): Android's own uninstall prompt; the page then installs
+                    // F-Droid's set. Never for F-Droid's Termux, never without the user's tap (the page asks first).
+                    if (!installed("com.termux") || FDROID_SIGNER.equals(signer("com.termux"))) return;
+                    i = new Intent(Intent.ACTION_DELETE, Uri.parse("package:com.termux"));
+                    break;
                 case "get-termux-api":
                     i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux.api/"));
                     break;
