@@ -3,6 +3,7 @@ import { startDraft, switchProfile } from '../gateway'
 import { setState, useStore, type Screen } from '../store'
 import { SessionList } from './SessionList'
 import { haptic } from '../bridge'
+import { setSideHidden } from '../sidepanel'
 
 // Skills, memory, cron, files and projects live on the Hermes hub (one tile, more room for chats).
 const NAV: [Exclude<Screen, null>, string, string][] = [
@@ -25,14 +26,20 @@ export function Drawer() {
       <div className={`drawer-backdrop${open ? ' show' : ''}`} onClick={() => setState({ drawer: false })} />
       <aside className={`drawer${open ? ' open' : ''}`}>
         <div className="drawer-top">
-          <button className="profile-switch" onClick={() => setShowProfiles(v => !v)}>
-            <span className="avatar">{(current?.display_name || profile).slice(0, 1).toUpperCase()}</span>
-            <span className="profile-name">
-              {current?.display_name || profile}
-              <span className="dim small">{current?.description || (profile === 'default' ? 'Main profile' : '')}</span>
-            </span>
-            <span className="chev">{showProfiles ? '▴' : '▾'}</span>
-          </button>
+          <div className="drawer-head">
+            <button className="profile-switch" onClick={() => setShowProfiles(v => !v)}>
+              <span className="avatar">{(current?.display_name || profile).slice(0, 1).toUpperCase()}</span>
+              <span className="profile-name">
+                {current?.display_name || profile}
+                <span className="dim small">{current?.description || (profile === 'default' ? 'Main profile' : '')}</span>
+              </span>
+              <span className="chev">{showProfiles ? '▴' : '▾'}</span>
+            </button>
+            {/* Only shown while the list is docked on a wide screen (styles.css): hides it, also from Settings and other pages. */}
+            <button className="icon-btn side-hide" aria-label="Hide the chat list" onClick={() => { haptic(); setSideHidden(true) }}>
+              «
+            </button>
+          </div>
           {showProfiles && (
             <div className="profile-list">
               {profiles.map(p => (

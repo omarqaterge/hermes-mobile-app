@@ -1081,6 +1081,21 @@ textarea {
   gap: 10px;
   border-bottom: 1px solid var(--border);
 }
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.drawer-head .profile-switch {
+  flex: 1;
+  min-width: 0;
+}
+/* « hides the docked chat list: wide screens only (below). */
+.side-hide {
+  display: none;
+  color: var(--dim);
+}
 .drawer-list {
   flex: 1;
   overflow-y: auto;
@@ -3026,24 +3041,31 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
     --side: 320px;
     --canvas-w: min(46vw, 640px);
   }
-  .drawer {
+  .app {
+    transition: margin-left 0.22s ease, margin-right 0.22s ease;
+  }
+  /* The chat list is docked unless the user hid it (☰ or «; web/src/sidepanel.ts, html[data-side='hidden']).
+     Hidden = the phone layout: a swipe right opens it over the chat. */
+  html:not([data-side='hidden']) .drawer {
     width: var(--side);
     transform: none;
-    transition: none;
     padding-top: env(safe-area-inset-top);
   }
-  .drawer-backdrop,
-  .menu-btn {
+  html:not([data-side='hidden']) .drawer-backdrop {
     display: none;
   }
-  .app {
-    margin-left: var(--side);
-    transition: margin-right 0.22s ease;
+  html:not([data-side='hidden']) .side-hide {
+    display: grid;
   }
-  .screen {
+  html:not([data-side='hidden']) .app {
+    margin-left: var(--side);
+  }
+  /* Pages open beside the docked list, and above it (z 22 > drawer 21), so their own sheets and dialogs (they live
+     inside the page's stacking context) are not cut off by the list on the left. */
+  html:not([data-side='hidden']) .screen {
     left: var(--side);
   }
-  .screen.takeover {
+  html:not([data-side='hidden']) .screen.takeover {
     left: 0;
   }
   /* Keep reading lines a comfortable length. */

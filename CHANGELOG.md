@@ -4,6 +4,11 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Tablets: hide the chat list.** On wide screens (tablets, unfolded foldables, landscape) ☰ in the chat header now
+  hides or shows the chat list on the left, and « at the top of the list hides it from any page; the app remembers it.
+  Sheets opened from Settings and other pages (like Uninstall Hermes) now cover the whole width instead of sitting
+  half under the list. Browser tests only; not yet on a real tablet.
+
 ## v0.8.66 (2026-10-29)
 
 - **The installer no longer opens Settings or taps the screen.** It used to pair Termux with Wireless debugging by itself while asking you not to touch the phone; you now do that once in the app after the install (see the next line). Seen on the test phone (Android 16): the new pairing worked there. A fresh install with this installer was not yet run.
