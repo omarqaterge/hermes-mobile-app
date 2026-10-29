@@ -200,7 +200,7 @@ PROFILE
 CHROMIUM_LIBS="libglib2.0-0t64 libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 libcups2t64 libdbus-1-3 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64"
 deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps libatomic1 && apt-get install -y --no-install-recommends $CHROMIUM_LIBS"
 
-step hermes "Hermes Agent (10-30 minutes on a phone)"
+step hermes "Hermes Agent (most of the wait)"
 # libatomic1 (above): the glibc Node.js Hermes downloads links it, minimal Debian lacks it, and the pinned build's installer
 # (unlike the hosted one) does not install it.
 # install-stamp.json is written only when Hermes's installer finished; a crashed install can still leave a working `hermes`.
