@@ -3064,6 +3064,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
      inside the page's stacking context) are not cut off by the list on the left. */
   html:not([data-side='hidden']) .screen {
     left: var(--side);
+    z-index: 22;
   }
   html:not([data-side='hidden']) .screen.takeover {
     left: 0;
