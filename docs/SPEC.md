@@ -2707,7 +2707,7 @@ Termux's own adb must be paired with Wireless debugging once (Android 11+) befor
 5. `KeeperPlan.pairScript` builds `[ -x ~/bin/hm-shizuku ] && exec ~/bin/hm-shizuku pair PORT CODE` (only two validated numbers are added) and `ShizukuKeeper.runInTermux` sends it (same rules as the keeper: not after an uninstall, not before Termux accepted a command, not without `RUN_COMMAND`; then "Termux can’t be asked yet"). The notification says "Pairing…".
 6. The script's `shizuku-auto` event with `cmd` `pair` (`KeeperPlan.pairResult`): success → "Termux is paired" ("Shizuku now starts by itself after a restart, on Wi-Fi."; auto-cancels after 15 s) and discovery stops; failure → "Pairing didn’t work" with the script's detail (at most 120 characters) and the field again, and discovery starts again. Either way an open Setup screen re-reads `setupState` (`MainActivity.setupChanged`). No event within 40 s (`ANSWER_MS`): "No answer from Termux".
 
-Battery: discovery and the notification end 10 minutes after the tap (`WINDOW_MS`, one `Handler.postDelayed`), plus one 40 s timeout per typed code. No loop, no wake lock.
+Battery: discovery and the notification end 10 minutes after the tap (`WINDOW_MS`, one `Handler.postDelayed`), plus one 40 s timeout per typed code (`ANSWER_MS`), the 5 s cap of the one re-resolve pass and a single 500 ms resolve retry. No loop, no wake lock.
 
 #### Autostart table (`Autostart`)
 
