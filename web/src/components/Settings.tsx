@@ -877,7 +877,7 @@ function OpenUISection() {
   }
   return (
     <Section title="Replies">
-      <ToggleRow icon="🧩" tone="green" title="Cards and buttons in replies" sub="Tables, charts and forms you can tap. Applies to new chats" on={on} onChange={set} />
+      <ToggleRow icon="🧩" tone="green" title="Dynamic UI" sub="Tables, charts and forms you can tap. Applies to new chats" on={on} onChange={set} />
     </Section>
   )
 }

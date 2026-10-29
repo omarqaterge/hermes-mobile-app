@@ -1531,7 +1531,7 @@ async function main() {
       check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'switch shows on')
     }
     // Settings → Replies: cards in replies (plugin /openui), on by default
-    const ouiRow = np.locator('.set-row', { hasText: 'Cards and buttons in replies' })
+    const ouiRow = np.locator('.set-row', { hasText: 'Dynamic UI' })
     await ouiRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the cards row'), () => check(false, 'Settings has the cards row'))
     check((await ouiRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'cards: on by default')
     await ouiRow.click({ timeout: 1500 }).catch(() => {})
