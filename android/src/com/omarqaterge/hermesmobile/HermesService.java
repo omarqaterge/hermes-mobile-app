@@ -223,7 +223,9 @@ public class HermesService extends Service {
         createChannels(this);
         loadUnseen();
         key = ensureKey();
-        startForeground(STATUS_ID, statusNotification("Ready", null, false), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        // The typed call is API 29 and the special-use type API 34; older Android uses the manifest's type.
+        if (Build.VERSION.SDK_INT >= 34) startForeground(STATUS_ID, statusNotification("Ready", null, false), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        else startForeground(STATUS_ID, statusNotification("Ready", null, false));
         running = true;
         instance = this;
         new Thread(this::serve, "hermes-events").start();
@@ -397,7 +399,8 @@ public class HermesService extends Service {
         am.cancel(pi);
         if (at <= System.currentTimeMillis()) return;
         try {
-            if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+            // canScheduleExactAlarms is API 31; before that exact alarms need no permission.
+            if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
             else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
         } catch (SecurityException e) {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);

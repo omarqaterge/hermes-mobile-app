@@ -98,7 +98,8 @@ phone.
 - **Android versions:** minimum Android 8.0 (API 26, `--min-sdk-version 26` in `android/build.sh`), target API 35,
   compiled against API 36 so Android 16 Live Update calls can be used when present. Some features need more:
   Wireless debugging (Shizuku restarting by itself) needs Android 11 (API 30), the assistant role needs API 29,
-  `POST_NOTIFICATIONS` is asked from API 33.
+  `POST_NOTIFICATIONS` is asked from API 33, saving pictures needs API 29. The page needs an up-to-date Android
+  System WebView (4.2, "Version checks").
 - **No root.** Everything runs as normal apps. Hermes's adb-level phone access goes through Shizuku and its `rish`
   shell. A rooted phone may use chroot-distro instead of proot-distro (6.3); nothing in the app needs root.
 - **What runs where (one line each):**
@@ -2363,17 +2364,17 @@ The Android shell is a Gradle-less APK (`android/build.sh`: `aapt2`, `javac`, `d
 
 **Versions.** `android/build.sh` compiles against Android 16 (`android-36.jar`, because Live Update APIs live there), links with `--min-sdk-version 26` (Android 8.0) and `--target-sdk-version 35`, and runs `d8 --min-api 26`. The shell needs no root.
 
-**Features that need a newer Android than 8.0.** The code guards some of these with `Build.VERSION.SDK_INT`; the ones marked "no guard" call the API without a check (see "Known gaps" at the end of 4.2).
+**Features that need a newer Android than 8.0.** The code guards some of these with `Build.VERSION.SDK_INT`; `tools/api-check.sh` (Android lint, run in CI) fails when a call above API 26 has no such check (see "Version checks" at the end of 4.2).
 
 | Android | API | What needs it | Guard in code |
 |---|---|---|---|
 | 8.0 | 26 | Everything else: notification channels, `startForegroundService`, `canRequestPackageInstalls`, `WebView.setRendererPriorityPolicy` | none needed |
 | 9 | 28 | Reading the signing certificate of other apps (`GET_SIGNING_CERTIFICATES`) for the helper-app signer check; the `FOREGROUND_SERVICE` permission | guarded (falls back to `GET_SIGNATURES`) |
-| 10 | 29 | Phone assistant role (`RoleManager.ROLE_ASSISTANT`, bridge `isAssistant`); the three-argument `startForeground(id, notification, type)` in `HermesService.onCreate` | role: guarded; `startForeground`: no guard |
-| 11 | 30 | Wireless debugging (`adb_wifi_enabled`), so the Shizuku keeper (4.7) only runs from here (`KeeperPlan.blocker` returns `old-android` below 30); `WindowInsets.Type` and `getInsetsController()` used for edge-to-edge in `MainActivity` | keeper: guarded; insets: no guard |
-| 12 | 31 | `AlarmManager.canScheduleExactAlarms()` in `HermesService.scheduleWake` | no guard |
+| 10 | 29 | Phone assistant role (`RoleManager.ROLE_ASSISTANT`, bridge `isAssistant`); saving a picture to Pictures/Hermes (`MediaStore` `RELATIVE_PATH`/`IS_PENDING`) | guarded (`saveImageNow` returns false below 29: no Save, Share still works) |
+| 11 | 30 | Wireless debugging (`adb_wifi_enabled`), so the Shizuku keeper (4.7) only runs from here (`KeeperPlan.blocker` returns `old-android` below 30); `WindowInsets.Type` and `getInsetsController()` used for edge-to-edge and bar icons in `MainActivity` | guarded (below 30 the old `getSystemWindowInset*` values and `SYSTEM_UI_FLAG_LIGHT_*` flags do the same) |
+| 12 | 31 | `AlarmManager.canScheduleExactAlarms()` in `HermesService.scheduleWake` | guarded (below 31 exact alarms need no permission) |
 | 13 | 33 | `POST_NOTIFICATIONS` runtime permission (asked at start), `RECEIVER_NOT_EXPORTED` for the app's own receivers, the "sensitive" clipboard flag on the installer command, `USE_EXACT_ALARM` | guarded |
-| 14 | 34 | The background app (`BgHost` refuses to run below 34 and prints `needs Android 14+`); the `specialUse` foreground-service type and its permission | `BgHost`: guarded; service type: a constant, declared in the manifest |
+| 14 | 34 | The background app (`BgHost` refuses to run below 34 and prints `needs Android 14+`); the `specialUse` foreground-service type and its permission | `BgHost`: guarded (`@TargetApi(34)`, `main` exits below 34); service type: `startForeground` passes it from 34, older Android uses the plain call and the manifest's type |
 | 16 | 36 | Live Updates: `Notification.ProgressStyle` (task segments, tracker icon) and `setShortCriticalText` (the status-bar chip text). `POST_PROMOTED_NOTIFICATIONS` is the permission for it | guarded: below 36 the chip is a normal ongoing notification with `BigTextStyle` and a progress bar |
 
 ### 4.1 Every Java class
@@ -2454,7 +2455,7 @@ Other-package permissions:
 - `com.termux.permission.RUN_COMMAND`: starts commands in Termux (`startHermesNow`, the key share, the probe, `Uninstall.run`, the Shizuku keeper). Termux must also have `allow-external-apps=true`. Asked at start together with `POST_NOTIFICATIONS`.
 - `moe.shizuku.manager.permission.API_V23`: only listed, never asked for. Shizuku's server calls the providers of apps that list it, which is how `ShizukuProvider` learns Shizuku is running.
 
-**Known gaps (code vs. the declared minimum).** The package declares API 26, but three calls have no version check: `startForeground(id, notification, type)` in `HermesService.onCreate` (API 29), `WindowInsets.Type`/`getInsetsController()` in `MainActivity` (API 30), and `canScheduleExactAlarms()` in `HermesService.scheduleWake` (API 31). On older Android these would fail at run time.
+**Version checks.** Every call above API 26 is behind a `Build.VERSION.SDK_INT` check; `tools/api-check.sh` (7.2) proves it in CI. Checked on an Android 8.0 emulator: the app starts and its service runs. The page itself needs a WebView that runs ES2022 (`web/vite.config.ts` target): an old, never-updated Android System WebView (for example Chrome 58 on a stock Android 8 image) can't run it, and `web/index.html` then shows "Hermes Mobile can't start" with the WebView version and asks to update Android System WebView or Chrome (only when the app hasn't started after 8 s and the WebView is older than Chrome 100; `main.tsx` sets `window.__hmRan` once it has).
 
 ### 4.3 Notifications
 
@@ -2603,7 +2604,7 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `openAssistantSettings` | none | nothing | Opens the system page where the assistant app is chosen: voice input settings, else default apps, else Settings (the role cannot be requested directly). |
 | `signInTermux` | `provider`, `profile` | boolean | For logins Hermes only does in a terminal: opens a Termux session in front that runs `hermes auth add <provider>` inside Debian, with a hint on how to open the link and paste the code. `provider` must match `[a-z0-9][a-z0-9-]{0,39}`, `profile` `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (or empty); false if invalid or `RUN_COMMAND` is not granted. |
 | `installUpdate` | `url` | nothing | `startUpdate(url)`: only an `https://github.com/omarqaterge/hermes-mobile-app/releases/download/….apk` URL is accepted. Needs the "install unknown apps" permission (else it opens that page). Downloads to the cache (redirects only to GitHub hosts, at most 150 MB), checks the file is this package with a higher `versionCode`, then commits a `PackageInstaller` session; the system asks the user to confirm. Progress goes to `window.hermesUpdate(state, pct, msg)`. If the confirm prompt arrives while the app is hidden it waits for `onResume`. |
-| `saveImage` | `id`, `name`, `path`, `b64` | nothing (async) | Saves an image (from a phone file or base64, at most 30 MB; format sniffed as jpg/png/webp/gif) to Pictures/Hermes through `MediaStore`. Answers `window.__hmImage(id, ok)`. |
+| `saveImage` | `id`, `name`, `path`, `b64` | nothing (async) | Saves an image (from a phone file or base64, at most 30 MB; format sniffed as jpg/png/webp/gif) to Pictures/Hermes through `MediaStore` (Android 10+; answers false below). Answers `window.__hmImage(id, ok)`. |
 | `shareImage` | `id`, `name`, `path`, `b64` | nothing (async) | Writes a copy to `cache/share` (older copies than 1 h are deleted), serves it through `CameraProvider` and opens a share sheet with a one-off URI grant. Answers `window.__hmImage(id, ok)`. |
 | `chatSeen` | `id` | nothing | The page opened this chat: sets `HermesService.openChat` and `lastShownChat`, removes its reply card and Done entry. Empty `id` (new-chat screen) means no chat is on screen. |
 | `setUnseen` | `profile`, `json` (`[{id, title}]`, up to 500) | nothing | `HermesService.replaceUnseen`: the page's unread list for one profile; only removes or retitles Done-chip entries. |
@@ -3246,6 +3247,7 @@ Emulator-only switch: when `HM_TEST_BOOTSTRAP_URL` is set, a string resource `hm
 | File | What it covers |
 |---|---|
 | `java-check.sh` | Compiles all of `android/src` with `javac` against Robolectric's `android-all-16.jar` (downloaded from Maven Central and cached in `~/.cache/hermes-mobile`) and a stub `R.java` generated from `res/`. Proves it compiles; builds no APK. Needs JDK 21+. Then runs `test_shizuku_keeper.sh`. CI job `android`. |
+| `api-check.sh` | Runs Android lint's `NewApi`/`InlinedApi` checks on `android/src` (a copy with `<uses-sdk>` set to the minimum from `android/build.sh`, since the build passes it to `aapt2` instead of the manifest). Fails when a call above that minimum has no `Build.VERSION.SDK_INT` check. Needs the Android SDK's command-line tools (`ANDROID_HOME` or the Homebrew path). |
 | `test_shizuku_keeper.sh` | `KeeperPlan.java` decisions: when the app may restart Shizuku, the notice text when it cannot, the bounded attempt schedule, the NsdManager port choice, the Termux command. |
 | `test_setup_lines.sh` | `SetupLines.java`: token check, line filter, 50-line buffer, FAIL/DONE handling and the JSON that `say()` posts. CI job `android`. |
 | `test_autostart.sh` | `Autostart.java`: which makers get the step, every maker has a page list, every package the table opens is in the manifest `<queries>` (Android 11+ hides other packages otherwise). CI job `android`. |
@@ -3282,7 +3284,7 @@ Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NO
 | `web` | Web (typecheck, unit tests, build, browser e2e) | Node 22 with npm cache; `npm ci`, `npm test`, `npm run build` in `web/`; then in `tools/web-e2e`: `npm ci`, `npx playwright install --with-deps chromium`, `./run.sh`. |
 | `plugin` | Plugin (canvas + media) | Python 3.12; `pip install fastapi httpx`; runs `test_canvas.py`, `test_library.py`, `test_gallery.py`, `test_media.py`, `test_chat_search.py`, `test_checkpoints.py`, `test_battery.py`, `test_approval.py`, `test_chip.py`, `test_phone_app.py`, `test_auto_mode.py`, `test_openui.py`, `test_openui_query.py`, `test_claude_login.py`, `test_phone_access.py`, `test_profile_link.py`, then `python3 tools/test_check_spec.py` and `python3 tools/check_spec.py` (the second one fails the build when the code has a name `docs/SPEC.md` lacks). |
 | `hermes-patches` | Hermes patches apply to the pinned Hermes | `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`. |
-| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/test_setup_lines.sh`, `tools/test_autostart.sh`. |
+| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`. |
 
 Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`.
 
