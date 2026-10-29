@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { NativeSetup } from './bridge'
-import { appsPlan, nextStep, probeState, progressView, recommendedGaps, replaceDue, REPLACE_TTL_MS, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type PreHermes, type Remote } from './setupflow'
+import { appsPlan, flowNav, flowPages, nextStep, probeState, progressView, recommendedGaps, replaceDue, REPLACE_TTL_MS, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowPage, type FlowStep, type PreHermes, type Remote, type StepId } from './setupflow'
 
 const native: NativeSetup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, termuxApi: true, shizuku: true, startError: '', maker: 'google' }
 const remote: Remote = { plugin: true, enabled: true, enabledList: ['hermes-mobile'], phone: { files: true, termux_api: true, shizuku: 'ok' } }
@@ -117,6 +117,12 @@ describe('shouldOpenFlow', () => {
     const off = setupSteps(native, 'open', { ...remote, phone: { files: true, termux_api: true, shizuku: 'off' } }, true)
     expect(shouldOpenFlow(off, none)).toBe(true)
     expect(shouldOpenFlow(off, { welcomeDone: false, flowDone: true })).toBe(false)
+  })
+  test('only Shizuku starting by itself missing on a first run → opens', () => {
+    const steps = setupSteps({ ...native, shizukuAuto: { sdk: true, wss: true, paired: false, last: '' } }, 'open', remote, true)
+    expect(steps.find(s => s.id === 'shizuku-auto')?.state).toBe('bad')
+    expect(shouldOpenFlow(steps, none)).toBe(true)
+    expect(shouldOpenFlow(steps, { welcomeDone: false, flowDone: true })).toBe(false)
   })
   test('plugin not installed on a first run → opens', () => {
     expect(shouldOpenFlow(setupSteps(native, 'open', { ...remote, plugin: false }, true), none)).toBe(true)
@@ -313,4 +319,43 @@ describe('replaceDue: after Android uninstalled the other Termux', () => {
   test('older than the TTL → drop (a later Uninstall-Hermes must never reinstall Termux)', () =>
     expect(replaceDue(now - REPLACE_TTL_MS - 1, { ...native, termux: false }, now)).toBe('drop'))
   test('no native state yet → wait', () => expect(replaceDue(now - 5000, null, now)).toBe('wait'))
+})
+
+describe('step order: Shizuku comes right after the install, before the model', () => {
+  test('shizuku and shizuku-auto rows are before model', () => {
+    const order = setupSteps(native, 'open', remote, true).map(s => s.id)
+    expect(order.indexOf('shizuku-auto')).toBeLessThan(order.indexOf('model'))
+    expect(order.indexOf('shizuku')).toBeLessThan(order.indexOf('model'))
+    expect(order.indexOf('enabled')).toBeLessThan(order.indexOf('shizuku'))
+  })
+  test('with Shizuku working but unpaired and no model, the pairing step comes before the model', () => {
+    const steps = setupSteps({ ...native, shizukuAuto: { sdk: true, wss: true, paired: false, last: '' } }, 'open', remote, false)
+    expect(nextStep(steps)?.id).toBe('shizuku-auto')
+  })
+})
+
+describe('flowPages / flowNav: Back and Next in the setup flow', () => {
+  const ids: StepId[] = ['apps', 'shizuku-start', 'installer', 'shizuku-auto', 'model']
+  const steps: FlowStep[] = ids.map(id => ({ id, required: true, state: 'bad' }))
+  test('pages follow the step order, include the current step, end last', () => {
+    expect(flowPages(['model', 'apps'], steps, 'installer')).toEqual(['apps', 'installer', 'model', 'end'])
+    expect(flowPages([], steps, null)).toEqual(['end'])
+  })
+  const pages: FlowPage[] = ['apps', 'installer', 'model', 'end']
+  test('no page picked: shows the current step; Back = the one before; no Next', () => {
+    expect(flowNav(pages, 'installer', null)).toMatchObject({ page: 'installer', index: 1, steps: 3, prev: 'apps', next: null, atCurrent: true })
+  })
+  test('went back: shows that page; Next walks towards the current step', () => {
+    expect(flowNav(pages, 'model', 'apps')).toMatchObject({ page: 'apps', index: 0, prev: null, next: 'installer', atCurrent: false })
+  })
+  test('never past the current step (required steps have no skip)', () => {
+    expect(flowNav(pages, 'installer', 'model')).toMatchObject({ page: 'installer', next: null, atCurrent: true })
+    expect(flowNav(pages, 'installer', 'end')).toMatchObject({ page: 'installer' })
+  })
+  test('all done: the end page; Back = the last step', () => {
+    expect(flowNav(pages, null, null)).toMatchObject({ page: 'end', prev: 'model', next: null, atCurrent: true })
+  })
+  test('only the end page: no Back, no Next', () => {
+    expect(flowNav(['end'], null, null)).toMatchObject({ page: 'end', prev: null, next: null, steps: 0 })
+  })
 })
