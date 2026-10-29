@@ -4,6 +4,9 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **The model menu shows your real reasoning level in a new chat.** With a default of High set in Settings, the menu
+  showed Medium until the first message, and picking a model reset the level to Medium. It now shows and keeps the
+  default.
 - **Use any model, not only the ones in the list.** Type a model's exact name in the model menu's search (in a chat
   or under Settings → Default models): "Use “<name>”" offers it with each connected provider. Once picked it stays in
   the menu under that provider (✕ forgets it). Like Hermes Desktop's "Custom model".

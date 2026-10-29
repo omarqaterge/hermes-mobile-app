@@ -57,7 +57,8 @@ export function ModelSheet() {
   }, [active?.runtimeId])
   const currentModel = active?.info.model || data?.model
   const currentProvider = active?.info.provider || data?.provider
-  const effort = active?.info.reasoning_effort || 'medium'
+  const defaultEffort = useStore(s => s.defaultEffort)
+  const effort = active?.info.reasoning_effort || defaultEffort || 'medium'
   const touched = useRef(false) // a level picked in this sheet wins over the medium reset on a model switch
   const customs = useCustoms()
   // Connected providers (current first) with the model ids typed in earlier added to their lists. A provider whose
@@ -87,7 +88,7 @@ export function ModelSheet() {
     haptic()
     // A new chat's switch waits for its agent (~2 s); a send meanwhile waits for the switch.
     setState({ sheet: null })
-    setModel(slug, m, touched.current ? undefined : 'medium')
+    setModel(slug, m, touched.current ? undefined : defaultEffort || 'medium')
       .then(() => remember && addCustom(slug, m))
       .catch(x => toast(errText(x), 'error'))
   }

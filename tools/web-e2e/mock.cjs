@@ -244,7 +244,7 @@ const server = http.createServer((req, res) => {
     }
     if (p === '/api/model/set') return send({ ok: true })
     if (p === '/api/dashboard/plugins') return send([{ name: 'hermes-mobile' }, { name: 'kanban' }])
-    if (p === '/api/config' && req.method === 'GET') return send({ plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })
+    if (p === '/api/config' && req.method === 'GET') return send({ agent: { reasoning_effort: 'high' }, plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })
     if (p === '/api/config' && req.method === 'PUT') {
       const b = JSON.parse(body || '{}')
       if (b.config?.plugins?.enabled) pluginEnabled = b.config.plugins.enabled.includes('hermes-mobile') // other config writes (the model) leave it alone

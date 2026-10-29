@@ -295,6 +295,7 @@ async function main() {
     }
     await openModels()
     check((await page.locator('.fav-group').count()) === 0, 'no Favourites section before anything is starred')
+    check((await page.locator('.effort-row .pill.on').allInnerTexts()).join() === 'high', 'the picker shows the configured default reasoning level, not medium')
     await page.getByRole('button', { name: 'Star mock-sonnet' }).click()
     await sleep(300)
     check((await page.locator('.sheet .sheet-title', { hasText: 'Model' }).count()) === 1, 'starring keeps the picker open')
