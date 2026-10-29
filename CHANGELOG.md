@@ -4,6 +4,11 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+
+## v0.8.63 (2026-10-29)
+
+Tested on an Android 15 emulator (real taps); not yet seen on a real phone.
+
 - **Setup always has an "Install all" button for the helper apps.** It installs whatever is still missing, one app after another. If your Termux came from somewhere other than F-Droid (for example the Play Store), the setup used to stop after Shizuku with no button: Install all now offers to replace that Termux with F-Droid's (Android asks before uninstalling it), then installs the rest.
 
 ## v0.8.62 (2026-10-29)
