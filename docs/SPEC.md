@@ -13,7 +13,7 @@ describing each feature; section 9 is a glossary. Identifiers are written in bac
 backticks (Danger zone, Auto for all chats). References name a file and a symbol (`web/src/components/Composer.tsx`
 `Composer`), never a line number.
 
-**How to keep it current.** Update this file in the same commit as the code change it describes. Before pushing, run
+**How to keep it current.** Everyone who changes the repository, person or coding agent, updates this file in the same commit as the code change it describes ([AGENTS.md](../AGENTS.md) says so for every agent; `CLAUDE.md` imports it). Before pushing, run
 `python3 tools/check_spec.py`: it pulls the names out of the code (files, bridge methods, plugin routes, hooks and
 tools, gateway RPCs, `localStorage` keys, screens, Settings sections and row titles, aria-labels, service events,
 notification channels, manifest permissions) and fails when this file lacks one. CI runs it on every push. Give each
@@ -80,6 +80,7 @@ where, and what is still open, is in [docs/improvements.md](improvements.md) and
   - [7.3 Browser e2e (tools/web-e2e/)](#73-browser-e2e-toolsweb-e2e)
   - [7.4 Workflows (.github/workflows/)](#74-workflows-githubworkflows)
   - [7.5 Versioning and releases](#75-versioning-and-releases)
+  - [7.6 Docs for contributors and agents](#76-docs-for-contributors-and-agents)
 - [8. Feature index](#8-feature-index)
 - [9. Glossary](#9-glossary)
 
@@ -3309,6 +3310,18 @@ The release APK must always be signed with the same key, or phones cannot update
 - **Releases** are made by pushing a tag `v*` (for example `v0.8.62`) to `main`. `release.yml` builds and signs the APK and attaches `hermes-mobile.apk` to the GitHub release. The signing keystore is the repository secret `KEYSTORE_B64` (base64 of the keystore file). `releases/latest` is what the in-app update (Settings → About), `UpdateNotice` and the installers (`phone/install.sh`, `setup-phone.sh`, `setup-phone.ps1`) download.
 - **`CHANGELOG.md`** has an `## Unreleased` section on top; each release section `## vX.Y.Z (date)` collects what shipped since the previous tag, user-facing wording, with a line saying what was tested on which device. Released versions are not always consecutive tags (some build numbers were never tagged).
 - The ready-made Debian image has its own release tag, `hermes-image-<pin12>` (7.4), never "latest".
+
+### 7.6 Docs for contributors and agents
+
+| File | For whom | What it holds |
+|---|---|---|
+| `README.md` | users | Features, install routes, the "Android versions" table (what needs which Android, up-to-date WebView), uninstall, how to build. |
+| `AGENTS.md` | every coding agent | Read this spec first; update it in the same commit as each change and run `tools/check_spec.py`; every-Android-phone rules and `tools/api-check.sh`; checks before committing; UI, public-repo, attribution and commit rules; no `v*` tags. |
+| `CLAUDE.md` | Claude Code | Imports `AGENTS.md` (`@AGENTS.md`). |
+| `CONTRIBUTING.md` | people sending PRs | Checks to run, the spec and CHANGELOG rule, what to do after a Hermes update, project rules. |
+| `AGENT_INSTALL.md` | a user's own coding agent | How to set up a phone (6.3). |
+| `CHANGELOG.md` | users, release notes | What's new per release (7.5). |
+| `docs/improvements.md`, `docs/manual-tests.md` | maintainers | Backlog with what was verified where; hand-test list. |
 
 ---
 
