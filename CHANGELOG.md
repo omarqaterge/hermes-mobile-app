@@ -8,9 +8,9 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Pair Termux yourself, once, after the install.** The setup's "Shizuku starts by itself" step has a Start pairing button: Settings opens at Wireless debugging and Hermes Mobile shows a Pairing notification; tap Pair device with pairing code and type the code into that notification. Then Shizuku starts again by itself after a restart (Android 11+, on Wi-Fi). Seen on an Android 15 emulator; not yet on a real phone.
 - **Go back and forward in the setup.** Back and Next under the step counter (and Android's Back) show the steps you
   already finished; Next stops at the step you're on, since the required steps can't be skipped. Shizuku's "starts by
-  itself" step now comes right after the install, before the model, with new text and a **Start pairing** button; the
-  installer texts say about 15 minutes. Web tests only; not yet on a real phone.
-- **The install time now says about 15 minutes** (README, install guide, app), measured on clean emulator installs. The docs now say the installer no longer pairs Termux by itself: the app asks you to pair once after the install.
+  itself" step now comes right after the install, before the model, with new text and a **Start pairing** button. Web tests
+  only; not yet on a real phone.
+- **The install time now says about 15 minutes** (README, install guide, app), measured on clean emulator installs.
 - **Settings → Replies: the cards switch is now called "Dynamic UI".** Same switch, new name.
 - **The model menu shows your real reasoning level in a new chat.** With a default of High set in Settings, the menu
   showed Medium until the first message, and picking a model reset the level to Medium. It now shows and keeps the

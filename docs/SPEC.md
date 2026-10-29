@@ -2696,7 +2696,7 @@ Steps of one run (`ShizukuKeeper.down`, entered from `onDown`; every constant is
 11. When the new binder arrives (`up`): stop everything, remove the notice, store `ok`, and, if the keeper turned Wireless debugging on, turn it off again 10 s later (`WD_OFF_MS`).
 12. If Shizuku is still not running 60 s after the last attempt: result `failed` ("Hermes couldn’t start it by itself. Tap to open Shizuku and start it."), notice, and Wireless debugging goes back off if it was ours.
 
-The result words (`setupState.shizukuAuto.last`) are therefore: the blockers, `no-wifi`, `untrusted-network`, `starting`, `ok`, `failed`, `too-many`, `no-port`, and any word Termux reports. The notice (id 9, channel `Phone access`) opens the Shizuku app, or this app for `no-permission`, `no-termux` and `unpaired` ("Shizuku isn’t set up to start by itself. Open Hermes Mobile → Setup check → Set up."). Pairing itself is a user tap: Setup check → `setupFix` `shizuku-pair` (below). The generic message when a reason has no special text is "Hermes can’t see or use the screen until you start Shizuku again."
+The result words (`setupState.shizukuAuto.last`) are therefore: the blockers, `no-wifi`, `untrusted-network`, `starting`, `ok`, `failed`, `too-many`, `no-port`, and any word Termux reports. The notice (id 9, channel `Phone access`) opens the Shizuku app, or this app for `no-permission`, `no-termux` and `unpaired` ("Shizuku isn’t set up to start by itself. Open Hermes Mobile → Setup check → Start pairing."). Pairing itself is a user tap: Setup check → `setupFix` `shizuku-pair` (below). The generic message when a reason has no special text is "Hermes can’t see or use the screen until you start Shizuku again."
 
 #### Start pairing (`AdbPairing`)
 

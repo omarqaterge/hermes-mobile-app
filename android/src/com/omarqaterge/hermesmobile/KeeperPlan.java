@@ -118,7 +118,7 @@ final class KeeperPlan {
             case "no-permission":
             case "no-termux":
             case "unpaired":
-                return "Shizuku isn\u2019t set up to start by itself. Open Hermes Mobile \u2192 Setup check \u2192 Set up.";
+                return "Shizuku isn\u2019t set up to start by itself. Open Hermes Mobile \u2192 Setup check \u2192 Start pairing.";
             case "failed":
                 return "Hermes couldn\u2019t start it by itself. Tap to open Shizuku and start it.";
             case "too-many":
