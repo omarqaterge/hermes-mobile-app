@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **The installer no longer opens Settings or taps the screen.** It used to pair Termux with Wireless debugging by itself while asking you not to touch the phone; you now do that once in the app after the install (see the next line). Tested with fakes only; not yet on a real phone.
 - **Settings → Replies: the cards switch is now called "Dynamic UI".** Same switch, new name.
 - **The model menu shows your real reasoning level in a new chat.** With a default of High set in Settings, the menu
   showed Medium until the first message, and picking a model reset the level to Medium. It now shows and keeps the
