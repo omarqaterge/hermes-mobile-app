@@ -4,6 +4,12 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Cards: a date picked in a card form is accepted.** A card with a required date field always said "This field is
+  required" even though the day showed in the field, so the form never sent. It now accepts the day and sends it in
+  the message as `- day: 2026-10-15` (a range as `from to to`). The calendar now closes once you pick the day, instead
+  of staying open over the buttons. A list picker, text fields, checkboxes, radio buttons and chips were tried in the
+  same form and were fine. Also fixed: a field the card tied to a `$variable` was left out of the message the button
+  sent; it is now listed with the others. Browser tests with real clicks and taps; not yet on a real phone.
 - **Setup no longer gets stuck at "Hermes can see and use the screen (Shizuku)".** After you started Shizuku the page
   said it would move on by itself but never checked again, so it stayed there. It now re-checks every few seconds while
   that step is on screen (up to 10 minutes per visit), and when Shizuku runs but Termux isn't allowed yet it says so
