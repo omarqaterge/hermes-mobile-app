@@ -2,8 +2,8 @@
 import { expect, test } from 'vitest'
 import { PULL_MAX_PX, PULL_TRIGGER_PX, rubber, shouldOpen } from './pullbtw'
 
-test('the trigger is about 110 px of finger travel', () => {
-  expect(PULL_TRIGGER_PX).toBe(110)
+test('the trigger is about 160 px of finger travel', () => {
+  expect(PULL_TRIGGER_PX).toBe(160)
 })
 
 test('rubber band: starts near half the finger distance, grows monotonically, never passes the cap', () => {
