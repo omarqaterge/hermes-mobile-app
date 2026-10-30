@@ -25,6 +25,7 @@ import { installPullToBtw } from './pullbtw'
 import { findHit, findMatches, firstRange, highlightWords } from './jump'
 import { useBackHandler } from './backstack'
 import { recentPrompts } from './recent'
+import { firstUnseen, lastVisit } from './visit'
 import { bare, useCommandCatalog, type CommandEntry } from './commands'
 import { Title, plainTitle } from './components/Title'
 import { fmtClock, useAutoRead, useDraftAutoRead } from './voice'
@@ -415,6 +416,14 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [showJump, setShowJump] = useState(false)
+  // "New since your last visit" (visit.ts): the last-seen time is read once when the chat opens (before leaving it
+  // marks anything) and the first newer message is found once, from the chat itself (not its cached preview).
+  const visitRef = useRef<{ key: string | undefined; since: number | null; idx: number | null; applied: boolean }>({ key: undefined, since: null, idx: null, applied: false })
+  if (visitRef.current.key !== sessionKey) {
+    visitRef.current = { key: sessionKey, since: sessionKey ? lastVisit(sessionKey) : null, idx: null, applied: false }
+  }
+  if (visitRef.current.idx === null && sessionKey && items && items.length > 0 && !previewing) visitRef.current.idx = firstUnseen(items, visitRef.current.since)
+  const dividerIdx = visitRef.current.idx ?? -1
   // Long chats: only the last WINDOW items are drawn on open (each one parses markdown); scrolling near the top
   // draws the previous WINDOW, keeping what's on screen in place. The start index stays put while new items
   // arrive, so nothing shifts under the reader.
@@ -554,6 +563,30 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     setShowJump(!near)
   }, [items])
 
+  // Open with the divider near the top instead of at the end (when it is above the last screenful). A search jump or
+  // an in-chat search that is waiting wins; so does the user's own scrolling (this runs once per opened chat).
+  useLayoutEffect(() => {
+    const el = scroller.current
+    const v = visitRef.current
+    if (!el || !items || v.applied || previewing || v.idx === null) return
+    if (dividerIdx < 0 || getState().jump || getState().find?.q.trim()) {
+      v.applied = true
+      return
+    }
+    if (dividerIdx < start) {
+      setWin({ key: sessionKey, start: Math.max(0, dividerIdx - 3) })
+      return // runs again once it is drawn
+    }
+    const mark = el.querySelector('.visit-divider')
+    if (!mark) return
+    v.applied = true
+    const top = mark.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+    if (top >= el.scrollHeight - el.clientHeight) return // already within the last screenful: stay at the end
+    stick.current = false
+    el.scrollTop = top - 8
+    setShowJump(true)
+  }, [items, dividerIdx, start, sessionKey, previewing]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Scrubber (components/Scrubber.tsx): one tick per message you sent; `scrubTo` is the item to bring to the top.
   const marks = useMemo(() => userMarks(items ?? []), [items])
   const marksRef = useRef(marks)
@@ -658,10 +691,15 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
         const f = folds.get(start + i)
         const card = changes.get(start + i)
         const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
-        if (!f) return card ? <div key={it.id} className="turn-end">{view}<TurnChangesCard changes={card} /></div> : view
-        if (!('head' in f)) return <div key={it.id} className={card ? 'turn-end' : 'folded'}>{card && <TurnChangesCard changes={card} />}</div>
+        const mark = start + i === dividerIdx ? <div className="visit-divider" role="separator">New since your last visit</div> : null
+        if (!f) {
+          if (card) return <div key={it.id} className="turn-end">{mark}{view}<TurnChangesCard changes={card} /></div>
+          return mark ? <div key={it.id} className="visit-wrap">{mark}{view}</div> : view
+        }
+        if (!('head' in f)) return <div key={it.id} className={card ? 'turn-end' : 'folded'}>{mark}{card && <TurnChangesCard changes={card} />}</div>
         return (
           <div key={it.id} className="tool-run-wrap">
+            {mark}
             <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} />
             {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} />}
             {card && <TurnChangesCard changes={card} />}

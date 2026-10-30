@@ -614,6 +614,31 @@ textarea {
 .folded {
   display: none;
 }
+.visit-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* "New since your last visit" (visit.ts): a thin line with the text in the middle. */
+.visit-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.visit-divider::before,
+.visit-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.45;
+}
 .tool-run-wrap {
   display: flex;
   flex-direction: column;

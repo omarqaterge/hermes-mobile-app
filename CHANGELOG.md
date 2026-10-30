@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **"New since your last visit" in a chat.** When a chat got messages while you were away (a long task finished, a
+  scheduled job or a bot wrote to it), a thin line with that text sits before the first message you haven't seen, and
+  the chat opens scrolled to it instead of to the very end. It goes away the next time you open the chat; a chat you
+  never opened on this phone shows no line. Browser tests only; not yet on a real phone.
 - **Things slide open and close.** Tool cards, the thought process, the task list and the changed-files card now slide
   open and shut instead of jumping, chevrons turn instead of swapping characters, and the button next to the box fades
   in when it changes between Send, Stop, Mic and Queue. The reasoning level on the model chip shows as small bars (the

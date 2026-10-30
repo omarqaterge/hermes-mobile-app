@@ -2,6 +2,7 @@ import { btwDone, openBtw } from './btw'
 import { bootMark } from './boot'
 import { fmtDuration } from './text'
 import { markSeen, noteSessions } from './unread'
+import { markVisit } from './visit'
 import { rememberPrompt } from './recent'
 import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
 import { api } from './api'
@@ -528,6 +529,15 @@ subscribe(() => {
   if (id === shownChat) return
   shownChat = id
   chatSeen(id || '')
+})
+
+// The visit mark (visit.ts): leaving a chat (another one opens, a new draft starts) counts as having seen it.
+let visitedChat: string | undefined
+subscribe(() => {
+  const id = getState().active?.storedId
+  if (id === visitedChat) return
+  if (visitedChat) markVisit(visitedChat)
+  visitedChat = id
 })
 
 export function startDraft(): void {
@@ -1292,6 +1302,7 @@ document.addEventListener('visibilitychange', () => {
     // Kept for the next cold start, so the chat is on screen before Hermes answers.
     const a = getState().active
     if (a) saveChatToDisk(a.profile, a.storedId, a.title, a.items)
+    if (a) markVisit(a.storedId)
   }
 })
 setInterval(() => {
@@ -1474,6 +1485,8 @@ client.onEvent((ev: GatewayEvent) => {
       }
       if (p.error || p.failure_reason) turnFailed = true
       const turnSecs = turnStartSecs()
+      const watching = getState().active?.storedId
+      if (watching && document.visibilityState === 'visible') markVisit(watching) // they watched the turn end
       updateActive(() => ({ running: false, status: '', turnStart: null, usage: p.usage ?? getState().active?.usage ?? null }))
       void finishTurnStats(lastId, p.usage, turnSecs)
       break
