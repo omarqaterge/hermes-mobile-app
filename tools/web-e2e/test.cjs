@@ -2700,6 +2700,21 @@ async function main() {
   }
   await mock({ configured: true, pluginEnabled: true })
 
+  // e. the flow at "Hermes can see and use the screen": Shizuku was started (the app sees it) but Termux can't use it yet.
+  // The page says so (not "isn't running") and moves on by itself once Hermes reaches Shizuku, with no return to the app.
+  await mock({ configured: true, pluginEnabled: true, phone: { files: true, shizuku: 'off' } })
+  {
+    const fs = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, shizuku: true, shizukuRunning: true })
+    await fs.goto('http://127.0.0.1:5180/')
+    const card = fs.locator('.flow-card', { hasText: 'Hermes can see and use the screen' })
+    await card.waitFor({ timeout: 15000 }).then(() => check(true, 'flow: Shizuku not reachable → opens at the Shizuku step'), () => check(false, 'flow: Shizuku not reachable → opens at the Shizuku step'))
+    const t = (await card.textContent().catch(() => '')) || ''
+    check(t.includes('Shizuku is running, but Termux can’t use it yet') && !t.includes('isn’t running'), `flow: the app sees Shizuku running → says Termux can't use it yet, not "isn't running" (${t.slice(0, 120)})`)
+    await mock({ phone: { files: true, shizuku: 'ok' } })
+    await card.waitFor({ state: 'detached', timeout: 12000 }).then(() => check(true, 'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'), () => check(false, 'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'))
+    await fs.close()
+  }
+
   // ── Shizuku row in the Backend status sheet ──
   {
     const base = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '', termuxApi: true, termuxBoot: true, shizuku: true, shizukuRunning: true }

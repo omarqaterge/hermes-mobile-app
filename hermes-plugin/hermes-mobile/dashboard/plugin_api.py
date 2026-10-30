@@ -523,18 +523,34 @@ def phone_access_now() -> dict:
     return {"files": files, "termux_api": api, "shizuku": shizuku}
 
 
+_phone_lock = None
+
+
 @router.get("/phone-access")
 async def phone_access():
-    """Runs two short commands; cached 15 s, since the Setup screen asks every few seconds while it is open."""
+    """Runs two short commands; cached 15 s (5 s while Shizuku doesn't work yet, so a fix shows soon), since the Setup
+    screens ask every few seconds while they are open. One check at a time: rish can wait 20 s on Shizuku's "Allow Termux?"
+    prompt, and overlapping calls would each ask again."""
     import asyncio
     import time
 
-    now = time.monotonic()
-    if _phone_cache.get("v") is not None and now - _phone_cache.get("t", 0) < 15:
+    global _phone_lock
+    if _phone_lock is None:
+        _phone_lock = asyncio.Lock()
+
+    def fresh():
+        v = _phone_cache.get("v")
+        ttl = 15 if v is not None and v.get("shizuku") in ("ok", "missing") else 5
+        return v is not None and time.monotonic() - _phone_cache.get("t", 0) < ttl
+
+    if fresh():
         return _phone_cache["v"]
-    v = await asyncio.to_thread(phone_access_now)
-    _phone_cache.update(v=v, t=time.monotonic())
-    return v
+    async with _phone_lock:
+        if fresh():  # a call that waited for the lock gets the answer the one before it just found
+            return _phone_cache["v"]
+        v = await asyncio.to_thread(phone_access_now)
+        _phone_cache.update(v=v, t=time.monotonic())
+        return v
 
 
 # ── app preferences that should follow the user across installs (pins + custom chat order) ──
