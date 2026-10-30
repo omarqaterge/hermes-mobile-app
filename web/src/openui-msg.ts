@@ -14,7 +14,12 @@ function show(v: unknown): string {
   if (v == null) return ''
   if (Array.isArray(v)) return v.map(show).filter(Boolean).join(', ')
   if (typeof v === 'boolean') return v ? 'yes' : 'no'
-  if (typeof v === 'object') return JSON.stringify(v)
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : dayText(v)
+  if (typeof v === 'object') {
+    const r = v as { from?: unknown; to?: unknown }
+    if (typeof r.from === 'string' && typeof r.to === 'string' && Object.keys(r).length === 2) return `${r.from} to ${r.to}` // a date range
+    return JSON.stringify(v)
+  }
   return String(v).trim()
 }
 
@@ -100,4 +105,20 @@ export function saveUiState(k: string, s: Record<string, unknown>, now = Date.no
   } catch {
     /* storage full: the card just starts empty next time */
   }
+}
+
+// Days in a card's DatePicker are kept as the text "YYYY-MM-DD" in the picker's local time (openui-date.tsx).
+const pad = (n: number) => String(n).padStart(2, '0')
+export const dayText = (d: Date): string => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+/** A picked range as {from, to} text; an end that is not picked yet is left out. */
+export function rangeText(r: { from?: Date; to?: Date }): { from?: string; to?: string } {
+  return { ...(r.from ? { from: dayText(r.from) } : {}), ...(r.to ? { to: dayText(r.to) } : {}) }
+}
+/** The day a saved value stands for: our text, an ISO timestamp an older save may hold, or a Date. */
+export function textDay(v: unknown): Date | undefined {
+  if (v instanceof Date) return isNaN(v.getTime()) ? undefined : v
+  if (typeof v !== 'string') return undefined
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : /^\d{4}-\d{2}-\d{2}T/.test(v) ? new Date(v) : null
+  return d && !isNaN(d.getTime()) ? d : undefined
 }

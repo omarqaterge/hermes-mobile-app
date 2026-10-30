@@ -1651,7 +1651,7 @@ Item menu (`ItemMenu`, a sheet titled with the item's title):
 
 ### 3.9 OpenUI cards
 
-**Files:** `OpenUIBlock.tsx` (the block in a message), `openui-entry.tsx` (lazy renderer bundle), `openui-lib.ts` (component library and the reference text), `openui-msg.ts` (button text, link check, saved form state), `openui-query.ts` (the live-data tool client).
+**Files:** `OpenUIBlock.tsx` (the block in a message), `openui-entry.tsx` (lazy renderer bundle), `openui-lib.ts` (component library and the reference text), `openui-date.tsx` (the DatePicker replacement), `openui-msg.ts` (button text, link check, saved form state, day text), `openui-query.ts` (the live-data tool client).
 
 Hermes may answer with interactive cards (tables, charts, buttons, forms, steps) instead of prose. The reply contains a fenced block with the language `openui-lang` (the language `openui` also works). The app draws it with OpenUI's own chat component library. This is the one place where the app does not use its own native-style controls (owner decision); the canvas stays for things the user asks to build or write.
 
@@ -1672,6 +1672,12 @@ Hermes may answer with interactive cards (tables, charts, buttons, forms, steps)
 | Same, in a view that is not a chat reply (canvas, files, /btw) | Toast "Open the chat to use this". Only chat replies are interactive (`interactive` is set in `ChatItems.tsx`). |
 | `@OpenUrl` | Opens the link outside the app, only for `http` or `https` (`safeHttpUrl`); otherwise toast "That link can’t be opened" |
 | Any other action type | Ignored |
+
+#### Form fields (two fixes around OpenUI)
+
+- **Dates.** OpenUI's own `DatePicker` keeps the picked day as a JavaScript `Date`, and its "required" check (`isEmpty` in lang-core) calls any object without own keys empty, so a Date always failed with "This field is required" while the field showed the day. `web/src/openui-date.tsx` replaces the component (`library.extend({ components: { override } })` in `openui-entry.tsx`; same name, props and description, so the reference text does not change). The calendar closes once the day (both ends of a range) is picked; OpenUI leaves it open over the buttons below. The day is kept as local text `YYYY-MM-DD` (`dayText`, `textDay` in `openui-msg.ts`; a range as `{from, to}`, counted for "required" only once both ends are picked). An older saved state holding the ISO text of a Date is still read (`textDay`). In the message a day reads `2026-10-15` and a range `2026-10-15 to 2026-10-19` (`formFields`).
+- **Fields tied to a `$variable`.** `Select("role", items, null, rules, $role)` keeps its value in the card's variables, not under the form's field names, so the form's values reached Hermes without it. `withBoundValues` in `openui-entry.tsx` parses the card (`createParser`), finds the fields of the pressed button's form whose `value` is a `$variable`, and copies each value into the form state under the field name before `onAction`.
+- Checked: in web-e2e with real Chrome, a real shadow root and real mouse clicks and touch taps, a card form with a required list picker (Radix Select, popup portalled to `<body>`), text and date; in vitest (`openui-form.test.tsx`) also text area, checkboxes, radio buttons and chips. Only the date failed.
 
 #### Saved form state
 
