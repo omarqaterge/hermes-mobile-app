@@ -4,7 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
-- **Test builds with remote debugging.** `HM_DEVTOOLS=1 android/build.sh` makes a test build whose page can be inspected and driven from a computer over `adb`; it shows a "Test build: remote debugging is on" strip at all times. Normal and release builds are unchanged, and the build script and the release workflow both refuse or fail if a release would carry it. Seen on a Xiaomi phone (Android 16): the test build installs over an earlier self-built one, shows the strip, and its `webview_devtools_remote` socket is there; the earlier build without `HM_DEVTOOLS` had none. Attaching Playwright not yet tried.
+- **Test builds with remote debugging.** `HM_DEVTOOLS=1 android/build.sh` makes a test build whose page can be inspected and driven from a computer over `adb`; it shows a "Test build: remote debugging is on" strip at all times. Normal and release builds are unchanged, and the build script and the release workflow both refuse or fail if a release would carry it. Seen on a Xiaomi phone (Android 16): the test build installs over an earlier self-built one, shows the strip, and its `webview_devtools_remote` socket is there; the earlier build without `HM_DEVTOOLS` had none. Playwright attached over `adb forward` and drove a whole test session.
 - **More previews in Files.** Tapping a file in Files now shows CSV/TSV as a table, JSON pretty-printed, code
   highlighted, Mermaid files as diagrams, HTML pages running offline in the sandbox, and audio/video in a player
   (streamed, not read into the page). PDF, Office and other files say "No preview here" and keep Open with….
@@ -38,22 +38,24 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **See which files a turn changed.** When Hermes wrote or edited files, a card at the end of that turn says
   `✎ 3 files changed  +42 −7`. Tap it for the files, each with its own counts; tap a file to see its diff. A
   Checkpoints button opens the file checkpoints to undo. It also shows when the tool calls above it are folded.
-  Browser tests only; not yet on a real phone.
+  Seen on a Xiaomi phone (Android 16): card, file rows, diff sheet and Checkpoints work; the counts are readable in the light theme.
 - **Preview a web page or SVG right in the reply.** An `html` or `svg` code block of 3+ lines now has a Preview button
   (Code switches back). The page runs in the same offline sandbox as the canvas, starts 160 px high and grows to its
   own height (at most 60 % of the screen); a Full screen button below it opens it full size, and Back closes it. It is
-  disabled while the reply is still arriving. Browser tests only; not yet on a real phone.
+  disabled while the reply is still arriving. Seen on a Xiaomi phone (Android 16): Preview, the page's own button, Full screen and Back, and
+  an SVG preview work.
 - **Jump between your messages in a long chat.** Once a chat has six or more of your messages and is several screens
   long, a thin rail appears on the right edge with one tick per message you sent. Drag along it: a bubble shows the
   message under your finger (`12 / 30` and its first words); let go and the chat scrolls there. A tap jumps too, and
-  the tick of the message at the top of the screen is highlighted. Browser tests only; not yet on a real phone.
+  the tick of the message at the top of the screen is highlighted. Seen on a Xiaomi phone (Android 16): the rail, the drag bubble, the jump
+  and its flash work, and a sideways swipe on the rail opens neither the drawer nor the canvas.
 - **Queue a follow-up while Hermes works.** When a reply is running and you have typed something, the send button
   splits in two: Steer (as before, the words go into the running task now) and Queue. A queued message waits as a
   dashed bubble at the end of the chat (edit it, remove it, or send it now) and is sent by itself when the reply ends,
   then the next one. Stop or an error pauses the queue (Queue paused, Resume), and a chat you open starts paused.
   Up to 10 per chat, kept across restarts; sent only while the app shows that chat. Seen on a Xiaomi phone (Android
-  16): Steer and Queue appear while a reply runs, and a queued message was sent by itself when the reply ended. Edit,
-  remove, pause after Stop and keeping the queue across a restart were not yet tried on a phone.
+  16): queueing, sending by itself, edit, remove, Queue paused after Stop with Resume, the queue kept after a
+  force-stop, and Steer all work.
 - **Quote part of a reply.** Select words in one of Hermes's replies and a bar above the composer offers Quote or
   Explain. Quote puts the words as a chip above the text box (up to 3, ✕ removes one) and the next message starts with
   them as a quote; Explain sends the quote with "Explain this." at once. Your sent message shows the quote as a block.
