@@ -1511,6 +1511,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `Markdown.tsx` | Markdown renderer, code blocks, Mermaid, task lists, tables, link handling, sanitiser. |
 | `Media.tsx` | `Media`, `Lightbox`, `FileChip`, audio player. |
 | `Diff.tsx` | `DiffView`, `looksLikeDiff`, `stripAnsi`. |
+| `filekind.ts` | What the Files screen shows for a file: `previewKind` (document type and code language, image, player, or none). |
 | `changes.ts` | Files a turn changed: `turnChanges`, `diffCounts`, `shortPath`, `EDIT_TOOLS`, `MAX_DIFF`. |
 | `Changes.tsx` | `TurnChangesCard`: the changed files card at the end of a turn (3.3). |
 | `Composer.tsx` | The composer. |
@@ -1547,7 +1548,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 
 ### 3.7 Canvas panel
 
-**Files:** `Canvas.tsx` (panel, editor, menus, history sheet), `HtmlFrame.tsx` (sandboxed HTML frame, shared with the chat), `htmlframe.ts` (`frameDoc`, `frameHeight`), `canvas.ts` (state, sync with the plugin, the agent's tool events, line diff).
+**Files:** `Canvas.tsx` (panel, editor, menus, history sheet), `DocView.tsx` (`DocView`, `CsvTable`, `fenced`: the viewer for each document type), `HtmlFrame.tsx` (sandboxed HTML frame, shared with the chat), `htmlframe.ts` (`frameDoc`, `frameHeight`), `canvas.ts` (state, sync with the plugin, the agent's tool events, line diff).
 
 The canvas is a set of documents that belong to one chat. Hermes writes them with its `canvas` tool, you read, edit and run them, and they stay with the chat. The panel is `web/src/components/Canvas.tsx` `CanvasPanel`. Its state and its sync with the phone are in `web/src/canvas.ts` (`useCanvas`, `canvasState`).
 
@@ -1606,6 +1607,8 @@ Messages sent from the panel (`send` in `CanvasPanel`): the text starts with `Ab
 **Rules:** the canvas is for things the user asks to build or write; inline cards are for answers (3.9). No native `<select>` or `confirm()`: the panel uses `confirmDialog` and `promptDialog` (`web/src/dialog.tsx`) and `Sheetish` bottom sheets.
 
 #### Document types and how each shows (`DocView`)
+
+`DocView` (`web/src/components/DocView.tsx`, props `type`, `lang`, `title`, `text`, `network`) is shared by the canvas, the Gallery viewer and the Files preview (3.14); `CsvTable` and `fenced` live in the same file.
 
 | Type | Viewer |
 |---|---|
@@ -2041,7 +2044,7 @@ Create / edit sheet ("New scheduled job" / "Edit job"): fields Name, Schedule, a
 Runs sheet ("Runs · <name>", `GET /api/cron/jobs/<id>/runs?limit=20`): one card per run with title / status, start time and a preview or "N msgs · reason". "No runs yet" when empty. Tap a run: if it has a chat (the dashboard lists runs as chats with source `cron`) the screen closes and that chat opens; otherwise a sheet shows its saved output (inline text, else the file read through `GET /api/files/read`, else the preview or "This run saved no output.").
 
 #### Files
-**Opens from:** the hub's Files card. **Closes with:** Back. Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`.
+**Opens from:** the hub's Files card. **Closes with:** Back. Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`, `web/src/filekind.ts`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |
@@ -2052,9 +2055,23 @@ Runs sheet ("Runs · <name>", `GET /api/cron/jobs/<id>/runs?limit=20`): one card
 | Breadcrumbs | `/` (`aria-label` "Top folder") and one button per path part | Jump to that folder | | |
 | New-folder form | Field "Folder name", Create button, ✕ button (`aria-label` "Cancel") | Create calls `POST /api/files/mkdir`; names containing `/` are ignored | | Enter also creates |
 | ".." row | Shown when the folder has a parent | Goes up | | |
-| File / folder rows | Icon (📁 folder, 🖼 image, 📄 text, 📦 other), name, then "Folder" or the size, plus the modified time | Folder: enter it. File: open the preview sheet | | "Empty folder", an error notice, "Loading…" |
+| File / folder rows | Icon (📁 folder, 🖼 image, 📄 document, 🎞 audio or video, 📦 other), name, then "Folder" or the size, plus the modified time | Folder: enter it. File: open the preview sheet | | "Empty folder", an error notice, "Loading…" |
 
-Preview sheet (title = file name, path in monospace): text files (known text extensions, or a `text/*` type) show as text, up to 200,000 characters; `.md` files render as Markdown; images show inline; files over 3 MB say "Too large to preview (<size>)."; other types say "No preview for this file type." Buttons: Delete (confirms, then `DELETE /api/files`), Open with… (the `openFile` bridge call, which uses `termux-open`; outside the app the toast says "Open works in the phone app"), Open in canvas (text files only: closes the screen and opens the file in the canvas, 3.7) and Ask Hermes (puts "Look at the file <path> and " into the composer and returns to the chat).
+Preview sheet (title = file name, path in monospace). What shows is decided by `previewKind` (`web/src/filekind.ts`) from the extension (upper case counts), then from the MIME type for unknown extensions:
+| Files with | Preview |
+|---|---|
+| `.csv`, `.tsv` | Table (the same `DocView` as the canvas; the delimiter is read from the first line) |
+| `.json` | Pretty-printed JSON |
+| `.mmd`, `.mermaid` | Rendered diagram |
+| `.html`, `.htm` | The page, in the offline sandbox (`HtmlFrame` with `network` off, no `allow-same-origin`); "Open in canvas" is where network can be allowed |
+| code (`py`, `js`, `ts`, `tsx`, `jsx`, `sh`, `zsh`, `bash`, `java`, `kt`, `c`, `h`, `cpp`, `rs`, `go`, `rb`, `css`, `xml`, `sql`, `yaml`, `yml`, `toml`) | Highlighted code; the language is the extension, mapped to the highlight.js name (`yml` to `yaml`, `kt` to `kotlin`, `rs` to `rust`, `rb` to `ruby`, `sh` to `bash`, `h` to `c`, `tsx` to `typescript`, `jsx` to `javascript`) |
+| `.md`, `.markdown` | Rendered Markdown |
+| `.txt`, `.ini`, `.cfg`, `.conf`, `.log`, `.env`, `.gitignore`, or any `text/*` type | Plain text, up to 200,000 characters |
+| `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.svg`, or any `image/*` type | The image inline |
+| `.mp3`, `.m4a`, `.ogg`, `.wav`, `.flac`, `.mp4`, `.webm`, `.mov`, `.mkv` | A player (`Media`). The file is not read into the page (it streams from the phone), so there is no size limit |
+| `.pdf`, Office files, everything else | "No preview here. Use Open with… to view it in another app." |
+
+Files read into the page (everything except players) over 3 MB say "Too large to preview (<size>)." Buttons: Delete (confirms, then `DELETE /api/files`), Open with… (the `openFile` bridge call, which uses `termux-open`; outside the app the toast says "Open works in the phone app"), Open in canvas (documents read as text only: closes the screen and opens the file in the canvas, 3.7) and Ask Hermes (puts "Look at the file <path> and " into the composer and returns to the chat).
 **Data:** `GET /api/files`, `GET /api/files/read`, `POST /api/files/upload`, `POST /api/files/mkdir`, `DELETE /api/files` (all sent without the profile scope).
 
 #### Projects
