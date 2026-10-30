@@ -102,7 +102,14 @@ final class DevTools {
         appContext = app;
         boolean ended = until != 0 && (!isOn() || !developerOptionsOn(app));
         if (ended) until = 0;
-        apply(app, ended);
+        if (ended || until != 0) {
+            apply(app, ended);
+            return;
+        }
+        // Off and never on in this process (a fresh start, also the service's at boot): WebView is already off, so don't
+        // load it just to say so; only drop a notification a dead process may have left.
+        NotificationManager nm = app.getSystemService(NotificationManager.class);
+        if (nm != null) nm.cancel(NOTIFICATION_ID);
     }
 
     /** Makes WebView, the timer and the notification match the state. Main thread. */
