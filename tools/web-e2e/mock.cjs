@@ -453,6 +453,12 @@ wss.on('connection', ws => {
           // Slow start-up resume: the user starts a new chat while this is loading.
           return later(2500, () => reply({ session_id: 'rt-slowstart', stored_session_id: sid, info: { title: 'Slow chat', model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
         }
+        if (sid === 's-scrub') {
+          // 30 questions with tall answers: the chat scrubber (rail with one tick per question) shows.
+          const messages = []
+          for (let i = 1; i <= 30; i++) messages.push({ role: 'user', text: `question ${i}`, row_id: i }, { role: 'assistant', text: `answer ${i}\n\n` + 'line\n\n'.repeat(15) })
+          return reply({ session_id: 'rt-s-scrub', stored_session_id: sid, info: { title: 'Scrub chat', model: 'mock-model' }, messages })
+        }
         if (sid === 's-long') {
           // 150 turns: the app should draw only the end and load earlier turns on scroll.
           const messages = []

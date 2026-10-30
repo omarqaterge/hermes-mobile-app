@@ -163,6 +163,14 @@ textarea {
 }
 
 /* ── chat ─────────────────────────────────────────────── */
+/* Holds the scrolling list and the scrubber rail, which must not scroll with the content. */
+.chat-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
 .chat {
   flex: 1;
   min-height: 0;
@@ -3400,4 +3408,82 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   right: -3px;
   bottom: -3px;
   color: var(--accent-ink);
+}
+
+/* chat scrubber: the rail on the right edge of a long chat (components/Scrubber.tsx) */
+.scrubber {
+  position: absolute;
+  right: 0;
+  top: 12px;
+  bottom: 72px;
+  width: 28px;
+  z-index: 3;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+.scrubber::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--dim);
+  opacity: 0.25;
+  transition: width 0.12s;
+}
+.scrubber.active::before,
+.scrubber:focus-visible::before {
+  width: 6px;
+}
+.scrub-tick {
+  position: absolute;
+  right: 3px;
+  width: 5px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--dim);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.scrub-tick.on {
+  width: 12px;
+  background: var(--accent);
+  opacity: 1;
+}
+.scrub-bubble {
+  position: absolute;
+  right: 36px;
+  transform: translateY(-50%);
+  max-width: min(70vw, 320px);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  pointer-events: none;
+}
+.scrub-num {
+  flex: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+.scrub-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrubber::before {
+    transition: none;
+  }
 }
