@@ -14,6 +14,7 @@ const METHODS = [
   'sharedItem', 'mediaBase', 'setLastChat', 'getTokenAsync', 'setupState', 'setupFix', 'isAssistant', 'openAssistantSettings', 'signInTermux', 'installUpdate',
   'saveImage', 'shareImage', 'chatSeen', 'setUnseen', 'installHelperApp', 'probeTermux', 'probeTermuxNow', 'setupCommand', 'setupProgress',
   'bgState', 'bgFrameAsync', 'bgAction',
+  'openRemoteDebugging', 'remoteDebuggingState', 'turnOffRemoteDebugging', // none of these can turn remote debugging on: the shell asks for the screen lock itself
   'uninstallStart', 'uninstallState', 'uninstallApp'
 ]
 

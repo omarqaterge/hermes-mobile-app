@@ -94,6 +94,10 @@ const nativeShell = () => {
         return true
       },
       setupProgress: key => (k(key, 'setupProgress'), window.__progress ? JSON.stringify(window.__progress) : ''),
+      // Settings → About → Remote debugging (plan 14): the test sets window.__rd; the calls are recorded in window.__rdCalls.
+      remoteDebuggingState: key => (k(key, 'remoteDebuggingState'), JSON.stringify(window.__rd || { available: false, on: false, minutesLeft: 0 })),
+      openRemoteDebugging: key => (k(key, 'openRemoteDebugging'), (window.__rdCalls ||= []).push('open')),
+      turnOffRemoteDebugging: key => (k(key, 'turnOffRemoteDebugging'), (window.__rdCalls ||= []).push('off'), (window.__rd = { ...window.__rd, on: false, minutesLeft: 0 }), setTimeout(() => window.dispatchEvent(new Event('hm-devtools')), 20)), // the shell tells the page, as DevTools.apply does
       listVoices: key => k(key, 'listVoices'),
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
@@ -1782,6 +1786,53 @@ async function main() {
     check((await dv.getByText('Test build: remote debugging is on').count()) === 1 && (await dv.locator('.devtools-strip button, .devtools-strip a').count()) === 0, 'devtools: one strip, nothing to dismiss')
     await dv.close()
     check((await np.getByText('Test build: remote debugging is on').count()) === 0, 'devtools: a normal page has no strip')
+  }
+
+
+  // ── plan 14: Settings → About → Remote debugging (the page can only ask; it never turns anything on) ──
+  {
+    const bridgeSrc = require('fs').readFileSync(require('path').join(__dirname, '../../web/src/secure-bridge.ts'), 'utf8')
+    const names = [...bridgeSrc.matchAll(/'([A-Za-z]+)'/g)].map(m => m[1])
+    check(names.filter(n => /^(enable|turnOn|startRemote|setRemote|allowRemote)/i.test(n) || /(enable|turnon)(remote|debug|devtools)/i.test(n)).length === 0, 'remote debugging: secure-bridge.ts lists no method that enables it')
+    check(['openRemoteDebugging', 'remoteDebuggingState', 'turnOffRemoteDebugging'].every(n => names.includes(n)), 'remote debugging: the three methods are in secure-bridge.ts')
+    const rdPage = async init => {
+      const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(init)
+      await pg.addInitScript(nativeShell)
+      await pg.goto('http://127.0.0.1:5180/')
+      await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+      await pg.getByRole('button', { name: /^Sessions/ }).click()
+      await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+      await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+      return pg
+    }
+    const strip = pg => pg.locator('.devtools-strip')
+    // not available (Developer options off): no row, no strip
+    let rd = await rdPage(() => { window.__rd = { available: false, on: false, minutesLeft: 0 } })
+    check((await rd.getByText('Remote debugging', { exact: true }).count()) === 0, 'remote debugging: no row while Developer options are off')
+    check((await strip(rd).count()) === 0, 'remote debugging: no strip while off')
+    await rd.close()
+    // off: row says Off, tap asks the shell to open its confirmation (and nothing else)
+    rd = await rdPage(() => { window.__rd = { available: true, on: false, minutesLeft: 0 } })
+    const rowOff = rd.locator('button, .row', { hasText: 'Remote debugging' }).first()
+    check(await rowOff.isVisible(), 'remote debugging: the row shows when Developer options are on')
+    check((await rowOff.innerText()).includes('Off'), 'remote debugging: the row says Off')
+    check((await strip(rd).count()) === 0, 'remote debugging: no strip while off (available)')
+    await rowOff.click()
+    check(JSON.stringify(await rd.evaluate(() => window.__rdCalls)) === '["open"]', 'remote debugging: tapping Off calls openRemoteDebugging only')
+    // the shell turns it on (after the lock screen): the page follows when the shell says so
+    await rd.evaluate(() => { window.__rd = { available: true, on: true, minutesLeft: 42 }; window.dispatchEvent(new Event('hm-devtools')) })
+    await rd.locator('.set-sub', { hasText: 'On · 42 min left' }).waitFor({ timeout: 5000 })
+    check(await strip(rd).isVisible() && (await strip(rd).innerText()).includes('Remote debugging is on · 42 min left'), 'remote debugging: the strip shows while on')
+    await rd.locator('button, .row', { hasText: 'Remote debugging' }).first().click()
+    await rd.locator('.devtools-strip').waitFor({ state: 'detached', timeout: 5000 })
+    check(JSON.stringify(await rd.evaluate(() => window.__rdCalls)) === '["open","off"]', 'remote debugging: tapping On calls turnOffRemoteDebugging')
+    check((await strip(rd).count()) === 0, 'remote debugging: the strip goes when it is turned off')
+    await rd.close()
+    // already on when the page loads
+    rd = await rdPage(() => { window.__rd = { available: true, on: true, minutesLeft: 42 } })
+    check((await rd.locator('.set-sub', { hasText: 'On · 42 min left' }).count()) === 1 && (await strip(rd).isVisible()), 'remote debugging: shows "On · 42 min left" and the strip when already on')
+    await rd.close()
   }
 
   // ── #33 Live mode: an approval is read out and answered by voice ──

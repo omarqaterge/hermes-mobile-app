@@ -221,6 +221,7 @@ public class HermesService extends Service {
     public void onCreate() {
         super.onCreate();
         createChannels(this);
+        DevTools.recheck(this); // a restarted process has remote debugging off: drop a notification the old one left
         loadUnseen();
         key = ensureKey();
         // The typed call is API 29 and the special-use type API 34; older Android uses the manifest's type.
@@ -312,6 +313,10 @@ public class HermesService extends Service {
         }
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             stopTurn(intent.getStringExtra("session"));
+            return START_STICKY;
+        }
+        if (intent != null && DevTools.ACTION_OFF.equals(intent.getAction())) {
+            DevTools.turnOff(this); // the Turn off button of the remote-debugging notification (this service is not exported)
             return START_STICKY;
         }
         if (intent != null && TtsMedia.ACTION_TTS.equals(intent.getAction())) {
@@ -1558,7 +1563,10 @@ public class HermesService extends Service {
         NotificationChannel pair = new NotificationChannel(AdbPairing.CH_PAIR, "Pairing", NotificationManager.IMPORTANCE_HIGH);
         pair.setDescription("The Wireless debugging pairing code, while you set up Hermes Mobile");
         pair.setShowBadge(false);
-        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback, phone, upd, pair}) nm.createNotificationChannel(c);
+        NotificationChannel devtools = new NotificationChannel(DevTools.CH_DEVTOOLS, "Remote debugging", NotificationManager.IMPORTANCE_LOW);
+        devtools.setDescription("Shown while remote debugging is on, with a button to turn it off");
+        devtools.setShowBadge(false);
+        for (NotificationChannel c : new NotificationChannel[]{status, idle, alert, reply, learn, jobs, playback, phone, upd, pair, devtools}) nm.createNotificationChannel(c);
         nm.deleteNotificationChannel("hermes"); // v0.1 channel, replaced by the ones above
         nm.deleteNotificationChannel("learning"); // replaced by learning2/jobs2, which don't badge the icon
         nm.deleteNotificationChannel("jobs");
