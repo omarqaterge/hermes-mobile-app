@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Stash a draft.** In the Add menu, "Stash draft" puts the text you are writing aside and empties the box;
+  "Stashed drafts" lists what you put aside (from any chat) and tapping one puts it back, swapping with what is in the
+  box. "Clear all stashed drafts" removes them; at most 20 are kept. Quotes and attachments stay where they are.
+  Browser tests only; not yet on a real phone.
 - **Several questions, one at a time.** When Hermes asks more than one question at once, the sheet shows
   `Question 2 of 3` with the current question and a row of dots; picking a choice in a single-choice question moves to
   the next one by itself after a moment. Back and Next move by hand (Android Back goes to the previous question), and

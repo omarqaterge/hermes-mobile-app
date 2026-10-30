@@ -11,6 +11,10 @@ import { Spinner } from './Spinner'
 import { QuoteBar } from './QuoteBar'
 import { ctxLevel, ringDash } from '../ctxring'
 import { effortLevel } from '../effort'
+import { clearStashes, pushStash, stashes, takeStash } from '../stash'
+import { confirmDialog } from '../dialog'
+import { plainTitle } from './Title'
+import { ago } from '../unread'
 import { QUEUE_MAX, enqueue, useQueue } from '../queue'
 import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
 
@@ -88,6 +92,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const cameraInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [attachMenu, setAttachMenu] = useState(false)
+  const [stashMenu, setStashMenu] = useState(false)
   const [attaching, setAttaching] = useState(0)
   const running = useStore(s => s.active?.running ?? false)
   const model = useStore(s => s.active?.info.model ?? s.defaultModel)
@@ -128,6 +133,33 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
       ta.current?.focus()
     }
   }, [])
+
+  // Stash: only the typed text is put aside; quotes and attachments stay where they are.
+  const stashList = attachMenu || stashMenu ? stashes() : []
+  const putText = (t: string) => {
+    setText(t)
+    setCaret(t.length)
+    ta.current?.focus()
+  }
+  const stashDraft = () => {
+    if (!text.trim()) return
+    pushStash(text, chatId || null)
+    putText('')
+    toast('Draft stashed')
+  }
+  const unstash = async (id: string) => {
+    if (id === 'clear') {
+      if (await confirmDialog({ title: 'Clear all stashed drafts?', message: 'The drafts you put aside will be deleted.', confirmLabel: 'Clear', danger: true })) clearStashes()
+      return
+    }
+    const st = takeStash(id)
+    if (!st) return
+    if (text.trim()) {
+      pushStash(text, chatId || null)
+      toast('Swapped with your stash')
+    }
+    putText(st.text)
+  }
 
   const pick = (c: CommandEntry) => {
     haptic()
@@ -442,6 +474,23 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             void addFiles(files)
           }}
         />
+        {stashMenu && (
+          <PickerSheet
+            title="Stashed drafts"
+            options={[
+              ...stashList.map(st => ({
+                value: st.id,
+                label: (st.text.trim().split('\n')[0] || '').slice(0, 60),
+                sub: `${ago(st.at)} · ${(st.chat && plainTitle(getState().sessions.find(x => x.id === st.chat)?.title)) || 'New chat'}`,
+                tone: 'gray' as const
+              })),
+              { value: 'clear', label: 'Clear all stashed drafts', tone: 'red' as const, icon: line('M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3') }
+            ]}
+            value=""
+            onPick={unstash}
+            onClose={() => setStashMenu(false)}
+          />
+        )}
         {attachMenu && (
           <PickerSheet
             title="Add"
@@ -453,10 +502,12 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
                 tone: 'teal',
                 icon: line('M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4zM18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z')
               },
-              ...ATTACH_OPTIONS
+              ...ATTACH_OPTIONS,
+              ...(text.trim() ? [{ value: 'stash', label: 'Stash draft', sub: 'Put this text aside and clear the box', tone: 'gray' as const, icon: line('M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM3 4h18v4H3zM12 11v5M9.5 13.5L12 16l2.5-2.5') }] : []),
+              ...(stashList.length ? [{ value: 'stashes', label: `Stashed drafts (${stashList.length})`, sub: stashList[0].text.trim().slice(0, 50), tone: 'gray' as const, icon: line('M12 3l9 4.5-9 4.5-9-4.5zM3 12l9 4.5 9-4.5M3 16.5L12 21l9-4.5') }] : [])
             ]}
             value=""
-            onPick={v => (v === 'model' ? setState({ sheet: 'model' }) : (v === 'camera' ? cameraInput : v === 'photo' ? photoInput : fileInput).current?.click())}
+            onPick={v => (v === 'model' ? setState({ sheet: 'model' }) : v === 'stash' ? stashDraft() : v === 'stashes' ? setStashMenu(true) : (v === 'camera' ? cameraInput : v === 'photo' ? photoInput : fileInput).current?.click())}
             onClose={() => setAttachMenu(false)}
           />
         )}
