@@ -1,3 +1,4 @@
+import { appVersion, isDevtoolsBuild } from './bridge'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { compressChat, connect, errText, fmtCtx, openSessionFromNotification, reconnectNow } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
@@ -731,6 +732,19 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   )
 }
 
+/** Test builds only (`HM_DEVTOOLS=1`): a thin strip that can't be dismissed, drawn above everything, full screens included. */
+function DevtoolsStrip() {
+  if (!isDevtoolsBuild(appVersion())) return null
+  return (
+    <>
+      <div className="devtools-strip" role="status">
+        Test build: remote debugging is on
+      </div>
+      <div className="devtools-spacer" aria-hidden="true" />
+    </>
+  )
+}
+
 export function App() {
   const sheet = useStore(s => s.sheet)
   const screen = useStore(s => s.screen)
@@ -769,6 +783,7 @@ export function App() {
 
   return (
     <div className="app">
+      <DevtoolsStrip />
       <Header />
       <ConnBanner />
       <FindBar />
