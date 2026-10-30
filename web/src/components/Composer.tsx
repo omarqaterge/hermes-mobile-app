@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fmtPause, getLivePause, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
 import { startListening, stopListening, useVoice, voiceErrorText, voiceInputAvailable } from '../voice'
 import { attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, setYolo, unqueueMessage } from '../gateway'
@@ -10,6 +10,7 @@ import { getDraft, setDraft } from '../drafts'
 import { Spinner } from './Spinner'
 import { QuoteBar } from './QuoteBar'
 import { ctxLevel, ringDash } from '../ctxring'
+import { effortLevel } from '../effort'
 import { QUEUE_MAX, enqueue, useQueue } from '../queue'
 import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
 
@@ -35,7 +36,20 @@ const ATTACH_OPTIONS: Option[] = [
   }
 ]
 
-const EFFORT_SHORT: Record<string, string> = { medium: 'med', minimal: 'min', none: 'off' }
+/** The reasoning level as 1-5 rising bars (a hollow bar for off); the level's text when it is one we don't know. */
+function EffortBars({ effort }: { effort: string }) {
+  const n = effortLevel(effort)
+  if (n === null) return <span className="model-chip-effort">{effort}</span>
+  if (n === 0) return <span className="model-chip-effort effort-bars" aria-hidden="true"><span className="effort-bar off" style={{ height: 10 }} /></span>
+  return (
+    <span className="model-chip-effort effort-bars" aria-hidden="true">
+      {[0, 1, 2, 3, 4].map(i => (
+        <span key={i} className={`effort-bar${i < n ? ' on' : ''}`} style={{ height: 4 + i * 2 }} />
+      ))}
+    </span>
+  )
+}
+
 
 export function Composer({ injected, onInjected }: { injected: string | null; onInjected: () => void }) {
   // Each chat keeps its own unsent text; the new-chat screen has one per profile.
@@ -362,12 +376,12 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
       {live === 'off' && !showMenu && (
         // The model Hermes reports for this chat (session.info), or the profile default before a chat exists.
         <div className="model-row">
-          <button className="model-chip" aria-label={`Model: ${model || 'none'}. Change model`} onClick={() => { haptic(); setState({ sheet: 'model' }) }} disabled={offline}>
+          <button className="model-chip" aria-label={`Model: ${model || 'none'}${effort && model ? `, reasoning ${effort === 'none' ? 'off' : effort}` : ''}. Change model`} onClick={() => { haptic(); setState({ sheet: 'model' }) }} disabled={offline}>
             <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z" />
             </svg>
             <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
-            {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
+            {effort && model ? <EffortBars effort={effort} /> : null}
           </button>
           {yolo && (
             // Full access (/yolo): commands run without asking. Tap to turn it off (Auto access shows only in the header).
@@ -501,7 +515,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           }}
         />
         {!text.trim() && !quotes.length && !running && !listening && liveAvailable() && (
-          <button
+          <button key="live"
             className="send live-btn"
             aria-label="Live conversation"
             title={`Live: talk, pause ${fmtPause(getLivePause())} to send, Hermes answers out loud`}
@@ -517,7 +531,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           </button>
         )}
         {!text.trim() && !quotes.length && !running && !listening && voiceInputAvailable() ? (
-          <button
+          <button key="mic"
             className="send mic"
             aria-label="Dictate"
             disabled={busy || offline}
@@ -538,15 +552,15 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-3.08A7 7 0 0 0 19 12h-2z"/></svg>
           </button>
         ) : listening ? (
-          <button className="send mic on" aria-label="Stop dictation" onClick={() => { haptic(); stopListening() }}>
+          <button key="mic-on" className="send mic on" aria-label="Stop dictation" onClick={() => { haptic(); stopListening() }}>
             <span className="stop-square" />
           </button>
         ) : running && !text.trim() && !quotes.length ? (
-          <button className="send stop" aria-label="Stop" onClick={() => { haptic(); void interrupt() }}>
+          <button key="stop" className="send stop" aria-label="Stop" onClick={() => { haptic(); void interrupt() }}>
             <span className="stop-square" />
           </button>
         ) : running ? (
-          <>
+          <Fragment key="run">
             <button className="send steer" aria-label="Steer" title="Send into the running task now" onClick={() => void send()} disabled={busy || !!opening}>
               Steer
             </button>
@@ -560,9 +574,9 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21.85 12.5c.8-.35.8-1.5 0-1.84L3.4 2.6c-.66-.29-1.39.2-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
               <svg className="queue-badge" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><circle cx="12" cy="12" r="9" fill="var(--accent)" /><path d="M12 7v5l3 2" /></svg>
             </button>
-          </>
+          </Fragment>
         ) : (
-          <button className="send" aria-label={conn !== 'open' ? 'Send when back online' : 'Send'} onClick={() => void send()} disabled={(!text.trim() && !quotes.length) || busy || !!opening}>
+          <button key="send" className="send" aria-label={conn !== 'open' ? 'Send when back online' : 'Send'} onClick={() => void send()} disabled={(!text.trim() && !quotes.length) || busy || !!opening}>
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21.85 12.5c.8-.35.8-1.5 0-1.84L3.4 2.6c-.66-.29-1.39.2-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
           </button>
         )}
