@@ -210,6 +210,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    `/yolo` and `/fast` are handled with `config.set` (keys `yolo` and `fast`); everything else tries `slash.exec`,
    then `command.dispatch`, and follows its `type` (`exec`, `alias` up to depth 3, `send`, `skill`, `prefill`).
 5. If the chat is running, the text steers the running turn (`session.steer`) and a "Steer: …" notice is added.
+   A follow-up typed while the chat runs can also wait in the page's queue instead (`queue.ts`, 3.4): see step 8a.
 6. Otherwise the page adds the user bubble at once (with photo previews, image paths, file names and their
    `@file:` refs), sets `running: true`, clears the attachments, waits for a model switch in flight
    (`switching`), and calls `prompt.submit` with `surface: 'mobile'`. Files travel as their `@file:` references in
@@ -235,6 +236,13 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    - Events of other chats only refresh the drawer (`session.title`, `message.complete` → `loadSessionsSoon`);
      `sessions.changed` refreshes it too. `notification.show` becomes a toast; `request.cancel` closes a request
      sheet that was answered elsewhere.
+8a. The queue drains on turn end. `gateway.ts` watches the store (`subscribe`): when the open chat goes from running to
+   not running and the turn was not stopped (`interrupt()`) and did not end with an error (`message.complete` with
+   `error` or `failure_reason`), the queue is not paused, no approval or question is open (`requests`), Hermes is
+   connected and no attachment is waiting, `drainQueue` takes the first queued message (`takeFirst`) and sends it
+   with `sendPrompt`. Its reply ends the next turn, which sends the next one. After a Stop or an error the queue is
+   paused instead, and so is a chat just opened. `drainQueue(chat, true)` (the Resume button) ignores the pause.
+   If the send throws, the message goes back to the front and the queue is paused with an error toast.
 8. A missed `message.complete` can't leave the spinner on: every 15 s, if the chat is running and no event came for
    45 s, `syncRunning` asks `session.resume`; when Hermes says it is no longer running, the stored transcript
    replaces the screen. The same check runs whenever the page becomes visible.
@@ -560,6 +568,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.lastSession` | `gateway.ts`, `store.ts` | The chat to reopen on start: `{id, profile}`; used only when the profile matches. | Records the profile |
 | `hm.live.pause` (inventory name `hm.live`) | `live.ts` (`PAUSE_KEY`) | Live mode: seconds of silence before sending (0.5–10, default 2). | No |
 | `hm.oled` | `theme.ts` | Legacy OLED switch (`'1'`), read only when `hm.theme` is absent. | No |
+| `hm.queue.v1` | `queue.ts` | Follow-ups queued while Hermes works: `{storedChatId: [{id, text, at}]}`, oldest first, at most 10 per chat; a deleted chat's entry is removed. | No |
 | `hm.openui.v1` | `openui-msg.ts` | Card form/variable state: `{"<chatId>:<hash of card code>": {at, s}}`; newest 150 cards, ≤ 300,000 characters. | No (chat ids) |
 | `hm.order.v1` (suffix `.<profile>`) | `order.ts` | Drawer pins and custom order `{pinned, manual, at}`; mirrored to the plugin's `/prefs` (newest `at` wins). | Yes |
 | `hm.outbox.v1` | `gateway.ts`, `store.ts` | The one message queued while offline: `{chat, text, atts?, runtime?}`. | No |
@@ -947,6 +956,7 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 | Find bar (`FindBar`) | Search field "Search in this chat", a count such as `3 / 7` (or "none"), buttons Previous match (↑), Next match (↓), Close search (✕). | Previous match goes to an older hit, Next match to a newer one (wraps). Enter in the field goes to the next older hit, Shift+Enter to the newer. Close search ends the search. | none | Opened from chat menu "Search in chat". Closes by itself when another chat opens. Back closes it. Arrows disabled with no hit. |
 | Messages (`Chat`) | The scrolling list of items (3.3). | See 3.3. | Pull up past the end: By the way (3.12). | Skeleton while a chat opens, empty screen when there are no items. |
 | Scroll button (aria-label Scroll to the newest message) | Round `↓` button over the list. | Smooth-scrolls to the end. | none | Shown only when the list is more than 80 px away from its end. |
+| Queued messages (`QueuedRows`, `web/src/components/Queued.tsx`) | After the last message and before the bottom space: right-aligned dashed bubbles, each with a small header `Queued · 1 of 2` and three icon buttons under it. Above them, while the queue is paused, the line `Queue paused` with a Resume button. | Send now (aria-label `Send queued message now`) removes it from the queue and sends it: it steers the running turn, or is sent as a normal message when idle. Edit (aria-label `Edit queued message`) turns the bubble into a text box with Cancel and Save. Remove (aria-label `Remove queued message`) deletes it. Resume sends the first queued message now (when a reply is still running it only lifts the pause, so the queue goes on when the reply ends). | none | Not part of `items`, so search, jump and folding ignore it. Hidden when the chat has no queued message. A chat opens with its queue paused; Stop or an error pauses it too. |
 | Pull hint | Text "Release for a side question", hidden until the user pulls up at the end of the list. | n/a (`pullbtw.ts` draws it) | Pull up 110 px past the end (`PULL_TRIGGER_PX`) and release. | Needs a chat on screen. |
 | Activity banner (`ActivityBanner`) | Strip with spinner: "<chat title>: <what Hermes does>", and "(+N more)". | Opens that chat. | none | Hidden when empty. Disabled when the item is the open chat's own background review. |
 | Status bar (`StatusBar`) | While a turn runs: spinner, the live status text (or "Working…"), `~N tok/s`, `ctx N%`. Below it, a "☑ Tasks done/total" line when Hermes keeps a todo list. | Tasks line toggles the list. Each todo shows ✓ completed, ◐ in progress, ✕ cancelled, ○ pending. | none | Hidden when nothing runs and there are no todos. |
@@ -1173,17 +1183,18 @@ The composer sits at the bottom of the chat (`web/src/components/Composer.tsx` `
 | Stop button (aria-label Stop) | Stop square. | Interrupts the running turn (`session.interrupt`). | none | Shown while a reply runs and the text box is empty. |
 | Send button (aria-label Send) | Paper-plane icon. The label is "Steer" while a reply runs and "Send when back online" while offline. | Sends. | none | Disabled when the text is blank, a send is in flight, or a chat is opening. |
 
-**Data:** `drafts.ts` (`hm.drafts.v1`, legacy `hm.draft`), `recent.ts` (`hm.recent.v1.<profile>`), `commands.ts` (`hm.cmds.v1.<profile>`), outbox (`hm.outbox.v1`); RPCs `prompt.submit`, `session.steer`, `session.interrupt`, `slash.exec`, `command.dispatch`, `commands.catalog`, `image.attach_bytes`, `image.attach`, `image.detach`, `file.attach`, `config.set`; dashboard `GET /api/skills`.
+**Data:** `queue.ts` (`hm.queue.v1`), `drafts.ts` (`hm.drafts.v1`, legacy `hm.draft`), `recent.ts` (`hm.recent.v1.<profile>`), `commands.ts` (`hm.cmds.v1.<profile>`), outbox (`hm.outbox.v1`); RPCs `prompt.submit`, `session.steer`, `session.interrupt`, `slash.exec`, `command.dispatch`, `commands.catalog`, `image.attach_bytes`, `image.attach`, `image.detach`, `file.attach`, `config.set`; dashboard `GET /api/skills`.
 **Rules:** attaching and the camera use a plain `<input type="file">` (the Android shell supplies the picker and camera), so there is no custom file browser.
 
 #### What the button on the right does
 
-One slot, five faces, decided in this order:
+One slot, six faces, decided in this order:
 
 1. Text box empty, no reply running, not listening, and the phone app has voice input: the Live conversation button and the Dictate button (side by side).
 2. Listening: Stop dictation.
 3. A reply is running and the box is empty: Stop.
-4. Otherwise: Send (label Steer while a reply runs).
+4. A reply is running and the box (or the quotes) has content: two buttons. A small pill `Steer` (aria-label `Steer`) sends it into the running turn now, like Send used to while running. The round arrow with a clock badge (aria-label `Queue`) puts it in the queue (below). Queue is disabled, with the label `Queue (remove attachments first)`, while photos or files are attached (Hermes would attach them to whatever is sent next); with the label `Queue (full)` when the chat already has 10 queued messages; and while the text starts with `/` (slash commands are never queued; Steer runs them as before). Ctrl/Cmd+Enter in the box queues while a reply runs.
+5. Otherwise: Send (label Send when back online while Hermes is not connected).
 
 #### Sending
 
@@ -1202,6 +1213,8 @@ One slot, five faces, decided in this order:
 5. Any other text starting with `/` goes to `runSlash` (below).
 6. If a reply is running: `session.steer` with the text, and a notice "Steer: <text>" is added. The running turn takes the new instruction; no new turn starts.
 7. Otherwise a user item is added (with the queued photo thumbnails and file names), `running` is set, any pending model switch is awaited, and `prompt.submit` is called with `surface: 'mobile'`. File attachments go as their `@file:` references in front of the text; photos were already queued inside Hermes. If it fails, a "Send failed: <reason>" notice is added and the attachments reappear in the composer.
+
+**Queue** (`send(undefined, 'queue')` in `Composer.tsx`, state in `web/src/queue.ts`): the text sent is built exactly as for Send (`withQuotes(quotes, text)`, so quotes travel with it); it is added to the open chat's queue (`enqueue`, `hm.queue.v1`), and the box and the quotes are cleared. Queued messages are shown at the end of the chat (3.2) and sent one by one when the chat's turn ends (2.2.1 step 8a). The queue lives in the page, not in Hermes: a queued message is sent only while the app shows that chat (closing the app, or opening another chat, keeps it and pauses it until Resume). It is a different thing from the offline outbox. The placeholder while a reply runs is "Queue or steer a follow-up…".
 
 `runSlash`: shows the command as a user item, then:
 
@@ -1467,6 +1480,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `fold.ts` | Folding of tool-call runs. |
 | `jump.ts` | Message search jump, in-chat search, word highlighting. |
 | `drafts.ts` | Unsent text per chat. |
+| `queue.ts` | Follow-ups queued while Hermes works: `queuedFor`, `enqueue`, `editQueued`, `removeQueued`, `takeFirst`, `restoreFirst`, `clearQueue`, `isPaused`, `setPaused`, `useQueue`, `QUEUE_MAX`; the pause is kept in memory only. |
+| `Queued.tsx` | `QueuedRows`: the dashed queued bubbles, Queue paused and Resume. |
 | `recent.ts` | Recent prompts. |
 | `commands.ts` | Slash-command and skill catalog for autocomplete. |
 | `favs.ts` | Starred models. |
