@@ -3084,6 +3084,42 @@ async function main() {
     await mock({ phone: { files: true, shizuku: 'ok' } })
   }
 
+  // ── "New since your last visit" divider (visit.ts) ──
+  {
+    const vp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await vp.addInitScript(() => {
+      if (!sessionStorage.getItem('visit-seeded')) {
+        sessionStorage.setItem('visit-seeded', '1')
+        localStorage.setItem('hm.visit.v1', JSON.stringify({ 's-7': 1790000030 * 1000, 's-visit': 1790000100 * 1000 }))
+      }
+      localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-7', profile: 'default' }))
+    })
+    await vp.goto('http://127.0.0.1:5180/')
+    await vp.locator('.msg.assistant', { hasText: 'answer s-7' }).waitFor({ timeout: 5000 })
+    check((await vp.locator('.visit-divider').count()) === 1 && (await vp.locator('.visit-divider').textContent()) === 'New since your last visit', 'visit: the divider shows in a chat with newer messages')
+    check((await vp.locator('.visit-divider').getAttribute('role')) === 'separator', 'visit: the divider has the separator role')
+    check(await vp.evaluate(() => { const d = document.querySelector('.visit-divider'); return !!d && d.parentElement.parentElement.classList.contains('chat') && d.parentElement.querySelector('.msg.assistant')?.textContent.includes('answer s-7') }), 'visit: the divider sits in the wrapper of the first unseen message, one child of the chat')
+    check(await vp.evaluate(() => [...document.querySelector('.chat').children].filter(c => c.matches('.msg.user, .msg.assistant') || c.querySelector('.msg.user, .msg.assistant')).length === 2), 'visit: the chat still has one element per message')
+    await vp.evaluate(() => window.hermesOpenSession('s-5'))
+    await vp.locator('.msg.assistant', { hasText: 'answer s-5' }).waitFor({ timeout: 5000 })
+    check((await vp.locator('.visit-divider').count()) === 0, 'visit: a chat never opened before has no divider')
+    await vp.evaluate(() => window.hermesOpenSession('s-7'))
+    await vp.locator('.msg.assistant', { hasText: 'answer s-7' }).waitFor({ timeout: 5000 })
+    check((await vp.locator('.visit-divider').count()) === 0, 'visit: reopening a chat after leaving it shows no divider')
+    check(await vp.evaluate(() => Number(JSON.parse(localStorage.getItem('hm.visit.v1'))['s-7']) > 1790000030 * 1000), 'visit: leaving a chat stores the visit time')
+    // scroll: the divider opens near the top of the chat, not at the end
+    await vp.evaluate(() => window.hermesOpenSession('s-visit'))
+    await vp.locator('.visit-divider').waitFor({ timeout: 5000 })
+    await sleep(400)
+    {
+      const db = await vp.locator('.visit-divider').boundingBox()
+      const cb = await vp.locator('.chat').boundingBox()
+      check(db && cb && db.y >= cb.y && db.y - cb.y < 40, `visit: the chat opens with the divider near the top (${db && cb && Math.round(db.y - cb.y)} px below it)`)
+      check(await vp.evaluate(() => document.querySelector('.visit-divider').parentElement.querySelector('.msg.user')?.textContent === 'visit question 2'), 'visit: the divider is right before the first unseen question')
+    }
+    await vp.close()
+  }
+
   await browser.close()
   console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED')
   process.exit(failures ? 1 : 0)
