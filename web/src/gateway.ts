@@ -500,7 +500,7 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
   retire(prev)
   rememberSession(active.storedId)
   applyDraftRead(active.storedId) // a read-aloud choice made on the empty screen
-  const want = defaultAccess() // Settings → Auto for all chats
+  const want = lockView() ? 'off' : defaultAccess() // Settings → Auto for all chats; over the lock screen: talking only
   if (want !== 'off') {
     if (want === 'auto') updateActive(x => (x.runtimeId === active.runtimeId ? { autoAccess: true } : {}))
     void setAccess(active, want, false).catch(() => {})
@@ -678,6 +678,12 @@ export async function sendPrompt(text: string): Promise<void> {
     return
   }
 
+  // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first.
+  if (lockView() && accessOf(a) !== 'off') {
+    askUnlock('Unlock the phone to use this chat')
+    throw new Error('Unlock the phone to use this chat')
+  }
+
   if (a.running) {
     // Mid-turn: steer the running turn instead of queueing a new prompt.
     await rpc('session.steer', { session_id: a.runtimeId, text: trimmed })
@@ -793,6 +799,11 @@ export function setAccess(a: ActiveSession, mode: Access, remember = true): Prom
 }
 let accessQueue: Promise<unknown> = Promise.resolve()
 async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean): Promise<Access> {
+  // Over the lock screen nothing turns Auto or Full access on (a resume re-applying it, /yolo by voice): unlock first.
+  if (mode !== 'off' && lockView()) {
+    askUnlock('Unlock the phone to change access')
+    throw new Error('Unlock the phone to change access')
+  }
   let on: boolean
   if (mode === 'auto') {
     try {
