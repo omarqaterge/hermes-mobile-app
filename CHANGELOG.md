@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Preview a web page or SVG right in the reply.** An `html` or `svg` code block of 3+ lines now has a Preview button
+  (Code switches back). The page runs in the same offline sandbox as the canvas, starts 160 px high and grows to its
+  own height (at most 60 % of the screen); a Full screen button below it opens it full size, and Back closes it. It is
+  disabled while the reply is still arriving. Browser tests only; not yet on a real phone.
 - **Jump between your messages in a long chat.** Once a chat has six or more of your messages and is several screens
   long, a thin rail appears on the right edge with one tick per message you sent. Drag along it: a bubble shows the
   message under your finger (`12 / 30` and its first words); let go and the chat scrolls there. A tap jumps too, and

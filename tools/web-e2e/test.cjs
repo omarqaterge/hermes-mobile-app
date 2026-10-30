@@ -956,6 +956,52 @@ async function main() {
     await idle()
   }
 
+  // ── HTML preview inside replies ──
+  {
+    const idle = () => page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+    await page.getByPlaceholder('Message Hermes').fill('show html streaming')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const pb = page.locator('.msg.assistant .codeblock').last().getByRole('button', { name: 'Preview', exact: true })
+    await pb.waitFor({ timeout: 10000 }).catch(() => {})
+    check((await pb.count()) === 1 && (await pb.isDisabled()), 'html preview: Preview is disabled while the reply streams')
+    await idle()
+    await page.getByPlaceholder('Message Hermes').fill('show html')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const blk = page.locator('.msg.assistant .codeblock').last()
+    await blk.getByRole('button', { name: 'Preview', exact: true }).waitFor({ timeout: 10000 })
+    await idle()
+    check(await blk.getByRole('button', { name: 'Preview', exact: true }).isEnabled(), 'html preview: Preview is enabled once the reply is complete')
+    await blk.getByRole('button', { name: 'Preview', exact: true }).click()
+    const fr = blk.locator('iframe.inline-frame')
+    await fr.waitFor({ timeout: 5000 })
+    check(!((await fr.getAttribute('sandbox')) || '').includes('allow-same-origin') && !((await fr.getAttribute('sandbox')) || '').includes('allow-top-navigation'), 'html preview: the sandbox has no allow-same-origin or allow-top-navigation')
+    const inner = page.frameLocator('iframe.inline-frame').last()
+    await inner.locator('#t').getByText('Hello frame ok').waitFor({ timeout: 5000 }).then(() => check(true, 'html preview: the page ran its script'), () => check(false, 'html preview: the page ran its script'))
+    let hh = 0
+    for (let i = 0; i < 30; i++) {
+      hh = (await fr.boundingBox())?.height || 0
+      if (hh > 200) break
+      await sleep(100)
+    }
+    const vh = await page.evaluate(() => innerHeight)
+    check(hh > 160 && hh <= vh * 0.6 + 1, `html preview: the frame grew to its page, capped at 60% of the window (${hh} of ${vh})`)
+    const rootFrame = page.frames().find(f => f !== page.mainFrame() && f.parentFrame() === page.mainFrame() && f.url() === 'about:srcdoc')
+    check(!!rootFrame && (await rootFrame.evaluate(() => typeof window.HermesAndroid)) === 'undefined', 'html preview: window.HermesAndroid is undefined inside the frame')
+    check(!!rootFrame && (await rootFrame.evaluate(() => fetch('http://127.0.0.1:9119/api/status').then(() => 'ok', () => 'blocked'))) === 'blocked', 'html preview: fetch() from the inline frame is blocked (offline CSP)')
+    await blk.getByRole('button', { name: 'Open preview full screen' }).click()
+    await page.locator('.html-viewer iframe').waitFor({ timeout: 3000 })
+    check((await page.locator('.html-viewer[role=dialog]').count()) === 1, 'html preview: Full screen opens the viewer')
+    await page.locator('.html-viewer').getByRole('button', { name: 'Close preview' }).click()
+    check((await page.locator('.html-viewer').count()) === 0, 'html preview: ✕ closes the viewer')
+    await blk.getByRole('button', { name: 'Open preview full screen' }).click()
+    await page.locator('.html-viewer').waitFor({ timeout: 3000 })
+    await page.evaluate(() => window.hermesBack())
+    await sleep(200)
+    check((await page.locator('.html-viewer').count()) === 0, 'html preview: Android Back closes the viewer')
+    await blk.getByRole('button', { name: 'Code', exact: true }).click()
+    check((await blk.locator('iframe').count()) === 0 && (await blk.locator('pre').count()) === 1, 'html preview: Code switches back to the source')
+  }
+
   // ── tool calls fold into one "Ran N tools" line; tap opens them ──
   await page.getByPlaceholder('Message Hermes').fill('use tools')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()

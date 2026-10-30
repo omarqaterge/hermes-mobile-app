@@ -1,6 +1,9 @@
 // Mock Hermes dashboard + tui_gateway on 127.0.0.1:9119 for browser tests of the web UI (no phone needed).
 // Logs every RPC / REST call to a JSONL file so test.cjs can assert what the app sent.
 const http = require('http')
+
+// Reply for the inline HTML preview scenarios (`show html`, `show html streaming`).
+const HTML_REPLY = 'Page:\n\n```html\n<!doctype html>\n<h1 id="t">Hello frame</h1>\n<script>document.getElementById("t").textContent += " ok"</script>\n<div style="height:600px"></div>\n```'
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -613,6 +616,19 @@ wss.on('connection', ws => {
         if (/^show broken ui$/.test(params.text)) {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Oops:\n\n```openui-lang\nthis is not openui at all\n```' }))
+          return
+        }
+        if (/^show html$/.test(params.text)) {
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: HTML_REPLY }))
+          return
+        }
+        if (/^show html streaming$/.test(params.text)) {
+          const chunks = HTML_REPLY.match(/[\s\S]{1,16}/g)
+          let t = 100
+          event('message.start', sid, {})
+          for (const c of chunks) later((t += 40), () => event('message.delta', sid, { text: c }))
+          later(t + 1500, () => event('message.complete', sid, { text: HTML_REPLY }))
           return
         }
         if (/^show diagram$/.test(params.text)) {
