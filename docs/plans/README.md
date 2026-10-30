@@ -18,6 +18,8 @@ what to make, which files and functions to touch, what to test, and what "done" 
 | 10 | [Questions sheet: move to the next question by itself](10-clarify-auto-advance.md) | S | none |
 | 11 | [Composer stash (put a draft aside)](11-composer-stash.md) | S–M | none |
 | 12 | [More file previews in Files](12-file-previews.md) | M | 04 (shares `HtmlFrame`) |
+| 13 | [Test builds with WebView remote debugging](13-devtools-test-build.md) | S | none |
+| 14 | ["Remote debugging" developer setting with safeguards](14-devtools-setting.md) | M | 13; needs a real-phone check |
 
 Build them one at a time, one plan per branch or commit series. Don't mix two plans in one commit.
 
