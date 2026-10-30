@@ -26,7 +26,7 @@ import { installPullToBtw } from './pullbtw'
 import { findHit, findMatches, firstRange, highlightWords } from './jump'
 import { useBackHandler } from './backstack'
 import { recentPrompts } from './recent'
-import { firstUnseen, lastVisit } from './visit'
+import { BACK_GRACE_MS, firstUnseen, lastBack, lastVisit, newWhileAway, noteAway, noteBack, onBack } from './visit'
 import { bare, useCommandCatalog, type CommandEntry } from './commands'
 import { Title, plainTitle } from './components/Title'
 import { fmtClock, useAutoRead, useDraftAutoRead } from './voice'
@@ -48,6 +48,7 @@ declare global {
   interface Window {
     hermesBack?: () => boolean
     hermesResume?: () => void
+    hermesPause?: () => void
     hermesOpenSession?: (id: string, draft?: string) => void
   }
 }
@@ -73,9 +74,13 @@ window.hermesBack = () => {
 window.hermesOpenSession = (id: string, draft?: string) => openSessionFromNotification(id, draft)
 // Called by the shell when the app returns to the foreground.
 window.hermesResume = () => {
+  noteBack()
   if (getState().conn !== 'open') reconnectNow()
   refreshBg()
 }
+// Called by the shell when the app leaves the foreground (Home, another app, screen off): the open chat was seen until
+// now (visit.ts). The page's own visibilitychange may come later or not at all in a WebView.
+window.hermesPause = () => noteAway(getState().active?.storedId)
 
 function Header() {
   const title = useStore(s => (s.opening && s.preview?.storedId === s.opening ? s.preview.title : s.active?.title))
@@ -420,10 +425,33 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   // "New since your last visit" (visit.ts): the last-seen time is read once when the chat opens (before leaving it
   // marks anything) and the first newer message is found once, from the chat itself (not its cached preview).
   const visitRef = useRef<{ key: string | undefined; since: number | null; idx: number | null; applied: boolean }>({ key: undefined, since: null, idx: null, applied: false })
+  const awayRef = useRef<{ at: number; back: number } | null>(null)
+  const [, bumpBack] = useState(0)
+  useEffect(
+    () =>
+      onBack(() => {
+        const b = lastBack()
+        if (!b || !b.chat || b.chat !== visitRef.current.key) return
+        awayRef.current = { at: b.at, back: b.back }
+        bumpBack(n => n + 1)
+      }),
+    []
+  )
   if (visitRef.current.key !== sessionKey) {
     visitRef.current = { key: sessionKey, since: sessionKey ? lastVisit(sessionKey) : null, idx: null, applied: false }
+    awayRef.current = null
   }
   if (visitRef.current.idx === null && sessionKey && items && items.length > 0 && !previewing) visitRef.current.idx = firstUnseen(items, visitRef.current.since)
+  // Back in the app with this chat still open: messages that arrived while away get the divider (and the scroll),
+  // replacing an older one. The backlog can land a moment after the return, so look again as items arrive, briefly.
+  const awayAt = awayRef.current
+  if (awayAt && items && !previewing) {
+    const i = newWhileAway(items, awayAt.at, awayAt.back)
+    if (i > 0) {
+      visitRef.current = { key: sessionKey, since: awayAt.at, idx: i, applied: false }
+      awayRef.current = null
+    } else if (Date.now() > awayAt.back + 2 * BACK_GRACE_MS) awayRef.current = null
+  }
   const dividerIdx = visitRef.current.idx ?? -1
   // Long chats: only the last WINDOW items are drawn on open (each one parses markdown); scrolling near the top
   // draws the previous WINDOW, keeping what's on screen in place. The start index stays put while new items
