@@ -9,6 +9,7 @@ import { PickerSheet, type Option } from './ui'
 import { getDraft, setDraft } from '../drafts'
 import { Spinner } from './Spinner'
 import { QuoteBar } from './QuoteBar'
+import { QUEUE_MAX, enqueue, useQueue } from '../queue'
 import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
 
 const EMPTY: Attachment[] = []
@@ -84,6 +85,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const catalog = useCommandCatalog()
   const quotes = useQuotes()
   const chatId = useStore(s => s.active?.storedId)
+  const queue = useQueue(chatId)
   // Quotes belong to the chat they were taken from.
   useEffect(() => clearQuotes(), [chatId])
 
@@ -171,7 +173,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   }
 
   /** Send `typed` (with the quotes in front of it, unless it is a slash command); the text box is cleared only when `fromBox`. */
-  const send = async (over?: { quotes: string[]; typed: string }) => {
+  const send = async (over?: { quotes: string[]; typed: string }, mode: 'send' | 'queue' = 'send') => {
     const fromBox = !over
     const t = over ? over.typed : text
     const slash = fromBox && t.trimStart().startsWith('/')
@@ -179,6 +181,14 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
     if ((!t.trim() && !qs.length) || busy) return
     haptic()
     const full = withQuotes(qs, t)
+    if (mode === 'queue') {
+      // Waits for the end of the running reply (queue.ts); the quotes go with it, as in a normal send.
+      if (!chatId || slash || attachments.length) return
+      if (!enqueue(chatId, full.trim())) return void toast(`The queue is full (${QUEUE_MAX} messages)`, 'error')
+      setText('')
+      if (qs.length) clearQuotes()
+      return
+    }
     if (conn !== 'open') {
       // Offline: keep it and send it on reconnect (one message; a second one joins it).
       const prev = getState().queued?.text
@@ -204,7 +214,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   }
 
   const offline = conn !== 'open' || !!opening
-  const placeholder = opening ? 'Opening your chat…' : quotes.length && !text ? 'Ask about the quote…' : offline ? 'Offline: type now, it sends when Hermes is back' : running ? 'Steer the running task…' : 'Message Hermes'
+  const placeholder = opening ? 'Opening your chat…' : quotes.length && !text ? 'Ask about the quote…' : offline ? 'Offline: type now, it sends when Hermes is back' : running ? 'Queue or steer a follow-up…' : 'Message Hermes'
 
   // Fit the box to its text (or placeholder). Measure again when the placeholder changes and when Live mode
   // gives the box back: a chat switched while it was hidden was measured at the wrong width and stayed 2 rows.
@@ -484,7 +494,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey && (e.ctrlKey || e.metaKey)) {
               e.preventDefault()
-              void send()
+              void send(undefined, running ? 'queue' : 'send')
             }
           }}
         />
@@ -533,8 +543,24 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           <button className="send stop" aria-label="Stop" onClick={() => { haptic(); void interrupt() }}>
             <span className="stop-square" />
           </button>
+        ) : running ? (
+          <>
+            <button className="send steer" aria-label="Steer" title="Send into the running task now" onClick={() => void send()} disabled={busy || !!opening}>
+              Steer
+            </button>
+            <button
+              className="send queue"
+              aria-label={queue.items.length >= QUEUE_MAX ? 'Queue (full)' : attachments.length ? 'Queue (remove attachments first)' : 'Queue'}
+              title="Send after the running reply ends"
+              onClick={() => void send(undefined, 'queue')}
+              disabled={busy || !!opening || !chatId || text.trimStart().startsWith('/') || attachments.length > 0 || queue.items.length >= QUEUE_MAX}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21.85 12.5c.8-.35.8-1.5 0-1.84L3.4 2.6c-.66-.29-1.39.2-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
+              <svg className="queue-badge" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><circle cx="12" cy="12" r="9" fill="var(--accent)" /><path d="M12 7v5l3 2" /></svg>
+            </button>
+          </>
         ) : (
-          <button className="send" aria-label={running ? 'Steer' : conn !== 'open' ? 'Send when back online' : 'Send'} onClick={() => void send()} disabled={(!text.trim() && !quotes.length) || busy || !!opening}>
+          <button className="send" aria-label={conn !== 'open' ? 'Send when back online' : 'Send'} onClick={() => void send()} disabled={(!text.trim() && !quotes.length) || busy || !!opening}>
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21.85 12.5c.8-.35.8-1.5 0-1.84L3.4 2.6c-.66-.29-1.39.2-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
           </button>
         )}

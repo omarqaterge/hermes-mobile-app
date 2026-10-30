@@ -1012,6 +1012,86 @@ async function main() {
   await sleep(3500)
   check(calls().slice(endMark).some(c => c.path === '/api/plugins/hermes-mobile/activity'), 'activity polled once right after the turn (the review starts then)')
 
+  // ── queue: a follow-up typed while Hermes works waits as a dashed bubble and is sent when the reply ends ──
+  {
+    const box = page.locator('.composer textarea')
+    const sends = text => rpcs('prompt.submit').filter(c => c.params.text === text).length
+    const steers = text => rpcs('session.steer').filter(c => c.params.text === text).length
+    const doneCount = async t => page.locator('.msg.assistant', { hasText: t }).count()
+    const startSlow = async () => {
+      await box.fill('slow reply')
+      await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+      await page.locator('.composer .send.queue, .composer .send.stop').first().waitFor({ timeout: 3000 })
+    }
+    const queueText = async t => {
+      await box.fill(t)
+      await page.locator('.composer').getByRole('button', { name: 'Queue', exact: true }).click()
+    }
+    // 1 + 2: queue one, it waits, then it is sent when the reply ends
+    const slow0 = await doneCount('Slow done.')
+    await startSlow()
+    await box.fill('next one')
+    check((await page.locator('.composer').getByRole('button', { name: 'Steer', exact: true }).count()) === 1 && (await page.locator('.composer').getByRole('button', { name: 'Queue', exact: true }).count()) === 1, 'running with text: Queue and Steer buttons')
+    check(((await box.getAttribute('placeholder')) || '') === 'Queue or steer a follow-up…', 'running: the placeholder offers Queue or steer')
+    await page.locator('.composer').getByRole('button', { name: 'Queue', exact: true }).click()
+    await page.locator('.queued-msg', { hasText: 'next one' }).waitFor({ timeout: 3000 }).then(() => check(true, 'queued message shows as a dashed bubble'), () => check(false, 'queued message shows as a dashed bubble'))
+    check(((await page.locator('.queued-head').first().textContent()) || '').includes('Queued · 1 of 1'), 'the bubble says Queued · 1 of 1')
+    check((await box.inputValue()) === '', 'queueing clears the box')
+    check(sends('next one') === 0 && steers('next one') === 0, 'nothing is sent while the reply runs')
+    await page.locator('.msg.assistant', { hasText: 'Queued next one done.' }).waitFor({ timeout: 6000 }).then(() => check(true, 'the queued message is sent by itself when the reply ends'), () => check(false, 'the queued message is sent by itself when the reply ends'))
+    check(sends('next one') === 1 && steers('next one') === 0, `exactly one prompt.submit with the queued text (${sends('next one')})`)
+    check((await page.locator('.queued-msg').count()) === 0, 'the bubble is gone after sending')
+    check((await doneCount('Slow done.')) === slow0 + 1, 'the slow reply finished first')
+
+    // 3: remove one, edit another; only the edited one is sent
+    await startSlow()
+    await queueText('a')
+    await queueText('b')
+    check(((await page.locator('.queued-head').last().textContent()) || '').includes('2 of 2'), 'two queued bubbles: 1 of 2, 2 of 2')
+    await page.locator('.queued-msg', { hasText: 'Queued · 1 of 2' }).getByRole('button', { name: 'Remove queued message' }).click()
+    await page.locator('.queued-msg', { hasText: 'Queued · 1 of 1' }).getByRole('button', { name: 'Edit queued message' }).click()
+    await page.locator('.queued-msg .edit-box').fill('c')
+    await page.locator('.queued-msg').getByRole('button', { name: 'Save' }).click()
+    check((await page.locator('.queued-msg .bubble', { hasText: /^c$/ }).count()) === 1, 'Edit and Save change the queued text')
+    await page.locator('.msg.assistant', { hasText: 'Queued c done.' }).waitFor({ timeout: 6000 }).then(() => check(true, 'the edited message is sent'), () => check(false, 'the edited message is sent'))
+    check(sends('c') === 1 && sends('a') === 0 && sends('b') === 0, `only the edited message was sent (c=${sends('c')} a=${sends('a')} b=${sends('b')})`)
+
+    // 4: Stop pauses the queue; Resume sends it
+    await startSlow()
+    await queueText('d')
+    await page.locator('.composer').getByRole('button', { name: 'Stop', exact: true }).click()
+    await page.getByText('Queue paused').waitFor({ timeout: 4000 }).then(() => check(true, 'Stop pauses the queue (Queue paused)'), () => check(false, 'Stop pauses the queue (Queue paused)'))
+    await sleep(600)
+    check(sends('d') === 0 && (await page.locator('.queued-msg', { hasText: 'd' }).count()) === 1, 'a paused queue sends nothing and keeps the bubble')
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await page.locator('.msg.assistant', { hasText: 'Queued d done.' }).waitFor({ timeout: 4000 }).then(() => check(true, 'Resume sends the queued message'), () => check(false, 'Resume sends the queued message'))
+    check(sends('d') === 1 && (await page.locator('.queued-msg').count()) === 0, 'Resume: one prompt.submit, bubble gone')
+
+    // 5: Steer still works, and Send now steers the queued message
+    await startSlow()
+    await box.fill('steer me')
+    await page.locator('.composer').getByRole('button', { name: 'Steer', exact: true }).click()
+    await sleep(300)
+    check(steers('steer me') === 1, 'Steer calls session.steer')
+    await queueText('later')
+    await page.locator('.queued-msg', { hasText: 'later' }).getByRole('button', { name: 'Send queued message now' }).click()
+    await sleep(300)
+    check(steers('later') === 1 && (await page.locator('.queued-msg').count()) === 0, 'Send now steers the queued message and removes it')
+    await page.locator('.msg.assistant', { hasText: 'Slow done.' }).nth(slow0 + 2).waitFor({ timeout: 6000 }).catch(() => {})
+    await page.locator('.composer').getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 4000 }).catch(() => {})
+
+    // 6: a queue survives a reload and opens paused
+    await startSlow()
+    await queueText('e')
+    await page.reload()
+    await page.locator('.queued-msg', { hasText: 'e' }).waitFor({ timeout: 8000 }).then(() => check(true, 'the queue survives a reload'), () => check(false, 'the queue survives a reload'))
+    check((await page.getByText('Queue paused').count()) === 1, 'after a reload the queue is paused')
+    await sleep(500)
+    check(sends('e') === 0, 'nothing is sent by surprise when the chat opens')
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await page.locator('.msg.assistant', { hasText: 'Queued e done.' }).waitFor({ timeout: 6000 }).then(() => check(true, 'Resume after a reload sends it'), () => check(false, 'Resume after a reload sends it'))
+  }
+
   // ── the model Hermes reports sits above the composer; tap opens the picker ──
   const chip = page.locator('.model-chip')
   check(((await chip.textContent()) || '').includes('mock-model'), `model chip shows the chat's model (${await chip.textContent()})`)

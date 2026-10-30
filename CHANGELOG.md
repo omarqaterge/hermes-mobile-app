@@ -4,6 +4,12 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Queue a follow-up while Hermes works.** When a reply is running and you have typed something, the send button
+  splits in two: Steer (as before, the words go into the running task now) and Queue. A queued message waits as a
+  dashed bubble at the end of the chat (edit it, remove it, or send it now) and is sent by itself when the reply ends,
+  then the next one. Stop or an error pauses the queue (Queue paused, Resume), and a chat you open starts paused.
+  Up to 10 per chat, kept across restarts; sent only while the app shows that chat. Browser tests only; not yet on a
+  real phone.
 - **Quote part of a reply.** Select words in one of Hermes's replies and a bar above the composer offers Quote or
   Explain. Quote puts the words as a chip above the text box (up to 3, ✕ removes one) and the next message starts with
   them as a quote; Explain sends the quote with "Explain this." at once. Your sent message shows the quote as a block.

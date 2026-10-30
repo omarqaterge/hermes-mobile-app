@@ -4,6 +4,7 @@ import { closeScreen, getState, setState, toast, useStore, type ChatItem, type T
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { foldMap } from './fold'
 import { Composer } from './components/Composer'
+import { QueuedRows } from './components/Queued'
 import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
 import { RequestSheet } from './components/RequestSheet'
@@ -571,6 +572,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
           </div>
         )
       })}
+      <QueuedRows />
       <div className="chat-pad" />
       {showJump && (
         <button
