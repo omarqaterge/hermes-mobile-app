@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Remote debugging setting, for developers.** With Android Developer options on, Settings → About shows a "Remote debugging" row. It asks for your phone's screen lock (set one first), then lets a connected computer inspect the app for 60 minutes; a notification with a Turn off button and a strip at the top show while it is on, and it turns itself off after 60 minutes, when you turn off Developer options, or when the app restarts. Nothing inside the app can switch it on. Not yet tried on a phone.
 - **Test builds with remote debugging.** `HM_DEVTOOLS=1 android/build.sh` makes a test build whose page can be inspected and driven from a computer over `adb`; it shows a "Test build: remote debugging is on" strip at all times. Normal and release builds are unchanged, and the build script and the release workflow both refuse or fail if a release would carry it. Seen on a Xiaomi phone (Android 16): the test build installs over an earlier self-built one, shows the strip, and its `webview_devtools_remote` socket is there; the earlier build without `HM_DEVTOOLS` had none. Playwright attached over `adb forward` and drove a whole test session.
 - **More previews in Files.** Tapping a file in Files now shows CSV/TSV as a table, JSON pretty-printed, code
   highlighted, Mermaid files as diagrams, HTML pages running offline in the sandbox, and audio/video in a player
