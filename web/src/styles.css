@@ -1475,6 +1475,34 @@ textarea {
   display: grid;
   gap: 6px;
 }
+.clarify-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--dim);
+  font-size: 0.82rem;
+  margin: 2px 0 6px;
+}
+.clarify-dots {
+  display: flex;
+  gap: 4px;
+}
+.clarify-dot {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+.clarify-dot.done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.clarify-dot.on {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent);
+}
 .group {
   display: grid;
   gap: 2px;
