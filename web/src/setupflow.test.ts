@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { NativeSetup } from './bridge'
-import { appsPlan, flowNav, flowPages, nextStep, probeState, progressView, recommendedGaps, replaceDue, REPLACE_TTL_MS, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowPage, type FlowStep, type PreHermes, type Remote, type StepId } from './setupflow'
+import { appsPlan, flowNav, flowPages, nextStep, probeState, progressView, recommendedGaps, replaceDue, REPLACE_TTL_MS, setupSteps, flowWatchActive, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowPage, type FlowStep, type PreHermes, type Remote, type StepId } from './setupflow'
 
 const native: NativeSetup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, termuxApi: true, shizuku: true, startError: '', maker: 'google' }
 const remote: Remote = { plugin: true, enabled: true, enabledList: ['hermes-mobile'], phone: { files: true, termux_api: true, shizuku: 'ok' } }
@@ -275,6 +275,19 @@ describe('progressView step times', () => {
 })
 
 // The Start Shizuku step re-asks the app whether Shizuku runs, but only while it is on screen (battery).
+describe('flowWatchActive', () => {
+  test('re-checks only a step whose fix happens elsewhere, while visible, for at most 10 minutes', () => {
+    const base = { id: 'shizuku' as StepId, visible: true, startedAt: 1000, now: 2000 }
+    expect(flowWatchActive(base)).toBe(true)
+    for (const id of ['plugin', 'enabled', 'shizuku-auto', 'run', 'hermes'] as StepId[]) expect(flowWatchActive({ ...base, id })).toBe(true)
+    for (const id of ['apps', 'shizuku-start', 'installer', 'model'] as StepId[]) expect(flowWatchActive({ ...base, id })).toBe(false) // their own watch
+    expect(flowWatchActive({ ...base, id: null })).toBe(false)
+    expect(flowWatchActive({ ...base, visible: false })).toBe(false)
+    expect(flowWatchActive({ ...base, now: 1000 + 10 * 60 * 1000 - 1 })).toBe(true)
+    expect(flowWatchActive({ ...base, now: 1000 + 10 * 60 * 1000 })).toBe(false)
+  })
+})
+
 describe('shizukuWatchActive', () => {
   const base = { visible: true, running: false, startedAt: 1000, now: 1000 + 5000 }
   test('polls while the step is visible and Shizuku is not running yet', () => {

@@ -4,6 +4,11 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Setup no longer gets stuck at "Hermes can see and use the screen (Shizuku)".** After you started Shizuku the page
+  said it would move on by itself but never checked again, so it stayed there. It now re-checks every few seconds while
+  that step is on screen (up to 10 minutes per visit), and when Shizuku runs but Termux isn't allowed yet it says so
+  (tap Allow all the time on Shizuku's prompt) instead of "Shizuku isn't running". The Status sheet's Shizuku row says
+  "Termux not allowed" in that case too. Browser and plugin tests only; not yet on a real phone.
 - **Tablets: hide the chat list.** On wide screens (tablets, unfolded foldables, landscape) ☰ in the chat header now
   hides or shows the chat list on the left, and « at the top of the list hides it from any page; the app remembers it.
   Sheets opened from Settings and other pages (like Uninstall Hermes) now cover the whole width instead of sitting

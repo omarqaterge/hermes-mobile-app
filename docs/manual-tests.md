@@ -30,6 +30,10 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
 - [ ] **A brand-new real phone.** Run `tools/setup-phone.sh` against a freshly reset (or never-used) Android phone.
       Expected: same as above, and a first message gets a reply. (The emulator run can't check vendor battery
       restrictions or a real Shizuku start.)
+- [ ] **Setup flow at the Shizuku step.** On a phone where Hermes is installed but Shizuku isn't started, open the
+      setup flow at "Hermes can see and use the screen (Shizuku)", tap Open Shizuku, start it, come back.
+      Expected: Shizuku asks whether Termux may use it (tap Allow all the time); within a few seconds the page moves
+      on by itself, without leaving the app again.
 
 ## Needs a release tag
 
