@@ -1053,6 +1053,26 @@ async function main() {
   await run.click()
   check((await visibleCards()) === 0, 'tap again folds them')
 
+  // ── motion: tool card bodies slide open and closed; the phone's reduced-motion setting skips it ──
+  await run.click()
+  const card0 = page.locator('.tool:visible', { hasText: /step 0/ }).first()
+  await card0.locator('.tool-head').click()
+  await card0.locator('.tool-body').waitFor({ timeout: 3000 }).then(() => check(true, 'motion: the tool body appears'), () => check(false, 'motion: the tool body appears'))
+  await sleep(350)
+  check((await card0.locator('.tool-head').getAttribute('aria-expanded')) === 'true' && (await card0.locator('.collapse').evaluate(e => e.style.overflow)) === '', 'motion: at rest the open body is not clipped')
+  await card0.locator('.tool-head').click()
+  check((await card0.locator('.tool-body').count()) === 1, 'motion: the body is still there right after closing')
+  await sleep(400)
+  check((await card0.locator('.tool-body').count()) === 0, 'motion: the body is gone after the close animation')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await card0.locator('.tool-head').click()
+  await card0.locator('.tool-body').waitFor({ timeout: 3000 })
+  await card0.locator('.tool-head').click()
+  await sleep(50)
+  check((await card0.locator('.tool-body').count()) === 0, 'motion: reduced motion closes the body at once')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await run.click()
+
   check((await page.locator('.turn-changes').count()) === 0, 'a turn with only terminal tools has no changes card')
 
   // ── a turn that wrote files ends with a card listing them; tap a file for its diff ──
@@ -1223,6 +1243,14 @@ async function main() {
   await chip.click()
   await page.locator('.sheet', { hasText: 'mock-sonnet' }).first().waitFor({ timeout: 3000 }).then(() => check(true, 'chip opens the model picker'), () => check(false, 'chip opens the model picker'))
   await page.evaluate(() => window.hermesBack())
+  {
+    const lbl = (await chip.getAttribute('aria-label')) || ''
+    const m = /^Model: .*, reasoning (\w+)\. Change model$/.exec(lbl)
+    const want = { minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5 }[m ? m[1] : '']
+    check(!!m && !!want, `motion: the chip's label names the reasoning level (${lbl})`)
+    check((await chip.locator('.effort-bars').count()) === 1 && (await chip.locator('.effort-bar').count()) === 5, 'motion: the chip draws five effort bars')
+    check((await chip.locator('.effort-bar.on').count()) === want, `motion: ${want} bars are filled`)
+  }
 
   // ── canvas: a long canvas call opens the panel on a "writing" state, then shows the document ──
   await page.getByPlaceholder('Message Hermes').fill('write canvas')

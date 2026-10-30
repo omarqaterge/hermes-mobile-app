@@ -5,6 +5,7 @@ import { ItemView, ToolRunHead } from './components/ChatItems'
 import { foldMap } from './fold'
 import { turnChanges } from './changes'
 import { TurnChangesCard } from './components/Changes'
+import { Chevron, Collapse } from './components/ui'
 import { Composer } from './components/Composer'
 import { QueuedRows } from './components/Queued'
 import { Scrubber } from './components/Scrubber'
@@ -303,9 +304,9 @@ function StatusBar() {
       {todos.length > 0 && (
         <div className="todos">
           <button className="todos-head" onClick={() => setOpenTodos(v => !v)}>
-            ☑ Tasks {done}/{todos.length} <span className="chev">{openTodos ? '▾' : '▸'}</span>
+            ☑ Tasks {done}/{todos.length} <span className="chev"><Chevron open={openTodos} /></span>
           </button>
-          {openTodos && (
+          <Collapse open={openTodos}>
             <ul>
               {todos.map((t, i) => (
                 <li key={t.id || i} className={`todo-${t.status}`}>
@@ -313,7 +314,7 @@ function StatusBar() {
                 </li>
               ))}
             </ul>
-          )}
+          </Collapse>
         </div>
       )}
     </div>

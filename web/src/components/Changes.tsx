@@ -4,6 +4,7 @@ import { setState } from '../store'
 import { shortPath, type FileChange, type TurnChanges } from '../changes'
 import { DiffView } from './Diff'
 import { Sheet } from './Screens'
+import { Chevron, Collapse } from './ui'
 
 function Stat({ added, removed }: { added: number; removed: number }) {
   return (
@@ -26,9 +27,9 @@ export function TurnChangesCard({ changes }: { changes: TurnChanges }) {
           {n} file{n === 1 ? '' : 's'} changed
         </span>
         <Stat added={changes.added} removed={changes.removed} />
-        <span className="chev">{open ? '▾' : '▸'}</span>
+        <span className="chev"><Chevron open={open} /></span>
       </button>
-      {open && (
+      <Collapse open={open}>
         <div className="turn-changes-list">
           {changes.files.map(f => (
             <button
@@ -48,7 +49,7 @@ export function TurnChangesCard({ changes }: { changes: TurnChanges }) {
             Checkpoints
           </button>
         </div>
-      )}
+      </Collapse>
       {file && (
         <Sheet title={file.path} onClose={() => setFile(null)}>
           <div className="pad">{file.diffs.length ? <DiffView text={file.diffs.join('\n')} max={200000} /> : <div className="dim">No diff recorded for this edit</div>}</div>
