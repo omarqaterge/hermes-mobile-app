@@ -5,6 +5,8 @@ import { ItemView, ToolRunHead } from './components/ChatItems'
 import { foldMap } from './fold'
 import { Composer } from './components/Composer'
 import { QueuedRows } from './components/Queued'
+import { Scrubber } from './components/Scrubber'
+import { SCRUB_MIN, currentMark, userMarks } from './scrub'
 import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
 import { RequestSheet } from './components/RequestSheet'
@@ -515,6 +517,59 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     setShowJump(!near)
   }, [items])
 
+  // Scrubber (components/Scrubber.tsx): one tick per message you sent; `scrubTo` is the item to bring to the top.
+  const marks = useMemo(() => userMarks(items ?? []), [items])
+  const marksRef = useRef(marks)
+  marksRef.current = marks
+  const [curMark, setCurMark] = useState(0)
+  const [tall, setTall] = useState(false)
+  const [scrubTo, setScrubTo] = useState<number | null>(null)
+  const findOpen = useStore(s => Boolean(s.find))
+  const startRef = useRef(start)
+  startRef.current = start
+  const topRaf = useRef(0)
+  /** Which of your messages is at (or above) the top of the list, and whether the chat is long enough for the rail. */
+  const trackTop = () => {
+    topRaf.current = 0
+    const el = scroller.current
+    if (!el) return
+    setTall(el.scrollHeight > 3 * el.clientHeight)
+    const ms = marksRef.current
+    if (ms.length < SCRUB_MIN) return
+    const first = startRef.current > 0 ? 1 : 0
+    const drawn = Math.max(0, count - startRef.current) // children past these are queued bubbles, the pad, buttons
+    const top = el.getBoundingClientRect().top + 1
+    let idx = startRef.current
+    for (let c = first; c < first + drawn && c < el.children.length; c++) {
+      if (el.children[c].getBoundingClientRect().bottom > top) {
+        idx = startRef.current + c - first
+        break
+      }
+      idx = startRef.current + c - first
+    }
+    setCurMark(currentMark(ms, idx))
+  }
+  useLayoutEffect(trackTop, [items, start]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => cancelAnimationFrame(topRaf.current), [])
+  // Same steps as the search jump: draw earlier turns first if the message is above the window, then scroll and flash.
+  useEffect(() => {
+    const el = scroller.current
+    if (scrubTo === null || !items || !el) return
+    if (scrubTo >= items.length) return setScrubTo(null)
+    if (scrubTo < start) {
+      setWin({ key: sessionKey, start: Math.max(0, scrubTo - 3) })
+      return // runs again once it is drawn
+    }
+    if (unfold(scrubTo)) return // runs again once it is drawn
+    setScrubTo(null)
+    const node = el.children[(start > 0 ? 1 : 0) + scrubTo - start]
+    if (!node) return
+    stick.current = false
+    el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - 8
+    node.classList.add('hit-flash')
+    setTimeout(() => node.classList.remove('hit-flash'), 2500)
+  }, [scrubTo, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const opening = useStore(s => s.opening)
   const conn = useStore(s => s.conn)
   const openingActive = useStore(s => s.active?.storedId)
@@ -544,6 +599,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   if (!items || items.length === 0) return <Empty onPick={onPick} />
 
   return (
+    <div className="chat-wrap">
     <div
       className="chat"
       ref={scroller}
@@ -552,6 +608,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
         const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80
         stick.current = near
         setShowJump(!near)
+        if (!topRaf.current) topRaf.current = requestAnimationFrame(trackTop)
       }}
     >
       {start > 0 && (
@@ -589,6 +646,10 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       <div className="pull-hint" aria-hidden="true">
         <span>Release for a side question</span>
       </div>
+    </div>
+    {marks.length >= SCRUB_MIN && tall && !findOpen && !previewing && (
+      <Scrubber marks={marks} current={Math.min(curMark, marks.length - 1)} onPick={k => marks[k] && setScrubTo(marks[k].idx)} />
+    )}
     </div>
   )
 }
