@@ -4,6 +4,7 @@
 //   kind 'ask'   → the pending clarify question of that chat gets the text as its answer
 //   kind 'reply' → the text is sent to that chat as a new message (opening it first if another chat is open)
 import { answerRequest, connectionAlive, errText, queueAndReconnect, resumeSession, sendPrompt } from './gateway'
+import { lockView } from './lockview'
 import { getState, toast } from './store'
 
 declare global {
@@ -28,12 +29,11 @@ export function answerFromNotification(kind: string, session: string, text: stri
     const req = clarifyFor(session)
     if (!req) return false
     const qs = req.params.questions as { qid?: string }[] | undefined
-    if (Array.isArray(qs) && qs.length === 1) answerRequest(req, { answers: { [String(qs[0]?.qid ?? '_')]: t } })
-    else answerRequest(req, { answer: t })
-    return true
+    if (Array.isArray(qs) && qs.length === 1) return answerRequest(req, { answers: { [String(qs[0]?.qid ?? '_')]: t } })
+    return answerRequest(req, { answer: t })
   }
   if (kind === 'reply') {
-    if (!session) return false
+    if (!session || lockView()) return false // over the lock screen: the service opens the app to unlock instead
     void (async () => {
       if (!(await connectionAlive())) {
         queueAndReconnect(session, t)

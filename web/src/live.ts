@@ -4,6 +4,7 @@
 // The microphone is off while Hermes thinks and while it speaks, so it never hears itself.
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { answerRequest, errText, sendPrompt } from './gateway'
+import { leaveLockView } from './lockview'
 import { getState, toast } from './store'
 import { liveBridge, onTtsDone, setLiveMuted, setLivePhase, speak, startListening, stopListening, stopSpeaking, voiceErrorText, voiceInputAvailable } from './voice'
 
@@ -179,7 +180,7 @@ function answerByVoice(said: string) {
   const choice = voiceChoice(said, approvalChoices(a.req))
   if (choice) {
     approval = null
-    answerRequest(a.req, { choice })
+    if (!answerRequest(a.req, { choice })) return listen() // over the lock screen: it asked for an unlock
     toast(choice === 'deny' ? 'Denied' : choice === 'session' ? 'Allowed for this chat' : 'Allowed once')
     return
   }
@@ -229,6 +230,7 @@ export function stopLive(opts?: { keepSpeech?: boolean }): void {
   goto('off')
   stopListening()
   if (!opts?.keepSpeech) stopSpeaking()
+  leaveLockView() // shown over the lock screen for talking: the lock screen comes back
 }
 
 /** Leaving the app ends Live mode: the microphone can't stay open off screen. A reply being read keeps playing;
