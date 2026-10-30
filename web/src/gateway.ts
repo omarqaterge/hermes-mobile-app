@@ -1429,6 +1429,11 @@ client.onEvent((ev: GatewayEvent) => {
       break
     case 'session.usage':
       updateActive(() => ({ usage: (payload.usage as never) ?? null }))
+      {
+        // The ring moves during long turns: usage that carries the context numbers needs no extra RPC.
+        const u = payload.usage as Usage | undefined
+        if (u?.context_max && u.context_used != null) void refreshCtx(u)
+      }
       break
     case 'session.info':
       updateActive(x => ({ info: { ...x.info, ...(payload as object) } }))
