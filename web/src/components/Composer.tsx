@@ -8,6 +8,8 @@ import { matchCommands, refreshCommands, useCommandCatalog, type CommandEntry } 
 import { PickerSheet, type Option } from './ui'
 import { getDraft, setDraft } from '../drafts'
 import { Spinner } from './Spinner'
+import { QuoteBar } from './QuoteBar'
+import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
 
 const EMPTY: Attachment[] = []
 
@@ -80,6 +82,10 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const opening = useStore(s => s.opening)
   const profile = useStore(s => s.profile)
   const catalog = useCommandCatalog()
+  const quotes = useQuotes()
+  const chatId = useStore(s => s.active?.storedId)
+  // Quotes belong to the chat they were taken from.
+  useEffect(() => clearQuotes(), [chatId])
 
   // Slash autocomplete: open while the text is "/<letters>" (no space yet) and something matches.
   // The token can sit anywhere: a "/word" right before the caret, at the start or after whitespace.
@@ -164,23 +170,33 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
     d.caret = at
   }
 
-  const send = async () => {
-    const t = text
-    if (!t.trim() || busy) return
+  /** Send `typed` (with the quotes in front of it, unless it is a slash command); the text box is cleared only when `fromBox`. */
+  const send = async (over?: { quotes: string[]; typed: string }) => {
+    const fromBox = !over
+    const t = over ? over.typed : text
+    const slash = fromBox && t.trimStart().startsWith('/')
+    const qs = slash ? [] : over ? over.quotes : quotes
+    if ((!t.trim() && !qs.length) || busy) return
     haptic()
+    const full = withQuotes(qs, t)
     if (conn !== 'open') {
       // Offline: keep it and send it on reconnect (one message; a second one joins it).
       const prev = getState().queued?.text
-      queueMessage(prev ? `${prev}\n\n${t.trim()}` : t.trim())
-      setText('')
+      queueMessage(prev ? `${prev}\n\n${full.trim()}` : full.trim())
+      if (fromBox) setText('')
+      if (qs.length && fromBox) clearQuotes()
       return
     }
     setBusy(true)
-    setText('')
+    if (fromBox) setText('')
+    if (fromBox && qs.length) clearQuotes()
     try {
-      await sendPrompt(t)
+      await sendPrompt(full)
     } catch (err) {
-      setText(t)
+      if (fromBox) {
+        setText(t)
+        if (qs.length) setQuotes(qs)
+      }
       toast(errText(err), 'error')
     } finally {
       setBusy(false)
@@ -188,7 +204,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   }
 
   const offline = conn !== 'open' || !!opening
-  const placeholder = opening ? 'Opening your chat…' : offline ? 'Offline: type now, it sends when Hermes is back' : running ? 'Steer the running task…' : 'Message Hermes'
+  const placeholder = opening ? 'Opening your chat…' : quotes.length && !text ? 'Ask about the quote…' : offline ? 'Offline: type now, it sends when Hermes is back' : running ? 'Steer the running task…' : 'Message Hermes'
 
   // Fit the box to its text (or placeholder). Measure again when the placeholder changes and when Live mode
   // gives the box back: a chat switched while it was hidden was measured at the wrong width and stayed 2 rows.
@@ -235,6 +251,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           </button>
         </div>
       )}
+      <QuoteBar onExplain={sel => void send({ quotes: [sel], typed: 'Explain this.' })} />
       {showMenu && (
         <div className="slash-menu" role="listbox">
           {catalog == null && <div className="dim small pad">Loading commands…</div>}
@@ -246,6 +263,18 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
               </span>
               <span className="slash-desc">{c.desc}</span>
             </button>
+          ))}
+        </div>
+      )}
+      {quotes.length > 0 && (
+        <div className="attach-row quote-row">
+          {quotes.map((q, i) => (
+            <span key={`${i}-${q.slice(0, 20)}`} className="chip quote-chip">
+              <span className="quote-chip-text">❝ {q.replace(/\s+/g, ' ').slice(0, 60)}{q.length > 60 ? '…' : ''}</span>
+              <button className="attach-x" aria-label="Remove quote" onClick={() => { haptic(); removeQuote(i) }}>
+                ✕
+              </button>
+            </span>
           ))}
         </div>
       )}
@@ -459,7 +488,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             }
           }}
         />
-        {!text.trim() && !running && !listening && liveAvailable() && (
+        {!text.trim() && !quotes.length && !running && !listening && liveAvailable() && (
           <button
             className="send live-btn"
             aria-label="Live conversation"
@@ -475,7 +504,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             </svg>
           </button>
         )}
-        {!text.trim() && !running && !listening && voiceInputAvailable() ? (
+        {!text.trim() && !quotes.length && !running && !listening && voiceInputAvailable() ? (
           <button
             className="send mic"
             aria-label="Dictate"
@@ -500,12 +529,12 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           <button className="send mic on" aria-label="Stop dictation" onClick={() => { haptic(); stopListening() }}>
             <span className="stop-square" />
           </button>
-        ) : running && !text.trim() ? (
+        ) : running && !text.trim() && !quotes.length ? (
           <button className="send stop" aria-label="Stop" onClick={() => { haptic(); void interrupt() }}>
             <span className="stop-square" />
           </button>
         ) : (
-          <button className="send" aria-label={running ? 'Steer' : conn !== 'open' ? 'Send when back online' : 'Send'} onClick={() => void send()} disabled={!text.trim() || busy || !!opening}>
+          <button className="send" aria-label={running ? 'Steer' : conn !== 'open' ? 'Send when back online' : 'Send'} onClick={() => void send()} disabled={(!text.trim() && !quotes.length) || busy || !!opening}>
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21.85 12.5c.8-.35.8-1.5 0-1.84L3.4 2.6c-.66-.29-1.39.2-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
           </button>
         )}
