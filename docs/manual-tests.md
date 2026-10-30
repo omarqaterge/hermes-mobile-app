@@ -89,9 +89,10 @@ build `0.8.66-test+devtools` (commit d866ed3), driven from a computer with Playw
       with Pause, Resume and Clear goal.
 - [x] **07 Context ring.** Fits next to the model name; sheet numbers; Compress older turns.
 - [x] **08 Animations.** Slides and turning arrows, effort bars, instant with `animator_duration_scale 0`.
-- [ ] **09 New since your last visit.** Failed on the phone: Home while Hermes answers, come back to the same chat →
-      no line (the chat was never reopened). Fixed with `window.hermesPause` / `noteBack`; try again: send a long
-      request, press Home at once, wait until it is done, open the app → the line before the reply, scrolled there.
+- [x] **09 New since your last visit.** First try failed (Home while Hermes answers, back to the same chat: no line,
+      the chat was never reopened); fixed with `window.hermesPause` / `noteBack` (commit e54d7ff). Retest on build 869
+      (commit b184623): the line before the reply that arrived while away and scrolled there; none for a reply watched
+      on screen; none after reopening the chat.
 - [x] **10 Several questions at once.** One at a time, auto-advance after a pick, Back keeps the answer, Answer.
 - [x] **11 Stash a draft.** Stash, swap, clear all.
 - [x] **12 File previews.** CSV table, highlighted code, JSON, HTML page, mp3 and mp4 play, PDF note and Open with….
