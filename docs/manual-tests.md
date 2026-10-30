@@ -52,15 +52,17 @@ Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): th
 
 ## Remote debugging setting (Settings → About), needs a release-style build (not `HM_DEVTOOLS`)
 
-Not tried on a real phone yet. Do these on a Xiaomi/HyperOS phone and at least one other maker.
+Tried on a Xiaomi phone, Android 16 (HyperOS), normal build 0.8.66-test (commit a9d6741). Still to try on another maker.
 
-- [ ] 1. Android Developer options off: Settings → About has no "Remote debugging" row.
+- [x] 1. Android Developer options off: Settings → About has no "Remote debugging" row.
 - [ ] 2. Developer options on, no screen lock set: tap the row, Continue. Expected: "Set a screen lock first", stays Off.
-- [ ] 3. With a screen lock: Continue opens the phone's own lock screen. A wrong PIN or Back leaves it Off. The right PIN turns it on: the row says "On · 60 min left", the strip shows, the notification "Remote debugging" is there, and `chrome://inspect` on a computer (after `adb forward` as above) lists the page.
-- [ ] 4. The notification's Turn off button: it goes off, the notification and strip go, and `chrome://inspect` no longer connects. Record here whether an already attached DevTools session was cut; if not, recreate the WebView or say so in the notification text.
-- [ ] 5. Force-stop the app: it reopens with remote debugging Off and no notification.
+- [x] 3. With a screen lock: Continue opens the phone's own lock screen. A wrong PIN or Back leaves it Off. The right PIN turns it on: the row says "On · 60 min left", the strip shows, the notification "Remote debugging" is there, and `chrome://inspect` on a computer (after `adb forward` as above) lists the page.
+      Seen: Back on the lock screen leaves it Off; after unlocking, the row, strip, notification and socket appeared and Playwright attached.
+- [x] 4. The notification's Turn off button: it goes off, the notification and strip go, and `chrome://inspect` no longer connects.
+      Seen: an attached Playwright session was cut at once ("Target page, context or browser has been closed"), so nothing more is needed. Tapping the row while on also turns it off.
+- [x] 5. Force-stop the app: it reopens with remote debugging Off and no notification.
 - [ ] 6. Wait 60 minutes (or build with a 2-minute `DURATION_MS`): it turns itself off and the notification goes. Also try with the screen off for the whole time.
-- [ ] 7. Developer options turned off while it is on: it is off at the next time the app is opened.
+- [x] 7. Developer options turned off while it is on: it is off at the next time the app is opened.
 
 ## Rare situations
 
