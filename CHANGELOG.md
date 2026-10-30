@@ -18,6 +18,7 @@ User-facing changes, newest first. Each release section collects what shipped si
   any risky command); allowing a command, answering a question or opening your chats asks
   you to unlock, and ending Live mode brings the lock screen back. Checked on Android 15 and Android 8 emulators;
   not yet on a real phone.
+- **Pulling up for a side question (/btw) takes a firmer pull.** It now needs about 160 px of pull (was 110), so a normal scroll to the end no longer opens it by accident. Browser tests only; not yet on a real phone.
 - **Setup no longer gets stuck at "Hermes can see and use the screen (Shizuku)".** After you started Shizuku the page
   said it would move on by itself but never checked again, so it stayed there. It now re-checks every few seconds while
   that step is on screen (up to 10 minutes per visit), and when Shizuku runs but Termux isn't allowed yet it says so

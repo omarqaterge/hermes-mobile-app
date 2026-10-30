@@ -6,7 +6,7 @@ import { getState } from './store'
 // side chat (/btw) about this chat. Released early, it springs back and nothing happens.
 
 /** Finger travel (px) that arms the gesture. */
-export const PULL_TRIGGER_PX = 110
+export const PULL_TRIGGER_PX = 160
 /** The list never stretches further than this (px), however far the finger goes. */
 export const PULL_MAX_PX = 120
 
