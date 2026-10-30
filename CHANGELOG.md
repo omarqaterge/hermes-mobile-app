@@ -24,17 +24,16 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **Things slide open and close.** Tool cards, the thought process, the task list and the changed-files card now slide
   open and shut instead of jumping, chevrons turn instead of swapping characters, and the button next to the box fades
   in when it changes between Send, Stop, Mic and Queue. The reasoning level on the model chip shows as small bars (the
-  chip's label says it in words). Nothing moves when the phone's "Remove animations" setting is on. Browser tests
-  only; not yet on a real phone.
+  chip's label says it in words). Nothing moves when the phone's "Remove animations" setting is on. Seen on a Xiaomi phone (Android 16): smooth slides and turning arrows, the effort bars, and instant opening with animations turned off.
 - **A ring shows how full the chat's memory is.** At the right end of the model row above the box, a small ring fills
   with the chat's context use all the time (not only while Hermes works), turning amber from 80 % and red from 90 %.
   Tap it for the Context window sheet: tokens used of the maximum, cost and cache hits when Hermes reports them, and
-  a Compress older turns button. The ring also moves during a long turn. Browser tests only; not yet on a real phone.
+  a Compress older turns button. The ring also moves during a long turn. Seen on a Xiaomi phone (Android 16): the ring fits next to the model name, the sheet's numbers and Compress work.
 - **See how long Hermes has been working, and the chat's goal.** The status line above the box now shows the running
   turn's time (`1:23`) after three seconds, and it keeps counting from the real start when you reopen the chat. The
   finished reply's stats gain the total (`~41 tok/s · 1m 23s · ctx 12%`). When the chat has a goal (`/goal`), a line
   `🎯 Ship the login fix · turn 3 of 20 · active` sits under it; tap it for the goal's details with Pause/Resume and
-  Clear goal. The clock ticks only while a turn runs and the screen is on. Browser tests only; not yet on a real phone.
+  Clear goal. The clock ticks only while a turn runs and the screen is on. Seen on a Xiaomi phone (Android 16): the timer, its real start after switching chats, the duration in the stats, and the goal line with Pause, Resume and Clear goal.
 - **See which files a turn changed.** When Hermes wrote or edited files, a card at the end of that turn says
   `✎ 3 files changed  +42 −7`. Tap it for the files, each with its own counts; tap a file to see its diff. A
   Checkpoints button opens the file checkpoints to undo. It also shows when the tool calls above it are folded.
