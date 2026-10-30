@@ -886,10 +886,10 @@ async function main() {
     check(lastSubmit() === 'Pick A', `a card button sends its words (${lastSubmit()})`)
     await idle()
     n = rpcs('prompt.submit').length
-    await card.locator('input[name="name"]').fill('Omar', { timeout: 5000 }).catch(() => {})
+    await card.locator('input[name="name"]').fill('Sam', { timeout: 5000 }).catch(() => {})
     await card.getByRole('button', { name: 'Send' }).click({ timeout: 5000 }).catch(() => {})
     for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
-    check(lastSubmit() === 'Here are my details\n\n- name: Omar', `a form sends its values (${JSON.stringify(lastSubmit())})`)
+    check(lastSubmit() === 'Here are my details\n\n- name: Sam', `a form sends its values (${JSON.stringify(lastSubmit())})`)
     await idle()
     n = rpcs('prompt.submit').length
     await card.getByText('Compare both').click({ timeout: 5000 }).catch(() => {})
@@ -914,6 +914,41 @@ async function main() {
     await liveCard.getByText('Mock result one').waitFor({ timeout: 15000 }).then(() => check(true, 'a Query card draws the tool answer'), () => check(false, 'a Query card draws the tool answer'))
     check(qcalls().length === 1 && qcalls()[0].body.name === 'web_search' && qcalls()[0].body.args.query === 'openui', `one call to /openui/call with the card's args (${JSON.stringify(qcalls().map(c => c.body))})`)
     await idle()
+    // a card form with a required list picker and a required date: pick like a finger (mouse click, then touch tap), send
+    const bookFlow = async (p, press, label) => {
+      const idleP = () => p.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+      await p.getByPlaceholder('Message Hermes').fill('show form ui')
+      await p.locator('.composer').getByRole('button', { name: 'Send' }).click()
+      const c = p.locator('.msg.assistant .hm-openui').last()
+      await c.getByText('Book a table').waitFor({ timeout: 15000 }).then(() => check(true, `${label}: the form card renders`), () => check(false, `${label}: the form card renders`))
+      await idleP()
+      const inside = () => c.evaluate(el => el.shadowRoot.textContent)
+      await c.locator('input[name="name"]').fill('Sam')
+      await press(c.getByRole('combobox'))
+      await press(p.getByRole('option', { name: 'Four people' }))
+      await sleep(300)
+      check(((await c.getByRole('combobox').textContent()) || '').includes('Four people'), `${label}: the picker shows the pick`)
+      let n = rpcs('prompt.submit').length
+      await press(c.getByRole('button', { name: 'Book' }))
+      await sleep(600)
+      const empty = (await inside()).match(/This field is required/g) || []
+      check(rpcs('prompt.submit').length === n && empty.length === 1, `${label}: only the empty date is refused (${empty.length} required notes, ${rpcs('prompt.submit').length - n} sent)`)
+      await press(c.locator('.openui-date-picker-renderer-floating-input-container'))
+      await press(p.locator('.openui-date-picker-renderer-floating-content button', { hasText: /^15$/ }).first())
+      await sleep(300)
+      await press(c.getByRole('button', { name: 'Book' }))
+      for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
+      const sent = rpcs('prompt.submit').pop()?.params.text
+      check(/^Book it\n\n- name: Sam\n- size: 4\n- day: \d{4}-\d{2}-15$/.test(sent || ''), `${label}: the form sends the picked list item and day (${JSON.stringify(sent)})`)
+      check(!(await inside()).includes('This field is required'), `${label}: no required note left`)
+      await idleP()
+    }
+    await bookFlow(page, loc => loc.click({ timeout: 5000 }), 'card form (mouse)')
+    const tp = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true })
+    await tp.goto('http://127.0.0.1:5180/')
+    await tp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await bookFlow(tp, loc => loc.tap({ timeout: 5000 }), 'card form (touch)')
+    await tp.close()
     await idle()
   }
 

@@ -567,6 +567,22 @@ wss.on('connection', ws => {
           later(200, () => event('message.complete', sid, { text: 'Here are the plans:\n\n```openui-lang\n' + OUI + '\n```\n\nPick one.' }))
           return
         }
+        if (/^show form ui$/.test(params.text)) {
+          // Keep identical to FORM in web/src/openui-form.test.tsx. A form whose picker is required.
+          const FORM = [
+            'root = Card([head, form])',
+            'head = CardHeader("Book a table")',
+            'form = Form("booking", formBtns, [nameField, sizeField, dayField])',
+            'nameField = FormControl("Name", Input("name", "Your name", "text", {required: true}))',
+            'sizeField = FormControl("Party size", Select("size", [SelectItem("2", "Two people"), SelectItem("4", "Four people")], "Choose size", {required: true}))',
+            'dayField = FormControl("Day", DatePicker("day", "single", {required: true}))',
+            'formBtns = Buttons([send])',
+            'send = Button("Book", @ToAssistant("Book it"), "primary")'
+          ].join('\n')
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: 'Book here:\n\n```openui-lang\n' + FORM + '\n```' }))
+          return
+        }
         if (/^show ui streaming$/.test(params.text)) {
           const full = 'Streaming plans:\n\n```openui-lang\n' + OUI + '\n```\n'
           const chunks = full.match(/[\s\S]{1,12}/g)
