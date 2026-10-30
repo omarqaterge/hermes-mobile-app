@@ -4,6 +4,7 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Test builds with remote debugging.** `HM_DEVTOOLS=1 android/build.sh` makes a test build whose page can be inspected and driven from a computer over `adb`; it shows a "Test build: remote debugging is on" strip at all times. Normal and release builds are unchanged, and the build script and the release workflow both refuse or fail if a release would carry it. Browser tests and the build guard test only; the real WebView socket not yet tried on a phone.
 - **More previews in Files.** Tapping a file in Files now shows CSV/TSV as a table, JSON pretty-printed, code
   highlighted, Mermaid files as diagrams, HTML pages running offline in the sandbox, and audio/video in a player
   (streamed, not read into the page). PDF, Office and other files say "No preview here" and keep Open with….

@@ -89,6 +89,7 @@ public class MainActivity extends Activity {
 
         root = new FrameLayout(this);
         root.setBackgroundColor(bg);
+        if (devtoolsBuild()) WebView.setWebContentsDebuggingEnabled(true); // test builds only (HM_DEVTOOLS=1)
         web = new WebView(this);
         web.setBackgroundColor(bg);
         // Keep the renderer at the app's priority while hidden, so it is still alive when a notification
@@ -455,6 +456,17 @@ public class MainActivity extends Activity {
 
     /** The bootstrap URL. Emulator test builds only (android/build.sh HM_TEST_BOOTSTRAP_URL): a URL on the emulator's
      *  host (10.0.2.2) serving a working tree. Release builds have no such resource. */
+    /** True only in a test build made with HM_DEVTOOLS=1 (android/build.sh): the string resource hm_devtools exists and
+     *  is "1". Release builds have no such resource, so WebView remote debugging stays off. */
+    boolean devtoolsBuild() {
+        try {
+            int id = getResources().getIdentifier("hm_devtools", "string", getPackageName());
+            return id != 0 && "1".equals(getString(id));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     String bootstrapUrl() {
         try {
             int id = getResources().getIdentifier("hm_test_bootstrap", "string", getPackageName());

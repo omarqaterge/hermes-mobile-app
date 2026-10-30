@@ -36,6 +36,18 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
 - [ ] **In-app update.** After the next `v*` release: Settings → Check for updates offers it; Download and install
       work and the app reopens on the new version.
 
+## Driving a test build from a computer
+
+Needs a build made with `HM_DEVTOOLS=1 android/build.sh` installed on the phone (it shows the "Test build: remote debugging is on" strip), the phone connected with `adb`, and the app open.
+
+1. `adb shell pidof com.omarqaterge.hermesmobile` gives the PID.
+2. `adb shell cat /proc/net/unix | grep webview_devtools_remote` shows the socket name, `webview_devtools_remote_<PID>`.
+3. `adb forward tcp:9222 localabstract:webview_devtools_remote_<PID>`.
+4. In Chrome open `chrome://inspect`: the page is listed. Or with Playwright: `const b = await chromium.connectOverCDP('http://127.0.0.1:9222'); const page = b.contexts()[0].pages()[0]`.
+5. `adb forward --remove tcp:9222` when done.
+
+Also check: the strip stays visible over Settings and other full screens, and a normal (non-`HM_DEVTOOLS`) build has no `webview_devtools_remote` socket.
+
 ## Rare situations
 
 - [ ] **Expired login renewed from the model picker.** When a provider login expires, open the model picker on
