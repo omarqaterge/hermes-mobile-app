@@ -542,6 +542,21 @@ wss.on('connection', ws => {
           later((t += 40), () => event('message.complete', sid, { text: 'All four done.' }))
           return
         }
+        if (/^edit files$/.test(params.text)) {
+          // Two file edits (a write and a patch) with their inline diffs, then the answer: the turn ends with a changes card.
+          const edits = [
+            ['write_file', { path: '/root/projects/site/a.txt', content: 'x\ny' }, '--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,2 @@\n+x\n+y'],
+            ['patch', { path: '/root/projects/site/b.txt', old_string: 'old', new_string: 'new' }, '--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old\n+new']
+          ]
+          let t = 50
+          for (const [i, [name, args, diff]] of edits.entries()) {
+            later((t += 40), () => event('tool.start', sid, { tool_id: `call_ed${i}`, name, args }))
+            later((t += 40), () => event('tool.complete', sid, { tool_id: `call_ed${i}`, name, args, duration_s: 0.2, result_text: 'ok', inline_diff: diff }))
+          }
+          later((t += 60), () => event('message.start', sid, {}))
+          later((t += 40), () => event('message.complete', sid, { text: 'Edited.' }))
+          return
+        }
         if (/^wait a while$/.test(params.text)) {
           // One long command (nothing streams for 7 s): what the app polls meanwhile is what costs battery.
           later(50, () => event('tool.start', sid, { tool_id: 'call_wait', name: 'terminal', context: 'sleep 7', args: { command: 'sleep 7' } }))

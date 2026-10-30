@@ -3,6 +3,8 @@ import { compressChat, connect, errText, fmtCtx, openSessionFromNotification, re
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { foldMap } from './fold'
+import { turnChanges } from './changes'
+import { TurnChangesCard } from './components/Changes'
 import { Composer } from './components/Composer'
 import { QueuedRows } from './components/Queued'
 import { Scrubber } from './components/Scrubber'
@@ -392,6 +394,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   // Runs of tool calls fold into one line; tapping it opens them (keyed by the run's first item id).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(() => new Set())
   const folds = useMemo(() => foldMap(items ?? [], openRuns), [items, openRuns])
+  const changes = useMemo(() => turnChanges(items ?? [], running), [items, running])
   const toggleRun = useCallback((id: string) => {
     setOpenRuns(o => {
       const n = new Set(o)
@@ -619,13 +622,15 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       {items.slice(start).map((it, i) => {
         // One element per item, also when folded: search and jump find messages by child index.
         const f = folds.get(start + i)
+        const card = changes.get(start + i)
         const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
-        if (!f) return view
-        if (!('head' in f)) return <div key={it.id} className="folded" />
+        if (!f) return card ? <div key={it.id} className="turn-end">{view}<TurnChangesCard changes={card} /></div> : view
+        if (!('head' in f)) return <div key={it.id} className={card ? 'turn-end' : 'folded'}>{card && <TurnChangesCard changes={card} />}</div>
         return (
           <div key={it.id} className="tool-run-wrap">
             <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} />
             {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} />}
+            {card && <TurnChangesCard changes={card} />}
           </div>
         )
       })}
