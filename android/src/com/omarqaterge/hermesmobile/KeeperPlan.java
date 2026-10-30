@@ -17,6 +17,10 @@ final class KeeperPlan {
     }
 
     static final int ATTEMPTS = 3;
+    /** The one check after the service starts (after a reboot Shizuku doesn't start by itself, so no binder arrives).
+     *  Counted in real time (an alarm on the elapsed-realtime clock), not CPU-awake time: a phone left asleep after a
+     *  reboot with Wi-Fi off would otherwise push the "Not on Wi-Fi" notice back by every minute it slept. */
+    static final long CHECK_MS = 90_000;
     /** Attempt i runs this long after the previous one (the first at once): 0, 30, 120 s after the down event. */
     private static final long[] GAP_MS = {0, 30_000, 90_000};
     /** After the last attempt: still no Shizuku → "failed" and the notice. */

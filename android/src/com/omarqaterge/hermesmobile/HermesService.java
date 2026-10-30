@@ -230,7 +230,7 @@ public class HermesService extends Service {
         instance = this;
         new Thread(this::serve, "hermes-events").start();
         rearmWake();
-        main.postDelayed(shizukuCheck, 90_000); // once: after a reboot Shizuku doesn't start by itself, so no binder ever arrives
+        ShizukuKeeper.armCheck(this); // once, 90 s of real time: after a reboot Shizuku doesn't start by itself, so no binder arrives
         main.postDelayed(updateCheck, 120_000);
     }
 
@@ -241,11 +241,6 @@ public class HermesService extends Service {
             UpdateNotice.check(HermesService.this, false);
             main.postDelayed(this, UpdateNotice.CHECK_MS);
         }
-    };
-
-    /** Not running 90 s after start: the keeper restarts it, or says in the notice why it can't (ShizukuKeeper). */
-    private final Runnable shizukuCheck = () -> {
-        if (shizukuInstalled(this) && !ShizukuProvider.running()) ShizukuKeeper.onDown(this, true);
     };
 
     static boolean shizukuInstalled(Context ctx) {
@@ -427,8 +422,7 @@ public class HermesService extends Service {
     public void onDestroy() {
         running = false;
         instance = null;
-        main.removeCallbacks(shizukuCheck);
-        ShizukuKeeper.stop();
+        ShizukuKeeper.stop(); // also removes the 90 s check
         main.removeCallbacks(updateCheck);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
