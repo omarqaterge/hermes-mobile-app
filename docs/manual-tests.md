@@ -74,7 +74,7 @@ Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): th
 
 ## Features from docs/plans (01–12)
 
-Tried on a Xiaomi phone, Android 16 (HyperOS): 01 with build `0.8.66-test` (commit 970883a), 02–09 with the test
+Tried on a Xiaomi phone, Android 16 (HyperOS): 01 with build `0.8.66-test` (commit 970883a), 02–12 with the test
 build `0.8.66-test+devtools` (commit d866ed3), driven from a computer with Playwright.
 
 - [x] **01 Quote part of a reply.** Bar, Quote chip, sending with the quote, Explain, no bar in your own bubble.
@@ -92,6 +92,7 @@ build `0.8.66-test+devtools` (commit d866ed3), driven from a computer with Playw
 - [ ] **09 New since your last visit.** Failed on the phone: Home while Hermes answers, come back to the same chat →
       no line (the chat was never reopened). Fixed with `window.hermesPause` / `noteBack`; try again: send a long
       request, press Home at once, wait until it is done, open the app → the line before the reply, scrolled there.
-- [ ] **10 Several questions at once**, **11 Stash a draft**, **12 File previews** (audio/video playback): not yet
-      tried on a phone.
+- [x] **10 Several questions at once.** One at a time, auto-advance after a pick, Back keeps the answer, Answer.
+- [x] **11 Stash a draft.** Stash, swap, clear all.
+- [x] **12 File previews.** CSV table, highlighted code, JSON, HTML page, mp3 and mp4 play, PDF note and Open with….
 
