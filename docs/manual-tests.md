@@ -74,7 +74,7 @@ Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): th
 
 ## Features from docs/plans (01–12)
 
-Tried on a Xiaomi phone, Android 16 (HyperOS): 01 with build `0.8.66-test` (commit 970883a), 02–05 with the test
+Tried on a Xiaomi phone, Android 16 (HyperOS): 01 with build `0.8.66-test` (commit 970883a), 02–09 with the test
 build `0.8.66-test+devtools` (commit d866ed3), driven from a computer with Playwright.
 
 - [x] **01 Quote part of a reply.** Bar, Quote chip, sending with the quote, Explain, no bar in your own bubble.
@@ -85,7 +85,13 @@ build `0.8.66-test+devtools` (commit d866ed3), driven from a computer with Playw
       the rail, no rail in short chats.
 - [x] **04 HTML preview.** Preview disabled while streaming, inline page works, Full screen and Back, SVG preview.
 - [x] **05 Changed-files card.** Card, rows, diff sheet, Checkpoints; counts readable in the light theme.
-- [ ] **06 Elapsed time and goal line**, **07 Context ring** (fits the model row on a phone), **08 Animations** (and
-      off with Remove animations), **09 New since your last visit**, **10 Several questions at once**,
-      **11 Stash a draft**, **12 File previews** (audio/video playback): not yet tried on a phone.
+- [x] **06 Elapsed time and goal line.** Timer, real start after switching chats, duration in the stats, `/goal` line
+      with Pause, Resume and Clear goal.
+- [x] **07 Context ring.** Fits next to the model name; sheet numbers; Compress older turns.
+- [x] **08 Animations.** Slides and turning arrows, effort bars, instant with `animator_duration_scale 0`.
+- [ ] **09 New since your last visit.** Failed on the phone: Home while Hermes answers, come back to the same chat →
+      no line (the chat was never reopened). Fixed with `window.hermesPause` / `noteBack`; try again: send a long
+      request, press Home at once, wait until it is done, open the app → the line before the reply, scrolled there.
+- [ ] **10 Several questions at once**, **11 Stash a draft**, **12 File previews** (audio/video playback): not yet
+      tried on a phone.
 
