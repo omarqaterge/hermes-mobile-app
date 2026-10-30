@@ -1,7 +1,6 @@
 // The canvas panel: documents beside the chat that Hermes writes and you read, edit, run and keep.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { copyText, haptic, openExternal, shareText as nativeShare } from '../bridge'
-import { parseCsv } from '../text'
 import { sendPrompt, errText } from '../gateway'
 import { toast } from '../store'
 import { confirmDialog, promptDialog } from '../dialog'
@@ -30,10 +29,8 @@ import {
   type DocMeta,
   type DocType
 } from '../canvas'
-import { Markdown } from './Markdown'
-import { HtmlFrame } from './HtmlFrame'
+import { DocView } from './DocView'
 import { DiffView } from './Diff'
-import { Linked } from './Linked'
 import { Row, Section } from './ui'
 import { setState } from '../store'
 import { useSheetDrag } from './useSheetDrag'
@@ -49,66 +46,6 @@ const ago = (t: number) => {
 }
 
 // ── content renderers ────────────────────────────────────────
-
-/** A fence long enough that the document's own backticks can't close it. */
-function fenced(text: string, lang: string): string {
-  const run = Math.max(2, ...(text.match(/`+/g) || []).map(m => m.length)) + 1
-  const f = '`'.repeat(run)
-  return `${f}${lang}\n${text}\n${f}`
-}
-
-
-function CsvTable({ text }: { text: string }) {
-  const rows = useMemo(() => parseCsv(text).slice(0, 2000), [text])
-  if (!rows.length) return <div className="dim pad">Empty table</div>
-  const [head, ...body] = rows
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {body.map((r, i) => (
-            <tr key={i}>{head.map((_, j) => <td key={j}>{r[j] ?? ''}</td>)}</tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-export function DocView({ doc, text, network }: { doc: Doc; text: string; network: boolean }) {
-  switch (doc.type) {
-    case 'markdown':
-      return (
-        <div className="canvas-md">
-          <Markdown text={text} />
-        </div>
-      )
-    case 'html':
-      return <HtmlFrame html={text} network={network} />
-    case 'code':
-      return <Markdown text={fenced(text, doc.lang || '')} />
-    case 'json': {
-      let pretty = text
-      try {
-        pretty = JSON.stringify(JSON.parse(text), null, 2)
-      } catch {
-        /* show as written */
-      }
-      return <Markdown text={fenced(pretty, 'json')} />
-    }
-    case 'mermaid':
-      return <Markdown text={fenced(text, 'mermaid')} />
-    case 'csv':
-      return <CsvTable text={text} />
-    case 'svg':
-      return <img className="canvas-svg" alt={doc.title} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`} />
-    default:
-      return <pre className="canvas-text"><Linked text={text} /></pre>
-  }
-}
 
 // ── editor ───────────────────────────────────────────────────
 
@@ -645,7 +582,7 @@ export function CanvasPanel() {
               ) : mode === 'edit' ? (
                 <Editor key={doc.id} doc={doc} onChange={t => editDoc(doc.id, t)} onSelect={setSel} />
               ) : (
-                <DocView doc={doc} text={text} network={Boolean(net[doc.id])} />
+                <DocView type={doc.type} lang={doc.lang} title={doc.title} text={text} network={Boolean(net[doc.id])} />
               )}
             </div>
 

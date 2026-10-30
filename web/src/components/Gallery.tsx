@@ -6,7 +6,8 @@ import { confirmDialog, promptDialog } from '../dialog'
 import { ago } from '../unread'
 import { toast } from '../store'
 import { deleteItem, itemContent, openGallery, openItemChat, renameItem, setGalleryFilter, setGalleryQuery, useGallery, type GalleryItem } from '../gallery'
-import { DocView, Sheetish, TYPE_ICON } from './Canvas'
+import { Sheetish, TYPE_ICON } from './Canvas'
+import { DocView } from './DocView'
 import { ScreenShell, Sheet, Status } from './Screens'
 import { Row, Section, Segmented } from './ui'
 import { Spinner } from './Spinner'
@@ -113,7 +114,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
               <Spinner />
             </div>
           ) : (
-            <DocView doc={{ id: item.doc, title: item.title, type: item.type, lang: item.lang, rev: 0, updated: item.updated, by: '', chars: item.chars, path: '', created: item.created, content: text }} text={text} network={false} />
+            <DocView type={item.type} lang={item.lang} title={item.title} text={text} network={false} />
           )}
         </div>
       </div>

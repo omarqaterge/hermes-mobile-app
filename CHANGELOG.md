@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **More previews in Files.** Tapping a file in Files now shows CSV/TSV as a table, JSON pretty-printed, code
+  highlighted, Mermaid files as diagrams, HTML pages running offline in the sandbox, and audio/video in a player
+  (streamed, not read into the page). PDF, Office and other files say "No preview here" and keep Open with….
+  Browser tests only; not yet on a real phone.
 - **Stash a draft.** In the Add menu, "Stash draft" puts the text you are writing aside and empties the box;
   "Stashed drafts" lists what you put aside (from any chat) and tapping one puts it back, swapping with what is in the
   box. "Clear all stashed drafts" removes them; at most 20 are kept. Quotes and attachments stay where they are.
