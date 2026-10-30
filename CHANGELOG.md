@@ -8,15 +8,15 @@ User-facing changes, newest first. Each release section collects what shipped si
 - **More previews in Files.** Tapping a file in Files now shows CSV/TSV as a table, JSON pretty-printed, code
   highlighted, Mermaid files as diagrams, HTML pages running offline in the sandbox, and audio/video in a player
   (streamed, not read into the page). PDF, Office and other files say "No preview here" and keep Open with….
-  Browser tests only; not yet on a real phone.
+  Seen on a Xiaomi phone (Android 16): CSV, code, JSON and HTML previews, audio and video playback, and the PDF note with Open with….
 - **Stash a draft.** In the Add menu, "Stash draft" puts the text you are writing aside and empties the box;
   "Stashed drafts" lists what you put aside (from any chat) and tapping one puts it back, swapping with what is in the
   box. "Clear all stashed drafts" removes them; at most 20 are kept. Quotes and attachments stay where they are.
-  Browser tests only; not yet on a real phone.
+  Seen on a Xiaomi phone (Android 16): stash, swap and clear all work.
 - **Several questions, one at a time.** When Hermes asks more than one question at once, the sheet shows
   `Question 2 of 3` with the current question and a row of dots; picking a choice in a single-choice question moves to
   the next one by itself after a moment. Back and Next move by hand (Android Back goes to the previous question), and
-  the last question has Answer. A single question looks as before. Browser tests only; not yet on a real phone.
+  the last question has Answer. A single question looks as before. Seen on a Xiaomi phone (Android 16): one question at a time, moving on after a pick, Back to the previous question with its answer kept, and Answer.
 - **"New since your last visit" in a chat.** When a chat got messages while you were away (a long task finished, a
   scheduled job or a bot wrote to it), a thin line with that text sits before the first message you haven't seen, and
   the chat opens scrolled to it instead of to the very end. It goes away the next time you open the chat; a chat you
