@@ -392,9 +392,15 @@ wss.on('connection', ws => {
   const event = (type, session_id, payload) => ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
   const later = (ms, fn) => setTimeout(fn, ms)
 
+  let threeSid = ''
   ws.on('message', raw => {
     const msg = JSON.parse(String(raw))
-    if (msg.method === undefined) return log({ answer: msg.id, result: msg.result, error: msg.error }) // response to a server request
+    if (msg.method === undefined) {
+      log({ answer: msg.id, result: msg.result, error: msg.error }) // response to a server request
+      // The three-question turn ends once its questions are answered.
+      if (msg.id === 'srv-clarify-3') later(100, () => event('message.complete', threeSid, { text: 'Thanks.' }))
+      return
+    }
     const { id, method, params = {} } = msg
     log({ rpc: method, params })
     const reply = result => ws.send(JSON.stringify({ jsonrpc: '2.0', id, result }))
@@ -530,6 +536,13 @@ wss.on('connection', ws => {
         if (/^ask me$/.test(params.text)) {
           // Hermes asks a question (clarify, a server → client request) and waits.
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-1', method: 'clarify', params: { session_id: sid, question: 'Which colour?', choices: ['Red', 'Blue'] } })))
+          return
+        }
+        if (/^ask me three$/.test(params.text)) {
+          // Three questions at once: the sheet shows them one at a time.
+          threeSid = sid
+          const questions = [{ qid: 'a', question: 'Colour?', choices: ['Red', 'Blue'] }, { qid: 'b', question: 'Size?', choices: ['S', 'M'] }, { qid: 'c', question: 'Notes?', choices: null }]
+          later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-3', method: 'clarify', params: { session_id: sid, questions } })))
           return
         }
         if (/^slow reply$/.test(params.text)) {
