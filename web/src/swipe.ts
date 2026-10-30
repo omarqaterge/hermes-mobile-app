@@ -15,7 +15,7 @@ export function openChatCanvas(): void {
 // canvas (the same as the header canvas button; only with a chat on screen and the canvas closed).
 // Ignored when the finger starts on something that scrolls or drags sideways itself (tables, code blocks,
 // diagrams, the canvas, sliders, text fields, the drawer) or while a sheet, dialog or screen is open.
-const SKIP = '.scrubber,input,textarea,select,[contenteditable],[role=dialog],.sheet-backdrop,.canvas-panel,.drawer,.drawer-backdrop,.lightbox,.slider,.tts-player,.find-bar,pre,table,.katex-display,.mermaid,.diagram,.hm-openui'
+const SKIP = '.scrubber,.html-viewer,.inline-frame,input,textarea,select,[contenteditable],[role=dialog],.sheet-backdrop,.canvas-panel,.drawer,.drawer-backdrop,.lightbox,.slider,.tts-player,.find-bar,pre,table,.katex-display,.mermaid,.diagram,.hm-openui'
 
 function scrollsSideways(el: Element | null): boolean {
   for (let n = el; n && n !== document.body; n = n.parentElement) {
