@@ -16,6 +16,7 @@ import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLivePause, setLivePause } from '../live'
+import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
 import { UninstallSection } from './Uninstall'
@@ -732,17 +733,26 @@ function AssistantSection() {
     document.addEventListener('visibilitychange', again)
     return () => document.removeEventListener('visibilitychange', again)
   }, [])
+  const [onLock, setOnLock] = useState(lockAssist)
   if (!bridge?.openAssistantSettings) return null
   return (
     <Section
       title="Phone assistant"
       footer={
-        on
+        (on
           ? 'Long-press the power button (or swipe in from a bottom corner) to talk to Hermes in Live mode. If it still opens another assistant, set the power-button shortcut to the assistant in the phone’s settings.'
-          : 'Choose Hermes under “Digital assistant app”. Then long-pressing the power button opens Hermes in Live mode, from any app.'
+          : 'Choose Hermes under “Digital assistant app”. Then long-pressing the power button opens Hermes in Live mode, from any app.') +
+        (lockAssistAvailable()
+          ? onLock
+            ? ' On the lock screen, Live mode opens without unlocking, for talking only: allowing a command, answering a question or opening your chats asks you to unlock.'
+            : ' On the lock screen, the phone asks you to unlock first.'
+          : '')
       }
     >
       <Row icon="✦" tone="gold" title="Use Hermes as phone assistant" value={on ? 'On' : 'Off'} chevron onClick={() => bridge.openAssistantSettings?.()} />
+      {lockAssistAvailable() && (
+        <ToggleRow icon="🔒" tone="purple" title="Talk to Hermes on the lock screen" on={onLock} onChange={v => { setOnLock(v); setLockAssist(v) }} />
+      )}
     </Section>
   )
 }
