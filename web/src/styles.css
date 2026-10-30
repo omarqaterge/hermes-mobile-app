@@ -2792,6 +2792,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   align-items: center;
   gap: 5px;
   max-width: 70%;
+  min-width: 0;
   min-height: 28px;
   padding: 2px 10px;
   border-radius: 14px;
@@ -2807,6 +2808,59 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--mono);
+}
+.ctx-ring {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border-radius: 14px;
+}
+.ctx-ring:active {
+  background: var(--press);
+}
+.ctx-ring-track {
+  stroke: var(--dim);
+  opacity: 0.35;
+}
+.ctx-ring-fill {
+  stroke: var(--accent);
+}
+.ctx-ring.warn .ctx-ring-fill {
+  stroke: var(--warn);
+}
+.ctx-ring.full .ctx-ring-fill {
+  stroke: var(--err);
+}
+.ctx-bar {
+  height: 8px;
+  margin: 4px 0 8px;
+  border-radius: 4px;
+  background: var(--press);
+  overflow: hidden;
+}
+.ctx-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.ctx-bar-fill.warn {
+  background: var(--warn);
+}
+.ctx-bar-fill.full {
+  background: var(--err);
+}
+.ctx-figures {
+  font-weight: 600;
+}
+.ctx-row {
+  margin-top: 8px;
+}
+.ctx-compress {
+  margin-top: 16px;
 }
 .yolo-chip {
   display: inline-flex;

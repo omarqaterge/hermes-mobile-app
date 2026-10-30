@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **A ring shows how full the chat's memory is.** At the right end of the model row above the box, a small ring fills
+  with the chat's context use all the time (not only while Hermes works), turning amber from 80 % and red from 90 %.
+  Tap it for the Context window sheet: tokens used of the maximum, cost and cache hits when Hermes reports them, and
+  a Compress older turns button. The ring also moves during a long turn. Browser tests only; not yet on a real phone.
 - **See how long Hermes has been working, and the chat's goal.** The status line above the box now shows the running
   turn's time (`1:23`) after three seconds, and it keeps counting from the real start when you reopen the chat. The
   finished reply's stats gain the total (`~41 tok/s · 1m 23s · ctx 12%`). When the chat has a goal (`/goal`), a line

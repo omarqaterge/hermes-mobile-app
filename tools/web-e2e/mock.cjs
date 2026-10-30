@@ -683,7 +683,7 @@ wss.on('connection', ws => {
         } else {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.delta', sid, { text: 'OK' }))
-          later(300, () => event('message.complete', sid, { text: 'OK' }))
+          later(300, () => event('message.complete', sid, { text: 'OK', usage: { input: 1200, output: 340, total: 1540, cost_usd: 0.0123, cache_hit_pct: 63 } }))
         }
         return
       }

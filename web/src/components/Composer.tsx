@@ -9,6 +9,7 @@ import { PickerSheet, type Option } from './ui'
 import { getDraft, setDraft } from '../drafts'
 import { Spinner } from './Spinner'
 import { QuoteBar } from './QuoteBar'
+import { ctxLevel, ringDash } from '../ctxring'
 import { QUEUE_MAX, enqueue, useQueue } from '../queue'
 import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
 
@@ -383,6 +384,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
               ⚡ Full access
             </button>
           )}
+          <ContextRing />
         </div>
       )}
       <div className={`composer${live !== 'off' ? ' composer-hidden' : ''}`}>
@@ -566,5 +568,22 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
         )}
       </div>
     </div>
+  )
+}
+
+/** Small ring at the right end of the model row: how full the chat's context window is. Tap for the details sheet. */
+function ContextRing() {
+  const ctx = useStore(s => s.active?.ctx)
+  if (!ctx) return null
+  const pct = Math.min(100, Math.max(0, ctx.percent))
+  const { dasharray, dashoffset } = ringDash(pct, 7)
+  const label = pct > 0 && pct < 1 ? '<1' : String(Math.round(pct))
+  return (
+    <button className={`ctx-ring ${ctxLevel(pct)}`} aria-label={`Context ${label}% used. Show details`} onClick={() => { haptic(); setState({ sheet: 'context' }) }}>
+      <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true" fill="none" strokeWidth="2.5">
+        <circle className="ctx-ring-track" cx="9" cy="9" r="7" />
+        <circle className="ctx-ring-fill" cx="9" cy="9" r="7" strokeLinecap="round" strokeDasharray={dasharray} strokeDashoffset={dashoffset} transform="rotate(-90 9 9)" />
+      </svg>
+    </button>
   )
 }

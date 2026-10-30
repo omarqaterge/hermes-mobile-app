@@ -186,6 +186,23 @@ async function main() {
   }
   // ── /yolo goes through config.set (in-process, like Desktop), never the slash worker ──
   await page.locator('.msg.assistant', { hasText: 'OK' }).first().waitFor({ timeout: 5000 })
+  // ── context ring: shows after the first turn, the sheet lists tokens, cost and cache hits ──
+  {
+    const ring = page.locator('.ctx-ring')
+    await ring.waitFor({ timeout: 5000 }).catch(() => {})
+    check((await ring.getAttribute('aria-label')) === 'Context 10% used. Show details', 'ring shows 10% after the first turn')
+    const box = await ring.boundingBox(), rowBox = await page.locator('.model-row').boundingBox()
+    check(box && rowBox && box.x + box.width <= rowBox.x + rowBox.width + 1 && box.x >= 0, 'ring sits inside the model row')
+    await ring.click()
+    const sheet = page.locator('.sheet', { hasText: 'Context window' })
+    await sheet.waitFor({ timeout: 3000 }).catch(() => {})
+    const txt = await sheet.innerText().catch(() => '')
+    check(txt.includes('100 of 1,000 tokens'), `context sheet shows tokens (${JSON.stringify(txt.slice(0, 120))})`)
+    check(txt.includes('Cost: $0.0123') && txt.includes('Cache hits: 63%') && txt.includes('input 1,200 · output 340'), 'context sheet shows cost, cache hits and token split')
+    await page.evaluate(() => window.hermesBack())
+    await sleep(300)
+    check((await page.locator('.sheet', { hasText: 'Context window' }).count()) === 0, 'Android Back closes the context sheet')
+  }
   await page.getByPlaceholder('Message Hermes').fill('/yolo')
   await page.getByRole('button', { name: 'Send' }).click()
   await sleep(500)
@@ -1299,6 +1316,19 @@ async function main() {
   check(rpcs('session.compress').some(r => r.params.session_id === 'rt-s-full'), 'session.compress sent for the open chat')
   await sleep(300)
   check((await hint.count()) === 0, 'hint gone afterwards')
+  // the ring for the 20% left after compressing; then force 85% again via the other route: reopen the chat
+  await page.evaluate(() => window.hermesOpenSession('s-8'))
+  await page.evaluate(() => window.hermesOpenSession('s-full'))
+  await page.locator('.ctx-ring.warn').waitFor({ timeout: 5000 }).then(() => check(true, 'ring turns amber at 85%'), () => check(false, 'ring turns amber at 85%'))
+  {
+    const before = rpcs('session.compress').length
+    await page.locator('.ctx-ring').click()
+    await page.locator('.sheet', { hasText: 'Context window' }).getByRole('button', { name: 'Compress older turns' }).click()
+    await page.locator('.toast', { hasText: 'Context compressed' }).waitFor({ timeout: 5000 }).then(() => check(true, 'sheet Compress toasts the result'), () => check(false, 'sheet Compress toasts the result'))
+    check(rpcs('session.compress').length === before + 1, 'sheet Compress sends session.compress')
+    await page.evaluate(() => window.hermesBack())
+    await sleep(300)
+  }
   await page.evaluate(() => window.hermesOpenSession('s-8'))
   await page.locator('.msg.assistant', { hasText: 'answer s-8' }).waitFor({ timeout: 5000 })
   check((await hint.count()) === 0, 'no hint at 10%')
