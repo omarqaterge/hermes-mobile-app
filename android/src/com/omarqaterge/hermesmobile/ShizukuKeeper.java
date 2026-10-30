@@ -34,7 +34,8 @@ import java.util.Set;
  * Wireless debugging is turned off again if we turned it on.
  *
  * Battery: nothing polls. Entered only from a down event (Shizuku's binder died) or the one 90 s check after the service
- * starts; at most KeeperPlan.ATTEMPTS Handler.postDelayed attempts per event (0, 30, 120 s) and MAX_RUNS_PER_HOUR events
+ * starts (a one-shot, non-waking alarm on the real-time clock: it never wakes the phone, but a phone that slept through
+ * the 90 s runs it the moment it wakes, where a Handler delay would wait for 90 s of CPU-awake time); at most KeeperPlan.ATTEMPTS Handler.postDelayed attempts per event (0, 30, 120 s) and MAX_RUNS_PER_HOUR events
  * per hour; one Wi-Fi NetworkCallback only while waiting for Wi-Fi; NsdManager discovery for at most 10 s. Everything is
  * removed when Shizuku is up or the service is destroyed. Decisions live in KeeperPlan (tested on a plain JVM).
  * All state is touched on the main thread only.
@@ -67,6 +68,8 @@ final class ShizukuKeeper {
     private static final Runnable wdOffTask = ShizukuKeeper::wirelessDebuggingOff;
     private static final Runnable allowTimeout = ShizukuKeeper::stopAllowObserver;
     private static Runnable readbackTask, nsdTimeout;
+    private static final Runnable checkTask = ShizukuKeeper::check;
+    private static final android.app.AlarmManager.OnAlarmListener checkAlarm = ShizukuKeeper::check;
 
     static SharedPreferences prefs(Context c) {
         return c.getSharedPreferences("hermes", Context.MODE_PRIVATE);
@@ -86,9 +89,45 @@ final class ShizukuKeeper {
         H.post(() -> up(a));
     }
 
+    /** The service started: check once, KeeperPlan.CHECK_MS of real time later, whether Shizuku runs (after a reboot it
+     *  doesn't start by itself, so no binder ever arrives). Replaces an earlier check; stop() removes it. */
+    static void armCheck(Context ctx) {
+        Context a = ctx.getApplicationContext();
+        H.post(() -> {
+            app = a;
+            disarmCheck();
+            long at = android.os.SystemClock.elapsedRealtime() + KeeperPlan.CHECK_MS;
+            android.app.AlarmManager am = a.getSystemService(android.app.AlarmManager.class);
+            try { // USE_EXACT_ALARM is in the manifest; a listener alarm lives and dies with this process
+                am.setExact(android.app.AlarmManager.ELAPSED_REALTIME, at, "hermes:shizuku-check", checkAlarm, H);
+            } catch (Exception e) {
+                try { // exact alarms not allowed: an inexact one still counts real time
+                    am.set(android.app.AlarmManager.ELAPSED_REALTIME, at, "hermes:shizuku-check", checkAlarm, H);
+                } catch (Exception e2) {
+                    Log.w(TAG, "check alarm failed: " + e2);
+                    H.postDelayed(checkTask, KeeperPlan.CHECK_MS);
+                }
+            }
+        });
+    }
+
+    private static void check() {
+        disarmCheck();
+        if (HermesService.shizukuInstalled(app) && !ShizukuProvider.running()) down(app, true);
+    }
+
+    private static void disarmCheck() {
+        H.removeCallbacks(checkTask);
+        try {
+            app.getSystemService(android.app.AlarmManager.class).cancel(checkAlarm);
+        } catch (Exception ignored) {
+        }
+    }
+
     /** The service is going away: nothing of ours may keep running. */
     static void stop() {
         H.post(() -> {
+            if (app != null) disarmCheck();
             stopRun();
             H.removeCallbacks(wdOffTask);
         });

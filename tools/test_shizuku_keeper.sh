@@ -31,6 +31,10 @@ public class KeeperPlanTest {
         check(eq(b(true, false, false, 35, true, true, false), "unpaired"), "Termux adb not paired → unpaired");
         check(eq(b(true, true, true, 29, false, false, false), "uninstalling"), "several fail → the first one is reported");
 
+        // the one check after the service starts: real time (counts deep sleep), so a phone left asleep after a
+        // reboot with Wi-Fi off still shows the notice the moment it wakes (a Handler delay stops while it sleeps)
+        check(KeeperPlan.CHECK_MS == 90_000, "check 90 s after the service starts");
+
         // who gets a notice
         for (String r : new String[]{"old-android", "no-permission", "no-termux", "unpaired", "no-wifi", "untrusted-network", "failed", "too-many"})
             check(KeeperPlan.userMustAct(r), r + " → notice");
