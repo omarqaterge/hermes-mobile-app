@@ -9,7 +9,7 @@ import { confirmDialog } from '../dialog'
 import { useBackHandler } from '../backstack'
 import { closeScreen, getState, setState, toast, useStore } from '../store'
 import {
-  SHIZUKU_WATCH_EVERY_MS, appsPlan, flowNav, flowPages, nextStep, probeState, progressView, recommendedGaps, replaceDue, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowPage, type FlowStep, type PhoneAccess, type PreHermes,
+  FLOW_WATCH_EVERY_MS, SHIZUKU_WATCH_EVERY_MS, appsPlan, flowNav, flowWatchActive, flowPages, nextStep, probeState, progressView, recommendedGaps, replaceDue, setupSteps, shizukuAutoKind, shizukuWatchActive, shouldOpenFlow, type FlowPage, type FlowStep, type PhoneAccess, type PreHermes,
   type ProbeRaw, type Progress, type Remote, type StepId, type StepState
 } from '../setupflow'
 import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
@@ -394,6 +394,9 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
           'Shizuku doesn’t answer Termux. Set Battery to Unrestricted for both Shizuku and Termux (app info → Battery).'
         ) : sh === 'missing' ? (
           'Shizuku’s shell isn’t set up for Hermes yet. Run the installer in Termux again.'
+        ) : n?.shizukuRunning ? (
+          // the app holds Shizuku's binder, but Termux's rish got no answer yet (often: Shizuku's prompt is still open)
+          'Shizuku is running, but Termux can’t use it yet. If Shizuku asks whether Termux may use it, tap Allow all the time. If nothing asks, open Shizuku → Application management and turn on Termux.'
         ) : (
           <>
             Shizuku isn’t running. Open it and start it. No root: <i>Start via Wireless debugging</i> (pair once).
@@ -714,6 +717,30 @@ export function SetupFlow() {
     }
   }
   useBackHandler(goPrev, !loading && nav.prev !== null)
+  // The page promises to move on by itself, but nothing tells it when e.g. Shizuku was started or allowed Termux: re-check
+  // every 4 s while such a step is current and visible (bounded: flowWatchActive).
+  const watchId = !loading && nav.atCurrent && cur ? cur.id : null
+  useEffect(() => {
+    if (!watchId) return
+    let startedAt = Date.now()
+    let timer = 0
+    const stop = () => {
+      clearInterval(timer)
+      timer = 0
+    }
+    const active = () => flowWatchActive({ id: watchId, visible: document.visibilityState === 'visible', startedAt, now: Date.now() })
+    const sync = () => {
+      stop()
+      if (document.visibilityState === 'visible') startedAt = Date.now()
+      if (active()) timer = window.setInterval(() => (active() ? refresh(false) : stop()), FLOW_WATCH_EVERY_MS)
+    }
+    sync()
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [watchId, refresh])
   if (!loading && cur && conn !== 'open') flowShowedStep = true // e.g. Start Hermes, the installer
   const stateOf = (id: StepId) => steps.find(s => s.id === id)?.state
   // skip = the step went away (the installer made it unnecessary): counts as finished, no ✓.
