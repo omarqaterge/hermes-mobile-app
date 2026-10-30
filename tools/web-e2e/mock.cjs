@@ -448,6 +448,13 @@ wss.on('connection', ws => {
             { role: 'user', text: 'show me things', row_id: 1 },
             { role: 'assistant', text: 'Plain words to swipe on.\n\n```js\nconst a = 1\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```openui-lang\n' + card + '\n```\n\nMore plain words.' }] })
         }
+        if (sid === 's-wide') {
+          // Text a real chat has: a long unbroken path / URL in plain text and in inline code.
+          const url = 'https://example.com/' + 'segment-'.repeat(30) + 'end'
+          return reply({ session_id: 'rt-wide', stored_session_id: sid, info: { title: 'Wide chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'where is it', row_id: 1 },
+            { role: 'assistant', text: 'Plain words to swipe on.\n\nThe file is ' + url + ' and also `' + '/very/long/path/'.repeat(12) + 'file.txt` here.\n\nMore plain words.' }] })
+        }
         if (sid === 's-slowstart') {
           // Slow start-up resume: the user starts a new chat while this is loading.
           return later(2500, () => reply({ session_id: 'rt-slowstart', stored_session_id: sid, info: { title: 'Slow chat', model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
