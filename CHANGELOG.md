@@ -4,6 +4,15 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **A locked phone can't approve a command or answer Hermes from a notification any more.** Allow once, Allow
+  session, a question's answer buttons and the Reply field now ask you to unlock first: on Android 12+ the phone asks
+  for your PIN right on the notification; on Android 8-11 the tap opens the app instead, which asks you to unlock and
+  then shows the request (or your typed text in the box). Deny, Stop and Clear stay one tap.
+- **New: Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen"** (off by default). Off: the assist
+  button or gesture on a locked phone asks you to unlock before Live mode starts. On: Live mode opens over the lock
+  screen without unlocking, for talking only; allowing a command, answering a question or opening your chats asks
+  you to unlock, and ending Live mode brings the lock screen back. Checked on Android 15 and Android 8 emulators;
+  not yet on a real phone.
 - **Setup no longer gets stuck at "Hermes can see and use the screen (Shizuku)".** After you started Shizuku the page
   said it would move on by itself but never checked again, so it stayed there. It now re-checks every few seconds while
   that step is on screen (up to 10 minutes per visit), and when Shizuku runs but Termux isn't allowed yet it says so

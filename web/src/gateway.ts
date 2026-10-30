@@ -24,6 +24,7 @@ import type {
   TranscriptMessage,
   Usage
 } from '@hermes/shared/gateway-contract.generated'
+import { askUnlock, lockView } from './lockview'
 import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, wsUrl } from './bridge'
 import {
   type ActiveSession,
@@ -1127,10 +1128,17 @@ client.onRequest((req: ServerRequest) => {
   return true
 })
 
-export function answerRequest(req: ServerRequest, result: Record<string, unknown>): void {
+/** Answers a request from Hermes. Over the lock screen (lockview.ts) only Deny goes through: anything else asks for an
+ *  unlock and returns false, the request stays open. */
+export function answerRequest(req: ServerRequest, result: Record<string, unknown>): boolean {
+  if (lockView() && !(req.method === 'approval' && result.choice === 'deny')) {
+    askUnlock(req.method === 'approval' ? 'Unlock the phone to allow this' : 'Unlock the phone to answer')
+    return false
+  }
   req.respond(result)
   cancelNotification(`req-${req.id}`)
   setState(s => ({ requests: s.requests.filter(r => r.id !== req.id) }))
+  return true
 }
 
 export function rejectRequest(req: ServerRequest): void {

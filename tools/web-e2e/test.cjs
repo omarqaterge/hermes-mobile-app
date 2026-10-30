@@ -98,6 +98,10 @@ const nativeShell = () => {
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
       openAssistantSettings: key => k(key, 'openAssistantSettings'),
+      // Talk to Hermes on the lock screen: the values pushed to the shell are recorded.
+      setLockAssist: (key, on) => (k(key, 'setLockAssist'), (window.__lockAssist ||= []).push(on)),
+      requestUnlock: key => k(key, 'requestUnlock'),
+      leaveLockScreen: key => k(key, 'leaveLockScreen'),
       // Claude in Termux: recorded; window.__noTermux = the shell can't open Termux.
       signInTermux: (key, provider, profile) => (k(key, 'signInTermux'), (window.__termuxSignins ||= []).push([provider, profile]), !window.__noTermux),
       // Background app: the test sets state through window.__hmBg; frames come back 120 ms after each request.
@@ -1428,6 +1432,43 @@ async function main() {
   await sleep(2800)
   const va = calls().filter(c => c.answer === 'srv-approval-1')
   check(va.length === 1 && va[0].result && va[0].result.choice === 'once', `answered by voice (${JSON.stringify(va)})`)
+  // Over the lock screen (the shell calls hermesLockView): talking works, allowing asks for an unlock first, Deny goes
+  // through, the drawer asks for an unlock instead of opening, and ending Live mode puts the lock screen back.
+  {
+    await np.locator('.live-bar').getByRole('button', { name: 'End' }).click()
+    check(!(await np.evaluate(() => window.__nativeCalls)).includes('leaveLockScreen'), 'unlocked: ending Live mode does not touch the lock screen')
+    await np.evaluate(() => window.hermesLockView(true))
+    const unlocks = () => np.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
+    const listens = await np.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
+    await np.evaluate(() => window.hermesShortcut('live'))
+    await np.waitForFunction(n => window.__nativeCalls.filter(c => c === 'startListening').length > n, listens, { timeout: 5000 })
+    await np.evaluate(() => window.__hmVoice('final', 'run the thing'))
+    await np.locator('.sheet .sheet-title', { hasText: 'Approve' }).waitFor({ timeout: 8000 }).catch(() => {})
+    await np.waitForFunction(() => (window.__spoken || []).filter(t => /Allow or deny/.test(t)).length >= 2, null, { timeout: 8000 }).catch(() => {})
+    await sleep(300)
+    await np.evaluate(() => window.__hmVoice('final', 'yes allow it'))
+    await sleep(2800)
+    check(calls().filter(c => c.answer === 'srv-approval-1').length === 1, 'locked: "allow" by voice is not sent')
+    check((await unlocks()) === 1, `locked: "allow" by voice asks for an unlock (${await unlocks()})`)
+    await np.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
+    await sleep(300)
+    check(calls().filter(c => c.answer === 'srv-approval-1').length === 1, 'locked: Allow once on the sheet is not sent')
+    check((await unlocks()) === 2, `locked: Allow once asks for an unlock (${await unlocks()})`)
+    await np.locator('.sheet').getByRole('button', { name: 'Deny' }).click()
+    await sleep(300)
+    const dn = calls().filter(c => c.answer === 'srv-approval-1')
+    check(dn.length === 2 && dn[1].result && dn[1].result.choice === 'deny', `locked: Deny goes through (${JSON.stringify(dn.slice(1))})`)
+    await np.getByRole('button', { name: /^Sessions/ }).click().catch(() => {})
+    await sleep(300)
+    check((await np.locator('.drawer.open, .drawer-open').count()) === 0 && (await unlocks()) === 3, `locked: the chat list asks for an unlock instead of opening (${await unlocks()})`)
+    check(await np.locator('.live-bar').count() === 1, 'locked: still talking in Live mode')
+    await np.locator('.live-bar').getByRole('button', { name: 'End' }).click()
+    await sleep(200)
+    check((await np.evaluate(() => window.__nativeCalls)).includes('leaveLockScreen'), 'locked: ending Live mode puts the lock screen back')
+    await np.evaluate(() => window.hermesLockView(false))
+    await np.evaluate(() => window.hermesShortcut('live'))
+    await np.locator('.live-bar').waitFor({ timeout: 5000 }).catch(() => {})
+  }
   // A chat created by its first message tells the service it is on screen (returning to the app = seen).
   const seenNew = await np.evaluate(() => window.__seen || [])
   check(seenNew.some(id => /^s-new/.test(id)), `new chat reported on screen (${JSON.stringify(seenNew)})`)
@@ -1568,7 +1609,19 @@ async function main() {
   })
   await sleep(200)
   check(/On/.test((await ar.textContent()) || ''), `assistant row says On after returning (${await ar.textContent()})`)
+  // "Talk to Hermes on the lock screen": off by default, each change saved and pushed to the shell.
+  const lr = np.locator('.set-row', { hasText: 'Talk to Hermes on the lock screen' })
+  await lr.waitFor({ timeout: 5000 }).then(() => check(true, 'lock-screen row shown'), () => check(false, 'lock-screen row shown'))
+  check((await lr.getByRole('switch').getAttribute('aria-checked')) === 'false', 'lock-screen row is off by default')
+  check(/asks you to unlock first/.test((await np.locator('.set-section', { has: ar }).locator('.set-foot').textContent()) || ''), 'footer says the lock screen asks to unlock first')
+  await lr.click()
+  check((await lr.getByRole('switch').getAttribute('aria-checked')) === 'true', 'lock-screen row turns on')
+  check(JSON.stringify(await np.evaluate(() => window.__lockAssist)) === '[true]' && (await np.evaluate(() => localStorage.getItem('hm.lockAssist.v1'))) === '1', `on: pushed to the shell and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`)
+  await lr.click()
+  check(JSON.stringify(await np.evaluate(() => window.__lockAssist)) === '[true,false]' && (await np.evaluate(() => localStorage.getItem('hm.lockAssist.v1'))) === '0', `off again: pushed and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`)
+  await sleep(200)
   await np.evaluate(() => window.hermesBack())
+  await sleep(200)
   await np.evaluate(() => window.hermesBack())
 
   // ── setup check with the Android checks: ✗ items have buttons that ask the shell to fix them ──
