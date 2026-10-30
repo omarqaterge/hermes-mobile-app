@@ -1451,6 +1451,37 @@ async function main() {
   await sleep(200)
   check((await page.locator('.hub-card').count()) === 0, 'Back again closes the hub')
 
+  // ── Files previews: table, code, page, player, and the note for files with no preview ──
+  await page.getByRole('button', { name: /^Sessions/ }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: 'Files' }).click()
+  const fileReads = name => calls().filter(c => c.path === '/api/files/read' && decodeURIComponent(c.query).endsWith('/' + name)).length
+  await page.locator('.file-row', { hasText: 'table.csv' }).click()
+  await page.locator('.sheet table td', { hasText: /^2$/ }).waitFor({ timeout: 5000 }).then(() => check(true, 'Files: a csv shows as a table with its cell'), () => check(false, 'Files: a csv shows as a table with its cell'))
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.file-row', { hasText: 'code.py' }).click()
+  await page.locator('.sheet code.hljs, .sheet .hljs').first().waitFor({ timeout: 5000 }).then(() => check(true, 'Files: python code is highlighted'), () => check(false, 'Files: python code is highlighted'))
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.file-row', { hasText: 'page.html' }).click()
+  await page.locator('.sheet iframe').waitFor({ timeout: 5000 })
+  await page.frameLocator('.sheet iframe').locator('h1', { hasText: 'Hi' }).waitFor({ timeout: 5000 }).then(() => check(true, 'Files: an html file runs in a frame showing its content'), () => check(false, 'Files: an html file runs in a frame showing its content'))
+  const sb = (await page.locator('.sheet iframe').getAttribute('sandbox')) || ''
+  check(sb.includes('allow-scripts') && !sb.includes('allow-same-origin'), `Files: the page frame is sandboxed without allow-same-origin (${sb})`)
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.file-row', { hasText: 'song.mp3' }).click()
+  await page.locator('.sheet audio').waitFor({ state: 'attached', timeout: 5000 }).then(() => check(true, 'Files: an mp3 shows a player'), () => check(false, 'Files: an mp3 shows a player'))
+  check(fileReads('song.mp3') === 0, 'Files: the mp3 was never read through /api/files/read')
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.file-row', { hasText: 'doc.pdf' }).click()
+  await page.locator('.sheet', { hasText: 'No preview here. Use Open with… to view it in another app.' }).waitFor({ timeout: 5000 }).then(() => check(true, 'Files: a pdf says there is no preview'), () => check(false, 'Files: a pdf says there is no preview'))
+  check((await page.locator('.sheet button', { hasText: 'Open with…' }).count()) === 1, 'Files: the pdf sheet keeps Open with…')
+  check(fileReads('doc.pdf') === 0, 'Files: the pdf was not read')
+  await page.evaluate(() => window.hermesBack())
+  await page.evaluate(() => window.hermesBack())
+  await sleep(300)
+  await page.evaluate(() => window.hermesBack())
+  await sleep(300)
+
   // ── #22 Projects: tap a chat to open it ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
   await page.locator('.nav-tile', { hasText: 'Hermes' }).click()

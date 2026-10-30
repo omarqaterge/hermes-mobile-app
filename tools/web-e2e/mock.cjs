@@ -64,6 +64,7 @@ let endpoints = [] // POST /api/providers/custom-endpoints
 // Like Hermes's redacted_credential_preview: first 4 + last 4 of a long value.
 const redact = v => (v.length >= 12 ? `«redacted:${v.slice(0, 4)}...${v.slice(-4)}»` : '«redacted:***»')
 
+const FILE_TEXT = { 'table.csv': 'a,b\n1,2', 'page.html': '<h1>Hi</h1>', 'code.py': 'print("x")' }
 const server = http.createServer((req, res) => {
   let body = ''
   req.on('data', c => (body += c))
@@ -133,7 +134,14 @@ const server = http.createServer((req, res) => {
       const join = n => (dir === '/' ? '' : dir) + '/' + n
       const entries = depth < 4 ? ['a', 'b'].map(n => ({ name: n, path: join(n), is_directory: true })) : []
       entries.push({ name: 'note.txt', path: join('note.txt'), is_directory: false, size: 5 })
+      for (const [n, text] of Object.entries(FILE_TEXT)) entries.push({ name: n, path: join(n), is_directory: false, size: text.length })
+      for (const n of ['song.mp3', 'doc.pdf']) entries.push({ name: n, path: join(n), is_directory: false, size: 1000 })
       return send({ path: dir, parent: dir === '/' ? null : dir.replace(/\/[^/]+$/, '') || '/', entries })
+    }
+    if (p === '/api/files/read' && req.method === 'GET') {
+      // Text files of the Files screen's previews (the call is logged, so a test can see what was read).
+      const name = (url.searchParams.get('path') || '').split('/').pop()
+      return send({ data_url: 'data:text/plain;base64,' + Buffer.from(FILE_TEXT[name] ?? 'hello').toString('base64'), size: (FILE_TEXT[name] ?? 'hello').length })
     }
     if (p === '/api/cron/jobs' && req.method === 'GET') return send([{ id: 'j1', name: 'Morning brief', schedule: '0 9 * * *', prompt: 'Brief me', next_run_at: null }])
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
