@@ -2,7 +2,7 @@ import { btwDone, openBtw } from './btw'
 import { bootMark } from './boot'
 import { fmtDuration } from './text'
 import { markSeen, noteSessions } from './unread'
-import { markVisit } from './visit'
+import { isAway, markVisit, noteAway, noteBack } from './visit'
 import { rememberPrompt } from './recent'
 import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
 import { api } from './api'
@@ -1296,13 +1296,14 @@ async function syncRunning(): Promise<void> {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
+    noteBack()
     void checkSocket()
     void syncRunning()
   } else {
     // Kept for the next cold start, so the chat is on screen before Hermes answers.
     const a = getState().active
     if (a) saveChatToDisk(a.profile, a.storedId, a.title, a.items)
-    if (a) markVisit(a.storedId)
+    noteAway(a?.storedId)
   }
 })
 setInterval(() => {
@@ -1486,7 +1487,7 @@ client.onEvent((ev: GatewayEvent) => {
       if (p.error || p.failure_reason) turnFailed = true
       const turnSecs = turnStartSecs()
       const watching = getState().active?.storedId
-      if (watching && document.visibilityState === 'visible') markVisit(watching) // they watched the turn end
+      if (watching && document.visibilityState === 'visible' && !isAway()) markVisit(watching) // they watched the turn end
       updateActive(() => ({ running: false, status: '', turnStart: null, usage: p.usage ?? getState().active?.usage ?? null }))
       void finishTurnStats(lastId, p.usage, turnSecs)
       break
