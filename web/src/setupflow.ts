@@ -236,6 +236,15 @@ export function shizukuWatchActive(s: { visible: boolean; running: boolean; star
   return s.visible && !s.running && s.now - s.startedAt < SHIZUKU_WATCH_MS
 }
 
+/** Required steps the flow shows as a plain card whose fix happens elsewhere (Shizuku and its "Allow Termux?" prompt,
+ *  Termux, Android's settings) with nothing telling the page it is done: the flow re-asks every few seconds while one is
+ *  the current step and on screen, for at most 10 minutes (coming back to the app starts the 10 minutes again). */
+export const FLOW_WATCHED: StepId[] = ['run', 'hermes', 'plugin', 'enabled', 'shizuku', 'shizuku-auto']
+export const FLOW_WATCH_EVERY_MS = 4000
+export function flowWatchActive(s: { id: StepId | null; visible: boolean; startedAt: number; now: number }): boolean {
+  return s.id != null && FLOW_WATCHED.includes(s.id) && s.visible && s.now - s.startedAt < SHIZUKU_WATCH_MS
+}
+
 /** The first required step that isn't done (bad, or still being checked), else null. */
 export function nextStep(steps: FlowStep[]): FlowStep | null {
   return steps.find(s => s.required && (s.state === 'bad' || s.state === 'wait')) ?? null

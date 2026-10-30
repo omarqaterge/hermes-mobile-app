@@ -1,4 +1,4 @@
-"""Setup check's phone-access probe (dashboard/plugin_api.py phone_access_now).
+"""Setup check's phone-access probe (dashboard/plugin_api.py phone_access_now and the GET /phone-access cache).
 
 On the phone the Termux:API row flipped to "Hermes can't reach it" for one check and back to ✓ on the next: a single
 termux-battery-status call that didn't answer (the Termux:API app waking up) counted as "not set up". One retry.
@@ -78,6 +78,39 @@ subprocess.run = run
 check("never answers → not reachable, gives up after 2 tries", api.phone_access_now()["termux_api"] is False and len(calls) == 2, str(len(calls)))
 subprocess.run = real_run
 shutil.which = shutil_which
+
+print("GET /phone-access: cache and one check at a time")
+import asyncio  # noqa: E402
+import time  # noqa: E402
+
+answers = {"shizuku": "off"}
+checks = []
+
+
+def fake_now():
+    checks.append(1)
+    time.sleep(0.2)  # rish waiting on Shizuku
+    return {"files": True, "termux_api": True, "shizuku": answers["shizuku"]}
+
+
+api.phone_access_now = fake_now
+
+
+async def burst():
+    return await asyncio.gather(*(api.phone_access() for _ in range(4)))
+
+
+api._phone_cache.clear()
+out = asyncio.run(burst())
+check("overlapping requests share one check (no second rish, no second Shizuku prompt)", len(checks) == 1 and all(o["shizuku"] == "off" for o in out), str(len(checks)))
+api._phone_cache["t"] -= 6
+answers["shizuku"] = "ok"
+check("a not-working answer is re-checked after 5 s (the fix shows soon)", asyncio.run(api.phone_access())["shizuku"] == "ok" and len(checks) == 2, str(len(checks)))
+api._phone_cache["t"] -= 6
+check("a working answer stays cached 15 s", asyncio.run(api.phone_access())["shizuku"] == "ok" and len(checks) == 2, str(len(checks)))
+api._phone_cache["t"] -= 10
+asyncio.run(api.phone_access())
+check("…and is checked again after that", len(checks) == 3, str(len(checks)))
 
 print("FAILED" if fails else "all passed")
 sys.exit(1 if fails else 0)
