@@ -231,7 +231,7 @@ public class HermesService extends Service {
         instance = this;
         new Thread(this::serve, "hermes-events").start();
         rearmWake();
-        main.postDelayed(shizukuCheck, 90_000); // once: after a reboot Shizuku doesn't start by itself, so no binder ever arrives
+        ShizukuKeeper.armCheck(this); // once, 90 s of real time: after a reboot Shizuku doesn't start by itself, so no binder arrives
         main.postDelayed(updateCheck, 120_000);
     }
 
@@ -242,11 +242,6 @@ public class HermesService extends Service {
             UpdateNotice.check(HermesService.this, false);
             main.postDelayed(this, UpdateNotice.CHECK_MS);
         }
-    };
-
-    /** Not running 90 s after start: the keeper restarts it, or says in the notice why it can't (ShizukuKeeper). */
-    private final Runnable shizukuCheck = () -> {
-        if (shizukuInstalled(this) && !ShizukuProvider.running()) ShizukuKeeper.onDown(this, true);
     };
 
     static boolean shizukuInstalled(Context ctx) {
@@ -432,8 +427,7 @@ public class HermesService extends Service {
     public void onDestroy() {
         running = false;
         instance = null;
-        main.removeCallbacks(shizukuCheck);
-        ShizukuKeeper.stop();
+        ShizukuKeeper.stop(); // also removes the 90 s check
         main.removeCallbacks(updateCheck);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
@@ -1217,7 +1211,7 @@ public class HermesService extends Service {
                 .putExtra("kind", "ask").putExtra("session", session == null ? "" : session).putExtra("text", choice);
         PendingIntent pi = PendingIntent.getService(this, ("choice:" + session + ":" + k).hashCode(), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Action.Builder(null, colored(choice.length() > 18 ? choice.substring(0, 17) + "\u2026" : choice, GOLD), pi).build();
+        return unlockFirst(new Notification.Action.Builder(null, colored(choice.length() > 18 ? choice.substring(0, 17) + "\u2026" : choice, GOLD), pi)).build();
     }
 
     JSONObject pendingAsk;
@@ -1277,9 +1271,9 @@ public class HermesService extends Service {
         } else {
             b.setStyle(new Notification.BigTextStyle().bigText(t));
         }
-        b.addAction(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once")).build());
+        b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once"))).build());
         if (a.optBoolean("allow_session", true))
-            b.addAction(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session")).build());
+            b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
         b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
         promote(b, secs + "s");
         return b.build();
@@ -1390,7 +1384,35 @@ public class HermesService extends Service {
     }
 
     Notification.Action approveAction(JSONObject e, String choice, String label) {
-        return new Notification.Action.Builder(null, label, approveIntent(e, choice)).build();
+        Notification.Action.Builder b = new Notification.Action.Builder(null, label, approveIntent(e, choice));
+        return ("deny".equals(choice) ? b : unlockFirst(b)).build();
+    }
+
+    /** A notification answer that acts (Allow, Allow session, an answer, a choice, a reply) on a LOCKED phone: don't
+     *  act, open the app instead with the request (its chat, the typed text in the box) so the user unlocks first
+     *  (MainActivity asks for the unlock screen) and answers there. Android 12+ already asks for the unlock before
+     *  the button works (unlockFirst); this covers Android 8-11. True = it was locked and nothing was sent. */
+    boolean openToUnlock(String session, String draft, String what) {
+        if (!MainActivity.keyguardLocked(this)) return false;
+        android.util.Log.i("HermesLock", "locked: not sending " + what + ", opening the app to unlock");
+        Intent open = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_UNLOCK, true);
+        if (session != null && !session.isEmpty()) open.putExtra("session", session); // opens that chat (its sheet)
+        if (draft != null) open.putExtra("draft", draft.length() > 20000 ? draft.substring(0, 20000) : draft);
+        try {
+            startActivity(open);
+        } catch (Exception ignored) {
+            // background start refused: the notification is still there, answered once unlocked
+        }
+        return true;
+    }
+
+    /** On the lock screen, Android asks to unlock before this answer goes through (API 31+): whoever holds a locked
+     *  phone can't allow a command or tell Hermes what to do. Deny stays one tap. */
+    static Notification.Action.Builder unlockFirst(Notification.Action.Builder b) {
+        if (Build.VERSION.SDK_INT >= 31) b.setAuthenticationRequired(true);
+        return b;
     }
 
     PendingIntent approveIntent(JSONObject e, String choice) {
@@ -1409,6 +1431,7 @@ public class HermesService extends Service {
     void answerApproval(Intent i) {
         String session = i.getStringExtra("session");
         String choice = i.getStringExtra("choice");
+        if (!"deny".equals(choice) && openToUnlock(session, null, "approval " + choice)) return;
         String t = tag("approval", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
         new Thread(() -> {
@@ -1455,7 +1478,7 @@ public class HermesService extends Service {
                 .putExtra("session", session == null ? "" : session);
         PendingIntent pi = PendingIntent.getService(this, ("answer:" + kind + ":" + session).hashCode(), i,
                 PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Action.Builder(null, label, pi).addRemoteInput(ri.build()).setAllowGeneratedReplies(false).build();
+        return unlockFirst(new Notification.Action.Builder(null, label, pi).addRemoteInput(ri.build()).setAllowGeneratedReplies(false)).build();
     }
 
     /** Hand a typed answer to the app's page (it holds the connection Hermes asked on). If the app isn't
@@ -1469,6 +1492,7 @@ public class HermesService extends Service {
         String session = i.getStringExtra("session");
         String t = tag("ask".equals(kind) ? "ask" : "reply", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
+        if (!text.isEmpty() && openToUnlock(session, text, "answer " + kind)) return;
         if ("ask".equals(kind) && !text.isEmpty() && pendingAsk != null) {
             pendingAsk = null; // answered (or it failed and says so): the chip goes back to the status
             main.removeCallbacks(expireAskTask);

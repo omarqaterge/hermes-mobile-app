@@ -24,6 +24,9 @@ interface AndroidBridge {
   openTtsEngineApp?(pkg: string): void
   isAssistant?(): boolean // Hermes holds the phone's assistant role
   openAssistantSettings?(): void // system page to pick the digital assistant app
+  setLockAssist?(on: boolean): void // the assist gesture may open Live mode over the lock screen (kept natively)
+  requestUnlock?(): void // Android's unlock screen while the app shows over the lock screen
+  leaveLockScreen?(): void // stop showing over the lock screen (Live mode ended)
   stopSpeaking?(): void
   ttsControl?(cmd: 'play' | 'pause' | 'toggle' | 'rew' | 'ff' | 'stop'): void // read-aloud, shared with its notification
   startListening?(): void

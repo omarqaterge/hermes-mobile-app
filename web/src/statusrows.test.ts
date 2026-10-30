@@ -10,8 +10,10 @@ describe('shizukuRow', () => {
     expect(shizukuRow(run, 'denied')).toMatchObject({ value: 'Termux not allowed', state: 'err' })
     expect(shizukuRow(run, 'blocked')).toMatchObject({ value: 'Not answering', state: 'err' })
     expect(shizukuRow(run, 'missing')).toMatchObject({ value: 'Not set up for Hermes', state: 'err' })
-    expect(shizukuRow(run, 'off')).toMatchObject({ value: 'Not running', state: 'err' })
+    expect(shizukuRow({ shizuku: true }, 'off')).toMatchObject({ value: 'Not running', state: 'err' })
   })
+  it('the app sees Shizuku running but Termux can not reach it: Termux not allowed, not "Not running"', () =>
+    expect(shizukuRow(run, 'off')).toMatchObject({ value: 'Termux not allowed', state: 'err', fix: 'open-shizuku' }))
   it('says whether Shizuku restarts by itself, only when the app reports it', () => {
     const a = { sdk: true, wss: true, paired: true, last: 'ok' }
     expect(shizukuRow({ ...run, shizukuAuto: a }, 'ok')).toMatchObject({ value: 'Running', note: 'Restarts by itself' })

@@ -43,7 +43,9 @@ export function shizukuRow(native: Pick<NativeSetup, 'shizuku' | 'shizukuRunning
       return { value: 'Not answering', state: 'err', note: 'Set Shizuku’s and Termux’s Battery to Unrestricted.', fix }
     case 'missing':
       return { value: 'Not set up for Hermes', state: 'err', note: 'Run the installer in Termux again.', fix }
-    default: // off: Hermes can't reach Shizuku
-      return { value: 'Not running', state: 'err', note: 'Open Shizuku and start it.', fix }
+    default: // off: Hermes can't reach Shizuku (while the app knows it runs: Termux isn't allowed yet)
+      return knowsNative
+        ? { value: 'Termux not allowed', state: 'err', note: 'In Shizuku, allow Termux.', fix }
+        : { value: 'Not running', state: 'err', note: 'Open Shizuku and start it.', fix }
   }
 }

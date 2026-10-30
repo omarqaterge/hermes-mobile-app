@@ -138,6 +138,7 @@ public class MainActivity extends Activity {
                 pageReady = true;
                 openPendingSession();
                 deliverShare();
+                if (overLock) web.evaluateJavascript("window.hermesLockView && window.hermesLockView(true)", null);
                 deliverShortcut();
             }
 
@@ -191,6 +192,7 @@ public class MainActivity extends Activity {
         pendingDraft = getIntent().getStringExtra("draft");
         takeShare(getIntent());
         pendingShortcut = shortcutOf(getIntent());
+        applyLockScreen(getIntent());
         requestRuntimePermissions();
         startHermes(); // no-op if already running; the supervisor script is idempotent
         bootLog("load-url");
@@ -956,6 +958,7 @@ public class MainActivity extends Activity {
             openPendingSession();
         }
         if (takeShare(intent)) deliverShare();
+        applyLockScreen(intent);
         String sc = shortcutOf(intent);
         if (sc != null) {
             pendingShortcut = sc;
@@ -978,8 +981,98 @@ public class MainActivity extends Activity {
         return in.getStringExtra("shortcut");
     }
 
+    // ── the lock screen ──
+    // Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen" (pref "lockAssist" in "hm", default off;
+    // the page's hm.lockAssist.v1 pushes it through setLockAssist). Off: the assist gesture on a locked phone opens the
+    // app behind the lock screen, so Android asks for an unlock first. On: the app shows over the lock screen for
+    // talking only (the page's lockview.ts asks for an unlock before anything that acts) until Live mode ends, the
+    // phone is unlocked or the app leaves the screen.
+    static final String EXTRA_UNLOCK = "unlock";
+    boolean overLock = false;
+    android.content.BroadcastReceiver unlockedReceiver;
+
+    static boolean keyguardLocked(Context c) {
+        android.app.KeyguardManager km = c.getSystemService(android.app.KeyguardManager.class);
+        return km != null && km.isKeyguardLocked();
+    }
+
+    static boolean lockAssistOn(Context c) {
+        return c.getSharedPreferences("hm", MODE_PRIVATE).getBoolean("lockAssist", false);
+    }
+
+    /** Each intent decides afresh: only the assist gesture / voice button with the setting on, on a locked phone,
+     *  shows over the lock screen. An intent from a notification answered on a locked phone (HermesService on
+     *  Android < 12, extra "unlock") asks for the unlock screen. */
+    void applyLockScreen(Intent in) {
+        String act = in == null ? null : in.getAction();
+        boolean assist = (Intent.ACTION_ASSIST.equals(act) || Intent.ACTION_VOICE_COMMAND.equals(act))
+                && (in.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0;
+        boolean locked = keyguardLocked(this);
+        boolean show = assist && locked && lockAssistOn(this);
+        android.util.Log.i("HermesLock", "intent " + act + " locked=" + locked + " setting=" + lockAssistOn(this) + " overLock=" + show);
+        showOverLock(show);
+        boolean unlock = in != null && in.getBooleanExtra(EXTRA_UNLOCK, false);
+        if (unlock) in.removeExtra(EXTRA_UNLOCK);
+        if (locked && !show && (assist || unlock)) handler.post(this::askUnlock); // setting off: unlock first
+    }
+
+    void showOverLock(boolean on) {
+        if (on == overLock && !on) return;
+        overLock = on;
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(on);
+            setTurnScreenOn(on);
+        } else {
+            int f = android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED | android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
+            if (on) getWindow().addFlags(f);
+            else getWindow().clearFlags(f);
+        }
+        if (on && unlockedReceiver == null) {
+            unlockedReceiver = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context c, Intent i) {
+                    showOverLock(false); // unlocked: an ordinary app again
+                }
+            };
+            registerReceiver(unlockedReceiver, new IntentFilter(Intent.ACTION_USER_PRESENT));
+        } else if (!on && unlockedReceiver != null) {
+            try {
+                unregisterReceiver(unlockedReceiver);
+            } catch (Exception ignored) {
+            }
+            unlockedReceiver = null;
+        }
+        if (pageReady) web.evaluateJavascript("window.hermesLockView && window.hermesLockView(" + on + ")", null);
+    }
+
+    /** Android's unlock screen (PIN, pattern, fingerprint); nothing else happens: the user taps again once unlocked. */
+    void askUnlock() {
+        if (!keyguardLocked(this)) return;
+        android.app.KeyguardManager km = getSystemService(android.app.KeyguardManager.class);
+        km.requestDismissKeyguard(this, new android.app.KeyguardManager.KeyguardDismissCallback() {
+            @Override
+            public void onDismissSucceeded() {
+                android.util.Log.i("HermesLock", "unlocked");
+                showOverLock(false);
+                deliverShortcut(); // Live mode held back until the unlock
+            }
+
+            @Override
+            public void onDismissError() {
+                android.util.Log.i("HermesLock", "unlock screen not shown");
+            }
+        });
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (overLock) showOverLock(false); // screen off or app left: never shown over the lock screen again by itself
+    }
+
     void deliverShortcut() {
         if (!pageReady || pendingShortcut == null) return;
+        if (!overLock && keyguardLocked(this)) return; // behind the lock screen: wait for the unlock (onResume)
         String sc = pendingShortcut.replaceAll("[^a-z]", "");
         pendingShortcut = null;
         getIntent().removeExtra("shortcut");
@@ -1506,6 +1599,7 @@ public class MainActivity extends Activity {
         for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())
             if (n.getId() == 2 && n.getTag() != null && n.getTag().startsWith("approval:")) nm.cancel(n.getTag(), 2);
         web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
+        deliverShortcut(); // the assist gesture's Live mode, held back while the phone was locked
         resumeHelperInstall();
         showUpdatePrompt();
         setupChanged();
@@ -1970,6 +2064,28 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return false;
             }
+        }
+
+        /** Settings → Phone assistant → "Talk to Hermes on the lock screen": kept in the preferences, so the assist
+         *  gesture knows it before the page loads (after a reboot, from the lock screen). */
+        @JavascriptInterface
+        public void setLockAssist(String key, boolean on) {
+            if (!ok(key)) return;
+            getSharedPreferences("hm", MODE_PRIVATE).edit().putBoolean("lockAssist", on).apply();
+        }
+
+        /** Shown over the lock screen: bring up Android's unlock screen before something that acts. */
+        @JavascriptInterface
+        public void requestUnlock(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(MainActivity.this::askUnlock);
+        }
+
+        /** Live mode ended over the lock screen: the lock screen covers the app again. */
+        @JavascriptInterface
+        public void leaveLockScreen(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> showOverLock(false));
         }
 
         /** A provider login that Hermes only does in a terminal: run it in Termux (false = couldn't start it). */
