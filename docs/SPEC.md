@@ -560,6 +560,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.devBase` | `bridge.ts` | Development only, and in `sessionStorage`, not `localStorage`: the dashboard base URL the dev server injects. | No |
 | `hm.devToken` | `bridge.ts` | Development only, `sessionStorage`: the dashboard token the dev server injects. | No |
 | `hm.draft` | `drafts.ts` | Legacy single draft (before `hm.drafts.v1`); moved into `hm.drafts.v1` as `new:<profile>` and deleted on first read. | No |
+| `hm.visit.v1` | `visit.ts` | When each chat was last on screen: `{chatId: ms}`; newest 500 kept. Drives the "New since your last visit" divider. | No |
 | `hm.drafts.v1` | `drafts.ts` | Unsent composer text: `{chatId: text}`, plus `new:<profile>` for the new-chat screen; newest 100 kept. | Mixed (new-chat drafts per profile) |
 | `hm.favModels.v1` | `favs.ts` | Starred models `[{p: provider, m: model}]` in starring order. | No (shared by all profiles) |
 | `hm.sideHidden.v1` | `sidepanel.ts` | `1` while the user has hidden the docked chat list on a wide screen; absent = docked. | No |
@@ -992,6 +993,7 @@ Shown when there is no open chat and none is opening (`Empty`).
 #### Windowing, folding, search jump
 
 - **Windowing.** Only the last 40 items (`WINDOW`) are drawn when a chat opens, because every item parses Markdown. At the top, an "Earlier messages…" line with a spinner is watched by an `IntersectionObserver` with an 800 px margin. When it comes near, the 40 items before are drawn and the scroll position is kept on the message that was first. New items arriving do not move the start index.
+- **Opening at the divider.** If a chat has a "New since your last visit" divider above the last screenful, it opens scrolled to the divider instead of the end (see 3.2, New since your last visit).
 - **Stick to the end.** While the user is within 80 px of the end, the list follows new content. Scrolling further up stops the following and shows the scroll button. Switching chat sticks again.
 - **Folded tool runs.** `web/src/fold.ts` folds three or more tool cards in a row (`FOLD_MIN`) into one line (see 3.3).
 - **Jump from message search.** The drawer's message search sets `store.jump` (`web/src/jump.ts`: chat id, the marked words, the snippet). After the chat opens, `findHit` picks the message whose text holds the most marked words and longest snippet pieces (ties go to the latest), draws earlier items if the hit is above the window, opens a folded run if the hit is inside one, scrolls it to the centre, flashes it for 2.5 s and marks the words for 6 s with the CSS Custom Highlight API (`highlightWords`, name `hm-hit`). If no message matches, a toast says "Opened the chat; the exact message wasn’t found".
@@ -1024,6 +1026,12 @@ Every label ends with ". Change how much Hermes may do without asking".
 - **Full access chip.** When a chat is in Full access, the composer shows a red "⚡ Full access" chip (aria-label "Full access is on: Hermes runs commands without asking. Tap to turn it off"). Tapping it turns Full access off and toasts "Full access off: Hermes asks before risky commands again". Auto access has no chip; it shows only in the header.
 - **`/yolo` command.** Typing `/yolo` (optionally `on` or `off`) in the composer toggles Full access the same way and adds a notice to the chat.
 - **Settings row.** `DefaultAccessRow` in the same file is the Settings row Auto for all chats: a `SelectRow` with the same three options. Choosing Full asks "Full access in every chat?" (button "Allow in all chats"). Off removes the key.
+
+#### New since your last visit
+
+`web/src/visit.ts` keeps, per chat, when it was last on screen (`hm.visit.v1`, ms, newest 500 chats). `markVisit` runs in `gateway.ts` when the user leaves a chat (another chat opens or a new draft starts), when the page goes hidden while a chat is open (the `visibilitychange` handler), and when a turn ends (`message.complete`) while the page is visible. When `Chat` shows a chat whose key changed it reads `lastVisit` once (a `visitRef`), and the first time the chat's own items (not the read-only preview) are there it asks `firstUnseen` for the first user or assistant item with `at` newer than that time (never index 0; items without `at`, such as tool cards, are skipped). That index is frozen for as long as the chat stays open, so new live messages do not move it. The item is drawn with a `visit-divider` line (`role="separator"`, text "New since your last visit", accent colour) before it, inside a `visit-wrap` element; when the item is also in a turn-end or tool-run wrapper, the divider is the first child of that wrapper, so there is still one child of `.chat` per item. A chat never opened on this phone has no divider.
+
+Initial scroll: when the divider is above the last screenful, the chat opens with it 8 px below the top instead of at the end (earlier items are drawn first if it is above the window, like a search jump), and the scroll button shows. A message-search jump or an in-chat search that is waiting takes priority and no divider scroll happens. Only once per opened chat; the user's own scrolling is never overridden afterwards.
 
 #### Unread chats
 
@@ -1521,6 +1529,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `activity.ts` | Polling of `GET /activity` for the activity banner. |
 | `tasks.ts` | Tick state of Markdown task lists. |
 | `unread.ts` | Unread chats and "time ago". |
+| `visit.ts` | Last time each chat was on screen (`lastVisit`, `markVisit`) and the first message newer than that (`firstUnseen`), for the "New since your last visit" divider. |
 | `checkpoints.ts` | Client for the plugin's checkpoint routes and the labels the File checkpoints sheet shows. |
 | `export.ts` | A chat as Markdown for Share chat. |
 | `share.ts` | Share-to-Hermes and launcher shortcuts. |

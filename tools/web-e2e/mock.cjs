@@ -472,6 +472,13 @@ wss.on('connection', ws => {
           for (let i = 1; i <= 30; i++) messages.push({ role: 'user', text: `question ${i}`, row_id: i }, { role: 'assistant', text: `answer ${i}\n\n` + 'line\n\n'.repeat(15) })
           return reply({ session_id: 'rt-s-scrub', stored_session_id: sid, info: { title: 'Scrub chat', model: 'mock-model' }, messages })
         }
+        if (sid === 's-visit') {
+          // Two tall answers; the second question was sent at ...120 s (after a test sets the last visit to ...100 s).
+          const tall = 'line\n\n'.repeat(60)
+          return reply({ session_id: 'rt-s-visit', stored_session_id: sid, info: { title: 'Visit chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'visit question 1', row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: 'visit answer 1\n\n' + tall, timestamp: 1790000060 },
+            { role: 'user', text: 'visit question 2', row_id: 3, timestamp: 1790000120 }, { role: 'assistant', text: 'visit answer 2\n\n' + tall, timestamp: 1790000180 }] })
+        }
         if (sid === 's-long') {
           // 150 turns: the app should draw only the end and load earlier turns on scroll.
           const messages = []
