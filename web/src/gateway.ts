@@ -2,6 +2,7 @@ import { btwDone, openBtw } from './btw'
 import { bootMark } from './boot'
 import { markSeen, noteSessions } from './unread'
 import { rememberPrompt } from './recent'
+import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
 import { api } from './api'
 import { forgetCheckpoints } from './checkpoints'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
@@ -617,6 +618,7 @@ export async function deleteSession(storedId: string): Promise<void> {
   // attached in the composer of another open chat: it isn't in any message yet.
   void api('POST', '/api/plugins/hermes-mobile/cleanup', { keep }).catch(() => {})
   void forgetCheckpoints(storedId)
+  clearQueue(storedId)
 }
 
 export async function renameSession(title: string): Promise<void> {
@@ -896,11 +898,58 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   pushItem({ kind: 'notice', id: newId('n'), text: out, level: r?.warning ? 'warn' : 'info' })
 }
 
+// ── queued follow-ups (queue.ts): sent one by one when the open chat's turn ends ──
+let turnFailed = false // the running turn was stopped or ended with an error: the queue pauses instead of sending
+let seenChat: string | undefined
+let seenRunning = false
+
+subscribe(() => {
+  const a = getState().active
+  const chat = a?.storedId
+  const running = a?.running ?? false
+  const wasChat = seenChat
+  const wasRunning = seenRunning
+  seenChat = chat
+  seenRunning = running
+  if (running) return
+  if (chat !== wasChat) {
+    // Opening a chat never sends by surprise: a queue it holds waits for Resume.
+    turnFailed = false
+    if (chat && queuedFor(chat).length) setPaused(chat, true)
+    return
+  }
+  if (!chat || !wasRunning) return
+  const failed = turnFailed
+  turnFailed = false
+  if (failed) {
+    if (queuedFor(chat).length) setPaused(chat, true)
+    return
+  }
+  // Let this state change finish first: sending changes the state again.
+  setTimeout(() => drainQueue(chat, false), 0)
+})
+
+/** Send the first queued message of `chat` now (`force`: also when the queue is paused). */
+export function drainQueue(chat: string, force: boolean): void {
+  const s = getState()
+  const a = s.active
+  if (!a || a.storedId !== chat || a.running || s.conn !== 'open' || s.opening) return
+  if (!force && (isPaused(chat) || s.requests.length > 0 || a.attachments.length > 0)) return
+  setPaused(chat, false)
+  const q = takeFirst(chat)
+  if (!q) return
+  sendPrompt(q.text).catch(e => {
+    restoreFirst(chat, q)
+    setPaused(chat, true)
+    toast(errText(e), 'error')
+  })
+}
 const bare = (s: string) => s.replace(/^\/+/, '').trim()
 
 export async function interrupt(): Promise<void> {
   const a = getState().active
   if (!a) return
+  if (a.running) turnFailed = true // the queue pauses when this turn ends
   try {
     await rpc('session.interrupt', { session_id: a.runtimeId })
   } catch (err) {
@@ -1406,6 +1455,7 @@ client.onEvent((ev: GatewayEvent) => {
         const it = getState().active?.items.find(x => x.id === lastId)
         if (it && it.kind === 'assistant' && it.text) speak(lastId ?? 'auto', it.text)
       }
+      if (p.error || p.failure_reason) turnFailed = true
       updateActive(() => ({ running: false, status: '', usage: p.usage ?? getState().active?.usage ?? null }))
       void finishTurnStats(lastId, p.usage)
       break

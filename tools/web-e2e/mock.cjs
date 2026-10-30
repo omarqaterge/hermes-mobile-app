@@ -381,6 +381,7 @@ function safeJson(t) {
 const wss = new WebSocketServer({ server, path: '/api/ws', verifyClient: () => Date.now() > refuseUntil })
 let seq = 0
 let created = 0
+const slowTurns = new Map() // runtime id → timers of a running 'slow reply'
 wss.on('connection', ws => {
   const event = (type, session_id, payload) => ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
   const later = (ms, fn) => setTimeout(fn, ms)
@@ -505,6 +506,21 @@ wss.on('connection', ws => {
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-1', method: 'clarify', params: { session_id: sid, question: 'Which colour?', choices: ['Red', 'Blue'] } })))
           return
         }
+        if (/^slow reply$/.test(params.text)) {
+          // A reply that takes 1.5 s, so a follow-up can be queued meanwhile; Stop (session.interrupt) ends it early.
+          const live = fn => () => ws.readyState === 1 && fn()
+          slowTurns.set(sid, [
+            later(100, live(() => event('message.start', sid, {}))),
+            later(300, live(() => event('message.delta', sid, { text: 'Slow done.' }))),
+            later(1500, live(() => (slowTurns.delete(sid), event('message.complete', sid, { text: 'Slow done.' }))))
+          ])
+          return
+        }
+        if (/^(next one|c|d|e)$/.test(params.text)) {
+          // The follow-ups the queue tests send: answered at once.
+          later(100, () => ws.readyState === 1 && event('message.complete', sid, { text: `Queued ${params.text} done.` }))
+          return
+        }
         if (/^use tools$/.test(params.text)) {
           // Four tool calls (with reasoning between two of them), then the answer: the app folds them into one line.
           let t = 50
@@ -621,6 +637,16 @@ wss.on('connection', ws => {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.delta', sid, { text: 'OK' }))
           later(300, () => event('message.complete', sid, { text: 'OK' }))
+        }
+        return
+      }
+      case 'session.interrupt': {
+        reply({})
+        const t = slowTurns.get(params.session_id)
+        if (t) {
+          t.forEach(clearTimeout)
+          slowTurns.delete(params.session_id)
+          later(50, () => event('message.complete', params.session_id, { text: 'Stopped.' }))
         }
         return
       }
