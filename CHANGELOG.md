@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Jump between your messages in a long chat.** Once a chat has six or more of your messages and is several screens
+  long, a thin rail appears on the right edge with one tick per message you sent. Drag along it: a bubble shows the
+  message under your finger (`12 / 30` and its first words); let go and the chat scrolls there. A tap jumps too, and
+  the tick of the message at the top of the screen is highlighted. Browser tests only; not yet on a real phone.
 - **Queue a follow-up while Hermes works.** When a reply is running and you have typed something, the send button
   splits in two: Steer (as before, the words go into the running task now) and Queue. A queued message waits as a
   dashed bubble at the end of the chat (edit it, remove it, or send it now) and is sent by itself when the reply ends,

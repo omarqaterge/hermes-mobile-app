@@ -20,7 +20,7 @@ export function shouldOpen(fingerDy: number, atBottomAtStart: boolean, hasChat: 
   return atBottomAtStart && hasChat && fingerDy >= PULL_TRIGGER_PX
 }
 
-const SKIP = 'input,textarea,select,[contenteditable],[role=dialog],.hm-openui,pre,table,.katex-display,.mermaid,.diagram,.slider,.tts-player'
+const SKIP = '.scrubber,input,textarea,select,[contenteditable],[role=dialog],.hm-openui,pre,table,.katex-display,.mermaid,.diagram,.slider,.tts-player'
 
 function atBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= 2
