@@ -4,6 +4,11 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Things slide open and close.** Tool cards, the thought process, the task list and the changed-files card now slide
+  open and shut instead of jumping, chevrons turn instead of swapping characters, and the button next to the box fades
+  in when it changes between Send, Stop, Mic and Queue. The reasoning level on the model chip shows as small bars (the
+  chip's label says it in words). Nothing moves when the phone's "Remove animations" setting is on. Browser tests
+  only; not yet on a real phone.
 - **A ring shows how full the chat's memory is.** At the right end of the model row above the box, a small ring fills
   with the chat's context use all the time (not only while Hermes works), turning amber from 80 % and red from 90 %.
   Tap it for the Context window sheet: tokens used of the maximum, cost and cache hits when Hermes reports them, and

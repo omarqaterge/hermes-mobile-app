@@ -3,7 +3,7 @@ import { type ChatItem, toast } from '../store'
 import { branchAt, filesOf, imagesOf, resendFrom, retryTurn, type MsgFile, type MsgImage } from '../gateway'
 import { Markdown } from './Markdown'
 import { copyRich, copyText, haptic } from '../bridge'
-import { PickerSheet } from './ui'
+import { Chevron, Collapse, PickerSheet } from './ui'
 import { toggleSpeak, useVoice } from '../voice'
 import { splitQuote } from '../quote'
 import { api } from '../api'
@@ -88,7 +88,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
           {item.status === 'error' ? '✕' : null}
         </span>
       </button>
-      {open && (
+      <Collapse open={open}>
         <div className="tool-body">
           {item.risk && <div className="tool-risk-note">⚠ {item.risk}</div>}
           {args && Object.keys(args).length > 0 && (
@@ -140,7 +140,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
           {!out && loadingOut && <div className="tool-text dim">Loading output…</div>}
           {!out && !loadingOut && !item.summary && item.status === 'done' && stored !== null && <div className="tool-text dim">No output recorded</div>}
         </div>
-      )}
+      </Collapse>
     </div>
   )
 })
@@ -160,7 +160,7 @@ export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }
         <span className="tool-run-names">{run.names.join(', ')}</span>
       </span>
       {run.running ? <Spinner small /> : null}
-      <span className="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+      <span className="chev" aria-hidden="true"><Chevron open={open} /></span>
     </button>
   )
 })
@@ -185,9 +185,10 @@ function Reasoning({ text, live }: { text: string; live: boolean }) {
       <button className="reasoning-head" onClick={() => setOpen(o => !o)}>
         <span className="reasoning-dot">{live ? <Spinner small /> : <BrainIcon />}</span>
         {live ? 'Thinking…' : 'Thought process'}
-        <span className="chev">{open ? '▾' : '▸'}</span>
+        <span className="chev"><Chevron open={open} /></span>
       </button>
-      {open ? <div className="reasoning-body"><Linked text={text} /></div> : live ? <div className="reasoning-peek">{text.slice(-160)}</div> : null}
+      <Collapse open={open}><div className="reasoning-body"><Linked text={text} /></div></Collapse>
+      {!open && live ? <div className="reasoning-peek">{text.slice(-160)}</div> : null}
     </div>
   )
 }
