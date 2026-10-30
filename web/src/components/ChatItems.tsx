@@ -5,6 +5,7 @@ import { Markdown } from './Markdown'
 import { copyRich, copyText, haptic } from '../bridge'
 import { PickerSheet } from './ui'
 import { toggleSpeak, useVoice } from '../voice'
+import { splitQuote } from '../quote'
 import { api } from '../api'
 import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
@@ -279,6 +280,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
   const [keep, setKeep] = useState<MsgImage[]>(() => imagesOf(item)) // photos sent again with the edit
   const [keepFiles, setKeepFiles] = useState<MsgFile[]>(() => filesOf(item)) // files sent again with the edit
   const time = useTimeTap(item.at)
+  const quoted = splitQuote(item.text)
   const ta = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     const el = ta.current
@@ -361,7 +363,12 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
             {item.files?.map(n => <span key={`f-${n}`} className="chip">📎 {n}</span>)}
           </div>
         ) : null}
-        <Linked text={item.text} />
+        {quoted.quotes.map((q, i) => (
+          <blockquote key={i} className="msg-quote">
+            <Linked text={q} />
+          </blockquote>
+        ))}
+        <Linked text={quoted.body} />
       </div>
       {time.node}
       {actions && (

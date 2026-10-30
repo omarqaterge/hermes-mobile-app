@@ -950,6 +950,7 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 | Pull hint | Text "Release for a side question", hidden until the user pulls up at the end of the list. | n/a (`pullbtw.ts` draws it) | Pull up 110 px past the end (`PULL_TRIGGER_PX`) and release. | Needs a chat on screen. |
 | Activity banner (`ActivityBanner`) | Strip with spinner: "<chat title>: <what Hermes does>", and "(+N more)". | Opens that chat. | none | Hidden when empty. Disabled when the item is the open chat's own background review. |
 | Status bar (`StatusBar`) | While a turn runs: spinner, the live status text (or "Working…"), `~N tok/s`, `ctx N%`. Below it, a "☑ Tasks done/total" line when Hermes keeps a todo list. | Tasks line toggles the list. Each todo shows ✓ completed, ◐ in progress, ✕ cancelled, ○ pending. | none | Hidden when nothing runs and there are no todos. |
+| Selection bar (`QuoteBar`, `web/src/components/QuoteBar.tsx`) | Strip just above the composer with the label "Selected text" and the buttons Quote and Explain. | Quote adds the selection to the composer's quotes (3.4), clears the selection and focuses the text box. Explain sends the selection as a quote followed by "Explain this." at once. | none | Shown only while 3 to 2000 characters are selected inside one reply (`.msg.assistant .md`). Over 2000 characters the label reads "Selection is too long to quote" and both buttons are disabled. Hidden when the selection collapses, a sheet opens, the chat changes or Live mode is on. |
 | Compress hint (`CompressHint`) | "Context N% full. Compress older turns so Hermes keeps up?", button Compress, and ✕ (aria-label Not now). | Compress calls `compressChat` (`session.compress`, up to 5 min), then a toast with the result. Not now hides the hint for that chat until the app restarts. | none | Shown from 80 % context fill, not while a turn runs (unless compressing). While busy the button shows a spinner and ✕ is hidden. |
 | Read-aloud player, background-app card | See 3.11 and 3.10. | | | |
 | Composer | See 3.4. | | | |
@@ -1035,7 +1036,7 @@ There is no separate item kind for approvals, images, files or errors. Approvals
 
 #### User message
 
-`UserMsg`. A bubble with the text (web addresses are links, `Linked.tsx`).
+`UserMsg`. A bubble with the text (web addresses are links, `Linked.tsx`). Leading lines that start with `>` (with or without the space after it) are drawn as quote blocks (`.msg-quote`: left border, dim text) above the rest, one block per quote (`splitQuote` in `web/src/quote.ts`); this also shows stored chats correctly after a reload. Edit still edits the full text, quotes included.
 
 - **Attachments.** Photos sent from this phone show as thumbnails (tap: the Lightbox). Photos of a resumed chat show through `Media` from their path; if only a name is known, a chip "🖼 name". Files show as chips "📎 name".
 - **Time.** Tapping the bubble (not a link, button, code, table, image, or selected text) toggles the send time under it: "14:05" for today, otherwise weekday, day, month and time.
@@ -1188,9 +1189,9 @@ One slot, five faces, decided in this order:
 
 `send()`:
 
-1. Ignores blank text.
-2. If Hermes is not connected: queues the text in the outbox and clears the box (below).
-3. Otherwise clears the box, calls `sendPrompt`, and on failure puts the text back and shows an error toast.
+1. Ignores blank text unless there is at least one quote chip. The text sent is `withQuotes(quotes, text)` (`web/src/quote.ts`): each quote as a Markdown blockquote (`> ` before every line), a blank line between quotes, a blank line, then the typed text. A text starting with `/` is sent as it is and keeps the quotes.
+2. If Hermes is not connected: queues that text in the outbox and clears the box and the quotes (below).
+3. Otherwise clears the box and the quotes, calls `sendPrompt`, and on failure puts the text and the quotes back and shows an error toast.
 
 `sendPrompt` (`gateway.ts`) in order:
 
@@ -1220,6 +1221,15 @@ One slot, five faces, decided in this order:
 #### Drafts
 
 `web/src/drafts.ts`. Each chat keeps its own unsent text in `hm.drafts.v1` (chat id → text); the empty new-chat screen has one per profile (`new:<profile>`). The text is saved on every change and restored when the chat is shown again. At most 100 drafts are kept (the oldest dropped first); an empty text deletes the entry. A one-time migration moves the old single `hm.draft` into the current profile's new-chat draft. When the empty screen turns into a real chat (the first attachment, a share, a model pick that replaces an empty chat), the text moves with it.
+
+#### Quotes
+
+Words selected in a reply can be quoted into the next message.
+
+- The selection bar (3.2, `QuoteBar`) adds the selection with `addQuote`. A chip `quote-chip` ("❝" and the first 60 characters) per quote shows above the text box, in the attachment row area, each with ✕ (aria-label `Remove quote`, `removeQuote`). At most 3 quotes (`QUOTES_MAX`): a 4th replaces the oldest. A quote is at most 2000 characters (`QUOTE_MAX`).
+- With quotes and an empty box the placeholder is "Ask about the quote…" and the Send button is enabled (the Live and Dictate buttons give way to Send).
+- Quotes belong to the chat they were taken from: switching chats clears them (`clearQuotes`). They are not kept across a reload.
+- The quote state (`useQuotes`, `setQuotes` to put them back after a failed send) and the text helpers `withQuotes` / `splitQuote` live in `web/src/quote.ts`. `splitQuote` is the inverse of `withQuotes` and counts a line like `>x` (no space) as a quote line, as Markdown does.
 
 #### Attachments and camera
 
@@ -1448,6 +1458,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `Media.tsx` | `Media`, `Lightbox`, `FileChip`, audio player. |
 | `Diff.tsx` | `DiffView`, `looksLikeDiff`, `stripAnsi`. |
 | `Composer.tsx` | The composer. |
+| `QuoteBar.tsx` | `QuoteBar`: the Quote / Explain bar over the composer while a reply's text is selected. |
+| `quote.ts` | Quote helpers and state: `withQuotes`, `splitQuote`, `useQuotes`, `addQuote`, `removeQuote`, `clearQuotes`, `setQuotes`, `QUOTE_MAX`, `QUOTES_MAX`. |
 | `Sheets.tsx` | Model, Commands, Chat menu, Draft menu, Chat details, Backend status, File checkpoints sheets. |
 | `RequestSheet.tsx` | Approval, question and password sheets. |
 | `Spinner.tsx` | `Spinner`. Every spinner turns on one shared 8 Hz timer instead of a CSS animation, which would redraw the WebView every frame while Hermes works. The timer runs only while a spinner is mounted. |
