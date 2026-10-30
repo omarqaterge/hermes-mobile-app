@@ -1015,6 +1015,43 @@ async function main() {
   await run.click()
   check((await visibleCards()) === 0, 'tap again folds them')
 
+  check((await page.locator('.turn-changes').count()) === 0, 'a turn with only terminal tools has no changes card')
+
+  // ── a turn that wrote files ends with a card listing them; tap a file for its diff ──
+  await page.getByPlaceholder('Message Hermes').fill('edit files')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'Edited.' }).waitFor({ timeout: 5000 })
+  const tc = page.locator('.turn-changes')
+  await tc.waitFor({ timeout: 5000 })
+  check(((await tc.textContent()) || '').includes('2 files changed') && ((await tc.textContent()) || '').includes('+3 −1'), `changes card totals (${await tc.textContent()})`)
+  check(await page.evaluate(() => { const w = document.querySelector('.turn-changes').closest('.chat > *'); return !!w && !!w.querySelector('.msg.assistant') && w.textContent.includes('Edited.') }), 'the card sits in the same child element as the last item')
+  await tc.locator('.turn-changes-head').click()
+  const rows = tc.locator('.turn-changes-row')
+  check((await rows.count()) === 2, 'two file rows')
+  const rowText = async i => ((await rows.nth(i).textContent()) || '').replace(/\s+/g, ' ')
+  check((await rowText(0)).includes('a.txt') && (await rowText(0)).includes('+2 −0'), `row a.txt (${await rowText(0)})`)
+  check((await rowText(1)).includes('b.txt') && (await rowText(1)).includes('+1 −1'), `row b.txt (${await rowText(1)})`)
+  await rows.nth(1).click()
+  await page.locator('.sheet-title', { hasText: '/root/projects/site/b.txt' }).waitFor({ timeout: 3000 }).then(() => check(true, 'file sheet titled with the path'), () => check(false, 'file sheet titled with the path'))
+  check((await page.locator('.sheet .diff-view .dl', { hasText: 'new' }).count()) >= 1, 'file sheet shows the diff')
+  await page.evaluate(() => window.hermesBack())
+  await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 3000 }).then(() => check(true, 'Back closes the file sheet'), () => check(false, 'Back closes the file sheet'))
+  await tc.getByRole('button', { name: 'Checkpoints' }).click()
+  await page.locator('.sheet-title', { hasText: 'File checkpoints' }).waitFor({ timeout: 3000 }).then(() => check(true, 'Checkpoints opens the file checkpoints sheet'), () => check(false, 'Checkpoints opens the file checkpoints sheet'))
+  await page.evaluate(() => window.hermesBack())
+  // Search still lands on the message that carries the card (scroll away first).
+  await page.evaluate(() => { document.querySelector('.chat').scrollTop = 0 })
+  await page.locator('header.topbar').getByRole('button', { name: 'Chat options' }).click()
+  await page.locator('.menu-item', { hasText: 'Search in chat' }).click()
+  await page.locator('.findbar input').fill('Edited.')
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.chat'), m = [...document.querySelectorAll('.chat .msg.assistant')].find(x => x.textContent.includes('Edited.'))
+    if (!el || !m) return false
+    const r = m.getBoundingClientRect(), v = el.getBoundingClientRect()
+    return r.bottom > v.top && r.top < v.bottom
+  }, null, { timeout: 4000 }).then(() => check(true, 'search finds a reply that has a changes card'), () => check(false, 'search finds a reply that has a changes card'))
+  await page.getByRole('button', { name: 'Close search' }).click()
+
   // ── web addresses in plain text open with the phone's default handler (window.open in a browser) ──
   await page.getByPlaceholder('Message Hermes').fill('see https://example.com/b')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
