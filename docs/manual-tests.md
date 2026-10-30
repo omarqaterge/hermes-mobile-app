@@ -48,7 +48,7 @@ Needs a build made with `HM_DEVTOOLS=1 android/build.sh` installed on the phone 
 
 Also check: the strip stays visible over Settings and other full screens, and a normal (non-`HM_DEVTOOLS`) build has no `webview_devtools_remote` socket.
 
-Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): the strip shows under the status bar and the socket is listed; a build of the same branch without `HM_DEVTOOLS` had no socket. Still to check: Playwright attaching, and the strip over full screens.
+Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): the strip shows under the status bar and the socket is listed; a build of the same branch without `HM_DEVTOOLS` had no socket. Playwright attached and drove a whole test session. Still to check: the strip over full screens.
 
 ## Rare situations
 
@@ -74,16 +74,18 @@ Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): th
 
 ## Features from docs/plans (01–12)
 
-The full step-by-step list (what to do, what to expect) is the phone checklist kept with the plans. First round on a
-Xiaomi phone, Android 16 (HyperOS), build 0.8.66-test at 970883a:
+Tried on a Xiaomi phone, Android 16 (HyperOS): 01 with build `0.8.66-test` (commit 970883a), 02–05 with the test
+build `0.8.66-test+devtools` (commit d866ed3), driven from a computer with Playwright.
 
 - [x] **01 Quote part of a reply.** Bar, Quote chip, sending with the quote, Explain, no bar in your own bubble.
       Android's selection menu floats above the bar without covering it.
-- [ ] **02 Queue.** Done: Steer and Queue appear while a reply runs; a queued message sends by itself when the reply
-      ends. To do: edit and remove a queued message, Stop → Queue paused → Resume, queue kept after a force-stop,
-      Steer still steering.
-- [ ] **03 Scrubber**, **04 HTML preview**, **05 Changed-files card** (also its green/red counts in the light theme),
-      **06 Elapsed time and goal line**, **07 Context ring** (fits the model row on a phone), **08 Animations** (and
+- [x] **02 Queue.** Queue, sending by itself, edit, remove, Stop → Queue paused → Resume, kept after a force-stop,
+      Steer.
+- [x] **03 Scrubber.** Rail with one tick per message, drag bubble, jump and flash, no drawer/canvas from a swipe on
+      the rail, no rail in short chats.
+- [x] **04 HTML preview.** Preview disabled while streaming, inline page works, Full screen and Back, SVG preview.
+- [x] **05 Changed-files card.** Card, rows, diff sheet, Checkpoints; counts readable in the light theme.
+- [ ] **06 Elapsed time and goal line**, **07 Context ring** (fits the model row on a phone), **08 Animations** (and
       off with Remove animations), **09 New since your last visit**, **10 Several questions at once**,
       **11 Stash a draft**, **12 File previews** (audio/video playback): not yet tried on a phone.
 
