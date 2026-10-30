@@ -928,6 +928,28 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.goal-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--accent);
+  padding: 4px 0;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+.goal-sub-head {
+  margin: 12px 0 4px;
+}
+.goal-subs {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 0.86rem;
+}
 .todos-head {
   color: var(--accent);
   padding: 4px 0;

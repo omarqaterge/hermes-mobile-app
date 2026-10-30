@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type {
+  GoalSnapshot,
   ProfileRow,
   SessionListRow,
   SessionLiveInfo,
@@ -96,6 +97,10 @@ export interface ActiveSession {
   todos: Todo[]
   openAssistantId: string | null
   attachments: Attachment[] // queued for the next prompt
+  /** When the running turn started (ms since epoch), null while idle. Drives the status line's elapsed time. */
+  turnStart: number | null
+  /** The chat's goal (Hermes's /goal), null when none or the backend can't say. */
+  goal: GoalSnapshot | null
   /** Auto access (header's Auto button): with info.yolo, the plugin still blocks Hermes's dangerous-command list. */
   autoAccess?: boolean
 }

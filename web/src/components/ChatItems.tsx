@@ -9,7 +9,7 @@ import { splitQuote } from '../quote'
 import { api } from '../api'
 import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
-import { formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
+import { fmtDuration, formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
@@ -41,11 +41,6 @@ const TOOL_ICONS: Record<string, string> = {
   image_generate: '🎨',
   send_message: '✉',
   phone_app: '📱'
-}
-
-function fmtDuration(s?: number | null): string {
-  if (s == null) return ''
-  return s < 1 ? `${Math.round(s * 1000)}ms` : s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
 }
 
 function argsPreview(args?: Record<string, unknown> | null): string {

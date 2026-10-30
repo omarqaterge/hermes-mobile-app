@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CommandsCatalogResult, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import type { CommandsCatalogResult, GoalSnapshot, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
 import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, reasonLabel, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
-import { deleteSession, errText, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
+import { deleteSession, errText, goalAction, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
 import { openCanvas, useCanvas } from '../canvas'
 import { confirmDialog } from '../dialog'
 import { Title, keepBranch, plainTitle } from './Title'
@@ -22,10 +22,11 @@ import { DiffView } from './Diff'
 import { useBackHandler } from '../backstack'
 import { Spinner } from './Spinner'
 
-function Shell({ title, children }: { title: string; children: React.ReactNode }) {
-  const drag = useSheetDrag(() => setState({ sheet: null }))
+function Shell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
+  const close = onClose ?? (() => setState({ sheet: null }))
+  const drag = useSheetDrag(close)
   return (
-    <div className="sheet-backdrop" onClick={() => setState({ sheet: null })}>
+    <div className="sheet-backdrop" onClick={close}>
       <div className="sheet tall" role="dialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className="sheet-title">{title}</div>
@@ -702,6 +703,91 @@ export function RollbackSheet() {
             </div>
           ))
         )}
+      </div>
+    </Shell>
+  )
+}
+
+const CONTRACT_LABELS: [keyof GoalSnapshot['contract'], string][] = [
+  ['outcome', 'Outcome'],
+  ['verification', 'Verification'],
+  ['constraints', 'Constraints'],
+  ['boundaries', 'Boundaries'],
+  ['stop_when', 'Stop when']
+]
+
+/** The chat's goal (Hermes's /goal): its contract and subgoals, with Pause / Resume and Clear. Opened from the goal line in the status bar. */
+export function GoalSheet({ goal, onClose }: { goal: GoalSnapshot; onClose: () => void }) {
+  const [busy, setBusy] = useState(false)
+  useBackHandler(onClose, true)
+  const paused = goal.status === 'paused'
+  const run = async (action: 'goal.pause' | 'goal.resume' | 'goal.clear') => {
+    if (busy) return
+    setBusy(true)
+    haptic()
+    try {
+      await goalAction(action)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const clear = async () => {
+    const ok = await confirmDialog({ title: 'Clear this goal?', confirmLabel: 'Clear', danger: true })
+    if (ok) {
+      await run('goal.clear')
+      onClose()
+    }
+  }
+  const rows = CONTRACT_LABELS.filter(([k]) => goal.contract?.[k])
+  return (
+    <Shell title="Goal" onClose={onClose}>
+      <div className="sheet-scroll">
+        <div className="kv">
+          <div>Goal</div>
+          <div>{goal.title}</div>
+          <div>Status</div>
+          <div>{goal.status}{goal.paused_reason ? ` (${goal.paused_reason})` : ''}</div>
+          <div>Turns</div>
+          <div>{goal.turns_used} of {goal.max_turns}</div>
+          {rows.map(([k, label]) => (
+            <Fragment key={k}>
+              <div>{label}</div>
+              <div>{goal.contract[k]}</div>
+            </Fragment>
+          ))}
+          {goal.last_verdict ? (
+            <>
+              <div>Last verdict</div>
+              <div>{goal.last_verdict}</div>
+            </>
+          ) : null}
+          {goal.last_reason ? (
+            <>
+              <div>Reason</div>
+              <div>{goal.last_reason}</div>
+            </>
+          ) : null}
+        </div>
+        {goal.subgoals?.length > 0 && (
+          <>
+            <div className="dim small goal-sub-head">Subgoals</div>
+            <ul className="goal-subs">
+              {goal.subgoals.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        <div className="sheet-actions col">
+          {(goal.status === 'active' || paused) && (
+            <button className="btn primary" disabled={busy} onClick={() => void run(paused ? 'goal.resume' : 'goal.pause')}>
+              {paused ? 'Resume' : 'Pause'}
+            </button>
+          )}
+          <button className="btn danger" disabled={busy} onClick={() => void clear()}>
+            Clear goal
+          </button>
+        </div>
       </div>
     </Shell>
   )

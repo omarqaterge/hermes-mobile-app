@@ -384,6 +384,9 @@ function safeJson(t) {
 const wss = new WebSocketServer({ server, path: '/api/ws', verifyClient: () => Date.now() > refuseUntil })
 let seq = 0
 let created = 0
+// The one chat with a goal ('rt-goal'): session.control changes it, session.control.read and .update report it.
+const goalState = { rt: 'rt-goal', g: null }
+const goalFor = rt => (rt === goalState.rt ? goalState.g : null)
 const slowTurns = new Map() // runtime id → timers of a running 'slow reply'
 wss.on('connection', ws => {
   const event = (type, session_id, payload) => ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
@@ -427,12 +430,19 @@ wss.on('connection', ws => {
               { role: 'user', text: 'First question', row_id: 1 },
               { role: 'assistant', text: 'First answer' }
             ],
+            turn_started_at: Date.now() / 1000 - 75,
             inflight: { user: 'Explain streams', assistant: 'Streams are a sequence of', streaming: true },
             todo_state: { todos: [{ id: '1', content: 'Read', status: 'completed' }, { id: '2', content: 'Write', status: 'in_progress' }], revision: 2 }
           })
           later(700, () => event('message.delta', 'rt-run', { text: ' values over time.' }))
           later(1200, () => event('message.complete', 'rt-run', { text: 'Streams are a sequence of values over time.' }))
           return
+        }
+        if (sid === 's-goal') {
+          // A chat with a goal set: the goal line shows under the chat (session.control.read answers it).
+          goalState.g = { title: 'Ship it', status: 'active', turns_used: 3, max_turns: 20, contract: { outcome: 'Login works' }, subgoals: ['tests'], gates: [] }
+          return reply({ session_id: 'rt-goal', stored_session_id: sid, info: { title: 'Goal chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'work on it', row_id: 1 }, { role: 'assistant', text: 'answer s-goal' }] })
         }
         if (sid === 's-card') {
           // A saved chat holding a Query() card (same code as LIVE below).
@@ -677,6 +687,15 @@ wss.on('connection', ws => {
         }
         return
       }
+      case 'session.control.read':
+        return reply({ control: { goal: goalFor(params.session_id), loop: null, heartbeat: null, revision: 'x', updated_at: 0 } })
+      case 'session.control':
+        reply({})
+        if (params.action === 'goal.pause' && goalState.rt === params.session_id) goalState.g = { ...goalState.g, status: 'paused', paused_reason: 'by user' }
+        if (params.action === 'goal.resume' && goalState.rt === params.session_id) goalState.g = { ...goalState.g, status: 'active', paused_reason: null }
+        if (params.action === 'goal.clear' && goalState.rt === params.session_id) goalState.g = null
+        if (goalState.rt === params.session_id) later(30, () => event('session.control.update', params.session_id, { control: { goal: goalState.g, loop: null, heartbeat: null, revision: 'y', updated_at: 1 } }))
+        return
       case 'session.interrupt': {
         reply({})
         const t = slowTurns.get(params.session_id)

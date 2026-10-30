@@ -563,12 +563,33 @@ async function main() {
   check((await page.locator('.msg.assistant', { hasText: 'Streams are a sequence of' }).count()) === 1, 'reply so far is shown right away (before new deltas)')
   check((await page.locator('.msg.user .bubble', { hasText: 'Explain streams' }).count()) === 1, 'the running question shows once')
   check((await page.locator('.todos-head').innerText()).includes('1/2'), 'task list restored from todo_state')
+  check(/1:1[5-9]/.test(await page.locator('.status-line').innerText()), `status line shows the turn's elapsed time (${JSON.stringify(await page.locator('.status-line').innerText())})`)
+  check((await page.locator('.goal-line').count()) === 0, 'a chat without a goal shows no goal line')
   await sleep(1500)
   const replies = await page.locator('.msg.assistant').allInnerTexts()
   const last = replies[replies.length - 1]
   check(/^Streams are a sequence of values over time\./.test(last.trim()), `reply continues from the snapshot (${JSON.stringify(last.slice(0, 60))})`)
   check(replies.filter(r => r.includes('Streams are')).length === 1, 'no duplicate reply bubble')
   await page.screenshot({ path: path.join(SHOTS, 'hm-shot-inflight.png') })
+
+  // ── goal line: a chat with a goal shows it under the chat; the sheet pauses it ──
+  {
+    await page.evaluate(() => window.hermesOpenSession('s-goal'))
+    await page.locator('.goal-line').waitFor({ timeout: 5000 })
+    const line = await page.locator('.goal-line').innerText()
+    check(line.includes('Ship it') && line.includes('turn 3 of 20'), `goal line shows the goal and its turns (${JSON.stringify(line)})`)
+    await page.locator('.goal-line').click()
+    await page.locator('.sheet-title', { hasText: 'Goal' }).waitFor({ timeout: 3000 })
+    check(((await page.locator('.sheet').innerText()) || '').includes('Login works'), 'the goal sheet shows the contract outcome')
+    check((await page.locator('.sheet .kv').innerText()).includes('tests') || (await page.locator('.sheet').innerText()).includes('tests'), 'the goal sheet lists the subgoals')
+    await page.locator('.sheet').getByRole('button', { name: 'Pause', exact: true }).click()
+    await page.locator('.goal-line', { hasText: 'paused: by user' }).waitFor({ timeout: 3000 }).then(() => check(true, 'after Pause the goal line says paused: by user'), () => check(false, 'after Pause the goal line says paused: by user'))
+    check(rpcs('session.control').some(c => c.params.action === 'goal.pause'), 'Pause calls session.control with goal.pause')
+    check((await page.locator('.sheet').getByRole('button', { name: 'Resume', exact: true }).count()) === 1, 'a paused goal offers Resume')
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.locator('.sheet-backdrop').click({ position: { x: 5, y: 5 } })
+    await page.locator('.sheet').waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'tapping outside closes the goal sheet'), () => check(false, 'tapping outside closes the goal sheet'))
+  }
 
   // ── editing a message Hermes no longer holds, with later turns: never appended at the end ──
   fs.writeFileSync(LOG, '')
@@ -1125,6 +1146,10 @@ async function main() {
     check(sends('next one') === 1 && steers('next one') === 0, `exactly one prompt.submit with the queued text (${sends('next one')})`)
     check((await page.locator('.queued-msg').count()) === 0, 'the bubble is gone after sending')
     check((await doneCount('Slow done.')) === slow0 + 1, 'the slow reply finished first')
+    {
+      const meta = await page.locator('.msg.assistant', { hasText: 'Slow done.' }).first().locator('.msg-meta').innerText().catch(() => '')
+      check(/ \d\.\ds/.test(' ' + meta) || /\b1s\b/.test(meta), `the reply's meta carries the turn's duration (${JSON.stringify(meta)})`)
+    }
 
     // 3: remove one, edit another; only the edited one is sent
     await startSlow()
