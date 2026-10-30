@@ -51,12 +51,14 @@ User-facing changes, newest first. Each release section collects what shipped si
   splits in two: Steer (as before, the words go into the running task now) and Queue. A queued message waits as a
   dashed bubble at the end of the chat (edit it, remove it, or send it now) and is sent by itself when the reply ends,
   then the next one. Stop or an error pauses the queue (Queue paused, Resume), and a chat you open starts paused.
-  Up to 10 per chat, kept across restarts; sent only while the app shows that chat. Browser tests only; not yet on a
-  real phone.
+  Up to 10 per chat, kept across restarts; sent only while the app shows that chat. Seen on a Xiaomi phone (Android
+  16): Steer and Queue appear while a reply runs, and a queued message was sent by itself when the reply ended. Edit,
+  remove, pause after Stop and keeping the queue across a restart were not yet tried on a phone.
 - **Quote part of a reply.** Select words in one of Hermes's replies and a bar above the composer offers Quote or
   Explain. Quote puts the words as a chip above the text box (up to 3, ✕ removes one) and the next message starts with
   them as a quote; Explain sends the quote with "Explain this." at once. Your sent message shows the quote as a block.
-  Browser tests only; not yet on a real phone.
+  Seen on a Xiaomi phone (Android 16): the bar, Quote, Explain and the quote block work, Android's own selection menu
+  doesn't cover the bar, and selecting text in your own message shows no bar.
 - **Tablets: hide the chat list.** On wide screens (tablets, unfolded foldables, landscape) ☰ in the chat header now
   hides or shows the chat list on the left, and « at the top of the list hides it from any page; the app remembers it.
   Sheets opened from Settings and other pages (like Uninstall Hermes) now cover the whole width instead of sitting

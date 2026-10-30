@@ -69,3 +69,19 @@ Also check: the strip stays visible over Settings and other full screens, and a 
       Pixel, OnePlus or Motorola with Android 14+: open an app, tap, type, Take over. Android 11-13: Settings →
       Background apps should say "Needs Android 14 or newer".
 - [ ] **A banking app with the Settings toggle on** (opens; FLAG_SECURE screens may show black in the live view).
+
+## Features from docs/plans (01–12)
+
+The full step-by-step list (what to do, what to expect) is the phone checklist kept with the plans. First round on a
+Xiaomi phone, Android 16 (HyperOS), build 0.8.66-test at 970883a:
+
+- [x] **01 Quote part of a reply.** Bar, Quote chip, sending with the quote, Explain, no bar in your own bubble.
+      Android's selection menu floats above the bar without covering it.
+- [ ] **02 Queue.** Done: Steer and Queue appear while a reply runs; a queued message sends by itself when the reply
+      ends. To do: edit and remove a queued message, Stop → Queue paused → Resume, queue kept after a force-stop,
+      Steer still steering.
+- [ ] **03 Scrubber**, **04 HTML preview**, **05 Changed-files card** (also its green/red counts in the light theme),
+      **06 Elapsed time and goal line**, **07 Context ring** (fits the model row on a phone), **08 Animations** (and
+      off with Remove animations), **09 New since your last visit**, **10 Several questions at once**,
+      **11 Stash a draft**, **12 File previews** (audio/video playback): not yet tried on a phone.
+
