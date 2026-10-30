@@ -2161,6 +2161,47 @@ async function main() {
     check((await rp.locator('.canvas-panel').count()) === 1, `a real finger swiping left on a ${what} opens the canvas`)
     await rctx.close()
   }
+  // A chat whose text has long unbroken words (a URL, a path): the swipes must still work on plain text.
+  {
+    const rctx = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
+    const rp = await rctx.newPage()
+    await rp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-wide', profile: 'default' })))
+    await rp.goto('http://127.0.0.1:5180/')
+    await rp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(500)
+    const cdp = await rctx.newCDPSession(rp)
+    const finger = async (x0, y0, dx, dy, steps = 12) => {
+      const pt = (x, y) => [{ x, y, id: 1 }]
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(x0, y0) })
+      for (let i = 1; i <= steps; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x0 + (dx * i) / steps, y0 + (dy * i) / steps + (i % 3)) })
+        await sleep(16)
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    }
+    const at = await rp.evaluate(() => {
+      const p = [...document.querySelectorAll('.msg.assistant p')][0]
+      p.scrollIntoView({ block: 'center' })
+      const r = p.getBoundingClientRect()
+      const x = 200, y = r.top + 8
+      const e = document.elementFromPoint(x, y)
+      const ws = []
+      for (let n = e; n && n !== document.body; n = n.parentElement) {
+        const cs = getComputedStyle(n)
+        if (n.scrollWidth > n.clientWidth + 2) ws.push(`${n.tagName}.${n.className} ${n.scrollWidth}>${n.clientWidth} x=${cs.overflowX} y=${cs.overflowY}`)
+      }
+      return { x, y, on: e.tagName + '.' + e.className, ws }
+    })
+    console.log(`  (wide chat: swipe starts on ${JSON.stringify(at)})`)
+    await finger(at.x, at.y, -240, 6)
+    await sleep(500)
+    check((await rp.locator('.canvas-panel').count()) === 1, 'a real finger swiping left on plain text opens the canvas in a chat with long unbroken words')
+    if (await rp.locator('.canvas-panel').count()) { await rp.evaluate(() => window.hermesBack()); await sleep(500) }
+    await finger(at.x - 100, at.y, 240, 6)
+    await sleep(500)
+    check((await rp.locator('.drawer.open').count()) === 1, 'a real finger swiping right on plain text opens the drawer in a chat with long unbroken words')
+    await rctx.close()
+  }
   // Wide screens keep the canvas as a column beside the chat.
   const cvw = await browser.newPage({ viewport: { width: 1100, height: 800 } })
   await cvw.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
