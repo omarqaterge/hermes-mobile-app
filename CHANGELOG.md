@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Quote part of a reply.** Select words in one of Hermes's replies and a bar above the composer offers Quote or
+  Explain. Quote puts the words as a chip above the text box (up to 3, ✕ removes one) and the next message starts with
+  them as a quote; Explain sends the quote with "Explain this." at once. Your sent message shows the quote as a block.
+  Browser tests only; not yet on a real phone.
 - **Tablets: hide the chat list.** On wide screens (tablets, unfolded foldables, landscape) ☰ in the chat header now
   hides or shows the chat list on the left, and « at the top of the list hides it from any page; the app remembers it.
   Sheets opened from Settings and other pages (like Uninstall Hermes) now cover the whole width instead of sitting

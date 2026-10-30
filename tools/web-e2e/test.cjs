@@ -869,6 +869,45 @@ async function main() {
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant svg', { hasText: 'Start' }).first().waitFor({ timeout: 15000 }).then(() => check(true, 'diagram renders from the lazy Mermaid'), () => check(false, 'diagram renders from the lazy Mermaid'))
 
+  // ── Quote part of a reply into the composer ──
+  {
+    const selectIn = (sel, starts = '') => page.evaluate(([q, st]) => {
+      const el = [...document.querySelectorAll(q)].filter(e => e.firstChild?.nodeType === 3 && e.textContent.startsWith(st)).pop()
+      const t = el.firstChild
+      const r = document.createRange()
+      r.setStart(t, 0); r.setEnd(t, Math.min(4, t.length))
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r)
+    }, [sel, starts])
+    await selectIn('.msg.user .bubble')
+    await sleep(300)
+    check((await page.locator('.quote-bar').count()) === 0, 'quote: no bar for a selection in your own bubble')
+    await selectIn('.msg.assistant .md > p')
+    await page.locator('.quote-bar').waitFor({ timeout: 3000 }).catch(() => {})
+    check((await page.locator('.quote-bar').count()) === 1, 'quote: the bar shows for a selection in a reply')
+    await page.getByRole('button', { name: 'Quote', exact: true }).click()
+    check((await page.locator('.quote-chip').count()) === 1, 'quote: Quote adds a chip above the composer')
+    check((await page.locator('.quote-bar').count()) === 0, 'quote: the bar hides after Quote')
+    await page.getByRole('button', { name: 'Remove quote' }).click()
+    check((await page.locator('.quote-chip').count()) === 0, 'quote: ✕ removes the chip')
+    await selectIn('.msg.assistant .md > p')
+    await page.getByRole('button', { name: 'Quote', exact: true }).click()
+    await page.getByPlaceholder('Ask about the quote…').fill('why?')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await page.locator('.msg.user .msg-quote').last().waitFor({ timeout: 5000 }).catch(() => {})
+    const qs = rpcs('prompt.submit').pop()?.params.text
+    check(qs === '> Flow\n\nwhy?', `quote: the sent text is a blockquote then the message (${JSON.stringify(qs)})`)
+    check((await page.locator('.msg.user .msg-quote').count()) >= 1, 'quote: the user bubble shows a .msg-quote')
+    check((await page.locator('.quote-chip').count()) === 0, 'quote: the chip is gone after sending')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+    await selectIn('.msg.assistant .md > p', 'Flow')
+    const n = rpcs('prompt.submit').length
+    await page.getByRole('button', { name: 'Explain', exact: true }).click()
+    for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
+    const ex = rpcs('prompt.submit').pop()?.params.text
+    check(/^> \S.*\n\nExplain this\.$/.test(ex || ''), `quote: Explain sends the quote then "Explain this." (${JSON.stringify(ex)})`)
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+  }
+
   // ── OpenUI: ```openui-lang blocks render as cards from the lazy bundle; buttons and forms answer ──
   check(await page.evaluate(() => document.getElementById('hm-openui')?.type === 'text/hm-lazy' && !window.__hmOpenUI), 'OpenUI not run at start')
   {
