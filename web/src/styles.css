@@ -3487,3 +3487,12 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
     transition: none;
   }
 }
+
+/* Inline HTML/SVG preview in a reply, and its full-screen viewer */
+.html-wrap.auto { height: auto; min-height: 0; }
+.html-frame.inline-frame { flex: none; min-height: 0; max-height: 60vh; border: 0; border-radius: 0; }
+img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 auto; padding: 8px; background: var(--bg); }
+.html-viewer { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; padding: calc(env(safe-area-inset-top, 0px) + 52px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); background: var(--bg); }
+.html-viewer .html-wrap { flex: 1; min-height: 0; }
+.html-viewer .html-frame { min-height: 0; }
+.html-viewer > .close { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 10px; width: 40px; height: 40px; border-radius: 20px; font-size: 1.1rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); }
