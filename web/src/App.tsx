@@ -12,7 +12,7 @@ import { SCRUB_MIN, currentMark, userMarks } from './scrub'
 import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
 import { RequestSheet } from './components/RequestSheet'
-import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, ModelSheet, RollbackSheet, SessionActionsSheet, StatusSheet } from './components/Sheets'
+import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, GoalSheet, ModelSheet, RollbackSheet, SessionActionsSheet, StatusSheet } from './components/Sheets'
 import { bannerItems, startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
 import { BtwSheet } from './components/Btw'
@@ -26,7 +26,7 @@ import { useBackHandler } from './backstack'
 import { recentPrompts } from './recent'
 import { bare, useCommandCatalog, type CommandEntry } from './commands'
 import { Title, plainTitle } from './components/Title'
-import { useAutoRead, useDraftAutoRead } from './voice'
+import { fmtClock, useAutoRead, useDraftAutoRead } from './voice'
 import { dotState, startHealthPolling, checkHealth } from './health'
 import { SettingsScreen } from './components/Settings'
 import { SetupFlow, SetupScreen, checkSetupFlow, watchFirstRun } from './components/Setup'
@@ -249,24 +249,66 @@ function CompressHint() {
   )
 }
 
+/** Milliseconds since `start`, redrawn once a second only while a turn runs and the page is visible (battery);
+ * it stops by itself when the page is hidden and catches up on the next tick once it is visible again. */
+function useElapsed(start: number | null, running: boolean): number {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!running || start == null) return
+    let id: ReturnType<typeof setInterval> | undefined
+    const stop = () => {
+      if (id !== undefined) clearInterval(id)
+      id = undefined
+    }
+    const go = () => {
+      stop()
+      if (document.visibilityState === 'visible') {
+        tick(n => n + 1)
+        id = setInterval(() => tick(n => n + 1), 1000)
+      }
+    }
+    go()
+    document.addEventListener('visibilitychange', go)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', go)
+    }
+  }, [start, running])
+  return start == null ? 0 : Math.max(0, Date.now() - start)
+}
+
+const GOAL_HIDDEN = new Set(['cleared', 'done', 'complete', 'completed', 'achieved'])
+
 function StatusBar() {
   const running = useStore(s => s.active?.running ?? false)
   const status = useStore(s => s.active?.status ?? '')
   const todos = useStore(s => s.active?.todos ?? EMPTY_TODOS)
   const tps = useStore(s => s.active?.tps ?? null)
   const ctx = useStore(s => s.active?.ctx ?? null)
+  const turnStart = useStore(s => s.active?.turnStart ?? null)
+  const goal = useStore(s => s.active?.goal ?? null)
   const [openTodos, setOpenTodos] = useState(false)
+  const [openGoal, setOpenGoal] = useState(false)
+  const elapsed = useElapsed(turnStart, running)
   const done = todos.filter(t => t.status === 'completed' || t.status === 'done').length
-  if (!running && todos.length === 0) return null
+  const showGoal = goal != null && !GOAL_HIDDEN.has(goal.status)
+  if (!running && todos.length === 0 && !showGoal) return null
   return (
     <div className="statusbar">
       {running && (
         <div className="status-line">
           <Spinner small /> <span className="status-text">{status || 'Working…'}</span>
+          {elapsed >= 3000 ? <span className="dim small status-elapsed">{fmtClock(elapsed / 1000)}</span> : null}
           {tps ? <span className="dim small">~{tps} tok/s</span> : null}
           {ctx && <span className="dim small">{fmtCtx(ctx).split(' · ')[0]}</span>}
         </div>
       )}
+      {showGoal && goal && (
+        <button className="goal-line" onClick={() => setOpenGoal(true)}>
+          🎯 {goal.title} · turn {goal.turns_used} of {goal.max_turns} · {goal.paused_reason ? `paused: ${goal.paused_reason}` : goal.status}
+        </button>
+      )}
+      {openGoal && showGoal && goal && <GoalSheet goal={goal} onClose={() => setOpenGoal(false)} />}
       {todos.length > 0 && (
         <div className="todos">
           <button className="todos-head" onClick={() => setOpenTodos(v => !v)}>

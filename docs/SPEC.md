@@ -231,7 +231,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    - `message.complete` drops leftover generating cards, puts the final text on the reply (`fullReply` keeps the
      streamed text unless the final one is longer and ends with it), adds an error notice on failure, hands the
      reply to Live mode or to auto read-aloud (only while the app is in front), sets `running: false`, and
-     `finishTurnStats` writes "~N tok/s · ctx N% · used/max" under the reply and saves it in `hm.stats.v1`.
+     `finishTurnStats` writes "~N tok/s · 1m 23s · ctx N% · used/max" under the reply (the turn's duration, from 1 s on) and saves it in `hm.stats.v1`.
    - `review.summary`, `background.complete` and an unclaimed `btw.complete` become info notices.
    - Events of other chats only refresh the drawer (`session.title`, `message.complete` → `loadSessionsSoon`);
      `sessions.changed` refreshes it too. `notification.show` becomes a toast; `request.cancel` closes a request
@@ -579,7 +579,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.setupFlowDone` | `components/Setup.tsx` | `'1'` once the first-run setup flow finished. | No |
 | `hm.shizukuStepDone` | `components/Setup.tsx` | `'1'` once Shizuku was seen running (or the user said it runs). | No |
 | `hm.replaceTermux` | `components/Setup.tsx` | Time (ms) the user confirmed Replace Termux; cleared once F-Droid's set is being installed, or after 10 minutes. | No |
-| `hm.stats.v1` | `gateway.ts` (`STATS_KEY`) | Turn stats under replies: `{"<chatId>:<user row id>": "~41 tok/s · ctx 2% · …"}`; newest 2,000. | No (chat ids) |
+| `hm.stats.v1` | `gateway.ts` (`STATS_KEY`) | Turn stats under replies: `{"<chatId>:<user row id>": "~41 tok/s · 1m 23s · ctx 2% · …"}`; newest 2,000. | No (chat ids) |
 | `hm.tasks.v1` | `tasks.ts` | Ticked task-list boxes in replies: `{<message hash>: {<box index>: bool}}`; newest 300 messages. | No |
 | `hm.textScale` | `store.ts`, `components/Settings.tsx` | Text size factor (0.9, 1, 1.1, 1.2, 1.35). | No |
 | `hm.theme` | `theme.ts` | `default`, `oled`, `light` or `system`. | No |
@@ -671,7 +671,7 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
   early on `cron_idle`. The alarm time is saved and re-armed after the app restarts.
 - **Service timers** use `Handler.postDelayed` (no CPU wake): the update check every 12 h, the one Shizuku check at
   90 s, the bg-app card's 130 s expiry.
-- **Page timers** stop or slow down when the page is hidden: socket beat 15 s (`gateway.ts`), health ping every
+- **Page timers** stop or slow down when the page is hidden: the status line's elapsed-time ticker (`useElapsed` in `App.tsx`, 1 s) runs only while a turn runs and the page is visible, and clears itself on `visibilitychange` to hidden, when the turn ends and on unmount; socket beat 15 s (`gateway.ts`), health ping every
   minute while visible and the full `GET /api/status` (~0.26 s of dashboard CPU) every 10 minutes or when the
   status sheet opens (`health.ts`), activity poll 3 s while the banner shows something else 9 s (`activity.ts`),
   canvas list every 6 s only while the panel is open. Chromium freezes the hidden page about a minute in; the
@@ -753,6 +753,8 @@ All go through `rpc` in `gateway.ts`, which adds `profile`. "Used by" = file and
 | `session.create` | `gateway.ts` `newSession` | New chat: `source: 'mobile'`, optional `cwd` + `cwd_explicit`, `model`, `provider`, `reasoning_effort`. |
 | `session.delete` | `gateway.ts` `deleteSession` | Delete a stored chat (after closing its live runtimes). |
 | `session.history` | `gateway.ts` `userRowId` | Stored rows, to find a user message's row id for edit/retry/stats. |
+| `session.control` | `gateway.ts` `goalAction` | Goal sheet buttons: `goal.pause`, `goal.resume`, `goal.clear`; the goal is re-read afterwards. |
+| `session.control.read` | `gateway.ts` `loadGoal` | After a chat is created or opened (not awaited, errors ignored): the chat's goal for the goal line. |
 | `session.interrupt` | `gateway.ts` `interrupt` | Stop the running turn. |
 | `session.list` | `gateway.ts` `loadSessions`, `loadArchived` | Drawer list (limit 80, +100 per Show more); archived = `include_hidden` list minus the normal list (limit 200 each). |
 | `session.resume` | `gateway.ts` `resumeSession`, `syncRunning` | Open a stored chat (60 s timeout; `inflight` adds a live turn); check whether a turn is still running (20 s). |
@@ -960,7 +962,7 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 | Pull hint | Text "Release for a side question", hidden until the user pulls up at the end of the list. | n/a (`pullbtw.ts` draws it) | Pull up 110 px past the end (`PULL_TRIGGER_PX`) and release. | Needs a chat on screen. |
 | Chat scrubber (`Scrubber`, `web/src/components/Scrubber.tsx`; `.chat-wrap` holds it beside `.chat`) | A thin rail on the right edge of the chat, 12 px below the top to 72 px above the bottom (clear of the scroll button), with one `scrub-tick` per message the user sent, placed by message order (`k / (n - 1)` of the height). The tick of the message at or above the top of the list is highlighted (`on`). While a finger is on it the rail widens and a `scrub-bubble` left of the finger shows `12 / 30` and the first 80 characters of that message (or the first attachment's name). The rail is `role="slider"` with aria-label `Jump to a message`, `aria-valuenow` the current message number and `aria-valuetext` its text. | Drag along it, or tap it: the nearest tick is picked (`haptic()` each time it changes); letting go scrolls the chat so that message sits 8 px below the top and flashes it (`hit-flash`). ArrowUp / ArrowDown on the focused rail move one message. Swipes and the pull-up gesture skip it (`.scrubber` in `SKIP`). | Only with at least 6 user messages (`SCRUB_MIN`) and a list taller than 3 times its visible height. Hidden while the find bar is open and while a chat is only previewed. Queued bubbles and the bottom space are not items and get no tick. |
 | Activity banner (`ActivityBanner`) | Strip with spinner: "<chat title>: <what Hermes does>", and "(+N more)". | Opens that chat. | none | Hidden when empty. Disabled when the item is the open chat's own background review. |
-| Status bar (`StatusBar`) | While a turn runs: spinner, the live status text (or "Working…"), `~N tok/s`, `ctx N%`. Below it, a "☑ Tasks done/total" line when Hermes keeps a todo list. | Tasks line toggles the list. Each todo shows ✓ completed, ◐ in progress, ✕ cancelled, ○ pending. | none | Hidden when nothing runs and there are no todos. |
+| Status bar (`StatusBar`) | While a turn runs: spinner, the live status text (or "Working…"), the turn's elapsed time as `m:ss` (`h:mm:ss` from an hour; `.status-elapsed`, from 3 s on), `~N tok/s`, `ctx N%`. Below it, the goal line (`.goal-line`) when the chat has a goal that is not cleared or done: `🎯 title · turn 3 of 20 · active`, or `paused: reason`. Below that, a "☑ Tasks done/total" line when Hermes keeps a todo list. | Goal line opens the Goal sheet (3.5). Tasks line toggles the list. Each todo shows ✓ completed, ◐ in progress, ✕ cancelled, ○ pending. | none | Hidden when nothing runs, there are no todos and no goal. The elapsed time comes from `turnStart` (the send, the first `message.start`, or Hermes's `turn_started_at` on resume; `useElapsed` redraws it once a second). |
 | Selection bar (`QuoteBar`, `web/src/components/QuoteBar.tsx`) | Strip just above the composer with the label "Selected text" and the buttons Quote and Explain. | Quote adds the selection to the composer's quotes (3.4), clears the selection and focuses the text box. Explain sends the selection as a quote followed by "Explain this." at once. | none | Shown only while 3 to 2000 characters are selected inside one reply (`.msg.assistant .md`). Over 2000 characters the label reads "Selection is too long to quote" and both buttons are disabled. Hidden when the selection collapses, a sheet opens, the chat changes or Live mode is on. |
 | Compress hint (`CompressHint`) | "Context N% full. Compress older turns so Hermes keeps up?", button Compress, and ✕ (aria-label Not now). | Compress calls `compressChat` (`session.compress`, up to 5 min), then a toast with the result. Not now hides the hint for that chat until the app restarts. | none | Shown from 80 % context fill, not while a turn runs (unless compressing). While busy the button shows a spinner and ✕ is hidden. |
 | Read-aloud player, background-app card | See 3.11 and 3.10. | | | |
@@ -1067,7 +1069,7 @@ There is no separate item kind for approvals, images, files or errors. Approvals
   - **Read aloud** speaks the reply (`toggleSpeak`); while it is read the button reads "Stop reading". Voice behaviour is 3.11.
   - **Retry** (`retryTurn`): finds the user message the reply belongs to and calls `resendFrom` with its text. Disabled while a reply runs.
   - **Branch** (`branchAt`): calls `session.branch` with a message count so the new chat holds everything up to the end of this turn, renames it "⎇ <original title>" (a later branch of the same chat becomes "⎇ <title> 2", and so on, because Hermes wants unique titles), opens it, and toasts "Branched: <title>". Disabled while a reply runs.
-  - **Stats** text such as `~41 tok/s · ctx 2% · 8k/200k`: tokens per second (from the provider's `avg_tps`, else estimated from the stream, else from the turn's wall time) and the context fill. Saved per turn in `hm.stats.v1` (2000 entries), so it returns when the chat is reopened.
+  - **Stats** text such as `~41 tok/s · 1m 23s · ctx 2% · 8k/200k`: tokens per second (from the provider's `avg_tps`, else estimated from the stream, else from the turn's wall time) the turn's duration (`fmtDuration` in `text.ts`, shown when the turn took at least 1 s) and the context fill. Saved per turn in `hm.stats.v1` (2000 entries), so it returns when the chat is reopened.
 - **Time.** Tapping the reply (not on a link or control) shows its time, like a user bubble (not while streaming).
 
 Actions are not drawn on earlier segments of a turn (a reply split by tool calls), on streaming replies, or in a preview.
@@ -1155,12 +1157,13 @@ Rendering rules:
 
 Events from Hermes (`client.onEvent` in `gateway.ts`) reach the chat for the open chat only:
 
-- `message.start`: the turn starts; `running` is set.
+- `message.start`: the turn starts; `running` is set and `turnStart` is set if the send didn't already (Hermes may send several per turn).
+- `session.control.update`: the chat's goal changed (`control.goal`); the goal line follows it.
 - `thinking.delta` / `status.update`: the status-bar text.
 - `reasoning.delta`, `message.delta`: appended to the open assistant item in batches (every 60 ms, every 150 ms once the reply is over 6000 characters), not per token, because every change reparses Markdown. Any other event flushes the batch first, so order never changes.
 - `tool.generating`, `tool.start`, `tool.complete`: the tool card appears when the call starts being written, becomes `running` at `tool.start`, `done` at `tool.complete`. A tool that streams under a generic name takes its real name at start. A replayed start for a card that already exists adds no second card. Starting a tool closes the open assistant segment, so text after tools is a new segment.
 - `todo.updated`, `session.usage`, `session.info`, `session.title`.
-- `message.complete`: tool cards still "generating" are dropped; errors become a notice; the final text fills a reply whose stream missed some (`fullReply`); the turn stats are computed (`finishTurnStats`); `running` ends. Live mode and automatic read-aloud (Settings or chat menu, when the app is on screen) speak the reply here.
+- `message.complete`: tool cards still "generating" are dropped; errors become a notice; the final text fills a reply whose stream missed some (`fullReply`); the turn stats are computed (`finishTurnStats`, given the turn's seconds read before `turnStart` is cleared); `running` ends. Live mode and automatic read-aloud (Settings or chat menu, when the app is on screen) speak the reply here.
 - `review.summary`, `btw.complete`, `background.complete`: notices.
 - A silent connection is checked: every 15 s `gateway.ping`; after 45 s without any event during a turn the page asks `session.resume` whether the turn is still running and loads the stored transcript if it finished meanwhile.
 
@@ -1394,6 +1397,11 @@ Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat
 
 **Data:** `store.health` from `web/src/health.ts` (`gateway.ping` every minute while the app is in front, the full `GET /api/status` every 10 minutes or when this sheet opens), `GET /phone-access` (plugin), the `setupState` bridge call. A late answer after the sheet closes is dropped.
 **Rules:** the header dot uses only what the app needs (the gateway socket, the dashboard and storage components, critical memory or disk pressure). Messaging platforms Hermes may also run do not turn it amber.
+
+#### Goal sheet
+**Opens from:** tapping the goal line in the status bar (local state in `StatusBar`, not a `state.sheet`). **Closes with:** tap outside, drag down, Back (`useBackHandler`), or after Clear goal. **Source:** `web/src/components/Sheets.tsx` `GoalSheet`.
+
+Shows the goal (Hermes's `/goal`) from `ActiveSession.goal`: title, status (with the pause reason), turns used of the maximum, the contract fields that are not empty (Outcome, Verification, Constraints, Boundaries, Stop when), Last verdict and Reason when set, and the subgoals as a list. Buttons: Pause (while active) or Resume (while paused), each calling `goalAction`; Clear goal asks "Clear this goal?" (confirm "Clear") first. Errors are toasted. The goal is read by `loadGoal` and kept current by `session.control.update` events.
 
 #### File checkpoints sheet
 **Opens from:** Chat menu → File checkpoints; the Checkpoints button of the changed files card (3.3). **Closes with:** tap outside, drag down, Back (Back first leaves a snapshot view). **Source:** `web/src/components/Sheets.tsx` `RollbackSheet`; `web/src/checkpoints.ts`.
