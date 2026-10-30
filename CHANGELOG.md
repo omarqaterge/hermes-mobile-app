@@ -61,6 +61,32 @@ User-facing changes, newest first. Each release section collects what shipped si
   them as a quote; Explain sends the quote with "Explain this." at once. Your sent message shows the quote as a block.
   Seen on a Xiaomi phone (Android 16): the bar, Quote, Explain and the quote block work, Android's own selection menu
   doesn't cover the bar, and selecting text in your own message shows no bar.
+- **"Not on Wi-Fi" Shizuku notice after a restart with Wi-Fi off.** The check that Shizuku came back runs 90 s after
+  the app starts, but that wait only counted time the phone was awake, so a phone left asleep after the restart showed
+  the notice late or not at all. It now counts real time: the notice ("Shizuku isn't running … Not on Wi-Fi") is there
+  as soon as the phone is awake, without waking it. Seen on an Android 15 emulator; not yet on a real phone.
+- **A locked phone can't approve a command or answer Hermes from a notification any more.** Allow once, Allow
+  session, a question's answer buttons and the Reply field now ask you to unlock first: on Android 12+ the phone asks
+  for your PIN right on the notification; on Android 8-11 the tap opens the app instead, which asks you to unlock and
+  then shows the request (or your typed text in the box). Deny, Stop and Clear stay one tap.
+- **New: Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen"** (off by default). Off: the assist
+  button or gesture on a locked phone asks you to unlock before Live mode starts. On: Live mode opens over the lock
+  screen without unlocking, for talking only (Auto and Full access don't apply there: Hermes asks before
+  any risky command); allowing a command, answering a question or opening your chats asks
+  you to unlock, and ending Live mode brings the lock screen back. Checked on Android 15 and Android 8 emulators;
+  not yet on a real phone.
+- **Pulling up for a side question (/btw) takes a firmer pull.** It now needs about 160 px of pull (was 110), so a normal scroll to the end no longer opens it by accident. Browser tests only; not yet on a real phone.
+- **Cards: a date picked in a card form is accepted.** A card with a required date field always said "This field is
+  required" even though the day showed in the field, so the form never sent. It now accepts the day and sends it in
+  the message as `- day: 2026-10-15` (a range as `from to to`). The calendar now closes once you pick the day, instead
+  of staying open over the buttons. A list picker, text fields, checkboxes, radio buttons and chips were tried in the
+  same form and were fine. Also fixed: a field the card tied to a `$variable` was left out of the message the button
+  sent; it is now listed with the others. Browser tests with real clicks and taps; not yet on a real phone.
+- **Setup no longer gets stuck at "Hermes can see and use the screen (Shizuku)".** After you started Shizuku the page
+  said it would move on by itself but never checked again, so it stayed there. It now re-checks every few seconds while
+  that step is on screen (up to 10 minutes per visit), and when Shizuku runs but Termux isn't allowed yet it says so
+  (tap Allow all the time on Shizuku's prompt) instead of "Shizuku isn't running". The Status sheet's Shizuku row says
+  "Termux not allowed" in that case too. Browser and plugin tests only; not yet on a real phone.
 - **Tablets: hide the chat list.** On wide screens (tablets, unfolded foldables, landscape) ☰ in the chat header now
   hides or shows the chat list on the left, and « at the top of the list hides it from any page; the app remembers it.
   Sheets opened from Settings and other pages (like Uninstall Hermes) now cover the whole width instead of sitting

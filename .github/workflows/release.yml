@@ -51,7 +51,13 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+        # A release made on GitHub's website (Releases -> Draft a new release) creates the tag and the release together:
+        # then this only attaches the APK to it.
         run: |
-          gh release create "$GITHUB_REF_NAME" android/build/hermes-mobile.apk \
-            --title "Hermes Mobile $GITHUB_REF_NAME" \
-            --notes "Install: run the one-line installer from the README in Termux, or download hermes-mobile.apk below on your phone. Setup steps: https://github.com/${{ github.repository }}#install"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" android/build/hermes-mobile.apk --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" android/build/hermes-mobile.apk \
+              --title "Hermes Mobile $GITHUB_REF_NAME" \
+              --notes "Install: run the one-line installer from the README in Termux, or download hermes-mobile.apk below on your phone. Setup steps: https://github.com/${{ github.repository }}#install"
+          fi

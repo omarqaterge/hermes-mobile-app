@@ -102,6 +102,10 @@ const nativeShell = () => {
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
       openAssistantSettings: key => k(key, 'openAssistantSettings'),
+      // Talk to Hermes on the lock screen: the values pushed to the shell are recorded.
+      setLockAssist: (key, on) => (k(key, 'setLockAssist'), (window.__lockAssist ||= []).push(on)),
+      requestUnlock: key => k(key, 'requestUnlock'),
+      leaveLockScreen: key => k(key, 'leaveLockScreen'),
       // Claude in Termux: recorded; window.__noTermux = the shell can't open Termux.
       signInTermux: (key, provider, profile) => (k(key, 'signInTermux'), (window.__termuxSignins ||= []).push([provider, profile]), !window.__noTermux),
       // Background app: the test sets state through window.__hmBg; frames come back 120 ms after each request.
@@ -993,10 +997,10 @@ async function main() {
     check(lastSubmit() === 'Pick A', `a card button sends its words (${lastSubmit()})`)
     await idle()
     n = rpcs('prompt.submit').length
-    await card.locator('input[name="name"]').fill('Omar', { timeout: 5000 }).catch(() => {})
+    await card.locator('input[name="name"]').fill('Sam', { timeout: 5000 }).catch(() => {})
     await card.getByRole('button', { name: 'Send' }).click({ timeout: 5000 }).catch(() => {})
     for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
-    check(lastSubmit() === 'Here are my details\n\n- name: Omar', `a form sends its values (${JSON.stringify(lastSubmit())})`)
+    check(lastSubmit() === 'Here are my details\n\n- name: Sam', `a form sends its values (${JSON.stringify(lastSubmit())})`)
     await idle()
     n = rpcs('prompt.submit').length
     await card.getByText('Compare both').click({ timeout: 5000 }).catch(() => {})
@@ -1021,6 +1025,41 @@ async function main() {
     await liveCard.getByText('Mock result one').waitFor({ timeout: 15000 }).then(() => check(true, 'a Query card draws the tool answer'), () => check(false, 'a Query card draws the tool answer'))
     check(qcalls().length === 1 && qcalls()[0].body.name === 'web_search' && qcalls()[0].body.args.query === 'openui', `one call to /openui/call with the card's args (${JSON.stringify(qcalls().map(c => c.body))})`)
     await idle()
+    // a card form with a required list picker and a required date: pick like a finger (mouse click, then touch tap), send
+    const bookFlow = async (p, press, label) => {
+      const idleP = () => p.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+      await p.getByPlaceholder('Message Hermes').fill('show form ui')
+      await p.locator('.composer').getByRole('button', { name: 'Send' }).click()
+      const c = p.locator('.msg.assistant .hm-openui').last()
+      await c.getByText('Book a table').waitFor({ timeout: 15000 }).then(() => check(true, `${label}: the form card renders`), () => check(false, `${label}: the form card renders`))
+      await idleP()
+      const inside = () => c.evaluate(el => el.shadowRoot.textContent)
+      await c.locator('input[name="name"]').fill('Sam')
+      await press(c.getByRole('combobox'))
+      await press(p.getByRole('option', { name: 'Four people' }))
+      await sleep(300)
+      check(((await c.getByRole('combobox').textContent()) || '').includes('Four people'), `${label}: the picker shows the pick`)
+      let n = rpcs('prompt.submit').length
+      await press(c.getByRole('button', { name: 'Book' }))
+      await sleep(600)
+      const empty = (await inside()).match(/This field is required/g) || []
+      check(rpcs('prompt.submit').length === n && empty.length === 1, `${label}: only the empty date is refused (${empty.length} required notes, ${rpcs('prompt.submit').length - n} sent)`)
+      await press(c.locator('.openui-date-picker-renderer-floating-input-container'))
+      await press(p.locator('.openui-date-picker-renderer-floating-content button', { hasText: /^15$/ }).first())
+      await sleep(300)
+      await press(c.getByRole('button', { name: 'Book' }))
+      for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
+      const sent = rpcs('prompt.submit').pop()?.params.text
+      check(/^Book it\n\n- name: Sam\n- size: 4\n- day: \d{4}-\d{2}-15$/.test(sent || ''), `${label}: the form sends the picked list item and day (${JSON.stringify(sent)})`)
+      check(!(await inside()).includes('This field is required'), `${label}: no required note left`)
+      await idleP()
+    }
+    await bookFlow(page, loc => loc.click({ timeout: 5000 }), 'card form (mouse)')
+    const tp = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true })
+    await tp.goto('http://127.0.0.1:5180/')
+    await tp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await bookFlow(tp, loc => loc.tap({ timeout: 5000 }), 'card form (touch)')
+    await tp.close()
     await idle()
   }
 
@@ -1642,10 +1681,13 @@ async function main() {
     await sleep(400)
     check((await btw()) === 0, 'a short pull up at the bottom does not open the side chat')
     check((await pp.evaluate(() => document.querySelector('.chat').className)) === 'chat', 'a short pull springs back and leaves no pull classes')
-    const mid = await pull(150, true)
+    await pull(130)
+    await sleep(400)
+    check((await btw()) === 0, 'a medium pull (130 px) no longer opens the side chat')
+    const mid = await pull(200, true)
     check(mid && mid.pulling && mid.armed && parseFloat(mid.pull) < -20 && mid.moved !== 'none', `a firm pull stretches the list and arms the hint (${JSON.stringify(mid)})`)
     await pp.locator('.sheet.btw').waitFor({ timeout: 3000 }).then(() => check(true, 'a firm pull up at the bottom opens the side chat'), () => check(false, 'a firm pull up at the bottom opens the side chat'))
-    await pull(150)
+    await pull(200)
     await sleep(300)
     check((await btw()) === 1, 'the gesture does nothing while the side chat is open')
     await pp.evaluate(() => { document.querySelector('.sheet-backdrop')?.click() })
@@ -1657,7 +1699,7 @@ async function main() {
       el.scrollTop = 0
     })
     await sleep(200)
-    await pull(150)
+    await pull(200)
     await sleep(400)
     check((await btw()) === 0, 'a pull when the list is not at the bottom does not open the side chat')
     await pp.close()
@@ -1847,6 +1889,51 @@ async function main() {
   await sleep(2800)
   const va = calls().filter(c => c.answer === 'srv-approval-1')
   check(va.length === 1 && va[0].result && va[0].result.choice === 'once', `answered by voice (${JSON.stringify(va)})`)
+  // Over the lock screen (the shell calls hermesLockView): talking works, allowing asks for an unlock first, Deny goes
+  // through, the drawer asks for an unlock instead of opening, and ending Live mode puts the lock screen back.
+  {
+    await np.locator('.live-bar').getByRole('button', { name: 'End' }).click()
+    check(!(await np.evaluate(() => window.__nativeCalls)).includes('leaveLockScreen'), 'unlocked: ending Live mode does not touch the lock screen')
+    // Settings → default access Auto: a chat made over the lock screen must still ask (talking only).
+    await np.evaluate(() => localStorage.setItem('hm.defaultAccess.v1', 'auto'))
+    const yoloOn = () => rpcs('config.set').filter(r => r.params.key === 'yolo' && r.params.value === '1').length
+    const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto' && c.body && c.body.mode === 'auto').length
+    const yoloBefore = yoloOn()
+    const autoBefore = autoPuts()
+    await np.evaluate(() => window.hermesLockView(true))
+    const unlocks = () => np.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
+    const listens = await np.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
+    await np.evaluate(() => window.hermesShortcut('live'))
+    await np.waitForFunction(n => window.__nativeCalls.filter(c => c === 'startListening').length > n, listens, { timeout: 5000 })
+    await np.evaluate(() => window.__hmVoice('final', 'run the thing'))
+    await np.locator('.sheet .sheet-title', { hasText: 'Approve' }).waitFor({ timeout: 8000 }).catch(() => {})
+    await np.waitForFunction(() => (window.__spoken || []).filter(t => /Allow or deny/.test(t)).length >= 2, null, { timeout: 8000 }).catch(() => {})
+    await sleep(300)
+    await np.evaluate(() => window.__hmVoice('final', 'yes allow it'))
+    await sleep(2800)
+    check(yoloOn() === yoloBefore && autoPuts() === autoBefore, `locked: default Auto access is not applied to the Live chat (yolo on ${yoloOn() - yoloBefore}, auto PUTs ${autoPuts() - autoBefore})`)
+    check(calls().filter(c => c.answer === 'srv-approval-1').length === 1, 'locked: "allow" by voice is not sent')
+    check((await unlocks()) === 1, `locked: "allow" by voice asks for an unlock (${await unlocks()})`)
+    await np.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
+    await sleep(300)
+    check(calls().filter(c => c.answer === 'srv-approval-1').length === 1, 'locked: Allow once on the sheet is not sent')
+    check((await unlocks()) === 2, `locked: Allow once asks for an unlock (${await unlocks()})`)
+    await np.locator('.sheet').getByRole('button', { name: 'Deny' }).click()
+    await sleep(300)
+    const dn = calls().filter(c => c.answer === 'srv-approval-1')
+    check(dn.length === 2 && dn[1].result && dn[1].result.choice === 'deny', `locked: Deny goes through (${JSON.stringify(dn.slice(1))})`)
+    await np.getByRole('button', { name: /^Sessions/ }).click().catch(() => {})
+    await sleep(300)
+    check((await np.locator('.drawer.open, .drawer-open').count()) === 0 && (await unlocks()) === 3, `locked: the chat list asks for an unlock instead of opening (${await unlocks()})`)
+    check(await np.locator('.live-bar').count() === 1, 'locked: still talking in Live mode')
+    await np.locator('.live-bar').getByRole('button', { name: 'End' }).click()
+    await sleep(200)
+    check((await np.evaluate(() => window.__nativeCalls)).includes('leaveLockScreen'), 'locked: ending Live mode puts the lock screen back')
+    await np.evaluate(() => window.hermesLockView(false))
+    await np.evaluate(() => localStorage.removeItem('hm.defaultAccess.v1'))
+    await np.evaluate(() => window.hermesShortcut('live'))
+    await np.locator('.live-bar').waitFor({ timeout: 5000 }).catch(() => {})
+  }
   // A chat created by its first message tells the service it is on screen (returning to the app = seen).
   const seenNew = await np.evaluate(() => window.__seen || [])
   check(seenNew.some(id => /^s-new/.test(id)), `new chat reported on screen (${JSON.stringify(seenNew)})`)
@@ -1987,7 +2074,19 @@ async function main() {
   })
   await sleep(200)
   check(/On/.test((await ar.textContent()) || ''), `assistant row says On after returning (${await ar.textContent()})`)
+  // "Talk to Hermes on the lock screen": off by default, each change saved and pushed to the shell.
+  const lr = np.locator('.set-row', { hasText: 'Talk to Hermes on the lock screen' })
+  await lr.waitFor({ timeout: 5000 }).then(() => check(true, 'lock-screen row shown'), () => check(false, 'lock-screen row shown'))
+  check((await lr.getByRole('switch').getAttribute('aria-checked')) === 'false', 'lock-screen row is off by default')
+  check(/asks you to unlock first/.test((await np.locator('.set-section', { has: ar }).locator('.set-foot').textContent()) || ''), 'footer says the lock screen asks to unlock first')
+  await lr.click()
+  check((await lr.getByRole('switch').getAttribute('aria-checked')) === 'true', 'lock-screen row turns on')
+  check(JSON.stringify(await np.evaluate(() => window.__lockAssist)) === '[true]' && (await np.evaluate(() => localStorage.getItem('hm.lockAssist.v1'))) === '1', `on: pushed to the shell and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`)
+  await lr.click()
+  check(JSON.stringify(await np.evaluate(() => window.__lockAssist)) === '[true,false]' && (await np.evaluate(() => localStorage.getItem('hm.lockAssist.v1'))) === '0', `off again: pushed and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`)
+  await sleep(200)
   await np.evaluate(() => window.hermesBack())
+  await sleep(200)
   await np.evaluate(() => window.hermesBack())
 
   // ── setup check with the Android checks: ✗ items have buttons that ask the shell to fix them ──
@@ -2606,6 +2705,80 @@ async function main() {
   await cswipe('.msg.assistant p', 60, 200)
   await cvp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe right still opens the drawer with the canvas closed'), () => check(false, 'swipe right still opens the drawer with the canvas closed'))
   await cvp.close()
+  // A REAL finger: CDP touch events (browser-generated, with the scroller's own touch handling), not dispatched ones.
+  for (const [sid, what] of [['s-panel', 'chat with a canvas'], ['s-5', 'chat without one']]) {
+    const rctx = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
+    const rp = await rctx.newPage()
+    await rp.addInitScript(id => localStorage.setItem('hm.lastSession', JSON.stringify({ id, profile: 'default' })), sid)
+    await rp.goto('http://127.0.0.1:5180/')
+    await rp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(500)
+    const cdp = await rctx.newCDPSession(rp)
+    const finger = async (x0, y0, dx, dy, steps = 12) => {
+      const pt = (x, y) => [{ x, y, id: 1 }]
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(x0, y0) })
+      for (let i = 1; i <= steps; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x0 + (dx * i) / steps, y0 + (dy * i) / steps + (i % 3)) })
+        await sleep(16)
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    }
+    // Start the finger on plain text of a message when there is some (like reading), else on the chat itself.
+    const at = await rp.evaluate(() => {
+      const p = [...document.querySelectorAll('.msg.assistant p, .msg.user p, .msg .bubble')].find(e => e.textContent.trim().length > 5)
+      if (p) p.scrollIntoView({ block: 'center' })
+      const r = (p || document.querySelector('.chat')).getBoundingClientRect()
+      const x = Math.min(340, r.right - 10), y = r.top + Math.min(r.height / 2, 20)
+      const e = document.elementFromPoint(x, y)
+      return { x, y, on: e ? e.tagName + '.' + e.className : 'none', ws: (() => { const o = []; for (let n = e; n && n !== document.body; n = n.parentElement) if (n.scrollWidth > n.clientWidth + 2) o.push(n.tagName + '.' + n.className + ':' + getComputedStyle(n).overflowX); return o })() }
+    })
+    console.log(`  (real swipe starts on ${JSON.stringify(at)} in the ${what})`)
+    await finger(at.x, at.y, -240, 6)
+    await sleep(500)
+    check((await rp.locator('.canvas-panel').count()) === 1, `a real finger swiping left on a ${what} opens the canvas`)
+    await rctx.close()
+  }
+  // A chat whose text has long unbroken words (a URL, a path): the swipes must still work on plain text.
+  {
+    const rctx = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
+    const rp = await rctx.newPage()
+    await rp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-wide', profile: 'default' })))
+    await rp.goto('http://127.0.0.1:5180/')
+    await rp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(500)
+    const cdp = await rctx.newCDPSession(rp)
+    const finger = async (x0, y0, dx, dy, steps = 12) => {
+      const pt = (x, y) => [{ x, y, id: 1 }]
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(x0, y0) })
+      for (let i = 1; i <= steps; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x0 + (dx * i) / steps, y0 + (dy * i) / steps + (i % 3)) })
+        await sleep(16)
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    }
+    const at = await rp.evaluate(() => {
+      const p = [...document.querySelectorAll('.msg.assistant p')][0]
+      p.scrollIntoView({ block: 'center' })
+      const r = p.getBoundingClientRect()
+      const x = 200, y = r.top + 8
+      const e = document.elementFromPoint(x, y)
+      const ws = []
+      for (let n = e; n && n !== document.body; n = n.parentElement) {
+        const cs = getComputedStyle(n)
+        if (n.scrollWidth > n.clientWidth + 2) ws.push(`${n.tagName}.${n.className} ${n.scrollWidth}>${n.clientWidth} x=${cs.overflowX} y=${cs.overflowY}`)
+      }
+      return { x, y, on: e.tagName + '.' + e.className, ws }
+    })
+    console.log(`  (wide chat: swipe starts on ${JSON.stringify(at)})`)
+    await finger(at.x, at.y, -240, 6)
+    await sleep(500)
+    check((await rp.locator('.canvas-panel').count()) === 1, 'a real finger swiping left on plain text opens the canvas in a chat with long unbroken words')
+    if (await rp.locator('.canvas-panel').count()) { await rp.evaluate(() => window.hermesBack()); await sleep(500) }
+    await finger(at.x - 100, at.y, 240, 6)
+    await sleep(500)
+    check((await rp.locator('.drawer.open').count()) === 1, 'a real finger swiping right on plain text opens the drawer in a chat with long unbroken words')
+    await rctx.close()
+  }
   // Wide screens keep the canvas as a column beside the chat.
   const cvw = await browser.newPage({ viewport: { width: 1100, height: 800 } })
   await cvw.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
@@ -3180,6 +3353,21 @@ async function main() {
     await ff.close()
   }
   await mock({ configured: true, pluginEnabled: true })
+
+  // e. the flow at "Hermes can see and use the screen": Shizuku was started (the app sees it) but Termux can't use it yet.
+  // The page says so (not "isn't running") and moves on by itself once Hermes reaches Shizuku, with no return to the app.
+  await mock({ configured: true, pluginEnabled: true, phone: { files: true, shizuku: 'off' } })
+  {
+    const fs = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, shizuku: true, shizukuRunning: true })
+    await fs.goto('http://127.0.0.1:5180/')
+    const card = fs.locator('.flow-card', { hasText: 'Hermes can see and use the screen' })
+    await card.waitFor({ timeout: 15000 }).then(() => check(true, 'flow: Shizuku not reachable → opens at the Shizuku step'), () => check(false, 'flow: Shizuku not reachable → opens at the Shizuku step'))
+    const t = (await card.textContent().catch(() => '')) || ''
+    check(t.includes('Shizuku is running, but Termux can’t use it yet') && !t.includes('isn’t running'), `flow: the app sees Shizuku running → says Termux can't use it yet, not "isn't running" (${t.slice(0, 120)})`)
+    await mock({ phone: { files: true, shizuku: 'ok' } })
+    await card.waitFor({ state: 'detached', timeout: 12000 }).then(() => check(true, 'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'), () => check(false, 'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'))
+    await fs.close()
+  }
 
   // ── Shizuku row in the Backend status sheet ──
   {
