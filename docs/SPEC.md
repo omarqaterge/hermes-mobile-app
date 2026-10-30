@@ -1142,6 +1142,15 @@ Rendering rules:
 
 `web/src/components/Diff.tsx` `DiffView` draws a unified diff in a monospace block: green added lines, red removed lines, blue `@@` hunk headers, bold file-header lines (`diff --git`, `index`, `---`, `+++`, `a/… → b/…`), yellow lines starting with `!`, and dim meta lines (`┊…`, `\ No newline`). ANSI colour codes from Hermes's terminal diffs are stripped, the "┊ review diff" marker line is dropped, and output over 20,000 characters ends with "… (truncated)". `looksLikeDiff` decides whether plain text is a diff (a hunk or git header plus changed lines). The same view is used in tool cards, Markdown code blocks and the File checkpoints sheet.
 
+#### Changed files card
+
+`TurnChangesCard` (`web/src/components/Changes.tsx`, logic in `web/src/changes.ts`). When a turn (a user message and everything up to the next one) wrote files, a card follows its last item: "✎ 3 files changed" with the total `+A −B` (`.diffstat-add` green, `.diffstat-del` red) and a chevron. Only `write_file` and `patch` tools (`EDIT_TOOLS`) that ended `done` count; failed ones, other tools and tools without `args.path` are ignored. The last turn gets no card while the reply is still running.
+
+- **Tap the card head:** opens or closes the list: one `.turn-changes-row` per file (`shortPath`: `~/projects/site/a.txt`, long paths become `~/…/dir/name.ext`) with its own `+N −M`, then a **Checkpoints** button that opens the File checkpoints sheet (`sheet: 'rollback'`). A file edited several times is one row with the counts added up and the diffs joined in order (`diffCounts` counts `+`/`-` lines and skips `+++`/`---` headers; each file keeps at most `MAX_DIFF` = 200,000 characters of diff, then "… (truncated)").
+- **Tap a file row:** a sheet titled with the full path showing `DiffView` of its diffs, or "No diff recorded for this edit". Back closes it.
+- **Without a recorded diff** (older stored chats): `write_file` counts the lines of `args.content` as added and the row says "new or rewritten"; `patch` counts `old_string` lines as removed and `new_string` lines as added.
+- **In the list:** the card shares one child element of `.chat` (`div.turn-end`, or the `tool-run-wrap` of a folded run) with the item it follows, so search, jump and the scrubber still find items by child index; it stays visible when the run is folded. Not part of exports or read-aloud.
+
 #### Streaming
 
 Events from Hermes (`client.onEvent` in `gateway.ts`) reach the chat for the open chat only:
@@ -1387,7 +1396,7 @@ Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat
 **Rules:** the header dot uses only what the app needs (the gateway socket, the dashboard and storage components, critical memory or disk pressure). Messaging platforms Hermes may also run do not turn it amber.
 
 #### File checkpoints sheet
-**Opens from:** Chat menu → File checkpoints. **Closes with:** tap outside, drag down, Back (Back first leaves a snapshot view). **Source:** `web/src/components/Sheets.tsx` `RollbackSheet`; `web/src/checkpoints.ts`.
+**Opens from:** Chat menu → File checkpoints; the Checkpoints button of the changed files card (3.3). **Closes with:** tap outside, drag down, Back (Back first leaves a snapshot view). **Source:** `web/src/components/Sheets.tsx` `RollbackSheet`; `web/src/checkpoints.ts`.
 
 Hermes snapshots a folder before it edits a file there (once per turn). The plugin (`checkpoints.py`) records which snapshots this chat caused; the sheet lists them and can restore a folder or one file.
 
@@ -1472,6 +1481,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `Markdown.tsx` | Markdown renderer, code blocks, Mermaid, task lists, tables, link handling, sanitiser. |
 | `Media.tsx` | `Media`, `Lightbox`, `FileChip`, audio player. |
 | `Diff.tsx` | `DiffView`, `looksLikeDiff`, `stripAnsi`. |
+| `changes.ts` | Files a turn changed: `turnChanges`, `diffCounts`, `shortPath`, `EDIT_TOOLS`, `MAX_DIFF`. |
+| `Changes.tsx` | `TurnChangesCard`: the changed files card at the end of a turn (3.3). |
 | `Composer.tsx` | The composer. |
 | `QuoteBar.tsx` | `QuoteBar`: the Quote / Explain bar over the composer while a reply's text is selected. |
 | `quote.ts` | Quote helpers and state: `withQuotes`, `splitQuote`, `useQuotes`, `addQuote`, `removeQuote`, `clearQuotes`, `setQuotes`, `QUOTE_MAX`, `QUOTES_MAX`. |

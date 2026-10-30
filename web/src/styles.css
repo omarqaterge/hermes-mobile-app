@@ -3496,3 +3496,58 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .html-viewer .html-wrap { flex: 1; min-height: 0; }
 .html-viewer .html-frame { min-height: 0; }
 .html-viewer > .close { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 10px; width: 40px; height: 40px; border-radius: 20px; font-size: 1.1rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); }
+/* "N files changed" card at the end of a turn (components/Changes.tsx) */
+.turn-end {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.turn-changes {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  margin: 2px 0 6px;
+  overflow: hidden;
+}
+.turn-changes-head,
+.turn-changes-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+}
+.turn-changes-title {
+  flex: 1;
+}
+.turn-changes-list {
+  border-top: 1px solid var(--border);
+  padding: 0 0 8px;
+}
+.turn-changes-list .btn {
+  margin: 4px 12px 0;
+  width: calc(100% - 24px);
+}
+.turn-changes-path {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.diffstat {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.diffstat-add {
+  color: #2ea043;
+}
+.diffstat-del {
+  color: #f85149;
+}

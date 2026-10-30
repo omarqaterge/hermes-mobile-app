@@ -4,6 +4,10 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **See which files a turn changed.** When Hermes wrote or edited files, a card at the end of that turn says
+  `✎ 3 files changed  +42 −7`. Tap it for the files, each with its own counts; tap a file to see its diff. A
+  Checkpoints button opens the file checkpoints to undo. It also shows when the tool calls above it are folded.
+  Browser tests only; not yet on a real phone.
 - **Preview a web page or SVG right in the reply.** An `html` or `svg` code block of 3+ lines now has a Preview button
   (Code switches back). The page runs in the same offline sandbox as the canvas, starts 160 px high and grows to its
   own height (at most 60 % of the screen); a Full screen button below it opens it full size, and Back closes it. It is
