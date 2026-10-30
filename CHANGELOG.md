@@ -4,6 +4,11 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **See how long Hermes has been working, and the chat's goal.** The status line above the box now shows the running
+  turn's time (`1:23`) after three seconds, and it keeps counting from the real start when you reopen the chat. The
+  finished reply's stats gain the total (`~41 tok/s · 1m 23s · ctx 12%`). When the chat has a goal (`/goal`), a line
+  `🎯 Ship the login fix · turn 3 of 20 · active` sits under it; tap it for the goal's details with Pause/Resume and
+  Clear goal. The clock ticks only while a turn runs and the screen is on. Browser tests only; not yet on a real phone.
 - **See which files a turn changed.** When Hermes wrote or edited files, a card at the end of that turn says
   `✎ 3 files changed  +42 −7`. Tap it for the files, each with its own counts; tap a file to see its diff. A
   Checkpoints button opens the file checkpoints to undo. It also shows when the tool calls above it are folded.
