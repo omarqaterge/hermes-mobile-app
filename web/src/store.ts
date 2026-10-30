@@ -111,7 +111,7 @@ export interface Ctx {
   percent: number
 }
 
-export type Sheet = null | 'model' | 'commands' | 'session-actions' | 'chat-menu' | 'draft-menu' | 'status' | 'rollback'
+export type Sheet = null | 'model' | 'commands' | 'session-actions' | 'chat-menu' | 'draft-menu' | 'status' | 'rollback' | 'context'
 
 export type Screen = null | 'skills' | 'memory' | 'cron' | 'files' | 'projects' | 'settings' | 'bots' | 'setup' | 'hub' | 'welcome' | 'gallery'
 

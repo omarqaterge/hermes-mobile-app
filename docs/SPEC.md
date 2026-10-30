@@ -227,7 +227,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
      args, duration, summary, result text and inline diff; `tool.output_risk` flags a card. Canvas tool events
      also call `canvasWritingStarted`, `canvasCallStarted` and `canvasToolDone` (3.7).
    - `subagent.start|progress|thinking|tool|complete` keep one card per sub-agent; `todo.updated` sets the task
-     list; `session.usage` and `session.info` update the chat; `session.title` renames it.
+     list; `session.usage` and `session.info` update the chat (usage that carries `context_max` and `context_used` also updates `ctx` through `refreshCtx`, so the context ring moves during a long turn); `session.title` renames it.
    - `message.complete` drops leftover generating cards, puts the final text on the reply (`fullReply` keeps the
      streamed text unless the final one is longer and ends with it), adds an error notice on failure, hands the
      reply to Live mode or to auto read-aloud (only while the app is in front), sets `running: false`, and
@@ -878,6 +878,7 @@ flowchart TD
 | `draft-menu` | `Sheet` value, `DraftMenuSheet` | Chat options on the empty new-chat screen. | Same. | 3.5 |
 | `session-actions` | `Sheet` value, `SessionActionsSheet` ("Chat details") | Chat menu row Chat details. | Same. | 3.5 |
 | `status` | `Sheet` value, `StatusSheet` ("Backend status") | The status dot in the header; Settings row Status. | Same. | 3.5 |
+| `context` | `Sheet` value, `ContextSheet` ("Context window") | The context ring in the composer's model row. | Same. | 3.5 |
 | `rollback` | `Sheet` value, `RollbackSheet` ("File checkpoints") | Chat menu row File checkpoints. | Same. Inside it, Back first steps from a snapshot to the list. | 3.5 |
 | `commands` | `Sheet` value, `CommandsSheet` | No control sets it in the current code. The composer's "/" button opens the inline autocomplete instead (3.4). The sheet is still mounted by `App` if `sheet` is ever `commands`. | Same. | 3.5 |
 | Request sheet | `RequestSheet`, driven by `requests[0]` | Hermes asks (approval, question, password, code). | Only by answering (or Skip/Cancel). Not dismissible by tap or drag. | 3.6 |
@@ -1162,7 +1163,7 @@ Events from Hermes (`client.onEvent` in `gateway.ts`) reach the chat for the ope
 - `thinking.delta` / `status.update`: the status-bar text.
 - `reasoning.delta`, `message.delta`: appended to the open assistant item in batches (every 60 ms, every 150 ms once the reply is over 6000 characters), not per token, because every change reparses Markdown. Any other event flushes the batch first, so order never changes.
 - `tool.generating`, `tool.start`, `tool.complete`: the tool card appears when the call starts being written, becomes `running` at `tool.start`, `done` at `tool.complete`. A tool that streams under a generic name takes its real name at start. A replayed start for a card that already exists adds no second card. Starting a tool closes the open assistant segment, so text after tools is a new segment.
-- `todo.updated`, `session.usage`, `session.info`, `session.title`.
+- `todo.updated`, `session.usage` (also refreshes `ctx` without an RPC when the usage has `context_max` and `context_used`), `session.info`, `session.title`.
 - `message.complete`: tool cards still "generating" are dropped; errors become a notice; the final text fills a reply whose stream missed some (`fullReply`); the turn stats are computed (`finishTurnStats`, given the turn's seconds read before `turnStart` is cleared); `running` ends. Live mode and automatic read-aloud (Settings or chat menu, when the app is on screen) speak the reply here.
 - `review.summary`, `btw.complete`, `background.complete`: notices.
 - A silent connection is checked: every 15 s `gateway.ping`; after 45 s without any event during a turn the page asks `session.resume` whether the turn is still running and loads the stored transcript if it finished meanwhile.
@@ -1187,7 +1188,7 @@ The composer sits at the bottom of the chat (`web/src/components/Composer.tsx` `
 | Slash menu | Floating list above the composer: `/name`, a "skill" tag for skills, a one-line description. | Tap an item to insert `/name ` at the typed token (the text after the caret is kept). | Does not steal focus from the text box (`onMouseDown` is cancelled). | Shows "Loading commands…" until the catalog first arrives. Hidden when nothing matches. |
 | Attachment row | Photo thumbnails (with ✕), chips for files "📎 name" (with ✕), a chip "Attaching…" with a spinner while uploads run, and a small clear button when more than one item is queued. | ✕ (aria-label "Remove <name>") takes one item back out. clear removes all. | none | Hidden when nothing is attached or uploading. |
 | Live bar | Replaces the model row and hides the text box during Live mode: a coloured dot, "Live · Listening…" / "Hermes is thinking…" / "Hermes is speaking…" / "Mic muted", the words heard so far, or the hint "Pause for N s to send"; a mute button (aria-label Mute microphone / Unmute microphone) and End. | Mute toggles the microphone (replies are still read aloud). End stops Live mode. | none | Only while Live mode runs. Live mode itself is 3.11. |
-| Model row | A chip with a sparkle icon, the model's short name (text after the last `/`, or "Choose a model"), and the reasoning level (`med`, `min`, `off`, or the level's name). aria-label "Model: <name>. Change model". Beside it the "⚡ Full access" chip when a chat is in Full access. | Opens the Model sheet (3.5). The Full access chip turns Full access off. | none | Chip disabled while offline or a chat is opening. Hidden in Live mode and while the slash menu is open. |
+| Model row | A chip with a sparkle icon, the model's short name (text after the last `/`, or "Choose a model"), and the reasoning level (`med`, `min`, `off`, or the level's name). aria-label "Model: <name>. Change model". Beside it the "⚡ Full access" chip when a chat is in Full access. At the right end the context ring (`ContextRing`, `.ctx-ring`, 28 px tap target around an 18 px SVG circle `r = 7`): a track in `var(--dim)` and a fill in `var(--accent)` that is amber (`warn`) from 80 % and red (`full`) from 90 % (`ctxLevel`, `ringDash` in `ctxring.ts`). aria-label "Context 12% used. Show details". Shown whenever the chat's `ctx` is known (after the chat is opened or its first turn ends); a new chat has none. | Opens the Model sheet (3.5). The Full access chip turns Full access off. The ring opens the Context window sheet (`sheet: 'context'`). | none | Chip disabled while offline or a chat is opening. Hidden in Live mode and while the slash menu is open. |
 | Add button (aria-label Add) | `+` at the left of the text box. | Opens the picker "Add": a row with the current model (taps open the Model sheet), then Camera ("Take a picture now"), Photo ("From your gallery"), File ("PDF, document, spreadsheet, text, code… (up to 20 MB)"). | none | Disabled while offline or opening. |
 | Commands button (aria-label Commands) | `/` | Puts a `/` at the caret (with a space before it when the previous character is not whitespace) and focuses the box, which opens the slash menu. If a slash token is already open it only focuses. | none | Disabled while offline or opening. |
 | Text box | Multi-line field, grows with its content up to 180 px. Placeholder: "Message Hermes", "Steer the running task…" while a reply runs, "Opening your chat…" while a chat opens, or "Offline: type now, it sends when Hermes is back". | Typing. Enter inserts a new line. Ctrl+Enter or Cmd+Enter sends (hardware keyboard). | none | Never disabled: the user can always type. |
@@ -1376,6 +1377,11 @@ How picking works (`setModel` in `gateway.ts`):
 
 Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat's `cwd`), then when usage is known Tokens ("N in · M out"), Context ("N% used") and Cost (`$0.0000`), and Session id. Tapping the session id copies it (toast "Copied"). Missing values show "—". **Data:** `active.info` and `active.usage`.
 
+#### Context window sheet
+**Opens from:** the context ring in the composer's model row (`setState({ sheet: 'context' })`). **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ContextSheet`, `useCompress`.
+
+**Layout, top to bottom:** title "Context window"; a bar (`.ctx-bar`) filled to the percent (amber from 80 %, red from 90 %) and "N% used"; "12,345 of 128,000 tokens" (`toLocaleString()`), and "estimated by Hermes" when `usage.context_estimated`; when `usage` has them: "This chat so far: input N · output N", "Cost: $0.0123" (`cost_usd`, 4 decimals under $1 via `fmtCost`) and "Cache hits: 63%" (`cache_hit_pct`); the button "Compress older turns" (`session.compress` through `compressChat`, spinner while it runs, then a toast with the result). The button is disabled while a reply runs, with the note "Wait for the reply to finish". `useCompress` is the small hook (`{ busy, run }`) that `CompressHint` shares with this sheet.
+
 #### Backend status sheet
 **Opens from:** the header status dot; Settings → Status. **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `StatusSheet`.
 
@@ -1503,6 +1509,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `drafts.ts` | Unsent text per chat. |
 | `queue.ts` | Follow-ups queued while Hermes works: `queuedFor`, `enqueue`, `editQueued`, `removeQueued`, `takeFirst`, `restoreFirst`, `clearQueue`, `isPaused`, `setPaused`, `useQueue`, `QUEUE_MAX`; the pause is kept in memory only. |
 | `Queued.tsx` | `QueuedRows`: the dashed queued bubbles, Queue paused and Resume. |
+| `ctxring.ts` | Context ring logic: `ringDash` (stroke dash for a percent, clamped 0..100), `ctxLevel` (`ok`, `warn` from 80, `full` from 90), `fmtCost`. |
 | `scrub.ts` | Chat scrubber logic: `userMarks` (one `Mark` per user message), `nearestMark`, `currentMark`, `SCRUB_MIN`. |
 | `Scrubber.tsx` | `Scrubber`: the rail, ticks and picked-message bubble (3.2). |
 | `recent.ts` | Recent prompts. |

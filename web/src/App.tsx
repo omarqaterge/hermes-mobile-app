@@ -12,7 +12,7 @@ import { SCRUB_MIN, currentMark, userMarks } from './scrub'
 import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
 import { RequestSheet } from './components/RequestSheet'
-import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, GoalSheet, ModelSheet, RollbackSheet, SessionActionsSheet, StatusSheet } from './components/Sheets'
+import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { bannerItems, startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
 import { BtwSheet } from './components/Btw'
@@ -209,8 +209,8 @@ function CompressHint() {
   const pct = useStore(s => s.active?.ctx?.percent ?? 0)
   const id = useStore(s => s.active?.storedId ?? '')
   const running = useStore(s => s.active?.running ?? false)
-  const [busy, setBusy] = useState(false)
   const [, bump] = useState(0)
+  const { busy, run } = useCompress(() => compressDismissed.add(id))
   if (!id || pct < COMPRESS_AT || (running && !busy) || compressDismissed.has(id)) return null
   return (
     <div className="compress-hint">
@@ -220,16 +220,7 @@ function CompressHint() {
       <button
         className="btn compress-go"
         disabled={busy}
-        onClick={() => {
-          setBusy(true)
-          compressChat()
-            .then(t => toast(t))
-            .catch(e => toast(errText(e), 'error'))
-            .finally(() => {
-              compressDismissed.add(id)
-              setBusy(false)
-            })
-        }}
+        onClick={run}
       >
         {busy ? <Spinner small /> : 'Compress'}
       </button>
@@ -775,6 +766,7 @@ export function App() {
       {sheet === 'session-actions' && <SessionActionsSheet />}
       {sheet === 'status' && <StatusSheet />}
       {sheet === 'rollback' && <RollbackSheet />}
+      {sheet === 'context' && <ContextSheet />}
       {request && <RequestSheet key={request.id} req={request} />}
       <UninstallResume />
       <CanvasPanel />

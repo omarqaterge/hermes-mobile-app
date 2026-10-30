@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CommandsCatalogResult, GoalSnapshot, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
 import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, reasonLabel, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
-import { deleteSession, errText, goalAction, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
+import { deleteSession, compressChat, errText, goalAction, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
 import { openCanvas, useCanvas } from '../canvas'
 import { confirmDialog } from '../dialog'
 import { Title, keepBranch, plainTitle } from './Title'
@@ -21,6 +21,7 @@ import { useSheetDrag } from './useSheetDrag'
 import { DiffView } from './Diff'
 import { useBackHandler } from '../backstack'
 import { Spinner } from './Spinner'
+import { fmtCost } from '../ctxring'
 
 function Shell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
   const close = onClose ?? (() => setState({ sheet: null }))
@@ -788,6 +789,64 @@ export function GoalSheet({ goal, onClose }: { goal: GoalSnapshot; onClose: () =
             Clear goal
           </button>
         </div>
+      </div>
+    </Shell>
+  )
+}
+
+/** Compress older turns (session.compress), shared by the compress hint and the context sheet. `run` toasts the result; `onDone` runs afterwards. */
+export function useCompress(onDone?: () => void): { busy: boolean; run: () => void } {
+  const [busy, setBusy] = useState(false)
+  const run = () => {
+    if (busy) return
+    setBusy(true)
+    haptic()
+    compressChat()
+      .then(t => toast(t))
+      .catch(e => toast(errText(e), 'error'))
+      .finally(() => {
+        onDone?.()
+        setBusy(false)
+      })
+  }
+  return { busy, run }
+}
+
+/** The chat's context window: how full it is, what Hermes reports about tokens, cost and cache, and a Compress button. */
+export function ContextSheet() {
+  const ctx = useStore(s => s.active?.ctx)
+  const usage = useStore(s => s.active?.usage)
+  const running = useStore(s => s.active?.running ?? false)
+  const { busy, run } = useCompress()
+  const pct = ctx ? Math.min(100, Math.max(0, ctx.percent)) : 0
+  return (
+    <Shell title="Context window">
+      <div className="sheet-scroll">
+        {ctx ? (
+          <>
+            <div className="ctx-bar" role="img" aria-label={`${Math.round(pct)}% used`}>
+              <div className={`ctx-bar-fill ${pct >= 90 ? 'full' : pct >= 80 ? 'warn' : ''}`} style={{ width: `${pct}%` }} />
+            </div>
+            <div className="ctx-figures">{Math.round(pct)}% used</div>
+            <div>
+              {ctx.used.toLocaleString()} of {ctx.max.toLocaleString()} tokens
+            </div>
+            {usage?.context_estimated ? <div className="dim small">estimated by Hermes</div> : null}
+          </>
+        ) : (
+          <div className="dim">Nothing to show yet.</div>
+        )}
+        {usage && (usage.input != null || usage.output != null) ? (
+          <div className="ctx-row">
+            This chat so far: input {(usage.input ?? 0).toLocaleString()} · output {(usage.output ?? 0).toLocaleString()}
+          </div>
+        ) : null}
+        {usage?.cost_usd != null ? <div className="ctx-row">Cost: {fmtCost(usage.cost_usd)}</div> : null}
+        {usage?.cache_hit_pct != null ? <div className="ctx-row">Cache hits: {Math.round(usage.cache_hit_pct)}%</div> : null}
+        <button className="btn block ctx-compress" disabled={running || busy || !ctx} onClick={run}>
+          {busy ? <Spinner small /> : 'Compress older turns'}
+        </button>
+        {running ? <div className="dim small">Wait for the reply to finish</div> : null}
       </div>
     </Shell>
   )
