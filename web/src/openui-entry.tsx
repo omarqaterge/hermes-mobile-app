@@ -4,11 +4,54 @@
 // its own shadow root: the app's `.md` CSS can't leak in, and OpenUI's CSS stays out of the app.
 import { Component, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Renderer, type ActionEvent, type McpClientLike, type OpenUIError } from '@openuidev/react-lang'
+import { Renderer, createParser, type ActionEvent, type McpClientLike, type OpenUIError } from '@openuidev/react-lang'
 // The package root, not '@openuidev/react-ui/ThemeProvider': that deep path breaks under vitest's node ESM.
 import { ThemeProvider } from '@openuidev/react-ui'
 import css from '@openuidev/react-ui/components.css?inline'
-import { library } from './openui-lib'
+import { library as base } from './openui-lib'
+import { DatePicker } from './openui-date'
+
+// OpenUI's chat library, with its DatePicker replaced by openui-date.tsx's (a picked day failed "required").
+const library = base.extend!({ components: { override: [DatePicker] } })
+
+// A field bound to a $variable, Select("role", items, null, rules, $role), keeps its value in the card's variables
+// ($role), not under the form's field names, so the form's values would reach Hermes without it. Before a button's
+// action goes out, copy each such variable into its form's state under the field's name.
+const parser = createParser(library.toJSONSchema())
+type Node = { type?: string; typeName?: string; props?: Record<string, unknown> }
+function boundFields(code: string, formName: string): [string, string][] {
+  const out: [string, string][] = []
+  const walk = (n: unknown, inForm: boolean): void => {
+    if (Array.isArray(n)) return n.forEach(x => walk(x, inForm))
+    if (!n || typeof n !== 'object') return
+    const el = n as Node
+    if (el.type !== 'element' || !el.props) return
+    const here = inForm || (el.typeName === 'Form' && el.props.name === formName)
+    const v = el.props.value as { k?: string; n?: string } | undefined
+    if (here && typeof el.props.name === 'string' && v?.k === 'StateRef' && typeof v.n === 'string') out.push([el.props.name, v.n])
+    for (const c of Object.values(el.props)) walk(c, here)
+  }
+  try {
+    walk(parser.parse(code).root, false)
+  } catch {
+    /* unparsable code: nothing to add */
+  }
+  return out
+}
+export function withBoundValues(e: ActionEvent, code: string): ActionEvent {
+  const name = e.formName
+  const state = e.formState
+  if (!name || !state) return e
+  const form = { ...((state[name] as Record<string, unknown> | undefined) ?? {}) }
+  let changed = false
+  for (const [field, variable] of boundFields(code, name)) {
+    if (form[field] === undefined && state[variable] !== undefined) {
+      form[field] = { value: state[variable] }
+      changed = true
+    }
+  }
+  return changed ? { ...e, formState: { ...state, [name]: form } } : e
+}
 
 export interface BlockProps {
   code: string
@@ -68,7 +111,7 @@ function view(p: BlockProps, scope: string) {
           library={library}
           isStreaming={p.streaming}
           initialState={p.initialState}
-          onAction={p.onAction}
+          onAction={e => p.onAction(withBoundValues(e, p.code))}
           onStateUpdate={p.onState}
           onError={p.onErrors}
           toolProvider={p.toolProvider ?? null}
