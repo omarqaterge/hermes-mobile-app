@@ -10,7 +10,8 @@ User-facing changes, newest first. Each release section collects what shipped si
   then shows the request (or your typed text in the box). Deny, Stop and Clear stay one tap.
 - **New: Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen"** (off by default). Off: the assist
   button or gesture on a locked phone asks you to unlock before Live mode starts. On: Live mode opens over the lock
-  screen without unlocking, for talking only; allowing a command, answering a question or opening your chats asks
+  screen without unlocking, for talking only (Auto and Full access don't apply there: Hermes asks before
+  any risky command); allowing a command, answering a question or opening your chats asks
   you to unlock, and ending Live mode brings the lock screen back. Checked on Android 15 and Android 8 emulators;
   not yet on a real phone.
 - **Setup no longer gets stuck at "Hermes can see and use the screen (Shizuku)".** After you started Shizuku the page

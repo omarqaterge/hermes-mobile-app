@@ -1437,6 +1437,12 @@ async function main() {
   {
     await np.locator('.live-bar').getByRole('button', { name: 'End' }).click()
     check(!(await np.evaluate(() => window.__nativeCalls)).includes('leaveLockScreen'), 'unlocked: ending Live mode does not touch the lock screen')
+    // Settings → default access Auto: a chat made over the lock screen must still ask (talking only).
+    await np.evaluate(() => localStorage.setItem('hm.defaultAccess.v1', 'auto'))
+    const yoloOn = () => rpcs('config.set').filter(r => r.params.key === 'yolo' && r.params.value === '1').length
+    const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto' && c.body && c.body.mode === 'auto').length
+    const yoloBefore = yoloOn()
+    const autoBefore = autoPuts()
     await np.evaluate(() => window.hermesLockView(true))
     const unlocks = () => np.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
     const listens = await np.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
@@ -1448,6 +1454,7 @@ async function main() {
     await sleep(300)
     await np.evaluate(() => window.__hmVoice('final', 'yes allow it'))
     await sleep(2800)
+    check(yoloOn() === yoloBefore && autoPuts() === autoBefore, `locked: default Auto access is not applied to the Live chat (yolo on ${yoloOn() - yoloBefore}, auto PUTs ${autoPuts() - autoBefore})`)
     check(calls().filter(c => c.answer === 'srv-approval-1').length === 1, 'locked: "allow" by voice is not sent')
     check((await unlocks()) === 1, `locked: "allow" by voice asks for an unlock (${await unlocks()})`)
     await np.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
@@ -1466,6 +1473,7 @@ async function main() {
     await sleep(200)
     check((await np.evaluate(() => window.__nativeCalls)).includes('leaveLockScreen'), 'locked: ending Live mode puts the lock screen back')
     await np.evaluate(() => window.hermesLockView(false))
+    await np.evaluate(() => localStorage.removeItem('hm.defaultAccess.v1'))
     await np.evaluate(() => window.hermesShortcut('live'))
     await np.locator('.live-bar').waitFor({ timeout: 5000 }).catch(() => {})
   }
