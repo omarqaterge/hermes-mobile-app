@@ -48,6 +48,8 @@ Needs a build made with `HM_DEVTOOLS=1 android/build.sh` installed on the phone 
 
 Also check: the strip stays visible over Settings and other full screens, and a normal (non-`HM_DEVTOOLS`) build has no `webview_devtools_remote` socket.
 
+Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): the strip shows under the status bar and the socket is listed; a build of the same branch without `HM_DEVTOOLS` had no socket. Still to check: Playwright attaching, and the strip over full screens.
+
 ## Rare situations
 
 - [ ] **Expired login renewed from the model picker.** When a provider login expires, open the model picker on
