@@ -37,7 +37,7 @@ const nativeShell = () => {
         fetch('/__api' + p, { method: m, headers: b != null ? { 'Content-Type': 'application/json' } : undefined, body: b ?? undefined }).then(async r => window.__hmHttp(id, r.status, await r.text()))
       },
       isInForeground: key => (k(key, 'isInForeground'), true),
-      appVersion: key => (k(key, 'appVersion'), 'test'),
+      appVersion: key => (k(key, 'appVersion'), window.__appVersion || 'test'),
       isSystemDark: key => (k(key, 'isSystemDark'), true),
       setBackground: key => k(key, 'setBackground'),
       haptic: key => k(key, 'haptic'),
@@ -1763,6 +1763,26 @@ async function main() {
   check(nc.includes('getTokenAsync') && !nc.includes('getToken'), `token fetched asynchronously (${[...new Set(nc)].join(',')})`)
   check(rpcs('session.list').length > listsBefore, 'connected with it (session.list)')
   check(await np.evaluate(() => typeof window.HermesAndroid.handshake === 'undefined'), 'page only sees the key-adding wrapper')
+
+  // ── test build (plan 13): the strip shows when appVersion ends with +devtools, never on a normal page ──
+  {
+    const dv = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await dv.addInitScript(() => { window.__appVersion = '0.8.66+devtools' })
+    await dv.addInitScript(nativeShell)
+    await dv.goto('http://127.0.0.1:5180/')
+    await dv.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    const strip = dv.getByText('Test build: remote debugging is on')
+    check(await strip.isVisible(), 'devtools: a +devtools build shows the warning strip')
+    const box = await strip.boundingBox()
+    check(box && box.y < 40 && box.height > 0, 'devtools: the strip is at the top of the page')
+    await dv.getByRole('button', { name: /^Sessions/ }).click()
+    await dv.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await dv.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+    check(await strip.isVisible(), 'devtools: the strip stays visible over a full screen')
+    check((await dv.getByText('Test build: remote debugging is on').count()) === 1 && (await dv.locator('.devtools-strip button, .devtools-strip a').count()) === 0, 'devtools: one strip, nothing to dismiss')
+    await dv.close()
+    check((await np.getByText('Test build: remote debugging is on').count()) === 0, 'devtools: a normal page has no strip')
+  }
 
   // ── #33 Live mode: an approval is read out and answered by voice ──
   await np.evaluate(() => window.hermesShortcut('live'))

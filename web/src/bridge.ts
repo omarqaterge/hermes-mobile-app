@@ -374,6 +374,12 @@ export function appVersion(): string {
   return native?.appVersion() || 'web-dev'
 }
 
+/** True for a test build made with `HM_DEVTOOLS=1 android/build.sh`: its version name ends with `+devtools`
+ *  (WebView remote debugging is on; the page shows a warning strip). */
+export function isDevtoolsBuild(version: string): boolean {
+  return version.endsWith('+devtools')
+}
+
 /** Open a file with another Android app (via termux-open). Returns false outside the app. */
 export function openFile(path: string): boolean {
   if (native?.openFile) {

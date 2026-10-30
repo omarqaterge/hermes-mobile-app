@@ -2,6 +2,12 @@
 # Build the Hermes phone app without Gradle: aapt2 + javac + d8 + zipalign + apksigner.
 # Output: build/hermes-mobile.apk (signed with a local key in ~/.android/hermes-mobile.keystore, or $KEYSTORE).
 set -euo pipefail
+# A release build (KEYSTORE is the release key CI passes) must never carry WebView remote debugging. This check is
+# first, before any SDK check, so tools/test_devtools_guard.sh needs no Android SDK.
+if [ -n "${HM_DEVTOOLS:-}" ] && [ -n "${KEYSTORE:-}" ]; then
+  echo "refusing to build: HM_DEVTOOLS (WebView remote debugging) can't be combined with KEYSTORE (a release build)" >&2
+  exit 1
+fi
 cd "$(dirname "$0")"
 
 SDK="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
@@ -13,6 +19,8 @@ BT="$SDK/build-tools/35.0.0"
 ANDROID_JAR="$SDK/platforms/android-$COMPILE_PLATFORM/android.jar"
 VERSION_NAME="${VERSION_NAME:-0.1.0}"
 VERSION_CODE="${VERSION_CODE:-1}"
+DEVTOOLS=0
+if [ "${HM_DEVTOOLS:-}" = "1" ]; then DEVTOOLS=1; VERSION_NAME="$VERSION_NAME+devtools"; fi
 KS="${KEYSTORE:-$HOME/.android/hermes-mobile.keystore}"  # CI passes the release key here
 
 [ -f "$ANDROID_JAR" ] || { echo "missing $ANDROID_JAR (sdkmanager \"platforms;android-$COMPILE_PLATFORM\")"; exit 1; }
@@ -39,6 +47,15 @@ if [ -n "${HM_TEST_BOOTSTRAP_URL:-}" ]; then
   printf '<resources><string name="hm_test_bootstrap" translatable="false">%s</string></resources>\n' "$HM_TEST_BOOTSTRAP_URL" > build/res-test/values/test.xml
   "$BT/aapt2" compile --dir build/res-test -o build/res-test.zip
   RES_ZIPS+=(build/res-test.zip)
+fi
+# Test builds only: HM_DEVTOOLS=1 adds the string resource hm_devtools, which MainActivity.devtoolsBuild reads to turn on
+# WebView remote debugging, and "+devtools" on the version name, which makes the page show its warning strip.
+if [ "$DEVTOOLS" = 1 ]; then
+  echo "TEST BUILD: WebView remote debugging is on" >&2
+  mkdir -p build/res-devtools/values
+  printf '<resources><string name="hm_devtools" translatable="false">1</string></resources>\n' > build/res-devtools/values/devtools.xml
+  "$BT/aapt2" compile --dir build/res-devtools -o build/res-devtools.zip
+  RES_ZIPS+=(build/res-devtools.zip)
 fi
 "$BT/aapt2" link -I "$ANDROID_JAR" --manifest AndroidManifest.xml -A assets \
   --min-sdk-version 26 --target-sdk-version "$PLATFORM" \
