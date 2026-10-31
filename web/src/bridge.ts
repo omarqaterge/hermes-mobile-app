@@ -34,6 +34,9 @@ interface AndroidBridge {
   sharedItem?(index: number): string
   setLastChat?(id: string, title: string): void
   chatSeen?(id: string): void
+  openRemoteDebugging?(): void // asks the shell to show ITS OWN confirmation + the phone's screen lock; turns nothing on by itself
+  remoteDebuggingState?(): string // read-only JSON {available, on, minutesLeft}
+  turnOffRemoteDebugging?(): void // turning off is always allowed
   bgState?(): string // the background app Hermes drives (JSON without port/token) or ""
   bgFrameAsync?(id: number, maxW: number): void // answers window.__hmBgFrame(id, dataUrl | "")
   bgAction?(what: 'stop' | 'take_over'): string // "ok" or "error: …"
@@ -375,6 +378,38 @@ export function installUpdate(url: string): boolean {
 
 export function appVersion(): string {
   return native?.appVersion() || 'web-dev'
+}
+
+/** True for a test build made with `HM_DEVTOOLS=1 android/build.sh`: its version name ends with `+devtools`
+ *  (WebView remote debugging is on; the page shows a warning strip). */
+export function isDevtoolsBuild(version: string): boolean {
+  return version.endsWith('+devtools')
+}
+
+/** Settings → About → Remote debugging: the shell's state as JSON ("" outside the app). Read-only. */
+export function remoteDebuggingState(): string {
+  try {
+    return window.HermesAndroid?.remoteDebuggingState?.() || ''
+  } catch {
+    return ''
+  }
+}
+
+/** Ask the shell to open its own confirmation (native dialog, then the phone's screen lock). It cannot turn anything on itself. */
+export function openRemoteDebugging(): void {
+  try {
+    window.HermesAndroid?.openRemoteDebugging?.()
+  } catch {
+    /* outside the app */
+  }
+}
+
+export function turnOffRemoteDebugging(): void {
+  try {
+    window.HermesAndroid?.turnOffRemoteDebugging?.()
+  } catch {
+    /* outside the app */
+  }
 }
 
 /** Open a file with another Android app (via termux-open). Returns false outside the app. */

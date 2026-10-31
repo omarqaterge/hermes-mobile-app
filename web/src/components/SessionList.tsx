@@ -11,6 +11,7 @@ import { Title, keepBranch, plainTitle } from './Title'
 import { confirmDialog } from '../dialog'
 import { ago, lastActive } from '../unread'
 import { orderChats, recentIds } from '../chatorder'
+import { Chevron } from './ui'
 
 function dayLabel(ms?: number): string {
   if (!ms) return 'Older'
@@ -706,7 +707,7 @@ export function SessionList({ query }: { query: string }) {
         </button>
       )}
       <button className="archived-toggle" onClick={() => setArchivedOpen(v => !v)}>
-        🗄 Archived {archived ? `(${archived.length})` : ''} <span className="chev">{archivedOpen ? '▾' : '▸'}</span>
+        🗄 Archived {archived ? `(${archived.length})` : ''} <span className="chev"><Chevron open={archivedOpen} /></span>
       </button>
       {menu &&
         createPortal(

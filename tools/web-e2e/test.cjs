@@ -37,7 +37,7 @@ const nativeShell = () => {
         fetch('/__api' + p, { method: m, headers: b != null ? { 'Content-Type': 'application/json' } : undefined, body: b ?? undefined }).then(async r => window.__hmHttp(id, r.status, await r.text()))
       },
       isInForeground: key => (k(key, 'isInForeground'), true),
-      appVersion: key => (k(key, 'appVersion'), 'test'),
+      appVersion: key => (k(key, 'appVersion'), window.__appVersion || 'test'),
       isSystemDark: key => (k(key, 'isSystemDark'), true),
       setBackground: key => k(key, 'setBackground'),
       haptic: key => k(key, 'haptic'),
@@ -94,6 +94,10 @@ const nativeShell = () => {
         return true
       },
       setupProgress: key => (k(key, 'setupProgress'), window.__progress ? JSON.stringify(window.__progress) : ''),
+      // Settings → About → Remote debugging (plan 14): the test sets window.__rd; the calls are recorded in window.__rdCalls.
+      remoteDebuggingState: key => (k(key, 'remoteDebuggingState'), JSON.stringify(window.__rd || { available: false, on: false, minutesLeft: 0 })),
+      openRemoteDebugging: key => (k(key, 'openRemoteDebugging'), (window.__rdCalls ||= []).push('open')),
+      turnOffRemoteDebugging: key => (k(key, 'turnOffRemoteDebugging'), (window.__rdCalls ||= []).push('off'), (window.__rd = { ...window.__rd, on: false, minutesLeft: 0 }), setTimeout(() => window.dispatchEvent(new Event('hm-devtools')), 20)), // the shell tells the page, as DevTools.apply does
       listVoices: key => k(key, 'listVoices'),
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
@@ -190,6 +194,23 @@ async function main() {
   }
   // ── /yolo goes through config.set (in-process, like Desktop), never the slash worker ──
   await page.locator('.msg.assistant', { hasText: 'OK' }).first().waitFor({ timeout: 5000 })
+  // ── context ring: shows after the first turn, the sheet lists tokens, cost and cache hits ──
+  {
+    const ring = page.locator('.ctx-ring')
+    await ring.waitFor({ timeout: 5000 }).catch(() => {})
+    check((await ring.getAttribute('aria-label')) === 'Context 10% used. Show details', 'ring shows 10% after the first turn')
+    const box = await ring.boundingBox(), rowBox = await page.locator('.model-row').boundingBox()
+    check(box && rowBox && box.x + box.width <= rowBox.x + rowBox.width + 1 && box.x >= 0, 'ring sits inside the model row')
+    await ring.click()
+    const sheet = page.locator('.sheet', { hasText: 'Context window' })
+    await sheet.waitFor({ timeout: 3000 }).catch(() => {})
+    const txt = await sheet.innerText().catch(() => '')
+    check(txt.includes('100 of 1,000 tokens'), `context sheet shows tokens (${JSON.stringify(txt.slice(0, 120))})`)
+    check(txt.includes('Cost: $0.0123') && txt.includes('Cache hits: 63%') && txt.includes('input 1,200 · output 340'), 'context sheet shows cost, cache hits and token split')
+    await page.evaluate(() => window.hermesBack())
+    await sleep(300)
+    check((await page.locator('.sheet', { hasText: 'Context window' }).count()) === 0, 'Android Back closes the context sheet')
+  }
   await page.getByPlaceholder('Message Hermes').fill('/yolo')
   await page.getByRole('button', { name: 'Send' }).click()
   await sleep(500)
@@ -567,12 +588,33 @@ async function main() {
   check((await page.locator('.msg.assistant', { hasText: 'Streams are a sequence of' }).count()) === 1, 'reply so far is shown right away (before new deltas)')
   check((await page.locator('.msg.user .bubble', { hasText: 'Explain streams' }).count()) === 1, 'the running question shows once')
   check((await page.locator('.todos-head').innerText()).includes('1/2'), 'task list restored from todo_state')
+  check(/1:1[5-9]/.test(await page.locator('.status-line').innerText()), `status line shows the turn's elapsed time (${JSON.stringify(await page.locator('.status-line').innerText())})`)
+  check((await page.locator('.goal-line').count()) === 0, 'a chat without a goal shows no goal line')
   await sleep(1500)
   const replies = await page.locator('.msg.assistant').allInnerTexts()
   const last = replies[replies.length - 1]
   check(/^Streams are a sequence of values over time\./.test(last.trim()), `reply continues from the snapshot (${JSON.stringify(last.slice(0, 60))})`)
   check(replies.filter(r => r.includes('Streams are')).length === 1, 'no duplicate reply bubble')
   await page.screenshot({ path: path.join(SHOTS, 'hm-shot-inflight.png') })
+
+  // ── goal line: a chat with a goal shows it under the chat; the sheet pauses it ──
+  {
+    await page.evaluate(() => window.hermesOpenSession('s-goal'))
+    await page.locator('.goal-line').waitFor({ timeout: 5000 })
+    const line = await page.locator('.goal-line').innerText()
+    check(line.includes('Ship it') && line.includes('turn 3 of 20'), `goal line shows the goal and its turns (${JSON.stringify(line)})`)
+    await page.locator('.goal-line').click()
+    await page.locator('.sheet-title', { hasText: 'Goal' }).waitFor({ timeout: 3000 })
+    check(((await page.locator('.sheet').innerText()) || '').includes('Login works'), 'the goal sheet shows the contract outcome')
+    check((await page.locator('.sheet .kv').innerText()).includes('tests') || (await page.locator('.sheet').innerText()).includes('tests'), 'the goal sheet lists the subgoals')
+    await page.locator('.sheet').getByRole('button', { name: 'Pause', exact: true }).click()
+    await page.locator('.goal-line', { hasText: 'paused: by user' }).waitFor({ timeout: 3000 }).then(() => check(true, 'after Pause the goal line says paused: by user'), () => check(false, 'after Pause the goal line says paused: by user'))
+    check(rpcs('session.control').some(c => c.params.action === 'goal.pause'), 'Pause calls session.control with goal.pause')
+    check((await page.locator('.sheet').getByRole('button', { name: 'Resume', exact: true }).count()) === 1, 'a paused goal offers Resume')
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.locator('.sheet-backdrop').click({ position: { x: 5, y: 5 } })
+    await page.locator('.sheet').waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'tapping outside closes the goal sheet'), () => check(false, 'tapping outside closes the goal sheet'))
+  }
 
   // ── editing a message Hermes no longer holds, with later turns: never appended at the end ──
   fs.writeFileSync(LOG, '')
@@ -791,6 +833,32 @@ async function main() {
   const rs = rpcs('prompt.submit').pop()
   check(rs && rs.params.text === 'sent from the notification' && rs.params.session_id === 'rt-s-7', `reply goes to its own chat (${JSON.stringify(rs && rs.params)})`)
 
+  // ── Several questions at once: one at a time, a single-choice pick moves on by itself ──
+  await page.getByPlaceholder('Message Hermes').fill('ask me three')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.getByText('Question 1 of 3').waitFor({ timeout: 5000 })
+  check((await page.getByText('Colour?').count()) === 1 && (await page.getByText('Size?').count()) === 0, 'several questions: only the first is shown')
+  await page.locator('.sheet .choice', { hasText: 'Blue' }).click()
+  await page.getByText('Question 2 of 3').waitFor({ timeout: 1000 })
+  check((await page.getByText('Size?').count()) === 1, 'several questions: picking a choice moves to the next question by itself')
+  await page.locator('.sheet .choice', { hasText: 'M' }).click()
+  await page.getByText('Question 3 of 3').waitFor({ timeout: 1000 })
+  check(await page.locator('.sheet').getByRole('button', { name: 'Answer' }).isDisabled(), 'several questions: Answer waits for every question')
+  await page.locator('.sheet').getByRole('button', { name: 'Back', exact: true }).click()
+  await page.getByText('Question 2 of 3').waitFor({ timeout: 1000 })
+  check((await page.locator('.sheet .choice.on').innerText()).includes('M'), 'several questions: Back keeps the earlier choice')
+  await page.getByRole('button', { name: 'Go to question 3' }).click()
+  await page.getByPlaceholder('Your answer…').fill('none')
+  await page.evaluate(() => window.hermesBack())
+  await page.getByText('Question 2 of 3').waitFor({ timeout: 1000 })
+  check(true, 'several questions: Android Back steps to the previous question')
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await page.locator('.sheet').getByRole('button', { name: 'Answer' }).click()
+  await sleep(400)
+  const ans3 = calls().filter(c => c.answer === 'srv-clarify-3')
+  check(ans3.length === 1 && JSON.stringify(ans3[0].result) === JSON.stringify({ answers: { a: 'Blue', b: 'M', c: 'none' } }), `several questions answered together (${JSON.stringify(ans3)})`)
+  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 5000 })
+
   // ── A huge approval warning: buttons stay on screen, a repeated finding shows once with its count ──
   await page.getByPlaceholder('Message Hermes').fill('run the long thing')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
@@ -872,6 +940,45 @@ async function main() {
   await page.getByPlaceholder('Message Hermes').fill('show diagram')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant svg', { hasText: 'Start' }).first().waitFor({ timeout: 15000 }).then(() => check(true, 'diagram renders from the lazy Mermaid'), () => check(false, 'diagram renders from the lazy Mermaid'))
+
+  // ── Quote part of a reply into the composer ──
+  {
+    const selectIn = (sel, starts = '') => page.evaluate(([q, st]) => {
+      const el = [...document.querySelectorAll(q)].filter(e => e.firstChild?.nodeType === 3 && e.textContent.startsWith(st)).pop()
+      const t = el.firstChild
+      const r = document.createRange()
+      r.setStart(t, 0); r.setEnd(t, Math.min(4, t.length))
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r)
+    }, [sel, starts])
+    await selectIn('.msg.user .bubble')
+    await sleep(300)
+    check((await page.locator('.quote-bar').count()) === 0, 'quote: no bar for a selection in your own bubble')
+    await selectIn('.msg.assistant .md > p')
+    await page.locator('.quote-bar').waitFor({ timeout: 3000 }).catch(() => {})
+    check((await page.locator('.quote-bar').count()) === 1, 'quote: the bar shows for a selection in a reply')
+    await page.getByRole('button', { name: 'Quote', exact: true }).click()
+    check((await page.locator('.quote-chip').count()) === 1, 'quote: Quote adds a chip above the composer')
+    check((await page.locator('.quote-bar').count()) === 0, 'quote: the bar hides after Quote')
+    await page.getByRole('button', { name: 'Remove quote' }).click()
+    check((await page.locator('.quote-chip').count()) === 0, 'quote: ✕ removes the chip')
+    await selectIn('.msg.assistant .md > p')
+    await page.getByRole('button', { name: 'Quote', exact: true }).click()
+    await page.getByPlaceholder('Ask about the quote…').fill('why?')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await page.locator('.msg.user .msg-quote').last().waitFor({ timeout: 5000 }).catch(() => {})
+    const qs = rpcs('prompt.submit').pop()?.params.text
+    check(qs === '> Flow\n\nwhy?', `quote: the sent text is a blockquote then the message (${JSON.stringify(qs)})`)
+    check((await page.locator('.msg.user .msg-quote').count()) >= 1, 'quote: the user bubble shows a .msg-quote')
+    check((await page.locator('.quote-chip').count()) === 0, 'quote: the chip is gone after sending')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+    await selectIn('.msg.assistant .md > p', 'Flow')
+    const n = rpcs('prompt.submit').length
+    await page.getByRole('button', { name: 'Explain', exact: true }).click()
+    for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
+    const ex = rpcs('prompt.submit').pop()?.params.text
+    check(/^> \S.*\n\nExplain this\.$/.test(ex || ''), `quote: Explain sends the quote then "Explain this." (${JSON.stringify(ex)})`)
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+  }
 
   // ── OpenUI: ```openui-lang blocks render as cards from the lazy bundle; buttons and forms answer ──
   check(await page.evaluate(() => document.getElementById('hm-openui')?.type === 'text/hm-lazy' && !window.__hmOpenUI), 'OpenUI not run at start')
@@ -956,6 +1063,52 @@ async function main() {
     await idle()
   }
 
+  // ── HTML preview inside replies ──
+  {
+    const idle = () => page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+    await page.getByPlaceholder('Message Hermes').fill('show html streaming')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const pb = page.locator('.msg.assistant .codeblock').last().getByRole('button', { name: 'Preview', exact: true })
+    await pb.waitFor({ timeout: 10000 }).catch(() => {})
+    check((await pb.count()) === 1 && (await pb.isDisabled()), 'html preview: Preview is disabled while the reply streams')
+    await idle()
+    await page.getByPlaceholder('Message Hermes').fill('show html')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const blk = page.locator('.msg.assistant .codeblock').last()
+    await blk.getByRole('button', { name: 'Preview', exact: true }).waitFor({ timeout: 10000 })
+    await idle()
+    check(await blk.getByRole('button', { name: 'Preview', exact: true }).isEnabled(), 'html preview: Preview is enabled once the reply is complete')
+    await blk.getByRole('button', { name: 'Preview', exact: true }).click()
+    const fr = blk.locator('iframe.inline-frame')
+    await fr.waitFor({ timeout: 5000 })
+    check(!((await fr.getAttribute('sandbox')) || '').includes('allow-same-origin') && !((await fr.getAttribute('sandbox')) || '').includes('allow-top-navigation'), 'html preview: the sandbox has no allow-same-origin or allow-top-navigation')
+    const inner = page.frameLocator('iframe.inline-frame').last()
+    await inner.locator('#t').getByText('Hello frame ok').waitFor({ timeout: 5000 }).then(() => check(true, 'html preview: the page ran its script'), () => check(false, 'html preview: the page ran its script'))
+    let hh = 0
+    for (let i = 0; i < 30; i++) {
+      hh = (await fr.boundingBox())?.height || 0
+      if (hh > 200) break
+      await sleep(100)
+    }
+    const vh = await page.evaluate(() => innerHeight)
+    check(hh > 160 && hh <= vh * 0.6 + 1, `html preview: the frame grew to its page, capped at 60% of the window (${hh} of ${vh})`)
+    const rootFrame = page.frames().find(f => f !== page.mainFrame() && f.parentFrame() === page.mainFrame() && f.url() === 'about:srcdoc')
+    check(!!rootFrame && (await rootFrame.evaluate(() => typeof window.HermesAndroid)) === 'undefined', 'html preview: window.HermesAndroid is undefined inside the frame')
+    check(!!rootFrame && (await rootFrame.evaluate(() => fetch('http://127.0.0.1:9119/api/status').then(() => 'ok', () => 'blocked'))) === 'blocked', 'html preview: fetch() from the inline frame is blocked (offline CSP)')
+    await blk.getByRole('button', { name: 'Open preview full screen' }).click()
+    await page.locator('.html-viewer iframe').waitFor({ timeout: 3000 })
+    check((await page.locator('.html-viewer[role=dialog]').count()) === 1, 'html preview: Full screen opens the viewer')
+    await page.locator('.html-viewer').getByRole('button', { name: 'Close preview' }).click()
+    check((await page.locator('.html-viewer').count()) === 0, 'html preview: ✕ closes the viewer')
+    await blk.getByRole('button', { name: 'Open preview full screen' }).click()
+    await page.locator('.html-viewer').waitFor({ timeout: 3000 })
+    await page.evaluate(() => window.hermesBack())
+    await sleep(200)
+    check((await page.locator('.html-viewer').count()) === 0, 'html preview: Android Back closes the viewer')
+    await blk.getByRole('button', { name: 'Code', exact: true }).click()
+    check((await blk.locator('iframe').count()) === 0 && (await blk.locator('pre').count()) === 1, 'html preview: Code switches back to the source')
+  }
+
   // ── tool calls fold into one "Ran N tools" line; tap opens them ──
   await page.getByPlaceholder('Message Hermes').fill('use tools')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
@@ -968,6 +1121,63 @@ async function main() {
   check((await visibleCards()) === 4, `tap shows all four (${await visibleCards()})`)
   await run.click()
   check((await visibleCards()) === 0, 'tap again folds them')
+
+  // ── motion: tool card bodies slide open and closed; the phone's reduced-motion setting skips it ──
+  await run.click()
+  const card0 = page.locator('.tool:visible', { hasText: /step 0/ }).first()
+  await card0.locator('.tool-head').click()
+  await card0.locator('.tool-body').waitFor({ timeout: 3000 }).then(() => check(true, 'motion: the tool body appears'), () => check(false, 'motion: the tool body appears'))
+  await sleep(350)
+  check((await card0.locator('.tool-head').getAttribute('aria-expanded')) === 'true' && (await card0.locator('.collapse').evaluate(e => e.style.overflow)) === '', 'motion: at rest the open body is not clipped')
+  await card0.locator('.tool-head').click()
+  check((await card0.locator('.tool-body').count()) === 1, 'motion: the body is still there right after closing')
+  await sleep(400)
+  check((await card0.locator('.tool-body').count()) === 0, 'motion: the body is gone after the close animation')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await card0.locator('.tool-head').click()
+  await card0.locator('.tool-body').waitFor({ timeout: 3000 })
+  await card0.locator('.tool-head').click()
+  await sleep(50)
+  check((await card0.locator('.tool-body').count()) === 0, 'motion: reduced motion closes the body at once')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await run.click()
+
+  check((await page.locator('.turn-changes').count()) === 0, 'a turn with only terminal tools has no changes card')
+
+  // ── a turn that wrote files ends with a card listing them; tap a file for its diff ──
+  await page.getByPlaceholder('Message Hermes').fill('edit files')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'Edited.' }).waitFor({ timeout: 5000 })
+  const tc = page.locator('.turn-changes')
+  await tc.waitFor({ timeout: 5000 })
+  check(((await tc.textContent()) || '').includes('2 files changed') && ((await tc.textContent()) || '').includes('+3 −1'), `changes card totals (${await tc.textContent()})`)
+  check(await page.evaluate(() => { const w = document.querySelector('.turn-changes').closest('.chat > *'); return !!w && !!w.querySelector('.msg.assistant') && w.textContent.includes('Edited.') }), 'the card sits in the same child element as the last item')
+  await tc.locator('.turn-changes-head').click()
+  const rows = tc.locator('.turn-changes-row')
+  check((await rows.count()) === 2, 'two file rows')
+  const rowText = async i => ((await rows.nth(i).textContent()) || '').replace(/\s+/g, ' ')
+  check((await rowText(0)).includes('a.txt') && (await rowText(0)).includes('+2 −0'), `row a.txt (${await rowText(0)})`)
+  check((await rowText(1)).includes('b.txt') && (await rowText(1)).includes('+1 −1'), `row b.txt (${await rowText(1)})`)
+  await rows.nth(1).click()
+  await page.locator('.sheet-title', { hasText: '/root/projects/site/b.txt' }).waitFor({ timeout: 3000 }).then(() => check(true, 'file sheet titled with the path'), () => check(false, 'file sheet titled with the path'))
+  check((await page.locator('.sheet .diff-view .dl', { hasText: 'new' }).count()) >= 1, 'file sheet shows the diff')
+  await page.evaluate(() => window.hermesBack())
+  await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 3000 }).then(() => check(true, 'Back closes the file sheet'), () => check(false, 'Back closes the file sheet'))
+  await tc.getByRole('button', { name: 'Checkpoints' }).click()
+  await page.locator('.sheet-title', { hasText: 'File checkpoints' }).waitFor({ timeout: 3000 }).then(() => check(true, 'Checkpoints opens the file checkpoints sheet'), () => check(false, 'Checkpoints opens the file checkpoints sheet'))
+  await page.evaluate(() => window.hermesBack())
+  // Search still lands on the message that carries the card (scroll away first).
+  await page.evaluate(() => { document.querySelector('.chat').scrollTop = 0 })
+  await page.locator('header.topbar').getByRole('button', { name: 'Chat options' }).click()
+  await page.locator('.menu-item', { hasText: 'Search in chat' }).click()
+  await page.locator('.findbar input').fill('Edited.')
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.chat'), m = [...document.querySelectorAll('.chat .msg.assistant')].find(x => x.textContent.includes('Edited.'))
+    if (!el || !m) return false
+    const r = m.getBoundingClientRect(), v = el.getBoundingClientRect()
+    return r.bottom > v.top && r.top < v.bottom
+  }, null, { timeout: 4000 }).then(() => check(true, 'search finds a reply that has a changes card'), () => check(false, 'search finds a reply that has a changes card'))
+  await page.getByRole('button', { name: 'Close search' }).click()
 
   // ── web addresses in plain text open with the phone's default handler (window.open in a browser) ──
   await page.getByPlaceholder('Message Hermes').fill('see https://example.com/b')
@@ -1012,12 +1222,104 @@ async function main() {
   await sleep(3500)
   check(calls().slice(endMark).some(c => c.path === '/api/plugins/hermes-mobile/activity'), 'activity polled once right after the turn (the review starts then)')
 
+  // ── queue: a follow-up typed while Hermes works waits as a dashed bubble and is sent when the reply ends ──
+  {
+    const box = page.locator('.composer textarea')
+    const sends = text => rpcs('prompt.submit').filter(c => c.params.text === text).length
+    const steers = text => rpcs('session.steer').filter(c => c.params.text === text).length
+    const doneCount = async t => page.locator('.msg.assistant', { hasText: t }).count()
+    const startSlow = async () => {
+      await box.fill('slow reply')
+      await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+      await page.locator('.composer .send.queue, .composer .send.stop').first().waitFor({ timeout: 3000 })
+    }
+    const queueText = async t => {
+      await box.fill(t)
+      await page.locator('.composer').getByRole('button', { name: 'Queue', exact: true }).click()
+    }
+    // 1 + 2: queue one, it waits, then it is sent when the reply ends
+    const slow0 = await doneCount('Slow done.')
+    await startSlow()
+    await box.fill('next one')
+    check((await page.locator('.composer').getByRole('button', { name: 'Steer', exact: true }).count()) === 1 && (await page.locator('.composer').getByRole('button', { name: 'Queue', exact: true }).count()) === 1, 'running with text: Queue and Steer buttons')
+    check(((await box.getAttribute('placeholder')) || '') === 'Queue or steer a follow-up…', 'running: the placeholder offers Queue or steer')
+    await page.locator('.composer').getByRole('button', { name: 'Queue', exact: true }).click()
+    await page.locator('.queued-msg', { hasText: 'next one' }).waitFor({ timeout: 3000 }).then(() => check(true, 'queued message shows as a dashed bubble'), () => check(false, 'queued message shows as a dashed bubble'))
+    check(((await page.locator('.queued-head').first().textContent()) || '').includes('Queued · 1 of 1'), 'the bubble says Queued · 1 of 1')
+    check((await box.inputValue()) === '', 'queueing clears the box')
+    check(sends('next one') === 0 && steers('next one') === 0, 'nothing is sent while the reply runs')
+    await page.locator('.msg.assistant', { hasText: 'Queued next one done.' }).waitFor({ timeout: 6000 }).then(() => check(true, 'the queued message is sent by itself when the reply ends'), () => check(false, 'the queued message is sent by itself when the reply ends'))
+    check(sends('next one') === 1 && steers('next one') === 0, `exactly one prompt.submit with the queued text (${sends('next one')})`)
+    check((await page.locator('.queued-msg').count()) === 0, 'the bubble is gone after sending')
+    check((await doneCount('Slow done.')) === slow0 + 1, 'the slow reply finished first')
+    {
+      const meta = await page.locator('.msg.assistant', { hasText: 'Slow done.' }).first().locator('.msg-meta').innerText().catch(() => '')
+      check(/ \d\.\ds/.test(' ' + meta) || /\b1s\b/.test(meta), `the reply's meta carries the turn's duration (${JSON.stringify(meta)})`)
+    }
+
+    // 3: remove one, edit another; only the edited one is sent
+    await startSlow()
+    await queueText('a')
+    await queueText('b')
+    check(((await page.locator('.queued-head').last().textContent()) || '').includes('2 of 2'), 'two queued bubbles: 1 of 2, 2 of 2')
+    await page.locator('.queued-msg', { hasText: 'Queued · 1 of 2' }).getByRole('button', { name: 'Remove queued message' }).click()
+    await page.locator('.queued-msg', { hasText: 'Queued · 1 of 1' }).getByRole('button', { name: 'Edit queued message' }).click()
+    await page.locator('.queued-msg .edit-box').fill('c')
+    await page.locator('.queued-msg').getByRole('button', { name: 'Save' }).click()
+    check((await page.locator('.queued-msg .bubble', { hasText: /^c$/ }).count()) === 1, 'Edit and Save change the queued text')
+    await page.locator('.msg.assistant', { hasText: 'Queued c done.' }).waitFor({ timeout: 6000 }).then(() => check(true, 'the edited message is sent'), () => check(false, 'the edited message is sent'))
+    check(sends('c') === 1 && sends('a') === 0 && sends('b') === 0, `only the edited message was sent (c=${sends('c')} a=${sends('a')} b=${sends('b')})`)
+
+    // 4: Stop pauses the queue; Resume sends it
+    await startSlow()
+    await queueText('d')
+    await page.locator('.composer').getByRole('button', { name: 'Stop', exact: true }).click()
+    await page.getByText('Queue paused').waitFor({ timeout: 4000 }).then(() => check(true, 'Stop pauses the queue (Queue paused)'), () => check(false, 'Stop pauses the queue (Queue paused)'))
+    await sleep(600)
+    check(sends('d') === 0 && (await page.locator('.queued-msg', { hasText: 'd' }).count()) === 1, 'a paused queue sends nothing and keeps the bubble')
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await page.locator('.msg.assistant', { hasText: 'Queued d done.' }).waitFor({ timeout: 4000 }).then(() => check(true, 'Resume sends the queued message'), () => check(false, 'Resume sends the queued message'))
+    check(sends('d') === 1 && (await page.locator('.queued-msg').count()) === 0, 'Resume: one prompt.submit, bubble gone')
+
+    // 5: Steer still works, and Send now steers the queued message
+    await startSlow()
+    await box.fill('steer me')
+    await page.locator('.composer').getByRole('button', { name: 'Steer', exact: true }).click()
+    await sleep(300)
+    check(steers('steer me') === 1, 'Steer calls session.steer')
+    await queueText('later')
+    await page.locator('.queued-msg', { hasText: 'later' }).getByRole('button', { name: 'Send queued message now' }).click()
+    await sleep(300)
+    check(steers('later') === 1 && (await page.locator('.queued-msg').count()) === 0, 'Send now steers the queued message and removes it')
+    await page.locator('.msg.assistant', { hasText: 'Slow done.' }).nth(slow0 + 2).waitFor({ timeout: 6000 }).catch(() => {})
+    await page.locator('.composer').getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 4000 }).catch(() => {})
+
+    // 6: a queue survives a reload and opens paused
+    await startSlow()
+    await queueText('e')
+    await page.reload()
+    await page.locator('.queued-msg', { hasText: 'e' }).waitFor({ timeout: 8000 }).then(() => check(true, 'the queue survives a reload'), () => check(false, 'the queue survives a reload'))
+    check((await page.getByText('Queue paused').count()) === 1, 'after a reload the queue is paused')
+    await sleep(500)
+    check(sends('e') === 0, 'nothing is sent by surprise when the chat opens')
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await page.locator('.msg.assistant', { hasText: 'Queued e done.' }).waitFor({ timeout: 6000 }).then(() => check(true, 'Resume after a reload sends it'), () => check(false, 'Resume after a reload sends it'))
+  }
+
   // ── the model Hermes reports sits above the composer; tap opens the picker ──
   const chip = page.locator('.model-chip')
   check(((await chip.textContent()) || '').includes('mock-model'), `model chip shows the chat's model (${await chip.textContent()})`)
   await chip.click()
   await page.locator('.sheet', { hasText: 'mock-sonnet' }).first().waitFor({ timeout: 3000 }).then(() => check(true, 'chip opens the model picker'), () => check(false, 'chip opens the model picker'))
   await page.evaluate(() => window.hermesBack())
+  {
+    const lbl = (await chip.getAttribute('aria-label')) || ''
+    const m = /^Model: .*, reasoning (\w+)\. Change model$/.exec(lbl)
+    const want = { minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5 }[m ? m[1] : '']
+    check(!!m && !!want, `motion: the chip's label names the reasoning level (${lbl})`)
+    check((await chip.locator('.effort-bars').count()) === 1 && (await chip.locator('.effort-bar').count()) === 5, 'motion: the chip draws five effort bars')
+    check((await chip.locator('.effort-bar.on').count()) === want, `motion: ${want} bars are filled`)
+  }
 
   // ── canvas: a long canvas call opens the panel on a "writing" state, then shows the document ──
   await page.getByPlaceholder('Message Hermes').fill('write canvas')
@@ -1111,6 +1413,19 @@ async function main() {
   check(rpcs('session.compress').some(r => r.params.session_id === 'rt-s-full'), 'session.compress sent for the open chat')
   await sleep(300)
   check((await hint.count()) === 0, 'hint gone afterwards')
+  // the ring for the 20% left after compressing; then force 85% again via the other route: reopen the chat
+  await page.evaluate(() => window.hermesOpenSession('s-8'))
+  await page.evaluate(() => window.hermesOpenSession('s-full'))
+  await page.locator('.ctx-ring.warn').waitFor({ timeout: 5000 }).then(() => check(true, 'ring turns amber at 85%'), () => check(false, 'ring turns amber at 85%'))
+  {
+    const before = rpcs('session.compress').length
+    await page.locator('.ctx-ring').click()
+    await page.locator('.sheet', { hasText: 'Context window' }).getByRole('button', { name: 'Compress older turns' }).click()
+    await page.locator('.toast', { hasText: 'Context compressed' }).waitFor({ timeout: 5000 }).then(() => check(true, 'sheet Compress toasts the result'), () => check(false, 'sheet Compress toasts the result'))
+    check(rpcs('session.compress').length === before + 1, 'sheet Compress sends session.compress')
+    await page.evaluate(() => window.hermesBack())
+    await sleep(300)
+  }
   await page.evaluate(() => window.hermesOpenSession('s-8'))
   await page.locator('.msg.assistant', { hasText: 'answer s-8' }).waitFor({ timeout: 5000 })
   check((await hint.count()) === 0, 'no hint at 10%')
@@ -1178,6 +1493,43 @@ async function main() {
   await page.evaluate(() => window.hermesBack())
   await sleep(200)
   check((await page.locator('.hub-card').count()) === 0, 'Back again closes the hub')
+
+  // ── Files previews: table, code, page, player, and the note for files with no preview ──
+  await page.getByRole('button', { name: /^Sessions/ }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: 'Files' }).click()
+  // Android Back closes the open preview sheet; wait until it is gone before the next tap.
+  const closeSheet = async () => {
+    await page.evaluate(() => window.hermesBack())
+    await page.locator('.sheet').waitFor({ state: 'detached', timeout: 5000 })
+  }
+  const fileReads = name => calls().filter(c => c.path === '/api/files/read' && decodeURIComponent(c.query).endsWith('/' + name)).length
+  await page.locator('.file-row', { hasText: 'table.csv' }).click()
+  await page.locator('.sheet table td', { hasText: /^2$/ }).waitFor({ timeout: 5000 }).then(() => check(true, 'Files: a csv shows as a table with its cell'), () => check(false, 'Files: a csv shows as a table with its cell'))
+  await closeSheet()
+  await page.locator('.file-row', { hasText: 'code.py' }).click()
+  await page.locator('.sheet code.hljs, .sheet .hljs').first().waitFor({ timeout: 5000 }).then(() => check(true, 'Files: python code is highlighted'), () => check(false, 'Files: python code is highlighted'))
+  await closeSheet()
+  await page.locator('.file-row', { hasText: 'page.html' }).click()
+  await page.locator('.sheet iframe').waitFor({ timeout: 5000 })
+  await page.frameLocator('.sheet iframe').locator('h1', { hasText: 'Hi' }).waitFor({ timeout: 5000 }).then(() => check(true, 'Files: an html file runs in a frame showing its content'), () => check(false, 'Files: an html file runs in a frame showing its content'))
+  const sb = (await page.locator('.sheet iframe').getAttribute('sandbox')) || ''
+  check(sb.includes('allow-scripts') && !sb.includes('allow-same-origin'), `Files: the page frame is sandboxed without allow-same-origin (${sb})`)
+  await closeSheet()
+  await page.locator('.file-row', { hasText: 'song.mp3' }).click()
+  await page.locator('.sheet audio').waitFor({ state: 'attached', timeout: 5000 }).then(() => check(true, 'Files: an mp3 shows a player'), () => check(false, 'Files: an mp3 shows a player'))
+  check(fileReads('song.mp3') === 0, 'Files: the mp3 was never read through /api/files/read')
+  await closeSheet()
+  await page.locator('.file-row', { hasText: 'doc.pdf' }).click()
+  await page.locator('.sheet', { hasText: 'No preview here. Use Open with… to view it in another app.' }).waitFor({ timeout: 5000 }).then(() => check(true, 'Files: a pdf says there is no preview'), () => check(false, 'Files: a pdf says there is no preview'))
+  check((await page.locator('.sheet button', { hasText: 'Open with…' }).count()) === 1, 'Files: the pdf sheet keeps Open with…')
+  check(fileReads('doc.pdf') === 0, 'Files: the pdf was not read')
+  await closeSheet()
+  // Back out of Files (at its root chip) and then out of the hub, waiting for each to close.
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.crumbs').waitFor({ state: 'detached', timeout: 5000 })
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('.hub-card').first().waitFor({ state: 'detached', timeout: 5000 })
 
   // ── #22 Projects: tap a chat to open it ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
@@ -1457,6 +1809,73 @@ async function main() {
   check(nc.includes('getTokenAsync') && !nc.includes('getToken'), `token fetched asynchronously (${[...new Set(nc)].join(',')})`)
   check(rpcs('session.list').length > listsBefore, 'connected with it (session.list)')
   check(await np.evaluate(() => typeof window.HermesAndroid.handshake === 'undefined'), 'page only sees the key-adding wrapper')
+
+  // ── test build (plan 13): the strip shows when appVersion ends with +devtools, never on a normal page ──
+  {
+    const dv = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await dv.addInitScript(() => { window.__appVersion = '0.8.66+devtools' })
+    await dv.addInitScript(nativeShell)
+    await dv.goto('http://127.0.0.1:5180/')
+    await dv.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    const strip = dv.getByText('Test build: remote debugging is on')
+    check(await strip.isVisible(), 'devtools: a +devtools build shows the warning strip')
+    const box = await strip.boundingBox()
+    check(box && box.y < 40 && box.height > 0, 'devtools: the strip is at the top of the page')
+    await dv.getByRole('button', { name: /^Sessions/ }).click()
+    await dv.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await dv.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+    check(await strip.isVisible(), 'devtools: the strip stays visible over a full screen')
+    check((await dv.getByText('Test build: remote debugging is on').count()) === 1 && (await dv.locator('.devtools-strip button, .devtools-strip a').count()) === 0, 'devtools: one strip, nothing to dismiss')
+    await dv.close()
+    check((await np.getByText('Test build: remote debugging is on').count()) === 0, 'devtools: a normal page has no strip')
+  }
+
+
+  // ── plan 14: Settings → About → Remote debugging (the page can only ask; it never turns anything on) ──
+  {
+    const bridgeSrc = require('fs').readFileSync(require('path').join(__dirname, '../../web/src/secure-bridge.ts'), 'utf8')
+    const names = [...bridgeSrc.matchAll(/'([A-Za-z]+)'/g)].map(m => m[1])
+    check(names.filter(n => /^(enable|turnOn|startRemote|setRemote|allowRemote)/i.test(n) || /(enable|turnon)(remote|debug|devtools)/i.test(n)).length === 0, 'remote debugging: secure-bridge.ts lists no method that enables it')
+    check(['openRemoteDebugging', 'remoteDebuggingState', 'turnOffRemoteDebugging'].every(n => names.includes(n)), 'remote debugging: the three methods are in secure-bridge.ts')
+    const rdPage = async init => {
+      const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(init)
+      await pg.addInitScript(nativeShell)
+      await pg.goto('http://127.0.0.1:5180/')
+      await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+      await pg.getByRole('button', { name: /^Sessions/ }).click()
+      await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+      await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+      return pg
+    }
+    const strip = pg => pg.locator('.devtools-strip')
+    // not available (Developer options off): no row, no strip
+    let rd = await rdPage(() => { window.__rd = { available: false, on: false, minutesLeft: 0 } })
+    check((await rd.getByText('Remote debugging', { exact: true }).count()) === 0, 'remote debugging: no row while Developer options are off')
+    check((await strip(rd).count()) === 0, 'remote debugging: no strip while off')
+    await rd.close()
+    // off: row says Off, tap asks the shell to open its confirmation (and nothing else)
+    rd = await rdPage(() => { window.__rd = { available: true, on: false, minutesLeft: 0 } })
+    const rowOff = rd.locator('button, .row', { hasText: 'Remote debugging' }).first()
+    check(await rowOff.isVisible(), 'remote debugging: the row shows when Developer options are on')
+    check((await rowOff.innerText()).includes('Off'), 'remote debugging: the row says Off')
+    check((await strip(rd).count()) === 0, 'remote debugging: no strip while off (available)')
+    await rowOff.click()
+    check(JSON.stringify(await rd.evaluate(() => window.__rdCalls)) === '["open"]', 'remote debugging: tapping Off calls openRemoteDebugging only')
+    // the shell turns it on (after the lock screen): the page follows when the shell says so
+    await rd.evaluate(() => { window.__rd = { available: true, on: true, minutesLeft: 42 }; window.dispatchEvent(new Event('hm-devtools')) })
+    await rd.locator('.set-sub', { hasText: 'On · 42 min left' }).waitFor({ timeout: 5000 })
+    check(await strip(rd).isVisible() && (await strip(rd).innerText()).includes('Remote debugging is on · 42 min left'), 'remote debugging: the strip shows while on')
+    await rd.locator('button, .row', { hasText: 'Remote debugging' }).first().click()
+    await rd.locator('.devtools-strip').waitFor({ state: 'detached', timeout: 5000 })
+    check(JSON.stringify(await rd.evaluate(() => window.__rdCalls)) === '["open","off"]', 'remote debugging: tapping On calls turnOffRemoteDebugging')
+    check((await strip(rd).count()) === 0, 'remote debugging: the strip goes when it is turned off')
+    await rd.close()
+    // already on when the page loads
+    rd = await rdPage(() => { window.__rd = { available: true, on: true, minutesLeft: 42 } })
+    check((await rd.locator('.set-sub', { hasText: 'On · 42 min left' }).count()) === 1 && (await strip(rd).isVisible()), 'remote debugging: shows "On · 42 min left" and the strip when already on')
+    await rd.close()
+  }
 
   // ── #33 Live mode: an approval is read out and answered by voice ──
   await np.evaluate(() => window.hermesShortcut('live'))
@@ -2153,6 +2572,68 @@ async function main() {
   await swipe('.msg.assistant', 160, 10)
   await swp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe right on a chat opens the drawer'), () => check(false, 'swipe right on a chat opens the drawer'))
   await swp.close()
+
+  // ── chat scrubber: a rail of ticks, one per message you sent; drag to pick, let go to jump ──
+  {
+  const page = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  await page.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-scrub', profile: 'default' })))
+  await page.goto('http://127.0.0.1:5180/')
+  await page.locator('.msg.assistant', { hasText: 'answer 30' }).waitFor({ timeout: 5000 })
+  await page.locator('.scrubber').waitFor({ timeout: 3000 })
+  check((await page.locator('.scrubber .scrub-tick').count()) === 30, 'scrubber: one tick per message you sent')
+  check((await page.locator('.scrubber').getAttribute('aria-label')) === 'Jump to a message' && (await page.locator('.scrubber').getAttribute('role')) === 'slider', 'scrubber: slider role and label')
+  { const v = Number(await page.locator('.scrubber').getAttribute('aria-valuenow')); check(v >= 29, `scrubber: at the bottom the current tick is one of the last messages (${v})`) }
+  check((await page.locator('.scrubber .scrub-tick.on').count()) === 1, 'scrubber: exactly one tick is highlighted')
+  {
+    const rb = await page.locator('.scrubber').boundingBox()
+    const x = rb.x + rb.width / 2
+    await page.mouse.move(x, rb.y + rb.height - 1)
+    await page.mouse.down()
+    await page.mouse.move(x, rb.y + rb.height / 2, { steps: 4 })
+    await page.mouse.move(x, rb.y + 1, { steps: 4 })
+    const bub = (await page.locator('.scrub-bubble').textContent()) || ''
+    check(bub.includes('question 1') && bub.includes('1 / 30'), `scrubber: the bubble shows the picked message (${bub})`)
+    await page.mouse.up()
+    await sleep(500)
+    check((await page.locator('.scrub-bubble').count()) === 0, 'scrubber: the bubble goes when you let go')
+    const q1 = page.locator('.msg.user', { hasText: /^question 1$/ })
+    await q1.waitFor({ timeout: 3000 })
+    const qb = await q1.boundingBox()
+    const cb = await page.locator('.chat').boundingBox()
+    check(qb && qb.y >= cb.y && qb.y <= cb.y + 100, `scrubber: letting go scrolls to the picked message (${qb && Math.round(qb.y - cb.y)} px below the top)`)
+    check((await page.locator('.scrubber').getAttribute('aria-valuenow')) === '1', 'scrubber: the first tick is current after the jump')
+    // a tap jumps to the nearest tick, and the rail stays put while the list scrolls
+    const rb2 = await page.locator('.scrubber').boundingBox()
+    check(Math.abs(rb2.y - rb.y) < 1, 'scrubber: the rail does not scroll with the content')
+    await page.mouse.click(x, rb2.y + rb2.height / 2)
+    await sleep(500)
+    const now = Number(await page.locator('.scrubber').getAttribute('aria-valuenow'))
+    check(now >= 14 && now <= 17, `scrubber: a tap on the middle jumps to a middle message (${now})`)
+    await page.locator('.scrubber').focus()
+    await page.keyboard.press('ArrowDown')
+    await sleep(500)
+    check((await page.locator('.scrubber').getAttribute('aria-valuenow')) === String(now + 1), 'scrubber: ArrowDown moves to the next message')
+  }
+  {
+    // a horizontal move that starts on the rail does not open the drawer
+    const dx = await page.evaluate(() => {
+      const el = document.querySelector('.scrubber')
+      const r = el.getBoundingClientRect()
+      const x = r.left + 14, y = r.top + r.height / 2
+      const mk = (type, px) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 7, target: el, clientX: px, clientY: y })] })
+      el.dispatchEvent(mk('touchstart', x)); el.dispatchEvent(mk('touchmove', x + 60)); el.dispatchEvent(mk('touchmove', x + 160)); el.dispatchEvent(mk('touchend', x + 160))
+      return 1
+    })
+    await sleep(300)
+    check(dx === 1 && (await page.locator('.drawer.open').count()) === 0, 'scrubber: a horizontal move starting on the rail does not open the drawer')
+  }
+  await page.evaluate(() => window.hermesOpenSession('s-5'))
+  await page.locator('.msg.assistant', { hasText: 'answer s-5' }).waitFor({ timeout: 5000 })
+  check((await page.locator('.scrubber').count()) === 0, 'scrubber: a short chat shows no rail')
+  await page.close()
+
+  }
+
 
   // ── the canvas is a panel from the right: swipe left on the chat opens it, swipe right on its header / Back closes it ──
   const cvp = await browser.newPage({ viewport: { width: 375, height: 812 } })
@@ -2923,6 +3404,93 @@ async function main() {
     { const t = await shRow(); check(t.includes('Not installed'), `status: Shizuku not installed (${t})`) }
     await sp.close()
     await mock({ phone: { files: true, shizuku: 'ok' } })
+  }
+
+  // ── "New since your last visit" divider (visit.ts) ──
+  {
+    const vp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await vp.addInitScript(() => {
+      if (!sessionStorage.getItem('visit-seeded')) {
+        sessionStorage.setItem('visit-seeded', '1')
+        localStorage.setItem('hm.visit.v1', JSON.stringify({ 's-7': 1790000030 * 1000, 's-visit': 1790000100 * 1000 }))
+      }
+      localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-7', profile: 'default' }))
+    })
+    await vp.goto('http://127.0.0.1:5180/')
+    await vp.locator('.msg.assistant', { hasText: 'answer s-7' }).waitFor({ timeout: 5000 })
+    check((await vp.locator('.visit-divider').count()) === 1 && (await vp.locator('.visit-divider').textContent()) === 'New since your last visit', 'visit: the divider shows in a chat with newer messages')
+    check((await vp.locator('.visit-divider').getAttribute('role')) === 'separator', 'visit: the divider has the separator role')
+    check(await vp.evaluate(() => { const d = document.querySelector('.visit-divider'); return !!d && d.parentElement.parentElement.classList.contains('chat') && d.parentElement.querySelector('.msg.assistant')?.textContent.includes('answer s-7') }), 'visit: the divider sits in the wrapper of the first unseen message, one child of the chat')
+    check(await vp.evaluate(() => [...document.querySelector('.chat').children].filter(c => c.matches('.msg.user, .msg.assistant') || c.querySelector('.msg.user, .msg.assistant')).length === 2), 'visit: the chat still has one element per message')
+    await vp.evaluate(() => window.hermesOpenSession('s-5'))
+    await vp.locator('.msg.assistant', { hasText: 'answer s-5' }).waitFor({ timeout: 5000 })
+    check((await vp.locator('.visit-divider').count()) === 0, 'visit: a chat never opened before has no divider')
+    await vp.evaluate(() => window.hermesOpenSession('s-7'))
+    await vp.locator('.msg.assistant', { hasText: 'answer s-7' }).waitFor({ timeout: 5000 })
+    check((await vp.locator('.visit-divider').count()) === 0, 'visit: reopening a chat after leaving it shows no divider')
+    check(await vp.evaluate(() => Number(JSON.parse(localStorage.getItem('hm.visit.v1'))['s-7']) > 1790000030 * 1000), 'visit: leaving a chat stores the visit time')
+    // scroll: the divider opens near the top of the chat, not at the end
+    await vp.evaluate(() => window.hermesOpenSession('s-visit'))
+    await vp.locator('.visit-divider').waitFor({ timeout: 5000 })
+    await sleep(400)
+    {
+      const db = await vp.locator('.visit-divider').boundingBox()
+      const cb = await vp.locator('.chat').boundingBox()
+      check(db && cb && db.y >= cb.y && db.y - cb.y < 40, `visit: the chat opens with the divider near the top (${db && cb && Math.round(db.y - cb.y)} px below it)`)
+      check(await vp.evaluate(() => document.querySelector('.visit-divider').parentElement.querySelector('.msg.user')?.textContent === 'visit question 2'), 'visit: the divider is right before the first unseen question')
+    }
+    // away and back with the same chat open (Home while Hermes answers): the shell's hermesPause / hermesResume
+    await vp.evaluate(() => window.hermesOpenSession('s-5'))
+    await vp.locator('.msg.assistant', { hasText: 'answer s-5' }).waitFor({ timeout: 5000 })
+    await vp.getByPlaceholder('Message Hermes').fill('slow reply')
+    await vp.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await vp.locator('.msg.assistant', { hasText: 'Slow done.' }).waitFor({ timeout: 5000 })
+    await vp.getByPlaceholder('Message Hermes').waitFor({ timeout: 5000 })
+    check((await vp.locator('.visit-divider').count()) === 0, 'visit: a reply watched on screen gets no divider')
+    await vp.getByPlaceholder('Message Hermes').fill('slow reply')
+    await vp.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await vp.evaluate(() => window.hermesPause()) // Home right after sending: the reply starts 300 ms later
+    await sleep(2200)
+    check((await vp.locator('.visit-divider').count()) === 0, 'visit: no divider while the app is away')
+    await vp.evaluate(() => window.hermesResume())
+    await vp.locator('.visit-divider').waitFor({ timeout: 3000 }).catch(() => {})
+    check(await vp.evaluate(() => { const d = document.querySelector('.visit-divider'); return !!d && d.parentElement.parentElement.classList.contains('chat') && (() => { const r = [...document.querySelectorAll('.msg.assistant')].filter(m => m.textContent.includes('Slow done.')); return r.length === 2 && d.parentElement.contains(r[1]) && !d.parentElement.contains(r[0]) })() }), 'visit: back in the app with the chat still open, the divider is before the reply that came meanwhile')
+    await vp.close()
+  }
+
+  // ── composer stash (stash.ts): put a draft aside from the Add sheet ──
+  {
+    const sp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await sp.goto('http://127.0.0.1:5180/')
+    const sbox = sp.getByPlaceholder('Message Hermes')
+    await sbox.waitFor({ timeout: 15000 })
+    const addBtn = () => sp.getByRole('button', { name: 'Add', exact: true }).click()
+    const stored = () => sp.evaluate(() => JSON.parse(localStorage.getItem('hm.stash.v1') || '[]').map(s => s.text))
+    await addBtn()
+    check((await sp.locator('.picker-opt', { hasText: 'Stash draft' }).count()) === 0 && (await sp.locator('.picker-opt', { hasText: 'Stashed drafts' }).count()) === 0, 'stash: an empty box and no stashes shows neither option')
+    await sp.evaluate(() => window.hermesBack())
+    await sp.locator('.picker').waitFor({ state: 'detached', timeout: 3000 })
+    await sbox.fill('half written')
+    await addBtn()
+    await sp.locator('.picker-opt', { hasText: 'Stash draft' }).click()
+    await sp.locator('.picker').waitFor({ state: 'detached', timeout: 3000 })
+    check((await sbox.inputValue()) === '' && JSON.stringify(await stored()) === '["half written"]', 'stash: Stash draft empties the box and stores the text')
+    await sbox.fill('other')
+    await addBtn()
+    check((await sp.locator('.picker-opt', { hasText: 'Stashed drafts (1)' }).count()) === 1, 'stash: the Add sheet counts the stashes')
+    await sp.locator('.picker-opt', { hasText: 'Stashed drafts (1)' }).click()
+    await sp.locator('.picker-opt', { hasText: 'half written' }).click()
+    await sp.locator('.picker').waitFor({ state: 'detached', timeout: 3000 })
+    check((await sbox.inputValue()) === 'half written' && JSON.stringify(await stored()) === '["other"]', 'stash: picking a stash with text in the box swaps them')
+    await sbox.fill('')
+    await addBtn()
+    await sp.locator('.picker-opt', { hasText: 'Stashed drafts (1)' }).click()
+    await sp.locator('.picker-opt', { hasText: 'Clear all stashed drafts' }).click()
+    await sp.locator('.dialog button', { hasText: 'Clear' }).last().click()
+    await sp.locator('.dialog').waitFor({ state: 'detached', timeout: 3000 })
+    await addBtn()
+    check((await sp.locator('.picker-opt', { hasText: 'Stashed drafts' }).count()) === 0 && (await stored()).length === 0, 'stash: Clear all stashed drafts removes them')
+    await sp.close()
   }
 
   await browser.close()

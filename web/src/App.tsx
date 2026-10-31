@@ -1,13 +1,21 @@
+import { appVersion, isDevtoolsBuild } from './bridge'
+import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { compressChat, connect, errText, fmtCtx, openSessionFromNotification, reconnectNow } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { foldMap } from './fold'
+import { turnChanges } from './changes'
+import { TurnChangesCard } from './components/Changes'
+import { Chevron, Collapse } from './components/ui'
 import { Composer } from './components/Composer'
+import { QueuedRows } from './components/Queued'
+import { Scrubber } from './components/Scrubber'
+import { SCRUB_MIN, currentMark, userMarks } from './scrub'
 import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
 import { RequestSheet } from './components/RequestSheet'
-import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, ModelSheet, RollbackSheet, SessionActionsSheet, StatusSheet } from './components/Sheets'
+import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { bannerItems, startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
 import { BtwSheet } from './components/Btw'
@@ -19,9 +27,10 @@ import { installPullToBtw } from './pullbtw'
 import { findHit, findMatches, firstRange, highlightWords } from './jump'
 import { useBackHandler } from './backstack'
 import { recentPrompts } from './recent'
+import { BACK_GRACE_MS, firstUnseen, lastBack, lastVisit, newWhileAway, noteAway, noteBack, onBack } from './visit'
 import { bare, useCommandCatalog, type CommandEntry } from './commands'
 import { Title, plainTitle } from './components/Title'
-import { useAutoRead, useDraftAutoRead } from './voice'
+import { fmtClock, useAutoRead, useDraftAutoRead } from './voice'
 import { dotState, startHealthPolling, checkHealth } from './health'
 import { SettingsScreen } from './components/Settings'
 import { SetupFlow, SetupScreen, checkSetupFlow, watchFirstRun } from './components/Setup'
@@ -40,6 +49,7 @@ declare global {
   interface Window {
     hermesBack?: () => boolean
     hermesResume?: () => void
+    hermesPause?: () => void
     hermesOpenSession?: (id: string, draft?: string) => void
   }
 }
@@ -65,9 +75,13 @@ window.hermesBack = () => {
 window.hermesOpenSession = (id: string, draft?: string) => openSessionFromNotification(id, draft)
 // Called by the shell when the app returns to the foreground.
 window.hermesResume = () => {
+  noteBack()
   if (getState().conn !== 'open') reconnectNow()
   refreshBg()
 }
+// Called by the shell when the app leaves the foreground (Home, another app, screen off): the open chat was seen until
+// now (visit.ts). The page's own visibilitychange may come later or not at all in a WebView.
+window.hermesPause = () => noteAway(getState().active?.storedId)
 
 function Header() {
   const title = useStore(s => (s.opening && s.preview?.storedId === s.opening ? s.preview.title : s.active?.title))
@@ -204,8 +218,8 @@ function CompressHint() {
   const pct = useStore(s => s.active?.ctx?.percent ?? 0)
   const id = useStore(s => s.active?.storedId ?? '')
   const running = useStore(s => s.active?.running ?? false)
-  const [busy, setBusy] = useState(false)
   const [, bump] = useState(0)
+  const { busy, run } = useCompress(() => compressDismissed.add(id))
   if (!id || pct < COMPRESS_AT || (running && !busy) || compressDismissed.has(id)) return null
   return (
     <div className="compress-hint">
@@ -215,16 +229,7 @@ function CompressHint() {
       <button
         className="btn compress-go"
         disabled={busy}
-        onClick={() => {
-          setBusy(true)
-          compressChat()
-            .then(t => toast(t))
-            .catch(e => toast(errText(e), 'error'))
-            .finally(() => {
-              compressDismissed.add(id)
-              setBusy(false)
-            })
-        }}
+        onClick={run}
       >
         {busy ? <Spinner small /> : 'Compress'}
       </button>
@@ -244,30 +249,72 @@ function CompressHint() {
   )
 }
 
+/** Milliseconds since `start`, redrawn once a second only while a turn runs and the page is visible (battery);
+ * it stops by itself when the page is hidden and catches up on the next tick once it is visible again. */
+function useElapsed(start: number | null, running: boolean): number {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!running || start == null) return
+    let id: ReturnType<typeof setInterval> | undefined
+    const stop = () => {
+      if (id !== undefined) clearInterval(id)
+      id = undefined
+    }
+    const go = () => {
+      stop()
+      if (document.visibilityState === 'visible') {
+        tick(n => n + 1)
+        id = setInterval(() => tick(n => n + 1), 1000)
+      }
+    }
+    go()
+    document.addEventListener('visibilitychange', go)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', go)
+    }
+  }, [start, running])
+  return start == null ? 0 : Math.max(0, Date.now() - start)
+}
+
+const GOAL_HIDDEN = new Set(['cleared', 'done', 'complete', 'completed', 'achieved'])
+
 function StatusBar() {
   const running = useStore(s => s.active?.running ?? false)
   const status = useStore(s => s.active?.status ?? '')
   const todos = useStore(s => s.active?.todos ?? EMPTY_TODOS)
   const tps = useStore(s => s.active?.tps ?? null)
   const ctx = useStore(s => s.active?.ctx ?? null)
+  const turnStart = useStore(s => s.active?.turnStart ?? null)
+  const goal = useStore(s => s.active?.goal ?? null)
   const [openTodos, setOpenTodos] = useState(false)
+  const [openGoal, setOpenGoal] = useState(false)
+  const elapsed = useElapsed(turnStart, running)
   const done = todos.filter(t => t.status === 'completed' || t.status === 'done').length
-  if (!running && todos.length === 0) return null
+  const showGoal = goal != null && !GOAL_HIDDEN.has(goal.status)
+  if (!running && todos.length === 0 && !showGoal) return null
   return (
     <div className="statusbar">
       {running && (
         <div className="status-line">
           <Spinner small /> <span className="status-text">{status || 'Working…'}</span>
+          {elapsed >= 3000 ? <span className="dim small status-elapsed">{fmtClock(elapsed / 1000)}</span> : null}
           {tps ? <span className="dim small">~{tps} tok/s</span> : null}
           {ctx && <span className="dim small">{fmtCtx(ctx).split(' · ')[0]}</span>}
         </div>
       )}
+      {showGoal && goal && (
+        <button className="goal-line" onClick={() => setOpenGoal(true)}>
+          🎯 {goal.title} · turn {goal.turns_used} of {goal.max_turns} · {goal.paused_reason ? `paused: ${goal.paused_reason}` : goal.status}
+        </button>
+      )}
+      {openGoal && showGoal && goal && <GoalSheet goal={goal} onClose={() => setOpenGoal(false)} />}
       {todos.length > 0 && (
         <div className="todos">
           <button className="todos-head" onClick={() => setOpenTodos(v => !v)}>
-            ☑ Tasks {done}/{todos.length} <span className="chev">{openTodos ? '▾' : '▸'}</span>
+            ☑ Tasks {done}/{todos.length} <span className="chev"><Chevron open={openTodos} /></span>
           </button>
-          {openTodos && (
+          <Collapse open={openTodos}>
             <ul>
               {todos.map((t, i) => (
                 <li key={t.id || i} className={`todo-${t.status}`}>
@@ -275,7 +322,7 @@ function StatusBar() {
                 </li>
               ))}
             </ul>
-          )}
+          </Collapse>
         </div>
       )}
     </div>
@@ -376,6 +423,37 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [showJump, setShowJump] = useState(false)
+  // "New since your last visit" (visit.ts): the last-seen time is read once when the chat opens (before leaving it
+  // marks anything) and the first newer message is found once, from the chat itself (not its cached preview).
+  const visitRef = useRef<{ key: string | undefined; since: number | null; idx: number | null; applied: boolean }>({ key: undefined, since: null, idx: null, applied: false })
+  const awayRef = useRef<{ at: number; back: number } | null>(null)
+  const [, bumpBack] = useState(0)
+  useEffect(
+    () =>
+      onBack(() => {
+        const b = lastBack()
+        if (!b || !b.chat || b.chat !== visitRef.current.key) return
+        awayRef.current = { at: b.at, back: b.back }
+        bumpBack(n => n + 1)
+      }),
+    []
+  )
+  if (visitRef.current.key !== sessionKey) {
+    visitRef.current = { key: sessionKey, since: sessionKey ? lastVisit(sessionKey) : null, idx: null, applied: false }
+    awayRef.current = null
+  }
+  if (visitRef.current.idx === null && sessionKey && items && items.length > 0 && !previewing) visitRef.current.idx = firstUnseen(items, visitRef.current.since)
+  // Back in the app with this chat still open: messages that arrived while away get the divider (and the scroll),
+  // replacing an older one. The backlog can land a moment after the return, so look again as items arrive, briefly.
+  const awayAt = awayRef.current
+  if (awayAt && items && !previewing) {
+    const i = newWhileAway(items, awayAt.at, awayAt.back)
+    if (i > 0) {
+      visitRef.current = { key: sessionKey, since: awayAt.at, idx: i, applied: false }
+      awayRef.current = null
+    } else if (Date.now() > awayAt.back + 2 * BACK_GRACE_MS) awayRef.current = null
+  }
+  const dividerIdx = visitRef.current.idx ?? -1
   // Long chats: only the last WINDOW items are drawn on open (each one parses markdown); scrolling near the top
   // draws the previous WINDOW, keeping what's on screen in place. The start index stays put while new items
   // arrive, so nothing shifts under the reader.
@@ -389,6 +467,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   // Runs of tool calls fold into one line; tapping it opens them (keyed by the run's first item id).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(() => new Set())
   const folds = useMemo(() => foldMap(items ?? [], openRuns), [items, openRuns])
+  const changes = useMemo(() => turnChanges(items ?? [], running), [items, running])
   const toggleRun = useCallback((id: string) => {
     setOpenRuns(o => {
       const n = new Set(o)
@@ -514,6 +593,83 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     setShowJump(!near)
   }, [items])
 
+  // Open with the divider near the top instead of at the end (when it is above the last screenful). A search jump or
+  // an in-chat search that is waiting wins; so does the user's own scrolling (this runs once per opened chat).
+  useLayoutEffect(() => {
+    const el = scroller.current
+    const v = visitRef.current
+    if (!el || !items || v.applied || previewing || v.idx === null) return
+    if (dividerIdx < 0 || getState().jump || getState().find?.q.trim()) {
+      v.applied = true
+      return
+    }
+    if (dividerIdx < start) {
+      setWin({ key: sessionKey, start: Math.max(0, dividerIdx - 3) })
+      return // runs again once it is drawn
+    }
+    const mark = el.querySelector('.visit-divider')
+    if (!mark) return
+    v.applied = true
+    const top = mark.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+    if (top >= el.scrollHeight - el.clientHeight) return // already within the last screenful: stay at the end
+    stick.current = false
+    el.scrollTop = top - 8
+    setShowJump(true)
+  }, [items, dividerIdx, start, sessionKey, previewing]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scrubber (components/Scrubber.tsx): one tick per message you sent; `scrubTo` is the item to bring to the top.
+  const marks = useMemo(() => userMarks(items ?? []), [items])
+  const marksRef = useRef(marks)
+  marksRef.current = marks
+  const [curMark, setCurMark] = useState(0)
+  const [tall, setTall] = useState(false)
+  const [scrubTo, setScrubTo] = useState<number | null>(null)
+  const findOpen = useStore(s => Boolean(s.find))
+  const startRef = useRef(start)
+  startRef.current = start
+  const topRaf = useRef(0)
+  /** Which of your messages is at (or above) the top of the list, and whether the chat is long enough for the rail. */
+  const trackTop = () => {
+    topRaf.current = 0
+    const el = scroller.current
+    if (!el) return
+    setTall(el.scrollHeight > 3 * el.clientHeight)
+    const ms = marksRef.current
+    if (ms.length < SCRUB_MIN) return
+    const first = startRef.current > 0 ? 1 : 0
+    const drawn = Math.max(0, count - startRef.current) // children past these are queued bubbles, the pad, buttons
+    const top = el.getBoundingClientRect().top + 1
+    let idx = startRef.current
+    for (let c = first; c < first + drawn && c < el.children.length; c++) {
+      if (el.children[c].getBoundingClientRect().bottom > top) {
+        idx = startRef.current + c - first
+        break
+      }
+      idx = startRef.current + c - first
+    }
+    setCurMark(currentMark(ms, idx))
+  }
+  useLayoutEffect(trackTop, [items, start]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => cancelAnimationFrame(topRaf.current), [])
+  // Same steps as the search jump: draw earlier turns first if the message is above the window, then scroll and flash.
+  useEffect(() => {
+    const el = scroller.current
+    if (scrubTo === null || !items || !el) return
+    if (scrubTo >= items.length) return setScrubTo(null)
+    if (scrubTo < start) {
+      setWin({ key: sessionKey, start: Math.max(0, scrubTo - 3) })
+      return // runs again once it is drawn
+    }
+    if (unfold(scrubTo)) return // runs again once it is drawn
+    setScrubTo(null)
+    const node = el.children[(start > 0 ? 1 : 0) + scrubTo - start]
+    if (!node) return
+    stick.current = false
+    el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - 8
+    node.classList.add('hit-flash')
+    setTimeout(() => node.classList.remove('hit-flash'), 2500)
+  }, [scrubTo, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const opening = useStore(s => s.opening)
   const conn = useStore(s => s.conn)
   const openingActive = useStore(s => s.active?.storedId)
@@ -543,6 +699,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   if (!items || items.length === 0) return <Empty onPick={onPick} />
 
   return (
+    <div className="chat-wrap">
     <div
       className="chat"
       ref={scroller}
@@ -551,6 +708,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
         const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80
         stick.current = near
         setShowJump(!near)
+        if (!topRaf.current) topRaf.current = requestAnimationFrame(trackTop)
       }}
     >
       {start > 0 && (
@@ -561,16 +719,24 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       {items.slice(start).map((it, i) => {
         // One element per item, also when folded: search and jump find messages by child index.
         const f = folds.get(start + i)
+        const card = changes.get(start + i)
         const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
-        if (!f) return view
-        if (!('head' in f)) return <div key={it.id} className="folded" />
+        const mark = start + i === dividerIdx ? <div className="visit-divider" role="separator">New since your last visit</div> : null
+        if (!f) {
+          if (card) return <div key={it.id} className="turn-end">{mark}{view}<TurnChangesCard changes={card} /></div>
+          return mark ? <div key={it.id} className="visit-wrap">{mark}{view}</div> : view
+        }
+        if (!('head' in f)) return <div key={it.id} className={card ? 'turn-end' : 'folded'}>{mark}{card && <TurnChangesCard changes={card} />}</div>
         return (
           <div key={it.id} className="tool-run-wrap">
+            {mark}
             <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} />
             {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} />}
+            {card && <TurnChangesCard changes={card} />}
           </div>
         )
       })}
+      <QueuedRows />
       <div className="chat-pad" />
       {showJump && (
         <button
@@ -588,6 +754,25 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
         <span>Release for a side question</span>
       </div>
     </div>
+    {marks.length >= SCRUB_MIN && tall && !findOpen && !previewing && (
+      <Scrubber marks={marks} current={Math.min(curMark, marks.length - 1)} onPick={k => marks[k] && setScrubTo(marks[k].idx)} />
+    )}
+    </div>
+  )
+}
+
+/** Test builds only (`HM_DEVTOOLS=1`): a thin strip that can't be dismissed, drawn above everything, full screens included. */
+function DevtoolsStrip() {
+  const live = remoteDebugStrip(useRemoteDebug()) // remote debugging switched on in Settings → About (plan 14)
+  const testBuild = isDevtoolsBuild(appVersion())
+  if (!testBuild && !live) return null
+  return (
+    <>
+      <div className="devtools-strip" role="status">
+        {testBuild ? 'Test build: remote debugging is on' : live}
+      </div>
+      <div className="devtools-spacer" aria-hidden="true" />
+    </>
   )
 }
 
@@ -629,6 +814,7 @@ export function App() {
 
   return (
     <div className="app">
+      <DevtoolsStrip />
       <Header />
       <ConnBanner />
       <FindBar />
@@ -665,6 +851,7 @@ export function App() {
       {sheet === 'session-actions' && <SessionActionsSheet />}
       {sheet === 'status' && <StatusSheet />}
       {sheet === 'rollback' && <RollbackSheet />}
+      {sheet === 'context' && <ContextSheet />}
       {request && <RequestSheet key={request.id} req={request} />}
       <UninstallResume />
       <CanvasPanel />

@@ -220,6 +220,10 @@ adb install -r android/build/hermes-mobile.apk
 The first build creates a signing key in `~/.android/hermes-mobile.keystore` (never commit it). A self-built app can't update the
 downloaded one, because the keys differ: uninstall that first.
 
+For testing only, `HM_DEVTOOLS=1 android/build.sh` makes a build whose page can be inspected and driven from a computer over `adb`
+(Chrome DevTools, Playwright). It shows a "Test build: remote debugging is on" strip, and the script refuses to combine it with
+`KEYSTORE`, so a release can't carry it. Anything that can reach `adb` on the phone can read your chats in such a build: don't use it day to day.
+
 To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open http://127.0.0.1:5180.
 
 Tests, project rules and what to do after a Hermes update: [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents follow [AGENTS.md](AGENTS.md) (keep [docs/SPEC.md](docs/SPEC.md) current with every change).

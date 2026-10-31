@@ -1,6 +1,6 @@
 // The app's own form controls. Nothing here uses the browser/Android defaults (no <select>, no native
 // range or checkbox): every picker, slider and switch is drawn in the app's visual language.
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { haptic } from '../bridge'
 import { useBackHandler } from '../backstack'
 import { useSheetDrag } from './useSheetDrag'
@@ -213,5 +213,86 @@ export function Segmented<T extends string | number>({ options, value, onChange 
         </button>
       ))}
     </div>
+  )
+}
+
+
+// ── motion ──────────────────────────────────────────────────
+
+const COLLAPSE_MS = 180
+const COLLAPSE_EASE = 'cubic-bezier(.2,.8,.2,1)'
+
+function reducedMotion(): boolean {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch {
+    return false
+  }
+}
+
+/** Slides its children open and closed (height and opacity, Web Animations API). Under reduced motion it mounts and unmounts at once. */
+export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  const [mounted, setMounted] = useState(open)
+  const el = useRef<HTMLDivElement>(null)
+  const anim = useRef<Animation | null>(null)
+  const timer = useRef<number | undefined>(undefined)
+  const first = useRef(true)
+  if (open && !mounted) setMounted(true)
+
+  useLayoutEffect(() => {
+    const node = el.current
+    const wasFirst = first.current
+    first.current = false
+    const stop = () => {
+      window.clearTimeout(timer.current)
+      anim.current?.cancel()
+      anim.current = null
+      if (node) node.style.overflow = ''
+    }
+    if (!node || wasFirst || typeof node.animate !== 'function' || reducedMotion()) {
+      stop()
+      if (!open) setMounted(false)
+      return stop
+    }
+    const from = node.getBoundingClientRect().height
+    const fromOp = Number(getComputedStyle(node).opacity) || 0
+    stop()
+    node.style.overflow = 'hidden'
+    const to = open ? node.scrollHeight : 0
+    const a = node.animate(
+      [{ height: `${from}px`, opacity: fromOp }, { height: `${to}px`, opacity: open ? 1 : 0 }],
+      { duration: COLLAPSE_MS, easing: COLLAPSE_EASE }
+    )
+    anim.current = a
+    const done = () => {
+      if (anim.current !== a) return
+      window.clearTimeout(timer.current)
+      anim.current = null
+      a.cancel()
+      node.style.overflow = ''
+      if (!open) setMounted(false)
+    }
+    a.onfinish = done
+    timer.current = window.setTimeout(done, COLLAPSE_MS + 100)
+    return () => {
+      // A flip during the animation re-runs the effect, which starts from the current height.
+      window.clearTimeout(timer.current)
+    }
+  }, [open])
+
+  if (!mounted) return null
+  return (
+    <div ref={el} className="collapse">
+      {children}
+    </div>
+  )
+}
+
+/** A right-pointing chevron that turns 90 degrees when open. */
+export function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg className={`chevron${open ? ' open' : ''}`} viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 6l6 6-6 6" />
+    </svg>
   )
 }
