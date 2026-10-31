@@ -30,6 +30,7 @@ import type {
   Usage
 } from '@hermes/shared/gateway-contract.generated'
 import { askUnlock, lockView } from './lockview'
+import { onChatOpen, runChatOpen } from './chatopen'
 import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, wsUrl } from './bridge'
 import {
   type ActiveSession,
@@ -508,12 +509,7 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
   retire(prev)
   rememberSession(active.storedId)
   applyDraftRead(active.storedId) // a read-aloud choice made on the empty screen
-  void loadGoal()
-  const want = lockView() ? 'off' : defaultAccess() // Settings → Auto for all chats; over the lock screen: talking only
-  if (want !== 'off') {
-    if (want === 'auto') updateActive(x => (x.runtimeId === active.runtimeId ? { autoAccess: true } : {}))
-    void setAccess(active, want, false).catch(() => {})
-  }
+  runChatOpen({ chat: active, kind: 'new' }) // goal, access mode… (each feature's own step)
   return active
 }
 
@@ -600,17 +596,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   markSeen(next.storedId)
   chatSeen(next.storedId)
   setLastChat(next.storedId, title)
-  void loadGoal()
-  // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back (Auto access: the plugin's list first).
-  const want = rememberedAccess(next.storedId)
-  if (want === 'auto') updateActive(x => (x.runtimeId === next.runtimeId ? { autoAccess: true } : {}))
-  if (want !== 'off' && !next.info.yolo) void setAccess(next, want, yoloChats()[next.storedId] !== undefined).catch(() => {})
-  else if (want === 'auto') void setPluginAuto(next.storedId, true).catch(() => {})
-  // Show the chat's context fill under its last reply.
-  void refreshCtx(next.usage).then(ctx => {
-    const id = lastAssistantId()
-    if (ctx && id) patchItem(id, it => (it.kind === 'assistant' && !it.meta ? { ...it, meta: fmtCtx(ctx) } : it))
-  })
+  runChatOpen({ chat: next, kind: 'resume' }) // goal, access mode, context fill… (each feature's own step)
 }
 
 export async function deleteSession(storedId: string): Promise<void> {
@@ -779,6 +765,21 @@ function rememberedAccess(storedId: string): Access {
   if (v === undefined) return defaultAccess() // never set for this chat: Settings → Auto: default for all chats
   return v === 'auto' ? 'auto' : v ? 'full' : 'off'
 }
+
+onChatOpen('access', ({ chat, kind }) => {
+  if (kind === 'new') {
+    const want = lockView() ? 'off' : defaultAccess() // Settings → Auto for all chats; over the lock screen: talking only
+    if (want === 'off') return
+    if (want === 'auto') updateActive(x => (x.runtimeId === chat.runtimeId ? { autoAccess: true } : {}))
+    void setAccess(chat, want, false).catch(() => {})
+    return
+  }
+  // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back (Auto access: the plugin's list first).
+  const want = rememberedAccess(chat.storedId)
+  if (want === 'auto') updateActive(x => (x.runtimeId === chat.runtimeId ? { autoAccess: true } : {}))
+  if (want !== 'off' && !chat.info.yolo) void setAccess(chat, want, yoloChats()[chat.storedId] !== undefined).catch(() => {})
+  else if (want === 'auto') void setPluginAuto(chat.storedId, true).catch(() => {})
+})
 
 const DEFAULT_ACCESS_KEY = 'hm.defaultAccess.v1'
 /** Settings → "Auto for all chats": what a chat starts in when you haven't set Auto for it yourself. */
@@ -1794,10 +1795,21 @@ export async function compressChat(): Promise<string> {
   return text
 }
 
+// A reopened chat shows its context fill under its last reply.
+onChatOpen('context-fill', ({ chat, kind }) => {
+  if (kind !== 'resume') return
+  void refreshCtx(chat.usage).then(ctx => {
+    const id = lastAssistantId()
+    if (ctx && id) patchItem(id, it => (it.kind === 'assistant' && !it.meta ? { ...it, meta: fmtCtx(ctx) } : it))
+  })
+})
+
 export function fmtCtx(c: Ctx): string {
   const k = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
   return `ctx ${c.percent < 1 ? '<1' : Math.round(c.percent)}% · ${k(c.used)}/${k(c.max)}`
 }
+
+onChatOpen('goal', () => void loadGoal())
 
 /** Read the open chat's goal (Hermes's /goal) for the goal line. Never blocks opening; older Hermes builds may not have the RPC, so errors are ignored. */
 export async function loadGoal(): Promise<void> {
