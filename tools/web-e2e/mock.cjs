@@ -582,6 +582,37 @@ wss.on('connection', ws => {
           later(100, () => ws.readyState === 1 && event('message.complete', sid, { text: `Queued ${params.text} done.` }))
           return
         }
+        if (/^read the note$/.test(params.text)) {
+          // One whole turn with the event types and payload shapes of the pinned Hermes (tools/hermes-contract sends this
+          // prompt to the real Hermes with a fake model: reasoning, one read_file call, reasoning, the answer in chunks).
+          // A tool result is the parsed JSON in `result` (`result_text` only comes with display.tool_progress verbose).
+          const live = fn => () => ws.readyState === 1 && fn()
+          const args = { path: '/root/note.txt' }
+          const usage = n => ({ model: 'mock-model', input: 120 * n, output: 20 * n, reasoning: 0, prompt: 120 * n, completion: 20 * n, total: 140 * n, calls: n, context_used: 120, context_max: 256000, context_percent: 0, context_source: 'provider_usage', context_estimated: false, compressions: 0, avg_latency_s: 1, avg_tps: 20, active_subagents: 0 })
+          const steps = [
+            ['message.start', undefined],
+            ['thinking.delta', { text: '(o_o) processing...' }],
+            ['reasoning.delta', { text: 'Let me read ' }],
+            ['reasoning.delta', { text: 'the note first.' }],
+            ['tool.generating', { name: 'read_file' }],
+            ['tool.start', { tool_id: 'call_note', name: 'read_file', context: 'note.txt', args }],
+            ['tool.complete', { tool_id: 'call_note', name: 'read_file', args, duration_s: 0.04, result: { content: '1|contract note', total_lines: 1, file_size: 14, truncated: false, is_binary: false, is_image: false, not_found: false } }],
+            ['thinking.delta', { text: '(-_-) computing...' }],
+            ['reasoning.delta', { text: 'I have the note, ' }],
+            ['reasoning.delta', { text: 'now I can answer.' }],
+            ['message.delta', { text: '\n\nThe note says: ' }],
+            ['message.delta', { text: 'contract note. ' }],
+            ['session.usage', { usage: usage(1) }],
+            ['message.delta', { text: 'Nothing else ' }],
+            ['message.delta', { text: 'to report.' }],
+            ['reasoning.available', { text: 'The note says: contract note. Nothing else to report.' }],
+            ['message.complete', { text: 'The note says: contract note. Nothing else to report.', usage: usage(2), status: 'complete', persisted_turn: { row_ids: [3, 4, 5, 6], complete: true, user_row_id: 3, final_assistant_row_id: 6 }, reasoning: 'I have the note, now I can answer.' }],
+            ['session.info', { model: 'mock-model', provider: 'mock' }]
+          ]
+          let t = 50
+          for (const [type, payload] of steps) later((t += 40), live(() => (payload === undefined ? ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: sid } })) : event(type, sid, payload))))
+          return
+        }
         if (/^use tools$/.test(params.text)) {
           // Four tool calls (with reasoning between two of them), then the answer: the app folds them into one line.
           let t = 50
