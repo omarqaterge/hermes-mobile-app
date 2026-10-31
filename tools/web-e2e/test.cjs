@@ -1092,7 +1092,8 @@ async function main() {
     }
     const vh = await page.evaluate(() => innerHeight)
     check(hh > 160 && hh <= vh * 0.6 + 1, `html preview: the frame grew to its page, capped at 60% of the window (${hh} of ${vh})`)
-    const rootFrame = page.frames().find(f => f !== page.mainFrame() && f.parentFrame() === page.mainFrame() && f.url() === 'about:srcdoc')
+    // this iframe's own frame: finding it by the URL about:srcdoc missed it with desktop Chrome 154
+    const rootFrame = await (await fr.elementHandle())?.contentFrame()
     check(!!rootFrame && (await rootFrame.evaluate(() => typeof window.HermesAndroid)) === 'undefined', 'html preview: window.HermesAndroid is undefined inside the frame')
     check(!!rootFrame && (await rootFrame.evaluate(() => fetch('http://127.0.0.1:9119/api/status').then(() => 'ok', () => 'blocked'))) === 'blocked', 'html preview: fetch() from the inline frame is blocked (offline CSP)')
     await blk.getByRole('button', { name: 'Open preview full screen' }).click()
