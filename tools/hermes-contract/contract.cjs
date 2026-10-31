@@ -511,7 +511,11 @@ async function main() {
       if (m.error?.code !== c.expectError || r.error?.code !== c.expectError) res.fails.push(`expected ${c.expectError} from both: mock ${m.error?.code ?? 'ok'}, Hermes ${r.error?.code ?? 'ok'}`)
     } else if (c.exact && !m.error && !r.error) {
       if (JSON.stringify(m.result) !== JSON.stringify(r.result)) res.fails.push(`the mock sends ${JSON.stringify(m.result)}, Hermes ${JSON.stringify(r.result)}`)
-    } else if (m.error && r.error) res.notes.push(`both answer an error (mock ${m.error.code}, Hermes ${r.error.code}: ${r.error.message})`)
+    } else if (m.error && r.error) {
+      // An error on both sides compares nothing (a wrong route, or an id an earlier case failed to make): only a case that
+      // expects one (expectError) may answer an error.
+      res.fails.push(`both answer an error, and the case expects none (mock ${m.error.code}, Hermes ${r.error.code}: ${r.error.message})`)
+    }
     else if (m.error) res.fails.push(`the mock answers an error (${m.error.code} ${m.error.message}), Hermes doesn't`)
     else if (r.error) res.fails.push(`Hermes answers an error: ${r.error.code} ${r.error.message}`)
     else compare(m.result, r.result, '', res)
