@@ -22,8 +22,9 @@ const allSessions = Array.from({ length: N_SESSIONS }, (_, i) => ({
   started_at: Math.floor(Date.now() / 1000) - i * 3600,
   source: 'mobile'
 }))
-// The slow-resume chat, oldest of all (past the first page): its title comes from session.list, as with Hermes.
-allSessions.push({ id: 's-slow', title: 's-slow', preview: 'x', message_count: 2, started_at: Math.floor(Date.now() / 1000) - (N_SESSIONS + 1) * 3600, source: 'mobile' })
+// The slow-resume chat, past the first page and just before the oldest (a test deletes the last row): its title comes
+// from session.list, as with Hermes.
+allSessions.splice(N_SESSIONS - 1, 0, { id: 's-slow', title: 's-slow', preview: 'x', message_count: 2, started_at: Math.floor(Date.now() / 1000) - (N_SESSIONS - 1.5) * 3600, source: 'mobile' })
 allSessions.unshift({ id: 's-stale', title: 'Stale edit chat', preview: 'x', message_count: 4, started_at: Math.floor(Date.now() / 1000) - 60, source: 'mobile' })
 allSessions.unshift({ id: 's-card', title: 'Card chat', preview: 'x', message_count: 2, started_at: Math.floor(Date.now() / 1000) - 30, source: 'mobile' })
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
