@@ -5,7 +5,8 @@
   POST /v1/chat/completions   streams (SSE) a canned reply. When the conversation has no tool result yet it answers
                               with some reasoning and ONE tool call (read_file on the file given as the 2nd argument);
                               once a tool result is in the conversation (the follow-up request) it answers with
-                              reasoning and a text in several chunks, then stops. Without "stream": true the same
+                              reasoning and a text in several chunks, then stops (after a 1.6 s pause, so that Hermes's
+                              once-a-second session.usage ticker fires during the turn). Without "stream": true the same
                               reply comes as one JSON body.
   GET  /v1/models             one model, so Hermes's model checks find it.
 
@@ -75,6 +76,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.rstrip("/").endswith("/chat/completions"):
             return self._json({"error": {"message": "not found"}}, 404)
         deltas, finish = plan(body)
+        if finish == "stop":
+            # Hermes pushes session.usage from a ticker that fires once a second while a turn runs, and only when the counters
+            # changed: the answer after the tool call comes late enough for one tick to see the first call's usage.
+            time.sleep(1.6)
         usage = {"prompt_tokens": 120, "completion_tokens": 20, "total_tokens": 140}
         if not body.get("stream"):
             msg = {"role": "assistant", "content": "".join(d.get("content", "") for d in deltas) or None}
