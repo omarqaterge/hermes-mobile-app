@@ -64,7 +64,7 @@ python3 tools/check_spec.py
   Files that touch `window`/`localStorage` at load time start with `// @vitest-environment happy-dom`
   (see `web/src/helpers.test.ts`).
 - `tools/web-e2e/run.sh` builds the page and drives it with Playwright against a mock Hermes
-  (`tools/web-e2e/mock.cjs`). Every web change needs at least one new `check(...)` in `tools/web-e2e/test.cjs`. New mock
+  (`tools/web-e2e/mock.cjs`). Every web change needs at least one new `check(...)` in the feature's file under `tools/web-e2e/checks/`. New mock
   behaviour goes into `mock.cjs`: a new prompt text in the `prompt.submit` case (see `use tools`, `show diagram`), or
   a new stored chat in the `session.resume` case (see `s-run`, `s-card`). In cloud sessions the script finds
   Chromium under `/opt/pw-browsers` by itself.

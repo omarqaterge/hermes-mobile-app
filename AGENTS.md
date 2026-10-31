@@ -33,9 +33,9 @@ else. `CLAUDE.md` imports this file.
 
 ## Checks before you commit
 
-`cd web && npm test && npm run build`, `tools/web-e2e/run.sh` (add a check for each web change),
-`python3 tools/check_spec.py`, and for Android changes `tools/java-check.sh` (JDK 21+) and `tools/api-check.sh`
-(Android SDK command-line tools). Plugin and phone-script tests: see CONTRIBUTING.md. CI runs all of them on every push.
+`cd web && npm test && npm run build`, `tools/web-e2e/run.sh` (add a check for each web change, in its feature's
+file under `tools/web-e2e/checks/`), `python3 tools/check_spec.py`, and for Android changes `tools/java-check.sh`
+(JDK 21+) and `tools/api-check.sh` (Android SDK command-line tools). Plugin and phone-script tests: see CONTRIBUTING.md. CI runs all of them on every push.
 
 ## Rules
 
