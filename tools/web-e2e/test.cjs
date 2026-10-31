@@ -2386,9 +2386,13 @@ async function main() {
   await vp.locator('.msg.assistant a.chat-link').first().waitFor({ timeout: 5000 })
   check((await vp.locator('.msg.assistant a.chat-link').count()) === 2, 'markdown chat link and a bare session id both become chat links (' + (await vp.locator('.msg.assistant').last().innerHTML()).slice(0, 700) + ')')
   const vResumesBefore = rpcs('session.resume').length
+  const vGoalReadsBefore = rpcs('session.control.read').length
   await vp.locator('.msg.assistant a.chat-link').first().click()
   await sleep(800)
   check(rpcs('session.resume').length > vResumesBefore && rpcs('session.resume').pop().params.session_id === 's-6', 'tapping a chat link opens that chat ' + JSON.stringify(rpcs('session.resume').slice(-2)))
+  // the chat-open steps (chatopen.ts) ran for the chat that opened: its goal is read with its own session id
+  const vRt = rpcs('session.control.read').slice(vGoalReadsBefore)
+  check(vRt.length > 0 && vRt.every(c => c.params.session_id), 'opening a chat runs its chat-open steps (goal read ' + JSON.stringify(vRt.map(c => c.params.session_id)) + ')')
   await vp.evaluate(() => window.hermesShortcut('new'))
   await vbox.fill('link chats')
   await vp.getByRole('button', { name: 'Send' }).click()
