@@ -585,7 +585,8 @@ wss.on('connection', ws => {
         if (/^read the note$/.test(params.text)) {
           // One whole turn with the event types and payload shapes of the pinned Hermes (tools/hermes-contract sends this
           // prompt to the real Hermes with a fake model: reasoning, one read_file call, reasoning, the answer in chunks).
-          // A tool result is the parsed JSON in `result` (`result_text` only comes with display.tool_progress verbose).
+          // A tool result is the parsed JSON in `result` (the real Hermes adds `result_text` only with display.tool_progress verbose, which
+          // the app never sets, so no flow here sends it).
           const live = fn => () => ws.readyState === 1 && fn()
           const args = { path: '/root/note.txt' }
           const usage = n => ({ model: 'mock-model', input: 120 * n, output: 20 * n, reasoning: 0, prompt: 120 * n, completion: 20 * n, total: 140 * n, calls: n, context_used: 120, context_max: 256000, context_percent: 0, context_source: 'provider_usage', context_estimated: false, compressions: 0, avg_latency_s: 1, avg_tps: 20, active_subagents: 0 })
@@ -616,9 +617,16 @@ wss.on('connection', ws => {
         if (/^use tools$/.test(params.text)) {
           // Four tool calls (with reasoning between two of them), then the answer: the app folds them into one line.
           let t = 50
-          for (const [i, name] of ['terminal', 'read_file', 'search_files', 'terminal'].entries()) {
-            later((t += 40), () => event('tool.start', sid, { tool_id: `call_${i}`, name, context: `step ${i}`, args: { command: `echo ${i}` } }))
-            later((t += 40), () => event('tool.complete', sid, { tool_id: `call_${i}`, name, duration_s: 1.5, result_text: `out ${i}` }))
+          // Each result is the parsed JSON of the tool's output in `result` (shapes of the real tools), never `result_text`.
+          const calls = [
+            ['terminal', { command: 'echo 0' }, { output: 'out 0', exit_code: 0, error: null }],
+            ['read_file', { path: '/root/note.txt' }, { content: '1|out 1', total_lines: 1, file_size: 7, truncated: false, is_binary: false, is_image: false, not_found: false }],
+            ['search_files', { pattern: 'out', path: '/root' }, { total_count: 1, matches: [{ path: '/root/note.txt', line: 1, content: 'out 2' }] }],
+            ['terminal', { command: 'echo 3' }, { output: 'out 3', exit_code: 0, error: null }]
+          ]
+          for (const [i, [name, args, result]] of calls.entries()) {
+            later((t += 40), () => event('tool.start', sid, { tool_id: `call_${i}`, name, context: `step ${i}`, args }))
+            later((t += 40), () => event('tool.complete', sid, { tool_id: `call_${i}`, name, args, duration_s: 1.5, result }))
             if (i === 1) later((t += 20), () => event('reasoning.delta', sid, { text: 'thinking between calls' }))
           }
           later((t += 60), () => event('message.start', sid, {}))
@@ -628,13 +636,15 @@ wss.on('connection', ws => {
         if (/^edit files$/.test(params.text)) {
           // Two file edits (a write and a patch) with their inline diffs, then the answer: the turn ends with a changes card.
           const edits = [
-            ['write_file', { path: '/root/projects/site/a.txt', content: 'x\ny' }, '--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,2 @@\n+x\n+y'],
-            ['patch', { path: '/root/projects/site/b.txt', old_string: 'old', new_string: 'new' }, '--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old\n+new']
+            ['write_file', { path: '/root/projects/site/a.txt', content: 'x\ny' }, '--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,2 @@\n+x\n+y',
+              { bytes_written: 3, dirs_created: true, verified: true, lint: { status: 'skipped', message: 'No linter for .txt files' }, resolved_path: '/root/projects/site/a.txt', files_modified: ['/root/projects/site/a.txt'] }],
+            ['patch', { path: '/root/projects/site/b.txt', old_string: 'old', new_string: 'new' }, '--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old\n+new',
+              { success: true, diff: '--- a//root/projects/site/b.txt\n+++ b//root/projects/site/b.txt\n@@ -1 +1 @@\n-old\n+new', files_modified: ['/root/projects/site/b.txt'], lint: { status: 'skipped', message: 'No linter for .txt files' }, resolved_path: '/root/projects/site/b.txt' }]
           ]
           let t = 50
-          for (const [i, [name, args, diff]] of edits.entries()) {
+          for (const [i, [name, args, diff, result]] of edits.entries()) {
             later((t += 40), () => event('tool.start', sid, { tool_id: `call_ed${i}`, name, args }))
-            later((t += 40), () => event('tool.complete', sid, { tool_id: `call_ed${i}`, name, args, duration_s: 0.2, result_text: 'ok', inline_diff: diff }))
+            later((t += 40), () => event('tool.complete', sid, { tool_id: `call_ed${i}`, name, args, duration_s: 0.2, result, inline_diff: diff }))
           }
           later((t += 60), () => event('message.start', sid, {}))
           later((t += 40), () => event('message.complete', sid, { text: 'Edited.' }))
@@ -643,7 +653,7 @@ wss.on('connection', ws => {
         if (/^wait a while$/.test(params.text)) {
           // One long command (nothing streams for 7 s): what the app polls meanwhile is what costs battery.
           later(50, () => event('tool.start', sid, { tool_id: 'call_wait', name: 'terminal', context: 'sleep 7', args: { command: 'sleep 7' } }))
-          later(7000, () => event('tool.complete', sid, { tool_id: 'call_wait', name: 'terminal', duration_s: 7, result_text: '' }))
+          later(7000, () => event('tool.complete', sid, { tool_id: 'call_wait', name: 'terminal', duration_s: 7, args: { command: 'sleep 7' }, result: { output: '', exit_code: 0, error: null } }))
           later(7050, () => event('message.start', sid, {}))
           later(7100, () => event('message.complete', sid, { text: 'Waited.' }))
           return
@@ -656,7 +666,7 @@ wss.on('connection', ws => {
             const stored = sid.replace(/^rt-/, '')
             const d = { id: 'dplan', title: 'Plan', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 18, path: '', created: Date.now() / 1000, content: '# Plan\n\nStep one' }
             ;(canvasDocs[stored] ||= []).push(d)
-            event('tool.complete', sid, { tool_id: 'call_cv', name: 'canvas', duration_s: 0.1, args: { action: 'create' }, result_text: JSON.stringify({ ok: true, id: 'dplan', shown: true }) })
+            event('tool.complete', sid, { tool_id: 'call_cv', name: 'canvas', duration_s: 0.1, args: { action: 'create', title: 'Plan', content: '# Plan\n\nStep one' }, result: { ok: true, id: 'dplan', shown: true } })
           })
           later(3800, () => event('message.start', sid, {}))
           later(3900, () => event('message.complete', sid, { text: 'Wrote the plan.' }))
@@ -665,7 +675,7 @@ wss.on('connection', ws => {
         if (/^see https:\/\/example\.com\/b$/.test(params.text)) {
           // Web addresses in plain text: a tool's output and inline code in the reply.
           later(50, () => event('tool.start', sid, { tool_id: 'call_url', name: 'web_extract', context: 'example.com', args: { urls: ['https://example.com/a'] } }))
-          later(100, () => event('tool.complete', sid, { tool_id: 'call_url', name: 'web_extract', duration_s: 0.2, result_text: 'fetched https://example.com/a.' }))
+          later(100, () => event('tool.complete', sid, { tool_id: 'call_url', name: 'web_extract', duration_s: 0.2, args: { urls: ['https://example.com/a'] }, result: { results: [{ url: 'https://example.com/a', title: 'Example', content: 'fetched https://example.com/a.', error: null }] } }))
           later(150, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Read `https://example.com/c` and:\n\n```\nhttps://example.com/d\n```' }))
           return
