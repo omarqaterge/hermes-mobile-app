@@ -642,7 +642,7 @@ async function main() {
   await page.waitForFunction(() => document.querySelectorAll('.drawer .session-row').length > 100, null, { timeout: 5000 })
   const after = await page.locator('.drawer .session-row').count()
   const lim = rpcs('session.list').map(c => c.params.limit)
-  check(before === 80 && after === 153 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
+  check(before === 80 && after === 154 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
   check((await olderBtn.count()) === 0, 'button hides when everything is loaded')
 
   // ── deleting a chat also clears its leftover photos/files/canvas on the phone ──
@@ -1402,7 +1402,7 @@ async function main() {
   await page.locator('.menu-item', { hasText: 'Share chat' }).click()
   await page.locator('.toast', { hasText: 'Copied as Markdown' }).waitFor({ timeout: 3000 }).catch(() => {})
   const md = await page.evaluate(() => window.__copied)
-  check(md && md.startsWith('# s-8\n') && md.includes('**You:**\n\nhello s-8') && md.includes('**Hermes:**\n\nanswer s-8'), `chat exported as Markdown (${JSON.stringify(md && md.slice(0, 90))})`)
+  check(md && md.startsWith('# Chat 8\n') && md.includes('**You:**\n\nhello s-8') && md.includes('**Hermes:**\n\nanswer s-8'), `chat exported as Markdown (${JSON.stringify(md && md.slice(0, 90))})`)
 
   // ── #17 compress suggestion near a full context ──
   await page.evaluate(() => window.hermesOpenSession('s-full'))

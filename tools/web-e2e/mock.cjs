@@ -22,6 +22,9 @@ const allSessions = Array.from({ length: N_SESSIONS }, (_, i) => ({
   started_at: Math.floor(Date.now() / 1000) - i * 3600,
   source: 'mobile'
 }))
+// The slow-resume chat, past the first page and just before the oldest (a test deletes the last row): its title comes
+// from session.list, as with Hermes.
+allSessions.splice(N_SESSIONS - 1, 0, { id: 's-slow', title: 's-slow', preview: 'x', message_count: 2, started_at: Math.floor(Date.now() / 1000) - (N_SESSIONS - 1.5) * 3600, source: 'mobile' })
 allSessions.unshift({ id: 's-stale', title: 'Stale edit chat', preview: 'x', message_count: 4, started_at: Math.floor(Date.now() / 1000) - 60, source: 'mobile' })
 allSessions.unshift({ id: 's-card', title: 'Card chat', preview: 'x', message_count: 2, started_at: Math.floor(Date.now() / 1000) - 30, source: 'mobile' })
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
@@ -423,7 +426,8 @@ wss.on('connection', ws => {
         const n = (params.model ? `-m${++created}` : '') + (draftGen ? `-d${draftGen}` : '')
         const rt = `rt-new${n}`, model = params.model || 'mock-model'
         later(600, () => { log({ built: rt }); event('session.info', rt, { model, provider: params.provider || 'mock' }) })
-        return reply({ session_id: rt, stored_session_id: `s-new${n}`, info: { model, provider: params.provider || 'mock' }, messages: [] })
+        // info names a provider only when the params did (a per-session override), like Hermes.
+        return reply({ session_id: rt, stored_session_id: `s-new${n}`, info: { model, ...(params.provider ? { provider: params.provider } : {}) }, messages: [] })
       }
       case 'setup.status':
         return reply({ provider_configured: providerConfigured || (looseStatus && !!params.profile), ready: true })
@@ -432,14 +436,17 @@ wss.on('connection', ws => {
       case 'model.options':
         return reply({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
       case 'session.resume': {
+        // Like Hermes's resume reply: the stored id comes back as resumed / session_key (no stored_session_id) and
+        // info has no title (the app takes it from session.list). tools/hermes-contract checks this against Hermes.
         const sid = params.session_id
         if (goneDraft(sid)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 4007, message: 'session not found' } }))
         if (sid === 's-run') {
           reply({
             session_id: 'rt-run',
-            stored_session_id: 's-run',
+            resumed: 's-run',
+            session_key: 's-run',
             running: true,
-            info: { title: 'Running chat', model: 'mock-model' },
+            info: { model: 'mock-model' },
             messages: [
               { role: 'user', text: 'First question', row_id: 1 },
               { role: 'assistant', text: 'First answer' }
@@ -455,48 +462,48 @@ wss.on('connection', ws => {
         if (sid === 's-goal') {
           // A chat with a goal set: the goal line shows under the chat (session.control.read answers it).
           goalState.g = { title: 'Ship it', status: 'active', turns_used: 3, max_turns: 20, contract: { outcome: 'Login works' }, subgoals: ['tests'], gates: [] }
-          return reply({ session_id: 'rt-goal', stored_session_id: sid, info: { title: 'Goal chat', model: 'mock-model' }, messages: [
+          return reply({ session_id: 'rt-goal', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
             { role: 'user', text: 'work on it', row_id: 1 }, { role: 'assistant', text: 'answer s-goal' }] })
         }
         if (sid === 's-card') {
           // A saved chat holding a Query() card (same code as LIVE below).
           const code = ['root = Card([head, table])', 'head = CardHeader("Search results")', 'results = Query("web_search", {query: "openui"}, {data: {web: []}})', 'table = Table([Col("Title", results.data.web.title), Col("Link", results.data.web.url)])'].join('\n')
-          return reply({ session_id: 'rt-card', stored_session_id: sid, info: { title: 'Card chat', model: 'mock-model' }, messages: [
+          return reply({ session_id: 'rt-card', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
             { role: 'user', text: 'show live ui', row_id: 1 }, { role: 'assistant', text: 'Live:\n\n```openui-lang\n' + code + '\n```' }] })
         }
         if (sid === 's-stale') {
           // Hermes no longer holds the first question live (row 999 answers 4018 to an edit).
-          return reply({ session_id: 'rt-stale', stored_session_id: sid, info: { title: 'Stale edit chat', model: 'mock-model' }, messages: [
+          return reply({ session_id: 'rt-stale', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
             { role: 'user', text: 'stale first question', row_id: 999 }, { role: 'assistant', text: 'stale first answer' },
             { role: 'user', text: 'stale second question', row_id: 1000 }, { role: 'assistant', text: 'stale second answer' }] })
         }
         if (sid === 's-panel') {
           const card = ['root = Card([head, intro])', 'head = CardHeader("Swipe card")', 'intro = TextContent("Inside a card.")'].join('\n')
-          return reply({ session_id: 'rt-panel', stored_session_id: sid, info: { title: 'Panel chat', model: 'mock-model' }, messages: [
+          return reply({ session_id: 'rt-panel', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
             { role: 'user', text: 'show me things', row_id: 1 },
             { role: 'assistant', text: 'Plain words to swipe on.\n\n```js\nconst a = 1\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```openui-lang\n' + card + '\n```\n\nMore plain words.' }] })
         }
         if (sid === 's-wide') {
           // Text a real chat has: a long unbroken path / URL in plain text and in inline code.
           const url = 'https://example.com/' + 'segment-'.repeat(30) + 'end'
-          return reply({ session_id: 'rt-wide', stored_session_id: sid, info: { title: 'Wide chat', model: 'mock-model' }, messages: [
+          return reply({ session_id: 'rt-wide', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
             { role: 'user', text: 'where is it', row_id: 1 },
             { role: 'assistant', text: 'Plain words to swipe on.\n\nThe file is ' + url + ' and also `' + '/very/long/path/'.repeat(12) + 'file.txt` here.\n\nMore plain words.' }] })
         }
         if (sid === 's-slowstart') {
           // Slow start-up resume: the user starts a new chat while this is loading.
-          return later(2500, () => reply({ session_id: 'rt-slowstart', stored_session_id: sid, info: { title: 'Slow chat', model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
+          return later(2500, () => reply({ session_id: 'rt-slowstart', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
         }
         if (sid === 's-scrub') {
           // 30 questions with tall answers: the chat scrubber (rail with one tick per question) shows.
           const messages = []
           for (let i = 1; i <= 30; i++) messages.push({ role: 'user', text: `question ${i}`, row_id: i }, { role: 'assistant', text: `answer ${i}\n\n` + 'line\n\n'.repeat(15) })
-          return reply({ session_id: 'rt-s-scrub', stored_session_id: sid, info: { title: 'Scrub chat', model: 'mock-model' }, messages })
+          return reply({ session_id: 'rt-s-scrub', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages })
         }
         if (sid === 's-visit') {
           // Two tall answers; the second question was sent at ...120 s (after a test sets the last visit to ...100 s).
           const tall = 'line\n\n'.repeat(60)
-          return reply({ session_id: 'rt-s-visit', stored_session_id: sid, info: { title: 'Visit chat', model: 'mock-model' }, messages: [
+          return reply({ session_id: 'rt-s-visit', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
             { role: 'user', text: 'visit question 1', row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: 'visit answer 1\n\n' + tall, timestamp: 1790000060 },
             { role: 'user', text: 'visit question 2', row_id: 3, timestamp: 1790000120 }, { role: 'assistant', text: 'visit answer 2\n\n' + tall, timestamp: 1790000180 }] })
         }
@@ -504,9 +511,9 @@ wss.on('connection', ws => {
           // 150 turns: the app should draw only the end and load earlier turns on scroll.
           const messages = []
           for (let i = 0; i < 150; i++) messages.push({ role: 'user', text: `question ${i}`, row_id: i * 2 + 1 }, { role: 'assistant', text: `**answer ${i}**\n\n- point a\n- point b` })
-          return reply({ session_id: 'rt-s-long', stored_session_id: sid, info: { title: 'Long chat', model: 'mock-model' }, messages })
+          return reply({ session_id: 'rt-s-long', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages })
         }
-        const res = { session_id: runtimeGen ? `rt${runtimeGen}-${sid}` : `rt-${sid}`, stored_session_id: sid, info: { title: sid, model: 'mock-model' }, messages: [{ role: 'user', text: `hello ${sid}`, row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: `answer ${sid}`, timestamp: 1790000060 }] }
+        const res = { session_id: runtimeGen ? `rt${runtimeGen}-${sid}` : `rt-${sid}`, resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [{ role: 'user', text: `hello ${sid}`, row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: `answer ${sid}`, timestamp: 1790000060 }] }
         // A slow phone: the cached copy must be on screen long before this answer.
         if (sid === 's-slow') return later(1500, () => reply(res))
         return reply(res)
