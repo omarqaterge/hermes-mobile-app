@@ -3,12 +3,13 @@ import { type ChatItem, toast } from '../store'
 import { branchAt, filesOf, imagesOf, resendFrom, retryTurn, type MsgFile, type MsgImage } from '../gateway'
 import { Markdown } from './Markdown'
 import { copyRich, copyText, haptic } from '../bridge'
-import { PickerSheet } from './ui'
+import { Chevron, Collapse, PickerSheet } from './ui'
 import { toggleSpeak, useVoice } from '../voice'
+import { splitQuote } from '../quote'
 import { api } from '../api'
 import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
-import { formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
+import { fmtDuration, formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
@@ -40,11 +41,6 @@ const TOOL_ICONS: Record<string, string> = {
   image_generate: '🎨',
   send_message: '✉',
   phone_app: '📱'
-}
-
-function fmtDuration(s?: number | null): string {
-  if (s == null) return ''
-  return s < 1 ? `${Math.round(s * 1000)}ms` : s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
 }
 
 function argsPreview(args?: Record<string, unknown> | null): string {
@@ -92,7 +88,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
           {item.status === 'error' ? '✕' : null}
         </span>
       </button>
-      {open && (
+      <Collapse open={open}>
         <div className="tool-body">
           {item.risk && <div className="tool-risk-note">⚠ {item.risk}</div>}
           {args && Object.keys(args).length > 0 && (
@@ -144,7 +140,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
           {!out && loadingOut && <div className="tool-text dim">Loading output…</div>}
           {!out && !loadingOut && !item.summary && item.status === 'done' && stored !== null && <div className="tool-text dim">No output recorded</div>}
         </div>
-      )}
+      </Collapse>
     </div>
   )
 })
@@ -164,7 +160,7 @@ export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }
         <span className="tool-run-names">{run.names.join(', ')}</span>
       </span>
       {run.running ? <Spinner small /> : null}
-      <span className="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+      <span className="chev" aria-hidden="true"><Chevron open={open} /></span>
     </button>
   )
 })
@@ -189,9 +185,10 @@ function Reasoning({ text, live }: { text: string; live: boolean }) {
       <button className="reasoning-head" onClick={() => setOpen(o => !o)}>
         <span className="reasoning-dot">{live ? <Spinner small /> : <BrainIcon />}</span>
         {live ? 'Thinking…' : 'Thought process'}
-        <span className="chev">{open ? '▾' : '▸'}</span>
+        <span className="chev"><Chevron open={open} /></span>
       </button>
-      {open ? <div className="reasoning-body"><Linked text={text} /></div> : live ? <div className="reasoning-peek">{text.slice(-160)}</div> : null}
+      <Collapse open={open}><div className="reasoning-body"><Linked text={text} /></div></Collapse>
+      {!open && live ? <div className="reasoning-peek">{text.slice(-160)}</div> : null}
     </div>
   )
 }
@@ -279,6 +276,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
   const [keep, setKeep] = useState<MsgImage[]>(() => imagesOf(item)) // photos sent again with the edit
   const [keepFiles, setKeepFiles] = useState<MsgFile[]>(() => filesOf(item)) // files sent again with the edit
   const time = useTimeTap(item.at)
+  const quoted = splitQuote(item.text)
   const ta = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     const el = ta.current
@@ -361,7 +359,12 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
             {item.files?.map(n => <span key={`f-${n}`} className="chip">📎 {n}</span>)}
           </div>
         ) : null}
-        <Linked text={item.text} />
+        {quoted.quotes.map((q, i) => (
+          <blockquote key={i} className="msg-quote">
+            <Linked text={q} />
+          </blockquote>
+        ))}
+        <Linked text={quoted.body} />
       </div>
       {time.node}
       {actions && (

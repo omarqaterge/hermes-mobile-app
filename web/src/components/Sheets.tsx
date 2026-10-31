@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CommandsCatalogResult, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import type { CommandsCatalogResult, GoalSnapshot, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
 import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, reasonLabel, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
-import { deleteSession, errText, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
+import { deleteSession, compressChat, errText, goalAction, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
 import { openCanvas, useCanvas } from '../canvas'
 import { confirmDialog } from '../dialog'
 import { Title, keepBranch, plainTitle } from './Title'
@@ -21,11 +21,13 @@ import { useSheetDrag } from './useSheetDrag'
 import { DiffView } from './Diff'
 import { useBackHandler } from '../backstack'
 import { Spinner } from './Spinner'
+import { fmtCost } from '../ctxring'
 
-function Shell({ title, children }: { title: string; children: React.ReactNode }) {
-  const drag = useSheetDrag(() => setState({ sheet: null }))
+function Shell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
+  const close = onClose ?? (() => setState({ sheet: null }))
+  const drag = useSheetDrag(close)
   return (
-    <div className="sheet-backdrop" onClick={() => setState({ sheet: null })}>
+    <div className="sheet-backdrop" onClick={close}>
       <div className="sheet tall" role="dialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className="sheet-title">{title}</div>
@@ -702,6 +704,149 @@ export function RollbackSheet() {
             </div>
           ))
         )}
+      </div>
+    </Shell>
+  )
+}
+
+const CONTRACT_LABELS: [keyof GoalSnapshot['contract'], string][] = [
+  ['outcome', 'Outcome'],
+  ['verification', 'Verification'],
+  ['constraints', 'Constraints'],
+  ['boundaries', 'Boundaries'],
+  ['stop_when', 'Stop when']
+]
+
+/** The chat's goal (Hermes's /goal): its contract and subgoals, with Pause / Resume and Clear. Opened from the goal line in the status bar. */
+export function GoalSheet({ goal, onClose }: { goal: GoalSnapshot; onClose: () => void }) {
+  const [busy, setBusy] = useState(false)
+  useBackHandler(onClose, true)
+  const paused = goal.status === 'paused'
+  const run = async (action: 'goal.pause' | 'goal.resume' | 'goal.clear') => {
+    if (busy) return
+    setBusy(true)
+    haptic()
+    try {
+      await goalAction(action)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const clear = async () => {
+    const ok = await confirmDialog({ title: 'Clear this goal?', confirmLabel: 'Clear', danger: true })
+    if (ok) {
+      await run('goal.clear')
+      onClose()
+    }
+  }
+  const rows = CONTRACT_LABELS.filter(([k]) => goal.contract?.[k])
+  return (
+    <Shell title="Goal" onClose={onClose}>
+      <div className="sheet-scroll">
+        <div className="kv">
+          <div>Goal</div>
+          <div>{goal.title}</div>
+          <div>Status</div>
+          <div>{goal.status}{goal.paused_reason ? ` (${goal.paused_reason})` : ''}</div>
+          <div>Turns</div>
+          <div>{goal.turns_used} of {goal.max_turns}</div>
+          {rows.map(([k, label]) => (
+            <Fragment key={k}>
+              <div>{label}</div>
+              <div>{goal.contract[k]}</div>
+            </Fragment>
+          ))}
+          {goal.last_verdict ? (
+            <>
+              <div>Last verdict</div>
+              <div>{goal.last_verdict}</div>
+            </>
+          ) : null}
+          {goal.last_reason ? (
+            <>
+              <div>Reason</div>
+              <div>{goal.last_reason}</div>
+            </>
+          ) : null}
+        </div>
+        {goal.subgoals?.length > 0 && (
+          <>
+            <div className="dim small goal-sub-head">Subgoals</div>
+            <ul className="goal-subs">
+              {goal.subgoals.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        <div className="sheet-actions col">
+          {(goal.status === 'active' || paused) && (
+            <button className="btn primary" disabled={busy} onClick={() => void run(paused ? 'goal.resume' : 'goal.pause')}>
+              {paused ? 'Resume' : 'Pause'}
+            </button>
+          )}
+          <button className="btn danger" disabled={busy} onClick={() => void clear()}>
+            Clear goal
+          </button>
+        </div>
+      </div>
+    </Shell>
+  )
+}
+
+/** Compress older turns (session.compress), shared by the compress hint and the context sheet. `run` toasts the result; `onDone` runs afterwards. */
+export function useCompress(onDone?: () => void): { busy: boolean; run: () => void } {
+  const [busy, setBusy] = useState(false)
+  const run = () => {
+    if (busy) return
+    setBusy(true)
+    haptic()
+    compressChat()
+      .then(t => toast(t))
+      .catch(e => toast(errText(e), 'error'))
+      .finally(() => {
+        onDone?.()
+        setBusy(false)
+      })
+  }
+  return { busy, run }
+}
+
+/** The chat's context window: how full it is, what Hermes reports about tokens, cost and cache, and a Compress button. */
+export function ContextSheet() {
+  const ctx = useStore(s => s.active?.ctx)
+  const usage = useStore(s => s.active?.usage)
+  const running = useStore(s => s.active?.running ?? false)
+  const { busy, run } = useCompress()
+  const pct = ctx ? Math.min(100, Math.max(0, ctx.percent)) : 0
+  return (
+    <Shell title="Context window">
+      <div className="sheet-scroll">
+        {ctx ? (
+          <>
+            <div className="ctx-bar" role="img" aria-label={`${Math.round(pct)}% used`}>
+              <div className={`ctx-bar-fill ${pct >= 90 ? 'full' : pct >= 80 ? 'warn' : ''}`} style={{ width: `${pct}%` }} />
+            </div>
+            <div className="ctx-figures">{Math.round(pct)}% used</div>
+            <div>
+              {ctx.used.toLocaleString()} of {ctx.max.toLocaleString()} tokens
+            </div>
+            {usage?.context_estimated ? <div className="dim small">estimated by Hermes</div> : null}
+          </>
+        ) : (
+          <div className="dim">Nothing to show yet.</div>
+        )}
+        {usage && (usage.input != null || usage.output != null) ? (
+          <div className="ctx-row">
+            This chat so far: input {(usage.input ?? 0).toLocaleString()} · output {(usage.output ?? 0).toLocaleString()}
+          </div>
+        ) : null}
+        {usage?.cost_usd != null ? <div className="ctx-row">Cost: {fmtCost(usage.cost_usd)}</div> : null}
+        {usage?.cache_hit_pct != null ? <div className="ctx-row">Cache hits: {Math.round(usage.cache_hit_pct)}%</div> : null}
+        <button className="btn block ctx-compress" disabled={running || busy || !ctx} onClick={run}>
+          {busy ? <Spinner small /> : 'Compress older turns'}
+        </button>
+        {running ? <div className="dim small">Wait for the reply to finish</div> : null}
       </div>
     </Shell>
   )
