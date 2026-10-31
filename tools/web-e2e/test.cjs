@@ -1144,6 +1144,19 @@ async function main() {
 
   check((await page.locator('.turn-changes').count()) === 0, 'a turn with only terminal tools has no changes card')
 
+  // ── a turn as the pinned Hermes streams it (the contract check's "read the note" flow): reasoning, one read_file call whose result
+  //    comes as parsed JSON in `result` (no result_text), the answer in chunks ──
+  await page.getByPlaceholder('Message Hermes').fill('read the note')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'The note says: contract note. Nothing else to report.' }).waitFor({ timeout: 5000 })
+  const noteTool = page.locator('.tool', { hasText: 'read_file' }).last()
+  check((await noteTool.count()) === 1, 'real-shaped turn: the read_file call shows as a tool card')
+  await noteTool.locator('.tool-head').click()
+  await noteTool.locator('.tool-body').waitFor({ timeout: 3000 }).then(() => check(true, 'real-shaped turn: its body opens'), () => check(false, 'real-shaped turn: its body opens'))
+  check((((await noteTool.locator('.tool-body').textContent()) || '').includes('contract note')), 'real-shaped turn: the card shows the JSON result')
+  await noteTool.locator('.tool-head').click()
+  await sleep(400)
+
   // ── a turn that wrote files ends with a card listing them; tap a file for its diff ──
   await page.getByPlaceholder('Message Hermes').fill('edit files')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
