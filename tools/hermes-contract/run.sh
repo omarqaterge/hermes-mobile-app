@@ -20,6 +20,6 @@ HM_E2E_LOG="$work/mock-calls.jsonl" node ../web-e2e/mock.cjs > "$work/mock.log" 
 ./start-hermes.sh "$work" "$port"
 kill -0 "$MOCK" || { echo "the mock didn't start:"; cat "$work/mock.log"; exit 1; }
 status=0
-node contract.cjs http://127.0.0.1:9119 "http://127.0.0.1:$port" || status=$?
+HM_CONTRACT_NOTE="$work/note.txt" node contract.cjs http://127.0.0.1:9119 "http://127.0.0.1:$port" || status=$?
 if [ "$status" != 0 ]; then echo "--- dashboard.log (last 40 lines)"; tail -40 "$work/dashboard.log"; fi
 exit "$status"

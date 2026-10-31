@@ -1,27 +1,51 @@
 #!/usr/bin/env python3
 """A fake OpenAI-compatible model for tools/hermes-contract (Python standard library only, no key, no network beyond
-127.0.0.1). It lets the pinned Hermes run one real model turn:
+127.0.0.1). It lets the pinned Hermes run real model turns, one script per prompt (SCRIPTS, keyed by the text of the
+conversation's LAST user message; the same prompts have scripted turns in tools/web-e2e/mock.cjs):
 
-  POST /v1/chat/completions   streams (SSE) a canned reply. When the conversation has no tool result yet it answers
-                              with some reasoning and ONE tool call (read_file on the file given as the 2nd argument);
-                              once a tool result is in the conversation (the follow-up request) it answers with
-                              reasoning and a text in several chunks, then stops (after a 1.6 s pause, so that Hermes's
-                              once-a-second session.usage ticker fires during the turn). Without "stream": true the same
-                              reply comes as one JSON body.
+  POST /v1/chat/completions   streams (SSE) a canned reply. A script is a list of tool calls and a final text: the reply
+                              to a request is the script's next tool call (counted by the tool results after the last
+                              user message), with some reasoning first, or the final text in several chunks once every
+                              call has its result. The final text comes after a 1.6 s pause, so that Hermes's
+                              once-a-second session.usage ticker fires during the turn. "slow reply" streams its text
+                              over about 20 s, so that a turn can be interrupted while it runs. A title request
+                              (Hermes's auxiliary title generation) gets {"title": "Contract title"}; a delegated
+                              sub-agent (its goal is the user message) answers at once. Without "stream": true the
+                              same reply comes as one JSON body.
   GET  /v1/models             one model, so Hermes's model checks find it.
 
 Usage: fake-model.py <port file> <file for the read_file call> [request log]
+The other scripts' files live next to the note: x (made world-writable by "run the thing", which Hermes asks to
+approve) and site/ (edited by "edit files", so Hermes takes a checkpoint).
 Picks a free port on 127.0.0.1, writes it to <port file> (the caller waits for that file), then serves until killed.
 """
 import json
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT_FILE, NOTE = sys.argv[1], sys.argv[2]
 LOG = sys.argv[3] if len(sys.argv) > 3 else None
+WORK = os.path.dirname(os.path.abspath(NOTE))
 MODEL = "contract-model"
-FINAL = ["The note says: ", "contract note. ", "Nothing else ", "to report."]
+SUB_GOAL = "Count to three"
+
+# prompt -> (tool calls, final text chunks). Each tool call is (name, args).
+SCRIPTS = {
+    "read the note": ([("read_file", {"path": NOTE})], ["The note says: ", "contract note. ", "Nothing else ", "to report."]),
+    # Hermes's dangerous-command check asks to approve a world-writable chmod (tools/approval_detection.py).
+    "run the thing": ([("terminal", {"command": f"chmod 777 {WORK}/x"})], ["Ran ", "the thing."]),
+    "ask me": ([("clarify", {"question": "Which colour?", "choices": ["Red", "Blue"]})], ["You picked ", "a colour."]),
+    # The task list tool (todo_list) is a deferred tool here: the model reaches it through the tool_call bridge.
+    "plan it": ([("tool_call", {"calls": [{"name": "todo_list", "arguments": {"todos": [
+        {"id": "1", "content": "Read", "status": "completed"},
+        {"id": "2", "content": "Write", "status": "in_progress"}]}}]})], ["Planned."]),
+    "edit files": ([("write_file", {"path": f"{WORK}/site/a.txt", "content": "x\ny\n"}),
+                    ("patch", {"path": f"{WORK}/site/b.txt", "old_string": "old", "new_string": "new"})], ["Edited."]),
+    "delegate it": ([("delegate_task", {"goal": SUB_GOAL, "context": "Answer with the three words only."})], ["The helper ", "counted."]),
+}
+SLOW = ["Slow ", "done."] + [" more"] * 40
 REASON1 = ["Let me read ", "the note first."]
 REASON2 = ["I have the note, ", "now I can answer."]
 
@@ -34,16 +58,36 @@ def chunk(delta, finish=None, usage=None):
     return c
 
 
+def text_of(m):
+    c = m.get("content")
+    if isinstance(c, list):
+        return "".join(p.get("text", "") for p in c if isinstance(p, dict))
+    return c or ""
+
+
 def plan(body):
-    """The chunks of the reply to this request, and its finish reason."""
+    """The chunks of the reply to this request, its finish reason and how long to wait before it."""
     msgs = body.get("messages") or []
-    if any(m.get("role") == "tool" for m in msgs):
-        return [{"reasoning_content": t} for t in REASON2] + [{"content": t} for t in FINAL], "stop"
-    call = {"name": "read_file", "arguments": json.dumps({"path": NOTE})}
-    first = {"tool_calls": [{"index": 0, "id": "call_contract_1", "type": "function",
-                             "function": {"name": call["name"], "arguments": call["arguments"][:12]}}]}
-    rest = {"tool_calls": [{"index": 0, "function": {"arguments": call["arguments"][12:]}}]}
-    return [{"reasoning_content": t} for t in REASON1] + [first, rest], "tool_calls"
+    system = " ".join(text_of(m) for m in msgs if m.get("role") == "system")
+    if system.startswith("You name chat sessions"):
+        return [{"content": json.dumps({"title": "Contract title"})}], "stop", 0
+    users = [i for i, m in enumerate(msgs) if m.get("role") == "user"]
+    last = text_of(msgs[users[-1]]).strip() if users else ""
+    done = sum(1 for m in msgs[(users[-1] if users else 0):] if m.get("role") == "tool")
+    if SUB_GOAL in last:  # the sub-agent delegate_task starts: its goal is its first user message
+        return [{"content": "One, two, three."}], "stop", 0
+    if last.endswith("slow reply"):
+        return [{"content": t} for t in SLOW], "stop", 0.5
+    calls, final = next((v for k, v in SCRIPTS.items() if last.endswith(k)), ([], ["OK"]))
+    if done >= len(calls):
+        reason = REASON2 if calls else []
+        return [{"reasoning_content": t} for t in reason] + [{"content": t} for t in final], "stop", 1.6
+    name, args = calls[done]
+    a = json.dumps(args)
+    cid = f"call_contract_{done + 1}"
+    first = {"tool_calls": [{"index": 0, "id": cid, "type": "function", "function": {"name": name, "arguments": a[:12]}}]}
+    rest = {"tool_calls": [{"index": 0, "function": {"arguments": a[12:]}}]}
+    return [{"reasoning_content": t} for t in REASON1] + [first, rest], "tool_calls", 0
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -70,23 +114,26 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(n) or b"{}")
         if LOG:
             with open(LOG, "a") as f:
-                roles = [m.get("role") for m in body.get("messages", [])]
-                f.write(json.dumps({"path": self.path, "stream": bool(body.get("stream")), "roles": roles,
-                                    "tools": len(body.get("tools") or [])}) + "\n")
+                msgs = body.get("messages", [])
+                users = [text_of(m)[-60:] for m in msgs if m.get("role") == "user"]
+                f.write(json.dumps({"path": self.path, "stream": bool(body.get("stream")), "roles": [m.get("role") for m in msgs],
+                                    "last_user": users[-1] if users else None,
+                                    "tools": [t.get("function", {}).get("name") for t in body.get("tools") or []]}) + "\n")
         if not self.path.rstrip("/").endswith("/chat/completions"):
             return self._json({"error": {"message": "not found"}}, 404)
-        deltas, finish = plan(body)
-        if finish == "stop":
-            # Hermes pushes session.usage from a ticker that fires once a second while a turn runs, and only when the counters
-            # changed: the answer after the tool call comes late enough for one tick to see the first call's usage.
-            time.sleep(1.6)
+        deltas, finish, pause = plan(body)
+        # Hermes pushes session.usage from a ticker that fires once a second while a turn runs, and only when the counters
+        # changed: the answer after the tool call comes late enough for one tick to see the first call's usage.
+        time.sleep(pause if finish == "stop" and pause > 1 else 0)
+        gap = pause if pause and pause <= 1 else 0.05
         usage = {"prompt_tokens": 120, "completion_tokens": 20, "total_tokens": 140}
         if not body.get("stream"):
             msg = {"role": "assistant", "content": "".join(d.get("content", "") for d in deltas) or None}
-            for d in deltas:
-                if "tool_calls" in d and "id" in d["tool_calls"][0]:
-                    msg["tool_calls"] = [{"id": "call_contract_1", "type": "function", "function": {
-                        "name": "read_file", "arguments": json.dumps({"path": NOTE})}}]
+            calls = [d["tool_calls"][0] for d in deltas if "tool_calls" in d]
+            if calls:
+                fn = calls[0]["function"]
+                msg["tool_calls"] = [{"id": calls[0]["id"], "type": "function", "function": {
+                    "name": fn["name"], "arguments": "".join(c["function"]["arguments"] for c in calls)}}]
             return self._json({"id": "chatcmpl-contract", "object": "chat.completion", "created": int(time.time()),
                                "model": MODEL, "choices": [{"index": 0, "message": msg, "finish_reason": finish}],
                                "usage": usage})
@@ -101,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
             for c in out:
                 self.wfile.write(b"data: " + json.dumps(c).encode() + b"\n\n")
                 self.wfile.flush()
-                time.sleep(0.05)
+                time.sleep(gap)
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):

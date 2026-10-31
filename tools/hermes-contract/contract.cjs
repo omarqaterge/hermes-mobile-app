@@ -2,7 +2,7 @@
 // pinned Hermes, and compares the reply SHAPES (keys and types, not values). The mock's replies are what the browser
 // tests prove the app works with, so a key the mock sends that the real Hermes lacks, or a key of another type, fails;
 // keys only the real Hermes sends are listed and allowed. The real Hermes runs the app's plugin and talks to a fake local
-// model (fake-model.py), so the plugin's read-only routes and one whole model turn (prompt.submit and its events) are
+// model (fake-model.py), so the plugin's routes (reading and writing) and whole model turns (prompt.submit and its events) are
 // compared too.
 // Usage: node contract.cjs [mock URL] [Hermes URL]   (defaults http://127.0.0.1:9119 and http://127.0.0.1:9229; run.sh
 // starts both). The Hermes must be a throwaway one: chats are created, renamed, closed and deleted.
@@ -15,6 +15,10 @@ const TOKEN = /__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/
 // Keys the mock sends that the real Hermes may leave out, with why. Paths as printed by the check.
 const ALLOW_MISSING = {}
 
+const sleep = ms => new Promise(ok => setTimeout(ok, ms))
+// The note the fake model's read_file call reads (run.sh passes it): the plugin routes that read a file use it too.
+const NOTE = process.env.HM_CONTRACT_NOTE || '/tmp/hermes-contract-note.txt'
+
 const kind = v => (v === null || v === undefined ? 'null' : Array.isArray(v) ? 'array' : typeof v)
 
 // One connection to a Hermes (or the mock): the page with the token, REST with the token header, /api/ws JSON-RPC.
@@ -26,6 +30,7 @@ async function connect(base) {
   const ws = new WebSocket(`${base.replace(/^http/, 'ws')}/api/ws?token=${encodeURIComponent(token)}`)
   const waits = new Map()
   const events = []
+  const requests = [] // server → client requests (approval, clarify): { id, method, params }
   let seq = 0
   ws.onmessage = e => {
     const msg = JSON.parse(String(e.data))
@@ -33,6 +38,7 @@ async function connect(base) {
       waits.get(msg.id)(msg)
       waits.delete(msg.id)
     } else if (msg.method === 'event') events.push(msg.params)
+    else if (msg.method && msg.id !== undefined) requests.push(msg)
   }
   await new Promise((ok, fail) => {
     ws.onopen = ok
@@ -60,6 +66,24 @@ async function connect(base) {
     }
     return r.ok ? { result: json } : { error: { code: r.status, message: text.slice(0, 200) } }
   }
+  // The app's answer to a server request (JsonRpcGatewayClient: a JSON-RPC result with the request's id).
+  const answer = (id, result) => ws.send(JSON.stringify({ jsonrpc: '2.0', id, result }))
+  // The first server request with this method after `from`, waiting up to `ms`.
+  const request = async (method, from, ms) => {
+    const end = Date.now() + ms
+    for (;;) {
+      const q = requests.slice(from).find(x => x.method === method)
+      if (q) return { id: q.id, result: q.params ?? {} }
+      if (Date.now() > end) return { error: { code: 'timeout', message: `no ${method} request in ${ms / 1000} s` } }
+      await sleep(100)
+    }
+  }
+  // A request whose reply is compared by its status and headers (the plugin's /media streams bytes).
+  const raw = async (path, headers) => {
+    const r = await fetch(base + path, { headers: { 'X-Hermes-Session-Token': token, ...headers } })
+    await r.arrayBuffer()
+    return { status: r.status, headers: Object.fromEntries(r.headers) }
+  }
   // The first event of a type (optionally for a session) after `from`, waiting up to `ms`.
   const event = async (type, sid, from, ms) => {
     const end = Date.now() + ms
@@ -70,30 +94,43 @@ async function connect(base) {
         const seen = events.slice(from).map(x => `${x.type}${x.session_id === sid ? '' : ` (${x.session_id || 'no session'})`}`)
         return { error: { code: 'timeout', message: `no ${type} event in ${ms / 1000} s; events seen: ${seen.join(', ') || 'none'}` } }
       }
-      await new Promise(r => setTimeout(r, 100))
+      await sleep(100)
     }
   }
-  // Every event of a type for a session after `from`, their payloads merged into one object (like groups() does for rows).
-  const merged = (type, sid, from) => {
-    const found = events.slice(from).filter(x => x.type === type && x.session_id === sid)
+  // Every event of a type for a session between `from` and `to` (optionally only those whose payload passes `keep`),
+  // their payloads merged into one object (like groups() does for rows).
+  const merged = (type, sid, from, to = events.length, keep = () => true) => {
+    const found = events.slice(from, to).filter(x => x.type === type && x.session_id === sid && keep(x.payload ?? {}))
     if (!found.length) return { error: { code: 'none', message: `no ${type} event for this chat; events seen: ${[...new Set(events.slice(from).map(x => x.type))].join(', ') || 'none'}` } }
     return { result: groups(found.map(x => x.payload ?? {}))['[]'] }
   }
-  return { page, rpc, http, events, event, merged, close: () => ws.close() }
+  return { page, rpc, http, raw, events, event, merged, requests, request, answer, close: () => ws.close() }
 }
 
-// Arrays are compared element group by element group (rows with a `role` by role), each group merged into one
-// object holding every key seen in it.
+// Arrays are compared element group by element group (rows with a `role` by role): Hermes's rows of a group are merged into
+// one object holding every key seen in them, and each of the mock's rows is compared with it.
+const groupOf = el => (kind(el) === 'object' && typeof el.role === 'string' ? `[role=${el.role}]` : '[]')
 function groups(arr) {
   const out = {}
   for (const el of arr) {
-    const g = kind(el) === 'object' && typeof el.role === 'string' ? `[role=${el.role}]` : '[]'
+    const g = groupOf(el)
     if (kind(el) !== 'object') out[g] ??= el
     else {
-      // A key keeps its first non-null value, so a field that is null in some rows is still typed by the others.
-      const acc = (out[g] ??= {})
-      for (const [k, v] of Object.entries(el)) if (acc[k] === undefined || acc[k] === null) acc[k] = v
+      out[g] = mergeInto(out[g] ?? {}, el)
     }
+  }
+  return out
+}
+// Merges one row into the rows merged so far: a key keeps its first non-null value (so a field that is null in some rows is
+// still typed by the others), nested objects are merged the same way and lists are joined (rows of one group can carry
+// different keys deeper down, like each provider's `status`).
+function mergeInto(acc, el) {
+  const out = { ...acc }
+  for (const [k, v] of Object.entries(el)) {
+    const a = out[k]
+    if (a === undefined || a === null) out[k] = v
+    else if (kind(a) === 'object' && kind(v) === 'object') out[k] = mergeInto(a, v)
+    else if (kind(a) === 'array' && kind(v) === 'array') out[k] = a.concat(v)
   }
   return out
 }
@@ -119,23 +156,29 @@ function compare(m, r, path, res) {
       if (m.length !== r.length) res.notes.push(`${path || '.'}: ${m.length ? 'Hermes' : 'mock'} sends an empty list (not compared)`)
       return
     }
+    // Each of the mock's rows against all of Hermes's rows of its group merged (so a wrong type in any mock row shows).
     const gm = groups(m), gr = groups(r)
     for (const g of Object.keys(gm)) {
       if (!(g in gr)) res.fails.push(`${path}${g}: the mock has such rows, Hermes doesn't`)
-      else compare(gm[g], gr[g], path + g, res)
+      else for (const el of m.filter(x => groupOf(x) === g)) compare(el, gr[g], path + g, res)
     }
+    res.fails = [...new Set(res.fails)]
   }
 }
 
 
-// The app's plugin (hermes-plugin/hermes-mobile, installed into the Hermes by start-hermes.sh): its read-only GET routes, with
-// the paths and query strings the app uses. Canvas and library content is made first (SETUP, below) so those lists have rows.
-// Not covered, and why: the routes that write (PUT /prefs, /bgapps, /openui, /auto; POST /memory, /approve, /stop,
-// /cleanup, /refresh-logins, /openui/call, /checkpoints/restore; DELETE ...), the claude-login routes (they start a sign-in
-// with Anthropic), /bots (always-on bots, Termux), /media (a file path on the phone) and /tool-result (a stored tool
-// output). /phone-access is compared even though nothing on this machine can answer it (no /sdcard, no Termux:API, no
-// rish): both sides answer "nothing reachable" in the same shape. /checkpoints answers with no folders here (a snapshot
-// needs a write_file or patch turn), so its rows are not compared.
+// The app's plugin (hermes-plugin/hermes-mobile, installed into the Hermes by start-hermes.sh): its GET routes with the
+// paths and query strings the app uses, then the routes that WRITE, with the methods and bodies the app sends (web/src
+// canvas.ts, gallery.ts, checkpoints.ts, order.ts, gateway.ts, Screens.tsx, OpenUIBlock.tsx, SignIn.tsx, api.ts,
+// Bots.tsx, Settings.tsx, MainActivity.media). Everything writes into the throwaway HOME only. Canvas and library content
+// is made first (SETUP, below) so those lists have rows. Not covered, and why (docs/SPEC.md 7.3 lists them too):
+// POST /claude-login/start and /finish (they start a real sign-in with Anthropic; /cancel is covered), PUT /bots/{name}
+// (it would turn an always-on bot on), POST /approve and /stop (the notification buttons: the plugin answers them over
+// the dashboard on 127.0.0.1:9119, the phone's port, which the real Hermes here must never use; the same
+// approval.respond and session.interrupt are covered over the WebSocket below). /phone-access is compared even though
+// nothing on this machine can answer it (no /sdcard, no Termux:API, no rish): both sides answer "nothing reachable" in
+// the same shape. /checkpoints and its diff and restore are compared after the "edit files" turn (turnCases), which
+// gives the real Hermes a snapshot.
 const PLUGIN = '/api/plugins/hermes-mobile'
 const DOC = { title: 'Contract note', type: 'markdown', content: '# Contract\n\nA canvas document for the contract check.' }
 async function pluginSetup(c) {
@@ -162,7 +205,78 @@ function pluginCases() {
     get('/gallery', '/gallery'),
     get('/gallery?q=', '/gallery?q=contract'),
     get('/library', '/library'),
-    get('/library/item', c => `${PLUGIN}/library/item?id=${c.libId}`)
+    get('/library/item', c => `${PLUGIN}/library/item?id=${c.libId}`),
+    get('/bots', '/bots'),
+    get('/bots/log', '/bots/log'),
+    ...pluginWriteCases()
+  ]
+}
+
+// The plugin routes that write, as the app calls them (see above).
+function pluginWriteCases() {
+  const call = (name, method, path, body, more = {}) => ({
+    name: `${method} plugin ${name}`,
+    ...more,
+    run: c => c.http(method, typeof path === 'function' ? path(c) : PLUGIN + path, typeof body === 'function' ? body(c) : body)
+  })
+  const q = o => new URLSearchParams(o).toString()
+  return [
+    // Canvas (canvas.ts) and the gallery's rename / delete (gallery.ts: a chat's document goes through the same canvas routes).
+    call('/canvas/doc (save)', 'PUT', '/canvas/doc', c => ({ session: c.stored, id: c.docId, content: '# Contract\n\nEdited.', base_rev: 1 })),
+    call('/canvas/rename', 'POST', '/canvas/rename', c => ({ session: c.stored, id: c.docId, title: 'Contract note renamed' })),
+    call('/canvas/version', 'GET', c => `${PLUGIN}/canvas/version?${q({ session: c.stored, id: c.docId, rev: 1 })}`),
+    call('/canvas/restore', 'POST', '/canvas/restore', c => ({ session: c.stored, id: c.docId, rev: 1 })),
+    {
+      name: 'POST plugin /canvas/doc (a second document)',
+      run: async c => {
+        const r = await c.http('POST', `${PLUGIN}/canvas/doc`, { session: c.stored, title: 'Throwaway', content: 'gone soon', type: 'markdown', lang: '' })
+        c.doc2 = r.result?.id
+        return r
+      }
+    },
+    call('/canvas/doc (delete)', 'DELETE', c => `${PLUGIN}/canvas/doc?${q({ session: c.stored, id: c.doc2 })}`),
+    {
+      name: 'POST plugin /canvas/open-file',
+      run: async c => {
+        const r = await c.http('POST', `${PLUGIN}/canvas/open-file`, { session: c.stored, path: NOTE })
+        c.fileDoc = r.result?.id
+        return r
+      }
+    },
+    call('/canvas/save-file', 'POST', '/canvas/save-file', c => ({ session: c.stored, id: c.fileDoc })),
+    // The gallery's rename / delete of a saved (library) copy.
+    call('/library/item (rename)', 'PUT', '/library/item', c => ({ id: c.libId, title: 'Contract copy renamed', category: '' })),
+    call('/library/item (delete)', 'DELETE', c => `${PLUGIN}/library/item?${q({ id: c.libId })}`),
+    // The chat list's pinned and manual order (order.ts).
+    call('/prefs', 'PUT', '/prefs', { pinned: ['contract-chat'], manual: null, at: Date.now() }),
+    // Auto access on and off (gateway.ts setPluginAuto).
+    call('/auto (set)', 'PUT', '/auto', c => ({ session: c.stored, mode: 'auto' })),
+    call('/auto (clear)', 'PUT', '/auto', c => ({ session: c.stored, mode: '' })),
+    // The Memory screen (Screens.tsx): add, edit, delete.
+    call('/memory (add)', 'POST', '/memory', { action: 'add', target: 'memory', content: 'A contract entry.' }),
+    call('/memory (edit)', 'POST', '/memory', { action: 'replace', target: 'memory', content: 'A contract entry, edited.', old_text: 'A contract entry.' }),
+    call('/memory (delete)', 'POST', '/memory', { action: 'remove', target: 'memory', old_text: 'A contract entry, edited.' }),
+    // Settings switches the app writes (Settings.tsx), set to what they already are.
+    call('/bgapps', 'PUT', '/bgapps', { allow_sensitive: false }),
+    call('/openui', 'PUT', '/openui', { enabled: true }),
+    // A card's Query(): one allowed read, one refused tool (403 on both sides).
+    call('/openui/call (allowed read)', 'POST', '/openui/call', { name: 'read_file', args: { path: NOTE } }),
+    call('/openui/call (refused tool)', 'POST', '/openui/call', { name: 'terminal', args: { command: 'true' } }, { expectError: 403 }),
+    call('/refresh-logins', 'POST', '/refresh-logins', {}),
+    call('/claude-login/cancel', 'POST', '/claude-login/cancel', { session_id: 'contract-none' }),
+    call('/profiles/link', 'POST', '/profiles/link', {}),
+    // After a chat is deleted (gateway.ts): uploads and canvas folders no chat uses.
+    call('/cleanup', 'POST', '/cleanup', { keep: [] }),
+    {
+      // The shell's media URL (MainActivity.media): a byte range of a file, as a player asks for it.
+      name: 'GET plugin /media (a byte range)',
+      exact: true,
+      run: async c => {
+        const r = await c.raw(`${PLUGIN}/media?path=${encodeURIComponent(NOTE)}`, { Range: 'bytes=0-3' })
+        const h = r.headers
+        return { result: { status: r.status, accept_ranges: h['accept-ranges'] ?? null, content_range: /^bytes 0-3\/\d+$/.test(h['content-range'] || ''), length: h['content-length'] ?? null, type: (h['content-type'] || '').split(';')[0] } }
+      }
+    }
   ]
 }
 
@@ -171,7 +285,7 @@ function pluginCases() {
 // Each event type is compared by the merged payloads of all events of that type, and the ORDER in which the types first
 // appear must be the same.
 const TURN_PROMPT = 'read the note'
-const TURN_EVENTS = ['message.start', 'thinking.delta', 'reasoning.delta', 'tool.generating', 'tool.start', 'tool.complete', 'message.delta', 'session.usage', 'message.complete', 'session.info']
+const TURN_EVENTS = ['session.title', 'message.start', 'thinking.delta', 'reasoning.delta', 'tool.generating', 'tool.start', 'tool.complete', 'message.delta', 'session.usage', 'message.complete', 'session.info']
 const ORDER = ['message.start', 'reasoning.delta', 'tool.generating', 'tool.start', 'tool.complete', 'message.delta', 'message.complete']
 function turnCases() {
   return [
@@ -214,6 +328,83 @@ function turnCases() {
   ]
 }
 
+// More model turns on the same chat, one per script of fake-model.py (the mock has a scripted turn for each prompt):
+// `answer` = the server request the turn waits on and the app's answer to it (RequestSheet.tsx: approval { choice },
+// clarify { answer }), `interrupt` = the app's Stop (session.interrupt) once the reply streams, `completes` = how many
+// message.complete events end it (a background sub-agent's result comes back as a second turn).
+async function runTurn(c, key, prompt, { answer, interrupt, completes = 1 } = {}) {
+  const t = (c.turns[key] = { from: c.events.length })
+  const reqFrom = c.requests.length
+  const r = await c.rpc('prompt.submit', { session_id: c.newRuntime, text: prompt })
+  if (r.error) return r
+  if (answer) {
+    const q = await c.request(answer.method, reqFrom, 60_000)
+    if (q.error) return q
+    t.request = q.result
+    await sleep(300)
+    c.answer(q.id, answer.result)
+  }
+  if (interrupt) {
+    const d = await c.event('message.delta', c.newRuntime, t.from, 60_000)
+    if (d.error) return d
+    t.interrupt = await c.rpc('session.interrupt', { session_id: c.newRuntime })
+  }
+  const end = Date.now() + 90_000
+  const done = () => c.events.slice(t.from).filter(e => e.type === 'message.complete' && e.session_id === c.newRuntime).length
+  while (done() < completes) {
+    if (Date.now() > end) return { error: { code: 'timeout', message: `${done()} of ${completes} message.complete in 90 s` } }
+    await sleep(100)
+  }
+  await sleep(1500)
+  t.to = c.events.length
+  return r
+}
+const TURNS = [
+  { key: 'approve', prompt: 'run the thing', opts: { answer: { method: 'approval', result: { choice: 'once' } } }, request: 'approval', events: ['tool.start', 'tool.complete', 'message.complete'] },
+  { key: 'deny', prompt: 'run the thing', opts: { answer: { method: 'approval', result: { choice: 'deny' } } }, request: 'approval', events: ['tool.complete', 'message.complete'] },
+  { key: 'clarify', prompt: 'ask me', opts: { answer: { method: 'clarify', result: { answer: 'Red' } } }, request: 'clarify', events: ['tool.start', 'tool.complete', 'message.complete'] },
+  { key: 'todo', prompt: 'plan it', events: ['tool.start', 'tool.complete', 'todo.updated', 'message.complete'] },
+  { key: 'edits', prompt: 'edit files', events: [['tool.complete', 'write_file'], ['tool.complete', 'patch'], 'message.complete'] },
+  { key: 'sub-agent', prompt: 'delegate it', opts: { completes: 2 }, events: ['subagent.start', 'subagent.thinking', 'subagent.complete', 'tool.complete', 'message.complete'] },
+  { key: 'interrupted', prompt: 'slow reply', opts: { interrupt: true }, events: ['message.complete'] }
+]
+function moreTurnCases() {
+  const out = []
+  for (const { key, prompt, opts, request, events } of TURNS) {
+    out.push({ name: `prompt.submit (${key}: "${prompt}")`, run: c => runTurn(c, key, prompt, opts) })
+    if (request) out.push({ name: `server request ${request} (${key})`, run: c => ({ result: c.turns[key]?.request ?? {} }) })
+    if (opts?.interrupt) out.push({ name: `session.interrupt (${key}, while the reply streams)`, run: c => c.turns[key]?.interrupt ?? { error: { code: 'none', message: 'not sent' } } })
+    for (const e of events) {
+      const [type, tool] = Array.isArray(e) ? e : [e]
+      out.push({
+        name: `event ${type}${tool ? ` ${tool}` : ''} (${key})`,
+        run: c => (c.turns[key] ? c.merged(type, c.newRuntime, c.turns[key].from, c.turns[key].to, p => !tool || p.name === tool) : { error: { code: 'none', message: 'the turn did not run' } })
+      })
+    }
+    if (key === 'edits') out.push(...checkpointCases())
+  }
+  return out
+}
+// The chat's file checkpoints after the "edit files" turn (checkpoints.ts): the list, a snapshot's diff, a restore of the
+// whole snapshot, and forgetting the chat's list (what the app does after deleting a chat).
+function checkpointCases() {
+  const q = o => new URLSearchParams(o).toString()
+  return [
+    {
+      name: 'GET plugin /checkpoints (after the edits)',
+      run: async c => {
+        const r = await c.http('GET', `${PLUGIN}/checkpoints?${q({ session: c.newStored })}`)
+        const f = r.result?.folders?.[0]
+        c.snap = f && f.snapshots?.[0] ? { workdir: f.workdir, snap: f.snapshots[0].id } : null
+        return r.result && !c.snap ? { error: { code: 'empty', message: `no snapshot listed: ${JSON.stringify(r.result)}` } } : r
+      }
+    },
+    { name: 'GET plugin /checkpoints/diff', run: c => (c.snap ? c.http('GET', `${PLUGIN}/checkpoints/diff?${q({ session: c.newStored, ...c.snap })}`) : { error: { code: 'none', message: 'no snapshot' } }) },
+    { name: 'POST plugin /checkpoints/restore', run: c => (c.snap ? c.http('POST', `${PLUGIN}/checkpoints/restore`, { session: c.newStored, ...c.snap, file: '' }) : { error: { code: 'none', message: 'no snapshot' } }) },
+    { name: 'DELETE plugin /checkpoints', run: c => c.http('DELETE', `${PLUGIN}/checkpoints?${q({ session: c.newStored })}`) }
+  ]
+}
+
 // The requests, in order. `run(c)` gets the target's connection with its own ids: the mock's stored chat is s-0, the real Hermes's
 // is the one seed.py wrote; runtime ids come from the replies (session.resume, session.create).
 const CASES = [
@@ -232,6 +423,9 @@ const CASES = [
     '/api/sessions/search?q=question'
   ].map(p => ({ name: `GET ${p}`, run: c => c.http('GET', p) })),
   ...pluginCases(),
+  // The app's client says it answers server → client requests (json-rpc-channel.ts advertiseCapabilities); without it the
+  // real Hermes withdraws approvals and skips questions at once.
+  { name: 'client.capabilities', run: c => c.rpc('client.capabilities', { server_requests: true }) },
   { name: 'gateway.ping', run: c => c.rpc('gateway.ping') },
   { name: 'profiles.list', run: c => c.rpc('profiles.list') },
   { name: 'setup.status', run: c => c.rpc('setup.status') },
@@ -275,6 +469,15 @@ const CASES = [
   // The app waits for session.info to learn the new chat's agent is built (gateway.ts trackBuild).
   { name: 'event session.info (after session.create)', run: c => c.event('session.info', c.newRuntime, c.mark, 15_000) },
   ...turnCases(),
+  {
+    // The stored output of the turn's tool call (ChatItems.tsx, when a reloaded transcript has no output).
+    name: 'GET plugin /tool-result',
+    run: c => {
+      const done = c.events.slice(c.mark).find(e => e.type === 'tool.complete' && e.session_id === c.newRuntime)
+      return done ? c.http('GET', `${PLUGIN}/tool-result?id=${encodeURIComponent(done.payload.tool_id)}`) : { error: { code: 'none', message: 'no tool.complete' } }
+    }
+  },
+  ...moreTurnCases(),
   { name: 'session.close (new chat)', run: c => c.rpc('session.close', { session_id: c.newRuntime }) },
   { name: 'session.delete', run: c => c.rpc('session.delete', { session_id: c.stored }) }
 ]
@@ -291,6 +494,8 @@ async function main() {
   const real = await connect(REAL)
   mock.stored = 's-0'
   real.stored = 'contract-chat'
+  mock.turns = {}
+  real.turns = {}
   let failed = 0
   const total = CASES.filter(c => !c.setup).length
   mock.isMock = true
@@ -302,9 +507,15 @@ async function main() {
     }
     const [m, r] = [await c.run(mock), await c.run(real)]
     const res = { fails: [], notes: [], extra: [] }
-    if (c.exact && !m.error && !r.error) {
+    if (c.expectError) {
+      if (m.error?.code !== c.expectError || r.error?.code !== c.expectError) res.fails.push(`expected ${c.expectError} from both: mock ${m.error?.code ?? 'ok'}, Hermes ${r.error?.code ?? 'ok'}`)
+    } else if (c.exact && !m.error && !r.error) {
       if (JSON.stringify(m.result) !== JSON.stringify(r.result)) res.fails.push(`the mock sends ${JSON.stringify(m.result)}, Hermes ${JSON.stringify(r.result)}`)
-    } else if (m.error && r.error) res.notes.push(`both answer an error (mock ${m.error.code}, Hermes ${r.error.code}: ${r.error.message})`)
+    } else if (m.error && r.error) {
+      // An error on both sides compares nothing (a wrong route, or an id an earlier case failed to make): only a case that
+      // expects one (expectError) may answer an error.
+      res.fails.push(`both answer an error, and the case expects none (mock ${m.error.code}, Hermes ${r.error.code}: ${r.error.message})`)
+    }
     else if (m.error) res.fails.push(`the mock answers an error (${m.error.code} ${m.error.message}), Hermes doesn't`)
     else if (r.error) res.fails.push(`Hermes answers an error: ${r.error.code} ${r.error.message}`)
     else compare(m.result, r.result, '', res)
