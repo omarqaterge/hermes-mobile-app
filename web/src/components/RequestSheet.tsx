@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-contract.generated'
 import { answerRequest, rejectRequest } from '../gateway'
 import { haptic } from '../bridge'
 import { Linked } from './Linked'
 import { tidyApprovalText } from '../text'
+import { useBackHandler } from '../backstack'
+import { ADVANCE_MS, nextStep } from '../clarify'
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
   once: 'Allow once',
@@ -47,11 +49,13 @@ function Approval({ req }: { req: ServerRequest }) {
 function OneQuestion({
   q,
   value,
-  onChange
+  onChange,
+  onPicked
 }: {
   q: ClarifyQuestion
   value: string
   onChange: (v: string) => void
+  onPicked?: () => void
 }) {
   const selected = value ? value.split('\n') : []
   return (
@@ -68,7 +72,10 @@ function OneQuestion({
                 onClick={() => {
                   haptic()
                   if (q.multi_select) onChange((on ? selected.filter(x => x !== c) : [...selected, c]).join('\n'))
-                  else onChange(c)
+                  else {
+                    onChange(c)
+                    onPicked?.()
+                  }
                 }}
               >
                 {q.multi_select ? (on ? '☑ ' : '☐ ') : on ? '● ' : '○ '}
@@ -95,30 +102,94 @@ function Clarify({ req }: { req: ServerRequest }) {
     ? (p.questions as ClarifyQuestion[])
     : [{ qid: '_', question: String(p.question || 'Hermes has a question'), choices: (p.choices as string[]) || null, multi_select: Boolean(p.multi_select) }]
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [step, setStep] = useState(0)
+  const timer = useRef<number | undefined>(undefined)
+  const n = questions.length
+  const multi = n > 1
   const ready = questions.every(q => (answers[q.qid] || '').trim())
+  const stopTimer = () => window.clearTimeout(timer.current)
+  useEffect(() => stopTimer, [])
+  const goTo = (i: number) => {
+    stopTimer()
+    haptic()
+    setStep(Math.max(0, Math.min(n - 1, i)))
+  }
+  // Back (Android) steps to the previous question; on the first one the sheet registers nothing, as before.
+  useBackHandler(() => goTo(step - 1), multi && step > 0)
+  // After a single-choice pick, move on by itself; a second tap restarts the pause.
+  const picked = () => {
+    if (!multi || step >= n - 1) return
+    stopTimer()
+    const from = step
+    timer.current = window.setTimeout(() => {
+      haptic()
+      setStep(nextStep(answersRef.current, questions, from))
+    }, ADVANCE_MS)
+  }
+  const answersRef = useRef(answers)
+  answersRef.current = answers
+  const shown = multi ? [questions[step]] : questions
+  const last = step >= n - 1
   return (
     <>
       <div className="sheet-title">❓ Hermes asks</div>
+      {multi ? (
+        <div className="clarify-steps">
+          <span>
+            Question {step + 1} of {n}
+          </span>
+          <span className="clarify-dots">
+            {questions.map((q, k) => (
+              <button
+                key={q.qid}
+                className={`clarify-dot${(answers[q.qid] || '').trim() ? ' done' : ''}${k === step ? ' on' : ''}`}
+                aria-label={`Go to question ${k + 1}`}
+                onClick={() => goTo(k)}
+              />
+            ))}
+          </span>
+        </div>
+      ) : null}
       <div className="sheet-scroll">
-        {questions.map(q => (
-          <OneQuestion key={q.qid} q={q} value={answers[q.qid] || ''} onChange={v => setAnswers(a => ({ ...a, [q.qid]: v }))} />
+        {shown.map(q => (
+          <OneQuestion
+            key={q.qid}
+            q={q}
+            value={answers[q.qid] || ''}
+            onChange={v => {
+              answersRef.current = { ...answersRef.current, [q.qid]: v }
+              setAnswers(answersRef.current)
+            }}
+            onPicked={picked}
+          />
         ))}
       </div>
       <div className="sheet-actions">
         <button className="btn" onClick={() => answerRequest(req, { answer: '' })}>
           Skip
         </button>
-        <button
-          className="btn primary"
-          disabled={!ready}
-          onClick={() => {
-            haptic()
-            if (p.questions && (p.questions as unknown[]).length) answerRequest(req, { answers })
-            else answerRequest(req, { answer: answers['_'] })
-          }}
-        >
-          Answer
-        </button>
+        {multi && step > 0 ? (
+          <button className="btn" onClick={() => goTo(step - 1)}>
+            Back
+          </button>
+        ) : null}
+        {multi && !last ? (
+          <button className="btn primary" onClick={() => goTo(step + 1)}>
+            Next
+          </button>
+        ) : (
+          <button
+            className="btn primary"
+            disabled={!ready}
+            onClick={() => {
+              haptic()
+              if (p.questions && (p.questions as unknown[]).length) answerRequest(req, { answers })
+              else answerRequest(req, { answer: answers['_'] })
+            }}
+          >
+            Answer
+          </button>
+        )}
       </div>
     </>
   )

@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { Children, cloneElement, createContext, isValidElement, memo, useContext, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -19,6 +19,10 @@ import { useBackHandler } from '../backstack'
 import { hashText, setTask, subscribeTasks, useTask } from '../tasks'
 import { runLazy } from '../lazy'
 import { OpenUIBlock, OpenUICtx } from './OpenUIBlock'
+import { HtmlFrame } from './HtmlFrame'
+
+/** True while the reply being rendered is still arriving (a context, so code blocks aren't rebuilt per stream batch). */
+const StreamingCtx = createContext(false)
 
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -135,7 +139,21 @@ function DiagramViewer({ svg, source, onClose }: { svg: string; source: string; 
   )
 }
 
+/** Full-screen view of an html preview (same offline sandbox as the inline frame). Android Back closes it. */
+function HtmlViewer({ html, onClose }: { html: string; onClose: () => void }) {
+  useBackHandler(onClose, true)
+  return (
+    <div className="html-viewer" role="dialog" aria-modal="true" aria-label="HTML preview">
+      <button className="close" onClick={onClose} aria-label="Close preview">✕</button>
+      <HtmlFrame html={html} network={false} />
+    </div>
+  )
+}
+
 function CodeBlock({ children }: { children?: ReactNode }) {
+  const streaming = useContext(StreamingCtx)
+  const [preview, setPreview] = useState(false)
+  const [viewer, setViewer] = useState(false)
   const [copied, setCopied] = useState(false)
   const [open, setOpen] = useState(false)
   const [wrap, setWrap] = useState(false)
@@ -159,6 +177,8 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const isDiff = lang === 'diff' || lang === 'patch' || (!lang && looksLikeDiff(code))
   const lines = code.split('\n').length
   const long = lines > 26
+  const previewable = (lang === 'html' || lang === 'svg') && lines >= 3
+  const showing = previewable && preview
   return (
     <div className={`codeblock${long && !open ? ' collapsed' : ''}${wrap ? ' wrap' : ''}`}>
       <div className="codeblock-bar">
@@ -166,6 +186,11 @@ function CodeBlock({ children }: { children?: ReactNode }) {
         {!isDiff && (
           <button className={wrap ? 'on' : ''} onClick={() => { haptic(); setWrap(w => !w) }}>
             Wrap
+          </button>
+        )}
+        {previewable && (
+          <button className={showing ? 'on' : ''} disabled={streaming} onClick={() => { haptic(); setPreview(p => !p) }}>
+            {showing ? 'Code' : 'Preview'}
           </button>
         )}
         {!isDiff && lines >= 3 && (
@@ -191,8 +216,18 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      {isDiff ? <DiffView text={code} /> : <pre>{children}</pre>}
-      {long && (
+      {showing ? (
+        lang === 'svg' ? (
+          <img className="inline-frame inline-svg" alt="SVG preview" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(code)}`} />
+        ) : (
+          <>
+            <HtmlFrame html={code} network={false} autoHeight={{ min: 160, max: Math.round(window.innerHeight * 0.6) }} className="inline-frame" />
+            <button className="codeblock-more" onClick={() => { haptic(); setViewer(true) }} aria-label="Open preview full screen">Full screen</button>
+            {viewer && <HtmlViewer html={code} onClose={() => setViewer(false)} />}
+          </>
+        )
+      ) : isDiff ? <DiffView text={code} /> : <pre>{children}</pre>}
+      {long && !showing && (
         <button className="codeblock-more" onClick={() => { haptic(); setOpen(o => !o) }}>
           {open ? 'Show less' : `Show all ${lines} lines`}
         </button>
@@ -511,6 +546,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
   const components = useMemo<Components>(() => mdComponents(seed, nextBox), [])
   return (
     <OpenUICtx.Provider value={ui}>
+    <StreamingCtx.Provider value={streaming}>
     <div
       className="md"
       onClick={e => {
@@ -544,6 +580,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
         {prepare(chatLinks(text))}
       </ReactMarkdown>
     </div>
+    </StreamingCtx.Provider>
     </OpenUICtx.Provider>
   )
 })

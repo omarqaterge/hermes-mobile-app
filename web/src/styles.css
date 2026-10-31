@@ -78,6 +78,29 @@ textarea {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Test builds (HM_DEVTOOLS=1): always visible, above full screens (z-index 90) and the rest. */
+.devtools-strip {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: 0;
+  right: 0;
+  height: 18px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-bottom: 1px solid var(--warn-border);
+  pointer-events: none;
+}
+.devtools-spacer {
+  height: 18px;
+  flex: none;
+}
+
 /* ── top bar ─────────────────────────────────────────── */
 .topbar {
   display: flex;
@@ -163,6 +186,14 @@ textarea {
 }
 
 /* ── chat ─────────────────────────────────────────────── */
+/* Holds the scrolling list and the scrubber rail, which must not scroll with the content. */
+.chat-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
 .chat {
   flex: 1;
   min-height: 0;
@@ -606,6 +637,31 @@ textarea {
 .folded {
   display: none;
 }
+.visit-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* "New since your last visit" (visit.ts): a thin line with the text in the middle. */
+.visit-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.visit-divider::before,
+.visit-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.45;
+}
 .tool-run-wrap {
   display: flex;
   flex-direction: column;
@@ -919,6 +975,28 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.goal-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--accent);
+  padding: 4px 0;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+.goal-sub-head {
+  margin: 12px 0 4px;
+}
+.goal-subs {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 0.86rem;
 }
 .todos-head {
   color: var(--accent);
@@ -1419,6 +1497,34 @@ textarea {
 .clarify-q {
   display: grid;
   gap: 6px;
+}
+.clarify-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--dim);
+  font-size: 0.82rem;
+  margin: 2px 0 6px;
+}
+.clarify-dots {
+  display: flex;
+  gap: 4px;
+}
+.clarify-dot {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+.clarify-dot.done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.clarify-dot.on {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent);
 }
 .group {
   display: grid;
@@ -2500,7 +2606,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 :root[data-theme='light'] .sheet-backdrop { background: rgba(20, 18, 12, 0.35); }
 :root[data-theme='light'] .toast { box-shadow: 0 6px 20px rgba(60, 50, 20, 0.18); }
 :root[data-theme='light'] .btn.primary,
-:root[data-theme='light'] .send:not(.mic):not(.live-btn):not(.stop) { color: #fff; }
+:root[data-theme='light'] .send:not(.mic):not(.live-btn):not(.stop):not(.steer) { color: #fff; }
 :root[data-theme='light'] .btn.danger-solid { color: #fff; }
 :root[data-theme='light'] .avatar { color: #fff; }
 /* diffs: darker text on the pale tints */
@@ -2762,6 +2868,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   align-items: center;
   gap: 5px;
   max-width: 70%;
+  min-width: 0;
   min-height: 28px;
   padding: 2px 10px;
   border-radius: 14px;
@@ -2777,6 +2884,59 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--mono);
+}
+.ctx-ring {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border-radius: 14px;
+}
+.ctx-ring:active {
+  background: var(--press);
+}
+.ctx-ring-track {
+  stroke: var(--dim);
+  opacity: 0.35;
+}
+.ctx-ring-fill {
+  stroke: var(--accent);
+}
+.ctx-ring.warn .ctx-ring-fill {
+  stroke: var(--warn);
+}
+.ctx-ring.full .ctx-ring-fill {
+  stroke: var(--err);
+}
+.ctx-bar {
+  height: 8px;
+  margin: 4px 0 8px;
+  border-radius: 4px;
+  background: var(--press);
+  overflow: hidden;
+}
+.ctx-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.ctx-bar-fill.warn {
+  background: var(--warn);
+}
+.ctx-bar-fill.full {
+  background: var(--err);
+}
+.ctx-figures {
+  font-weight: 600;
+}
+.ctx-row {
+  margin-top: 8px;
+}
+.ctx-compress {
+  margin-top: 16px;
 }
 .yolo-chip {
   display: inline-flex;
@@ -3336,4 +3496,225 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   .chat.pull-release > :not(.pull-hint):not(.jump) {
     transition: none;
   }
+}
+.quote-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--surface); }
+.quote-bar-label { flex: 1; min-width: 0; font-size: 0.72rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.quote-bar-btn { flex: none; padding: 7px 14px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, var(--surface-2)); border: 1px solid var(--accent); font-weight: 600; font-size: 0.85rem; }
+.quote-bar-btn:disabled { opacity: 0.4; }
+.quote-row { padding: 0 12px; }
+.quote-chip { max-width: 100%; display: inline-flex; align-items: center; gap: 6px; }
+.quote-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.msg-quote { margin: 0 0 6px; padding: 2px 0 2px 8px; border-left: 3px solid var(--accent); color: var(--dim); font-size: 0.92em; }
+
+/* Queued follow-ups (queue.ts): dashed bubbles at the end of the chat, and the Queue / Steer buttons */
+.queued-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.queued-msg .bubble {
+  background: transparent;
+  border: 1.5px dashed var(--accent);
+}
+.queued-msg.editing {
+  width: 86%;
+}
+.queued-head {
+  font-size: 11px;
+  color: var(--dim);
+  text-align: right;
+  margin-bottom: 3px;
+}
+.queued-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  margin-top: 2px;
+}
+.queue-paused {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--dim);
+}
+.send.steer {
+  width: auto;
+  padding: 0 12px;
+  border-radius: 19px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: var(--panel-2, rgba(127, 127, 127, 0.18));
+  color: var(--text);
+}
+.send.queue {
+  position: relative;
+  padding-left: 3px;
+}
+.send.queue:disabled {
+  opacity: 0.45;
+}
+.queue-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  color: var(--accent-ink);
+}
+
+/* chat scrubber: the rail on the right edge of a long chat (components/Scrubber.tsx) */
+.scrubber {
+  position: absolute;
+  right: 0;
+  top: 12px;
+  bottom: 72px;
+  width: 28px;
+  z-index: 3;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+.scrubber::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--dim);
+  opacity: 0.25;
+  transition: width 0.12s;
+}
+.scrubber.active::before,
+.scrubber:focus-visible::before {
+  width: 6px;
+}
+.scrub-tick {
+  position: absolute;
+  right: 3px;
+  width: 5px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--dim);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.scrub-tick.on {
+  width: 12px;
+  background: var(--accent);
+  opacity: 1;
+}
+.scrub-bubble {
+  position: absolute;
+  right: 36px;
+  transform: translateY(-50%);
+  max-width: min(70vw, 320px);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  pointer-events: none;
+}
+.scrub-num {
+  flex: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+.scrub-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrubber::before {
+    transition: none;
+  }
+}
+
+/* Inline HTML/SVG preview in a reply, and its full-screen viewer */
+.html-wrap.auto { height: auto; min-height: 0; }
+.html-frame.inline-frame { flex: none; min-height: 0; max-height: 60vh; border: 0; border-radius: 0; }
+img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 auto; padding: 8px; background: var(--bg); }
+.html-viewer { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; padding: calc(env(safe-area-inset-top, 0px) + 52px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); background: var(--bg); }
+.html-viewer .html-wrap { flex: 1; min-height: 0; }
+.html-viewer .html-frame { min-height: 0; }
+.html-viewer > .close { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 10px; width: 40px; height: 40px; border-radius: 20px; font-size: 1.1rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); }
+/* "N files changed" card at the end of a turn (components/Changes.tsx) */
+.turn-end {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.turn-changes {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  margin: 2px 0 6px;
+  overflow: hidden;
+}
+.turn-changes-head,
+.turn-changes-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+}
+.turn-changes-title {
+  flex: 1;
+}
+.turn-changes-list {
+  border-top: 1px solid var(--border);
+  padding: 0 0 8px;
+}
+.turn-changes-list .btn {
+  margin: 4px 12px 0;
+  width: calc(100% - 24px);
+}
+.turn-changes-path {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.diffstat {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.diffstat-add {
+  color: #2ea043;
+}
+.diffstat-del {
+  color: #f85149;
+}
+
+/* Motion: Collapse (ui.tsx), the turning chevron, effort bars on the model chip, the send button's face change */
+.chevron { display: block; transition: transform 0.18s; }
+.chevron.open { transform: rotate(90deg); }
+.chev { display: inline-flex; align-items: center; vertical-align: middle; }
+.model-chip-effort.effort-bars { display: inline-flex; align-items: flex-end; gap: 2px; padding: 3px 5px; }
+.effort-bar { display: block; width: 3px; border-radius: 1px; background: currentColor; opacity: 0.3; }
+.effort-bar.on { opacity: 1; }
+.effort-bar.off { background: transparent; border: 1px solid currentColor; box-sizing: border-box; opacity: 0.8; }
+@keyframes face-in { from { opacity: 0; transform: scale(0.85); } }
+.send > svg, .send > .stop-square { animation: face-in 0.12s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .chevron { transition: none; }
+  .send > svg, .send > .stop-square { animation: none; }
 }

@@ -7,6 +7,7 @@ import { addsToScreen, getState, hydrate, setState, splitAttachments, toast } fr
 import { findHit, parseSnippet } from './jump'
 import { ago, markSeen, noteSessions } from './unread'
 import { chatMarkdown } from './export'
+import { fmtDuration } from './text'
 
 test('speakable drops code, links, symbols', () => {
   const s = speakable('## Hi\n\nSee [docs](https://x.y) and `x`.\n\n```\ncode\n```\n\n- one ✅')
@@ -347,4 +348,17 @@ describe('reading clock', () => {
   test('readingClock = elapsed / ~total at the given pace', () => {
     expect(readingClock(120, 1000, 10)).toBe('0:12 / ~1:40')
   })
+})
+
+test('fmtDuration: ms under a second, one decimal under a minute, then m s', () => {
+  expect(fmtDuration(0.85)).toBe('850ms')
+  expect(fmtDuration(3.2)).toBe('3.2s')
+  expect(fmtDuration(65)).toBe('1m 5s')
+  expect(fmtDuration(3700)).toBe('61m 40s')
+  expect(fmtDuration(null)).toBe('')
+})
+
+test('fmtClock gives the status line its elapsed time', () => {
+  expect(fmtClock(75)).toBe('1:15')
+  expect(fmtClock(3725)).toBe('1:02:05')
 })

@@ -54,6 +54,7 @@ public class MainActivity extends Activity {
     static final String BASE_URL = "http://127.0.0.1:9119";
     static final int REQ_FILES = 41;
     static final int REQ_CAMERA = 42;
+    static final int REQ_DEVTOOLS = 43;
     static final Pattern TOKEN = Pattern.compile("__HERMES_SESSION_TOKEN__\\s*=\\s*\"([^\"]+)\"");
 
     WebView web;
@@ -89,6 +90,8 @@ public class MainActivity extends Activity {
 
         root = new FrameLayout(this);
         root.setBackgroundColor(bg);
+        if (devtoolsBuild()) WebView.setWebContentsDebuggingEnabled(true); // test builds only (HM_DEVTOOLS=1)
+        else DevTools.recheck(this); // off after a process restart; drops a notification a dead process left
         web = new WebView(this);
         web.setBackgroundColor(bg);
         // Keep the renderer at the app's priority while hidden, so it is still alive when a notification
@@ -457,6 +460,12 @@ public class MainActivity extends Activity {
 
     /** The bootstrap URL. Emulator test builds only (android/build.sh HM_TEST_BOOTSTRAP_URL): a URL on the emulator's
      *  host (10.0.2.2) serving a working tree. Release builds have no such resource. */
+    /** True only in a test build made with HM_DEVTOOLS=1 (android/build.sh): the string resource hm_devtools exists and
+     *  is "1". Release builds have no such resource, so WebView remote debugging stays off. */
+    boolean devtoolsBuild() {
+        return DevTools.testBuild(this);
+    }
+
     String bootstrapUrl() {
         try {
             int id = getResources().getIdentifier("hm_test_bootstrap", "string", getPackageName());
@@ -1595,6 +1604,7 @@ public class MainActivity extends Activity {
         showUpdatePrompt();
         setupChanged();
         pushBg();
+        DevTools.recheck(this); // out of time, or Developer options turned off meanwhile: off
     }
 
     /** The setup flow re-checks (a permission dialog or a settings page may have changed something). */
@@ -1675,6 +1685,8 @@ public class MainActivity extends Activity {
         visible = false;
         HermesService.openChat = null; // nothing is on screen any more: a chat finishing now counts as unseen
         voice.stopListening(); // never leave the microphone open in the background
+        // The open chat was seen until now: messages that arrive meanwhile get "New since your last visit" on return.
+        web.evaluateJavascript("window.hermesPause && window.hermesPause()", null);
         super.onPause();
     }
 
@@ -1705,8 +1717,55 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ---- Settings → About → Remote debugging (DevTools): only a NATIVE dialog + the phone's screen-lock screen turn it on ----
+    private android.app.AlertDialog devtoolsDialog;
+    private boolean devtoolsPending = false;
+
+    /** Page asked to open the confirmation (Bridge.openRemoteDebugging). Main thread. Nothing is turned on here. */
+    void askRemoteDebugging() {
+        if (!foreground || isFinishing() || devtoolsPending) return;
+        if (devtoolsDialog != null && devtoolsDialog.isShowing()) return;
+        if (DevTools.isOn() || !DevTools.developerOptionsOn(this)) return;
+        devtoolsDialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Turn on remote debugging?")
+                .setMessage("A computer connected to this phone will be able to read and control Hermes Mobile, including your chats, for 60 minutes. You will be asked for your screen lock. Only continue if you started this yourself.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue", (d, w) -> askScreenLock())
+                .show();
+    }
+
+    private void askScreenLock() {
+        if (!DevTools.hasScreenLock(this)) {
+            android.widget.Toast.makeText(this, "Set a screen lock first", android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            android.app.KeyguardManager km = getSystemService(android.app.KeyguardManager.class);
+            Intent i = km.createConfirmDeviceCredentialIntent("Turn on remote debugging", "Confirm it is you");
+            if (i == null) {
+                android.widget.Toast.makeText(this, "Set a screen lock first", android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            devtoolsPending = true;
+            startActivityForResult(i, REQ_DEVTOOLS);
+        } catch (Exception e) {
+            devtoolsPending = false;
+        }
+    }
+
+    /** The page re-reads the remote-debugging state (a fixed script, no data). */
+    void devtoolsChanged() {
+        if (web != null && pageReady) web.evaluateJavascript("window.dispatchEvent(new Event('hm-devtools'))", null);
+    }
+
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
+        if (req == REQ_DEVTOOLS) {
+            boolean asked = devtoolsPending;
+            devtoolsPending = false;
+            if (asked && result == RESULT_OK) DevTools.turnOn(this);
+            return;
+        }
         if (req == REQ_CAMERA && fileCallback != null) {
             java.io.File f = cameraFile;
             cameraFile = null;
@@ -1957,6 +2016,28 @@ public class MainActivity extends Activity {
         public void speak(String key, String text, String cfg) {
             if (!ok(key)) return;
             runOnUiThread(() -> voice.speak(text, cfg));
+        }
+
+        /** Settings → About → Remote debugging: asks the SHELL to show its own confirmation. It turns nothing on (that
+         *  needs the phone's screen lock, handled in native code); no bridge method can turn remote debugging on. */
+        @JavascriptInterface
+        public void openRemoteDebugging(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(MainActivity.this::askRemoteDebugging);
+        }
+
+        /** {"available":bool,"on":bool,"minutesLeft":int}: read-only. */
+        @JavascriptInterface
+        public String remoteDebuggingState(String key) {
+            if (!ok(key)) return "";
+            return DevTools.stateJson(MainActivity.this);
+        }
+
+        /** Turning off is always safe. (A test build keeps debugging on regardless.) */
+        @JavascriptInterface
+        public void turnOffRemoteDebugging(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> DevTools.turnOff(MainActivity.this));
         }
 
         /** Read-aloud mode for the background service: {"global":bool,"sessions":{id:bool},"tts":{…}}. */

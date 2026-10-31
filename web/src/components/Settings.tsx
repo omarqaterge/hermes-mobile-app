@@ -9,7 +9,8 @@ import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
-import { appVersion, haptic } from '../bridge'
+import { appVersion, haptic, openRemoteDebugging, turnOffRemoteDebugging } from '../bridge'
+import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { bootSummary, lastBoot } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
@@ -857,9 +858,24 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <UpdateRow />
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
+        <RemoteDebugRow />
       </Section>
       <UninstallSection />
     </>
+  )
+}
+
+/** Developer option (Android Developer options on): remote debugging for 60 minutes. Tapping when off only asks the
+ *  shell to show its own confirmation and the screen-lock prompt; the page can't turn it on. */
+function RemoteDebugRow() {
+  const row = remoteDebugRow(useRemoteDebug())
+  if (!row) return null
+  return (
+    <Row
+      title="Remote debugging"
+      sub={row.sub}
+      onClick={() => { haptic(); if (row.action === 'open') openRemoteDebugging(); else turnOffRemoteDebugging() }}
+    />
   )
 }
 

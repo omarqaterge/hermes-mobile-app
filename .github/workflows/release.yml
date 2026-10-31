@@ -43,6 +43,11 @@ jobs:
           KEYSTORE="$RUNNER_TEMP/release.keystore" VERSION_NAME="$v" \
             VERSION_CODE=$(( a * 10000 + b * 100 + ${c:-0} )) android/build.sh
           rm -f "$RUNNER_TEMP/release.keystore"
+      - name: Release APK must not carry the test-build flag
+        run: |
+          if unzip -p android/build/hermes-mobile.apk resources.arsc | grep -aq hm_devtools; then
+            echo "release APK has hm_devtools (WebView remote debugging)"; exit 1
+          fi
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -94,3 +94,4 @@ jobs:
       - run: tools/api-check.sh
       - run: tools/test_setup_lines.sh
       - run: tools/test_autostart.sh
+      - run: tools/test_devtools_guard.sh

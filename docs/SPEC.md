@@ -210,6 +210,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    `/yolo` and `/fast` are handled with `config.set` (keys `yolo` and `fast`); everything else tries `slash.exec`,
    then `command.dispatch`, and follows its `type` (`exec`, `alias` up to depth 3, `send`, `skill`, `prefill`).
 5. If the chat is running, the text steers the running turn (`session.steer`) and a "Steer: …" notice is added.
+   A follow-up typed while the chat runs can also wait in the page's queue instead (`queue.ts`, 3.4): see step 8a.
 6. Otherwise the page adds the user bubble at once (with photo previews, image paths, file names and their
    `@file:` refs), sets `running: true`, clears the attachments, waits for a model switch in flight
    (`switching`), and calls `prompt.submit` with `surface: 'mobile'`. Files travel as their `@file:` references in
@@ -226,15 +227,22 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
      args, duration, summary, result text and inline diff; `tool.output_risk` flags a card. Canvas tool events
      also call `canvasWritingStarted`, `canvasCallStarted` and `canvasToolDone` (3.7).
    - `subagent.start|progress|thinking|tool|complete` keep one card per sub-agent; `todo.updated` sets the task
-     list; `session.usage` and `session.info` update the chat; `session.title` renames it.
+     list; `session.usage` and `session.info` update the chat (usage that carries `context_max` and `context_used` also updates `ctx` through `refreshCtx`, so the context ring moves during a long turn); `session.title` renames it.
    - `message.complete` drops leftover generating cards, puts the final text on the reply (`fullReply` keeps the
      streamed text unless the final one is longer and ends with it), adds an error notice on failure, hands the
      reply to Live mode or to auto read-aloud (only while the app is in front), sets `running: false`, and
-     `finishTurnStats` writes "~N tok/s · ctx N% · used/max" under the reply and saves it in `hm.stats.v1`.
+     `finishTurnStats` writes "~N tok/s · 1m 23s · ctx N% · used/max" under the reply (the turn's duration, from 1 s on) and saves it in `hm.stats.v1`.
    - `review.summary`, `background.complete` and an unclaimed `btw.complete` become info notices.
    - Events of other chats only refresh the drawer (`session.title`, `message.complete` → `loadSessionsSoon`);
      `sessions.changed` refreshes it too. `notification.show` becomes a toast; `request.cancel` closes a request
      sheet that was answered elsewhere.
+8a. The queue drains on turn end. `gateway.ts` watches the store (`subscribe`): when the open chat goes from running to
+   not running and the turn was not stopped (`interrupt()`) and did not end with an error (`message.complete` with
+   `error` or `failure_reason`), the queue is not paused, no approval or question is open (`requests`), Hermes is
+   connected and no attachment is waiting, `drainQueue` takes the first queued message (`takeFirst`) and sends it
+   with `sendPrompt`. Its reply ends the next turn, which sends the next one. After a Stop or an error the queue is
+   paused instead, and so is a chat just opened. `drainQueue(chat, true)` (the Resume button) ignores the pause.
+   If the send throws, the message goes back to the front and the queue is paused with an error toast.
 8. A missed `message.complete` can't leave the spinner on: every 15 s, if the chat is running and no event came for
    45 s, `syncRunning` asks `session.resume`; when Hermes says it is no longer running, the stored transcript
    replaces the screen. The same check runs whenever the page becomes visible.
@@ -474,9 +482,20 @@ below keep that power with the app's own page and away from content it shows.
   later caller.
 - `secure-bridge.ts` is the first import of `main.tsx`, so the app's own script is that first caller. It calls
   `handshake()`, then replaces `window.HermesAndroid` with a wrapper that has exactly the names in its `METHODS`
-  list (49 names; full table in 4.5), each adding the key. A frame that only sees the raw object can't make a
+  list (52 names; full table in 4.5), each adding the key. A frame that only sees the raw object can't make a
   single call. `ok(key)` compares in constant time (`MessageDigest.isEqual`).
 - A new bridge method must take the key first, check it, and be added to `METHODS`.
+
+**WebView remote debugging is off, except in test builds.** With remote debugging on, anything that can reach `adb` on the phone can read the page (token, chats) and call every bridge method, and on these phones Termux is paired with Wireless debugging (4.7), so `adb` is reachable from the phone itself. So `MainActivity` never calls `WebView.setWebContentsDebuggingEnabled(true)`, with one exception: a test build made with `HM_DEVTOOLS=1 android/build.sh` (7.1). That adds the string resource `hm_devtools` (value `1`); `MainActivity.devtoolsBuild()` reads it with `getIdentifier` and, only when it is `1`, turns debugging on before the `WebView` is created. The same build ends its version name with `+devtools`, and the page shows a warning strip (3.2). Guards: `build.sh` exits 1 when `HM_DEVTOOLS` is set together with `KEYSTORE` (the release key), as its very first step and before any SDK check (`tools/test_devtools_guard.sh` tests this); `release.yml` fails the release when `resources.arsc` of the built APK contains `hm_devtools`. No bridge method was added.
+
+**Remote debugging as a setting (Settings → About → Remote debugging).** The installed app, release included, can turn WebView remote debugging on for a short time, to debug a problem that only shows on the user's own install. Threats and answers:
+
+1. *Script in the page* (a sanitiser bug, a bad card, a bad dependency holds the bridge key). **No bridge method turns it on.** The page may only call `openRemoteDebugging` (asks the shell to show its own confirmation), `remoteDebuggingState` (read-only JSON `{available, on, minutesLeft}`) and `turnOffRemoteDebugging` (turning off is always safe). All three take the per-page key first and are in `secure-bridge.ts`; `tools/web-e2e/test.cjs` checks that no name there suggests enabling.
+2. *Hermes driving the phone* (background app, Shizuku could tap a switch). Turning on needs the phone's screen-lock credential, which nothing can type for you: `Bridge.openRemoteDebugging` runs `MainActivity.askRemoteDebugging`, a **native** `AlertDialog` ("Turn on remote debugging?", Cancel / Continue; shown only while the app is on screen, one at a time); Continue runs `KeyguardManager.createConfirmDeviceCredentialIntent` through `startActivityForResult` (request code `REQ_DEVTOOLS`). Only `onActivityResult` with `RESULT_OK` for that request, and only if the app itself launched it (`devtoolsPending`), calls `DevTools.turnOn`, which checks Developer options and the screen lock again. With no screen lock (`isDeviceSecure()` false) a toast says "Set a screen lock first" and it stays off.
+3. *Forgetting it on.* The state is one static field in `DevTools` (process memory only), so a process restart turns it off (`DevTools.recheck` runs in `MainActivity.onCreate` and `HermesService.onCreate` and drops a notification a dead process left; when it is off and was never on in this process it doesn't touch WebView, so the service's start at boot doesn't load WebView). It ends after 60 minutes (`DURATION_MS`; one bounded `Handler` callback, also re-checked in `MainActivity.onResume`, because a sleeping phone delays the callback), and from the ongoing notification `Remote debugging` (4.3) with a Turn off action.
+4. *Ordinary users.* The row (and `available`) exist only while Android Developer options are on (`Settings.Global.DEVELOPMENT_SETTINGS_ENABLED`); `onResume` turns it off if they were turned off.
+
+A test build (`devtoolsBuild()`) keeps debugging on whatever this setting does: `DevTools.apply` enables it when `isOn() || testBuild`. The notification's Turn off action is a `PendingIntent.getService` with an explicit intent (action `ACTION_OFF`, `DevTools.ACTION_OFF`) to `HermesService`, which is `exported="false"`, so no receiver was added and the manifest did not change. No new permission. Whether an already attached DevTools session is cut when it is turned off is recorded in `docs/manual-tests.md`.
 
 **`safeRequest` / `safeLink`.**
 - `safeRequest(method, path)`: the only REST calls the shell makes for the page (`httpAsync`, `streamGet`) are
@@ -498,7 +517,7 @@ below keep that power with the app's own page and away from content it shows.
 
 **Sandboxed canvas iframes.**
 - HTML documents (canvas, gallery) run in `<iframe sandbox="allow-scripts allow-forms allow-modals"
-  referrerPolicy="no-referrer" srcDoc>` (`Canvas.tsx` `HtmlFrame`). No `allow-same-origin`, so the frame has no
+  referrerPolicy="no-referrer" srcDoc>` (`web/src/components/HtmlFrame.tsx` `HtmlFrame`, srcDoc built by `frameDoc` in `web/src/htmlframe.ts`; also used for the inline chat preview). No `allow-same-origin`, so the frame has no
   access to the app page, its storage or its cookies.
 - A guard script is injected first (right after the doctype): it deletes `window.HermesAndroid`, reports errors,
   routes `alert()` to an app toast and turns link clicks into a message to the page. The page asks "Open link?"
@@ -559,6 +578,8 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.devBase` | `bridge.ts` | Development only, and in `sessionStorage`, not `localStorage`: the dashboard base URL the dev server injects. | No |
 | `hm.devToken` | `bridge.ts` | Development only, `sessionStorage`: the dashboard token the dev server injects. | No |
 | `hm.draft` | `drafts.ts` | Legacy single draft (before `hm.drafts.v1`); moved into `hm.drafts.v1` as `new:<profile>` and deleted on first read. | No |
+| `hm.visit.v1` | `visit.ts` | When each chat was last on screen: `{chatId: ms}`; newest 500 kept. Drives the "New since your last visit" divider. | No |
+| `hm.stash.v1` | `stash.ts` | Drafts put aside from the composer: `[{id, text, at, chat}]`, newest first, at most 20 (`chat` is the stored chat id or null). | No |
 | `hm.drafts.v1` | `drafts.ts` | Unsent composer text: `{chatId: text}`, plus `new:<profile>` for the new-chat screen; newest 100 kept. | Mixed (new-chat drafts per profile) |
 | `hm.favModels.v1` | `favs.ts` | Starred models `[{p: provider, m: model}]` in starring order. | No (shared by all profiles) |
 | `hm.sideHidden.v1` | `sidepanel.ts` | `1` while the user has hidden the docked chat list on a wide screen; absent = docked. | No |
@@ -567,6 +588,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.lastSession` | `gateway.ts`, `store.ts` | The chat to reopen on start: `{id, profile}`; used only when the profile matches. | Records the profile |
 | `hm.live.pause` (inventory name `hm.live`) | `live.ts` (`PAUSE_KEY`) | Live mode: seconds of silence before sending (0.5–10, default 2). | No |
 | `hm.oled` | `theme.ts` | Legacy OLED switch (`'1'`), read only when `hm.theme` is absent. | No |
+| `hm.queue.v1` | `queue.ts` | Follow-ups queued while Hermes works: `{storedChatId: [{id, text, at}]}`, oldest first, at most 10 per chat; a deleted chat's entry is removed. | No |
 | `hm.openui.v1` | `openui-msg.ts` | Card form/variable state: `{"<chatId>:<hash of card code>": {at, s}}`; newest 150 cards, ≤ 300,000 characters. | No (chat ids) |
 | `hm.order.v1` (suffix `.<profile>`) | `order.ts` | Drawer pins and custom order `{pinned, manual, at}`; mirrored to the plugin's `/prefs` (newest `at` wins). | Yes |
 | `hm.outbox.v1` | `gateway.ts`, `store.ts` | The one message queued while offline: `{chat, text, atts?, runtime?}`. | No |
@@ -577,7 +599,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.setupFlowDone` | `components/Setup.tsx` | `'1'` once the first-run setup flow finished. | No |
 | `hm.shizukuStepDone` | `components/Setup.tsx` | `'1'` once Shizuku was seen running (or the user said it runs). | No |
 | `hm.replaceTermux` | `components/Setup.tsx` | Time (ms) the user confirmed Replace Termux; cleared once F-Droid's set is being installed, or after 10 minutes. | No |
-| `hm.stats.v1` | `gateway.ts` (`STATS_KEY`) | Turn stats under replies: `{"<chatId>:<user row id>": "~41 tok/s · ctx 2% · …"}`; newest 2,000. | No (chat ids) |
+| `hm.stats.v1` | `gateway.ts` (`STATS_KEY`) | Turn stats under replies: `{"<chatId>:<user row id>": "~41 tok/s · 1m 23s · ctx 2% · …"}`; newest 2,000. | No (chat ids) |
 | `hm.tasks.v1` | `tasks.ts` | Ticked task-list boxes in replies: `{<message hash>: {<box index>: bool}}`; newest 300 messages. | No |
 | `hm.textScale` | `store.ts`, `components/Settings.tsx` | Text size factor (0.9, 1, 1.1, 1.2, 1.35). | No |
 | `hm.theme` | `theme.ts` | `default`, `oled`, `light` or `system`. | No |
@@ -670,7 +692,7 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
   early on `cron_idle`. The alarm time is saved and re-armed after the app restarts.
 - **Service timers** use `Handler.postDelayed` (no CPU wake): the update check every 12 h, the one Shizuku check at
   90 s, the bg-app card's 130 s expiry.
-- **Page timers** stop or slow down when the page is hidden: socket beat 15 s (`gateway.ts`), health ping every
+- **Page timers** stop or slow down when the page is hidden: the status line's elapsed-time ticker (`useElapsed` in `App.tsx`, 1 s) runs only while a turn runs and the page is visible, and clears itself on `visibilitychange` to hidden, when the turn ends and on unmount; socket beat 15 s (`gateway.ts`), health ping every
   minute while visible and the full `GET /api/status` (~0.26 s of dashboard CPU) every 10 minutes or when the
   status sheet opens (`health.ts`), activity poll 3 s while the banner shows something else 9 s (`activity.ts`),
   canvas list every 6 s only while the panel is open. Chromium freezes the hidden page about a minute in; the
@@ -693,7 +715,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
   `installHelperApp`, `probeTermux`, `copySetupCommand`, `setupProgress`, `onSetupEvent` fed by
   `window.hermesSetupInstall`, `hermesTermuxProbe`, `hermesSetupLine`, `hermesSetupChanged`), `signInTermux`,
   `installUpdate`, `appVersion`, `openFile`, `sharedItem`, `setLastChat`, `chatSeen`, `setUnseen`, `shareText`
-  (≤ 400,000 characters), `bgState`, `bgFrameAsync`, `bgAction`. In a plain browser the dev values come from
+  (≤ 400,000 characters), `bgState`, `bgFrameAsync`, `bgAction`, `remoteDebuggingState`, `openRemoteDebugging`, `turnOffRemoteDebugging` (`remotedebug.ts`, 2.3). In a plain browser the dev values come from
   `sessionStorage` (`hm.devBase`, `hm.devToken`), never the URL.
 - `api.ts` — `api(method, path, body, {profile})` for dashboard REST. In the app it goes through the bridge
   (`httpAsync` → `window.__hmHttp(id, status, body)`); in a browser through the dev server's `/__api` proxy. It adds
@@ -752,6 +774,8 @@ All go through `rpc` in `gateway.ts`, which adds `profile`. "Used by" = file and
 | `session.create` | `gateway.ts` `newSession` | New chat: `source: 'mobile'`, optional `cwd` + `cwd_explicit`, `model`, `provider`, `reasoning_effort`. |
 | `session.delete` | `gateway.ts` `deleteSession` | Delete a stored chat (after closing its live runtimes). |
 | `session.history` | `gateway.ts` `userRowId` | Stored rows, to find a user message's row id for edit/retry/stats. |
+| `session.control` | `gateway.ts` `goalAction` | Goal sheet buttons: `goal.pause`, `goal.resume`, `goal.clear`; the goal is re-read afterwards. |
+| `session.control.read` | `gateway.ts` `loadGoal` | After a chat is created or opened (not awaited, errors ignored): the chat's goal for the goal line. |
 | `session.interrupt` | `gateway.ts` `interrupt` | Stop the running turn. |
 | `session.list` | `gateway.ts` `loadSessions`, `loadArchived` | Drawer list (limit 80, +100 per Show more); archived = `include_hidden` list minus the normal list (limit 200 each). |
 | `session.resume` | `gateway.ts` `resumeSession`, `syncRunning` | Open a stored chat (60 s timeout; `inflight` adds a live turn); check whether a turn is still running (20 s). |
@@ -875,6 +899,7 @@ flowchart TD
 | `draft-menu` | `Sheet` value, `DraftMenuSheet` | Chat options on the empty new-chat screen. | Same. | 3.5 |
 | `session-actions` | `Sheet` value, `SessionActionsSheet` ("Chat details") | Chat menu row Chat details. | Same. | 3.5 |
 | `status` | `Sheet` value, `StatusSheet` ("Backend status") | The status dot in the header; Settings row Status. | Same. | 3.5 |
+| `context` | `Sheet` value, `ContextSheet` ("Context window") | The context ring in the composer's model row. | Same. | 3.5 |
 | `rollback` | `Sheet` value, `RollbackSheet` ("File checkpoints") | Chat menu row File checkpoints. | Same. Inside it, Back first steps from a snapshot to the list. | 3.5 |
 | `commands` | `Sheet` value, `CommandsSheet` | No control sets it in the current code. The composer's "/" button opens the inline autocomplete instead (3.4). The sheet is still mounted by `App` if `sheet` is ever `commands`. | Same. | 3.5 |
 | Request sheet | `RequestSheet`, driven by `requests[0]` | Hermes asks (approval, question, password, code). | Only by answering (or Skip/Cancel). Not dismissible by tap or drag. | 3.6 |
@@ -907,7 +932,7 @@ The Android shell calls `window.hermesBack` (`App.tsx`). It returns `true` when 
 - Swipe right (finger moves more than 70 px, and more than twice as far across as down): opens the drawer.
 - Swipe left (same thresholds): opens the chat's canvas, only when a chat is open or opening and the canvas is closed.
 - A move that goes more than 40 px down or up before it qualifies counts as scrolling and cancels the gesture.
-- Nothing happens while a drawer, screen or sheet is open, with more than one finger, or when the touch starts inside inputs, dialogs, sheet backdrops, the canvas, the drawer, the lightbox, sliders, the read-aloud player, code blocks, tables, wide formulas, diagrams, OpenUI cards, or any element that scrolls sideways.
+- Nothing happens while a drawer, screen or sheet is open, with more than one finger, or when the touch starts inside inputs, dialogs, sheet backdrops, the canvas, the drawer, the lightbox, sliders, the chat scrubber rail, the read-aloud player, code blocks, tables, wide formulas, diagrams, OpenUI cards, or any element that scrolls sideways.
 - `openChatCanvas` (also used by the header canvas button) opens the canvas. With no chat and none opening it first creates a new chat, because a canvas belongs to a chat. While a chat is still opening (cold start) it does not create one.
 
 Pulling the chat up past its end opens the By the way sheet (`web/src/pullbtw.ts`). The chat view arms that gesture; 3.12 describes it.
@@ -923,7 +948,8 @@ The Android shell and other code call these globals (declared in `App.tsx`, `sha
 | Global | Caller | What it does |
 |---|---|---|
 | `window.hermesBack()` | Android Back | See above. |
-| `window.hermesResume()` | Shell, app returns to the foreground | Reconnects if the socket is not open (`reconnectNow`) and refreshes the background-app card. |
+| `window.hermesResume()` | Shell, app returns to the foreground | Reconnects if the socket is not open (`reconnectNow`), refreshes the background-app card, and tells the open chat it is back (`noteBack`, for the "New since your last visit" divider). |
+| `window.hermesPause()` | Shell, app leaves the foreground (`onPause`) | Notes that the open chat was seen until now (`noteAway`); messages arriving meanwhile get the "New since your last visit" divider on return. |
 | `window.hermesOpenSession(id, draft?)` | Notification tap | `openSessionFromNotification`: remembers the chat, closes screens, sheets and drawer, resumes it (now, or right after connecting). A `draft` (an answer typed into a notification that could not be delivered) goes into the composer. |
 | `window.hermesShared(count, text)` | Android share sheet | `receiveShare` in `share.ts`: see 3.4 "Share to Hermes". |
 | `window.hermesShortcut(kind)` | Launcher shortcuts | Closes screens, sheets and drawer, starts a new chat; kind `live` also starts Live mode. |
@@ -946,6 +972,7 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
 |---|---|---|---|---|
+| Test-build strip (`DevtoolsStrip`) | Only in a test build (`HM_DEVTOOLS=1`, 2.3): a thin warning-coloured strip, `Test build: remote debugging is on`, above the header and drawn over full screens too. While remote debugging is on from Settings → About (2.3) the same strip reads `Remote debugging is on · N min left` (`remoteDebugStrip`). | none | none | Always shown in such a build; not in normal or release builds. |
 | Menu button `☰` (`Header`) | Icon at the left. A small dot on it when any chat is unread. Its label is Sessions, or Sessions (unread chats); on wide screens Hide chat list / Show chat list. | Opens the drawer; on wide screens hides or docks the chat list column (`toggleSide`, 3.1 Wide screens). | Swipe right anywhere on the chat does the same. | Always enabled. |
 | Title and subtitle (`Header`, `Title.tsx`) | Chat title, and under it: the status dot, a 🔊 badge while read-aloud is on for this chat, then the profile name (or "Hermes Agent" for the default profile). A branched chat shows a branch icon (aria-label Branch) before its title. | Title: opens the chat menu (3.5) when a chat exists, does nothing on the empty screen. While a chat is opening the title shows the cached title. | none | Fallback title is "New chat" (chat exists, no title yet) or "Hermes" (empty screen). |
 | Status dot (aria-label Backend status) | Small coloured circle. Green = ok, amber = Hermes up with problems, red = offline, blinking amber = connecting (`dotState` in `health.ts`). | Opens the Backend status sheet (3.5). The tap does not also open the chat menu. | none | none |
@@ -956,9 +983,12 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 | Find bar (`FindBar`) | Search field "Search in this chat", a count such as `3 / 7` (or "none"), buttons Previous match (↑), Next match (↓), Close search (✕). | Previous match goes to an older hit, Next match to a newer one (wraps). Enter in the field goes to the next older hit, Shift+Enter to the newer. Close search ends the search. | none | Opened from chat menu "Search in chat". Closes by itself when another chat opens. Back closes it. Arrows disabled with no hit. |
 | Messages (`Chat`) | The scrolling list of items (3.3). | See 3.3. | Pull up past the end: By the way (3.12). | Skeleton while a chat opens, empty screen when there are no items. |
 | Scroll button (aria-label Scroll to the newest message) | Round `↓` button over the list. | Smooth-scrolls to the end. | none | Shown only when the list is more than 80 px away from its end. |
+| Queued messages (`QueuedRows`, `web/src/components/Queued.tsx`) | After the last message and before the bottom space: right-aligned dashed bubbles, each with a small header `Queued · 1 of 2` and three icon buttons under it. Above them, while the queue is paused, the line `Queue paused` with a Resume button. | Send now (aria-label `Send queued message now`) removes it from the queue and sends it: it steers the running turn, or is sent as a normal message when idle. Edit (aria-label `Edit queued message`) turns the bubble into a text box with Cancel and Save. Remove (aria-label `Remove queued message`) deletes it. Resume sends the first queued message now (when a reply is still running it only lifts the pause, so the queue goes on when the reply ends). | none | Not part of `items`, so search, jump and folding ignore it. Hidden when the chat has no queued message. A chat opens with its queue paused; Stop or an error pauses it too. |
 | Pull hint | Text "Release for a side question", hidden until the user pulls up at the end of the list. | n/a (`pullbtw.ts` draws it) | Pull up 160 px past the end (`PULL_TRIGGER_PX`) and release. | Needs a chat on screen. |
+| Chat scrubber (`Scrubber`, `web/src/components/Scrubber.tsx`; `.chat-wrap` holds it beside `.chat`) | A thin rail on the right edge of the chat, 12 px below the top to 72 px above the bottom (clear of the scroll button), with one `scrub-tick` per message the user sent, placed by message order (`k / (n - 1)` of the height). The tick of the message at or above the top of the list is highlighted (`on`). While a finger is on it the rail widens and a `scrub-bubble` left of the finger shows `12 / 30` and the first 80 characters of that message (or the first attachment's name). The rail is `role="slider"` with aria-label `Jump to a message`, `aria-valuenow` the current message number and `aria-valuetext` its text. | Drag along it, or tap it: the nearest tick is picked (`haptic()` each time it changes); letting go scrolls the chat so that message sits 8 px below the top and flashes it (`hit-flash`). ArrowUp / ArrowDown on the focused rail move one message. Swipes and the pull-up gesture skip it (`.scrubber` in `SKIP`). | Only with at least 6 user messages (`SCRUB_MIN`) and a list taller than 3 times its visible height. Hidden while the find bar is open and while a chat is only previewed. Queued bubbles and the bottom space are not items and get no tick. |
 | Activity banner (`ActivityBanner`) | Strip with spinner: "<chat title>: <what Hermes does>", and "(+N more)". | Opens that chat. | none | Hidden when empty. Disabled when the item is the open chat's own background review. |
-| Status bar (`StatusBar`) | While a turn runs: spinner, the live status text (or "Working…"), `~N tok/s`, `ctx N%`. Below it, a "☑ Tasks done/total" line when Hermes keeps a todo list. | Tasks line toggles the list. Each todo shows ✓ completed, ◐ in progress, ✕ cancelled, ○ pending. | none | Hidden when nothing runs and there are no todos. |
+| Status bar (`StatusBar`) | While a turn runs: spinner, the live status text (or "Working…"), the turn's elapsed time as `m:ss` (`h:mm:ss` from an hour; `.status-elapsed`, from 3 s on), `~N tok/s`, `ctx N%`. Below it, the goal line (`.goal-line`) when the chat has a goal that is not cleared or done: `🎯 title · turn 3 of 20 · active`, or `paused: reason`. Below that, a "☑ Tasks done/total" line when Hermes keeps a todo list. | Goal line opens the Goal sheet (3.5). Tasks line toggles the list. Each todo shows ✓ completed, ◐ in progress, ✕ cancelled, ○ pending. | none | Hidden when nothing runs, there are no todos and no goal. The elapsed time comes from `turnStart` (the send, the first `message.start`, or Hermes's `turn_started_at` on resume; `useElapsed` redraws it once a second). |
+| Selection bar (`QuoteBar`, `web/src/components/QuoteBar.tsx`) | Strip just above the composer with the label "Selected text" and the buttons Quote and Explain. | Quote adds the selection to the composer's quotes (3.4), clears the selection and focuses the text box. Explain sends the selection as a quote followed by "Explain this." at once. | none | Shown only while 3 to 2000 characters are selected inside one reply (`.msg.assistant .md`). Over 2000 characters the label reads "Selection is too long to quote" and both buttons are disabled. Hidden when the selection collapses, a sheet opens, the chat changes or Live mode is on. |
 | Compress hint (`CompressHint`) | "Context N% full. Compress older turns so Hermes keeps up?", button Compress, and ✕ (aria-label Not now). | Compress calls `compressChat` (`session.compress`, up to 5 min), then a toast with the result. Not now hides the hint for that chat until the app restarts. | none | Shown from 80 % context fill, not while a turn runs (unless compressing). While busy the button shows a spinner and ✕ is hidden. |
 | Read-aloud player, background-app card | See 3.11 and 3.10. | | | |
 | Composer | See 3.4. | | | |
@@ -986,10 +1016,12 @@ Shown when there is no open chat and none is opening (`Empty`).
 #### Windowing, folding, search jump
 
 - **Windowing.** Only the last 40 items (`WINDOW`) are drawn when a chat opens, because every item parses Markdown. At the top, an "Earlier messages…" line with a spinner is watched by an `IntersectionObserver` with an 800 px margin. When it comes near, the 40 items before are drawn and the scroll position is kept on the message that was first. New items arriving do not move the start index.
+- **Opening at the divider.** If a chat has a "New since your last visit" divider above the last screenful, it opens scrolled to the divider instead of the end (see 3.2, New since your last visit).
 - **Stick to the end.** While the user is within 80 px of the end, the list follows new content. Scrolling further up stops the following and shows the scroll button. Switching chat sticks again.
 - **Folded tool runs.** `web/src/fold.ts` folds three or more tool cards in a row (`FOLD_MIN`) into one line (see 3.3).
 - **Jump from message search.** The drawer's message search sets `store.jump` (`web/src/jump.ts`: chat id, the marked words, the snippet). After the chat opens, `findHit` picks the message whose text holds the most marked words and longest snippet pieces (ties go to the latest), draws earlier items if the hit is above the window, opens a folded run if the hit is inside one, scrolls it to the centre, flashes it for 2.5 s and marks the words for 6 s with the CSS Custom Highlight API (`highlightWords`, name `hm-hit`). If no message matches, a toast says "Opened the chat; the exact message wasn’t found".
 - **In-chat search.** `findMatches` lists the items whose text contains the query (case-insensitive), newest first. All hits in drawn messages are marked (`hm-find`), the current one (`hm-hit`) is centred, scrolling only when the query or the chosen match changes. Searched text: user and assistant text, and for tool cards their context and result text.
+- **Scrubber jump.** Letting go on the chat scrubber (3.2) sets `scrubTo` (an item index) in `Chat`: it draws earlier items first when the message is above the window, opens a folded run if needed (`unfold`), scrolls the message to 8 px below the top, and flashes it for 2.5 s: the same steps as the search jump. The tick of the current message follows the scroll (`trackTop`, once per animation frame): the first drawn item whose bottom is below the list's top gives the item index, and `currentMark` maps it to a tick; the `.chat-earlier` row, queued bubbles and the bottom space are skipped.
 
 #### Auto button (header)
 
@@ -1018,6 +1050,14 @@ Every label ends with ". Change how much Hermes may do without asking".
 - **`/yolo` command.** Typing `/yolo` (optionally `on` or `off`) in the composer toggles Full access the same way and adds a notice to the chat.
 - **Settings row.** `DefaultAccessRow` in the same file is the Settings row Auto for all chats: a `SelectRow` with the same three options. Choosing Full asks "Full access in every chat?" (button "Allow in all chats"). Off removes the key.
 
+#### New since your last visit
+
+`web/src/visit.ts` keeps, per chat, when it was last on screen (`hm.visit.v1`, ms, newest 500 chats). `markVisit` runs in `gateway.ts` when the user leaves a chat (another chat opens or a new draft starts), when the app goes away while a chat is open (`noteAway`: the shell's `window.hermesPause` or the page's `visibilitychange`, whichever comes first), and when a turn ends (`message.complete`) while the page is visible and not away (`isAway`). When `Chat` shows a chat whose key changed it reads `lastVisit` once (a `visitRef`), and the first time the chat's own items (not the read-only preview) are there it asks `firstUnseen` for the first user or assistant item with `at` newer than that time (never index 0; items without `at`, such as tool cards, are skipped). That index is frozen for as long as the chat stays open, so new live messages do not move it. The item is drawn with a `visit-divider` line (`role="separator"`, text "New since your last visit", accent colour) before it, inside a `visit-wrap` element; when the item is also in a turn-end or tool-run wrapper, the divider is the first child of that wrapper, so there is still one child of `.chat` per item. A chat never opened on this phone has no divider.
+
+**Away and back with the same chat open.** Leaving the app (Home, another app, screen off) and coming back keeps the chat on screen, so it is not reopened. `noteAway` records which chat was open and when; `noteBack` (from `window.hermesResume` or `visibilitychange`, whichever comes first) tells `Chat` through `onBack`/`lastBack`. If that chat is still the one shown, `Chat` looks, as items arrive, for the first user or assistant item stamped after the leave time and no later than `BACK_GRACE_MS` (5 s) after the return (`newWhileAway`: messages from the backlog are stamped when the page processes them). It stops looking 10 s after the return. When one is found, the divider moves there (replacing an older one) and the chat scrolls to it under the same rule as when opening. Replies watched on screen get no divider.
+
+Initial scroll: when the divider is above the last screenful, the chat opens with it 8 px below the top instead of at the end (earlier items are drawn first if it is above the window, like a search jump), and the scroll button shows. A message-search jump or an in-chat search that is waiting takes priority and no divider scroll happens. Only once per opened chat; the user's own scrolling is never overridden afterwards.
+
 #### Unread chats
 
 `web/src/unread.ts` keeps, per profile, the message count the user last saw in each chat and when the count last changed (`hm.seen.v1.<profile>`). After every `session.list`, `noteSessions` updates it. A chat is unread when it has more messages than were seen; the open chat is always read. The first list ever is the baseline (nothing unread); a chat that started after tracking began and has messages counts as unread. `markSeen` runs when a chat opens. The unread list is shown as the dot on the menu button and in the drawer, and mirrored to the Android service (`setUnseen` bridge call) for its Done chip and the icon badge. `ago()` formats the drawer's "5 min" labels. At most 1500 chats are tracked.
@@ -1044,7 +1084,7 @@ There is no separate item kind for approvals, images, files or errors. Approvals
 
 #### User message
 
-`UserMsg`. A bubble with the text (web addresses are links, `Linked.tsx`).
+`UserMsg`. A bubble with the text (web addresses are links, `Linked.tsx`). Leading lines that start with `>` (with or without the space after it) are drawn as quote blocks (`.msg-quote`: left border, dim text) above the rest, one block per quote (`splitQuote` in `web/src/quote.ts`); this also shows stored chats correctly after a reload. Edit still edits the full text, quotes included.
 
 - **Attachments.** Photos sent from this phone show as thumbnails (tap: the Lightbox). Photos of a resumed chat show through `Media` from their path; if only a name is known, a chip "🖼 name". Files show as chips "📎 name".
 - **Time.** Tapping the bubble (not a link, button, code, table, image, or selected text) toggles the send time under it: "14:05" for today, otherwise weekday, day, month and time.
@@ -1063,7 +1103,7 @@ There is no separate item kind for approvals, images, files or errors. Approvals
   - **Read aloud** speaks the reply (`toggleSpeak`); while it is read the button reads "Stop reading". Voice behaviour is 3.11.
   - **Retry** (`retryTurn`): finds the user message the reply belongs to and calls `resendFrom` with its text. Disabled while a reply runs.
   - **Branch** (`branchAt`): calls `session.branch` with a message count so the new chat holds everything up to the end of this turn, renames it "⎇ <original title>" (a later branch of the same chat becomes "⎇ <title> 2", and so on, because Hermes wants unique titles), opens it, and toasts "Branched: <title>". Disabled while a reply runs.
-  - **Stats** text such as `~41 tok/s · ctx 2% · 8k/200k`: tokens per second (from the provider's `avg_tps`, else estimated from the stream, else from the turn's wall time) and the context fill. Saved per turn in `hm.stats.v1` (2000 entries), so it returns when the chat is reopened.
+  - **Stats** text such as `~41 tok/s · 1m 23s · ctx 2% · 8k/200k`: tokens per second (from the provider's `avg_tps`, else estimated from the stream, else from the turn's wall time) the turn's duration (`fmtDuration` in `text.ts`, shown when the turn took at least 1 s) and the context fill. Saved per turn in `hm.stats.v1` (2000 entries), so it returns when the chat is reopened.
 - **Time.** Tapping the reply (not on a link or control) shows its time, like a user bubble (not while streaming).
 
 Actions are not drawn on earlier segments of a turn (a reply split by tool calls), on streaming replies, or in a preview.
@@ -1090,6 +1130,7 @@ Actions are not drawn on earlier segments of a turn (a reply split by tool calls
 - **Label:** the tool's own context line, else for `phone_app` a plain sentence ("Using Keep", "Tapping in Keep", `phoneAppLabel` in `text.ts`), else the first of `command`, `path`, `query`, `url`, `name`, `goal` from the arguments.
 - **State mark:** spinner while `generating` or `running`; the duration (`850ms`, `3.2s`, `1m 5s`) or ✓ when done; ✕ on error.
 - **Risk:** a tool flagged by Hermes (`tool.output_risk`) gets a red outline and, expanded, a "⚠ <reason>" note.
+- **Opening and closing:** the body is wrapped in `Collapse` (`ui.tsx`), so it slides open and closed in 180 ms (see Motion in 3.20). After a tap that closes it, the body stays mounted until the animation ends.
 - **Expanded body**, in order: Arguments (JSON; the noisy file body and replaced strings are left out when a diff is shown), Summary, Diff (Hermes's inline diff, or a diff built from the `memory` tool's arguments, or a diff found in the result), any image / video / audio path or URL found in the output (drawn with `Media`), Output (readable part of a JSON result, with `exit N` and error in the caption, a Copy button, cut at 20,000 characters).
 - **Stored output.** A tool card restored from history has no result text. When opened, the card fetches it from the plugin (`GET /tool-result?id=<tool call id>`), shows "Loading output…", caches it, and says "No output recorded" if there is none. Cards with a locally made id are not fetched.
 - **Folding.** `web/src/fold.ts` `toolRuns` finds runs of at least three tool cards with only tool cards and reasoning-only replies between them. A closed run is one line (`ToolRunHead`): up to four tool icons, "Ran 7 tools · 42s" (or "Running 4 tools…"), " · N failed" when some failed, the list of tool names, a spinner while one runs, and a chevron. Tap toggles the run (keyed by its first item's id). A run still working keeps its last card visible. Every item keeps its own element in the list, folded ones as empty placeholders, so message search can find them by position.
@@ -1113,7 +1154,7 @@ A box (`notice-info`, `notice-warn`, `notice-error`) with Markdown text. Where n
 Rendering rules:
 
 - **Safety.** Raw HTML goes through `rehype-sanitize` with an allow-list. Scripts, event handlers and unknown tags never get through. Inline SVG is allowed with presentation attributes only (no script, `foreignObject`, `use`, image or style elements). Inline `style` is cut down to looks (colour, spacing, borders, type); anything that positions, overlays, hides, or loads a URL is removed. A card with a background and no text colour gets a readable text colour chosen from the background's brightness.
-- **Code blocks** (`CodeBlock`): a bar with the language (or "code"), then buttons Wrap (toggle line wrapping), Canvas (for blocks of 3+ lines: creates a canvas document of the right type, `html`, `svg`, `markdown`, `json`, `csv` or `code`, and toasts "Opened in the canvas"), and Copy ("Copied" for 1.2 s). Blocks over 26 lines are collapsed with a button "Show all N lines" / "Show less". A block tagged `diff` or `patch`, or an untagged block that looks like a unified diff, is drawn as a diff (below) without Wrap and Canvas.
+- **Code blocks** (`CodeBlock`): a bar with the language (or "code"), then buttons Wrap (toggle line wrapping), Canvas (for blocks of 3+ lines: creates a canvas document of the right type, `html`, `svg`, `markdown`, `json`, `csv` or `code`, and toasts "Opened in the canvas"), and Copy ("Copied" for 1.2 s). Blocks over 26 lines are collapsed with a button "Show all N lines" / "Show less". An `html` or `svg` block of 3+ lines also gets **Preview** (before Canvas; label **Code** while the preview shows; disabled while the reply is still streaming, read from `StreamingCtx` so blocks aren't rebuilt per stream batch). Preview replaces the code with the page in a sandboxed `HtmlFrame` (class `inline-frame`, always offline, see 3.7 "HTML runs in a sandbox"): it starts 160 px high and grows to the page's height, at most 60 % of the window height, then scrolls inside. `svg` shows as an `<img>` with a `data:image/svg+xml` source (no scripts). Below the frame a **Full screen** button (aria-label `Open preview full screen`) opens `HtmlViewer` (class `html-viewer`, `role="dialog"`, aria-label `HTML preview`, so swipe and pull gestures skip it; also `.inline-frame` is in their `SKIP` lists): the same offline page filling the screen, closed with ✕ (aria-label `Close preview`) or Android Back. "Show all" is hidden while previewing. A block tagged `diff` or `patch`, or an untagged block that looks like a unified diff, is drawn as a diff (below) without Wrap and Canvas.
 - **Diagrams.** A `mermaid` block is drawn as SVG once Mermaid loads (about 250 ms after the text stops changing, theme follows light/dark, strict security level). Tap it (aria-label Open diagram full screen) to open the viewer: buttons Zoom out and Zoom in (steps of 1.35, range 50 % to 600 %), Fit, Copy (the source; toast "Diagram source copied"), and Close; pinch zooms, drag pans, Back closes. A diagram that cannot be drawn stays visible as code with the caption "mermaid (not rendered)".
 - **Cards.** A block tagged `openui-lang` (or `openui`) is drawn by `OpenUIBlock` as an interactive card (3.9). If the card cannot be drawn, the source shows with the caption "openui-lang (not shown)". Card buttons can send messages only in chat replies (`interactive`), not in canvas, files or the By the way sheet.
 - **Task lists.** `- [ ]` items get tap targets. The tick state is the user's: stored on the phone (`web/src/tasks.ts`, `hm.tasks.v1`, keyed by a hash of the message plus the box position, newest 300 messages kept) and it wins over the `[x]` the model wrote. Tapping the item's text ticks it too. The top-level list shows a bar and "N/M done".
@@ -1138,16 +1179,26 @@ Rendering rules:
 
 `web/src/components/Diff.tsx` `DiffView` draws a unified diff in a monospace block: green added lines, red removed lines, blue `@@` hunk headers, bold file-header lines (`diff --git`, `index`, `---`, `+++`, `a/… → b/…`), yellow lines starting with `!`, and dim meta lines (`┊…`, `\ No newline`). ANSI colour codes from Hermes's terminal diffs are stripped, the "┊ review diff" marker line is dropped, and output over 20,000 characters ends with "… (truncated)". `looksLikeDiff` decides whether plain text is a diff (a hunk or git header plus changed lines). The same view is used in tool cards, Markdown code blocks and the File checkpoints sheet.
 
+#### Changed files card
+
+`TurnChangesCard` (`web/src/components/Changes.tsx`, logic in `web/src/changes.ts`). When a turn (a user message and everything up to the next one) wrote files, a card follows its last item: "✎ 3 files changed" with the total `+A −B` (`.diffstat-add` green, `.diffstat-del` red) and a chevron. Only `write_file` and `patch` tools (`EDIT_TOOLS`) that ended `done` count; failed ones, other tools and tools without `args.path` are ignored. The last turn gets no card while the reply is still running.
+
+- **Tap the card head:** opens or closes the list: one `.turn-changes-row` per file (`shortPath`: `~/projects/site/a.txt`, long paths become `~/…/dir/name.ext`) with its own `+N −M`, then a **Checkpoints** button that opens the File checkpoints sheet (`sheet: 'rollback'`). A file edited several times is one row with the counts added up and the diffs joined in order (`diffCounts` counts `+`/`-` lines and skips `+++`/`---` headers; each file keeps at most `MAX_DIFF` = 200,000 characters of diff, then "… (truncated)").
+- **Tap a file row:** a sheet titled with the full path showing `DiffView` of its diffs, or "No diff recorded for this edit". Back closes it.
+- **Without a recorded diff** (older stored chats): `write_file` counts the lines of `args.content` as added and the row says "new or rewritten"; `patch` counts `old_string` lines as removed and `new_string` lines as added.
+- **In the list:** the card shares one child element of `.chat` (`div.turn-end`, or the `tool-run-wrap` of a folded run) with the item it follows, so search, jump and the scrubber still find items by child index; it stays visible when the run is folded. Not part of exports or read-aloud.
+
 #### Streaming
 
 Events from Hermes (`client.onEvent` in `gateway.ts`) reach the chat for the open chat only:
 
-- `message.start`: the turn starts; `running` is set.
+- `message.start`: the turn starts; `running` is set and `turnStart` is set if the send didn't already (Hermes may send several per turn).
+- `session.control.update`: the chat's goal changed (`control.goal`); the goal line follows it.
 - `thinking.delta` / `status.update`: the status-bar text.
 - `reasoning.delta`, `message.delta`: appended to the open assistant item in batches (every 60 ms, every 150 ms once the reply is over 6000 characters), not per token, because every change reparses Markdown. Any other event flushes the batch first, so order never changes.
 - `tool.generating`, `tool.start`, `tool.complete`: the tool card appears when the call starts being written, becomes `running` at `tool.start`, `done` at `tool.complete`. A tool that streams under a generic name takes its real name at start. A replayed start for a card that already exists adds no second card. Starting a tool closes the open assistant segment, so text after tools is a new segment.
-- `todo.updated`, `session.usage`, `session.info`, `session.title`.
-- `message.complete`: tool cards still "generating" are dropped; errors become a notice; the final text fills a reply whose stream missed some (`fullReply`); the turn stats are computed (`finishTurnStats`); `running` ends. Live mode and automatic read-aloud (Settings or chat menu, when the app is on screen) speak the reply here.
+- `todo.updated`, `session.usage` (also refreshes `ctx` without an RPC when the usage has `context_max` and `context_used`), `session.info`, `session.title`.
+- `message.complete`: tool cards still "generating" are dropped; errors become a notice; the final text fills a reply whose stream missed some (`fullReply`); the turn stats are computed (`finishTurnStats`, given the turn's seconds read before `turnStart` is cleared); `running` ends. Live mode and automatic read-aloud (Settings or chat menu, when the app is on screen) speak the reply here.
 - `review.summary`, `btw.complete`, `background.complete`: notices.
 - A silent connection is checked: every 15 s `gateway.ping`; after 45 s without any event during a turn the page asks `session.resume` whether the turn is still running and loads the stored transcript if it finished meanwhile.
 
@@ -1171,8 +1222,8 @@ The composer sits at the bottom of the chat (`web/src/components/Composer.tsx` `
 | Slash menu | Floating list above the composer: `/name`, a "skill" tag for skills, a one-line description. | Tap an item to insert `/name ` at the typed token (the text after the caret is kept). | Does not steal focus from the text box (`onMouseDown` is cancelled). | Shows "Loading commands…" until the catalog first arrives. Hidden when nothing matches. |
 | Attachment row | Photo thumbnails (with ✕), chips for files "📎 name" (with ✕), a chip "Attaching…" with a spinner while uploads run, and a small clear button when more than one item is queued. | ✕ (aria-label "Remove <name>") takes one item back out. clear removes all. | none | Hidden when nothing is attached or uploading. |
 | Live bar | Replaces the model row and hides the text box during Live mode: a coloured dot, "Live · Listening…" / "Hermes is thinking…" / "Hermes is speaking…" / "Mic muted", the words heard so far, or the hint "Pause for N s to send"; a mute button (aria-label Mute microphone / Unmute microphone) and End. | Mute toggles the microphone (replies are still read aloud). End stops Live mode. | none | Only while Live mode runs. Live mode itself is 3.11. |
-| Model row | A chip with a sparkle icon, the model's short name (text after the last `/`, or "Choose a model"), and the reasoning level (`med`, `min`, `off`, or the level's name). aria-label "Model: <name>. Change model". Beside it the "⚡ Full access" chip when a chat is in Full access. | Opens the Model sheet (3.5). The Full access chip turns Full access off. | none | Chip disabled while offline or a chat is opening. Hidden in Live mode and while the slash menu is open. |
-| Add button (aria-label Add) | `+` at the left of the text box. | Opens the picker "Add": a row with the current model (taps open the Model sheet), then Camera ("Take a picture now"), Photo ("From your gallery"), File ("PDF, document, spreadsheet, text, code… (up to 20 MB)"). | none | Disabled while offline or opening. |
+| Model row | A chip with a sparkle icon, the model's short name (text after the last `/`, or "Choose a model"), and the reasoning level as `EffortBars` (`.effort-bars`: five bars of rising height, 3 px wide, filled up to the level and the rest at 30 % opacity; `effortLevel` in `web/src/effort.ts` maps minimal 1, low 2, medium 3, high 4, xhigh 5; off is one hollow bar; a level the app doesn't know, such as max or ultra, shows as its name). aria-label "Model: <name>, reasoning <level>. Change model" (without the level part when none is known). Beside it the "⚡ Full access" chip when a chat is in Full access. At the right end the context ring (`ContextRing`, `.ctx-ring`, 28 px tap target around an 18 px SVG circle `r = 7`): a track in `var(--dim)` and a fill in `var(--accent)` that is amber (`warn`) from 80 % and red (`full`) from 90 % (`ctxLevel`, `ringDash` in `ctxring.ts`). aria-label "Context 12% used. Show details". Shown whenever the chat's `ctx` is known (after the chat is opened or its first turn ends); a new chat has none. | Opens the Model sheet (3.5). The Full access chip turns Full access off. The ring opens the Context window sheet (`sheet: 'context'`). | none | Chip disabled while offline or a chat is opening. Hidden in Live mode and while the slash menu is open. |
+| Add button (aria-label Add) | `+` at the left of the text box. | Opens the picker "Add": a row with the current model (taps open the Model sheet), then Camera ("Take a picture now"), Photo ("From your gallery"), File ("PDF, document, spreadsheet, text, code… (up to 20 MB)"), then "Stash draft" (only when the box has text) and "Stashed drafts (N)" (only when N > 0): see Stash below. | none | Disabled while offline or opening. |
 | Commands button (aria-label Commands) | `/` | Puts a `/` at the caret (with a space before it when the previous character is not whitespace) and focuses the box, which opens the slash menu. If a slash token is already open it only focuses. | none | Disabled while offline or opening. |
 | Text box | Multi-line field, grows with its content up to 180 px. Placeholder: "Message Hermes", "Steer the running task…" while a reply runs, "Opening your chat…" while a chat opens, or "Offline: type now, it sends when Hermes is back". | Typing. Enter inserts a new line. Ctrl+Enter or Cmd+Enter sends (hardware keyboard). | none | Never disabled: the user can always type. |
 | Live conversation button (aria-label Live conversation) | Waveform icon. Tooltip: "Live: talk, pause N s to send, Hermes answers out loud". | Starts Live mode (3.11). | none | Shown when the text box is empty, no reply runs, dictation is off, and the phone app's voice input exists. Disabled while busy or offline. |
@@ -1181,25 +1232,26 @@ The composer sits at the bottom of the chat (`web/src/components/Composer.tsx` `
 | Stop button (aria-label Stop) | Stop square. | Interrupts the running turn (`session.interrupt`). | none | Shown while a reply runs and the text box is empty. |
 | Send button (aria-label Send) | Paper-plane icon. The label is "Steer" while a reply runs and "Send when back online" while offline. | Sends. | none | Disabled when the text is blank, a send is in flight, or a chat is opening. |
 
-**Data:** `drafts.ts` (`hm.drafts.v1`, legacy `hm.draft`), `recent.ts` (`hm.recent.v1.<profile>`), `commands.ts` (`hm.cmds.v1.<profile>`), outbox (`hm.outbox.v1`); RPCs `prompt.submit`, `session.steer`, `session.interrupt`, `slash.exec`, `command.dispatch`, `commands.catalog`, `image.attach_bytes`, `image.attach`, `image.detach`, `file.attach`, `config.set`; dashboard `GET /api/skills`.
+**Data:** `queue.ts` (`hm.queue.v1`), `drafts.ts` (`hm.drafts.v1`, legacy `hm.draft`), `stash.ts` (`hm.stash.v1`), `recent.ts` (`hm.recent.v1.<profile>`), `commands.ts` (`hm.cmds.v1.<profile>`), outbox (`hm.outbox.v1`); RPCs `prompt.submit`, `session.steer`, `session.interrupt`, `slash.exec`, `command.dispatch`, `commands.catalog`, `image.attach_bytes`, `image.attach`, `image.detach`, `file.attach`, `config.set`; dashboard `GET /api/skills`.
 **Rules:** attaching and the camera use a plain `<input type="file">` (the Android shell supplies the picker and camera), so there is no custom file browser.
 
 #### What the button on the right does
 
-One slot, five faces, decided in this order:
+One slot, six faces, decided in this order:
 
 1. Text box empty, no reply running, not listening, and the phone app has voice input: the Live conversation button and the Dictate button (side by side).
 2. Listening: Stop dictation.
 3. A reply is running and the box is empty: Stop.
-4. Otherwise: Send (label Steer while a reply runs).
+4. A reply is running and the box (or the quotes) has content: two buttons. A small pill `Steer` (aria-label `Steer`) sends it into the running turn now, like Send used to while running. The round arrow with a clock badge (aria-label `Queue`) puts it in the queue (below). Queue is disabled, with the label `Queue (remove attachments first)`, while photos or files are attached (Hermes would attach them to whatever is sent next); with the label `Queue (full)` when the chat already has 10 queued messages; and while the text starts with `/` (slash commands are never queued; Steer runs them as before). Ctrl/Cmd+Enter in the box queues while a reply runs.
+5. Otherwise: Send (label Send when back online while Hermes is not connected).
 
 #### Sending
 
 `send()`:
 
-1. Ignores blank text.
-2. If Hermes is not connected: queues the text in the outbox and clears the box (below).
-3. Otherwise clears the box, calls `sendPrompt`, and on failure puts the text back and shows an error toast.
+1. Ignores blank text unless there is at least one quote chip. The text sent is `withQuotes(quotes, text)` (`web/src/quote.ts`): each quote as a Markdown blockquote (`> ` before every line), a blank line between quotes, a blank line, then the typed text. A text starting with `/` is sent as it is and keeps the quotes.
+2. If Hermes is not connected: queues that text in the outbox and clears the box and the quotes (below).
+3. Otherwise clears the box and the quotes, calls `sendPrompt`, and on failure puts the text and the quotes back and shows an error toast.
 
 `sendPrompt` (`gateway.ts`) in order:
 
@@ -1210,6 +1262,8 @@ One slot, five faces, decided in this order:
 5. Any other text starting with `/` goes to `runSlash` (below).
 6. If a reply is running: `session.steer` with the text, and a notice "Steer: <text>" is added. The running turn takes the new instruction; no new turn starts.
 7. Otherwise a user item is added (with the queued photo thumbnails and file names), `running` is set, any pending model switch is awaited, and `prompt.submit` is called with `surface: 'mobile'`. File attachments go as their `@file:` references in front of the text; photos were already queued inside Hermes. If it fails, a "Send failed: <reason>" notice is added and the attachments reappear in the composer.
+
+**Queue** (`send(undefined, 'queue')` in `Composer.tsx`, state in `web/src/queue.ts`): the text sent is built exactly as for Send (`withQuotes(quotes, text)`, so quotes travel with it); it is added to the open chat's queue (`enqueue`, `hm.queue.v1`), and the box and the quotes are cleared. Queued messages are shown at the end of the chat (3.2) and sent one by one when the chat's turn ends (2.2.1 step 8a). The queue lives in the page, not in Hermes: a queued message is sent only while the app shows that chat (closing the app, or opening another chat, keeps it and pauses it until Resume). It is a different thing from the offline outbox. The placeholder while a reply runs is "Queue or steer a follow-up…".
 
 `runSlash`: shows the command as a user item, then:
 
@@ -1229,6 +1283,19 @@ One slot, five faces, decided in this order:
 #### Drafts
 
 `web/src/drafts.ts`. Each chat keeps its own unsent text in `hm.drafts.v1` (chat id → text); the empty new-chat screen has one per profile (`new:<profile>`). The text is saved on every change and restored when the chat is shown again. At most 100 drafts are kept (the oldest dropped first); an empty text deletes the entry. A one-time migration moves the old single `hm.draft` into the current profile's new-chat draft. When the empty screen turns into a real chat (the first attachment, a share, a model pick that replaces an empty chat), the text moves with it.
+
+#### Stash
+
+`web/src/stash.ts` (`stashes`, `pushStash`, `takeStash`, `clearStashes`, `STASH_MAX` = 20; list in `hm.stash.v1`), like `git stash` for the composer. Add → **Stash draft** (shown only when the box has text) saves the typed text with its chat and time at the front of the list, empties the box and toasts "Draft stashed". Only the text is stashed: quote chips (below) and attachments stay where they are. Add → **Stashed drafts (N)** (shown only when N > 0; its sub line is the newest stash's first 50 characters) opens a second picker "Stashed drafts", newest first: label = the first line (60 characters), sub = "<time ago> · <chat title or New chat>". Picking one puts its text in the box and removes it; when the box already had text, the two swap (the old text is stashed) and a toast says "Swapped with your stash". The last row, "Clear all stashed drafts", asks first (`confirmDialog`). The oldest of more than 20 is dropped.
+
+#### Quotes
+
+Words selected in a reply can be quoted into the next message.
+
+- The selection bar (3.2, `QuoteBar`) adds the selection with `addQuote`. A chip `quote-chip` ("❝" and the first 60 characters) per quote shows above the text box, in the attachment row area, each with ✕ (aria-label `Remove quote`, `removeQuote`). At most 3 quotes (`QUOTES_MAX`): a 4th replaces the oldest. A quote is at most 2000 characters (`QUOTE_MAX`).
+- With quotes and an empty box the placeholder is "Ask about the quote…" and the Send button is enabled (the Live and Dictate buttons give way to Send).
+- Quotes belong to the chat they were taken from: switching chats clears them (`clearQuotes`). They are not kept across a reload.
+- The quote state (`useQuotes`, `setQuotes` to put them back after a failed send) and the text helpers `withQuotes` / `splitQuote` live in `web/src/quote.ts`. `splitQuote` is the inverse of `withQuotes` and counts a line like `>x` (no space) as a quote line, as Markdown does.
 
 #### Attachments and camera
 
@@ -1348,6 +1415,11 @@ How picking works (`setModel` in `gateway.ts`):
 
 Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat's `cwd`), then when usage is known Tokens ("N in · M out"), Context ("N% used") and Cost (`$0.0000`), and Session id. Tapping the session id copies it (toast "Copied"). Missing values show "—". **Data:** `active.info` and `active.usage`.
 
+#### Context window sheet
+**Opens from:** the context ring in the composer's model row (`setState({ sheet: 'context' })`). **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ContextSheet`, `useCompress`.
+
+**Layout, top to bottom:** title "Context window"; a bar (`.ctx-bar`) filled to the percent (amber from 80 %, red from 90 %) and "N% used"; "12,345 of 128,000 tokens" (`toLocaleString()`), and "estimated by Hermes" when `usage.context_estimated`; when `usage` has them: "This chat so far: input N · output N", "Cost: $0.0123" (`cost_usd`, 4 decimals under $1 via `fmtCost`) and "Cache hits: 63%" (`cache_hit_pct`); the button "Compress older turns" (`session.compress` through `compressChat`, spinner while it runs, then a toast with the result). The button is disabled while a reply runs, with the note "Wait for the reply to finish". `useCompress` is the small hook (`{ busy, run }`) that `CompressHint` shares with this sheet.
+
 #### Backend status sheet
 **Opens from:** the header status dot; Settings → Status. **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `StatusSheet`.
 
@@ -1370,8 +1442,13 @@ Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat
 **Data:** `store.health` from `web/src/health.ts` (`gateway.ping` every minute while the app is in front, the full `GET /api/status` every 10 minutes or when this sheet opens), `GET /phone-access` (plugin), the `setupState` bridge call. A late answer after the sheet closes is dropped.
 **Rules:** the header dot uses only what the app needs (the gateway socket, the dashboard and storage components, critical memory or disk pressure). Messaging platforms Hermes may also run do not turn it amber.
 
+#### Goal sheet
+**Opens from:** tapping the goal line in the status bar (local state in `StatusBar`, not a `state.sheet`). **Closes with:** tap outside, drag down, Back (`useBackHandler`), or after Clear goal. **Source:** `web/src/components/Sheets.tsx` `GoalSheet`.
+
+Shows the goal (Hermes's `/goal`) from `ActiveSession.goal`: title, status (with the pause reason), turns used of the maximum, the contract fields that are not empty (Outcome, Verification, Constraints, Boundaries, Stop when), Last verdict and Reason when set, and the subgoals as a list. Buttons: Pause (while active) or Resume (while paused), each calling `goalAction`; Clear goal asks "Clear this goal?" (confirm "Clear") first. Errors are toasted. The goal is read by `loadGoal` and kept current by `session.control.update` events.
+
 #### File checkpoints sheet
-**Opens from:** Chat menu → File checkpoints. **Closes with:** tap outside, drag down, Back (Back first leaves a snapshot view). **Source:** `web/src/components/Sheets.tsx` `RollbackSheet`; `web/src/checkpoints.ts`.
+**Opens from:** Chat menu → File checkpoints; the Checkpoints button of the changed files card (3.3). **Closes with:** tap outside, drag down, Back (Back first leaves a snapshot view). **Source:** `web/src/components/Sheets.tsx` `RollbackSheet`; `web/src/checkpoints.ts`.
 
 Hermes snapshots a folder before it edits a file there (once per turn). The plugin (`checkpoints.py`) records which snapshots this chat caused; the sheet lists them and can restore a folder or one file.
 
@@ -1401,7 +1478,7 @@ These are `PickerSheet` instances from `web/src/components/ui.tsx` (3.20): a lis
 
 ### 3.6 Approvals and questions
 
-When Hermes needs the user, it sends a request to the page. `gateway.ts` accepts the methods in `SERVER_REQUESTS` (`approval`, `clarify`, `secret`, `sudo`, `otp`, and `connection.request`) and puts them in `store.requests`. `App` draws the first one as a `RequestSheet`; the next appears when it is answered. Requests are not dismissed by tapping outside (the backdrop has no handler) and the sheet registers no Back handler, so an accidental tap does not leave the agent waiting. Android Back is not routed to it (it would act on the layers behind it).
+When Hermes needs the user, it sends a request to the page. `gateway.ts` accepts the methods in `SERVER_REQUESTS` (`approval`, `clarify`, `secret`, `sudo`, `otp`, and `connection.request`) and puts them in `store.requests`. `App` draws the first one as a `RequestSheet`; the next appears when it is answered. Requests are not dismissed by tapping outside (the backdrop has no handler) and the sheet registers no Back handler, so an accidental tap does not leave the agent waiting. Android Back is not routed to it (it would act on the layers behind it). The one exception is a batch of questions on its second question or later: `Clarify` registers a Back handler then (`useBackHandler`), and Back steps to the previous question.
 
 #### Request sheet
 **Opens from:** a request from Hermes for the open session or any session this page is attached to. **Closes with:** answering, skipping or cancelling; or Hermes cancelling the request (`request.cancel`, for example when it was answered from a notification or timed out). **Source:** `web/src/components/RequestSheet.tsx` `RequestSheet`.
@@ -1416,6 +1493,8 @@ When Hermes needs the user, it sends a request to the page. `gateway.ts` accepts
 | Buttons | One per choice: Allow once (primary), Allow this session, Always allow, Deny (red). | Answers with that choice (`{ choice }`) and closes the sheet. Over the lock screen (`lockView()`), every button but Deny toasts "Unlock the phone to allow this" and asks for the unlock screen instead (`answerRequest` returns false; the sheet stays). | none | The choices are the ones Hermes sends. If it sends none: Allow once, Allow this session (unless `allow_session` is false), Always allow (only if `allow_permanent` is set), Deny. |
 
 **Question layout (method `clarify`):** title "❓ Hermes asks". One block per question: the question text, then either choices (radio-style `○`/`●` for single choice, checkbox-style `☐`/`☑` for multi-select) and a text field "Or type your own answer…", or just a field "Your answer…". Buttons Skip (answers with an empty string) and Answer (disabled until every question has an answer; multi-select answers are joined by new lines). A batch of questions is answered as `{ answers: { <qid>: <text> } }`, a single plain question as `{ answer }`.
+
+**Several questions (a `clarify` request whose `questions` list has more than one):** the sheet shows one question at a time. Under the title is a header `Question {i} of {n}` and a row of `n` small dots (`.clarify-dot`; filled `.done` when that question has an answer, ringed `.on` for the current one). Each dot is a button with aria-label `Go to question {k}` (for example `Go to question 2`) that jumps to that question. Only the current question is drawn. Picking a choice in a single-choice question (not multi-select) records it and, after `ADVANCE_MS` (300 ms, in `clarify.ts`), moves to the next unanswered question after it, or to the next one if all are answered (`nextStep` in `clarify.ts`, a pure function); a tap on another choice during the pause restarts the timer, typing in the text field never advances, and the last question never advances. Each choice tap and each move calls `haptic()`. Buttons: Skip (on every step, answers with an empty string), Back (not on the first question) and Next (all but the last; always enabled, so a question can be skipped and come back to), and on the last question Answer (enabled when every question has an answer; sends `{ answers }` as above). Android Back goes to the previous question when not on the first; on the first it does what it did before (not routed to the sheet). One question looks and works as described above, with no header, dots or Back/Next.
 
 **Password, secret and code layout (methods `sudo`, `secret`, `otp`, and also `connection.request`, which uses the same sheet):** title "🔐 Password needed" (`sudo`), "🔑 <variable name>" (`secret`), or "🔢 Code needed" (others). The prompt text, then a field (hidden characters; `otp` shows plain digits with a numeric keyboard). Buttons Cancel (rejects the request with "cancelled by user") and Send (disabled while empty; answers `{ value }`).
 
@@ -1448,15 +1527,22 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 
 | File | Purpose |
 |---|---|
+| `remotedebug.ts` | Settings → About → Remote debugging, as pure functions plus a hook: `parseRemoteDebug` (the shell's JSON → `{available, on, minutesLeft}`, anything odd = not available), `remoteDebugRow` (null when unavailable; "Off" opens, "On · N min left" turns off), `remoteDebugStrip`, and `useRemoteDebug` (reads on mount, visibility, focus and the `hm-devtools` event; a one-minute timer only while on and visible). Unit tests: `remotedebug.test.ts`. |
+| `App.tsx` `DevtoolsStrip` | Also shows `Remote debugging is on · N min left` while the setting is on. Test builds: when `isDevtoolsBuild(appVersion())` (`bridge.ts`: the version ends with `+devtools`) it draws `.devtools-strip`, a fixed 18 px strip at the top reading `Test build: remote debugging is on` (warning colours from CSS variables, `z-index` 100 so it shows over full screens too, not tappable, can't be dismissed), plus `.devtools-spacer` so the header is not covered. Normal builds draw nothing. |
 | `main.tsx` | Page entry. Imports `secure-bridge` first (it takes the native bridge key), then `share.ts` and `notif-answer.ts` (they register the `window.hermes*` globals), applies the saved theme, calls `openFirstRun`, and renders `App`. |
-| `App.tsx` | Root: `Header`, banners, `Chat`, `FindBar`, the layer stack, `window.hermesBack`, `hermesResume`, `hermesOpenSession`. |
+| `App.tsx` | Root: `Header`, banners, `Chat`, `FindBar`, the layer stack, `window.hermesBack`, `hermesResume`, `hermesPause`, `hermesOpenSession`. |
 | `Title.tsx` | Chat titles; a branched chat is stored as "⎇ <title>" (Hermes keeps only plain text) and drawn with a branch icon (`BranchIcon`); `plainTitle` and `keepBranch` keep the mark when renaming. |
 | `AutoAccess.tsx` | `AutoButton` (header) and `DefaultAccessRow` (Settings). |
 | `ChatItems.tsx` | `ItemView`, `ToolCard`, `ToolRunHead`, user and assistant messages, sub-agent card, message actions. |
 | `Markdown.tsx` | Markdown renderer, code blocks, Mermaid, task lists, tables, link handling, sanitiser. |
 | `Media.tsx` | `Media`, `Lightbox`, `FileChip`, audio player. |
 | `Diff.tsx` | `DiffView`, `looksLikeDiff`, `stripAnsi`. |
+| `filekind.ts` | What the Files screen shows for a file: `previewKind` (document type and code language, image, player, or none). |
+| `changes.ts` | Files a turn changed: `turnChanges`, `diffCounts`, `shortPath`, `EDIT_TOOLS`, `MAX_DIFF`. |
+| `Changes.tsx` | `TurnChangesCard`: the changed files card at the end of a turn (3.3). |
 | `Composer.tsx` | The composer. |
+| `QuoteBar.tsx` | `QuoteBar`: the Quote / Explain bar over the composer while a reply's text is selected. |
+| `quote.ts` | Quote helpers and state: `withQuotes`, `splitQuote`, `useQuotes`, `addQuote`, `removeQuote`, `clearQuotes`, `setQuotes`, `QUOTE_MAX`, `QUOTES_MAX`. |
 | `Sheets.tsx` | Model, Commands, Chat menu, Draft menu, Chat details, Backend status, File checkpoints sheets. |
 | `RequestSheet.tsx` | Approval, question and password sheets. |
 | `Spinner.tsx` | `Spinner`. Every spinner turns on one shared 8 Hz timer instead of a CSS animation, which would redraw the WebView every frame while Hermes works. The timer runs only while a spinner is mounted. |
@@ -1464,6 +1550,12 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `fold.ts` | Folding of tool-call runs. |
 | `jump.ts` | Message search jump, in-chat search, word highlighting. |
 | `drafts.ts` | Unsent text per chat. |
+| `stash.ts` | Drafts put aside from the composer: `stashes`, `pushStash`, `takeStash`, `clearStashes`, `STASH_MAX`. |
+| `queue.ts` | Follow-ups queued while Hermes works: `queuedFor`, `enqueue`, `editQueued`, `removeQueued`, `takeFirst`, `restoreFirst`, `clearQueue`, `isPaused`, `setPaused`, `useQueue`, `QUEUE_MAX`; the pause is kept in memory only. |
+| `Queued.tsx` | `QueuedRows`: the dashed queued bubbles, Queue paused and Resume. |
+| `ctxring.ts` | Context ring logic: `ringDash` (stroke dash for a percent, clamped 0..100), `ctxLevel` (`ok`, `warn` from 80, `full` from 90), `fmtCost`. |
+| `scrub.ts` | Chat scrubber logic: `userMarks` (one `Mark` per user message), `nearestMark`, `currentMark`, `SCRUB_MIN`. |
+| `Scrubber.tsx` | `Scrubber`: the rail, ticks and picked-message bubble (3.2). |
 | `recent.ts` | Recent prompts. |
 | `commands.ts` | Slash-command and skill catalog for autocomplete. |
 | `favs.ts` | Starred models. |
@@ -1472,6 +1564,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `activity.ts` | Polling of `GET /activity` for the activity banner. |
 | `tasks.ts` | Tick state of Markdown task lists. |
 | `unread.ts` | Unread chats and "time ago". |
+| `visit.ts` | Last time each chat was on screen (`lastVisit`, `markVisit`) and the first message newer than that (`firstUnseen`), for the "New since your last visit" divider; leaving and coming back with the same chat open (`noteAway`, `noteBack`, `isAway`, `lastBack`, `onBack`, `newWhileAway`, `BACK_GRACE_MS`). |
 | `checkpoints.ts` | Client for the plugin's checkpoint routes and the labels the File checkpoints sheet shows. |
 | `export.ts` | A chat as Markdown for Share chat. |
 | `share.ts` | Share-to-Hermes and launcher shortcuts. |
@@ -1481,7 +1574,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 
 ### 3.7 Canvas panel
 
-**Files:** `Canvas.tsx` (panel, editor, menus, history sheet, sandboxed HTML frame), `canvas.ts` (state, sync with the plugin, the agent's tool events, line diff).
+**Files:** `Canvas.tsx` (panel, editor, menus, history sheet), `DocView.tsx` (`DocView`, `CsvTable`, `fenced`: the viewer for each document type), `HtmlFrame.tsx` (sandboxed HTML frame, shared with the chat), `htmlframe.ts` (`frameDoc`, `frameHeight`), `canvas.ts` (state, sync with the plugin, the agent's tool events, line diff).
 
 The canvas is a set of documents that belong to one chat. Hermes writes them with its `canvas` tool, you read, edit and run them, and they stay with the chat. The panel is `web/src/components/Canvas.tsx` `CanvasPanel`. Its state and its sync with the phone are in `web/src/canvas.ts` (`useCanvas`, `canvasState`).
 
@@ -1541,6 +1634,8 @@ Messages sent from the panel (`send` in `CanvasPanel`): the text starts with `Ab
 
 #### Document types and how each shows (`DocView`)
 
+`DocView` (`web/src/components/DocView.tsx`, props `type`, `lang`, `title`, `text`, `network`) is shared by the canvas, the Gallery viewer and the Files preview (3.14); `CsvTable` and `fenced` live in the same file.
+
 | Type | Viewer |
 |---|---|
 | `markdown` | Rendered Markdown (`Markdown`) |
@@ -1562,6 +1657,7 @@ New documents you create yourself (New document sheet) can be: Notes / document 
 - A guard script is inserted first, right after the doctype, before any script of the page: it deletes `window.HermesAndroid`, reports errors (`hmCanvasError`, shown in the page header as "⚠ message"), replaces `alert()` with a message to the parent (`hmCanvasAlert`, shown as an app toast of up to 300 characters for 5 s), and turns link clicks into a message (`hmCanvasLink`). Links inside the frame would otherwise load the site inside the frame, so the parent asks "Open link?" (button Open) and then opens it outside the app with `openExternal`. Only `http` and `https` links are accepted.
 - Offline (default): a `Content-Security-Policy` meta tag allows `default-src 'none'`, inline scripts and styles, images from `data:` and `blob:`, fonts from `data:`, media from `data:` and `blob:`, and sets `form-action 'none'` and `base-uri 'none'`. The Online toggle drops this tag for that document.
 - The Gallery viewer uses the same frame and always offline (3.8).
+- The same component shows the inline preview in chat replies (3.3, `autoHeight`): always offline. With `autoHeight` the guard also posts the page's height (`hmFrameHeight`, a `ResizeObserver` plus once on load) and the frame is set to that height, clamped between a minimum and a maximum (`frameHeight` accepts finite numbers only). The `message` listener only reads messages whose `source` is this frame's `contentWindow`, and only the keys `hmCanvasError`, `hmCanvasAlert`, `hmCanvasLink` and `hmFrameHeight`.
 
 #### Editor (`Editor`)
 
@@ -1980,7 +2076,7 @@ Create / edit sheet ("New scheduled job" / "Edit job"): fields Name, Schedule, a
 Runs sheet ("Runs · <name>", `GET /api/cron/jobs/<id>/runs?limit=20`): one card per run with title / status, start time and a preview or "N msgs · reason". "No runs yet" when empty. Tap a run: if it has a chat (the dashboard lists runs as chats with source `cron`) the screen closes and that chat opens; otherwise a sheet shows its saved output (inline text, else the file read through `GET /api/files/read`, else the preview or "This run saved no output.").
 
 #### Files
-**Opens from:** the hub's Files card. **Closes with:** Back. Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`.
+**Opens from:** the hub's Files card. **Closes with:** Back. Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`, `web/src/filekind.ts`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |
@@ -1991,9 +2087,23 @@ Runs sheet ("Runs · <name>", `GET /api/cron/jobs/<id>/runs?limit=20`): one card
 | Breadcrumbs | `/` (`aria-label` "Top folder") and one button per path part | Jump to that folder | | |
 | New-folder form | Field "Folder name", Create button, ✕ button (`aria-label` "Cancel") | Create calls `POST /api/files/mkdir`; names containing `/` are ignored | | Enter also creates |
 | ".." row | Shown when the folder has a parent | Goes up | | |
-| File / folder rows | Icon (📁 folder, 🖼 image, 📄 text, 📦 other), name, then "Folder" or the size, plus the modified time | Folder: enter it. File: open the preview sheet | | "Empty folder", an error notice, "Loading…" |
+| File / folder rows | Icon (📁 folder, 🖼 image, 📄 document, 🎞 audio or video, 📦 other), name, then "Folder" or the size, plus the modified time | Folder: enter it. File: open the preview sheet | | "Empty folder", an error notice, "Loading…" |
 
-Preview sheet (title = file name, path in monospace): text files (known text extensions, or a `text/*` type) show as text, up to 200,000 characters; `.md` files render as Markdown; images show inline; files over 3 MB say "Too large to preview (<size>)."; other types say "No preview for this file type." Buttons: Delete (confirms, then `DELETE /api/files`), Open with… (the `openFile` bridge call, which uses `termux-open`; outside the app the toast says "Open works in the phone app"), Open in canvas (text files only: closes the screen and opens the file in the canvas, 3.7) and Ask Hermes (puts "Look at the file <path> and " into the composer and returns to the chat).
+Preview sheet (title = file name, path in monospace). What shows is decided by `previewKind` (`web/src/filekind.ts`) from the extension (upper case counts), then from the MIME type for unknown extensions:
+| Files with | Preview |
+|---|---|
+| `.csv`, `.tsv` | Table (the same `DocView` as the canvas; the delimiter is read from the first line) |
+| `.json` | Pretty-printed JSON |
+| `.mmd`, `.mermaid` | Rendered diagram |
+| `.html`, `.htm` | The page, in the offline sandbox (`HtmlFrame` with `network` off, no `allow-same-origin`); "Open in canvas" is where network can be allowed |
+| code (`py`, `js`, `ts`, `tsx`, `jsx`, `sh`, `zsh`, `bash`, `java`, `kt`, `c`, `h`, `cpp`, `rs`, `go`, `rb`, `css`, `xml`, `sql`, `yaml`, `yml`, `toml`) | Highlighted code; the language is the extension, mapped to the highlight.js name (`yml` to `yaml`, `kt` to `kotlin`, `rs` to `rust`, `rb` to `ruby`, `sh` to `bash`, `h` to `c`, `tsx` to `typescript`, `jsx` to `javascript`) |
+| `.md`, `.markdown` | Rendered Markdown |
+| `.txt`, `.ini`, `.cfg`, `.conf`, `.log`, `.env`, `.gitignore`, or any `text/*` type | Plain text, up to 200,000 characters |
+| `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.svg`, or any `image/*` type | The image inline |
+| `.mp3`, `.m4a`, `.ogg`, `.wav`, `.flac`, `.mp4`, `.webm`, `.mov`, `.mkv` | A player (`Media`). The file is not read into the page (it streams from the phone), so there is no size limit |
+| `.pdf`, Office files, everything else | "No preview here. Use Open with… to view it in another app." |
+
+Files read into the page (everything except players) over 3 MB say "Too large to preview (<size>)." Buttons: Delete (confirms, then `DELETE /api/files`), Open with… (the `openFile` bridge call, which uses `termux-open`; outside the app the toast says "Open works in the phone app"), Open in canvas (documents read as text only: closes the screen and opens the file in the canvas, 3.7) and Ask Hermes (puts "Look at the file <path> and " into the composer and returns to the chat).
 **Data:** `GET /api/files`, `GET /api/files/read`, `POST /api/files/upload`, `POST /api/files/mkdir`, `DELETE /api/files` (all sent without the profile scope).
 
 #### Projects
@@ -2039,6 +2149,7 @@ The screen has one main page and six sub-pages. The top-bar title is the page na
 | About | Check for updates / Update to <version> | The in-app update row, described next | See below |
 | About | Hermes | Value `v<version>` of the phone's Hermes (from the open chat, else the health check), or "—" | nothing (no update button, see below) |
 | About | Last start-up | Sub: the start-up timing marks of the last launch ("script 0.1s · …", from `hm.boot.v1` through `web/src/boot.ts`), or "Not measured yet" | nothing |
+| About | Remote debugging | Only while Android Developer options are on (`remoteDebuggingState().available`). Sub "Off" or "On · N min left" (`remoteDebugRow` in `web/src/remotedebug.ts`; `RemoteDebugRow` in `Settings.tsx`). Re-read when the page becomes visible or focused, on the shell's `hm-devtools` event, and once a minute only while it is on and the page is visible (at most 60 reads) | Off: `openRemoteDebugging()`, which only makes the shell show its own confirmation and the phone's screen-lock prompt (2.3). On: `turnOffRemoteDebugging()` |
 | Danger zone | Uninstall Hermes | Only inside the Android app with an app build that has the uninstall bridge. Footer: "Removes Hermes, all chats and every helper app from this phone. You can save a backup first." | Opens the Uninstall sheet (3.19) |
 
 **In-app update row** (`Settings.tsx` `UpdateRow`, `web/src/update.ts`): it asks GitHub once when the page opens (and not again within a minute, no polling): `GET https://api.github.com/repos/omarqaterge/hermes-mobile-app/releases/latest`. It compares the release tag with `appVersion()` (dotted numbers, a leading `v` ignored). The row changes with `phase`:
@@ -2333,7 +2444,11 @@ The cleanup steps, in order, as reported by the script's `HMUNINSTALL …` lines
 | `PickerSheet`, `Option` | A bottom sheet listing choices with a ✓ on the current one; options may have a group heading, sub text and icon | Picking an option calls `onPick` and closes; registers with Android Back; draggable by its grip |
 | `SelectRow` | A row that shows the current choice as its sub line and opens a `PickerSheet` | The replacement for `<select>` |
 | `SliderRow` | A title, the formatted value and a styled range slider | The one place a range input is used; it is drawn with the app's CSS (the `--pct` fill) |
+| `Collapse` | Wraps a body that opens and closes: mounts the children, then animates the wrapper's height and opacity (180 ms, Web Animations API); on close animates to 0, then unmounts (a timer of 280 ms unmounts it if the animation never reports finishing). `overflow: hidden` only while animating. Flipping `open` mid-animation continues from the current height | Used by `ToolCard`, `Reasoning` (the thought text), the todo list in `StatusBar` and the file list of `TurnChangesCard`. Not used for folded runs of tool calls, which stay instant (the chat keeps one child per item). Under `prefers-reduced-motion: reduce` it mounts and unmounts at once |
+| `Chevron` | A right-pointing SVG chevron (`.chevron`) that turns 90 degrees when `open`, with a `transition: transform .18s` | Replaces the text chevrons (`▾`/`▸`) in `.chev` spans: tool run heads, `Reasoning`, the todo list, the changed-files card and the Archived row. The profile switch in the drawer keeps its text `▴`/`▾` |
 | `Segmented` | A row of buttons, one selected | Used for the text-size choice in Appearance (the Memory screen's two tabs are plain styled buttons) |
+
+**Motion.** `Collapse`, `Chevron`, the send button's face change (`face-in`: the Send, Stop, Mic, Live, Steer and Queue buttons are keyed, so a new face fades and scales in over 120 ms) and the effort bars are all switched off by the phone's own "Remove animations" setting, which reaches the page as `prefers-reduced-motion: reduce`; there is no motion setting inside the app.
 
 **`dialog.tsx` — in-app dialogs.** `confirmDialog({ title, message, list, icon, confirmLabel, cancelLabel, danger })` returns a promise of true / false; `promptDialog({ …, placeholder, value, match })` returns the text or `null`. When `match` is set the confirm button stays disabled until the typed text equals it (type-the-name deletes). `DialogHost` (mounted once in `App.tsx`) shows the first queued request as a bottom sheet with `role="alertdialog"`; further requests wait in a queue. Cancel, the backdrop, dragging down and Android Back all answer "no". The danger style uses a 🗑 icon and the red button, labelled Delete unless `confirmLabel` says otherwise. These replace the browser's `confirm()` and `prompt()`.
 
@@ -2376,7 +2491,8 @@ The cleanup steps, in order, as reported by the script's `HMUNINSTALL …` lines
 | `update.ts` | The in-app app-update check and install request |
 | `hermes-update.ts` | The phone's Hermes version and its match with the version the app was made for |
 | `theme.ts` | The four themes and how they reach the page and Android |
-| `ui.tsx` | Sections, rows, switches, pickers, sliders, segmented control |
+| `ui.tsx` | Sections, rows, switches, pickers, sliders, segmented control, `Collapse`, `Chevron` |
+| `effort.ts` | `effortLevel`: reasoning level to 0-5 for the model chip's bars |
 | `dialog.tsx` | `confirmDialog`, `promptDialog` and their host |
 | `useSheetDrag.ts` | Drag-down-to-close for bottom sheets |
 
@@ -2410,7 +2526,7 @@ All sources are under `android/src/com/omarqaterge/hermesmobile` (package `com.o
 
 | Class | Purpose | Main methods | Who calls it |
 |---|---|---|---|
-| `MainActivity` | The only activity. Holds the `WebView` that shows `file:///android_asset/www/index.html`, injects the bridge object `HermesAndroid`, starts Hermes in Termux, runs the app-first setup helpers (helper-app installer, probe, installer command), the in-app update, share-in, launcher shortcuts, media streaming, image save/share. | `onCreate`, `onResume`, `onPause`, `onNewIntent`, `onBackPressed`, `startHermes`, `setupState`, `setupFix`, `probeTermux`, `installHelper`, `startUpdate`, `media`, `rawHttp`, `safeRequest`, `safeLink`, inner class `Bridge` (the 49 methods) | Android (launcher, notifications, share sheet, assist gesture); `HermesService` through the static `MainActivity.current` / `MainActivity.visible` and `deliverAnswer`, `pushBg`, `pushSetupLine`; `Voice`, `Uninstall` |
+| `MainActivity` | The only activity. Holds the `WebView` that shows `file:///android_asset/www/index.html`, injects the bridge object `HermesAndroid`, starts Hermes in Termux, runs the app-first setup helpers (helper-app installer, probe, installer command), the in-app update, share-in, launcher shortcuts, media streaming, image save/share. | `onCreate`, `onResume`, `onPause`, `onNewIntent`, `onBackPressed`, `startHermes`, `setupState`, `setupFix`, `probeTermux`, `installHelper`, `startUpdate`, `devtoolsBuild`, `askRemoteDebugging`, `media`, `rawHttp`, `safeRequest`, `safeLink`, inner class `Bridge` (the 52 methods) | Android (launcher, notifications, share sheet, assist gesture); `HermesService` through the static `MainActivity.current` / `MainActivity.visible` and `deliverAnswer`, `pushBg`, `pushSetupLine`; `Voice`, `Uninstall` |
 | `HermesService` | Foreground service (type `specialUse`). Runs the loopback listener on port 9121, owns every notification (status chip, approvals, questions, replies, learning, jobs), the wake lock and cron alarm, the unseen-chat list, the installer progress channel, the bg-app card state. | `onCreate`, `onStartCommand`, `serve`, `handle`, `onEvent`, `statusNotification`, `workingNotification`, `approvalNotification`, `askNotification`, `doneNotification`, `flashNotification`, `stopTurn`, `answerApproval`, `answerFromNotification`, `updateWake`, `scheduleWake`, `createChannels` | `MainActivity.onCreate`/`onResume` (`HermesService.start`), `BootReceiver`, `StartReceiver`, `WakeReceiver`, notification `PendingIntent`s, `ShizukuProvider` (`shizukuDown`/`shizukuUp`), `UpdateNotice`, `ShizukuKeeper` (notice) |
 | `Voice` | Text-to-speech read-aloud and speech-to-text dictation. One instance per `MainActivity` and one for the service (read-aloud only). Owns the playback state so the media card keeps working while the page is frozen. | `speak`, `pause`, `play`, `jump`, `seekMs`, `control` (static), `listVoices`, `stopSpeaking`, `speakable` (static, Markdown to speech text), `startListening`, `stopListening` | The bridge (`speak`, `listVoices`, `stopSpeaking`, `ttsControl`, `startListening`, `stopListening`); `HermesService.readAloud`; `TtsMedia` callbacks via `Voice.control` |
 | `TtsMedia` | The `Reading aloud` media card: a `MediaSession` plus a `MediaStyle` notification with Back 5 s, Pause/Play, Forward 5 s, Stop. | `show`, `hide`; session callbacks (`onPlay`, `onPause`, `onSeekTo`, `onCustomAction`, `onStop`, skip/rewind/fast-forward) | `Voice.publish`/`finished`/`stopSpeaking`/`destroy`; its buttons go to `HermesService.onStartCommand` (action `TtsMedia.ACTION_TTS`), which calls `Voice.control` |
@@ -2420,6 +2536,7 @@ All sources are under `android/src/com/omarqaterge/hermesmobile` (package `com.o
 | `ShizukuProvider` | A `ContentProvider` that Shizuku's server calls (`sendBinder`) so the app knows Shizuku is running, without the Shizuku library and without asking Shizuku for permission. | `call`, `running` (static: binder alive), death recipient | Shizuku's server; `HermesService`, `ShizukuKeeper`, `MainActivity.setupState` call `running()` |
 | `Autostart` | The one table of phone makers that have an "Autostart" switch and the system pages that open it. | `vendor(manufacturer, brand)`, classes `Vendor`, `Page`, table `VENDORS` | `MainActivity.setupState`, `autostartPage`, `openAutostart` |
 | `Uninstall` | Native half of Settings → Danger zone → Uninstall Hermes: runs `phone/uninstall.sh` in Termux and starts Android's uninstall prompt for the helper apps. | `run`, `done`, `state`, `uninstallApp`, `started`, `args` | Bridge `uninstallStart`, `uninstallState`, `uninstallApp`; `HermesService`, `MainActivity`, `ShizukuKeeper` call `started()` to stop acting after an uninstall |
+| `DevTools` | Remote debugging as a setting (2.3): the static state `until` (process memory only), `isOn`, `minutesLeft`, `developerOptionsOn`, `hasScreenLock`, `stateJson`, `turnOn` (only called after the lock screen returned `RESULT_OK`), `turnOff`, `recheck`, `testBuild`; the private `apply` sets `WebView.setWebContentsDebuggingEnabled`, the 60-minute `Handler` callback and the notification. Free of the page. | `turnOn`, `turnOff`, `recheck`, `stateJson`, `testBuild` | `MainActivity` (`askRemoteDebugging`, `onActivityResult`, `onResume`, `Bridge`); `HermesService` (`ACTION_OFF`, channel) |
 | `UpdateNotice` | Tells the user once per release that a newer version is on GitHub. | `check`, `isNewer`, `parts` | `HermesService` (120 s after start, then every 12 h) |
 | `SetupLines` | Policy for the installer's progress lines (`POST /setup` on port 9121): one-time token, accepted line shapes, last 50 lines. Plain Java. | `start`, `resume`, `add`, `json`, `parse`, `installing`, `active` | `HermesService.setupPost`; bridge `setupProgress` through `HermesService.setup(...)` |
 | `CameraProvider` | A non-exported `ContentProvider` that hands the camera app one file to write and share targets a copy of an image. | `openFile`, `query`, `getType`, `dir`, `shareDir`, `uriFor` | `MainActivity.takePhoto`, `shareImageNow`; the camera app and the share target through a one-off URI grant |
@@ -2489,7 +2606,7 @@ Other-package permissions:
 
 #### Channels
 
-`HermesService.createChannels(ctx)` creates all ten. `MainActivity` and `UpdateNotice` call it too, because they post before the service may be running. It also deletes the old channels `hermes`, `learning` and `jobs` (the ids `learning2` and `jobs2` exist because a channel's badge flag cannot change once created).
+`HermesService.createChannels(ctx)` creates all eleven. `MainActivity` and `UpdateNotice` call it too, because they post before the service may be running. It also deletes the old channels `hermes`, `learning` and `jobs` (the ids `learning2` and `jobs2` exist because a channel's badge flag cannot change once created).
 
 | Display name | Id | Importance | Badge | What posts there |
 |---|---|---|---|---|
@@ -2502,9 +2619,10 @@ Other-package permissions:
 | `Reading aloud` | `playback` | LOW | no | The `TtsMedia` card (id 7). |
 | `Phone access` | `phone` | DEFAULT | no | The Shizuku notice (id 9) from `ShizukuKeeper`. |
 | `App updates` | `update` | DEFAULT | no | "Hermes Mobile X is available" from `UpdateNotice` (id 10). |
+| `Remote debugging` | `devtools` | LOW | no | The ongoing notification from `DevTools` (id 11) while remote debugging is on: "Remote debugging is on · turns off at HH:MM" with the action Turn off (`DevTools.ACTION_OFF`, handled in `HermesService.onStartCommand`). Gone when it turns off. |
 | `Pairing` | `pairing` | HIGH | no | The Pairing notification from `AdbPairing` (tag `pair`, id 1): "Pair Termux: enter the code" with the Enter code field ("6-digit code"), then "Pairing…", "Termux is paired" or what went wrong. Only after the user tapped Start pairing; gone 10 minutes after that tap. |
 
-Notification ids: 1 = status chip (also bridge `notify`, with a tag), 2 = every tagged card (`approval:<chat>`, `ask:<chat>`, `reply:<chat>`, `learn:<id>`, `cron:<id>`, `stop:<chat>`), 3 = group summary, 7 = reading card, 9 = Shizuku notice, 10 = update notice. All cards except the status chip are in the group `hermes` (children alert, the summary does not). The summary is posted with every card and removed when the last card goes (`dropEmptySummary`).
+Notification ids: 1 = status chip (also bridge `notify`, with a tag), 2 = every tagged card (`approval:<chat>`, `ask:<chat>`, `reply:<chat>`, `learn:<id>`, `cron:<id>`, `stop:<chat>`), 3 = group summary, 7 = reading card, 9 = Shizuku notice, 10 = update notice, 11 = remote debugging. All cards except the status chip are in the group `hermes` (children alert, the summary does not). The summary is posted with every card and removed when the last card goes (`dropEmptySummary`).
 
 All of them use the small icon `ic_stat_hermes` (the approval chip uses `ic_stat_shield`) and accent colour gold `#D9A441`, green `#3DBE7A`, red `#E5564B` or amber `#E8912D` as noted below.
 
@@ -2650,11 +2768,14 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `bgState` | none | JSON string or `""` | The background app's state (no port or token), or `""` when none. |
 | `bgFrameAsync` | `id`, `maxW` (120–1080) | nothing (async) | Fetches a JPEG of the hidden display from `BgHost` (`GET /frame`) and answers `window.__hmBgFrame(id, "data:image/jpeg;base64,…")`, or `""` on none/error. |
 | `bgAction` | `what` (`stop` or `take_over`) | `ok` or `error: …` | Tells `BgHost` `/close` (stop) or `/hand_over` (move the app to the real screen). Returns at once; the card goes away when the host answers 200. |
+| `openRemoteDebugging` | none | nothing | Settings → About → Remote debugging. Only asks `MainActivity.askRemoteDebugging` to show the native confirmation (then the phone's screen lock). It turns nothing on; nothing in the page can (2.3). |
+| `remoteDebuggingState` | none | JSON string | Read-only `{"available":bool,"on":bool,"minutesLeft":int}`. `available` = Android Developer options are on. |
+| `turnOffRemoteDebugging` | none | nothing | `DevTools.turnOff` (a test build keeps debugging on). Turning off is always allowed. |
 | `uninstallStart` | `backup`, `keys`, `settings` (JSON text) | `ok`, `busy`, `no-termux`, `no-permission`, `error: …` | `Uninstall.run`. 4.7. |
 | `uninstallState` | none | JSON string | `Uninstall.state`: `{started, running, removed, result}`. |
 | `uninstallApp` | `which` (`termux-api`, `termux-boot`, `shizuku`, `termux`, `self`) | boolean | `Uninstall.uninstallApp`: opens Android's uninstall prompt for that fixed package; false if unknown or not installed. |
 
-**Calls from Java into the page** (all through `evaluateJavascript`, defined by the web code): `window.hermesResume()` (on resume), `window.hermesBack()` (hardware Back; returns true if the page handled it, otherwise the task moves to the back), `window.hermesOpenSession(id, draft)` (open a chat from a notification or shortcut), `window.hermesShortcut(kind)`, `window.hermesLockView(on)`, `window.hermesShared(count, text)`, `window.hermesAnswer(kind, session, text)`, `window.hermesSetupLine(line)`, `window.hermesSetupInstall(...)`, `window.hermesSetupChanged()`, `window.hermesTermuxProbe(json)`, `window.hermesUpdate(...)`, `window.hermesUninstallDone()`, `window.__hmVoice(kind, text)`, `window.__hmToken(id, t)`, `window.__hmHttp(id, status, body)`, `window.__hmBg(state)`, `window.__hmBgFrame(id, data)`, `window.__hmImage(id, ok)`, `window.__hmSystemTheme()`.
+**Calls from Java into the page** (all through `evaluateJavascript`, defined by the web code): `window.hermesResume()` (on resume), `window.hermesPause()` (on pause), `window.hermesBack()` (hardware Back; returns true if the page handled it, otherwise the task moves to the back), `window.hermesOpenSession(id, draft)` (open a chat from a notification or shortcut), `window.hermesShortcut(kind)`, `window.hermesLockView(on)`, `window.hermesShared(count, text)`, `window.hermesAnswer(kind, session, text)`, `window.hermesSetupLine(line)`, `window.hermesSetupInstall(...)`, `window.hermesSetupChanged()`, `window.hermesTermuxProbe(json)`, `window.hermesUpdate(...)`, `window.hermesUninstallDone()`, `window.__hmVoice(kind, text)`, `window.__hmToken(id, t)`, `window.__hmHttp(id, status, body)`, `window.__hmBg(state)`, `window.__hmBgFrame(id, data)`, `window.__hmImage(id, ok)`, `window.__hmSystemTheme()`.
 
 **`setupState` fields.** `termux`, `runCommand`, `notifications`, `batteryApp`, `batteryTermux`, `batteryShizuku`, `sdk`, `termuxApi`, `shizuku`, `shizukuRunning`, `shizukuAuto` (`{sdk: true on Android 11+, wss, paired, last}`), `maker` (lower-case manufacturer), `autostart` (`""` hidden, `list`, `app`, `settings`, or `info`), `autostartName`, `autostartWhere`, `startError`, `termuxBoot`, `termuxBootStopped` (installed but never opened, so Android withholds `BOOT_COMPLETED`), `termuxSigner` (`fdroid`, `other` or `""`), `termuxVersion`, `canInstall`, `installing` (the helper app in flight), `devOptions`, `wirelessDebugging`, `probe`.
 
@@ -2814,7 +2935,7 @@ See the Shizuku keeper above. The provider has no data: `query`, `insert`, `upda
 #### MainActivity: other things it does
 
 - **Start-up.** `onCreate` logs timing marks to logcat tag `hmboot` (create, page started, page finished, load URL, token), sets the window and `WebView` background to the last colour the page chose (preferences `hm`/`bg`, default `#0E1115`) so launch does not flash, pads the root for system bars, cutout and keyboard (edge-to-edge), creates the channels, starts the service, handles the intent (`updateUrl`, `clearDone`, `session`, `draft`, share, shortcut), asks for `POST_NOTIFICATIONS` and `RUN_COMMAND`, calls `startHermes()`, then loads `file:///android_asset/www/index.html`. `WebView` settings: JavaScript and DOM storage on, file access on (the page is a local file) but file-from-file and universal access off, content access off, media playback without a gesture, text zoom 100 %. The renderer keeps the app's priority while hidden so a notification answer finds a live page.
-- **Resume and pause.** `onResume` sets `visible`, marks the last shown chat seen, restarts the service if it is not running, removes `approval:` pop-ups, calls `hermesResume`, retries a waiting installer prompt, opens a waiting update prompt, re-checks setup (`hermesSetupChanged`) and pushes the background-app state. `onPause` clears `visible` and the open chat, and stops the microphone.
+- **Resume and pause.** `onResume` sets `visible`, marks the last shown chat seen, restarts the service if it is not running, removes `approval:` pop-ups, calls `hermesResume`, retries a waiting installer prompt, opens a waiting update prompt, re-checks setup (`hermesSetupChanged`) and pushes the background-app state. `onPause` clears `visible` and the open chat, stops the microphone and calls `hermesPause`.
 - **Open a chat.** A notification, the Done chip or the `last_chat` shortcut puts `session` (and maybe `draft`) in the intent; once the page is ready, `window.hermesOpenSession(id, draft)` runs. The id is stripped to `[A-Za-z0-9_.:-]`.
 - **Share to Hermes.** `ACTION_SEND` / `SEND_MULTIPLE` text and up to 10 file URIs are kept; once the page is ready, `window.hermesShared(count, text)` runs and the page reads each file with `sharedItem`. The text is cut at 100,000 characters and prefixed with the subject when the text does not already contain it. The intent action is reset to `MAIN` so a re-created activity does not share again.
 - **Dashboard access.** `rawHttp` is a small HTTP/1.1 client to `127.0.0.1:9119` (3 s connect, 120 s read) that adds `X-Hermes-Session-Token`. The token is read from the dashboard page's `__HERMES_SESSION_TOKEN__` script; the page cannot do that itself (no CORS), which is why the bridge exists.
@@ -3225,11 +3346,12 @@ Runtime dependencies are pinned or caret-ranged in `web/package.json`: React 19,
 2. `aapt2 compile` the resources, then `aapt2 link` the manifest with `--min-sdk-version 26`, `--target-sdk-version 35`, the version name and code. Compile target is Android 16 (`android-36.jar`) because Live Update APIs live there; build-tools 35.0.0.
 3. `javac` (source/target 11) all of `src` plus the generated `R.java`, then `d8 --min-api 26` into `classes.dex`, zipped into the APK.
 4. `zipalign -p 4`, `apksigner sign`, `apksigner verify`. Output: `android/build/hermes-mobile.apk`.
+Test-build switch: `HM_DEVTOOLS=1` compiles and links a second resource dir (`build/res-devtools/values/devtools.xml`) with the string `hm_devtools` = `1`, prints `TEST BUILD: WebView remote debugging is on` to stderr and appends `+devtools` to `VERSION_NAME` (for example `0.8.66-test+devtools`). `isNewer` ignores the suffix. The script refuses (exit 1) when `HM_DEVTOOLS` and `KEYSTORE` are both set, before checking the SDK. Both test switches may be set together. See 2.3 for why and how to drive such a build (`docs/manual-tests.md`).
 Emulator-only switch: when `HM_TEST_BOOTSTRAP_URL` is set, a string resource `hm_test_bootstrap` is added so the setup flow's installer command fetches that URL instead of `main`'s `bootstrap.sh`; `MainActivity` accepts only `http://10.0.2.2:<port>/…`. Never set for a release.
 
 ### 7.2 Every `tools/` file
 
-`tools/` holds 45 plain files (plus the folders `tools/web-e2e`, `tools/battery`, `tools/fixtures`, described after the table). "Phone needed" means it uses `adb` and a connected device or emulator. Tests that say "CI" run in `.github/workflows/ci.yml` (see 7.4). Every Python test prints `[PASS]`/`[FAIL]` lines and exits 1 on any failure; the shell tests print `PASS`/`FAIL` lines and `ALL PASSED`.
+`tools/` holds 46 plain files (plus the folders `tools/web-e2e`, `tools/battery`, `tools/fixtures`, described after the table). "Phone needed" means it uses `adb` and a connected device or emulator. Tests that say "CI" run in `.github/workflows/ci.yml` (see 7.4). Every Python test prints `[PASS]`/`[FAIL]` lines and exits 1 on any failure; the shell tests print `PASS`/`FAIL` lines and `ALL PASSED`.
 
 **Install and setup**
 
@@ -3301,6 +3423,7 @@ Emulator-only switch: when `HM_TEST_BOOTSTRAP_URL` is set, a string resource `hm
 
 | File | What it covers |
 |---|---|
+| `test_devtools_guard.sh` | `android/build.sh` refuses `KEYSTORE` together with `HM_DEVTOOLS` (any value) with exit 1 before any SDK check, lets `HM_DEVTOOLS` alone through the guard, and `release.yml` has the `hm_devtools` APK check and never sets the variable. CI job `android`. No SDK needed. |
 | `java-check.sh` | Compiles all of `android/src` with `javac` against Robolectric's `android-all-16.jar` (downloaded from Maven Central and cached in `~/.cache/hermes-mobile`) and a stub `R.java` generated from `res/`. Proves it compiles; builds no APK. Needs JDK 21+. Then runs `test_shizuku_keeper.sh`. CI job `android`. |
 | `api-check.sh` | Runs Android lint's `NewApi`/`InlinedApi` checks on `android/src` (a copy with `<uses-sdk>` set to the minimum from `android/build.sh`, since the build passes it to `aapt2` instead of the manifest). Fails when a call above that minimum has no `Build.VERSION.SDK_INT` check. Needs the Android SDK's command-line tools (`ANDROID_HOME` or the Homebrew path). |
 | `test_shizuku_keeper.sh` | `KeeperPlan.java` decisions: when the app may restart Shizuku, the notice text when it cannot, the bounded attempt schedule, the NsdManager port choice, the Termux command. |
@@ -3338,7 +3461,7 @@ Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NO
 | `web` | Web (typecheck, unit tests, build, browser e2e) | Node 22 with npm cache; `npm ci`, `npm test`, `npm run build` in `web/`; then in `tools/web-e2e`: `npm ci`, `npx playwright install --with-deps chromium`, `./run.sh`. |
 | `plugin` | Plugin (canvas + media) | Python 3.12; `pip install fastapi httpx`; runs `test_canvas.py`, `test_library.py`, `test_gallery.py`, `test_media.py`, `test_chat_search.py`, `test_checkpoints.py`, `test_battery.py`, `test_approval.py`, `test_chip.py`, `test_phone_app.py`, `test_auto_mode.py`, `test_openui.py`, `test_openui_query.py`, `test_claude_login.py`, `test_phone_access.py`, `test_profile_link.py`, then `python3 tools/test_check_spec.py` and `python3 tools/check_spec.py` (the second one fails the build when the code has a name `docs/SPEC.md` lacks). |
 | `hermes-patches` | Hermes patches apply to the pinned Hermes | `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`. |
-| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`. |
+| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`, `tools/test_devtools_guard.sh`. |
 
 Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`.
 

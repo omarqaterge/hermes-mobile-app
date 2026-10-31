@@ -8,6 +8,9 @@ import { errText, newSession, resumeSession, rpc } from '../gateway'
 import { closeScreen, setState, toast, useStore, type Screen } from '../store'
 import { haptic, openFile } from '../bridge'
 import { Markdown } from './Markdown'
+import { DocView } from './DocView'
+import { Media } from './Media'
+import { previewKind, type PreviewKind } from '../filekind'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -547,9 +550,13 @@ const ROOTS: [string, string][] = [
   ['Hermes', '/root/.hermes'],
   ['Home', '/root']
 ]
-const TEXT_EXT = /\.(txt|md|markdown|json|ya?ml|toml|ini|cfg|conf|log|csv|tsv|py|js|ts|tsx|jsx|sh|zsh|bash|java|kt|c|h|cpp|rs|go|rb|html|css|xml|sql|env|gitignore)$/i
-const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp|svg)$/i
 const PREVIEW_MAX = 3 * 1024 * 1024
+const NO_PREVIEW = 'No preview here. Use Open with… to view it in another app.'
+
+function fileIcon(name: string, mime?: string | null): string {
+  const k = previewKind(name, mime).kind
+  return k === 'image' ? '🖼' : k === 'doc' ? '📄' : k === 'media' ? '🎞' : '📦'
+}
 
 function decodeDataUrl(url: string): string {
   const b64 = url.split(',')[1] || ''
@@ -561,7 +568,7 @@ function decodeDataUrl(url: string): string {
 export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
   const [path, setPath] = useState('/sdcard')
   const { data, error, loading, reload } = useLoader(() => api<Listing>('GET', `/api/files?${qs({ path })}`, undefined, { profile: false }), [path])
-  const [preview, setPreview] = useState<{ entry: FileEntry; text?: string; image?: string; note?: string } | null>(null)
+  const [preview, setPreview] = useState<{ entry: FileEntry; text?: string; image?: string; media?: string; note?: string; doc?: Extract<PreviewKind, { kind: 'doc' }> } | null>(null)
   const [newDir, setNewDir] = useState<string | null>(null)
   const upload = useRef<HTMLInputElement>(null)
   // Android Back goes up one folder; at one of the root chips (or /) it leaves the screen.
@@ -574,13 +581,14 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
       return
     }
     setPreview({ entry: e })
-    const canText = TEXT_EXT.test(e.name) || (e.mime_type || '').startsWith('text/')
-    const canImg = IMG_EXT.test(e.name) || (e.mime_type || '').startsWith('image/')
-    if (!canText && !canImg) return setPreview({ entry: e, note: 'No preview for this file type.' })
+    const k = previewKind(e.name, e.mime_type)
+    // Audio and video stream through `Media`; the file is never read into the page.
+    if (k.kind === 'media') return setPreview({ entry: e, media: e.path })
+    if (k.kind === 'none') return setPreview({ entry: e, note: NO_PREVIEW })
     if ((e.size ?? 0) > PREVIEW_MAX) return setPreview({ entry: e, note: `Too large to preview (${fmtSize(e.size)}).` })
     try {
       const r = await api<{ data_url: string }>('GET', `/api/files/read?${qs({ path: e.path })}`, undefined, { profile: false })
-      setPreview(canImg ? { entry: e, image: r.data_url } : { entry: e, text: decodeDataUrl(r.data_url) })
+      setPreview(k.kind === 'image' ? { entry: e, image: r.data_url } : { entry: e, text: decodeDataUrl(r.data_url), doc: k })
     } catch (err) {
       setPreview({ entry: e, note: errText(err) })
     }
@@ -679,7 +687,7 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
       )}
       {data?.entries.map(e => (
         <button key={e.path} className="file-row" onClick={() => void open(e)}>
-          <span className="file-icon">{e.is_directory ? '📁' : IMG_EXT.test(e.name) ? '🖼' : TEXT_EXT.test(e.name) ? '📄' : '📦'}</span>
+          <span className="file-icon">{e.is_directory ? '📁' : fileIcon(e.name, e.mime_type)}</span>
           <span className="list-main static">
             <span className="list-title">{e.name}</span>
             <span className="list-sub">
@@ -694,10 +702,15 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
           <div className="dim small mono">{preview.entry.path}</div>
           <div className="sheet-scroll">
             {preview.image && <img className="preview-img" src={preview.image} alt={preview.entry.name} />}
-            {preview.text != null &&
-              (/\.(md|markdown)$/i.test(preview.entry.name) ? <Markdown text={preview.text} /> : <pre className="tool-pre">{preview.text.slice(0, 200_000)}</pre>)}
+            {preview.media && <Media src={preview.media} alt={preview.entry.name} />}
+            {preview.text != null && preview.doc &&
+              (preview.doc.type === 'text' ? (
+                <pre className="tool-pre">{preview.text.slice(0, 200_000)}</pre>
+              ) : (
+                <DocView type={preview.doc.type} lang={preview.doc.lang} title={preview.entry.name} text={preview.text} network={false} />
+              ))}
             {preview.note && <div className="dim">{preview.note}</div>}
-            {!preview.image && preview.text == null && !preview.note && <div className="dim">Loading…</div>}
+            {!preview.image && !preview.media && preview.text == null && !preview.note && <div className="dim">Loading…</div>}
           </div>
           <div className="sheet-actions wrap">
             <button className="btn danger" onClick={() => void remove(preview.entry)}>
