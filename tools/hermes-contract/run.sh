@@ -1,7 +1,8 @@
 #!/bin/bash
 # Checks the mock Hermes of the browser tests (tools/web-e2e/mock.cjs) against the real, pinned Hermes: starts the mock
 # on 127.0.0.1:9119 and the pinned Hermes (start-hermes.sh) on 127.0.0.1:${HM_CONTRACT_PORT:-9229}, then runs
-# contract.cjs. Needs git, uv, Node 22 and tools/web-e2e's node_modules (the mock uses `ws`). No model or key is used.
+# contract.cjs. Needs git, uv, Node 22 and tools/web-e2e's node_modules (the mock uses `ws`) and python3 for the fake model
+# the Hermes talks to (fake-model.py). No real model or key is used.
 # Usage: tools/hermes-contract/run.sh [work dir]   (default: a new temp dir; pass one to reuse the clone and venv)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -12,6 +13,7 @@ mkdir -p "$work"
 cleanup() {
   kill "${MOCK:-}" 2>/dev/null || true
   [ -f "$work/dashboard.pid" ] && kill "$(cat "$work/dashboard.pid")" 2>/dev/null || true
+  [ -f "$work/model.pid" ] && kill "$(cat "$work/model.pid")" 2>/dev/null || true
 }
 trap cleanup EXIT
 HM_E2E_LOG="$work/mock-calls.jsonl" node ../web-e2e/mock.cjs > "$work/mock.log" 2>&1 & MOCK=$!
