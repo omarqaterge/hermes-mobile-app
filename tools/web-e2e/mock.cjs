@@ -33,6 +33,8 @@ const canvasDocs = {} // session -> [doc]
 const libraryItems = [] // the Library (plugin library.py), newest first
 // An old Library copy saved without a chat (no source): the gallery lists it as a saved copy.
 libraryItems.push({ id: 'lib-old', title: 'Old notes', type: 'markdown', lang: '', category: 'Unsorted', saved: Math.floor(Date.now() / 1000) - 86400, chars: 16, content: 'Kept from before', source: null })
+// Gate for s-slowstart's document list (see the canvas route): held until released.
+const canvasGate = { open: false, held: [] }
 // The chat whose start-up resume is slow already has a canvas (opening it while the chat loads must show it).
 canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Life\n\nGlider' }]
 // A chat with a canvas and things that scroll sideways (code, table, card): the swipe-left-to-canvas checks.
@@ -118,6 +120,10 @@ const server = http.createServer((req, res) => {
       }
       if (b.configured) providerConfigured = true
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
+      if (b.releaseCanvas) {
+        canvasGate.open = true
+        for (const go of canvasGate.held.splice(0)) go()
+      }
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
@@ -440,7 +446,14 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/canvas') {
       const s = url.searchParams.get('session')
       const list = () => send({ docs: (canvasDocs[s] || []).map(({ content, ...m }) => m) })
-      if (s === 's-slowstart') return void setTimeout(list, 700) // long enough to see the panel's loading state
+      // s-slowstart's list is held until a test posts {releaseCanvas: true} to /__mock, so the panel's loading state can be
+      // looked at without racing a timer (a fixed delay was lost on slow machines). 8 s safety: nobody waits forever.
+      if (s === 's-slowstart' && !canvasGate.open) {
+        const t = setTimeout(() => { canvasGate.held = canvasGate.held.filter(f => f !== go); list() }, 8000)
+        const go = () => { clearTimeout(t); list() }
+        canvasGate.held.push(go)
+        return
+      }
       return list()
     }
     if (p === '/api/plugins/hermes-mobile/canvas/doc') {

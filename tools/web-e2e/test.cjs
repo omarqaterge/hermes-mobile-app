@@ -1093,9 +1093,17 @@ async function main() {
     }
     const vh = await page.evaluate(() => innerHeight)
     check(hh > 160 && hh <= vh * 0.6 + 1, `html preview: the frame grew to its page, capped at 60% of the window (${hh} of ${vh})`)
-    const rootFrame = page.frames().find(f => f !== page.mainFrame() && f.parentFrame() === page.mainFrame() && f.url() === 'about:srcdoc')
+    // The frame behind the <iframe> element, not found by url: a full Chrome (macOS, new headless) reports no url ('') for an
+    // srcdoc frame where Playwright's headless shell says 'about:srcdoc'.
+    const rootFrame = await (await fr.elementHandle()).contentFrame()
     check(!!rootFrame && (await rootFrame.evaluate(() => typeof window.HermesAndroid)) === 'undefined', 'html preview: window.HermesAndroid is undefined inside the frame')
-    check(!!rootFrame && (await rootFrame.evaluate(() => fetch('http://127.0.0.1:9119/api/status').then(() => 'ok', () => 'blocked'))) === 'blocked', 'html preview: fetch() from the inline frame is blocked (offline CSP)')
+    // no-cors, so the mock's missing CORS headers can't be what blocks it: only the page's CSP (connect-src, from default-src 'none') can; the violation event names it.
+    const probe = () => new Promise(res => {
+      let v = ''
+      document.addEventListener('securitypolicyviolation', e => { v = e.effectiveDirective })
+      fetch('http://127.0.0.1:9119/api/status', { mode: 'no-cors' }).then(() => setTimeout(() => res('ok'), 50), () => setTimeout(() => res('blocked by ' + v), 50))
+    })
+    check(!!rootFrame && (await rootFrame.evaluate(probe)) === 'blocked by connect-src', 'html preview: fetch() from the inline frame is blocked (offline CSP)')
     await blk.getByRole('button', { name: 'Open preview full screen' }).click()
     await page.locator('.html-viewer iframe').waitFor({ timeout: 3000 })
     check((await page.locator('.html-viewer[role=dialog]').count()) === 1, 'html preview: Full screen opens the viewer')
@@ -2552,6 +2560,8 @@ async function main() {
   await scv.locator('.canvas-btn').click()
   await scv.locator('.canvas-panel').waitFor({ timeout: 3000 })
   check((await scv.locator('.canvas-panel [aria-busy="true"]').count()) === 1 && (await scv.locator('.canvas-empty-title').count()) === 0, 'canvas opened on a loading chat shows a loading state, not "empty"')
+  // The mock holds this chat's document list until now (no timer to race on a slow machine).
+  await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ releaseCanvas: true }) })
   await scv.locator('.canvas-tab-title', { hasText: 'Life' }).waitFor({ timeout: 3000 })
   check(true, 'canvas opened on a loading chat shows that chat\'s documents')
   await sleep(2800) // the slow resume answers now
