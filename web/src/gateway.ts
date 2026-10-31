@@ -1,7 +1,10 @@
 import { btwDone, openBtw } from './btw'
 import { bootMark } from './boot'
+import { fmtDuration } from './text'
 import { markSeen, noteSessions } from './unread'
+import { isAway, markVisit, noteAway, noteBack } from './visit'
 import { rememberPrompt } from './recent'
+import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
 import { api } from './api'
 import { forgetCheckpoints } from './checkpoints'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
@@ -11,6 +14,8 @@ import { JsonRpcGatewayClient, type GatewayEvent } from '@hermes/shared/json-rpc
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type {
   MessageCompletePayload,
+  SessionControlReadResult,
+  SessionControlUpdatePayload,
   PromptSubmitResult,
   ProfilesListResult,
   SessionCompressResult,
@@ -448,7 +453,10 @@ function baseActive(r: SessionCreateResult | SessionResumeResult, storedId: stri
     tps: null,
     todos: (resumed.todo_state?.todos as Todo[] | undefined) ?? [],
     openAssistantId,
-    attachments: []
+    attachments: [],
+    // Hermes reports the start in epoch seconds; an older build doesn't, so count from now.
+    turnStart: running ? (resumed.turn_started_at ? resumed.turn_started_at * 1000 : Date.now()) : null,
+    goal: null
   }
 }
 
@@ -500,6 +508,7 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
   retire(prev)
   rememberSession(active.storedId)
   applyDraftRead(active.storedId) // a read-aloud choice made on the empty screen
+  void loadGoal()
   const want = lockView() ? 'off' : defaultAccess() // Settings → Auto for all chats; over the lock screen: talking only
   if (want !== 'off') {
     if (want === 'auto') updateActive(x => (x.runtimeId === active.runtimeId ? { autoAccess: true } : {}))
@@ -521,6 +530,15 @@ subscribe(() => {
   if (id === shownChat) return
   shownChat = id
   chatSeen(id || '')
+})
+
+// The visit mark (visit.ts): leaving a chat (another one opens, a new draft starts) counts as having seen it.
+let visitedChat: string | undefined
+subscribe(() => {
+  const id = getState().active?.storedId
+  if (id === visitedChat) return
+  if (visitedChat) markVisit(visitedChat)
+  visitedChat = id
 })
 
 export function startDraft(): void {
@@ -582,6 +600,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   markSeen(next.storedId)
   chatSeen(next.storedId)
   setLastChat(next.storedId, title)
+  void loadGoal()
   // Hermes (b8a8be18) forgets a chat's YOLO when it is resumed: put it back (Auto access: the plugin's list first).
   const want = rememberedAccess(next.storedId)
   if (want === 'auto') updateActive(x => (x.runtimeId === next.runtimeId ? { autoAccess: true } : {}))
@@ -618,6 +637,7 @@ export async function deleteSession(storedId: string): Promise<void> {
   // attached in the composer of another open chat: it isn't in any message yet.
   void api('POST', '/api/plugins/hermes-mobile/cleanup', { keep }).catch(() => {})
   void forgetCheckpoints(storedId)
+  clearQueue(storedId)
 }
 
 export async function renameSession(title: string): Promise<void> {
@@ -699,14 +719,14 @@ export async function sendPrompt(text: string): Promise<void> {
   const refs = files.map(f => f.ref).filter(Boolean)
   const body = refs.length ? `${refs.join(' ')}\n\n${trimmed}` : trimmed
   pushItem({ kind: 'user', id: uid, text: trimmed, images: images.length ? images : undefined, imageUrls: queued.some(x => x.preview) ? queued.filter(x => x.kind === 'image').map(x => x.preview || '') : undefined, imagePaths: queued.some(x => x.path) ? queued.filter(x => x.kind === 'image').map(x => x.path || '') : undefined, files: files.length ? files.map(f => f.name) : undefined, fileRefs: files.length ? files.map(f => f.ref || '') : undefined, at: Date.now() })
-  updateActive(() => ({ running: true, status: '', attachments: [], openAssistantId: null }))
+  updateActive(() => ({ running: true, status: '', attachments: [], openAssistantId: null, turnStart: Date.now() }))
   try {
     await switching.get(a.runtimeId)?.catch(() => {}) // a model picked a moment ago must apply to this turn
     const r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: body, surface: 'mobile' })
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
     // Not sent: the attachments are still queued, so show them again.
-    updateActive(() => ({ running: false, attachments: queued }))
+    updateActive(() => ({ running: false, attachments: queued, turnStart: null }))
     pushItem({ kind: 'notice', id: newId('n'), text: `Send failed: ${errText(err)}`, level: 'error' })
   }
 }
@@ -895,11 +915,11 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
       pushItem({ kind: 'notice', id: newId('n'), text: `/${name}: ${type === 'skill' ? 'skill payload missing message' : 'empty message'}`, level: 'error' })
       return
     }
-    updateActive(() => ({ running: true, status: '', openAssistantId: null }))
+    updateActive(() => ({ running: true, status: '', openAssistantId: null, turnStart: Date.now() }))
     try {
       await rpc('prompt.submit', { session_id: a.runtimeId, text: message, display_kind: type === 'skill' ? 'skill' : null, title_preview: r?.display || `/${body}`, surface: 'mobile' })
     } catch (err) {
-      updateActive(() => ({ running: false }))
+      updateActive(() => ({ running: false, turnStart: null }))
       pushItem({ kind: 'notice', id: newId('n'), text: `Send failed: ${errText(err)}`, level: 'error' })
     }
     return
@@ -908,11 +928,58 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   pushItem({ kind: 'notice', id: newId('n'), text: out, level: r?.warning ? 'warn' : 'info' })
 }
 
+// ── queued follow-ups (queue.ts): sent one by one when the open chat's turn ends ──
+let turnFailed = false // the running turn was stopped or ended with an error: the queue pauses instead of sending
+let seenChat: string | undefined
+let seenRunning = false
+
+subscribe(() => {
+  const a = getState().active
+  const chat = a?.storedId
+  const running = a?.running ?? false
+  const wasChat = seenChat
+  const wasRunning = seenRunning
+  seenChat = chat
+  seenRunning = running
+  if (running) return
+  if (chat !== wasChat) {
+    // Opening a chat never sends by surprise: a queue it holds waits for Resume.
+    turnFailed = false
+    if (chat && queuedFor(chat).length) setPaused(chat, true)
+    return
+  }
+  if (!chat || !wasRunning) return
+  const failed = turnFailed
+  turnFailed = false
+  if (failed) {
+    if (queuedFor(chat).length) setPaused(chat, true)
+    return
+  }
+  // Let this state change finish first: sending changes the state again.
+  setTimeout(() => drainQueue(chat, false), 0)
+})
+
+/** Send the first queued message of `chat` now (`force`: also when the queue is paused). */
+export function drainQueue(chat: string, force: boolean): void {
+  const s = getState()
+  const a = s.active
+  if (!a || a.storedId !== chat || a.running || s.conn !== 'open' || s.opening) return
+  if (!force && (isPaused(chat) || s.requests.length > 0 || a.attachments.length > 0)) return
+  setPaused(chat, false)
+  const q = takeFirst(chat)
+  if (!q) return
+  sendPrompt(q.text).catch(e => {
+    restoreFirst(chat, q)
+    setPaused(chat, true)
+    toast(errText(e), 'error')
+  })
+}
 const bare = (s: string) => s.replace(/^\/+/, '').trim()
 
 export async function interrupt(): Promise<void> {
   const a = getState().active
   if (!a) return
+  if (a.running) turnFailed = true // the queue pauses when this turn ends
   try {
     await rpc('session.interrupt', { session_id: a.runtimeId })
   } catch (err) {
@@ -1240,7 +1307,7 @@ async function syncRunning(): Promise<void> {
     // Finished while we weren't listening: take the stored transcript and stop the spinner.
     const next = baseActive(r, a.storedId)
     next.items = applySavedStats(next.items, next.storedId)
-    setState({ active: { ...next, title: next.title || cur.title } })
+    setState({ active: { ...next, title: next.title || cur.title, goal: cur.goal } })
   } catch {
     /* keep waiting */
   }
@@ -1248,12 +1315,14 @@ async function syncRunning(): Promise<void> {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
+    noteBack()
     void checkSocket()
     void syncRunning()
   } else {
     // Kept for the next cold start, so the chat is on screen before Hermes answers.
     const a = getState().active
     if (a) saveChatToDisk(a.profile, a.storedId, a.title, a.items)
+    noteAway(a?.storedId)
   }
 })
 setInterval(() => {
@@ -1293,7 +1362,7 @@ client.onEvent((ev: GatewayEvent) => {
   switch (type) {
     case 'message.start':
       stream = { chars: 0, ms: 0, last: 0, total: 0, start: performance.now() }
-      updateActive(() => ({ running: true, tps: null }))
+      updateActive(a => ({ running: true, tps: null, turnStart: a.turnStart ?? Date.now() })) // more than one message.start per turn: keep the first
       break
     case 'thinking.delta':
       updateActive(() => ({ status: String(payload.text || '') }))
@@ -1391,6 +1460,11 @@ client.onEvent((ev: GatewayEvent) => {
       break
     case 'session.usage':
       updateActive(() => ({ usage: (payload.usage as never) ?? null }))
+      {
+        // The ring moves during long turns: usage that carries the context numbers needs no extra RPC.
+        const u = payload.usage as Usage | undefined
+        if (u?.context_max && u.context_used != null) void refreshCtx(u)
+      }
       break
     case 'session.info':
       updateActive(x => ({ info: { ...x.info, ...(payload as object) } }))
@@ -1398,6 +1472,10 @@ client.onEvent((ev: GatewayEvent) => {
     case 'session.title':
       updateActive(() => ({ title: String(payload.title || '') }))
       loadSessionsSoon()
+      break
+    case 'session.control.update':
+      // Goal (or loop / heartbeat) state changed: keep the goal line current.
+      updateActive(() => ({ goal: (payload as unknown as SessionControlUpdatePayload).control?.goal ?? null }))
       break
     case 'message.complete': {
       const p = payload as MessageCompletePayload
@@ -1425,8 +1503,12 @@ client.onEvent((ev: GatewayEvent) => {
         const it = getState().active?.items.find(x => x.id === lastId)
         if (it && it.kind === 'assistant' && it.text) speak(lastId ?? 'auto', it.text)
       }
-      updateActive(() => ({ running: false, status: '', usage: p.usage ?? getState().active?.usage ?? null }))
-      void finishTurnStats(lastId, p.usage)
+      if (p.error || p.failure_reason) turnFailed = true
+      const turnSecs = turnStartSecs()
+      const watching = getState().active?.storedId
+      if (watching && document.visibilityState === 'visible' && !isAway()) markVisit(watching) // they watched the turn end
+      updateActive(() => ({ running: false, status: '', turnStart: null, usage: p.usage ?? getState().active?.usage ?? null }))
+      void finishTurnStats(lastId, p.usage, turnSecs)
       break
     }
     case 'review.summary':
@@ -1574,7 +1656,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
     rebindKeptRowIds(kept, r?.survivor_user_row_ids)
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
-    updateActive(() => ({ running: false }))
+    updateActive(() => ({ running: false, turnStart: null }))
     // Not sent: take the photos back out of Hermes's queue, or they would ride along with the next message.
     for (const im of queued) await rpc('image.detach', { session_id: a.runtimeId, path: im.path }).catch(() => {})
     // The server may have kept the old turns: reload the truth, then say why.
@@ -1717,11 +1799,42 @@ export function fmtCtx(c: Ctx): string {
   return `ctx ${c.percent < 1 ? '<1' : Math.round(c.percent)}% · ${k(c.used)}/${k(c.max)}`
 }
 
-async function finishTurnStats(itemId: string | null, usage?: Usage | null): Promise<void> {
+/** Read the open chat's goal (Hermes's /goal) for the goal line. Never blocks opening; older Hermes builds may not have the RPC, so errors are ignored. */
+export async function loadGoal(): Promise<void> {
+  const a = getState().active
+  if (!a) return
+  const runtimeId = a.runtimeId
+  try {
+    const r = await rpc<SessionControlReadResult>('session.control.read', { session_id: runtimeId })
+    updateActive(x => (x.runtimeId === runtimeId ? { goal: r?.control?.goal ?? null } : null))
+  } catch {
+    /* no goal support */
+  }
+}
+
+/** Pause, resume or clear the open chat's goal, then read it again. Errors are toasted. */
+export async function goalAction(action: 'goal.pause' | 'goal.resume' | 'goal.clear'): Promise<void> {
+  const a = getState().active
+  if (!a) return
+  try {
+    await rpc('session.control', { session_id: a.runtimeId, action })
+    await loadGoal()
+  } catch (err) {
+    toast(errText(err), 'error')
+  }
+}
+
+/** Seconds the open chat's running turn has lasted, null when unknown. Read before `turnStart` is cleared. */
+function turnStartSecs(): number | null {
+  const t = getState().active?.turnStart
+  return t ? Math.max(0, (Date.now() - t) / 1000) : null
+}
+
+async function finishTurnStats(itemId: string | null, usage?: Usage | null, secs: number | null = null): Promise<void> {
   const reported = usage?.avg_tps && usage.avg_tps > 0 ? Math.round(usage.avg_tps) : null
   const tps = reported ?? (stream.ms > 400 ? estTps() : wallTps())
   const ctx = await refreshCtx(usage)
-  const parts = [tps ? `${reported ? '' : '~'}${tps} tok/s` : '', ctx ? fmtCtx(ctx) : ''].filter(Boolean)
+  const parts = [tps ? `${reported ? '' : '~'}${tps} tok/s` : '', secs != null && secs >= 1 ? fmtDuration(secs) : '', ctx ? fmtCtx(ctx) : ''].filter(Boolean)
   if (!itemId || !parts.length) return
   const meta = parts.join(' · ')
   patchItem(itemId, it => (it.kind === 'assistant' ? { ...it, meta } : it))

@@ -1,7 +1,6 @@
 // The canvas panel: documents beside the chat that Hermes writes and you read, edit, run and keep.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { copyText, haptic, openExternal, shareText as nativeShare } from '../bridge'
-import { parseCsv } from '../text'
 import { sendPrompt, errText } from '../gateway'
 import { toast } from '../store'
 import { confirmDialog, promptDialog } from '../dialog'
@@ -30,9 +29,8 @@ import {
   type DocMeta,
   type DocType
 } from '../canvas'
-import { Markdown } from './Markdown'
+import { DocView } from './DocView'
 import { DiffView } from './Diff'
-import { Linked } from './Linked'
 import { Row, Section } from './ui'
 import { setState } from '../store'
 import { useSheetDrag } from './useSheetDrag'
@@ -48,113 +46,6 @@ const ago = (t: number) => {
 }
 
 // ── content renderers ────────────────────────────────────────
-
-/** A fence long enough that the document's own backticks can't close it. */
-function fenced(text: string, lang: string): string {
-  const run = Math.max(2, ...(text.match(/`+/g) || []).map(m => m.length)) + 1
-  const f = '`'.repeat(run)
-  return `${f}${lang}\n${text}\n${f}`
-}
-
-
-function CsvTable({ text }: { text: string }) {
-  const rows = useMemo(() => parseCsv(text).slice(0, 2000), [text])
-  if (!rows.length) return <div className="dim pad">Empty table</div>
-  const [head, ...body] = rows
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {body.map((r, i) => (
-            <tr key={i}>{head.map((_, j) => <td key={j}>{r[j] ?? ''}</td>)}</tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-/** HTML runs in a sandboxed frame: scripts yes, but no access to the app, and no network unless allowed. */
-function HtmlFrame({ html, network }: { html: string; network: boolean }) {
-  const frame = useRef<HTMLIFrameElement>(null)
-  const [err, setErr] = useState('')
-  const srcDoc = useMemo(() => {
-    // First thing in the document, before any script of the page's own: remove the phone bridge, report errors,
-    // and show alert() in the app's own look (Android's box says "The page at … says").
-    const guard =
-      `<script>try{delete window.HermesAndroid}catch(e){}try{window.HermesAndroid=undefined}catch(e){}` +
-      `window.addEventListener('error',function(e){parent.postMessage({hmCanvasError:String(e.message)},'*')});` +
-      `window.alert=function(m){parent.postMessage({hmCanvasAlert:String(m===undefined?'':m)},'*')};` +
-      // Links would load the site inside the frame (sub-frame navigations never reach the Android shell): hand them to the app.
-      `document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');` +
-      `if(!a||/^#/.test(a.getAttribute('href')))return;e.preventDefault();parent.postMessage({hmCanvasLink:a.href},'*')},true);</script>`
-    // Offline means offline: default-src doesn't cover form submissions, so they are blocked separately.
-    const csp = network
-      ? ''
-      : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'">`
-    const top = `<meta name="viewport" content="width=device-width,initial-scale=1">${csp}${guard}`
-    // The guard must be the very first thing that can run, so it goes right after the doctype (or at the start).
-    const dt = /^\s*<!doctype[^>]*>/i.exec(html)
-    if (dt) return html.slice(0, dt[0].length) + top + html.slice(dt[0].length)
-    return `<!doctype html>${top}${html}`
-  }, [html, network])
-  useEffect(() => {
-    setErr('')
-    const on = (e: MessageEvent) => {
-      if (e.source !== frame.current?.contentWindow || !e.data) return
-      if (typeof e.data.hmCanvasError === 'string') setErr(e.data.hmCanvasError)
-      else if (typeof e.data.hmCanvasAlert === 'string' && e.data.hmCanvasAlert.trim()) toast(e.data.hmCanvasAlert.slice(0, 300), 'info', 5000)
-      else if (typeof e.data.hmCanvasLink === 'string' && /^https?:\/\//i.test(e.data.hmCanvasLink)) {
-        const url = e.data.hmCanvasLink.slice(0, 2000)
-        // The page could post this without a tap, so the user confirms.
-        confirmDialog({ title: 'Open link?', message: url, confirmLabel: 'Open' }).then(ok => ok && openExternal(url))
-      }
-    }
-    window.addEventListener('message', on)
-    return () => window.removeEventListener('message', on)
-  }, [srcDoc])
-  return (
-    <div className="html-wrap">
-      {err && <div className="html-err">⚠ {err}</div>}
-      <iframe ref={frame} className="html-frame" title="Preview" sandbox="allow-scripts allow-forms allow-modals" referrerPolicy="no-referrer" srcDoc={srcDoc} />
-    </div>
-  )
-}
-
-export function DocView({ doc, text, network }: { doc: Doc; text: string; network: boolean }) {
-  switch (doc.type) {
-    case 'markdown':
-      return (
-        <div className="canvas-md">
-          <Markdown text={text} />
-        </div>
-      )
-    case 'html':
-      return <HtmlFrame html={text} network={network} />
-    case 'code':
-      return <Markdown text={fenced(text, doc.lang || '')} />
-    case 'json': {
-      let pretty = text
-      try {
-        pretty = JSON.stringify(JSON.parse(text), null, 2)
-      } catch {
-        /* show as written */
-      }
-      return <Markdown text={fenced(pretty, 'json')} />
-    }
-    case 'mermaid':
-      return <Markdown text={fenced(text, 'mermaid')} />
-    case 'csv':
-      return <CsvTable text={text} />
-    case 'svg':
-      return <img className="canvas-svg" alt={doc.title} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`} />
-    default:
-      return <pre className="canvas-text"><Linked text={text} /></pre>
-  }
-}
 
 // ── editor ───────────────────────────────────────────────────
 
@@ -691,7 +582,7 @@ export function CanvasPanel() {
               ) : mode === 'edit' ? (
                 <Editor key={doc.id} doc={doc} onChange={t => editDoc(doc.id, t)} onSelect={setSel} />
               ) : (
-                <DocView doc={doc} text={text} network={Boolean(net[doc.id])} />
+                <DocView type={doc.type} lang={doc.lang} title={doc.title} text={text} network={Boolean(net[doc.id])} />
               )}
             </div>
 
