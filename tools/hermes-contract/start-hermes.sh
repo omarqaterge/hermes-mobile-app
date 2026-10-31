@@ -36,6 +36,8 @@ printf '<!doctype html><html><head></head><body>hermes-contract</body></html>\n'
 # The fake model: a free port on 127.0.0.1, a note for its read_file call.
 rm -f "$work/model.port" "$work/model.log" "$work/model-requests.jsonl"
 printf 'contract note\n' > "$work/note.txt"
+# The files of the other scripted turns (fake-model.py): x for the chmod Hermes asks to approve, site/ for the edits.
+rm -rf "$work/site" && mkdir -p "$work/site" && printf 'old\n' > "$work/site/b.txt" && : > "$work/x" && chmod 644 "$work/x"
 nohup "$src/.venv/bin/python" "$here/tools/hermes-contract/fake-model.py" "$work/model.port" "$work/note.txt" \
   "$work/model-requests.jsonl" > "$work/model.log" 2>&1 &
 echo $! > "$work/model.pid"
@@ -52,7 +54,8 @@ find "$home/plugins" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || t
 
 cd "$src"
 # The plugin finds the chats and the bots under /root/.hermes unless told (the phone's Debian home).
-HOME="$uhome" HERMES_HOME="$home" HERMES_HOME_ROOT="$uhome" HERMES_MOBILE_ROOT="$home" HERMES_WEB_DIST="$dist" nohup .venv/bin/hermes dashboard --host 127.0.0.1 --port "$port" --no-open --skip-build \
+# File checkpoints (snapshots before write_file / patch, for the plugin's /checkpoints) are on, as the app uses them.
+HERMES_TUI_CHECKPOINTS=1 HOME="$uhome" HERMES_HOME="$home" HERMES_HOME_ROOT="$uhome" HERMES_MOBILE_ROOT="$home" HERMES_WEB_DIST="$dist" nohup .venv/bin/hermes dashboard --host 127.0.0.1 --port "$port" --no-open --skip-build \
   > "$work/dashboard.log" 2>&1 &
 echo $! > "$work/dashboard.pid"
 for _ in $(seq 1 90); do
