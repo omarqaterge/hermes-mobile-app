@@ -18,7 +18,7 @@ MODEL_URL = os.environ.get("HM_FAKE_MODEL_URL", "http://127.0.0.1:9/v1")
 with open(os.path.join(os.environ["HERMES_HOME"], "config.yaml"), "w") as f:
     f.write(f"model:\n  default: contract-model\n  provider: custom\n  base_url: {MODEL_URL}\n"
             "  api_key: placeholder-not-a-key\nagent:\n  reasoning_effort: high\nplugins:\n  enabled:\n  - hermes-mobile\n"
-            "auxiliary:\n  title_generation:\n    enabled: false\n")
+            "auxiliary:\n  title_generation:\n    enabled: true\napprovals:\n  mode: manual\n")
 # The built-in memory the app's Memory screen lists (MEMORY.md / USER.md: entries joined by a "§" line).
 mem = os.path.join(os.environ["HERMES_HOME"], "memories")
 os.makedirs(mem, exist_ok=True)
