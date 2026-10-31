@@ -1,6 +1,9 @@
 // Mock Hermes dashboard + tui_gateway on 127.0.0.1:9119 for browser tests of the web UI (no phone needed).
 // Logs every RPC / REST call to a JSONL file so test.cjs can assert what the app sent.
 const http = require('http')
+
+// Reply for the inline HTML preview scenarios (`show html`, `show html streaming`).
+const HTML_REPLY = 'Page:\n\n```html\n<!doctype html>\n<h1 id="t">Hello frame</h1>\n<script>document.getElementById("t").textContent += " ok"</script>\n<div style="height:600px"></div>\n```'
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -61,6 +64,7 @@ let endpoints = [] // POST /api/providers/custom-endpoints
 // Like Hermes's redacted_credential_preview: first 4 + last 4 of a long value.
 const redact = v => (v.length >= 12 ? `«redacted:${v.slice(0, 4)}...${v.slice(-4)}»` : '«redacted:***»')
 
+const FILE_TEXT = { 'table.csv': 'a,b\n1,2', 'page.html': '<h1>Hi</h1>', 'code.py': 'print("x")' }
 const server = http.createServer((req, res) => {
   let body = ''
   req.on('data', c => (body += c))
@@ -130,7 +134,14 @@ const server = http.createServer((req, res) => {
       const join = n => (dir === '/' ? '' : dir) + '/' + n
       const entries = depth < 4 ? ['a', 'b'].map(n => ({ name: n, path: join(n), is_directory: true })) : []
       entries.push({ name: 'note.txt', path: join('note.txt'), is_directory: false, size: 5 })
+      for (const [n, text] of Object.entries(FILE_TEXT)) entries.push({ name: n, path: join(n), is_directory: false, size: text.length })
+      for (const n of ['song.mp3', 'doc.pdf']) entries.push({ name: n, path: join(n), is_directory: false, size: 1000 })
       return send({ path: dir, parent: dir === '/' ? null : dir.replace(/\/[^/]+$/, '') || '/', entries })
+    }
+    if (p === '/api/files/read' && req.method === 'GET') {
+      // Text files of the Files screen's previews (the call is logged, so a test can see what was read).
+      const name = (url.searchParams.get('path') || '').split('/').pop()
+      return send({ data_url: 'data:text/plain;base64,' + Buffer.from(FILE_TEXT[name] ?? 'hello').toString('base64'), size: (FILE_TEXT[name] ?? 'hello').length })
     }
     if (p === '/api/cron/jobs' && req.method === 'GET') return send([{ id: 'j1', name: 'Morning brief', schedule: '0 9 * * *', prompt: 'Brief me', next_run_at: null }])
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
@@ -381,13 +392,23 @@ function safeJson(t) {
 const wss = new WebSocketServer({ server, path: '/api/ws', verifyClient: () => Date.now() > refuseUntil })
 let seq = 0
 let created = 0
+// The one chat with a goal ('rt-goal'): session.control changes it, session.control.read and .update report it.
+const goalState = { rt: 'rt-goal', g: null }
+const goalFor = rt => (rt === goalState.rt ? goalState.g : null)
+const slowTurns = new Map() // runtime id → timers of a running 'slow reply'
 wss.on('connection', ws => {
   const event = (type, session_id, payload) => ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
   const later = (ms, fn) => setTimeout(fn, ms)
 
+  let threeSid = ''
   ws.on('message', raw => {
     const msg = JSON.parse(String(raw))
-    if (msg.method === undefined) return log({ answer: msg.id, result: msg.result, error: msg.error }) // response to a server request
+    if (msg.method === undefined) {
+      log({ answer: msg.id, result: msg.result, error: msg.error }) // response to a server request
+      // The three-question turn ends once its questions are answered.
+      if (msg.id === 'srv-clarify-3') later(100, () => event('message.complete', threeSid, { text: 'Thanks.' }))
+      return
+    }
     const { id, method, params = {} } = msg
     log({ rpc: method, params })
     const reply = result => ws.send(JSON.stringify({ jsonrpc: '2.0', id, result }))
@@ -423,12 +444,19 @@ wss.on('connection', ws => {
               { role: 'user', text: 'First question', row_id: 1 },
               { role: 'assistant', text: 'First answer' }
             ],
+            turn_started_at: Date.now() / 1000 - 75,
             inflight: { user: 'Explain streams', assistant: 'Streams are a sequence of', streaming: true },
             todo_state: { todos: [{ id: '1', content: 'Read', status: 'completed' }, { id: '2', content: 'Write', status: 'in_progress' }], revision: 2 }
           })
           later(700, () => event('message.delta', 'rt-run', { text: ' values over time.' }))
           later(1200, () => event('message.complete', 'rt-run', { text: 'Streams are a sequence of values over time.' }))
           return
+        }
+        if (sid === 's-goal') {
+          // A chat with a goal set: the goal line shows under the chat (session.control.read answers it).
+          goalState.g = { title: 'Ship it', status: 'active', turns_used: 3, max_turns: 20, contract: { outcome: 'Login works' }, subgoals: ['tests'], gates: [] }
+          return reply({ session_id: 'rt-goal', stored_session_id: sid, info: { title: 'Goal chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'work on it', row_id: 1 }, { role: 'assistant', text: 'answer s-goal' }] })
         }
         if (sid === 's-card') {
           // A saved chat holding a Query() card (same code as LIVE below).
@@ -458,6 +486,19 @@ wss.on('connection', ws => {
         if (sid === 's-slowstart') {
           // Slow start-up resume: the user starts a new chat while this is loading.
           return later(2500, () => reply({ session_id: 'rt-slowstart', stored_session_id: sid, info: { title: 'Slow chat', model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
+        }
+        if (sid === 's-scrub') {
+          // 30 questions with tall answers: the chat scrubber (rail with one tick per question) shows.
+          const messages = []
+          for (let i = 1; i <= 30; i++) messages.push({ role: 'user', text: `question ${i}`, row_id: i }, { role: 'assistant', text: `answer ${i}\n\n` + 'line\n\n'.repeat(15) })
+          return reply({ session_id: 'rt-s-scrub', stored_session_id: sid, info: { title: 'Scrub chat', model: 'mock-model' }, messages })
+        }
+        if (sid === 's-visit') {
+          // Two tall answers; the second question was sent at ...120 s (after a test sets the last visit to ...100 s).
+          const tall = 'line\n\n'.repeat(60)
+          return reply({ session_id: 'rt-s-visit', stored_session_id: sid, info: { title: 'Visit chat', model: 'mock-model' }, messages: [
+            { role: 'user', text: 'visit question 1', row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: 'visit answer 1\n\n' + tall, timestamp: 1790000060 },
+            { role: 'user', text: 'visit question 2', row_id: 3, timestamp: 1790000120 }, { role: 'assistant', text: 'visit answer 2\n\n' + tall, timestamp: 1790000180 }] })
         }
         if (sid === 's-long') {
           // 150 turns: the app should draw only the end and load earlier turns on scroll.
@@ -512,6 +553,28 @@ wss.on('connection', ws => {
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-1', method: 'clarify', params: { session_id: sid, question: 'Which colour?', choices: ['Red', 'Blue'] } })))
           return
         }
+        if (/^ask me three$/.test(params.text)) {
+          // Three questions at once: the sheet shows them one at a time.
+          threeSid = sid
+          const questions = [{ qid: 'a', question: 'Colour?', choices: ['Red', 'Blue'] }, { qid: 'b', question: 'Size?', choices: ['S', 'M'] }, { qid: 'c', question: 'Notes?', choices: null }]
+          later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-3', method: 'clarify', params: { session_id: sid, questions } })))
+          return
+        }
+        if (/^slow reply$/.test(params.text)) {
+          // A reply that takes 1.5 s, so a follow-up can be queued meanwhile; Stop (session.interrupt) ends it early.
+          const live = fn => () => ws.readyState === 1 && fn()
+          slowTurns.set(sid, [
+            later(100, live(() => event('message.start', sid, {}))),
+            later(300, live(() => event('message.delta', sid, { text: 'Slow done.' }))),
+            later(1500, live(() => (slowTurns.delete(sid), event('message.complete', sid, { text: 'Slow done.' }))))
+          ])
+          return
+        }
+        if (/^(next one|c|d|e)$/.test(params.text)) {
+          // The follow-ups the queue tests send: answered at once.
+          later(100, () => ws.readyState === 1 && event('message.complete', sid, { text: `Queued ${params.text} done.` }))
+          return
+        }
         if (/^use tools$/.test(params.text)) {
           // Four tool calls (with reasoning between two of them), then the answer: the app folds them into one line.
           let t = 50
@@ -522,6 +585,21 @@ wss.on('connection', ws => {
           }
           later((t += 60), () => event('message.start', sid, {}))
           later((t += 40), () => event('message.complete', sid, { text: 'All four done.' }))
+          return
+        }
+        if (/^edit files$/.test(params.text)) {
+          // Two file edits (a write and a patch) with their inline diffs, then the answer: the turn ends with a changes card.
+          const edits = [
+            ['write_file', { path: '/root/projects/site/a.txt', content: 'x\ny' }, '--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,2 @@\n+x\n+y'],
+            ['patch', { path: '/root/projects/site/b.txt', old_string: 'old', new_string: 'new' }, '--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old\n+new']
+          ]
+          let t = 50
+          for (const [i, [name, args, diff]] of edits.entries()) {
+            later((t += 40), () => event('tool.start', sid, { tool_id: `call_ed${i}`, name, args }))
+            later((t += 40), () => event('tool.complete', sid, { tool_id: `call_ed${i}`, name, args, duration_s: 0.2, result_text: 'ok', inline_diff: diff }))
+          }
+          later((t += 60), () => event('message.start', sid, {}))
+          later((t += 40), () => event('message.complete', sid, { text: 'Edited.' }))
           return
         }
         if (/^wait a while$/.test(params.text)) {
@@ -616,6 +694,19 @@ wss.on('connection', ws => {
           later(200, () => event('message.complete', sid, { text: 'Oops:\n\n```openui-lang\nthis is not openui at all\n```' }))
           return
         }
+        if (/^show html$/.test(params.text)) {
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: HTML_REPLY }))
+          return
+        }
+        if (/^show html streaming$/.test(params.text)) {
+          const chunks = HTML_REPLY.match(/[\s\S]{1,16}/g)
+          let t = 100
+          event('message.start', sid, {})
+          for (const c of chunks) later((t += 40), () => event('message.delta', sid, { text: c }))
+          later(t + 1500, () => event('message.complete', sid, { text: HTML_REPLY }))
+          return
+        }
         if (/^show diagram$/.test(params.text)) {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Flow:\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```' }))
@@ -643,7 +734,26 @@ wss.on('connection', ws => {
         } else {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.delta', sid, { text: 'OK' }))
-          later(300, () => event('message.complete', sid, { text: 'OK' }))
+          later(300, () => event('message.complete', sid, { text: 'OK', usage: { input: 1200, output: 340, total: 1540, cost_usd: 0.0123, cache_hit_pct: 63 } }))
+        }
+        return
+      }
+      case 'session.control.read':
+        return reply({ control: { goal: goalFor(params.session_id), loop: null, heartbeat: null, revision: 'x', updated_at: 0 } })
+      case 'session.control':
+        reply({})
+        if (params.action === 'goal.pause' && goalState.rt === params.session_id) goalState.g = { ...goalState.g, status: 'paused', paused_reason: 'by user' }
+        if (params.action === 'goal.resume' && goalState.rt === params.session_id) goalState.g = { ...goalState.g, status: 'active', paused_reason: null }
+        if (params.action === 'goal.clear' && goalState.rt === params.session_id) goalState.g = null
+        if (goalState.rt === params.session_id) later(30, () => event('session.control.update', params.session_id, { control: { goal: goalState.g, loop: null, heartbeat: null, revision: 'y', updated_at: 1 } }))
+        return
+      case 'session.interrupt': {
+        reply({})
+        const t = slowTurns.get(params.session_id)
+        if (t) {
+          t.forEach(clearTimeout)
+          slowTurns.delete(params.session_id)
+          later(50, () => event('message.complete', params.session_id, { text: 'Stopped.' }))
         }
         return
       }
