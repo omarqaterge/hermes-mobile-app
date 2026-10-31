@@ -4,6 +4,63 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+- **Remote debugging setting, for developers.** With Android Developer options on, Settings → About shows a "Remote debugging" row. It asks for your phone's screen lock (set one first), then lets a connected computer inspect the app for 60 minutes; a notification with a Turn off button and a strip at the top show while it is on, and it turns itself off after 60 minutes, when you turn off Developer options, or when the app restarts. Nothing inside the app can switch it on. Seen on a Xiaomi phone (Android 16): the dialog, the phone's own lock screen (Back leaves it off), on with the strip, notification and a working debug connection, Turn off cutting an attached session at once, off after a force-stop, and off when Developer options are turned off. Also seen: after 60 minutes with the screen off it was off when the phone was woken (notification, row and socket gone); on an Android 15 emulator, "Set a screen lock first" without a lock, and on and Turn off with a PIN.
+- **Test builds with remote debugging.** `HM_DEVTOOLS=1 android/build.sh` makes a test build whose page can be inspected and driven from a computer over `adb`; it shows a "Test build: remote debugging is on" strip at all times. Normal and release builds are unchanged, and the build script and the release workflow both refuse or fail if a release would carry it. Seen on a Xiaomi phone (Android 16): the test build installs over an earlier self-built one, shows the strip, and its `webview_devtools_remote` socket is there; the earlier build without `HM_DEVTOOLS` had none. Playwright attached over `adb forward` and drove a whole test session.
+- **More previews in Files.** Tapping a file in Files now shows CSV/TSV as a table, JSON pretty-printed, code
+  highlighted, Mermaid files as diagrams, HTML pages running offline in the sandbox, and audio/video in a player
+  (streamed, not read into the page). PDF, Office and other files say "No preview here" and keep Open with….
+  Seen on a Xiaomi phone (Android 16): CSV, code, JSON and HTML previews, audio and video playback, and the PDF note with Open with….
+- **Stash a draft.** In the Add menu, "Stash draft" puts the text you are writing aside and empties the box;
+  "Stashed drafts" lists what you put aside (from any chat) and tapping one puts it back, swapping with what is in the
+  box. "Clear all stashed drafts" removes them; at most 20 are kept. Quotes and attachments stay where they are.
+  Seen on a Xiaomi phone (Android 16): stash, swap and clear all work.
+- **Several questions, one at a time.** When Hermes asks more than one question at once, the sheet shows
+  `Question 2 of 3` with the current question and a row of dots; picking a choice in a single-choice question moves to
+  the next one by itself after a moment. Back and Next move by hand (Android Back goes to the previous question), and
+  the last question has Answer. A single question looks as before. Seen on a Xiaomi phone (Android 16): one question at a time, moving on after a pick, Back to the previous question with its answer kept, and Answer.
+- **"New since your last visit" in a chat.** When a chat got messages while you were away (a long task finished, a
+  scheduled job or a bot wrote to it), a thin line with that text sits before the first message you haven't seen, and
+  the chat opens scrolled to it instead of to the very end. It goes away the next time you open the chat; a chat you
+  never opened on this phone shows no line. It also works when you leave the app with the chat open (Home while Hermes answers) and come back: the first phone test found that case had no line, because the chat was never reopened. Seen on a Xiaomi phone (Android 16) after the fix: the line before the reply that came while away, the chat scrolled to it, no line for a reply watched on screen, none after reopening.
+- **Things slide open and close.** Tool cards, the thought process, the task list and the changed-files card now slide
+  open and shut instead of jumping, chevrons turn instead of swapping characters, and the button next to the box fades
+  in when it changes between Send, Stop, Mic and Queue. The reasoning level on the model chip shows as small bars (the
+  chip's label says it in words). Nothing moves when the phone's "Remove animations" setting is on. Seen on a Xiaomi phone (Android 16): smooth slides and turning arrows, the effort bars, and instant opening with animations turned off.
+- **A ring shows how full the chat's memory is.** At the right end of the model row above the box, a small ring fills
+  with the chat's context use all the time (not only while Hermes works), turning amber from 80 % and red from 90 %.
+  Tap it for the Context window sheet: tokens used of the maximum, cost and cache hits when Hermes reports them, and
+  a Compress older turns button. The ring also moves during a long turn. Seen on a Xiaomi phone (Android 16): the ring fits next to the model name, the sheet's numbers and Compress work.
+- **See how long Hermes has been working, and the chat's goal.** The status line above the box now shows the running
+  turn's time (`1:23`) after three seconds, and it keeps counting from the real start when you reopen the chat. The
+  finished reply's stats gain the total (`~41 tok/s · 1m 23s · ctx 12%`). When the chat has a goal (`/goal`), a line
+  `🎯 Ship the login fix · turn 3 of 20 · active` sits under it; tap it for the goal's details with Pause/Resume and
+  Clear goal. The clock ticks only while a turn runs and the screen is on. Seen on a Xiaomi phone (Android 16): the timer, its real start after switching chats, the duration in the stats, and the goal line with Pause, Resume and Clear goal.
+- **See which files a turn changed.** When Hermes wrote or edited files, a card at the end of that turn says
+  `✎ 3 files changed  +42 −7`. Tap it for the files, each with its own counts; tap a file to see its diff. A
+  Checkpoints button opens the file checkpoints to undo. It also shows when the tool calls above it are folded.
+  Seen on a Xiaomi phone (Android 16): card, file rows, diff sheet and Checkpoints work; the counts are readable in the light theme.
+- **Preview a web page or SVG right in the reply.** An `html` or `svg` code block of 3+ lines now has a Preview button
+  (Code switches back). The page runs in the same offline sandbox as the canvas, starts 160 px high and grows to its
+  own height (at most 60 % of the screen); a Full screen button below it opens it full size, and Back closes it. It is
+  disabled while the reply is still arriving. Seen on a Xiaomi phone (Android 16): Preview, the page's own button, Full screen and Back, and
+  an SVG preview work.
+- **Jump between your messages in a long chat.** Once a chat has six or more of your messages and is several screens
+  long, a thin rail appears on the right edge with one tick per message you sent. Drag along it: a bubble shows the
+  message under your finger (`12 / 30` and its first words); let go and the chat scrolls there. A tap jumps too, and
+  the tick of the message at the top of the screen is highlighted. Seen on a Xiaomi phone (Android 16): the rail, the drag bubble, the jump
+  and its flash work, and a sideways swipe on the rail opens neither the drawer nor the canvas.
+- **Queue a follow-up while Hermes works.** When a reply is running and you have typed something, the send button
+  splits in two: Steer (as before, the words go into the running task now) and Queue. A queued message waits as a
+  dashed bubble at the end of the chat (edit it, remove it, or send it now) and is sent by itself when the reply ends,
+  then the next one. Stop or an error pauses the queue (Queue paused, Resume), and a chat you open starts paused.
+  Up to 10 per chat, kept across restarts; sent only while the app shows that chat. Seen on a Xiaomi phone (Android
+  16): queueing, sending by itself, edit, remove, Queue paused after Stop with Resume, the queue kept after a
+  force-stop, and Steer all work.
+- **Quote part of a reply.** Select words in one of Hermes's replies and a bar above the composer offers Quote or
+  Explain. Quote puts the words as a chip above the text box (up to 3, ✕ removes one) and the next message starts with
+  them as a quote; Explain sends the quote with "Explain this." at once. Your sent message shows the quote as a block.
+  Seen on a Xiaomi phone (Android 16): the bar, Quote, Explain and the quote block work, Android's own selection menu
+  doesn't cover the bar, and selecting text in your own message shows no bar.
 - **"Not on Wi-Fi" Shizuku notice after a restart with Wi-Fi off.** The check that Shizuku came back runs 90 s after
   the app starts, but that wait only counted time the phone was awake, so a phone left asleep after the restart showed
   the notice late or not at all. It now counts real time: the notice ("Shizuku isn't running … Not on Wi-Fi") is there

@@ -386,3 +386,9 @@ export function formatDuration(secs: number): string {
   const ss = String(s).padStart(2, '0')
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
+
+/** A duration in seconds as `850ms`, `3.2s` or `1m 5s` (empty when unknown). */
+export function fmtDuration(s?: number | null): string {
+  if (s == null) return ''
+  return s < 1 ? `${Math.round(s * 1000)}ms` : s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
