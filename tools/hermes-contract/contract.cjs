@@ -1,8 +1,9 @@
 // Contract check: sends the same requests the app sends to the mock Hermes (tools/web-e2e/mock.cjs) and to the real,
 // pinned Hermes, and compares the reply SHAPES (keys and types, not values). The mock's replies are what the browser
 // tests prove the app works with, so a key the mock sends that the real Hermes lacks, or a key of another type, fails;
-// keys only the real Hermes sends are listed and allowed. The real Hermes runs the app's plugin, so the plugin's read-only
-// routes are compared too. Requests that need a model reply are not made.
+// keys only the real Hermes sends are listed and allowed. The real Hermes runs the app's plugin and talks to a fake local
+// model (fake-model.py), so the plugin's read-only routes and one whole model turn (prompt.submit and its events) are
+// compared too.
 // Usage: node contract.cjs [mock URL] [Hermes URL]   (defaults http://127.0.0.1:9119 and http://127.0.0.1:9229; run.sh
 // starts both). The Hermes must be a throwaway one: chats are created, renamed, closed and deleted.
 const MOCK = process.argv[2] || 'http://127.0.0.1:9119'
@@ -72,7 +73,13 @@ async function connect(base) {
       await new Promise(r => setTimeout(r, 100))
     }
   }
-  return { page, rpc, http, events, event, close: () => ws.close() }
+  // Every event of a type for a session after `from`, their payloads merged into one object (like groups() does for rows).
+  const merged = (type, sid, from) => {
+    const found = events.slice(from).filter(x => x.type === type && x.session_id === sid)
+    if (!found.length) return { error: { code: 'none', message: `no ${type} event for this chat; events seen: ${[...new Set(events.slice(from).map(x => x.type))].join(', ') || 'none'}` } }
+    return { result: groups(found.map(x => x.payload ?? {}))['[]'] }
+  }
+  return { page, rpc, http, events, event, merged, close: () => ws.close() }
 }
 
 // Arrays are compared element group by element group (rows with a `role` by role), each group merged into one
@@ -159,6 +166,54 @@ function pluginCases() {
   ]
 }
 
+// One model turn on the chat session.create made: prompt.submit, then the events the app reads in gateway.ts. The Hermes
+// answers through the fake model (read_file on a note, then the answer); the mock has a scripted turn for the same prompt.
+// Each event type is compared by the merged payloads of all events of that type, and the ORDER in which the types first
+// appear must be the same.
+const TURN_PROMPT = 'read the note'
+const TURN_EVENTS = ['message.start', 'thinking.delta', 'reasoning.delta', 'tool.generating', 'tool.start', 'tool.complete', 'message.delta', 'session.usage', 'message.complete', 'session.info']
+const ORDER = ['message.start', 'reasoning.delta', 'tool.generating', 'tool.start', 'tool.complete', 'message.delta', 'message.complete']
+function turnCases() {
+  return [
+    {
+      name: 'prompt.submit',
+      run: async c => {
+        c.mark = c.events.length
+        if (c.isMock) await c.http('POST', '/__mock', { activity: [{ session: c.newRuntime, text: 'Thinking…', short: 'Thinking', profile: 'default', review: false, ts: Date.now() / 1000 }] })
+        const r = await c.rpc('prompt.submit', { session_id: c.newRuntime, text: TURN_PROMPT })
+        if (r.error) return r
+        // The activity feed (the app's banner) while the turn runs: the plugin's hooks report it; the mock is told to show one item.
+        const started = await c.event('message.start', c.newRuntime, c.mark, 60_000)
+        if (started.error) return started
+        c.activity = { items: [] }
+        for (let i = 0; i < 25 && !c.activity.items.length && !c.events.slice(c.mark).some(e => e.type === 'message.complete'); i++) {
+          c.activity = (await c.http('GET', `${PLUGIN}/activity`)).result ?? c.activity
+          await new Promise(ok => setTimeout(ok, 200))
+        }
+        const done = await c.event('message.complete', c.newRuntime, c.mark, 90_000)
+        if (done.error) return done
+        await new Promise(ok => setTimeout(ok, 1500)) // the session.info that follows
+        if (c.isMock) await c.http('POST', '/__mock', { activity: [] })
+        return r
+      }
+    },
+    { name: 'GET plugin /activity (during the turn)', run: c => ({ result: c.activity }) },
+    ...TURN_EVENTS.map(type => ({ name: `event ${type} (model turn)`, run: c => c.merged(type, c.newRuntime, c.mark) })),
+    {
+      name: 'event order (model turn)',
+      exact: true,
+      run: c => {
+        const evs = c.events.slice(c.mark).filter(e => e.session_id === c.newRuntime)
+        const done = evs.findIndex(e => e.type === 'message.complete')
+        const first = type => evs.findIndex(e => e.type === type)
+        const info = evs.findIndex((e, i) => i > done && e.type === 'session.info')
+        const seen = ORDER.map(t => [t, first(t)]).concat([['session.info (after message.complete)', info]])
+        return { result: seen.filter(([, i]) => i >= 0).sort((a, b) => a[1] - b[1]).map(([t]) => t) }
+      }
+    }
+  ]
+}
+
 // The requests, in order. `run(c)` gets the target's connection with its own ids: the mock's stored chat is s-0, the real Hermes's
 // is the one seed.py wrote; runtime ids come from the replies (session.resume, session.create).
 const CASES = [
@@ -219,6 +274,7 @@ const CASES = [
   },
   // The app waits for session.info to learn the new chat's agent is built (gateway.ts trackBuild).
   { name: 'event session.info (after session.create)', run: c => c.event('session.info', c.newRuntime, c.mark, 15_000) },
+  ...turnCases(),
   { name: 'session.close (new chat)', run: c => c.rpc('session.close', { session_id: c.newRuntime }) },
   { name: 'session.delete', run: c => c.rpc('session.delete', { session_id: c.stored }) }
 ]
@@ -237,6 +293,7 @@ async function main() {
   real.stored = 'contract-chat'
   let failed = 0
   const total = CASES.filter(c => !c.setup).length
+  mock.isMock = true
   for (const c of CASES) {
     if (c.setup) {
       await c.setup(mock)

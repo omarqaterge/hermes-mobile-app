@@ -2,10 +2,12 @@
 # Installs and starts the pinned Hermes (web/vendor/hermes-shared/.hermes-commit) with hermes/patches applied, the way
 # the phone runs it (`hermes dashboard --host 127.0.0.1`), for tools/hermes-contract/run.sh. Everything lives in
 # <work dir>: the clone, its uv venv, a throwaway HERMES_HOME seeded with one chat (seed.py) and the app's plugin
-# (hermes-plugin/hermes-mobile, copied in and enabled like phone/install.sh does), and a stub web dist (the app has its own
-# UI; the dashboard only needs an index.html to put its session token in). No model provider, no key. The dashboard runs with HOME=<work dir>/userhome (HERMES_HOME is its .hermes), so
+# (hermes-plugin/hermes-mobile, copied in and enabled like phone/install.sh does), a stub web dist (the app has its own UI;
+# the dashboard only needs an index.html to put its session token in), and a fake local model (fake-model.py) the seeded
+# config points at. No real model provider, no key. The dashboard runs with HOME=<work dir>/userhome (HERMES_HOME is its .hermes), so
 # nothing it or the plugin writes (~/.hermes/installs, ~/.hermes/mobile) lands in the real home.
-# Usage: start-hermes.sh <work dir> <port>    (the dashboard's output goes to <work dir>/dashboard.log)
+# Usage: start-hermes.sh <work dir> <port>    (the dashboard's output goes to <work dir>/dashboard.log; the fake model's
+# pid is <work dir>/model.pid)
 set -euo pipefail
 here=$(cd "$(dirname "$0")/../.." && pwd)
 work=$1 port=$2
@@ -31,12 +33,22 @@ mkdir -p "$home" "$dist"
 find "$home" -mindepth 1 -maxdepth 1 ! -name installs -exec rm -rf {} +
 printf '<!doctype html><html><head></head><body>hermes-contract</body></html>\n' > "$dist/index.html"
 
+# The fake model: a free port on 127.0.0.1, a note for its read_file call.
+rm -f "$work/model.port" "$work/model.log" "$work/model-requests.jsonl"
+printf 'contract note\n' > "$work/note.txt"
+nohup "$src/.venv/bin/python" "$here/tools/hermes-contract/fake-model.py" "$work/model.port" "$work/note.txt" \
+  "$work/model-requests.jsonl" > "$work/model.log" 2>&1 &
+echo $! > "$work/model.pid"
+for _ in $(seq 1 50); do [ -s "$work/model.port" ] && break; sleep 0.2; done
+[ -s "$work/model.port" ] || { echo "start-hermes: the fake model did not start" >&2; cat "$work/model.log" >&2; exit 1; }
+
 # The app's plugin, as phone/install.sh puts it into Debian (a copy, not a link, so Python's caches stay out of the repo).
 mkdir -p "$home/plugins"
 cp -R "$here/hermes-plugin/hermes-mobile" "$home/plugins/hermes-mobile"
 find "$home/plugins" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 
-(cd "$src" && HOME="$uhome" HERMES_HOME="$home" .venv/bin/python "$here/tools/hermes-contract/seed.py")
+(cd "$src" && HOME="$uhome" HERMES_HOME="$home" HM_FAKE_MODEL_URL="http://127.0.0.1:$(cat "$work/model.port")/v1" \
+  .venv/bin/python "$here/tools/hermes-contract/seed.py")
 
 cd "$src"
 # The plugin finds the chats and the bots under /root/.hermes unless told (the phone's Debian home).
