@@ -23,6 +23,7 @@ jobs:
     outputs:
       web: ${{ steps.diff.outputs.web }}
       contract: ${{ steps.diff.outputs.contract }}
+      patches: ${{ steps.diff.outputs.patches }}
     steps:
       - uses: actions/checkout@v5
       # The repository's work is its owner's: no commit in a PR may credit an AI tool (tools/check-attribution.sh).
@@ -146,8 +147,11 @@ jobs:
       - run: python3 tools/test_phone_access.py
       - run: python3 tools/test_profile_link.py
 
+  # Required by the main ruleset; a job skipped by its `if` counts as passed there.
   hermes-patches:
     name: Hermes patches apply to the pinned Hermes
+    needs: changes
+    if: needs.changes.outputs.patches == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
