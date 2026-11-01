@@ -48,4 +48,4 @@ node mock.cjs & MOCK=$!
 trap 'kill $MOCK $DEV 2>/dev/null || true; rm -rf "$run_dir"' EXIT
 sleep 1.5
 kill -0 $MOCK || { echo "mock didn't start"; exit 1; }
-node test.cjs
+node test.cjs "$@"

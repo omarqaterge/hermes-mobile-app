@@ -149,4 +149,11 @@ const nativeShell = () => {
 // Changes the mock's state (POST /__mock).
 const mock = b => fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify(b) })
 
-module.exports = { MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell }
+// Opens the composer's Add sheet, picks `option` (Photo, File, Camera…) and gives the file chooser `files`.
+const addFiles = async (page, option, files) => {
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.picker-opt', { hasText: option }).click()])
+  await chooser.setFiles(files)
+}
+
+module.exports = { addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell }
