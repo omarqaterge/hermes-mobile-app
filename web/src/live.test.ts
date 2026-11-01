@@ -68,3 +68,52 @@ describe('Live mode when the app is hidden', () => {
     expect(v.stopSpeaking).toHaveBeenCalled()
   })
 })
+
+describe('Live mode waits for a phrase still being finished', () => {
+  const g = () => vi.mocked(gw.sendPrompt)
+  let gw: typeof import('./gateway')
+  beforeEach(async () => {
+    vi.useFakeTimers()
+    gw = await import('./gateway')
+    g().mockClear()
+    live.startLive()
+  })
+  afterEach(() => {
+    live.stopLive()
+    vi.useRealTimers()
+  })
+  const pause = () => live.getLivePause() * 1000
+
+  test('the pause ends on a preview: the finished phrase is sent when it comes, not the preview', () => {
+    voice.hear!('partial', 'remind me to call')
+    vi.advanceTimersByTime(pause() + 10)
+    expect(g()).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(400)
+    voice.hear!('final', 'Remind me to call my sister tomorrow.')
+    expect(g()).toHaveBeenCalledWith('Remind me to call my sister tomorrow.')
+  })
+
+  test('no finished phrase within 1.5 s: the preview is sent', () => {
+    voice.hear!('partial', 'remind me to call')
+    vi.advanceTimersByTime(pause() + 1500 + 10)
+    expect(g()).toHaveBeenCalledWith('remind me to call')
+  })
+
+  test('speaking again while waiting restarts the pause', () => {
+    voice.hear!('partial', 'remind me')
+    vi.advanceTimersByTime(pause() + 10)
+    voice.hear!('partial', 'remind me to call my sister')
+    vi.advanceTimersByTime(1500)
+    expect(g()).not.toHaveBeenCalled()
+    voice.hear!('final', 'Remind me to call my sister.')
+    vi.advanceTimersByTime(pause() + 10)
+    expect(g()).toHaveBeenCalledWith('Remind me to call my sister.')
+  })
+
+  test('a finished phrase before the pause ends is sent without waiting', () => {
+    voice.hear!('partial', 'hello')
+    voice.hear!('final', 'Hello there.')
+    vi.advanceTimersByTime(pause() + 10)
+    expect(g()).toHaveBeenCalledWith('Hello there.')
+  })
+})
