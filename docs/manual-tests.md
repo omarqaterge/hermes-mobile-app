@@ -90,6 +90,12 @@ Tried on a Xiaomi phone, Android 16 (HyperOS), normal build 0.8.66-test (commit 
       Pixel, OnePlus or Motorola with Android 14+: open an app, tap, type, Take over. Android 11-13: Settings →
       Background apps should say "Needs Android 14 or newer".
 - [ ] **A banking app with the Settings toggle on** (opens; FLAG_SECURE screens may show black in the live view).
+- [ ] **Faster steps.** Ask for something with several taps (a new note with a title). Expected: the steps run without a
+      fixed pause between them, Hermes points at buttons by their text, and no keyboard shows in the live view.
+- [ ] **Straight to a screen.** "Share 'milk, eggs' to Keep" or "open this link in YouTube". Expected: one approval for
+      that app, then the app's share or link screen in the background.
+- [ ] **A switch.** "Turn on Do not disturb" (in Settings). Expected: `toggle` changes it once and says it is on; asking
+      again changes nothing.
 
 ## Features from docs/plans (01–12)
 
