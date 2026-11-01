@@ -1,6 +1,6 @@
 // The canvas panel: swipes, Back, wide screens.
 const path = require('path')
-const { sleep, check, fail, nativeShell } = require('../lib.cjs')
+const { WEB, sleep, check, fail, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -8,7 +8,7 @@ module.exports = async t => {
   const cvp = await browser.newPage({ viewport: { width: 375, height: 812 } })
   cvp.on('pageerror', e => { console.log('PAGEERROR', e.message); fail() })
   await cvp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
-  await cvp.goto('http://127.0.0.1:5180/')
+  await cvp.goto(WEB + '/')
   await cvp.locator('.msg.assistant .hm-openui', { hasText: 'Swipe card' }).waitFor({ timeout: 15000 })
   await cvp.locator('.msg.assistant pre').first().waitFor({ timeout: 5000 })
   await cvp.locator('.msg.assistant table').first().waitFor({ timeout: 5000 })
@@ -79,7 +79,7 @@ module.exports = async t => {
     const rctx = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
     const rp = await rctx.newPage()
     await rp.addInitScript(id => localStorage.setItem('hm.lastSession', JSON.stringify({ id, profile: 'default' })), sid)
-    await rp.goto('http://127.0.0.1:5180/')
+    await rp.goto(WEB + '/')
     await rp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
     await sleep(500)
     const cdp = await rctx.newCDPSession(rp)
@@ -112,7 +112,7 @@ module.exports = async t => {
     const rctx = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
     const rp = await rctx.newPage()
     await rp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-wide', profile: 'default' })))
-    await rp.goto('http://127.0.0.1:5180/')
+    await rp.goto(WEB + '/')
     await rp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
     await sleep(500)
     const cdp = await rctx.newCDPSession(rp)
@@ -154,7 +154,7 @@ module.exports = async t => {
   // The native shell (Settings → Uninstall Hermes needs it), with setup complete so no setup flow takes over.
   await cvw.addInitScript(s => { window.__setup = s }, { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '', termuxApi: true, termuxBoot: true, shizuku: true })
   await cvw.addInitScript(nativeShell)
-  await cvw.goto('http://127.0.0.1:5180/')
+  await cvw.goto(WEB + '/')
   await cvw.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
   await cvw.locator('.canvas-btn').click()
   await cvw.locator('.canvas-panel').waitFor({ timeout: 3000 })
