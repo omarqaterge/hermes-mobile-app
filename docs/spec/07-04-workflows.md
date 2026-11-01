@@ -1,0 +1,28 @@
+### 7.4 Workflows (`.github/workflows/`)
+
+Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK=1`, are set in `ci.yml` and `release.yml` because OpenUI's install script sends telemetry otherwise.
+
+**`ci.yml`, workflow "CI"**, runs on every push and pull request. Five jobs, all on `ubuntu-latest`:
+
+| Job | Name in the Actions list | Steps |
+|---|---|---|
+| `web` | Web (typecheck, unit tests, build, browser e2e) | Node 22 with npm cache; `npm ci`, `npm test`, `npm run build` in `web/`; then in `tools/web-e2e`: `npm ci`, `npx playwright install --with-deps chromium`, `./run.sh`. |
+| `plugin` | Plugin (canvas + media) | Python 3.12; `pip install fastapi httpx`; runs `test_canvas.py`, `test_library.py`, `test_gallery.py`, `test_media.py`, `test_chat_search.py`, `test_checkpoints.py`, `test_battery.py`, `test_approval.py`, `test_chip.py`, `test_phone_app.py`, `test_auto_mode.py`, `test_openui.py`, `test_openui_query.py`, `test_claude_login.py`, `test_phone_access.py`, `test_profile_link.py`, then `python3 tools/test_check_spec.py` and `python3 tools/check_spec.py` (the second one fails the build when the code has a name `docs/SPEC.md` lacks), then `python3 tools/test_changelog.py` and `python3 tools/changelog.py check`. |
+| `hermes-patches` | Hermes patches apply to the pinned Hermes | `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`, `test_device_lock.sh`. |
+| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`, `tools/test_devtools_guard.sh`. |
+| `hermes-contract` | Mock Hermes matches the pinned Hermes | Node 22 with npm cache, `astral-sh/setup-uv` with its cache keyed on the Hermes pin; `npm ci` in `tools/web-e2e` (no browser download), then `tools/hermes-contract/run.sh "$RUNNER_TEMP/hermes-contract"` (it also uses the runner's `python3` for the fake model). 15-minute limit; a run takes about 3 minutes (127 cases). |
+
+Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`.
+
+**`release.yml`, workflow "Release"**, runs on a pushed tag matching `v*`. One job `apk` (ubuntu-latest, `contents: write`):
+1. Node 22, JDK 17 (Temurin), `npm ci` in `web/`.
+2. `sdkmanager "platforms;android-36" "build-tools;35.0.0"`.
+3. Build: fails with "Set the KEYSTORE_B64 secret first" if the secret is empty; decodes `KEYSTORE_B64` into `$RUNNER_TEMP/release.keystore`; takes the version from the tag (`v0.8.62` → `0.8.62`), computes `VERSION_CODE = a*10000 + b*100 + c` from `a.b.c`, runs `android/build.sh` with `KEYSTORE`, `VERSION_NAME`, `VERSION_CODE`; deletes the keystore.
+4. `gh release create <tag> android/build/hermes-mobile.apk --title "Hermes Mobile <tag>"` with notes that point to the README install steps. When the release already exists (made on GitHub's website, which creates the tag and the release together) it only attaches the APK to it (`gh release upload --clobber`).
+The release APK must always be signed with the same key, or phones cannot update.
+
+**`image.yml`, workflow "Ready-made Debian image"**, manual only (`workflow_dispatch`, input `publish`, default false). Run it after moving the Hermes pin in `phone/bootstrap.sh`. One job `image` on `ubuntu-24.04-arm`, 90 min limit, `contents: write`:
+1. Runs `test_bootstrap_pin.sh` and `test_bootstrap_image.sh`.
+2. Installs `zstd`; runs `tools/build-image.sh image-out`; checks `sha256sum -c`.
+3. Computes the file name (`build-image.sh --name`) and the release tag `hermes-image-<first 12 of the pin>`.
+4. If `publish` is off: uploads the image, its `.sha256` and `build.log` as a workflow artifact (7 days). If on: creates the release `hermes-image-<pin12>` when missing (prerelease, `--latest=false`, so the app's update check and the APK download keep pointing at the app release), then uploads the image first and the `.sha256` second (a half-replaced pair fails `bootstrap.sh`'s hash check, which falls back to a normal install).

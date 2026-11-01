@@ -5,9 +5,10 @@ else. `CLAUDE.md` imports this file.
 
 ## Start here
 
-- **Read [docs/SPEC.md](docs/SPEC.md) first.** It describes the whole app: architecture, data flows, every screen and
-  UI element, the Android shell, the Hermes plugin, the phone scripts, build, tests and releases. Use it to find the
-  code you need instead of guessing.
+- **Read the spec's contents list in [docs/SPEC.md](docs/SPEC.md) first, then the files in `docs/spec/` for the area
+  you work on.** Together they describe the whole app: architecture, data flows, every screen and UI element, the
+  Android shell, the Hermes plugin, the phone scripts, build, tests and releases. Use them to find the code you need
+  instead of guessing.
 - Changes for users go in a new file in [changes/](changes/README.md) (never edit the top of CHANGELOG.md: that's how
   parallel branches conflict); checks and project rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 - On the maintainer's machine, `.hermes.md` and `.handoff/history.md` (git-excluded) hold the current state and the full
@@ -15,7 +16,7 @@ else. `CLAUDE.md` imports this file.
 
 ## Keep the spec current (required)
 
-- **Update `docs/SPEC.md` in the same commit as every change it describes**: a new or changed feature, screen, button,
+- **Update the spec file for the area (`docs/spec/NN-MM-name.md`) in the same commit as every change it describes**: a new or changed feature, screen, button,
   setting, gesture, notification, bridge method, plugin route/hook/tool, gateway RPC, `localStorage` key, script,
   permission, test tool or CI step. Removing something means removing it from the spec too.
 - Run `python3 tools/check_spec.py` before committing. CI runs it and fails when the code has a name the spec doesn't
@@ -39,8 +40,8 @@ while they work; they don't stop two branches from clashing when they merge, and
 
 - **Plan by file.** Before starting parallel streams, write down the shared files each one will change. Two streams
   that both change one of the big shared files (`web/src/gateway.ts`, `web/src/App.tsx`, `web/src/styles.css`,
-  `MainActivity.java`, `HermesService.java`, `tools/web-e2e/test.cjs`, `tools/web-e2e/mock.cjs`, `docs/SPEC.md`)
-  run one after the other, not side by side, or one of them stays out of that file.
+  `MainActivity.java`, `HermesService.java`, `tools/web-e2e/mock.cjs`) run one after the other, not side by side,
+  or one of them stays out of that file.
 - **Keep branches short.** Merge or sync with `main` at least daily; one feature per branch. A branch weeks behind
   `main` turns into a merge nobody can review.
 - **Add, don't edit the middle.** Prefer a new file or a new entry in a list over editing lines another feature also

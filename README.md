@@ -226,7 +226,7 @@ For testing only, `HM_DEVTOOLS=1 android/build.sh` makes a build whose page can 
 
 To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open http://127.0.0.1:5180.
 
-Tests, project rules and what to do after a Hermes update: [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents follow [AGENTS.md](AGENTS.md) (keep [docs/SPEC.md](docs/SPEC.md) current with every change).
+Tests, project rules and what to do after a Hermes update: [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents follow [AGENTS.md](AGENTS.md) (keep the spec, [docs/SPEC.md](docs/SPEC.md) and `docs/spec/`, current with every change).
 
 ## License and credits
 

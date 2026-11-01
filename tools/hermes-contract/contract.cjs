@@ -171,7 +171,7 @@ function compare(m, r, path, res) {
 // paths and query strings the app uses, then the routes that WRITE, with the methods and bodies the app sends (web/src
 // canvas.ts, gallery.ts, checkpoints.ts, order.ts, gateway.ts, Screens.tsx, OpenUIBlock.tsx, SignIn.tsx, api.ts,
 // Bots.tsx, Settings.tsx, MainActivity.media). Everything writes into the throwaway HOME only. Canvas and library content
-// is made first (SETUP, below) so those lists have rows. Not covered, and why (docs/SPEC.md 7.3 lists them too):
+// is made first (SETUP, below) so those lists have rows. Not covered, and why (docs/spec/07-03-browser-e2e.md lists them too):
 // POST /claude-login/start and /finish (they start a real sign-in with Anthropic; /cancel is covered), PUT /bots/{name}
 // (it would turn an always-on bot on), POST /approve and /stop (the notification buttons: the plugin answers them over
 // the dashboard on 127.0.0.1:9119, the phone's port, which the real Hermes here must never use; the same
