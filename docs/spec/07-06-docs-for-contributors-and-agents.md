@@ -6,7 +6,7 @@
 | `AGENTS.md` | every coding agent | Start here: `tools/setup.sh`, `docs/status/` and `docs/decisions/`, the spec's contents list then the area files, `tools/check.sh`, and a map of the folders; working in parallel (one file per shared item, open the PR with auto-merge on, keep the status file current); then the rules: update the area's file in the same commit as each change and run `tools/check_spec.py`; every-Android-phone rules and `tools/api-check.sh`; working in parallel (plan streams by file, short branches, add rather than edit the middle, `tools/device-lock.sh` per device); checks before committing; UI, public-repo, attribution and commit rules; no `v*` tags. |
 | `CLAUDE.md` | Claude Code | Imports `AGENTS.md` (`@AGENTS.md`). |
 | `GEMINI.md` | Gemini CLI | Points to `AGENTS.md` (Gemini CLI reads `GEMINI.md`; Codex, Cursor, Copilot and Hermes read `AGENTS.md`). |
-| `CONTRIBUTING.md` | people sending PRs | Checks to run, the spec and CHANGELOG rule, what to do after a Hermes update, project rules. |
+| `CONTRIBUTING.md` | people sending PRs | The checks (`tools/setup.sh`, then `tools/check.sh`; it lists no test commands itself, it points at spec 7.2 and 7.3), the spec and CHANGELOG rule, what to do after a Hermes update, project rules. |
 | `AGENT_INSTALL.md` | a user's own coding agent | How to set up a phone (6.3). |
 | `changes/` | everyone changing user-visible behaviour | One file per unreleased change (7.5), folded into `CHANGELOG.md` at release. |
 | `CHANGELOG.md` | users, release notes | What's new per release (7.5). |
