@@ -27,8 +27,45 @@ module.exports = async t => {
   await swipe('textarea', 160, 0)
   await sleep(300)
   check((await swp.locator('.drawer.open').count()) === 0, 'a swipe starting in the composer does not open the drawer')
-  await swipe('.msg.assistant', 160, 10)
-  await swp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe right on a chat opens the drawer'), () => check(false, 'swipe right on a chat opens the drawer'))
+  // The drawer follows the finger, then on release finishes opening or closing (never stays half open).
+  const drawerX = () => swp.evaluate(() => Math.round(document.querySelector('.drawer').getBoundingClientRect().right))
+  const hold = (sel, xs, wait) => swp.evaluate(async ([sel, xs, wait]) => {
+    const el = document.querySelector(sel)
+    const r = el.getBoundingClientRect()
+    const x = sel === '.drawer-backdrop' ? r.right - 20 : r.left + 40, y = r.top + Math.min(r.height / 2, 30)
+    const mk = (type, px) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 2, target: el, clientX: px, clientY: y })] })
+    el.dispatchEvent(mk('touchstart', x))
+    for (const dx of xs) {
+      el.dispatchEvent(mk('touchmove', x + dx))
+      if (wait) await new Promise(r => setTimeout(r, wait))
+    }
+    window.__end = () => el.dispatchEvent(mk('touchend', x + xs[xs.length - 1]))
+  }, [sel, xs, wait])
+  const release = () => swp.evaluate(() => window.__end())
+  await hold('.msg.assistant', [30, 60, 100], 0)
+  check(Math.abs((await drawerX()) - 100) <= 2, `drawer: mid-swipe its edge is under the finger (${await drawerX()})`)
+  await release()
+  await sleep(400)
+  check((await swp.locator('.drawer.open').count()) === 0 && (await drawerX()) <= 0, 'drawer: let go before half way (no flick) and it closes again')
+  await swipe('.msg.assistant', 200, 10)
+  await swp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'swipe right past half way opens the drawer'), () => check(false, 'swipe right past half way opens the drawer'))
+  await sleep(400)
+  check((await swp.evaluate(() => document.querySelector('.drawer').style.transform)) === '', 'drawer: no inline position left after it settles')
+  // swipe left on the backdrop pushes it back, following the finger
+  await hold('.drawer-backdrop', [-30, -80], 0)
+  const w = await swp.evaluate(() => document.querySelector('.drawer').offsetWidth)
+  check(Math.abs((await drawerX()) - (w - 80)) <= 2, `drawer: a swipe left on the backdrop moves it with the finger (${await drawerX()} of ${w})`)
+  await release()
+  await sleep(400)
+  check((await swp.locator('.drawer.open').count()) === 1, 'drawer: a short slow swipe left lets it spring back open')
+  await hold('.drawer-backdrop', [-40, -80, -120, -200], 0)
+  await release()
+  await sleep(400)
+  check((await swp.locator('.drawer.open').count()) === 0 && (await drawerX()) <= 0, 'drawer: a swipe left past half way closes it')
+  // a quick flick opens it even when short
+  await hold('.msg.assistant', [20, 40, 60, 80], 16)
+  await release()
+  await swp.locator('.drawer.open').waitFor({ timeout: 2000 }).then(() => check(true, 'drawer: a quick short flick right opens it'), () => check(false, 'drawer: a quick short flick right opens it'))
   await swp.close()
 
   // ── chat scrubber: a rail of ticks, one per message you sent; drag to pick, let go to jump ──
