@@ -6,7 +6,8 @@ Pull requests and issues are welcome.
 2. Make your change. Keep it focused; one idea per PR. Update the specification (index: [docs/SPEC.md](docs/SPEC.md), text: the area's file in `docs/spec/`) in the
    same commit, and for anything users notice add a file to [changes/](changes/README.md) (not a line in CHANGELOG.md, so parallel
    branches don't conflict). Coding agents: see [AGENTS.md](AGENTS.md).
-3. Run the checks (CI runs the same on every PR):
+3. Run the checks: `tools/setup.sh` once per checkout, then `tools/check.sh`, which runs the ones your changes need
+   (`--all` for everything). CI runs the same on every PR. What they cover, for example:
    - `cd web && npm ci && npm test && npm run build`: unit tests and the build
    - `tools/web-e2e/run.sh`: the built interface in headless Chromium against a mock Hermes
    - `python3 tools/test_canvas.py`, `tools/test_media.py`, `tools/test_chat_search.py`, `tools/test_battery.py` if you touched
