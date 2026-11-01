@@ -365,7 +365,7 @@ def slow_desktop_watchers(server=None) -> dict:
     if callable(skin) and not getattr(skin, "_hm_slow", False):
         import time
 
-        last = [0.0]
+        last = [float("-inf")]  # not 0.0: monotonic() counts from boot, so the first check would wait out the first 30 s
 
         def slow_skin():
             if time.monotonic() - last[0] >= _WATCH_DEFAULT:

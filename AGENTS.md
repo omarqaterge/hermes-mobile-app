@@ -8,7 +8,8 @@ else. `CLAUDE.md` imports this file.
 - **Read [docs/SPEC.md](docs/SPEC.md) first.** It describes the whole app: architecture, data flows, every screen and
   UI element, the Android shell, the Hermes plugin, the phone scripts, build, tests and releases. Use it to find the
   code you need instead of guessing.
-- Changes for users go in [CHANGELOG.md](CHANGELOG.md); checks and project rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
+- Changes for users go in a new file in [changes/](changes/README.md) (never edit the top of CHANGELOG.md: that's how
+  parallel branches conflict); checks and project rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 - On the maintainer's machine, `.hermes.md` and `.handoff/history.md` (git-excluded) hold the current state and the full
   history: if they exist, read `.hermes.md` and search the history before solving something that looks familiar.
 
@@ -34,8 +35,9 @@ else. `CLAUDE.md` imports this file.
 ## Checks before you commit
 
 `cd web && npm test && npm run build`, `tools/web-e2e/run.sh` (add a check for each web change, in its feature's
-file under `tools/web-e2e/checks/`), `python3 tools/check_spec.py`, and for Android changes `tools/java-check.sh`
-(JDK 21+) and `tools/api-check.sh` (Android SDK command-line tools). Plugin and phone-script tests: see CONTRIBUTING.md. CI runs all of them on every push.
+file under `tools/web-e2e/checks/`), `python3 tools/check_spec.py`, `python3 tools/changelog.py check`, and for
+Android changes `tools/java-check.sh` (JDK 21+) and `tools/api-check.sh` (Android SDK command-line tools). Plugin and
+phone-script tests: see CONTRIBUTING.md. CI runs all of them on every push.
 
 ## Rules
 
