@@ -4,6 +4,10 @@ The work is done by the app's background host (android/.../bg/BgHost.java), a sm
 user through Shizuku's rish. This module starts it on demand, talks to it over 127.0.0.1 with a per-start token,
 asks the user once per app per chat (Hermes's approval gate; /yolo skips it), refuses banking/payment/password/2FA
 apps unless the user allowed them in the app's Settings, and tells the phone app what is happening (event `bgapp`).
+
+Made for few model round trips: actions take an element's text instead of a number, several can go in one call
+(`steps`), `open` can jump straight to a screen (a link, a share, an intent), and every action answers with the new
+screen (or says nothing changed).
 """
 
 from __future__ import annotations
@@ -28,6 +32,9 @@ HOST_CLASS = "com.omarqaterge.hermesmobile.bg.BgHost"
 RISH_BIN = Path("/data/data/com.termux/files/home/bin/rish")
 PREFS = Path.home() / ".hermes" / "mobile" / "bgapps.json"
 SHOT_DIR = Path.home() / ".hermes" / "cache" / "phone_app"
+NOTES_DIR = Path.home() / ".hermes" / "mobile" / "app-notes"   # <package>.md: what the model learned about an app
+NOTES_MAX = 3000                     # characters kept per app (the newest)
+MAX_STEPS = 20
 
 # Apps refused unless the user allowed them (Settings → Background apps). Matched on package name and label, so it is
 # best effort: generic words (bank, pay, wallet, authenticator, password…) plus well-known apps from many countries
@@ -54,6 +61,7 @@ STALE_IDLE_S = 20.0                  # owner's turn is over and it has been quie
 turn_running: Optional[Callable[[str], bool]] = None   # set by the plugin: is this chat's turn still running?
 _granted: set = set()                # (session, pkg) already approved in this chat
 _names: Dict[int, str] = {}          # element number -> its text, from the last capture (for the status line)
+_last_view = ""                      # the last element list the model was shown (to say "nothing changed")
 _apps_cache: Tuple[float, List[dict]] = (0.0, [])
 
 
@@ -107,6 +115,39 @@ def availability() -> Tuple[bool, str]:
     if 0 < sdk < MIN_SDK:
         return False, "Needs Android 14 or newer"
     return True, ""
+
+
+# ── app notes ───────────────────────────────────────────────────────────────
+
+def _notes_file(pkg: str) -> Optional[Path]:
+    return NOTES_DIR / f"{pkg}.md" if re.fullmatch(r"[A-Za-z0-9_.]+", pkg or "") else None
+
+
+def read_notes(pkg: str) -> str:
+    f = _notes_file(pkg)
+    try:
+        return f.read_text().strip() if f else ""
+    except Exception:
+        return ""
+
+
+def add_note(pkg: str, text: str) -> None:
+    """Keep what worked in an app for the next time (shown on open). The newest NOTES_MAX characters stay."""
+    f = _notes_file(pkg)
+    if not f:
+        raise PhoneAppError("no app to write a note for")
+    line = " ".join(text.split())[:500]
+    if not line:
+        raise PhoneAppError("note needs text")
+    old = read_notes(pkg)
+    body = (old + "\n" if old else "") + f"- {time.strftime('%Y-%m-%d')}: {line}"
+    if len(body) > NOTES_MAX:
+        body = body[-NOTES_MAX:]
+        body = body[body.find("\n") + 1:] if "\n" in body else body
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(body + "\n")
+    tmp.replace(f)
 
 
 # ── host process ───────────────────────────────────────────────────────────
@@ -185,6 +226,10 @@ def ensure_host(_retry: bool = False) -> None:
 def call(path: str, body: Optional[dict] = None) -> dict:
     try:
         r = _request(path, body)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:  # the plugin is newer than the app on the phone
+            raise PhoneAppError(f"this needs a newer Hermes Mobile app ({path[1:]} is missing); ask the user to update it") from e
+        raise PhoneAppError(f"the background host answered {e.code}") from e
     except urllib.error.URLError as e:
         raise PhoneAppError(f"lost the background host ({e.reason}); open the app again") from e
     if not r.get("ok"):
@@ -222,6 +267,23 @@ def resolve_app(name: str) -> dict:
     raise PhoneAppError(f"no app called {n!r}; use action='list_apps'")
 
 
+def intent_of(a: dict) -> Optional[dict]:
+    """open's way into a screen: `intent` {action, data, type, extras}, or the shorthands `url` (open a link) and
+    `share_text` (send text to the app, as its share sheet would). None = the app's first screen."""
+    if isinstance(a.get("intent"), dict):
+        i = a["intent"]
+        out = {k: i[k] for k in ("action", "data", "type") if isinstance(i.get(k), str) and i[k]}
+        if isinstance(i.get("extras"), dict):
+            out["extras"] = {str(k): v for k, v in i["extras"].items() if isinstance(v, (str, int, float, bool))}
+        return out
+    if a.get("url"):
+        return {"action": "android.intent.action.VIEW", "data": str(a["url"])}
+    if a.get("share_text"):
+        return {"action": "android.intent.action.SEND", "type": "text/plain",
+                "extras": {"android.intent.extra.TEXT": str(a["share_text"])}}
+    return None
+
+
 # ── approval ────────────────────────────────────────────────────────────────
 
 def _approve(session: str, pkg: str, label: str) -> Optional[str]:
@@ -243,19 +305,32 @@ def _approve(session: str, pkg: str, label: str) -> Optional[str]:
 
 # ── formatting ──────────────────────────────────────────────────────────────
 
+_MORE = {("after", False): "more below", ("before", False): "more above", ("both", False): "more above and below",
+         ("after", True): "more to the right", ("before", True): "more to the left", ("both", True): "more both ways"}
+
+
 def format_elements(els: List[dict]) -> str:
+    """One line per element: `[n] role "name"` and its state. Position only for elements with no name (an icon's
+    place is the best hint to what it is); a list says which way it scrolls instead. Old hosts send `cls`, not `role`."""
     lines = []
     for e in els:
-        bits = [f"[{e['n']}]", e.get("cls", "")]
-        if e.get("text"):
-            bits.append(json.dumps(e["text"], ensure_ascii=False))
-        if e.get("desc") and e.get("desc") != e.get("text"):
-            bits.append("desc=" + json.dumps(e["desc"], ensure_ascii=False))
-        if e.get("id"):
-            bits.append("id=" + e["id"])
-        bits += [k for k in ("click", "edit", "scroll", "checked", "focused") if e.get(k)]
-        bits.append(f"@{e.get('x')},{e.get('y')}")
-        lines.append(" ".join(b for b in bits if b))
+        bits = [f"[{e['n']}]", e.get("role") or e.get("cls") or "element"]
+        name = e.get("text") or e.get("desc") or ""
+        if name:
+            bits.append(json.dumps(name, ensure_ascii=False))
+        if e.get("hint") and e.get("hint") != name:
+            bits.append("hint=" + json.dumps(e["hint"], ensure_ascii=False))
+        if "checked" in e:
+            bits.append("on" if e["checked"] else "off")
+        bits += [k for k in ("selected", "focused", "disabled") if e.get(k)]
+        more = _MORE.get((e.get("more"), bool(e.get("horizontal"))))
+        if more:
+            bits.append(f"({more})")
+        if not name and not e.get("hint") and not more:
+            if e.get("id"):
+                bits.append("id=" + e["id"])
+            bits.append(f"@{e.get('x')},{e.get('y')}")
+        lines.append(" ".join(bits))
     return "\n".join(lines)
 
 
@@ -271,19 +346,39 @@ def _save_image(b64: str) -> str:
     return str(p)
 
 
-def _capture(mode: str) -> dict:
+def _capture(mode: str, after: str = "") -> dict:
+    """The screen for the model. after = the action that just ran: if the screen looks exactly as before, say so
+    instead of sending the same list again."""
+    global _last_view
     want_img = mode in ("vision", "som")
     want_tree = mode in ("ax", "som")
-    r = call("/capture", {"tree": want_tree, "image": want_img, "max_w": 720})
-    out: Dict[str, Any] = {"app": _state.get("label"), "screen": f"{r.get('w')}x{r.get('h')}"}
+    r = call("/capture", {"tree": want_tree, "image": want_img, "marks": mode == "som", "max_w": 720})
+    out: Dict[str, Any] = {"app": _state.get("label")}
+    where = " › ".join(x for x in (r.get("screen"), r.get("title")) if x and x != _state.get("label"))
+    if where:
+        out["screen"] = where
+    if r.get("popup"):
+        out["popup"] = "a dialog or menu is open: its elements come first"
     if want_tree:
         els = r.get("elements", [])
         _names.clear()
-        _names.update({e["n"]: str(e.get("text") or e.get("desc") or "") for e in els})
-        out["elements"] = format_elements(els)
+        _names.update({e["n"]: str(e.get("text") or e.get("desc") or e.get("hint") or "") for e in els})
+        view = where + "\n" + format_elements(els)
+        if after and view == _last_view and not want_img:
+            out["screen_changed"] = False
+            out["note"] = ("The list stopped moving: this is its end." if after == "scroll" else
+                           "Nothing on the screen changed (the elements are as in the last list). It may need more "
+                           "time (wait_for, wait_after) or another way.")
+            return out
+        _last_view = view
+        out["elements"] = format_elements(els) or "(nothing readable: try mode='som' for a screenshot)"
     if want_img and r.get("image_b64"):
         out["screenshot_path"] = _save_image(r["image_b64"])
-        out["note"] = "Look at screenshot_path with your vision tool if the element list isn't enough."
+        out["note"] = ("Look at screenshot_path with your vision tool; the numbers drawn on it are the element numbers."
+                       if mode == "som" else "Look at screenshot_path with your vision tool.")
+    if r.get("black"):
+        out["note"] = ("This app hides its screen from pictures (it shows black); use the element list, not "
+                       "screenshots.")
     return out
 
 
@@ -300,6 +395,7 @@ def end_session(sid: str) -> None:
 
     The tool only said "done" when the model called close/hand_over. A model that just stops talking left the app
     open and the card on screen until the app's own 130 s timer. Nothing is done for another chat's app."""
+    global _last_view
     with _lock:
         if not _state or (_state.get("session") and _state["session"] != sid):
             return
@@ -309,6 +405,7 @@ def end_session(sid: str) -> None:
             log(f"phone_app end_session close: {type(e).__name__}: {e}")
         _event("done", "Finished")
         _state.clear()
+        _last_view = ""
 
 
 def _event(state: str, action: str = "") -> None:
@@ -323,36 +420,67 @@ def _event(state: str, action: str = "") -> None:
 
 # ── tool ────────────────────────────────────────────────────────────────────
 
+STEP_ACTIONS = ("tap", "long_press", "set_text", "type", "key", "submit", "toggle", "scroll", "scroll_to", "swipe",
+                "wait_for", "wait")
+
 TOOL_SCHEMA = {
     "name": "phone_app",
     "description": (
         "Use an app on the user's phone WITHOUT taking their screen: the app runs on a hidden screen while the user keeps "
-        "using the phone. Workflow: action='open' with app (name or package), then 'capture' (numbered elements; "
-        "mode='som' adds a screenshot path), then tap/set_text by element number, re-capture to check, and 'close' when "
-        "done (or 'hand_over' to put the app on the user's real screen). The user is asked once per app per chat. "
-        "Banking, payment, password and 2FA apps are refused unless the user allowed them in Settings."),
+        "using the phone. Workflow: action='open' (app name or package; add url, share_text or intent to land on the "
+        "right screen at once). Every action answers with the screen's numbered elements (or says nothing changed), so "
+        "you rarely need 'capture'. Point at an element by its text with target (\"Save\", \"Search\") or by its number. "
+        "Put several actions in one call with steps. Actions return as soon as the screen settles; when something "
+        "slow follows (loading, a search, sending), use wait_for with the text you expect, or wait_after. Write a "
+        "note when you learn how to do something in an app: it is shown the next time it opens. 'close' when done "
+        "(or 'hand_over' to put the app on the user's real screen). The user is asked once per app per chat. Banking, "
+        "payment, password and 2FA apps are refused unless the user allowed them in Settings."),
     "parameters": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list_apps", "open", "capture", "tap", "set_text", "type", "key", "scroll",
-                                                  "wait", "hand_over", "close"],
-                       "description": "What to do. capture is free (no side effects)."},
+            "action": {"type": "string", "enum": ["list_apps", "open", "capture", "tap", "long_press", "set_text", "type",
+                                                  "key", "submit", "toggle", "scroll", "scroll_to", "swipe", "wait_for",
+                                                  "wait", "steps", "note", "hand_over", "close"],
+                       "description": "What to do. capture is free (no side effects). submit = the keyboard's Search/Send/Go "
+                                      "button of a field (more reliable than key enter). toggle = a switch or checkbox. "
+                                      "scroll_to = scroll until target is on screen. wait_for = wait until target shows "
+                                      "(or with gone=true, disappears)."},
             "app": {"type": "string", "description": "open: the app's name as shown on the phone, or its package."},
-            "element": {"type": "integer", "description": "tap/set_text/scroll: element number from the last capture."},
-            "coordinate": {"type": "array", "items": {"type": "integer"}, "description": "tap: [x, y] on the hidden screen (720x1600), when no element fits."},
-            "text": {"type": "string", "description": "set_text: the field's new text (replaces it). type: text added to the focused field."},
+            "url": {"type": "string", "description": "open: a link to open in the app (https:, geo:, tel:, mailto:, an app's deep link)."},
+            "share_text": {"type": "string", "description": "open: text to share into the app (a new note, a message draft)."},
+            "intent": {"type": "object", "description": "open: an Android intent {action, data, type, extras}, e.g. "
+                                                        "{action: 'android.intent.action.INSERT', data: 'content://com.android.calendar/events', "
+                                                        "extras: {title: 'Dentist', beginTime: 1767261600000}}. Only intents that open a screen."},
+            "target": {"type": "string", "description": "tap/long_press/set_text/submit/toggle/scroll_to/wait_for: the element's text, "
+                                                        "label or hint, read fresh from the screen (no capture needed)."},
+            "element": {"type": "integer", "description": "The element's number from the last list (instead of target)."},
+            "coordinate": {"type": "array", "items": {"type": "integer"}, "description": "tap/long_press: [x, y] on the hidden screen "
+                                                                                       "(720x1600). swipe: [x1, y1, x2, y2]."},
+            "text": {"type": "string", "description": "set_text: the field's new text (replaces it). type: text added to the focused "
+                                                      "field. note: what to remember about this app."},
+            "on": {"type": "boolean", "description": "toggle: the state wanted; it is only tapped when not already so."},
+            "gone": {"type": "boolean", "description": "wait_for: wait until target is no longer on the screen."},
             "key": {"type": "string", "description": "key: back, enter, del, tab, search, menu, up, down, left, right, space."},
-            "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "scroll direction (down = further down the list)."},
-            "mode": {"type": "string", "enum": ["ax", "som", "vision"], "description": "capture: ax = element list (default), som = list + screenshot, vision = screenshot only."},
-            "seconds": {"type": "number", "description": "wait: seconds (max 10)."},
-            "capture_after": {"type": "boolean", "description": "Return a fresh element list after the action (saves a call)."},
+            "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "scroll/scroll_to direction (down = further down the list)."},
+            "mode": {"type": "string", "enum": ["ax", "som", "vision"], "description": "capture: ax = element list (default), som = list + "
+                                                                                       "screenshot with the numbers drawn on it, vision = screenshot only."},
+            "seconds": {"type": "number", "description": "wait: seconds (max 10). wait_for: how long at most (default 8, max 12)."},
+            "wait_after": {"type": "number", "description": "Seconds to wait after the action before looking (max 10), when you know "
+                                                            "the app is slow to answer it."},
+            "steps": {"type": "array", "items": {"type": "object"}, "description": "steps: actions to run in order, each an object with "
+                                                                                  "the same fields (action, target, text…): one of "
+                                                                                  + ", ".join(STEP_ACTIONS) + ". Stops at the first "
+                                                                                  "that fails. The screen is returned once, at the end."},
+            "capture_after": {"type": "boolean", "description": "Return the screen after the action (default true; false saves time "
+                                                                "when you don't need it)."},
         },
         "required": ["action"],
     },
 }
 
-_VERB = {"tap": "Tapping", "set_text": "Typing", "type": "Typing", "key": "Pressing", "scroll": "Scrolling",
-         "capture": "Looking", "wait": "Waiting"}
+_VERB = {"tap": "Tapping", "long_press": "Long-pressing", "set_text": "Typing", "type": "Typing", "key": "Pressing",
+         "submit": "Submitting", "toggle": "Switching", "scroll": "Scrolling", "scroll_to": "Scrolling to",
+         "swipe": "Swiping", "capture": "Looking", "wait": "Waiting", "wait_for": "Waiting for", "note": "Noting"}
 
 
 def action_label(args: dict) -> str:
@@ -366,15 +494,20 @@ def action_label(args: dict) -> str:
         return "Listing the phone's apps"
     if act in ("close", "hand_over"):
         return f"{'Closing' if act == 'close' else 'Handing over'} {label}"
+    if act == "steps":
+        n = len(a["steps"]) if isinstance(a.get("steps"), list) else 0
+        return f"{label}: doing {n} step{'s' if n != 1 else ''}"
     verb = _VERB.get(act, "Using")
     what = ""
     if act in ("set_text", "type") and a.get("text"):
-        what = f" \u201c{str(a['text'])[:40]}\u201d"
+        what = f" “{str(a['text'])[:40]}”"
     elif act == "key" and a.get("key"):
         what = f" {a['key']}"
-    elif act == "tap" and a.get("element") is not None:
+    elif a.get("target"):
+        what = f" “{str(a['target'])[:40]}”"
+    elif act in ("tap", "long_press", "toggle") and a.get("element") is not None:
         name = _names.get(int(a["element"]), "") if str(a["element"]).isdigit() else ""
-        what = f" \u201c{name[:40]}\u201d" if name else ""
+        what = f" “{name[:40]}”" if name else ""
     return f"{label}: {verb.lower()}{what}"
 
 
@@ -417,7 +550,110 @@ def _need_open(sid: str) -> None:
         raise PhoneAppError(f"another chat is using {_state.get('label')} right now")
 
 
+def _where(a: dict) -> dict:
+    """Which element an action works on, for the host: {n} or {target} (an empty dict = none given)."""
+    if a.get("element") is not None:
+        return {"n": int(a["element"])}
+    if a.get("target"):
+        return {"target": str(a["target"])}
+    return {}
+
+
+def _act(act: str, a: dict) -> dict:
+    """One action on the open app (no capture). Returns what the host said that the model should know."""
+    if act in ("tap", "long_press", "toggle", "scroll_to", "wait_for") and not a.get("target") and a.get("text") \
+            and a.get("element") is None and not a.get("coordinate"):
+        a = {**a, "target": a["text"]}  # models often write tap(text="Save")
+    path = "/" + act
+    if act in ("tap", "long_press"):
+        body = _where(a)
+        if not body:
+            c = a.get("coordinate")
+            if not (isinstance(c, list) and len(c) == 2):
+                raise PhoneAppError(f"{act} needs target (the element's text), element (its number) or coordinate [x, y]")
+            body = {"x": int(c[0]), "y": int(c[1])}
+    elif act == "set_text":
+        body = _where(a)
+        if not body:
+            raise PhoneAppError("set_text needs target (the field's label or hint) or element (a text field's number)")
+        body["text"] = str(a.get("text") or "")
+    elif act == "type":
+        body = {"text": str(a.get("text") or "")}
+    elif act == "key":
+        body = {"name": str(a.get("key") or "")}
+    elif act == "submit":
+        body = _where(a)
+    elif act == "toggle":
+        body = _where(a)
+        if not body:
+            raise PhoneAppError("toggle needs target (the switch's label) or element")
+        if isinstance(a.get("on"), bool):
+            body["on"] = a["on"]
+    elif act == "scroll":
+        body = {"direction": str(a.get("direction") or "down"), "n": int(a.get("element") or 0)}
+    elif act == "scroll_to":
+        body = {"target": str(a.get("target") or ""), "direction": str(a.get("direction") or "down")}
+    elif act == "wait_for":
+        body = {"target": str(a.get("target") or ""), "gone": bool(a.get("gone")), "seconds": float(a.get("seconds") or 8)}
+    elif act == "swipe":
+        c = a.get("coordinate")
+        if not (isinstance(c, list) and len(c) == 4):
+            raise PhoneAppError("swipe needs coordinate [x1, y1, x2, y2]")
+        body = {"x1": int(c[0]), "y1": int(c[1]), "x2": int(c[2]), "y2": int(c[3])}
+    elif act == "wait":
+        time.sleep(max(0.0, min(float(a.get("seconds") or 1), 10.0)))
+        return {}
+    else:
+        raise PhoneAppError(f"unknown action {act!r}")
+    r = call(path, body)
+    _event("act", action_label({**a, "action": act}))
+    return {k: r[k] for k in ("via", "target", "checked", "changed", "found", "waited_ms") if k in r and r[k] != ""}
+
+
+def _wait_after(a: dict) -> None:
+    s = a.get("wait_after")
+    if isinstance(s, (int, float)) and s > 0:
+        time.sleep(min(float(s), 10.0))
+
+
+def _open(a: dict, sid: str) -> dict:
+    global _last_view
+    intent = intent_of(a)
+    if intent is not None:
+        # Which app the link or intent opens decides the approval and the sensitive-app check, not the words used.
+        pkg = resolve_app(str(a["app"]))["pkg"] if a.get("app") else ""
+        ensure_host()
+        r = call("/resolve", {"intent": intent, "pkg": pkg})
+        pkg, label = r["pkg"], r.get("label") or r["pkg"]
+    else:
+        app = resolve_app(str(a.get("app") or ""))
+        pkg, label = app["pkg"], app.get("label") or app["pkg"]
+    if pkg == APP_PKG:
+        raise PhoneAppError("that is Hermes Mobile itself")
+    if is_sensitive(pkg, label) and not read_prefs().get("allow_sensitive"):
+        raise PhoneAppError(f"{label} looks like a banking, payment, password or 2FA app. The user has not allowed "
+                            "those (Settings → Background apps in the phone app); don't try another way.")
+    if _state and _state.get("session") not in ("", sid) and _alive():
+        raise PhoneAppError(f"another chat is using {_state.get('label')} right now")
+    denied = _approve(sid, pkg, label)
+    if denied:
+        return {"ok": False, "action": "open", "error": denied}
+    ensure_host()
+    r = call("/open", {"pkg": pkg, **({"intent": intent} if intent is not None else {})})
+    _state.clear()
+    _state.update({"session": sid, "pkg": pkg, "label": r.get("label") or label, "at": time.time()})
+    _last_view = ""
+    _event("open", f"Opened {_state['label']}")
+    out = {"ok": True, "opened": _state["label"], "package": pkg}
+    notes = read_notes(pkg)
+    if notes:
+        out["your_notes_for_this_app"] = notes
+    out.update(_capture("ax"))
+    return out
+
+
 def _run(act: str, a: dict, sid: str) -> dict:
+    global _last_view
     with _lock:
         _free_if_stale(sid)
         if _state and _state.get("session") == sid:
@@ -425,26 +661,7 @@ def _run(act: str, a: dict, sid: str) -> dict:
         if act == "list_apps":
             return {"ok": True, "apps": [f"{x['label']} ({x['pkg']})" for x in list_apps()]}
         if act == "open":
-            app = resolve_app(str(a.get("app") or ""))
-            pkg, label = app["pkg"], app.get("label") or app["pkg"]
-            if pkg == APP_PKG:
-                raise PhoneAppError("that is Hermes Mobile itself")
-            if is_sensitive(pkg, label) and not read_prefs().get("allow_sensitive"):
-                raise PhoneAppError(f"{label} looks like a banking, payment, password or 2FA app. The user has not allowed "
-                                    "those (Settings → Background apps in the phone app); don't try another way.")
-            if _state and _state.get("session") not in ("", sid) and _alive():
-                raise PhoneAppError(f"another chat is using {_state.get('label')} right now")
-            denied = _approve(sid, pkg, label)
-            if denied:
-                return {"ok": False, "action": act, "error": denied}
-            ensure_host()
-            r = call("/open", {"pkg": pkg})
-            _state.clear()
-            _state.update({"session": sid, "pkg": pkg, "label": r.get("label") or label, "at": time.time()})
-            _event("open", f"Opened {_state['label']}")
-            out = {"ok": True, "opened": _state["label"], "package": pkg}
-            out.update(_capture("ax"))
-            return out
+            return _open(a, sid)
         if act in ("close", "hand_over"):
             if not _state or not _alive():
                 _state.clear()
@@ -454,38 +671,47 @@ def _run(act: str, a: dict, sid: str) -> dict:
             label = _state.get("label")
             _event("done", "Closed" if act == "close" else "Handed over")
             _state.clear()
+            _last_view = ""
             return {"ok": True, ("closed" if act == "close" else "handed_over"): label}
-        if act == "wait":
-            time.sleep(max(0.0, min(float(a.get("seconds") or 1), 10.0)))
-            if _state:
-                return {"ok": True, **_capture("ax")} if a.get("capture_after") else {"ok": True}
+        if act == "note":
+            pkg = resolve_app(str(a["app"]))["pkg"] if a.get("app") else _state.get("pkg", "")
+            add_note(pkg, str(a.get("text") or ""))
+            return {"ok": True, "noted": True}
+        if act == "wait" and not _state:
+            _act("wait", a)
             return {"ok": True}
         _need_open(sid)
         if act == "capture":
             _event("act", "Looking at the screen")
             return {"ok": True, **_capture(str(a.get("mode") or "ax"))}
-        if act == "tap":
-            if a.get("element") is not None:
-                body: dict = {"n": int(a["element"])}
-            elif isinstance(a.get("coordinate"), list) and len(a["coordinate"]) == 2:
-                body = {"x": int(a["coordinate"][0]), "y": int(a["coordinate"][1])}
-            else:
-                raise PhoneAppError("tap needs element (from capture) or coordinate [x, y]")
-            r = call("/tap", body)
-        elif act == "set_text":
-            if a.get("element") is None:
-                raise PhoneAppError("set_text needs element (a text field from capture)")
-            r = call("/set_text", {"n": int(a["element"]), "text": str(a.get("text") or "")})
-        elif act == "type":
-            r = call("/type", {"text": str(a.get("text") or "")})
-        elif act == "key":
-            r = call("/key", {"name": str(a.get("key") or "")})
-        elif act == "scroll":
-            r = call("/scroll", {"direction": str(a.get("direction") or "down"), "n": int(a.get("element") or 0)})
-        else:
+        if act == "steps":
+            steps = a.get("steps")
+            if not isinstance(steps, list) or not steps:
+                raise PhoneAppError("steps needs a list of actions")
+            if len(steps) > MAX_STEPS:
+                raise PhoneAppError(f"at most {MAX_STEPS} steps in one call")
+            out: Dict[str, Any] = {"ok": True, "action": "steps"}
+            done: List[str] = []
+            for i, st in enumerate(steps, 1):
+                sa = str(st.get("action") or "") if isinstance(st, dict) else ""
+                if sa not in STEP_ACTIONS:
+                    out.update({"ok": False, "error": f"step {i}: {sa or '?'} can't be a step (only {', '.join(STEP_ACTIONS)})"})
+                    break
+                try:
+                    r = _act(sa, st)
+                    _wait_after(st)
+                except PhoneAppError as e:
+                    out.update({"ok": False, "error": f"step {i} ({sa}) failed: {e}"})
+                    break
+                done.append(sa + (f" {json.dumps(r, ensure_ascii=False)}" if r else ""))
+            out["done"] = done
+            if a.get("capture_after", True) is not False:
+                out.update(_capture("ax", after=str(steps[len(done) - 1].get("action")) if done else "steps"))
+            return out
+        if act not in STEP_ACTIONS:
             raise PhoneAppError(f"unknown action {act!r}")
-        _event("act", action_label(a))
-        out = {"ok": True, "action": act, "via": r.get("via")}
-        if a.get("capture_after"):
-            out.update(_capture("ax"))
+        out = {"ok": True, "action": act, **_act(act, a)}
+        _wait_after(a)
+        if a.get("capture_after", act != "wait"):
+            out.update(_capture("ax", after=act))
         return out

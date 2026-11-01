@@ -82,7 +82,7 @@
 | `test_uninstall.sh` | `phone/uninstall.sh` on a fake Termux: deletes exactly the installer's paths, safe to repeat, failed backup removes nothing, backup leaves keys out unless asked, stops loops by exact PID, refuses a non-Termux `HOME`, partial states still finish. |
 | `test_hm_shizuku.sh` | `phone/hm-shizuku` with fake `adb`, `curl`, `getprop` and a `rish` that fails the test if called. Covers `pair PORT CODE` (adb call, no screen, usage errors, wrong code, Android 10, no adb), start with port / scan / not paired, exit codes, the `shizuku-auto` event JSON, and that the installer has no pairing code. |
 | `test_device_lock.sh` | `tools/device-lock.sh` in a temp lock folder: hold, busy (exit 75 with the holder's name), extend, only the holder releases, an expired lock is taken over, `run` releases afterwards even on failure and passes the exit code on, serials with `:`, bad arguments. |
-| `test_bghost.sh` | Needs `adb`: smoke test of the background host `bg/BgHost` on an emulator or phone (token check, status, display lifecycle). Not in CI. |
+| `test_bghost.sh` | Needs `adb`: smoke test of the background host `bg/BgHost` on an emulator or phone (token check, status, display lifecycle, element roles, the cached frame, numbered marks, `wait_for`/`scroll_to`/tap by text, a refused intent). Not in CI. |
 
 **Android tests (plain JDK, no Android SDK)**
 
