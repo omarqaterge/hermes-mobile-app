@@ -15,6 +15,7 @@ Paths are in Debian unless noted. "Root" is `~/.hermes`.
 | `~/.hermes/mobile/openui.json` | `openui.set_enabled` | `{"enabled": bool}`. |
 | `~/.hermes/mobile/bots.json`, `bots.heartbeat`, `~/.hermes/logs/mobile-gateway.log` | `bots.py` | Bot keeper state (retired, see 6.2). |
 | `~/.hermes/cache/phone_app/screen-*.jpg` | `phone_app.py` | Screenshots for `capture` modes `som`/`vision`; the last 20 are kept. |
+| `~/.hermes/mobile/app-notes/<package>.md` | `phone_app.add_note` | What the model noted about an app (`phone_app` action `note`), shown when it opens the app again; the newest 3000 characters are kept. |
 | `/data/local/tmp/hm-bghost.log` (phone shell side) | `BgHost` start | Host start-up log; read back through `rish` on a failed start. |
 | `<profile>/memories/MEMORY.md`, `USER.md` | `POST /memory` | Hermes's own memory files. |
 | `<profile>/auth.json` credential pool | `claude_login.py` | A new `anthropic` entry from the in-app sign-in. |
