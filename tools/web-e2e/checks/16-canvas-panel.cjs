@@ -335,4 +335,21 @@ module.exports = async t => {
     check(b && b.width >= 374 && (await pp.locator('.canvas-split').count()) === 0, `phone: the canvas still covers the chat, no divider (${JSON.stringify(b)})`)
     await pp.close()
   }
+
+  // A swipe left on the empty new-chat screen does what the canvas button does there: starts the chat, opens its canvas.
+  {
+    const pe = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await pe.goto(WEB + '/')
+    await pe.locator('.empty .suggestion').first().waitFor({ timeout: 8000 })
+    await pe.evaluate(() => {
+      const el = document.querySelector('.empty')
+      const mk = (type, px) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: px, clientY: 300 })] })
+      el.dispatchEvent(mk('touchstart', 300))
+      el.dispatchEvent(mk('touchmove', 200))
+      el.dispatchEvent(mk('touchmove', 80))
+      el.dispatchEvent(mk('touchend', 80))
+    })
+    await pe.locator('.canvas-panel').waitFor({ timeout: 5000 }).then(() => check(true, 'swipe left on the empty new-chat screen opens a canvas'), () => check(false, 'swipe left on the empty new-chat screen opens a canvas'))
+    await pe.close()
+  }
 }
