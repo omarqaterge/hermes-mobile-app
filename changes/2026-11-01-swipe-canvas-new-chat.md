@@ -1,0 +1,1 @@
+- **Swipe left opens the canvas on a new chat too.** On the empty new-chat screen a swipe left now does what the canvas button does: it starts the chat and opens its canvas, so you can go straight to writing notes or a draft. Web tests only; not yet on a real phone.
