@@ -7,8 +7,9 @@ const fs = require('fs')
 const path = require('path')
 const { MOCK, WEB, LOG, sleep, fail, failures } = require('./lib.cjs')
 
-// The check files to run: all of them in name order, or `--only 05,07-09` (numbers or ranges, from argv or
-// HM_E2E_ONLY), which CI's shards and a quick local run use.
+// The check files to run: all of them in name order, or `--only 05,07-09,19-` (numbers or ranges, from argv or
+// HM_E2E_ONLY), which CI's shards and a quick local run use. `19-` is 19 and every later file, so a new file at the
+// end runs in CI's last shard without a change to the shard list.
 function files(dir) {
   const all = fs.readdirSync(dir).filter(f => /^\d\d-.*\.cjs$/.test(f)).sort()
   const i = process.argv.indexOf('--only')
@@ -16,7 +17,7 @@ function files(dir) {
   if (!spec) return all
   const want = new Set()
   for (const part of spec.split(',')) {
-    const [a, b = a] = part.split('-').map(Number)
+    const [a, b = a] = part.split('-').map(x => (x === '' ? 99 : Number(x)))
     for (let n = a; n <= b; n++) want.add(n)
   }
   const picked = all.filter(f => want.has(Number(f.slice(0, 2))))
