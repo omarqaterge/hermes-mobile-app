@@ -1,5 +1,5 @@
 // Start-up order: profiles after the chat, a new chat kept, the canvas button while resuming.
-const { calls, sleep, check } = require('../lib.cjs')
+const { calls, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -36,6 +36,8 @@ module.exports = async t => {
   await scv.locator('.canvas-btn').click()
   await scv.locator('.canvas-panel').waitFor({ timeout: 3000 })
   check((await scv.locator('.canvas-panel [aria-busy="true"]').count()) === 1 && (await scv.locator('.canvas-empty-title').count()) === 0, 'canvas opened on a loading chat shows a loading state, not "empty"')
+  // The mock holds this chat's document list until now (no timer to race on a slow machine).
+  await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ releaseCanvas: true }) })
   await scv.locator('.canvas-tab-title', { hasText: 'Life' }).waitFor({ timeout: 3000 })
   check(true, 'canvas opened on a loading chat shows that chat\'s documents')
   await sleep(2800) // the slow resume answers now
