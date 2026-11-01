@@ -49,6 +49,7 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
     st => (st.active?.storedId === s.id && !!st.active?.running) || st.activity.some(a => a.session === s.id && !a.review)
   )
   const unread = useStore(st => !active && st.unread.includes(s.id)) && !working
+  const sent = useStore(st => st.sentCounts[s.id])
   const ref = useRef<HTMLDivElement>(null)
   const g = useRef({ x0: 0, y0: 0, mode: '' as '' | 'swipe' | 'scroll' | 'drag', moved: false, y: 0, id: 0, timer: 0 as unknown as ReturnType<typeof setTimeout>, zone: '' })
   const [dx, setDx] = useState(0)
@@ -160,9 +161,9 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
             {s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}
           </span>
           <span className="dim small">
-            {ago(lastActive(s))}
-            {ago(lastActive(s)) ? ' · ' : ''}
-            {s.message_count ?? 0} msgs{s.source && s.source !== 'mobile' ? ` · ${s.source}` : ''}
+            {[ago(lastActive(s)), sent !== undefined && `${sent} msgs`, s.source !== 'mobile' && s.source]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
         </span>
         <button

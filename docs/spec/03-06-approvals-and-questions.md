@@ -88,6 +88,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `activity.ts` | Polling of `GET /activity` for the activity banner. |
 | `tasks.ts` | Tick state of Markdown task lists. |
 | `unread.ts` | Unread chats and "time ago". |
+| `sent-counts.ts` | How many messages the user sent in each chat, for the drawer's "N msgs" (`loadSentCounts`, plugin `POST /sent-counts`; 3.13). |
 | `visit.ts` | Last time each chat was on screen (`lastVisit`, `markVisit`) and the first message newer than that (`firstUnseen`), for the "New since your last visit" divider; leaving and coming back with the same chat open (`noteAway`, `noteBack`, `isAway`, `lastBack`, `onBack`, `newWhileAway`, `BACK_GRACE_MS`). |
 | `checkpoints.ts` | Client for the plugin's checkpoint routes and the labels the File checkpoints sheet shows. |
 | `export.ts` | A chat as Markdown for Share chat. |

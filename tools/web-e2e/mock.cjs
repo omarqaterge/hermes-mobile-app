@@ -174,6 +174,11 @@ const server = http.createServer((req, res) => {
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
     if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems })
+    if (p === '/api/plugins/hermes-mobile/sent-counts') {
+      // Messages the user sent (plugin /sent-counts): half of message_count here, each turn being a message and a reply.
+      const ids = JSON.parse(body || '{}').ids || []
+      return send({ counts: Object.fromEntries(ids.map(id => [id, Math.ceil((allSessions.find(x => x.id === id)?.message_count || 0) / 2)])) })
+    }
     if (p === '/api/plugins/hermes-mobile/prefs') {
       // The chat list's order (plugin /prefs): PUT keeps what the app sent, the next GET returns it.
       if (req.method === 'PUT') {
