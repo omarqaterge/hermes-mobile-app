@@ -13,7 +13,7 @@
 | `dev` | `vite --host 127.0.0.1` | Vite dev server, loopback only. |
 | `build` | `tsc --noEmit && vite build` | Typecheck, then the single-file build. CI and `android/build.sh` depend on it. |
 | `typecheck` | `tsc --noEmit` | Types only. |
-| `test` | `vitest run` | The unit tests in `web/src/*.test.ts(x)` (22 files; `happy-dom` is the test DOM). |
+| `test` | `vitest run` | The unit tests in `web/src/*.test.ts(x)` (38 files; `happy-dom` is the test DOM). `gateway-events.test.ts` feeds event sequences shaped like the pinned Hermes's (a whole turn with reasoning, a tool call and a streamed reply; tool placeholders and replays; errors; events of other chats) through the real client's event hub, with no socket, and checks the chat items `gateway.ts` makes of them. |
 | `gen:openui` | `OPENUI_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 UPDATE_OPENUI=1 vitest run src/openui-lib.test.ts` | Regenerates the OpenUI prompt/library snapshot after the OpenUI packages are bumped. The two env vars stop OpenUI's script from sending telemetry. |
 
 Runtime dependencies are pinned or caret-ranged in `web/package.json`: React 19, `zustand` (state), `react-markdown` with `remark-gfm`, `remark-math`, `rehype-katex`, `rehype-highlight`, `rehype-raw`, `rehype-sanitize`, `mermaid`, `katex`, `zod`, and the three `@openuidev/*` packages (card renderer).
