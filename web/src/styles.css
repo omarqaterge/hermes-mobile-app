@@ -3823,14 +3823,10 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
   color: #f85149;
 }
 
-/* Motion: Collapse (ui.tsx), the turning chevron, effort bars on the model chip, the send button's face change */
+/* Motion: Collapse (ui.tsx), the turning chevron, the send button's face change */
 .chevron { display: block; transition: transform 0.18s; }
 .chevron.open { transform: rotate(90deg); }
 .chev { display: inline-flex; align-items: center; vertical-align: middle; }
-.model-chip-effort.effort-bars { display: inline-flex; align-items: flex-end; gap: 2px; padding: 3px 5px; }
-.effort-bar { display: block; width: 3px; border-radius: 1px; background: currentColor; opacity: 0.3; }
-.effort-bar.on { opacity: 1; }
-.effort-bar.off { background: transparent; border: 1px solid currentColor; box-sizing: border-box; opacity: 0.8; }
 @keyframes face-in { from { opacity: 0; transform: scale(0.85); } }
 .send > svg, .send > .stop-square { animation: face-in 0.12s ease-out; }
 @media (prefers-reduced-motion: reduce) {
