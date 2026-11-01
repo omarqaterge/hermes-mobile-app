@@ -1,5 +1,5 @@
 // Start-up order: profiles after the chat, a new chat kept, the canvas button while resuming.
-const { calls, sleep, check, mock } = require('../lib.cjs')
+const { MOCK, WEB, calls, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -7,7 +7,7 @@ module.exports = async t => {
   const spf = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await spf.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
   const nBoot = calls().length
-  await spf.goto('http://127.0.0.1:5180/')
+  await spf.goto(WEB + '/')
   await sleep(1200) // connected, the slow resume (2.5 s) is in flight
   const early = calls().slice(nBoot).map(c => c.rpc)
   check(early.includes('session.resume') && early.includes('session.list') && !early.includes('profiles.list'), `profiles.list not sent while the chat opens (${early.filter(Boolean).join(',')})`)
@@ -19,7 +19,7 @@ module.exports = async t => {
   // ── start-up resume must not pull you out of a new chat you started while it was loading ──
   const slp = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await slp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
-  await slp.goto('http://127.0.0.1:5180/')
+  await slp.goto(WEB + '/')
   await sleep(900) // connected, the slow resume is in flight
   await slp.evaluate(() => window.hermesShortcut('new'))
   await slp.locator('.empty .suggestion').first().waitFor({ timeout: 5000 })
@@ -30,14 +30,14 @@ module.exports = async t => {
   // ── the canvas button while the start-up resume loads: that chat's canvas (loading first), never a new chat ──
   const scv = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await scv.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
-  await scv.goto('http://127.0.0.1:5180/')
+  await scv.goto(WEB + '/')
   await sleep(600) // connected, the slow resume is in flight
   check(await scv.evaluate(() => !document.querySelector('.msg.user')), 'slow start-up chat still loading when the canvas is tapped')
   await scv.locator('.canvas-btn').click()
   await scv.locator('.canvas-panel').waitFor({ timeout: 3000 })
   check((await scv.locator('.canvas-panel [aria-busy="true"]').count()) === 1 && (await scv.locator('.canvas-empty-title').count()) === 0, 'canvas opened on a loading chat shows a loading state, not "empty"')
   // The mock holds this chat's document list until now (no timer to race on a slow machine).
-  await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ releaseCanvas: true }) })
+  await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ releaseCanvas: true }) })
   await scv.locator('.canvas-tab-title', { hasText: 'Life' }).waitFor({ timeout: 3000 })
   check(true, 'canvas opened on a loading chat shows that chat\'s documents')
   await sleep(2800) // the slow resume answers now

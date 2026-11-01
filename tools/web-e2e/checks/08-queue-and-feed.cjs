@@ -1,5 +1,5 @@
 // Battery-friendly polling, the message queue, the model chip, canvas states, media URLs, unread dots.
-const { calls, rpcs, sleep, check, mock } = require('../lib.cjs')
+const { MOCK, calls, rpcs, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -142,7 +142,7 @@ module.exports = async t => {
   await page.locator('.canvas-x').click()
 
   // ── #12 media streams through the shell's URL (no base64 through /api/files/read) ──
-  await page.evaluate(() => (window.HermesAndroid = { mediaBase: () => 'http://127.0.0.1:9119/m?k=K&p=' }))
+  await page.evaluate(() => (window.HermesAndroid = { mediaBase: () => window.__hmMockBase + '/m?k=K&p=' }))
   await page.getByPlaceholder('Message Hermes').fill('show media')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   const img = page.locator('img.media').last()
@@ -150,7 +150,7 @@ module.exports = async t => {
   await img.evaluate(i => i.scrollIntoView())
   await page.waitForFunction(() => { const i = [...document.querySelectorAll('img.media')].pop(); return i && i.complete && i.naturalWidth > 0 }, null, { timeout: 5000 }).catch(() => {})
   const src = await img.getAttribute('src')
-  check(src === 'http://127.0.0.1:9119/m?k=K&p=' + encodeURIComponent('/root/pics/my pic.png'), `image uses the streamed URL (${src})`)
+  check(src === MOCK + '/m?k=K&p=' + encodeURIComponent('/root/pics/my pic.png'), `image uses the streamed URL (${src})`)
   check(await img.evaluate(i => i.naturalWidth > 0), 'streamed image loads')
   check(!calls().some(c => c.path === '/api/files/read'), 'nothing read as base64')
   await page.evaluate(() => delete window.HermesAndroid)

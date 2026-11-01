@@ -3,6 +3,9 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 
+// The mock and the page; run.sh sets other ports when 9119/5180 are taken.
+const MOCK = `http://127.0.0.1:${process.env.HM_E2E_MOCK_PORT || 9119}`
+const WEB = `http://127.0.0.1:${process.env.HM_E2E_WEB_PORT || 5180}`
 const LOG = process.env.HM_E2E_LOG || path.join(os.tmpdir(), 'hm-web-e2e-calls.jsonl')
 const SHOTS = process.env.HM_E2E_SHOTS || os.tmpdir()
 const calls = () => fs.readFileSync(LOG, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
@@ -26,7 +29,7 @@ const nativeShell = () => {
     }
     window.HermesAndroid = {
       handshake: () => (taken ? '' : ((taken = true), 'K')),
-      getBaseUrl: key => (k(key, 'getBaseUrl'), 'http://127.0.0.1:9119'),
+      getBaseUrl: key => (k(key, 'getBaseUrl'), window.__hmMockBase || 'http://127.0.0.1:9119'),
       getToken: key => (k(key, 'getToken'), 'tok'),
       getTokenAsync: (key, id) => {
         k(key, 'getTokenAsync')
@@ -144,6 +147,6 @@ const nativeShell = () => {
     }
 }
 // Changes the mock's state (POST /__mock).
-const mock = b => fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify(b) })
+const mock = b => fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify(b) })
 
-module.exports = { LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell }
+module.exports = { MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell }

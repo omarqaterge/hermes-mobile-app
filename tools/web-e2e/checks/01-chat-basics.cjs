@@ -1,6 +1,6 @@
 // Start-up marks, the model picked before the first message, the context ring, access modes, model picker.
 const fs = require('fs')
-const { LOG, calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
+const { WEB, LOG, calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -141,7 +141,7 @@ module.exports = async t => {
     check(await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')).includes(false)), 'Off is remembered as an explicit choice')
   }
   await page.evaluate(() => localStorage.clear())
-  await page.goto('http://127.0.0.1:5180/')
+  await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
@@ -179,7 +179,7 @@ module.exports = async t => {
     check(rpcs('session.create').some(c => c.params.model === 'mock-sonnet'), 'tapping a favourite picks it')
   }
   await page.evaluate(() => localStorage.clear())
-  await page.goto('http://127.0.0.1:5180/')
+  await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
@@ -202,7 +202,7 @@ module.exports = async t => {
     await sleep(600)
     check(rpcs('session.create').some(c => c.params.model === 'org/brand-new:1' && (c.params.provider || 'mock') === 'mock'), 'picking the typed id starts the chat with it')
     check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.customModels.v1') || '[]').some(c => c.p === 'mock' && c.m === 'org/brand-new:1')), 'the typed id is remembered')
-    await page.goto('http://127.0.0.1:5180/')
+    await page.goto(WEB + '/')
     await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await openModels()
     check((await page.locator('.model-row', { hasText: 'org/brand-new:1' }).count()) === 1, 'the remembered id is a normal row under its provider')
@@ -212,7 +212,7 @@ module.exports = async t => {
     await page.keyboard.press('Escape').catch(() => {})
   }
   await page.evaluate(() => localStorage.clear())
-  await page.goto('http://127.0.0.1:5180/')
+  await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
@@ -239,7 +239,7 @@ module.exports = async t => {
   }
   await page.getByPlaceholder('Message Hermes').fill('')
   await page.evaluate(() => localStorage.clear())
-  await page.goto('http://127.0.0.1:5180/')
+  await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 }
