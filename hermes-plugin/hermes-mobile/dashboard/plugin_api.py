@@ -1136,6 +1136,55 @@ async def profiles_link():
     return {"linked": link_profiles()}
 
 
+# Rows Hermes stores as role=user that the user never typed: model-switch notices, compaction summaries, background
+# and delegation reports, auto-continue nudges. Hermes hides them in the transcript too (session_history.py).
+_NOT_TYPED_KINDS = ("hidden", "model_switch", "async_delegation_complete", "auto_continue", "internal_notification",
+                    "process_complete")
+_NOT_TYPED_PREFIXES = ("[System:", "[System note:", "[CONTEXT COMPACTION", "[ASYNC DELEGATION", "[IMPORTANT:",
+                       "[Your active task list", "[STILL IN PROGRESS", "[Note: model was just switched")
+
+
+def sent_counts(db_path: Path, ids: list) -> dict:
+    """{chat id: messages the user sent}, over each chat's compression lineage. Read-only, one query per call."""
+    import sqlite3
+
+    ids = [i for i in ids if isinstance(i, str) and i][:500]
+    if not ids or not db_path.exists():
+        return {}
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+    try:
+        marks = ",".join("?" * len(ids))
+        kinds = ",".join("?" * len(_NOT_TYPED_KINDS))
+        prefixes = " ".join("AND m.content NOT LIKE ? || '%'" for _ in _NOT_TYPED_PREFIXES)
+        rows = con.execute(
+            f"""WITH RECURSIVE chain(root, sid) AS (
+                  SELECT id, id FROM sessions WHERE id IN ({marks})
+                  UNION SELECT chain.root, c.id FROM chain JOIN sessions p ON p.id = chain.sid
+                    JOIN sessions c ON c.parent_session_id = p.id WHERE p.end_reason = 'compression')
+                SELECT chain.root, COUNT(m.id) FROM chain JOIN messages m ON m.session_id = chain.sid
+                WHERE m.role = 'user' AND COALESCE(m.display_kind, '') NOT IN ({kinds})
+                  AND TRIM(COALESCE(m.content, '')) != '' {prefixes}
+                GROUP BY chain.root""",
+            (*ids, *_NOT_TYPED_KINDS, *_NOT_TYPED_PREFIXES),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        con.close()
+    return {i: 0 for i in ids} | {r[0]: r[1] for r in rows}
+
+
+class SentCountsBody(BaseModel):
+    ids: list[str]
+
+
+@router.post("/sent-counts")
+def post_sent_counts(body: SentCountsBody, profile: Optional[str] = None):
+    """How many messages the user sent in each listed chat, for the drawer's "N msgs" (session.list's
+    message_count also counts replies and tool calls)."""
+    return {"counts": sent_counts(_home(profile) / "state.db", body.ids)}
+
+
 try:  # the dashboard imports this file once at start
     link_profiles()
 except Exception:

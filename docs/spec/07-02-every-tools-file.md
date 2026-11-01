@@ -68,6 +68,7 @@
 | `test_claude_login.py` | `claude_login.py`, the in-app Claude sign-in. Part 1 fakes Hermes; part 2 runs only when Hermes is importable and uses its real credential pool on a throwaway `HERMES_HOME`. |
 | `test_phone_access.py` | The phone-access probe (`phone_access_now`): one retry so a sleeping Termux:API app does not flash red. Skipped without `fastapi`. |
 | `test_profile_link.py` | `link_profiles`: the plugin is linked into every Hermes profile. Skipped without `fastapi`. |
+| `test_sent_counts.py` | `sent_counts` (plugin `POST /sent-counts`): only the messages the user typed count, across a compression lineage, not Hermes's own notices or a sub-agent's task. Skipped without `fastapi`. |
 
 **Phone-script and install tests (shell, no phone unless noted; CI job `hermes-patches` unless noted)**
 

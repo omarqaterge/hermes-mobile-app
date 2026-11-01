@@ -40,7 +40,7 @@ A session row shows, from left to right:
 - an unread dot (`aria-label` "Finished, not opened yet") when the chat has more messages than you last saw, it is not the open chat and it is not working;
 - 📌 for a pinned chat;
 - the title (via `Title`, which also renders the branch marker), else the first-message preview, else "Untitled";
-- under it, in dim text: time since last activity (now, N min, N h, N d, N wk, or a date after about two months), then ` · N msgs`, then ` · <source>` when the chat did not come from this app (`source` other than `mobile`);
+- under it, in dim text: time since last activity (now, N min, N h, N d, N wk, or a date after about two months), then ` · N msgs`, where N counts only the messages you sent (no replies, tool calls or Hermes's own notices; `sentCounts` in the store, filled by `loadSentCounts` in `web/src/sent-counts.ts` from the plugin's `POST /sent-counts` after each `session.list`, asking again only for chats whose `message_count` changed; left out until that answer arrives or when the plugin is too old to have the route), then ` · <source>` when the chat did not come from this app (`source` other than `mobile`);
 - a ⋮ button on the right (`aria-label` "Chat options") that opens the item menu. It stops the pointer from starting a swipe or drag.
 
 **Row gestures** (a row is a `SwipeRow`; touch only, no handles, no edit mode):
