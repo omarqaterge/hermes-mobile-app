@@ -153,9 +153,14 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
   `gateway.ping`. When the page becomes visible, `checkSocket` pings (10 s) and replaces a dead socket at once.
 - **Reconnect.** A closed or failed socket calls `scheduleReconnect` (2.2.4 step 5). `connect()` clears the warm
   list (Hermes reaps the old socket's runtimes itself).
-- **After connecting** (`afterConnect`): `session.list`, the default model (`GET /api/model/info` +
-  `GET /api/config` for the reasoning level), `profiles.list` 3 s later or right after the resume (it is slow), a
-  Hermes-version check after 5 s (`hermes-update.ts`), then the resume:
+- **After connecting** (`afterConnect`): `session.list` and the resume go first, alone. Everything else the app
+  needs after a connect waits for `afterChatOpens()`, which resolves once the start-up chat is open (or there is
+  none to open), or after 3 s at most: the default model (`GET /api/model/info` + `GET /api/config` for the
+  reasoning level); `App`'s health poll (`startHealthPolling`, or a ping-only `checkHealth(false)` on a reconnect),
+  activity poll, canvas sync and setup-flow check; and the composer's command list (`refreshCommands`:
+  `commands.catalog`, `GET /api/skills`). On a phone (2026-11-01) these, sent at the same moment, made Hermes answer
+  `session.list` and `session.resume` in about 1.2 s instead of 30–70 ms. `profiles.list` is sent 3 s later or
+  right after the resume (it is slow), and a Hermes-version check after 5 s (`hermes-update.ts`). The resume:
   1. The chat to resume is the one on screen, else `hm.lastSession` (only when its profile matches).
   2. `resumeSession(id, {keepItemsIfSame: true, auto: true})`. If the socket replays events this chat missed
      (`client.sessionReplayBarrier`), the page waits for them first so they aren't applied twice. If the reloaded

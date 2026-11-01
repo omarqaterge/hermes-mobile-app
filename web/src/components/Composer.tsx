@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fmtPause, getLivePause, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
 import { startListening, stopListening, useVoice, voiceErrorText, voiceInputAvailable } from '../voice'
-import { attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, setYolo, unqueueMessage } from '../gateway'
+import { afterChatOpens, attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, setYolo, unqueueMessage } from '../gateway'
 import { getState, setState, toast, useStore, type Attachment } from '../store'
 import { haptic } from '../bridge'
 import { matchCommands, refreshCommands, useCommandCatalog, type CommandEntry } from '../commands'
@@ -118,9 +118,15 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const matches = slashQuery != null && catalog ? matchCommands(catalog, slashQuery) : []
   const showMenu = slashQuery != null && (catalog == null || matches.length > 0)
 
-  // Warm the catalog in the background as soon as Hermes is reachable (and per profile).
+  // Warm the catalog in the background once Hermes is reachable and the chat has opened (commands.catalog and the
+  // skills scan are heavy for Hermes on a phone), and per profile.
   useEffect(() => {
-    if (conn === 'open') refreshCommands()
+    if (conn !== 'open') return
+    let current = true
+    void afterChatOpens().then(() => current && getState().conn === 'open' && refreshCommands())
+    return () => {
+      current = false
+    }
   }, [conn, profile])
   useEffect(() => {
     if (slashQuery != null) refreshCommands()
