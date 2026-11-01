@@ -7,6 +7,23 @@ const fs = require('fs')
 const path = require('path')
 const { MOCK, WEB, LOG, sleep, fail, failures } = require('./lib.cjs')
 
+// The check files to run: all of them in name order, or `--only 05,07-09` (numbers or ranges, from argv or
+// HM_E2E_ONLY), which CI's shards and a quick local run use.
+function files(dir) {
+  const all = fs.readdirSync(dir).filter(f => /^\d\d-.*\.cjs$/.test(f)).sort()
+  const i = process.argv.indexOf('--only')
+  const spec = i > 0 ? process.argv[i + 1] : process.env.HM_E2E_ONLY
+  if (!spec) return all
+  const want = new Set()
+  for (const part of spec.split(',')) {
+    const [a, b = a] = part.split('-').map(Number)
+    for (let n = a; n <= b; n++) want.add(n)
+  }
+  const picked = all.filter(f => want.has(Number(f.slice(0, 2))))
+  if (!picked.length) throw new Error(`--only ${spec}: no check file matches`)
+  return picked
+}
+
 async function main() {
   // Pages until the first-run section play an app that has reached Hermes before: a fresh install now opens the setup
   // flow over everything at start-up (openFirstRun), which those checks are not about.
@@ -36,7 +53,10 @@ async function main() {
   await sleep(500)
   Object.assign(t, { browser, page })
   const dir = path.join(__dirname, 'checks')
-  for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.cjs')).sort()) await require(path.join(dir, f))(t)
+  for (const f of files(dir)) {
+    console.log(`-- ${f}`)
+    await require(path.join(dir, f))(t)
+  }
 
   await browser.close()
   console.log(failures() ? `\n${failures()} FAILED` : '\nALL PASSED')

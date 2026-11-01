@@ -28,6 +28,27 @@ ci_runs() {
   ' .github/workflows/ci.yml | grep -v -E '^(pip|npm) install'
 }
 
+# The browser tests as CI runs them: the shards listed in ci.yml's web-e2e matrix, in parallel, each with its own
+# mock and page on free ports; one PASS/FAIL per shard. The web build runs once first.
+e2e_shards() {
+  local shards dir pids=() sh
+  shards=$(sed -nE "s/^ *shard: \[(.*)\]/\1/p" .github/workflows/ci.yml | tr -d "' " | tr ',' ' ')
+  [ -n "$shards" ] || shards=all
+  if ! (cd web && npm run --silent build >/dev/null); then results+=("FAIL  web build"); failed=$((failed + 1)); return; fi
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/hm-check.XXXXXX")
+  for sh in $shards; do
+    if [ "$sh" = all ]; then set --; else set -- --only "$sh"; fi
+    HM_E2E_SKIP_BUILD=1 HM_E2E_MOCK_PORT=0 HM_E2E_WEB_PORT=0 tools/web-e2e/run.sh "$@" > "$dir/$sh.log" 2>&1 &
+    pids+=("$!:$sh")
+  done
+  echo "== browser e2e: shards $shards in parallel (logs in $dir)"
+  for p in "${pids[@]}"; do
+    if wait "${p%%:*}"; then results+=("PASS  browser e2e ${p#*:}")
+    else results+=("FAIL  browser e2e ${p#*:} (see $dir/${p#*:}.log)"); failed=$((failed + 1)); grep -E '^FAIL' "$dir/${p#*:}.log" | head -5
+    fi
+  done
+}
+
 groups=()
 case "${1:-}" in
   --all) groups=(web plugin patches android) ;;
@@ -54,7 +75,7 @@ for g in ${groups[@]+"${groups[@]}"}; do
       if [ ! -e web/node_modules ]; then skip "web (no web/node_modules: run tools/setup.sh)"; continue; fi
       run "web typecheck" bash -c 'cd web && npm run --silent typecheck'
       run "web unit tests" bash -c 'cd web && npm test --silent'
-      run "browser e2e" tools/web-e2e/run.sh
+      e2e_shards
       ;;
     plugin)
       if ! python3 -c 'import fastapi, httpx' 2>/dev/null; then skip "plugin (no fastapi/httpx for this python3: pip install fastapi httpx; CI runs it)"; continue; fi

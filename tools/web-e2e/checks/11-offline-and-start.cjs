@@ -1,8 +1,9 @@
 // Offline queue, attachments over a reconnect, message times, /btw, shortcut, suggestions, About, hub, setup check.
-const { WEB, calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
+const { addFiles, WEB, calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
 
 module.exports = async t => {
-  const { browser, page, attach } = t
+  const { browser, page } = t
+  const attach = (option, files) => addFiles(page, option, files)
   // ── #28 a message typed while offline is queued and sent on reconnect ──
   const openBefore = await page.evaluate(() => JSON.parse(localStorage.getItem('hm.lastSession') || '{}').id)
   await mock({ drop: 4000 })
