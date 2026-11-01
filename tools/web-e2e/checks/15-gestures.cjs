@@ -78,7 +78,14 @@ module.exports = async t => {
   check((await page.locator('.scrubber .scrub-tick').count()) === 30, 'scrubber: one tick per message you sent')
   check((await page.locator('.scrubber').getAttribute('aria-label')) === 'Jump to a message' && (await page.locator('.scrubber').getAttribute('role')) === 'slider', 'scrubber: slider role and label')
   { const v = Number(await page.locator('.scrubber').getAttribute('aria-valuenow')); check(v >= 29, `scrubber: at the bottom the current tick is one of the last messages (${v})`) }
-  check((await page.locator('.scrubber .scrub-tick.on').count()) === 1, 'scrubber: exactly one tick is highlighted')
+  // the orange thumb follows the scroll and replaces the list's own scroll bar
+  const thumb = async () => page.evaluate(() => {
+    const r = document.querySelector('.scrubber').getBoundingClientRect()
+    const t = document.querySelector('.scrub-thumb').getBoundingClientRect()
+    return { at: (t.top + t.height / 2 - r.top) / r.height, w: t.width, h: t.height }
+  })
+  { const t = await thumb(); check(t.at > 0.95, `scrubber thumb: at the end of the chat it sits at the bottom of the rail (${t.at.toFixed(2)})`) }
+  check((await page.locator('.chat').evaluate(el => getComputedStyle(el).scrollbarWidth)) === 'none', 'scrubber thumb: the list hides its own scroll bar while the rail shows')
   {
     const rb = await page.locator('.scrubber').boundingBox()
     const x = rb.x + rb.width / 2
@@ -97,6 +104,22 @@ module.exports = async t => {
     const cb = await page.locator('.chat').boundingBox()
     check(qb && qb.y >= cb.y && qb.y <= cb.y + 100, `scrubber: letting go scrolls to the picked message (${qb && Math.round(qb.y - cb.y)} px below the top)`)
     check((await page.locator('.scrubber').getAttribute('aria-valuenow')) === '1', 'scrubber: the first tick is current after the jump')
+    { const t = await thumb(); check(t.at < 0.02 && t.w >= 11 && t.h <= 3, `scrubber thumb: with your message at the top it melts into its tick (${t.at.toFixed(3)}, ${t.w}x${t.h})`) }
+    {
+      // half way from your first message to your second: a full pill between their ticks
+      const mid = await page.evaluate(() => {
+        const el = document.querySelector('.chat')
+        const us = [...el.querySelectorAll('.msg.user')]
+        const a = us.find(n => n.textContent.trim() === 'question 1'), b = us.find(n => n.textContent.trim() === 'question 2')
+        const top = n => n.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+        el.scrollTop = (top(a) + top(b)) / 2 - 10
+        return true
+      })
+      await sleep(200)
+      const t = await thumb()
+      const gap = 1 / 29
+      check(mid && t.h >= 12 && t.at > gap * 0.3 && t.at < gap * 0.7, `scrubber thumb: between two messages it is a pill between their ticks (${(t.at / gap).toFixed(2)} of the gap, ${t.h}px tall)`)
+    }
     // a tap jumps to the nearest tick, and the rail stays put while the list scrolls
     const rb2 = await page.locator('.scrubber').boundingBox()
     check(Math.abs(rb2.y - rb.y) < 1, 'scrubber: the rail does not scroll with the content')
