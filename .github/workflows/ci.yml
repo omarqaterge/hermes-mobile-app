@@ -172,6 +172,7 @@ jobs:
       - run: python3 tools/test_claude_login.py
       - run: python3 tools/test_phone_access.py
       - run: python3 tools/test_profile_link.py
+      - run: python3 tools/test_sent_counts.py
 
   # Required by the main ruleset; a job skipped by its `if` counts as passed there.
   hermes-patches:

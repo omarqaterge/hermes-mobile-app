@@ -165,7 +165,12 @@ module.exports = async t => {
   await page.getByRole('button', { name: /^Sessions/ }).click()
   const row9 = page.locator('.session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 9$/ }) })
   check((await row9.locator('.unread-dot').count()) === 1, 'the chat with the new reply has a dot')
-  check(/^now · 4 msgs/.test((await row9.locator('.dim.small').textContent()) || ''), `row shows when it changed (${await row9.locator('.dim.small').textContent()})`)
+  check(/^now · 2 msgs/.test((await row9.locator('.dim.small').textContent()) || ''), `row shows when it changed (${await row9.locator('.dim.small').textContent()})`)
+  // "N msgs" is what the user sent (plugin /sent-counts), not message_count (4 here: two messages, two replies),
+  // and a new list asks again only for the chats whose message_count moved.
+  const sc = calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/sent-counts').map(c => c.body?.ids || [])
+  const lastAsk = sc[sc.length - 1] || []
+  check(sc.length >= 2 && lastAsk.includes('s-9') && lastAsk.includes('s-fresh') && lastAsk.length <= 3, `sent counts are fetched again only for changed chats (${JSON.stringify(lastAsk)})`)
   check(/^\d+ h · /.test((await page.locator('.session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 12$/ }) }).locator('.dim.small').textContent()) || ''), 'older chats show hours ago')
   // A chat that got a reply (or a message) keeps its place: Hermes lists it first, the drawer must not.
   const titles = async () => page.locator('.drawer .session-row .session-title').allInnerTexts()

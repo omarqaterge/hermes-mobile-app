@@ -2,6 +2,7 @@ import { btwDone, openBtw } from './btw'
 import { bootMark } from './boot'
 import { fmtDuration } from './text'
 import { markSeen, noteSessions } from './unread'
+import { loadSentCounts } from './sent-counts'
 import { isAway, markVisit, noteAway, noteBack } from './visit'
 import { rememberPrompt } from './recent'
 import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
@@ -373,6 +374,7 @@ export async function loadSessions(): Promise<void> {
     bootMark('sessions')
     setState({ sessions: r.sessions ?? [] })
     noteSessions(r.sessions ?? [])
+    void loadSentCounts(r.sessions ?? [])
     try {
       localStorage.setItem(SESSIONS_CACHE(getState().profile), JSON.stringify((r.sessions ?? []).slice(0, SESSIONS_PAGE)))
     } catch {
