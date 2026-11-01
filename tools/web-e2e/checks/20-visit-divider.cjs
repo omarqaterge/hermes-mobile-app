@@ -1,5 +1,5 @@
 // The "New since your last visit" divider.
-const { sleep, check } = require('../lib.cjs')
+const { WEB, sleep, check } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -13,7 +13,7 @@ module.exports = async t => {
       }
       localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-7', profile: 'default' }))
     })
-    await vp.goto('http://127.0.0.1:5180/')
+    await vp.goto(WEB + '/')
     await vp.locator('.msg.assistant', { hasText: 'answer s-7' }).waitFor({ timeout: 5000 })
     check((await vp.locator('.visit-divider').count()) === 1 && (await vp.locator('.visit-divider').textContent()) === 'New since your last visit', 'visit: the divider shows in a chat with newer messages')
     check((await vp.locator('.visit-divider').getAttribute('role')) === 'separator', 'visit: the divider has the separator role')

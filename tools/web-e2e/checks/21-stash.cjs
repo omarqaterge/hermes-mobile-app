@@ -1,12 +1,12 @@
 // Composer stash.
-const { check } = require('../lib.cjs')
+const { WEB, check } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
   // ── composer stash (stash.ts): put a draft aside from the Add sheet ──
   {
     const sp = await browser.newPage({ viewport: { width: 375, height: 812 } })
-    await sp.goto('http://127.0.0.1:5180/')
+    await sp.goto(WEB + '/')
     const sbox = sp.getByPlaceholder('Message Hermes')
     await sbox.waitFor({ timeout: 15000 })
     const addBtn = () => sp.getByRole('button', { name: 'Add', exact: true }).click()

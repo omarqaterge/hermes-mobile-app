@@ -1,5 +1,5 @@
 // First run: welcome, sign-in, model; every provider the pinned Hermes has.
-const { calls, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
+const { WEB, calls, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -8,7 +8,7 @@ module.exports = async t => {
   await mock({ unconfigured: true })
   const wel = await browser.newPage({ viewport: { width: 375, height: 812 } })
   wel.on('pageerror', e => { console.log('PAGEERROR', e.message); fail() })
-  await wel.goto('http://127.0.0.1:5180/')
+  await wel.goto(WEB + '/')
   await wel.getByText('Connect Hermes to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'fresh install opens the welcome'), () => check(false, 'fresh install opens the welcome'))
   check(await wel.getByRole('button', { name: 'Connect a provider first' }).isDisabled(), 'Pick a model waits for a connected provider')
   await wel.locator('.providers .set-row', { hasText: 'OpenAI' }).first().click()
@@ -37,7 +37,7 @@ module.exports = async t => {
     pv.on('pageerror', e => { console.log('PAGEERROR (providers)', e.message); fail() })
     await pv.addInitScript(s => { window.__setup = s }, { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })
     await pv.addInitScript(nativeShell)
-    await pv.goto('http://127.0.0.1:5180/')
+    await pv.goto(WEB + '/')
     await pv.locator('.providers .set-row').first().waitFor({ timeout: 15000 }).catch(() => {})
     const section = t => pv.locator('.providers .set-section', { has: pv.locator('.set-heading', { hasText: t }) })
     const names = async t => (await section(t).locator('.set-row .key-line').allTextContents()).map(x => x.trim())

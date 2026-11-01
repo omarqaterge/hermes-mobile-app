@@ -1,5 +1,5 @@
 // The Shizuku row in the Backend status sheet.
-const { sleep, check, mock, nativeShell } = require('../lib.cjs')
+const { WEB, sleep, check, mock, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -9,7 +9,7 @@ module.exports = async t => {
     const sp = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await sp.addInitScript(s => { window.__setup = s }, base)
     await sp.addInitScript(nativeShell)
-    await sp.goto('http://127.0.0.1:5180/')
+    await sp.goto(WEB + '/')
     await sp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     const shRow = async () => {
       await sp.locator('.conn-dot').first().click()

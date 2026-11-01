@@ -5,13 +5,16 @@ dashboard session token (read from http://127.0.0.1:9119, e.g. the phone via
 bridge does. The token never appears in a URL. Loopback only."""
 import http.server
 import json
+import os
 import re
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 DIST = Path(__file__).resolve().parent / "dist" / "index.html"
-HERMES = "http://127.0.0.1:9119"
+# HM_HERMES_URL / HM_DEV_PORT: another mock or page port (tools/web-e2e/run.sh sets them when 9119/5180 are taken).
+HERMES = os.environ.get("HM_HERMES_URL", "http://127.0.0.1:9119")
+PORT = int(os.environ.get("HM_DEV_PORT", "5180"))
 
 
 def hermes_token() -> str:
@@ -90,4 +93,4 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    http.server.ThreadingHTTPServer(("127.0.0.1", 5180), Handler).serve_forever()
+    http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
