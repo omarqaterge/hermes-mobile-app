@@ -1,0 +1,9 @@
+#!/bin/bash
+# Time the app's start-up requests (session.list, session.resume) on the phone's Hermes: see gw_time.py.
+# Usage: tools/gw-time [session id] [runs]     (default: the newest chat, 3 runs per scenario)
+# Force-stops the app first, so the chats this resumes and closes are never one the app has open. Read-only otherwise.
+DIR=$(cd "$(dirname "$0")" && pwd)
+S=$(printf %s "${1:-}" | tr -cd 'A-Za-z0-9_-')
+N=$(printf %s "${2:-3}" | tr -cd '0-9')
+adb shell am force-stop com.omarqaterge.hermesmobile
+"$DIR/phone" "proot-distro login debian -- bash -lc 'PY=\$(ls -td /root/.hermes/installs/*/environments/*/venv/bin/python3 | head -1); exec \$PY - \"$S\" ${N:-3}'" < "$DIR/gw_time.py"
