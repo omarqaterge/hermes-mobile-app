@@ -17,10 +17,14 @@ Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NO
 
 Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`.
 
-**`release.yml`, workflow "Release"**, runs on a pushed tag matching `v*`. One job `apk` (ubuntu-latest, `contents: write`, 30-minute limit):
-1. Checkout with `persist-credentials: false` (the write token is passed only to `gh` in the publish step, never left in `.git/config` where npm's install scripts could read it); Node 22, JDK 17 (Temurin), `npm ci` in `web/`.
+**`release.yml`, workflow "Release"**, runs on a pushed tag matching `v*`. Two jobs, so that no npm package's code runs where the signing key is (a package's install script or build plugin can leave a process running for the rest of its job, but cannot reach another job's runner); the workflow's token is read-only except in `apk`:
+
+Job `web` (ubuntu-latest, 15-minute limit, no secrets): checkout with `persist-credentials: false`, Node 22, `npm ci` and `npx vite build` in `web/`, then uploads `web/dist/index.html` as the artifact `web-dist` (kept 1 day).
+
+Job `apk` (ubuntu-latest, after `web`, `contents: write`, 30-minute limit, no Node or npm):
+1. Checkout with `persist-credentials: false` (the write token is passed only to `gh` in the publish step, never left in `.git/config`); JDK 17 (Temurin); downloads `web-dist` into `web/dist`.
 2. `sdkmanager "platforms;android-36" "build-tools;35.0.0"`.
-3. Build: fails with "Set the KEYSTORE_B64 secret first" if the secret is empty; decodes `KEYSTORE_B64` into `$RUNNER_TEMP/release.keystore`; takes the version from the tag (`v0.8.62` → `0.8.62`), computes `VERSION_CODE = a*10000 + b*100 + c` from `a.b.c`, runs `android/build.sh` with `KEYSTORE`, `VERSION_NAME`, `VERSION_CODE`; deletes the keystore.
+3. Build: fails with "Set the KEYSTORE_B64 secret first" if the secret is empty; decodes `KEYSTORE_B64` into `$RUNNER_TEMP/release.keystore`; takes the version from the tag (`v0.8.62` → `0.8.62`), computes `VERSION_CODE = a*10000 + b*100 + c` from `a.b.c`, runs `android/build.sh` with `HM_SKIP_WEB_BUILD=1` (it uses the downloaded `index.html` instead of running `vite build`), `KEYSTORE`, `VERSION_NAME`, `VERSION_CODE`; deletes the keystore.
 4. `gh release create <tag> android/build/hermes-mobile.apk --title "Hermes Mobile <tag>"` with notes that point to the README install steps. When the release already exists (made on GitHub's website, which creates the tag and the release together) it only attaches the APK to it (`gh release upload --clobber`).
 The release APK must always be signed with the same key, or phones cannot update.
 
