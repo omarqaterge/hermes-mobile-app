@@ -7,17 +7,9 @@ Pull requests and issues are welcome.
    same commit, and for anything users notice add a file to [changes/](changes/README.md) (not a line in CHANGELOG.md, so parallel
    branches don't conflict). Coding agents: see [AGENTS.md](AGENTS.md).
 3. Run the checks: `tools/setup.sh` once per checkout, then `tools/check.sh`, which runs the ones your changes need
-   (`--all` for everything). CI runs the same on every PR. What they cover, for example:
-   - `cd web && npm ci && npm test && npm run build`: unit tests and the build
-   - `tools/web-e2e/run.sh`: the built interface in headless Chromium against a mock Hermes
-   - `python3 tools/test_canvas.py`, `tools/test_media.py`, `tools/test_chat_search.py`, `tools/test_battery.py` if you touched
-     the plugin or the phone scripts
-   - `tools/java-check.sh` if you touched `android/` (compiles the Java shell without the Android SDK)
-   - `tools/api-check.sh` if you touched `android/` (Android lint: every call newer than Android 8.0 needs a version check)
-   - `python3 tools/check_spec.py`: the spec ([docs/SPEC.md](docs/SPEC.md) and `docs/spec/`) mentions everything the code has
-   - `python3 tools/changelog.py check`: the files in `changes/` are well formed
-   - `tools/test_hermes_patches.sh` if you touched `hermes/patches` (they apply to the pinned Hermes build and revert cleanly)
-   - `python3 tools/e2e.py`: end-to-end checks against a real phone (not run by CI)
+   (`--all` for everything; it takes most of its commands from CI's workflow file). CI runs the same on every PR. What each check covers is in the spec, [7.2 Every `tools/` file](docs/spec/07-02-every-tools-file.md) and
+   [7.3 Browser e2e](docs/spec/07-03-browser-e2e.md). Not in CI: `python3 tools/e2e.py`, end-to-end checks against a
+   real phone; run it after touching the plugin, the service or the event flow.
 4. Open a pull request and fill in the template. Add a screenshot for UI changes.
 
 To build the app and work on the interface, see [Build the app yourself](README.md#build-the-app-yourself) in the README.
