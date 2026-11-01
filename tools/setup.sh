@@ -64,17 +64,44 @@ else
   python3 -c 'import fastapi, httpx' 2>/dev/null && ok "python fastapi, httpx" || miss "python fastapi, httpx (pip install fastapi httpx)"
 fi
 
+# Playwright's own Chromium on Linux also needs system libraries (libnspr4, libnss3, ...) that a bare image lacks:
+# start it once, and when it can't load a library, install them (root only) or say how.
+pw_launches() {
+  [ "$(uname)" = Linux ] || return 0
+  (cd tools/web-e2e && node -e "require('playwright').chromium.launch().then(b => b.close())" >/dev/null 2>&1)
+}
+pw_libs() {
+  pw_launches && return 0
+  if $only_check; then
+    miss "the system libraries of Playwright's Chromium: run 'npx playwright install-deps chromium' in tools/web-e2e as root"
+    return 1
+  fi
+  if [ "$(id -u)" = 0 ] && (cd tools/web-e2e && npx playwright install-deps chromium >/dev/null 2>&1) && pw_launches; then
+    ok "the system libraries of Playwright's Chromium (installed)"
+  else
+    miss "the system libraries of Playwright's Chromium: run 'sudo npx playwright install-deps chromium' in tools/web-e2e"
+    return 1
+  fi
+}
+
+# True when one of the paths exists (globs that match nothing stay as text and fail the test; `ls -d a* b*` fails
+# as soon as one of them matches nothing).
+any_dir() { local d; for d in "$@"; do [ -d "$d" ] && return 0; done; return 1; }
+
 echo "Browser for tools/web-e2e"
 if [ -n "${CHROMIUM:-}" ] && [ -x "$CHROMIUM" ]; then
   ok "CHROMIUM=$CHROMIUM"
-elif ls -d "$HOME/Library/Caches/ms-playwright"/chromium-* "$HOME/.cache/ms-playwright"/chromium-* /opt/pw-browsers/chromium-* >/dev/null 2>&1; then
-  ok "Playwright's Chromium"
+elif any_dir /opt/pw-browsers/chromium-*; then
+  ok "Playwright's Chromium (/opt/pw-browsers)"
+elif any_dir "$HOME/Library/Caches/ms-playwright"/chromium* "$HOME/.cache/ms-playwright"/chromium*; then
+  pw_libs && ok "Playwright's Chromium"
 elif [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
   ok "Google Chrome (run.sh uses it)"
 elif $only_check; then
   miss "a browser (tools/setup.sh installs Playwright's Chromium)"
+elif (cd tools/web-e2e && npx playwright install chromium >/dev/null 2>&1); then
+  pw_libs && ok "Playwright's Chromium (installed)"
 else
-  (cd tools/web-e2e && npx playwright install chromium >/dev/null 2>&1) && ok "Playwright's Chromium (installed)" ||
-    miss "a browser: run 'npx playwright install --with-deps chromium' in tools/web-e2e"
+  miss "a browser: run 'npx playwright install --with-deps chromium' in tools/web-e2e"
 fi
 echo "Next: tools/check.sh (checks for what your branch changed) or tools/check.sh --all"
