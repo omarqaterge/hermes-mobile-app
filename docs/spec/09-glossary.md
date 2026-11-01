@@ -1,0 +1,34 @@
+## 9. Glossary
+
+- **Android 16 Live Update**: the Android 16 notification kind (promoted ongoing, `Notification.ProgressStyle`) that shows on the lock screen and status bar. See *Live Update*.
+- **app keeper**: a loop (`app-keeper`) in `phone/hermes-services` that checks every 300 s whether the app's event listener answers on `127.0.0.1:9121`; if not it broadcasts `StartReceiver` (with `FLAG_INCLUDE_STOPPED_PACKAGES`) to restart the app's service, also after a force stop or a Recents clean-up. See 6.2.
+- **Approval**: a request from Hermes to run a dangerous command. It reaches the app as a sheet, or as buttons on the chip/notification when the app is closed. Each answer applies to exactly the request it shows. See 3.6.
+- **Auto access / Full access / yolo**: the three levels of how much a chat may do without asking. Off asks before risky commands. Auto access runs everything except commands on Hermes's dangerous-command list. Full access (`/yolo`) asks nothing. The header Auto button sets it per chat. `/yolo` is the Hermes slash command behind Full access.
+- **bot**: the Settings/Hermes-hub name for a Hermes profile (Bots screen).
+- **BgHost**: the Java process (`bg/BgHost`) that runs a virtual hidden display so Hermes can use an app without taking the screen. See 4.7.
+- **/btw**: "by the way", a side question about the current chat that does not interrupt a running reply.
+- **canvas**: the document panel beside the chat where Hermes and the user edit HTML, Markdown or code together; each change is a version.
+- **card (OpenUI)**: interactive UI (table, chart, tabs, buttons, form) that a reply draws with an `openui-lang` fence; not the same as a tool card.
+- **chip**: the status notification (Android Live Update from Android 16, a normal notification before) that shows what Hermes is doing and carries buttons.
+- **dashboard**: Hermes's own web server (`hermes dashboard`, `127.0.0.1:9119`). The app talks to it for REST calls and for the `tui_gateway` WebSocket; the plugin adds routes to it.
+- **Debian**: the Debian 13 userland that runs Hermes inside Termux (through proot-distro, or chroot-distro on rooted phones).
+- **Done chip**: the sticky green notification listing chats that finished while the app was closed.
+- **gallery**: the Hermes-hub list of every canvas document of every chat and profile (it replaced the Library).
+- **Hermes pin**: the exact Hermes commit the app is tested against (`web/vendor/hermes-shared/.hermes-commit`, mirrored in `phone/bootstrap.sh`).
+- **island**: the status chip as shown in a phone's pill/island area; the README calls answering from it "Answer from the island".
+- **Live Update**: Android 16's promoted ongoing notification; the app uses it for the status chip.
+- **Live mode**: hands-free voice conversation (listen, send, read the reply, listen again).
+- **plugin**: the `hermes-mobile` Hermes plugin (`hermes-plugin/hermes-mobile`): hooks that send events to the app, tools (`canvas`, `find_chats`, `phone_app`, …) and dashboard routes. See section 5.
+- **profile**: a Hermes profile (own model, keys, `SOUL.md`, memory); the app calls them bots.
+- **proot-distro**: the Termux tool that runs Debian without root.
+- **chroot-distro**: its rooted counterpart, used when `HM_DISTRO=chroot`.
+- **read-aloud**: speaking a reply through Android text-to-speech with a player (in the app and in the notification shade).
+- **ready-made image**: the prebuilt Debian + Hermes archive (`hermes-debian-<pin12>-arm64.tar.zst`) that `bootstrap.sh` restores instead of installing Debian and Hermes on the phone.
+- **rish**: Shizuku's shell wrapper; Hermes and the installer use it to run commands with shell permissions (extracted from Shizuku's APK by `phone/phone-access.sh`).
+- **Shizuku**: an app that gives other apps shell-level access through Wireless debugging, no root. Hermes Mobile needs it for the screen, hidden-display apps and battery settings.
+- **ShizukuKeeper**: the Java class that starts Shizuku again by itself when it stops (on Wi-Fi, through Wireless debugging).
+- **tui_gateway**: Hermes's JSON-RPC backend (the one its TUI and Desktop use). The app speaks to it over the WebSocket `/api/ws` of the dashboard.
+- **Termux**: the Android terminal app where Hermes runs. **Termux:API** gives Hermes phone functions (battery, files); **Termux:Boot** starts it after a restart. Install all of them from F-Droid.
+- **tool card**: the chat item that shows one tool call and its output.
+- **versionCode**: the integer Android compares to decide an update; here `a*10000 + b*100 + c` of `a.b.c` (7.5).
+- **Wireless debugging**: Android's developer setting that Shizuku (and the Shizuku keeper) use to start without a computer.

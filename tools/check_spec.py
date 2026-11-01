@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Check that docs/SPEC.md mentions everything the code has.
+"""Check that the spec (docs/SPEC.md and docs/spec/*.md) mentions everything the code has.
 
 Pulls names out of the code (files, bridge methods, plugin routes/hooks/tools, gateway RPCs, localStorage keys,
 screens, Settings sections, row titles, aria-labels, service events, notification channels, permissions) and
-lists every one docs/SPEC.md doesn't mention. Identifiers must appear in backticks (`speak`, `GET /canvas`);
+lists every one no spec file mentions. Identifiers must appear in backticks (`speak`, `GET /canvas`);
 UI copy (section/row titles, aria-labels) as plain text.
 
 Usage: python3 tools/check_spec.py [repo_root]     exit 0 = complete, 1 = something is missing
@@ -87,6 +87,13 @@ def missing(spec: str, inv: dict[str, set[str]]) -> list[str]:
     return gaps
 
 
+def spec_text(root: Path) -> str:
+    """The whole spec: the index docs/SPEC.md and every docs/spec/*.md section file, in name order."""
+    parts = [_read(root / "docs" / "SPEC.md")]
+    parts += [_read(p) for p in sorted((root / "docs" / "spec").glob("*.md"))]
+    return "\n".join(parts)
+
+
 def main(argv: list[str]) -> int:
     root = Path(argv[1]) if len(argv) > 1 else Path(__file__).resolve().parent.parent
     spec_path = root / "docs" / "SPEC.md"
@@ -95,14 +102,14 @@ def main(argv: list[str]) -> int:
         return 1
     inv = inventory(root)
     total = sum(len(v) for v in inv.values())
-    gaps = missing(_read(spec_path), inv)
+    gaps = missing(spec_text(root), inv)
     if gaps:
-        print(f"docs/SPEC.md is missing {len(gaps)} of {total} items:")
+        print(f"The spec (docs/SPEC.md + docs/spec/) is missing {len(gaps)} of {total} items:")
         for g in gaps:
             print("  " + g)
-        print("Add each one to docs/SPEC.md (identifiers in backticks, UI text as shown on screen).")
+        print("Add each one to the spec file for its area in docs/spec/ (identifiers in backticks, UI text as shown on screen).")
         return 1
-    print(f"docs/SPEC.md covers all {total} items.")
+    print(f"The spec (docs/SPEC.md + docs/spec/) covers all {total} items.")
     return 0
 
 
