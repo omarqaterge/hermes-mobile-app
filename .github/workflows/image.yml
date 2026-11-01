@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Pin and patches are consistent
         run: |
           bash tools/test_bootstrap_pin.sh
@@ -42,7 +42,7 @@ jobs:
           echo "pin=$pin" >> "$GITHUB_OUTPUT"
       - name: Keep as artifact
         if: ${{ !inputs.publish }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.name.outputs.file }}
           path: |
