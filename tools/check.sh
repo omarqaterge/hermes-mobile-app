@@ -57,9 +57,10 @@ case "${1:-}" in
     changed=$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u)
     echo "Changed since origin/main: $(printf '%s\n' "$changed" | grep -c .) file(s)"
     want() { printf '%s\n' "$changed" | grep -q -E "$1"; }
-    [ -n "$(printf '%s\n' "$changed" | bash tools/ci-changes.sh | grep -x 'web=true')" ] && groups+=(web)
+    ci=$(printf '%s\n' "$changed" | bash tools/ci-changes.sh)
+    printf '%s\n' "$ci" | grep -qx 'web=true' && groups+=(web)
     want '^(hermes-plugin/|tools/test_[a-z_]+\.py$|tools/[a-z_]+\.py$)' && groups+=(plugin)
-    want '^(hermes/|phone/|tools/[a-z_-]+\.sh$)' && groups+=(patches)
+    printf '%s\n' "$ci" | grep -qx 'patches=true' && groups+=(patches)
     want '^(android/|tools/(java-check|api-check|test_setup_lines|test_autostart|test_devtools_guard)\.sh$)' && groups+=(android)
     ;;
   *) groups=("$@") ;;
