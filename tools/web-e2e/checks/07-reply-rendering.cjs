@@ -1,6 +1,6 @@
 // Mermaid, quoting, OpenUI cards, HTML preview, tool calls, motion, turn file changes, web addresses.
 const path = require('path')
-const { MOCK, WEB, calls, rpcs, sleep, check, mock } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -294,5 +294,28 @@ module.exports = async t => {
     check(['https://example.com/b', 'https://example.com/a', 'https://example.com/c'].every(u => opened.includes(u)), `tapping each opens it (${JSON.stringify(opened)})`)
     check((await page.locator('.msg.user .msg-time').count()) === 0, 'a link tap does not toggle the message time')
     await page.evaluate(() => { window.open = window.__realOpen })
+  }
+
+  // ── KaTeX and highlight.js ship as inert text too (hm-rich) and run on the first message with math or code ──
+  // On a page of its own, so the bundle is loaded by this reply (the main page has drawn code blocks before).
+  {
+    const fp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    fp.on('pageerror', e => { console.log('PAGEERROR (math page)', e.message); fail() })
+    await fp.goto(WEB + '/')
+    await fp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    check(await fp.evaluate(() => document.getElementById('hm-rich')?.type === 'text/hm-lazy' && !window.__hmRich && !document.getElementById('hm-rich-css')), 'math and code colours not run at start')
+    await fp.getByPlaceholder('Message Hermes').fill('show math')
+    await fp.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const reply = fp.locator('.msg.assistant', { hasText: 'Math done.' }).last()
+    await reply.locator('.katex-display').first().waitFor({ timeout: 15000 }).then(() => check(true, 'display math renders from the lazy KaTeX'), () => check(false, 'display math renders from the lazy KaTeX'))
+    check((await reply.locator('.katex:not(.katex-display .katex)').count()) >= 1 && !(await reply.innerText()).includes('e^{i'), 'inline math renders, its TeX is not shown')
+    check((await reply.locator('.katex-display').count()) === 2, 'both display formulas render')
+    check((await reply.locator('pre code .hljs-keyword, pre code .hljs-title, pre code .hljs-number').count()) > 0, 'the code block gets colours')
+    check((await fp.locator('#hm-rich-css').count()) === 1, 'the KaTeX and highlight.js CSS is added once')
+    // A formula's font must load from the bundle (data: URL), or KaTeX falls back to plain text widths.
+    check(await fp.evaluate(() => [...document.styleSheets].some(s => s.ownerNode?.id === 'hm-rich-css' && [...s.cssRules].some(r => r.cssText.includes('KaTeX_Main') && r.cssText.includes('data:font/woff2')))), 'KaTeX fonts are inlined')
+    await sleep(300)
+    check(await fp.locator('.chat').evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 80), 'the chat stays at the end once the formulas are drawn')
+    await fp.close()
   }
 }
