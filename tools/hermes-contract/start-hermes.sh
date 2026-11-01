@@ -15,8 +15,15 @@ work=$1 port=$2
 pin=$(cat "$here/web/vendor/hermes-shared/.hermes-commit")
 src=$work/hermes-agent
 mkdir -p "$work"
+# Only the pinned commit, without history: a blob-less clone fetched each file the patch checks read one at a time
+# (about 40 s in CI). Fetching by id takes the full id, which phone/bootstrap.sh has (tools/test_bootstrap_pin.sh keeps
+# the two pins the same). A reused work dir fetches only when the pin moved.
 if [ ! -d "$src/.git" ]; then
-  git clone -q --filter=blob:none https://github.com/NousResearch/hermes-agent.git "$src"
+  git init -q "$src"
+  git -C "$src" remote add origin https://github.com/NousResearch/hermes-agent.git
+fi
+if ! git -C "$src" cat-file -e "$pin^{commit}" 2>/dev/null; then
+  git -C "$src" fetch -q --depth=1 origin "$(sed -n 's/^HERMES_COMMIT=\([0-9a-f]\{40\}\).*/\1/p' "$here/phone/bootstrap.sh")"
 fi
 git -C "$src" -c advice.detachedHead=false checkout -q "$pin"
 HERMES_AGENT_DIR="$src" bash "$here/phone/hermes-patches.sh" apply "$here/hermes/patches"
