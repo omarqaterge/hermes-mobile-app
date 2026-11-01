@@ -116,3 +116,19 @@ build `0.8.66-test+devtools` (commit d866ed3), driven from a computer with Playw
 - [x] **11 Stash a draft.** Stash, swap, clear all.
 - [x] **12 File previews.** CSV table, highlighted code, JSON, HTML page, mp3 and mp4 play, PDF note and Open with….
 
+## On-device dictation (Settings → Voice → Speech recognition)
+
+Tried on emulators only (Android 15 and 8.0, arm64): downloads with progress and hash check, the check on the test
+recording, Use / Test model / Delete, a model added by Hugging Face link and from a `.zip` picked in Android's file
+picker, a damaged model file (the check fails, the card says why, dictation falls back), the check process killed
+mid-way (the app keeps running), live dictation through the emulator's microphone (previews, then the phrase). Still to
+check on a real phone:
+
+1. Download Moonshine Base on Wi-Fi; the card shows the test result. Note the "<s> s for 6.6 s of speech" figure.
+2. Dictate a few sentences in the composer with pauses: a phrase lands after each pause, previews appear while speaking.
+   Talk for over 8 s without a pause: the phrase is cut and nothing is lost.
+3. Live mode with the model: it sends after the pause and answers out loud; it doesn't hear its own reading.
+4. Battery and heat: dictate for 5 minutes with each built-in model (`adb shell dumpsys batterystats` before and after,
+   or `top` for the app's CPU share while dictating and once stopped: no CPU once the microphone is off).
+5. Leave the app while dictating: the microphone indicator goes off at once.
+6. A 32-bit (armeabi-v7a) phone, if one is at hand: Moonshine Tiny downloads, checks and dictates.

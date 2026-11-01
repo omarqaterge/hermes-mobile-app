@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
     static final int REQ_FILES = 41;
     static final int REQ_CAMERA = 42;
     static final int REQ_DEVTOOLS = 43;
+    static final int REQ_STT_FILES = 44; // Settings → Voice → Speech recognition → files on the phone
     static final Pattern TOKEN = Pattern.compile("__HERMES_SESSION_TOKEN__\\s*=\\s*\"([^\"]+)\"");
 
     WebView web;
@@ -1685,6 +1686,7 @@ public class MainActivity extends Activity {
         visible = false;
         HermesService.openChat = null; // nothing is on screen any more: a chat finishing now counts as unseen
         voice.stopListening(); // never leave the microphone open in the background
+        stt.release(); // nor an on-device speech model in memory
         // The open chat was seen until now: messages that arrive meanwhile get "New since your last visit" on return.
         web.evaluateJavascript("window.hermesPause && window.hermesPause()", null);
         super.onPause();
@@ -1760,6 +1762,16 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
+        if (req == REQ_STT_FILES) {
+            java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+            if (result == RESULT_OK && data != null) {
+                if (data.getClipData() != null)
+                    for (int k = 0; k < data.getClipData().getItemCount(); k++) uris.add(data.getClipData().getItemAt(k).getUri());
+                else if (data.getData() != null) uris.add(data.getData());
+            }
+            stt.addFromFiles(uris);
+            return;
+        }
         if (req == REQ_DEVTOOLS) {
             boolean asked = devtoolsPending;
             devtoolsPending = false;
@@ -1811,12 +1823,14 @@ public class MainActivity extends Activity {
         }
     }
 
+    final LocalStt stt = new LocalStt(this); // before voice, which uses it
     final Voice voice = new Voice(this);
 
     @Override
     protected void onDestroy() {
         if (current == this) current = null;
         voice.destroy();
+        stt.destroy();
         super.onDestroy();
     }
 
@@ -2172,6 +2186,65 @@ public class MainActivity extends Activity {
         public void stopListening(String key) {
             if (!ok(key)) return;
             runOnUiThread(voice::stopListening);
+        }
+
+        /** On-device dictation models (LocalStt): JSON {chosen, sample, importing?, importError?, models: [...]}. */
+        @JavascriptInterface
+        public String listSttModels(String key) {
+            if (!ok(key)) return "{}";
+            return stt.list();
+        }
+
+        @JavascriptInterface
+        public void downloadSttModel(String key, String id) {
+            if (!ok(key)) return;
+            stt.download(id);
+        }
+
+        @JavascriptInterface
+        public void cancelSttDownload(String key, String id) {
+            if (!ok(key)) return;
+            stt.cancel(id);
+        }
+
+        @JavascriptInterface
+        public void deleteSttModel(String key, String id) {
+            if (!ok(key)) return;
+            stt.delete(id);
+        }
+
+        /** The model dictation uses; "" = the phone's own speech recognition. */
+        @JavascriptInterface
+        public void setSttModel(String key, String id) {
+            if (!ok(key)) return;
+            stt.choose(id);
+        }
+
+        @JavascriptInterface
+        public void testSttModel(String key, String id) {
+            if (!ok(key)) return;
+            stt.test(id);
+        }
+
+        /** A Hugging Face model link (https://huggingface.co/owner/model). */
+        @JavascriptInterface
+        public void addSttModelUrl(String key, String url) {
+            if (!ok(key)) return;
+            stt.addFromUrl(url);
+        }
+
+        /** Android's document picker for a model's files (or a .zip of them); the result goes to LocalStt. */
+        @JavascriptInterface
+        public void pickSttModelFiles(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                        .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                try {
+                    startActivityForResult(i, REQ_STT_FILES);
+                } catch (Exception ignored) {
+                }
+            });
         }
 
         /** getToken without blocking the page: the answer comes back as window.__hmToken(id, token). */

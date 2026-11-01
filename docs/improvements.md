@@ -60,5 +60,30 @@ tried on the phone; `open` = not started.
 | 38 | `/fast` ran in the slow slash worker | S | `config.set key=fast` (session-scoped, like Desktop). web-e2e ✓. Phone 0.8.37: Opus 5.5 toggles "Fast mode on/off for this chat"; Haiku shows Hermes's "not available for this model". `/verbose` left alone: it only changes terminal/messaging display settings |
 | 39 | App-icon badge (HyperOS) | S | phone-tested on 0.8.33: HyperOS shows the number we set (4 unseen with a single reply card → "4"); the Done chip alone (status channel) shows no badge; number 0 = "no number" → it counted the leftover card ("1"), so cards are now dropped once nothing is unseen (Clear → badge gone, phone-verified). Also fixed: the status listener read Content-Length as chars, so a non-ASCII event body hung |
 
+### On-device speech-to-text: which model (2026-11-01)
+
+The same six everyday sentences (made with macOS `say`: reminders, a GitHub question, weather, a message, battery, a
+Python request; names, numbers and tech words) plus two LibriSpeech clips, run through the app's own decoding code
+(`SttEngine`) on a Mac with sherpa-onnx 2.0.1, one thread. WER is on words, ignoring case and punctuation; speed is
+compute time per second of audio, without the live previews (with them, Moonshine Base was 0.035).
+
+| Model (int8 / quantized) | Download | Everyday WER | All WER | Compute / audio | Live words | Punctuation |
+|---|---|---|---|---|---|---|
+| Moonshine Base (en, 2026-02-27) | 142 MB | 0% | 0% | 0.018 | no | yes |
+| Moonshine Tiny (en, 2026-02-27) | 44 MB | 0.9% | 0.6% | 0.010 | no | yes |
+| NeMo FastConformer streaming 480 ms (en) | 137 MB | 8.3% | 5.2% | 0.044 | yes | no |
+| Zipformer streaming (en, 2023-06-26), the "Zipformer-M" | 73 MB | 18.5% | 11.5% | 0.034 | yes | no |
+
+Zipformer was trained on audiobooks only: it heard "Android" as "ANDROY", "my phone a lot" as "MY FUN OF LOT", "a CSV
+file" as "A S V FAL". Moonshine models compute only while you speak (voice activity detection), the streaming ones on
+all audio while the microphone is on, so Moonshine Base is the recommended default: most accurate and less work per
+minute of dictation. Synthetic voices are clean speech: real voices, noise and accents will do worse for every model.
+
+On the Android 15 emulator (arm64, on the same Mac, while other work ran) every model's check transcribed the sample
+with 0% WER (NeMo 5.6%: "brothel" for "brothels"); timings there varied tenfold between runs (Moonshine Tiny 0.23 s and
+2.8 s for the same 6.6 s clip) and say nothing about a phone. On the Android 8.0 emulator (API 26) Moonshine Tiny
+downloaded, passed its check (0% WER, 0.24 s) and dictation fell back to the phone's recogniser when the emulator's
+microphone could not be opened. A real phone's speed and battery use are still to measure (docs/manual-tests.md).
+
 Left out on purpose: anything about Telegram / channels / the bot keeper (decision of 0.7.47), swipe or long-press
 actions the user already rejected, Hermes-side speech-to-text (`voice.record`) and wake word (`wake.*`).

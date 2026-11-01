@@ -19,6 +19,14 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `ttsControl` | `cmd` (`play`, `pause`, `toggle`, `rew`, `ff`, `stop`; anything else is ignored) | nothing | `Voice.control(cmd)`: the in-app player acts on the same reader as the `Reading aloud` card. |
 | `startListening` | none | nothing | `Voice.startListening` (dictation). Asks for `RECORD_AUDIO` first if needed. |
 | `stopListening` | none | nothing | `Voice.stopListening`. |
+| `listSttModels` | none | JSON string | `LocalStt.list`: `{chosen, sample, importing?, importError?, models: [{id, name, kind, size, live, punctuation, good, weak, licence, recommended, custom, source, state (none / downloading / checking / ready / failed), done, total, error, test, onDisk}]}`. |
+| `downloadSttModel` | `id` | nothing | `LocalStt.download`: downloads a catalogue model (and Silero VAD when it needs one), then checks it; also "Try again" (files already there and intact are kept). Async: `stt-models` events. |
+| `cancelSttDownload` | `id` | nothing | Stops a download at its next block; the `.part` file stays so a new download resumes. |
+| `deleteSttModel` | `id` | nothing | Deletes the model's folder; back to the phone's recogniser if it was chosen. |
+| `setSttModel` | `id` (`""` = the phone's speech recognition) | nothing | `LocalStt.choose`: only a model that passed its check; frees the loaded model. |
+| `testSttModel` | `id` | nothing | Runs the model's check again in `SttProbe`; a model that fails it is no longer used. Async: `stt-models`. |
+| `addSttModelUrl` | `url` | nothing | `LocalStt.addFromUrl`: a Hugging Face model link (or `owner/repo`); lists the repo, downloads only the files the model needs, checks it. Async: `stt-models` with `importing` / `importError`. |
+| `pickSttModelFiles` | none | nothing | Opens Android's document picker (`ACTION_OPEN_DOCUMENT`, several files); the files go to `LocalStt.addFromFiles`. |
 | `getToken` | none | token string, `""` on failure | Blocking: fetches `http://127.0.0.1:9119/` and reads `__HERMES_SESSION_TOKEN__` from it. |
 | `getTokenAsync` | `id` | nothing (async) | Same, on a thread, always fetching a fresh one; answers `window.__hmToken(id, token)`. A good token also marks Termux as accepting commands (`setTermuxOk`). |
 | `httpAsync` | `id`, `method`, `path`, `body` | nothing (async) | Runs a dashboard REST call on a thread pool (`rawHttp` to `127.0.0.1:9119`, with the session token header). `safeRequest` allows only GET/POST/PUT/DELETE/PATCH on a path that starts with `/api/`, has no spaces or control characters and is at most 4,096 long. On 401/403 it takes a new token and retries once. Answers `window.__hmHttp(id, status, body)`; status `0` and the message for a connection error. |

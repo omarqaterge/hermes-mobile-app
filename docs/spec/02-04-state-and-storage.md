@@ -71,6 +71,8 @@ Owned by the Java side (4); listed here because the flows above depend on them.
 | `hm` → `bg` | The page background colour, so the next launch doesn't flash. |
 | `hm` → `readaloud` | Read-aloud mode for the service: `{global, sessions, tts}`. |
 | `voice` | `Voice.java`'s own settings (4.6). |
+| `voice` → `sttModel` | The on-device dictation model in use (`LocalStt`), `""` or missing = the phone's own recogniser. |
+| `noBackupFilesDir/stt/` | On-device speech models: `<id>/` holds a model's files and `model.json` (`{id, name, kind, roles, punctuation, source, checked, test}`), `custom-<n>/` the ones the user added, `vad/silero_vad.onnx` the voice activity detector. Not backed up. |
 
 #### 2.4.3 Hermes-side files the app relies on (proot Debian)
 

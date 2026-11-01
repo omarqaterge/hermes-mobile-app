@@ -12,13 +12,14 @@ PLATFORM=$(ls "$SDK/platforms" 2>/dev/null | sed -n 's/^android-\([0-9]*\)$/\1/p
 [ -n "$PLATFORM" ] || { echo "api-check: no platform under $SDK/platforms" >&2; exit 2; }
 MIN=$(sed -n 's/.*--min-sdk-version \([0-9]*\).*/\1/p' build.sh | head -1)
 [ -n "$MIN" ] || { echo "api-check: no --min-sdk-version in build.sh" >&2; exit 2; }
+SHERPA_JAR=$(../tools/sherpa-onnx.sh --jar-only | head -1) # LocalStt's speech engine, so lint resolves its classes
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
 cp -R src res "$OUT/"
 sed "s#<application#<uses-sdk android:minSdkVersion=\"$MIN\" />\n    <application#" AndroidManifest.xml > "$OUT/AndroidManifest.xml"
 grep -q '<uses-sdk' "$OUT/AndroidManifest.xml" || { echo "api-check: could not add <uses-sdk>" >&2; exit 2; }
 set +e
 ( cd "$OUT" && "$LINT" --quiet --check NewApi,InlinedApi --disable LintError --exitcode --sdk-home "$SDK" \
-    --compile-sdk-version "$PLATFORM" --sources src --resources res --text report.txt . > lint.log 2>&1 )
+    --compile-sdk-version "$PLATFORM" --sources src --libraries "$SHERPA_JAR" --resources res --text report.txt . > lint.log 2>&1 )
 rc=$?
 set -e
 sed "s#\.\./src/#android/src/#" "$OUT/report.txt" 2>/dev/null | grep -E '(Error|Warning):' || true

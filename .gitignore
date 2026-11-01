@@ -3,6 +3,7 @@ web/dist/
 android/build/
 android/assets/www/
 android/assets/phone/
+android/assets/stt/
 __pycache__/
 *.pyc
 .DS_Store
