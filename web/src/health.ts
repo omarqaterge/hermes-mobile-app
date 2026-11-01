@@ -52,13 +52,15 @@ export async function checkHealth(full = true): Promise<Health> {
   return h
 }
 
-/** Every minute while the app is in front: a ping, plus the full status when it is 10 min old. */
-export function startHealthPolling(): void {
-  if (timer) return
+/** Every minute while the app is in front: a ping, plus the full status when it is 10 min old. True when it started
+ * now (with a full check), false when it was already running. */
+export function startHealthPolling(): boolean {
+  if (timer) return false
   void checkHealth()
   timer = setInterval(() => {
     if (!document.hidden) void checkHealth(false)
   }, 60_000)
+  return true
 }
 
 export type Dot = 'ok' | 'warn' | 'err' | 'wait'
