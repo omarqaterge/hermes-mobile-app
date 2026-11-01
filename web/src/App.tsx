@@ -10,8 +10,8 @@ import { TurnChangesCard } from './components/Changes'
 import { Chevron, Collapse } from './components/ui'
 import { Composer } from './components/Composer'
 import { QueuedRows } from './components/Queued'
-import { Scrubber } from './components/Scrubber'
-import { SCRUB_MIN, currentMark, userMarks } from './scrub'
+import { Scrubber, paintRail } from './components/Scrubber'
+import { SCRUB_MIN, railPosition, readLine, userMarks } from './scrub'
 import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
 import { RequestSheet } from './components/RequestSheet'
@@ -622,13 +622,15 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   const marksRef = useRef(marks)
   marksRef.current = marks
   const [curMark, setCurMark] = useState(0)
+  const rail = useRef<HTMLDivElement>(null)
+  const railPos = useRef(0)
   const [tall, setTall] = useState(false)
   const [scrubTo, setScrubTo] = useState<number | null>(null)
   const findOpen = useStore(s => Boolean(s.find))
   const startRef = useRef(start)
   startRef.current = start
   const topRaf = useRef(0)
-  /** Which of your messages is at (or above) the top of the list, and whether the chat is long enough for the rail. */
+  /** Where the screen is between your messages (moves the rail's thumb), and whether the chat is long enough for the rail. */
   const trackTop = () => {
     topRaf.current = 0
     const el = scroller.current
@@ -636,18 +638,17 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     setTall(el.scrollHeight > 3 * el.clientHeight)
     const ms = marksRef.current
     if (ms.length < SCRUB_MIN) return
+    // Each mark's top in the list's content (`.chat` is the children's offsetParent); marks above the drawn window
+    // share the top of the list.
     const first = startRef.current > 0 ? 1 : 0
-    const drawn = Math.max(0, count - startRef.current) // children past these are queued bubbles, the pad, buttons
-    const top = el.getBoundingClientRect().top + 1
-    let idx = startRef.current
-    for (let c = first; c < first + drawn && c < el.children.length; c++) {
-      if (el.children[c].getBoundingClientRect().bottom > top) {
-        idx = startRef.current + c - first
-        break
-      }
-      idx = startRef.current + c - first
-    }
-    setCurMark(currentMark(ms, idx))
+    const tops = ms.map(m => {
+      const node = m.idx >= startRef.current ? (el.children[first + m.idx - startRef.current] as HTMLElement | undefined) : undefined
+      return node ? node.offsetTop : 0
+    })
+    const pos = railPosition(tops, readLine(el.scrollTop, el.clientHeight, el.scrollHeight))
+    railPos.current = pos
+    paintRail(rail.current, pos, ms.length)
+    setCurMark(Math.floor(pos + 1e-6))
   }
   useLayoutEffect(trackTop, [items, start]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => cancelAnimationFrame(topRaf.current), [])
@@ -697,11 +698,12 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       </div>
     )
   if (!items || items.length === 0) return <Empty onPick={onPick} />
+  const railShown = marks.length >= SCRUB_MIN && tall && !findOpen && !previewing
 
   return (
     <div className="chat-wrap">
     <div
-      className="chat"
+      className={`chat${railShown ? ' railed' : ''}`}
       ref={scroller}
       onScroll={e => {
         const el = e.currentTarget
@@ -754,8 +756,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
         <span>Release for a side question</span>
       </div>
     </div>
-    {marks.length >= SCRUB_MIN && tall && !findOpen && !previewing && (
-      <Scrubber marks={marks} current={Math.min(curMark, marks.length - 1)} onPick={k => marks[k] && setScrubTo(marks[k].idx)} />
+    {railShown && (
+      <Scrubber marks={marks} current={Math.min(curMark, marks.length - 1)} rail={rail} pos={railPos} onPick={k => marks[k] && setScrubTo(marks[k].idx)} />
     )}
     </div>
   )

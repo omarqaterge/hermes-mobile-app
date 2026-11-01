@@ -212,6 +212,13 @@ textarea {
   background: var(--border);
   border-radius: 2px;
 }
+/* The scrubber's thumb is the scroll bar when the rail shows. */
+.chat.railed {
+  scrollbar-width: none;
+}
+.chat.railed::-webkit-scrollbar {
+  display: none;
+}
 .chat > * {
   flex-shrink: 0; /* long chats must scroll, never squash cards (overflow:hidden items shrink to 0) */
 }
@@ -3721,10 +3728,19 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   opacity: 0.6;
   pointer-events: none;
 }
-.scrub-tick.on {
-  width: 12px;
+.scrub-thumb {
+  /* Set on every scroll frame by paintRail: --thumb is the position, --merge 1 on a tick (the thumb takes the tick's
+     shape) down to 0 half way between two (a full pill). */
+  --m: var(--merge, 1);
+  position: absolute;
+  top: var(--thumb, 0%);
+  right: calc(3px - 1px * (1 - var(--m)));
+  width: calc(5px + 7px * var(--m));
+  height: calc(2px + 14px * (1 - var(--m)));
+  border-radius: 3px;
+  transform: translateY(-50%);
   background: var(--accent);
-  opacity: 1;
+  pointer-events: none;
 }
 .scrub-bubble {
   position: absolute;
