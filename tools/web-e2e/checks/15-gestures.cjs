@@ -1,12 +1,12 @@
 // Swipe to open the drawer, the chat scrubber.
-const { sleep, check } = require('../lib.cjs')
+const { WEB, sleep, check } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
   // ── swipe right on a chat opens the sessions drawer ──
   const swp = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await swp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-5', profile: 'default' })))
-  await swp.goto('http://127.0.0.1:5180/')
+  await swp.goto(WEB + '/')
   await swp.locator('.msg.assistant').first().waitFor({ timeout: 8000 })
   const swipe = (sel, dx, dy) => swp.evaluate(([sel, dx, dy]) => {
     const el = document.querySelector(sel)
@@ -35,7 +35,7 @@ module.exports = async t => {
   {
   const page = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await page.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-scrub', profile: 'default' })))
-  await page.goto('http://127.0.0.1:5180/')
+  await page.goto(WEB + '/')
   await page.locator('.msg.assistant', { hasText: 'answer 30' }).waitFor({ timeout: 5000 })
   await page.locator('.scrubber').waitFor({ timeout: 3000 })
   check((await page.locator('.scrubber .scrub-tick').count()) === 30, 'scrubber: one tick per message you sent')

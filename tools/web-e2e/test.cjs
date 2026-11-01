@@ -5,16 +5,16 @@
 const { chromium } = require('playwright')
 const fs = require('fs')
 const path = require('path')
-const { LOG, sleep, fail, failures } = require('./lib.cjs')
+const { MOCK, WEB, LOG, sleep, fail, failures } = require('./lib.cjs')
 
 async function main() {
   // Pages until the first-run section play an app that has reached Hermes before: a fresh install now opens the setup
   // flow over everything at start-up (openFirstRun), which those checks are not about.
   const t = { established: true }
   // Never drive the real phone: 9119 must be the mock (an adb forward to the phone uses the same port).
-  const home = await fetch('http://127.0.0.1:9119/').then(r => r.text(), () => '')
+  const home = await fetch(MOCK + '/').then(r => r.text(), () => '')
   if (!home.includes('MOCK-HERMES')) {
-    console.error('127.0.0.1:9119 is not the mock (real Hermes / adb forward?). Refusing to run.')
+    console.error(`${MOCK} is not the mock (real Hermes / adb forward?). Refusing to run.`)
     process.exit(3)
   }
   fs.writeFileSync(LOG, '')
@@ -22,6 +22,7 @@ async function main() {
   const newPage = browser.newPage.bind(browser)
   browser.newPage = async opts => {
     const p = await newPage(opts)
+    await p.addInitScript(b => { window.__hmMockBase = b }, MOCK) // the fake shell's getBaseUrl
     if (t.established) await p.addInitScript(() => { try { if (!localStorage.getItem('hm.connectedOnce')) localStorage.setItem('hm.connectedOnce', '1') } catch { /* */ } })
     return p
   }
@@ -30,7 +31,7 @@ async function main() {
     console.log('PAGEERROR', e.message)
     fail()
   })
-  await page.goto('http://127.0.0.1:5180/')
+  await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   await sleep(500)
   Object.assign(t, { browser, page })

@@ -1,5 +1,5 @@
 // Offline queue, attachments over a reconnect, message times, /btw, shortcut, suggestions, About, hub, setup check.
-const { calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
+const { WEB, calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page, attach } = t
@@ -92,7 +92,7 @@ module.exports = async t => {
   {
     const pp = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await pp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-5', profile: 'default' })))
-    await pp.goto('http://127.0.0.1:5180/')
+    await pp.goto(WEB + '/')
     await pp.locator('.msg.assistant').first().waitFor({ timeout: 8000 })
     // Touch events on .chat: start near the bottom, move up `dy` px in steps, optionally report mid-gesture state, end.
     const pull = (dy, peek) => pp.evaluate(async ([dy, peek]) => {
@@ -139,7 +139,7 @@ module.exports = async t => {
     check((await btw()) === 0, 'a pull when the list is not at the bottom does not open the side chat')
     await pp.close()
     const pe = await browser.newPage({ viewport: { width: 375, height: 812 } })
-    await pe.goto('http://127.0.0.1:5180/')
+    await pe.goto(WEB + '/')
     await pe.locator('.empty .suggestion').first().waitFor({ timeout: 8000 })
     await pe.evaluate(() => {
       const el = document.querySelector('.empty')

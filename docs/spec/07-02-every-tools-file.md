@@ -1,6 +1,13 @@
 ### 7.2 Every `tools/` file
 
-`tools/` holds 46 plain files (plus the folders `tools/web-e2e`, `tools/battery`, `tools/fixtures`, described after the table). "Phone needed" means it uses `adb` and a connected device or emulator. Tests that say "CI" run in `.github/workflows/ci.yml` (see 7.4). Every Python test prints `[PASS]`/`[FAIL]` lines and exits 1 on any failure; the shell tests print `PASS`/`FAIL` lines and `ALL PASSED`.
+`tools/` holds the plain files below (plus the folders `tools/web-e2e`, `tools/battery`, `tools/fixtures`, described after the table). "Phone needed" means it uses `adb` and a connected device or emulator. Tests that say "CI" run in `.github/workflows/ci.yml` (see 7.4). Every Python test prints `[PASS]`/`[FAIL]` lines and exits 1 on any failure; the shell tests print `PASS`/`FAIL` lines and `ALL PASSED`.
+
+**Developer setup and checks (for people and coding agents)**
+
+| File | What it is for |
+|---|---|
+| `setup.sh` | Gets a fresh checkout or worktree ready: reports Node (22+), Python, JDK 21 and the Android SDK, installs `web/` and `tools/web-e2e/` packages (copying a sibling git worktree's `node_modules` when its `package-lock.json` is identical, as a copy-on-write clone on macOS or hard links on Linux, else `npm ci`; a symlink would not do, Vite refuses files whose real path is outside the checkout), `pip install fastapi httpx`, and finds a browser for the e2e tests (`$CHROMIUM`, Playwright's Chromium, or Google Chrome on a Mac; installs Playwright's Chromium otherwise). `--check` only reports. Safe to rerun; usable as a cloud agent environment's setup script. |
+| `check.sh` | One command for the checks a change needs, with one PASS/FAIL/SKIP summary. No argument: the groups the branch's changes since `origin/main` need (uncommitted files included); `--all`: every group; or name groups (`web`, `plugin`, `patches`, `android`). `check_spec.py` and `changelog.py check` always run. `web` runs the typecheck, unit tests and `tools/web-e2e/run.sh`; `plugin`, `patches` and `android` run the commands of the CI jobs `plugin`, `hermes-patches` and `android`, read from `ci.yml` so the two never drift. Missing JDK, Android SDK or the plugin tests' `fastapi`/`httpx`, and `test_battery.py` without Linux `/proc`, are a SKIP (CI still runs them); the contract check is CI-only. |
 
 **Install and setup**
 
@@ -85,4 +92,4 @@
 | `test_setup_lines.sh` | `SetupLines.java`: token check, line filter, 50-line buffer, FAIL/DONE handling and the JSON that `say()` posts. CI job `android`. |
 | `test_autostart.sh` | `Autostart.java`: which makers get the step, every maker has a page list, every package the table opens is in the manifest `<queries>` (Android 11+ hides other packages otherwise). CI job `android`. |
 
-**Battery tools (`tools/battery/`, a folder, not counted in the 45)**: `bench.py` (idle / chat / cron benchmarks and a `report` mode; method in `docs/battery-report.md`), `hmsamp.sh` (sampler run as the adb shell user: wake lock and `/proc` ticks per process and thread), `hmreport.py` (summarises a sampler capture), `hmnet.sh` (network bytes per UID), `reqcost.py` (CPU cost of one request to the dashboard), `wschat.py` (one benchmark chat turn over the gateway WebSocket, then deletes the chat).
+**Battery tools (`tools/battery/`, a folder)**: `bench.py` (idle / chat / cron benchmarks and a `report` mode; method in `docs/battery-report.md`), `hmsamp.sh` (sampler run as the adb shell user: wake lock and `/proc` ticks per process and thread), `hmreport.py` (summarises a sampler capture), `hmnet.sh` (network bytes per UID), `reqcost.py` (CPU cost of one request to the dashboard), `wschat.py` (one benchmark chat turn over the gateway WebSocket, then deletes the chat).
