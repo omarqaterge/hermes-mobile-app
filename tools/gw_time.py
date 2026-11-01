@@ -2,7 +2,8 @@
 # its socket opens at start-up, session.list and session.resume, alone and together, in the variants that could make
 # them cheaper; then the other requests the app sends in the same moment (BURST), each alone, and all of them at once
 # as the app does, to see whether they hold up the chat. Prints only timings, sizes and counts: never titles or chat text.
-#   gw_time.py [session id] [runs]   (default: the newest chat, 3 runs; HM_GW_URL picks another dashboard)
+#   gw_time.py [session id | longest] [runs]   (default: the newest chat, 3 runs; `longest`: the chat with the most
+#   messages among the newest 80; HM_GW_URL picks another dashboard)
 # Each scenario opens a fresh socket, as the app does at start-up, closes the chats it resumed and waits for Hermes to
 # settle (a resume builds the chat's agent in the background) before the next one.
 import asyncio, json, os, re, statistics, sys, time, urllib.request
@@ -61,12 +62,17 @@ def resume_facts(result):
 async def main():
     target = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
     runs = int(sys.argv[2]) if len(sys.argv) > 2 else 3
-    if not target:
-        (_, _, r), = await call_many([("session.list", {"limit": 1})])
-        target = ((r.get("sessions") or [{}])[0]).get("id")
+    which = "the given one"
+    if not target or target == "longest":
+        longest = target == "longest"
+        (_, _, r), = await call_many([("session.list", {"limit": 80 if longest else 1})])
+        rows = r.get("sessions") or [{}]
+        row = max(rows, key=lambda x: x.get("message_count") or 0) if longest else rows[0]
+        target = row.get("id")
+        which = f"the longest one ({row.get('message_count') or 0} messages)" if longest else "the newest one"
         if not target:
             sys.exit("no chat to resume")
-    print(f"chat: the newest one ({len(target)}-character id); {runs} runs per scenario, {SETTLE_S:g} s apart\n")
+    print(f"chat: {which} ({len(target)}-character id); {runs} runs per scenario, {SETTLE_S:g} s apart\n")
     list80, list20 = ("session.list", {"limit": 80}), ("session.list", {"limit": 20})
     resume = ("session.resume", {"session_id": target})
     noimg = ("session.resume", {"session_id": target, "inline_images": False})
