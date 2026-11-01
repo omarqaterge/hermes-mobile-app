@@ -258,8 +258,9 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 - `remember=true` writes the chat's own choice into `hm.yolo.v1` (`true` = Full, `'auto'`, `false` = an explicit
   Off). The Settings default (`hm.defaultAccess.v1`) is applied with `remember=false`, so a chat that never had
   its own choice keeps following the default.
-- Hermes forgets yolo when a chat is resumed, so `resumeSession` re-applies `rememberedAccess(storedId)` (the
-  chat's own entry, else the default).
+- Hermes forgets yolo when a chat is resumed, so the `access` chat-open step (`chatopen.ts`) re-applies
+  `rememberedAccess(storedId)` after `resumeSession` (the chat's own entry, else the default); after `newSession` it
+  applies the default.
 
 #### 2.2.2 Approval while the app is closed
 
@@ -775,7 +776,7 @@ All go through `rpc` in `gateway.ts`, which adds `profile`. "Used by" = file and
 | `session.delete` | `gateway.ts` `deleteSession` | Delete a stored chat (after closing its live runtimes). |
 | `session.history` | `gateway.ts` `userRowId` | Stored rows, to find a user message's row id for edit/retry/stats. |
 | `session.control` | `gateway.ts` `goalAction` | Goal sheet buttons: `goal.pause`, `goal.resume`, `goal.clear`; the goal is re-read afterwards. |
-| `session.control.read` | `gateway.ts` `loadGoal` | After a chat is created or opened (not awaited, errors ignored): the chat's goal for the goal line. |
+| `session.control.read` | `gateway.ts` `loadGoal` | After a chat is created or opened, from the `goal` chat-open step (not awaited, errors ignored): the chat's goal for the goal line. |
 | `session.interrupt` | `gateway.ts` `interrupt` | Stop the running turn. |
 | `session.list` | `gateway.ts` `loadSessions`, `loadArchived` | Drawer list (limit 80, +100 per Show more); archived = `include_hidden` list minus the normal list (limit 200 each). |
 | `session.resume` | `gateway.ts` `resumeSession`, `syncRunning` | Open a stored chat (60 s timeout; `inflight` adds a live turn); check whether a turn is still running (20 s). |
@@ -1538,6 +1539,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `Media.tsx` | `Media`, `Lightbox`, `FileChip`, audio player. |
 | `Diff.tsx` | `DiffView`, `looksLikeDiff`, `stripAnsi`. |
 | `filekind.ts` | What the Files screen shows for a file: `previewKind` (document type and code language, image, player, or none). |
+| `chatopen.ts` | The extra work each feature does when a chat opens. `onChatOpen(name, run)` adds a step (the same name again replaces it; returns a remover), `runChatOpen({chat, kind})` runs them all in order after `newSession` (`kind: 'new'`) or `resumeSession` (`'resume'`) has put the chat on screen (a step that throws is logged and skipped), `chatOpenSteps` lists their names. Each step sits next to its feature's code in `gateway.ts`: `access` (default or remembered access mode), `context-fill` (resume only: the context fill under the last reply) and `goal` (`loadGoal`). A new feature adds its own step instead of editing the middle of `newSession`/`resumeSession`, so parallel branches don't change the same lines. |
 | `changes.ts` | Files a turn changed: `turnChanges`, `diffCounts`, `shortPath`, `EDIT_TOOLS`, `MAX_DIFF`. |
 | `Changes.tsx` | `TurnChangesCard`: the changed files card at the end of a turn (3.3). |
 | `Composer.tsx` | The composer. |
@@ -2823,7 +2825,7 @@ The manifest gives `MainActivity` an `ASSIST` and `VOICE_COMMAND` filter. When t
 The assist gesture on a locked phone. `MainActivity.applyLockScreen` decides for every intent (`onCreate`, `onNewIntent`), from the `hm` preference `lockAssist` (bridge `setLockAssist`; Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen", default off):
 
 - **Off (default):** the app opens behind the lock screen and `askUnlock` brings up the unlock screen at once; `deliverShortcut` holds Live mode back while `keyguardLocked` is true and delivers it on `onResume` or when the unlock succeeds, so the microphone never opens behind the lock screen.
-- **On:** `showOverLock(true)`: `setShowWhenLocked`/`setTurnScreenOn` on Android 8.1+, the window flags `FLAG_SHOW_WHEN_LOCKED`/`FLAG_TURN_SCREEN_ON` on 8.0. The page gets `window.hermesLockView(true)` (`web/src/lockview.ts`) and is for talking only: `answerRequest` lets only Deny through (anything else, by voice or on the sheet, toasts "Unlock the phone to allow this" / "Unlock the phone to answer" and calls `requestUnlock`); opening the chat list, a screen or a sheet is undone with "Unlock the phone to see your chats" and `requestUnlock`; a reply typed into a notification is refused (`notif-answer.ts`). Auto and Full access don't apply there: `newSession` skips the default access (`defaultAccess`) for a chat made over the lock screen, so the Live chat (always a new draft, `hermesShortcut`) asks before risky commands; `setAccessNow` refuses to turn Auto or Full on ("Unlock the phone to change access", also for a resume re-applying a chat's access or /yolo by voice); and `sendPrompt` refuses to send into a chat in Auto or Full access ("Unlock the phone to use this chat"). Each asks for the unlock screen. Ending Live mode calls `leaveLockScreen`, so the lock screen covers the app again.
+- **On:** `showOverLock(true)`: `setShowWhenLocked`/`setTurnScreenOn` on Android 8.1+, the window flags `FLAG_SHOW_WHEN_LOCKED`/`FLAG_TURN_SCREEN_ON` on 8.0. The page gets `window.hermesLockView(true)` (`web/src/lockview.ts`) and is for talking only: `answerRequest` lets only Deny through (anything else, by voice or on the sheet, toasts "Unlock the phone to allow this" / "Unlock the phone to answer" and calls `requestUnlock`); opening the chat list, a screen or a sheet is undone with "Unlock the phone to see your chats" and `requestUnlock`; a reply typed into a notification is refused (`notif-answer.ts`). Auto and Full access don't apply there: the `access` chat-open step skips the default access (`defaultAccess`) for a chat `newSession` made over the lock screen, so the Live chat (always a new draft, `hermesShortcut`) asks before risky commands; `setAccessNow` refuses to turn Auto or Full on ("Unlock the phone to change access", also for a resume re-applying a chat's access or /yolo by voice); and `sendPrompt` refuses to send into a chat in Auto or Full access ("Unlock the phone to use this chat"). Each asks for the unlock screen. Ending Live mode calls `leaveLockScreen`, so the lock screen covers the app again.
 - It stops showing over the lock screen when the phone is unlocked (`ACTION_USER_PRESENT`, or `requestDismissKeyguard` succeeded), when the activity stops (`onStop`: screen off, app left), and for any intent that is not the assist gesture. Logcat tag `HermesLock`.
 
 ### 4.7 Shizuku keeper, Autostart, Uninstall, UpdateNotice, BgHost and the rest
