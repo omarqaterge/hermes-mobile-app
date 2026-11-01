@@ -3,7 +3,7 @@
 Pull requests and issues are welcome.
 
 1. Fork the repo and create a branch from `main`.
-2. Make your change. Keep it focused; one idea per PR. Update [docs/SPEC.md](docs/SPEC.md) (the full specification) in the
+2. Make your change. Keep it focused; one idea per PR. Update the specification (index: [docs/SPEC.md](docs/SPEC.md), text: the area's file in `docs/spec/`) in the
    same commit, and for anything users notice add a file to [changes/](changes/README.md) (not a line in CHANGELOG.md, so parallel
    branches don't conflict). Coding agents: see [AGENTS.md](AGENTS.md).
 3. Run the checks (CI runs the same on every PR):
@@ -13,7 +13,7 @@ Pull requests and issues are welcome.
      the plugin or the phone scripts
    - `tools/java-check.sh` if you touched `android/` (compiles the Java shell without the Android SDK)
    - `tools/api-check.sh` if you touched `android/` (Android lint: every call newer than Android 8.0 needs a version check)
-   - `python3 tools/check_spec.py`: [docs/SPEC.md](docs/SPEC.md) mentions everything the code has
+   - `python3 tools/check_spec.py`: the spec ([docs/SPEC.md](docs/SPEC.md) and `docs/spec/`) mentions everything the code has
    - `python3 tools/changelog.py check`: the files in `changes/` are well formed
    - `tools/test_hermes_patches.sh` if you touched `hermes/patches` (they apply to the pinned Hermes build and revert cleanly)
    - `python3 tools/e2e.py`: end-to-end checks against a real phone (not run by CI)
