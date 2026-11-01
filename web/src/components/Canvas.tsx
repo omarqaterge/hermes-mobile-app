@@ -32,9 +32,11 @@ import {
 import { DocView } from './DocView'
 import { DiffView } from './Diff'
 import { Row, Section } from './ui'
-import { setState } from '../store'
+import { setState, useStore } from '../store'
 import { useSheetDrag } from './useSheetDrag'
 import { Spinner } from './Spinner'
+import { DOCK, claimEdge, dividerStart, dragCancel, dragEnd, dragTo, dragging, nudgeSplit, resetSplit, useDock, useSplitPercent } from '../splitview'
+import { openChatCanvas } from '../swipe'
 
 export const TYPE_ICON: Record<DocType, string> = { markdown: '📝', html: '🌐', code: '💻', text: '📄', json: '{ }', csv: '▦', svg: '🖼', mermaid: '⛓' }
 const EXT: Record<DocType, string> = { markdown: 'md', html: 'html', code: 'txt', text: 'txt', json: 'json', csv: 'csv', svg: 'svg', mermaid: 'mmd' }
@@ -326,8 +328,6 @@ const ACTIONS: Array<[string, string]> = [
   ['Explain', 'Explain this to me in the chat (do not change the document).']
 ]
 
-const WIDE = window.matchMedia('(min-width: 840px)')
-
 function useElapsed(since: number): number {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -378,6 +378,66 @@ function useAgoTick(on: boolean): void {
     const t = setInterval(() => !document.hidden && set(n => n + 1), 30_000)
     return () => clearInterval(t)
   }, [on])
+}
+
+/** Wide screens: the divider between the chat and the canvas column. Drag it to share the width (splitview.ts); past
+ * 85 % the canvas goes full screen, under 20 % it closes. Arrow keys move it, a double-tap resets it. */
+function SplitHandle() {
+  const dock = useDock()
+  const pct = useSplitPercent()
+  if (!dock) return null
+  return (
+    <div
+      className="canvas-split"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the canvas"
+      aria-valuemin={20}
+      aria-valuemax={85}
+      aria-valuenow={pct ?? undefined}
+      tabIndex={0}
+      onPointerDown={e => {
+        if (e.button !== 0) return
+        e.preventDefault()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        dividerStart(e.clientX)
+      }}
+      onPointerMove={e => dragging() && dragTo(e.clientX)}
+      onPointerUp={() => dragEnd()}
+      onPointerCancel={() => dragCancel()}
+      onDoubleClick={() => resetSplit()}
+      onKeyDown={e => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault()
+          nudgeSplit(e.key === 'ArrowLeft' ? 0.05 : -0.05)
+        }
+      }}
+    >
+      <span className="canvas-split-grip" />
+      <span className="canvas-split-hint hint-max">Full screen</span>
+      <span className="canvas-split-hint hint-close">Close</span>
+    </div>
+  )
+}
+
+/** Wide screens, canvas closed, a chat on screen: a slim tab at the right edge. Tap it, or swipe in from the right
+ * edge (swipe.ts), to bring the canvas in. While it shows, the Android shell keeps its Back gesture off that strip. */
+export function CanvasPull() {
+  const dock = useDock()
+  const open = useCanvas(s => s.open)
+  const show = useStore(s => dock && !open && Boolean(s.active || s.opening) && !s.drawer && !s.screen && !s.sheet)
+  useEffect(() => {
+    claimEdge(show)
+    return () => claimEdge(false)
+  }, [show])
+  if (!dock) return null
+  // Hidden, not removed: a pull that started on the tab keeps sending its touch events to it, and a removed element's
+  // events no longer reach the document listener in swipe.ts.
+  return (
+    <button className={`canvas-pull${show ? '' : ' off'}`} aria-label="Open the canvas" aria-hidden={!show} tabIndex={show ? 0 : -1} onClick={() => openChatCanvas()}>
+      <span className="canvas-pull-grip" />
+    </button>
+  )
 }
 
 export function CanvasPanel() {
@@ -444,11 +504,11 @@ export function CanvasPanel() {
 
   /** Swipe right on the header (phones): the panel follows the finger; let go past 30 % of its width or with a quick
    * flick and it closes, otherwise it slides back. The tab row scrolls sideways itself, so a swipe there only drags the
-   * panel when the row is at its start. Wide screens show a fixed column: nothing to drag. */
+   * panel when the row is at its start. Wide screens show a column with its own divider (`SplitHandle`) instead. */
   const swipeProps = {
     onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
       drag.current = null
-      if (WIDE.matches || e.touches.length !== 1 || !panel.current) return
+      if (DOCK.matches || e.touches.length !== 1 || !panel.current) return
       const tabs = (e.target as Element).closest('.canvas-tabs')
       if (tabs && tabs.scrollLeft > 1) return
       const { clientX: x, clientY: y } = e.touches[0]
@@ -503,6 +563,7 @@ export function CanvasPanel() {
   return (
     <>
       <div ref={panel} className={`canvas-panel size-${size}`} role="dialog" aria-label="Canvas">
+        {size === 'side' && <SplitHandle />}
         <div className="canvas-head" {...swipeProps}>
           <div className="canvas-tabs">
             {docs.map(d => (

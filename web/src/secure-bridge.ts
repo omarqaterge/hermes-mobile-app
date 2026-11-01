@@ -10,7 +10,7 @@ type Raw = Record<string, (...args: unknown[]) => unknown>
 const METHODS = [
   'speak', 'setReadAloud', 'openTtsEngineApp', 'shareText', 'listVoices', 'stopSpeaking', 'ttsControl', 'startListening', 'stopListening',
   'getToken', 'httpAsync', 'openFile', 'getBaseUrl', 'startHermes', 'notify', 'setBackground', 'isSystemDark',
-  'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'isInForeground', 'appVersion',
+  'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'setEdgeGrab', 'isInForeground', 'appVersion',
   'sharedItem', 'mediaBase', 'setLastChat', 'getTokenAsync', 'setupState', 'setupFix', 'isAssistant', 'openAssistantSettings', 'setLockAssist', 'requestUnlock', 'leaveLockScreen', 'signInTermux', 'installUpdate',
   'saveImage', 'shareImage', 'chatSeen', 'setUnseen', 'installHelperApp', 'probeTermux', 'probeTermuxNow', 'setupCommand', 'setupProgress',
   'bgState', 'bgFrameAsync', 'bgAction',
