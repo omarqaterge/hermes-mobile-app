@@ -10,7 +10,6 @@ import { getDraft, setDraft } from '../drafts'
 import { Spinner } from './Spinner'
 import { QuoteBar } from './QuoteBar'
 import { ctxLevel, ringDash } from '../ctxring'
-import { effortLevel } from '../effort'
 import { clearStashes, pushStash, stashes, takeStash } from '../stash'
 import { confirmDialog } from '../dialog'
 import { plainTitle } from './Title'
@@ -40,19 +39,7 @@ const ATTACH_OPTIONS: Option[] = [
   }
 ]
 
-/** The reasoning level as 1-5 rising bars (a hollow bar for off); the level's text when it is one we don't know. */
-function EffortBars({ effort }: { effort: string }) {
-  const n = effortLevel(effort)
-  if (n === null) return <span className="model-chip-effort">{effort}</span>
-  if (n === 0) return <span className="model-chip-effort effort-bars" aria-hidden="true"><span className="effort-bar off" style={{ height: 10 }} /></span>
-  return (
-    <span className="model-chip-effort effort-bars" aria-hidden="true">
-      {[0, 1, 2, 3, 4].map(i => (
-        <span key={i} className={`effort-bar${i < n ? ' on' : ''}`} style={{ height: 4 + i * 2 }} />
-      ))}
-    </span>
-  )
-}
+const EFFORT_SHORT: Record<string, string> = { medium: 'med', minimal: 'min', none: 'off' }
 
 
 export function Composer({ injected, onInjected }: { injected: string | null; onInjected: () => void }) {
@@ -419,7 +406,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
               <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z" />
             </svg>
             <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
-            {effort && model ? <EffortBars effort={effort} /> : null}
+            {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
           </button>
           {yolo && (
             // Full access (/yolo): commands run without asking. Tap to turn it off (Auto access shows only in the header).

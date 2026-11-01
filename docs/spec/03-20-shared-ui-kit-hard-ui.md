@@ -17,7 +17,7 @@
 | `Chevron` | A right-pointing SVG chevron (`.chevron`) that turns 90 degrees when `open`, with a `transition: transform .18s` | Replaces the text chevrons (`▾`/`▸`) in `.chev` spans: tool run heads, `Reasoning`, the todo list, the changed-files card and the Archived row. The profile switch in the drawer keeps its text `▴`/`▾` |
 | `Segmented` | A row of buttons, one selected | Used for the text-size choice in Appearance (the Memory screen's two tabs are plain styled buttons) |
 
-**Motion.** `Collapse`, `Chevron`, the send button's face change (`face-in`: the Send, Stop, Mic, Live, Steer and Queue buttons are keyed, so a new face fades and scales in over 120 ms) and the effort bars are all switched off by the phone's own "Remove animations" setting, which reaches the page as `prefers-reduced-motion: reduce`; there is no motion setting inside the app.
+**Motion.** `Collapse`, `Chevron` and the send button's face change (`face-in`: the Send, Stop, Mic, Live, Steer and Queue buttons are keyed, so a new face fades and scales in over 120 ms) are all switched off by the phone's own "Remove animations" setting, which reaches the page as `prefers-reduced-motion: reduce`; there is no motion setting inside the app.
 
 **`dialog.tsx` — in-app dialogs.** `confirmDialog({ title, message, list, icon, confirmLabel, cancelLabel, danger })` returns a promise of true / false; `promptDialog({ …, placeholder, value, match })` returns the text or `null`. When `match` is set the confirm button stays disabled until the typed text equals it (type-the-name deletes). `DialogHost` (mounted once in `App.tsx`) shows the first queued request as a bottom sheet with `role="alertdialog"`; further requests wait in a queue. Cancel, the backdrop, dragging down and Android Back all answer "no". The danger style uses a 🗑 icon and the red button, labelled Delete unless `confirmLabel` says otherwise. These replace the browser's `confirm()` and `prompt()`.
 
@@ -64,6 +64,5 @@
 | `hermes-update.ts` | The phone's Hermes version and its match with the version the app was made for |
 | `theme.ts` | The four themes and how they reach the page and Android |
 | `ui.tsx` | Sections, rows, switches, pickers, sliders, segmented control, `Collapse`, `Chevron` |
-| `effort.ts` | `effortLevel`: reasoning level to 0-5 for the model chip's bars |
 | `dialog.tsx` | `confirmDialog`, `promptDialog` and their host |
 | `useSheetDrag.ts` | Drag-down-to-close for bottom sheets |
