@@ -55,11 +55,17 @@ jobs:
       - run: npm test
         working-directory: web
 
+  # Three shards in parallel, each with its own mock and page; each starts at a check file that needs nothing from
+  # earlier files (docs/spec/07-03-browser-e2e.md). Change the list there and here together.
   web-e2e:
-    name: Web build and browser e2e
+    name: Web build and browser e2e (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['01-06', '07-12', '13-21']
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -85,7 +91,7 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
-          ./run.sh
+          ./run.sh --only ${{ matrix.shard }}
 
   # The name the main ruleset requires: passes when both web jobs passed, or were skipped because nothing web changed.
   web:
