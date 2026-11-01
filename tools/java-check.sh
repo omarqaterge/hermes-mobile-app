@@ -7,8 +7,16 @@ cd "$(dirname "$0")/../android"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/hermes-mobile"
 JAR="$CACHE/android-all-16.jar"
 mkdir -p "$CACHE"
-[ -s "$JAR" ] || curl -sSfL -o "$JAR" \
-  https://repo1.maven.org/maven2/org/robolectric/android-all/16-robolectric-13921718/android-all-16-robolectric-13921718.jar
+# The jar is code javac loads, so it must be exactly the one checked in here: a download (or a cached copy) with any
+# other SHA-256 is refused and not kept.
+JAR_SHA256=8b74a0a137330658d2f33f0dc715d42734f74ba8b2d7014fc2e95aa40d3f682d
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+if [ ! -s "$JAR" ]; then
+  curl -sSfL -o "$JAR.part" \
+    https://repo1.maven.org/maven2/org/robolectric/android-all/16-robolectric-13921718/android-all-16-robolectric-13921718.jar
+  mv "$JAR.part" "$JAR"
+fi
+[ "$(sha256 "$JAR")" = "$JAR_SHA256" ] || { rm -f "$JAR"; echo "java-check: $JAR is not the expected android-all jar (SHA-256); removed, run again" >&2; exit 1; }
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
 mkdir -p "$OUT/gen/com/omarqaterge/hermesmobile" "$OUT/classes"
 {
@@ -25,7 +33,7 @@ mkdir -p "$OUT/gen/com/omarqaterge/hermesmobile" "$OUT/classes"
   echo "}"
 } > "$OUT/gen/com/omarqaterge/hermesmobile/R.java"
 set +e
-javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -nowarn -classpath "$JAR" -d "$OUT/classes" \
+javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -nowarn -proc:none -classpath "$JAR" -d "$OUT/classes" \
   $(find src "$OUT/gen" -name '*.java') 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS'
 rc=${PIPESTATUS[0]}
 [ "$rc" = 0 ] && echo "java-check: OK" || { echo "java-check: FAILED"; exit 1; }

@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Pin and patches are consistent
         run: |
           bash tools/test_bootstrap_pin.sh
