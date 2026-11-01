@@ -62,6 +62,14 @@ class CheckSpec(unittest.TestCase):
         self.assertEqual(cs.missing((root / "docs/SPEC.md").read_text(), cs.inventory(root)), [])
         self.assertEqual(cs.main(["check_spec.py", str(root)]), 0)
 
+    def test_names_may_sit_in_any_spec_file(self):
+        root = make_repo(self.root, FULL.replace("`haptic` ", "").replace("`GET /canvas`", ""))
+        (root / "docs/spec").mkdir()
+        (root / "docs/spec/04-05-bridge-methods.md").write_text("`haptic` buzzes the phone.\n")
+        self.assertEqual(cs.main(["check_spec.py", str(root)]), 1)  # GET /canvas is still missing
+        (root / "docs/spec/05-04-dashboard-routes.md").write_text("`GET /canvas` reads the canvas.\n")
+        self.assertEqual(cs.main(["check_spec.py", str(root)]), 0)
+
     def test_missing_items_are_listed(self):
         root = make_repo(self.root, FULL.replace("`haptic` ", "").replace("`GET /canvas`", ""))
         gaps = cs.missing((root / "docs/SPEC.md").read_text(), cs.inventory(root))
