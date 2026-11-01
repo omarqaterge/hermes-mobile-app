@@ -56,6 +56,9 @@ r=$(req /scroll_to '{"target":"zz-not-on-screen"}'); check "scroll_to stops at t
 r=$(req /tap '{"target":"zz-not-on-screen"}'); check "tap by text that isn't there is refused" "$([[ $r == *'nothing on the screen says'* ]] && echo 1)" "$r"
 r=$(req /open '{"pkg":"com.android.settings","intent":{"action":"android.intent.action.DELETE","data":"package:x"}}')
 check "an intent that acts without a screen is refused" "$([[ $r == *"isn't allowed"* ]] && echo 1)" "$r"
+r=$(req /scroll_to "$(python3 -c 'import json,sys;print(json.dumps({"target":sys.argv[1],"direction":"up"}))' "$name")")
+check "scroll_to finds an element further up" "$([[ $r == *'"found":'* ]] && echo 1)" "$r"
+cap=$(req /capture '{"tree":true}'); first=$(el n); name=$(el text) # the scrolls above moved the list
 [ -n "$name" ] && { r=$(req /tap "$(python3 -c 'import json,sys;print(json.dumps({"target":sys.argv[1]}))' "$name")"); check "tap by text" "$([[ $r == *'"ok":true'* ]] && echo 1)" "$r"; for i in 1 2; do req /key '{"name":"back"}' >/dev/null; done; req /open "{\"pkg\":\"$PKG\"}" >/dev/null; cap=$(req /capture '{"tree":true}'); first=$(el n); }
 r=$(req /tap "{\"n\":${first:-1}}"); check "tap by element" "$([[ $r == *'"ok":true'* ]] && echo 1)" "$r"
 check "focus stays after tap" "$([ "$(focus)" = 0 ] && echo 1)" "$(focus)"

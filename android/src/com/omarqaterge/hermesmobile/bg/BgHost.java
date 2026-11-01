@@ -621,7 +621,7 @@ public final class BgHost {
         Canvas c = new Canvas(bm);
         Paint box = new Paint(); box.setStyle(Paint.Style.STROKE); box.setStrokeWidth(3);
         Paint tag = new Paint();
-        Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG); txt.setColor(Color.WHITE); txt.setTextSize(22); txt.setFakeBoldText(true);
+        Paint ink = new Paint(Paint.ANTI_ALIAS_FLAG); ink.setColor(Color.WHITE); ink.setStrokeWidth(3); ink.setStrokeCap(Paint.Cap.ROUND);
         for (int i = 0; i < s.els.length(); i++) {
             String role = s.els.getJSONObject(i).optString("role");
             if (role.equals("text") || role.equals("list") || role.equals("pager")) continue;
@@ -630,11 +630,28 @@ public final class BgHost {
             box.setColor(col);
             c.drawRect(b, box);
             String num = String.valueOf(i + 1);
-            float tw = txt.measureText(num) + 8, x = Math.max(0, Math.min(b.left, W - tw)), y = Math.max(0, Math.min(b.top, H - 26));
+            float tw = num.length() * 15 + 7, x = Math.max(0, Math.min(b.left, W - tw)), y = Math.max(0, Math.min(b.top, H - 26));
             tag.setColor(col);
             c.drawRect(x, y, x + tw, y + 26, tag);
-            c.drawText(num, x + 4, y + 21, txt);
+            for (int k = 0; k < num.length(); k++) digit(c, ink, num.charAt(k) - '0', x + 5 + k * 15, y + 4);
         }
+    }
+
+    /** Segments a-g (top, top right, bottom right, bottom, bottom left, top left, middle) lit for each digit. */
+    static final int[] SEGMENTS = {0b0111111, 0b0000110, 0b1011011, 0b1001111, 0b1100110, 0b1101101, 0b1111101,
+            0b0000111, 0b1111111, 0b1101111};
+
+    /** A 10x18 digit drawn with lines: the host runs in app_process, where no font is loaded and drawText crashes. */
+    static void digit(Canvas c, Paint p, int d, float x, float y) {
+        int s = SEGMENTS[d];
+        float r = x + 10, m = y + 9, bt = y + 18;
+        if ((s & 1) != 0) c.drawLine(x, y, r, y, p);
+        if ((s & 2) != 0) c.drawLine(r, y, r, m, p);
+        if ((s & 4) != 0) c.drawLine(r, m, r, bt, p);
+        if ((s & 8) != 0) c.drawLine(x, bt, r, bt, p);
+        if ((s & 16) != 0) c.drawLine(x, m, x, bt, p);
+        if ((s & 32) != 0) c.drawLine(x, y, x, m, p);
+        if ((s & 64) != 0) c.drawLine(x, m, r, m, p);
     }
 
     // ── accessibility tree ───────────────────────────────────────────────────────────────────────────────
@@ -1062,9 +1079,8 @@ public final class BgHost {
         return ok().put("checked", n.isChecked()).put("changed", true).put("target", p.what);
     }
 
-    /** The list to scroll when none is named: the biggest one that can still move that way. */
-    static AccessibilityNodeInfo mainList(boolean fwd) throws Exception {
-        Scan s = scan();
+    /** The list to scroll when none is named: the biggest one in s that can still move that way. */
+    static AccessibilityNodeInfo mainList(Scan s, boolean fwd) {
         AccessibilityAction want = fwd ? AccessibilityAction.ACTION_SCROLL_FORWARD : AccessibilityAction.ACTION_SCROLL_BACKWARD;
         AccessibilityNodeInfo best = null;
         long area = -1;
@@ -1078,11 +1094,16 @@ public final class BgHost {
         return best;
     }
 
+    /** One scroll, settled. Through the list's own scroll action first; some lists (seen in a vendor's Settings) say
+     *  yes to it and don't move, so when the screen didn't change a finger swipe does it. */
     static String scrollOnce(String dir, AccessibilityNodeInfo target) throws Exception {
         boolean fwd = dir.equals("down") || dir.equals("right");
-        if (target == null) target = mainList(fwd);
-        if (target != null && target.performAction(fwd ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))
-            return "node";
+        Scan before = scan();
+        if (target == null) target = mainList(before, fwd);
+        if (target != null && target.performAction(fwd ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) {
+            settle();
+            if (!scan().names.equals(before.names)) return "node";
+        }
         int cx = W / 2, cy = H / 2, d = H / 3;
         switch (dir) {
             case "down": swipe(cx, cy + d / 2, cx, cy - d / 2, 300); break;
@@ -1090,15 +1111,14 @@ public final class BgHost {
             case "right": swipe(cx + W / 4, cy, cx - W / 4, cy, 300); break;
             default: swipe(cx - W / 4, cy, cx + W / 4, cy, 300);
         }
+        settle();
         return "swipe";
     }
 
     static JSONObject scroll(JSONObject a) throws Exception {
         JSONObject no = notOpen(); if (no != null) return no;
         int n = a.optInt("n", 0);
-        String via = scrollOnce(a.optString("direction", "down"), n > 0 ? node(n) : null);
-        settle();
-        return ok().put("via", via);
+        return ok().put("via", scrollOnce(a.optString("direction", "down"), n > 0 ? node(n) : null));
     }
 
     /** Scroll until an element saying `target` is on the screen: at most 15 scrolls, or until the list stops moving. */
@@ -1118,7 +1138,6 @@ public final class BgHost {
             if (s.names.equals(before) || i == 15) break; // nothing moved: the end of the list
             before = s.names;
             scrollOnce(dir, null);
-            settle();
         }
         return err("\"" + want + "\" isn't in this list (scrolled " + dir + " to the end)");
     }
