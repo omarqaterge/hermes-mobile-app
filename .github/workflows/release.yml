@@ -18,8 +18,13 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
+      # The token (contents: write) is not saved in .git/config, where npm's install scripts could read it; the publish
+      # step passes it to gh itself.
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
