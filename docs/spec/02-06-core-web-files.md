@@ -43,8 +43,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
   indented block, `<pre>`); `loadRich` runs the bundle once, adds its CSS as `<style id="hm-rich-css">` after the
   page's own and tells the subscribers (`subscribeRich`, `richApi`, which `Markdown` reads with
   `useSyncExternalStore`). Before that, a formula shows as its TeX in inline code and code blocks have no colours;
-  every message re-renders once it is loaded. Cold start (`coldstart.cjs`, CPU ×4, 2026-11-01): composer visible at
-  about 429 ms instead of 481; start-up script 970 KB instead of 1404 KB, CSS 75 KB instead of 435 KB.
+  every message re-renders once it is loaded.
 - `health.ts` — the header dot and status sheet data: `checkHealth` (ping `gateway.ping` with 8 s timeout, plus
   `GET /api/status` without `profile=`), `startHealthPolling` (2.5), `dotState`: `wait` while connecting, `err`
   when not open, `warn` when the status call failed, the dashboard or storage component isn't ok/unknown, or disk
