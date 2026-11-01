@@ -1,5 +1,6 @@
 // Voice: read replies aloud and dictate into the composer. Android does the work (TextToSpeech /
 // SpeechRecognizer, see Voice.java) through the bridge; in a plain browser we fall back to the Web Speech API.
+import { onSttModels } from './stt'
 import { useSyncExternalStore } from 'react'
 import { getState, toast } from './store'
 
@@ -126,6 +127,13 @@ window.__hmVoice = (kind, text) => {
       break
     case 'ready':
       set({ listening: true, partial: '' })
+      break
+    case 'stt-models':
+      onSttModels(text)
+      break
+    case 'stt-fallback':
+      // the on-device model couldn't start: Voice.java carries on with the phone's own recogniser
+      toast('The on-device speech model couldn’t start, so the phone’s speech recognition is used. Check it in Settings → Voice → Speech recognition.', 'error', 8000)
       break
     case 'partial':
       set({ partial: text })

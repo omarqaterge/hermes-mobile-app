@@ -17,6 +17,7 @@ if [ ! -s "$JAR" ]; then
   mv "$JAR.part" "$JAR"
 fi
 [ "$(sha256 "$JAR")" = "$JAR_SHA256" ] || { rm -f "$JAR"; echo "java-check: $JAR is not the expected android-all jar (SHA-256); removed, run again" >&2; exit 1; }
+SHERPA_JAR=$(../tools/sherpa-onnx.sh --jar-only | head -1) # LocalStt's speech engine (Java API only)
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
 mkdir -p "$OUT/gen/com/omarqaterge/hermesmobile" "$OUT/classes"
 {
@@ -33,10 +34,13 @@ mkdir -p "$OUT/gen/com/omarqaterge/hermesmobile" "$OUT/classes"
   echo "}"
 } > "$OUT/gen/com/omarqaterge/hermesmobile/R.java"
 set +e
-javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -nowarn -proc:none -classpath "$JAR" -d "$OUT/classes" \
+javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -nowarn -proc:none -classpath "$JAR:$SHERPA_JAR" -d "$OUT/classes" \
   $(find src "$OUT/gen" -name '*.java') 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS'
 rc=${PIPESTATUS[0]}
 [ "$rc" = 0 ] && echo "java-check: OK" || { echo "java-check: FAILED"; exit 1; }
 # The Shizuku keeper's decision logic (plain JVM, no Android classes); the cwd is android/ here.
 ../tools/test_shizuku_keeper.sh > "$OUT/keeper.txt" 2>&1 || { grep -v '^PASS' "$OUT/keeper.txt"; echo "java-check: keeper test FAILED"; exit 1; }
 echo "java-check: keeper test $(tail -1 "$OUT/keeper.txt")"
+# On-device dictation's model helper (plain JVM): catalogue, model detection, text tidying.
+../tools/test_stt_models.sh > "$OUT/stt.txt" 2>&1 || { grep -v '^PASS' "$OUT/stt.txt"; echo "java-check: STT models test FAILED"; exit 1; }
+echo "java-check: STT models test $(tail -1 "$OUT/stt.txt")"

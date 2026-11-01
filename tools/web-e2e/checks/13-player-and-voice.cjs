@@ -1,6 +1,6 @@
 // Read-aloud player, chat links, dictation, model in the + menu, learning dot.
 const path = require('path')
-const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -191,4 +191,74 @@ module.exports = async t => {
   await sleep(200)
   check(await vp.evaluate(() => document.activeElement === document.body || document.activeElement.tagName !== 'TEXTAREA'), 'stopping dictation does not focus the box (no keyboard)')
   await vp.close()
+
+  // ── Settings → Voice → Speech recognition: on-device dictation models (fake shell: window.__stt, window.__sttCalls) ──
+  {
+    const sp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    sp.on('pageerror', e => {
+      console.log('PAGEERROR (speech recognition page)', e.message)
+      fail()
+    })
+    await sp.addInitScript(() => {
+      const mb = 1e6
+      const base = { live: false, punctuation: true, custom: false, state: 'none', good: 'Most accurate here.', weak: 'Words after each pause.', licence: 'MIT' }
+      window.__stt = {
+        chosen: '',
+        sample: 'After early nightfall the yellow lamps would light up here and there the squalid quarter of the brothels.',
+        models: [
+          { ...base, id: 'moonshine-base-en', name: 'Moonshine Base (English)', kind: 'moonshine', size: 142 * mb, recommended: true },
+          { ...base, id: 'zipformer-en', name: 'Zipformer streaming (English)', kind: 'online-transducer', size: 73 * mb, live: true, punctuation: false, good: 'Words while you speak.', weak: 'Audiobooks only.' }
+        ]
+      }
+    })
+    await sp.addInitScript(nativeShell)
+    await sp.goto(WEB + '/')
+    await sp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await sp.getByRole('button', { name: /^Sessions/ }).click()
+    await sp.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await sp.locator('.set-row', { hasText: 'Voice' }).first().click()
+    const row = sp.locator('.set-row', { hasText: 'Speech recognition' })
+    await row.waitFor({ timeout: 5000 })
+    check((await row.innerText()).includes('Phone’s speech recognition'), 'Voice page: Speech recognition row shows the phone’s recogniser at first')
+    await row.click()
+    await sp.locator('.screen .title', { hasText: 'Speech recognition' }).waitFor({ timeout: 5000 })
+    const baseCard = sp.getByLabel('Speech model Moonshine Base (English)')
+    check(await baseCard.getByText('Recommended', { exact: true }).isVisible(), 'the recommended model is marked')
+    check(await sp.getByLabel('Speech model Zipformer streaming (English)').getByText('Words while you speak', { exact: true }).isVisible(), 'a streaming model says words appear while you speak')
+    check((await sp.locator('.set-row', { hasText: 'Phone’s speech recognition' }).innerText()).includes('In use'), 'the phone’s recogniser is in use before any model')
+    await baseCard.getByRole('button', { name: 'Download 142 MB' }).click()
+    await baseCard.getByText(/Downloading… 71 MB of 142 MB/).waitFor({ timeout: 3000 }).then(() => check(true, 'download shows its progress'), () => check(false, 'download shows its progress'))
+    check((await baseCard.locator('[role=progressbar]').getAttribute('aria-valuenow')) === '50', 'progress bar at 50%')
+    await baseCard.getByText('Checking the model on a test recording…').waitFor({ timeout: 3000 }).then(() => check(true, 'then the check on the test recording'), () => check(false, 'then the check on the test recording'))
+    await baseCard.getByText('Test: 18 of 18 words right · 0.6 s for 6.6 s of speech').waitFor({ timeout: 3000 }).then(() => check(true, 'the test result says how many words were right and how fast'), () => check(false, 'the test result says how many words were right and how fast'))
+    check(await baseCard.getByText('In use', { exact: true }).isVisible(), 'the first ready model is used')
+    check(!(await sp.locator('.set-row', { hasText: 'Phone’s speech recognition' }).innerText()).includes('In use'), 'the phone’s recogniser is no longer marked in use')
+    await baseCard.getByRole('button', { name: 'Test model' }).click()
+    await sp.locator('.set-row', { hasText: 'Phone’s speech recognition' }).click()
+    await sleep(100)
+    check(JSON.stringify(await sp.evaluate(() => window.__sttCalls)) === JSON.stringify([['download', 'moonshine-base-en'], ['test', 'moonshine-base-en'], ['use', '']]), 'download, test and back to the phone’s recogniser reach the shell')
+    await baseCard.getByRole('button', { name: 'Use' }).click()
+    // your own model from a Hugging Face link
+    await sp.locator('.set-row', { hasText: 'Add from Hugging Face' }).click()
+    await sp.getByPlaceholder('https://huggingface.co/owner/model').fill('https://huggingface.co/someone/sherpa-onnx-whisper-tiny.en')
+    await sp.getByRole('alertdialog').getByRole('button', { name: 'Add', exact: true }).click()
+    await sp.getByText('Adding the model from huggingface.co/someone/sherpa-onnx-whisper-tiny.en…').waitFor({ timeout: 2000 }).then(() => check(true, 'adding a model by link shows it is busy'), () => check(false, 'adding a model by link shows it is busy'))
+    const own = sp.getByLabel('Speech model sherpa-onnx-whisper-tiny.en')
+    await own.waitFor({ timeout: 3000 })
+    check(await own.getByText('From huggingface.co/someone/sherpa-onnx-whisper-tiny.en').isVisible(), 'your own model says where it came from')
+    check(await own.getByText(/Test: 9 of 18 words right/).isVisible(), 'your own model shows its test result')
+    await own.getByRole('button', { name: 'Delete' }).click()
+    await sp.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click()
+    await own.waitFor({ state: 'detached', timeout: 2000 }).then(() => check(true, 'Delete (after confirming) removes your own model'), () => check(false, 'Delete (after confirming) removes your own model'))
+    await sp.locator('.set-row', { hasText: 'Add files from this phone' }).click()
+    check((await sp.evaluate(() => window.__sttCalls.at(-1)[0])) === 'pick', 'Add files from this phone opens the shell’s file picker')
+    // Back returns to Voice, whose row now names the model
+    await sp.locator('.screen .back, .screen button[aria-label="Back"]').first().click()
+    await sp.locator('.set-row', { hasText: 'Speech recognition' }).waitFor({ timeout: 3000 })
+    check((await sp.locator('.set-row', { hasText: 'Speech recognition' }).innerText()).includes('Moonshine Base'), 'Back goes to Voice, whose row names the model in use')
+    // the shell fell back from a model that wouldn't load
+    await sp.evaluate(() => window.__hmVoice('stt-fallback', 'stt-model-load'))
+    await sp.getByText(/The on-device speech model couldn’t start/).waitFor({ timeout: 2000 }).then(() => check(true, 'a model that fails to start is explained in a toast'), () => check(false, 'a model that fails to start is explained in a toast'))
+    await sp.close()
+  }
 }

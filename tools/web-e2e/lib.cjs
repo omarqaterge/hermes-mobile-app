@@ -103,6 +103,54 @@ const nativeShell = () => {
       openRemoteDebugging: key => (k(key, 'openRemoteDebugging'), (window.__rdCalls ||= []).push('open')),
       turnOffRemoteDebugging: key => (k(key, 'turnOffRemoteDebugging'), (window.__rdCalls ||= []).push('off'), (window.__rd = { ...window.__rd, on: false, minutesLeft: 0 }), setTimeout(() => window.dispatchEvent(new Event('hm-devtools')), 20)), // the shell tells the page, as DevTools.apply does
       listVoices: key => k(key, 'listVoices'),
+      // On-device dictation models (LocalStt): window.__stt is the list; a download sends progress, then "checking", then
+      // ready with a test result; a Hugging Face link adds "custom-1"; the calls are recorded in window.__sttCalls.
+      listSttModels: key => (k(key, 'listSttModels'), JSON.stringify(window.__stt || { chosen: '', models: [] })),
+      downloadSttModel: (key, id) => {
+        k(key, 'downloadSttModel')
+        ;(window.__sttCalls ||= []).push(['download', id])
+        const set = patch => {
+          window.__stt = { ...window.__stt, models: window.__stt.models.map(m => (m.id === id ? { ...m, ...patch } : m)) }
+          window.__hmVoice('stt-models', JSON.stringify(window.__stt))
+        }
+        const total = window.__stt.models.find(m => m.id === id).size
+        set({ state: 'downloading', done: 0, total })
+        setTimeout(() => set({ done: Math.round(total / 2) }), 60)
+        setTimeout(() => set({ state: 'checking', done: undefined, total: undefined }), 400)
+        setTimeout(() => {
+          set({ state: 'ready', test: { ok: true, text: window.__stt.sample, wer: 0, ms: 600, audioMs: 6625 } })
+          if (!window.__stt.chosen) {
+            window.__stt = { ...window.__stt, chosen: id }
+            window.__hmVoice('stt-models', JSON.stringify(window.__stt))
+          }
+        }, 1200)
+      },
+      cancelSttDownload: (key, id) => (k(key, 'cancelSttDownload'), (window.__sttCalls ||= []).push(['cancel', id])),
+      deleteSttModel: (key, id) => {
+        k(key, 'deleteSttModel')
+        ;(window.__sttCalls ||= []).push(['delete', id])
+        window.__stt = { ...window.__stt, models: window.__stt.models.filter(m => m.id !== id), chosen: window.__stt.chosen === id ? '' : window.__stt.chosen }
+        setTimeout(() => window.__hmVoice('stt-models', JSON.stringify(window.__stt)), 20)
+      },
+      setSttModel: (key, id) => {
+        k(key, 'setSttModel')
+        ;(window.__sttCalls ||= []).push(['use', id])
+        window.__stt = { ...window.__stt, chosen: id }
+        setTimeout(() => window.__hmVoice('stt-models', JSON.stringify(window.__stt)), 20)
+      },
+      testSttModel: (key, id) => (k(key, 'testSttModel'), (window.__sttCalls ||= []).push(['test', id])),
+      pickSttModelFiles: key => (k(key, 'pickSttModelFiles'), (window.__sttCalls ||= []).push(['pick'])),
+      addSttModelUrl: (key, url) => {
+        k(key, 'addSttModelUrl')
+        ;(window.__sttCalls ||= []).push(['url', url])
+        window.__stt = { ...window.__stt, importing: 'someone/sherpa-onnx-whisper-tiny.en', importError: undefined }
+        window.__hmVoice('stt-models', JSON.stringify(window.__stt))
+        setTimeout(() => {
+          const m = { id: 'custom-1', name: 'sherpa-onnx-whisper-tiny.en', kind: 'whisper', size: 103e6, onDisk: 103e6, live: false, punctuation: true, custom: true, source: 'huggingface.co/someone/sherpa-onnx-whisper-tiny.en', state: 'ready', test: { ok: true, text: 'After early nightfall the yellow lamps', wer: 0.5, ms: 900, audioMs: 6625 } }
+          window.__stt = { ...window.__stt, importing: undefined, models: [...window.__stt.models, m] }
+          window.__hmVoice('stt-models', JSON.stringify(window.__stt))
+        }, 200)
+      },
       startHermes: key => k(key, 'startHermes'),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
       openAssistantSettings: key => k(key, 'openAssistantSettings'),

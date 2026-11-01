@@ -16,9 +16,9 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 /**
- * Read-aloud (TextToSpeech) and dictation (SpeechRecognizer) for the web UI. Results go back to the page
+ * Read-aloud (TextToSpeech) and dictation (SpeechRecognizer, or an on-device model through LocalStt) for the web UI. Results go back to the page
  * as window.__hmVoice(kind, text): tts-start | tts-seg | tts-paused | tts-resumed | tts-done | voices | ready | partial |
- * final | error | end.
+ * final | error | end | stt-fallback (the on-device model failed; the phone's recogniser took over).
  * All methods must be called on the main thread (TextToSpeech's progress callbacks arrive on a binder thread and are
  * posted to it). Read-aloud owns its playback state here, not in the page, so the media notification (TtsMedia) can
  * pause / resume / jump while the page is frozen in the background. Granularity is one ≤CHUNK utterance: pause and
@@ -505,12 +505,39 @@ final class Voice {
             a.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
             return;
         }
+        stopSpeaking(); // don't listen to ourselves
+        if (a.stt.start(localSink)) return; // an on-device model is chosen (Settings → Voice → Speech recognition)
+        startRecognizer();
+    }
+
+    /** Dictation through the on-device model: the same page events as Android's recogniser. */
+    private final LocalStt.Sink localSink = new LocalStt.Sink() {
+        private volatile boolean fellBack = false;
+        @Override public void ready() { fellBack = false; js("ready", ""); }
+        @Override public void partial(String text) { js("partial", text); }
+        @Override public void phrase(String text) { js("final", text); }
+        @Override public void failed(String code) {
+            if ("mic-denied".equals(code)) {
+                js("error", code);
+                return;
+            }
+            // the model wouldn't load (or the microphone wouldn't open for it): carry on with the phone's recogniser
+            fellBack = true;
+            js("stt-fallback", code);
+            main.post(Voice.this::startRecognizer);
+        }
+        @Override public void end() {
+            if (!fellBack) js("end", "");
+            fellBack = false;
+        }
+    };
+
+    private void startRecognizer() {
         if (!SpeechRecognizer.isRecognitionAvailable(a) && installedRecognizers().isEmpty()) {
             js("error", "stt-unavailable");
             js("end", "");
             return;
         }
-        stopSpeaking(); // don't listen to ourselves
         continuous = true;
         failures = 0;
         main.removeCallbacks(forceEnd);
@@ -676,6 +703,10 @@ final class Voice {
 
     /** The user pressed stop (or left the app): finish the current phrase, then end. */
     void stopListening() {
+        if (a != null && a.stt.listening()) {
+            a.stt.stop(); // finishes the phrase being said, then "end"
+            return;
+        }
         if (!continuous && sr == null) return;
         continuous = false;
         main.removeCallbacks(restart);

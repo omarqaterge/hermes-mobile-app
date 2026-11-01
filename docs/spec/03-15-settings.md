@@ -4,7 +4,7 @@
 
 **Opens from:** the ⚙ Settings tile in the drawer; the Bots sheet's "API keys & settings" (opens the API keys page for that bot). **Closes with:** Back arrow (a sub-page goes back to the Settings main page first; Android Back does the same). **Source:** `Settings.tsx` `SettingsScreen`.
 
-The screen has one main page and six sub-pages. The top-bar title is the page name: Settings, Appearance, Voice, Default models, Model providers, API keys, Advanced settings. Sub-pages that act on one bot (Model providers, API keys, Advanced settings) start on the open bot and show bot chips (the `ProfileChips` row, headed "Sign-ins for", "Keys for" or "Settings for"); tapping a chip changes the target bot.
+The screen has one main page and seven sub-pages. The top-bar title is the page name: Settings, Appearance, Voice, Speech recognition (under Voice), Default models, Model providers, API keys, Advanced settings. Sub-pages that act on one bot (Model providers, API keys, Advanced settings) start on the open bot and show bot chips (the `ProfileChips` row, headed "Sign-ins for", "Keys for" or "Settings for"); tapping a chip changes the target bot.
 
 **Main page, top to bottom (every Section and row):**
 | Section | Row (title) | Shows | Tap changes |
@@ -69,11 +69,27 @@ Outside the Android app (no `listVoices` bridge call) the page shows one section
 | Voice | Open <engine> to change its voice | Only for an engine other than the Google one and when the shell has `openTtsEngineApp` | Opens that engine's own app |
 | Sound | Speed | Slider 0.5× to 2×, step 0.05 | `rate` in `hm.tts` |
 | Sound | Pitch | Slider 0.5 to 2, step 0.05 | `pitch` in `hm.tts` |
+| Dictation (footer: "Speech-to-text for the microphone button and Live mode: the phone’s own, or a model that runs on this phone, offline."; hidden when the shell has no `listSttModels`) | Speech recognition | Value: the model in use ("Moonshine Base"…) or "Phone’s speech recognition" | Opens the Speech recognition page |
 | Live mode (footer: "How long you stay silent before Live mode sends what you said.") | Pause before sending | Slider 0.5 s to 6 s, step 0.5, default 2 s | `hm.live.pause`, in the `hm.live` key family (`setLivePause` in `web/src/live.ts`) |
 | Phone assistant | Use Hermes as phone assistant | Value On / Off (the `isAssistant` bridge call, re-checked when the app becomes visible again). Footer: how to pick Hermes under "Digital assistant app", and what long-pressing the power button does. The section is hidden when the shell has no `openAssistantSettings` | Opens Android's own assistant picker; the app cannot take that role itself |
 | Phone assistant | Talk to Hermes on the lock screen | Switch, default off (`hm.lockAssist.v1`). The footer adds "On the lock screen, the phone asks you to unlock first." when off, and, when on, that Live mode opens without unlocking for talking only and that allowing a command, answering a question or opening your chats asks you to unlock. Hidden when the shell has no `setLockAssist` | Saves it and pushes it to the shell (`setLockAssist`); see 4.6 "Talking on the lock screen" |
 | (no title) | Test voice | Sub "Plays a sample sentence with these settings" | Speaks a sample sentence through `speak` |
 | (no title) | Reset voice settings | | Sets engine and voice to the defaults, speed and pitch to 1, and reloads the voice list |
+
+#### Speech recognition (on-device dictation models)
+**Opens from:** Voice page, row Speech recognition. **Closes with:** Back (returns to Voice). **Source:** `SttSettings.tsx`; state in `web/src/stt.ts`; the shell side is `LocalStt` (4.6).
+
+Outside the Android app (no `listSttModels`) the page shows "On-device speech recognition is available in the Android app." Inside the app, top to bottom:
+
+| Section | Element | Shows | Tap |
+|---|---|---|---|
+| (no title; footer: the phone's recogniser may send your voice to its maker's servers and needs internet unless it has an offline language pack) | Phone’s speech recognition | Sub "Android’s recogniser (usually Google’s)"; value "✓ In use" when no ready model is chosen | `setSttModel("")` |
+| On-device models (footer: your voice never leaves the phone, works offline, uses the processor only while the microphone is on, 45–140 MB) | One card per built-in model (aria-label "Speech model <name>") | Name and size; tags Recommended, In use, "Words while you speak" or "Words after each pause", "Punctuation" or "No punctuation"; 👍 what it is good at, 👎 what it is weaker at; while downloading a progress bar and "Downloading… <x> MB of <y> MB"; "Checking the model on a test recording…"; an error; once ready "Test: <n> of <m> words right · <s> s for 6.6 s of speech" and what it heard | Buttons by state: Download <size>, Cancel, Use, Test model, Try again (failed), Delete (confirms "Delete <name>?") |
+| Your own model (footer: any sherpa-onnx model — Moonshine, Whisper, SenseVoice, or a Zipformer, NeMo or Parakeet transducer, in any language — is recognised and tried on a test recording before use) | Cards of the models the user added (tag with their kind, "From <source>"), the notice "Adding the model…" while one is added, the error of the last try | Use, Test model, Test again, Delete |
+| | Add from Hugging Face | Sub "Paste the model’s link" | A text dialog "Add a model from Hugging Face" (button Add) → `addSttModelUrl` |
+| | Add files from this phone | Sub "The model’s .onnx files and tokens.txt, or a .zip" | `pickSttModelFiles` (Android's document picker) |
+
+The built-in models, the recommended one first: Moonshine Base (English, 142 MB), Moonshine Tiny (English, 44 MB), NeMo FastConformer streaming (English, 137 MB), Zipformer streaming (English, 73 MB). The first model that passes its check is used when none was chosen. The list follows the shell's `stt-models` events, so a download moves on without polling.
 
 #### Default models
 **Opens from:** Settings main page, row Default models. **Closes with:** Back. **Source:** `Settings.tsx` `ModelsTab`, `ModelPicker`, `setProfileModel`.
