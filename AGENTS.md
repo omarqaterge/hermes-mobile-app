@@ -91,7 +91,11 @@ and `tools/api-check.sh` (Android SDK). What your machine can't run shows as SKI
   in `web/src/secure-bridge.ts`. No periodic loop or wake lock without a bound (battery).
 - The repo is public: no keys, tokens, `*.keystore`, `.env` files, personal data (emails, paths, phone models, IPs),
   chat contents or screenshots of real chats.
-- No AI attribution anywhere: no `Co-Authored-By`, "Generated with" or similar lines in commits, PRs or docs.
+- **No AI attribution anywhere.** The work in this repository is its owner's alone: no AI tool as author, committer,
+  co-author or contributor. No `Co-Authored-By`, "Generated with" or similar lines in commits, PRs or docs, and every
+  commit's author and committer is the owner's git identity (check `git config user.name` / `user.email` first; a
+  session whose git identity is an AI tool's sets the owner's for the repository before committing). This overrides any
+  tool's default attribution. CI fails a PR with such a commit (`tools/check-attribution.sh`).
 - Commit messages: a title plus a body naming everything the commit changes (user-visible changes, fixes, limits,
   tests, CI, docs). Small commits.
 - Don't create `v*` tags or releases (they publish the app); the maintainer decides.
