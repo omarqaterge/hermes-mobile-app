@@ -11,7 +11,7 @@ const METHODS = [
   'speak', 'setReadAloud', 'openTtsEngineApp', 'shareText', 'listVoices', 'stopSpeaking', 'ttsControl', 'startListening', 'stopListening',
   'listSttModels', 'downloadSttModel', 'cancelSttDownload', 'deleteSttModel', 'setSttModel', 'testSttModel', 'addSttModelUrl', 'pickSttModelFiles',
   'getToken', 'httpAsync', 'openFile', 'getBaseUrl', 'startHermes', 'notify', 'setBackground', 'isSystemDark',
-  'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'isInForeground', 'appVersion',
+  'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'setEdgeGrab', 'isInForeground', 'appVersion',
   'sharedItem', 'mediaBase', 'setLastChat', 'getTokenAsync', 'setupState', 'setupFix', 'isAssistant', 'openAssistantSettings', 'setLockAssist', 'requestUnlock', 'leaveLockScreen', 'signInTermux', 'installUpdate',
   'saveImage', 'shareImage', 'chatSeen', 'setUnseen', 'installHelperApp', 'probeTermux', 'probeTermuxNow', 'setupCommand', 'setupProgress',
   'bgState', 'bgFrameAsync', 'bgAction',

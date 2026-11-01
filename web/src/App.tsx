@@ -19,7 +19,7 @@ import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, GoalSheet, ModelSheet, Co
 import { bannerItems, startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
 import { BtwSheet } from './components/Btw'
-import { CanvasPanel } from './components/Canvas'
+import { CanvasPanel, CanvasPull } from './components/Canvas'
 import { startCanvasSync, useCanvas } from './canvas'
 import { backTop } from './backstack'
 import { installSwipeToDrawer, openChatCanvas } from './swipe'
@@ -864,6 +864,7 @@ export function App() {
       {request && <RequestSheet key={request.id} req={request} />}
       <UninstallResume />
       <CanvasPanel />
+      <CanvasPull />
       <BtwSheet />
       <DialogHost />
       <div className="toasts">

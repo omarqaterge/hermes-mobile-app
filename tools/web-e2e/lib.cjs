@@ -44,6 +44,7 @@ const nativeShell = () => {
       isSystemDark: key => (k(key, 'isSystemDark'), true),
       setBackground: key => k(key, 'setBackground'),
       haptic: key => k(key, 'haptic'),
+      setEdgeGrab: (key, on) => (k(key, 'setEdgeGrab'), (window.__edgeGrab = on)),
       notify: key => k(key, 'notify'),
       cancelNotification: key => k(key, 'cancelNotification'),
       setLastChat: key => k(key, 'setLastChat'),

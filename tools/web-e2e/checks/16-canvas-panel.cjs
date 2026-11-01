@@ -207,4 +207,132 @@ module.exports = async t => {
     await cvw.evaluate(() => localStorage.removeItem('hm.sideHidden.v1'))
   }
   await cvw.close()
+
+  // Tablets: the canvas docks beside the chat from 700 px; the divider between them shares the width.
+  const tab = await browser.newPage({ viewport: { width: 800, height: 1280 } })
+  tab.on('pageerror', e => { console.log('PAGEERROR', e.message); fail() })
+  await tab.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
+  await tab.addInitScript(s => { window.__setup = s }, { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '', termuxApi: true, termuxBoot: true, shizuku: true })
+  await tab.addInitScript(nativeShell)
+  await tab.goto(WEB + '/')
+  await tab.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+  await sleep(300)
+  {
+    const width = async () => (await tab.locator('.canvas-panel').boundingBox())?.width ?? 0
+    const chatW = () => tab.locator('.chat-wrap').evaluate(el => el.getBoundingClientRect().width)
+    check((await tab.locator('.canvas-pull').isVisible()) && (await tab.evaluate(() => window.__edgeGrab)) === true, 'tablet: the pull tab shows at the right edge and the shell keeps Back off it')
+    {
+      const r = await tab.evaluate(() => {
+        const s = document.createElement('div')
+        s.className = 'scrubber'
+        document.querySelector('.chat-wrap').appendChild(s)
+        const b = s.getBoundingClientRect()
+        s.remove()
+        return b.right
+      })
+      check(r <= 800 - 24, `tablet: the scrubber stays out of the edge strip (right ${r})`)
+    }
+    await tab.locator('.canvas-pull').click()
+    await tab.locator('.canvas-panel').waitFor({ timeout: 3000 })
+    await sleep(400)
+    const b = await tab.locator('.canvas-panel').boundingBox()
+    const mr = await tab.locator('.app').evaluate(el => parseFloat(getComputedStyle(el).marginRight))
+    check(b && b.x > 300 && Math.abs(b.x + b.width - 800) <= 1 && Math.abs(mr - b.width) <= 2, `tablet upright (800 px): tapping the pull tab opens the canvas as a column beside the chat (${JSON.stringify(b)})`)
+    check(!(await tab.locator('.canvas-pull').isVisible()) && (await tab.evaluate(() => window.__edgeGrab)) === false, 'tablet: the pull tab and the edge claim go while the canvas is open')
+    const grip = async () => {
+      const h = await tab.locator('.canvas-split').boundingBox()
+      return { x: h.x + h.width / 2, y: h.y + h.height / 2 }
+    }
+    const dragTo = async x => {
+      const g = await grip()
+      await tab.mouse.move(g.x, g.y)
+      await tab.mouse.down()
+      for (let i = 1; i <= 8; i++) await tab.mouse.move(g.x + ((x - g.x) * i) / 8, g.y)
+      await tab.mouse.up()
+      await sleep(400)
+    }
+    await dragTo(500)
+    check(Math.abs((await width()) - 300) <= 3, `tablet: dragging the divider resizes the canvas (${await width()})`)
+    const saved = await tab.evaluate(() => Number(localStorage.getItem('hm.canvasSplit.v1')))
+    check(Math.abs(saved - 0.375) < 0.02, `tablet: the width is kept as a share of the screen (${saved})`)
+    await dragTo(200)
+    check(Math.abs((await width()) - 460) <= 3 && (await chatW()) >= 339, `tablet: the chat keeps at least 340 px (canvas ${await width()}, chat ${await chatW()})`)
+    await tab.locator('.canvas-split').focus()
+    await tab.keyboard.press('ArrowRight')
+    await sleep(400)
+    check((await width()) < 460, `tablet: ArrowRight on the divider narrows the canvas (${await width()})`)
+    await tab.locator('.canvas-split').dblclick()
+    await sleep(400)
+    check((await tab.evaluate(() => localStorage.getItem('hm.canvasSplit.v1'))) === null && Math.abs((await width()) - 368) <= 3, `tablet: a double-tap on the divider resets the width (${await width()})`)
+    // Past 85 % the canvas goes full screen; under 20 % it closes. While dragging, the divider says which.
+    {
+      const g = await grip()
+      await tab.mouse.move(g.x, g.y)
+      await tab.mouse.down()
+      for (let i = 1; i <= 8; i++) await tab.mouse.move(g.x + ((40 - g.x) * i) / 8, g.y)
+      check(await tab.locator('.hint-max').isVisible(), 'tablet: dragging the divider far left shows "Full screen"')
+      await tab.mouse.up()
+      await sleep(400)
+    }
+    check((await tab.locator('.canvas-panel.size-max').count()) === 1, 'tablet: letting go past 85 % fills the screen')
+    await tab.getByRole('button', { name: 'Exit full screen' }).click()
+    await sleep(400)
+    await dragTo(780)
+    check((await tab.locator('.canvas-panel').count()) === 0, 'tablet: letting go under 20 % closes the canvas')
+    await tab.reload()
+    await tab.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await tab.getByRole('banner').getByRole('button', { name: 'Chat options' }).click()
+    await tab.locator('.sheet').first().waitFor({ timeout: 3000 })
+    check(!(await tab.locator('.canvas-pull').isVisible()), 'tablet: no pull tab while a sheet is open')
+  }
+  await tab.close()
+  // A real finger pulls the canvas in from the right edge (wide screen): it follows the finger and opens where it lets
+  // go; a quick flick opens it at the width it had last time.
+  {
+    const ectx = await browser.newContext({ viewport: { width: 1100, height: 800 }, hasTouch: true })
+    const ep = await ectx.newPage()
+    ep.on('pageerror', e => { console.log('PAGEERROR', e.message); fail() })
+    await ep.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
+    await ep.goto(WEB + '/')
+    await ep.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(400)
+    const cdp = await ectx.newCDPSession(ep)
+    const finger = async (x0, y0, dx, steps, wait) => {
+      const pt = x => [{ x, y: y0, id: 1 }]
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(x0) })
+      for (let i = 1; i <= steps; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x0 + (dx * i) / steps) })
+        await sleep(wait)
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await sleep(500)
+    }
+    const width = async () => (await ep.locator('.canvas-panel').boundingBox())?.width ?? 0
+    await finger(1095, 300, -400, 40, 40)
+    check((await ep.locator('.canvas-panel').count()) === 1 && Math.abs((await width()) - 405) <= 8, `wide screen: a slow pull from the right edge opens the canvas where the finger lets go (${await width()})`)
+    const kept = await width()
+    await ep.getByRole('button', { name: 'Close canvas' }).click()
+    await sleep(300)
+    await finger(1095, 300, -120, 4, 16)
+    check((await ep.locator('.canvas-panel').count()) === 1 && Math.abs((await width()) - kept) <= 3, `wide screen: a flick from the right edge opens the canvas at its last width (${await width()} vs ${kept})`)
+    await ep.getByRole('button', { name: 'Close canvas' }).click()
+    await sleep(300)
+    await finger(1095, 300, -60, 12, 40)
+    check((await ep.locator('.canvas-panel').count()) === 0, 'wide screen: a short slow pull from the edge leaves the canvas closed')
+    await ectx.close()
+  }
+  // Phones keep the full-width panel: no divider, no pull tab.
+  {
+    const pp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await pp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
+    await pp.goto(WEB + '/')
+    await pp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    check((await pp.locator('.canvas-pull').count()) === 0, 'phone: no pull tab')
+    await pp.locator('.canvas-btn').click()
+    await pp.locator('.canvas-panel').waitFor({ timeout: 3000 })
+    await sleep(300)
+    const b = await pp.locator('.canvas-panel').boundingBox()
+    check(b && b.width >= 374 && (await pp.locator('.canvas-split').count()) === 0, `phone: the canvas still covers the chat, no divider (${JSON.stringify(b)})`)
+    await pp.close()
+  }
 }

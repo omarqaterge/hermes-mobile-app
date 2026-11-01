@@ -26,8 +26,13 @@ KS="${KEYSTORE:-$HOME/.android/hermes-mobile.keystore}"  # CI passes the release
 [ -f "$ANDROID_JAR" ] || { echo "missing $ANDROID_JAR (sdkmanager \"platforms;android-$COMPILE_PLATFORM\")"; exit 1; }
 [ -x "$BT/aapt2" ] || { echo "missing build-tools 35.0.0"; exit 1; }
 
-# 1. web UI → assets
-( cd ../web && npx vite build >/dev/null )
+# 1. web UI → assets. HM_SKIP_WEB_BUILD=1 uses the web/dist/index.html already there: the release workflow builds it in
+# a job of its own, so no npm package's code runs where the signing key is.
+if [ "${HM_SKIP_WEB_BUILD:-}" = 1 ]; then
+  [ -s ../web/dist/index.html ] || { echo "HM_SKIP_WEB_BUILD=1 but there is no web/dist/index.html" >&2; exit 1; }
+else
+  ( cd ../web && npx vite build >/dev/null )
+fi
 mkdir -p assets/www
 cp ../web/dist/index.html assets/www/index.html
 # Settings → Uninstall Hermes runs this in Termux (Uninstall.java); shipped in the APK so it matches the app.

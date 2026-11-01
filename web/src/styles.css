@@ -3195,17 +3195,154 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   50% { opacity: 0.25; }
 }
 
-/* ── Wide screens (unfolded foldables, tablets, landscape): chat list, chat and canvas side by side ── */
-@media (min-width: 840px) {
+/* ── Wide screens (tablets, unfolded foldables, landscape): chat and canvas side by side from 700 px, the chat list
+   docked too from 840 px ── */
+:root {
+  --side-w: 0px; /* width of the docked chat list: 0 unless docked (840 px block below) */
+}
+@media (min-width: 700px) {
+  /* The canvas column (web/src/splitview.ts): a share of the room beside the docked list, at least 300 px, leaving the
+     chat at least 340 px. No stored share = 46 %, at most 640 px; html[data-split] = the share the user dragged to;
+     html.resizing = the width under the finger while dragging. */
   :root {
-    --side: 320px;
-    --canvas-w: min(46vw, 640px);
+    --canvas-room: calc(100vw - var(--side-w));
+    --canvas-w: clamp(300px, min(calc(var(--canvas-room) * 0.46), 640px), calc(var(--canvas-room) - 340px));
+  }
+  html[data-split] {
+    --canvas-w: clamp(300px, calc(var(--canvas-room) * var(--canvas-frac)), calc(var(--canvas-room) - 340px));
+  }
+  html.resizing {
+    --canvas-w: var(--canvas-live);
   }
   .app {
     transition: margin-left 0.22s ease, margin-right 0.22s ease;
   }
+  html.resizing .app,
+  html.resizing .canvas-panel {
+    transition: none;
+  }
+  /* An HTML document's frame would take the pointer away from the divider mid-drag. */
+  html.resizing iframe {
+    pointer-events: none;
+  }
+  html.resizing body {
+    user-select: none;
+  }
+  /* Keep reading lines a comfortable length; the right side leaves the edge strip (pull tab) clear of the scrubber. */
+  .chat {
+    padding-inline: max(16px, calc((100% - 820px) / 2));
+    padding-right: max(52px, calc((100% - 820px) / 2));
+  }
+  .composer-wrap {
+    padding-inline: max(8px, calc((100% - 836px) / 2));
+  }
+  .chat-wrap .scrubber {
+    right: max(24px, calc((100% - 820px) / 2 - 28px));
+  }
+  /* The canvas becomes the right-hand column (max stays full screen). */
+  html[data-canvas='side'] .app {
+    margin-right: var(--canvas-w);
+  }
+  html[data-canvas='side'] .canvas-panel {
+    top: 0;
+    width: var(--canvas-w);
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top);
+    animation: none;
+    transition: transform 0.2s ease, width 0.22s ease;
+  }
+  /* The divider on the column's left border: a 16 px touch area with a grip; past a snap point it says what letting go
+     does. */
+  .canvas-split {
+    position: absolute;
+    left: -8px;
+    top: 0;
+    bottom: 0;
+    width: 16px;
+    z-index: 2;
+    cursor: col-resize;
+    touch-action: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    outline: none;
+  }
+  .canvas-split-grip {
+    width: 4px;
+    height: 44px;
+    border-radius: 2px;
+    background: var(--border);
+    transition: background 0.15s, height 0.15s;
+  }
+  .canvas-split:hover .canvas-split-grip,
+  .canvas-split:focus-visible .canvas-split-grip,
+  html.resizing .canvas-split-grip {
+    background: var(--accent);
+    height: 64px;
+  }
+  .canvas-split-hint {
+    display: none;
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 0.8rem;
+    font-weight: 650;
+    pointer-events: none;
+  }
+  html[data-snap='max'] .hint-max,
+  html[data-snap='close'] .hint-close {
+    display: block;
+  }
+  /* The pull tab at the right edge (canvas closed): the visible grip, inside the 24 × 200 px strip the Android shell
+     keeps free of its Back gesture (setEdgeGrab). */
+  .canvas-pull {
+    position: fixed;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 200px;
+    z-index: 4;
+    padding: 0;
+    background: none;
+    border: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    touch-action: pan-y;
+  }
+  .canvas-pull.off {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .canvas-pull-grip {
+    width: 5px;
+    height: 48px;
+    margin-right: 3px;
+    border-radius: 3px;
+    background: var(--border);
+    transition: background 0.15s;
+  }
+  .canvas-pull:hover .canvas-pull-grip,
+  .canvas-pull:focus-visible .canvas-pull-grip {
+    background: var(--accent);
+  }
+}
+@media (min-width: 840px) {
+  :root {
+    --side: 320px;
+  }
   /* The chat list is docked unless the user hid it (☰ or «; web/src/sidepanel.ts, html[data-side='hidden']).
      Hidden = the phone layout: a swipe right opens it over the chat. */
+  html:not([data-side='hidden']) {
+    --side-w: var(--side);
+  }
   html:not([data-side='hidden']) .drawer {
     width: var(--side);
     transform: none;
@@ -3228,24 +3365,6 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   }
   html:not([data-side='hidden']) .screen.takeover {
     left: 0;
-  }
-  /* Keep reading lines a comfortable length. */
-  .chat {
-    padding-inline: max(16px, calc((100% - 820px) / 2));
-  }
-  .composer-wrap {
-    padding-inline: max(8px, calc((100% - 836px) / 2));
-  }
-  /* The canvas becomes the right-hand column (max stays full screen). */
-  html[data-canvas='side'] .app {
-    margin-right: var(--canvas-w);
-  }
-  html[data-canvas='side'] .canvas-panel {
-    top: 0;
-    width: var(--canvas-w);
-    box-shadow: none;
-    padding-top: env(safe-area-inset-top);
-    animation: none;
   }
 }
 
@@ -3717,4 +3836,11 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 @media (prefers-reduced-motion: reduce) {
   .chevron { transition: none; }
   .send > svg, .send > .stop-square { animation: none; }
+}
+
+/* Settings → About → What's new: one block per release since the installed version */
+.whats-new-version {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 600;
 }

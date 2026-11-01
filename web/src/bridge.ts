@@ -14,6 +14,7 @@ interface AndroidBridge {
   copyText(text: string): void
   copyRich(text: string, html: string): void
   haptic(): void
+  setEdgeGrab?(on: boolean): void // keep Android's Back gesture off the canvas pull tab at the right edge (API 29+)
   isInForeground(): boolean
   appVersion(): string
   installUpdate?(url: string): void
@@ -201,6 +202,15 @@ export function haptic(): void {
     native?.haptic()
   } catch {
     /* optional */
+  }
+}
+
+/** Wide screens: the canvas pull tab is on screen (true) or gone (false); see splitview.ts. */
+export function setEdgeGrab(on: boolean): void {
+  try {
+    native?.setEdgeGrab?.(on)
+  } catch {
+    /* older shell */
   }
 }
 

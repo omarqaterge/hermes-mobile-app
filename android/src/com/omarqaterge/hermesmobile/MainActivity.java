@@ -13,6 +13,7 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Insets;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -1853,6 +1854,28 @@ public class MainActivity extends Activity {
         mediaKey = mk.toString();
     }
 
+    /** Wide screens: while the web shows the canvas pull tab at the right edge, keep Android's Back gesture off the
+     *  24 x 200 dp strip behind it (Android's per-edge limit is 200 dp), so a swipe from there reaches the page. The
+     *  rest of the edge keeps Back. The rect follows rotations and resizes. */
+    boolean edgeGrab, edgeGrabHooked;
+
+    void applyEdgeGrab() {
+        if (Build.VERSION.SDK_INT < 29 || web == null) return; // setSystemGestureExclusionRects is API 29; older Android has no edge gesture
+        if (!edgeGrabHooked) {
+            edgeGrabHooked = true;
+            web.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> applyEdgeGrab());
+        }
+        java.util.List<Rect> rects = new java.util.ArrayList<>();
+        if (edgeGrab) {
+            float d = getResources().getDisplayMetrics().density;
+            int w = web.getWidth(), h = web.getHeight();
+            int gw = Math.round(24 * d), gh = Math.min(h, Math.round(200 * d));
+            int top = (h - gh) / 2;
+            rects.add(new Rect(w - gw, top, w, top + gh));
+        }
+        web.setSystemGestureExclusionRects(rects);
+    }
+
     boolean ok(String key) {
         return key != null && !bridgeKey.isEmpty() && java.security.MessageDigest.isEqual(
                 bridgeKey.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
@@ -2450,6 +2473,16 @@ public class MainActivity extends Activity {
         public void haptic(String key) {
             if (!ok(key)) return;
             runOnUiThread(() -> web.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP));
+        }
+
+        /** The canvas pull tab is on screen (true) or gone (false): see applyEdgeGrab. */
+        @JavascriptInterface
+        public void setEdgeGrab(String key, boolean on) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                edgeGrab = on;
+                applyEdgeGrab();
+            });
         }
 
         @JavascriptInterface
