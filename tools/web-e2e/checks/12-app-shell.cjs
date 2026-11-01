@@ -1,7 +1,7 @@
 // In the app shell: token and key, test build, remote debugging, Live mode, hidden display, assistant, setup, uninstall, Claude sign-in.
 const fs = require('fs')
 const path = require('path')
-const { calls, rpcs, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -13,7 +13,7 @@ module.exports = async t => {
   })
   await np.addInitScript(nativeShell)
   const listsBefore = rpcs('session.list').length
-  await np.goto('http://127.0.0.1:5180/')
+  await np.goto(WEB + '/')
   await np.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   await sleep(1500)
   const nc = await np.evaluate(() => window.__nativeCalls)
@@ -26,7 +26,7 @@ module.exports = async t => {
     const dv = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await dv.addInitScript(() => { window.__appVersion = '0.8.66+devtools' })
     await dv.addInitScript(nativeShell)
-    await dv.goto('http://127.0.0.1:5180/')
+    await dv.goto(WEB + '/')
     await dv.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     const strip = dv.getByText('Test build: remote debugging is on')
     check(await strip.isVisible(), 'devtools: a +devtools build shows the warning strip')
@@ -52,7 +52,7 @@ module.exports = async t => {
       const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
       await pg.addInitScript(init)
       await pg.addInitScript(nativeShell)
-      await pg.goto('http://127.0.0.1:5180/')
+      await pg.goto(WEB + '/')
       await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
       await pg.getByRole('button', { name: /^Sessions/ }).click()
       await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
@@ -259,7 +259,7 @@ module.exports = async t => {
     }
     await ouiRow.click({ timeout: 1500 }).catch(() => {}) // back on for the rest of the run
     await np.evaluate(() => window.hermesBack())
-    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { allow_sensitive: false, available: false, reason: 'Needs Shizuku running' } }) })
+    await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { allow_sensitive: false, available: false, reason: 'Needs Shizuku running' } }) })
     await np.getByRole('button', { name: /^Sessions/ }).click()
     await np.locator('.nav-tile', { hasText: 'Settings' }).click()
     const noRow = np.locator('.set-row', { hasText: 'Needs Shizuku running' })
@@ -267,7 +267,7 @@ module.exports = async t => {
     check((await noRow.getByRole('switch').count()) === 0, 'unavailable: no switch')
     check((await np.locator('.set-row select, .set-row input').count()) === 0, 'settings row uses no native controls')
     await np.evaluate(() => window.hermesBack())
-    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { available: true, reason: undefined } }) })
+    await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { available: true, reason: undefined } }) })
   }
 
   // ── Phone assistant: Settings → Voice opens the system picker and shows the role once Hermes holds it ──
@@ -348,24 +348,24 @@ module.exports = async t => {
     await setAuto({ sdk: false, wss: false, paired: false, last: '' })
     await autoRow.waitFor({ state: 'detached', timeout: 6000 }).then(() => check(true, 'shizuku auto: hidden on Android 10 and older'), () => check(false, 'shizuku auto: hidden on Android 10 and older'))
     // On Android 10 and older the Shizuku row says it has to be started from a computer after each restart.
-    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'off' } }) })
+    await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'off' } }) })
     await setAuto({ sdk: true, wss: true, paired: true, last: 'ok' })
     await np.locator('.setup-item.bad', { hasText: 'see and use the screen' }).waitFor({ timeout: 6000 }).catch(() => {})
     check(!((await np.locator('.setup-item.bad', { hasText: 'see and use the screen' }).textContent().catch(() => '')) || '').includes('Android 10'), 'shizuku auto: no Android 10 sentence on Android 11+')
     await setAuto({ sdk: false, wss: false, paired: false, last: '' })
     await np.locator('.setup-item.bad', { hasText: 'Android 10 and older' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku auto: Shizuku row says Android 10 and older needs a computer'), () => check(false, 'shizuku auto: Shizuku row says Android 10 and older needs a computer'))
-    await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
+    await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
     await setAuto(null)
   }
   await np.evaluate(() => (window.__setup = { ...window.__setup, termuxApi: false, shizuku: true }))
-  await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: false, shizuku: 'off' } }) })
+  await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: false, shizuku: 'off' } }) })
   await np.locator('.setup-hero-title', { hasText: '3 things to fix' }).waitFor({ timeout: 6000 }).then(() => check(true, 'phone access: files, Termux:API and Shizuku counted'), () => check(false, 'phone access: files, Termux:API and Shizuku counted'))
   await np.locator('.setup-item.bad', { hasText: 'Termux:API' }).getByRole('button', { name: 'Get Termux:API' }).click()
   await np.locator('.setup-item.bad', { hasText: 'Shizuku' }).getByRole('button', { name: 'Open Shizuku' }).click()
   await np.locator('.setup-item.bad', { hasText: 'your files' }).getByRole('button', { name: 'Restart Hermes' }).click()
   const fx = JSON.stringify((await np.evaluate(() => window.__fixes)).slice(-3))
   check(fx === '["get-termux-api","open-shizuku","restart-hermes"]', `phone access fix buttons (${fx})`)
-  await fetch('http://127.0.0.1:9119/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
+  await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
 
   // ── Settings → Uninstall Hermes: what goes is listed, backup offered (keys off), typed confirm, the Termux cleanup
   //    first (a failed backup removes nothing and can be retried), then each app in order, this app last ──
@@ -470,7 +470,7 @@ module.exports = async t => {
     cs.on('pageerror', e => { console.log('PAGEERROR (claude page)', e.message); fail() })
     await cs.addInitScript(nativeShell)
     await mock({ claudeSignedIn: true })
-    await cs.goto('http://127.0.0.1:5180/')
+    await cs.goto(WEB + '/')
     await cs.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     const openAccounts = async () => {
       await cs.getByRole('button', { name: /^Sessions/ }).click()
@@ -521,7 +521,7 @@ module.exports = async t => {
     await claudeRow.locator('text=Signed in').waitFor({ timeout: 5000 }).then(() => check(true, 'claude: row shows Signed in after Termux'), () => check(false, 'claude: row shows Signed in after Termux'))
     // An older plugin without the in-app login: the sheet offers Termux instead
     await mock({ claudeSignedIn: false, claudeLoginMissing: true })
-    await cs.goto('http://127.0.0.1:5180/')
+    await cs.goto(WEB + '/')
     await cs.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await openAccounts()
     await claudeRow.getByRole('button', { name: 'Sign in' }).click({ timeout: 5000 }).catch(() => {})

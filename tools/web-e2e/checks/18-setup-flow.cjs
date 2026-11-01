@@ -1,6 +1,6 @@
 // The setup flow: what is set up, resuming at the first missing step.
 const fs = require('fs')
-const { sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
+const { WEB, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -18,7 +18,7 @@ module.exports = async t => {
   await mock({ configured: true, pluginEnabled: true })
   {
     const fa = await flowPage(OK)
-    await fa.goto('http://127.0.0.1:5180/')
+    await fa.goto(WEB + '/')
     await fa.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await fa.waitForFunction(() => localStorage.getItem('hm.setupFlowDone') === '1', null, { timeout: 8000 }).catch(() => {})
     check(!(await flowShown(fa)), 'flow: everything set up → straight to chat, no setup flow')
@@ -30,7 +30,7 @@ module.exports = async t => {
   await mock({ unconfigured: true, pluginEnabled: true, looseStatus: true })
   {
     const fb = await flowPage({ ...OK, batteryApp: false })
-    await fb.goto('http://127.0.0.1:5180/')
+    await fb.goto(WEB + '/')
     await fb.getByText('Connect Hermes to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'flow: no model → opens at the model step'), () => check(false, 'flow: no model → opens at the model step'))
     check((await fb.locator('.flow-progress-label').textContent()) === 'Step 1 of 1', `flow: progress counts only the missing required steps (${await fb.locator('.flow-progress-label').textContent()})`)
     await fb.locator('.providers .set-row', { hasText: 'OpenAI' }).first().click()
@@ -64,7 +64,7 @@ module.exports = async t => {
   {
     const auto = paired => ({ ...OK, shizuku: true, batteryShizuku: true, shizukuAuto: { sdk: true, wss: true, paired, last: '' } })
     const fn = await flowPage(auto(false))
-    await fn.goto('http://127.0.0.1:5180/')
+    await fn.goto(WEB + '/')
     const label = () => fn.locator('.flow-progress-label').textContent().catch(() => '')
     const disabled = name => fn.getByRole('button', { name }).isDisabled().catch(() => true)
     await fn.locator('.flow-card-title', { hasText: 'Shizuku starts by itself' }).waitFor({ timeout: 15000 }).then(() => check(true, 'flow nav: Shizuku not paired → the flow opens at "Shizuku starts by itself"'), () => check(false, 'flow nav: Shizuku not paired → the flow opens at "Shizuku starts by itself"'))
@@ -111,7 +111,7 @@ module.exports = async t => {
     await f0.addInitScript(s => { window.__setup = s }, { ...OK, shizuku: false })
     await f0.addInitScript(nativeShell)
     const t0 = Date.now()
-    await f0.goto('http://127.0.0.1:5180/')
+    await f0.goto(WEB + '/')
     const shown = await f0.locator('.screen.takeover').waitFor({ timeout: 3000 }).then(() => true, () => false)
     check(shown, `takeover (${vp.width}px): a fresh install opens the setup flow at once (${Date.now() - t0} ms)`)
     if (shown) {
@@ -128,7 +128,7 @@ module.exports = async t => {
   await mock({ configured: true, pluginEnabled: true, drop: 19000 })
   {
     const fc = await flowPage(OK)
-    await fc.goto('http://127.0.0.1:5180/')
+    await fc.goto(WEB + '/')
     await fc.getByRole('button', { name: 'Start Hermes' }).waitFor({ timeout: 30000 }).then(() => check(true, 'flow: Hermes not running → opens at Start Hermes'), () => check(false, 'flow: Hermes not running → opens at Start Hermes'))
     await fc.getByRole('button', { name: 'Start Hermes' }).click().catch(() => {})
     check((await fc.evaluate(() => window.__fixes || [])).includes('start'), 'flow: Start Hermes asks the shell to start it')
@@ -142,7 +142,7 @@ module.exports = async t => {
   {
     const XIAOMI = { ...OK, maker: 'xiaomi', autostart: 'list', autostartName: 'Autostart', autostartWhere: 'Settings → Apps → Background autostart' }
     const fd = await flowPage(XIAOMI)
-    await fd.goto('http://127.0.0.1:5180/')
+    await fd.goto(WEB + '/')
     await fd.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await sleep(2500)
     check(!(await flowShown(fd)), 'flow: the Autostart tip alone does not open the flow')
@@ -162,7 +162,7 @@ module.exports = async t => {
     await fd.close()
     // A maker whose page is per app, or none of whose pages opens: one button per app (Hermes Mobile, Termux)
     const fi = await flowPage({ ...OK, maker: 'xiaomi', autostart: 'info', autostartName: 'Autostart', autostartWhere: 'Settings → Apps → Background autostart' })
-    await fi.goto('http://127.0.0.1:5180/')
+    await fi.goto(WEB + '/')
     await fi.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await fi.locator('.conn-dot').click()
     await fi.getByRole('button', { name: 'Setup check' }).click()
@@ -177,7 +177,7 @@ module.exports = async t => {
     await fi.close()
     // AOSP emulator / Pixel: the shell reports no Autostart page → no row, even before any Done
     const fg = await flowPage({ ...OK, maker: 'google', autostart: '', autostartName: '', autostartWhere: '' })
-    await fg.goto('http://127.0.0.1:5180/')
+    await fg.goto(WEB + '/')
     await fg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await fg.locator('.conn-dot').click()
     await fg.getByRole('button', { name: 'Setup check' }).click()
@@ -196,7 +196,7 @@ module.exports = async t => {
       // answer never reached the page): coming back to the app re-checks what is really installed and carries on.
       const fs = await flowPage(FRESH)
       await fs.addInitScript(() => { window.__installStall = ['termux-api', 'termux-boot'] })
-      await fs.goto('http://127.0.0.1:5180/')
+      await fs.goto(WEB + '/')
       await fs.getByRole('button', { name: 'Install all' }).click()
       const apiRow = fs.locator('.app-list .setup-item', { hasText: 'Termux:API' })
       await apiRow.getByText('Tap Install on Android’s prompt').waitFor({ timeout: 4000 }).then(() => check(true, 'install-all: the 2nd app waits on Android’s prompt'), () => check(false, 'install-all: the 2nd app waits on Android’s prompt'))
@@ -233,7 +233,7 @@ module.exports = async t => {
       // Termux from another source (Play Store / GitHub): F-Droid's Termux:API / Termux:Boot can't join it. Install all is
       // still the button: it asks, opens Android's uninstall prompt for Termux, and once Termux is gone installs all four.
       const fr = await flowPage({ ...FRESH, termux: true, termuxSigner: 'other', termuxVersion: '0.118.3' })
-      await fr.goto('http://127.0.0.1:5180/')
+      await fr.goto(WEB + '/')
       await fr.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 })
       const all = fr.getByRole('button', { name: 'Install all' })
       check((await all.count()) === 1, 'other Termux: Install all is offered (was “Install Shizuku”, then no button)')
@@ -261,14 +261,14 @@ module.exports = async t => {
       // Android killed the app while Termux was uninstalled: the next launch finishes the job by itself
       const fk = await flowPage({ ...FRESH })
       await fk.addInitScript(() => localStorage.setItem('hm.replaceTermux', String(Date.now() - 5000)))
-      await fk.goto('http://127.0.0.1:5180/')
+      await fk.goto(WEB + '/')
       await fk.waitForFunction(() => (window.__installs || []).length === 4, null, { timeout: 8000 }).then(() => check(true, 'other Termux: after the app was killed, the next launch installs the set'), () => check(false, 'other Termux: after the app was killed, the next launch installs the set'))
       await fk.close()
     }
     {
       // F-Droid Termux, only Shizuku missing: the button still says Install all (owner: one button for every install)
       const fs1 = await flowPage({ ...FRESH, termux: true, termuxSigner: 'fdroid', termuxApi: true, termuxBoot: true })
-      await fs1.goto('http://127.0.0.1:5180/')
+      await fs1.goto(WEB + '/')
       await fs1.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 })
       await fs1.getByRole('button', { name: 'Install all' }).waitFor({ timeout: 4000 }).then(() => fs1.getByRole('button', { name: 'Install all' }).click()).then(() => check(true, 'one missing app: the button is Install all'), () => check(false, 'one missing app: the button is Install all'))
       await fs1.getByText('Start Shizuku', { exact: true }).first().waitFor({ timeout: 8000 }).catch(() => {})
@@ -278,7 +278,7 @@ module.exports = async t => {
     {
       // Android 10 and older have no Wireless debugging: the step says Shizuku starts from a computer, links the guide, no Skip.
       const fo = await flowPage({ ...FRESH, sdk: 29 })
-      await fo.goto('http://127.0.0.1:5180/')
+      await fo.goto(WEB + '/')
       await fo.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 }) // the flow opens at once while Termux is missing
       await fo.evaluate(() => {
         window.__setup = { ...window.__setup, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid' }
@@ -299,7 +299,7 @@ module.exports = async t => {
     {
       // Android 11+ keeps the Developer options / Wireless debugging items
       const fo = await flowPage({ ...FRESH, sdk: 34 })
-      await fo.goto('http://127.0.0.1:5180/')
+      await fo.goto(WEB + '/')
       await fo.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 8000 }) // the flow opens at once while Termux is missing
       await fo.evaluate(() => {
         window.__setup = { ...window.__setup, termux: true, termuxApi: true, termuxBoot: true, shizuku: true, runCommand: true, termuxSigner: 'fdroid' }
@@ -310,7 +310,7 @@ module.exports = async t => {
       await fo.close()
     }
     const fe = await flowPage(FRESH)
-    await fe.goto('http://127.0.0.1:5180/')
+    await fe.goto(WEB + '/')
     await fe.getByText('Get the helper apps', { exact: true }).first().waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: no Termux → the flow opens at once at the helper apps'), () => check(false, 'app-first: no Termux → the flow opens at once at the helper apps'))
     check((await fe.locator('.app-list .setup-item.bad').count()) === 4, 'app-first: four install rows (Termux, Termux:API, Termux:Boot, Shizuku)')
     check((await fe.evaluate(() => window.__probes || 0)) === 0, 'app-first: no Termux command is sent while Termux is missing')
@@ -395,7 +395,7 @@ module.exports = async t => {
   await mock({ configured: true, pluginEnabled: true })
   {
     const ff = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, termuxBootStopped: false, shizuku: true, canInstall: true, devOptions: true, wirelessDebugging: true, termuxSigner: 'fdroid', probe: true, maker: 'google' })
-    await ff.goto('http://127.0.0.1:5180/')
+    await ff.goto(WEB + '/')
     await ff.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await sleep(2000)
     check(!(await flowShown(ff)), 'app-first: a set-up phone goes straight to chat')
@@ -414,7 +414,7 @@ module.exports = async t => {
   await mock({ configured: true, pluginEnabled: true, phone: { files: true, shizuku: 'off' } })
   {
     const fs = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, shizuku: true, shizukuRunning: true })
-    await fs.goto('http://127.0.0.1:5180/')
+    await fs.goto(WEB + '/')
     const card = fs.locator('.flow-card', { hasText: 'Hermes can see and use the screen' })
     await card.waitFor({ timeout: 15000 }).then(() => check(true, 'flow: Shizuku not reachable → opens at the Shizuku step'), () => check(false, 'flow: Shizuku not reachable → opens at the Shizuku step'))
     const t = (await card.textContent().catch(() => '')) || ''
