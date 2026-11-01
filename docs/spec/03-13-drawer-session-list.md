@@ -2,10 +2,10 @@
 
 The drawer is the left-hand panel with the profile switcher, the New chat button, three navigation tiles and the list of chats. It is always mounted (`App.tsx` renders `Drawer`); the `drawer` flag in the store (`web/src/store.ts`) slides it in.
 
-**Source files:** `web/src/components/Drawer.tsx` (`Drawer`), `web/src/components/SessionList.tsx` (`SessionList`, `SwipeRow`, `useDrag`, `SessionMenu`), `web/src/chatorder.ts` (`orderChats`, `recentIds`), `web/src/order.ts` (`useOrder`, `updateOrder`), `web/src/unread.ts` (`ago`, `lastActive`; used here for the "time ago" text).
+**Source files:** `web/src/components/Drawer.tsx` (`Drawer`), `web/src/components/SessionList.tsx` (`SessionList`, `SwipeRow`, `useDrag`, `SessionMenu`), `web/src/chatorder.ts` (`orderChats`, `recentIds`), `web/src/order.ts` (`useOrder`, `updateOrder`), `web/src/unread.ts` (`ago`, `lastActive`; used here for the "time ago" text), `drawerdrag.ts` (the drawer following the finger on a swipe).
 
 #### Drawer
-**Opens from:** the Sessions button in the chat header (`aria-label` "Sessions", or "Sessions (unread chats)" when a chat finished while you were elsewhere); a swipe right on a chat (`web/src/swipe.ts`); switching profile closes it. **Closes with:** tapping the dimmed backdrop, Android Back (`App.tsx` handles Back: it closes the drawer first), opening a chat, New chat, or one of the three tiles. **Source:** `web/src/components/Drawer.tsx` `Drawer`.
+**Opens from:** the Sessions button in the chat header (`aria-label` "Sessions", or "Sessions (unread chats)" when a chat finished while you were elsewhere); a swipe right on a chat, which slides it in under the finger (`web/src/swipe.ts`, `web/src/drawerdrag.ts`; 3.1 has the rules); switching profile closes it. **Closes with:** tapping the dimmed backdrop, a swipe left on the drawer (not on a chat row) or the backdrop, which pushes it back under the finger, Android Back (`App.tsx` handles Back: it closes the drawer first), opening a chat, New chat, or one of the three tiles. **Source:** `web/src/components/Drawer.tsx` `Drawer`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
