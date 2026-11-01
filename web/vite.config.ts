@@ -11,7 +11,7 @@ const katexWoff2Only: Plugin = {
   name: 'katex-woff2-only',
   enforce: 'pre',
   transform(code, id) {
-    if (!/katex(\.min)?\.css$/.test(id)) return null
+    if (!/katex(\.min)?\.css(\?inline)?$/.test(id)) return null
     return code.replace(/,\s*url\([^)]*\.(?:woff|ttf)\)\s*format\("(?:woff|truetype)"\)/g, '')
   }
 }
@@ -21,7 +21,8 @@ const katexWoff2Only: Plugin = {
 // Big optional bundles are built on their own (IIFE, with their own copies of what they import) and embedded as text
 // the browser doesn't parse; the app runs them on first use (src/lazy.ts; import.meta.env.DEV uses import()).
 // Mermaid is ~2.5 MB and only needed for diagrams; OpenUI is ~4 MB (renderer, its component library, React, CSS) and
-// only needed for ```openui-lang cards.
+// only needed for ```openui-lang cards; KaTeX and highlight.js (~1 MB with their CSS and fonts) only for math and
+// code blocks.
 function lazyBundle(id: string, entry: string): Plugin {
   return {
     name: `lazy-${id}`,
@@ -30,7 +31,7 @@ function lazyBundle(id: string, entry: string): Plugin {
       const out = await build({
         configFile: false,
         logLevel: 'warn',
-        plugins: [react()],
+        plugins: [katexWoff2Only, react()],
         // Library mode doesn't replace process.env.NODE_ENV; React reads it, and OpenUI also reads
         // process.env["NODE_ENV"] (no `process` in a WebView: it threw at load), hence the whole object too.
         define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'process.env': JSON.stringify({ NODE_ENV: 'production' }) },
@@ -38,6 +39,7 @@ function lazyBundle(id: string, entry: string): Plugin {
           write: false,
           target: 'es2022',
           minify: true,
+          assetsInlineLimit: 100_000_000, // fonts a ?inline stylesheet uses (KaTeX's) become data: URLs in it
           lib: { entry: fileURLToPath(new URL(entry, import.meta.url)), formats: ['iife'], name: `HmLazy_${id.replace(/\W/g, '_')}` },
           rollupOptions: { output: { inlineDynamicImports: true } }
         }
@@ -63,7 +65,7 @@ const hermesTested = readFileSync(fileURLToPath(new URL('./vendor/hermes-shared/
 export default defineConfig({
   base: './',
   define: { __HERMES_TESTED__: JSON.stringify(hermesTested) },
-  plugins: [katexWoff2Only, react(), viteSingleFile(), lazyBundle('hm-mermaid', './mermaid-entry.js'), lazyBundle('hm-openui', './src/openui-entry.tsx')],
+  plugins: [katexWoff2Only, react(), viteSingleFile(), lazyBundle('hm-mermaid', './mermaid-entry.js'), lazyBundle('hm-openui', './src/openui-entry.tsx'), lazyBundle('hm-rich', './src/rich-entry.ts')],
   resolve: {
     alias: { '@hermes/shared': fileURLToPath(new URL('./vendor/hermes-shared', import.meta.url)) }
   },
