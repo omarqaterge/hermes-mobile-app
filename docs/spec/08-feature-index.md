@@ -42,6 +42,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Read-aloud player: pause, seek bar, 5-second back and forward, speed, any installed speech engine; card in the notification shade with real position | 3.11, 4.6 |
 | Read-aloud says "card shown in the app" for a card | 4.6 |
 | Dictation and hands-free Live mode; approvals asked and answered by voice in Live mode | 3.11, 4.6 |
+| On-device speech recognition: offline models (Moonshine, NeMo, Zipformer) or your own sherpa-onnx model, each checked on a test recording | 3.15, 4.6 |
 | Hermes as the phone's Digital assistant (long-press power opens Live mode) | 4.6 |
 
 **Navigation and settings**

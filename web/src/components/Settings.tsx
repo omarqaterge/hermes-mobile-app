@@ -21,6 +21,8 @@ import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
 import { Markdown } from './Markdown'
+import { SttSettings } from './SttSettings'
+import { chosenSttName, loadSttModels, sttAvailable, useSttModels } from '../stt'
 import { UninstallSection } from './Uninstall'
 import { ProviderList } from './Providers'
 import { onlySlugs } from '../providers'
@@ -636,7 +638,7 @@ function ConfigSheet({ k, field, value, scope, onClose, onSave }: { k: string; f
 // ── App ──────────────────────────────────────────────────────
 
 /** Read-aloud voice: engine, voice, speed and pitch (Android TextToSpeech). */
-function VoiceSettings() {
+function VoiceSettings({ openStt }: { openStt: () => void }) {
   const catalog = useVoice(v => v.catalog)
   const [cfg, setCfg] = useState<TtsConfig>(ttsConfig)
   const [autoRead, setAutoReadState] = useState(autoReadOn)
@@ -645,6 +647,10 @@ function VoiceSettings() {
   }, [])
   // Every hook above this early return (React calls them in the same order on each render).
   const [livePause, setLivePauseState] = useState(getLivePause)
+  const stt = useSttModels()
+  useEffect(() => {
+    if (sttAvailable()) loadSttModels()
+  }, [])
   if (!ttsAvailable()) return <Section footer="Voice options are available in the Android app."><Row title="Voice" value="Not available here" /></Section>
 
   const update = (patch: Partial<TtsConfig>, reload = false) => {
@@ -710,6 +716,11 @@ function VoiceSettings() {
         <SliderRow icon="⏩" tone="blue" title="Speed" value={cfg.rate} min={0.5} max={2} step={0.05} format={v => `${v.toFixed(2)}×`} onChange={v => update({ rate: v })} />
         <SliderRow icon="🎚" tone="green" title="Pitch" value={cfg.pitch} min={0.5} max={2} step={0.05} format={v => v.toFixed(2)} onChange={v => update({ pitch: v })} />
       </Section>
+      {sttAvailable() && (
+        <Section title="Dictation" footer="Speech-to-text for the microphone button and Live mode: the phone’s own, or a model that runs on this phone, offline.">
+          <Row icon="🎤" tone="teal" title="Speech recognition" value={chosenSttName(stt)} chevron onClick={openStt} />
+        </Section>
+      )}
       <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said.">
         <SliderRow icon="⏱" tone="purple" title="Pause before sending" value={livePause} min={0.5} max={6} step={0.5} format={v => `${v.toFixed(1)} s`} onChange={v => { setLivePauseState(v); setLivePause(v) }} />
       </Section>
@@ -819,8 +830,8 @@ function AppearancePage() {
 
 // ── screen: a hub of grouped rows, each opening its own page ─
 
-type Page = 'hub' | 'appearance' | 'voice' | 'models' | 'accounts' | 'keys' | 'config'
-const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', models: 'Default models', accounts: 'Model providers', keys: 'API keys', config: 'Advanced settings' }
+type Page = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'accounts' | 'keys' | 'config'
+const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Default models', accounts: 'Model providers', keys: 'API keys', config: 'Advanced settings' }
 
 function Hub({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
@@ -1039,12 +1050,13 @@ export function SettingsScreen() {
   useEffect(() => {
     void loadProfiles()
   }, [])
-  useBackHandler(() => setPage('hub'), page !== 'hub') // Back on a sub-page returns to the hub
+  useBackHandler(() => setPage(page === 'stt' ? 'voice' : 'hub'), page !== 'hub') // Back on a sub-page returns to the hub (Speech recognition: to Voice)
   return (
-    <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : () => setPage('hub')}>
+    <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : () => setPage(page === 'stt' ? 'voice' : 'hub')}>
       {page === 'hub' && <Hub go={setPage} />}
       {page === 'appearance' && <AppearancePage />}
-      {page === 'voice' && <VoiceSettings />}
+      {page === 'voice' && <VoiceSettings openStt={() => setPage('stt')} />}
+      {page === 'stt' && <SttSettings />}
       {page === 'models' && <ModelsTab />}
       {page === 'accounts' && (
         <>
