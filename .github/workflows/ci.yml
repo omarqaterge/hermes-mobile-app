@@ -10,22 +10,34 @@ on:
     branches: [main]
   pull_request:
 
+# The token only reads (the code, a PR's file list and commits). The repository's default is read-only too; this keeps
+# it so if that setting changes, and no step can push, comment or release with it.
+permissions:
+  contents: read
+  pull-requests: read
+
 # A newer push to a PR cancels its older run; every run on main finishes.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Every job: a time limit (a hung browser test or fetch would otherwise hold a runner for GitHub's default 6 hours) and
+  # a checkout without the token saved in .git/config (no step uses git with it, so install scripts can't read it).
+
   # Which slow groups this change needs (tools/ci-changes.sh); main always runs everything.
   changes:
     name: What changed
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       web: ${{ steps.diff.outputs.web }}
       contract: ${{ steps.diff.outputs.contract }}
       patches: ${{ steps.diff.outputs.patches }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       # The repository's work is its owner's: no commit in a PR may credit an AI tool (tools/check-attribution.sh).
       # In this job, so the required "Web (...)" check fails with it.
       - name: No AI credit in the PR's commits
@@ -52,8 +64,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -67,20 +82,23 @@ jobs:
         working-directory: web
 
   # Five shards in parallel, each with its own mock and page; each starts at a check file that needs nothing from
-  # earlier files (docs/spec/07-03-browser-e2e.md). Change the list there and here together. 12 and 18 are the two
-  # longest files (about 85 s each in CI), so 12 runs alone and 18 only after 17, which it needs. `19-` is 19 to the
-  # last file, so a new file at the end runs without a change here.
+  # earlier files (docs/spec/07-03-browser-e2e.md). Change the list there and here together. 12 is the longest file
+  # (about 85 s in CI), so it runs alone; 18 runs only after 17, which it needs. `19-` is 19 to the last file, so a new
+  # file at the end runs without a change here.
   web-e2e:
     name: Web build and browser e2e (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         shard: ['01-06', '07-11', '12', '13-16,19-', '17-18']
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -114,6 +132,7 @@ jobs:
     needs: [changes, web-unit, web-e2e]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - env:
           RESULTS: ${{ needs.changes.result }} ${{ needs.web-unit.result }} ${{ needs.web-e2e.result }}
@@ -124,8 +143,11 @@ jobs:
   plugin:
     name: Plugin (canvas + media)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -157,8 +179,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.patches == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - run: tools/test_hermes_patches.sh
       - run: bash tools/test_hermes_debian.sh
       - run: bash tools/test_bootstrap_pin.sh
@@ -173,8 +198,11 @@ jobs:
   android:
     name: Android Java compiles
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -197,6 +225,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
