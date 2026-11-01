@@ -73,7 +73,7 @@
 
 | File | What it covers |
 |---|---|
-| `test_hermes_patches.sh` | `hermes/patches` apply to the pinned Hermes (`web/vendor/hermes-shared/.hermes-commit`) and revert cleanly; reports how they fare on upstream `main` (information only). Clones Hermes unless given a checkout. |
+| `test_hermes_patches.sh` | `hermes/patches` apply to the pinned Hermes (`web/vendor/hermes-shared/.hermes-commit`) and revert cleanly; reports how they fare on upstream `main` (information only). Unless given a checkout, fetches only the two commits it needs (the pin, by its full id from `phone/bootstrap.sh`, then upstream `main`) with `--depth=1`, without history: in the blob-less clone it used before, each patch check fetched the files it read one at a time (over a minute in CI). A checkout given on the command line is never made shallow. |
 | `test_hermes_debian.sh` | `phone/hermes-debian` (the proot-distro / chroot-distro switch) with fake `proot-distro`, `chroot-distro`, `su`: `--which`, `--rootfs`, `--put`, `--exists`, `--restart`, exit codes. |
 | `test_bootstrap_pin.sh` | The Hermes commit in `phone/bootstrap.sh` equals the app's vendored pin, and the installer is called with `--commit`. |
 | `test_bootstrap_image.sh` | The ready-made-image path of `bootstrap.sh` with fake `curl`, `proot-distro`, `uname`, `df`; the image name matches `build-image.sh --name`; the packer's scrub. |
