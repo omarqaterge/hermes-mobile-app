@@ -1,0 +1,44 @@
+### 4.6 Voice, read-aloud, Live mode, phone assistant
+
+#### Read-aloud (`Voice`, `TtsMedia`)
+
+What the user sees: a reply read out loud, an in-app player, and a `Reading aloud` card in the shade and on the lock screen with a seek bar and Back 5 s / Pause / Forward 5 s / Stop.
+
+How it works:
+
+1. The page calls bridge `speak(text, cfg)`, or the service calls `Voice.speak` itself for background read-aloud. `cfg` carries `engine` (package or empty for the phone default), `voice` (name), `rate` (clamped 0.3–3.0), `pitch` (0.3–2.5), `notify` (show the card; the voice test sets false), `base` (characters of the page text before this text, when the page restarts a reading mid-way), `title`, `session`.
+2. Only one reader at a time (`Voice.active`): a new reading stops the other instance.
+3. `split` cuts the text into chunks of at most 250 characters, at ". ", a newline or a space. Each chunk is queued with an id `<run>-<index>` (`-last` on the final one). `onStart` of a chunk tells the page `tts-seg` (offset, length), `tts-pace` and `tts-start`; `onDone` of the last one ends the reading (`tts-done`).
+4. Pace: the app measures characters per second between the starts of consecutive chunks (used if between 2 and 120, smoothed 50/50); until then `14 × rate`. Position and duration shown on the card are `characters / pace` (an estimate: Android TTS cannot report a position or seek).
+5. Pause stops the engine and keeps the place; Play reads the current chunk again. Back/Forward 5 s and the seek bar move the position by that many seconds' worth of characters, re-split the text from there, and speak from the new place (`tts-seek`, or `tts-paused` if paused). `Voice.control(cmd)` accepts `play`, `pause`, `toggle`, `ff`, `rew`, `stop` and `seek:<ms>`.
+6. Engine fallback: if the requested or default engine fails to start, the installed engines are tried one by one (Google's first). If none works the page gets `error` `tts-unavailable`.
+7. `TtsMedia.show` publishes a `MediaSession` named `hermes-tts` (metadata: chat title or "Reading aloud", artist "Hermes", duration; playback state with position, speed 1 or 0 and the time it was true, so the system draws the bar by itself without a timer) and the `MediaStyle` notification on the `Reading aloud` channel (id 7, public on the lock screen, category transport). Advertised actions: play, pause, play/pause, seek, stop, plus two custom actions Back 5 s and Forward 5 s. Skip next/previous from a headset also run the 5 s jump. The card is native on purpose: the page is frozen about a minute after the app is hidden, so controls that went through it would stop working. It is removed when the reading ends, is stopped, or the reader is destroyed.
+8. `Voice.speakable(markdown)` turns a reply into speech text: a card (an `openui` fence or the `[card]` marker the plugin writes) becomes "(card shown in the app).", other code blocks "(code omitted).", `MEDIA:` lines, images and link targets are dropped (link text kept), list/heading/quote/table markup and emphasis marks are removed, URLs become "link", emoji are removed, blank lines become sentence breaks. It is a port of `speakable()` in `web/src/voice.ts`.
+
+**Background read-aloud** (`HermesService.readAloud`): runs for a `reply` event when the app is not on screen, `platform` is `mobile` (only chats made in this app), `speak_text` is not empty, and the stored read-aloud setting (`setReadAloud`) is on for that chat (the per-chat value in `sessions` if present, else `global`). It adds `notify`, `title` and `session` to the stored voice settings so the card appears, and speaks on the main thread with the service's own `Voice`.
+
+Page events (`window.__hmVoice(kind, text)`): `tts-start`, `tts-seg`, `tts-pace`, `tts-seek`, `tts-paused`, `tts-resumed`, `tts-done` (text `stop` when the user ended it from the card or a media button), `voices`, `ready`, `partial`, `final`, `error`, `end`. Error texts: `tts-unavailable`, `voices-failed`, `stt-unavailable`, `stt-<code>`, `stt-start`, `mic-denied`.
+
+#### Dictation (`Voice` speech-to-text)
+
+`startListening` needs `RECORD_AUDIO` (asks, and continues after the answer; on denial the page gets `error` `mic-denied` then `end`). It stops any reading first so Hermes does not hear itself. Listening is continuous: partial results go to the page as `partial`, a finished phrase as `final`, and the recogniser restarts after each result, after "no match" and after speech timeouts, so it stays on until `stopListening`. Silence extras ask for 30 s. A recogniser that fails before it ever listened is replaced by the next installed one (the phone's default, then Google's, then others), and the one that worked is remembered in the `voice` preferences (`recognizer`). Busy or client errors of a working recogniser are retried up to four times on a new instance. `stopListening` lets the current phrase finish and forces the end after 2 s. `MainActivity.onPause` calls it, so the microphone never stays open in the background.
+
+#### Live mode
+
+Live mode (hands-free voice conversation) is page code (`web/src/live.ts`). The Android side supplies how it starts and the microphone/speech engine:
+
+- The launcher shortcut "Live mode" (long-press the app icon; `res/xml/shortcuts.xml`, extra `shortcut` = `live`) and the shortcut "New chat" (`new`). `MainActivity.shortcutOf` reads the extra; `deliverShortcut` waits for the page to be ready and calls `window.hermesShortcut(kind)`. The page starts a new draft and, for `live`, starts Live mode once Hermes is online (waits up to 30 s).
+- The assist gesture or a headset voice button (see below) is turned into `live` by the same function.
+- The microphone closes when the activity pauses; the page ends Live mode when it is hidden, and lets a reply that is being read finish.
+
+#### Phone assistant role
+
+The manifest gives `MainActivity` an `ASSIST` and `VOICE_COMMAND` filter. When the user picks Hermes as the digital assistant app (system settings; the role cannot be requested by an app, so bridge `openAssistantSettings` opens the page where it is chosen), the assist gesture (long-press power, corner swipe) or a headset's voice button starts the app. `shortcutOf` maps it to Live mode, or to a new chat when the system hints the user wants the keyboard (`EXTRA_ASSIST_INPUT_HINT_KEYBOARD`); an intent that came from Recents (`FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`) is ignored, and after delivery the intent is reset to `MAIN` so a recreated activity does not start Live mode again. Bridge `isAssistant` reports whether the role is held (Android 10+).
+
+#### Talking on the lock screen
+
+The assist gesture on a locked phone. `MainActivity.applyLockScreen` decides for every intent (`onCreate`, `onNewIntent`), from the `hm` preference `lockAssist` (bridge `setLockAssist`; Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen", default off):
+
+- **Off (default):** the app opens behind the lock screen and `askUnlock` brings up the unlock screen at once; `deliverShortcut` holds Live mode back while `keyguardLocked` is true and delivers it on `onResume` or when the unlock succeeds, so the microphone never opens behind the lock screen.
+- **On:** `showOverLock(true)`: `setShowWhenLocked`/`setTurnScreenOn` on Android 8.1+, the window flags `FLAG_SHOW_WHEN_LOCKED`/`FLAG_TURN_SCREEN_ON` on 8.0. The page gets `window.hermesLockView(true)` (`web/src/lockview.ts`) and is for talking only: `answerRequest` lets only Deny through (anything else, by voice or on the sheet, toasts "Unlock the phone to allow this" / "Unlock the phone to answer" and calls `requestUnlock`); opening the chat list, a screen or a sheet is undone with "Unlock the phone to see your chats" and `requestUnlock`; a reply typed into a notification is refused (`notif-answer.ts`). Auto and Full access don't apply there: the `access` chat-open step skips the default access (`defaultAccess`) for a chat `newSession` made over the lock screen, so the Live chat (always a new draft, `hermesShortcut`) asks before risky commands; `setAccessNow` refuses to turn Auto or Full on ("Unlock the phone to change access", also for a resume re-applying a chat's access or /yolo by voice); and `sendPrompt` refuses to send into a chat in Auto or Full access ("Unlock the phone to use this chat"). Each asks for the unlock screen. Ending Live mode calls `leaveLockScreen`, so the lock screen covers the app again.
+- It stops showing over the lock screen when the phone is unlocked (`ACTION_USER_PRESENT`, or `requestDismissKeyguard` succeeded), when the activity stops (`onStop`: screen off, app left), and for any intent that is not the assist gesture. Logcat tag `HermesLock`.
