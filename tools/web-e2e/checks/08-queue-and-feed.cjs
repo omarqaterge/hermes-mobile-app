@@ -112,10 +112,9 @@ module.exports = async t => {
   {
     const lbl = (await chip.getAttribute('aria-label')) || ''
     const m = /^Model: .*, reasoning (\w+)\. Change model$/.exec(lbl)
-    const want = { minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5 }[m ? m[1] : '']
-    check(!!m && !!want, `motion: the chip's label names the reasoning level (${lbl})`)
-    check((await chip.locator('.effort-bars').count()) === 1 && (await chip.locator('.effort-bar').count()) === 5, 'motion: the chip draws five effort bars')
-    check((await chip.locator('.effort-bar.on').count()) === want, `motion: ${want} bars are filled`)
+    check(!!m, `the chip's label names the reasoning level (${lbl})`)
+    const short = { medium: 'med', minimal: 'min' }[m ? m[1] : ''] || (m ? m[1] : '')
+    check(((await chip.locator('.model-chip-effort').textContent()) || '') === short, `the chip shows the reasoning level as text (${short})`)
   }
 
   // ── canvas: a long canvas call opens the panel on a "writing" state, then shows the document ──
