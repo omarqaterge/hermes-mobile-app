@@ -58,6 +58,8 @@
 | `Uninstall.tsx` | The Danger zone section, the uninstall sheet and its resume at start-up |
 | `uninstall.ts` | Pure uninstall logic and the shell calls |
 | `update.ts` | The in-app app-update check and install request |
+| `SttSettings.tsx` | Settings → Voice → Speech recognition: the phone's recogniser, the on-device model cards and Your own model |
+| `stt.ts` | The on-device model list from the shell (`listSttModels`, `stt-models` events), its actions, `fmtSize`, `chosenSttName`, `testSummary` |
 | `hermes-update.ts` | The phone's Hermes version and its match with the version the app was made for |
 | `theme.ts` | The four themes and how they reach the page and Android |
 | `ui.tsx` | Sections, rows, switches, pickers, sliders, segmented control, `Collapse`, `Chevron` |

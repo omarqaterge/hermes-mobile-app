@@ -33,6 +33,9 @@ cp ../web/dist/index.html assets/www/index.html
 # Settings → Uninstall Hermes runs this in Termux (Uninstall.java); shipped in the APK so it matches the app.
 mkdir -p assets/phone
 cp ../phone/uninstall.sh assets/phone/uninstall.sh
+# "Test model" in Settings → Voice → Speech recognition transcribes this clip (LibriSpeech, CC BY 4.0; see THIRD_PARTY.md).
+mkdir -p assets/stt
+cp stt/sample.wav assets/stt/sample.wav
 
 rm -rf build && mkdir -p build/gen build/classes build/dex
 
@@ -62,11 +65,16 @@ fi
   --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
   --java build/gen -o build/unsigned.apk "${RES_ZIPS[@]}"
 
-# 3. Java → classes → dex
+# 3. Java → classes → dex. On-device dictation (LocalStt) runs on sherpa-onnx: its pure-Java API jar is compiled in and
+# its native library (lib/<abi>/libsherpa-onnx-jni.so, onnxruntime linked in) goes into the APK.
+SHERPA=$(../tools/sherpa-onnx.sh)
+SHERPA_JAR=$(sed -n 1p <<< "$SHERPA")
+SHERPA_LIBS=$(sed -n 2p <<< "$SHERPA")
 find src build/gen -name '*.java' > build/sources.txt
-javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -classpath "$ANDROID_JAR" -d build/classes @build/sources.txt
-"$BT/d8" --min-api 26 --lib "$ANDROID_JAR" --output build/dex $(find build/classes -name '*.class')
+javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -classpath "$ANDROID_JAR:$SHERPA_JAR" -d build/classes @build/sources.txt
+"$BT/d8" --min-api 26 --lib "$ANDROID_JAR" --output build/dex $(find build/classes -name '*.class') "$SHERPA_JAR"
 ( cd build/dex && zip -q -j ../unsigned.apk classes.dex )
+( cd "$SHERPA_LIBS" && zip -q -r "$OLDPWD/build/unsigned.apk" lib -x '*.done' )
 
 # 4. align + sign
 [ -f "$KS" ] || keytool -genkeypair -keystore "$KS" -storepass hermesmobile -keypass hermesmobile \
