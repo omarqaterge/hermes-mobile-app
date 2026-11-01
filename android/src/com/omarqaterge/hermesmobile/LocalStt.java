@@ -707,19 +707,16 @@ final class LocalStt {
         stopAsked = true;
     }
 
+    /**
+     * One dictation. The microphone opens first and the page hears "ready" at once; when the model isn't in memory yet
+     * (the first dictation since the app came to the front) it loads meanwhile, and the audio heard while it loads waits
+     * in the queue and is decoded as soon as it is ready, so nothing said in the first second or two is lost.
+     */
     private void listen(File d, Sink sink) {
         AudioRecord rec = null;
+        Thread reader = null;
+        final java.util.concurrent.atomic.AtomicBoolean micOn = new java.util.concurrent.atomic.AtomicBoolean(true);
         try {
-            if (engine == null || !d.getName().equals(engineId)) {
-                freeEngine();
-                try {
-                    engine = SttEngine.load(d, SttModels.needsVad(SttEngine.meta(d).getString("kind")) ? vadFile() : null);
-                    engineId = d.getName();
-                } catch (Throwable e) {
-                    sink.failed("stt-model-load");
-                    return;
-                }
-            }
             if (stopAsked) return;
             // 16 kHz is what the models take; a microphone that can't record at that rate records at 48 kHz (resampled)
             int rate = 0;
@@ -744,21 +741,15 @@ final class LocalStt {
                 sink.failed("stt-mic");
                 return;
             }
-            rec.startRecording();
-            sink.ready();
-            SttEngine.Session s = engine.new Session(new SttEngine.Out() {
-                @Override public void partial(String text) { sink.partial(text); }
-                @Override public void phrase(String text) { sink.phrase(text); }
-            });
-            // The microphone is read on its own thread: AudioRecord holds only ~0.4 s, and decoding a phrase on a slow
-            // phone can take longer, which would drop the start of the next one. Previews wait while decoding is behind.
+            // The microphone is read on its own thread into a queue: AudioRecord holds only ~0.4 s, and loading the model
+            // or decoding a phrase on a slow phone takes longer. Previews wait while decoding is behind.
             final AudioRecord r = rec;
             final int rr = rate;
             final java.util.concurrent.LinkedBlockingQueue<float[]> q = new java.util.concurrent.LinkedBlockingQueue<>();
             final float[] end = new float[0];
-            Thread reader = new Thread(() -> {
+            reader = new Thread(() -> {
                 short[] buf = new short[rr / 10]; // 100 ms
-                while (!stopAsked) {
+                while (!stopAsked && micOn.get()) {
                     int n = r.read(buf, 0, buf.length);
                     if (n < 0) break;
                     float[] f = new float[n];
@@ -767,20 +758,55 @@ final class LocalStt {
                 }
                 q.add(end);
             }, "stt-mic");
+            rec.startRecording();
             reader.start();
+            sink.ready();
+            if (engine == null || !d.getName().equals(engineId)) {
+                freeEngine();
+                try {
+                    engine = SttEngine.load(d, SttModels.needsVad(SttEngine.meta(d).getString("kind")) ? vadFile() : null);
+                    engineId = d.getName();
+                } catch (Throwable e) {
+                    closeMic(micOn, reader, rec); // free the microphone before the phone's recogniser takes over
+                    rec = null;
+                    sink.failed("stt-model-load");
+                    return;
+                }
+            }
+            SttEngine.Session s = engine.new Session(new SttEngine.Out() {
+                @Override public void partial(String text) { sink.partial(text); }
+                @Override public void phrase(String text) { sink.phrase(text); }
+            });
             for (float[] f; (f = q.take()) != end; ) {
                 s.behind = q.size() > 5;
                 s.accept(f);
             }
-            rec.stop();
+            closeMic(micOn, reader, rec);
+            rec = null;
             s.finish();
         } catch (Throwable e) {
+            closeMic(micOn, reader, rec);
+            rec = null;
             sink.failed("stt-start");
         } finally {
             if (rec != null) rec.release();
             listening = false;
             sink.end();
         }
+    }
+
+    private static void closeMic(java.util.concurrent.atomic.AtomicBoolean micOn, Thread reader, AudioRecord rec) {
+        micOn.set(false);
+        if (rec == null) return;
+        try {
+            rec.stop(); // ends a read() in progress, so the reader thread finishes
+        } catch (Exception ignored) {
+        }
+        if (reader != null) try {
+            reader.join(500);
+        } catch (InterruptedException ignored) {
+        }
+        rec.release();
     }
 
     /** Frees the model's memory (the app went to the background, or another model was chosen). */
