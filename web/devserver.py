@@ -7,6 +7,8 @@ import http.server
 import json
 import os
 import re
+import signal
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -93,4 +95,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    # A plain `kill` (run.sh stopping it) ends it quietly, without bash's "Terminated" line.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    # Printed once the port is ours: tools/web-e2e/run.sh waits for this line.
+    print(f"devserver on http://127.0.0.1:{PORT}", flush=True)
+    server.serve_forever()
