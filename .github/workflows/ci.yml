@@ -98,3 +98,25 @@ jobs:
       - run: tools/test_setup_lines.sh
       - run: tools/test_autostart.sh
       - run: tools/test_devtools_guard.sh
+
+  hermes-contract:
+    name: Mock Hermes matches the pinned Hermes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/web-e2e/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: web/vendor/hermes-shared/.hermes-commit
+      - name: Install the mock's packages
+        working-directory: tools/web-e2e
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm ci
+      - run: tools/hermes-contract/run.sh "$RUNNER_TEMP/hermes-contract"
