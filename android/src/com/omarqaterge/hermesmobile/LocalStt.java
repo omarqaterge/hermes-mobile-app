@@ -76,7 +76,11 @@ final class LocalStt {
 
     private SttEngine engine;
     private String engineId;
-    private volatile boolean listening = false, stopAsked = false;
+    /** One dictation: its own stop flag, so a new one can start while the last one is still finishing its phrase. */
+    private static final class Run {
+        volatile boolean stop = false;
+    }
+    private volatile Run current; // the dictation the page hears from; an older one still finishing is silent
 
     LocalStt(MainActivity a) {
         this.a = a;
@@ -689,22 +693,41 @@ final class LocalStt {
     // ── listening ───────────────────────────────────────────
 
     boolean listening() {
-        return listening;
+        Run c = current;
+        return c != null && !c.stop;
     }
 
-    /** Starts dictation with the chosen model (loaded on first use). False when no ready model is chosen. */
-    boolean start(Sink sink) {
+    /**
+     * Starts dictation with the chosen model (loaded on first use). False when no ready model is chosen. A dictation that
+     * was stopped but is still finishing its last phrase (Live mode stops when it sends and starts again after the reply)
+     * no longer reaches the page: its late phrase and "end" would land in the new one. The new one waits for it to let
+     * go of the microphone, which it does before decoding that phrase.
+     */
+    synchronized boolean start(Sink sink) {
         final File d = chosenDir();
-        if (d == null || listening) return false;
-        listening = true;
-        stopAsked = false;
-        audio.execute(() -> listen(d, sink));
+        if (d == null) return false;
+        if (listening()) return true; // already on
+        final Run r = new Run();
+        current = r;
+        audio.execute(() -> listen(d, gate(r, sink), r));
         return true;
+    }
+
+    /** Passes a dictation's events on only while it is the current one. */
+    private Sink gate(Run r, Sink to) {
+        return new Sink() {
+            @Override public void ready() { if (current == r) to.ready(); }
+            @Override public void partial(String text) { if (current == r) to.partial(text); }
+            @Override public void phrase(String text) { if (current == r) to.phrase(text); }
+            @Override public void failed(String code) { if (current == r) to.failed(code); }
+            @Override public void end() { if (current == r) to.end(); }
+        };
     }
 
     /** The user pressed stop (or left the app): the phrase being said is finished, then the session ends. */
     void stop() {
-        stopAsked = true;
+        Run c = current;
+        if (c != null) c.stop = true;
     }
 
     /**
@@ -712,12 +735,12 @@ final class LocalStt {
      * (the first dictation since the app came to the front) it loads meanwhile, and the audio heard while it loads waits
      * in the queue and is decoded as soon as it is ready, so nothing said in the first second or two is lost.
      */
-    private void listen(File d, Sink sink) {
+    private void listen(File d, Sink sink, Run run) {
         AudioRecord rec = null;
         Thread reader = null;
         final java.util.concurrent.atomic.AtomicBoolean micOn = new java.util.concurrent.atomic.AtomicBoolean(true);
         try {
-            if (stopAsked) return;
+            if (run.stop) return;
             // 16 kHz is what the models take; a microphone that can't record at that rate records at 48 kHz (resampled)
             int rate = 0;
             for (int r : new int[]{SttEngine.RATE, 48000}) {
@@ -749,7 +772,7 @@ final class LocalStt {
             final float[] end = new float[0];
             reader = new Thread(() -> {
                 short[] buf = new short[rr / 10]; // 100 ms
-                while (!stopAsked && micOn.get()) {
+                while (!run.stop && micOn.get()) {
                     int n = r.read(buf, 0, buf.length);
                     if (n < 0) break;
                     float[] f = new float[n];
@@ -790,8 +813,10 @@ final class LocalStt {
             sink.failed("stt-start");
         } finally {
             if (rec != null) rec.release();
-            listening = false;
             sink.end();
+            synchronized (this) {
+                if (current == run) current = null;
+            }
         }
     }
 
@@ -811,7 +836,7 @@ final class LocalStt {
 
     /** Frees the model's memory (the app went to the background, or another model was chosen). */
     void release() {
-        stopAsked = true;
+        stop();
         audio.execute(this::freeEngine);
     }
 
@@ -822,7 +847,7 @@ final class LocalStt {
     }
 
     void destroy() {
-        stopAsked = true;
+        stop();
         audio.execute(this::freeEngine);
         audio.shutdown();
         work.shutdownNow();

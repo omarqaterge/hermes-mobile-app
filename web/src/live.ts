@@ -36,6 +36,10 @@ let thinkTimer: ReturnType<typeof setTimeout> | null = null
 let unTts: (() => void) | null = null
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 let muted = false // mic off, session still running
+// The pause ran out while the last phrase was only a preview (an on-device model finishes a phrase a moment after you
+// stop, and its previews lag behind): wait this long for the phrase itself before sending, so no words are cut off.
+const FINAL_WAIT_MS = 1500
+let finalWait = false
 
 export const liveAvailable = (): boolean => voiceInputAvailable()
 export const liveOn = (): boolean => phase !== 'off'
@@ -47,6 +51,7 @@ function clearTimers() {
   if (thinkTimer) clearTimeout(thinkTimer)
   if (idleTimer) clearTimeout(idleTimer)
   pauseTimer = thinkTimer = idleTimer = null
+  finalWait = false
 }
 
 /** (Re)start the "nobody is talking" countdown; any recognised speech resets it. */
@@ -81,7 +86,11 @@ function listen() {
     } else if (kind === 'final') {
       buffer = join(buffer, t)
       partial = ''
-      if (!pauseTimer) arm() // a phrase that arrived only as a final still counts as speech
+      if (finalWait) {
+        // the phrase we were waiting for: send now
+        if (pauseTimer) clearTimeout(pauseTimer)
+        fire()
+      } else if (!pauseTimer) arm() // a phrase that arrived only as a final still counts as speech
     } else if (kind === 'error') {
       toast(voiceErrorText(t, true), 'error', 8000)
       stopLive()
@@ -93,12 +102,19 @@ function listen() {
 }
 
 function arm() {
+  finalWait = false
   if (pauseTimer) clearTimeout(pauseTimer)
   pauseTimer = setTimeout(fire, getLivePause() * 1000)
 }
 
 function fire() {
   pauseTimer = null
+  if (partial && !finalWait && phase === 'listening') {
+    finalWait = true
+    pauseTimer = setTimeout(fire, FINAL_WAIT_MS)
+    return
+  }
+  finalWait = false
   const text = join(buffer, partial)
   if (!text || phase !== 'listening') return
   goto('thinking')
