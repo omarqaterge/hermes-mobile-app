@@ -15,5 +15,6 @@
 | `docs/decisions/` | every agent changing behaviour | One file per owner decision (**Decided:**, the reason, **So:**); read the ones for a screen before changing it, add one when the owner decides something. |
 | `.github/ISSUE_TEMPLATE/agent_task.md` | whoever files work | A complete brief: goal, area and files, acceptance, how to verify, needs a phone, decisions that apply. |
 | `docs/improvements.md`, `docs/manual-tests.md` | maintainers | Backlog with what was verified where; hand-test list. |
+| `docs/performance-history.md` | maintainers | How fast the app gets to a usable chat, from the first measurements to now, and the method for adding the next measurement (Last start-up row over five starts, `tools/gw-time`). |
 
 ---
