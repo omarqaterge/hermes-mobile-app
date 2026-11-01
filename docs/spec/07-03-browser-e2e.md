@@ -25,4 +25,4 @@ Headless Chromium drives the built web UI against a mock Hermes, with no phone. 
 
 **`web/devserver.py`** (used by `run.sh`): serves `web/dist/index.html` on `127.0.0.1:5180` (`HM_DEV_PORT` picks another port; `HM_HERMES_URL` another dashboard than `http://127.0.0.1:9119`), injects the Hermes session token into `sessionStorage` (the job the Android shell's bridge does) and proxies `/__api/<path>` to the dashboard with the token. Prints `devserver on http://127.0.0.1:<port>` once it listens. Loopback only; the token never appears in a URL. For a manual run against the phone: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open `http://127.0.0.1:5180` at 375×812.
 
-Other test layers: `cd web && npm test` (vitest, 38 files, spec 7.1); the Python and shell tests in 7.2; `python3 tools/e2e.py --quick` on a phone after touching the plugin, the service or the event flow.
+Other test layers: `cd web && npm test` (vitest, 22 files); the Python and shell tests in 7.2; `python3 tools/e2e.py --quick` on a phone after touching the plugin, the service or the event flow.
