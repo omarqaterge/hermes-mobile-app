@@ -64,9 +64,15 @@ Ask Hermes to do something in an app ("add milk to my Keep list") and it opens t
 types, while you keep using your phone. The status chip says **Using <app>** and **Take over** brings the app to your screen.
 It asks once per app per chat; banking, payment, password and 2FA apps stay off unless you allow them. Needs Android 14+ and Shizuku.
 
+### Knows your phone
+
+Hermes runs on the phone it talks about, so you can just ask: battery, storage, files in Downloads, what's installed. It uses
+Termux's phone commands, and with Shizuku it gets system-level access (settings, apps, logs) through `rish`. If Shizuku has
+stopped, it tells you instead of guessing.
+
 ### Your chats, your memory, your look
 
-Search inside every message, pin, archive, link chats to chats. Every memory write is shown as a diff, and there is a screen to see
+Search inside every message, pin, archive, link chats to chats, or ask Hermes to find "the chat where I sent the receipt photo". Every memory write is shown as a diff, and there is a screen to see
 what Hermes remembers. Dark, OLED black or light.
 
 <p align="center"><img src="docs/img/more.png" alt="Drawer, memory screen and light theme" width="100%"></p>
@@ -75,18 +81,20 @@ what Hermes remembers. Dark, OLED black or light.
 
 | | |
 |---|---|
-| **Chat** | Stop or steer a running reply; edit, retry or branch any turn; `/btw` side questions; `/` autocomplete for every skill and command; per-chat drafts |
-| **See the work** | Reasoning, live tool cards, sub-agents, the to-do list, speed and context use per reply, and file checkpoints to undo Hermes's file changes |
-| **Cards in replies** | Hermes can answer with interactive cards (tables, charts, tabs, buttons, forms) drawn by OpenUI; a card can show live, read-only data. Off switch in Settings → Replies |
-| **Voice** | Read replies aloud with a player (pause, seek, speed, any installed speech engine), dictation and hands-free Live mode |
-| **Models & profiles** | Sign in with ChatGPT, Claude, Grok or Nous Portal, or use API keys; switch model and reasoning level per chat; profiles with their own default model, keys and SOUL.md |
-| **Notifications** | Reply, answer questions and allow commands right from the notification; cron results; a "failed" note when a model call fails |
-| **Screens** | Skills, memory, cron jobs, files, projects, a canvas gallery, and every Hermes setting |
+| **Chat** | Stop or steer a running reply, or queue follow-ups that send when it ends; edit, retry or branch any turn; quote part of a reply or ask to explain it; `/btw` side questions (pull up past the last message); `/` autocomplete for every skill and command; per-chat drafts and stashed drafts |
+| **Long chats** | A rail on the right edge to jump between your messages; a "New since your last visit" line where unread messages start; several questions asked one at a time |
+| **See the work** | Reasoning, live tool cards, sub-agents, the to-do list, how long the turn has run and the chat's `/goal`; a card with the files a turn changed and their diffs; file checkpoints to undo them; a ring showing how full the context is, with Compress |
+| **Cards in replies** | Hermes can answer with interactive cards (tables, charts, tabs, buttons, forms) drawn by OpenUI; a card can show live, read-only data (off switch: Settings → Replies → Dynamic UI). HTML and SVG code blocks get a Preview button |
+| **Voice** | Read replies aloud with a player (pause, seek, speed, any installed speech engine), dictation and hands-free Live mode, optionally over the lock screen |
+| **Models & profiles** | Sign in with ChatGPT, Claude, Grok or Nous Portal, or use API keys; switch model and reasoning level per chat; bots (Hermes profiles) with their own default model, keys and SOUL.md |
+| **Notifications** | Reply, answer questions and allow commands right from the notification (a locked phone asks you to unlock first); a Done chip and app-icon badge for chats that finished while you were away; cron results; a "failed" note when a model call fails |
+| **Screens** | Skills, memory, cron jobs, projects, a canvas gallery, every Hermes setting, and files with previews (tables for CSV, code, JSON, Mermaid, HTML, audio and video) |
 | **Share** | "Share to Hermes" from any app; attach photos, camera shots and files; share a chat as Markdown |
 | **Offline-friendly** | Messages typed offline send on reconnect; the last chat list is cached |
 | **Shortcuts & big screens** | Launcher shortcuts (New chat, Live mode, last chat); a two-column layout on tablets and foldables |
 | **Setup check** | One screen that checks Termux, permissions, the plugin and battery settings, with a fix button for each |
 | **Battery** | No permanent wake lock: the phone sleeps while Hermes is idle |
+| **Updates** | A notification when a new release is out; one tap in Settings → About installs it |
 
 ## Install
 
@@ -207,7 +215,7 @@ Full specification (architecture, every feature, every screen): [docs/SPEC.md](d
 
 ## Build the app yourself
 
-You need **Node 20+**, **JDK 17** and the [Android command-line tools](https://developer.android.com/studio#command-line-tools-only)
+You need **Node 22+**, **JDK 17** and the [Android command-line tools](https://developer.android.com/studio#command-line-tools-only)
 (`sdkmanager "platforms;android-36" "build-tools;35.0.0"`). No Gradle:
 
 ```bash
@@ -222,7 +230,8 @@ downloaded one, because the keys differ: uninstall that first.
 
 For testing only, `HM_DEVTOOLS=1 android/build.sh` makes a build whose page can be inspected and driven from a computer over `adb`
 (Chrome DevTools, Playwright). It shows a "Test build: remote debugging is on" strip, and the script refuses to combine it with
-`KEYSTORE`, so a release can't carry it. Anything that can reach `adb` on the phone can read your chats in such a build: don't use it day to day.
+`KEYSTORE`, so a release can't carry it. Anything that can reach `adb` on the phone can read your chats in such a build: don't use it day to day. On a normal build,
+**Settings → About → Remote debugging** (shown with Developer options on) does the same for 60 minutes after your screen lock.
 
 To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open http://127.0.0.1:5180.
 
