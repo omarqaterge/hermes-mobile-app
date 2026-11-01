@@ -1,6 +1,8 @@
 // Mock Hermes dashboard + tui_gateway on 127.0.0.1:9119 for browser tests of the web UI (no phone needed).
 // Logs every RPC / REST call to a JSONL file so test.cjs can assert what the app sent.
 const http = require('http')
+// HM_E2E_MOCK_PORT: another port when 9119 is taken (run.sh picks one).
+const PORT = Number(process.env.HM_E2E_MOCK_PORT || 9119)
 
 // Reply for the inline HTML preview scenarios (`show html`, `show html streaming`).
 const HTML_REPLY = 'Page:\n\n```html\n<!doctype html>\n<h1 id="t">Hello frame</h1>\n<script>document.getElementById("t").textContent += " ok"</script>\n<div style="height:600px"></div>\n```'
@@ -1098,7 +1100,7 @@ wss.on('connection', ws => {
 })
 
 server.on('error', e => {
-  console.error(`mock: can't listen on 127.0.0.1:9119 (${e.code}). Is an adb forward or a real Hermes using it?`)
+  console.error(`mock: can't listen on 127.0.0.1:${PORT} (${e.code}). Is an adb forward or a real Hermes using it?`)
   process.exit(1)
 })
-server.listen(9119, '127.0.0.1', () => console.log('mock on 9119'))
+server.listen(PORT, '127.0.0.1', () => console.log(`mock on ${PORT}`))

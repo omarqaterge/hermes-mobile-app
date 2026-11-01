@@ -1,6 +1,6 @@
 // Mermaid, quoting, OpenUI cards, HTML preview, tool calls, motion, turn file changes, web addresses.
 const path = require('path')
-const { calls, rpcs, sleep, check, mock } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -125,7 +125,7 @@ module.exports = async t => {
     }
     await bookFlow(page, loc => loc.click({ timeout: 5000 }), 'card form (mouse)')
     const tp = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true })
-    await tp.goto('http://127.0.0.1:5180/')
+    await tp.goto(WEB + '/')
     await tp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
     await bookFlow(tp, loc => loc.tap({ timeout: 5000 }), 'card form (touch)')
     await tp.close()

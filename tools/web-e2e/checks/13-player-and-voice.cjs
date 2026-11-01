@@ -1,6 +1,6 @@
 // Read-aloud player, chat links, dictation, model in the + menu, learning dot.
 const path = require('path')
-const { calls, rpcs, sleep, check, fail, mock } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -19,7 +19,7 @@ module.exports = async t => {
     }
     window.HermesAndroid = {
       handshake: () => (taken ? '' : ((taken = true), 'K')),
-      getBaseUrl: key => (k(key, 'getBaseUrl'), 'http://127.0.0.1:9119'),
+      getBaseUrl: key => (k(key, 'getBaseUrl'), window.__hmMockBase),
       getToken: key => (k(key, 'getToken'), 'tok'),
       getTokenAsync: (key, id) => {
         k(key, 'getTokenAsync')
@@ -52,7 +52,7 @@ module.exports = async t => {
       stopListening: key => k(key, 'stopListening')
     }
   })
-  await vp.goto('http://127.0.0.1:5180/')
+  await vp.goto(WEB + '/')
   const vbox = vp.getByPlaceholder('Message Hermes')
   await vbox.waitFor({ timeout: 15000 })
   // model moved from the header into the + menu
