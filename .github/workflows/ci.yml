@@ -99,9 +99,11 @@ jobs:
         working-directory: tools/web-e2e
         env:
           HM_E2E_SKIP_BUILD: '1'
+        # No --with-deps: the runner image already has Chromium's system libraries (it ships Google Chrome), and the
+        # apt-get run that flag starts cost about 20 s per shard even with the browser cached.
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
           ./run.sh --only ${{ matrix.shard }}
 
   # The name the main ruleset requires: passes when both web jobs passed, or were skipped because nothing web changed.
