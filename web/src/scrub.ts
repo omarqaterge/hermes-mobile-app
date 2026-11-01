@@ -40,12 +40,22 @@ export function nearestMark(marks: Mark[], fraction: number): number {
   return Math.round(f * (marks.length - 1))
 }
 
-/** The last mark at or above the item at the top of the screen (0 when none is). */
-export function currentMark(marks: Mark[], topIdx: number): number {
-  let cur = 0
-  for (let k = 0; k < marks.length; k++) {
-    if (marks[k].idx <= topIdx) cur = k
-    else break
-  }
-  return cur
+/** The line read against the marks, in the list's content (px): just under the top of the screen, sliding down to the
+ * end of the list over the last screenful so that the end of the chat reaches the last mark. */
+export function readLine(scrollTop: number, clientHeight: number, scrollHeight: number): number {
+  const left = Math.max(0, scrollHeight - clientHeight - scrollTop)
+  const slide = clientHeight > 0 && left < clientHeight ? 1 - left / clientHeight : 0
+  return scrollTop + 10 + slide * Math.max(0, clientHeight - 10)
+}
+
+/** Where the screen is along the rail, counted in marks: 2 is on your third message, 2.5 halfway from it to the
+ * fourth. `tops` are the marks' tops in the list's content (px, in order), `line` comes from `readLine`. */
+export function railPosition(tops: number[], line: number): number {
+  const n = tops.length
+  if (!n || !(line >= tops[0])) return 0
+  let k = 0
+  while (k + 1 < n && tops[k + 1] <= line) k++
+  if (k === n - 1) return k
+  const gap = tops[k + 1] - tops[k]
+  return gap > 0 ? k + Math.min(1, (line - tops[k]) / gap) : k
 }

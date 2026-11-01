@@ -77,8 +77,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `queue.ts` | Follow-ups queued while Hermes works: `queuedFor`, `enqueue`, `editQueued`, `removeQueued`, `takeFirst`, `restoreFirst`, `clearQueue`, `isPaused`, `setPaused`, `useQueue`, `QUEUE_MAX`; the pause is kept in memory only. |
 | `Queued.tsx` | `QueuedRows`: the dashed queued bubbles, Queue paused and Resume. |
 | `ctxring.ts` | Context ring logic: `ringDash` (stroke dash for a percent, clamped 0..100), `ctxLevel` (`ok`, `warn` from 80, `full` from 90), `fmtCost`. |
-| `scrub.ts` | Chat scrubber logic: `userMarks` (one `Mark` per user message), `nearestMark`, `currentMark`, `SCRUB_MIN`. |
-| `Scrubber.tsx` | `Scrubber`: the rail, ticks and picked-message bubble (3.2). |
+| `scrub.ts` | Chat scrubber logic: `userMarks` (one `Mark` per user message), `nearestMark`, `readLine` and `railPosition` (where the screen is between your messages, for the thumb), `SCRUB_MIN`. |
+| `Scrubber.tsx` | `Scrubber`: the rail, ticks, thumb and picked-message bubble (3.2); `paintRail` moves the thumb. |
 | `recent.ts` | Recent prompts. |
 | `commands.ts` | Slash-command and skill catalog for autocomplete. |
 | `favs.ts` | Starred models. |
