@@ -267,7 +267,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 1. Settings → About → check (`update.ts` `checkForUpdate`): one `fetch` of GitHub's
    `repos/omarqaterge/hermes-mobile-app/releases/latest`; newer = dotted-number compare with `appVersion()`. The
    service also checks every 12 h (`UpdateNotice`) and posts a notice whose tap opens the app with an `updateUrl`
-   extra.
+   extra. When the release is newer, the page also reads `CHANGELOG.md` at its tag for What's new (3.15).
 2. Update → `installUpdate(url)` → `MainActivity.startUpdate`. `updateUrlOk` accepts only
    `https://github.com/omarqaterge/hermes-mobile-app/releases/download/….apk` (no `..`).
 3. Without "install unknown apps" permission the shell reports `permission` and opens that system page.

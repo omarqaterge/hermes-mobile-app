@@ -1,7 +1,11 @@
 // Settings → App update: asks GitHub for the newest release of this app and, on a tap, has the Android shell
-// download and install it (the system installer still asks you to confirm).
+// download and install it (the system installer still asks you to confirm). When a newer release is there it also reads
+// that release's CHANGELOG.md, so "What's new" can list every version between the installed one and the newest.
 import { useSyncExternalStore } from 'react'
 import { appVersion, installUpdate } from './bridge'
+import { isNewer, notesSince, type ReleaseNotes } from './releasenotes'
+
+export { isNewer }
 
 const REPO = 'omarqaterge/hermes-mobile-app'
 
@@ -11,9 +15,11 @@ export type UpdateState = {
   url: string
   pct: number
   msg: string
+  /** What's new: the CHANGELOG.md sections newer than the installed version, newest first; empty until read. */
+  notes: ReleaseNotes[]
 }
 
-let state: UpdateState = { phase: 'idle', latest: '', url: '', pct: 0, msg: '' }
+let state: UpdateState = { phase: 'idle', latest: '', url: '', pct: 0, msg: '', notes: [] }
 const subs = new Set<() => void>()
 const set = (p: Partial<UpdateState>) => {
   state = { ...state, ...p }
@@ -29,26 +35,28 @@ export const useUpdate = () =>
     () => state
   )
 
-/** "0.8.21" → [0,8,21]; anything that isn't dotted numbers sorts as 0. */
-const parts = (v: string) => v.replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0)
-export function isNewer(latest: string, current: string): boolean {
-  const a = parts(latest)
-  const b = parts(current)
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const d = (a[i] || 0) - (b[i] || 0)
-    if (d) return d > 0
+/** Reads CHANGELOG.md as it is at the release's tag (one request, same host as the release check). A failure only
+ *  leaves "What's new" out: the update itself still works. */
+async function loadNotes(tag: string, latest: string): Promise<void> {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/contents/CHANGELOG.md?ref=${encodeURIComponent(tag)}`, { headers: { Accept: 'application/vnd.github.raw+json' } })
+    if (!r.ok) return
+    const notes = notesSince(await r.text(), appVersion(), latest)
+    if (state.latest === latest) set({ notes })
+  } catch {
+    // offline or rate-limited: no notes this time
   }
-  return false
 }
 
 let checkedAt = 0
 
-/** One GitHub request (no polling). Skipped while a download is running or when checked in the last minute. */
+/** One GitHub request (no polling), plus one for the changelog when a new version is found. Skipped while a download is running or when checked in the last minute. */
 export async function checkForUpdate(force = false): Promise<void> {
   if (state.phase === 'downloading' || state.phase === 'installing') return
   if (!force && Date.now() - checkedAt < 60_000 && state.phase !== 'error') return
   checkedAt = Date.now()
   set({ phase: 'checking', msg: '' })
+  const before = state.latest
   try {
     const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } })
     if (!r.ok) throw new Error(r.status === 403 ? 'GitHub is limiting requests, try again later.' : `GitHub answered ${r.status}.`)
@@ -56,9 +64,11 @@ export async function checkForUpdate(force = false): Promise<void> {
     const latest = String(rel.tag_name || '').replace(/^v/i, '')
     const apk = (rel.assets || []).find(a => /\.apk$/i.test(a.name))
     if (!latest) throw new Error('No release found.')
-    if (!isNewer(latest, appVersion())) return set({ phase: 'uptodate', latest, url: '' })
+    if (!isNewer(latest, appVersion())) return set({ phase: 'uptodate', latest, url: '', notes: [] })
     if (!apk) throw new Error(`Version ${latest} has no app file yet.`)
-    set({ phase: 'available', latest, url: apk.browser_download_url })
+    const known = latest === before && state.notes.length > 0
+    set({ phase: 'available', latest, url: apk.browser_download_url, notes: known ? state.notes : [] })
+    if (!known) void loadNotes(String(rel.tag_name), latest)
   } catch (e) {
     set({ phase: 'error', msg: e instanceof TypeError ? "Can't reach GitHub. Check your connection." : (e as Error).message })
   }
