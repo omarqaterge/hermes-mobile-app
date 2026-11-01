@@ -12,25 +12,56 @@ on:
   push:
     tags: ['v*']
 
+# Two jobs, so that no npm package's code ever runs where the signing key is: `web` installs the packages and builds
+# web/dist/index.html with a read-only token and no secrets; `apk` (no Node, no npm) takes that file, signs the APK
+# and publishes it. A package's install script or build plugin can start a process that outlives its step, but not
+# one that reaches another job's runner.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apk:
+  web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx vite build
+        working-directory: web
+      - uses: actions/upload-artifact@v6
+        with:
+          name: web-dist
+          path: web/dist/index.html
+          retention-days: 1
+          if-no-files-found: error
+
+  apk:
+    needs: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      # The token (contents: write) is not saved in .git/config; the publish step passes it to gh itself.
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - run: npm ci
-        working-directory: web
+      - uses: actions/download-artifact@v5
+        with:
+          name: web-dist
+          path: web/dist
       - name: Android SDK pieces
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0" >/dev/null
       - name: Build the APK
@@ -40,7 +71,7 @@ jobs:
           [ -n "$KEYSTORE_B64" ] || { echo "Set the KEYSTORE_B64 secret first"; exit 1; }
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
           v="${GITHUB_REF_NAME#v}"; IFS=. read -r a b c <<< "$v"
-          KEYSTORE="$RUNNER_TEMP/release.keystore" VERSION_NAME="$v" \
+          HM_SKIP_WEB_BUILD=1 KEYSTORE="$RUNNER_TEMP/release.keystore" VERSION_NAME="$v" \
             VERSION_CODE=$(( a * 10000 + b * 100 + ${c:-0} )) android/build.sh
           rm -f "$RUNNER_TEMP/release.keystore"
       - name: Release APK must not carry the test-build flag

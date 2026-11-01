@@ -2,7 +2,7 @@
 
 Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK=1`, are set in `ci.yml` and `release.yml` because OpenUI's install script sends telemetry otherwise.
 
-**`ci.yml`, workflow "CI"**, runs on every pull request and on pushes to `main` (a branch push without a PR runs nothing). `concurrency` groups runs by PR: a newer push cancels the PR's older run; runs on `main` always finish. Jobs, all on `ubuntu-latest`; the slow ones only run when the change needs them, and a skipped job counts as passed for the `main` ruleset:
+**`ci.yml`, workflow "CI"**, runs on every pull request and on pushes to `main` (a branch push without a PR runs nothing). `concurrency` groups runs by PR: a newer push cancels the PR's older run; runs on `main` always finish. `permissions` gives the token read access only (`contents: read`, `pull-requests: read`), whatever the repository's default. Every job has a `timeout-minutes` limit (5 to 15 minutes) instead of GitHub's 6-hour default, and every checkout sets `persist-credentials: false`, so the token is not left in `.git/config` for later steps (npm and pip install scripts, the test scripts): no step uses git with it. Jobs, all on `ubuntu-latest`; the slow ones only run when the change needs them, and a skipped job counts as passed for the `main` ruleset:
 
 | Job | Name in the Actions list | Steps |
 |---|---|---|
@@ -12,19 +12,23 @@ Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NO
 | `web` | Web (typecheck, unit tests, build, browser e2e) | The name the `main` ruleset requires. Runs always (`if: always()`) after `changes`, `web-unit` and `web-e2e`; fails if any of them failed or was cancelled, passes when they passed or were skipped. |
 | `plugin` | Plugin (canvas + media) | Python 3.12; `pip install fastapi httpx`; runs `test_canvas.py`, `test_library.py`, `test_gallery.py`, `test_media.py`, `test_chat_search.py`, `test_checkpoints.py`, `test_battery.py`, `test_approval.py`, `test_chip.py`, `test_phone_app.py`, `test_auto_mode.py`, `test_openui.py`, `test_openui_query.py`, `test_claude_login.py`, `test_phone_access.py`, `test_profile_link.py`, then `python3 tools/test_check_spec.py` and `python3 tools/check_spec.py` (the second one fails the build when the code has a name `docs/SPEC.md` lacks), then `python3 tools/test_changelog.py` and `python3 tools/changelog.py check`. |
 | `hermes-patches` | Hermes patches apply to the pinned Hermes | Only when `patches` is true (Hermes patches, the pin, `phone/`, the shell scripts in `tools/`; a docs-only PR skips it, which the ruleset counts as passed). `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`, `test_device_lock.sh`, `test_ci_changes.sh`. |
-| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`, `tools/test_devtools_guard.sh`. |
+| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which checks the jar's SHA-256 and also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`, `tools/test_devtools_guard.sh`. |
 | `hermes-contract` | Mock Hermes matches the pinned Hermes | Only when `contract` is true. Node 22 with npm cache, `astral-sh/setup-uv` with its cache keyed on the Hermes pin; `npm ci` in `tools/web-e2e` (no browser download), then `tools/hermes-contract/run.sh "$RUNNER_TEMP/hermes-contract"` (it also uses the runner's `python3` for the fake model). 15-minute limit; a run takes about 3 minutes (127 cases). |
 
 Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`.
 
-**`release.yml`, workflow "Release"**, runs on a pushed tag matching `v*`. One job `apk` (ubuntu-latest, `contents: write`):
-1. Node 22, JDK 17 (Temurin), `npm ci` in `web/`.
+**`release.yml`, workflow "Release"**, runs on a pushed tag matching `v*`. Two jobs, so that no npm package's code runs where the signing key is (a package's install script or build plugin can leave a process running for the rest of its job, but cannot reach another job's runner); the workflow's token is read-only except in `apk`:
+
+Job `web` (ubuntu-latest, 15-minute limit, no secrets): checkout with `persist-credentials: false`, Node 22, `npm ci` and `npx vite build` in `web/`, then uploads `web/dist/index.html` as the artifact `web-dist` (kept 1 day).
+
+Job `apk` (ubuntu-latest, after `web`, `contents: write`, 30-minute limit, no Node or npm):
+1. Checkout with `persist-credentials: false` (the write token is passed only to `gh` in the publish step, never left in `.git/config`); JDK 17 (Temurin); downloads `web-dist` into `web/dist`.
 2. `sdkmanager "platforms;android-36" "build-tools;35.0.0"`.
-3. Build: fails with "Set the KEYSTORE_B64 secret first" if the secret is empty; decodes `KEYSTORE_B64` into `$RUNNER_TEMP/release.keystore`; takes the version from the tag (`v0.8.62` → `0.8.62`), computes `VERSION_CODE = a*10000 + b*100 + c` from `a.b.c`, runs `android/build.sh` with `KEYSTORE`, `VERSION_NAME`, `VERSION_CODE`; deletes the keystore.
+3. Build: fails with "Set the KEYSTORE_B64 secret first" if the secret is empty; decodes `KEYSTORE_B64` into `$RUNNER_TEMP/release.keystore`; takes the version from the tag (`v0.8.62` → `0.8.62`), computes `VERSION_CODE = a*10000 + b*100 + c` from `a.b.c`, runs `android/build.sh` with `HM_SKIP_WEB_BUILD=1` (it uses the downloaded `index.html` instead of running `vite build`), `KEYSTORE`, `VERSION_NAME`, `VERSION_CODE`; deletes the keystore.
 4. `gh release create <tag> android/build/hermes-mobile.apk --title "Hermes Mobile <tag>"` with notes that point to the README install steps. When the release already exists (made on GitHub's website, which creates the tag and the release together) it only attaches the APK to it (`gh release upload --clobber`).
 The release APK must always be signed with the same key, or phones cannot update.
 
-**`image.yml`, workflow "Ready-made Debian image"**, manual only (`workflow_dispatch`, input `publish`, default false). Run it after moving the Hermes pin in `phone/bootstrap.sh`. One job `image` on `ubuntu-24.04-arm`, 90 min limit, `contents: write`:
+**`image.yml`, workflow "Ready-made Debian image"**, manual only (`workflow_dispatch`, input `publish`, default false). Run it after moving the Hermes pin in `phone/bootstrap.sh`. One job `image` on `ubuntu-24.04-arm`, 90 min limit, `contents: write`, checkout with `persist-credentials: false`:
 1. Runs `test_bootstrap_pin.sh` and `test_bootstrap_image.sh`.
 2. Installs `zstd`; runs `tools/build-image.sh image-out`; checks `sha256sum -c`.
 3. Computes the file name (`build-image.sh --name`) and the release tag `hermes-image-<first 12 of the pin>`.

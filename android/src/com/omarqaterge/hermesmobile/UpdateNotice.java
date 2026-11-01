@@ -26,7 +26,7 @@ final class UpdateNotice {
 
     private UpdateNotice() {}
 
-    /** "v0.8.21" → [0,8,21]; anything that isn't dotted numbers counts as 0 (same rule as web/src/update.ts). */
+    /** "v0.8.21" → [0,8,21]; anything that isn't dotted numbers counts as 0 (same rule as web/src/releasenotes.ts). */
     static int[] parts(String v) {
         String[] p = v.replaceFirst("^[vV]", "").split("\\.");
         int[] r = new int[p.length];
