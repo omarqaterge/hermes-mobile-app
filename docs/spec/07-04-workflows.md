@@ -2,15 +2,18 @@
 
 Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK=1`, are set in `ci.yml` and `release.yml` because OpenUI's install script sends telemetry otherwise.
 
-**`ci.yml`, workflow "CI"**, runs on every push and pull request. Five jobs, all on `ubuntu-latest`:
+**`ci.yml`, workflow "CI"**, runs on every pull request and on pushes to `main` (a branch push without a PR runs nothing). `concurrency` groups runs by PR: a newer push cancels the PR's older run; runs on `main` always finish. Jobs, all on `ubuntu-latest`; the slow ones only run when the change needs them, and a skipped job counts as passed for the `main` ruleset:
 
 | Job | Name in the Actions list | Steps |
 |---|---|---|
-| `web` | Web (typecheck, unit tests, build, browser e2e) | Node 22 with npm cache; `npm ci`, `npm test`, `npm run build` in `web/`; then in `tools/web-e2e`: `npm ci`, `npx playwright install --with-deps chromium`, `./run.sh`. |
+| `changes` | What changed | Gets the PR's file list (`gh pr diff --name-only`) and pipes it through `tools/ci-changes.sh`, which prints `web=` and `contract=` outputs; on `main`, or when the list can't be read, everything is `true`. |
+| `web-unit` | Web typecheck and unit tests | Only when `web` is true. Node 22 with npm cache; `npm ci`, `npm run typecheck`, `npm test` in `web/`. |
+| `web-e2e` | Web build and browser e2e | Only when `web` is true, in parallel with `web-unit`. `npm ci` and `npx vite build` in `web/` (the typecheck is in `web-unit`); caches Playwright's browser in `~/.cache/ms-playwright` keyed on the e2e lockfile; in `tools/web-e2e`: `npm ci`, `npx playwright install --with-deps chromium`, `./run.sh` with `HM_E2E_SKIP_BUILD=1`. |
+| `web` | Web (typecheck, unit tests, build, browser e2e) | The name the `main` ruleset requires. Runs always (`if: always()`) after `changes`, `web-unit` and `web-e2e`; fails if any of them failed or was cancelled, passes when they passed or were skipped. |
 | `plugin` | Plugin (canvas + media) | Python 3.12; `pip install fastapi httpx`; runs `test_canvas.py`, `test_library.py`, `test_gallery.py`, `test_media.py`, `test_chat_search.py`, `test_checkpoints.py`, `test_battery.py`, `test_approval.py`, `test_chip.py`, `test_phone_app.py`, `test_auto_mode.py`, `test_openui.py`, `test_openui_query.py`, `test_claude_login.py`, `test_phone_access.py`, `test_profile_link.py`, then `python3 tools/test_check_spec.py` and `python3 tools/check_spec.py` (the second one fails the build when the code has a name `docs/SPEC.md` lacks), then `python3 tools/test_changelog.py` and `python3 tools/changelog.py check`. |
-| `hermes-patches` | Hermes patches apply to the pinned Hermes | `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`, `test_device_lock.sh`. |
+| `hermes-patches` | Hermes patches apply to the pinned Hermes | `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`, `test_device_lock.sh`, `test_ci_changes.sh`. |
 | `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`, `tools/test_devtools_guard.sh`. |
-| `hermes-contract` | Mock Hermes matches the pinned Hermes | Node 22 with npm cache, `astral-sh/setup-uv` with its cache keyed on the Hermes pin; `npm ci` in `tools/web-e2e` (no browser download), then `tools/hermes-contract/run.sh "$RUNNER_TEMP/hermes-contract"` (it also uses the runner's `python3` for the fake model). 15-minute limit; a run takes about 3 minutes (127 cases). |
+| `hermes-contract` | Mock Hermes matches the pinned Hermes | Only when `contract` is true. Node 22 with npm cache, `astral-sh/setup-uv` with its cache keyed on the Hermes pin; `npm ci` in `tools/web-e2e` (no browser download), then `tools/hermes-contract/run.sh "$RUNNER_TEMP/hermes-contract"` (it also uses the runner's `python3` for the fake model). 15-minute limit; a run takes about 3 minutes (127 cases). |
 
 Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`.
 

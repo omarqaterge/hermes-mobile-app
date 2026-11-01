@@ -7,11 +7,58 @@ env:
 
 on:
   push:
+    branches: [main]
   pull_request:
 
+# A newer push to a PR cancels its older run; every run on main finishes.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  web:
-    name: Web (typecheck, unit tests, build, browser e2e)
+  # Which slow groups this change needs (tools/ci-changes.sh); main always runs everything.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.diff.outputs.web }}
+      contract: ${{ steps.diff.outputs.contract }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR" ] && files=$(gh pr diff "$PR" --name-only --repo "$GITHUB_REPOSITORY"); then
+            printf '%s\n' "$files" | tools/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
+          else
+            echo all | tools/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  web-unit:
+    name: Web typecheck and unit tests
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run typecheck
+        working-directory: web
+      - run: npm test
+        working-directory: web
+
+  web-e2e:
+    name: Web build and browser e2e
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -24,16 +71,34 @@ jobs:
             tools/web-e2e/package-lock.json
       - run: npm ci
         working-directory: web
-      - run: npm test
+      # The typecheck runs in web-unit; here only the bundle the browser tests load.
+      - run: npx vite build
         working-directory: web
-      - run: npm run build
-        working-directory: web
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tools/web-e2e/package-lock.json') }}
       - name: Browser e2e against the mock Hermes
         working-directory: tools/web-e2e
+        env:
+          HM_E2E_SKIP_BUILD: '1'
         run: |
           npm ci
           npx playwright install --with-deps chromium
           ./run.sh
+
+  # The name the main ruleset requires: passes when both web jobs passed, or were skipped because nothing web changed.
+  web:
+    name: Web (typecheck, unit tests, build, browser e2e)
+    needs: [changes, web-unit, web-e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ needs.changes.result }} ${{ needs.web-unit.result }} ${{ needs.web-e2e.result }}
+        run: |
+          echo "changes, web-unit, web-e2e: $RESULTS"
+          case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac
 
   plugin:
     name: Plugin (canvas + media)
@@ -79,6 +144,7 @@ jobs:
       - run: bash tools/test_uninstall.sh
       - run: bash tools/test_hm_shizuku.sh
       - run: bash tools/test_device_lock.sh
+      - run: bash tools/test_ci_changes.sh
 
   android:
     name: Android Java compiles
@@ -101,6 +167,8 @@ jobs:
 
   hermes-contract:
     name: Mock Hermes matches the pinned Hermes
+    needs: changes
+    if: needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

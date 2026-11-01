@@ -10,7 +10,8 @@ if [ -z "${CHROMIUM:-}" ]; then
   c=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)
   [ -n "$c" ] && export CHROMIUM="$c"
 fi
-( cd ../../web && npm run build >/dev/null )
+# HM_E2E_SKIP_BUILD=1: web/dist is already built (CI builds it in its own step).
+[ "${HM_E2E_SKIP_BUILD:-}" = 1 ] || ( cd ../../web && npm run build >/dev/null )
 node mock.cjs & MOCK=$!
 ( cd ../../web && exec python3 devserver.py >/dev/null 2>&1 ) & DEV=$!
 trap 'kill $MOCK $DEV 2>/dev/null || true' EXIT
