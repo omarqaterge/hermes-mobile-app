@@ -68,6 +68,7 @@ echo "Groups: spec ${groups[*]:-}"
 
 run "check_spec.py" python3 tools/check_spec.py
 run "changelog.py check" python3 tools/changelog.py check
+run "no AI credit in commits" tools/check-attribution.sh
 
 for g in ${groups[@]+"${groups[@]}"}; do
   case "$g" in

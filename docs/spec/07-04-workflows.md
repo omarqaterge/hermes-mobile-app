@@ -6,7 +6,7 @@ Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NO
 
 | Job | Name in the Actions list | Steps |
 |---|---|---|
-| `changes` | What changed | Gets the PR's file list (`gh pr diff --name-only`) and pipes it through `tools/ci-changes.sh`, which prints `web=` and `contract=` outputs; on `main`, or when the list can't be read, everything is `true`. |
+| `changes` | What changed | On a PR, first runs `tools/check-attribution.sh` on the PR's commits (from the GitHub API) and fails when one credits an AI tool, which fails the required `web` check too. Then gets the PR's file list (`gh pr diff --name-only`) and pipes it through `tools/ci-changes.sh`, which prints `web=` and `contract=` outputs; on `main`, or when the list can't be read, everything is `true`. |
 | `web-unit` | Web typecheck and unit tests | Only when `web` is true. Node 22 with npm cache; `npm ci`, `npm run typecheck`, `npm test` in `web/`. |
 | `web-e2e` | Web build and browser e2e (01-06), (07-12), (13-21) | Only when `web` is true, in parallel with `web-unit`: a matrix of three shards (`fail-fast: false`), each on its own runner. `npm ci` and `npx vite build` in `web/` (the typecheck is in `web-unit`); caches Playwright's browser in `~/.cache/ms-playwright` keyed on the e2e lockfile; in `tools/web-e2e`: `npm ci`, `npx playwright install --with-deps chromium`, `./run.sh --only <shard>` with `HM_E2E_SKIP_BUILD=1`. The shard list is in the matrix; `tools/check.sh` reads it from there. |
 | `web` | Web (typecheck, unit tests, build, browser e2e) | The name the `main` ruleset requires. Runs always (`if: always()`) after `changes`, `web-unit` and `web-e2e`; fails if any of them failed or was cancelled, passes when they passed or were skipped. |
