@@ -387,7 +387,9 @@ module.exports = async t => {
     await push(['STEP debian Debian', 'STEP hermes Hermes', 'STEP plugin Plugin', 'STEP start Start'])
     await mock({ up: true })
     await push(['DONE'], { done: true, active: false })
-    check(/^Total \d+:\d\d$/.test(((await fe.locator('.install-total').textContent().catch(() => '')) || '').trim()) || (await fe.locator('.install-total').count()) === 0, 'step times: after DONE the total stops (or the view has moved on)')
+    // A short wait: once the view has moved on there is no total, and the default 30 s wait for it was the slowest
+    // step of the browser tests.
+    check(/^Total \d+:\d\d$/.test(((await fe.locator('.install-total').textContent({ timeout: 1000 }).catch(() => '')) || '').trim()) || (await fe.locator('.install-total').count()) === 0, 'step times: after DONE the total stops (or the view has moved on)')
     await fe.getByText('Connect Hermes to a model').waitFor({ timeout: 20000 }).then(() => check(true, 'app-first: DONE → connects → the model step'), () => check(false, 'app-first: DONE → connects → the model step'))
     await fe.close()
   }

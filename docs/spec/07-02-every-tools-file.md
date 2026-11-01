@@ -73,7 +73,7 @@
 
 | File | What it covers |
 |---|---|
-| `test_hermes_patches.sh` | `hermes/patches` apply to the pinned Hermes (`web/vendor/hermes-shared/.hermes-commit`) and revert cleanly; reports how they fare on upstream `main` (information only). Clones Hermes unless given a checkout. |
+| `test_hermes_patches.sh` | `hermes/patches` apply to the pinned Hermes (`web/vendor/hermes-shared/.hermes-commit`) and revert cleanly; reports how they fare on upstream `main` (information only). Unless given a checkout, fetches only the two commits it needs (the pin, by its full id from `phone/bootstrap.sh`, then upstream `main`) with `--depth=1`, without history: in the blob-less clone it used before, each patch check fetched the files it read one at a time (over a minute in CI). A checkout given on the command line is never made shallow. |
 | `test_hermes_debian.sh` | `phone/hermes-debian` (the proot-distro / chroot-distro switch) with fake `proot-distro`, `chroot-distro`, `su`: `--which`, `--rootfs`, `--put`, `--exists`, `--restart`, exit codes. |
 | `test_bootstrap_pin.sh` | The Hermes commit in `phone/bootstrap.sh` equals the app's vendored pin, and the installer is called with `--commit`. |
 | `test_bootstrap_image.sh` | The ready-made-image path of `bootstrap.sh` with fake `curl`, `proot-distro`, `uname`, `df`; the image name matches `build-image.sh --name`; the packer's scrub. |
@@ -89,7 +89,7 @@
 | File | What it covers |
 |---|---|
 | `test_devtools_guard.sh` | `android/build.sh` refuses `KEYSTORE` together with `HM_DEVTOOLS` (any value) with exit 1 before any SDK check, lets `HM_DEVTOOLS` alone through the guard, and `release.yml` has the `hm_devtools` APK check and never sets the variable. CI job `android`. No SDK needed. |
-| `java-check.sh` | Compiles all of `android/src` with `javac` against Robolectric's `android-all-16.jar` (downloaded from Maven Central and cached in `~/.cache/hermes-mobile`) and a stub `R.java` generated from `res/`. Proves it compiles; builds no APK. Needs JDK 21+. Then runs `test_shizuku_keeper.sh`. CI job `android`. |
+| `java-check.sh` | Compiles all of `android/src` with `javac` against Robolectric's `android-all-16.jar` (downloaded from Maven Central and cached in `~/.cache/hermes-mobile`; `JAR_SHA256` is its expected SHA-256, and a download or cached copy with any other hash is deleted and the check fails) and a stub `R.java` generated from `res/`, with `-proc:none` so that no annotation processor from the classpath runs. Proves it compiles; builds no APK. Needs JDK 21+. Then runs `test_shizuku_keeper.sh`. CI job `android`. |
 | `api-check.sh` | Runs Android lint's `NewApi`/`InlinedApi` checks on `android/src` (a copy with `<uses-sdk>` set to the minimum from `android/build.sh`, since the build passes it to `aapt2` instead of the manifest). Fails when a call above that minimum has no `Build.VERSION.SDK_INT` check. Needs the Android SDK's command-line tools (`ANDROID_HOME` or the Homebrew path). |
 | `test_shizuku_keeper.sh` | `KeeperPlan.java` decisions: when the app may restart Shizuku, the notice text when it cannot, the bounded attempt schedule, the NsdManager port choice, the Termux command. |
 | `test_setup_lines.sh` | `SetupLines.java`: token check, line filter, 50-line buffer, FAIL/DONE handling and the JSON that `say()` posts. CI job `android`. |
