@@ -33,6 +33,7 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `copyText` | `text` | nothing | Puts plain text on the clipboard. |
 | `copyRich` | `text`, `html` | nothing | Puts HTML with a plain-text fallback on the clipboard. |
 | `haptic` | none | nothing | `performHapticFeedback(KEYBOARD_TAP)` on the `WebView`. |
+| `setEdgeGrab` | `on` | nothing | Wide screens: while the canvas pull tab is on screen (3.7), `applyEdgeGrab` keeps Android's Back gesture off a 24 × 200 dp strip at mid-height on the right edge of the `WebView` (`setSystemGestureExclusionRects`, Android 10 / API 29 and newer; 200 dp is Android's per-edge limit), so a swipe from there reaches the page. The rest of the edge keeps Back. A layout listener moves the strip on rotation or resize; `false` clears it. Older Android has no edge gesture and does nothing. |
 | `isInForeground` | none | boolean | The activity's `foreground` flag. |
 | `appVersion` | none | version name, `"?"` if unknown | The installed `versionName`. |
 | `sharedItem` | `index` | JSON string | One file shared into the app, as `{name, mime, b64}`, at most 20 MB (`{name, error}` if too large, unreadable, or gone). Names get `/`, `\` and control characters replaced; MIME comes from the provider, then the file name, then the share's own type. Up to 10 files per share. |

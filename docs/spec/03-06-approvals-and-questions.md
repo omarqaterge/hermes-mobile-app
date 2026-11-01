@@ -83,6 +83,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `commands.ts` | Slash-command and skill catalog for autocomplete. |
 | `favs.ts` | Starred models. |
 | `sidepanel.ts` | Wide screens: hide or dock the chat list column (`hm.sideHidden.v1`, `html[data-side]`). |
+| `splitview.ts` | Wide screens: the canvas column's width, the divider drag with its snaps, the pull from the right edge, and the shell's edge claim (`DOCK`, `hm.canvasSplit.v1`, `html[data-split]`, `html.resizing`; 3.7). |
 | `custommodels.ts` | Model ids typed into a model picker (Hermes Desktop's "Custom model"): candidate check, remembered ids per provider. |
 | `activity.ts` | Polling of `GET /activity` for the activity banner. |
 | `tasks.ts` | Tick state of Markdown task lists. |

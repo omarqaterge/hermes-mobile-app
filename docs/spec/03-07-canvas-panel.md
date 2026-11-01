@@ -7,7 +7,7 @@ The canvas is a set of documents that belong to one chat. Hermes writes them wit
 #### What the user sees
 
 - A header button (aria-label Canvas, or "Canvas (Hermes is writing)" while a canvas call streams) with a dot when the chat has documents.
-- A panel that slides in from the right. On a phone it covers the chat. On a wide screen (min-width 840 px) it is a fixed column beside the chat, `--canvas-w` = `min(46vw, 640px)`, and nothing can be dragged.
+- A panel that slides in from the right. On a phone it covers the chat. On a wide screen (min-width 700 px: upright tablets, unfolded foldables, landscape) it is a column beside the chat whose width the user drags (see "Divider and width on wide screens" below).
 - Documents show as tabs. Each has a type icon (`TYPE_ICON`): markdown 📝, html 🌐, code 💻, text 📄, json `{ }`, csv ▦, svg 🖼, mermaid ⛓.
 
 #### Ways to open it
@@ -16,6 +16,8 @@ The canvas is a set of documents that belong to one chat. Hermes writes them wit
 |---|---|
 | Header canvas button (`openChatCanvas` in `web/src/swipe.ts`) | Opens this chat's canvas. On the empty new-chat screen it first starts a chat (`newSession`), then opens, because a canvas belongs to a chat. A chat that is still opening (cold start) counts as a chat: its canvas opens without creating a new one. |
 | Swipe left on the chat (`installSwipeToDrawer` in `web/src/swipe.ts`) | Same as the button. Needs finger travel left of more than 70 px and more than twice the vertical travel, a chat on screen (active or opening) and the canvas closed. The swipe is ignored when it starts on an input, a dialog, a sheet, the canvas, the drawer, a lightbox, a slider, the read-aloud player, the find bar, a code block, a table, a formula, a diagram or an OpenUI card, on anything that scrolls sideways, or while the drawer, a screen or a sheet is open. |
+| Swipe in from the right edge (wide screens; `EDGE` strip in `web/src/swipe.ts`, `edgePullStart` in `web/src/splitview.ts`) | A touch that starts in the 24 px strip at the right edge and moves more than 10 px left (more left than up or down) opens the canvas at zero width and the column follows the finger. Let go slowly and it stays at that width; a flick (faster than 0.5 px/ms leftwards) opens it at the width it had last time; let go under 20 % of the room and it closes again. Needs a chat on screen (active or opening), the canvas closed, and no drawer, screen or sheet open. The strip belongs to the canvas: code blocks, tables or the scrubber under it don't stop the pull; text fields, dialogs, sheets, the drawer, a lightbox and the read-aloud player still do (`EDGE_SKIP`). A mostly vertical move (more than 20 px) is a scroll. |
+| Pull tab (`CanvasPull` in `Canvas.tsx`, class `canvas-pull`, aria-label Open the canvas) | A slim grip at mid-height on the right edge, in a 24 × 200 px touch area, on wide screens only while the edge swipe can work (a chat on screen, canvas closed, no drawer, screen or sheet). Tap: opens the canvas (`openChatCanvas`). It marks the strip of the edge that the Android shell keeps free of its Back gesture (`claimEdge` → bridge `setEdgeGrab`, 4.5). It is hidden (class `off`), not removed, while it doesn't apply, so a pull that started on it keeps its touch events. |
 | Chat ⋮ menu → Canvas | Opens it. The row's second line says "N documents" or "Documents, notes and pages beside the chat". |
 | Code block button "Canvas" (`web/src/components/Markdown.tsx`) | Shown on a code block of 3 lines or more. Makes a document from the block (`createDoc`; type html, svg, markdown, json or csv from the fence language, else code) and shows the toast "Opened in the canvas". |
 | Files → a text file → "Open in canvas" | `openFileInCanvas`: opens the file as a document linked to it (`POST /canvas/open-file`). |
@@ -26,8 +28,16 @@ The canvas is a set of documents that belong to one chat. Hermes writes them wit
 
 - Button ✕ (aria-label Close canvas).
 - Android Back (`useBackHandler`): if the panel is full screen it first goes back to the side size; otherwise it closes. While one of the panel's own sheets is open, Back closes that sheet first.
-- Swipe right on the top bar (`.canvas-head`, phones only). The panel follows the finger. It closes when you let go past 30 % of its width, or with a flick faster than 0.5 px/ms (slides out in 200 ms); otherwise it slides back. The drag starts only after 10 px of travel, mostly rightwards. A swipe that begins while the tab row is scrolled away from its start is left to the tab row. Leftwards or mostly vertical movement is not a close swipe.
+- Swipe right on the top bar (`.canvas-head`, phones only, below 700 px). The panel follows the finger. It closes when you let go past 30 % of its width, or with a flick faster than 0.5 px/ms (slides out in 200 ms); otherwise it slides back. The drag starts only after 10 px of travel, mostly rightwards. A swipe that begins while the tab row is scrolled away from its start is left to the tab row. Leftwards or mostly vertical movement is not a close swipe.
+- Wide screens: drag the divider to under 20 % of the room and let go (see below).
 - Closing saves a pending edit first (`flushSave`).
+
+#### Divider and width on wide screens (`web/src/splitview.ts`)
+
+- **The divider** (`SplitHandle` in `Canvas.tsx`, class `canvas-split`) sits on the column's left border: a 16 px touch area with a grip (`canvas-split-grip`), `role="separator"`, `aria-orientation="vertical"`, aria-label Resize the canvas, `aria-valuenow` the stored share in percent (20–85). Shown only at the side size on wide screens (`useDock`, `DOCK` = `(min-width: 700px)`).
+- **Drag** (pointer events, mouse or finger; `dividerStart`, `dragTo`, `dragEnd`, `dragCancel`): the chat and the canvas follow the finger. While dragging, `html.resizing` turns off the width transitions and makes iframes ignore the pointer, and `--canvas-live` holds the width under the finger. Let go past 85 % of the room and the canvas goes full screen (the stored width is kept for later); under 20 % it closes; otherwise that share is kept. While the finger is past a snap point the divider shows "Full screen" or "Close" (`canvas-split-hint`, `html[data-snap]`).
+- **Keys:** ArrowLeft widens the canvas by 5 %, ArrowRight narrows it (`nudgeSplit`). **Double-tap** goes back to the default width (`resetSplit`).
+- **Width:** the canvas's share of the room beside the docked chat list (the screen width minus `--side-w`) is kept in localStorage `hm.canvasSplit.v1` and set as `--canvas-frac` on `html[data-split]`, so a rotation or hiding the list re-flows without code. `--canvas-w` = that share, at least 300 px, and leaving the chat at least 340 px (the canvas minimum wins on a screen too narrow for both). Without a stored share it is 46 %, at most 640 px. A share the screen cannot show (past the chat's minimum) is stored as what was shown (`keep`).
 
 #### Canvas panel (screen block)
 
