@@ -19,6 +19,7 @@ your chat…"). All rows are on the owner's Android phone unless they say otherw
 | 2026-11-01, before that day's changes | — | Chat usable at 2.0 s (Last start-up `chat-live`, median of 5 starts; `script` 0.2 s, `painted` 0.2 s). |
 | 2026-11-01 (#32) | KaTeX and highlight.js load on the first message that needs them. Start-up script 1404 → 970 KB, CSS 435 → 75 KB. | Desktop `coldstart.cjs`: 481 → 429 ms. Phone: `script` 0.2 → 0.1 s; chat usable unchanged (2.0 s), because the wait was elsewhere. |
 | 2026-11-01 (#38) | The chat goes first: the app's other start-up requests (status, commands, skills, model, settings, plugin routes) wait until it is open; the full status is asked for once, not twice. With them in the same moment, Hermes answered the chat's two requests in about 1.2 s instead of 30–70 ms. | Chat usable at **0.3 s** (`sessions` 1.9 → 0.3 s, `chat-live` 2.0 → 0.3 s, medians of 5 starts). |
+| 2026-11-01, long chat (after #38) | — (first row measured with the method below) | A chat of 146 messages (resume reply 209 KB, against about 1 KB for a short one): chat usable at **0.3 s**, the same as a short chat (`script` 0.1 s, `painted` 0.2 s, `sessions` and `chat-live` 0.3 s, medians of 5 starts). Android's `am start -W` `TotalTime`: 130 ms. Hermes's side (`tools/gw-time longest`): `session.resume` 139 ms alone. Scrolling up 15 times: 5 slow frames of 3040 (0.16%), 95th percentile 15 ms, no blank areas or jumps. |
 
 In short: from a 3–5 s spinner, and 4.5 s to a usable chat in mid-October, to 0.3 s on 2026-11-01.
 
