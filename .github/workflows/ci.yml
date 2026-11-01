@@ -66,8 +66,10 @@ jobs:
       - run: npm test
         working-directory: web
 
-  # Three shards in parallel, each with its own mock and page; each starts at a check file that needs nothing from
-  # earlier files (docs/spec/07-03-browser-e2e.md). Change the list there and here together.
+  # Five shards in parallel, each with its own mock and page; each starts at a check file that needs nothing from
+  # earlier files (docs/spec/07-03-browser-e2e.md). Change the list there and here together. 12 and 18 are the two
+  # longest files (about 85 s each in CI), so 12 runs alone and 18 only after 17, which it needs. `19-` is 19 to the
+  # last file, so a new file at the end runs without a change here.
   web-e2e:
     name: Web build and browser e2e (${{ matrix.shard }})
     needs: changes
@@ -76,7 +78,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ['01-06', '07-12', '13-21']
+        shard: ['01-06', '07-11', '12', '13-16,19-', '17-18']
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
