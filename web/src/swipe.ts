@@ -14,7 +14,8 @@ export function openChatCanvas(): void {
 }
 
 // Swipe right anywhere on a chat to pull the sessions drawer in (the same menu as ☰; it follows the finger, drawerdrag.ts);
-// swipe left on the open drawer or its backdrop to push it back. Swipe left on a chat to open the chat's canvas (the same as the header canvas button; only with a chat on screen and the canvas closed). On wide screens a
+// swipe left on the open drawer or its backdrop to push it back. Swipe left on a chat, or on the empty new-chat screen,
+// to open the chat's canvas (the same as the header canvas button; only with the canvas closed). On wide screens a
 // swipe that starts at the right edge pulls the canvas in under the finger instead (EDGE, splitview.ts).
 // Ignored when the finger starts on something that scrolls or drags sideways itself (tables, code blocks,
 // diagrams, the canvas, sliders, text fields, the drawer) or while a sheet, dialog or screen is open.
@@ -95,8 +96,7 @@ export function installSwipeToDrawer(): () => void {
       setState({ drawer: true })
     } else if (dx < -70 && -dx > Math.abs(dy) * 2) {
       start = null
-      const s = getState()
-      if ((s.active || s.opening) && !canvasState().open) openChatCanvas()
+      if (!canvasState().open) openChatCanvas() // on the empty new-chat screen too: it starts the chat first
     }
   }
   const end = () => {
