@@ -79,7 +79,7 @@ A box (`notice-info`, `notice-warn`, `notice-error`) with Markdown text. Where n
 
 #### Markdown inside replies
 
-`web/src/components/Markdown.tsx` `Markdown` renders replies and notices with `react-markdown`: GitHub-flavoured Markdown, math (KaTeX; `$…$`, `$$…$$`, `\(…\)`, `\[…\]`), syntax highlighting, raw HTML, and Obsidian-style extras. Before parsing, `prepare` (`web/src/text.ts`) rewrites a few things outside code: `MEDIA:<path>` lines become images or file links, `[[Note|alias]]` becomes plain text, `==text==` becomes a highlight, a leading `---` YAML block shows as a yaml code block, math fences and `\colorbox` are repaired, and blank lines inside balanced HTML blocks are removed so the block stays whole. `chatLinks` turns a bare session id (`20261029_101500_ab12cd`) into a link that opens that chat.
+`web/src/components/Markdown.tsx` `Markdown` renders replies and notices with `react-markdown`: GitHub-flavoured Markdown, math (KaTeX; `$…$`, `$$…$$`, `\(…\)`, `\[…\]`), syntax highlighting (KaTeX and highlight.js are loaded on the first message that needs them, `web/src/rich.ts`; until then a formula shows as its TeX and code without colours), raw HTML, and Obsidian-style extras. Before parsing, `prepare` (`web/src/text.ts`) rewrites a few things outside code: `MEDIA:<path>` lines become images or file links, `[[Note|alias]]` becomes plain text, `==text==` becomes a highlight, a leading `---` YAML block shows as a yaml code block, math fences and `\colorbox` are repaired, and blank lines inside balanced HTML blocks are removed so the block stays whole. `chatLinks` turns a bare session id (`20261029_101500_ab12cd`) into a link that opens that chat.
 
 Rendering rules:
 

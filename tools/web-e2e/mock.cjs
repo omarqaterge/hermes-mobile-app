@@ -1016,6 +1016,16 @@ wss.on('connection', ws => {
           later(t + 1500, () => event('message.complete', sid, { text: HTML_REPLY }))
           return
         }
+        if (/^show math$/.test(params.text)) {
+          // KaTeX and highlight.js come in the page's lazy 'hm-rich' bundle: inline and display math, then code.
+          later(100, () => event('message.start', sid, {}))
+          // Taller than the screen, so a list at its end must stay there when the formulas are drawn.
+          const steps = Array.from({ length: 20 }, (_, i) => `Step ${i + 1}.`).join('\n\n')
+          // Tall inline formulas: each line grows once KaTeX draws it.
+          const tall = Array.from({ length: 8 }, (_, i) => `Term ${i + 1}: $\\displaystyle \\frac{\\sum_{k=1}^{n} k^{${i + 2}}}{\\prod_{j=1}^{m} j}$`).join('\n\n')
+          later(200, () => event('message.complete', sid, { text: steps + '\n\nEuler: $e^{i\\pi} + 1 = 0$ and\n\n$$\n\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}\n$$\n\n$$\n\\int_0^1 \\frac{x^4 (1-x)^4}{1+x^2} \\, dx = \\frac{22}{7} - \\pi\n$$\n\n```python\ndef area(r):\n    return 3.14 * r ** 2\n```\n\n' + tall + '\n\nMath done.' }))
+          return
+        }
         if (/^show diagram$/.test(params.text)) {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Flow:\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```' }))

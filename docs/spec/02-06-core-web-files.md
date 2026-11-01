@@ -34,9 +34,17 @@ These files carry the plumbing every screen uses. Screens are in 3.
   (2.2.5).
 - `boot.ts` — start-up timing marks (`bootMark`, `lastBoot`, `bootSummary`) in `hm.boot.v1`; the shell logs its own
   stages to logcat tag `hmboot`.
-- `lazy.ts` — `runLazy(id, global)`: big optional bundles (Mermaid as `hm-mermaid`, OpenUI as `hm-openui`) ship in
-  `index.html` as inert `<script type="text/hm-lazy">` text (`vite.config.ts` `lazyBundle`) and are run once, on
-  first use; a failed load can be retried.
+- `lazy.ts` — `runLazy(id, global)`: big optional bundles (Mermaid as `hm-mermaid`, OpenUI as `hm-openui`, KaTeX and
+  highlight.js as `hm-rich`) ship in `index.html` as inert `<script type="text/hm-lazy">` text (`vite.config.ts`
+  `lazyBundle`) and are run once, on first use; a failed load can be retried.
+- `rich.ts` — math and code colours on demand. `rich-entry.ts` (built as `hm-rich`, about 0.8 MB: `rehype-katex`,
+  `rehype-highlight`, highlight.js's `github-dark` palette and KaTeX's CSS with its woff2 fonts inlined) sets
+  `window.__hmRich`. `needsRich(text)` says whether a message has math or a code block (`$`, `\(`, `\[`, a fence, an
+  indented block, `<pre>`); `loadRich` runs the bundle once, adds its CSS as `<style id="hm-rich-css">` after the
+  page's own and tells the subscribers (`subscribeRich`, `richApi`, which `Markdown` reads with
+  `useSyncExternalStore`). Before that, a formula shows as its TeX in inline code and code blocks have no colours;
+  every message re-renders once it is loaded. Cold start (`coldstart.cjs`, CPU ×4, 2026-11-01): composer visible at
+  about 429 ms instead of 481; start-up script 970 KB instead of 1404 KB, CSS 75 KB instead of 435 KB.
 - `health.ts` — the header dot and status sheet data: `checkHealth` (ping `gateway.ping` with 8 s timeout, plus
   `GET /api/status` without `profile=`), `startHealthPolling` (2.5), `dotState`: `wait` while connecting, `err`
   when not open, `warn` when the status call failed, the dashboard or storage component isn't ok/unknown, or disk

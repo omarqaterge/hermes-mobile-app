@@ -1,9 +1,7 @@
-import { Children, cloneElement, createContext, isValidElement, memo, useContext, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { Children, cloneElement, createContext, isValidElement, memo, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import rehypeHighlight from 'rehype-highlight'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { visit } from 'unist-util-visit'
@@ -18,6 +16,7 @@ import { createDoc } from '../canvas'
 import { useBackHandler } from '../backstack'
 import { hashText, setTask, subscribeTasks, useTask } from '../tasks'
 import { runLazy } from '../lazy'
+import { loadRich, needsRich, richApi, subscribeRich, type RichApi } from '../rich'
 import { OpenUIBlock, OpenUICtx } from './OpenUIBlock'
 import { HtmlFrame } from './HtmlFrame'
 
@@ -525,11 +524,26 @@ const CHAT_HREF = /^hermes-chat:([\w-]{1,80})$/
 
 const REMARK = [remarkGfm, [remarkMath, { singleDollarTextMath: true }]] as const
 // Guessing the language of an unlabelled code block is costly: while a reply streams it would run on every
-// update, so it waits until the reply is complete.
-const rehypeFor = (detect: boolean) =>
-  [rehypeMathInHtml, rehypeRaw, [rehypeSanitize, schema], rehypeSafeStyle, rehypeSvgRefs, rehypeCallouts, [rehypeKatex, { throwOnError: false, strict: false, macros: KATEX_MACROS }], rehypeColorboxContrast, [rehypeHighlight, { detect, ignoreMissing: true }]] as const
-const REHYPE_DONE = rehypeFor(true)
-const REHYPE_LIVE = rehypeFor(false)
+// update, so it waits until the reply is complete. KaTeX and highlight.js join once their lazy bundle is loaded
+// (rich.ts); until then a formula shows as its TeX and code without colours.
+const rehypeFor = (detect: boolean, rich: RichApi | null) => [
+  rehypeMathInHtml,
+  rehypeRaw,
+  [rehypeSanitize, schema],
+  rehypeSafeStyle,
+  rehypeSvgRefs,
+  rehypeCallouts,
+  ...(rich ? [[rich.rehypeKatex, { throwOnError: false, strict: false, macros: KATEX_MACROS }]] : []),
+  rehypeColorboxContrast,
+  ...(rich ? [[rich.rehypeHighlight, { detect, ignoreMissing: true }]] : [])
+]
+const PLAIN = { done: rehypeFor(true, null), live: rehypeFor(false, null) }
+let withRich: { api: RichApi; done: ReturnType<typeof rehypeFor>; live: ReturnType<typeof rehypeFor> } | null = null
+function rehypePlugins(streaming: boolean, rich: RichApi | null) {
+  if (!rich) return streaming ? PLAIN.live : PLAIN.done
+  if (withRich?.api !== rich) withRich = { api: rich, done: rehypeFor(true, rich), live: rehypeFor(false, rich) }
+  return streaming ? withRich.live : withRich.done
+}
 
 // Keep local paths (react-markdown would otherwise strip unknown schemes but leaves /paths alone).
 const urlTransform = (url: string) => (isLocal(url) || CHAT_HREF.test(url) ? url : defaultUrlTransform(url))
@@ -544,6 +558,10 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
   // Built once per message: new component functions on every render would make React rebuild every code
   // block, table and diagram on each streamed update (losing "Show all", Wrap, a drawn diagram…).
   const components = useMemo<Components>(() => mdComponents(seed, nextBox), [])
+  const rich = useSyncExternalStore(subscribeRich, richApi)
+  useEffect(() => {
+    if (!rich && needsRich(text)) void loadRich()
+  }, [rich, text])
   return (
     <OpenUICtx.Provider value={ui}>
     <StreamingCtx.Provider value={streaming}>
@@ -571,7 +589,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
     >
       <ReactMarkdown
         remarkPlugins={REMARK as unknown as Options['remarkPlugins']}
-        rehypePlugins={(streaming ? REHYPE_LIVE : REHYPE_DONE) as unknown as Options['rehypePlugins']}
+        rehypePlugins={rehypePlugins(streaming, rich) as unknown as Options['rehypePlugins']}
         // Sanitize adds the user-content- prefix to ids itself; don't let remark-rehype add it too.
         remarkRehypeOptions={REMARK_REHYPE}
         urlTransform={urlTransform}
