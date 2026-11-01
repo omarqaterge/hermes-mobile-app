@@ -20,6 +20,7 @@ import { getLivePause, setLivePause } from '../live'
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
+import { Markdown } from './Markdown'
 import { UninstallSection } from './Uninstall'
 import { ProviderList } from './Providers'
 import { onlySlugs } from '../providers'
@@ -856,6 +857,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
       <Section title="About">
         <Row title="App" value={appVersion()} />
         <UpdateRow />
+        <WhatsNewRow />
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
         <RemoteDebugRow />
@@ -978,6 +980,42 @@ function UpdateRow() {
         else void checkForUpdate(true)
       }}
     />
+  )
+}
+
+/** "What's new" under the update row while a newer release is offered: opens the changelog of every version since this one. */
+function WhatsNewRow() {
+  const u = useUpdate()
+  const [open, setOpen] = useState(false)
+  if (!u.notes.length || !isNewer(u.latest, appVersion())) return null
+  const n = u.notes.length
+  const canUpdate = u.phase === 'available' || u.phase === 'permission'
+  return (
+    <>
+      <Row icon="📝" tone="purple" title="What's new" sub={n === 1 ? `In ${u.latest}` : `${n} versions since yours (${appVersion()})`} chevron onClick={() => setOpen(true)} />
+      {open && (
+        <Sheet title="What's new" onClose={() => setOpen(false)}>
+          <div className="sheet-scroll whats-new">
+            {u.notes.map(r => (
+              <section key={r.version}>
+                <h3 className="whats-new-version">
+                  {r.version}
+                  {r.date && <span className="dim small"> · {r.date}</span>}
+                </h3>
+                <Markdown text={r.text} />
+              </section>
+            ))}
+          </div>
+          {canUpdate && (
+            <div className="sheet-actions">
+              <button className="btn primary" onClick={() => { haptic(); setOpen(false); startUpdate() }}>
+                Update to {u.latest}
+              </button>
+            </div>
+          )}
+        </Sheet>
+      )}
+    </>
   )
 }
 

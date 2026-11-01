@@ -3718,3 +3718,10 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
   .chevron { transition: none; }
   .send > svg, .send > .stop-square { animation: none; }
 }
+
+/* Settings → About → What's new: one block per release since the installed version */
+.whats-new-version {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
