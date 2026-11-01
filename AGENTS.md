@@ -32,6 +32,24 @@ else. `CLAUDE.md` imports this file.
   run in CI) fails otherwise. `javac` and `tools/java-check.sh` can't see API levels.
 - New features that need a newer Android: say so in the README's "Android versions" table and in the spec (4.2).
 
+## Working in parallel
+
+Several agents often work on this repository at once, each in its own git worktree. Worktrees keep their files apart
+while they work; they don't stop two branches from clashing when they merge, and they don't share phones fairly.
+
+- **Plan by file.** Before starting parallel streams, write down the shared files each one will change. Two streams
+  that both change one of the big shared files (`web/src/gateway.ts`, `web/src/App.tsx`, `web/src/styles.css`,
+  `MainActivity.java`, `HermesService.java`, `tools/web-e2e/test.cjs`, `tools/web-e2e/mock.cjs`, `docs/SPEC.md`)
+  run one after the other, not side by side, or one of them stays out of that file.
+- **Keep branches short.** Merge or sync with `main` at least daily; one feature per branch. A branch weeks behind
+  `main` turns into a merge nobody can review.
+- **Add, don't edit the middle.** Prefer a new file or a new entry in a list over editing lines another feature also
+  edits; when two branches clash twice in the same spot, split that file or turn the spot into a list features add to.
+- **One session per device.** Before installing to, tapping on or testing on a phone or emulator, take its lock:
+  `tools/device-lock.sh hold SERIAL WHO` (SERIAL from `adb devices`, WHO your branch or session); release it with
+  `tools/device-lock.sh release SERIAL WHO` when done, or wrap one command in `tools/device-lock.sh run SERIAL WHO
+  CMD...`. Exit code 75 means another session has it: wait or work on something else, never take it over.
+
 ## Checks before you commit
 
 `cd web && npm test && npm run build`, `tools/web-e2e/run.sh` (add a check for each web change),
