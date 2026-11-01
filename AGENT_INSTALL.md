@@ -249,7 +249,7 @@ adb shell "input text 'history%s-c%s&&%sclear'"
 adb shell input keyevent 66
 ```
 
-The user can change all of this later in the app: Settings → Subscriptions & accounts / API keys / Default models.
+The user can change all of this later in the app: Settings → Model providers / API keys / Default models.
 
 ## 8. Install the app
 
@@ -288,7 +288,8 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
      Android 10 and older: start it from a computer after each restart. Rooted: Shizuku → *Start*, and it restarts by itself.
      No root is needed for anything.
    - Hermes Mobile can be the phone's assistant (long-press power opens voice chat): Settings → Default apps → Digital assistant app.
-   - Updating later: in Termux, `bash hm.sh` (phone side) and install the newer APK from the Releases page.
+   - Updating later: the app says when a new release is out, and Settings → About → Update installs it; for the phone side,
+     `bash hm.sh` in Termux.
 6. Delete the downloaded `.apk` files from the computer.
 
 Report to the user what was installed, the model, and anything you skipped or that didn't work.
