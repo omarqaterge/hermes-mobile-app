@@ -1,4 +1,4 @@
-// Start-up order: profiles after the chat, a new chat kept, the canvas button while resuming.
+// Start-up order: profiles and the other start-up requests after the chat, a new chat kept, the canvas button while resuming.
 const { MOCK, WEB, calls, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
@@ -11,9 +11,18 @@ module.exports = async t => {
   await sleep(1200) // connected, the slow resume (2.5 s) is in flight
   const early = calls().slice(nBoot).map(c => c.rpc)
   check(early.includes('session.resume') && early.includes('session.list') && !early.includes('profiles.list'), `profiles.list not sent while the chat opens (${early.filter(Boolean).join(',')})`)
+  // The rest of the start-up burst waits too: on a phone it made session.list / session.resume ~20× slower.
+  const BURST = ['/api/status', '/api/skills', '/api/model/info', '/api/config', '/api/plugins/hermes-mobile/activity']
+  const earlyHttp = calls().slice(nBoot).map(c => c.path).filter(Boolean)
+  check(!early.includes('commands.catalog') && !BURST.some(p => earlyHttp.includes(p)), `status, commands, skills, model, config and activity not sent while the chat opens (${[...new Set(earlyHttp)].join(',')})`)
   await spf.locator('.msg', { hasText: 'old answer' }).waitFor({ timeout: 6000 })
   await sleep(300)
   check(calls().slice(nBoot).some(c => c.rpc === 'profiles.list'), 'profiles.list sent once the chat is open')
+  await sleep(700)
+  const after = calls().slice(nBoot)
+  const afterHttp = after.map(c => c.path).filter(Boolean)
+  check(after.some(c => c.rpc === 'commands.catalog') && BURST.every(p => afterHttp.includes(p)), `the rest of the start-up requests are sent once the chat is open (${[...new Set(afterHttp)].join(',')})`)
+  check(afterHttp.filter(p => p === '/api/status').length === 1, `the full status is asked for once at start-up (${afterHttp.filter(p => p === '/api/status').length})`)
   await spf.close()
 
   // ── start-up resume must not pull you out of a new chat you started while it was loading ──

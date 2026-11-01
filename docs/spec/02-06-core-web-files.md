@@ -45,7 +45,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
   `useSyncExternalStore`). Before that, a formula shows as its TeX in inline code and code blocks have no colours;
   every message re-renders once it is loaded.
 - `health.ts` — the header dot and status sheet data: `checkHealth` (ping `gateway.ping` with 8 s timeout, plus
-  `GET /api/status` without `profile=`), `startHealthPolling` (2.5), `dotState`: `wait` while connecting, `err`
+  `GET /api/status` without `profile=`), `startHealthPolling` (2.5; returns false when it was already running, so `App` asks for only a ping on a reconnect and the full status is sent once at start-up), `dotState`: `wait` while connecting, `err`
   when not open, `warn` when the status call failed, the dashboard or storage component isn't ok/unknown, or disk
   or memory pressure is critical, else `ok`. Messaging-platform health is ignored on purpose.
 

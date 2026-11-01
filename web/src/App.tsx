@@ -1,7 +1,7 @@
 import { appVersion, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { compressChat, connect, errText, fmtCtx, openSessionFromNotification, reconnectNow } from './gateway'
+import { afterChatOpens, compressChat, connect, errText, fmtCtx, openSessionFromNotification, reconnectNow } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { foldMap } from './fold'
@@ -799,13 +799,22 @@ export function App() {
   }, [screen])
   useEffect(() => watchFirstRun(conn, () => setState({ screen: 'welcome' })), [conn])
   useEffect(() => {
-    // Health poll starts once connected; each reconnect re-checks so the dot is current.
+    // Health poll starts once connected; each reconnect re-checks so the dot is current. All of it waits until the
+    // chat has opened (afterChatOpens): sent with session.resume, it made the chat open several times slower.
     if (conn !== 'open') return
-    void checkSetupFlow() // a first run with something missing (no model, no plugin…): the setup flow resumes at it
-    startHealthPolling()
-    startActivityPolling()
-    startCanvasSync()
-    void checkHealth(false) // a reconnect (each return from the background) pings; the full status only when stale
+    let current = true
+    void afterChatOpens().then(() => {
+      if (!current || getState().conn !== 'open') return
+      void checkSetupFlow() // a first run with something missing (no model, no plugin…): the setup flow resumes at it
+      // A reconnect (each return from the background) pings; the full status only when stale. The first start's
+      // full check is startHealthPolling's own.
+      if (!startHealthPolling()) void checkHealth(false)
+      startActivityPolling()
+      startCanvasSync()
+    })
+    return () => {
+      current = false
+    }
   }, [conn])
 
   useEffect(() => {
