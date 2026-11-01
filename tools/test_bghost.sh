@@ -45,7 +45,18 @@ adb shell "cd /data/local/tmp; (HM_TOKEN=$TOK CLASSPATH=$CP setsid nohup app_pro
 sleep 3
 r=$(req /open "{\"pkg\":\"$PKG\"}"); check "opens again" "$([[ $r == *'"ok":true'* ]] && echo 1)" "$r"
 cap=$(req /capture '{"tree":true}')
-first=$(printf %s "$cap" | python3 -c 'import json,sys;e=json.load(sys.stdin).get("elements",[]);print(next((x["n"] for x in e if x.get("click")),""))' 2>/dev/null)
+el() { printf %s "$cap" | python3 -c "import json,sys;e=json.load(sys.stdin).get('elements',[]);print(next((x[sys.argv[1]] for x in e if x.get('role') not in ('text','list','pager') and x.get('text')),''))" "$1" 2>/dev/null; }
+first=$(el n); name=$(el text)
+check "elements have roles and the screen is named" "$([[ $cap == *'"role":'* && $cap == *'"screen":'* ]] && echo 1)" "${cap:0:300}"
+f1=$(curl -s -H "X-HM-Token: $TOK" "http://127.0.0.1:$LP/frame?w=360" | cksum); f2=$(curl -s -H "X-HM-Token: $TOK" "http://127.0.0.1:$LP/frame?w=360" | cksum)
+check "an unchanged screen gives the same picture again (cached)" "$([ "$f1" = "$f2" ] && echo 1)" "$f1 $f2"
+r=$(req /capture '{"tree":true,"image":true,"marks":true}'); check "capture with numbered marks has a picture" "$([[ $r == *'"image_b64":'* ]] && echo 1)" "${r:0:200}"
+r=$(req /wait_for '{"target":"zz-not-on-screen","seconds":1}'); check "wait_for gives up with a clear error" "$([[ $r == *"didn't show"* ]] && echo 1)" "$r"
+r=$(req /scroll_to '{"target":"zz-not-on-screen"}'); check "scroll_to stops at the end of the list" "$([[ $r == *"isn't in this list"* ]] && echo 1)" "$r"
+r=$(req /tap '{"target":"zz-not-on-screen"}'); check "tap by text that isn't there is refused" "$([[ $r == *'nothing on the screen says'* ]] && echo 1)" "$r"
+r=$(req /open '{"pkg":"com.android.settings","intent":{"action":"android.intent.action.DELETE","data":"package:x"}}')
+check "an intent that acts without a screen is refused" "$([[ $r == *"isn't allowed"* ]] && echo 1)" "$r"
+[ -n "$name" ] && { r=$(req /tap "$(python3 -c 'import json,sys;print(json.dumps({"target":sys.argv[1]}))' "$name")"); check "tap by text" "$([[ $r == *'"ok":true'* ]] && echo 1)" "$r"; for i in 1 2; do req /key '{"name":"back"}' >/dev/null; done; req /open "{\"pkg\":\"$PKG\"}" >/dev/null; cap=$(req /capture '{"tree":true}'); first=$(el n); }
 r=$(req /tap "{\"n\":${first:-1}}"); check "tap by element" "$([[ $r == *'"ok":true'* ]] && echo 1)" "$r"
 check "focus stays after tap" "$([ "$(focus)" = 0 ] && echo 1)" "$(focus)"
 for i in 1 2 3; do r=$(req /key '{"name":"back"}'); done

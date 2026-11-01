@@ -5,18 +5,23 @@ import android.app.Instrumentation;
 import android.app.UiAutomation;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.AttributionSource;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
 import android.media.ImageReader;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -28,7 +33,9 @@ import android.view.InputEvent;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction;
 import android.view.accessibility.AccessibilityWindowInfo;
 
 import org.json.JSONArray;
@@ -50,8 +57,13 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Background host: runs as the SHELL user (started by the Hermes plugin through Shizuku's rish:
@@ -67,6 +79,9 @@ import java.util.Locale;
 public final class BgHost {
     static final long IDLE_MS = 120_000, MAX_MS = 30 * 60_000;
     static final int W = 720, H = 1600, DPI = 320, MAX_ELEMENTS = 300;
+    /** settle(): the screen counts as done QUIET_MS after its last change, or NO_CHANGE_MS after an action that changed
+     *  nothing, and never later than SETTLE_MAX_MS. */
+    static final long QUIET_MS = 200, NO_CHANGE_MS = 500, SETTLE_MAX_MS = 1500;
 
     // DisplayManager.VIRTUAL_DISPLAY_FLAG_* (hidden ones by value)
     static final int FLAGS = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
@@ -74,16 +89,25 @@ public final class BgHost {
             | (1 << 10) /* TRUSTED */ | (1 << 11) /* OWN_DISPLAY_GROUP */ | (1 << 12) /* ALWAYS_UNLOCKED */
             | (1 << 13) /* TOUCH_FEEDBACK_DISABLED */ | (1 << 14) /* OWN_FOCUS */ | (1 << 16) /* STEAL_TOP_FOCUS_DISABLED */;
 
+    /** Intent actions open() accepts from the android.* namespace (an app's own actions only reach that app): ones that
+     *  show a screen. No CALL, DELETE, INSTALL or anything else that acts without one. */
+    static final Set<String> SAFE_ACTIONS = new HashSet<>(Arrays.asList(Intent.ACTION_VIEW, Intent.ACTION_SEND,
+            Intent.ACTION_SENDTO, Intent.ACTION_INSERT, Intent.ACTION_EDIT, Intent.ACTION_SEARCH, Intent.ACTION_WEB_SEARCH,
+            Intent.ACTION_DIAL, Intent.ACTION_MAIN, "android.intent.action.SET_ALARM", "android.intent.action.SET_TIMER",
+            "android.intent.action.SHOW_ALARMS", "android.intent.action.SHOW_TIMERS"));
+
     static Context ctx;
     static String token;
     static VirtualDisplay vd;
     static ImageReader reader;
     static Image last;
+    static byte[] jpg; static int jpgW; static long jpgTs = -1; // frame()'s last picture, sent again while nothing changed
     static int displayId = -1;
     static String pkg = "";
     static UiAutomation ua;
     static HandlerThread uaThread;
-    static final List<AccessibilityNodeInfo> nodes = new ArrayList<>();
+    static volatile long lastChange = 0; // uptime of the last screen event from the hidden display
+    static Scan shown = new Scan();      // the last capture: element numbers refer to it
     static int extraFlags = 0; // test hook: HM_BG_FLAGS env adds/removes nothing by default
 
     public static void main(String[] args) throws Exception {
@@ -181,17 +205,26 @@ public final class BgHost {
             switch (path) {
                 case "/status": r = status(); break;
                 case "/apps": r = apps(); break;
-                case "/open": r = open(a.getString("pkg")); break;
-                case "/capture": r = capture(a.optBoolean("tree", true), a.optBoolean("image", false), a.optInt("max_w", W)); break;
-                case "/tap": r = tap(a); break;
-                case "/set_text": r = setText(a.getInt("n"), a.getString("text")); break;
+                case "/resolve": r = resolve(a.getJSONObject("intent"), a.optString("pkg", "")); break;
+                case "/open": r = open(a.getString("pkg"), a.optJSONObject("intent")); break;
+                case "/capture": r = capture(a.optBoolean("tree", true), a.optBoolean("image", false), a.optBoolean("marks", false), a.optInt("max_w", W)); break;
+                case "/tap": r = tap(a, false); break;
+                case "/long_press": r = tap(a, true); break;
+                case "/swipe": r = swipeReq(a); break;
+                case "/set_text": r = setText(a); break;
                 case "/type": r = type(a.getString("text")); break;
                 case "/key": r = key(a.getString("name")); break;
-                case "/scroll": r = scroll(a.optString("direction", "down"), a.optInt("n", 0)); break;
+                case "/submit": r = submit(a); break;
+                case "/toggle": r = toggle(a); break;
+                case "/scroll": r = scroll(a); break;
+                case "/scroll_to": r = scrollTo(a); break;
+                case "/wait_for": r = waitFor(a); break;
                 case "/hand_over": r = handOver(); quit = true; break;
                 case "/close": r = ok(); quit = true; break;
                 default: send(out, 404, "application/json", "{\"ok\":false,\"error\":\"not found\"}".getBytes(StandardCharsets.UTF_8)); return false;
             }
+        } catch (IllegalArgumentException t) { // our own messages for the model ("element 4 has changed…")
+            r = err(t.getMessage());
         } catch (Throwable t) {
             r = err(t.getClass().getSimpleName() + ": " + t.getMessage());
         }
@@ -273,9 +306,12 @@ public final class BgHost {
         DisplayManager dm = dmc.newInstance(ctx);
         vd = dm.createVirtualDisplay("hermes-bg", W, H, DPI, reader.getSurface(), FLAGS ^ extraFlags);
         displayId = vd.getDisplay().getDisplayId();
-        try { // keyboard (if any shows) stays on the hidden display: DISPLAY_IME_POLICY_LOCAL = 0
+        try { // No keyboard on the hidden display: text goes in through accessibility (set_text) or key events, so a
+              // keyboard would only cost drawing and cover half the app. DISPLAY_IME_POLICY_HIDE = 2; if a build refuses
+              // it, LOCAL = 0 at least keeps the keyboard off the owner's screen.
             Object wm = service("window", "android.view.IWindowManager");
-            wm.getClass().getMethod("setDisplayImePolicy", int.class, int.class).invoke(wm, displayId, 0);
+            Method m = wm.getClass().getMethod("setDisplayImePolicy", int.class, int.class);
+            try { m.invoke(wm, displayId, 2); } catch (Throwable t) { System.out.println("ime hide: " + t); m.invoke(wm, displayId, 0); }
         } catch (Throwable t) { System.out.println("ime policy: " + t); }
         System.out.println("DISPLAY " + displayId);
     }
@@ -285,6 +321,7 @@ public final class BgHost {
         ua = null;
         if (uaThread != null) { uaThread.quitSafely(); uaThread = null; }
         if (last != null) { last.close(); last = null; }
+        jpg = null; jpgTs = -1;
         if (vd != null) { vd.release(); vd = null; System.out.println("RELEASED " + displayId); }
         if (reader != null) { reader.close(); reader = null; }
     }
@@ -297,13 +334,68 @@ public final class BgHost {
         PackageManager pm = ctx.getPackageManager();
         Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         JSONArray out = new JSONArray();
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
+        Set<String> seen = new HashSet<>();
+        for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
             String p = ri.activityInfo.packageName;
             if (!seen.add(p)) continue;
             out.put(new JSONObject().put("pkg", p).put("label", String.valueOf(ri.loadLabel(pm))));
         }
         return ok().put("apps", out);
+    }
+
+    static String appLabel(String p) {
+        PackageManager pm = ctx.getPackageManager();
+        try { return String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(p, 0))); } catch (Throwable t) { return p; }
+    }
+
+    /** An intent from the model: {action (default VIEW), data, type, extras}. Only SAFE_ACTIONS, android.settings.*
+     *  pages or an app's own actions; no file:, intent: or javascript: links. */
+    static Intent buildIntent(JSONObject j) throws Exception {
+        String act = j.optString("action", "");
+        if (act.isEmpty()) act = Intent.ACTION_VIEW;
+        if (act.startsWith("android.") && !SAFE_ACTIONS.contains(act) && !act.startsWith("android.settings."))
+            throw new IllegalArgumentException("the intent action " + act + " isn't allowed here");
+        Intent it = new Intent(act);
+        String data = j.optString("data", ""), type = j.optString("type", "");
+        if (!data.isEmpty()) {
+            Uri u = Uri.parse(data);
+            String sch = u.getScheme() == null ? "" : u.getScheme().toLowerCase(Locale.ROOT);
+            if (sch.isEmpty() || sch.equals("file") || sch.equals("intent") || sch.equals("javascript") || sch.equals("android-app"))
+                throw new IllegalArgumentException("links like " + (sch.isEmpty() ? data : sch + ":") + " can't be opened here");
+            if (type.isEmpty()) it.setData(u); else it.setDataAndType(u, type);
+        } else if (!type.isEmpty()) it.setType(type);
+        JSONObject ex = j.optJSONObject("extras");
+        if (ex != null) for (Iterator<String> ks = ex.keys(); ks.hasNext(); ) {
+            String k = ks.next(); Object v = ex.get(k);
+            if (v instanceof String) it.putExtra(k, (String) v);
+            else if (v instanceof Boolean) it.putExtra(k, (boolean) (Boolean) v);
+            else if (v instanceof Integer) it.putExtra(k, (int) (Integer) v);
+            else if (v instanceof Long) it.putExtra(k, (long) (Long) v);
+            else if (v instanceof Number) it.putExtra(k, ((Number) v).doubleValue());
+            else throw new IllegalArgumentException("the extra " + k + " must be text, a number or true/false");
+        }
+        return it;
+    }
+
+    /** Which app an intent opens (in package p when given). Several candidates are an error that names them. */
+    static JSONObject resolve(JSONObject j, String p) throws Exception {
+        Intent it = buildIntent(j);
+        if (!p.isEmpty()) it.setPackage(p);
+        Set<String> pkgs = new LinkedHashSet<>();
+        for (ResolveInfo ri : ctx.getPackageManager().queryIntentActivities(it, PackageManager.MATCH_DEFAULT_ONLY))
+            pkgs.add(ri.activityInfo.packageName);
+        if (pkgs.isEmpty()) return err(p.isEmpty() ? "no app on the phone can open this" : appLabel(p) + " can't open this");
+        if (pkgs.size() > 1) {
+            StringBuilder sb = new StringBuilder("several apps can open this; say which with app: ");
+            int i = 0;
+            for (String c : pkgs) {
+                if (i++ == 8) break;
+                sb.append(i > 1 ? ", " : "").append(appLabel(c)).append(" (").append(c).append(')');
+            }
+            return err(sb.toString());
+        }
+        String only = pkgs.iterator().next();
+        return ok().put("pkg", only).put("label", appLabel(only));
     }
 
     /** The package of the app the user is looking at (top task of display 0), or "" if unknown. */
@@ -314,7 +406,7 @@ public final class BgHost {
             for (Object info : infos) {
                 if (!info.getClass().getField("visible").getBoolean(info)) continue;
                 Object cn = info.getClass().getField("topActivity").get(info);
-                if (cn instanceof android.content.ComponentName) return ((android.content.ComponentName) cn).getPackageName();
+                if (cn instanceof ComponentName) return ((ComponentName) cn).getPackageName();
             }
         } catch (Throwable t) { System.out.println("ownerForeground: " + t); }
         try { // fallback: dumpsys text (format differs between versions/vendors, so only a fallback)
@@ -347,22 +439,44 @@ public final class BgHost {
                 return res >= 0 ? "" : "launch failed (" + res + ")";
             }
         } catch (Throwable t) { System.out.println("startActivity: " + t + " -> am start"); }
-        android.content.ComponentName cn = it.getComponent();
+        ComponentName cn = it.getComponent();
         if (cn == null) return "no launch activity";
-        String out = exec("am", "start", "--display", String.valueOf(displayId), "-f", String.valueOf(it.getFlags()), "-n", cn.flattenToShortString());
+        List<String> cmd = new ArrayList<>(Arrays.asList("am", "start", "--display", String.valueOf(displayId), "-f", String.valueOf(it.getFlags())));
+        if (it.getAction() != null) { cmd.add("-a"); cmd.add(it.getAction()); }
+        if (it.getDataString() != null) { cmd.add("-d"); cmd.add(it.getDataString()); }
+        if (it.getType() != null) { cmd.add("-t"); cmd.add(it.getType()); }
+        Bundle ex = it.getExtras();
+        if (ex != null) for (String k : ex.keySet()) {
+            Object v = ex.get(k);
+            cmd.add(v instanceof Boolean ? "--ez" : v instanceof Integer ? "--ei" : v instanceof Long ? "--el" : v instanceof Double ? "--ed" : "--es");
+            cmd.add(k);
+            cmd.add(String.valueOf(v));
+        }
+        cmd.add("-n"); cmd.add(cn.flattenToShortString());
+        String out = exec(cmd.toArray(new String[0]));
         return out.contains("Error") ? out.trim() : "";
     }
 
-    static JSONObject open(String p) throws Exception {
+    /** Open app p on the hidden display: its first screen, or the screen an intent leads to (a link, a share…). */
+    static JSONObject open(String p, JSONObject intent) throws Exception {
         if (p == null || !p.matches("[A-Za-z0-9_.]+")) return err("bad package name");
         PackageManager pm = ctx.getPackageManager();
-        Intent it = pm.getLaunchIntentForPackage(p);
-        if (it == null) return err("no launchable app " + p);
+        Intent it;
+        if (intent != null) {
+            it = buildIntent(intent);
+            it.setPackage(p);
+            ResolveInfo ri = pm.resolveActivity(it, PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri == null) return err(appLabel(p) + " can't open this");
+            it.setComponent(new ComponentName(p, ri.activityInfo.name));
+        } else {
+            it = pm.getLaunchIntentForPackage(p);
+            if (it == null) return err("no launchable app " + p);
+            it.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        }
         if (p.equals(ownerForeground())) return err("the user has " + p + " open on the screen right now; ask them before taking it");
-        String label;
-        try { label = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(p, 0))); } catch (Throwable t) { label = p; }
+        String label = appLabel(p);
         ensureDisplay();
-        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         String failed = launch(it);
         if (!failed.isEmpty()) return err(failed);
         pkg = p;
@@ -373,7 +487,7 @@ public final class BgHost {
             if (hasContent()) break;
             SystemClock.sleep(250);
         }
-        SystemClock.sleep(400);
+        settle();
         String top = topPackage();
         if (!top.isEmpty() && !top.equals(p)) {
             // Usually the phone's own app lock (each vendor has one) or a sign-in/permission screen of another package.
@@ -386,34 +500,44 @@ public final class BgHost {
         return ok().put("display", displayId).put("label", label).put("pkg", p);
     }
 
-    /** True once a window on the hidden display has at least one node with text, a description or an action. */
+    /** True once a window on the hidden display shows text, or anything but a bare scroll container. */
     static boolean hasContent() {
         try {
-            for (AccessibilityWindowInfo wi : windows()) {
-                JSONArray probe = new JSONArray();
-                int before = nodes.size();
-                walk(wi.getRoot(), 0, probe);
-                while (nodes.size() > before) nodes.remove(nodes.size() - 1);
-                for (int i = 0; i < probe.length(); i++) { // a bare scroll container isn't content yet
-                    JSONObject e = probe.getJSONObject(i);
-                    if (e.has("text") || e.has("desc") || e.has("click") || e.has("edit")) return true;
-                }
+            JSONArray els = scan().els;
+            for (int i = 0; i < els.length(); i++) {
+                JSONObject e = els.getJSONObject(i);
+                String role = e.optString("role");
+                if (e.has("text") || !(role.equals("list") || role.equals("pager"))) return true;
             }
         } catch (Throwable ignored) {}
         return false;
     }
 
-    /** Package of the top activity on the hidden display, or "" if none/unknown. */
-    static String topPackage() {
+    /** The top activity on the hidden display, or null. */
+    static ComponentName topComponent() {
         try {
             Object atm = atm();
             List<?> infos = (List<?>) atm.getClass().getMethod("getAllRootTaskInfosOnDisplay", int.class).invoke(atm, displayId);
             for (Object info : infos) {
                 Object cn = info.getClass().getField("topActivity").get(info);
-                if (cn instanceof android.content.ComponentName) return ((android.content.ComponentName) cn).getPackageName();
+                if (cn instanceof ComponentName) return (ComponentName) cn;
             }
-        } catch (Throwable t) { System.out.println("topPackage: " + t); }
-        return "";
+        } catch (Throwable t) { System.out.println("topComponent: " + t); }
+        return null;
+    }
+
+    /** Package of the top activity on the hidden display, or "" if none/unknown. */
+    static String topPackage() {
+        ComponentName cn = topComponent();
+        return cn == null ? "" : cn.getPackageName();
+    }
+
+    /** The top activity's class name without its package ("EditNoteActivity"): which screen of the app this is. */
+    static String screenName() {
+        ComponentName cn = topComponent();
+        if (cn == null) return "";
+        String c = cn.getClassName();
+        return c.substring(c.lastIndexOf('.') + 1);
     }
 
     static JSONObject handOver() throws Exception {
@@ -433,25 +557,84 @@ public final class BgHost {
 
     // ── frames ───────────────────────────────────────────────────────────────────────────────────────────
 
-    static synchronized Bitmap bitmap() {
+    /** The newest picture of the hidden screen (the previous one while nothing new was drawn), or null. */
+    static synchronized Image latest() {
         if (reader == null) return null;
         Image n = reader.acquireLatestImage();
         if (n != null) { if (last != null) last.close(); last = n; }
-        if (last == null) return null;
-        Image.Plane p = last.getPlanes()[0];
+        return last;
+    }
+
+    /** A mutable W×H copy of a picture (its buffer rows can be wider than the display). */
+    static Bitmap toBitmap(Image img) {
+        Image.Plane p = img.getPlanes()[0];
         int rs = p.getRowStride(), ps = p.getPixelStride();
         Bitmap bm = Bitmap.createBitmap(rs / ps, H, Bitmap.Config.ARGB_8888);
         ByteBuffer buf = p.getBuffer(); buf.rewind(); bm.copyPixelsFromBuffer(buf);
-        return rs / ps == W ? bm : Bitmap.createBitmap(bm, 0, 0, W, H);
+        if (rs / ps == W) return bm;
+        Bitmap c = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+        new Canvas(c).drawBitmap(bm, 0, 0, null);
+        bm.recycle();
+        return c;
     }
 
-    static byte[] frame(int w) {
-        Bitmap bm = bitmap();
-        if (bm == null) return null;
+    static synchronized Bitmap snapshot() {
+        Image img = latest();
+        return img == null ? null : toBitmap(img);
+    }
+
+    /** The live view's picture, w pixels wide. While the hidden screen draws nothing new, the last JPEG is sent again
+     *  instead of copying and compressing the same picture every half second. */
+    static synchronized byte[] frame(int w) {
+        Image img = latest();
+        if (img == null) return null;
+        if (jpg != null && jpgW == w && jpgTs == img.getTimestamp()) return jpg;
+        jpg = jpeg(toBitmap(img), w);
+        jpgW = w;
+        jpgTs = img.getTimestamp();
+        return jpg;
+    }
+
+    static byte[] jpeg(Bitmap bm, int w) {
         Bitmap s = w >= W ? bm : Bitmap.createScaledBitmap(bm, w, Math.round(H * (w / (float) W)), true);
         ByteArrayOutputStream bo = new ByteArrayOutputStream();
         s.compress(Bitmap.CompressFormat.JPEG, 70, bo);
         return bo.toByteArray();
+    }
+
+    /** True when the picture is black all over: the app marked its screen secure (FLAG_SECURE), so pictures of it are
+     *  black while its elements can still be read. */
+    static boolean allBlack(Bitmap bm) {
+        for (int y = H / 48; y < H; y += H / 24)
+            for (int x = W / 24; x < W; x += W / 12) {
+                int c = bm.getPixel(x, y);
+                if (Color.red(c) > 8 || Color.green(c) > 8 || Color.blue(c) > 8) return false;
+            }
+        return true;
+    }
+
+    static final int[] MARK = {0xFFE53935, 0xFF1E88E5, 0xFF43A047, 0xFFFB8C00, 0xFF8E24AA, 0xFF00897B};
+
+    /** Set-of-marks: a numbered box around every element that can be used (plain text and whole lists stay unmarked,
+     *  so the picture stays readable), so a vision model can match the list's numbers to what it sees. */
+    static void drawMarks(Bitmap bm, Scan s) throws Exception {
+        Canvas c = new Canvas(bm);
+        Paint box = new Paint(); box.setStyle(Paint.Style.STROKE); box.setStrokeWidth(3);
+        Paint tag = new Paint();
+        Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG); txt.setColor(Color.WHITE); txt.setTextSize(22); txt.setFakeBoldText(true);
+        for (int i = 0; i < s.els.length(); i++) {
+            String role = s.els.getJSONObject(i).optString("role");
+            if (role.equals("text") || role.equals("list") || role.equals("pager")) continue;
+            Rect b = s.boxes.get(i);
+            int col = MARK[i % MARK.length];
+            box.setColor(col);
+            c.drawRect(b, box);
+            String num = String.valueOf(i + 1);
+            float tw = txt.measureText(num) + 8, x = Math.max(0, Math.min(b.left, W - tw)), y = Math.max(0, Math.min(b.top, H - 26));
+            tag.setColor(col);
+            c.drawRect(x, y, x + tw, y + 26, tag);
+            c.drawText(num, x + 4, y + 21, txt);
+        }
     }
 
     // ── accessibility tree ───────────────────────────────────────────────────────────────────────────────
@@ -469,7 +652,12 @@ public final class BgHost {
         AccessibilityServiceInfo si = u.getServiceInfo();
         si.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
                 | AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+        // UiAutomation subscribes to every event of every app by default, so each scroll, tap or text change on the
+        // owner's screen would be sent here too. Only "a screen changed" is used: settle() waits for the hidden one.
+        si.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                | AccessibilityEvent.TYPE_WINDOWS_CHANGED | AccessibilityEvent.TYPE_VIEW_SCROLLED;
         u.setServiceInfo(si);
+        u.setOnAccessibilityEventListener(e -> { if (e.getDisplayId() == displayId) lastChange = SystemClock.uptimeMillis(); });
         SystemClock.sleep(200);
         ua = u;
         return u;
@@ -481,56 +669,210 @@ public final class BgHost {
         return ws == null ? new ArrayList<>() : ws;
     }
 
-    static JSONObject capture(boolean tree, boolean image, int maxW) throws Exception {
-        if (vd == null) return err("no app open: use open first");
-        if (appGone()) return gone();
-        JSONObject r = ok().put("w", W).put("h", H).put("pkg", pkg);
-        if (tree) {
-            nodes.clear();
-            JSONArray els = new JSONArray();
-            for (AccessibilityWindowInfo wi : windows()) walk(wi.getRoot(), 0, els);
-            r.put("elements", els);
+    /** One reading of the hidden screen. Element n is index n-1 of every list. */
+    static final class Scan {
+        final List<AccessibilityNodeInfo> nodes = new ArrayList<>();
+        final List<Rect> boxes = new ArrayList<>();
+        final List<String> names = new ArrayList<>();
+        final JSONArray els = new JSONArray();
+        String title = "";
+        int appWindows;
+        boolean keyboard;
+    }
+
+    /** Reads every window of the hidden display, topmost first (a dialog's elements come before the screen under it).
+     *  A keyboard window is left out: its keys are not the app. */
+    static Scan scan() throws Exception {
+        Scan s = new Scan();
+        for (AccessibilityWindowInfo wi : windows()) {
+            if (wi.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) { s.keyboard = true; continue; }
+            if (wi.getType() == AccessibilityWindowInfo.TYPE_APPLICATION) {
+                s.appWindows++;
+                CharSequence t = wi.getTitle();
+                if (t != null && s.title.isEmpty()) s.title = t.toString();
+            }
+            walk(wi.getRoot(), 0, s);
+        }
+        return s;
+    }
+
+    static JSONObject capture(boolean tree, boolean image, boolean marks, int maxW) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        JSONObject r = ok().put("w", W).put("h", H).put("pkg", pkg).put("screen", screenName());
+        Scan s = null;
+        if (tree || marks) {
+            s = scan();
+            shown = s;
+            r.put("elements", s.els);
+            if (!s.title.isEmpty()) r.put("title", s.title);
+            if (s.appWindows > 1) r.put("popup", true);
+            if (s.keyboard) r.put("keyboard", true);
         }
         if (image) {
-            byte[] j = frame(Math.max(240, Math.min(maxW, W)));
-            if (j != null) r.put("image_b64", Base64.encodeToString(j, Base64.NO_WRAP));
+            Bitmap bm = snapshot();
+            if (bm != null) {
+                if (allBlack(bm)) r.put("black", true);
+                else if (marks) drawMarks(bm, s);
+                r.put("image_b64", Base64.encodeToString(jpeg(bm, Math.max(240, Math.min(maxW, W))), Base64.NO_WRAP));
+            }
         }
         return r;
     }
 
-    static void walk(AccessibilityNodeInfo n, int depth, JSONArray els) throws Exception {
-        if (n == null || depth > 60 || nodes.size() >= MAX_ELEMENTS) return;
-        if (!n.isVisibleToUser()) return;
+    static boolean actionable(AccessibilityNodeInfo n) {
+        return n.isClickable() || n.isLongClickable() || n.isEditable() || n.isCheckable() || n.isScrollable();
+    }
+
+    /** A button, row or switch, named with the text inside it. Not a node covering half the screen or more: some apps
+     *  make a whole page clickable, and folding it would hide everything on it. */
+    static boolean folds(AccessibilityNodeInfo n) {
+        if (!actionable(n) || n.isScrollable() || n.isEditable()) return false;
+        Rect b = new Rect(); n.getBoundsInScreen(b);
+        return (long) b.width() * b.height() < (long) W * H / 2;
+    }
+
+    /** The node's own words: its text and description ("Send", "Photo (Sunset)"). A field's hint is not its text. */
+    static String label(AccessibilityNodeInfo n) {
         CharSequence t = n.getText(), d = n.getContentDescription();
-        boolean useful = (t != null && t.length() > 0) || (d != null && d.length() > 0) || n.isClickable() || n.isEditable() || n.isScrollable();
-        if (useful) {
-            Rect b = new Rect(); n.getBoundsInScreen(b);
-            nodes.add(n);
-            JSONObject e = new JSONObject().put("n", nodes.size());
-            if (t != null && t.length() > 0) e.put("text", clip(t));
-            if (d != null && d.length() > 0) e.put("desc", clip(d));
-            String id = n.getViewIdResourceName();
-            if (id != null) e.put("id", id.contains(":id/") ? id.substring(id.indexOf(":id/") + 4) : id);
-            CharSequence cls = n.getClassName();
-            if (cls != null) { String c = cls.toString(); e.put("cls", c.substring(c.lastIndexOf('.') + 1)); }
-            if (n.isClickable()) e.put("click", true);
-            if (n.isEditable()) e.put("edit", true);
-            if (n.isScrollable()) e.put("scroll", true);
-            if (n.isChecked()) e.put("checked", true);
-            if (n.isFocused()) e.put("focused", true);
-            e.put("x", b.centerX()).put("y", b.centerY());
-            els.put(e);
+        String a = t == null || (n.isEditable() && n.isShowingHintText()) ? "" : t.toString().trim();
+        String b = d == null ? "" : d.toString().trim();
+        if (a.isEmpty()) return b;
+        if (b.isEmpty() || b.equals(a)) return a;
+        return a + " (" + b + ")";
+    }
+
+    /** The name the model sees. A folding node's name also has the words of the plain nodes inside it ("Wi-Fi,
+     *  Connected"); the usable nodes inside it (a switch in a row) go to `inner` and stay elements of their own. */
+    static String nameOf(AccessibilityNodeInfo n, int depth, List<AccessibilityNodeInfo> inner) {
+        StringBuilder name = new StringBuilder(label(n));
+        if (folds(n)) for (int i = 0; i < n.getChildCount(); i++) gather(n.getChild(i), depth + 1, name, inner);
+        return name.toString();
+    }
+
+    static void gather(AccessibilityNodeInfo c, int depth, StringBuilder name, List<AccessibilityNodeInfo> inner) {
+        if (c == null || depth > 60 || !c.isVisibleToUser()) return;
+        if (actionable(c)) { inner.add(c); return; }
+        String t = label(c);
+        if (!t.isEmpty() && name.indexOf(t) < 0 && name.length() < 300) { if (name.length() > 0) name.append(", "); name.append(t); }
+        for (int i = 0; i < c.getChildCount(); i++) gather(c.getChild(i), depth + 1, name, inner);
+    }
+
+    static void walk(AccessibilityNodeInfo n, int depth, Scan s) throws Exception {
+        if (n == null || depth > 60 || s.nodes.size() >= MAX_ELEMENTS || !n.isVisibleToUser()) return;
+        if (folds(n)) {
+            List<AccessibilityNodeInfo> inner = new ArrayList<>();
+            add(s, n, nameOf(n, depth, inner));
+            for (AccessibilityNodeInfo c : inner) walk(c, depth + 1, s);
+            return;
         }
-        for (int i = 0; i < n.getChildCount(); i++) walk(n.getChild(i), depth + 1, els);
+        String own = label(n);
+        if (actionable(n) || !own.isEmpty()) add(s, n, own);
+        for (int i = 0; i < n.getChildCount(); i++) walk(n.getChild(i), depth + 1, s);
+    }
+
+    static String role(AccessibilityNodeInfo n) {
+        String c = n.getClassName() == null ? "" : n.getClassName().toString();
+        if (n.isEditable()) return "field";
+        if (n.isCheckable()) return c.contains("Switch") || c.contains("Toggle") ? "switch" : c.contains("Radio") ? "radio" : "checkbox";
+        if (n.isScrollable()) return c.contains("Pager") ? "pager" : "list";
+        if (c.endsWith("SeekBar") || c.contains("Slider")) return "slider";
+        if (n.isClickable() || n.isLongClickable()) return c.contains("Tab") ? "tab" : c.contains("Image") ? "image button" : "button";
+        if (c.contains("Image")) return "image";
+        return "text";
+    }
+
+    static void add(Scan s, AccessibilityNodeInfo n, String name) throws Exception {
+        Rect b = new Rect(); n.getBoundsInScreen(b);
+        s.nodes.add(n);
+        s.boxes.add(b);
+        s.names.add(name);
+        JSONObject e = new JSONObject().put("n", s.nodes.size()).put("role", role(n));
+        if (!name.isEmpty()) e.put("text", clip(name));
+        if (n.isEditable()) { CharSequence h = n.getHintText(); if (h != null && h.length() > 0) e.put("hint", clip(h)); }
+        String id = n.getViewIdResourceName();
+        if (id != null) e.put("id", id.contains(":id/") ? id.substring(id.indexOf(":id/") + 4) : id);
+        if (n.isCheckable()) e.put("checked", n.isChecked());
+        if (n.isSelected()) e.put("selected", true);
+        if (n.isFocused()) e.put("focused", true);
+        if (!n.isEnabled()) e.put("disabled", true);
+        if (n.isScrollable()) {
+            List<AccessibilityAction> acts = n.getActionList();
+            boolean fwd = acts.contains(AccessibilityAction.ACTION_SCROLL_FORWARD), back = acts.contains(AccessibilityAction.ACTION_SCROLL_BACKWARD);
+            e.put("more", fwd && back ? "both" : fwd ? "after" : back ? "before" : "none");
+            if (b.width() > 2 * b.height()) e.put("horizontal", true);
+        }
+        e.put("x", b.centerX()).put("y", b.centerY());
+        s.els.put(e);
     }
 
     static String clip(CharSequence s) { String v = s.toString().replace('\n', ' '); return v.length() > 160 ? v.substring(0, 160) + "…" : v; }
 
+    /** Element n of the last capture, if it is still on the screen and still the same thing. A list row the app reused
+     *  for other content, or an element that left the screen, is refused instead of acting on the wrong thing. */
     static AccessibilityNodeInfo node(int n) {
-        if (n < 1 || n > nodes.size()) throw new IllegalArgumentException("no element " + n + " (capture again)");
-        AccessibilityNodeInfo x = nodes.get(n - 1);
-        x.refresh();
+        if (n < 1 || n > shown.nodes.size()) throw new IllegalArgumentException("no element " + n + " (capture again)");
+        AccessibilityNodeInfo x = shown.nodes.get(n - 1);
+        if (!x.refresh() || !x.isVisibleToUser()) throw new IllegalArgumentException("element " + n + " is no longer on the screen (capture again)");
+        if (!x.isEditable()) { // a field's text is what the model types, so it may differ
+            String now = nameOf(x, 0, new ArrayList<>());
+            if (!now.equals(shown.names.get(n - 1)))
+                throw new IllegalArgumentException("element " + n + " has changed (it now says \"" + clip(now) + "\"); capture again");
+        }
         return x;
+    }
+
+    /** What an action works on: {n} from the last capture, or {target}: words on the screen, matched on a fresh reading
+     *  (so the numbers of the last capture stay valid). */
+    static final class Pick { AccessibilityNodeInfo node; Rect box; String what = ""; }
+
+    static Pick pick(JSONObject a, String kind) throws Exception {
+        Pick p = new Pick();
+        if (a.has("n")) {
+            p.node = node(a.getInt("n"));
+            p.box = new Rect(); p.node.getBoundsInScreen(p.box);
+            return p;
+        }
+        String want = a.optString("target", "").trim();
+        if (want.isEmpty()) throw new IllegalArgumentException("say which element: its number, or its text as target");
+        Scan s = scan();
+        int i = find(s, want, kind);
+        if (i < 0) throw new IllegalArgumentException("nothing on the screen says \"" + want + "\" (capture to see what is there)");
+        JSONObject e = s.els.getJSONObject(i);
+        p.node = s.nodes.get(i);
+        p.box = s.boxes.get(i);
+        String name = e.optString("text", e.optString("hint", ""));
+        p.what = e.optString("role") + (name.isEmpty() ? "" : " \"" + name + "\"");
+        return p;
+    }
+
+    /** Index of the element in s that best matches `want`, or -1: the exact name (or one comma part of a folded name),
+     *  then a name starting with it, then one containing it, ignoring case; usable elements beat plain text. kind
+     *  "field" or "check" prefers text fields or switches, and takes the one right after a matching label (a settings
+     *  row whose switch is a separate element). */
+    static int find(Scan s, String want, String kind) throws Exception {
+        String w = want.toLowerCase(Locale.ROOT);
+        int best = -1, bestScore = 0;
+        for (int i = 0; i < s.els.length(); i++) {
+            JSONObject e = s.els.getJSONObject(i);
+            int score = 0;
+            for (String f : new String[]{e.optString("text"), e.optString("hint"), e.optString("id")}) {
+                String v = f.toLowerCase(Locale.ROOT);
+                if (v.isEmpty()) continue;
+                score = Math.max(score, v.equals(w) ? 30 : Arrays.asList(v.split(", ")).contains(w) ? 25 : v.startsWith(w) ? 20 : v.contains(w) ? 10 : 0);
+            }
+            if (score == 0) continue;
+            if (!e.optString("role").equals("text")) score += 3;
+            if (kind != null && isKind(e, kind)) score += 15;
+            if (score > bestScore) { best = i; bestScore = score; }
+        }
+        if (best >= 0 && kind != null && !isKind(s.els.getJSONObject(best), kind))
+            for (int j = best + 1; j < Math.min(s.els.length(), best + 5); j++)
+                if (isKind(s.els.getJSONObject(j), kind)) return j;
+        return best;
+    }
+
+    static boolean isKind(JSONObject e, String kind) {
+        return kind.equals("field") ? e.optString("role").equals("field") : e.has("checked");
     }
 
     // ── input ────────────────────────────────────────────────────────────────────────────────────────────
@@ -546,52 +888,73 @@ public final class BgHost {
 
     static JSONObject gone() { return err("the app closed itself (or left the hidden screen); open it again"); }
 
+    /** Null while an app is open on the hidden display, else the error to answer with. */
+    static JSONObject notOpen() {
+        if (vd == null) return err("no app open: use open first");
+        return appGone() ? gone() : null;
+    }
+
     static void inject(InputEvent ev) throws Exception {
         Method sd = ev.getClass().getMethod("setDisplayId", int.class);
         sd.invoke(ev, displayId);
         if (!ua().injectInputEvent(ev, true)) throw new IllegalStateException("input was not delivered");
     }
 
-    static void tapXY(int x, int y) throws Exception {
+    static void touch(int action, long down, long at, float x, float y) throws Exception {
+        MotionEvent e = MotionEvent.obtain(down, at, action, x, y, 0);
+        e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        inject(e);
+    }
+
+    /** A finger down for ms milliseconds: 60 is a tap, 650 a long press. */
+    static void pressXY(int x, int y, long ms) throws Exception {
         long t = SystemClock.uptimeMillis();
-        MotionEvent down = MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x, y, 0);
-        down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        inject(down);
-        MotionEvent up = MotionEvent.obtain(t, t + 60, MotionEvent.ACTION_UP, x, y, 0);
-        up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        inject(up);
+        touch(MotionEvent.ACTION_DOWN, t, t, x, y);
+        if (ms > 100) SystemClock.sleep(ms);
+        touch(MotionEvent.ACTION_UP, t, Math.max(SystemClock.uptimeMillis(), t + ms), x, y);
     }
 
     static void swipe(int x1, int y1, int x2, int y2, int ms) throws Exception {
         long t = SystemClock.uptimeMillis();
-        MotionEvent e = MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x1, y1, 0);
-        e.setSource(InputDevice.SOURCE_TOUCHSCREEN); inject(e);
+        touch(MotionEvent.ACTION_DOWN, t, t, x1, y1);
         int steps = 10;
         for (int i = 1; i <= steps; i++) {
             float f = i / (float) steps;
-            MotionEvent m = MotionEvent.obtain(t, t + (long) (ms * f), MotionEvent.ACTION_MOVE, x1 + (x2 - x1) * f, y1 + (y2 - y1) * f, 0);
-            m.setSource(InputDevice.SOURCE_TOUCHSCREEN); inject(m);
+            touch(MotionEvent.ACTION_MOVE, t, t + (long) (ms * f), x1 + (x2 - x1) * f, y1 + (y2 - y1) * f);
             SystemClock.sleep(ms / steps);
         }
-        MotionEvent u = MotionEvent.obtain(t, t + ms, MotionEvent.ACTION_UP, x2, y2, 0);
-        u.setSource(InputDevice.SOURCE_TOUCHSCREEN); inject(u);
+        touch(MotionEvent.ACTION_UP, t, t + ms, x2, y2);
     }
 
-    static JSONObject tap(JSONObject a) throws Exception {
-        if (vd == null) return err("no app open: use open first");
-        if (appGone()) return gone();
-        if (a.has("n")) {
-            AccessibilityNodeInfo n = node(a.getInt("n"));
-            for (AccessibilityNodeInfo c = n; c != null; c = c.getParent()) {
-                if (c.isClickable() && c.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { settle(); return ok().put("via", "node"); }
-            }
-            Rect b = new Rect(); n.getBoundsInScreen(b);
-            tapXY(b.centerX(), b.centerY());
-        } else {
-            tapXY(a.getInt("x"), a.getInt("y"));
+    static JSONObject tap(JSONObject a, boolean longPress) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        long ms = longPress ? 650 : 60;
+        if (a.has("x")) {
+            pressXY(a.getInt("x"), a.getInt("y"), ms);
+            settle();
+            return ok().put("via", "touch");
         }
+        Pick p = pick(a, null);
+        int action = longPress ? AccessibilityNodeInfo.ACTION_LONG_CLICK : AccessibilityNodeInfo.ACTION_CLICK;
+        for (AccessibilityNodeInfo c = p.node; c != null; c = c.getParent()) {
+            if ((longPress ? c.isLongClickable() : c.isClickable()) && c.performAction(action)) {
+                settle();
+                return ok().put("via", "node").put("target", p.what);
+            }
+        }
+        pressXY(p.box.centerX(), p.box.centerY(), ms);
         settle();
-        return ok().put("via", "touch");
+        return ok().put("via", "touch").put("target", p.what);
+    }
+
+    static JSONObject swipeReq(JSONObject a) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        int x1 = a.getInt("x1"), y1 = a.getInt("y1"), x2 = a.getInt("x2"), y2 = a.getInt("y2");
+        for (int[] pt : new int[][]{{x1, y1}, {x2, y2}})
+            if (pt[0] < 0 || pt[0] >= W || pt[1] < 0 || pt[1] >= H) return err("swipe points must be on the " + W + "x" + H + " screen");
+        swipe(x1, y1, x2, y2, Math.max(100, Math.min(a.optInt("ms", 300), 3000)));
+        settle();
+        return ok();
     }
 
     static AccessibilityNodeInfo focusedInput() throws Exception {
@@ -610,27 +973,26 @@ public final class BgHost {
         return n.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b);
     }
 
-    static JSONObject setText(int idx, String text) throws Exception {
-        if (vd == null) return err("no app open: use open first");
-        if (appGone()) return gone();
-        AccessibilityNodeInfo n = node(idx);
+    static JSONObject setText(JSONObject a) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        Pick p = pick(a, "field");
+        AccessibilityNodeInfo n = p.node;
         if (!n.isEditable()) {
             n.performAction(AccessibilityNodeInfo.ACTION_CLICK);
             SystemClock.sleep(300);
             AccessibilityNodeInfo f = focusedInput();
-            if (f == null) return err("element " + idx + " is not a text field");
+            if (f == null) return err((p.what.isEmpty() ? "that element" : p.what) + " is not a text field");
             n = f;
         } else {
             n.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
         }
-        if (!setNodeText(n, text)) return err("the field refused the text");
+        if (!setNodeText(n, a.getString("text"))) return err("the field refused the text");
         settle();
-        return ok();
+        return ok().put("target", p.what);
     }
 
     static JSONObject type(String text) throws Exception {
-        if (vd == null) return err("no app open: use open first");
-        if (appGone()) return gone();
+        JSONObject no = notOpen(); if (no != null) return no;
         AccessibilityNodeInfo f = focusedInput();
         if (f != null) {
             CharSequence cur = f.getText();
@@ -646,8 +1008,7 @@ public final class BgHost {
     }
 
     static JSONObject key(String name) throws Exception {
-        if (vd == null) return err("no app open: use open first");
-        if (appGone()) return gone();
+        JSONObject no = notOpen(); if (no != null) return no;
         int code;
         switch (name.toLowerCase(Locale.ROOT)) {
             case "back": code = KeyEvent.KEYCODE_BACK; break;
@@ -663,23 +1024,65 @@ public final class BgHost {
             case "space": code = KeyEvent.KEYCODE_SPACE; break;
             default: return err("unknown key " + name + " (back, enter, del, tab, search, menu, up, down, left, right, space)");
         }
-        long t = SystemClock.uptimeMillis();
-        inject(new KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0));
-        inject(new KeyEvent(t, t + 30, KeyEvent.ACTION_UP, code, 0));
+        pressKey(code);
         settle();
         return ok();
     }
 
-    static JSONObject scroll(String dir, int idx) throws Exception {
-        if (vd == null) return err("no app open: use open first");
-        if (appGone()) return gone();
-        boolean fwd = dir.equals("down") || dir.equals("right");
-        AccessibilityNodeInfo target = null;
-        if (idx > 0) target = node(idx);
-        else for (AccessibilityNodeInfo n : nodes) { n.refresh(); if (n.isScrollable()) { target = n; break; } }
-        if (target != null && target.performAction(fwd ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) {
-            settle(); return ok().put("via", "node");
+    static void pressKey(int code) throws Exception {
+        long t = SystemClock.uptimeMillis();
+        inject(new KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0));
+        inject(new KeyEvent(t, t + 30, KeyEvent.ACTION_UP, code, 0));
+    }
+
+    /** The keyboard's action button (Search, Send, Go, Done) of a field: the one given or the focused one. Many search
+     *  fields ignore a plain Enter key; the field's own action works without a keyboard. Enter is the fallback. */
+    static JSONObject submit(JSONObject a) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        AccessibilityNodeInfo f = a.has("n") || a.has("target") ? pick(a, "field").node : focusedInput();
+        if (f != null && f.performAction(AccessibilityAction.ACTION_IME_ENTER.getId())) { settle(); return ok().put("via", "field"); }
+        pressKey(KeyEvent.KEYCODE_ENTER);
+        settle();
+        return ok().put("via", "enter");
+    }
+
+    /** Switch or checkbox. With `on`, it is only tapped when it isn't in that state already. */
+    static JSONObject toggle(JSONObject a) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        Pick p = pick(a, "check");
+        AccessibilityNodeInfo n = p.node;
+        if (!n.isCheckable()) return err((p.what.isEmpty() ? "that element" : p.what) + " is not a switch or checkbox");
+        if (a.has("on") && n.isChecked() == a.getBoolean("on")) return ok().put("checked", n.isChecked()).put("changed", false).put("target", p.what);
+        boolean done = false;
+        for (AccessibilityNodeInfo c = n; c != null && !done; c = c.getParent())
+            done = c.isClickable() && c.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        if (!done) pressXY(p.box.centerX(), p.box.centerY(), 60);
+        settle();
+        n.refresh();
+        return ok().put("checked", n.isChecked()).put("changed", true).put("target", p.what);
+    }
+
+    /** The list to scroll when none is named: the biggest one that can still move that way. */
+    static AccessibilityNodeInfo mainList(boolean fwd) throws Exception {
+        Scan s = scan();
+        AccessibilityAction want = fwd ? AccessibilityAction.ACTION_SCROLL_FORWARD : AccessibilityAction.ACTION_SCROLL_BACKWARD;
+        AccessibilityNodeInfo best = null;
+        long area = -1;
+        for (int i = 0; i < s.nodes.size(); i++) {
+            AccessibilityNodeInfo n = s.nodes.get(i);
+            if (!n.isScrollable() || !n.getActionList().contains(want)) continue;
+            Rect b = s.boxes.get(i);
+            long ar = (long) b.width() * b.height();
+            if (ar > area) { area = ar; best = n; }
         }
+        return best;
+    }
+
+    static String scrollOnce(String dir, AccessibilityNodeInfo target) throws Exception {
+        boolean fwd = dir.equals("down") || dir.equals("right");
+        if (target == null) target = mainList(fwd);
+        if (target != null && target.performAction(fwd ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))
+            return "node";
         int cx = W / 2, cy = H / 2, d = H / 3;
         switch (dir) {
             case "down": swipe(cx, cy + d / 2, cx, cy - d / 2, 300); break;
@@ -687,11 +1090,66 @@ public final class BgHost {
             case "right": swipe(cx + W / 4, cy, cx - W / 4, cy, 300); break;
             default: swipe(cx - W / 4, cy, cx + W / 4, cy, 300);
         }
-        settle();
-        return ok().put("via", "swipe");
+        return "swipe";
     }
 
-    static void settle() { SystemClock.sleep(600); }
+    static JSONObject scroll(JSONObject a) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        int n = a.optInt("n", 0);
+        String via = scrollOnce(a.optString("direction", "down"), n > 0 ? node(n) : null);
+        settle();
+        return ok().put("via", via);
+    }
+
+    /** Scroll until an element saying `target` is on the screen: at most 15 scrolls, or until the list stops moving. */
+    static JSONObject scrollTo(JSONObject a) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        String want = a.optString("target", "").trim(), dir = a.optString("direction", "down");
+        if (want.isEmpty()) return err("scroll_to needs the text to look for (target)");
+        List<String> before = null;
+        for (int i = 0; i <= 15; i++) {
+            Scan s = scan();
+            int k = find(s, want, null);
+            if (k >= 0) {
+                s.nodes.get(k).performAction(AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId());
+                settle();
+                return ok().put("found", s.els.getJSONObject(k).optString("text", want)).put("scrolls", i);
+            }
+            if (s.names.equals(before) || i == 15) break; // nothing moved: the end of the list
+            before = s.names;
+            scrollOnce(dir, null);
+            settle();
+        }
+        return err("\"" + want + "\" isn't in this list (scrolled " + dir + " to the end)");
+    }
+
+    /** Wait until `target` shows (with gone: until it is no longer there), at most `seconds` (up to 12). */
+    static JSONObject waitFor(JSONObject a) throws Exception {
+        JSONObject no = notOpen(); if (no != null) return no;
+        String want = a.optString("target", "").trim();
+        if (want.isEmpty()) return err("wait_for needs the text to wait for (target)");
+        boolean gone = a.optBoolean("gone", false);
+        long start = SystemClock.uptimeMillis(), end = start + (long) (1000 * Math.max(0.5, Math.min(a.optDouble("seconds", 8), 12)));
+        while (true) {
+            if ((find(scan(), want, null) >= 0) != gone) return ok().put("waited_ms", SystemClock.uptimeMillis() - start);
+            if (SystemClock.uptimeMillis() >= end) break;
+            SystemClock.sleep(300);
+        }
+        return err("\"" + want + "\" " + (gone ? "is still there" : "didn't show") + " after " + (SystemClock.uptimeMillis() - start) / 1000 + " s");
+    }
+
+    /** Wait until the hidden screen stops changing. Fast by default: QUIET_MS after its last change, NO_CHANGE_MS when
+     *  nothing changes, never more than SETTLE_MAX_MS. Slower things (a download, a search) are the model's to wait for
+     *  (wait_after, wait_for), since only it knows what it expects. */
+    static void settle() {
+        long start = SystemClock.uptimeMillis();
+        while (true) {
+            long now = SystemClock.uptimeMillis(), changed = lastChange;
+            if (now - start >= SETTLE_MAX_MS) return;
+            if (changed > start ? now - changed >= QUIET_MS : now - start >= NO_CHANGE_MS) return;
+            SystemClock.sleep(40);
+        }
+    }
 
     static String exec(String... cmd) throws Exception {
         Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
