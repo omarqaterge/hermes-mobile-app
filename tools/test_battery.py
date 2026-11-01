@@ -230,9 +230,14 @@ check("a slower interval is never lowered", w["slow.already"] == 60.0, w)
 check("same dict object mutated (the thread holds it)", srv._CHANGE_WATCHES is watches and watches["pet.changed"][1] is sig)
 check("lease 5 s, kanban/bot mailbox 30 s, /loop untouched",
       (srv._LEASE_POLL_S, srv._KANBAN_POLL_SECONDS, srv._BOT_DELIVERY_POLL_SECONDS, srv._LOOP_POLL_SECONDS) == (5.0, 30.0, 30.0, 5.0))
-for _ in range(5):
-    srv._broadcast_skin_if_changed()
-check("skin check throttled (first call runs, the next ones skip)", skins == [1], skins)
+real_monotonic = time.monotonic
+time.monotonic = lambda: 3.0  # 3 s after boot (a fresh CI runner, or a phone where Hermes starts at boot)
+try:
+    for _ in range(5):
+        srv._broadcast_skin_if_changed()
+finally:
+    time.monotonic = real_monotonic
+check("skin check throttled (first call runs, the next ones skip), even right after boot", skins == [1], skins)
 check("runs once", done and papi.slow_desktop_watchers() == {})
 sys.modules.pop("tui_gateway.server", None)
 
