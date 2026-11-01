@@ -7,8 +7,8 @@ the browser tests run as three parallel shards in CI and in `tools/check.sh` (`r
 3 minutes instead of 6.5 locally.
 
 **Next:** the `07-12` shard is the longest (about 3 minutes); a fourth shard needs a file in the middle of it that
-starts cold, which means moving the state it borrows (from earlier files) into the file itself. The GitHub setting
-"Automatically delete head branches" is still off (an owner setting).
+starts cold, which means moving the state it borrows (from earlier files) into the file itself. The review of
+2026-11-01 (`docs/status/review-2026-11-01.md`) measured this and the rest of CI; its items carry this on.
 
 **Needs a real phone:** no.
 
