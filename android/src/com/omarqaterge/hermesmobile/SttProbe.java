@@ -17,7 +17,7 @@ import java.io.File;
  * Checks an on-device speech model in a process of its own (android:process=":sttprobe"): loads it, transcribes the
  * sample in the APK and answers {ok, text, wer, audioMs, ms, loadMs} or {ok: false, error}. sherpa-onnx ends the process
  * on some model files it can't use; here that only ends this process, and LocalStt reports it instead of the app closing.
- * Bound by LocalStt.probe for one check at a time; nothing runs once it is unbound.
+ * Bound by LocalStt.probe for one check at a time; the process ends once the last check is answered and unbound.
  */
 public final class SttProbe extends Service {
     static final int CHECK = 1;
@@ -33,6 +33,16 @@ public final class SttProbe extends Service {
 
     @Override public IBinder onBind(Intent intent) {
         return messenger.getBinder();
+    }
+
+    /**
+     * The last check was answered and LocalStt unbound: end the process. Freed native memory (the model, ~200 MB) is
+     * not handed back to Android while the process lives on as a cached one, and nothing else runs here. A check bound
+     * after this gets a new process from Android.
+     */
+    @Override public void onDestroy() {
+        super.onDestroy();
+        android.os.Process.killProcess(android.os.Process.myPid());
     }
 
     private JSONObject check(File dir, File vad) {
