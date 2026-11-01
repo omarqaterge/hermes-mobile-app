@@ -5,6 +5,8 @@ const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell } = requir
 
 module.exports = async t => {
   const { browser, page } = t
+  // Starts a shard of its own: the plugin is enabled (11-offline-and-start enables it in a full run).
+  await mock({ pluginEnabled: true })
   // ── #19 in the app shell: the token comes asynchronously (no blocking getToken), every call carries the key ──
   const np = await browser.newPage({ viewport: { width: 375, height: 812 } })
   np.on('pageerror', e => {
