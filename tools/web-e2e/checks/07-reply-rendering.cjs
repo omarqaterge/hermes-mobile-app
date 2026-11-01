@@ -1,6 +1,6 @@
 // Mermaid, quoting, OpenUI cards, HTML preview, tool calls, motion, turn file changes, web addresses.
 const path = require('path')
-const { calls, rpcs, sleep, check } = require('../lib.cjs')
+const { calls, rpcs, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -161,10 +161,17 @@ module.exports = async t => {
     }
     const vh = await page.evaluate(() => innerHeight)
     check(hh > 160 && hh <= vh * 0.6 + 1, `html preview: the frame grew to its page, capped at 60% of the window (${hh} of ${vh})`)
-    // this iframe's own frame: finding it by the URL about:srcdoc missed it with desktop Chrome 154
-    const rootFrame = await (await fr.elementHandle())?.contentFrame()
+    // The frame behind the <iframe> element, not found by url: a full Chrome (macOS, new headless) reports no url ('') for an
+    // srcdoc frame where Playwright's headless shell says 'about:srcdoc'.
+    const rootFrame = await (await fr.elementHandle()).contentFrame()
     check(!!rootFrame && (await rootFrame.evaluate(() => typeof window.HermesAndroid)) === 'undefined', 'html preview: window.HermesAndroid is undefined inside the frame')
-    check(!!rootFrame && (await rootFrame.evaluate(() => fetch('http://127.0.0.1:9119/api/status').then(() => 'ok', () => 'blocked'))) === 'blocked', 'html preview: fetch() from the inline frame is blocked (offline CSP)')
+    // no-cors, so the mock's missing CORS headers can't be what blocks it: only the page's CSP (connect-src, from default-src 'none') can; the violation event names it.
+    const probe = () => new Promise(res => {
+      let v = ''
+      document.addEventListener('securitypolicyviolation', e => { v = e.effectiveDirective })
+      fetch('http://127.0.0.1:9119/api/status', { mode: 'no-cors' }).then(() => setTimeout(() => res('ok'), 50), () => setTimeout(() => res('blocked by ' + v), 50))
+    })
+    check(!!rootFrame && (await rootFrame.evaluate(probe)) === 'blocked by connect-src', 'html preview: fetch() from the inline frame is blocked (offline CSP)')
     await blk.getByRole('button', { name: 'Open preview full screen' }).click()
     await page.locator('.html-viewer iframe').waitFor({ timeout: 3000 })
     check((await page.locator('.html-viewer[role=dialog]').count()) === 1, 'html preview: Full screen opens the viewer')
@@ -213,6 +220,19 @@ module.exports = async t => {
   await run.click()
 
   check((await page.locator('.turn-changes').count()) === 0, 'a turn with only terminal tools has no changes card')
+
+  // ── a turn as the pinned Hermes streams it (the contract check's "read the note" flow): reasoning, one read_file call whose result
+  //    comes as parsed JSON in `result` (no result_text), the answer in chunks ──
+  await page.getByPlaceholder('Message Hermes').fill('read the note')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'The note says: contract note. Nothing else to report.' }).waitFor({ timeout: 5000 })
+  const noteTool = page.locator('.tool', { hasText: 'read_file' }).last()
+  check((await noteTool.count()) === 1, 'real-shaped turn: the read_file call shows as a tool card')
+  await noteTool.locator('.tool-head').click()
+  await noteTool.locator('.tool-body').waitFor({ timeout: 3000 }).then(() => check(true, 'real-shaped turn: its body opens'), () => check(false, 'real-shaped turn: its body opens'))
+  check((((await noteTool.locator('.tool-body').textContent()) || '').includes('contract note')), 'real-shaped turn: the card shows the JSON result')
+  await noteTool.locator('.tool-head').click()
+  await sleep(400)
 
   // ── a turn that wrote files ends with a card listing them; tap a file for its diff ──
   await page.getByPlaceholder('Message Hermes').fill('edit files')
