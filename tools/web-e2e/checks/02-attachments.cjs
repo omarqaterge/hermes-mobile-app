@@ -1,15 +1,11 @@
 // Photos and files in the composer, the photo viewer, camera, share to Hermes, edit/retry keeping attachments.
 const path = require('path')
-const { SHOTS, rpcs, sleep, check, png } = require('../lib.cjs')
+const { addFiles, SHOTS, rpcs, sleep, check, png } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
   // ── #1 / #4 attachments ──────────────────────────────
-  const attach = async (option, files) => {
-    await page.getByRole('button', { name: 'Add', exact: true }).click()
-    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.picker-opt', { hasText: option }).click()])
-    await chooser.setFiles(files)
-  }
+  const attach = (option, files) => addFiles(page, option, files)
   await attach('Photo', [{ name: 'a.png', mimeType: 'image/png', buffer: png }, { name: 'b.png', mimeType: 'image/png', buffer: png }])
   await page.locator('.attach-thumb img[alt="b.png"]').waitFor({ timeout: 5000 })
   check(await page.locator('.attach-thumb img[alt="b.png"]').evaluate(i => i.complete && i.naturalWidth > 0), 'composer shows a real image preview')
@@ -155,5 +151,4 @@ module.exports = async t => {
   check(rpcs('prompt.submit').pop().params.text === 'without the file', '✕ on the file chip drops it from the edit')
   await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
   await sleep(300)
-  t.attach = attach
 }
