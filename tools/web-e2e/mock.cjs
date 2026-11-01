@@ -1104,3 +1104,5 @@ server.on('error', e => {
   process.exit(1)
 })
 server.listen(PORT, '127.0.0.1', () => console.log(`mock on ${PORT}`))
+// A plain `kill` (run.sh stopping it) ends it quietly, without bash's "Terminated" line.
+process.on('SIGTERM', () => process.exit(0))
