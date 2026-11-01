@@ -5,7 +5,7 @@ module.exports = async t => {
   const { browser, page } = t
   // ── first run: a Hermes with no model provider opens the welcome; sign in, pick a model, it never shows again ──
   t.established = false
-  // The plugin is enabled (12-app-shell enables it in a full run): the setup flow's plugin step must not cover the welcome.
+  // The plugin is enabled (11-offline-and-start enables it in a full run): the setup flow's plugin step must not cover the welcome.
   await mock({ pluginEnabled: true })
   await mock({ unconfigured: true })
   const wel = await browser.newPage({ viewport: { width: 375, height: 812 } })

@@ -32,7 +32,8 @@ ci_runs() {
 # mock and page on free ports; one PASS/FAIL per shard. The web build runs once first.
 e2e_shards() {
   local shards dir pids=() sh
-  shards=$(sed -nE "s/^ *shard: \[(.*)\]/\1/p" .github/workflows/ci.yml | tr -d "' " | tr ',' ' ')
+  # The quoted items of the matrix line; a shard may list several ranges ('13-16,19-').
+  shards=$(sed -nE "s/^ *shard: \[(.*)\]/\1/p" .github/workflows/ci.yml | grep -oE "'[^']+'" | tr -d "'" | tr '\n' ' ')
   [ -n "$shards" ] || shards=all
   if ! (cd web && npm run --silent build >/dev/null); then results+=("FAIL  web build"); failed=$((failed + 1)); return; fi
   dir=$(mktemp -d "${TMPDIR:-/tmp}/hm-check.XXXXXX")
