@@ -59,6 +59,14 @@ let attempt = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let started = false
 
+// On a phone Hermes answered session.list / session.resume in 30–70 ms alone but in ~1.2 s when the app's other
+// start-up requests (status, commands, skills, model, config, plugin routes) reached the dashboard with them: they
+// share one Python. Those wait for this: the connection's start-up chat open (or none to open), 3 s at most.
+let chatOpened: Promise<void> = Promise.resolve()
+let openChatDone = (): void => {}
+/** Resolves once this connection's start-up chat is open (or there is none to open), or after 3 s. */
+export const afterChatOpens = (): Promise<void> => chatOpened
+
 client.onState(conn => {
   setState({ conn })
   if (conn === 'open') {
@@ -88,6 +96,10 @@ export async function connect(): Promise<void> {
     if (cached.length) setState({ sessions: cached })
   }
   started = true
+  chatOpened = new Promise(resolve => {
+    openChatDone = resolve
+    setTimeout(resolve, 3000)
+  })
   const url = await wsUrl()
   if (!url) {
     setState({ conn: 'error', connDetail: 'Hermes is not running yet' })
@@ -173,7 +185,7 @@ export function queueAndReconnect(chat: string, text: string): void {
 
 async function afterConnect(): Promise<void> {
   void loadSessions()
-  void loadDefaultModel()
+  void afterChatOpens().then(loadDefaultModel)
   // profiles.list walks every profile's skill tree (~2.5 s on a phone) and slowed the chat's own resume and
   // session.list when sent alongside them; only the drawer's profile switcher needs it, so it goes last.
   let profilesAsked = false
@@ -209,6 +221,7 @@ async function afterConnect(): Promise<void> {
       }
     }
   } else setState({ opening: null })
+  openChatDone()
   askProfiles()
   void flushOutbox()
 }
