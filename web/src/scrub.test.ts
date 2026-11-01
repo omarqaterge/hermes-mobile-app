@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { currentMark, nearestMark, userMarks } from './scrub'
+import { nearestMark, railPosition, readLine, userMarks } from './scrub'
 import type { ChatItem } from './store'
 
 const u = (id: string, text: string, extra: Record<string, unknown> = {}) => ({ kind: 'user', id, text, ...extra }) as ChatItem
@@ -34,11 +34,22 @@ test('nearestMark clamps and rounds', () => {
   expect(nearestMark([], 0.5)).toBe(0)
 })
 
-test('currentMark is the last mark at or above the top item', () => {
-  const marks = [{ idx: 2, text: 'a' }, { idx: 6, text: 'b' }, { idx: 10, text: 'c' }]
-  expect(currentMark(marks, 0)).toBe(0)
-  expect(currentMark(marks, 2)).toBe(0)
-  expect(currentMark(marks, 7)).toBe(1)
-  expect(currentMark(marks, 10)).toBe(2)
-  expect(currentMark(marks, 99)).toBe(2)
+test('railPosition counts marks passed, with the fraction of the gap to the next one', () => {
+  const tops = [100, 300, 1300]
+  expect(railPosition(tops, 0)).toBe(0)
+  expect(railPosition(tops, 100)).toBe(0)
+  expect(railPosition(tops, 200)).toBe(0.5)
+  expect(railPosition(tops, 300)).toBe(1)
+  expect(railPosition(tops, 800)).toBe(1.5)
+  expect(railPosition(tops, 5000)).toBe(2)
+  expect(railPosition([], 50)).toBe(0)
+  // marks above the drawn window share one top: the position goes on from the last of them
+  expect(railPosition([0, 0, 400], 200)).toBe(1.5)
+})
+
+test('readLine sits under the top, then slides to the end over the last screenful', () => {
+  expect(readLine(0, 800, 10000)).toBe(10)
+  expect(readLine(5000, 800, 10000)).toBe(5010)
+  expect(readLine(9200, 800, 10000)).toBe(10000)
+  expect(readLine(8800, 800, 10000)).toBe(8800 + 10 + 0.5 * 790)
 })

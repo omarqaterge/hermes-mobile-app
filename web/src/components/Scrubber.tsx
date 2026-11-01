@@ -1,15 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { haptic } from '../bridge'
 import { nearestMark, type Mark } from '../scrub'
 
 /**
- * The rail on the right edge of a long chat: one tick per message you sent. Drag along it to pick a message (a bubble
- * shows it), let go to jump there; a tap jumps to the nearest tick. Drag logic uses pointer events (they also fire for
+ * The rail on the right edge of a long chat: one tick per message you sent, and an orange thumb that follows the scroll
+ * (it melts into a tick when that message is at the top, and slides through the gap while you read the reply). Drag
+ * along it to pick a message (a bubble shows it), let go to jump there; a tap jumps to the nearest tick. Drag logic uses pointer events (they also fire for
  * touch because the rail has `touch-action: none`); the touch handlers only keep the swipe/pull gestures and the
  * list's own scrolling away from it.
  */
-export function Scrubber({ marks, current, onPick }: { marks: Mark[]; current: number; onPick: (markIndex: number) => void }) {
-  const rail = useRef<HTMLDivElement>(null)
+export function Scrubber({
+  marks,
+  current,
+  rail,
+  pos,
+  onPick,
+}: {
+  marks: Mark[]
+  current: number
+  /** The rail element, so `Chat` can move the thumb on every scroll frame without re-rendering. */
+  rail: RefObject<HTMLDivElement | null>
+  /** Where the screen is, counted in marks (`railPosition`). */
+  pos: RefObject<number>
+  onPick: (markIndex: number) => void
+}) {
   const [picked, setPicked] = useState<number | null>(null)
   const pickedRef = useRef<number | null>(null)
   const n = marks.length
@@ -24,7 +38,9 @@ export function Scrubber({ marks, current, onPick }: { marks: Mark[]; current: n
     }
     el.addEventListener('touchmove', stop, { passive: false })
     return () => el.removeEventListener('touchmove', stop)
-  }, [])
+  }, [rail])
+  // While a finger is on the rail the thumb sits on the picked tick; otherwise it follows the scroll.
+  useLayoutEffect(() => paintRail(rail.current, picked ?? pos.current ?? 0, marks.length, true))
 
   const pickAt = (clientY: number) => {
     const r = rail.current?.getBoundingClientRect()
@@ -44,7 +60,7 @@ export function Scrubber({ marks, current, onPick }: { marks: Mark[]; current: n
   }
 
   const shown = picked ?? current
-  const pos = (k: number) => (n > 1 ? (k / (n - 1)) * 100 : 0)
+  const at = (k: number) => (n > 1 ? (k / (n - 1)) * 100 : 0)
   const mark = marks[Math.min(shown, n - 1)]
   return (
     <div
@@ -82,15 +98,18 @@ export function Scrubber({ marks, current, onPick }: { marks: Mark[]; current: n
       onKeyDown={e => {
         if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
         e.preventDefault()
-        const k = Math.min(n - 1, Math.max(0, current + (e.key === 'ArrowUp' ? -1 : 1)))
-        if (k !== current) onPick(k)
+        // Part way through a reply, ArrowUp goes back to the start of that message first.
+        const back = (pos.current ?? 0) - current > 0.02 ? 0 : -1
+        const k = Math.min(n - 1, Math.max(0, current + (e.key === 'ArrowUp' ? back : 1)))
+        if (k !== current || back === 0) onPick(k)
       }}
     >
       {marks.map((m, k) => (
-        <span key={m.idx} className={`scrub-tick${k === shown ? ' on' : ''}`} style={{ top: `${pos(k)}%` }} aria-hidden="true" />
+        <span key={m.idx} className="scrub-tick" style={{ top: `${at(k)}%` }} aria-hidden="true" />
       ))}
+      <span className="scrub-thumb" aria-hidden="true" />
       {picked !== null && mark && (
-        <div className="scrub-bubble" style={{ top: `${pos(picked)}%` }} aria-hidden="true">
+        <div className="scrub-bubble" style={{ top: `${at(picked)}%` }} aria-hidden="true">
           <span className="scrub-num">
             {picked + 1} / {n}
           </span>
@@ -99,4 +118,16 @@ export function Scrubber({ marks, current, onPick }: { marks: Mark[]; current: n
       )}
     </div>
   )
+}
+
+/** Moves the thumb to `pos` (in marks). Near a tick it is pulled onto it and turns into the tick's shape (`--merge` 1);
+ * half way between two ticks it is a full pill. Skipped while a finger is on the rail unless `force`. */
+export function paintRail(el: HTMLElement | null, pos: number, n: number, force = false) {
+  if (!el || n < 1 || (!force && el.classList.contains('active'))) return
+  const p = Math.min(n - 1, Math.max(0, Number.isFinite(pos) ? pos : 0))
+  const k = Math.round(p)
+  const merge = Math.max(0, 1 - Math.abs(p - k) * 4)
+  const shown = p + (k - p) * merge
+  el.style.setProperty('--thumb', `${n > 1 ? (shown / (n - 1)) * 100 : 0}%`)
+  el.style.setProperty('--merge', merge.toFixed(3))
 }
