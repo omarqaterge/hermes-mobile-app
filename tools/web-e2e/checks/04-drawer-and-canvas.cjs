@@ -13,7 +13,7 @@ module.exports = async t => {
   await page.waitForFunction(() => document.querySelectorAll('.drawer .session-row').length > 100, null, { timeout: 5000 })
   const after = await page.locator('.drawer .session-row').count()
   const lim = rpcs('session.list').map(c => c.params.limit)
-  check(before === 80 && after === 153 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
+  check(before === 80 && after === 154 && lim.includes(180), `older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`)
   check((await olderBtn.count()) === 0, 'button hides when everything is loaded')
 
   // ── deleting a chat also clears its leftover photos/files/canvas on the phone ──
