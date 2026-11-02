@@ -27,7 +27,9 @@ test('every option exists in the pinned Hermes, once, with a default of its kind
 test('numbers: range, whole numbers, percentages', () => {
   const retries = find('agent.api_max_retries')
   expect(parseInput(retries, '2')).toEqual({ value: 2 })
-  expect(parseInput(retries, '11')).toEqual({ error: 'Between 0 and 10' })
+  expect(parseInput(retries, '11')).toEqual({ error: 'Between 1 and 10' })
+  expect(parseInput(find('agent.max_turns'), '1,000')).toEqual({ value: 1000 }) // thousands, as the rows show numbers
+  expect(parseInput(find('web.extract_char_limit'), '15,000')).toEqual({ value: 15000 })
   expect(parseInput(retries, '1.5')).toEqual({ error: 'Enter a whole number' })
   expect(parseInput(retries, 'abc')).toEqual({ error: 'Enter a number' })
   expect(parseInput(retries, '')).toEqual({ error: 'Enter a number' })

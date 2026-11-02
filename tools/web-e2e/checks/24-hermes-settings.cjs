@@ -22,7 +22,7 @@ module.exports = async t => {
   const sheet = pg.locator('.sheet', { hasText: 'Retries before a fallback' })
   await sheet.getByLabel('Retries before a fallback').fill('42')
   await sheet.getByRole('button', { name: 'Save', exact: true }).click()
-  await sheet.getByText('Between 0 and 10').waitFor({ timeout: 3000 }).then(() => check(true, 'hermes settings: an out-of-range number is refused with its range'), () => check(false, 'hermes settings: an out-of-range number is refused with its range'))
+  await sheet.getByText('Between 1 and 10').waitFor({ timeout: 3000 }).then(() => check(true, 'hermes settings: an out-of-range number is refused with its range'), () => check(false, 'hermes settings: an out-of-range number is refused with its range'))
   const before = puts().length
   await sheet.getByLabel('Retries before a fallback').fill('1')
   await sheet.getByRole('button', { name: 'Save', exact: true }).click()
