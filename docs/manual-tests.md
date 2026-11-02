@@ -151,6 +151,12 @@ check on a real phone:
       Expected: "⚡ Full access on…", the button reads ⚡ Full access; `/yolo` again: "Back to Auto access". Note how long
       the notice takes right after opening a chat.
 
+- [ ] **Start with Hermes stopped.** With a build that has the fix: in Termux, stop the dashboard
+      (`~/bin/hermes-debian --restart`, or `pkill -f 'hermes dashboard'`; the service loop starts it again within about
+      10 s), force stop the app and open it at once. In Termux, watch
+      `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9119/` turn 200. Expected: the app connects within about
+      a second of that, not up to 15 s later. Note the `socket` and `sessions` times in Settings → About → Last start-up.
+
 ## Confirm approvals with fingerprint (owner only: needs the phone's fingerprint or PIN)
 
 - [ ] With Auto off, ask Hermes for something it must approve; tap Allow once. Expected: the fingerprint prompt

@@ -8,6 +8,7 @@ interface AndroidBridge {
   getTokenAsync?(id: number): void // same, answered through window.__hmToken(id, token)
   getBaseUrl(): string // e.g. "http://127.0.0.1:9119"
   startHermes(): void // Termux RUN_COMMAND ~/bin/hermes-services
+  watchHermes?(): void // answers window.__hmHermesReady() once the dashboard answers (on screen, 3 minutes at most)
   notify(title: string, body: string, tag: string): void
   cancelNotification(tag: string): void
   openExternal(url: string): void
@@ -134,6 +135,10 @@ export async function wsUrl(): Promise<string | null> {
 
 export function startHermes(): void {
   native?.startHermes()
+}
+
+export function watchHermes(): void {
+  native?.watchHermes?.()
 }
 
 export function notify(title: string, body: string, tag = 'hermes'): void {

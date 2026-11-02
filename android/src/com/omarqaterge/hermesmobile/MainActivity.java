@@ -1264,6 +1264,17 @@ public class MainActivity extends Activity {
         return cachedToken;
     }
 
+    /** The dashboard serves its page with a session token: the page can connect now. */
+    static boolean dashboardAnswers() {
+        String html = httpGet(BASE_URL + "/");
+        return html != null && TOKEN.matcher(html).find();
+    }
+
+    /** HermesService saw the dashboard answer: the page reconnects now. Any thread. */
+    void pushHermesReady() {
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript("window.__hmHermesReady && window.__hmHermesReady()", null); });
+    }
+
     /** Minimal HTTP/1.1 client for the local dashboard: any method may carry a body (DELETE too). */
     /** Only dashboard REST calls: a known verb and a plain /api/ path (no CR/LF or spaces: header injection). */
     static boolean safeRequest(String method, String path) {
@@ -2455,6 +2466,12 @@ public class MainActivity extends Activity {
         public void startHermes(String key) {
             if (!ok(key)) return;
             runOnUiThread(MainActivity.this::startHermes);
+        }
+
+        @JavascriptInterface
+        public void watchHermes(String key) {
+            if (!ok(key)) return;
+            HermesService.watchReady();
         }
 
         @JavascriptInterface

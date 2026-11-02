@@ -13,6 +13,10 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
   early on `cron_idle`. The alarm time is saved and re-armed after the app restarts.
 - **Service timers** use `Handler.postDelayed` (no CPU wake): the update check every 12 h, the one Shizuku check at
   90 s, the bg-app card's 130 s expiry.
+- **Waiting for Hermes.** `HermesService.watchReady` looks at the dashboard every 500 ms (`READY_POLL_MS`) on one
+  plain thread that holds no wake lock, only after the page asks (`watchHermes`, once per outage) and only while the
+  app is on screen. It stops when the dashboard answers, when the app leaves the screen, or after 3 minutes
+  (`READY_WATCH_MS`). A port nobody listens on refuses at once, so a try does not reach Python or proot.
 - **Page timers** stop or slow down when the page is hidden: the status line's elapsed-time ticker (`useElapsed` in `App.tsx`, 1 s) runs only while a turn runs and the page is visible, and clears itself on `visibilitychange` to hidden, when the turn ends and on unmount; socket beat 15 s (`gateway.ts`), health ping every
   minute while visible and the full `GET /api/status` (~0.26 s of dashboard CPU) every 10 minutes or when the
   status sheet opens (`health.ts`), activity poll 3 s while the banner shows something else 9 s (`activity.ts`),
