@@ -8,8 +8,10 @@ import { applyTheme, savedTheme } from './theme'
 import { bootMark } from './boot'
 import { openFirstRun } from './components/Setup'
 import { startStats } from './stats'
+import { startAppLog } from './applog'
 
 bootMark('script')
+startAppLog()
 
 applyTheme(savedTheme())
 openFirstRun() // a fresh install starts in the setup flow, not in a chat waiting for a Hermes that isn't installed

@@ -47,6 +47,8 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.statsId` | `stats.ts` | Usage stats: the random install ID. Exists only while opted in; turning stats off deletes it. | No |
 | `hm.statsSourceAsked` | `stats.ts` | `'1'` once "How did you hear about us?" was shown. The answer itself is not kept. | No |
 | `hm.devStatsKey` | `stats.ts` | Development and browser tests only, in `sessionStorage`, not `localStorage`: an Aptabase app key for a build that has none. Ignored inside the Android app. | No |
+| `hm.reportId` | `report.ts` | Report a problem: a random install ID (16 random bytes, made on the first report sent through the relay) so the relay can limit how often one install sends (3.21). Not the stats ID, nothing about the device. | No |
+| `hm.devReportUrl` | `report.ts` | Development and browser tests only, in `sessionStorage`, not `localStorage`: a relay URL for a build that has none. Ignored inside the Android app. | No |
 | `hm.tasks.v1` | `tasks.ts` | Ticked task-list boxes in replies: `{<message hash>: {<box index>: bool}}`; newest 300 messages. | No |
 | `hm.textScale` | `store.ts`, `components/Settings.tsx` | Text size factor (0.9, 1, 1.1, 1.2, 1.35). | No |
 | `hm.theme` | `theme.ts` | `default`, `oled`, `light` or `system`. | No |

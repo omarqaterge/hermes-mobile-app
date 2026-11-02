@@ -38,6 +38,7 @@ jobs:
         working-directory: web
         env:
           HERMES_STATS_KEY: ${{ vars.APTABASE_APP_KEY }} # not a secret: it ships in the app; empty = no stats
+          HERMES_REPORT_URL: ${{ vars.REPORT_RELAY_URL }} # not a secret either; empty = reports open GitHub's page
       - uses: actions/upload-artifact@v6
         with:
           name: web-dist

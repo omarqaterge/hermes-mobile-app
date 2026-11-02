@@ -12,6 +12,7 @@ import { DocView } from './DocView'
 import { Media } from './Media'
 import { previewKind, type PreviewKind } from '../filekind'
 import { Linked } from './Linked'
+import { ReportLink } from './Report'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -68,7 +69,7 @@ export function useLoader<T>(load: () => Promise<T>, deps: unknown[]) {
 }
 
 export function Status({ loading, error, empty, emptyText }: { loading: boolean; error: string; empty: boolean; emptyText: string }) {
-  if (error) return <div className="notice notice-error"><Linked text={error} /></div>
+  if (error) return <div className="notice notice-error"><Linked text={error} /> <ReportLink /></div>
   if (loading && empty) return <div className="dim pad">Loading…</div>
   if (empty) return <div className="dim pad">{emptyText}</div>
   return null

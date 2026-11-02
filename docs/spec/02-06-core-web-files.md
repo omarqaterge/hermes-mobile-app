@@ -5,6 +5,9 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `main.tsx` — entry point; imports `secure-bridge.ts` first, then applies the theme, opens the first-run flow on a
   fresh install and renders `App` (3.1).
 - `stats.ts` — opt-in usage stats (spec 2.3): `startStats` runs once from `main.tsx`, after the first render; with no app key it does nothing.
+- `report.ts` — Report a problem (spec 3.21): what a report holds (`reportDetails`), the log scrubber (`scrubLog`), the filled-in GitHub new-issue link (`fallbackUrl`) and sending through the relay (`sendReport`).
+- `Report.tsx` (in `components/`) — the Report a problem sheet, its Settings row and the link error states show (spec 3.21).
+- `applog.ts` — the recent app log a report may include: `startAppLog` runs once from `main.tsx`; the last 150 lines of errors, warnings, connection changes and error toasts, in memory only.
 - `secure-bridge.ts` — takes the bridge key with `handshake()` and replaces `window.HermesAndroid` with the keyed
   wrapper over `METHODS` (2.3).
 - `bridge.ts` — typed wrappers over the native bridge with browser fallbacks: `baseUrl`, `wsUrl` (fresh token per

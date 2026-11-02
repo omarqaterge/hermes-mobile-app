@@ -141,7 +141,9 @@ The [full install guide](docs/install.md) has every step in detail, the by-hand 
 a troubleshooting table and uninstalling.
 
 > Tested end to end on a clean Android 15 emulator and piece by piece on a real phone, but not yet on a brand-new real phone.
-> If something fails, please [open an issue](https://github.com/omarqaterge/hermes-mobile-app/issues).
+> If something fails, please [open an issue](https://github.com/omarqaterge/hermes-mobile-app/issues), or use Settings → About →
+> Report a problem in the app. Reports are public; they carry only what you write, the app, Android and Hermux versions,
+> and the scrubbed app log or a screenshot if you add them.
 
 ### Usage stats (off unless you say yes)
 

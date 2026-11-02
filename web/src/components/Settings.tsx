@@ -31,6 +31,7 @@ import { FallbackSection } from './Rotation'
 import { HermesSettingsPage } from './HermesSettings'
 import { ConnectorsPage } from './Connectors'
 import { StatsRow } from './StatsCard'
+import { ReportRow } from './Report'
 import { pluginRow, pluginUpdate, updateAnswer, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
@@ -903,6 +904,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row title="App" value={appVersion()} />
         <UpdateRow />
         <WhatsNewRow />
+        <ReportRow />
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
         <PluginRow />
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
