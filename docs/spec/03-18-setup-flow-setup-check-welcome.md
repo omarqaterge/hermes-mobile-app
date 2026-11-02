@@ -26,7 +26,7 @@ Two screens draw the same list of rows from `setupSteps()` (`web/src/setupflow.t
 | 16 | `termux-boot` "Termux:Boot was opened once" | no | Termux:Boot is no longer in the "stopped" state | Skipped when it is not installed | Open Termux:Boot |
 | 17 | `files` "Hermes can use your files" | no | `GET /phone-access` says `files` | Skipped when the plugin cannot say | Allow, Restart Hermes |
 | 18 | `termux-api` "Hermes can use the phone’s features (Termux:API)" | no | The app is installed and `GET /phone-access` says `termux_api` | `bad` if the app is missing | Get Termux:API, or Copy installer + Open Termux |
-| 19 | `autostart` "Turn on <name> for Termux and Hermes Mobile" | no | Android cannot tell: it stays a tip (`info`) until the user taps Done (`hm.autostartDone`) | Only on phones whose maker adds an Autostart switch; the shell chooses the page (`Autostart.java`) | The shell's page for Hermes Mobile / Termux (or one button), Done |
+| 19 | `autostart` "Turn on <name> for Termux and Hermes" (the app's name in the phone's own lists is "Hermes", so the step uses it) | no | Android cannot tell: it stays a tip (`info`) until the user taps Done (`hm.autostartDone`) | Only on phones whose maker adds an Autostart switch; the shell chooses the page (`Autostart.java`) | The shell's page for Hermes / Termux (or one button), Done |
 
 Each help text is fixed in `Setup.tsx` `describe`. For example, the installer row says: copy the command, open Termux, long-press, Paste, Enter; it installs Debian and Hermes in about 15 minutes and Termux must stay open.
 
