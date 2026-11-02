@@ -93,6 +93,13 @@ Tried on a Xiaomi phone, Android 16 (HyperOS), normal build 0.8.66-test (commit 
 - [ ] **Other phone makers.** Tested on a Xiaomi (Android 16) and an AOSP emulator (Android 15) only. On a Samsung,
       Pixel, OnePlus or Motorola with Android 14+: open an app, tap, type, Take over. Android 11-13: Settings →
       Background apps should say "Needs Android 14 or newer".
+- [x] **Chip opens the viewer (#63).** Ask Hermes to use `phone_app` in Calculator for a few steps, press Home, pull
+      down the shade while the chip says "Using Calculator" and tap the card's body (not Stop). Expected: the expanded
+      card shows a picture of the app; the tap opens Hermux on that chat with the live viewer (Take over / Stop).
+      Seen on an Android 16 phone, build 0.8.72-plugintest (2026-11-02): both as expected. An earlier report of the tap
+      opening Calculator with no picture came from a run where Calculator was started on the real screen with
+      `am start` (no hidden display was created), and the logged taps landed on other apps' notifications, never
+      Hermux's (by design, spec 3.10). Seen in passing: the keyboard came up under the viewer after the tap.
 - [ ] **A banking app with the Settings toggle on** (opens; FLAG_SECURE screens may show black in the live view).
 - [ ] **Faster steps.** Ask for something with several taps (a new note with a title). Expected: the steps run without a
       fixed pause between them, Hermes points at buttons by their text, and no keyboard shows in the live view.
