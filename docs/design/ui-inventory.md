@@ -101,8 +101,6 @@ activity banner, status bar, compress hint, read-aloud player, background-app ca
   connecting.
 - **🔊 badge** · indicator · this chat is read aloud · shown or hidden.
 - **Bot name** · dim text under the title (profile name, or "Hermes Agent").
-- **Auto** · pill button · how much Hermes may do without asking · Off (grey) / Auto access (green) / ⚡ Full access
-  (red); disabled offline. Opens a picker: ✋ Off, 🛡 Auto access, ⚡ Full access (Full asks to confirm).
 - **Canvas** · icon button · open this chat's canvas · dot when it has documents; pulsing while Hermes writes.
 - **⋮ Chat options** · icon button · Chat menu (Draft menu on the empty screen).
 - **Test-build strip** · amber strip above everything · only in debug builds or while remote debugging runs (with
@@ -175,7 +173,8 @@ activity banner, status bar, compress hint, read-aloud player, background-app ca
 - **Quote chips** · "❝ first words…" + ✕ (up to three).
 - **Attachments row** · photo thumbnails and 📎 / 🖼 file chips, each with ✕; "Attaching…" with spinner; **clear**.
 - **Model row** · **model chip** (sparkle, short model name, reasoning level such as "med") opening the Model sheet;
-  red **⚡ Full access** chip when on (tap turns it off); **context ring** (18 px, gold / amber ≥80 % / red ≥90 %)
+  **Auto** chip right after it (grey Off / green Auto access / red ⚡ Full access; opens a picker: ✋ Off,
+  🛡 Auto access, ⚡ Full access, Full asks to confirm); **context ring** (18 px, gold / amber ≥80 % / red ≥90 %)
   opening Context window.
 - **Input row**:
   - **＋ Add** · opens picker: model row, 📷 Camera, 🖼 Photo, 📎 File (up to 20 MB), Stash draft, Stashed drafts (N).

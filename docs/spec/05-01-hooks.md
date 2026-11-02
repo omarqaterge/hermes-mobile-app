@@ -23,7 +23,7 @@ Other events the plugin family sends (not hooks): `bgapp` (from `phone_app.py`, 
 
 **Background work detection.** `_is_review(turn_id, session_id)` decides whether a hook belongs to background work on a chat (the self-review after a reply, or a /btw side question). Both run on the same chat id and send no `session_end`. It asks Hermes's `tools.skill_provenance.get_current_write_origin()` (`background_review` or `side_question`); on a Hermes without it, it treats a task id with the form `<x>:<uuid>:<y>` (uuid not equal to the chat) as background. `_bg_status` never overwrites a real turn's status.
 
-**Auto mode blocking rule (`auto_mode.py`).** The app's header Auto button has three states: Off, Auto, Full. Full is Hermes's own `/yolo` (no prompts; Hermes's hard floor still blocks things like `rm -rf /`). Auto is `/yolo` **plus this rule**:
+**Auto mode blocking rule (`auto_mode.py`).** The app's Auto button (beside the composer's model chip) has three states: Off, Auto, Full. Full is Hermes's own `/yolo` (no prompts; Hermes's hard floor still blocks things like `rm -rf /`). Auto is `/yolo` **plus this rule**:
 
 - The app writes the chat id to `~/.hermes/mobile/auto.json` (`PUT /auto`) before it turns `/yolo` on, and turns `/yolo` off before it removes the entry, so a chat is never silently in Full.
 - On every `pre_tool_call`, `check(tool_name, args, session_id)` returns `None` unless `mode_of(session_id) == "auto"`.
