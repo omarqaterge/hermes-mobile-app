@@ -191,13 +191,36 @@ module.exports = async t => {
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant', { hasText: 'All four done.' }).waitFor({ timeout: 5000 })
   const run = page.locator('.tool-run').last()
-  check(((await run.textContent()) || '').includes('Ran 4 tools · 6s'), `one folded line for the run (${await run.textContent()})`)
+  check(((await run.textContent()) || '').includes('Ran 2 commands, read 1 file and searched once · 6s'), `one folded line for the run, in plain words (${await run.textContent()})`)
   const visibleCards = () => page.locator('.tool:visible', { hasText: /step [0-3]/ }).count()
   check((await visibleCards()) === 0, 'its cards are hidden')
   await run.click()
   check((await visibleCards()) === 4, `tap shows all four (${await visibleCards()})`)
   await run.click()
   check((await visibleCards()) === 0, 'tap again folds them')
+
+  // ── tool cards in plain words (toolsay.ts): "Ran echo", "Read"; the raw name stays in the open card ──
+  {
+    await run.click()
+    const titles = await page.locator('.tool:visible', { hasText: /step [0-3]/ }).locator('.tool-name').allTextContents()
+    check(JSON.stringify(titles) === JSON.stringify(['Ran echo', 'Read', 'Searched', 'Ran echo']), `card titles in plain words (${JSON.stringify(titles)})`)
+    const reasoned = page.locator('.reasoning', { hasText: 'thinking between calls' }).last()
+    check(((await reasoned.locator('.reasoning-line').textContent().catch(() => '')) || '') === 'thinking between calls', 'a closed thought shows its first line')
+    await run.click()
+  }
+  // ── a task-list call shows its steps and "1/2 done" instead of JSON ──
+  await page.getByPlaceholder('Message Hermes').fill('plan it')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'Planned.' }).waitFor({ timeout: 5000 })
+  {
+    const card = page.locator('.tool', { has: page.locator('.tool-name', { hasText: 'Updated tasks' }) }).last()
+    check(((await card.locator('.tool-label').textContent().catch(() => '')) || '') === '1/2 done', 'task card says 1/2 done')
+    await card.locator('.tool-head').click()
+    const steps = await card.locator('.tool-steps li').allInnerTexts()
+    check(steps.length === 2 && steps[0].includes('✓') && steps[0].includes('Read') && steps[1].includes('◐'), `task card lists the steps (${JSON.stringify(steps)})`)
+    check((await card.locator('.tool-section', { hasText: 'Arguments' }).count()) === 0 && (await card.locator('.tool-section', { hasText: 'Output' }).count()) === 0, 'no JSON arguments or output for a task list')
+    await card.locator('.tool-head').click()
+  }
 
   // ── motion: tool card bodies slide open and closed; the phone's reduced-motion setting skips it ──
   await run.click()
@@ -226,7 +249,7 @@ module.exports = async t => {
   await page.getByPlaceholder('Message Hermes').fill('read the note')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant', { hasText: 'The note says: contract note. Nothing else to report.' }).waitFor({ timeout: 5000 })
-  const noteTool = page.locator('.tool', { hasText: 'read_file' }).last()
+  const noteTool = page.locator('.tool', { has: page.locator('.tool-name[title="read_file"]') }).last()
   check((await noteTool.count()) === 1, 'real-shaped turn: the read_file call shows as a tool card')
   await noteTool.locator('.tool-head').click()
   await noteTool.locator('.tool-body').waitFor({ timeout: 3000 }).then(() => check(true, 'real-shaped turn: its body opens'), () => check(false, 'real-shaped turn: its body opens'))
@@ -281,16 +304,16 @@ module.exports = async t => {
   // ── web addresses in plain text open with the phone's default handler (window.open in a browser) ──
   await page.getByPlaceholder('Message Hermes').fill('see https://example.com/b')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
-  await page.locator('.msg.assistant', { hasText: 'Read' }).last().waitFor({ timeout: 5000 })
+  await page.locator('.msg.assistant', { hasText: 'example.com/c' }).last().waitFor({ timeout: 5000 })
   {
     // openExternal's browser path is window.open; record the calls instead of opening real tabs.
     await page.evaluate(() => { window.__opened = []; window.__realOpen = window.open; window.open = u => { window.__opened.push(String(u)); return null } })
     const own = page.locator('.msg.user .bubble a.auto-link', { hasText: 'https://example.com/b' })
     check((await own.count()) === 1, 'a web address in my own message is a link')
     if (await own.count()) await own.click()
-    const head = page.locator('.tool-head', { hasText: 'web_extract' }).last()
+    const head = page.locator('.tool-head', { has: page.locator('.tool-name[title="web_extract"]') }).last()
     if (await head.count()) await head.click()
-    else await page.locator('.tool-run').last().click().then(() => page.locator('.tool-head', { hasText: 'web_extract' }).last().click())
+    else await page.locator('.tool-run').last().click().then(() => page.locator('.tool-head', { has: page.locator('.tool-name[title="web_extract"]') }).last().click())
     const out = page.locator('.tool-pre a.auto-link', { hasText: 'https://example.com/a' })
     check((await out.count()) >= 1 && (await out.last().textContent()) === 'https://example.com/a', 'a web address in a tool output is a link (trailing dot left out)')
     if (await out.count()) await out.last().click()

@@ -610,6 +610,15 @@ textarea {
   font-style: italic;
   opacity: 0.8;
 }
+/* a finished thought, closed: its first heading or sentence on one line */
+.reasoning-line {
+  padding: 0 12px 8px 34px;
+  font-size: 0.78rem;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* tool cards */
 /* A folded run of tool calls (fold.ts): one line, tap to show the cards. */
@@ -717,8 +726,11 @@ textarea {
   font-weight: 600;
   color: var(--accent);
   flex: none;
-  font-family: var(--mono);
-  font-size: 0.8rem;
+  max-width: 55%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.82rem;
 }
 .tool-label {
   flex: 1;
@@ -836,6 +848,29 @@ textarea {
   color: var(--warn);
   font-size: 0.8rem;
   margin-bottom: 6px;
+}
+/* the raw tool name next to "Arguments" (the header shows plain words, toolsay.ts) */
+.tool-raw {
+  margin-left: 6px;
+  margin-right: auto;
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* a task-list call (todo_list) shows its steps instead of JSON */
+.tool-steps {
+  list-style: none;
+  margin: 2px 0 4px;
+  padding: 0;
+  font-size: 0.84rem;
+}
+.tool-steps li {
+  padding: 2px 0;
+}
+.step-mark {
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
 }
 
 /* sub-agents, notices */
@@ -3822,6 +3857,7 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .diffstat {
   font-family: var(--mono);
   font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .diffstat-add {
