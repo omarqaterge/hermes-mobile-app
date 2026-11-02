@@ -40,7 +40,7 @@ Hermes and its patches, `tools/` tests and developer tools, `docs/` spec, status
 
 ## Every Android phone
 
-- Hermes Mobile is for every Android phone and maker, minimum Android 8.0 (API 26). Prefer public/AOSP APIs; put
+- Hermux is for every Android phone and maker, minimum Android 8.0 (API 26). Prefer public/AOSP APIs; put
   vendor-specific handling behind a generic fallback; don't hard-code one maker's wording.
 - Every framework call newer than API 26 needs a `Build.VERSION.SDK_INT` check: `tools/api-check.sh` (Android lint,
   run in CI) fails otherwise. `javac` and `tools/java-check.sh` can't see API levels.

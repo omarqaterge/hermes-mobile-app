@@ -1,4 +1,6 @@
-# Installing Hermes Mobile: the full guide
+# Installing Hermux: the full guide
+
+Hermux was called Hermes Mobile. Older guides, and the file `hermes-mobile.apk`, still use that name.
 
 The [README](../README.md#install) has the short version. This page has every step, the rooted-phone option, fixes for
 common problems, and how to uninstall.
@@ -13,7 +15,7 @@ common problems, and how to uninstall.
 
 ## What you need
 
-**No root needed.** Hermes Mobile runs on an ordinary phone with a locked bootloader. A rooted phone works too; the
+**No root needed.** Hermux runs on an ordinary phone with a locked bootloader. A rooted phone works too; the
 differences are how Shizuku starts and, if you like, running Debian with chroot-distro (see [Rooted or not](#rooted-or-not)).
 
 You need an Android phone (arm64, Android 8+) with about 6 GB free, and access to a model, either of:
@@ -34,7 +36,7 @@ These apps get installed. Hermes needs all of them to run and to use your phone:
 | [Termux:API](https://f-droid.org/packages/com.termux.api/) | Lets Hermes use the phone: battery, location, clipboard, notifications, SMS, camera… |
 | [Termux:Boot](https://f-droid.org/packages/com.termux.boot/) | Starts Hermes again after the phone restarts |
 | [Shizuku](https://shizuku.rikka.app/download/) | Gives Hermes the access adb has, without root: screenshots, taps, apps, logs |
-| Hermes Mobile | This app |
+| Hermux | This app |
 
 Get the three Termux apps from **F-Droid**, all three: the Play Store builds are outdated and can't be mixed with F-Droid ones.
 
@@ -42,11 +44,11 @@ The install takes about 15 minutes, mostly waiting.
 
 ## On the phone, no computer (Android 11+)
 
-Install only Hermes Mobile; the app walks you through the rest and picks up wherever you stopped.
+Install only Hermux; the app walks you through the rest and picks up wherever you stopped.
 
 1. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest) on
    the phone, install it and open it (allow your browser to *install unknown apps* if Android asks).
-2. **Get the helper apps:** tap **Install all**. Android first asks you to allow Hermes Mobile to *install unknown apps*: turn
+2. **Get the helper apps:** tap **Install all**. Android first asks you to allow Hermux to *install unknown apps*: turn
    the switch on and go back. Then tap **Install** on Android's prompt for each app: Termux, Termux:API and Termux:Boot (from
    F-Droid) and Shizuku (from GitHub). Each app row links to its official page (F-Droid or Shizuku's releases) if you prefer to
    install it yourself; the Termux apps must all come from F-Droid. The app checks that each one comes from its maker before
@@ -57,10 +59,10 @@ Install only Hermes Mobile; the app walks you through the rest and picks up wher
    Android's own wireless debugging to start itself without a computer or root; it is local only), then open Shizuku, tap
    *Pairing* and follow its steps (Developer options → Wireless debugging → *Pair device with pairing code*, then type the code
    into Shizuku's notification), and tap *Start*. Rooted: just tap *Start* in Shizuku. On Android 10 and older there is no
-   Wireless debugging: Shizuku is started from a computer (run the Hermes Mobile setup script, or follow
+   Wireless debugging: Shizuku is started from a computer (run the Hermux setup script, or follow
    [Shizuku's guide](https://shizuku.rikka.app/guide/setup/)). If Shizuku was already running before you opened the app, tap
    *Shizuku is running: continue*; Setup check still verifies it after the install.
-4. Allow Hermes Mobile to *run commands in Termux* when Android asks.
+4. Allow Hermux to *run commands in Termux* when Android asks.
 5. **Run the installer:** tap **Copy the command**, then **Open Termux**. In Termux, long-press, tap **Paste**, then press Enter.
    Stay in Termux and tap **Allow** on what it asks (notifications, running in the background, files; Shizuku: **Allow all the
    time**). The app follows the install step by step; it takes about 15 minutes, mostly waiting (less when a ready-made Debian +
@@ -83,7 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/
 ```
 
 Keep Termux open until it prints `HMSETUP DONE`; `HMSETUP TODO` lines just above it say what is still missing. At the end
-Android's installer opens for Hermes Mobile: tap **Install** (pick *Package installer* if asked; allow Termux to *install unknown
+Android's installer opens for Hermux: tap **Install** (pick *Package installer* if asked; allow Termux to *install unknown
 apps* if it blocks it).
 
 ## From a computer (Mac, Windows, Linux)
@@ -122,11 +124,11 @@ Everything is the same except Shizuku, which Android stops whenever the phone re
 | | Not rooted, Android 11+ (most phones) | Not rooted, Android 8-10 | Rooted |
 |---|---|---|---|
 | First start | *Start via Wireless debugging* in Shizuku, or the computer route does it over USB | The computer route (over USB) | *Start* in Shizuku |
-| After a restart or if Shizuku stops | Hermes Mobile starts it again by itself once the phone is on Wi-Fi (see below) | From a computer, with the command Shizuku shows under *Start by connecting to a computer* | Shizuku starts itself |
+| After a restart or if Shizuku stops | Hermux starts it again by itself once the phone is on Wi-Fi (see below) | From a computer, with the command Shizuku shows under *Start by connecting to a computer* | Shizuku starts itself |
 
 How it starts by itself without root: the installer gives Termux its own adb (`android-tools`); after the install the app asks you to pair it once
 with the phone's Wireless debugging (the "Shizuku starts by itself" step: tap *Start pairing*, then type the 6-digit code into
-Hermes Mobile's notification; needs Wi-Fi). The installer itself never pairs, taps or reads the screen. When Shizuku is down and the phone is on Wi-Fi, Hermes Mobile turns Wireless debugging on (the installer
+Hermux's notification; needs Wi-Fi). The installer itself never pairs, taps or reads the screen. When Shizuku is down and the phone is on Wi-Fi, Hermux turns Wireless debugging on (the installer
 grants it `WRITE_SECURE_SETTINGS` for this), runs `~/bin/hm-shizuku start` in Termux, which starts Shizuku's server the same
 way its own *Start by connecting to a computer* does, and turns Wireless debugging off again if it was off. Everything stays on
 the phone. The first time on a new Wi-Fi Android asks *Allow wireless debugging on this network?*: tick *Always allow on this
@@ -169,7 +171,7 @@ over is not automatic.
 
 ## After installing
 
-- Set **battery to Unrestricted** for *Hermes Mobile*, *Termux* and *Shizuku* (Xiaomi/HyperOS: also turn on *Autostart*), or
+- Set **battery to Unrestricted** for *Hermux*, *Termux* and *Shizuku* (Xiaomi/HyperOS: also turn on *Autostart*), or
   Android may stop them. The computer setup script and the installer already take Shizuku off the battery limits; Setup check
   has a step for it if that did not work (Shizuku's app info → Battery).
 - Keep the Termux notification: Hermes runs inside Termux.
@@ -188,16 +190,16 @@ Open **Settings → Setup check** in the app first: it shows what's missing, wit
 | The installer says `No plugin named 'hermes-mobile'` | You switched Hermes to another profile (`hermes profile use`). Update to the newest installer and run it again: it adds the plugin to every profile |
 | Everything stops after a while | Battery is restricted, see [After installing](#after-installing) |
 | Hermes says Shizuku isn't running | The phone restarted: see [Rooted or not](#rooted-or-not) |
-| Shizuku doesn't come back after a restart | The phone must be on Wi-Fi. On a new Wi-Fi, tap *Allow* (with *Always allow on this network*) when Android asks about wireless debugging. Still not: Hermes Mobile → Setup check → *Shizuku starts by itself* → *Start pairing* (pair again with the code). In Termux, `~/bin/hm-shizuku status` says `paired` or `unpaired` and `~/.hermes-mobile/hm-shizuku.log` has the last attempts. Android 10 and older: start it from a computer |
+| Shizuku doesn't come back after a restart | The phone must be on Wi-Fi. On a new Wi-Fi, tap *Allow* (with *Always allow on this network*) when Android asks about wireless debugging. Still not: Hermux → Setup check → *Shizuku starts by itself* → *Start pairing* (pair again with the code). In Termux, `~/bin/hm-shizuku status` says `paired` or `unpaired` and `~/.hermes-mobile/hm-shizuku.log` has the last attempts. Android 10 and older: start it from a computer |
 | Hermes can't read your files | Setup check → *Hermes can use your files* → Allow, then Restart Hermes |
 | Termux:API won't install | Termux and Termux:API come from different stores. Install both from F-Droid |
-| Android says the update conflicts with the installed app, or asks you to uninstall it first | Every APK on the [Releases page](https://github.com/omarqaterge/hermes-mobile-app/releases) has the same signature and updates in place. This message means the installed copy is not from there (built yourself or by your coding agent: a different key), or is newer than the one you are installing. Uninstalling only Hermes Mobile keeps your chats, keys, memory and skills (they live in Hermes, inside Termux); you lose the app's own settings (theme, favourite models) and allow its permissions again on first start. Don't uninstall Termux |
+| Android says the update conflicts with the installed app, or asks you to uninstall it first | Every APK on the [Releases page](https://github.com/omarqaterge/hermes-mobile-app/releases) has the same signature and updates in place. This message means the installed copy is not from there (built yourself or by your coding agent: a different key), or is newer than the one you are installing. Uninstalling only Hermux keeps your chats, keys, memory and skills (they live in Hermes, inside Termux); you lose the app's own settings (theme, favourite models) and allow its permissions again on first start. Don't uninstall Termux |
 
 ## Uninstall
 
 In the app: **Settings → Danger zone → Uninstall Hermes**. It lists what goes, offers a backup, asks you to type `uninstall`, then
 removes Hermes with all chats, memory, skills, settings and keys, Debian, the installer's files and its phone setting (inside Termux, with
-`phone/uninstall.sh`). After that Android asks you to confirm each app: Termux:API, Termux:Boot, Shizuku, Termux, and Hermes Mobile last.
+`phone/uninstall.sh`). After that Android asks you to confirm each app: Termux:API, Termux:Boot, Shizuku, Termux, and Hermux last.
 Removing Termux makes Android close the app; open it again and it shows the last step.
 
 **Backup** (on by default): `Download/hermes-backup-<date>.tar.gz` with Hermes's chats (`state.db`), memory, skills, cron jobs, canvas
@@ -224,5 +226,5 @@ rather type it yourself:
 5. Remove the installer's files: `rm -rf ~/.hermes-mobile ~/bin/hermes-services ~/bin/hermes-debian ~/bin/hm-shizuku ~/bin/rish ~/bin/rish_shizuku.dex
    ~/.termux/boot/10-hermes ~/hermes-mobile ~/hermes-mobile.apk ~/hm.sh`, and the `allow-external-apps = true` line in
    `~/.termux/termux.properties`.
-6. Uninstall the apps in Android's settings: Termux:API, Termux:Boot, Shizuku, Termux, Hermes Mobile. Uninstalling Termux alone also
+6. Uninstall the apps in Android's settings: Termux:API, Termux:Boot, Shizuku, Termux, Hermux. Uninstalling Termux alone also
    deletes steps 1-5 (except the phone setting of step 3) with it; on a rooted phone using chroot-distro, restart the phone first.

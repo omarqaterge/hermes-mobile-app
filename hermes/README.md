@@ -1,6 +1,6 @@
 # Fixes to Hermes itself
 
-Hermes Mobile runs an unmodified [Hermes Agent](https://github.com/NousResearch/hermes-agent) build, plus the small
+Hermux runs an unmodified [Hermes Agent](https://github.com/NousResearch/hermes-agent) build, plus the small
 fixes in `patches/`. Each one is a plain `git format-patch` file, applied on top of the Hermes build the app is made for
 (`web/vendor/hermes-shared/.hermes-commit`) and offered upstream, so the list shrinks as Hermes merges them.
 

@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Removes what the Hermes Mobile installers (bootstrap.sh, install.sh, phone-access.sh, hermes-services) put on the phone,
+# Removes what the Hermux installers (bootstrap.sh, install.sh, phone-access.sh, hermes-services) put on the phone,
 # from inside TERMUX: stops Hermes, optionally saves a backup to Downloads first, undoes the phone setting the installer
 # changed (Android's child-process limit, through Shizuku when it runs), removes Debian (with Hermes, its chats and keys)
-# and the installer's files in Termux. It does NOT uninstall any app: the Hermes Mobile app does that afterwards (Android
+# and the installer's files in Termux. It does NOT uninstall any app: the Hermux app does that afterwards (Android
 # asks once per app), Termux last but one. Run by the app (Settings → Uninstall Hermes, through Termux's RUN_COMMAND), or
 # by hand:  bash uninstall.sh [--backup [--keys]]
 #   --backup          first save chats, memory, skills and settings to Download/hermes-backup-<date>.tar.gz; if that
@@ -222,7 +222,7 @@ rmp "$HOME/.cache/hermes-open"
 if grep -Eqs 'github\.com[/:]omarqaterge/(hermes-mobile-app|hermux)(\.git)?/?[[:space:]]*$' "$HOME/hermes-mobile/.git/config"; then rmp "$HOME/hermes-mobile"; fi
 [ "$failed" = 0 ] && say "OK files"
 
-# ── 6. last: Termux stops taking commands from other apps (install.sh turned that on for Hermes Mobile) ──
+# ── 6. last: Termux stops taking commands from other apps (install.sh turned that on for Hermux) ──
 # Skipped after a failure, so the app can run this script again.
 say "STEP termux Turning off commands from other apps in Termux"
 props="$HOME/.termux/termux.properties"

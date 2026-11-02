@@ -1,4 +1,4 @@
-# Sets up Hermes + Hermes Mobile on an Android phone from a Windows computer, over adb. Plug the phone in with USB
+# Sets up Hermes + Hermux on an Android phone from a Windows computer, over adb. Plug the phone in with USB
 # debugging on, then in PowerShell:
 #   irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.ps1 | iex
 # Same steps as tools/setup-phone.sh (macOS/Linux); explained in AGENT_INSTALL.md.
@@ -66,7 +66,7 @@ $abi = Sh 'getprop ro.product.cpu.abi'
 $sdk = [int](Sh 'getprop ro.build.version.sdk')
 $freeKb = [long]((((Sh 'df -k /data') -split "`n")[1] -split '\s+')[3])
 Say "$(Sh 'getprop ro.product.model'), Android SDK $sdk, $abi, $([math]::Floor($freeKb / 1048576)) GB free"
-if ($abi -ne 'arm64-v8a') { Die "This phone is $abi; Hermes Mobile needs arm64-v8a." }
+if ($abi -ne 'arm64-v8a') { Die "This phone is $abi; Hermux needs arm64-v8a." }
 if ($sdk -lt 26) { Die 'Android 8 or newer is needed.' }
 $need = 6000000   # a re-run has most of it installed already
 if (((Sh 'pm list packages com.termux') -split "`n" | ForEach-Object { $_.Trim() }) -contains 'package:com.termux') { $need = 2000000 }
@@ -214,13 +214,13 @@ if ($env:HM_SKIP_MODEL -or -not $prov) {
 }
 
 # ---------------------------------------------------------------- 8. app
-B '8/9 Hermes Mobile app'
+B '8/9 Hermux app'
 $apk = Join-Path $WORK 'hermes-mobile.apk'
 Get $APK_URL $apk
 $o = A install -r $apk
 Remove-Item $apk -ErrorAction SilentlyContinue
 if ($script:rc -ne 0) {
-  if ($o -match 'UPDATE_INCOMPATIBLE') { Die 'Another build of Hermes Mobile is installed (signed differently). Uninstall it from the phone and run this again.' }
+  if ($o -match 'UPDATE_INCOMPATIBLE') { Die 'Another build of Hermux is installed (signed differently). Uninstall it from the phone and run this again.' }
   Die "Installing the app failed: $o"
 }
 Sh "pm grant $APP com.termux.permission.RUN_COMMAND" | Out-Null
@@ -242,13 +242,13 @@ A forward --remove "tcp:$port" | Out-Null
 if ($ok) { Say 'Hermes is running on the phone.' } else { Say "Hermes didn't answer yet; the app's Setup check shows what's missing." }
 Restore
 
-B 'Done. Say hi in Hermes Mobile on the phone.'
+B 'Done. Say hi in Hermux on the phone.'
 (LogText) -split "`n" | Where-Object { $_ -match 'HMSETUP TODO (.*)' } | ForEach-Object { Say "Still to do: $($Matches[1])" }
-Say 'Xiaomi/HyperOS: also turn on Autostart for Termux and Hermes Mobile (Settings > Apps).'
+Say 'Xiaomi/HyperOS: also turn on Autostart for Termux and Hermux (Settings > Apps).'
 Say 'Keep the Termux notification: Hermes runs inside Termux.'
 Say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Android 10 and older: start it from a computer"
 Say '  after a restart. Rooted: it always does.'
 if ([int]((Sh 'getprop ro.build.version.sdk') -join '').Trim() -ge 30) {
-  Say 'On the phone, Hermes Mobile now asks you to pair Termux with Wireless debugging once (about a minute, on Wi-Fi): then Shizuku starts by itself after a restart.'
+  Say 'On the phone, Hermux now asks you to pair Termux with Wireless debugging once (about a minute, on Wi-Fi): then Shizuku starts by itself after a restart.'
 }
 Say 'Update later: run this again.'

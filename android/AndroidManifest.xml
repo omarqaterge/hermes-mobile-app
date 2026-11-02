@@ -81,7 +81,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
-            <!-- Phone assistant: once Hermes is picked as the digital assistant app, the assist gesture
+            <!-- Phone assistant: once Hermux is picked as the digital assistant app, the assist gesture
                  (long-press power / corner swipe) or a headset's voice button opens it in Live mode. -->
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />

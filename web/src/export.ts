@@ -26,7 +26,7 @@ function itemMd(it: ChatItem): string {
 
 export function chatMarkdown(a: Pick<ActiveSession, 'title' | 'items'>, when = new Date()): string {
   const title = (a.title || 'Chat with Hermes').replace(/^⎇\s*/, '')
-  const parts = [`# ${title}`, `_Exported from Hermes on ${when.toLocaleString()}_`]
+  const parts = [`# ${title}`, `_Exported from Hermux on ${when.toLocaleString()}_`]
   for (const it of a.items) {
     const md = itemMd(it)
     if (md) parts.push(md)

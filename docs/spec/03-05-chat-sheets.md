@@ -62,7 +62,7 @@ How picking works (`setModel` in `gateway.ts`):
 | Delete | 🗑 (red) | Asks "Delete “<title>”?" ("The whole conversation is removed. This cannot be undone."). On confirm: `deleteSession` and toast "Deleted". | none | |
 
 **Data:** `PATCH /api/sessions/<id>`, `session.undo`, `session.delete`, `session.close`, plugin `POST /cleanup` (removes the deleted chat's photos, files and canvas from the phone, keeping what is still attached in the composer), plugin `DELETE /checkpoints`.
-**Rules:** deleting a chat first closes its live sessions, because Hermes refuses to delete a chat that still has one. The share text format is `chatMarkdown` (`web/src/export.ts`): `# <title>`, `_Exported from Hermes on <date>_`, then `**You:**` and `**Hermes:**` blocks, attachments as `_Attached: …_`, tool calls as one italic line `_🔧 name: context (failed)_`, sub-agents as `_🤖 Sub-agent: goal_`, error notices as `> ⚠ …` quotes; info notices are left out. Pin and archive are not in this menu; they live on the drawer's session rows (3.13).
+**Rules:** deleting a chat first closes its live sessions, because Hermes refuses to delete a chat that still has one. The share text format is `chatMarkdown` (`web/src/export.ts`): `# <title>`, `_Exported from Hermux on <date>_`, then `**You:**` and `**Hermes:**` blocks, attachments as `_Attached: …_`, tool calls as one italic line `_🔧 name: context (failed)_`, sub-agents as `_🤖 Sub-agent: goal_`, error notices as `> ⚠ …` quotes; info notices are left out. Pin and archive are not in this menu; they live on the drawer's session rows (3.13).
 
 #### Draft menu sheet
 **Opens from:** Chat options on the empty new-chat screen. **Closes with:** an item, tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `DraftMenuSheet`.

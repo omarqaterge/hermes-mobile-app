@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sets up Hermes + Hermes Mobile on an Android phone from a Mac or Linux computer, over adb. Plug the phone in with USB
+# Sets up Hermes + Hermux on an Android phone from a Mac or Linux computer, over adb. Plug the phone in with USB
 # debugging on, then:
 #   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/setup-phone.sh -o setup-phone.sh && bash setup-phone.sh
 # Windows: tools/setup-phone.ps1. What it does, step by step: AGENT_INSTALL.md (same steps, for AI agents).
@@ -69,7 +69,7 @@ abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
 sdk=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 free_kb=$(adb shell df -k /data | awk 'NR==2 {print $4}' | tr -d '\r')
 say "$(adb shell getprop ro.product.model | tr -d '\r'), Android SDK $sdk, $abi, $((free_kb / 1048576)) GB free"
-[ "$abi" = arm64-v8a ] || die "This phone is $abi; Hermes Mobile needs arm64-v8a."
+[ "$abi" = arm64-v8a ] || die "This phone is $abi; Hermux needs arm64-v8a."
 [ "$sdk" -ge 26 ] || die "Android 8 or newer is needed."
 need=6000000  # a re-run has most of it installed already
 adb shell pm list packages com.termux | tr -d '\r' | grep -qx package:com.termux && need=2000000
@@ -223,10 +223,10 @@ else
 fi
 
 # ---------------------------------------------------------------- 8. app
-b "8/9 Hermes Mobile app"
+b "8/9 Hermux app"
 curl -fL --progress-bar -o "$WORK/hermes-mobile.apk" "$APK_URL"
 if ! out=$(adb install -r "$WORK/hermes-mobile.apk" 2>&1); then
-  case "$out" in *UPDATE_INCOMPATIBLE*) die "Another build of Hermes Mobile is installed (signed differently). Uninstall it from the phone and run this again." ;;
+  case "$out" in *UPDATE_INCOMPATIBLE*) die "Another build of Hermux is installed (signed differently). Uninstall it from the phone and run this again." ;;
     *) die "Installing the app failed: $out" ;; esac
 fi
 rm -f "$WORK/hermes-mobile.apk"
@@ -246,12 +246,12 @@ for _ in $(seq 1 30); do curl -fs -o /dev/null "http://127.0.0.1:$port/" && { ok
 adb forward --remove "tcp:$port" >/dev/null 2>&1 || true
 [ -n "$ok" ] && say "Hermes is running on the phone." || say "Hermes didn't answer yet; the app's Setup check shows what's missing."
 
-b "Done. Say hi in Hermes Mobile on the phone."
+b "Done. Say hi in Hermux on the phone."
 grep 'HMSETUP TODO' "$LOG" | sed 's/.*HMSETUP TODO /  Still to do: /' || true
-say "Xiaomi/HyperOS: also turn on Autostart for Termux and Hermes Mobile (Settings → Apps)."
+say "Xiaomi/HyperOS: also turn on Autostart for Termux and Hermux (Settings → Apps)."
 say "Keep the Termux notification: Hermes runs inside Termux."
 say "Shizuku (Hermes's access to the screen and apps) stops when the phone restarts. Android 10 and older: start it from a computer"
 say "  after a restart. Rooted: it always does."
 [ "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" -ge 30 ] 2>/dev/null &&
-  say "On the phone, Hermes Mobile now asks you to pair Termux with Wireless debugging once (about a minute, on Wi-Fi): then Shizuku starts by itself after a restart."
+  say "On the phone, Hermux now asks you to pair Termux with Wireless debugging once (about a minute, on Wi-Fi): then Shizuku starts by itself after a restart."
 say "Update later: run this script again."

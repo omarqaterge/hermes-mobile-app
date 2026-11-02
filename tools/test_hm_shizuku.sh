@@ -121,7 +121,7 @@ for bad in "abc 182068" "0 182068" "70000 182068" "40367 18206" "40367 1820681" 
   check "[ \$RC = 64 ] && [ ! -s '$S/adb.log' ]" "pair: '$bad' → usage (64), adb not called"
 done
 fresh pair-old; hm pair
-check "[ \$RC = 64 ] && ev 'e[\"result\"]==\"failed\" and \"update Hermes Mobile\" in e[\"detail\"]'" "pair: bare 'pair' (older app) → 64 + event asks to update the app"
+check "[ \$RC = 64 ] && ev 'e[\"result\"]==\"failed\" and \"update Hermux\" in e[\"detail\"]'" "pair: bare 'pair' (older app) → 64 + event asks to update the app"
 fresh pair-noadb; mv "$T/bin/adb" "$T/adb.off"; hm pair 40367 182068; mv "$T/adb.off" "$T/bin/adb"
 check "[ \$RC = 2 ] && ev 'e[\"result\"]==\"failed\" and \"adb\" in e[\"detail\"]'" "pair without adb: exit 2, event says adb is missing"
 fresh old; FAKE_SDK=29 hm pair 40367 182068

@@ -526,7 +526,7 @@ public class MainActivity extends Activity {
     /** Android's "Install" prompt for helperWhich, kept until the final answer, and whether it was put on screen. Android
      *  10+ refuses to open an activity from an app that isn't on screen ("Background activity launch blocked"): when
      *  the prompt arrives while the user is elsewhere (a full-screen installer still showing the previous app, Home), it
-     *  waits here and opens when Hermes Mobile comes back (onResume). */
+     *  waits here and opens when Hermux comes back (onResume). */
     Intent helperConfirm;
     boolean helperPromptShown;
 
@@ -665,7 +665,7 @@ public class MainActivity extends Activity {
         if (pkg == null) return; // not one of the four: ignored
         if (which.equals(helperRequested)) helperRequested = null;
         if (!getPackageManager().canRequestPackageInstalls()) {
-            helperState(which, "permission", 0, "Allow Hermes Mobile to install apps, then come back.");
+            helperState(which, "permission", 0, "Allow Hermux to install apps, then come back.");
             runOnUiThread(() -> setupFix("install-permission"));
             return;
         }
@@ -933,8 +933,8 @@ public class MainActivity extends Activity {
         String script = "clear; echo 'Signing in to " + provider + " for Hermes.'; "
                 + "echo 'To open the link: long-press it, More, Select URL. Then paste the code back here.'; echo; "
                 + "if " + DEBIAN + " bash -lc '" + hermes + " auth add " + provider + "'; "
-                + "then echo; echo 'Signed in. Go back to Hermes Mobile: it shows the login under Subscriptions & accounts.'; "
-                + "else echo; echo 'The sign-in did not finish (see the message above). Go back to Hermes Mobile and try again.'; fi; "
+                + "then echo; echo 'Signed in. Go back to Hermux: it shows the login under Subscriptions & accounts.'; "
+                + "else echo; echo 'The sign-in did not finish (see the message above). Go back to Hermux and try again.'; fi; "
                 + "read -r -p 'Press Enter to close. ' _";
         try {
             Intent i = new Intent();
@@ -1759,7 +1759,7 @@ public class MainActivity extends Activity {
         if (DevTools.isOn() || !DevTools.developerOptionsOn(this)) return;
         devtoolsDialog = new android.app.AlertDialog.Builder(this)
                 .setTitle("Turn on remote debugging?")
-                .setMessage("A computer connected to this phone will be able to read and control Hermes Mobile, including your chats, for 60 minutes. You will be asked for your screen lock. Only continue if you started this yourself.")
+                .setMessage("A computer connected to this phone will be able to read and control Hermux, including your chats, for 60 minutes. You will be asked for your screen lock. Only continue if you started this yourself.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Continue", (d, w) -> askScreenLock())
                 .show();
@@ -1952,9 +1952,9 @@ public class MainActivity extends Activity {
 
     void startUpdate(String url) {
         Uri u = Uri.parse(url == null ? "" : url);
-        if (!updateUrlOk(u)) { updateState("error", 0, "That isn't an official Hermes Mobile download."); return; }
+        if (!updateUrlOk(u)) { updateState("error", 0, "That isn't an official Hermux download."); return; }
         if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-            updateState("permission", 0, "Allow Hermes to install updates, then tap Update again.");
+            updateState("permission", 0, "Allow Hermux to install updates, then tap Update again.");
             runOnUiThread(() -> {
                 try {
                     startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
@@ -1974,7 +1974,7 @@ public class MainActivity extends Activity {
                 // Must be this app, newer than what is installed. The installer also refuses a different signing key.
                 android.content.pm.PackageInfo got = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
                 android.content.pm.PackageInfo mine = getPackageManager().getPackageInfo(getPackageName(), 0);
-                if (got == null || !getPackageName().equals(got.packageName)) throw new Exception("The download isn't a Hermes Mobile app file.");
+                if (got == null || !getPackageName().equals(got.packageName)) throw new Exception("The download isn't a Hermux app file.");
                 if (got.versionCode <= mine.versionCode) throw new Exception("You already have this version.");
                 updateState("installing", 100, "");
                 commitInstall(apk);
@@ -2121,7 +2121,7 @@ public class MainActivity extends Activity {
             getSharedPreferences("hm", MODE_PRIVATE).edit().putString("readaloud", json).apply();
         }
 
-        /** Whether Hermes is the phone's digital assistant app (the assist gesture opens Live mode). */
+        /** Whether Hermux is the phone's digital assistant app (the assist gesture opens Live mode). */
         @JavascriptInterface
         public boolean isAssistant(String key) {
             if (!ok(key)) return false;

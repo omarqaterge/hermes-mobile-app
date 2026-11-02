@@ -5,7 +5,7 @@ would never fire. Ticks every local profile's store every 60 s; the per-store ti
 safe next to any other scheduler.
 
 Battery: nothing holds a permanent wake lock any more, so the phone sleeps between jobs and this
-ticker sleeps with it. It reports the next due job to the Hermes app (`wake_at`), which sets an
+ticker sleeps with it. It reports the next due job to the Hermux app (`wake_at`), which sets an
 alarm that wakes the phone for it; once the job runs, its status beats keep the phone awake.
 When the alarm fires the app pokes this ticker (127.0.0.1:9122) so the job starts at once (Hermes's
 ticker sleeps on a monotonic clock that stops while the phone sleeps, so it would start up to 60 s

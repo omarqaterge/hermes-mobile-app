@@ -1,11 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # hm-shizuku: lets Shizuku start again by itself after a restart or a crash, without root (Android 11+, Wi-Fi).
 # Runs in TERMUX (phone/install.sh puts it in ~/bin). Termux gets its own adb (android-tools), paired once with the
-# phone's Wireless debugging; afterwards Hermes Mobile turns Wireless debugging on when Shizuku is down and runs
+# phone's Wireless debugging; afterwards Hermux turns Wireless debugging on when Shizuku is down and runs
 # `hm-shizuku start <port>`, which starts Shizuku's server the way Shizuku's own "Start by adb" does.
 #
 #   hm-shizuku pair PORT CODE  Pairs Termux's adb with Wireless debugging: the user opened "Pair device with pairing code"
-#                              and typed CODE into Hermes Mobile's notification; the app found PORT. Runs only
+#                              and typed CODE into Hermux's notification; the app found PORT. Runs only
 #                              adb pair 127.0.0.1:PORT CODE: no rish, nothing on the screen. Exit 0 = paired.
 #   hm-shizuku start [port]    Needs Wireless debugging on. Connects to 127.0.0.1:<port> (the app finds the port; without
 #                              one, or if it doesn't answer, it scans the loopback ports, ~1-20 s) and starts Shizuku's
@@ -66,7 +66,7 @@ finish() {
 
 cmd_pair() {
   local port="${1:-}" code="${2:-}" out sdk
-  [ -n "$port$code" ] || finish failed 64 "update Hermes Mobile: pairing is done from the app now (Setup check → Shizuku starts by itself)"
+  [ -n "$port$code" ] || finish failed 64 "update Hermux: pairing is done from the app now (Setup check → Shizuku starts by itself)"
   [[ "$port" =~ ^[0-9]{1,5}$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] && [[ "$code" =~ ^[0-9]{6}$ ]] || usage
   have_adb || finish failed 2 "adb is missing (pkg install android-tools)"
   sdk=$(getprop ro.build.version.sdk 2>/dev/null)

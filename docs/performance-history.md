@@ -1,6 +1,6 @@
 # Performance history
 
-How fast Hermes Mobile gets you to a usable chat, from the first measurements to now, and how to add the next
+How fast Hermux gets you to a usable chat, from the first measurements to now, and how to add the next
 measurement so the history stays comparable. Battery and background work have their own report:
 [battery-report.md](battery-report.md).
 

@@ -11,7 +11,7 @@ One flow removes Hermes, Debian, the data and chats, the installer's changes, th
 | running | The cleanup runs in Termux | A spinner, "Removing Hermes…" and a note that the user may leave the app and come back. Button Close |
 | lost | It started but never reported back (the app was closed) | A message to run it again, buttons Continue to the apps and Try again |
 | failed | The Termux script ended with a non-zero exit | The step list, the reason ("Stopped before removing anything:" for exit 3, "Termux didn’t run the cleanup:" for -1, otherwise "Something could not be removed:"). Buttons: Cancel (exit 3 with nothing removed; it restarts Hermes) or Continue to the apps, and Try again |
-| apps | The cleanup finished (or was skipped) | The five apps in the order Termux:API, Termux:Boot, Shizuku, Termux, Hermes Mobile, each with ✓ Removed or a button "Uninstall <name>" ("Uninstall Hermes Mobile" for this app). The next app's button is red |
+| apps | The cleanup finished (or was skipped) | The five apps in the order Termux:API, Termux:Boot, Shizuku, Termux, Hermux, each with ✓ Removed or a button "Uninstall <name>" ("Uninstall Hermux" for this app). The next app's button is red |
 
 Pressing Uninstall… opens a prompt: "Uninstall Hermes?", the text says what is deleted (including "(after saving the backup)" when chosen), and the user must type `uninstall`. Only then does the cleanup start (`uninstallStart` bridge call with the backup and keys choices and a settings snapshot). If the app may not run commands in Termux (`no-permission`), the sheet shows why with the buttons Allow and Skip to the apps (uninstalling Termux also deletes Debian and Hermes, but leaves the phone setting changed).
 

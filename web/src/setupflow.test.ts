@@ -164,7 +164,7 @@ describe('app-first steps', () => {
   test('a half-finished install (Termux allows us, not finished) → installer', () => {
     expect(nextStep(setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', shizukuDone: true })))?.id).toBe('installer')
   })
-  test('Termux there but Hermes Mobile may not run commands → run, before the installer', () => {
+  test('Termux there but Hermux may not run commands → run, before the installer', () => {
     expect(nextStep(setupSteps({ ...allApps, runCommand: false }, 'closed', null, null, pre({ probe: 'denied', shizukuDone: true })))?.id).toBe('run')
   })
   test('installed but stopped → hermes (Start Hermes); the Shizuku step is not shown any more', () => {

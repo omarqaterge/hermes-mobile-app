@@ -24,7 +24,7 @@ interface AndroidBridge {
   speak?(text: string, cfg: string): void
   listVoices?(cfg: string): void
   openTtsEngineApp?(pkg: string): void
-  isAssistant?(): boolean // Hermes holds the phone's assistant role
+  isAssistant?(): boolean // Hermux holds the phone's assistant role
   openAssistantSettings?(): void // system page to pick the digital assistant app
   setLockAssist?(on: boolean): void // the assist gesture may open Live mode over the lock screen (kept natively)
   requestUnlock?(): void // Android's unlock screen while the app shows over the lock screen
@@ -294,7 +294,7 @@ export type SetupFix =
   | 'install-permission' | 'about-phone' | 'dev-options' | 'open-termux-boot'
   /** Start pairing: posts the Pairing notification (the user types the code there) and opens Settings at Wireless debugging. Explicit tap only. */
   | 'shizuku-pair'
-  /** This phone's Autostart page (for Hermes Mobile / for Termux where the page is per app), else that app's App info. */
+  /** This phone's Autostart page (for Hermux / for Termux where the page is per app), else that app's App info. */
   | 'autostart' | 'autostart-termux'
   /** Android's uninstall prompt for a Termux that isn't F-Droid's (the shell refuses it for F-Droid's). Explicit tap only. */
   | 'replace-termux'

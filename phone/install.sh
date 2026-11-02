@@ -2,7 +2,7 @@
 # One-step phone setup. Run it in TERMUX (not inside Debian):
 #   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh | bash
 # or, from a clone:  bash ~/hermes-mobile/phone/install.sh
-# It lets the app start Hermes, installs the Hermes Mobile plugin into Debian and the supervisor script into ~/bin, gives
+# It lets the app start Hermes, installs the Hermux plugin into Debian and the supervisor script into ~/bin, gives
 # Hermes access to the phone (phone/phone-access.sh: files, Termux:API, Shizuku; no root needed), then downloads the app
 # and opens Android's installer. Safe to run again (it just refreshes everything).
 set -e
@@ -24,7 +24,7 @@ echo "$HM_DISTRO" > "$HOME/.hermes-mobile/distro"
 here=""
 [ -f "${BASH_SOURCE[0]:-}" ] && here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -z "$here" ] || [ ! -d "$here/hermes-plugin/hermes-mobile" ]; then
-  echo "0/5 Getting Hermes Mobile into ~/hermes-mobile"
+  echo "0/5 Getting Hermux into ~/hermes-mobile"
   command -v git >/dev/null || pkg install -y git
   if [ -d "$HOME/hermes-mobile/.git" ]; then git -C "$HOME/hermes-mobile" pull -q --ff-only
   else git clone -q --depth 1 "$REPO.git" "$HOME/hermes-mobile"; fi
@@ -53,7 +53,7 @@ else
 fi
 "$DEB" --exists /root/.hermes || die "Hermes is not set up in Debian yet. Install Hermes Agent and run 'hermes setup' first (see the README)."
 
-echo "3/5 Installing the Hermes Mobile plugin"
+echo "3/5 Installing the Hermux plugin"
 find "$here/hermes-plugin/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 "$DEB" --put "$here/hermes-plugin/hermes-mobile" /root/.hermes/plugins/hermes-mobile
 "$DEB" --put "$here/phone/cron_ticker.py" /root/.hermes/scripts/cron_ticker.py
@@ -65,7 +65,7 @@ find "$here/hermes-plugin/hermes-mobile" -name __pycache__ -prune -exec rm -rf {
   || echo "    Could not add the plugin to every Hermes profile."
 
 # Our fixes to Hermes itself (hermes/README.md). One that no longer fits this Hermes is skipped, never half-applied.
-echo "    Applying the Hermes Mobile fixes to Hermes (hermes/patches)"
+echo "    Applying the Hermux fixes to Hermes (hermes/patches)"
 "$DEB" --put "$here/hermes/patches" /root/.hermes/hermes-mobile-patches
 "$DEB" --put "$here/phone/hermes-patches.sh" /root/.hermes/scripts/hermes-patches.sh
 "$DEB" bash -lc 'bash /root/.hermes/scripts/hermes-patches.sh apply /root/.hermes/hermes-mobile-patches' \
@@ -117,4 +117,4 @@ else
   echo "Done with the phone side, but no ready-made app was found to download."
   echo "Build it on a computer instead: see 'Build the app yourself' in the README."
 fi
-echo "Then open Hermes Mobile and allow the permissions it asks for."
+echo "Then open Hermux and allow the permissions it asks for."

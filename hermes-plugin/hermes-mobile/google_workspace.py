@@ -1,4 +1,4 @@
-"""Google Workspace (Gmail, Calendar, Drive, Docs, Sheets, Contacts) sign-in for the Hermes Mobile app.
+"""Google Workspace (Gmail, Calendar, Drive, Docs, Sheets, Contacts) sign-in for the Hermux app.
 
 Hermes connects Google through its bundled `google-workspace` skill, whose own script does the whole setup
 (skills/productivity/google-workspace/scripts/setup.py): `--client-secret PATH` stores the user's OAuth client,

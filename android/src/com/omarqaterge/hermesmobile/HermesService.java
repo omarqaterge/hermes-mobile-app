@@ -543,7 +543,7 @@ public class HermesService extends Service {
         if (line.startsWith("STEP ")) {
             String[] p = line.split(" ", 3);
             text = "Setting up: " + (p.length > 2 && !p[2].trim().isEmpty() ? p[2].trim() : p[1]);
-        } else if (line.startsWith("FAIL ")) text = "Setup stopped: open Hermes Mobile";
+        } else if (line.startsWith("FAIL ")) text = "Setup stopped: open Hermux";
         else if (line.equals("DONE")) {
             getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").apply();
             MainActivity.setTermuxOk(this);
@@ -1462,7 +1462,7 @@ public class HermesService extends Service {
             startActivity(open);
         } catch (Exception e) {
             // background start refused: nothing is allowed; the approval still waits in the app
-            android.widget.Toast.makeText(this, "Open Hermes to allow this", android.widget.Toast.LENGTH_LONG).show();
+            android.widget.Toast.makeText(this, "Open Hermux to allow this", android.widget.Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1533,7 +1533,7 @@ public class HermesService extends Service {
                     dropEmptySummary(nm, t);
                 } else {
                     postGrouped(nm, t, alert(CH_ALERT, "Couldn't send your answer",
-                            "Open Hermes to answer (" + failed + ")", session, true));
+                            "Open Hermux to answer (" + failed + ")", session, true));
                 }
             });
         }, "hermes-approve").start();
@@ -1653,10 +1653,10 @@ public class HermesService extends Service {
         phone.setDescription("Shizuku stopped or not running");
         phone.setShowBadge(false);
         NotificationChannel upd = new NotificationChannel(UpdateNotice.CH_UPDATE, "App updates", NotificationManager.IMPORTANCE_DEFAULT);
-        upd.setDescription("A newer Hermes Mobile version is available");
+        upd.setDescription("A newer Hermux version is available");
         upd.setShowBadge(false);
         NotificationChannel pair = new NotificationChannel(AdbPairing.CH_PAIR, "Pairing", NotificationManager.IMPORTANCE_HIGH);
-        pair.setDescription("The Wireless debugging pairing code, while you set up Hermes Mobile");
+        pair.setDescription("The Wireless debugging pairing code, while you set up Hermux");
         pair.setShowBadge(false);
         NotificationChannel devtools = new NotificationChannel(DevTools.CH_DEVTOOLS, "Remote debugging", NotificationManager.IMPORTANCE_LOW);
         devtools.setDescription("Shown while remote debugging is on, with a button to turn it off");

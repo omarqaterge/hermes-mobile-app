@@ -1,6 +1,6 @@
 # Battery map
 
-Which parts of Hermes Mobile use the most battery, ranked, with what was measured and what is still open.
+Which parts of Hermux use the most battery, ranked, with what was measured and what is still open.
 Measured on a real phone (Android 16, 8 cores) on 2026-10-07 with `dumpsys batterystats --charged` and
 `/proc/<pid>/stat` CPU ticks (100 ticks = 1 s of one core). See "How to measure" at the end. Round 3 (chats and
 cron jobs, with before/after numbers and the benchmark tools) is in `docs/battery-report.md`.

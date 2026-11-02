@@ -1,4 +1,4 @@
-"""Dashboard API for the Hermes Mobile app: built-in memory entries (MEMORY.md / USER.md).
+"""Dashboard API for the Hermux app: built-in memory entries (MEMORY.md / USER.md).
 
 Mounted at /api/plugins/hermes-mobile/. Uses Hermes's own MemoryStore so writes take the same
 file locks, character limits and threat scanning as the agent's memory tool — and the memory

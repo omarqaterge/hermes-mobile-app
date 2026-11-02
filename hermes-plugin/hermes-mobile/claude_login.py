@@ -1,4 +1,4 @@
-"""In-app Claude (Pro/Max subscription) sign-in for the Hermes Mobile app.
+"""In-app Claude (Pro/Max subscription) sign-in for the Hermux app.
 
 It is the same PKCE login `hermes auth add anthropic` runs in a terminal, split in two steps so the app can show
 it in its own UI: `start` makes the claude.ai link (the user opens it in the browser and signs in), `finish` takes

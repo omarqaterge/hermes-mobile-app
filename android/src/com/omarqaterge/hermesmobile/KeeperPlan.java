@@ -122,9 +122,9 @@ final class KeeperPlan {
             case "no-permission":
             case "no-termux":
             case "unpaired":
-                return "Shizuku isn\u2019t set up to start by itself. Open Hermes Mobile \u2192 Setup check \u2192 Start pairing.";
+                return "Shizuku isn\u2019t set up to start by itself. Open Hermux \u2192 Setup check \u2192 Start pairing.";
             case "failed":
-                return "Hermes couldn\u2019t start it by itself. Tap to open Shizuku and start it.";
+                return "Hermux couldn\u2019t start it by itself. Tap to open Shizuku and start it.";
             case "too-many":
                 return "It stopped again right after each start. Tap to open Shizuku and start it.";
             default:
@@ -132,7 +132,7 @@ final class KeeperPlan {
         }
     }
 
-    /** The notice opens Hermes Mobile (to finish the set-up) instead of Shizuku. */
+    /** The notice opens Hermux (to finish the set-up) instead of Shizuku. */
     static boolean opensApp(String last) {
         return "no-permission".equals(last) || "no-termux".equals(last) || "unpaired".equals(last);
     }

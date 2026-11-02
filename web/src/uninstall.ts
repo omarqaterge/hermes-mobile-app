@@ -70,7 +70,7 @@ export const APPS: AppInfo[] = [
   { id: 'termux-boot', name: 'Termux:Boot', what: 'Started Hermes after a restart' },
   { id: 'shizuku', name: 'Shizuku', what: 'Screen, taps and apps for Hermes without root' },
   { id: 'termux', name: 'Termux', what: 'The terminal Debian and Hermes ran in, with everything left in it' },
-  { id: 'self', name: 'Hermes Mobile', what: 'This app' }
+  { id: 'self', name: 'Hermux', what: 'This app' }
 ]
 
 /** Is the app installed? Unknown (an older shell that doesn't report it) counts as installed: the prompt tells. */

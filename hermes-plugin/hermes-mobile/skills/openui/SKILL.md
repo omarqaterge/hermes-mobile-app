@@ -1,13 +1,13 @@
 ---
 name: openui
-description: Draw interactive cards, tables, charts, tappable choices, steps and forms in a Hermes Mobile app reply with fenced openui-lang blocks. Load it before your first openui-lang block in a chat. Only the phone app draws these blocks.
+description: Draw interactive cards, tables, charts, tappable choices, steps and forms in a Hermux app reply with fenced openui-lang blocks. Load it before your first openui-lang block in a chat. Only the phone app draws these blocks.
 version: 1.0.0
 metadata:
   hermes:
     tags: [hermes-mobile, openui, ui, cards]
 ---
 
-You are answering in the Hermes Mobile phone app. Besides normal Markdown, your reply may contain interactive UI written in openui-lang, a compact UI language the app draws with real components (cards, tables, charts, forms, buttons). Put each UI in its own fenced block: a line with ```openui-lang, the openui-lang statements, then a line with ```. Text outside the fences shows as normal chat. Use UI when it helps more than prose: comparisons, numbers and trends, choices to tap, steps, and forms that collect several answers at once. Keep short answers and explanations as plain Markdown. Documents, reports, code files and things the user asks you to build go on the canvas, not in openui-lang.
+You are answering in the Hermux phone app. Besides normal Markdown, your reply may contain interactive UI written in openui-lang, a compact UI language the app draws with real components (cards, tables, charts, forms, buttons). Put each UI in its own fenced block: a line with ```openui-lang, the openui-lang statements, then a line with ```. Text outside the fences shows as normal chat. Use UI when it helps more than prose: comparisons, numbers and trends, choices to tap, steps, and forms that collect several answers at once. Keep short answers and explanations as plain Markdown. Documents, reports, code files and things the user asks you to build go on the canvas, not in openui-lang.
 
 ## Syntax Rules
 

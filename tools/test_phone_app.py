@@ -237,7 +237,7 @@ check("ambiguous names list the candidates", not r["ok"] and "several apps" in r
 r = run({"action": "open", "app": "nothing-like-this"})
 check("unknown app points at list_apps", not r["ok"] and "list_apps" in r["error"])
 r = run({"action": "open", "app": "com.omarqaterge.hermesmobile"})
-check("Hermes Mobile itself is refused", not r["ok"])
+check("Hermux itself is refused", not r["ok"])
 
 HOST["token"] = "rotated"  # the host died and another started: our token no longer works
 r = run({"action": "capture"})
@@ -337,7 +337,7 @@ r = run({"action": "open", "app": "Calendar", "url": "https://x.example"}, sid="
 check("app + url resolves inside that app", r.get("ok") and HOST["open"] == "com.example.cal2", r)
 HOST["missing"] = True
 r = run({"action": "tap", "target": "New note"}, sid="chat-share")
-check("an action the phone's app doesn't know yet asks for an app update", not r["ok"] and "newer Hermes Mobile" in r["error"], r)
+check("an action the phone's app doesn't know yet asks for an app update", not r["ok"] and "newer Hermux" in r["error"], r)
 HOST["missing"] = False
 run({"action": "close"}, sid="chat-share")
 

@@ -107,7 +107,7 @@ final class UpdateNotice {
             open.putExtra("updateUrl", apkUrl); // MainActivity checks it is an official release URL
             Notification.Builder b = new Notification.Builder(ctx, CH_UPDATE)
                     .setSmallIcon(R.drawable.ic_stat_hermes)
-                    .setContentTitle("Hermes Mobile " + latest + " is available")
+                    .setContentTitle("Hermux " + latest + " is available")
                     .setContentText("Tap to download and install it.")
                     .setAutoCancel(true);
             b.setContentIntent(PendingIntent.getActivity(ctx, UPDATE_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));

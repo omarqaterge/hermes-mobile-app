@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# The whole phone side in one go, no questions asked: Termux packages, Debian, Hermes Agent, the Hermes Mobile plugin and
+# The whole phone side in one go, no questions asked: Termux packages, Debian, Hermes Agent, the Hermux plugin and
 # the supervisor. Run it in TERMUX (not inside Debian). Made for a computer agent driving the phone over adb (see
 # AGENT_INSTALL.md), works by hand too:
 #   curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/bootstrap.sh -o hm.sh && bash hm.sh
@@ -238,7 +238,7 @@ if ! deb "$has_browser"; then
   deb "$has_browser" || say "TODO browser: Hermes has no web browser yet. Run the installer again later (bash hm.sh)"
 fi
 
-step plugin "Hermes Mobile plugin, supervisor, and access to the phone (files, Termux:API, Shizuku; no root needed)"
+step plugin "Hermux plugin, supervisor, and access to the phone (files, Termux:API, Shizuku; no root needed)"
 if [ -n "$src" ] && [ -f "$src/install.sh" ] && [ -d "$src/../hermes-plugin/hermes-mobile" ]; then
   HM_NO_APK=1 bash "$src/install.sh"
 else
@@ -267,8 +267,8 @@ while IFS= read -r t; do [ -n "$t" ] && say "TODO $t"; done < "$HOME/.hermes-mob
 if [ -z "${HM_NO_APK:-}${HM_APP_TOKEN:-}" ]; then
   apk="$HOME/hermes-mobile.apk"
   if curl -fsL -o "$apk" "https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"; then
-    say "phone: tap Install (if Android asks which app to use, pick Package installer; allow Termux to install apps if asked), then open Hermes Mobile"
-    termux-open --content-type application/vnd.android.package-archive "$apk" 2>/dev/null || say "TODO app: open $apk (termux-open $apk) to install Hermes Mobile"
+    say "phone: tap Install (if Android asks which app to use, pick Package installer; allow Termux to install apps if asked), then open Hermux"
+    termux-open --content-type application/vnd.android.package-archive "$apk" 2>/dev/null || say "TODO app: open $apk (termux-open $apk) to install Hermux"
   else
     rm -f "$apk"
     say "TODO app: download hermes-mobile.apk from the latest release (github.com/omarqaterge/hermes-mobile-app/releases)"

@@ -35,7 +35,7 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 
 Shown when there is no open chat and none is opening (`Empty`).
 
-- A ☤ logo, the title "Hermes", and a line: "Your agent, on your phone." for the default profile, or "Profile: <name>".
+- A ☤ logo, the title "Hermux", and a line: "Your agent, on your phone." for the default profile, or "Profile: <name>".
 - Up to four suggestion buttons, built by `suggestions()` in order, without repeats: the three latest prompts this profile sent (`web/src/recent.ts` `recentPrompts`, shortened to 70 characters), then up to two skills ("/<skill> · <description>", from the command catalog, `commands.ts`), then four built-in suggestions (calendar today, summarise unread email, a quiz prompt, files in Downloads).
 - Tapping a suggestion does not send it. It puts the text into the composer (a trailing space added) and focuses it.
 - Nothing is created on Hermes's side until the first message (or the first attachment, a model pick, or an Auto choice).
@@ -75,7 +75,7 @@ Every label ends with ". Change how much Hermes may do without asking".
 - **Full access asks first.** A dialog titled "Give Hermes full access?" warns that every command runs without asking (deleting or overwriting files, killing apps, installing software, changing settings, sending data) and that nothing is checked first. Buttons: Cancel and "Allow full access" (red). Declining changes nothing.
 - **On the empty screen** the choice starts the chat first (`newSession`), because access is a property of a chat.
 - **Setting it** (`setAccess` in `gateway.ts`; one chat's switches run one at a time through `accessRuns`, and the newest request wins: one still waiting is dropped (`SUPERSEDED`, it answers with the newer one's result) and one already switching to Auto access stops before turning `yolo` on (removing the plugin entry it just wrote unless the chat was in Auto access), so a `/yolo` typed while the chat's start-up switch (Settings → Auto for all chats) still runs applies right after the step in progress instead of after the whole switch):
-  - Auto access: `PUT /auto` (plugin writes the chat id to its block list) first, then `config.set` key `yolo` = `1`. If Hermes does not turn yolo on, the plugin entry is removed again. An old plugin without `/auto` gives the error "Auto access needs the updated Hermes Mobile plugin".
+  - Auto access: `PUT /auto` (plugin writes the chat id to its block list) first, then `config.set` key `yolo` = `1`. If Hermes does not turn yolo on, the plugin entry is removed again. An old plugin without `/auto` gives the error "Auto access needs the updated Hermux plugin".
   - Full access: `config.set` `yolo` = `1`, and the plugin entry is removed.
   - Off: `config.set` `yolo` = `0`, and the plugin entry is removed.
   - Order matters: a chat is never briefly in Full access by accident.

@@ -1,7 +1,7 @@
 // Signing in to Claude (a Pro / Max subscription) and telling the user whether it worked.
 //
 // Hermes's dashboard has no Claude sign-in of its own (only `hermes auth add anthropic` in a terminal), so the app
-// uses the Hermes Mobile plugin's /claude-login routes: the same PKCE login, split in two (claude_login.py). The user
+// uses the Hermux plugin's /claude-login routes: the same PKCE login, split in two (claude_login.py). The user
 // opens claude.ai in the browser, signs in, copies the code Claude shows and pastes it here. Termux stays as the
 // fallback (older plugin, or the user prefers it).
 //
@@ -126,7 +126,7 @@ export function ClaudeSignInSheet({ profile, onClose, onDone, onTermux }: { prof
       <div className="sheet-scroll">
         {unavailable ? (
           <>
-            <div className="notice notice-warn">Hermes Mobile can’t do this sign-in in the app here ({unavailable}). Sign in with Termux instead: it runs the same login.</div>
+            <div className="notice notice-warn">Hermux can’t do this sign-in in the app here ({unavailable}). Sign in with Termux instead: it runs the same login.</div>
             <button className="btn primary block" onClick={onTermux}>
               Sign in with Termux
             </button>

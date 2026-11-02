@@ -17,7 +17,7 @@ Set up, on the user's Android phone, from their computer (macOS, Windows or Linu
 1. **Termux** (a Linux terminal app) with **Debian** inside it (proot-distro; on a rooted phone, chroot-distro if the user asks
    for it: run the setup script with `HM_DISTRO=chroot`, and the user taps Grant when the root manager asks about Termux).
 2. **Hermes Agent** (github.com/NousResearch/hermes-agent) inside Debian, with a model the user chooses.
-3. **Hermes Mobile** (this repo): the Hermes plugin, a supervisor script, and the Android app.
+3. **Hermux** (this repo): the Hermes plugin, a supervisor script, and the Android app.
 
 You drive the phone with `adb`: install apps, change a few settings, and type commands into Termux with
 `adb shell input text`. The phone-side work is one script, [`phone/bootstrap.sh`](phone/bootstrap.sh), which reports its
@@ -206,7 +206,7 @@ Run that every 30-60 s (`-d` prints and exits; don't leave `adb logcat` streamin
 Steps: `packages` → `debian` → `hermes` (the long one) → `plugin` → `start`, then **`HMSETUP DONE`**.
 
 During `plugin` (`HMSETUP phone: …` lines), Shizuku asks on the phone whether Termux may use it: ask the user to tap **Allow all
-the time** (the installer waits up to a minute). The installer never taps or reads the phone's screen. On Android 11+, once the app opens after `DONE`, it asks the user to pair Termux with Wireless debugging once ("Shizuku starts by itself": Start pairing, then the code goes into Hermes Mobile's notification; needs Wi-Fi). Tell the user to do that step: it lets Shizuku start again by itself after a restart.
+the time** (the installer waits up to a minute). The installer never taps or reads the phone's screen. On Android 11+, once the app opens after `DONE`, it asks the user to pair Termux with Wireless debugging once ("Shizuku starts by itself": Start pairing, then the code goes into Hermux's notification; needs Wi-Fi). Tell the user to do that step: it lets Shizuku start again by itself after a restart.
 `HMSETUP TODO …` lines just before `DONE` name what Hermes still can't reach (files, Termux:API, Shizuku) and how to fix it; fix it and re-run `bash hm.sh`.
 
 **`HMSETUP FAIL <step> (line N)`:** the real error is on the Termux screen. Read it with a screenshot
@@ -280,14 +280,14 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
    ```
 
 5. Tell the user, briefly:
-   - On **Xiaomi/HyperOS** also turn on **Autostart** for Termux and Hermes Mobile (Settings → Apps), or Android may still stop them.
+   - On **Xiaomi/HyperOS** also turn on **Autostart** for Termux and Hermux (Settings → Apps), or Android may still stop them.
    - The **Termux notification must stay**: Hermes runs inside Termux.
-   - **Shizuku stops when the phone restarts.** Android 11+: Hermes Mobile starts it again by itself once the phone is on Wi-Fi
+   - **Shizuku stops when the phone restarts.** Android 11+: Hermux starts it again by itself once the phone is on Wi-Fi
      (after the install the app asks you once to pair Termux's adb: "Shizuku starts by itself" → Start pairing, type the code into its notification; on a new Wi-Fi Android asks once to allow wireless debugging there: tick
-     *Always allow on this network* and tap *Allow*). If it doesn't come back: Hermes Mobile → Setup check → *Start pairing*.
+     *Always allow on this network* and tap *Allow*). If it doesn't come back: Hermux → Setup check → *Start pairing*.
      Android 10 and older: start it from a computer after each restart. Rooted: Shizuku → *Start*, and it restarts by itself.
      No root is needed for anything.
-   - Hermes Mobile can be the phone's assistant (long-press power opens voice chat): Settings → Default apps → Digital assistant app.
+   - Hermux can be the phone's assistant (long-press power opens voice chat): Settings → Default apps → Digital assistant app.
    - Updating later: the app says when a new release is out, and Settings → About → Update installs it; for the phone side,
      `bash hm.sh` in Termux.
 6. Delete the downloaded `.apk` files from the computer.

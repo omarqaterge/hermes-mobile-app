@@ -105,7 +105,7 @@ function Header() {
       </button>
       <button className="title-btn" onClick={() => hasActive && setState({ sheet: 'chat-menu' })}>
         <span className="title">
-          <Title text={title} fallback={hasActive ? 'New chat' : 'Hermes'} />
+          <Title text={title} fallback={hasActive ? 'New chat' : 'Hermux'} />
         </span>
         <span className="subtitle">
           <span
@@ -359,7 +359,7 @@ function Empty({ onPick }: { onPick: (t: string) => void }) {
   return (
     <div className="empty">
       <div className="logo">☤</div>
-      <div className="empty-title">Hermes</div>
+      <div className="empty-title">Hermux</div>
       <div className="dim">{profile === 'default' ? 'Your agent, on your phone.' : `Profile: ${profile}`}</div>
       <div className="suggestions">
         {picks.map(s => (
