@@ -228,7 +228,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 6. Outside the app (desktop dev page) there is no `mediaBase`, so `Media.tsx` falls back to
    `GET /api/files/read` (a data URL, size-capped).
 7. Save and Share in the image viewer reuse the same route (`mediaBytes`, up to 30 MB) or take base64 from the
-   page, write to Pictures/Hermes or a share-cache file, and answer through `window.__hmImage(id, ok)`.
+   page, write to Pictures/Hermux or a share-cache file, and answer through `window.__hmImage(id, ok)`.
 
 #### 2.2.8 Background app (Hermes uses an app on a hidden screen)
 

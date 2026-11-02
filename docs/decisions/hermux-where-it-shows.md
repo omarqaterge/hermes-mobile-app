@@ -25,5 +25,8 @@ in Termux.
   `/root/.hermes`, the `hermes` command, the plugin folder `hermes-mobile`, the APK file `hermes-mobile.apk`, the
   update address checks ([hermux-name-update-path.md](hermux-name-update-path.md)), credits and links to the upstream
   project, and the instruction to install Hermes Agent itself.
-- The phone folder `Pictures/Hermes` keeps its name (the app saves there and the text names the real folder), and so
-  do the old name in README's top picture and the released sections of CHANGELOG.md, until the interface redo.
+- ~~The phone folder `Pictures/Hermes` keeps its name.~~ Changed 2026-11-02, by the owner ("move it"): Save puts
+  pictures in `Pictures/Hermux`, and on Android 11+ the app moves the pictures it saved itself there from
+  `Pictures/Hermes`. On Android 10 (its move could overwrite a picture with the same name), and for any it can't
+  move, they stay where they were.
+- The old name in README's top picture and the released sections of CHANGELOG.md stay until the interface redo.

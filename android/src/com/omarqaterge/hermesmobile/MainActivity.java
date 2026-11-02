@@ -97,6 +97,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(bg);
         if (devtoolsBuild()) WebView.setWebContentsDebuggingEnabled(true); // test builds only (HM_DEVTOOLS=1)
         else DevTools.recheck(this); // off after a process restart; drops a notification a dead process left
+        PicturesFolder.moveOld(this); // pictures saved before the rename: Pictures/Hermes → Pictures/Hermux, a few starts at most
         web = new WebView(this);
         web.setBackgroundColor(bg);
         // Keep the renderer at the app's priority while hidden, so it is still alive when a notification
@@ -1391,7 +1392,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ── images from the lightbox: Save (Pictures/Hermes) and Share (a copy in cache/share, served by CameraProvider) ──
+    // ── images from the lightbox: Save (Pictures/Hermux, PicturesFolder) and Share (a copy in cache/share, served by CameraProvider) ──
     static final int MAX_IMAGE = 30 * 1024 * 1024;
 
     /** The image's bytes: base64 from the page (blob:/data: images) or the phone file at `path`. */
@@ -1429,7 +1430,7 @@ public class MainActivity extends Activity {
         String base = name == null ? "" : name.replaceAll("[^A-Za-z0-9._ -]", "_").replaceAll("^[. ]+", "");
         base = base.replaceAll("(?i)\\.(jpe?g|png|webp|gif)$", "");
         if (base.length() > 80) base = base.substring(0, 80);
-        if (base.trim().isEmpty()) base = "hermes-" + System.currentTimeMillis();
+        if (base.trim().isEmpty()) base = "hermux-" + System.currentTimeMillis();
         return base + "." + ext;
     }
 
@@ -1444,7 +1445,7 @@ public class MainActivity extends Activity {
         android.content.ContentValues v = new android.content.ContentValues();
         v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, imageName(name, ext));
         v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, imageMime(ext));
-        v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/Hermes");
+        v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, PicturesFolder.relativePath());
         v.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
         Uri uri = null;
         try {

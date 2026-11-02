@@ -90,7 +90,7 @@ function toBase64(url: string): Promise<string> {
     )
 }
 
-/** Save (Pictures/Hermes) or share an image. `src` is what Hermes gave (a path or a URL), `shown` the URL on screen. */
+/** Save (Pictures/Hermux) or share an image. `src` is what Hermes gave (a path or a URL), `shown` the URL on screen. */
 async function imageAction(kind: 'save' | 'share', src: string, shown: string, name: string): Promise<void> {
   haptic()
   if (!canNativeImage()) {
@@ -108,7 +108,7 @@ async function imageAction(kind: 'save' | 'share', src: string, shown: string, n
   } catch {
     ok = false
   }
-  if (kind === 'save') toast(ok ? 'Saved to Pictures/Hermes' : "Couldn't save the image", ok ? 'info' : 'error')
+  if (kind === 'save') toast(ok ? 'Saved to Pictures/Hermux' : "Couldn't save the image", ok ? 'info' : 'error')
   else if (!ok) toast("Couldn't share the image", 'error')
 }
 

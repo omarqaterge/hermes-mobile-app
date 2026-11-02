@@ -1,6 +1,6 @@
 // Photos and files in the composer, the photo viewer, camera, share to Hermes, edit/retry keeping attachments.
 const path = require('path')
-const { addFiles, SHOTS, rpcs, sleep, check, png } = require('../lib.cjs')
+const { addFiles, SHOTS, WEB, rpcs, sleep, check, png, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -151,4 +151,34 @@ module.exports = async t => {
   check(rpcs('prompt.submit').pop().params.text === 'without the file', '✕ on the file chip drops it from the edit')
   await page.locator('.msg.assistant', { hasText: 'OK' }).last().waitFor({ timeout: 5000 })
   await sleep(300)
+
+  // ── Save in the phone app: the picture goes to Pictures/Hermux (the shell's saveImage, faked here) ──
+  {
+    const sp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await sp.addInitScript(nativeShell)
+    await sp.addInitScript(() => {
+      window.__saved = []
+      Object.assign(window.HermesAndroid, {
+        saveImage: (key, id, name, path, b64) => {
+          window.__saved.push({ key, name, path, b64: Boolean(b64) })
+          setTimeout(() => window.__hmImage(id, true), 30)
+        },
+        shareImage: (key, id) => setTimeout(() => window.__hmImage(id, true), 30),
+        mediaBase: () => window.__hmMockBase + '/m?k=K&p=' // the picture streams from the mock, as in the app
+      })
+    })
+    await sp.goto(WEB + '/')
+    await sp.getByPlaceholder('Message Hermux').fill('show media')
+    await sp.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const img = sp.locator('img.media').last()
+    await img.waitFor({ timeout: 8000 })
+    await img.click()
+    const slb = sp.locator('.lightbox')
+    await slb.waitFor({ timeout: 3000 })
+    await slb.getByRole('button', { name: 'Save' }).click()
+    await sp.locator('.toast', { hasText: 'Saved to Pictures/Hermux' }).waitFor({ timeout: 3000 }).then(() => check(true, 'Save in the app says Saved to Pictures/Hermux'), () => check(false, 'Save in the app says Saved to Pictures/Hermux'))
+    const saved = await sp.evaluate(() => window.__saved)
+    check(saved.length === 1 && saved[0].key === 'K', `Save asks the shell to save the picture once, with the page key (${JSON.stringify(saved)})`)
+    await sp.close()
+  }
 }
