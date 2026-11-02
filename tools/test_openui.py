@@ -37,6 +37,8 @@ def check(name, cond, detail=""):
 print("openui.py")
 ou.PATH = tmp / "openui-test" / "openui.json"
 check("on by default (no file)", ou.enabled())
+check("no register_skill: the section names the tool", ou.prompt_section({"platform": "mobile"}) == ou.PROMPT_TOOL)
+ou.skill_registered = True
 check("app chats get the section", ou.prompt_section({"platform": "mobile"}) == ou.PROMPT)
 check("resumed app chats (tui) too", ou.prompt_section({"platform": "tui"}) == ou.PROMPT)
 check("other platforms don't", ou.prompt_section({"platform": "telegram"}) == "")
@@ -50,17 +52,40 @@ ou.PATH.write_text("{broken")
 check("a broken file counts as on", ou.enabled())
 ou.PATH.write_text("[]")
 check("a file that isn't an object counts as on", ou.enabled())
-check("section fits its 900-char budget", len(ou.PROMPT) <= 900, len(ou.PROMPT))
-check("section names the fence and the tool", "```openui-lang" in ou.PROMPT and "openui_reference" in ou.PROMPT)
+for name, text in (("PROMPT", ou.PROMPT), ("PROMPT_TOOL", ou.PROMPT_TOOL)):
+    check(f"{name} fits its 900-char budget", len(text) <= 900, len(text))
+check("section names the fence and the skill",
+      "```openui-lang" in ou.PROMPT and 'skill_view("hermes-mobile:openui")' in ou.PROMPT
+      and ou.PROMPT.index("skill_view") < ou.PROMPT.index("openui_reference"), ou.PROMPT)
+check("fallback section names the tool", "openui_reference" in ou.PROMPT_TOOL and "skill_view" not in ou.PROMPT_TOOL)
 ref = ou.tool_handler({})
 check("tool returns the reference", "```openui-lang" in ref and "Card(" in ref, ref[:80])
+check("tool leaves out the skill's frontmatter", ref.startswith("You are answering") and "\nname: openui" not in ref, ref[:80])
 check("reference within budget", len(ref) < 52_000, len(ref))
 check("schema name", ou.TOOL_SCHEMA["name"] == "openui_reference")
-real_ref = ou.REFERENCE
-ou.REFERENCE = tmp / "missing.txt"
+real_md = ou.SKILL_MD
+ou.SKILL_MD = tmp / "missing" / "SKILL.md"
 miss = ou.tool_handler({})
-check("missing reference: a JSON error, no exception", "error" in json.loads(miss), miss)
-ou.REFERENCE = real_ref
+check("missing skill file: a JSON error, no exception", "error" in json.loads(miss), miss)
+ou.SKILL_MD = real_md
+
+print("skills/openui/SKILL.md (a Hermes skill)")
+md = ou.SKILL_MD.read_text(encoding="utf-8")
+check("SKILL.md sits in skills/openui/", ou.SKILL_MD.parent.name == "openui" and ou.SKILL_MD.parent.parent.name == "skills")
+check("starts with frontmatter and closes it", md.startswith("---\n") and "\n---\n" in md[4:])
+fm = dict(l.split(": ", 1) for l in md[4:md.index("\n---\n", 4)].splitlines() if ": " in l and not l.startswith(" "))
+check("frontmatter name is the registered name", fm.get("name") == ou.SKILL_NAME, fm)
+check("frontmatter has a description skill_view doesn't cut", 40 < len(fm.get("description", "")) <= 1024, fm)
+check("SKILL.md within the 100,000 chars Hermes allows a skill it authors", len(md) <= 100_000, len(md))
+low = md.lower()
+check("no text Hermes flags as prompt injection", not any(p in low for p in (
+    "ignore previous instructions", "ignore all previous", "you are now", "disregard your",
+    "forget your instructions", "new instructions:", "system prompt:", "<system>", "]]>")))
+check("nothing Hermes's skill preprocessing would rewrite", "${HERMES_" not in md and "!`" not in md)
+manifest = (ou.SKILL_MD.parent.parent.parent / "plugin.yaml").read_text(encoding="utf-8")
+check("plugin.yaml: no second ': ' in a plain line (YAML would reject the manifest and Hermes skip the plugin)",
+      not [l for l in manifest.splitlines() if l.split(": ", 1)[-1].count(": ") and not l.lstrip().startswith("#")])
+check("the old reference file is gone (one copy only)", not (ou.SKILL_MD.parent.parent.parent / "openui_reference.txt").exists())
 s = ou.strip_ui("Here:\n```openui-lang\nroot = Card([])\n```\nDone")
 check("strip_ui: a block becomes [card]", s == "Here:\n[card]\nDone", repr(s))
 check("strip_ui: an unclosed block too", ou.strip_ui("x\n```openui-lang\nroot = Card(") == "x\n[card]")
@@ -87,8 +112,42 @@ class Ctx:
         self.hooks[name] = fn
 
 
-ctx = Ctx()
+class SkillCtx(Ctx):
+    def __init__(self):
+        super().__init__()
+        self.skills = {}
+
+    def register_skill(self, name, path, description="", frontmatter=None):
+        self.skills[name] = dict(path=Path(path), description=description)
+
+
+old = Ctx()
+plugin.register(old)
+mod = sys.modules.get("hm_openui")
+check("older Hermes (no register_skill): still loads, section names the tool",
+      mod is not None and not mod.skill_registered and "openui_reference" in old.tools
+      and old.sections["hermes-mobile.openui"]["content"]({"platform": "mobile"}) == mod.PROMPT_TOOL)
+
+ctx = SkillCtx()
 plugin.register(ctx)
+sk = ctx.skills.get("openui") or {}
+check("registers the openui skill with Hermes", sk.get("path") == mod.SKILL_MD and sk["path"].is_file(), ctx.skills)
+check("skills_list shows the frontmatter's description", sk.get("description") == fm.get("description"), sk)
+check("skill registered: the section points at skill_view",
+      ctx.sections["hermes-mobile.openui"]["content"]({"platform": "mobile"}) == mod.PROMPT)
+
+
+class BadSkillCtx(Ctx):
+    def register_skill(self, *a, **k):
+        raise ValueError("refused")
+
+
+bad = BadSkillCtx()
+plugin.register(bad)
+check("a refused skill: tool and section still there, section names the tool",
+      "openui_reference" in bad.tools and not mod.skill_registered
+      and bad.sections["hermes-mobile.openui"]["content"]({"platform": "mobile"}) == mod.PROMPT_TOOL)
+plugin.register(ctx)  # back to a Hermes with skills for the checks below
 t = ctx.tools.get("openui_reference") or {}
 check("registers the openui_reference tool", t.get("schema", {}).get("name") == "openui_reference", list(ctx.tools))
 check("tool in the canvas toolset", t.get("toolset") == "canvas", t.get("toolset"))
