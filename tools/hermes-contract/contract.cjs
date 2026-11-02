@@ -441,6 +441,11 @@ const CASES = [
   },
   { name: 'GET /api/config (fallback chain)', run: c => c.http('GET', '/api/config') },
   { name: 'PUT /api/config (no fallback)', run: c => c.http('PUT', '/api/config', { config: { fallback_providers: [] } }) },
+  // Settings → Hermes settings: the defaults, the time zone list in the schema, a value and a null written and read back.
+  { name: 'GET /api/config/defaults', run: c => c.http('GET', '/api/config/defaults') },
+  { name: 'GET /api/config/schema', run: c => c.http('GET', '/api/config/schema') },
+  { name: 'PUT /api/config (Hermes settings)', run: c => c.http('PUT', '/api/config', { config: { memory: { nudge_interval: 5 }, agent: { max_turns: null }, approvals: { deny: ['rm -rf /*'] } } }) },
+  { name: 'GET /api/config (Hermes settings)', run: c => c.http('GET', '/api/config') },
   ...pluginCases(),
   // The app's client says it answers server → client requests (json-rpc-channel.ts advertiseCapabilities); without it the
   // real Hermes withdraws approvals and skips questions at once.
