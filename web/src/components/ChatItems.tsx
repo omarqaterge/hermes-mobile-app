@@ -11,6 +11,7 @@ import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
 import { fmtDuration, formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
+import { commandLabel, stepMark, thoughtLine, todoSteps, toolTitle } from '../toolsay'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
 
@@ -70,30 +71,42 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
   // Media produced by a tool (image generation, screenshots, recordings…).
   const mediaSrc =
     /(https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp|gif|mp4|webm|mp3|m4a|wav)|(?:\/|~\/)[^\s"')]+\.(?:png|jpe?g|webp|gif|mp4|webm|mp3|m4a|wav))/i.exec(rawOut)?.[1] || null
-  const label = item.context || (item.name === 'phone_app' ? phoneAppLabel(item.args) : '') || argsPreview(item.args) || ''
+  const label = item.context || (item.name === 'phone_app' ? phoneAppLabel(item.args) : '') || commandLabel(item) || argsPreview(item.args) || ''
+  const title = toolTitle(item)
+  const steps = todoSteps(item)
+  const stepsDone = steps?.filter(t => t.status === 'completed' || t.status === 'done').length ?? 0
   const memDiff = item.name === 'memory' && item.status !== 'error' ? memoryDiff(item.args, rawOut) : undefined
   // With a diff on screen, the file body / replaced strings in the args are just a noisier copy.
   const hasDiff = Boolean(item.inlineDiff || out?.diff || memDiff)
-  const args = item.args && hasDiff ? Object.fromEntries(Object.entries(item.args).filter(([k]) => !DIFF_DUP_ARGS.has(k))) : item.args
+  const args = steps ? null : item.args && hasDiff ? Object.fromEntries(Object.entries(item.args).filter(([k]) => !DIFF_DUP_ARGS.has(k))) : item.args
   const icon = TOOL_ICONS[item.name] || '🔧'
   return (
     <div className={`tool tool-${item.status}${item.risk ? ' tool-risk' : ''}`}>
       <button className="tool-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <span className="tool-icon">{icon}</span>
-        <span className="tool-name">{item.name}</span>
-        <span className="tool-label">{label}</span>
+        <span className="tool-name" title={item.name}>{title}</span>
+        <span className="tool-label">{steps?.length ? `${stepsDone}/${steps.length} done` : label}</span>
         <span className="tool-state">
           {item.status === 'generating' || item.status === 'running' ? <Spinner /> : null}
           {item.status === 'done' ? fmtDuration(item.duration) || '✓' : null}
-          {item.status === 'error' ? '✕' : null}
+          {item.status === 'error' ? <span role="img" aria-label="failed">✕</span> : null}
         </span>
       </button>
       <Collapse open={open}>
         <div className="tool-body">
           {item.risk && <div className="tool-risk-note">⚠ {item.risk}</div>}
+          {steps && steps.length > 0 && (
+            <ul className="tool-steps">
+              {steps.map((t, i) => (
+                <li key={i} className={`todo-${t.status}`}>
+                  <span className="step-mark" aria-hidden="true">{stepMark(t.status)}</span> {t.content}
+                </li>
+              ))}
+            </ul>
+          )}
           {args && Object.keys(args).length > 0 && (
             <>
-              <div className="tool-section">Arguments</div>
+              <div className="tool-section">Arguments<span className="dim tool-raw">{item.name}</span></div>
               <pre className="tool-pre"><Linked text={JSON.stringify(args, null, 2)} /></pre>
             </>
           )}
@@ -122,7 +135,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
               <DiffView text={out.diff} />
             </>
           )}
-          {out && (out.text || !out.diff) && (
+          {out && (out.text || !out.diff) && !steps?.length && (
             <>
               <div className="tool-section">
                 Output{out.meta ? <span className="dim"> · {out.meta}</span> : null}
@@ -145,7 +158,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
   )
 })
 
-/** The line a folded run of tool calls shows: icons of the tools used, "Ran 7 tools · 42s", a chevron. */
+/** The line a folded run of tool calls shows: icons of the tools used, "Ran 2 commands and read 3 files · 42s", a chevron. */
 export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }: { id: string; run: ToolRun; open: boolean; onToggle: (id: string) => void }) {
   return (
     <button className={`tool-run${run.running ? ' running' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
@@ -188,7 +201,7 @@ function Reasoning({ text, live }: { text: string; live: boolean }) {
         <span className="chev"><Chevron open={open} /></span>
       </button>
       <Collapse open={open}><div className="reasoning-body"><Linked text={text} /></div></Collapse>
-      {!open && live ? <div className="reasoning-peek">{text.slice(-160)}</div> : null}
+      {!open ? <div className={live ? 'reasoning-peek' : 'reasoning-line'}>{live ? thoughtLine(text, true) : thoughtLine(text)}</div> : null}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { afterChatOpens, compressChat, connect, errText, fmtCtx, openSessionFromNotification, reconnectNow } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
+import { stepMark } from './toolsay'
 import { foldMap } from './fold'
 import { turnChanges } from './changes'
 import { TurnChangesCard } from './components/Changes'
@@ -316,7 +317,7 @@ function StatusBar() {
             <ul>
               {todos.map((t, i) => (
                 <li key={t.id || i} className={`todo-${t.status}`}>
-                  {t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '◐' : t.status === 'cancelled' ? '✕' : '○'} {t.content}
+                  {stepMark(t.status || '')} {t.content}
                 </li>
               ))}
             </ul>
