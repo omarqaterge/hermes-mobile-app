@@ -71,6 +71,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `Spinner.tsx` | `Spinner`. Every spinner turns on one shared 8 Hz timer instead of a CSS animation, which would redraw the WebView every frame while Hermes works. The timer runs only while a spinner is mounted. |
 | `text.ts` | Pure text helpers: `mediaKind`, `prepare`, `formatOutput`, `memoryDiff`, `plainText`, `parseCsv`, `chatLinks`, `tidyApprovalText`, `linkParts`, `phoneAppLabel`, `formatDuration`, `backgroundLuminance`. |
 | `fold.ts` | Folding of tool-call runs. |
+| `toolsay.ts` | Tool calls in plain words: `toolTitle`, `toolKind`, `commandText`, `programName`, `commandLabel`, `runSummary`, `thoughtLine`, `todoSteps`, `stepMark`, `compactCount` (3.3). |
 | `jump.ts` | Message search jump, in-chat search, word highlighting. |
 | `drafts.ts` | Unsent text per chat. |
 | `stash.ts` | Drafts put aside from the composer: `stashes`, `pushStash`, `takeStash`, `clearStashes`, `STASH_MAX`. |
