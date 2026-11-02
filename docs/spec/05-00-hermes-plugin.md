@@ -5,7 +5,7 @@ The plugin is the part of Hermux that runs **inside Hermes** (in the Debian cont
 1. **Tell the app what Hermes is doing** (hooks, 5.1): status line, replies, approvals, questions, learning, cron results, errors. The app turns these into notifications and the status chip.
 2. **Give the app and the model extra abilities** (tools 5.2, prompt sections 5.3, HTTP routes 5.4): canvas documents, chat search, background apps, cards in replies, Auto access, file checkpoints, media streaming, Claude sign-in, and so on.
 
-Source folder: `hermes-plugin/hermes-mobile/`. `phone/install.sh` copies it to `/root/.hermes/plugins/hermes-mobile` in Debian and links it into every Hermes profile (see 6.1). Hermes loads `__init__.py` (`register(ctx)`) in every Hermes process (dashboard, agent runs, cron). The dashboard additionally mounts `dashboard/plugin_api.py` at `/api/plugins/hermes-mobile/`.
+Source folder: `hermes-plugin/hermes-mobile/`. `phone/install.sh` copies it to `/root/.hermes/plugins/hermes-mobile` in Debian and links it into every Hermes profile (see 6.1); after that, every app update brings its own copy (inside the APK) and replaces an older plugin at a quiet moment (6.6). `BUILD_STAMP` in the folder (git-ignored; written by `android/build.sh` and `install.sh`) says which version it is (`GET /plugin-info`). Hermes loads `__init__.py` (`register(ctx)`) in every Hermes process (dashboard, agent runs, cron). The dashboard additionally mounts `dashboard/plugin_api.py` at `/api/plugins/hermes-mobile/`.
 
 #### Plugin files
 

@@ -442,6 +442,23 @@ def _slow_all() -> None:
 _slow_all()
 
 
+# ── which plugin this is (the app's plugin update compares it with the copy in its APK) ──
+
+def plugin_info(folder: Optional[Path] = None) -> dict:
+    """BUILD_STAMP ("STAMP HASH SOURCE", written by android/build.sh and install.sh): stamp 0 = a copy without one."""
+    folder = folder or Path(__file__).resolve().parent.parent
+    try:
+        stamp, digest, source = (folder / "BUILD_STAMP").read_text().split()[:3]
+        return {"stamp": int(stamp), "hash": digest, "source": source}
+    except (OSError, ValueError):
+        return {"stamp": 0, "hash": "", "source": ""}
+
+
+@router.get("/plugin-info")
+async def get_plugin_info():
+    return plugin_info()
+
+
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
 @router.get("/activity")

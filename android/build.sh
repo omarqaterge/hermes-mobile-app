@@ -38,6 +38,12 @@ cp ../web/dist/index.html assets/www/index.html
 # Settings → Uninstall Hermux runs this in Termux (Uninstall.java); shipped in the APK so it matches the app.
 mkdir -p assets/phone
 cp ../phone/uninstall.sh assets/phone/uninstall.sh
+# The Hermux plugin, so an app update brings the phone's plugin along (PluginSync.java runs plugin-update.sh in Termux).
+# plugin.txt = "STAMP HASH SHA256": the version (the last commit's time; now when the plugin folder has uncommitted
+# changes), the files' hash and the bundle's checksum.
+cp ../phone/plugin-update.sh assets/phone/plugin-update.sh
+bash ../phone/plugin-update.sh pack ../hermes-plugin/hermes-mobile assets/phone/plugin.tgz \
+  "$(bash ../phone/plugin-update.sh source-stamp ..)" > assets/phone/plugin.txt
 # "Test model" in Settings → Voice → Speech recognition transcribes this clip (LibriSpeech, CC BY 4.0; see THIRD_PARTY.md).
 mkdir -p assets/stt
 cp stt/sample.wav assets/stt/sample.wav

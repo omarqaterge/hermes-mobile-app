@@ -1075,6 +1075,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
+        PluginSync.maybeApply(this); // the app left the screen: a waiting plugin update may restart Hermes now
         if (overLock) showOverLock(false); // screen off or app left: never shown over the lock screen again by itself
     }
 
@@ -2679,6 +2680,21 @@ public class MainActivity extends Activity {
         public String uninstallState(String key) {
             if (!ok(key)) return "";
             return Uninstall.state(MainActivity.this);
+        }
+
+        /** The Hermux plugin in Debian against this APK's copy (Settings → About); a change calls window.hermesPluginState(). */
+        @JavascriptInterface
+        public String pluginState(String key) {
+            if (!ok(key)) return "";
+            return PluginSync.state(MainActivity.this);
+        }
+
+        /** Settings → About: update the plugin now (force = also replace a copy changed by hand). Never a downgrade, and
+         *  the script refuses while Hermes works. "ok", "busy", "working", "not-ready" or "error: …". */
+        @JavascriptInterface
+        public String pluginUpdate(String key, boolean force) {
+            if (!ok(key)) return "";
+            return PluginSync.userUpdate(MainActivity.this, force);
         }
 
         /** Android's uninstall prompt for termux-api, termux-boot, shizuku, termux or self (nothing else). */

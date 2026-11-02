@@ -13,6 +13,7 @@
 | `hermes_memory_sync.py` | Debian | `hermes-services` loop `memory-sync` (only if the file exists) | Two-device memory sync through a private git repo. |
 | `keep_note.py` | Debian or Termux | the model/skills by hand | Creates a Google Keep note by driving Keep's share sheet. |
 | `uninstall.sh` | Termux | the app (Settings → Danger zone → Uninstall Hermux), or by hand | Removes what the installers put on the phone (6.5). |
+| `plugin-update.sh` | Termux (its second half in Debian) | the app (`PluginSync`, from the copy in the APK); `android/build.sh` and `install.sh` use its `pack`, `stamp` and `source-stamp` modes | Brings the plugin in Debian up to the APK's copy: `check`, `apply` (checked bundle, staged, swapped, Hermes restarted, rolled back if the new plugin doesn't load), never a downgrade. See 6.6. |
 
 #### `bootstrap.sh` in order
 

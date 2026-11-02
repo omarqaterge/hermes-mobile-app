@@ -31,6 +31,7 @@ import { FallbackSection } from './Rotation'
 import { HermesSettingsPage } from './HermesSettings'
 import { ConnectorsPage } from './Connectors'
 import { StatsRow } from './StatsCard'
+import { pluginRow, pluginUpdate, updateAnswer, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 
@@ -903,6 +904,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <UpdateRow />
         <WhatsNewRow />
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
+        <PluginRow />
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
         <StatsRow />
         <RemoteDebugRow />
@@ -1023,6 +1025,33 @@ function UpdateRow() {
         haptic()
         if (u.phase === 'available' || u.phase === 'permission') startUpdate()
         else void checkForUpdate(true)
+      }}
+    />
+  )
+}
+
+/** The Hermux plugin inside Hermes, against this app's copy (plugin-sync.ts). Nothing outside the app. */
+function PluginRow() {
+  const st = usePluginState()
+  if (!st) return null
+  const row = pluginRow(st)
+  return (
+    <Row
+      icon="🧩"
+      tone={row.tone}
+      title="Hermux plugin"
+      value={row.value}
+      sub={row.sub}
+      disabled={!row.action}
+      onClick={async () => {
+        if (!row.action) return
+        if (row.action === 'force' && !(await confirmDialog({
+          title: 'Replace the plugin?',
+          message: 'The plugin in Hermes was changed by hand. Replace it with this app’s copy? Hermes restarts for a moment.',
+          confirmLabel: 'Replace'
+        }))) return
+        const why = updateAnswer(pluginUpdate(row.action === 'force'))
+        if (why) toast(why)
       }}
     />
   )

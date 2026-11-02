@@ -80,6 +80,7 @@ where, and what is still open, is in [docs/improvements.md](improvements.md) and
   - [6.3 Install routes](spec/06-03-install-routes.md)
   - [6.4 Hermes pin and patches (3)](spec/06-04-hermes-pin-and-patches.md)
   - [6.5 Uninstall (`phone/uninstall.sh`)](spec/06-05-uninstall.md)
+  - [6.6 The plugin follows the app (`phone/plugin-update.sh`)](spec/06-06-plugin-update.md)
 - 7. Build, test, CI, release
   - [7.1 Build commands](spec/07-01-build-commands.md)
   - [7.2 Every `tools/` file](spec/07-02-every-tools-file.md)

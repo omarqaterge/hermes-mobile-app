@@ -1,0 +1,4 @@
+---
+rank: big
+---
+- **App updates now bring Hermes's Hermux plugin up to date too.** Until now an in-app update left the plugin inside Hermes at the version of the first install, so newer features (cards in replies, the Google row in Connectors, the new notification wording) didn't arrive. The app now carries the plugin and swaps it in by itself once Hermes is idle and the app is closed; Hermes restarts for a moment then. It never replaces a newer or hand-changed plugin, and if the new one doesn't load the old one is put back. Settings → About → Hermux plugin shows where it stands and can update now or try again. Tested with scripts and browser checks; on a real phone see the manual test.

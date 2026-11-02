@@ -193,6 +193,7 @@ jobs:
       - run: bash tools/test_say_hook.sh
       - run: bash tools/test_install_routes.sh
       - run: bash tools/test_uninstall.sh
+      - run: bash tools/test_plugin_update.sh
       - run: bash tools/test_hm_shizuku.sh
       - run: bash tools/test_device_lock.sh
       - run: bash tools/test_ci_changes.sh

@@ -17,6 +17,7 @@ const METHODS = [
   'bgState', 'bgFrameAsync', 'bgAction',
   'openRemoteDebugging', 'remoteDebuggingState', 'turnOffRemoteDebugging', // none of these can turn remote debugging on: the shell asks for the screen lock itself
   'uninstallStart', 'uninstallState', 'uninstallApp',
+  'pluginState', 'pluginUpdate', // the plugin update runs only the APK's own copy; nothing from the page reaches the script
   'confirmApproval', 'approvalLockState', 'setApprovalLock', 'forgetApproval' // the shell asks for the screen lock itself; nothing here can skip it
 ]
 

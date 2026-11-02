@@ -82,6 +82,10 @@ page; their actions can only call read-only tools through `POST /openui/call`, a
   answers 204 or 403. The cron poke on 9122 sends the same key.
 - `POST /setup` uses its own one-time token instead (made when the app copies the installer command, body
   ≤ 1 KiB; `SetupLines`, 4.1).
+- `GET /plugin-bundle/<token>` answers the APK's own plugin bundle (`assets/phone/plugin.tgz`) only while a plugin update
+  runs and only to its one-time token (48 hex characters, compared in constant time; 403 otherwise). The script checks
+  the bytes against the SHA-256 in the APK before unpacking, so the plugin update installs nothing that didn't come
+  from the signed APK (6.6).
 
 **Opt-in usage stats (`web/src/stats.ts`, Aptabase).** Off by default. Without an app key in the build (`__STATS_KEY__`, empty in every build until the owner sets one) `statsAvailable()` is false: nothing is offered, nothing listens, nothing is sent. With a key, nothing is sent until the user says yes on the card (3.18) or in Settings → About (3.15). The page has no Content Security Policy of its own (only canvas frames do, `htmlframe.ts`), and `network_security_config.xml` allows any TLS host, so the HTTPS request needs no rule change; Aptabase's events route answers cross-origin requests from any origin with the `App-Key` header.
 
