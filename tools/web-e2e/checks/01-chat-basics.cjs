@@ -270,4 +270,49 @@ module.exports = async t => {
   await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
+
+  // ── /yolo goes to Full access from Off or Auto access, and back to the previous mode from Full access; a /yolo
+  //    typed while the chat's start-up switch (default Auto access) still runs wins ──
+  {
+    const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto')
+    const send = async text => {
+      await page.getByPlaceholder('Message Hermes').fill(text)
+      await page.getByRole('button', { name: 'Send' }).click()
+    }
+    await page.evaluate(() => localStorage.setItem('hm.defaultAccess.v1', 'auto'))
+    await page.goto(WEB + '/')
+    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await send('hello yolo')
+    await page.locator('.msg.assistant', { hasText: 'OK' }).first().waitFor({ timeout: 5000 })
+    await send('/yolo')
+    await page.getByText('Full access on for this chat (/yolo)').waitFor({ timeout: 3000 }).catch(() => {})
+    await sleep(300)
+    check((await page.locator('.model-row .auto-btn.full').count()) === 1, '/yolo from Auto access goes to Full access (not Off)')
+    const yolo = rpcs('config.set').filter(c => c.params.key === 'yolo').pop()
+    check(yolo && yolo.params.value === '1', '/yolo from Auto access leaves /yolo on')
+    await send('/yolo')
+    await page.getByText('Back to Auto access').waitFor({ timeout: 3000 }).catch(() => {})
+    await sleep(300)
+    check((await page.locator('.model-row .auto-btn.auto').count()) === 1, 'a second /yolo goes back to Auto access, the mode before')
+    check((autoPuts().pop() || {}).body?.mode === 'auto', 'back to Auto access writes the plugin list again')
+    await send('/yolo off')
+    await page.getByText('Auto off: Hermes asks before risky commands again').last().waitFor({ timeout: 3000 }).catch(() => {})
+    await sleep(300)
+    check((await page.locator('.model-row .auto-btn.off').count()) === 1, '/yolo off turns approvals back on')
+    await send('/yolo')
+    await sleep(500)
+    await send('/yolo')
+    await sleep(500)
+    check((await page.locator('.model-row .auto-btn.off').count()) === 1, 'from Off, /yolo twice ends in Off again')
+    // two switches typed back to back: the newer one wins, the older one never turns /yolo on afterwards
+    await send('/yolo on')
+    await send('/yolo off')
+    await sleep(800)
+    check((await page.locator('.model-row .auto-btn.off').count()) === 1, 'the newer of two quick /yolo commands wins')
+    check(rpcs('config.set').filter(c => c.params.key === 'yolo').pop()?.params.value === '0', 'the last yolo config.set is the newer request (off)')
+  }
+  await page.evaluate(() => localStorage.clear())
+  await page.goto(WEB + '/')
+  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  fs.writeFileSync(LOG, '')
 }
