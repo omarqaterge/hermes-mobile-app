@@ -63,6 +63,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Launcher shortcuts (New chat, Live mode, last chat) | 4.2, 4.6, 3.1 |
 | Two-column layout on tablets and foldables | 3.1, 3.7 |
 | One-tap app update (Settings → About) and the "App updates" notification | 2.2.10, 3.15, 4.7 |
+| Opt-in usage stats (card once after setup, Settings → About switch, "How did you hear about us?"); needs an app key in the build | 2.3, 2.4, 3.15, 3.18 |
 | Uninstall Hermes (Settings → Danger zone), with a backup offer | 3.19, 4.7, 6.5 |
 
 **Notifications and background**

@@ -43,6 +43,10 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.shizukuStepDone` | `components/Setup.tsx` | `'1'` once Shizuku was seen running (or the user said it runs). | No |
 | `hm.replaceTermux` | `components/Setup.tsx` | Time (ms) the user confirmed Replace Termux; cleared once F-Droid's set is being installed, or after 10 minutes. | No |
 | `hm.stats.v1` | `gateway.ts` (`STATS_KEY`) | Turn stats under replies: `{"<chatId>:<user row id>": "~41 tok/s · 1m 23s · ctx 2% · …"}`; newest 2,000. | No (chat ids) |
+| `hm.statsChoice` | `stats.ts` | Usage stats: `'yes'` or `'no'`. Absent = the card (3.18) was not shown yet; it is written `'no'` as the card opens, so it never shows twice and closing it leaves stats off. | No |
+| `hm.statsId` | `stats.ts` | Usage stats: the random install ID. Exists only while opted in; turning stats off deletes it. | No |
+| `hm.statsSourceAsked` | `stats.ts` | `'1'` once "How did you hear about us?" was shown. The answer itself is not kept. | No |
+| `hm.devStatsKey` | `stats.ts` | Development and browser tests only, in `sessionStorage`, not `localStorage`: an Aptabase app key for a build that has none. Ignored inside the Android app. | No |
 | `hm.tasks.v1` | `tasks.ts` | Ticked task-list boxes in replies: `{<message hash>: {<box index>: bool}}`; newest 300 messages. | No |
 | `hm.textScale` | `store.ts`, `components/Settings.tsx` | Text size factor (0.9, 1, 1.1, 1.2, 1.35). | No |
 | `hm.theme` | `theme.ts` | `default`, `oled`, `light` or `system`. | No |

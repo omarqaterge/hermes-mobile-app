@@ -19,7 +19,7 @@ Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/
 
 **`release.yml`, workflow "Release"**, runs on a pushed tag matching `v*`. Two jobs, so that no npm package's code runs where the signing key is (a package's install script or build plugin can leave a process running for the rest of its job, but cannot reach another job's runner); the workflow's token is read-only except in `apk`:
 
-Job `web` (ubuntu-latest, 15-minute limit, no secrets): checkout with `persist-credentials: false`, Node 22, `npm ci` and `npx vite build` in `web/`, then uploads `web/dist/index.html` as the artifact `web-dist` (kept 1 day).
+Job `web` (ubuntu-latest, 15-minute limit, no secrets): checkout with `persist-credentials: false`, Node 22, `npm ci` and `npx vite build` in `web/` (with `HERMES_STATS_KEY` from the repository variable `APTABASE_APP_KEY`, a public client key that ends up in the app; empty = no usage stats), then uploads `web/dist/index.html` as the artifact `web-dist` (kept 1 day).
 
 Job `apk` (ubuntu-latest, after `web`, `contents: write`, 30-minute limit, no Node or npm):
 1. Checkout with `persist-credentials: false` (the write token is passed only to `gh` in the publish step, never left in `.git/config`); JDK 17 (Temurin); downloads `web-dist` into `web/dist`.

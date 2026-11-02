@@ -7,6 +7,7 @@ import './styles.css'
 import { applyTheme, savedTheme } from './theme'
 import { bootMark } from './boot'
 import { openFirstRun } from './components/Setup'
+import { startStats } from './stats'
 
 bootMark('script')
 
@@ -14,4 +15,5 @@ applyTheme(savedTheme())
 openFirstRun() // a fresh install starts in the setup flow, not in a chat waiting for a Hermes that isn't installed
 
 createRoot(document.getElementById('root')!).render(<App />)
+startStats()
 ;(window as unknown as { __hmRan?: boolean }).__hmRan = true // index.html shows an "update WebView" note without it

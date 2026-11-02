@@ -141,6 +141,16 @@ a troubleshooting table and uninstalling.
 > Tested end to end on a clean Android 15 emulator and piece by piece on a real phone, but not yet on a brand-new real phone.
 > If something fails, please [open an issue](https://github.com/omarqaterge/hermes-mobile-app/issues).
 
+### Usage stats (off unless you say yes)
+
+The app sends nothing about how you use it unless you opt in, on a card shown once after setup or in Settings → About
+→ Share anonymous usage stats. Turning it off stops sending and forgets the ID. If you opt in, it sends to
+[Aptabase](https://aptabase.com) a random ID made only for this install, the app version, the Android version, each app
+start and screen open, and, if you choose to answer, how you heard about the app (from a fixed list). It never sends
+chats, prompts, tool output, file names, model keys, account names or phone numbers. Like any web request, a report
+reaches Aptabase with your IP address and the app's browser identification, which names the phone model. Aptabase says it
+doesn't store either; it keeps a rough country and region and a one-day anonymous code worked out from them.
+
 ### Android versions
 
 The app installs on Android 8.0 and newer (arm64). Some parts need a newer Android:
