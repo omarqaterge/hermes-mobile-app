@@ -54,6 +54,10 @@ interface AndroidBridge {
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermes; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
+  confirmApproval?(id: number, session: string, what: string): void // fingerprint / screen lock for an Allow; answers window.hermesApprovalConfirm(id, result)
+  approvalLockState?(): string // {on, secure}: Confirm approvals with fingerprint
+  setApprovalLock?(on: boolean): void
+  forgetApproval?(session: string): void // the chat's live session closed: its next Allow asks again
 }
 
 declare global {

@@ -7,6 +7,7 @@ import { isAway, markVisit, noteAway, noteBack } from './visit'
 import { rememberPrompt } from './recent'
 import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
 import { api } from './api'
+import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
@@ -308,6 +309,7 @@ function rememberSession(id: string | null): void {
 // ── requests ────────────────────────────────────────────────
 
 export function rpc<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
+  if (method === 'session.close') chatClosed(String(params.session_id || ''))
   const profile = getState().profile
   return client.request<T>(method, { profile, ...params }, timeoutMs)
 }
@@ -1258,17 +1260,50 @@ client.onRequest((req: ServerRequest) => {
   return true
 })
 
+/** Stored chat id of each live Hermes session opened here, so closing one ends its approval confirmation. */
+const chatOfRuntime = new Map<string, string>()
+onChatOpen('approval-lock', ({ chat }) => {
+  chatOfRuntime.set(chat.runtimeId, chat.storedId)
+})
+function chatClosed(runtimeId: string): void {
+  const storedId = chatOfRuntime.get(runtimeId)
+  if (storedId === undefined) return
+  chatOfRuntime.delete(runtimeId)
+  forgetApprovalConfirm(storedId)
+}
+/** The stored chat id an approval came from (Hermes names the live session). */
+function approvalChat(req: ServerRequest): string {
+  const sid = String(req.params.session_id || '')
+  const a = getState().active
+  if (a && (!sid || a.runtimeId === sid)) return a.storedId
+  return chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || sid
+}
+
 /** Answers a request from Hermes. Over the lock screen (lockview.ts) only Deny goes through: anything else asks for an
- *  unlock and returns false, the request stays open. */
+ *  unlock and returns false, the request stays open. The first Allow in a chat session asks for the fingerprint or
+ *  screen lock (approval-lock.ts): it returns false and answers once that is confirmed. */
 export function answerRequest(req: ServerRequest, result: Record<string, unknown>): boolean {
   if (lockView() && !(req.method === 'approval' && result.choice === 'deny')) {
     askUnlock(req.method === 'approval' ? 'Unlock the phone to allow this' : 'Unlock the phone to answer')
     return false
   }
+  if (req.method === 'approval' && result.choice !== 'deny') {
+    const chat = approvalChat(req)
+    if (approvalNeedsConfirm(chat)) {
+      const what = String(req.params.command || req.params.description || 'a command').slice(0, 160)
+      void confirmAllow(chat, what).then(ok => {
+        if (ok && getState().requests.some(r => r.id === req.id)) respondNow(req, result)
+      })
+      return false
+    }
+  }
+  respondNow(req, result)
+  return true
+}
+function respondNow(req: ServerRequest, result: Record<string, unknown>): void {
   req.respond(result)
   cancelNotification(`req-${req.id}`)
   setState(s => ({ requests: s.requests.filter(r => r.id !== req.id) }))
-  return true
 }
 
 export function rejectRequest(req: ServerRequest): void {
