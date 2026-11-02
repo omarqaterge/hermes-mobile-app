@@ -6,7 +6,7 @@ Hermes can drive an Android app on a hidden display (a "background app"). The sh
 
 #### Background app card (screen block)
 
-**Opens from:** appears by itself when the shell reports a background app for the open chat. The viewer opens from the card. **Closes with:** the card disappears when the state is cleared (the turn ends, Stop, Take over); the viewer closes with Back, a drag down on its top strip, a tap outside, or the same events. **Source:** `web/src/components/BgApp.tsx` `BgApp`, `BgViewer`; state and frame loop in `web/src/bgapp.ts`.
+**Opens from:** appears by itself when the shell reports a background app for the open chat. The viewer opens from the card, or straight from the status chip (below). **Closes with:** the card disappears when the state is cleared (the turn ends, Stop, Take over); the viewer closes with Back, a drag down on its top strip, a tap outside, or the same events. **Source:** `web/src/components/BgApp.tsx` `BgApp`, `BgViewer`; state and frame loop in `web/src/bgapp.ts`.
 
 **Layout, top to bottom:**
 
@@ -23,5 +23,13 @@ Hermes can drive an Android app on a hidden display (a "background app"). The sh
 - One loop serves every consumer (card thumbnail at 200 px, viewer at 540 px); the widest consumer sets the size. Only one request is in flight; the next is scheduled so requests start at most every 500 ms (`FRAME_EVERY_MS`, `frameDelay`); a request not answered in 8 s is dropped and the loop goes on.
 - The loop runs only while a consumer exists, the page is visible and a background app is set. It stops when the page is hidden and restarts when it is visible again.
 - A frame is accepted only when it is a `data:image/` URL. A change of chat or app clears the old picture; an identical state does not re-render (`setBg`).
+
+#### Opened from the status chip
+
+Tapping the working chip (4.3) while Hermes uses an app for the chat it shows opens the app on that chat with the viewer already open. The shell calls `window.hermesOpenBgView(id)` and then `window.hermesOpenSession(id)`; `hermesOpenBgView` stores the request (`wantViewer`, which also re-reads `bgState`) and `BgApp` acts on it through `useViewWanted` and `viewerStep`:
+
+- The chat shown or opening is that chat and the app is still in use for it: the viewer opens (already while the chat is opening). This covers a cold start from the tap (the request waits until the page has connected and opened the chat), the app open on another chat, and the chat already on screen.
+- That chat has finished opening and Hermes no longer uses an app for it (it finished between the post and the tap): the chat stays open without the viewer, and a toast says "Hermes isn't using an app any more".
+- A request older than `VIEW_WAIT_MS` (30 s) is dropped without opening anything; a request is used once, so the app coming back later shows the card only. Over the lock screen (`lockView`) the viewer does not open.
 
 **Rules:** the card is a plain `button`; the viewer is a bottom sheet with `useSheetDrag` and `useBackHandler`, like every other sheet.

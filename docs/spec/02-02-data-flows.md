@@ -108,7 +108,9 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    aloud when read-aloud is on for that chat and the chat was made in the app (`readAloud`, 4.6).
 4. Tapping the notification opens `MainActivity` with the extra `session`. `onCreate` or `onNewIntent` stores it as
    `pendingSession`; once the page has loaded, `openPendingSession` (the id filtered to `[A-Za-z0-9_.:-]`) calls
-   `window.hermesOpenSession`, which runs `openSessionFromNotification` → `resumeSession`.
+   `window.hermesOpenSession`, which runs `openSessionFromNotification` → `resumeSession`. When the tapped notification
+   is the working chip while Hermes uses an app for that chat, the intent also has `bgView` (`EXTRA_BG_VIEW`), and
+   `openPendingSession` first calls `window.hermesOpenBgView(id)` so the chat opens with the live viewer (3.10).
 5. The page's store subscription calls `chatSeen(storedId)` whenever the chat on screen changes (also for a chat
    created by its first message), so the service drops that chat's Done chip, badge and reply notification.
 6. Typing into Reply: the service's `answerFromNotification` hands the text to the page through

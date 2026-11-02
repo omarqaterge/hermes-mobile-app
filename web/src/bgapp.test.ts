@@ -8,7 +8,7 @@ vi.mock('./bridge', () => ({
   bgFrameAsync: (id: number, w: number) => (asked.push({ id, w }), true)
 }))
 
-import { bgForChat, frameDelay, parseBg, setBg, wantFrames } from './bgapp'
+import { VIEW_WAIT_MS, bgForChat, frameDelay, parseBg, setBg, viewerStep, wantFrames } from './bgapp'
 import { getState } from './store'
 
 const st = { session: 's-1', pkg: 'com.keep', label: 'Keep', action: 'tapping "New note"', since: 1000 }
@@ -30,6 +30,20 @@ test('bgForChat only matches the chat that started it', () => {
   expect(bgForChat(st, 's-2')).toBeNull()
   expect(bgForChat(st, null)).toBeNull()
   expect(bgForChat(null, 's-1')).toBeNull()
+})
+
+test('viewerStep: the chip tap opens the viewer for that chat, falls back to the chat when the app is done', () => {
+  const want = { session: 's-1', until: 10_000 }
+  expect(viewerStep(null, 's-1', true, st, 0)).toBe('wait')
+  expect(viewerStep(want, 's-1', false, st, 0)).toBe('open') // still opening: the viewer can open already
+  expect(viewerStep(want, 's-1', true, st, 0)).toBe('open')
+  expect(viewerStep(want, 's-2', true, st, 0)).toBe('wait') // another chat shows: wait for ours
+  expect(viewerStep(want, null, false, st, 0)).toBe('wait')
+  expect(viewerStep(want, 's-1', false, null, 0)).toBe('wait') // opening, no app: decide once it is open
+  expect(viewerStep(want, 's-1', true, null, 0)).toBe('gone')
+  expect(viewerStep(want, 's-1', true, { ...st, session: 's-2' }, 0)).toBe('gone') // the app is another chat's now
+  expect(viewerStep(want, 's-1', true, st, 10_001)).toBe('expired')
+  expect(VIEW_WAIT_MS).toBeGreaterThanOrEqual(10_000)
 })
 
 test('frameDelay waits out the rest of the interval', () => {

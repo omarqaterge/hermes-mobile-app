@@ -1,6 +1,7 @@
 // The app Hermes drives on a hidden display ("background app"). The shell tells the page about it
 // (window.__hmBg on every change and on resume, bgState() at start) and serves the live frames
-// (bgFrameAsync → window.__hmBgFrame). Port and token never reach the page.
+// (bgFrameAsync → window.__hmBgFrame). Port and token never reach the page. Tapping the status chip while Hermes
+// uses an app opens the live viewer (window.hermesOpenBgView, right before hermesOpenSession).
 import { useSyncExternalStore } from 'react'
 import { bgFrameAsync, bgState } from './bridge'
 import { getState, setState } from './store'
@@ -67,6 +68,7 @@ declare global {
   interface Window {
     __hmBg?: (state: unknown) => void
     __hmBgFrame?: (id: number, dataUrl: string) => void
+    hermesOpenBgView?: (session: string) => void
   }
 }
 window.__hmBg = state => setBg(parseBg(state))
@@ -164,6 +166,47 @@ export function useBgFrame(): string {
     },
     () => frame
   )
+}
+
+// ── the chip's tap: open the live viewer once that chat shows ──
+/** A request older than this is dropped (Hermes is long done with the app, or the chat never opened). */
+export const VIEW_WAIT_MS = 30_000
+
+export interface ViewWanted {
+  session: string
+  until: number
+}
+
+let viewWanted: ViewWanted | null = null
+const viewSubs = new Set<() => void>()
+
+/** Ask for the viewer of `session`'s background app (null = forget the request). Reads the shell's state afresh. */
+export function wantViewer(session: string | null, now = Date.now()): void {
+  viewWanted = session ? { session, until: now + VIEW_WAIT_MS } : null
+  if (session) refreshBg()
+  viewSubs.forEach(l => l())
+}
+window.hermesOpenBgView = session => wantViewer(typeof session === 'string' && session ? session : null)
+
+export function useViewWanted(): ViewWanted | null {
+  return useSyncExternalStore(
+    cb => {
+      viewSubs.add(cb)
+      return () => viewSubs.delete(cb)
+    },
+    () => viewWanted
+  )
+}
+
+/** What a pending request does now. `chat` is the chat shown or opening, `active` whether it has finished opening.
+ *  open: the app is still in use for that chat; gone: the chat is open but Hermes is done with the app (the chat
+ *  stays, nothing else opens); expired: too late; wait: that chat isn't showing yet. */
+export function viewerStep(want: ViewWanted | null, chat: string | null | undefined, active: boolean, bg: BgState | null, now = Date.now()): 'open' | 'gone' | 'expired' | 'wait' {
+  if (!want) return 'wait'
+  if (now > want.until) return 'expired'
+  if (!chat || chat !== want.session) return 'wait'
+  if (bgForChat(bg, chat)) return 'open'
+  return active ? 'gone' : 'wait'
 }
 
 refreshBg()

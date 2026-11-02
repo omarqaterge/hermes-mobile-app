@@ -574,4 +574,55 @@ module.exports = async t => {
     await bar.getByRole('button', { name: 'End' }).click()
     await lp.close()
   }
+
+  // ── the status chip tapped while Hermes uses an app: the shell calls hermesOpenBgView, then hermesOpenSession ──
+  {
+    const st = { session: 's-6', pkg: 'com.example.notes', label: 'Notes', action: 'typing', since: Date.now() }
+    const vp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    vp.on('pageerror', e => {
+      console.log('PAGEERROR (chip tap)', e.message)
+      fail()
+    })
+    await vp.addInitScript(s => { window.__bgNative = s }, st) // the shell already knows the app (cold start)
+    await vp.addInitScript(nativeShell)
+    const viewer = vp.locator('.bg-viewer')
+    const tap = id => vp.evaluate(id => { window.hermesOpenBgView(id); window.hermesOpenSession(id, '') }, id)
+    const shown = () => vp.evaluate(() => (window.__seen || []).slice(-1)[0])
+    const setNative = s => vp.evaluate(s => { window.__bgNative = s; window.__hmBg(s) }, s)
+    await vp.goto(WEB + '/', { waitUntil: 'load' })
+    await tap('s-6') // right after the page loads, before the connection is up
+    await viewer.waitFor({ timeout: 10000 }).then(() => check(true, 'chip tap, cold start: the chat opens with the live viewer'), () => check(false, 'chip tap, cold start: the chat opens with the live viewer'))
+    check((await shown()) === 's-6', `chip tap, cold start: that chat is on screen (${await shown()})`)
+    check(/Using Notes/.test((await viewer.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'chip tap: the viewer names the app')
+    await vp.evaluate(() => window.hermesBack())
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    // App already open on another chat.
+    await vp.evaluate(() => window.hermesOpenSession('s-5'))
+    await vp.waitForFunction(() => (window.__seen || []).slice(-1)[0] === 's-5', null, { timeout: 5000 }).catch(() => {})
+    await tap('s-6')
+    await viewer.waitFor({ timeout: 5000 }).then(() => check(true, 'chip tap, app open on another chat: switches and opens the viewer'), () => check(false, 'chip tap, app open on another chat: switches and opens the viewer'))
+    check((await shown()) === 's-6', `chip tap, app open: the chat switched (${await shown()})`)
+    await vp.evaluate(() => window.hermesBack())
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    // The same chat already on screen.
+    await tap('s-6')
+    await viewer.waitFor({ timeout: 3000 }).then(() => check(true, 'chip tap, that chat already open: the viewer opens'), () => check(false, 'chip tap, that chat already open: the viewer opens'))
+    await vp.evaluate(() => window.hermesBack())
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    // Hermes finished with the app before the tap: the chat opens, no viewer, a short note.
+    await setNative(null)
+    await vp.evaluate(() => window.hermesOpenSession('s-5'))
+    await vp.waitForFunction(() => (window.__seen || []).slice(-1)[0] === 's-5', null, { timeout: 5000 }).catch(() => {})
+    await tap('s-6')
+    await vp.waitForFunction(() => (window.__seen || []).slice(-1)[0] === 's-6', null, { timeout: 5000 }).then(() => check(true, 'chip tap, app already done: the chat opens'), () => check(false, 'chip tap, app already done: the chat opens'))
+    await vp.locator('.toast', { hasText: "Hermes isn't using an app any more" }).waitFor({ timeout: 3000 }).then(() => check(true, 'chip tap, app already done: says so'), () => check(false, 'chip tap, app already done: says so'))
+    check((await viewer.count()) === 0, 'chip tap, app already done: no viewer')
+    // The request was used up: the app coming back later shows the card, not the viewer by itself.
+    await setNative(st)
+    await vp.locator('.bg-card').waitFor({ timeout: 3000 }).catch(() => {})
+    await sleep(500)
+    check((await vp.locator('.bg-card').count()) === 1 && (await viewer.count()) === 0, 'a later app for that chat shows the card only')
+    await setNative(null)
+    await vp.close()
+  }
 }
