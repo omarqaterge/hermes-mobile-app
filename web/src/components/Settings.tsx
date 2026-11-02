@@ -27,6 +27,7 @@ import { UninstallSection } from './Uninstall'
 import { ProviderList } from './Providers'
 import { FallbackSection } from './Rotation'
 import { HermesSettingsPage } from './HermesSettings'
+import { ConnectorsPage } from './Connectors'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 
@@ -837,8 +838,8 @@ function AppearancePage() {
 
 // ── screen: a hub of grouped rows, each opening its own page ─
 
-type Page = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'accounts' | 'keys' | 'hermes' | 'config'
-const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Default models', accounts: 'Model providers', keys: 'API keys', hermes: 'Hermes settings', config: 'Advanced settings' }
+type Page = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'accounts' | 'keys' | 'connectors' | 'hermes' | 'config'
+const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Default models', accounts: 'Model providers', keys: 'API keys', connectors: 'Connectors', hermes: 'Hermes settings', config: 'Advanced settings' }
 
 function Hub({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
@@ -860,6 +861,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row icon="✨" tone="gold" title="Default models" sub="Which model each bot starts with" chevron onClick={() => go('models')} />
         <Row icon="👤" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
+        <Row icon="🔌" tone="teal" title="Connectors" sub="MCP servers, web search, Home Assistant and other services" chevron onClick={() => go('connectors')} />
         <Row icon="🎛️" tone="purple" title="Hermes settings" sub="Limits, memory, long chats, sub-agents, safety" chevron onClick={() => go('hermes')} />
         <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermes option, by its config name" chevron onClick={() => go('config')} />
       </Section>
@@ -1076,6 +1078,7 @@ export function SettingsScreen() {
         </>
       )}
       {page === 'keys' && <KeysTab scope={scope} setScope={setScope} />}
+      {page === 'connectors' && <ConnectorsPage scope={scope} setScope={setScope} />}
       {page === 'hermes' && <HermesSettingsPage scope={scope} setScope={setScope} />}
       {page === 'config' && <ConfigTab scope={scope} setScope={setScope} />}
     </ScreenShell>

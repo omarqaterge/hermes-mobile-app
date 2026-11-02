@@ -49,6 +49,7 @@
 | `Bots.tsx` | The Bots screen and its sheets (create, bot, SOUL.md, rename) |
 | `Providers.tsx` | The provider list, provider sheet and own-endpoint sheet |
 | `HermesSettings.tsx` | Settings → Hermes settings: the grouped Hermes options and the sheet that edits one |
+| `Connectors.tsx` | Settings → Connectors: MCP servers, the catalog, tools with a key and skill keys, with their sheets |
 | `Rotation.tsx` | Provider rotation: the fallback models list and a provider's keys and logins (credential pool) |
 | `providers.ts` | Pure provider catalog: merges Hermes's key list, sign-ins and saved endpoints into rows |
 | `Connect.tsx` | The device-code sign-in sheet and the Welcome (model step) body |
