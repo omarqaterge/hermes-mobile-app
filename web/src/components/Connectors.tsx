@@ -3,7 +3,7 @@
 // OAuth sign-in in the phone's browser, remove), tools that need a key or an account (on/off, pick the service, paste
 // its key, remove keys; a service whose setup is a terminal wizard copies the Termux command) and keys for skills.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, qs } from '../api'
+import { ApiError, api, qs } from '../api'
 import { copyText, haptic, openExternal } from '../bridge'
 import {
   STATE_WORDS,
@@ -149,41 +149,61 @@ function ServerSheet({ server: s, profile, onClose, onChanged }: { server: McpSe
   const [busy, setBusy] = useState(false)
   const [test, setTest] = useState<{ ok: boolean; error?: string; tools: Array<{ name: string; description?: string }> } | null>(null)
   const [flow, setFlow] = useState<OAuthFlow | null>(null)
-  const flowRef = useRef<OAuthFlow | null>(null)
-  flowRef.current = flow
+  const pending = useRef<string | null>(null) // the flow Hermes still runs for us, cancelled when we give up or close
   const fromPlugin = s.source === 'plugin'
 
-  // While a sign-in waits in the browser: ask Hermes every 2 s, for 15 minutes at most, until it is approved or fails.
+  const cancelFlow = () => {
+    const id = pending.current
+    pending.current = null
+    if (id) void api('DELETE', `/api/mcp/oauth/flows/${encodeURIComponent(id)}`, undefined, { profile: false }).catch(() => null)
+  }
+  // While a sign-in waits in the browser: ask Hermes 2 s after each answer, for 15 minutes at most, until it is approved
+  // or fails. A failed ask (Hermes busy, the app in the background) is retried; only Hermes forgetting the flow (404) or
+  // ten failures in a row end it here, and then the flow is cancelled so a retry isn't refused as "already in progress".
+  const flowId = flow?.flow_id
   useEffect(() => {
-    if (!flow || flow.status === 'approved' || flow.status === 'error') return
+    if (!flowId || pending.current !== flowId) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    let failures = 0
     const started = Date.now()
-    const t = setInterval(() => {
-      if (Date.now() - started > OAUTH_GIVE_UP_MS) {
-        clearInterval(t)
-        setFlow(f => f && { ...f, status: 'error', error: 'The sign-in took too long. Try again.' })
-        return
-      }
-      api<OAuthFlow>('GET', `/api/mcp/oauth/flows/${encodeURIComponent(flow.flow_id)}`, undefined, { profile: false })
+    const fail = (error: string, cancel: boolean) => {
+      if (cancel) cancelFlow()
+      else pending.current = null
+      setFlow(f => f && { ...f, status: 'error', error })
+    }
+    const poll = () => {
+      if (Date.now() - started > OAUTH_GIVE_UP_MS) return fail('The sign-in took too long. Try again.', true)
+      api<OAuthFlow>('GET', `/api/mcp/oauth/flows/${encodeURIComponent(flowId)}`, undefined, { profile: false })
         .then(f => {
+          if (cancelled) return
+          failures = 0
           setFlow(f)
-          if (f.status === 'approved') {
-            toast(`${s.name} signed in`)
-            onChanged()
-          }
+          if (f.status === 'approved' || f.status === 'error') {
+            pending.current = null
+            if (f.status === 'approved') {
+              toast(`${s.name} signed in`)
+              onChanged()
+            }
+          } else timer = setTimeout(poll, OAUTH_POLL_MS)
         })
-        .catch(e => setFlow(f => f && { ...f, status: 'error', error: errText(e) }))
-    }, OAUTH_POLL_MS)
-    return () => clearInterval(t)
+        .catch(e => {
+          if (cancelled) return
+          if (e instanceof ApiError && e.status === 404) return fail('The sign-in expired. Try again.', false)
+          if (++failures >= 10) return fail(errText(e), true)
+          timer = setTimeout(poll, OAUTH_POLL_MS)
+        })
+    }
+    timer = setTimeout(poll, OAUTH_POLL_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flow?.flow_id, flow?.status])
+  }, [flowId])
   // Closing the sheet mid-sign-in cancels it, so Hermes frees the slot for a retry.
-  useEffect(
-    () => () => {
-      const f = flowRef.current
-      if (f && f.status !== 'approved' && f.status !== 'error') void api('DELETE', `/api/mcp/oauth/flows/${encodeURIComponent(f.flow_id)}`, undefined, { profile: false }).catch(() => null)
-    },
-    []
-  )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => cancelFlow, [])
 
   const toggle = (on: boolean) => {
     setBusy(true)
@@ -204,6 +224,7 @@ function ServerSheet({ server: s, profile, onClose, onChanged }: { server: McpSe
     setBusy(true)
     api<OAuthFlow>('POST', `${base}/auth?${p}`, {}, { profile: false })
       .then(f => {
+        if (f.status !== 'approved' && f.status !== 'error') pending.current = f.flow_id
         setFlow(f)
         if (f.authorization_url) openExternal(f.authorization_url)
         else if (f.status === 'error') toast(f.error || 'Sign-in failed', 'error', 8000)
@@ -425,9 +446,25 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
       onChanged()
     })
   }
+  /** Makes a service the one in use. Hermes saves the choice even when a Nous-managed service isn't in the account's
+   *  subscription (`needs_nous_auth`): then it would not work, so the page says so instead of reporting success. */
+  const pick = async (prov: ToolProvider, say: boolean): Promise<boolean> => {
+    try {
+      const r = await api<{ needs_nous_auth?: boolean }>('PUT', `${base}/provider?${p}`, { provider: prov.name }, { profile: false })
+      if (r?.needs_nous_auth) {
+        toast(`${prov.name} needs a Nous Portal sign-in with a subscription that includes it (Settings → Model providers → Nous).`, 'error', 8000)
+        return false
+      }
+      if (say) toast(`${w.title}: ${prov.name}`)
+      return true
+    } catch (e) {
+      toast(errText(e), 'error', 8000)
+      return false
+    }
+  }
   const use = (prov: ToolProvider) => {
     setBusy(true)
-    void act(api('PUT', `${base}/provider?${p}`, { provider: prov.name }, { profile: false }), `${w.title}: ${prov.name}`).then(() => {
+    void pick(prov, true).then(() => {
       setBusy(false)
       changed()
     })
@@ -440,8 +477,8 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
     void (async () => {
       const ok = await act(api('PUT', `${base}/env?${p}`, { env }, { profile: false }), '')
       // A key alone doesn't switch services: make the one just set up the one in use.
-      if (ok && !prov.is_active) await act(api('PUT', `${base}/provider?${p}`, { provider: prov.name }, { profile: false }), '')
-      if (ok) toast(`${prov.name} connected`)
+      const switched = ok && (prov.is_active || (await pick(prov, false)))
+      if (switched) toast(`${prov.name} connected`)
       setVals({})
       setBusy(false)
       changed()
@@ -451,15 +488,16 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
     void confirmDialog({ title: `Disconnect ${prov.name}?`, message: 'Its keys are deleted from this bot’s .env.', confirmLabel: 'Disconnect', danger: true }).then(async ok => {
       if (!ok) return
       setBusy(true)
+      let all = true
       for (const v of prov.env_vars.filter(v => v.is_set)) {
-        await act(
+        all = (await act(
           api('DELETE', `/api/env?${p}`, { key: v.key }, { profile: false }).catch(e => {
             if (!/not found/i.test(errText(e))) throw e // set somewhere Hermes reads but not in this .env
           }),
           ''
-        )
+        )) && all
       }
-      toast(`${prov.name} disconnected`)
+      if (all) toast(`${prov.name} disconnected`)
       setBusy(false)
       changed()
     })
@@ -526,7 +564,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
                             Disconnect
                           </button>
                         )}
-                        {prov.post_setup && !keyed && (
+                        {prov.post_setup && (
                           <button className="btn" disabled={busy} onClick={() => terminal(prov.post_setup!)}>
                             Copy the Termux command
                           </button>
