@@ -422,6 +422,25 @@ const CASES = [
     '/api/credentials/pool',
     '/api/sessions/search?q=question'
   ].map(p => ({ name: `GET ${p}`, run: c => c.http('GET', p) })),
+  // Provider rotation (Settings → Model providers): a key added to a provider's credential pool, listed, removed; the
+  // fallback chain and a rotation strategy written to config.yaml and read back, then the chain emptied again.
+  { name: 'POST /api/credentials/pool', run: c => c.http('POST', '/api/credentials/pool', { provider: 'openrouter', api_key: 'sk-or-contract-not-a-key-0001' }) },
+  { name: 'GET /api/credentials/pool (one key)', run: c => c.http('GET', '/api/credentials/pool') },
+  {
+    // By the index the list gives the added key (an OPENROUTER_API_KEY in the environment would be another entry).
+    name: 'DELETE /api/credentials/pool/openrouter/<index>',
+    run: async c => {
+      const list = await c.http('GET', '/api/credentials/pool')
+      const e = (list.result?.providers || []).find(x => x.provider === 'openrouter')?.entries?.find(x => x.source === 'manual')
+      return c.http('DELETE', `/api/credentials/pool/openrouter/${e?.index ?? 1}`)
+    }
+  },
+  {
+    name: 'PUT /api/config (fallback chain, strategy)',
+    run: c => c.http('PUT', '/api/config', { config: { fallback_providers: [{ provider: 'openrouter', model: 'contract/fallback' }], credential_pool_strategies: { openrouter: 'round_robin' } } })
+  },
+  { name: 'GET /api/config (fallback chain)', run: c => c.http('GET', '/api/config') },
+  { name: 'PUT /api/config (no fallback)', run: c => c.http('PUT', '/api/config', { config: { fallback_providers: [] } }) },
   ...pluginCases(),
   // The app's client says it answers server → client requests (json-rpc-channel.ts advertiseCapabilities); without it the
   // real Hermes withdraws approvals and skips questions at once.

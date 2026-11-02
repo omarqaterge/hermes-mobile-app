@@ -3848,3 +3848,14 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
   font-size: 15px;
   font-weight: 600;
 }
+
+/* Provider rotation (Rotation.tsx): the fallback chain and a provider's key pool */
+.chain-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.chain-n { flex: none; width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; font-size: 0.72rem; background: var(--surface-2); color: var(--dim); }
+.chain-ctl { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.chain-ctl .icon-btn { width: 34px; height: 34px; font-size: 1rem; color: var(--dim); }
+.chain-ctl .icon-btn:disabled { opacity: 0.3; }
+.pool-badge { flex: none; font-size: 0.68rem; border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; white-space: nowrap; }
+.pool-badge.on { color: var(--ok); }
+.pool-badge.cooling { color: var(--warn); }
+.pool-badge.dead { color: var(--err); }

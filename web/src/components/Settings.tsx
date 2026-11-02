@@ -25,6 +25,7 @@ import { SttSettings } from './SttSettings'
 import { chosenSttName, loadSttModels, sttAvailable, useSttModels } from '../stt'
 import { UninstallSection } from './Uninstall'
 import { ProviderList } from './Providers'
+import { FallbackSection } from './Rotation'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 
@@ -64,7 +65,8 @@ export async function setProfileModel(profile: string, provider: string, model: 
 }
 
 /** Provider → model picker for a profile. `target` is shown in the title. */
-export function ModelPicker({ profile, target, onPick, onClose, refresh, only }: { profile: string; target: string; onPick: (provider: string, model: string, effort: string) => Promise<void>; onClose: () => void; refresh?: boolean; only?: string[] }) {
+/** `noEffort` hides the reasoning pills (a fallback model has no reasoning level of its own here). */
+export function ModelPicker({ profile, target, onPick, onClose, refresh, only, noEffort }: { profile: string; target: string; onPick: (provider: string, model: string, effort: string) => Promise<void>; onClose: () => void; refresh?: boolean; only?: string[]; noEffort?: boolean }) {
   const [data, setData] = useState<ModelOptions | null>(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
@@ -108,13 +110,15 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only }:
   }
   return (
     <Sheet title={`Model · ${target}`} onClose={onClose}>
-      <div className="effort-row">
-        {REASONING_EFFORT_VALUES.map(e => (
-          <button key={e} className={`pill${e === effort ? ' on' : ''}`} onClick={() => { haptic(); setEffort(e) }}>
-            {e}
-          </button>
-        ))}
-      </div>
+      {!noEffort && (
+        <div className="effort-row">
+          {REASONING_EFFORT_VALUES.map(e => (
+            <button key={e} className={`pill${e === effort ? ' on' : ''}`} onClick={() => { haptic(); setEffort(e) }}>
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
       <input className="search" placeholder="Search models…" value={q} onChange={e => setQ(e.target.value)} />
       <div className="sheet-scroll">
         {err && <div className="notice notice-error">{err}</div>}
@@ -1049,6 +1053,7 @@ export function SettingsScreen() {
   const opened = useStore(s => s.screenProfile)
   const [page, setPage] = useState<Page>(() => (opened ? 'keys' : 'hub'))
   const [scope, setScope] = useState(opened || current)
+  const [rotation, setRotation] = useState(0) // bumped when a provider changed: the fallback list re-reads its key status
   useEffect(() => {
     void loadProfiles()
   }, [])
@@ -1063,7 +1068,8 @@ export function SettingsScreen() {
       {page === 'accounts' && (
         <>
           <ProfileChips value={scope} onChange={setScope} label="Sign-ins for" />
-          <ProviderList profile={scope} />
+          <FallbackSection profile={scope} version={rotation} />
+          <ProviderList profile={scope} onChange={() => setRotation(v => v + 1)} onPicked={() => void loadProfiles()} />
           <div className="dim small pad">Every provider this Hermes supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → API keys.</div>
         </>
       )}

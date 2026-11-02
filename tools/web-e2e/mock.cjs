@@ -85,6 +85,32 @@ let envSet = {} // KEY -> value written by PUT /api/env (the profile's .env)
 let endpoints = [] // POST /api/providers/custom-endpoints
 // Like Hermes's redacted_credential_preview: first 4 + last 4 of a long value.
 const redact = v => (v.length >= 12 ? `«redacted:${v.slice(0, 4)}...${v.slice(-4)}»` : '«redacted:***»')
+// Provider rotation, like the pinned Hermes. The credential pool (auth.json): a key saved in .env is seeded as an
+// `env:<VAR>` entry of its provider; POST /api/credentials/pool adds `manual` entries; Claude's login is claudePool.
+// Status comes from Hermes's last use of each entry (test hook `poolStatus`: id -> ok / exhausted / dead).
+let poolManual = {} // provider -> [{ id, label, key }]
+let poolStatus = {}
+let poolSeq = 0
+// Like Hermes, the pool lists only providers already in auth.json: a .env key is seeded the first time Hermes loads that
+// provider's pool (a chat with it, or a key added to it), not when the key is saved.
+let poolSeeded = new Set()
+// config.yaml's fallback chain and per-provider rotation strategy (read with GET /api/config, merged by PUT /api/config).
+let rotation = { fallback_providers: [], credential_pool_strategies: {} }
+const keyPreview = v => (v.length >= 12 ? `${v.slice(0, 4)}...${v.slice(-4)}` : '***')
+const poolEntry = (index, id, label, auth_type, source, key) => ({ index, id, label, auth_type, source, priority: index - 1, last_status: poolStatus[id] ?? null, request_count: poolStatus[id] ? 3 : 0, token_preview: keyPreview(key), has_refresh: auth_type === 'oauth' })
+function poolList() {
+  const by = {}
+  const add = (provider, x) => (by[provider] ||= []).push(x)
+  for (const [k, v] of Object.entries(envSet)) {
+    const info = providerFixture.env[k]
+    if (info?.category === 'provider' && info.is_password && info.provider && poolSeeded.has(info.provider)) add(info.provider, { id: `env-${k.toLowerCase()}`, label: k, auth_type: 'api_key', source: `env:${k}`, key: v, env: k })
+  }
+  for (const [prov, list] of Object.entries(poolManual)) for (const m of list) add(prov, { ...m, auth_type: 'api_key', source: 'manual' })
+  for (const c of claudePool) add('anthropic', { id: c.id, label: c.label, auth_type: 'oauth', source: c.source, key: 'sk-ant-oat01-mock-abcd', claude: true })
+  return Object.keys(by)
+    .sort()
+    .map(provider => ({ provider, raw: by[provider], entries: by[provider].map((x, i) => poolEntry(i + 1, x.id, x.label, x.auth_type, x.source, x.key)) }))
+}
 
 const FILE_TEXT = { 'table.csv': 'a,b\n1,2', 'page.html': '<h1>Hi</h1>', 'code.py': 'print("x")' }
 const server = http.createServer((req, res) => {
@@ -118,6 +144,10 @@ const server = http.createServer((req, res) => {
         providerConfigured = false
         envSet = {}
         endpoints = []
+        poolManual = {}
+        poolStatus = {}
+        poolSeeded = new Set()
+        rotation = { fallback_providers: [], credential_pool_strategies: {} }
         codexPolls = 0 // nobody signed in to ChatGPT any more either
       }
       if (b.configured) providerConfigured = true
@@ -129,6 +159,10 @@ const server = http.createServer((req, res) => {
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
+      if (b.poolSeeded) poolSeeded = new Set(b.poolSeeded)
+      if (b.poolStatus) poolStatus = { ...poolStatus, ...b.poolStatus }
+      if (b.rotation) rotation = { fallback_providers: [], credential_pool_strategies: {}, ...b.rotation }
+      if (b.envSet) envSet = { ...envSet, ...b.envSet }
       if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.openui) openui = { ...openui, ...b.openui }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
@@ -312,7 +346,33 @@ const server = http.createServer((req, res) => {
       claudePool = []
       return send({ ok: true, provider: 'anthropic' })
     }
-    if (p === '/api/credentials/pool') return send({ providers: claudePool.length ? [{ provider: 'anthropic', entries: claudePool }] : [] })
+    if (p === '/api/credentials/pool' && req.method === 'POST') {
+      // Hermes's add_credential_pool_entry: an api_key entry labelled "key #N", priority 0, source manual.
+      const b = JSON.parse(body || '{}')
+      const prov = String(b.provider || '').trim().toLowerCase()
+      const key = String(b.api_key || '').trim()
+      if (!prov || !key) return send({ detail: 'provider and api_key are required' }, 400)
+      poolSeeded.add(prov) // load_pool seeds the provider's .env key before the new entry is added
+      const n = (poolList().find(x => x.provider === prov)?.entries.length || 0) + 1
+      poolSeeded.add(prov)
+      ;(poolManual[prov] ||= []).push({ id: `m${(++poolSeq).toString(16).padStart(5, '0')}`, label: String(b.label || '').trim() || `key #${n}`, key })
+      return send({ ok: true, provider: prov, count: n })
+    }
+    if (p.startsWith('/api/credentials/pool/') && req.method === 'DELETE') {
+      // DELETE /api/credentials/pool/<provider>/<index> (1-based); an env: entry also leaves the .env, like `hermes auth remove`.
+      const [prov, idx] = p.split('/').slice(-2).map(decodeURIComponent)
+      const group = poolList().find(x => x.provider === prov.toLowerCase())
+      const x = group?.raw[Number(idx) - 1]
+      if (!x) return send({ detail: 'No pool entry at that index' }, 404)
+      const cleaned = []
+      if (x.env) {
+        delete envSet[x.env]
+        cleaned.push(`Removed ${x.env} from .env`)
+      } else if (x.claude) claudePool = claudePool.filter(c => c.id !== x.id)
+      else poolManual[prov] = poolManual[prov].filter(m => m.id !== x.id)
+      return send({ ok: true, provider: prov, count: group.raw.length - 1, cleaned, hints: [] })
+    }
+    if (p === '/api/credentials/pool') return send({ providers: poolList().map(({ provider, entries }) => ({ provider, entries })) })
     // The plugin's in-app Claude login (claude_login.py): start gives the claude.ai link, finish takes the pasted code#state.
     if (p.startsWith('/api/plugins/hermes-mobile/claude-login/')) {
       if (claudeLoginMissing) return send({ detail: 'Not Found' }, 404)
@@ -341,10 +401,13 @@ const server = http.createServer((req, res) => {
     }
     if (p === '/api/model/set') return send({ ok: true })
     if (p === '/api/dashboard/plugins') return send([{ name: 'hermes-mobile' }, { name: 'kanban' }])
-    if (p === '/api/config' && req.method === 'GET') return send({ agent: { reasoning_effort: 'high' }, plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })
+    if (p === '/api/config' && req.method === 'GET') return send({ agent: { reasoning_effort: 'high' }, plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] }, ...rotation })
     if (p === '/api/config' && req.method === 'PUT') {
       const b = JSON.parse(body || '{}')
       if (b.config?.plugins?.enabled) pluginEnabled = b.config.plugins.enabled.includes('hermes-mobile') // other config writes (the model) leave it alone
+      // Hermes deep-merges: a list replaces the old one, a map gains or changes keys.
+      if (Array.isArray(b.config?.fallback_providers)) rotation.fallback_providers = b.config.fallback_providers
+      if (b.config?.credential_pool_strategies) rotation.credential_pool_strategies = { ...rotation.credential_pool_strategies, ...b.config.credential_pool_strategies }
       return send({ ok: true })
     }
     if (p === '/api/skills') return send([{ name: 'a', enabled: true }, { name: 'b', enabled: true }, { name: 'c', enabled: false }])
