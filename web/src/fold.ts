@@ -1,4 +1,5 @@
 import type { ChatItem } from './store'
+import { runSummary } from './toolsay'
 
 /** A run of tool calls folded into one "Ran N tools" line. Reasoning-only replies between the calls belong to it. */
 export interface ToolRun {
@@ -12,6 +13,8 @@ export interface ToolRun {
   running: boolean
   /** Distinct tool names, in order of first use. */
   names: string[]
+  /** What the calls did, in plain words: "ran 2 commands and read 1 file" (`runSummary`). */
+  summary: string
 }
 
 /** Fewer calls than this stay as plain cards. */
@@ -44,7 +47,8 @@ export function toolRuns(items: ChatItem[]): ToolRun[] {
         secs: tools.reduce((s, t) => s + (t.duration || 0), 0),
         errors: tools.filter(t => t.status === 'error').length,
         running: tools.some(t => t.status === 'running' || t.status === 'generating'),
-        names: [...new Set(tools.map(t => t.name))]
+        names: [...new Set(tools.map(t => t.name))],
+        summary: runSummary(tools)
       })
     }
     i = end
@@ -69,10 +73,11 @@ export function foldMap(items: ChatItem[], open: ReadonlySet<string>): Map<numbe
   return out
 }
 
-/** "Ran 7 tools · 42s", "Running 4 tools…". */
+/** "Ran 2 commands and read 3 files · 42s", "Running 4 tools…". */
 export function runLabel(r: ToolRun): string {
   const n = `${r.tools} tool${r.tools === 1 ? '' : 's'}`
   if (r.running) return `Running ${n}…`
   const t = r.secs >= 60 ? `${Math.floor(r.secs / 60)}m ${Math.round(r.secs % 60)}s` : r.secs >= 1 ? `${Math.round(r.secs)}s` : ''
-  return `Ran ${n}${t ? ` · ${t}` : ''}`
+  const what = r.summary ? r.summary[0].toUpperCase() + r.summary.slice(1) : `Ran ${n}`
+  return `${what}${t ? ` · ${t}` : ''}`
 }

@@ -170,7 +170,7 @@ describe('tool runs', () => {
     expect(runs).toHaveLength(1)
     expect(runs[0]).toMatchObject({ start: 1, end: 5, tools: 3, secs: 6, names: ['terminal', 'read_file'] })
     expect(toolRuns([user, tool('t1'), tool('t2'), say('a')])).toHaveLength(0)
-    expect(runLabel(runs[0])).toBe('Ran 3 tools · 6s')
+    expect(runLabel(runs[0])).toBe('Ran 2 commands and read 1 file · 6s')
   })
 
   test('hides all but the header when closed, nothing when open', () => {

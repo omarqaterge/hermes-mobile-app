@@ -3,13 +3,14 @@ import { haptic } from '../bridge'
 import { setState } from '../store'
 import { shortPath, type FileChange, type TurnChanges } from '../changes'
 import { DiffView } from './Diff'
+import { compactCount } from '../toolsay'
 import { Sheet } from './Screens'
 import { Chevron, Collapse } from './ui'
 
 function Stat({ added, removed }: { added: number; removed: number }) {
   return (
     <span className="diffstat">
-      <span className="diffstat-add">+{added}</span> <span className="diffstat-del">−{removed}</span>
+      <span className="diffstat-add">+{compactCount(added)}</span> <span className="diffstat-del">−{compactCount(removed)}</span>
     </span>
   )
 }
