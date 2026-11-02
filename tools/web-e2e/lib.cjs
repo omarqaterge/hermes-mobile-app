@@ -51,11 +51,12 @@ const nativeShell = () => {
       chatSeen: (key, id) => (k(key, 'chatSeen'), (window.__seen ||= []).push(id)),
       setReadAloud: key => k(key, 'setReadAloud'),
       mediaBase: key => (k(key, 'mediaBase'), ''),
-      // Voice: speaking "finishes" after 50 ms; the test plays the recogniser through window.__hmVoice.
+      // Voice: speaking "finishes" after 50 ms (never while window.__ttsHold is set, so a test can catch it mid-way);
+      // the test plays the recogniser through window.__hmVoice.
       speak: (key, text) => {
         k(key, 'speak')
         ;(window.__spoken ||= []).push(text)
-        setTimeout(() => window.__hmVoice('tts-done', ''), 50)
+        if (!window.__ttsHold) setTimeout(() => window.__hmVoice('tts-done', ''), 50)
       },
       stopSpeaking: key => k(key, 'stopSpeaking'),
       startListening: key => k(key, 'startListening'),
