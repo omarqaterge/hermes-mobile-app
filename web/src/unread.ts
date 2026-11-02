@@ -1,8 +1,9 @@
 // Unread chats and "time ago" for the drawer. session.list only has message counts and a start time, so this
 // keeps, per profile, the count you last saw in each chat and when its count last changed (localStorage
-// hm.seen.v1.<profile>). A chat is unread when it has more messages than you saw; the open chat is always read.
+// hm.seen.v1.<profile>). A chat is unread when it has more messages than you saw; the open chat is read while the app
+// is on screen.
 import type { SessionListRow } from '@hermes/shared/gateway-contract.generated'
-import { setUnseen } from './bridge'
+import { appInBackground, setUnseen } from './bridge'
 import { getState, setState } from './store'
 
 interface Seen {
@@ -64,14 +65,16 @@ export function noteSessions(rows: SessionListRow[]): void {
       // A chat that started after we began tracking was made elsewhere (a scheduled job, another device): unread
       // if it has messages. Older ones (first list, "Show older chats") are simply read.
       const started = (r.started_at || 0) * 1000
-      map[r.id] = { n: started > since && r.id !== open ? 0 : c, c, t: started || now }
+      map[r.id] = { n: started > since && (r.id !== open || appInBackground()) ? 0 : c, c, t: started || now }
       continue
     }
     if (e.c !== c) {
       e.c = c
       e.t = now
     }
-    if (r.id === open) e.n = c
+    // Off screen the open chat is not being read: a reply that lands then keeps it unread, and keeps the service's
+    // sticky Done chip, until the app is back (below) or the chat is opened.
+    if (r.id === open && !appInBackground()) e.n = c
   }
   save(map)
   publish(map)
@@ -87,6 +90,11 @@ export function markSeen(id: string | undefined | null): void {
   save(map)
   publish(map)
 }
+
+// Back on screen with a chat open: that chat is read now.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') markSeen(getState().active?.storedId)
+})
 
 /** When the chat last changed (ms), for "5 min ago". */
 export function lastActive(row: SessionListRow): number {

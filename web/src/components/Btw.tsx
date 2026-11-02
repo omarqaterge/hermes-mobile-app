@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { askBtw, closeBtw, useBtw } from '../btw'
+import { askBtw, clearBtw, closeBtw, useBtw } from '../btw'
 import { useBackHandler } from '../backstack'
 import { haptic } from '../bridge'
+import { confirmDialog } from '../dialog'
 import { useSheetDrag } from './useSheetDrag'
 import { Markdown } from './Markdown'
 import { Spinner } from './Spinner'
@@ -27,11 +28,20 @@ function Inner({ msgs }: { msgs: ReturnType<typeof useBtw>['msgs'] }) {
     void askBtw(text)
     setText('')
   }
+  const clear = async () => {
+    if (await confirmDialog({ title: 'Clear this side chat?', message: 'Its questions and answers go; the main chat stays as it is.', confirmLabel: 'Clear', danger: true })) clearBtw()
+  }
   return (
     <div className="sheet-backdrop" onClick={closeBtw}>
       <div className="sheet btw" role="dialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" />
-        <div className="sheet-title">By the way</div>
+        <div className="btw-head">
+          <div className="sheet-title">By the way</div>
+          {/* Its own pointerdown, so the sheet's drag-to-close (top 64 px) doesn't capture the tap. */}
+          <button className="btw-clear" onPointerDown={e => e.stopPropagation()} onClick={() => void clear()} disabled={!msgs.length}>
+            Clear
+          </button>
+        </div>
         <div className="btw-hint dim small">Ask about this chat without interrupting it. Hermes sees the conversation so far.</div>
         <div className="sheet-scroll btw-list">
           {msgs.map(m => (

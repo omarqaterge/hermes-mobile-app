@@ -600,6 +600,7 @@ wss.on('connection', ws => {
   const waiting = new Map()
 
   let threeSid = ''
+  let btwSeq = 0
   ws.on('message', raw => {
     const msg = JSON.parse(String(raw))
     if (msg.method === undefined) {
@@ -830,6 +831,13 @@ wss.on('connection', ws => {
           threeSid = sid
           const questions = [{ qid: 'a', question: 'Colour?', choices: ['Red', 'Blue'] }, { qid: 'b', question: 'Size?', choices: ['S', 'M'] }, { qid: 'c', question: 'Notes?', choices: null }]
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-3', method: 'clarify', params: { session_id: sid, questions } })))
+          return
+        }
+        if (/^title busy$/.test(params.text)) {
+          // Hermes's title model is rate limited mid-turn: the warning it sends must not replace the status line.
+          later(100, live(() => event('message.start', sid, {})))
+          later(200, live(() => event('status.update', sid, { kind: 'warn', text: '⚠ Auxiliary title generation failed: HTTP 429: This request would exceed your rate limit' })))
+          later(1500, live(() => event('message.complete', sid, { text: 'Busy done.' })))
           return
         }
         if (/^slow reply$/.test(params.text)) {
@@ -1108,6 +1116,12 @@ wss.on('connection', ws => {
         return reply({ project: { previewSessions: [{ id: 's-3', title: 'Chat 3' }, { id: 's-4', title: 'Chat 4' }] } })
       case 'session.compress':
         return later(300, () => reply({ compressed: true, before_messages: 40, after_messages: 6, usage: { context_used: 200, context_max: 1000, context_percent: 20 } }))
+      case 'prompt.btw': {
+        // A /btw side question: the answer comes later as btw.complete and says whether earlier side answers rode along.
+        const task_id = `btw-${++btwSeq}`
+        later(200, () => event('btw.complete', params.session_id, { task_id, text: /^Earlier side questions/.test(params.text || '') ? 'Side answer (with earlier)' : 'Side answer (fresh)' }))
+        return reply({ task_id })
+      }
       default:
         return reply({})
     }
