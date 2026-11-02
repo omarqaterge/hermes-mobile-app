@@ -1,1 +1,4 @@
+---
+rank: small
+---
 - **/yolo always means Full access.** Typing `/yolo` in a chat that is in Auto access now switches it to Full access instead of turning approvals back on; typing it again returns the chat to the mode it was in before (Auto access or Off). The notice says which mode the chat is in now, and a `/yolo` typed right after a chat opens applies at once instead of waiting for the chat's start-up switch. Web tests only; not yet on a real phone.

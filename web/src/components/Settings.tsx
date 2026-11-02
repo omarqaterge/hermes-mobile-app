@@ -13,6 +13,7 @@ import { appVersion, haptic, openExternal, openRemoteDebugging, turnOffRemoteDeb
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { bootSummary, lastBoot } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
+import { headlines } from '../releasenotes'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
@@ -1021,7 +1022,7 @@ function WhatsNewRow() {
                   {r.version}
                   {r.date && <span className="dim small"> · {r.date}</span>}
                 </h3>
-                <Markdown text={r.text} />
+                <WhatsNewNotes text={r.text} />
               </section>
             ))}
           </div>
@@ -1034,6 +1035,30 @@ function WhatsNewRow() {
           )}
         </Sheet>
       )}
+    </>
+  )
+}
+
+/** One release in "What's new": a short line per change, biggest first, smaller changes and fixes last; Details shows
+ *  the full notes. */
+function WhatsNewNotes({ text }: { text: string }) {
+  const [full, setFull] = useState(false)
+  const groups = useMemo(() => headlines(text), [text])
+  if (!groups.length) return <Markdown text={text} />
+  return (
+    <>
+      {groups.map((g, gi) => (
+        <div key={gi}>
+          {g.title && <h4 className="whats-new-group">{g.title}</h4>}
+          <ul className="whats-new-list">
+            {g.items.map((t, i) => <li key={i}>{t}</li>)}
+          </ul>
+        </div>
+      ))}
+      <button className="whats-new-more" aria-expanded={full} onClick={() => setFull(!full)}>
+        {full ? 'Hide details' : 'Details'}
+      </button>
+      {full && <Markdown text={text} />}
     </>
   )
 }

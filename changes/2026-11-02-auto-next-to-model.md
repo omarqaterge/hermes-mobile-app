@@ -1,1 +1,4 @@
+---
+rank: normal
+---
 - **The Auto button moved next to the model picker.** How much Hermes may do without asking (Off, Auto access, Full access) is now a chip in the composer's bottom row, right after the model chip, instead of in the chat header. In Full access the chip reads "⚡ Full access" in red, replacing the separate Full access chip that used to sit there; tap it and pick Off to turn it off. In Live mode, where that row is hidden, the Live bar shows a small 🛡 or ⚡ chip while Auto access or Full access is on. Checked in the browser tests at phone and tablet widths, in both themes; not yet seen on a phone.

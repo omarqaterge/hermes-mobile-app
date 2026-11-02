@@ -1,3 +1,6 @@
+---
+rank: big
+---
 - **Interrupt Hermes in Live mode.** While Hermes reads its answer aloud, just start talking: it stops and listens to
   you, and what you say becomes your next message (saying only "stop" or "wait" stops it without sending anything).
   The Live bar also has an Interrupt button. Live mode keeps the microphone on while Hermes speaks and ignores

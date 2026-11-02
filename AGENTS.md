@@ -20,7 +20,8 @@ The map: `web/` the app's interface (React, TypeScript), `android/` the Android 
 plugin inside Hermes on the phone (Python), `phone/` the phone-side install and service scripts, `hermes/` the pinned
 Hermes and its patches, `tools/` tests and developer tools, `docs/` spec, status, decisions and plans.
 
-- Changes users notice go in a new file in [changes/](changes/README.md), never at the top of CHANGELOG.md; checks and
+- Changes users notice go in a new file in [changes/](changes/README.md) (a plain-words headline first, and a `rank`
+  so the biggest changes lead the release notes), never at the top of CHANGELOG.md; checks and
   project rules are also in [CONTRIBUTING.md](CONTRIBUTING.md).
 - On the maintainer's machine, `.hermes.md` and `.handoff/history.md` (git-excluded) hold private notes and the full
   history: if they exist, search them before solving something that looks familiar. Anything another agent needs goes
