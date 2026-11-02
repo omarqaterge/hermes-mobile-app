@@ -2488,6 +2488,8 @@ input[type='range'] { accent-color: var(--accent, #d9a441); }
 }
 .live-mute.on { background: color-mix(in srgb, var(--err) 22%, var(--surface-2)); border-color: var(--err); color: var(--err); }
 .live-mute:active { transform: scale(0.94); }
+/* Interrupt: shown while Hermes speaks in Live mode; stops the reading and listens */
+.live-interrupt { flex: none; padding: 0 14px; height: 44px; border-radius: 22px; color: var(--accent); border-color: var(--accent); }
 
 
 /* ── Settings: grouped cards + the app's own form controls ─────────────── */
