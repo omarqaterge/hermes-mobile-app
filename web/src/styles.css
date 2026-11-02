@@ -3859,3 +3859,8 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .pool-badge.on { color: var(--ok); }
 .pool-badge.cooling { color: var(--warn); }
 .pool-badge.dead { color: var(--err); }
+
+/* Settings → Hermes settings (HermesSettings.tsx) */
+.hs-changed { flex: none; font-size: 0.66rem; color: var(--accent); border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; }
+.hs-input { display: flex; align-items: center; gap: 8px; }
+.hs-input .sheet-input { flex: 1; min-width: 0; }

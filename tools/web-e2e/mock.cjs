@@ -96,6 +96,21 @@ let poolSeq = 0
 let poolSeeded = new Set()
 // config.yaml's fallback chain and per-provider rotation strategy (read with GET /api/config, merged by PUT /api/config).
 let rotation = { fallback_providers: [], credential_pool_strategies: {} }
+// The rest of config.yaml (Settings → Hermes settings): the pinned Hermes's defaults (tools/hermes-config-fixture.py)
+// under what PUT /api/config saved, merged like Hermes's _deep_merge (maps merge, anything else replaces, null over a map
+// is ignored). The model, reasoning, plugin list and rotation keys keep their own handling above and below.
+const configDefaults = (({ _comment, ...d }) => d)(require('./fixtures/hermes-config-defaults.json'))
+let cfgSaved = {}
+const isMap = v => v && typeof v === 'object' && !Array.isArray(v)
+const deepMerge = (base, over) => {
+  const out = { ...base }
+  for (const [k, v] of Object.entries(over || {})) {
+    if (isMap(out[k]) && isMap(v)) out[k] = deepMerge(out[k], v)
+    else if (!(isMap(out[k]) && v == null)) out[k] = v
+  }
+  return out
+}
+const OWN_CONFIG = new Set(['model', 'plugins', 'fallback_providers', 'credential_pool_strategies'])
 const keyPreview = v => (v.length >= 12 ? `${v.slice(0, 4)}...${v.slice(-4)}` : '***')
 const poolEntry = (index, id, label, auth_type, source, key) => ({ index, id, label, auth_type, source, priority: index - 1, last_status: poolStatus[id] ?? null, request_count: poolStatus[id] ? 3 : 0, token_preview: keyPreview(key), has_refresh: auth_type === 'oauth' })
 function poolList() {
@@ -148,6 +163,7 @@ const server = http.createServer((req, res) => {
         poolStatus = {}
         poolSeeded = new Set()
         rotation = { fallback_providers: [], credential_pool_strategies: {} }
+        cfgSaved = {}
         codexPolls = 0 // nobody signed in to ChatGPT any more either
       }
       if (b.configured) providerConfigured = true
@@ -401,12 +417,26 @@ const server = http.createServer((req, res) => {
     }
     if (p === '/api/model/set') return send({ ok: true })
     if (p === '/api/dashboard/plugins') return send([{ name: 'hermes-mobile' }, { name: 'kanban' }])
-    if (p === '/api/config' && req.method === 'GET') return send({ agent: { reasoning_effort: 'high' }, plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] }, ...rotation })
+    if (p === '/api/config' && req.method === 'GET') {
+      // Like Hermes: load_config (defaults merged) without the top-level keys that start with "_".
+      const c = Object.fromEntries(Object.entries(deepMerge(configDefaults, cfgSaved)).filter(([k]) => !k.startsWith('_')))
+      return send({ ...c, agent: { ...c.agent, reasoning_effort: 'high' }, plugins: { ...c.plugins, enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] }, ...rotation })
+    }
+    if (p === '/api/config/defaults') return send(configDefaults)
+    // Hermes's schema has a field per option; the app reads only the time zone list from it (Hermes Settings).
+    if (p === '/api/config/schema')
+      return send({
+        fields: { timezone: { type: 'select', description: 'IANA timezone (e.g. America/New_York). Blank uses the system timezone.', category: 'general', options: ['Africa/Cairo', 'America/New_York', 'Asia/Tokyo', 'Europe/Amsterdam', 'UTC'] } },
+        category_order: ['general', 'agent', 'terminal', 'display', 'delegation', 'memory', 'compression', 'security', 'browser', 'voice', 'tts', 'stt', 'logging', 'discord', 'auxiliary']
+      })
     if (p === '/api/config' && req.method === 'PUT') {
       const b = JSON.parse(body || '{}')
       if (b.config?.plugins?.enabled) pluginEnabled = b.config.plugins.enabled.includes('hermes-mobile') // other config writes (the model) leave it alone
       // Hermes deep-merges: a list replaces the old one, a map gains or changes keys.
       if (Array.isArray(b.config?.fallback_providers)) rotation.fallback_providers = b.config.fallback_providers
+      const rest = Object.fromEntries(Object.entries(b.config || {}).filter(([k]) => !OWN_CONFIG.has(k)))
+      if (rest.agent) rest.agent = Object.fromEntries(Object.entries(rest.agent).filter(([k]) => !k.startsWith('reasoning')))
+      cfgSaved = deepMerge(cfgSaved, rest)
       if (b.config?.credential_pool_strategies) rotation.credential_pool_strategies = { ...rotation.credential_pool_strategies, ...b.config.credential_pool_strategies }
       return send({ ok: true })
     }
