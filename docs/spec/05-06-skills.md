@@ -1,0 +1,13 @@
+### 5.6 Skills
+
+The plugin ships one Hermes skill, `openui` (the card reference), in `hermes-plugin/hermes-mobile/skills/openui/SKILL.md`.
+
+**How Hermes handles skills.** A skill is a folder with a `SKILL.md` (YAML frontmatter, then instructions). Skills in `~/.hermes/skills/` (and `skills.external_dirs`) are listed by name and a short description in every chat's system prompt (`<available_skills>`), and the model reads one in full with `skill_view(name)` only when it needs it (progressive disclosure). A plugin ships its skills with `ctx.register_skill(name, path, description=...)` (Hermes's documented way for plugins; copying into `~/.hermes/skills/` is the older pattern): Hermes serves them read-only as `skill_view("<plugin>:<name>")` and lists them in `skills_list` (category `plugin`), but keeps them out of `<available_skills>`. The plugin's own system-prompt section is therefore the index entry.
+
+**The `openui` skill.**
+
+- `openui.register_skill(ctx)`, called from `register(ctx)`, registers `SKILL_MD` as `SKILL_NAME` (`openui`) with the frontmatter's description (`description()`, so `skills_list` and `skill_view` say the same), so Hermes serves it as `skill_view("hermes-mobile:openui")`. It sets `openui.skill_registered`. A Hermes without `ctx.register_skill`, or one that refuses the skill, leaves it false; the section (5.3) then names the `openui_reference` tool (5.2), which returns the same text.
+- The `hermes-mobile.openui` section (5.3) tells app chats to load the skill before their first `openui-lang` block, or to call `openui_reference` when the chat has no `skill_view` (the user turned off Hermes's skills toolset). It follows the Dynamic UI setting and the chat's platform, which a skill-index entry could not. The reference itself enters a chat only when the model loads it, once.
+- The file is generated, never edited: `npm run gen:openui` in `web/` writes `SKILL_FRONTMATTER` plus `referenceText()` from `web/src/openui-lib.ts` (`skillText()`), so the model is taught exactly the components the app draws. `web/src/openui-lib.test.ts` fails when the file is stale or the frontmatter is wrong.
+- Limits it keeps (checked by `tools/test_openui.py`): the description at most 1,024 characters (`skill_view` cuts longer ones), the file under the 100,000 characters Hermes allows for skills it writes itself (`skill_manage`; not applied to plugin skills, kept as a sane bound), none of the phrases Hermes logs as possible prompt injection, and no `${HERMES_…}` or `` !` `` text that Hermes's skill preprocessing would rewrite.
+- The plugin folder (with `skills/`) is copied as a whole by `phone/install.sh`, so nothing is copied into `~/.hermes/skills/` and no profile needs its own copy.

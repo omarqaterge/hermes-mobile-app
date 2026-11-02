@@ -73,6 +73,7 @@ where, and what is still open, is in [docs/improvements.md](improvements.md) and
   - [5.3 System-prompt sections (4)](spec/05-03-system-prompt-sections.md)
   - [5.4 Dashboard routes (all 46)](spec/05-04-dashboard-routes.md)
   - [5.5 Files the plugin writes and reads](spec/05-05-files-the-plugin-writes.md)
+  - [5.6 Skills the plugin ships](spec/05-06-skills.md)
 - [6. Phone side and install](spec/06-00-phone-side-and-install.md)
   - [6.1 Every `phone/` script (11)](spec/06-01-every-phone-script.md)
   - [6.2 `hermes-services`: the supervisor loops](spec/06-02-hermes-services-the-supervisor-loops.md)
