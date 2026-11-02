@@ -510,6 +510,21 @@ final class Voice {
         startRecognizer();
     }
 
+    /**
+     * Live mode's barge-in: listen while Hermes is speaking, without stopping it, so the page can cut it off when it hears
+     * you. The microphone must already be allowed (no permission prompt in the middle of a reply). The on-device model
+     * listens through the echo canceller; the phone's recogniser takes its own microphone. The page tells Hermes's own
+     * voice from yours by the words (live.ts).
+     */
+    void startListeningOver() {
+        if (a.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            js("end", "");
+            return;
+        }
+        if (a.stt.start(localSink, true)) return;
+        startRecognizer();
+    }
+
     /** Dictation through the on-device model: the same page events as Android's recogniser. */
     private final LocalStt.Sink localSink = new LocalStt.Sink() {
         private volatile boolean fellBack = false;

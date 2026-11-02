@@ -10,6 +10,10 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
       saying "allow" runs it, "deny" refuses it. Say something unclear twice: the approval sheet appears instead.
 - [ ] **Live mode in the background.** While Hermes is speaking in Live mode, press Home.
       Expected: it keeps speaking to the end; Live mode is off when you come back to the app.
+- [ ] **Interrupt by talking.** In a quiet room, ask Live mode for a long story. Expected: Hermes is not cut off by its
+      own voice; saying "what about tomorrow" over it stops it and sends that after the pause; saying just "stop"
+      stops it and sends nothing. Repeat with the on-device model and with the phone's recogniser (Settings → Voice →
+      Speech recognition). With barge-in off (Settings → Voice → Live mode), talking over Hermes does nothing.
 
 ## Read-aloud controls
 

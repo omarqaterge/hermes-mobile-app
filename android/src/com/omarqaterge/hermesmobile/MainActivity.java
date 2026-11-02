@@ -2205,6 +2205,13 @@ public class MainActivity extends Activity {
             runOnUiThread(voice::startListening);
         }
 
+        /** Live mode: listen while Hermes speaks (barge-in); the reading goes on. */
+        @JavascriptInterface
+        public void startListeningOver(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(voice::startListeningOver);
+        }
+
         @JavascriptInterface
         public void stopListening(String key) {
             if (!ok(key)) return;
