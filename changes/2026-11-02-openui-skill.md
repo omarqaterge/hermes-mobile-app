@@ -1,1 +1,4 @@
+---
+rank: small
+---
 - **Hermes learns cards from a skill.** The guide Hermes reads before drawing cards, tables, charts and forms in a reply is now a Hermes skill (`hermes-mobile:openui`), loaded the standard way with `skill_view`, so it shows as a skill step in the chat. It is still read only when Hermes draws a card. Checked against the Hermes version the app installs, not yet on a phone.

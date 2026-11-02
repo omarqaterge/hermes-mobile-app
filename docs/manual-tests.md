@@ -147,8 +147,21 @@ check on a real phone:
 
 - [ ] **Done chip stays (#67).** With a build that has #67: send a short prompt, press Home before the reply ends.
       Expected: the green Done chip appears and stays (wait 2 minutes) until you open the app or the chat.
-- [ ] **/yolo from Auto access.** In a chat whose Auto button (beside the model chip) shows Auto access, type `/yolo`. Today it turns approvals back on
-      ("Full access off…"); note how long the notice takes to appear.
+- [ ] **/yolo from Auto access.** In a chat whose Auto button (beside the model chip) shows Auto access, type `/yolo`.
+      Expected: "⚡ Full access on…", the button reads ⚡ Full access; `/yolo` again: "Back to Auto access". Note how long
+      the notice takes right after opening a chat.
+
+## Confirm approvals with fingerprint (owner only: needs the phone's fingerprint or PIN)
+
+- [ ] With Auto off, ask Hermes for something it must approve; tap Allow once. Expected: the fingerprint prompt
+      ("Allow Hermes to run this?" with the command); after it, the command runs. A second approval in the same chat
+      doesn't ask.
+- [ ] Cancel the prompt: nothing runs, the sheet stays, the toast says why. Deny never asks.
+- [ ] Leave the app with an approval waiting, tap Allow once on the notification (phone unlocked): the app opens on
+      the chat and Allow asks for the fingerprint. After that, notification Allows in that chat go straight through.
+- [ ] Restart the app (close it from Recents): the next Allow asks again.
+- [ ] Settings → Permissions → Confirm approvals with fingerprint: turning it off asks for the fingerprint first.
+- [ ] Android 8 or 9 phone if at hand: the screen-lock screen or "Use screen lock" fallback works.
 
 ## Connectors (Settings → Connectors)
 

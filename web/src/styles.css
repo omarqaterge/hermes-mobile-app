@@ -3884,6 +3884,10 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
   font-size: 15px;
   font-weight: 600;
 }
+.whats-new-list { margin: 6px 0 0; padding-left: 20px; }
+.whats-new-list li { margin: 4px 0; line-height: 1.4; }
+.whats-new-group { margin: 12px 0 0; font-size: 13px; font-weight: 600; color: var(--dim); }
+.whats-new-more { background: none; border: 0; padding: 8px 0; color: var(--accent); font: inherit; font-size: 13px; }
 
 /* Provider rotation (Rotation.tsx): the fallback chain and a provider's key pool */
 .chain-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }

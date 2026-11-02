@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { notesSince } from './releasenotes'
+import { headlines, notesSince } from './releasenotes'
 
 const LOG = `# What's new
 
@@ -33,5 +33,21 @@ describe('notesSince', () => {
   })
   it('a skipped version with no section is simply absent', () => {
     expect(notesSince(LOG, '0.8.60', '0.8.71').map(r => r.version)).toEqual(['0.8.70', '0.8.69', '0.8.68'])
+  })
+})
+
+describe('headlines', () => {
+  it('keeps one short line per change: the bold headline, else the first sentence', () => {
+    const g = headlines('- **Big thing.** Details\n  over two lines.\n- A plain bullet, e.g. this one. With more.\n- **Uses `code`.**')
+    expect(g).toEqual([{ title: '', items: ['Big thing', 'A plain bullet, e.g. this one', 'Uses code'] }])
+  })
+  it('groups under ### headings and drops empty groups', () => {
+    const g = headlines('- **Main.** x\n\n### Smaller changes and fixes\n\n- **Small.** y\n\n### Empty\n')
+    expect(g).toEqual([{ title: '', items: ['Main'] }, { title: 'Smaller changes and fixes', items: ['Small'] }])
+  })
+  it('shortens a very long first sentence', () => {
+    const [g] = headlines('- ' + 'word '.repeat(40))
+    expect(g.items[0].length).toBe(120)
+    expect(g.items[0].endsWith('…')).toBe(true)
   })
 })

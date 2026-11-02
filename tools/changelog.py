@@ -2,8 +2,16 @@
 """CHANGELOG fragments: each branch adds its user-facing entries as its own file in changes/ instead of editing the
 top of CHANGELOG.md, so parallel branches never conflict there. A release folds them into CHANGELOG.md.
 
-A fragment is changes/YYYY-MM-DD-short-name.md holding one or more CHANGELOG bullets ("- **Title.** Text…", continuation
-lines indented). Newer dates come first in the release section; changes/README.md is not a fragment.
+A fragment is changes/YYYY-MM-DD-short-name.md holding one or more CHANGELOG bullets ("- **Headline.** Text…",
+continuation lines indented), optionally after front matter giving its importance:
+
+  ---
+  rank: big
+  ---
+
+rank is big, normal (the default) or small. The release section lists big, then normal, then (under "### Smaller
+changes and fixes") small entries, newest first within each; the app's "What's new" sheet shows each bullet's
+headline in that order. changes/README.md is not a fragment.
 
 Usage:
   python3 tools/changelog.py check            fragments are well formed (CI)          exit 0 = fine, 1 = a bad fragment
@@ -20,6 +28,10 @@ import sys
 from pathlib import Path
 
 NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*\.md$")
+RANKS = ("big", "normal", "small")
+SMALL_HEADING = "### Smaller changes and fixes"
+HEADLINE = re.compile(r"^- \*\*([^*\n]+)\*\*")
+HEADLINE_MAX = 80
 
 
 def fragments(root: Path) -> list[Path]:
@@ -30,10 +42,33 @@ def fragments(root: Path) -> list[Path]:
     return sorted((p for p in d.iterdir() if p.is_file() and p.name != "README.md"), key=lambda p: p.name, reverse=True)
 
 
+def parse(p: Path) -> tuple[str, str, list[str]]:
+    """(rank, the bullets without front matter, problems with the front matter)."""
+    text = p.read_text(encoding="utf-8").strip()
+    rank, bad = "normal", []
+    if text.startswith("---\n"):
+        end = text.find("\n---", 3)
+        if end < 0:
+            return rank, text, ["front matter has no closing '---' line"]
+        for line in text[4:end].splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() != "rank":
+                bad.append(f"unknown front matter line {line!r} (only 'rank: big|normal|small')")
+            elif value.strip() not in RANKS:
+                bad.append(f"rank must be big, normal or small, not {value.strip()!r}")
+            else:
+                rank = value.strip()
+        text = text[end + 4:].strip()
+    return rank, text, bad
+
+
 def problems(root: Path) -> list[str]:
     out = []
     for p in fragments(root):
-        text = p.read_text(encoding="utf-8").strip()
+        _, text, bad = parse(p)
+        out += [f"{p.name}: {b}" for b in bad]
+        if bad:
+            continue
         if not NAME.match(p.name):
             out.append(f"{p.name}: name it YYYY-MM-DD-short-name.md (lower case, dashes)")
         if not text:
@@ -42,6 +77,16 @@ def problems(root: Path) -> list[str]:
             out.append(f"{p.name}: must start with a CHANGELOG bullet (\"- **Title.** …\")")
         elif any(line.startswith("#") for line in text.splitlines()):
             out.append(f"{p.name}: no headings; the release adds the version heading")
+        for line in text.splitlines():
+            if not line.startswith("- "):
+                continue
+            m = HEADLINE.match(line)
+            if not m:
+                out.append(f"{p.name}: each bullet starts with a bold headline (\"- **Headline.** …\")")
+            elif len(m.group(1)) > HEADLINE_MAX:
+                out.append(f"{p.name}: headline over {HEADLINE_MAX} characters; the details go after it")
+            elif re.search(r"#\d", m.group(1)):
+                out.append(f"{p.name}: no pull request numbers in the headline")
     return out
 
 
@@ -56,9 +101,15 @@ def _split(changelog: str) -> tuple[str, str, str]:
 
 
 def notes(root: Path) -> str:
+    """Big, then normal fragments, then CHANGELOG.md's "## Unreleased", then small ones under SMALL_HEADING."""
     _, unreleased, _ = _split((root / "CHANGELOG.md").read_text(encoding="utf-8"))
-    parts = [p.read_text(encoding="utf-8").strip() for p in fragments(root)]
-    return "\n".join(x for x in parts + [unreleased] if x)
+    parsed = [parse(p)[:2] for p in fragments(root)]  # newest first; sorted() keeps that within a rank
+    ranked = sorted(parsed, key=lambda f: RANKS.index(f[0]))
+    main = "\n".join(x for x in [t for r, t in ranked if r != "small"] + [unreleased] if x)
+    small = "\n".join(t for r, t in ranked if r == "small" and t)
+    if small:
+        return f"{main}\n\n{SMALL_HEADING}\n\n{small}" if main else f"{SMALL_HEADING}\n\n{small}"
+    return main
 
 
 def release(root: Path, version: str, date: str) -> str:

@@ -86,6 +86,28 @@ class Changelog(unittest.TestCase):
         self.assertEqual(cl.main(["release", "v0.8.70"], self.root), 1)
         self.assertNotIn("v0.8.70", (self.root / "CHANGELOG.md").read_text())
 
+    def test_rank_orders_big_then_normal_then_small_under_a_heading(self):
+        self.frag("2026-10-31-small.md", "---\nrank: small\n---\n- **Small fix.** s\n")
+        self.frag("2026-10-30-big.md", "---\nrank: big\n---\n- **Big thing.** b\n")
+        self.frag("2026-10-31-plain.md", "- **Plain.** p\n")
+        n = cl.notes(self.root)
+        self.assertNotIn("rank:", n)
+        order = [n.index(x) for x in ("Big thing", "Plain", "Old entry", cl.SMALL_HEADING, "Small fix")]
+        self.assertEqual(order, sorted(order), n)
+
+    def test_no_small_heading_without_small_entries(self):
+        self.frag("2026-10-30-big.md", "---\nrank: big\n---\n- **Big.** b\n")
+        self.assertNotIn("###", cl.notes(self.root))
+
+    def test_bad_front_matter_and_headlines_are_listed(self):
+        self.frag("2026-10-30-rank.md", "---\nrank: huge\n---\n- **A.** b\n")
+        self.frag("2026-10-30-key.md", "---\nsize: big\n---\n- **A.** b\n")
+        self.frag("2026-10-30-open.md", "---\nrank: big\n- **A.** b\n")
+        self.frag("2026-10-30-nobold.md", "- A plain bullet\n")
+        self.frag("2026-10-30-long.md", "- **" + "x" * 81 + "** b\n")
+        self.frag("2026-10-30-pr.md", "- **Fixed in #42.** b\n")
+        self.assertEqual(len(cl.problems(self.root)), 6, cl.problems(self.root))
+
     def test_the_real_repo_passes(self):
         self.assertEqual(cl.problems(HERE.parent), [])
 

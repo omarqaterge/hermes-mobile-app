@@ -72,6 +72,10 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `openRemoteDebugging` | none | nothing | Settings → About → Remote debugging. Only asks `MainActivity.askRemoteDebugging` to show the native confirmation (then the phone's screen lock). It turns nothing on; nothing in the page can (2.3). |
 | `remoteDebuggingState` | none | JSON string | Read-only `{"available":bool,"on":bool,"minutesLeft":int}`. `available` = Android Developer options are on. |
 | `turnOffRemoteDebugging` | none | nothing | `DevTools.turnOff` (a test build keeps debugging on). Turning off is always allowed. |
+| `confirmApproval` | `id`, `session` (stored chat id, `""` for Settings), `what` (the command) | nothing (async) | `ApprovalLock.ask`: answers `window.hermesApprovalConfirm(id, result)` with `ok` (confirmed now, or the chat already was, or the setting is off), `cancel` (dismissed, failed, or the app is not on screen) or `nolock` (no screen lock). The page cannot confirm anything itself (3.6). |
+| `approvalLockState` | none | JSON string | Read-only `{"on":bool,"secure":bool}`: Confirm approvals with fingerprint, and whether the phone has a screen lock. |
+| `setApprovalLock` | `on` | nothing | Saves the switch (preference `approvalLock`). The page asks `confirmApproval` first when turning it off. |
+| `forgetApproval` | `session` | nothing | The chat's live Hermes session closed: its next Allow asks again. |
 | `uninstallStart` | `backup`, `keys`, `settings` (JSON text) | `ok`, `busy`, `no-termux`, `no-permission`, `error: …` | `Uninstall.run`. 4.7. |
 | `uninstallState` | none | JSON string | `Uninstall.state`: `{started, running, removed, result}`. |
 | `uninstallApp` | `which` (`termux-api`, `termux-boot`, `shizuku`, `termux`, `self`) | boolean | `Uninstall.uninstallApp`: opens Android's uninstall prompt for that fixed package; false if unknown or not installed. |
