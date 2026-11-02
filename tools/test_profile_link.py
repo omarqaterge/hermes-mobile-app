@@ -65,5 +65,18 @@ empty = Path(tempfile.mkdtemp())
 check("no main copy: nothing is linked", api.link_profiles(empty) == [] and not (empty / "profiles" / "a" / "plugins").exists())
 check("no profiles folder: no error", api.link_profiles(Path(tempfile.mkdtemp())) == [])
 
+# GET /plugin-info: the version the app's plugin update (phone/plugin-update.sh) compares with its own copy.
+check("plugin-info without BUILD_STAMP is stamp 0", api.plugin_info(target) == {"stamp": 0, "hash": "", "source": ""})
+(target / "BUILD_STAMP").write_text("1793648698 " + "ab" * 32 + " apk\n")
+check("plugin-info reads BUILD_STAMP", api.plugin_info(target) == {"stamp": 1793648698, "hash": "ab" * 32, "source": "apk"})
+(target / "BUILD_STAMP").write_text("garbage\n")
+check("a broken BUILD_STAMP is stamp 0", api.plugin_info(target)["stamp"] == 0)
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+app = FastAPI()
+app.include_router(api.router, prefix="/api/plugins/hermes-mobile")
+r = TestClient(app).get("/api/plugins/hermes-mobile/plugin-info")
+check("GET /plugin-info answers", r.status_code == 200 and "stamp" in r.json(), r.text)
+
 print("ALL PASSED" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

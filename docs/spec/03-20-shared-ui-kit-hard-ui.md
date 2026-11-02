@@ -60,6 +60,7 @@
 | `statusrows.ts` | The Shizuku row of the Status sheet |
 | `Uninstall.tsx` | The Danger zone section, the uninstall sheet and its resume at start-up |
 | `uninstall.ts` | Pure uninstall logic and the shell calls |
+| `plugin-sync.ts` | Settings → About → Hermux plugin: `pluginRow` (the state → value, sub, tap action; unit-tested), `updateAnswer`, the shell calls `pluginState` / `pluginUpdate`, and `usePluginState`, refreshed by `window.hermesPluginState()` |
 | `update.ts` | The in-app app-update check and install request |
 | `releasenotes.ts` | Pure version comparison (`isNewer`), the What's new sections of the changelog (`notesSince`), and a section's one-line-per-change summary (`headlines`, `NotesGroup`) |
 | `SttSettings.tsx` | Settings → Voice → Speech recognition: the phone's recogniser, the on-device model cards and Your own model |

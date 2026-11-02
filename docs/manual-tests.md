@@ -178,3 +178,26 @@ check on a real phone:
 - [ ] **Google with a real account.** Paste an OAuth client file, sign in, paste back the localhost:1 address from the browser's address bar.
       Expected: the row reads Connected and Hermes reads your calendar in a new chat; Sign out returns to the sign-in step.
 - [ ] **A tool with a key.** Web search: save a key for another service; it reads "In use" and a new chat searches with it. Disconnect deletes the key.
+
+## The plugin follows the app (Settings → About → Hermux plugin; spec 6.6)
+
+Needs a phone with Hermes set up and an app build from this branch or later. Before you start, keep a copy of the
+plugin: `~/bin/hermes-debian sh -c 'cp -a /root/.hermes/plugins/hermes-mobile /root/hermes-mobile-plugin-backup'`.
+
+1. **Old plugin catches up.** On a phone whose plugin predates this (no `BUILD_STAMP`:
+   `~/bin/hermes-debian cat /root/.hermes/plugins/hermes-mobile/BUILD_STAMP` fails), install the new APK over the old
+   app, open it once, then leave it with no chat running. Within about a minute Settings → About → Hermux plugin goes
+   from "This app has a newer version…" to "Up to date with this app"; the `BUILD_STAMP` now ends in `apk`; Settings →
+   Replies → Dynamic UI is there, and every profile's `plugins/hermes-mobile` is a link to the main copy.
+2. **Never during a chat.** With an update waiting, start a long turn and leave the app: nothing restarts until the
+   turn ends; about 15 s after it does, Hermes restarts once and the row reads "Up to date".
+3. **Tap to update.** With the app open and Hermes idle, tap the row: "Updating… Hermes restarts for a moment", the
+   chat reconnects by itself, and the row reads "Up to date".
+4. **Rollback.** Make the APK's plugin fail to load (a test build whose `plugin_api.py` raises on import), tap the
+   row: after up to 3 minutes the row says "Couldn’t update (load rolled-back). The plugin that was there still works",
+   and the old plugin is back in place and answering.
+5. **Left alone.** Add a line to the installed `plugin.yaml`: the row reads "Changed by hand…"; tap → "Replace the
+   plugin?" → Cancel changes nothing. `touch /root/.hermes/hermes-mobile-plugin/hold` makes it "Held for testing".
+   Remove the hold file when done.
+6. **Interrupted.** During step 3, force-stop Termux right after "Updating…" shows; open Termux and the app again: the
+   next check settles it (the new plugin kept if it serves, else the old one back), never a missing plugin.

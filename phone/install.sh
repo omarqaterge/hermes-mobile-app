@@ -55,6 +55,9 @@ fi
 
 echo "3/5 Installing the Hermux plugin"
 find "$here/hermes-plugin/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+# Its version, so the app's own plugin update (phone/plugin-update.sh) knows this copy and never replaces a newer one.
+bash "$here/phone/plugin-update.sh" stamp "$here/hermes-plugin/hermes-mobile" \
+  "$(bash "$here/phone/plugin-update.sh" source-stamp "$here")" install || true
 "$DEB" --put "$here/hermes-plugin/hermes-mobile" /root/.hermes/plugins/hermes-mobile
 "$DEB" --put "$here/phone/cron_ticker.py" /root/.hermes/scripts/cron_ticker.py
 # Every Hermes profile has its own plugins folder. Link ours into each one, so a profile (also one made the active

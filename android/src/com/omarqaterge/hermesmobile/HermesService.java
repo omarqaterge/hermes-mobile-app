@@ -243,6 +243,14 @@ public class HermesService extends Service {
         rearmWake();
         ShizukuKeeper.armCheck(this); // once, 90 s of real time: after a reboot Shizuku doesn't start by itself, so no binder arrives
         main.postDelayed(updateCheck, 120_000);
+        // The plugin in Debian may be older than this APK's (after an app update): compare once Hermes had time to start.
+        main.postDelayed(() -> PluginSync.onServiceStart(this), 30_000);
+    }
+
+    /** No turn running (by the plugin's beats), no approval or question waiting: a plugin update may restart Hermes. */
+    synchronized boolean hermesIdle() {
+        boolean beating = lastWorking && System.currentTimeMillis() - lastBeat < WORKING_TTL_MS;
+        return !beating && pendingApproval == null && pendingAsk == null;
     }
 
     /** New-release notice: one GitHub request every 12 h at most (UpdateNotice throttles); the timer does not wake the CPU. */
@@ -599,6 +607,9 @@ public class HermesService extends Service {
         String line = in.readLine();
         // POST /setup = the installer's progress (its own one-time token, see SetupLines); everything else is an event.
         boolean setupReq = line != null && line.startsWith("POST /setup ");
+        // GET /plugin-bundle/<token> = phone/plugin-update.sh fetching this APK's plugin (PluginSync, one-time token).
+        String bundleToken = line != null && line.startsWith("GET /plugin-bundle/") && line.endsWith(" HTTP/1.1")
+                ? line.substring(19, line.length() - 9) : null;
         int len = 0;
         String gotKey = "";
         int headers = 0;
@@ -623,6 +634,14 @@ public class HermesService extends Service {
             }
         }
         OutputStream out = s.getOutputStream();
+        if (bundleToken != null) {
+            byte[] b = PluginSync.bundleFor(this, bundleToken);
+            out.write((b != null ? "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\nContent-Length: " + b.length
+                    : "HTTP/1.1 403 Forbidden\r\nContent-Length: 0").concat("\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            if (b != null) out.write(b);
+            out.flush();
+            return;
+        }
         if (setupReq) {
             int r = setupPost(body.toString());
             out.write((r == SetupLines.OK ? "HTTP/1.1 204 No Content\r\n" : r == SetupLines.BAD_TOKEN ? "HTTP/1.1 403 Forbidden\r\n" : "HTTP/1.1 400 Bad Request\r\n")
@@ -693,6 +712,7 @@ public class HermesService extends Service {
                 double since = e.optDouble("since", 0);
                 if (working && since > 0) workingSince = (long) (since * 1000);
                 if (!working) stopping = null;
+                boolean ended = lastWorking && !working;
                 lastWorking = working;
                 if (working) flashUntil = 0; // real work beats a flash
                 lastBeat = System.currentTimeMillis();
@@ -700,6 +720,7 @@ public class HermesService extends Service {
                 if (working) main.postDelayed(expireWorkingTask, WORKING_TTL_MS);
                 postStatus();
                 updateWake();
+                if (ended) main.postDelayed(() -> PluginSync.maybeApply(this), 15_000); // a quiet moment for a plugin update
                 return;
             }
             case "bgapp":

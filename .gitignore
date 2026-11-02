@@ -9,3 +9,4 @@ __pycache__/
 .DS_Store
 *.keystore
 out/
+hermes-plugin/hermes-mobile/BUILD_STAMP

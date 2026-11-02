@@ -56,6 +56,7 @@ Base path: `/api/plugins/hermes-mobile`. Most routes accept a `?profile=` query 
 | `POST /google/finish` | Body `{url}`: the address the browser was sent to (`http://localhost:1/?state=…&code=…`) or its code, passed to the script's `--auth-code`, which checks the state and saves `google_token.json`. Answers the state; 400 with the reason. | `GoogleConnect.tsx` |
 | `POST /google/install` | Starts installing Google's Python libraries into Hermes's environment in the background with the script's `--install-deps` (one job for the whole Hermes, up to 10 minutes; the state's `installing` and `install_error` follow it) and answers the state at once, because the app's HTTP call waits 2 minutes at most. | `GoogleConnect.tsx` |
 | `DELETE /google` | Signs out: the script's `--revoke` revokes the token with Google and deletes it (the client file stays). The state carries `warning` when Google couldn't be told, since the script deletes the token anyway. | `GoogleConnect.tsx` |
+| `GET /plugin-info` | The installed plugin's version from its `BUILD_STAMP` file: `{stamp, hash, source}`; stamp 0 for a copy without one (`plugin_info`). `phone/plugin-update.sh` waits for it to report the new stamp after an update (6.6). Global. | `phone/plugin-update.sh` |
 | `POST /profiles/link` | Links the plugin into every profile now; returns the profiles changed. Global. | Bots page (`web/src/components/Bots.tsx`) after creating a profile |
 
 #### Behaviour notes for the routes
