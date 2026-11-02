@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Report a problem: the log scrubber, the GitHub fallback link, and sending through the relay.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fallbackUrl, issueText, REPORT_REPO, scrubLog, sendReport, type Report } from './report'
+import { fallbackUrl, issueText, removeChatText, REPORT_REPO, scrubLog, sendReport, type Report } from './report'
 
 const details = { app: '1.4.0', android: '14', hermes: 'v0.21.5' }
 
@@ -23,6 +23,25 @@ describe('scrubLog', () => {
     expect(out).toContain('token=[removed]')
   })
 
+  it('removes secrets under longer names and in other forms', () => {
+    const out = scrubLog(
+      [
+        'access_token=abcdef123456',
+        '{"refresh_token":"abc123def"}',
+        'client_secret=abc123',
+        'GITHUB_TOKEN=abc123',
+        'authorization=abc123',
+        'Authorization: Basic dXNlcjpwYXNz',
+        'bot123456789:AAHabcdefghijklmnopqrstuvwxyz012345 failed',
+        'AKIAABCDEFGHIJKLMNOP',
+        'gsk_abcdefghijklmnopqrstuvwx',
+        'https://hooks.slack.com/services/T000/B000/abcdefghijklmnopqrstuvwx'
+      ].join('\n')
+    )
+    for (const leak of ['abcdef123456', 'abc123', 'dXNlcjpwYXNz', 'AAHabc', 'AKIA', 'gsk_', 'abcdefghijklmnopqrstuvwx']) expect(out).not.toContain(leak)
+    expect(out).toContain('https://hooks.slack.com/services/T000/B000/[removed]')
+  })
+
   it('removes emails, IP addresses and URL queries, but keeps the loopback address', () => {
     const out = scrubLog('mail me@example.org from 192.168.1.20 and fe80::1c2:3ff and 2001:db8:85a3:0:0:8a2e:370:7334\nGET https://user:pw@api.example.com/v1/x?key=SECRET#frag\nws://127.0.0.1:9119/api/ws?token=t0k')
     expect(out).not.toMatch(/me@example|192\.168|fe80|2001:db8|SECRET|user:pw|t0k/)
@@ -36,10 +55,10 @@ describe('scrubLog', () => {
   })
 
   it('replaces home and storage paths, and the phone model', () => {
-    const out = scrubLog('open /data/data/com.termux/files/home/notes/a.md\n/home/alex/x and /Users/alex/y\n/storage/emulated/0/Download/z.png\nMozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A) Chrome')
-    expect(out).not.toMatch(/alex|Pixel|com\.termux\/files\/home|emulated/)
-    expect(out).toContain('~/notes/a.md')
-    expect(out).toContain('[storage]/Download/z.png')
+    const out = scrubLog('open /data/data/com.termux/files/home/notes/a.md\n/home/alex/x and /Users/alex/y\n/storage/emulated/0/Download/z.png\nMozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A) Chrome\n(Linux; U; Android 9; SM-G960F)')
+    expect(out).not.toMatch(/alex|Pixel|SM-G960F|com\.termux\/files\/home|emulated|a\.md|z\.png/)
+    expect(out).toContain('open ~\n')
+    expect(out).toContain('[storage]\n')
     expect(out).toContain('(Linux; Android)')
   })
 
@@ -48,6 +67,14 @@ describe('scrubLog', () => {
     const out = scrubLog('error sending "Please book a table for two at Luigi’s on Friday"\nwarn parse failed for \'a long quoted message that might be private\'\nshort stays', chat)
     expect(out).not.toMatch(/Luigi|might be private/)
     expect(out).toContain('short stays')
+  })
+
+  it('removes chat text however the log holds it', () => {
+    const long = 'Please remember the appointment with my doctor '.repeat(12).trim()
+    expect(scrubLog(`warn ${JSON.stringify(long).slice(0, 300)}`, [long])).toBe('warn "[chat text]')
+    expect(scrubLog('sent call  my doctor   today', ['call my doctor today'])).toBe('sent [chat text]')
+    expect(scrubLog('sent {"text":"say \\"hello there\\" to him"}', ['say "hello there" to him'])).toBe('sent {"text":"[chat text]"}')
+    expect(removeChatText('a line\nkeep this', [])).toBe('a line\nkeep this')
   })
 
   it('removes long IDs and encoded data', () => {
@@ -84,6 +111,14 @@ describe('fallbackUrl', () => {
     const body = new URL(url).searchParams.get('body')!
     expect(body).toContain('didn’t fit in the link')
     expect(body).toContain('- Hermux agent: v0.21.5')
+  })
+
+  it('survives text cut in the middle of an emoji', () => {
+    for (let n = 1000; n < 1400; n += 7) {
+      const url = fallbackUrl(report({ text: '😀'.repeat(n) }))
+      expect(url.length).toBeLessThanOrEqual(7500)
+    }
+    expect(() => fallbackUrl(report({ log: `12:00:00 warn \uD83D` }))).not.toThrow()
   })
 
   it('carries a note, such as attaching the screenshot by hand', () => {

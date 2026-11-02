@@ -41,39 +41,59 @@ export function reportDetails(hermes: string): ReportDetails {
 
 /** Replaced in a log before anyone sees it. Order matters: secrets inside URLs go with the URL's query. */
 const RULES: Array<[RegExp, string | ((...m: string[]) => string)]> = [
-  [/\(Linux; Android[^)]*\)/g, '(Linux; Android)'], // a browser identification names the phone model
+  [/\(Linux;[^)]*Android[^)]*\)/g, '(Linux; Android)'], // a browser identification names the phone model
   [/\b(https?|wss?):\/\/[^\s"'<>]+/gi, url => cleanUrl(url)],
   [/\beyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]{6,}/g, '[token]'], // JWT
-  [/\bBearer\s+[^\s"',]+/gi, 'Bearer [token]'],
-  [/\b(?:sk|pk|rk)-[\w-]{16,}/g, '[key]'],
-  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[abprs]-[\w-]{10,}|AIza[\w-]{30,}|hf_[A-Za-z0-9]{20,})/g, '[key]'],
-  [/\b((?:api[_-]?key|token|secret|password|passwd|pwd|auth|session|cookie|key)["']?\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&]+)/gi, (_m, k) => `${k}[removed]`],
+  [/\b(Bearer|Basic)\s+[^\s"',]+/gi, (_m, k) => `${k} [token]`],
+  [/\b(?:sk|pk|rk)[-_][\w-]{16,}/g, '[key]'],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[abprs]-[\w-]{10,}|AIza[\w-]{30,}|hf_[A-Za-z0-9]{20,}|gsk_\w{20,}|AKIA[0-9A-Z]{16})/g, '[key]'],
+  [/(?<!\d)\d{6,}:[\w-]{30,}/g, '[key]'], // a Telegram bot token, also inside a word ("bot123…")
+  [/([\w-]*(?:api[_-]?key|token|secret|password|passwd|pwd|auth\w*|session|cookie|key)["']?\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&]+)/gi, (_m, k) => `${k}[removed]`],
   [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]'],
   [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, ip => (/^(127\.|0\.0\.0\.0$)/.test(ip) ? ip : '[ip]')],
   [/\b(?:[0-9a-f]{1,4}:){3,7}[0-9a-f]{1,4}\b/gi, '[ip]'],
   [/(?<![\w:])[0-9a-f]{0,4}(?::[0-9a-f]{0,4})*::(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?(?![\w:])/gi, m => (m === '::' || m === '::1' ? m : '[ip]')],
-  [/\/data\/data\/com\.termux\/files\/home|\/data\/user\/\d+\/com\.termux\/files\/home|\/home\/[^\s/"':]+|\/Users\/[^\s/"':]+|\/root(?=\/|\b)/g, '~'],
-  [/\/storage\/emulated\/\d+|\/sdcard/g, '[storage]'],
+  // A file's name can be as private as the folder's, so the whole path goes.
+  [/(?:\/data\/data\/com\.termux\/files\/home|\/data\/user\/\d+\/com\.termux\/files\/home|\/home\/[^\s/"':]+|\/Users\/[^\s/"':]+|\/root(?=\/|\b))[^\s"':,)]*/g, '~'],
+  [/(?:\/storage\/emulated\/\d+|\/sdcard)[^\s"':,)]*/g, '[storage]'],
   [/\b[0-9a-f]{32,}\b/gi, '[id]'],
-  [/[A-Za-z0-9+/_-]{40,}={0,2}/g, '[data]'],
+  [/[A-Za-z0-9+_-]{40,}={0,2}/g, '[data]'],
   [/"[^"\n]{25,}"|“[^”\n]{25,}”|'[^'\n]{25,}'/g, '"[text]"'] // quoted text in an error can be a message
 ]
 function cleanUrl(url: string): string {
   try {
     const u = new URL(url)
-    return `${u.protocol}//${u.host}${u.pathname}${u.search || u.hash ? '?[removed]' : ''}`
+    const path = u.pathname.split('/').map(p => (p.length >= 20 ? '[removed]' : p)).join('/') // a webhook's secret is in its path
+    return `${u.protocol}//${u.host}${path}${u.search || u.hash ? '?[removed]' : ''}`
   } catch {
     return '[link]'
   }
 }
 
+/** `text` without any line of `chat` (12 characters or more), with spaces evened out on both sides and also in its JSON
+ *  form. A long line is also found by its first 40 characters, and goes to the end of the line: a log line may be cut. */
+export function removeChatText(text: string, chat: string[]): string {
+  const lines = chat.flatMap(t => t.split('\n').map(l => l.replace(/\s+/g, ' ').trim())).filter(l => l.length >= 12)
+  const bits = [...new Set(lines.flatMap(l => [l, JSON.stringify(l).slice(1, -1)]))].sort((a, b) => b.length - a.length)
+  let out = text.replace(/[ \t]+/g, ' ')
+  for (const b of bits) {
+    out = out.split(b).join('[chat text]')
+    const start = b.slice(0, 40)
+    for (let at = b.length > 40 ? out.indexOf(start) : -1; at >= 0; at = out.indexOf(start, at)) {
+      const end = out.indexOf('\n', at)
+      out = `${out.slice(0, at)}[chat text]${end < 0 ? '' : out.slice(end)}`
+    }
+  }
+  return out
+}
+
+/** Lone halves of an emoji, left when text is cut: encodeURIComponent throws on them. */
+export const wellFormed = (s: string): string => s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+
 /** The log with personal details taken out: tokens, keys, emails, IP addresses, URL queries, home and storage paths,
  *  long IDs, quoted text, and any line of the given chat text (`chat`: the open chat's messages). */
 export function scrubLog(log: string, chat: string[] = []): string {
-  let out = log
-  // Chat text first, before the other rules change it: every line of 12 characters or more, longest first.
-  const bits = [...new Set(chat.flatMap(t => t.split('\n').map(l => l.trim())).filter(l => l.length >= 12))].sort((a, b) => b.length - a.length)
-  for (const b of bits) out = out.split(b).join('[chat text]')
+  let out = removeChatText(log, chat) // first, before the other rules change the text
   for (const [re, to] of RULES) out = out.replace(re, to as string)
   return out.length > MAX_LOG ? out.slice(out.length - MAX_LOG).replace(/^[^\n]*\n/, '') : out
 }
@@ -94,7 +114,7 @@ export function issueText(r: Report, note = ''): string {
 }
 
 const newIssue = (title: string, body: string) =>
-  `https://github.com/${REPORT_REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`
+  `https://github.com/${REPORT_REPO}/issues/new?title=${encodeURIComponent(wellFormed(title))}&body=${encodeURIComponent(wellFormed(body))}`
 const CUT = '_(Cut: the rest didn’t fit in the link.)_'
 
 /** GitHub's new-issue page filled with the report, under MAX_FALLBACK_URL: the log's oldest lines go first, then

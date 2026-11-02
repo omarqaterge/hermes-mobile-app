@@ -4,12 +4,14 @@
 //   POST /        a report (JSON, see readReport) → 201 {url, number, screenshot}; 429 when a limit is reached
 //   GET  /s/<id>  a screenshot a report uploaded (stored in the KV namespace REPORTS, linked from the issue)
 // Limits, all kept in REPORTS: MAX_PER_INSTALL reports a day for each random per-install ID the app makes (never a
-// phone identifier), MAX_PER_IP a day for each sender address (stored only as a salted hash), and size caps on every
-// field. Everything fits Cloudflare's free plan (Workers and KV). See README.md for setup.
+// phone identifier), MAX_PER_IP a day for each sender address (stored only as a salted hash), MAX_PER_DAY in all, and
+// size caps on every field. KV isn't atomic, so a burst of requests at the same moment can pass a little over a limit.
+// Everything fits Cloudflare's free plan (Workers and KV). See README.md for setup.
 
 export const LIMITS = {
   MAX_PER_INSTALL: 5, // reports per install ID per UTC day
-  MAX_PER_IP: 20, // reports per sender address per UTC day
+  MAX_PER_IP: 20, // reports per sender address (an IPv6 address counts by its /64) per UTC day
+  MAX_PER_DAY: 200, // reports from everyone per UTC day: what a flood of made-up install IDs can cost at most
   MAX_BODY: 4_500_000, // bytes of request JSON (the screenshot is in it, base64)
   MAX_TITLE: 120,
   MAX_TEXT: 6000,
@@ -46,7 +48,7 @@ export function readReport(body) {
   let shot = null
   if (screenshot != null) {
     const { type, data } = screenshot
-    if (!SHOT_TYPES[type] || typeof data !== 'string' || data.length > Math.ceil((LIMITS.MAX_SHOT * 4) / 3) + 4) return 'bad screenshot'
+    if (typeof type !== 'string' || !Object.hasOwn(SHOT_TYPES, type) || typeof data !== 'string' || data.length > Math.ceil((LIMITS.MAX_SHOT * 4) / 3) + 4) return 'bad screenshot'
     shot = { type, data }
   }
   return { installId, title: title.replace(/\s+/g, ' ').trim(), text: text.trim(), details: d, log: log?.trim() || '', shot }
@@ -58,7 +60,7 @@ const fenced = s => s.replace(/^(\s*)(`{3,}|~{3,})/gm, '$1​$2')
 
 /** The issue's Markdown. */
 export function issueBody(r, shotUrl) {
-  const lines = [quiet(r.text), '', '---', '', '**Details**', '']
+  const lines = [fenced(quiet(r.text)), '', '---', '', '**Details**', '']
   lines.push(`- App: ${r.details.app || 'unknown'}`, `- Android: ${r.details.android || 'unknown'}`, `- Hermux agent: ${r.details.hermes || 'unknown'}`)
   if (shotUrl) lines.push('', `![Screenshot](${shotUrl})`)
   if (r.log) lines.push('', '<details><summary>Recent app log (personal details removed in the app)</summary>', '', '```text', fenced(quiet(r.log)), '```', '', '</details>')
@@ -74,13 +76,27 @@ async function sha256(s) {
 /** Counts this report against both daily limits; false = a limit is already reached (nothing is counted then). */
 async function withinLimits(env, installId, ip, now) {
   const day = new Date(now).toISOString().slice(0, 10)
-  const ipKey = `ip:${day}:${await sha256(`${env.IP_SALT || 'report-relay'}|${ip || 'none'}`)}`
-  const idKey = `id:${day}:${installId}`
-  const [ipN, idN] = await Promise.all([env.REPORTS.get(ipKey), env.REPORTS.get(idKey)])
-  if (Number(idN || 0) >= LIMITS.MAX_PER_INSTALL || Number(ipN || 0) >= LIMITS.MAX_PER_IP) return false
+  const counters = [
+    [`id:${day}:${installId}`, LIMITS.MAX_PER_INSTALL],
+    [`ip:${day}:${await sha256(`${env.IP_SALT || 'report-relay'}|${addressKey(ip)}`)}`, LIMITS.MAX_PER_IP],
+    [`all:${day}`, LIMITS.MAX_PER_DAY]
+  ]
+  const counts = await Promise.all(counters.map(([k]) => env.REPORTS.get(k)))
+  if (counters.some(([, max], i) => Number(counts[i] || 0) >= max)) return false
   const opts = { expirationTtl: 2 * DAY_SECONDS }
-  await Promise.all([env.REPORTS.put(ipKey, String(Number(ipN || 0) + 1), opts), env.REPORTS.put(idKey, String(Number(idN || 0) + 1), opts)])
+  await Promise.all(counters.map(([k], i) => env.REPORTS.put(k, String(Number(counts[i] || 0) + 1), opts)))
   return true
+}
+
+/** One network hands out a whole /64 to one customer, so an IPv6 address counts by its first four groups. */
+function addressKey(ip) {
+  if (!ip) return 'none'
+  if (!ip.includes(':')) return ip
+  const [head, tail = ''] = ip.toLowerCase().split('::')
+  const left = head ? head.split(':') : []
+  const right = tail ? tail.split(':') : []
+  const zeros = ip.includes('::') ? Array(Math.max(0, 8 - left.length - right.length)).fill('0') : []
+  return [...left, ...zeros, ...right].slice(0, 4).map(g => g.replace(/^0+(?=.)/, '')).join(':')
 }
 
 function decodeShot(shot) {
@@ -136,13 +152,18 @@ async function report(request, env) {
   if (r.shot && !bytes) return json(400, { error: 'bad screenshot' })
   if (!(await withinLimits(env, r.installId, request.headers.get('cf-connecting-ip'), Date.now()))) return json(429, { error: 'limit reached' }, { 'retry-after': String(DAY_SECONDS) })
   let shotUrl = ''
+  let shotKey = ''
   if (r.shot && bytes) {
     const id = `${crypto.randomUUID().replace(/-/g, '')}.${SHOT_TYPES[r.shot.type]}`
-    await env.REPORTS.put(`shot:${id}`, bytes, { metadata: { type: r.shot.type } })
+    shotKey = `shot:${id}`
+    await env.REPORTS.put(shotKey, bytes, { metadata: { type: r.shot.type } })
     shotUrl = `${new URL(request.url).origin}/s/${id}`
   }
   const issue = await createIssue(env, r, shotUrl)
-  if (!issue) return json(502, { error: 'GitHub refused the issue' })
+  if (!issue) {
+    if (shotKey) await env.REPORTS.delete(shotKey) // no issue links to it
+    return json(502, { error: 'GitHub refused the issue' })
+  }
   return json(201, { ...issue, screenshot: Boolean(shotUrl) })
 }
 

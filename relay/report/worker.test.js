@@ -12,6 +12,7 @@ function kv() {
     m,
     async get(k) { return m.has(k) ? m.get(k).value : null },
     async put(k, value, opts) { m.set(k, { value, metadata: opts?.metadata }) },
+    async delete(k) { m.delete(k) },
     async getWithMetadata(k) { const e = m.get(k); return e ? { value: e.value, metadata: e.metadata } : { value: null, metadata: null } }
   }
 }
@@ -56,6 +57,7 @@ test('rejects bad reports without calling GitHub', async () => {
     report({ log: 'x'.repeat(LIMITS.MAX_LOG + 1) }),
     report({ details: { app: '<img src=x>' } }),
     report({ screenshot: { type: 'image/gif', data: PNG } }),
+    report({ screenshot: { type: 'constructor', data: 'UklGRgAAAABXRUJQ' } }), // not a key of its own in the type list
     report({ screenshot: { type: 'image/jpeg', data: PNG } }) // PNG bytes claiming to be a JPEG
   ]) {
     const res = await post(bad)
@@ -81,6 +83,22 @@ test('limits reports per install and per address', async () => {
   assert.ok(![...env.REPORTS.m.keys()].some(k => k.includes('192.0.2.1')))
 })
 
+test('an IPv6 address counts by its /64, and everyone has a daily total', async () => {
+  let last
+  for (let i = 0; i < LIMITS.MAX_PER_IP + 1; i++) last = await post(report({ installId: i.toString(16).padStart(32, 'd') }), `2001:db8:1:2::${i.toString(16)}`)
+  assert.equal(last.status, 429)
+  assert.equal((await post(report({ installId: 'e'.repeat(32) }), '2001:db8:1:3::1')).status, 201)
+  const day = new Date().toISOString().slice(0, 10)
+  env.REPORTS.m.set(`all:${day}`, { value: String(LIMITS.MAX_PER_DAY) })
+  assert.equal((await post(report({ installId: 'f'.repeat(32) }), '198.51.100.77')).status, 429)
+})
+
+test('a screenshot is deleted when GitHub refuses its issue', async () => {
+  answer = () => new Response('{}', { status: 403 })
+  assert.equal((await post(report({ screenshot: { type: 'image/png', data: PNG } }))).status, 502)
+  assert.ok(![...env.REPORTS.m.keys()].some(k => k.startsWith('shot:')))
+})
+
 test('stores a screenshot, links it from the issue and serves it', async () => {
   const res = await post(report({ screenshot: { type: 'image/png', data: PNG } }))
   assert.equal(res.status, 201)
@@ -102,7 +120,7 @@ test('a GitHub failure or a missing setup is an error the app can fall back from
 })
 
 test('the issue body cannot mention people or break out of the log block', () => {
-  const r = readReport(report({ text: 'ping @someone', log: 'line\n```\n# heading' }))
+  const r = readReport(report({ text: 'ping @someone\n```\nopen fence', log: 'line\n```\n# heading' }))
   const body = issueBody(r, '')
   assert.ok(!/@someone/.test(body))
   assert.ok(body.includes('@​someone'))

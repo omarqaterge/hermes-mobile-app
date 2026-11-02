@@ -1,10 +1,10 @@
 // "Report a problem": a sheet that turns what the user writes into a public GitHub issue (report.ts). Opened from
 // Settings → About and from error states (openReport). What goes with the words is on screen before Submit.
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { appLog } from '../applog'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { appLog, openChatText } from '../applog'
 import { openExternal } from '../bridge'
 import { fallbackUrl, MAX_TEXT, MAX_TITLE, prepareScreenshot, relayUrl, reportDetails, REPORT_REPO, scrubLog, sendReport, type Report, type Screenshot } from '../report'
-import { getState, toast, useStore } from '../store'
+import { toast, useStore } from '../store'
 import { Sheet } from './Screens'
 import { Row, ToggleRow } from './ui'
 
@@ -36,25 +36,33 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
     Object.assign(draft, { title, text, withLog })
   }, [title, text, withLog])
   const details = reportDetails(hermes)
-  const active = getState().active
-  const chat = [active?.title || '', ...(active?.items || []).map(i => ('text' in i && typeof i.text === 'string' ? i.text : ''))]
-  const log = withLog ? scrubLog(appLog(), chat) : ''
+  // Read once when switched on: what is shown is what is sent, and typing doesn't scrub it again.
+  const log = useMemo(() => (withLog ? scrubLog(appLog(), openChatText()) : ''), [withLog])
   const relay = Boolean(relayUrl())
   const ready = title.trim() && text.trim() && phase.kind === 'edit'
+  // A send in progress finishes on screen (30 seconds at most): closed, it could open GitHub out of nowhere or be sent twice.
+  const close = () => {
+    if (phase.kind !== 'sending') onClose()
+  }
 
   const submit = async () => {
     if (!ready) return
     const r: Report = { title: title.trim(), text: text.trim(), details, log: log || undefined }
     setPhase({ kind: 'sending' })
-    const res = await sendReport(r, shot && { type: shot.type, data: shot.data })
-    if (res.kind === 'sent') {
-      Object.assign(draft, { title: '', text: '', withLog: false })
-      setPhase(res)
-      return
+    try {
+      const res = await sendReport(r, shot && { type: shot.type, data: shot.data })
+      if (res.kind === 'sent') {
+        Object.assign(draft, { title: '', text: '', withLog: false })
+        setPhase(res)
+        return
+      }
+      const url = fallbackUrl(r, shot ? SHOT_NOTE : '')
+      setPhase({ kind: 'github', why: res.why, url })
+      openExternal(url)
+    } catch {
+      setPhase({ kind: 'edit' })
+      toast("Couldn't send the report", 'error')
     }
-    const url = fallbackUrl(r, shot ? SHOT_NOTE : '')
-    setPhase({ kind: 'github', why: res.why, url })
-    openExternal(url)
   }
 
   if (phase.kind === 'sent')
@@ -94,7 +102,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
     )
 
   return (
-    <Sheet title="Report a problem" onClose={onClose}>
+    <Sheet title="Report a problem" onClose={close}>
       <div className="sheet-scroll report">
         <div className="notice notice-warn">Reports are public: anyone can read them on GitHub. Don't write anything private.</div>
         <label className="field">
@@ -112,7 +120,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
         {withLog && (
           <>
             <pre className="sheet-code report-log" aria-label="App log to send">{log || 'Nothing logged yet.'}</pre>
-            <div className="sheet-desc">Keys, tokens, emails, internet addresses, links' details, home folders and chat text are taken out. Read it anyway: it will be public.</div>
+            <div className="sheet-desc">The app takes out keys, tokens, emails, internet addresses, links' details, home folders and chat text it recognises. It can miss some: read it, because it will be public.</div>
           </>
         )}
         {relay ? (
@@ -142,7 +150,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
         <div className="sheet-desc">This becomes a public issue in {REPORT_REPO} on GitHub.</div>
       </div>
       <div className="sheet-actions">
-        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn" disabled={phase.kind === 'sending'} onClick={close}>Cancel</button>
         <button className="btn primary" disabled={!ready} onClick={() => void submit()}>
           {phase.kind === 'sending' ? 'Sending…' : relay ? 'Submit' : 'Continue on GitHub'}
         </button>

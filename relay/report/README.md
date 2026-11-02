@@ -11,8 +11,9 @@ What it does (`worker.js`, details in [spec 3.21](../../docs/spec/03-21-report-a
 - `POST /` takes a report, checks its size and fields, and creates the issue with the label `from-app`. It answers with
   the issue's link.
 - It allows 5 reports a day for each install (a random ID the app makes, never a phone identifier) and 20 a day for
-  each internet address (stored only as a salted hash, deleted after two days). Past that it answers 429, and the app
-  sends the user to GitHub's page instead.
+  each internet address (stored only as a salted hash, deleted after two days; an IPv6 address counts by its /64), and
+  200 a day from everyone. Past that it answers 429, and the app sends the user to GitHub's page instead. KV isn't
+  atomic, so many requests at the same moment can pass a little over a limit.
 - A screenshot the user picked (at most 3 MB) is stored in the same KV namespace and served at `/s/<random>.jpg`, so the
   issue can show it.
 

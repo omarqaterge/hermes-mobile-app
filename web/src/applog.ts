@@ -1,10 +1,12 @@
 // The recent app log a problem report may include (components/Report.tsx). In memory only, never written to disk or
 // sent by itself: the last MAX_LINES lines of page errors, unhandled promise failures, console errors and warnings,
 // connection changes and error toasts. What leaves the phone is scrubLog's copy, shown to the user first (report.ts).
+import { removeChatText, wellFormed } from './report'
 import { getState, subscribe } from './store'
 
 const MAX_LINES = 150
 const MAX_LINE = 400
+const CHAT_ITEMS = 300 // of the open chat, checked against a log line and the log
 const lines: string[] = []
 
 const clock = (): string => new Date().toISOString().slice(11, 19) // UTC time of day, no date or time zone
@@ -18,10 +20,17 @@ const say = (v: unknown): string => {
   }
 }
 
-/** Adds one line (kind, then the message on one line, cut to MAX_LINE). */
+/** The title and latest messages of the open chat, to keep out of the log. */
+export function openChatText(): string[] {
+  const a = getState().active
+  return [a?.title || '', ...(a?.items || []).slice(-CHAT_ITEMS).map(i => ('text' in i && typeof i.text === 'string' ? i.text : ''))]
+}
+
+/** Adds one line (kind, then the message on one line, cut to MAX_LINE). Chat text goes before the cut, and while its
+ *  chat is still open: the log outlives both. */
 export function logLine(kind: string, ...parts: unknown[]): void {
-  const text = parts.map(say).join(' ').replace(/\s+/g, ' ').trim()
-  lines.push(`${clock()} ${kind} ${text}`.slice(0, MAX_LINE))
+  const text = removeChatText(parts.map(say).join(' ').replace(/\s+/g, ' ').trim(), openChatText())
+  lines.push(wellFormed(`${clock()} ${kind} ${text}`.slice(0, MAX_LINE)))
   if (lines.length > MAX_LINES) lines.splice(0, lines.length - MAX_LINES)
 }
 
@@ -53,7 +62,8 @@ export function startAppLog(): void {
     for (const t of s.toasts) {
       if (t.id <= toastSeen) continue
       toastSeen = t.id
-      if (t.level === 'error') logLine('toast', t.text)
+      // What failed, not why: an error's words (after the colon) and a quoted name can be the user's own.
+      if (t.level === 'error') logLine('toast', t.text.split(': ')[0].replace(/“[^”]*”|"[^"]*"/g, '“…”'))
     }
   })
 }

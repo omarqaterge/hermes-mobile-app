@@ -165,6 +165,28 @@ module.exports = async t => {
     await ctx.close()
   }
 
+  // A send in progress can't be closed or sent twice.
+  {
+    const { ctx, pg, posts } = await open(browser)
+    await ctx.route(/relay\.test/, async route => {
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS })
+      posts.push(1)
+      await sleep(800)
+      return route.fulfill({ status: 201, headers: CORS, contentType: 'application/json', body: JSON.stringify({ url: ISSUE, number: 12 }) })
+    })
+    const sheet = await openSheet(pg)
+    await sheet.getByPlaceholder('What went wrong, in a few words').fill('Slow one')
+    await sheet.getByPlaceholder('What you did, what you expected, what happened instead').fill('Takes long')
+    await sheet.getByRole('button', { name: 'Submit' }).click()
+    await sheet.getByRole('button', { name: 'Sending…' }).waitFor({ timeout: 3000 })
+    await pg.mouse.click(180, 8) // the backdrop, above the sheet
+    check((await sheet.getByRole('button', { name: 'Cancel' }).isDisabled()), 'report: Cancel is off while sending')
+    check((await sheet.isVisible()), 'report: a tap outside does not close the sheet while sending')
+    await pg.locator('.sheet', { hasText: 'Report sent' }).waitFor({ timeout: 5000 })
+    check(posts.length === 1, 'report: one tap sends once')
+    await ctx.close()
+  }
+
   // The light theme.
   {
     const { ctx, pg, errors } = await open(browser, { theme: 'light' })

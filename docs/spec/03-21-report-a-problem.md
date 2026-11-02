@@ -4,7 +4,7 @@
 hub screen's error notice (`ReportLink` in `Status`, `components/Screens.tsx`) and under "The installer stopped" in the
 setup flow; the Report a problem button of the Backend status sheet while Hermux is offline or has problems (it closes
 that sheet first). `openReport()` opens it from anywhere; `ReportHost`, mounted once in `App.tsx`, shows it.
-**Closes with:** the grip, backdrop, Back, Cancel or Close. **Source files:** `web/src/components/Report.tsx` (the
+**Closes with:** the grip, backdrop, Back, Cancel or Close, but not while a report is sending (30 seconds at most). **Source files:** `web/src/components/Report.tsx` (the
 sheet), `web/src/report.ts` (what is sent, the log scrubber, the GitHub link, sending), `web/src/applog.ts` (the recent
 app log), `relay/report/` (the relay, below). Decision: [report-a-problem](../decisions/report-a-problem.md).
 
@@ -13,8 +13,8 @@ anything private."; the fields Title (up to `MAX_TITLE`, 120 characters) and Wha
 line naming what is sent with it ("Sent with it: app …, Android …, Hermux agent …. Nothing else about your phone.",
 from `reportDetails`: `appVersion()`, the Android version from the WebView's identification, and the Hermes version of
 the open chat or the health check); the switch Include recent app log (off every time the app starts; while on, the
-exact text that will be sent shows below it, scrolled in a box labelled "App log to send", with a note on what was
-taken out); and the screenshot row. With a relay in the build, the row Add a screenshot opens the phone's picture
+exact text that will be sent, read once when switched on, shows below it, scrolled in a box labelled "App log to send",
+with a note on what the app takes out and that it can miss some); and the screenshot row. With a relay in the build, the row Add a screenshot opens the phone's picture
 picker (a hidden file input for PNG, JPEG or WebP, the same picker path as the composer's); the picked picture shows
 with "The screenshot will be public too. Check it shows nothing private." and Remove screenshot. `prepareScreenshot`
 redraws it as a JPEG of at most 1600 px a side, which also drops the photo's metadata (place, time, camera). Without a
@@ -42,24 +42,29 @@ log's oldest lines go first, then the end of the text, marked "(Cut: the rest di
 **The app log** (`applog.ts`): `startAppLog` (from `main.tsx`) keeps the last 150 lines, in memory only, of page errors,
 unhandled promise failures, `console.error` and `console.warn`, connection changes (`conn` and its detail) and error
 toasts, each `HH:MM:SS kind message` (UTC time of day), cut to 400 characters. `logLine` adds one, `appLog` reads them.
-Nothing reads it but this sheet.
+Nothing reads it but this sheet. Each line loses the open chat's text as it is added, before the cut (`openChatText`,
+the title and last 300 messages; `removeChatText`), and an error toast keeps only what failed: its words up to the first
+`: `, with quoted names replaced. `wellFormed` drops half an emoji left by a cut.
 
 **Scrubbing** (`scrubLog`, before the log is shown): any line of the open chat's title or messages (12 characters or
-more) becomes `[chat text]`; then the phone model in a browser identification, URL queries, fragments and user names
-(`https://host/path?[removed]`), JWTs, Bearer tokens, `sk-`/`pk-`/`rk-` keys, GitHub, Slack, Google and Hugging Face
-tokens, `token=`/`key:`/`password=`-style values, emails (`[email]`), IPv4 addresses but loopback and IPv6 addresses
-(`[ip]`), the Termux, Linux and macOS home folders (`~`), shared storage (`[storage]`), hex IDs of 32 characters or
-more (`[id]`), long encoded strings (`[data]`) and quoted text of 25 characters or more (`"[text]"`). The result is cut
+more; spaces evened out, also in JSON form; a long line also by its first 40 characters, to the end of the log line)
+becomes `[chat text]`; then the phone model in a browser identification, URL queries, fragments, user names and path
+parts of 20 characters or more (`https://host/path?[removed]`), JWTs, Bearer and Basic values, `sk-`/`pk-`/`rk-` keys,
+GitHub, Slack, Google, Groq, AWS, Telegram and Hugging Face tokens, `token=`/`client_secret=`/`Authorization:`/
+`password=`-style values under any longer name, emails (`[email]`), IPv4 addresses but loopback and IPv6 addresses
+(`[ip]`), whole paths in the Termux, Linux and macOS home folders (`~`) and shared storage (`[storage]`), hex IDs of 32
+characters or more (`[id]`), long encoded strings (`[data]`) and quoted text of 25 characters or more (`"[text]"`). The result is cut
 to the last `MAX_LOG` (20000) characters.
 
 **The relay** (`relay/report/worker.js`, a Cloudflare Worker on the free plan; setup steps in `relay/report/README.md`):
 `POST /` checks the report (`readReport`: install ID, title and text lengths, log length, version strings, a JPEG, PNG or
 WebP screenshot of at most 3 MB whose bytes match its type), counts it against `LIMITS` (5 reports a day per install
-ID, 20 a day per sender address, kept in the KV namespace `REPORTS` with the address only as a salted SHA-256 hash, both
-counters expiring after two days), stores the screenshot in `REPORTS` and serves it at `GET /s/<random id>.<ext>`,
-then creates the issue with the Worker secret `GITHUB_TOKEN` (a fine-grained token that may only create issues on
+ID, 20 a day per sender address, an IPv6 address by its /64, and 200 a day in all, kept in the KV namespace `REPORTS` with
+the address only as a salted SHA-256 hash, the counters expiring after two days; KV isn't atomic, so a burst at the same
+moment can pass a little over a limit), stores the screenshot in `REPORTS` and serves it at `GET /s/<random id>.<ext>`,
+deleting it again if GitHub refuses the issue, then creates the issue with the Worker secret `GITHUB_TOKEN` (a fine-grained token that may only create issues on
 `REPO`), labelled `LABEL` (`from-app`). The body (`issueBody`) has the text, the versions, the screenshot link and the
-log in a folded block; `@` mentions and code fences in the user's text and log are defused. Answers: 201 `{url, number,
+log in a folded block; `@` mentions and code fences in the user's text and log are defused (with a zero-width space), so a text can't swallow what follows it. Answers: 201 `{url, number,
 screenshot}`, 400 for a bad report, 413 when too large, 429 at a limit, 502 when GitHub refused, 503 when the secret or
 the namespace is missing. Any origin may call it (the app's page is a `file://` page). Tests: `relay/report/worker.test.js`
 (`node --test`, a stand-in KV and a mocked GitHub API), run by CI's plugin job.
