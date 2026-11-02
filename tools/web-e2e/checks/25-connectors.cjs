@@ -1,5 +1,5 @@
 // Settings → Connectors: MCP servers (add, catalog, on/off, test, browser sign-in, remove), tools with a key, keys for skills.
-const { WEB, calls, check, sleep } = require('../lib.cjs')
+const { WEB, calls, check, mock, sleep } = require('../lib.cjs')
 
 const waitOk = (loc, name, timeout = 5000) => loc.waitFor({ timeout }).then(() => check(true, name), () => check(false, name))
 
@@ -147,4 +147,21 @@ module.exports = async t => {
   check(http('/api/plugins/hermes-mobile/google', 'DELETE').length === 1, 'connectors: Google: sign out calls the plugin')
   await pg.locator('.sheet-backdrop').last().click({ position: { x: 5, y: 5 } })
   await pg.close()
+
+  // A failed server list shows its error with Try again inside its section (it used to show nothing at all).
+  {
+    const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await pg.goto(WEB + '/')
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await mock({ routeFail: { 'GET /api/mcp/servers': 500 } })
+    await pg.getByRole('button', { name: /^Sessions/ }).click()
+    await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await pg.locator('.set-row', { hasText: 'Connectors' }).click()
+    const mcp = pg.locator('.set-section', { hasText: 'Apps and services (MCP)' })
+    await waitOk(mcp.locator('.notice-error', { hasText: 'Mock failure' }), 'connectors: a failed server list shows the error in its section')
+    await mock({ routeFail: { 'GET /api/mcp/servers': 0 } })
+    await mcp.getByRole('button', { name: 'Try again' }).click()
+    await waitOk(mcp.locator('.set-row', { hasText: 'server-filesystem' }), 'connectors: Try again loads the server list')
+    await pg.close()
+  }
 }

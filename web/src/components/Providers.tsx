@@ -101,7 +101,7 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
         <span aria-hidden="true">🔍</span>
         <input placeholder="Search providers (e.g. deepseek, groq)" value={q} onChange={e => setQ(e.target.value)} />
       </label>
-      <Status loading={loading} error={error} empty={!loading && !error && !shown.length} emptyText="No provider matches. Try your own server below." />
+      <Status loading={loading} error={error} empty={!loading && !error && !shown.length} emptyText="No provider matches. Try your own server below." onRetry={reload} />
       {connected.length > 0 && <Section title={`Connected · ${connected.length}`}>{connected.map(row)}</Section>}
       {popular.length > 0 && <Section title="Popular">{popular.map(row)}</Section>}
       {rest.length > 0 && <Section title={q.trim() ? 'More' : `All providers · ${rest.length}`}>{rest.map(row)}</Section>}
