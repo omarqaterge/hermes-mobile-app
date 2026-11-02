@@ -101,7 +101,7 @@ export interface ActiveSession {
   turnStart: number | null
   /** The chat's goal (Hermes's /goal), null when none or the backend can't say. */
   goal: GoalSnapshot | null
-  /** Auto access (header's Auto button): with info.yolo, the plugin still blocks Hermes's dangerous-command list. */
+  /** Auto access (the composer's Auto button): with info.yolo, the plugin still blocks Hermes's dangerous-command list. */
   autoAccess?: boolean
 }
 
