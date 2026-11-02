@@ -251,6 +251,15 @@ module.exports = async t => {
   await rows.nth(1).click()
   await page.locator('.sheet-title', { hasText: '/root/projects/site/b.txt' }).waitFor({ timeout: 3000 }).then(() => check(true, 'file sheet titled with the path'), () => check(false, 'file sheet titled with the path'))
   check((await page.locator('.sheet .diff-view .dl', { hasText: 'new' }).count()) >= 1, 'file sheet shows the diff')
+  {
+    // A web address in a diff line is a link like anywhere else.
+    await page.evaluate(() => { window.__opened = []; window.__realOpen = window.open; window.open = u => { window.__opened.push(String(u)); return null } })
+    const dl = page.locator('.sheet .diff-view a.auto-link', { hasText: 'https://example.com/diff' })
+    check((await dl.count()) === 1, 'a web address in a diff is a link')
+    if (await dl.count()) await dl.click()
+    check((await page.evaluate(() => window.__opened)).includes('https://example.com/diff'), 'tapping it opens it outside')
+    await page.evaluate(() => { window.open = window.__realOpen })
+  }
   await page.evaluate(() => window.hermesBack())
   await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 3000 }).then(() => check(true, 'Back closes the file sheet'), () => check(false, 'Back closes the file sheet'))
   await tc.getByRole('button', { name: 'Checkpoints' }).click()

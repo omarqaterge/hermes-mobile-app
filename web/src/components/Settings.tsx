@@ -9,7 +9,7 @@ import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
-import { appVersion, haptic, openRemoteDebugging, turnOffRemoteDebugging } from '../bridge'
+import { appVersion, haptic, openExternal, openRemoteDebugging, turnOffRemoteDebugging } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { bootSummary, lastBoot } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
@@ -353,7 +353,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
       <div className="sheet-scroll">
         {row?.description && <div className="dim small">{row.description}</div>}
         {row?.url && (
-          <a className="small" href={row.url} target="_blank" rel="noreferrer">
+          <a className="small" href={row.url} onClick={e => { e.preventDefault(); haptic(); openExternal(row.url!) }}>
             Get a key ↗
           </a>
         )}

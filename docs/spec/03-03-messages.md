@@ -107,7 +107,7 @@ Rendering rules:
 
 #### Diff view
 
-`web/src/components/Diff.tsx` `DiffView` draws a unified diff in a monospace block: green added lines, red removed lines, blue `@@` hunk headers, bold file-header lines (`diff --git`, `index`, `---`, `+++`, `a/… → b/…`), yellow lines starting with `!`, and dim meta lines (`┊…`, `\ No newline`). ANSI colour codes from Hermes's terminal diffs are stripped, the "┊ review diff" marker line is dropped, and output over 20,000 characters ends with "… (truncated)". `looksLikeDiff` decides whether plain text is a diff (a hunk or git header plus changed lines). The same view is used in tool cards, Markdown code blocks and the File checkpoints sheet.
+`web/src/components/Diff.tsx` `DiffView` draws a unified diff in a monospace block: green added lines, red removed lines, blue `@@` hunk headers, bold file-header lines (`diff --git`, `index`, `---`, `+++`, `a/… → b/…`), yellow lines starting with `!`, and dim meta lines (`┊…`, `\ No newline`). ANSI colour codes from Hermes's terminal diffs are stripped, the "┊ review diff" marker line is dropped, and output over 20,000 characters ends with "… (truncated)". Web addresses in diff lines are links (`Linked`). `looksLikeDiff` decides whether plain text is a diff (a hunk or git header plus changed lines). The same view is used in tool cards, Markdown code blocks and the File checkpoints sheet.
 
 #### Changed files card
 
