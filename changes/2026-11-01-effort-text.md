@@ -1,1 +1,4 @@
+---
+rank: small
+---
 - **Reasoning level as text again.** The model chip above the composer shows the reasoning level in words again ("med", "high", "off"…) instead of the five bars. Web tests only; not yet on a real phone.

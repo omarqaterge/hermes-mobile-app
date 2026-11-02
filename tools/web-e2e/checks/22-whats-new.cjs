@@ -9,7 +9,12 @@ const LOG = `# What's new
 
 ## v0.8.70 (2026-11-03)
 
-- **Newest thing.**
+- **Newest thing.** With details
+  over two lines.
+
+### Smaller changes and fixes
+
+- **A small fix.** Its details.
 
 ## v0.8.69 (2026-11-02)
 
@@ -58,8 +63,15 @@ module.exports = async t => {
     const heads = await sheet.locator('.whats-new-version').allInnerTexts()
     check(heads.length === 2 && heads[0].startsWith('0.8.70') && heads[1].startsWith('0.8.69') && heads[0].includes('2026-11-03'), `what's new: newest first, with dates, only newer versions (${JSON.stringify(heads)})`)
     const text = await sheet.innerText()
-    check(text.includes('Newest thing.') && text.includes('Middle thing.') && !text.includes('Installed thing.') && !text.includes('Not out yet.'), "what's new: the sections' text, without the installed version or Unreleased")
-    check((await sheet.locator('strong', { hasText: 'Newest thing.' }).count()) === 1, "what's new: the notes are rendered as Markdown")
+    check(text.includes('Newest thing') && text.includes('Middle thing') && !text.includes('Installed thing') && !text.includes('Not out yet'), "what's new: the sections' text, without the installed version or Unreleased")
+    const first = await sheet.locator('section').first().locator('.whats-new-list li').allInnerTexts()
+    check(JSON.stringify(first) === '["Newest thing","A small fix"]', `what's new: one short line per change, the headline only (${JSON.stringify(first)})`)
+    check((await sheet.locator('section').first().locator('.whats-new-group').innerText()) === 'Smaller changes and fixes', "what's new: smaller changes and fixes under their own heading")
+    check(!text.includes('over two lines'), "what's new: the details stay hidden at first")
+    const more = sheet.locator('section').first().locator('button.whats-new-more')
+    await more.click()
+    check((await sheet.locator('strong', { hasText: 'Newest thing.' }).count()) === 1 && (await sheet.innerText()).includes('over two lines'), "what's new: Details shows the full notes as Markdown")
+    check((await more.innerText()) === 'Hide details', "what's new: the button then reads Hide details")
     await sheet.locator('button', { hasText: 'Update to 0.8.70' }).click()
     await sheet.waitFor({ state: 'detached', timeout: 3000 })
     check(JSON.stringify(await pg.evaluate(() => window.__installed)) === '["https://github.com/omarqaterge/hermes-mobile-app/releases/download/v0.8.70/hermes-mobile.apk"]', "what's new: Update in the sheet starts the download")
