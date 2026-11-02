@@ -3421,6 +3421,9 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 
 /* /btw mini chat */
 .sheet.btw { height: 70vh; z-index: 31; }
+.btw-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.btw-clear { padding: 6px 12px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--dim); font-size: 0.85rem; font-weight: 600; }
+.btw-clear:disabled { opacity: 0.45; }
 .btw-list { display: flex; flex-direction: column; gap: 12px; flex: 1; overflow-y: auto; }
 .btw-q { align-self: flex-end; margin-left: auto; max-width: 85%; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; border-radius: 16px 16px 4px 16px; width: fit-content; }
 .btw-a { margin-top: 8px; max-width: 95%; background: var(--panel-2, rgba(127, 127, 127, 0.14)); padding: 8px 12px; border-radius: 16px 16px 16px 4px; }
