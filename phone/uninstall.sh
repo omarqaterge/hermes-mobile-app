@@ -3,7 +3,7 @@
 # from inside TERMUX: stops Hermes, optionally saves a backup to Downloads first, undoes the phone setting the installer
 # changed (Android's child-process limit, through Shizuku when it runs), removes Debian (with Hermes, its chats and keys)
 # and the installer's files in Termux. It does NOT uninstall any app: the Hermux app does that afterwards (Android
-# asks once per app), Termux last but one. Run by the app (Settings → Uninstall Hermes, through Termux's RUN_COMMAND), or
+# asks once per app), Termux last but one. Run by the app (Settings → Uninstall Hermux, through Termux's RUN_COMMAND), or
 # by hand:  bash uninstall.sh [--backup [--keys]]
 #   --backup          first save chats, memory, skills and settings to Download/hermes-backup-<date>.tar.gz; if that
 #                     fails NOTHING is removed (exit 3)

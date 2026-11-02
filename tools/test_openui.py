@@ -168,7 +168,7 @@ check("canvas prompt: tables no longer sent to the canvas", "a table" not in cp)
 check("canvas prompt fits its 900-char budget", len(cp) <= 900, len(cp))
 
 sent = []
-plugin._send = lambda kind, title="Hermes", body="", session="", urgent=False, **kw: sent.append(
+plugin._send = lambda kind, title="Hermux", body="", session="", urgent=False, **kw: sent.append(
     dict(kind=kind, title=title, body=body, **kw))
 plugin._last_text["s-ui"] = "Here are your options:\n```openui-lang\nroot = Card([Button(\"Yes\")])\n```\nPick one."
 plugin._on_session_end(session_id="s-ui", turn_id="s-ui:1", completed=True)

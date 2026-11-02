@@ -3099,7 +3099,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   margin-top: 10px;
 }
 
-/* Hermes hub (Screens.tsx HubScreen) */
+/* Hermux hub (Screens.tsx HubScreen) */
 .hub {
   display: flex;
   flex-direction: column;
@@ -3591,7 +3591,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 
 .app-own-link { display: block; margin-top: 4px; padding: 0; background: none; border: 0; color: var(--accent); text-decoration: underline; font-size: 12px; text-align: left; }
 
-/* Settings → Uninstall Hermes (components/Uninstall.tsx); the lists reuse the setup-list look */
+/* Settings → Uninstall Hermux (components/Uninstall.tsx); the lists reuse the setup-list look */
 .uninstall .setup-list { margin-left: 0; margin-right: 0; }
 /* .sheet-scroll is a flex column and .setup-list clips its corners: without this the lists shrink into small boxes */
 .uninstall > * { flex-shrink: 0; }

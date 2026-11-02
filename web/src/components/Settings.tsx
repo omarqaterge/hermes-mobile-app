@@ -879,7 +879,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <ToggleRow icon="🔊" tone="gold" title="Read every reply aloud" sub="In all chats" on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
         <Row icon="🗣" tone="teal" title="Voice" sub="Engine, voice, speed and pitch" chevron onClick={() => go('voice')} />
       </Section>
-      <Section title="Hermes">
+      <Section title="Hermux">
         <Row icon="✨" tone="gold" title="Default models" sub="Which model each bot starts with" chevron onClick={() => go('models')} />
         <Row icon="👤" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />

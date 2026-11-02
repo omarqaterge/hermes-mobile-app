@@ -55,7 +55,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.lockAssist.v1` | `lockview.ts` (`LOCK_ASSIST_KEY`) | Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen": `'1'` on, `'0'` off; absent = off. Pushed to the shell with `setLockAssist`, which keeps its own copy. | No |
 | `hm.yolo.v1` | `gateway.ts` (`YOLO_KEY`) | Each chat's own access choice: `{chatId: true (Full) | 'auto' | false (explicit Off)}`; absent = follows `hm.defaultAccess.v1`. | No (chat ids) |
 
-Settings → Danger zone → Uninstall Hermes can put a settings snapshot into the backup: `uninstall.ts`
+Settings → Danger zone → Uninstall Hermux can put a settings snapshot into the backup: `uninstall.ts`
 `SETTINGS_KEYS` (`hm.theme`, `hm.oled`, `hm.textScale`, `hm.tts`, `hm.autoread`, `hm.autoread.chats`,
 `hm.favModels.v1`, `hm.customModels.v1`, `hm.live.pause`, `hm.live.bargein`, `hm.profile`, `hm.yolo.v1`). Caches, drafts and chat data are left out (3.19).
 

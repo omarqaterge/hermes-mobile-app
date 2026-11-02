@@ -1278,7 +1278,7 @@ client.onRequest((req: ServerRequest) => {
   // Approvals and questions are notified by the hermes-mobile plugin on the phone (works while
   // the app is closed); only masked prompts (password / secret / code) are notified from here.
   if (appInBackground() && req.method !== 'approval' && req.method !== 'clarify') {
-    notify('Hermes needs your input', 'Open Hermux to continue', `req-${req.id}`)
+    notify('Hermux needs your input', 'Open Hermux to continue', `req-${req.id}`)
   }
   return true
 })

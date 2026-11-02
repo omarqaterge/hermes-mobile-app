@@ -1,4 +1,4 @@
-// Settings → Uninstall Hermes: the step logic (pure, unit-tested) and the shell calls. The Termux half is
+// Settings → Uninstall Hermux: the step logic (pure, unit-tested) and the shell calls. The Termux half is
 // phone/uninstall.sh (run by the shell, Uninstall.java); the apps are removed with Android's own prompt, one at a time.
 import type { NativeSetup } from './bridge'
 

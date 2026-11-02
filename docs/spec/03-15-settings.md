@@ -12,12 +12,12 @@ The screen has one main page and nine sub-pages. The top-bar title is the page n
 | Appearance | Appearance | Sub "Theme and text size", value = current theme name | Opens the Appearance page |
 | Voice | Read every reply aloud | Switch, sub "In all chats" | `setAutoRead` writes `hm.autoread` (`"1"` / `"0"`) and tells the Android side so replies are read with the screen off. A per-chat choice (chat ⋮ menu, `hm.autoread.chats`) wins over this one |
 | Voice | Voice | Sub "Engine, voice, speed and pitch" | Opens the Voice page |
-| Hermes | Default models | Sub "Which model each bot starts with" | Opens the Default models page |
-| Hermes | Model providers | Sub "Sign-ins, API keys, your own server" | Opens the Model providers page |
-| Hermes | API keys | Sub "Providers and tools" | Opens the API keys page |
-| Hermes | Connectors | Sub "MCP servers, web search, Home Assistant and other services" | Opens the Connectors page |
-| Hermes | Hermes settings | Sub "Limits, memory, long chats, sub-agents, safety" | Opens the Hermes settings page |
-| Hermes | Advanced settings | Sub "Every Hermes option, by its config name" | Opens the Advanced settings page |
+| Hermux | Default models | Sub "Which model each bot starts with" | Opens the Default models page |
+| Hermux | Model providers | Sub "Sign-ins, API keys, your own server" | Opens the Model providers page |
+| Hermux | API keys | Sub "Providers and tools" | Opens the API keys page |
+| Hermux | Connectors | Sub "MCP servers, web search, Home Assistant and other services" | Opens the Connectors page |
+| Hermux | Hermes settings | Sub "Limits, memory, long chats, sub-agents, safety" | Opens the Hermes settings page |
+| Hermux | Advanced settings | Sub "Every Hermes option, by its config name" | Opens the Advanced settings page |
 | Permissions | Auto for all chats | A picker row (`DefaultAccessRow`): Off, Auto access, Full access. Footer: "What new and existing chats start in. A chat you set with its own Auto button keeps that choice." | Writes `hm.defaultAccess.v1` (`setDefaultAccess`). Choosing Full access first shows the dialog "Full access in every chat?" with the button "Allow in all chats" |
 | Permissions | Confirm approvals with fingerprint | A switch (`ApprovalLockRow`), on by default. Sub-text: "The first Allow in each chat asks for your fingerprint or screen lock, until the app restarts or the chat closes", or "This phone has no screen lock: approvals go through without it". Hidden without the shell's `confirmApproval` | Saved in the shell (`setApprovalLock`, preference `approvalLock`). Turning it off asks for the biometric or screen lock first (3.6 "Confirm approvals with fingerprint") |
 | Replies | Dynamic UI | Switch, sub "Tables, charts and forms you can tap. Applies to new chats". The whole section is hidden until `GET /openui` answers (an older plugin has no such route) | `PUT /openui` with `{ enabled }`; on failure the switch flips back and a toast says "Couldn’t save: …". Hermes freezes its system prompt per chat, so it only affects new chats; cards already in chats keep showing |
@@ -32,7 +32,7 @@ The screen has one main page and nine sub-pages. The top-bar title is the page n
 | About | Last start-up | Sub: the start-up timing marks of the last launch ("script 0.1s · …", from `hm.boot.v1` through `web/src/boot.ts`), or "Not measured yet" | nothing |
 | About | Share anonymous usage stats | A switch (`StatsRow` in `components/StatsCard.tsx`), only in a build with an app key (`statsAvailable()`). Sub "A random ID, the app and Android versions, app starts and screen opens. Never chats or files" | `setStatsChoice` (`web/src/stats.ts`, spec 2.3). Off stops sending and forgets the install ID. On, when the question was never shown, opens "How did you hear about us?" (3.18) |
 | About | Remote debugging | Only while Android Developer options are on (`remoteDebuggingState().available`). Sub "Off" or "On · N min left" (`remoteDebugRow` in `web/src/remotedebug.ts`; `RemoteDebugRow` in `Settings.tsx`). Re-read when the page becomes visible or focused, on the shell's `hm-devtools` event, and once a minute only while it is on and the page is visible (at most 60 reads) | Off: `openRemoteDebugging()`, which only makes the shell show its own confirmation and the phone's screen-lock prompt (2.3). On: `turnOffRemoteDebugging()` |
-| Danger zone | Uninstall Hermes | Only inside the Android app with an app build that has the uninstall bridge. Footer: "Removes Hermes, all chats and every helper app from this phone. You can save a backup first." | Opens the Uninstall sheet (3.19) |
+| Danger zone | Uninstall Hermux | Only inside the Android app with an app build that has the uninstall bridge. Footer: "Removes Hermes, all chats and every helper app from this phone. You can save a backup first." | Opens the Uninstall sheet (3.19) |
 
 **In-app update row** (`Settings.tsx` `UpdateRow`, `web/src/update.ts`): it asks GitHub once when the page opens (and not again within a minute, no polling): `GET https://api.github.com/repos/omarqaterge/hermes-mobile-app/releases/latest`. It compares the release tag with `appVersion()` (dotted numbers, a leading `v` ignored). The row changes with `phase`:
 | Phase | Title | Sub text |

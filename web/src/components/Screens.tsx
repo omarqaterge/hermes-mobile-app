@@ -917,7 +917,7 @@ export function ProjectsScreen() {
   )
 }
 
-// ── Hermes hub ───────────────────────────────────────────────
+// ── Hermux hub ───────────────────────────────────────────────
 // One screen for what Hermes knows and does on its own, each with a one-line summary; Back from a page returns here.
 
 const HUB: { key: Exclude<Screen, null>; icon: string; title: string; tone: string }[] = [
@@ -1001,7 +1001,7 @@ export function HubScreen() {
     return typeof v === 'string' ? v : failed.has(['skills', 'memory', 'cron', 'projects', 'gallery'].indexOf(k)) ? 'Couldn’t load' : 'Loading…'
   }
   return (
-    <ScreenShell title="Hermes">
+    <ScreenShell title="Hermux">
       <div className="hub">
         {HUB.map(h => (
           <button

@@ -19,7 +19,7 @@ The drawer is the left-hand panel with the profile switcher, the New chat button
 | Session list | Scrolling area, see below | | | |
 
 **Data:** reads `drawer`, `profiles`, `profile` from the store. `switchProfile` (in `web/src/gateway.ts`) stores the id in `hm.profile`, resets the page size to 80 chats, shows the cached list for that profile (`hm.sessions.v1.<profile>`), then loads the list and the default model from Hermes. The profile list itself comes from the `profiles.list` RPC (`loadProfiles`).
-**Rules:** the Hermes tile replaces five separate drawer entries: Skills, Memory, Cron, Files and Projects live on the Hermes hub (3.14). There is no messaging-channel entry anywhere.
+**Rules:** the Hermux tile replaces five separate drawer entries: Skills, Memory, Cron, Files and Projects live on the Hermux hub (3.14). There is no messaging-channel entry anywhere.
 
 #### Session list
 **Opens from:** inside the Drawer. **Source:** `web/src/components/SessionList.tsx` `SessionList`.

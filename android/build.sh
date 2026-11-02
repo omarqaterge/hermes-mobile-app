@@ -35,7 +35,7 @@ else
 fi
 mkdir -p assets/www
 cp ../web/dist/index.html assets/www/index.html
-# Settings → Uninstall Hermes runs this in Termux (Uninstall.java); shipped in the APK so it matches the app.
+# Settings → Uninstall Hermux runs this in Termux (Uninstall.java); shipped in the APK so it matches the app.
 mkdir -p assets/phone
 cp ../phone/uninstall.sh assets/phone/uninstall.sh
 # "Test model" in Settings → Voice → Speech recognition transcribes this clip (LibriSpeech, CC BY 4.0; see THIRD_PARTY.md).

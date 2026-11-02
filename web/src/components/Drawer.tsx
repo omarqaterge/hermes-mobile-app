@@ -5,9 +5,9 @@ import { SessionList } from './SessionList'
 import { haptic } from '../bridge'
 import { setSideHidden } from '../sidepanel'
 
-// Skills, memory, cron, files and projects live on the Hermes hub (one tile, more room for chats).
+// Skills, memory, cron, files and projects live on the Hermux hub (one tile, more room for chats).
 const NAV: [Exclude<Screen, null>, string, string][] = [
-  ['hub', '☤', 'Hermes'],
+  ['hub', '☤', 'Hermux'],
   ['bots', '🤖', 'Bots'],
   ['settings', '⚙', 'Settings']
 ]

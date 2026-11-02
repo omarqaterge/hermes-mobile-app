@@ -1,6 +1,6 @@
 ### 6.5 Uninstall (`phone/uninstall.sh`)
 
-Started by the app (Settings → Danger zone → Uninstall Hermes, through Termux's RUN_COMMAND; the app's `Uninstall` class then asks Android to remove the apps) or by hand: `bash uninstall.sh [--backup [--keys]] [--settings JSON]`. Every line it prints starts with `HMUNINSTALL ` (also sent to Android's log, tag `hmuninstall`): `STEP`, `OK`, `SKIP`, `FAIL`, `RM <path>`, `BACKUP <file>`, `DONE`. Exit 0 done, 3 stopped before removing anything, 1 something could not be removed, 2 usage. Safe to run again.
+Started by the app (Settings → Danger zone → Uninstall Hermux, through Termux's RUN_COMMAND; the app's `Uninstall` class then asks Android to remove the apps) or by hand: `bash uninstall.sh [--backup [--keys]] [--settings JSON]`. Every line it prints starts with `HMUNINSTALL ` (also sent to Android's log, tag `hmuninstall`): `STEP`, `OK`, `SKIP`, `FAIL`, `RM <path>`, `BACKUP <file>`, `DONE`. Exit 0 done, 3 stopped before removing anything, 1 something could not be removed, 2 usage. Safe to run again.
 
 Safety: it refuses to run unless `HOME` and `PREFIX` look like Termux's (each at least two levels deep, neither inside the other), and it only deletes listed paths inside them; a symlink is removed, never what it points to.
 

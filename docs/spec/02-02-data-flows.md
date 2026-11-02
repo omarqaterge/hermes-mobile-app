@@ -127,7 +127,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 1. `MainActivity.onCreate` calls `startHermes()`. It does nothing until Termux has accepted one of the app's
    commands once (`termuxOk`: a probe answered, the dashboard answered a token scrape, or the installer reported
    DONE; an app update from an older build counts as yes), nor while the installer runs, nor after Settings →
-   Uninstall Hermes started (`Uninstall.started`), nor within 8 s of the last request, nor without the
+   Uninstall Hermux started (`Uninstall.started`), nor within 8 s of the last request, nor without the
    `com.termux.permission.RUN_COMMAND` permission.
 2. `startHermesNow` sends Termux's `RunCommandService` the path `~/bin/hermes-services`, in the background.
    The script is idempotent: `run_loop` starts each loop only when its pid file's process is gone. A failure is
