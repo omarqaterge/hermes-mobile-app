@@ -14,6 +14,7 @@ import { errText, loadDefaultModel } from '../gateway'
 import { buildCatalog, connectedText, matches, methods, showFields, type Account, type Endpoint, type EnvRow, type Field, type Preset, type ProviderEntry, type SignIn } from '../providers'
 import { toast } from '../store'
 import { DeviceLoginSheet, cliFor, type OAuthProvider } from './Connect'
+import { KeyPoolSection } from './Rotation'
 import { ClaudeSignInSheet, afterSignIn, loadPool, withPoolStatus } from './SignIn'
 import { Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
@@ -269,6 +270,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
             {e.url && <Row title="Get a key ↗" sub={hostOf(e.url)} onClick={() => openExternal(e.url)} />}
           </Section>
         )}
+        <KeyPoolSection entry={e} profile={profile} onChanged={onChanged} />
         {extra && !more && <Row title="More settings" sub="Base URL and other options" chevron onClick={() => setMore(true)} />}
         {extra && more && (
           <Section title="Settings">
