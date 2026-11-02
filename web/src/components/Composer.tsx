@@ -380,6 +380,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
               <div className="live-hint">Pause for {fmtPause(getLivePause())} to send</div>
             )}
           </div>
+          <AutoButton hideWhenOff compact />
           {live === 'speaking' && (
             // Cut the reading short and listen now (talking over Hermes does the same when barge-in is on).
             <button className="btn live-interrupt" onClick={() => { haptic(); interruptLive() }}>

@@ -24,7 +24,7 @@ const DONE: Record<Access, string> = {
 
 /** The Auto button beside the composer's model chip: how much this chat may do without asking (off / Auto access / Full access).
  *  Full access spells itself out ("⚡ Full access"), so the chip doubles as the warning that commands run unchecked. */
-export function AutoButton() {
+export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenOff?: boolean; compact?: boolean }) {
   // On the empty screen no chat exists yet: it shows the mode the chat will start in (Settings → Auto for all chats).
   const mode = useStore(s => (s.active ? accessOf(s.active) : s.opening ? 'off' : defaultAccess()))
   const offline = useStore(s => s.conn !== 'open')
@@ -57,11 +57,12 @@ export function AutoButton() {
     }
   }
 
+  if (hideWhenOff && mode === 'off') return null // the Live bar shows it only as a reminder that approvals are off
   const label = mode === 'auto' ? 'Auto access is on' : mode === 'full' ? 'Full access is on' : 'Auto is off'
   return (
     <>
       <button className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermes may do without asking`} disabled={offline} onClick={() => setOpen(true)}>
-        {mode === 'full' ? '⚡ Full access' : 'Auto'}
+        {compact ? (mode === 'full' ? '⚡' : '🛡') : mode === 'full' ? '⚡ Full access' : 'Auto'}
       </button>
       {open && <PickerSheet title="Auto: run without asking" options={OPTIONS} value={mode} onPick={v => void pick(v)} onClose={() => setOpen(false)} />}
     </>
