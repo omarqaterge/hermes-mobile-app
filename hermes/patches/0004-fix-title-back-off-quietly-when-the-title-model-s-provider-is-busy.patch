@@ -1,0 +1,342 @@
+From 371efe8eace96095402d36f8bf093810aac0b9c6 Mon Sep 17 00:00:00 2001
+From: omarqaterge <omarqaterge@gmail.com>
+Date: Mon, 2 Nov 2026 05:40:43 +0100
+Subject: [PATCH] fix(title): back off quietly when the title model's provider
+ is busy
+
+A rate-limited title request (HTTP 429, e.g. "This request would exceed
+your organization's rate limit") reached failure_callback, so every new
+chat showed "Auxiliary title generation failed: HTTP 429: ..." as a
+warning, and every new chat sent one more request to the provider that
+had just refused it.
+
+Capacity failures (rate limit, overload, timeout, connection trouble,
+5xx, a credential pool cooling down) now stay in the log (INFO) and open
+one process-wide backoff: 60 s, doubling per failure up to 30 min, or a
+longer Retry-After. While it runs no title request is sent and no title
+thread is started; the session keeps its instant derived title. A
+success clears the backoff. A session whose upgrade was deferred stays
+eligible past the usual turn-3 cutoff until the backoff lets a request
+through, for at most 6 failed requests per session (the retry list is
+capped at 256 sessions). Billing/quota errors and other failures still
+reach failure_callback, since the user has to act on those.
+
+Tests: TestTitleCapacityBackoff (quiet 429, transport/5xx/timeout,
+billing still reported, doubling + Retry-After + cap, success clears,
+a rate-limited session named after the backoff, per-session cap).
+---
+ agent/title_generator.py            | 113 +++++++++++++++++++++++-
+ tests/agent/test_title_generator.py | 130 ++++++++++++++++++++++++++++
+ 2 files changed, 242 insertions(+), 1 deletion(-)
+
+diff --git a/agent/title_generator.py b/agent/title_generator.py
+index a726bed37d..5ad51967ab 100644
+--- a/agent/title_generator.py
++++ b/agent/title_generator.py
+@@ -34,6 +34,94 @@ def wait_for_title_upgrades(timeout: float = 10.0) -> None:
+     for thread in list(_UPGRADE_THREADS):
+         thread.join(max(0.0, deadline - time.monotonic()))
+ 
++
++# Provider capacity trouble (429 rate limit, overload, timeout, unreachable, 5xx) is nothing the user
++# can act on, and the instant title already names the session: such a failure stays in the log instead
++# of reaching ``failure_callback``, and opens one process-wide backoff (every session's title call goes
++# to the same provider) during which no title request is sent. The session keeps its derived title and
++# is upgraded on a later turn once the backoff ends, for up to ``TITLE_CAPACITY_RETRIES`` failed requests.
++TITLE_BACKOFF_BASE_SECONDS = 60.0
++TITLE_BACKOFF_MAX_SECONDS = 1800.0
++TITLE_CAPACITY_RETRIES = 6
++_RETRY_SESSIONS_MAX = 256
++_backoff_lock = threading.Lock()
++_backoff = {"until": 0.0, "delay": 0.0}
++# session_id -> title requests that failed for capacity; insertion order evicts the oldest past the cap.
++_retry_sessions: "dict[str, int]" = {}
++# Set by generate_title on this thread when it skipped or failed for capacity (read by auto_title_session).
++_attempt = threading.local()
++
++
++def _is_capacity_failure(exc: BaseException) -> bool:
++    """Rate limit / overload / transport trouble that passes on its own. Billing and quota errors are not:
++    the user has to act on those, so they keep reaching ``failure_callback``."""
++    from agent import auxiliary_client as aux
++    try:
++        if aux._is_payment_error(exc):
++            return False
++        return bool(
++            aux._is_rate_limit_error(exc) or aux._is_overloaded_error(exc) or aux._is_timeout_error(exc)
++            or aux._is_transient_transport_error(exc) or "cooling down" in str(exc).lower()
++        )
++    except Exception:
++        return False
++
++
++def title_backoff_remaining() -> float:
++    """Seconds until title requests are sent again (0.0 when not backing off)."""
++    with _backoff_lock:
++        return max(0.0, _backoff["until"] - time.monotonic())
++
++
++def _open_title_backoff(exc: BaseException) -> float:
++    """Double the backoff (from ``TITLE_BACKOFF_BASE_SECONDS``, honouring a longer ``Retry-After``, capped
++    at ``TITLE_BACKOFF_MAX_SECONDS``); returns the delay."""
++    retry_after = None
++    with suppress(Exception):
++        from agent.retry_utils import parse_retry_after_seconds
++        retry_after = parse_retry_after_seconds(getattr(getattr(exc, "response", None), "headers", None))
++    with _backoff_lock:
++        now = time.monotonic()
++        if _backoff["until"] > now:  # another thread's request already opened this backoff: don't double it again
++            return _backoff["until"] - now
++        delay = max(TITLE_BACKOFF_BASE_SECONDS, _backoff["delay"] * 2, retry_after or 0.0)
++        delay = min(delay, TITLE_BACKOFF_MAX_SECONDS)
++        _backoff["delay"] = delay
++        _backoff["until"] = now + delay
++        return delay
++
++
++def _clear_title_backoff() -> None:
++    with _backoff_lock:
++        _backoff["delay"] = 0.0
++        _backoff["until"] = 0.0
++
++
++def _note_title_deferred(session_id: str, failed_request: bool) -> None:
++    """Keep *session_id* eligible for a later upgrade; only requests that were sent count against its budget."""
++    with _backoff_lock:
++        count = _retry_sessions.pop(session_id, 0) + (1 if failed_request else 0)
++        _retry_sessions[session_id] = count
++        while len(_retry_sessions) > _RETRY_SESSIONS_MAX:
++            _retry_sessions.pop(next(iter(_retry_sessions)))
++
++
++def _title_retry_pending(session_id: str) -> bool:
++    with _backoff_lock:
++        return _retry_sessions.get(session_id, TITLE_CAPACITY_RETRIES) < TITLE_CAPACITY_RETRIES
++
++
++def _forget_title_retry(session_id: str) -> None:
++    with _backoff_lock:
++        _retry_sessions.pop(session_id, None)
++
++
++def reset_title_backoff() -> None:
++    """Clear the backoff and the retry list (tests)."""
++    _clear_title_backoff()
++    with _backoff_lock:
++        _retry_sessions.clear()
++
+ # (task_name, exception) -> None; surfaces auxiliary failures so silent drops don't pile up as NULL titles.
+ FailureCallback = Callable[[str, BaseException], None]
+ # (title, source) -> None; source is the persisted provenance (``derived`` / ``llm``). Consumers paying a
+@@ -492,6 +580,11 @@ def generate_title(
+             return None
+     except Exception:  # fail open: a broken validator must not disable titling
+         logger.debug("Title runtime validator raised; proceeding", exc_info=True)
++    remaining = title_backoff_remaining()
++    if remaining > 0:
++        logger.debug("Title generation skipped: provider backoff, %.0fs left", remaining)
++        _attempt.deferred = "skipped"
++        return None
+     user_snippet = build_title_input(user_message, title_preview)
+     if not user_snippet.strip() or (
+         # An attachment-only opener (manual attach, no paste preview) reaches
+@@ -529,6 +622,7 @@ def generate_title(
+             # ("```json") as the session title (#91927).
+             reasoning_config={"enabled": False},
+         )
++        _clear_title_backoff()
+         message = response.choices[0].message
+         title = _clean_title(_extract_title_text(message.content or "") or _title_from_reasoning(message))
+         # Answer-shaped output guard: titling is a 3-7 word task, so a title with many words is a model that
+@@ -553,6 +647,12 @@ def generate_title(
+             return None
+         return title
+     except Exception as e:
++        if _is_capacity_failure(e):
++            delay = _open_title_backoff(e)
++            logger.info("Title generation deferred %.0fs (provider busy, the session keeps its instant title): %s",
++                        delay, e)
++            _attempt.deferred = "failed"
++            return None
+         # WARNING so it shows in agent.log without debug mode; stack at debug.
+         logger.warning("Title generation failed: %s", e)
+         logger.debug("Title generation traceback", exc_info=True)
+@@ -667,10 +767,15 @@ def auto_title_session(
+         # Same for the accounting context, so the title call's token usage is recorded against this session
+         # (task='title_generation', #23270).
+         set_accounting_context(session_db, session_id)
++        _attempt.deferred = None
+         title, source = generate_title(
+             user_message, failure_callback=failure_callback, main_runtime=main_runtime,
+             runtime_validator=runtime_validator, title_preview=title_preview,
+         ), "llm"
++        if _attempt.deferred:
++            _note_title_deferred(session_id, failed_request=_attempt.deferred == "failed")
++        else:
++            _forget_title_retry(session_id)
+         if title and _is_provisional_greeting_title(title):
+             source = "derived"
+         if not title:  # the inline attempt declined collisions; off the critical path the lineage scan is affordable
+@@ -755,10 +860,12 @@ def maybe_auto_title(
+     # name is still a placeholder (instant slice, or the model's greeting title for a bare "hi") that
+     # the first substantive turn should replace. Untitled sessions always get another shot; a
+     # placeholder gets turns 2-3, so a failing title model costs at most three calls, not one per turn.
++    # A placeholder whose upgrade met a busy provider keeps its turns until the backoff lets one through.
+     user_msg_count = sum(1 for m in (conversation_history or []) if _is_real_user_turn(m))
+     if user_msg_count > 1 and (
+         _has_upgraded_title(session_db, session_id)
+-        or (user_msg_count > 3 and not _session_is_untitled(session_db, session_id))
++        or (user_msg_count > 3 and not _session_is_untitled(session_db, session_id)
++            and not _title_retry_pending(session_id))
+     ):
+         return None
+     kanban_title = _kanban_task_title()
+@@ -780,6 +887,10 @@ def maybe_auto_title(
+     if not _model_title_upgrade_enabled():
+         logger.debug("Instant title persisted; model upgrade disabled by auxiliary.title_generation.model_upgrade_enabled=false")
+         return None
++    if title_backoff_remaining() > 0:  # no thread for a request generate_title would skip anyway
++        logger.debug("Instant title persisted; model upgrade waits for the provider backoff")
++        _note_title_deferred(session_id, failed_request=False)
++        return None
+     # The thread must resolve auxiliary.title_generation (config, provider key, language) for the
+     # profile whose turn this is: a bare Thread starts with an empty context and lands on the launch
+     # profile under multiplex, titling X's session with the default profile's model and billing its key.
+diff --git a/tests/agent/test_title_generator.py b/tests/agent/test_title_generator.py
+index abe71edeff..42c4befa03 100644
+--- a/tests/agent/test_title_generator.py
++++ b/tests/agent/test_title_generator.py
+@@ -898,3 +898,133 @@ class TestModelSwitchMarkerNotTitleable:
+         assert apply_instant_title(db, "sess-1", "南京市秦淮区 小时级天气预报") == (
+             "南京市秦淮区 小时级天气预报"
+         )
++
++
++class _RateLimited(Exception):
++    """A provider 429, shaped like the SDK error (``status_code`` + ``response.headers``)."""
++
++    def __init__(self, retry_after=None):
++        super().__init__("HTTP 429: This request would exceed your organization's rate limit")
++        self.status_code = 429
++        self.response = MagicMock(headers={"retry-after": str(retry_after)} if retry_after else {})
++
++
++def _title_response(text):
++    resp = MagicMock()
++    resp.choices[0].message.content = text
++    resp.choices[0].message.reasoning = None
++    return resp
++
++
++class TestTitleCapacityBackoff:
++    """A busy provider (429, overload, timeout) keeps the instant title quietly and backs off."""
++
++    @pytest.fixture(autouse=True)
++    def _fresh_backoff(self):
++        from agent.title_generator import reset_title_backoff
++        reset_title_backoff()
++        with patch("agent.title_generator._auto_title_enabled", return_value=True), \
++                patch("agent.title_generator._model_title_upgrade_enabled", return_value=True):
++            yield
++        reset_title_backoff()
++
++    def test_rate_limit_is_quiet_and_skips_requests_until_the_backoff_ends(self):
++        from agent.title_generator import TITLE_BACKOFF_BASE_SECONDS, title_backoff_remaining
++        reported = []
++        with patch("agent.title_generator.call_llm", side_effect=_RateLimited()) as llm:
++            assert generate_title("fix the scheduler", failure_callback=lambda *a: reported.append(a)) is None
++            assert generate_title("another chat", failure_callback=lambda *a: reported.append(a)) is None
++        assert reported == []  # never a user-visible warning
++        assert llm.call_count == 1  # the second chat sent nothing to the rate-limited provider
++        assert 0 < title_backoff_remaining() <= TITLE_BACKOFF_BASE_SECONDS
++
++    @pytest.mark.parametrize("exc", [
++        RuntimeError("Connection error: connection reset by peer"),
++        type("APITimeoutError", (Exception,), {})("Request timed out."),
++        type("APIStatusError", (Exception,), {"status_code": 503})("HTTP 503: upstream unavailable"),
++    ])
++    def test_transport_and_server_trouble_backs_off_quietly_too(self, exc):
++        from agent.title_generator import title_backoff_remaining
++        reported = []
++        with patch("agent.title_generator.call_llm", side_effect=exc):
++            assert generate_title("fix the scheduler", failure_callback=lambda *a: reported.append(a)) is None
++        assert reported == [] and title_backoff_remaining() > 0
++
++    def test_a_billing_error_still_reaches_the_failure_callback(self):
++        from agent.title_generator import title_backoff_remaining
++        reported = []
++        exc = type("APIStatusError", (Exception,), {"status_code": 402})("HTTP 402: insufficient credits")
++        with patch("agent.title_generator.call_llm", side_effect=exc):
++            generate_title("fix the scheduler", failure_callback=lambda *a: reported.append(a))
++        assert reported == [("title generation", exc)] and title_backoff_remaining() == 0
++
++    def test_backoff_doubles_honours_retry_after_and_is_capped(self):
++        import agent.title_generator as tg
++        delays = []
++        for exc in (_RateLimited(), _RateLimited(), _RateLimited(retry_after=900), _RateLimited(), _RateLimited()):
++            with tg._backoff_lock:
++                tg._backoff["until"] = 0.0  # let the next request through, keeping the delay
++            with patch("agent.title_generator.call_llm", side_effect=exc):
++                generate_title("fix the scheduler")
++            delays.append(tg._backoff["delay"])
++        assert delays == [60.0, 120.0, 900.0, 1800.0, 1800.0]
++
++    def test_requests_already_in_flight_do_not_double_an_open_backoff(self):
++        import agent.title_generator as tg
++        assert tg._open_title_backoff(_RateLimited()) == 60.0
++        assert tg._open_title_backoff(_RateLimited()) <= 60.0  # a second thread failing at the same moment
++        assert tg._backoff["delay"] == 60.0
++
++    def test_a_successful_title_clears_the_backoff(self):
++        import agent.title_generator as tg
++        with patch("agent.title_generator.call_llm", side_effect=_RateLimited()):
++            generate_title("fix the scheduler")
++        with tg._backoff_lock:
++            tg._backoff["until"] = 0.0
++        with patch("agent.title_generator.call_llm", return_value=_title_response('{"title": "Scheduler fix"}')):
++            assert generate_title("fix the scheduler") == "Scheduler fix"
++        assert tg._backoff == {"until": 0.0, "delay": 0.0}
++
++    def test_a_rate_limited_session_keeps_its_instant_title_and_is_named_after_the_backoff(self, tmp_path):
++        import agent.title_generator as tg
++        db = SessionDB(tmp_path / "state.db")
++        db.create_session(session_id="sess-1", source="cli")
++        history = [{"role": "user", "content": "fix the flaky scheduler test"}]
++        reported = []
++        with patch("agent.title_generator.call_llm", side_effect=_RateLimited()) as llm:
++            maybe_auto_title(db, "sess-1", history[0]["content"], history,
++                             failure_callback=lambda *a: reported.append(a))
++            wait_for_title_upgrades(10)
++            assert llm.call_count == 1
++            # Turns 2-5 inside the backoff: no request, no thread, the derived title stays.
++            for n in range(2, 6):
++                history.append({"role": "user", "content": f"turn {n} question"})
++                assert maybe_auto_title(db, "sess-1", f"turn {n} question", history) is None
++            assert llm.call_count == 1
++        assert reported == []
++        assert db.get_session_title("sess-1") == "fix the flaky scheduler test"
++        assert db.get_session_title_source("sess-1") == "derived"
++        with tg._backoff_lock:
++            tg._backoff["until"] = 0.0  # the backoff has run out
++        history.append({"role": "user", "content": "turn 6 question"})
++        with patch("agent.title_generator.call_llm", return_value=_title_response('{"title": "Flaky scheduler test"}')):
++            maybe_auto_title(db, "sess-1", "turn 6 question", history)  # past turn 3: still owed its upgrade
++            wait_for_title_upgrades(10)
++        assert db.get_session_title("sess-1") == "Flaky scheduler test"
++        assert db.get_session_title_source("sess-1") == "llm"
++        assert not tg._title_retry_pending("sess-1")
++
++    def test_a_session_stops_asking_after_its_capacity_retries(self, tmp_path):
++        import agent.title_generator as tg
++        db = SessionDB(tmp_path / "state.db")
++        db.create_session(session_id="sess-1", source="cli")
++        history = []
++        with patch("agent.title_generator.call_llm", side_effect=_RateLimited()) as llm:
++            for n in range(tg.TITLE_CAPACITY_RETRIES + 4):
++                history.append({"role": "user", "content": f"question number {n}"})
++                with tg._backoff_lock:
++                    tg._backoff["until"] = 0.0
++                maybe_auto_title(db, "sess-1", f"question number {n}", history)
++                wait_for_title_upgrades(10)
++        assert llm.call_count == tg.TITLE_CAPACITY_RETRIES
++        assert db.get_session_title_source("sess-1") == "derived"

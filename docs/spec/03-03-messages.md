@@ -124,7 +124,7 @@ Events from Hermes (`client.onEvent` in `gateway.ts`) reach the chat for the ope
 
 - `message.start`: the turn starts; `running` is set and `turnStart` is set if the send didn't already (Hermes may send several per turn).
 - `session.control.update`: the chat's goal changed (`control.goal`); the goal line follows it.
-- `thinking.delta` / `status.update`: the status-bar text.
+- `thinking.delta` / `status.update`: the status-bar text. A `status.update` that `quietStatus` (`quietstatus.ts`) matches is dropped: Hermes's "⚠ Auxiliary title generation failed: …" warning when the provider is busy (usually the title model's HTTP 429) would replace "Working…" for the rest of the turn, while the chat keeps the title it has and Hermes asks again on a later turn (Hermes patch 0004, 6.4).
 - `reasoning.delta`, `message.delta`: appended to the open assistant item in batches (every 60 ms, every 150 ms once the reply is over 6000 characters), not per token, because every change reparses Markdown. Any other event flushes the batch first, so order never changes.
 - `tool.generating`, `tool.start`, `tool.complete`: the tool card appears when the call starts being written, becomes `running` at `tool.start`, `done` at `tool.complete`. A tool that streams under a generic name takes its real name at start. A replayed start for a card that already exists adds no second card. Starting a tool closes the open assistant segment, so text after tools is a new segment.
 - `todo.updated`, `session.usage` (also refreshes `ctx` without an RPC when the usage has `context_max` and `context_used`), `session.info`, `session.title`.
