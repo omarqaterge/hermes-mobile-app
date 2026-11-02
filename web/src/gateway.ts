@@ -767,7 +767,7 @@ function rememberYolo(storedId: string, mode: Access): void {
   }
 }
 
-/** How much a chat may do without asking (the header's Auto button):
+/** How much a chat may do without asking (the Auto button beside the model chip):
  *  off = Hermes asks before risky commands; auto = no prompts, but Hermes's dangerous-command list is blocked (plugin);
  *  full = no prompts at all (/yolo; Hermes's hardline floor still blocks rm -rf /, mkfs, shutdown…). */
 export type Access = 'off' | 'auto' | 'full'

@@ -19,7 +19,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Links open in the default app everywhere (messages, tool cards, thinking, sheets, canvas) | 3.3, 2.3 |
 | Every memory write shown as a diff | 3.3 |
 | File checkpoints: folders a chat changed, diff per file, restore (undoable) | 3.5 |
-| Header Auto button: Off / Auto access / Full access per chat, with a warning dialog for Full | 3.2, 2.2.1a |
+| Auto button beside the composer's model chip: Off / Auto access / Full access per chat, with a warning dialog for Full | 3.2, 2.2.1a |
 | Default Auto mode for all chats (Settings → Permissions → Auto for all chats) | 3.15 |
 | Approvals and questions with long warnings scrolling and repeats shown once with a count | 3.6 |
 | `/btw` side questions, opened by pulling up past the last message (about 110 px) | 3.12 |

@@ -39,7 +39,7 @@ Live mode also hears approvals (`liveBridge.onApproval`) so it can ask by voice.
 
 #### Auto mode and approvals
 
-With the header Auto button on Auto access or Full access (3.2), Hermes does not ask for most commands, so the sheet appears rarely: Auto access still stops on Hermes's dangerous list (the plugin blocks them, so no approval is possible); Full access stops on nothing but the catastrophic list. With Auto off, every command Hermes flags raises the sheet.
+With the Auto button (beside the model chip) on Auto access or Full access (3.2), Hermes does not ask for most commands, so the sheet appears rarely: Auto access still stops on Hermes's dangerous list (the plugin blocks them, so no approval is possible); Full access stops on nothing but the catastrophic list. With Auto off, every command Hermes flags raises the sheet.
 
 ---
 
@@ -54,7 +54,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `main.tsx` | Page entry. Imports `secure-bridge` first (it takes the native bridge key), then `share.ts` and `notif-answer.ts` (they register the `window.hermes*` globals), applies the saved theme, calls `openFirstRun`, and renders `App`. |
 | `App.tsx` | Root: `Header`, banners, `Chat`, `FindBar`, the layer stack, `window.hermesBack`, `hermesResume`, `hermesPause`, `hermesOpenSession`. |
 | `Title.tsx` | Chat titles; a branched chat is stored as "⎇ <title>" (Hermes keeps only plain text) and drawn with a branch icon (`BranchIcon`); `plainTitle` and `keepBranch` keep the mark when renaming. |
-| `AutoAccess.tsx` | `AutoButton` (header) and `DefaultAccessRow` (Settings). |
+| `AutoAccess.tsx` | `AutoButton` (composer's model row) and `DefaultAccessRow` (Settings). |
 | `ChatItems.tsx` | `ItemView`, `ToolCard`, `ToolRunHead`, user and assistant messages, sub-agent card, message actions. |
 | `Markdown.tsx` | Markdown renderer, code blocks, Mermaid, task lists, tables, link handling, sanitiser. |
 | `Media.tsx` | `Media`, `Lightbox`, `FileChip`, audio player. |

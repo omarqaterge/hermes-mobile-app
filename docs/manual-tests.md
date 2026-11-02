@@ -147,5 +147,5 @@ check on a real phone:
 
 - [ ] **Done chip stays (#67).** With a build that has #67: send a short prompt, press Home before the reply ends.
       Expected: the green Done chip appears and stays (wait 2 minutes) until you open the app or the chat.
-- [ ] **/yolo from Auto access.** In a chat whose header shows Auto, type `/yolo`. Today it turns approvals back on
+- [ ] **/yolo from Auto access.** In a chat whose Auto button (beside the model chip) shows Auto access, type `/yolo`. Today it turns approvals back on
       ("Full access off…"); note how long the notice takes to appear.
