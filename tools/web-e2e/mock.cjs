@@ -600,6 +600,7 @@ wss.on('connection', ws => {
   const waiting = new Map()
 
   let threeSid = ''
+  let btwSeq = 0
   ws.on('message', raw => {
     const msg = JSON.parse(String(raw))
     if (msg.method === undefined) {
@@ -1108,6 +1109,12 @@ wss.on('connection', ws => {
         return reply({ project: { previewSessions: [{ id: 's-3', title: 'Chat 3' }, { id: 's-4', title: 'Chat 4' }] } })
       case 'session.compress':
         return later(300, () => reply({ compressed: true, before_messages: 40, after_messages: 6, usage: { context_used: 200, context_max: 1000, context_percent: 20 } }))
+      case 'prompt.btw': {
+        // A /btw side question: the answer comes later as btw.complete and says whether earlier side answers rode along.
+        const task_id = `btw-${++btwSeq}`
+        later(200, () => event('btw.complete', params.session_id, { task_id, text: /^Earlier side questions/.test(params.text || '') ? 'Side answer (with earlier)' : 'Side answer (fresh)' }))
+        return reply({ task_id })
+      }
       default:
         return reply({})
     }
