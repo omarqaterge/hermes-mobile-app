@@ -52,7 +52,7 @@ export const HERMES_SETTINGS: HGroup[] = [
     title: 'When a model fails',
     footer: 'The fallback models themselves are under Settings → Model providers.',
     items: [
-      { key: 'agent.api_max_retries', label: 'Retries before a fallback', help: 'How often Hermes retries a failing request before it switches to the next fallback model. 1 switches fastest.', kind: 'number', min: 0, max: 10 },
+      { key: 'agent.api_max_retries', label: 'Retries before a fallback', help: 'How often Hermes retries a failing request before it switches to the next fallback model. 1 switches fastest.', kind: 'number', min: 1, max: 10 },
       { key: 'fallback.min_switch_reset_seconds', label: 'Wait out short rate limits', help: 'If the main model says it is free again within this time, Hermes waits instead of switching.', kind: 'number', min: 0, max: 3600, unit: s, zeroLabel: 'Always switch' },
       { key: 'agent.auto_recovery_cycles', label: 'Recovery rounds', help: 'After retries and fallbacks are used up in an outage, how many more rounds Hermes tries before it gives up.', kind: 'number', min: 0, max: 20 }
     ]
@@ -65,9 +65,9 @@ export const HERMES_SETTINGS: HGroup[] = [
       { key: 'agent.text_verbosity', label: 'Answer length (OpenAI)', help: 'How long final answers are on OpenAI’s newer models. Other models ignore it.', kind: 'choice', options: [{ value: '', label: 'Provider default' }, { value: 'low', label: 'Short' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'Long' }] },
       { key: 'agent.image_input_mode', label: 'Pictures you send', help: 'Attach them to the model, or describe them in words first for models that can’t see.', kind: 'choice', options: [{ value: 'auto', label: 'Automatic' }, { value: 'native', label: 'Always attach' }, { value: 'text', label: 'Always describe' }] },
       { key: 'agent.verify_on_stop', label: 'Check work before finishing', help: 'Nudges Hermes to test its code changes before it says it is done.', kind: 'choice', options: onOff('Off', 'For coding', 'Always') },
-      { key: 'prompt_caching.cache_ttl', label: 'Prompt cache (Claude)', help: 'How long Claude keeps the start of a chat cached. Longer saves money when you reply slowly.', kind: 'choice', options: [{ value: '5m', label: '5 minutes' }, { value: '1h', label: '1 hour' }, { value: 'auto', label: 'Automatic' }] },
+      { key: 'prompt_caching.cache_ttl', label: 'Prompt cache (Claude)', help: 'How long Claude keeps the start of a chat cached. Longer saves money when you reply slowly.', kind: 'choice', options: [{ value: '5m', label: '5 minutes' }, { value: '1h', label: '1 hour' }, { value: 'auto', label: 'Automatic' }, { value: false, label: 'Off' }] },
       { key: 'goals.max_turns', label: 'Goal turns before pausing', help: 'A goal keeps working on its own for at most this many turns, then pauses.', kind: 'number', min: 1, max: 500 },
-      { key: 'agent.clarify_timeout', label: 'Question wait', help: 'How long a question Hermes asks you stays open.', kind: 'number', min: 30, max: 86400, unit: s },
+      { key: 'agent.clarify_timeout', label: 'Question wait', help: 'How long a question Hermes asks you stays open.', kind: 'number', min: 0, max: 86400, unit: s, zeroLabel: 'No limit' },
       { key: 'approvals.timeout', label: 'Approval wait', help: 'How long a command waiting for your approval stays open before it is refused.', kind: 'number', min: 30, max: 86400, unit: s }
     ]
   },
@@ -87,7 +87,7 @@ export const HERMES_SETTINGS: HGroup[] = [
     items: [
       { key: 'compression.enabled', label: 'Compress long chats', help: 'When a chat fills the model’s memory, older messages are summarised so the chat can go on.', kind: 'toggle' },
       { key: 'compression.threshold', label: 'Compress at', help: 'How full the model’s context gets before compressing (models under 512K start at 75 % at the earliest).', kind: 'number', min: 0.1, max: 0.95, int: false, percent: true },
-      { key: 'compression.target_ratio', label: 'Summary size', help: 'How much of the context the compressed chat may take up.', kind: 'number', min: 0.05, max: 0.8, int: false, percent: true },
+      { key: 'compression.target_ratio', label: 'Summary size', help: 'How much of the context the compressed chat may take up.', kind: 'number', min: 0.1, max: 0.8, int: false, percent: true },
       { key: 'compression.protect_last_n', label: 'Recent messages kept', help: 'These last messages are never summarised.', kind: 'number', min: 1, max: 500 },
       { key: 'compression.idle_compact_after_seconds', label: 'Compress after a break', help: 'A chat you come back to after this long is compressed before the first reply.', kind: 'number', min: 0, max: 604800, unit: s, zeroLabel: 'Off' }
     ]
@@ -104,7 +104,7 @@ export const HERMES_SETTINGS: HGroup[] = [
         label: 'Sub-agent reasoning',
         help: 'How hard sub-agents think.',
         kind: 'choice',
-        options: [{ value: '', label: 'Same as the chat' }, ...['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(v => ({ value: v, label: v }))]
+        options: [{ value: '', label: 'Same as the chat' }, ...['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(v => ({ value: v, label: v }))]
       },
       { key: 'delegation.subagent_auto_approve', label: 'Sub-agents approve commands', help: 'Off: a sub-agent’s risky command is refused. On: it runs without asking you.', kind: 'toggle' }
     ]
@@ -115,9 +115,9 @@ export const HERMES_SETTINGS: HGroup[] = [
       { key: 'web.extract_char_limit', label: 'Page text limit', help: 'Longer web pages are cut to this before the model reads them.', kind: 'number', min: 1000, max: 1000000, unit: 'characters' },
       { key: 'web.cache_enabled', label: 'Remember web results', help: 'The same search or page within a short time is answered from the phone.', kind: 'toggle' },
       { key: 'web.cache_ttl_minutes', label: 'Remember them for', help: 'How long a web result is reused.', kind: 'number', min: 1, max: 1440, unit: 'minutes' },
-      { key: 'web.keyless_fallback', label: 'Free search when a key fails', help: 'A search whose paid service fails is tried once more on a free one.', kind: 'toggle' },
+      { key: 'web.keyless_fallback', label: 'Free web search', help: 'Without a search service set up, Hermes uses free ones, and retries a failed paid search on them once.', kind: 'toggle' },
       { key: 'terminal.timeout', label: 'Command time limit', help: 'A terminal command running longer than this is stopped.', kind: 'number', min: 10, max: 86400, unit: s },
-      { key: 'tool_output.max_bytes', label: 'Tool output limit', help: 'Longer output of a tool is cut before the model sees it.', kind: 'number', min: 1000, max: 10000000, unit: 'bytes' },
+      { key: 'tool_output.max_bytes', label: 'Tool output limit', help: 'Longer output of a tool is cut before the model sees it.', kind: 'number', min: 1000, max: 10000000, unit: 'characters' },
       { key: 'browser.inactivity_timeout', label: 'Close the browser after', help: 'Hermes’s web browser closes after this long unused.', kind: 'number', min: 10, max: 3600, unit: s },
       { key: 'checkpoints.enabled', label: 'File checkpoints', help: 'Snapshots files before Hermes changes them, so the change can be undone.', kind: 'toggle' },
       { key: 'checkpoints.max_snapshots', label: 'Checkpoints per folder', help: 'Older ones are dropped.', kind: 'number', min: 1, max: 500 },
@@ -216,7 +216,8 @@ export function parseInput(s: HSetting, text: string, allowed?: string[]): { val
   }
   if (s.kind !== 'number') return { error: 'Not a typed value' }
   if (!t) return { error: 'Enter a number' }
-  const n = Number(t.replace(',', '.').replace(/\s*%$/, ''))
+  // "15,000" as the rows show it: a comma before three digits groups thousands; any other comma is a decimal point.
+  const n = Number(t.replace(/,(?=\d{3}(?!\d))/g, '').replace(',', '.').replace(/\s*%$/, ''))
   if (!Number.isFinite(n)) return { error: 'Enter a number' }
   const v = s.percent ? n / 100 : n
   if (s.int !== false && !Number.isInteger(v)) return { error: 'Enter a whole number' }
