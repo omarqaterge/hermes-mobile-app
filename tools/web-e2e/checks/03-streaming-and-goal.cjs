@@ -76,4 +76,16 @@ module.exports = async t => {
     const users = await page.locator('.msg.user .bubble').allInnerTexts()
     check(users.join('|') === 'stale first question|stale second question', `chat reloaded as Hermes holds it (${JSON.stringify(users)})`)
   }
+
+  // ── a rate-limited chat title (Hermes's "Auxiliary title generation failed: HTTP 429") stays out of the status line ──
+  {
+    await page.getByPlaceholder('Message Hermes').fill('title busy')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await page.locator('.status-line').waitFor({ timeout: 3000 })
+    await sleep(600) // the warning arrives 200 ms into the turn
+    const shown = await page.locator('.status-text').innerText().catch(() => '')
+    check(shown === 'Working…', `the status line keeps "Working…" while the title warning arrives (${JSON.stringify(shown)})`)
+    await page.locator('.msg.assistant', { hasText: 'Busy done.' }).waitFor({ timeout: 5000 })
+    check((await page.getByText('Auxiliary title generation failed').count()) === 0, 'the title failure is shown nowhere in the chat')
+  }
 }

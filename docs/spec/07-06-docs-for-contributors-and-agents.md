@@ -14,7 +14,9 @@
 | `docs/status/` | every agent picking up work | One file per workstream (**State**, **Next**, **Needs a real phone**, **Links**); a PR edits only its own workstream's file and deletes it when done. `README.md` says how. |
 | `docs/decisions/` | every agent changing behaviour | One file per owner decision (**Decided:**, the reason, **So:**); read the ones for a screen before changing it, add one when the owner decides something. |
 | `.github/ISSUE_TEMPLATE/agent_task.md` | whoever files work | A complete brief: goal, area and files, acceptance, how to verify, needs a phone, decisions that apply. |
+| `docs/research/` | whoever plans screens or features | Research write-ups with their sources, one file per topic (for example `hermes-usage-and-phone-ui.md`: how people use Hermes and which UI elements to keep, move, drop or add on a phone). They inform decisions; the owner's decisions stay in `docs/decisions/`. |
 | `docs/improvements.md`, `docs/manual-tests.md` | maintainers | Backlog with what was verified where; hand-test list. |
+| `docs/design/` | whoever works on the UI revamp | `ui-inventory.md`: every screen, region and element with its job and states, plus the design constraints; `chatgpt-ui-prompts.md`: ready-to-paste ChatGPT image-generation prompts (a master prompt and one per key screen) for redesign concepts. |
 | `docs/performance-history.md` | maintainers | How fast the app gets to a usable chat, from the first measurements to now, and the method for adding the next measurement (Last start-up row over five starts, `tools/gw-time`). |
 
 ---
