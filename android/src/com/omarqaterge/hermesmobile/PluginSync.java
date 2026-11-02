@@ -39,7 +39,7 @@ final class PluginSync {
     static volatile boolean running = false;
     static volatile long runningSince = 0;
     static volatile String runningMode = "";
-    /** The one-time token for GET /plugin-bundle/<token>; null when no apply is running. */
+    /** The one-time token for GET /plugin-bundle/<token>; null when no apply is running or it was used. */
     static volatile String token = null;
     static boolean receiverOn = false;
 
@@ -131,7 +131,8 @@ final class PluginSync {
         if (busyRunning()) return "busy";
         if (!canRun(c)) return "not-ready";
         HermesService s = HermesService.instance;
-        if (s != null && !s.hermesIdle()) return "working";
+        if (s == null) return "not-ready"; // without the service nothing knows whether Hermes works
+        if (!s.hermesIdle()) return "working";
         return run(c, "apply", force);
     }
 
@@ -271,6 +272,7 @@ final class PluginSync {
         String t = token;
         if (t == null || got == null) return null;
         if (!java.security.MessageDigest.isEqual(t.getBytes(StandardCharsets.UTF_8), got.getBytes(StandardCharsets.UTF_8))) return null;
+        token = null; // one fetch per run
         return assetBytes(c, BUNDLE);
     }
 }

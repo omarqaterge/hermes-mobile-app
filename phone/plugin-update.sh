@@ -96,14 +96,20 @@ EOF
 # ── Termux side ──
 DASH=${HM_DASHBOARD:-http://127.0.0.1:9119}
 BUNDLE_URL=${HM_BUNDLE_URL:-http://127.0.0.1:9121/plugin-bundle}  # + /TOKEN
-WAIT=${HM_PLUGIN_WAIT:-180}     # seconds for the restarted dashboard to serve the new plugin
-BACK_WAIT=${HM_PLUGIN_BACK_WAIT:-120}
+WAIT=${HM_PLUGIN_WAIT:-300}     # seconds for the restarted dashboard to answer at all (a cold start on a phone is slow)
+LOAD_WAIT=${HM_PLUGIN_LOAD_WAIT:-60}  # then for it to serve the new plugin
+BACK_WAIT=${HM_PLUGIN_BACK_WAIT:-180}
+# The app passes this whole script as `bash -c TEXT`, so its text is on this process's command line: it must never
+# contain the dashboard's command line, or `hermes-debian --restart` (pkill -f on it) kills this run too.
+DASH_RE='[h]ermes dashboard --host 127[.]0[.]0[.]1 --port 9119'
+# Every Debian login gets a time limit: a hung proot-distro or chroot-distro must not hold the run forever.
+tmo() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 TERMUX_HOME=$HOME
 say() { echo "HMPLUGIN $*"; }
 deb() {  # run the Debian half; hermes-debian knows proot-distro and chroot-distro, an older install is proot-distro
-  if [ -x "$HOME/bin/hermes-debian" ]; then "$HOME/bin/hermes-debian" bash -c "$COMMON
+  if [ -x "$HOME/bin/hermes-debian" ]; then tmo 240 "$HOME/bin/hermes-debian" bash -c "$COMMON
 $IN_DEBIAN" hm-plugin "$@" </dev/null
-  else proot-distro login debian -- bash -c "$COMMON
+  else tmo 240 proot-distro login debian -- bash -c "$COMMON
 $IN_DEBIAN" hm-plugin "$@" </dev/null; fi
 }
 # One word of the Debian half's last HMPLUGIN line, so that noise from a login shell can't be taken for an answer.
@@ -116,6 +122,7 @@ route() {  # PATH: the body when the plugin's route answers 200, else non-zero. 
   printf '%s\n' "${out%$'\n'*}"
 }
 plugin_up() { route activity >/dev/null; }
+dash_up() { [ -n "$(token)" ]; }
 # Live work by Hermes's own count, in every Hermes process (a second check behind the app's: it may have missed a beat).
 working() { local a; a=$(route activity) || return 1; ! printf %s "$a" | grep -Eq '"items": *\[ *\]'; }
 serves() { route plugin-info | grep -Eq "\"stamp\": *$1([^0-9]|$)"; }
@@ -124,14 +131,14 @@ wait_serves() {  # STAMP SECONDS
   while [ "$SECONDS" -lt "$end" ]; do serves "$1" && return 0; sleep "${HM_PLUGIN_POLL:-3}"; done
   return 1
 }
-wait_up() {
-  local end=$((SECONDS + $1))
-  while [ "$SECONDS" -lt "$end" ]; do plugin_up && return 0; sleep "${HM_PLUGIN_POLL:-3}"; done
+wait_up() {  # SECONDS [dash]: until the plugin (or only the dashboard) answers
+  local end=$((SECONDS + $1)) f=${2:-plugin}_up
+  while [ "$SECONDS" -lt "$end" ]; do $f && return 0; sleep "${HM_PLUGIN_POLL:-3}"; done
   return 1
 }
 restart() {
   "$HOME/bin/hermes-debian" --restart 2>/dev/null \
-    || { pids=$(pgrep -f 'hermes dashboard --host 127.0.0.1 --port 9119') && kill -9 $pids 2>/dev/null; }
+    || { pids=$(pgrep -f "$DASH_RE") && kill -9 $pids 2>/dev/null; }
   # The supervisor loop starts it again; start the loop itself if it is gone. All output away: Termux waits on open pipes.
   local pid; pid=$(cat "$HOME/logs/dashboard.pid" 2>/dev/null)
   if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
@@ -147,8 +154,10 @@ restart_ticker() {  # the cron ticker keeps the plugin it first loaded; its loop
   return 0
 }
 settle() {  # STAMP: a swap whose run was cut off: keep it when the new plugin serves, else go back
-  if wait_serves "$1" "${HM_PLUGIN_SETTLE:-45}"; then deb commit | last >/dev/null
-  else deb rollback | last >/dev/null; restart; fi
+  if wait_serves "$1" "${HM_PLUGIN_SETTLE:-45}"; then deb commit | last >/dev/null; return 0; fi
+  # Only when Hermes answers, plainly without the new plugin, and has no work: else leave it for a later run.
+  if ! dash_up || working; then say BUSY settling; exit 0; fi
+  deb rollback | last >/dev/null; restart
 }
 
 usage() { echo "usage: plugin-update.sh check|apply|source-stamp|stamp|pack|hash ..." >&2; exit 2; }
@@ -157,9 +166,15 @@ LOCK="$TERMUX_HOME/.hermes-mobile/plugin-update.lock"
 take_lock() {
   mkdir -p "$TERMUX_HOME/.hermes-mobile"
   # A run is bounded well below 15 minutes: an older lock was left by a killed one.
-  find "$LOCK" -maxdepth 0 -mmin +15 -exec rmdir {} \; 2>/dev/null
+  find "$LOCK" -maxdepth 0 -mmin +20 -exec rm -rf {} \; 2>/dev/null
   mkdir "$LOCK" 2>/dev/null || { say BUSY another-run; exit 0; }
-  trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+  echo $$ > "$LOCK/pid"
+  trap drop_lock EXIT
+}
+drop_lock() {  # only our own: a run that outlived its lock must not remove the next run's
+  [ -n "${b:-}" ] && rm -f "$b"
+  [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK"
+  return 0
 }
 inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets $line
   line=$(deb inspect "$@" | last)
@@ -206,7 +221,6 @@ case "$cmd" in
     esac
     if working; then say BUSY working; exit 0; fi
     b="$TERMUX_HOME/.hermes-mobile/plugin-bundle.tgz"
-    trap 'rm -f "$b"; rmdir "$LOCK" 2>/dev/null' EXIT
     # Only what the APK holds: the script and this SHA both came out of it, and the bytes must match.
     curl -sf -m 30 -o "$b" "$BUNDLE_URL/$tok" || { say FAIL fetch no-bundle; exit 0; }
     [ "$(sha "$b" | cut -d' ' -f1)" = "$want" ] || { say FAIL fetch checksum; exit 0; }
@@ -214,15 +228,18 @@ case "$cmd" in
     [ "$r" = "HMPLUGIN STAGED" ] || { echo "${r:-HMPLUGIN FAIL stage no-answer}"; exit 0; }
     # Unpacking and compiling took a moment: look again right before Hermes is touched.
     if working; then say BUSY working; exit 0; fi
-    # A plugin the dashboard doesn't load now (switched off in Hermes) can't prove anything after the restart.
-    plugin_up && loaded=1 || loaded=0
+    # A plugin the dashboard doesn't load now (switched off in Hermes, or Hermes stopped) can't prove anything after
+    # the restart. A dashboard between two starts gets a moment first.
+    wait_up "${HM_PLUGIN_UP_WAIT:-20}" && loaded=1 || loaded=0
     r=$(deb swap "$stamp" | last)
     [ "$r" = "HMPLUGIN SWAPPED" ] || { echo "${r:-HMPLUGIN FAIL swap no-answer}"; exit 0; }
+    # A turn that started during the swap: put the old plugin back (no restart was made) and wait for another moment.
+    if working; then deb rollback >/dev/null; say BUSY working; exit 0; fi
     restart
     if [ "$loaded" = 0 ]; then
       deb commit >/dev/null
       say OK "$stamp" unverified
-    elif wait_serves "$stamp" "$WAIT"; then
+    elif wait_up "$WAIT" dash && wait_serves "$stamp" "$LOAD_WAIT"; then
       deb commit >/dev/null
       restart_ticker
       say OK "$stamp"

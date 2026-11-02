@@ -42,15 +42,23 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
   SHA256; unpack it into `/root/.hermes/hermes-mobile-plugin/new` (outside Hermes's plugins folder), check HASH and that
   `plugin.yaml` is there, and compile its Python with Hermes's own interpreter; look at `/activity` once more; swap:
   write the marker `pending` (the new stamp), move the live plugin to `old/`, move `new/` into place, and point every
-  profile's `plugins/hermes-mobile` at it (a stale copy there becomes a link, as `install.sh` does); restart the
-  dashboard (`hermes-debian --restart`; the supervisor loop starts it again) and wait up to 180 s for the new plugin's
-  `GET /plugin-info` to report the new stamp. Then: `OK STAMP` (old copy and marker removed; the cron ticker is
-  restarted too when no job runs, so it loads the new plugin), or rollback: the old plugin moved back, Hermes restarted
-  again, `FAIL load rolled-back`. When the plugin didn't answer before the swap (Hermes stopped, or the plugin switched
-  off), nothing can prove it loads: `OK STAMP unverified`.
+  profile's `plugins/hermes-mobile` at it (a stale copy there becomes a link, as `install.sh` does); look at
+  `/activity` a third time (a turn that started during the swap puts the old plugin back, no restart, `BUSY working`);
+  restart the dashboard (`hermes-debian --restart`; the supervisor loop starts it again), wait up to 300 s for it to
+  answer and then up to 60 s for the new plugin's `GET /plugin-info` to report the new stamp. Then: `OK STAMP` (old copy
+  and marker removed; the cron ticker is restarted too when no job runs, so it loads the new plugin; when a job runs it
+  keeps the old plugin until its next start), or rollback: the old plugin moved back, Hermes restarted again,
+  `FAIL load rolled-back`. When the plugin didn't answer within 20 s before the swap (Hermes stopped, or the plugin
+  switched off), nothing can prove it loads: `OK STAMP unverified`.
+- The app passes the script as `bash -c TEXT`, so its text is on the process's command line. It therefore never spells
+  out the dashboard's command line (`DASH_RE` is a pattern that doesn't match itself): `hermes-debian --restart` kills
+  by that command line and would otherwise kill the run along with the dashboard. Every Debian login has a 240 s limit
+  (`timeout`, where Termux has it).
 - An interrupted run (Termux killed, the phone off) is settled by the next one: no plugin but `old/` → `old/` is put
-  back; a `pending` marker matching the live plugin → kept if it serves its stamp within 45 s, else rolled back.
-  A lock (`~/.hermes-mobile/plugin-update.lock`, dropped after 15 min) keeps runs from overlapping (`BUSY another-run`).
+  back; a `pending` marker matching the live plugin → kept if it serves its stamp within 45 s; rolled back (with a
+  restart) only when the dashboard answers without it and has no work, else left for a later run (`BUSY settling`).
+  A lock (`~/.hermes-mobile/plugin-update.lock` with the run's PID; a run removes only its own, and one older than
+  20 min counts as left by a killed run) keeps runs from overlapping (`BUSY another-run`).
 - Every answer line starts with `HMPLUGIN `: `STATE <state> <installed stamp>`, `BUSY <why>`, `OK <stamp> [unverified]`,
   `FAIL <step> <why>` (steps `check`, `fetch`, `stage`, `swap`, `load`). After any FAIL the plugin that was there is in
   place.

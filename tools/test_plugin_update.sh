@@ -22,6 +22,8 @@ cat > "$HOME/bin/hermes-debian" <<EOF
 case "\$1" in
   --which) echo proot ;;
   --restart) echo x >> "$t/restarts"
+    # Like the real one: kill by the dashboard's command line (the app runs the script as \`bash -c TEXT\`).
+    pkill -9 -f 'hermes dashboard --host 127.0.0.1 --port 9119' 2>/dev/null
     if [ -f "$P/BROKEN" ] || [ ! -f "$P/plugin.yaml" ]; then rm -f "$t/loaded"
     else s=\$(cut -d' ' -f1 "$P/BUILD_STAMP" 2>/dev/null); echo "\${s:-0}" > "$t/loaded"; fi ;;
   *) exec "\$@" ;;
@@ -68,7 +70,7 @@ trap 'kill $srv 2>/dev/null; wait $srv 2>/dev/null; rm -rf "$t"' EXIT
 for _ in $(seq 50); do [ -s "$t/port" ] && break; sleep 0.1; done
 port=$(cat "$t/port")
 export HM_DASHBOARD="http://127.0.0.1:$port" HM_BUNDLE_URL="http://127.0.0.1:$port/plugin-bundle"
-export HM_PLUGIN_WAIT=4 HM_PLUGIN_BACK_WAIT=3 HM_PLUGIN_SETTLE=3 HM_PLUGIN_POLL=0.3
+export HM_PLUGIN_WAIT=4 HM_PLUGIN_LOAD_WAIT=3 HM_PLUGIN_BACK_WAIT=3 HM_PLUGIN_SETTLE=3 HM_PLUGIN_POLL=0.3 HM_PLUGIN_UP_WAIT=1
 echo aaa111 > "$t/token"
 
 # The APK's plugin (stamp 2000000000) and an old one (a file changed, no BUILD_STAMP), like the Oct 30 copy on a phone.
@@ -79,7 +81,8 @@ check "pack prints the stamp" "$STAMP" 2000000000
 check "hash ignores BUILD_STAMP" "$(bash "$S" hash "$NEW")" "$HASH"
 OLD="$t/old"; cp -R "$NEW" "$OLD"; echo "# old" >> "$OLD/plugin.yaml"; rm -f "$OLD/google_workspace.py"
 install_old() { rm -rf "$P" "$W"; cp -R "$OLD" "$P"; echo 0 > "$t/loaded"; }
-run() { bash "$S" "$@" 2>/dev/null | grep '^HMPLUGIN' | tail -1; }
+# As the app runs it: the script's text as \`bash -c\` (so it is on the command line), name hm-plugin.
+run() { bash -c "$(cat "$S")" hm-plugin "$@" 2>/dev/null | grep '^HMPLUGIN' | tail -1; }
 same() { [ "$(bash "$S" hash "$P")" = "$1" ] && echo yes || echo no; }
 OLDHASH=$(bash "$S" hash "$OLD")
 
@@ -162,13 +165,17 @@ echo "$STAMP" > "$t/loaded"
 check "swapped, new one serves: kept" "$(run check "$STAMP" "$HASH")" "HMPLUGIN STATE current $STAMP"
 check "old copy removed" "$(ls "$W" | tr '\n' ' ')" ""
 install_old; mkdir -p "$W"; mv "$P" "$W/old"; cp -R "$NEW" "$P"; bash "$S" stamp "$P" "$STAMP" apk; printf %s "$STAMP" > "$W/pending"
+check "pending while Hermes doesn't answer: left for later" "$(D=$(cat "$t/port"); HM_DASHBOARD=http://127.0.0.1:1 run check "$STAMP" "$HASH")" "HMPLUGIN BUSY settling"
+check "pending kept" "$(cat "$W/pending" 2>/dev/null)" "$STAMP"
 check "swapped, new one never served: rolled back" "$(run check "$STAMP" "$HASH")" "HMPLUGIN STATE older 0"
 check "old in place again" "$(same "$OLDHASH")" yes
 
 echo "one run at a time"
-mkdir "$HOME/.hermes-mobile/plugin-update.lock"
+mkdir "$HOME/.hermes-mobile/plugin-update.lock"; echo 1 > "$HOME/.hermes-mobile/plugin-update.lock/pid"
 check "busy" "$(run check "$STAMP" "$HASH")" "HMPLUGIN BUSY another-run"
-rmdir "$HOME/.hermes-mobile/plugin-update.lock"
+check "another run's lock is left alone" "$(cat "$HOME/.hermes-mobile/plugin-update.lock/pid")" 1
+rm -rf "$HOME/.hermes-mobile/plugin-update.lock"
+check "a run removes its own lock" "$(run check "$STAMP" "$HASH" >/dev/null; ls "$HOME/.hermes-mobile/plugin-update.lock" 2>/dev/null)" ""
 check "bad arguments" "$(bash "$S" apply 12 nothex 2>/dev/null; echo $?)" 2
 
 echo "source-stamp"
