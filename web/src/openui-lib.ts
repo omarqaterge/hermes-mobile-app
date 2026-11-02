@@ -36,9 +36,27 @@ export const RULES: string[] = [...(openuiChatPromptOptions.additionalRules ?? [
 /** The two shortest of OpenUI's chat examples: enough to show the shape without ~20K chars of samples. */
 export const EXAMPLES: string[] = [...(openuiChatPromptOptions.examples ?? [])].sort((a, b) => a.length - b.length).slice(0, 2)
 
-/** What the plugin's openui_reference tool returns (hermes-plugin/hermes-mobile/openui_reference.txt). */
+/** The language and component reference: the body of the plugin's Hermes skill (skills/openui/SKILL.md). */
 export function referenceText(): string {
   // tools: Query() live data through the plugin (read-only). bindings: $variables, @Set/@Reset and the built-in
   // functions (@Count, @Filter, @Sort…) run in the app.
   return library.prompt({ preamble: PREAMBLE, additionalRules: RULES, examples: EXAMPLES, tools: TOOLS as ToolSpec[], bindings: true })
+}
+
+/** Frontmatter of hermes-plugin/hermes-mobile/skills/openui/SKILL.md. The plugin registers the skill with Hermes
+ *  (`ctx.register_skill`), so Hermes serves it as `skill_view("hermes-mobile:openui")`. */
+export const SKILL_FRONTMATTER = [
+  '---',
+  'name: openui',
+  'description: Draw interactive cards, tables, charts, tappable choices, steps and forms in a Hermes Mobile app reply with fenced openui-lang blocks. Load it before your first openui-lang block in a chat. Only the phone app draws these blocks.',
+  'version: 1.0.0',
+  'metadata:',
+  '  hermes:',
+  '    tags: [hermes-mobile, openui, ui, cards]',
+  '---'
+].join('\n')
+
+/** The whole SKILL.md (`npm run gen:openui` writes it). */
+export function skillText(): string {
+  return SKILL_FRONTMATTER + '\n\n' + referenceText() + '\n'
 }
