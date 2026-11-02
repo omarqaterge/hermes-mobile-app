@@ -217,5 +217,28 @@ check '[ -f "$T/usr/var/lib/chroot-distro/containers/debian/rootfs/root/.hermes/
 check 'grep -qx "allow-external-apps = true" "$T/home/.termux/termux.properties"' "after a failure Termux still takes the app's commands (re-run possible)"
 check '! echo "$out" | grep -qx "HMUNINSTALL DONE"' "no DONE after a failure"
 
+# ── the installer's clone goes under either name of the repository; any other clone at that path stays ──
+n=0
+while read -r want url; do
+  n=$((n+1)); T="$ROOT/clone$n"; mkdir -p "$T"; mkbin "$T"; mktree "$T"
+  printf '[remote "origin"]\n\turl = %s\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n' "$url" > "$T/home/hermes-mobile/.git/config"
+  run "$T" </dev/null
+  if [ "$want" = gone ]; then check '[ ! -e "$T/home/hermes-mobile" ]' "clone of $url: removed"
+  else check '[ -d "$T/home/hermes-mobile" ]' "clone of $url: kept"; fi
+done <<'URLS'
+gone https://github.com/omarqaterge/hermes-mobile-app.git
+gone https://github.com/omarqaterge/hermux.git
+gone https://github.com/omarqaterge/hermux
+gone git@github.com:omarqaterge/hermux.git
+gone git@github.com:omarqaterge/hermes-mobile-app.git
+kept https://github.com/omarqaterge/hermux-evil.git
+kept https://github.com/omarqaterge/hermuxx.git
+kept https://github.com/omarqaterge/hermes-mobile-app-fork.git
+kept https://github.com/someone/hermux.git
+kept https://github.com/notomarqaterge/hermux.git
+kept https://gitlab.com/x/omarqaterge/hermux.git
+URLS
+check '[ "$n" = 11 ]' "all 11 clone addresses were tried ($n)"
+
 echo
 if [ "$fails" = 0 ]; then echo "test_uninstall: PASSED"; else echo "test_uninstall: $fails FAILED"; exit 1; fi

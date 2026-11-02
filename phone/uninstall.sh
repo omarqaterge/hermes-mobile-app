@@ -218,8 +218,8 @@ for n in dashboard memory-sync cron-ticker app-keeper bot-keeper; do rmp "$HOME/
 rmdir_empty "$HOME/logs"
 for f in hermes-mobile.apk hm.sh hm-install.sh hm-phone-access.sh hm-debian-image.tar.zst; do rmp "$HOME/$f"; done
 rmp "$HOME/.cache/hermes-open"
-# install.sh's clone, only when it is this project's
-if grep -qs 'omarqaterge/hermes-mobile-app' "$HOME/hermes-mobile/.git/config"; then rmp "$HOME/hermes-mobile"; fi
+# install.sh's clone, only when it is this project's (either name of the repository, docs/status/repo-rename.md)
+if grep -Eqs 'github\.com[/:]omarqaterge/(hermes-mobile-app|hermux)(\.git)?/?[[:space:]]*$' "$HOME/hermes-mobile/.git/config"; then rmp "$HOME/hermes-mobile"; fi
 [ "$failed" = 0 ] && say "OK files"
 
 # ── 6. last: Termux stops taking commands from other apps (install.sh turned that on for Hermes Mobile) ──
