@@ -8,6 +8,7 @@ import { rememberPrompt } from './recent'
 import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
 import { api } from './api'
 import { forgetCheckpoints } from './checkpoints'
+import { quietStatus } from './quietstatus'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
 import { canvasCallStarted, canvasToolDone, canvasWritingDone, canvasWritingStarted } from './canvas'
 import { applyDraftRead, autoReadFor, liveBridge, setDraftRead, speak } from './voice'
@@ -1384,7 +1385,7 @@ client.onEvent((ev: GatewayEvent) => {
       updateActive(() => ({ status: String(payload.text || '') }))
       break
     case 'status.update':
-      updateActive(() => ({ status: String(payload.text || '') }))
+      if (!quietStatus(String(payload.text || ''))) updateActive(() => ({ status: String(payload.text || '') }))
       break
     case 'reasoning.delta':
       queueDelta('reasoning', String(payload.text || ''))

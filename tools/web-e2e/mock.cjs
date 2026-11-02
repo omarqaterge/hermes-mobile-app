@@ -832,6 +832,13 @@ wss.on('connection', ws => {
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-3', method: 'clarify', params: { session_id: sid, questions } })))
           return
         }
+        if (/^title busy$/.test(params.text)) {
+          // Hermes's title model is rate limited mid-turn: the warning it sends must not replace the status line.
+          later(100, live(() => event('message.start', sid, {})))
+          later(200, live(() => event('status.update', sid, { kind: 'warn', text: '⚠ Auxiliary title generation failed: HTTP 429: This request would exceed your rate limit' })))
+          later(1500, live(() => event('message.complete', sid, { text: 'Busy done.' })))
+          return
+        }
         if (/^slow reply$/.test(params.text)) {
           // A reply that takes 1.5 s, so a follow-up can be queued meanwhile; Stop (session.interrupt) ends it early.
           const turn = { row, text: '', timers: [] }

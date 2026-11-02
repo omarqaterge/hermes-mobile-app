@@ -76,6 +76,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `stash.ts` | Drafts put aside from the composer: `stashes`, `pushStash`, `takeStash`, `clearStashes`, `STASH_MAX`. |
 | `queue.ts` | Follow-ups queued while Hermes works: `queuedFor`, `enqueue`, `editQueued`, `removeQueued`, `takeFirst`, `restoreFirst`, `clearQueue`, `isPaused`, `setPaused`, `useQueue`, `QUEUE_MAX`; the pause is kept in memory only. |
 | `Queued.tsx` | `QueuedRows`: the dashed queued bubbles, Queue paused and Resume. |
+| `quietstatus.ts` | `quietStatus(text)`: true for the Hermes status lines the status bar leaves out (today only "Auxiliary title generation failed", with or without its ⚠, when the reason says the provider is busy: 429, rate limit, too many requests, overloaded, capacity, timeout, connection or a 5xx; a billing or model error still shows, since the user has to act on it). |
 | `ctxring.ts` | Context ring logic: `ringDash` (stroke dash for a percent, clamped 0..100), `ctxLevel` (`ok`, `warn` from 80, `full` from 90), `fmtCost`. |
 | `scrub.ts` | Chat scrubber logic: `userMarks` (one `Mark` per user message), `nearestMark`, `readLine` and `railPosition` (where the screen is between your messages, for the thumb), `SCRUB_MIN`. |
 | `Scrubber.tsx` | `Scrubber`: the rail, ticks, thumb and picked-message bubble (3.2); `paintRail` moves the thumb. |
