@@ -25,7 +25,7 @@
 
 **`Screens.tsx` primitives.** `ScreenShell` is the frame of every full screen: top bar with the Back button (`aria-label` "Back", calls `closeScreen()` or the screen's own `onBack`), the title, optional action buttons, then the body. `Sheet` is the tall bottom sheet used by every form (grip, title, content; backdrop tap, grip drag and Android Back close it). `useLoader(load, deps)` runs an async load, keeps `data`, `error`, `loading`, `reload` and `setData`, and reloads when `deps` change. `Status` shows the shared states: an error notice, "Loading…" while loading with nothing yet, or the screen's empty text.
 
-**`Linked.tsx`.** `Linked` renders plain text with web addresses as links that open through the `openExternal` bridge call (a tap on a link stops the message bubble's own tap). Tool cards and reasoning blocks in the chat use it.
+**`Linked.tsx`.** `Linked` renders plain text with web addresses (`http(s)://`, `www.`) and `mailto:` addresses as links (`linkParts` in `web/src/text.ts`) that open through the `openExternal` bridge call, so outside the app in the default browser or mail app (a tap on a link stops the message bubble's own tap). It is used wherever plain text from Hermes or the user is shown: tool cards and reasoning blocks in the chat, user and queued messages, approval and question sheets, subagent cards, diff lines (`DiffView`), text documents in the canvas, gallery and file browser, the scheduled-task prompt, and the error notices of hub screens and the gallery.
 
 **`theme.ts`.** See Appearance (3.15): `savedTheme`, `resolveTheme`, `applyTheme`, `setTheme`, `systemDark`.
 

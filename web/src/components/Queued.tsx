@@ -3,6 +3,7 @@ import { drainQueue, errText, sendPrompt } from '../gateway'
 import { haptic } from '../bridge'
 import { editQueued, removeQueued, restoreFirst, setPaused, useQueue, type Queued } from '../queue'
 import { toast, useStore } from '../store'
+import { Linked } from './Linked'
 
 const ico = (d: string) => (
   <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -77,7 +78,7 @@ function QueuedRow({ chat, q, index, total }: { chat: string; q: Queued; index: 
   return (
     <div className="msg user queued-msg">
       <div className="queued-head">{head}</div>
-      <div className="bubble">{q.text}</div>
+      <div className="bubble"><Linked text={q.text} /></div>
       <div className="queued-actions">
         <button
           className="icon-btn"
