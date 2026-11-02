@@ -8,4 +8,4 @@ each web change is still required.
 
 **Needs a real phone:** n/a.
 
-**Links:** [decision](../decisions/no-ui-test-work-before-revamp.md).
+**Links:** [decision](../decisions/no-ui-test-work-before-revamp.md); [research: how people use Hermes and what to keep on a phone](../research/hermes-usage-and-phone-ui.md) (2026-11-02).
