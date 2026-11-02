@@ -18,7 +18,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
   `sessionStorage` (`hm.devBase`, `hm.devToken`), never the URL.
 - `api.ts` — `api(method, path, body, {profile})` for dashboard REST. In the app it goes through the bridge
   (`httpAsync` → `window.__hmHttp(id, status, body)`); in a browser through the dev server's `/__api` proxy. It adds
-  `profile=` unless `profile: false` or the path has one, parses JSON, throws `ApiError` ("Hermes unreachable: …"
+  `profile=` unless `profile: false` or the path has one, parses JSON, throws `ApiError` ("Hermux unreachable: …"
   for status 0, the server's `detail` or "HTTP n" for ≥ 400). Also `qs` and `refreshLogins`
   (`POST /refresh-logins`, never throws).
 - `gateway.ts` — the WebSocket client (`JsonRpcGatewayClient`, 120 s request timeout, own heartbeat off) and

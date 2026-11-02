@@ -53,7 +53,7 @@ module.exports = async t => {
     }
   })
   await vp.goto(WEB + '/')
-  const vbox = vp.getByPlaceholder('Message Hermes')
+  const vbox = vp.getByPlaceholder('Message Hermux')
   await vbox.waitFor({ timeout: 15000 })
   // model moved from the header into the + menu
   check((await vp.locator('header .model-chip').count()) === 0, 'no model chip in the header')
@@ -168,7 +168,7 @@ module.exports = async t => {
   // dictation: edits made while dictating are kept, the keyboard is not summoned at the end
   await vp.evaluate(() => window.hermesShortcut('new'))
   await vp.getByRole('button', { name: 'Dictate' }).click()
-  const ta = vp.getByPlaceholder('Message Hermes')
+  const ta = vp.getByPlaceholder('Message Hermux')
   await vp.evaluate(() => window.__hmVoice('partial', 'hello wor'))
   await vp.evaluate(() => window.__hmVoice('final', 'hello world'))
   await sleep(150)
@@ -213,7 +213,7 @@ module.exports = async t => {
     })
     await sp.addInitScript(nativeShell)
     await sp.goto(WEB + '/')
-    await sp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await sp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await sp.getByRole('button', { name: /^Sessions/ }).click()
     await sp.locator('.nav-tile', { hasText: 'Settings' }).click()
     await sp.locator('.set-row', { hasText: 'Voice' }).first().click()

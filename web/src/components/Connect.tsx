@@ -183,8 +183,8 @@ export function WelcomeBody({ onChange, onFinish }: { onChange?: () => void; onF
   return (
     <>
       <div className="welcome-hero">
-        <div className="welcome-title">Connect Hermes to a model</div>
-        <div className="dim">Hermes runs on this phone, but it thinks with a model in the cloud. Pick a provider: sign in with a subscription you already pay for, or paste an API key.</div>
+        <div className="welcome-title">Connect Hermux to a model</div>
+        <div className="dim">Hermux runs on this phone, but it thinks with a model in the cloud. Pick a provider: sign in with a subscription you already pay for, or paste an API key.</div>
       </div>
       <ProviderList profile={profile} onChange={recheck} onPicked={finish} />
       <div className="welcome-actions">

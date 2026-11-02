@@ -293,9 +293,9 @@ def _approve(session: str, pkg: str, label: str) -> Optional[str]:
     try:
         from tools.approval import request_tool_approval
     except Exception:
-        return "BLOCKED: Hermes's approval gate is unavailable, so phone_app can't ask the user"
+        return "BLOCKED: Hermux's approval gate is unavailable, so phone_app can't ask the user"
     res = request_tool_approval(
-        "phone_app", f"Use {label} in the background: Hermes opens it on a hidden screen and can read, tap and type in it",
+        "phone_app", f"Use {label} in the background: Hermux opens it on a hidden screen and can read, tap and type in it",
         rule_key=f"phone_app:{pkg}")
     if not res.get("approved"):
         return str(res.get("message") or "the user said no")

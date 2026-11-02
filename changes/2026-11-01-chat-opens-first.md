@@ -1,4 +1,4 @@
 ---
 rank: big
 ---
-- **Your chat opens much sooner when the app starts.** The app used to send about ten other requests to Hermes in the same moment as the one that opens your chat (status, commands, skills, model, settings), and on the phone they held it up. The chat now goes first and the rest follow once it is open; the full status check is also sent once instead of twice. On an Android phone the chat was ready 0.3 s after the page started instead of 2.0 s (median of five starts each); the status dot, the chat list and the `/` menu still work.
+- **Your chat opens much sooner when the app starts.** The app used to send about ten other requests to Hermux in the same moment as the one that opens your chat (status, commands, skills, model, settings), and on the phone they held it up. The chat now goes first and the rest follow once it is open; the full status check is also sent once instead of twice. On an Android phone the chat was ready 0.3 s after the page started instead of 2.0 s (median of five starts each); the status dot, the chat list and the `/` menu still work.

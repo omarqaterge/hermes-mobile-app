@@ -70,7 +70,7 @@ CHROOT_C="$PREFIX/var/lib/chroot-distro/containers/debian"
 DEB="$HOME/bin/hermes-debian"
 
 # ── 1. stop Hermes: the hermes-services loops (exact PIDs from their pid files) and what they started ──
-say "STEP stop Stopping Hermes"
+say "STEP stop Stopping Hermux"
 kill_tree() {  # PID: stop it (so a loop can't start its command again), its children, then it
   local c
   kill -STOP "$1" 2>/dev/null
@@ -104,7 +104,7 @@ say "OK stop $stopped supervisor loop(s) stopped"
 hm_backup() {
   local src=$1 out=$2 keys=$3 extra=$4 list e n p
   local bulk=" hermes-agent installs tools node vendor cache audio_cache image_cache checkpoints state-snapshots logs lsp bin desktop desktop-plugins .backups backups .curator_backups .plugin-backup-repo hermes-mobile-patches sandboxes "
-  [ -d "$src" ] || { echo "no Hermes folder at $src" >&2; return 2; }
+  [ -d "$src" ] || { echo "no Hermux folder at $src" >&2; return 2; }
   list="$out.list"
   : > "$list" || return 2
   walk() {  # DIR: the entries worth keeping, one find per entry
@@ -164,7 +164,7 @@ if [ "$backup" = 1 ]; then
     fi
   fi
   rm -rf "$work"
-  if [ "$ok" != 1 ]; then say "FAIL backup couldn't read Hermes's data in Debian; nothing was removed"; exit 3; fi
+  if [ "$ok" != 1 ]; then say "FAIL backup couldn't read Hermux's data in Debian; nothing was removed"; exit 3; fi
   say "BACKUP $DOWNLOADS/$name"
   say "OK backup $name ($(du -k "$DOWNLOADS/$name" 2>/dev/null | cut -f1) KB)"
 fi
@@ -183,7 +183,7 @@ else
 fi
 
 # ── 4. Debian, with Hermes, its chats, memory, skills and keys ──
-say "STEP debian Removing Debian and Hermes"
+say "STEP debian Removing Debian and Hermux"
 if [ "$D" = chroot ]; then
   # Never deleted by hand: a chroot can still have the phone's folders mounted inside. chroot-distro unmounts first.
   if has chroot-distro; then

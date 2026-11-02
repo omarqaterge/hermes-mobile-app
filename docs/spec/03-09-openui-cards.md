@@ -17,7 +17,7 @@ Hermes may answer with interactive cards (tables, charts, buttons, forms, steps)
 | Card action | Result |
 |---|---|
 | Button / list item / follow-up with `@ToAssistant("...")` | Sends that text as the user's next message (`actionMessage` in `web/src/openui-msg.ts`): the words, then, when the button is inside a form, the form's values as lines `- field: value` (booleans as yes/no, lists joined with commas, empty values left out, `$`-variables never sent), then an optional `(context)`. Haptic tap, then `sendPrompt`. |
-| Same, while Hermes is still answering | Nothing is sent; toast "Hermes is still answering. Try again when it’s done" |
+| Same, while Hermes is still answering | Nothing is sent; toast "Hermux is still answering. Try again when it’s done" |
 | Same, in a view that is not a chat reply (canvas, files, /btw) | Toast "Open the chat to use this". Only chat replies are interactive (`interactive` is set in `ChatItems.tsx`). |
 | `@OpenUrl` | Opens the link outside the app, only for `http` or `https` (`safeHttpUrl`); otherwise toast "That link can’t be opened" |
 | Any other action type | Ignored |
@@ -36,7 +36,7 @@ What you typed or picked survives leaving and reopening the chat. State is saved
 
 - A card can read live data with `Query(...)`. The tool client is `makeToolClient` in `web/src/openui-query.ts`; each call goes to `POST /openui/call` with `{ name, args }` (`/api/plugins/hermes-mobile/openui/call`).
 - Read-only tools only. The allowed list is `hermes-plugin/hermes-mobile/openui_tools.json`: `web_search`, `find_chats`, `read_file`, `search_files`. The plugin enforces the same list: a tool outside it gets 403, a call that takes over 30 s gets 504, a failing tool gets 502. A card can never write; any change goes through a button that asks Hermes in the chat, where the user approves it.
-- Bounds: the same call (same chat, tool and arguments) made within 15 minutes (`QUERY_FRESH_MS`) gets the saved answer, also after reopening the chat, but only the card's first call; a Refresh button's repeat call goes to the network. One card instance makes at most 30 network calls (`QUERY_MAX_CALLS`); the 31st returns the error text "This card asked for data too often. Ask Hermes to refresh it." (`QUERY_TOO_OFTEN`). This stops a model-written refresh interval from polling for ever. Errors come back as an error result inside the card.
+- Bounds: the same call (same chat, tool and arguments) made within 15 minutes (`QUERY_FRESH_MS`) gets the saved answer, also after reopening the chat, but only the card's first call; a Refresh button's repeat call goes to the network. One card instance makes at most 30 network calls (`QUERY_MAX_CALLS`); the 31st returns the error text "This card asked for data too often. Ask Hermux to refresh it." (`QUERY_TOO_OFTEN`). This stops a model-written refresh interval from polling for ever. Errors come back as an error result inside the card.
 - Answers are stored through the same `hm.openui.v1` store, under keys starting `q:`.
 
 #### What Hermes is taught (`web/src/openui-lib.ts`)

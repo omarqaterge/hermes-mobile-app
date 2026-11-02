@@ -94,7 +94,7 @@ function scheduleReconnect(): void {
   const delay = readySeen ? 0 : Math.min(15_000, 600 * 2 ** Math.min(attempt, 5))
   readySeen = false
   attempt++
-  setState({ connDetail: attempt > 2 ? 'Starting Hermes…' : 'Reconnecting…' })
+  setState({ connDetail: attempt > 2 ? 'Starting Hermux…' : 'Reconnecting…' })
   if (attempt === 1) watchHermes() // once per outage; these steps stay as the fallback
   if (attempt === 2 || attempt % 6 === 0) startHermes()
   reconnectTimer = setTimeout(() => {
@@ -128,7 +128,7 @@ export async function connect(): Promise<void> {
   })
   const url = await wsUrl()
   if (!url) {
-    setState({ conn: 'error', connDetail: 'Hermes is not running yet' })
+    setState({ conn: 'error', connDetail: 'Hermux is not running yet' })
     scheduleReconnect()
     return
   }
@@ -925,9 +925,9 @@ export async function setYolo(a: ActiveSession, want: boolean | null): Promise<A
 }
 /** The notice after /yolo: names the mode the chat is in now. */
 const YOLO_NOTICE: Record<Access, string> = {
-  full: '⚡ Full access on for this chat (/yolo): Hermes runs commands without asking',
+  full: '⚡ Full access on for this chat (/yolo): Hermux runs commands without asking',
   auto: 'Back to Auto access: dangerous commands are blocked, everything else runs',
-  off: 'Auto off: Hermes asks before risky commands again'
+  off: 'Auto off: Hermux asks before risky commands again'
 }
 
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
@@ -1156,7 +1156,7 @@ export async function detachAttachment(att: Attachment): Promise<void> {
   const a = getState().active
   if (!a) return
   if (att.kind === 'image') {
-    if (!att.path) throw new Error(`Can't remove ${att.name}: Hermes didn't say where it is queued`)
+    if (!att.path) throw new Error(`Can't remove ${att.name}: Hermux didn't say where it is queued`)
     await rpc('image.detach', { session_id: a.runtimeId, path: att.path })
   }
   updateActive(x => (x.runtimeId === a.runtimeId ? { attachments: x.attachments.filter(y => y !== att) } : null))
@@ -1894,7 +1894,7 @@ export async function refreshCtx(usage?: Usage | null): Promise<Ctx | null> {
 export async function compressChat(): Promise<string> {
   const a = getState().active
   if (!a) throw new Error('No chat open')
-  if (a.running) throw new Error('Wait until Hermes has finished')
+  if (a.running) throw new Error('Wait until Hermux has finished')
   const r = await rpc<SessionCompressResult>('session.compress', { session_id: a.runtimeId }, 300_000)
   if (r.compressed === false || r.summary?.noop || r.summary?.aborted || r.summary?.refused_would_grow) return r.message || r.summary?.headline || 'Nothing to compress'
   const b = r.before_messages, n = r.after_messages

@@ -9,7 +9,7 @@ describe('shizukuRow', () => {
   it('plugin states are problems', () => {
     expect(shizukuRow(run, 'denied')).toMatchObject({ value: 'Termux not allowed', state: 'err' })
     expect(shizukuRow(run, 'blocked')).toMatchObject({ value: 'Not answering', state: 'err' })
-    expect(shizukuRow(run, 'missing')).toMatchObject({ value: 'Not set up for Hermes', state: 'err' })
+    expect(shizukuRow(run, 'missing')).toMatchObject({ value: 'Not set up for Hermux', state: 'err' })
     expect(shizukuRow({ shizuku: true }, 'off')).toMatchObject({ value: 'Not running', state: 'err' })
   })
   it('the app sees Shizuku running but Termux can not reach it: Termux not allowed, not "Not running"', () =>

@@ -6,7 +6,7 @@ The canvas is a set of documents that belong to one chat. Hermes writes them wit
 
 #### What the user sees
 
-- A header button (aria-label Canvas, or "Canvas (Hermes is writing)" while a canvas call streams) with a dot when the chat has documents.
+- A header button (aria-label Canvas, or "Canvas (Hermux is writing)" while a canvas call streams) with a dot when the chat has documents.
 - A panel that slides in from the right. On a phone it covers the chat. On a wide screen (min-width 700 px: upright tablets, unfolded foldables, landscape) it is a column beside the chat whose width the user drags (see "Divider and width on wide screens" below).
 - Documents show as tabs. Each has a type icon (`TYPE_ICON`): markdown 📝, html 🌐, code 💻, text 📄, json `{ }`, csv ▦, svg 🖼, mermaid ⛓.
 
@@ -51,12 +51,12 @@ The canvas is a set of documents that belong to one chat. Hermes writes them wit
 | ✕ | Round close button, aria-label Close canvas | Closes the panel | Swipe right on the bar closes | |
 | Writing state | Replaces the body while Hermes writes a document that is not on a tab yet: spinner, "Hermes is writing a document…" (or "Saving “Title”…" once the call has text), a seconds counter, and the text so far in a box (cut at 40,000 characters) or grey skeleton lines | | | Shown only while the model streams a `canvas` call |
 | Loading | Spinner and "Loading the canvas…" | | | While the chat's document list has not arrived (chat still opening, or Hermes unreachable) |
-| Empty | 🗒, "Your canvas is empty", "Ask Hermes to write something here, or start your own." and a button New document | New document opens the New document sheet | | No documents |
-| Toolbar | Segmented control View / Edit (View is called Run for an HTML document); a status text; for an HTML document in View, a toggle "🚫 Offline" / "🌐 Online"; a button ⛶ (aria-label Fill the whole screen); a button ⋮ (aria-label More) | View: saves, then shows the document. Edit: shows the editor. Offline/Online: lets the page use the network (per document, kept until the app restarts). ⛶: full-screen size. ⋮: document menu. | | Status text: "Saving…", "Unsaved", "Saved ✓" (2 s, then back), "Conflict", "Not saved", otherwise "<when> · Hermes" or "<when> · You" (the age, such as "2 min ago", refreshes every 30 s while the panel is open and the page is visible) |
-| Rewrite banner | Spinner and "Hermes is rewriting this document… Ns" | | | While Hermes writes into the open document |
-| Conflict banner | "Hermes changed this document while you were editing." with buttons "Use Hermes’s" and "Keep mine" | Use Hermes’s: drops your unsaved text and reloads. Keep mine: reloads, puts your text back and saves it over Hermes's. | | Shown when Hermes changed a document you have unsaved edits in, or a save fails with a conflict |
+| Empty | 🗒, "Your canvas is empty", "Ask Hermux to write something here, or start your own." and a button New document | New document opens the New document sheet | | No documents |
+| Toolbar | Segmented control View / Edit (View is called Run for an HTML document); a status text; for an HTML document in View, a toggle "🚫 Offline" / "🌐 Online"; a button ⛶ (aria-label Fill the whole screen); a button ⋮ (aria-label More) | View: saves, then shows the document. Edit: shows the editor. Offline/Online: lets the page use the network (per document, kept until the app restarts). ⛶: full-screen size. ⋮: document menu. | | Status text: "Saving…", "Unsaved", "Saved ✓" (2 s, then back), "Conflict", "Not saved", otherwise "<when> · Hermux" or "<when> · You" (the age, such as "2 min ago", refreshes every 30 s while the panel is open and the page is visible) |
+| Rewrite banner | Spinner and "Hermux is rewriting this document… Ns" | | | While Hermes writes into the open document |
+| Conflict banner | "Hermux changed this document while you were editing." with buttons "Use Hermux’s" and "Keep mine" | Use Hermes’s: drops your unsaved text and reloads. Keep mine: reloads, puts your text back and saves it over Hermes's. | | Shown when Hermes changed a document you have unsaved edits in, or a save fails with a conflict |
 | Body | The document: a viewer, or the editor in Edit | Tapping links in a text document opens them (`Linked`) | Selecting text in the viewer shows the selection bar | "Loading…" until the full document arrives |
-| Selection bar | Label "Ask Hermes about the selection" and chips Rewrite, Shorter, Longer, Fix, Explain, Other… | A chip sends a chat message (see below). Other… asks "What should Hermes do with it?" first. | | Shown in View when more than 2 characters of the document are selected; cleared when the tab or mode changes |
+| Selection bar | Label "Ask Hermux about the selection" and chips Rewrite, Shorter, Longer, Fix, Explain, Other… | A chip sends a chat message (see below). Other… asks "What should Hermux do with it?" first. | | Shown in View when more than 2 characters of the document are selected; cleared when the tab or mode changes |
 | Ask bar | Text field "Ask Hermes to change “Title”…" and a send button (aria-label Send, disabled while the field is empty) | Sends the text as a chat message about this document | | Hidden in Edit |
 | Exit full screen | Round button ⤓ at the top right (aria-label Exit full screen) | Back to the side size | | Only in full-screen size |
 
@@ -127,7 +127,7 @@ A bottom sheet titled with the document's title (`DocMenu`, built on `Sheetish`)
 
 1. `tool.generating` with the name `canvas`, `tool_call` or `mcp__tool_call` calls `canvasWritingStarted`. The panel is not open yet, so after 1.5 s of still writing it opens on the writing state (a short read or list call finishes before that).
 2. `tool.start` brings the real name and arguments (`canvasCallStarted`). If it is not a `canvas` call with action `create` or `write`, the guess is undone (the panel closes again if it was opened only for this). Otherwise the title and the document text so far show in the writing state.
-3. `tool.complete` for `canvas` calls `canvasToolDone`: it refreshes the list, then opens the document if the tool says it should be shown or the action was `write` or `patch` while the panel is open. If the panel is closed it shows an info toast: "Hermes added a document to the canvas" or "Hermes updated the canvas". A `create` also refreshes the gallery list (`galleryToolDone`).
+3. `tool.complete` for `canvas` calls `canvasToolDone`: it refreshes the list, then opens the document if the tool says it should be shown or the action was `write` or `patch` while the panel is open. If the panel is closed it shows an info toast: "Hermux added a document to the canvas" or "Hermux updated the canvas". A `create` also refreshes the gallery list (`galleryToolDone`).
 4. When the turn ends the writing state is cleared (`canvasWritingDone`); a panel opened only for a call that wrote nothing closes again.
 
 #### Sync and per-chat scope

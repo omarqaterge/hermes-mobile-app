@@ -5,21 +5,21 @@ import { confirmDialog } from '../dialog'
 import { PickerSheet, SelectRow, type Option } from './ui'
 
 const OPTIONS: Option[] = [
-  { value: 'off', label: 'Off', sub: 'Hermes asks before risky commands', icon: '✋', tone: 'gray' },
+  { value: 'off', label: 'Off', sub: 'Hermux asks before risky commands', icon: '✋', tone: 'gray' },
   {
     value: 'auto',
     label: 'Auto access',
-    sub: 'Runs everything without asking, except the commands on Hermes’s dangerous list (recursive deletes, overwriting system or config files, force-killing processes, piping downloads into a shell…): those are blocked',
+    sub: 'Runs everything without asking, except the commands on Hermux’s dangerous list (recursive deletes, overwriting system or config files, force-killing processes, piping downloads into a shell…): those are blocked',
     icon: '🛡',
     tone: 'teal'
   },
-  { value: 'full', label: 'Full access', sub: 'Runs every command without asking. Only Hermes’s catastrophic list (wipe the disk, shut down…) stays blocked', icon: '⚡', tone: 'red' }
+  { value: 'full', label: 'Full access', sub: 'Runs every command without asking. Only Hermux’s catastrophic list (wipe the disk, shut down…) stays blocked', icon: '⚡', tone: 'red' }
 ]
 
 const DONE: Record<Access, string> = {
-  off: 'Auto off: Hermes asks before risky commands again',
+  off: 'Auto off: Hermux asks before risky commands again',
   auto: 'Auto access on for this chat: dangerous commands are blocked, everything else runs',
-  full: 'Full access on for this chat: Hermes runs commands without asking'
+  full: 'Full access on for this chat: Hermux runs commands without asking'
 }
 
 /** The Auto button beside the composer's model chip: how much this chat may do without asking (off / Auto access / Full access).
@@ -35,9 +35,9 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
     if (want === mode) return
     if (want === 'full') {
       const ok = await confirmDialog({
-        title: 'Give Hermes full access?',
+        title: 'Give Hermux full access?',
         message:
-          'Hermes will run every command in this chat without asking you first: deleting or overwriting files, killing apps and processes, installing software, changing settings, sending data over the network. A wrong step can lose your data, and nothing is checked before it runs. Only Hermes’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. Use it only for a task you trust, and turn it off afterwards.',
+          'Hermux will run every command in this chat without asking you first: deleting or overwriting files, killing apps and processes, installing software, changing settings, sending data over the network. A wrong step can lose your data, and nothing is checked before it runs. Only Hermux’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. Use it only for a task you trust, and turn it off afterwards.',
         confirmLabel: 'Allow full access',
         icon: '⚠️',
         danger: true
@@ -61,7 +61,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
   const label = mode === 'auto' ? 'Auto access is on' : mode === 'full' ? 'Full access is on' : 'Auto is off'
   return (
     <>
-      <button className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermes may do without asking`} disabled={offline} onClick={() => setOpen(true)}>
+      <button className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermux may do without asking`} disabled={offline} onClick={() => setOpen(true)}>
         {compact ? (mode === 'full' ? '⚡' : '🛡') : mode === 'full' ? '⚡ Full access' : 'Auto'}
       </button>
       {open && <PickerSheet title="Auto: run without asking" options={OPTIONS} value={mode} onPick={v => void pick(v)} onClose={() => setOpen(false)} />}
@@ -77,7 +77,7 @@ export function DefaultAccessRow() {
     if (want === 'full') {
       const ok = await confirmDialog({
         title: 'Full access in every chat?',
-        message: 'Hermes will run every command in every chat without asking you first: deleting or overwriting files, killing apps, installing software, sending data over the network. Nothing is checked before it runs. Only Hermes’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. You can still turn it off for a single chat from its Auto button.',
+        message: 'Hermux will run every command in every chat without asking you first: deleting or overwriting files, killing apps, installing software, sending data over the network. Nothing is checked before it runs. Only Hermux’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. You can still turn it off for a single chat from its Auto button.',
         confirmLabel: 'Allow in all chats',
         icon: '⚠️',
         danger: true

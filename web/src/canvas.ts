@@ -334,7 +334,7 @@ export function canvasToolDone(resultText: string | null | undefined, args: unkn
       if (state.open || shown) {
         set({ active: id, open: true })
         void loadDoc(id, true)
-      } else if (!state.open) toast(action === 'create' ? 'Hermes added a document to the canvas' : 'Hermes updated the canvas', 'info')
+      } else if (!state.open) toast(action === 'create' ? 'Hermux added a document to the canvas' : 'Hermux updated the canvas', 'info')
     }
   })
 }

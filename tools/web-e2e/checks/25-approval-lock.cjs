@@ -24,11 +24,11 @@ module.exports = async t => {
       })
     }, al)
     await pg.goto(WEB + '/')
-    await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     return pg
   }
   const ask = async (pg, text) => {
-    await pg.getByPlaceholder('Message Hermes').fill(text)
+    await pg.getByPlaceholder('Message Hermux').fill(text)
     await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
     await pg.locator('.sheet .sheet-title', { hasText: 'Approve' }).waitFor({ timeout: 5000 })
   }

@@ -253,7 +253,7 @@ function stillOpen(req: ServerRequest): boolean {
 /** What Live mode says when Hermes asks for approval: just the question (the details are on the screen; reading a
  * long command out loud took ages). "Allow for this chat" still works when said (voiceChoice). */
 export function approvalPrompt(_choices: string[]): string {
-  return 'Hermes needs your permission. Allow or deny?'
+  return 'Hermux needs your permission. Allow or deny?'
 }
 
 function onApproval(req: ServerRequest) {

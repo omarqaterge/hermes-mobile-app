@@ -50,7 +50,7 @@ async function main() {
     fail()
   })
   await page.goto(WEB + '/')
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await sleep(500)
   Object.assign(t, { browser, page })
   const dir = path.join(__dirname, 'checks')

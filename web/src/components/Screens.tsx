@@ -227,7 +227,7 @@ export function MemoryScreen() {
         { action, target: tab, content, old_text: old }
       )
       if (r.result?.success === false) {
-        toast(r.result.error || 'Hermes refused the change', 'error', 6000)
+        toast(r.result.error || 'Hermux refused the change', 'error', 6000)
         return false
       }
       const fresh = r[tab]
@@ -289,7 +289,7 @@ export function MemoryScreen() {
                 className="btn danger"
                 disabled={busy}
                 onClick={() => {
-                  void confirmDialog({ title: 'Delete this memory?', message: 'Hermes will forget it.', danger: true }).then(yes => yes && run('remove', undefined, edit.old!).then(ok => ok && setEdit(null)))
+                  void confirmDialog({ title: 'Delete this memory?', message: 'Hermux will forget it.', danger: true }).then(yes => yes && run('remove', undefined, edit.old!).then(ok => ok && setEdit(null)))
                 }}
               >
                 Delete
@@ -480,7 +480,7 @@ export function CronScreen() {
               ))}
             </div>
             <label className="field">
-              <span>What should Hermes do?</span>
+              <span>What should Hermux do?</span>
               <textarea className="sheet-input" rows={5} value={form.prompt} onChange={e => setForm({ ...form, prompt: e.target.value })} />
             </label>
             <div className="dim small">Runs on the phone. Results are saved locally and you get a notification.</div>
@@ -548,7 +548,7 @@ const ROOTS: [string, string][] = [
   ['Downloads', '/sdcard/Download'],
   ['Photos', '/sdcard/DCIM'],
   ['Documents', '/sdcard/Documents'],
-  ['Hermes', '/root/.hermes'],
+  ['Hermux', '/root/.hermes'],
   ['Home', '/root']
 ]
 const PREVIEW_MAX = 3 * 1024 * 1024
@@ -746,7 +746,7 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
                 setState({ screen: null })
               }}
             >
-              Ask Hermes
+              Ask Hermux
             </button>
           </div>
         </Sheet>

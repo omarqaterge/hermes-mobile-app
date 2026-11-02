@@ -29,7 +29,7 @@ The user installs only the APK; the app walks them through the rest (`docs/insta
 3. The app copies a command to the clipboard (`setupCommand` bridge method): `curl -fsSL .../phone/bootstrap.sh -o hm.sh && HM_APP_TOKEN=<token> bash hm.sh`. A fresh random token per copy. The user opens Termux and pastes it (Termux has no "type this" intent). `HM_NO_APK` is not set, `HM_APP_TOKEN` is.
 4. `bootstrap.sh` posts every line to `POST /setup` on the app's `HermesService`, which accepts only lines of a fixed shape carrying the current token and shows them in the setup flow (4.7, "App-first installer progress"). `DONE` clears the token.
 5. A fixed probe command run through Termux's RUN_COMMAND (`MainActivity` `PROBE_SCRIPT`: `services=yes`, `installed=yes`, `dash=<http code>`) tells the app whether the install finished and whether the dashboard answers. The marker `~/.hermes-mobile/installed` is written at `DONE`.
-6. Because `HM_APP_TOKEN` is set the script does not download the APK (the app is already installed). The model is connected inside the app ("Connect Hermes to a model").
+6. Because `HM_APP_TOKEN` is set the script does not download the APK (the app is already installed). The model is connected inside the app ("Connect Hermux to a model").
 
 Without the app's help the user can paste `curl -fsSL .../phone/bootstrap.sh -o hm.sh && bash hm.sh` into Termux; at the end the script opens Android's installer for the APK.
 

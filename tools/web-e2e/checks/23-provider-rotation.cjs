@@ -13,7 +13,7 @@ module.exports = async t => {
   })
   const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await pg.goto(WEB + '/')
-  await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
   await pg.locator('.set-row', { hasText: 'Model providers' }).click()

@@ -118,13 +118,13 @@ function Header() {
             }}
           />
           {reading ? <span className="reading-badge" title="Reading replies aloud">🔊</span> : null}
-          {profile !== 'default' ? profile : 'Hermes Agent'}
+          {profile !== 'default' ? profile : 'Hermux agent'}
         </span>
       </button>
       {(
         <button
           className={`icon-btn canvas-btn${canvasWriting ? ' writing' : ''}`}
-          aria-label={canvasWriting ? 'Canvas (Hermes is writing)' : 'Canvas'}
+          aria-label={canvasWriting ? 'Canvas (Hermux is writing)' : 'Canvas'}
           onClick={openChatCanvas}
         >
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -159,7 +159,7 @@ function ConnBanner() {
     return () => clearInterval(id)
   }, [conn])
   if (conn === 'open') return null
-  const label = detail || (conn === 'connecting' ? 'Connecting to Hermes…' : 'Hermes is offline')
+  const label = detail || (conn === 'connecting' ? 'Connecting to Hermux…' : 'Hermux is offline')
   return (
     <div className="conn-banner">
       <Spinner small />
@@ -174,7 +174,7 @@ function ConnBanner() {
         </button>
       )}
       <button className="mini" onClick={() => reconnectNow()}>
-        {secs >= 20 ? 'Restart Hermes' : 'Retry'}
+        {secs >= 20 ? 'Restart Hermux' : 'Retry'}
       </button>
     </div>
   )
@@ -224,7 +224,7 @@ function CompressHint() {
   return (
     <div className="compress-hint">
       <span>
-        Context {Math.round(pct)}% full. {busy ? 'Compressing…' : 'Compress older turns so Hermes keeps up?'}
+        Context {Math.round(pct)}% full. {busy ? 'Compressing…' : 'Compress older turns so Hermux keeps up?'}
       </span>
       <button
         className="btn compress-go"
@@ -685,7 +685,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     return (
       <div className="chat chat-skeleton" role="status" aria-label="Opening your chat">
         <div className="skeleton-label dim">
-          <Spinner small /> {conn === 'open' ? plainTitle(openingTitle) || 'Opening your chat…' : 'Connecting to Hermes…'}
+          <Spinner small /> {conn === 'open' ? plainTitle(openingTitle) || 'Opening your chat…' : 'Connecting to Hermux…'}
         </div>
         {/* The rough shape of a conversation while it loads, instead of a lone spinner. */}
         {[['user', 46], ['assistant', 88, 72, 54], ['user', 30], ['assistant', 80, 64]].map(([who, ...ws], i) => (

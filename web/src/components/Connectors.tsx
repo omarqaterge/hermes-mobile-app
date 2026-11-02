@@ -74,7 +74,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
     <>
       <ProfileChips value={scope} onChange={setScope} label="Connectors for" />
       <GoogleSection key={scope} profile={scope} />
-      <Section title="Apps and services (MCP)" footer="MCP servers give Hermes tools from other services: Notion, Linear, GitHub, your own server… A change applies to new chats.">
+      <Section title="Apps and services (MCP)" footer="MCP servers give Hermux tools from other services: Notion, Linear, GitHub, your own server… A change applies to new chats.">
         {(servers.data || []).map(s => (
           <Row
             key={s.name}
@@ -87,7 +87,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
             onClick={() => setServer(s.name)}
           />
         ))}
-        <Row icon="＋" tone="gold" title="Add from the catalog" sub="Services Hermes knows how to connect" chevron onClick={() => setCatalog(true)} />
+        <Row icon="＋" tone="gold" title="Add from the catalog" sub="Services Hermux knows how to connect" chevron onClick={() => setCatalog(true)} />
         <Row icon="＋" tone="blue" title="Add a server" sub="By its address, or a command that starts it" chevron onClick={() => setAdding(true)} />
       </Section>
       <Status loading={servers.loading} error={servers.error} empty={false} emptyText="" />
@@ -99,7 +99,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
       </Section>
       <Status loading={tools.loading} error={tools.error} empty={false} emptyText="" />
       {(keys.data?.length || 0) > 0 && (
-        <Section title="Keys for skills" footer="Hermes’s skills for these services read the key from the bot’s .env.">
+        <Section title="Keys for skills" footer="Hermux’s skills for these services read the key from the bot’s .env.">
           {keys.data!.map(([k, r]) => (
             <Row
               key={k}
@@ -235,7 +235,7 @@ function ServerSheet({ server: s, profile, onClose, onChanged }: { server: McpSe
       .finally(() => setBusy(false))
   }
   const remove = () =>
-    void confirmDialog({ title: `Remove ${s.name}?`, message: 'Hermes forgets this server. Its saved token stays in the bot’s .env.', confirmLabel: 'Remove', danger: true }).then(
+    void confirmDialog({ title: `Remove ${s.name}?`, message: 'Hermux forgets this server. Its saved token stays in the bot’s .env.', confirmLabel: 'Remove', danger: true }).then(
       ok => ok && act(api('DELETE', `${base}?${p}`, undefined, { profile: false }), `${s.name} removed`).then(done => done && (onChanged(), onClose()))
     )
 
@@ -250,7 +250,7 @@ function ServerSheet({ server: s, profile, onClose, onChanged }: { server: McpSe
         </Section>
         {!fromPlugin && (
           <Section footer="A change applies to new chats.">
-            <ToggleRow title="On" sub="Hermes can use this server’s tools" on={s.enabled} onChange={v => !busy && toggle(v)} />
+            <ToggleRow title="On" sub="Hermux can use this server’s tools" on={s.enabled} onChange={v => !busy && toggle(v)} />
           </Section>
         )}
         {s.auth === 'oauth' && !fromPlugin && (
@@ -329,7 +329,7 @@ function AddServerSheet({ profile, onClose, onAdded }: { profile: string; onClos
               <span>Environment (one KEY=value per line)</span>
               <textarea className="mono" rows={3} value={f.env} onChange={e => set({ env: e.target.value })} placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=…" autoCapitalize="none" />
             </label>
-            <div className="dim small">The command runs inside Hermes’s Debian on the phone, so the program (npx, uvx…) must be installed there.</div>
+            <div className="dim small">The command runs inside Hermux’s Debian on the phone, so the program (npx, uvx…) must be installed there.</div>
           </>
         )}
       </div>
@@ -389,7 +389,7 @@ function CatalogSheet({ profile, onClose, onAdded }: { profile: string; onClose:
               <input className="mono" type="password" autoComplete="off" value={env[v.name] || ''} onChange={e => setEnv(x => ({ ...x, [v.name]: e.target.value }))} placeholder={v.name} />
             </label>
           ))}
-          {pick.needs_install && <div className="dim small">Hermes downloads and builds it first; that can take a few minutes.</div>}
+          {pick.needs_install && <div className="dim small">Hermux downloads and builds it first; that can take a few minutes.</div>}
         </div>
         <div className="sheet-actions">
           <button className="btn primary" disabled={busy || missing || pick.installed} onClick={install}>
@@ -513,7 +513,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
       <div className="sheet-scroll">
         <div className="dim small pad">{w.sub}</div>
         <Section footer="A change applies to new chats.">
-          <ToggleRow title="On" sub="Hermes can use these tools" on={enabled} onChange={v => !busy && toggle(v)} />
+          <ToggleRow title="On" sub="Hermux can use these tools" on={enabled} onChange={v => !busy && toggle(v)} />
         </Section>
         <Status loading={cfg.loading} error={cfg.error} empty={!cfg.loading && !cfg.error && !cfg.data?.providers.length} emptyText="Nothing to set up: it works as it is." />
         {(cfg.data?.providers.length || 0) > 0 && (

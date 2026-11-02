@@ -14,7 +14,7 @@ function itemMd(it: ChatItem): string {
       return `**You:**\n\n${it.text}${att.length ? `\n\n_Attached: ${att.join(', ')}_` : ''}`
     }
     case 'assistant':
-      return it.text.trim() ? `**Hermes:**\n\n${it.text.trim()}` : ''
+      return it.text.trim() ? `**Hermux:**\n\n${it.text.trim()}` : ''
     case 'tool':
       return `_🔧 ${it.name}${it.context ? `: ${it.context}` : ''}${it.status === 'error' ? ' (failed)' : ''}_`
     case 'subagent':
@@ -25,7 +25,7 @@ function itemMd(it: ChatItem): string {
 }
 
 export function chatMarkdown(a: Pick<ActiveSession, 'title' | 'items'>, when = new Date()): string {
-  const title = (a.title || 'Chat with Hermes').replace(/^⎇\s*/, '')
+  const title = (a.title || 'Chat with Hermux').replace(/^⎇\s*/, '')
   const parts = [`# ${title}`, `_Exported from Hermux on ${when.toLocaleString()}_`]
   for (const it of a.items) {
     const md = itemMd(it)

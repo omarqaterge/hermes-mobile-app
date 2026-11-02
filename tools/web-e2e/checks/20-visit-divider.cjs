@@ -39,12 +39,12 @@ module.exports = async t => {
     // away and back with the same chat open (Home while Hermes answers): the shell's hermesPause / hermesResume
     await vp.evaluate(() => window.hermesOpenSession('s-5'))
     await vp.locator('.msg.assistant', { hasText: 'answer s-5' }).waitFor({ timeout: 5000 })
-    await vp.getByPlaceholder('Message Hermes').fill('slow reply')
+    await vp.getByPlaceholder('Message Hermux').fill('slow reply')
     await vp.locator('.composer').getByRole('button', { name: 'Send' }).click()
     await vp.locator('.msg.assistant', { hasText: 'Slow done.' }).waitFor({ timeout: 5000 })
-    await vp.getByPlaceholder('Message Hermes').waitFor({ timeout: 5000 })
+    await vp.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
     check((await vp.locator('.visit-divider').count()) === 0, 'visit: a reply watched on screen gets no divider')
-    await vp.getByPlaceholder('Message Hermes').fill('slow reply')
+    await vp.getByPlaceholder('Message Hermux').fill('slow reply')
     await vp.locator('.composer').getByRole('button', { name: 'Send' }).click()
     await vp.evaluate(() => window.hermesPause()) // Home right after sending: the reply starts 300 ms later
     await sleep(2200)

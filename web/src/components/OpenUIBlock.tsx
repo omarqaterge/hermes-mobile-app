@@ -70,7 +70,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
     }
     if (e.type !== 'continue_conversation') return // the chat library has no custom actions
     if (!live.current.interactive) return toast('Open the chat to use this')
-    if (getState().active?.running) return toast('Hermes is still answering. Try again when it’s done')
+    if (getState().active?.running) return toast('Hermux is still answering. Try again when it’s done')
     const text = actionMessage(e)
     if (!text) return
     haptic()

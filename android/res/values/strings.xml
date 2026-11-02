@@ -2,5 +2,5 @@
     <string name="app_name">Hermux</string>
     <string name="sc_new">New chat</string>
     <string name="sc_live">Live mode</string>
-    <string name="sc_live_long">Talk to Hermes (Live mode)</string>
+    <string name="sc_live_long">Talk to Hermux (Live mode)</string>
 </resources>

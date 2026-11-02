@@ -7,7 +7,7 @@ module.exports = async t => {
   const { browser } = t
   const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await pg.goto(WEB + '/')
-  await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await pg.evaluate(() => { window.__opened = []; window.open = u => { window.__opened.push(String(u)); return null } })
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
@@ -24,7 +24,7 @@ module.exports = async t => {
 
   // Turn a server off from its sheet.
   await pg.locator('.set-row', { hasText: 'files' }).first().click()
-  const files = pg.locator('.sheet', { hasText: 'Hermes can use this server’s tools' })
+  const files = pg.locator('.sheet', { hasText: 'Hermux can use this server’s tools' })
   await files.getByRole('switch', { name: 'On' }).click()
   await sleep(300)
   {
@@ -139,7 +139,7 @@ module.exports = async t => {
   await waitOk(g2.getByText('OAuth state mismatch'), 'connectors: Google: an address from another sign-in shows the reason')
   await g2.getByLabel('The address the browser shows').fill('http://localhost:1/?state=mock&code=4/abc')
   await g2.getByRole('button', { name: 'Finish' }).click()
-  const g3 = pg.locator('.sheet', { hasText: 'Ask Hermes about your mail' })
+  const g3 = pg.locator('.sheet', { hasText: 'Ask Hermux about your mail' })
   await waitOk(g3, 'connectors: Google: the right address connects')
   await g3.locator('.set-row', { hasText: 'Sign out' }).click()
   await pg.locator('.dialog').getByRole('button', { name: 'Sign out' }).click()

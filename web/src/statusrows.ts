@@ -23,7 +23,7 @@ function restartNote(a: NativeSetup['shizukuAuto']): string | null {
 export function shizukuRow(native: Pick<NativeSetup, 'shizuku' | 'shizukuRunning' | 'shizukuAuto'> | null, plugin: PhoneAccess['shizuku'] | null | undefined): ShizukuRow | null {
   const installed = native?.shizuku
   if (installed === false) {
-    return { value: 'Not installed', state: 'wait', note: 'Lets Hermes see and use the screen. Install it from Setup check.', fix: 'setup' }
+    return { value: 'Not installed', state: 'wait', note: 'Lets Hermux see and use the screen. Install it from Setup check.', fix: 'setup' }
   }
   if (native?.shizukuRunning === false) {
     return { value: 'Not running', state: 'err', note: 'Open Shizuku and start it.', fix: installed ? 'open-shizuku' : 'setup' }
@@ -42,7 +42,7 @@ export function shizukuRow(native: Pick<NativeSetup, 'shizuku' | 'shizukuRunning
     case 'blocked':
       return { value: 'Not answering', state: 'err', note: 'Set Shizuku’s and Termux’s Battery to Unrestricted.', fix }
     case 'missing':
-      return { value: 'Not set up for Hermes', state: 'err', note: 'Run the installer in Termux again.', fix }
+      return { value: 'Not set up for Hermux', state: 'err', note: 'Run the installer in Termux again.', fix }
     default: // off: Hermes can't reach Shizuku (while the app knows it runs: Termux isn't allowed yet)
       return knowsNative
         ? { value: 'Termux not allowed', state: 'err', note: 'In Shizuku, allow Termux.', fix }

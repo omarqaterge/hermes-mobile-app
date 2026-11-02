@@ -26,7 +26,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.sideHidden.v1` | `sidepanel.ts` | `1` while the user has hidden the docked chat list on a wide screen; absent = docked. | No |
 | `hm.canvasSplit.v1` | `splitview.ts` | The canvas column's share of the room beside the chat list on wide screens, 0.2–0.85, set by dragging the divider; absent = the default width. | No |
 | `hm.customModels.v1` | `custommodels.ts` | Model ids typed into a model picker and picked once `[{p: provider, m: model}]`; shown as normal rows under their provider. | No (shared by all profiles) |
-| `hm.hermesSeen` | `hermes-update.ts` | The Hermes version already warned about ("This Hermes is a different version…"), so the toast shows once per version. | No |
+| `hm.hermesSeen` | `hermes-update.ts` | The Hermes version already warned about ("This Hermux agent is a different version…"), so the toast shows once per version. | No |
 | `hm.lastSession` | `gateway.ts`, `store.ts` | The chat to reopen on start: `{id, profile}`; used only when the profile matches. | Records the profile |
 | `hm.live.pause` (inventory name `hm.live`) | `live.ts` (`PAUSE_KEY`) | Live mode: seconds of silence before sending (0.5–10, default 2). | No |
 | `hm.live.bargein` | `live.ts` (`BARGE_KEY`) | Live mode: talking over Hermes cuts it off (`"0"` = off; anything else or absent = on). | No |
@@ -52,7 +52,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.theme` | `theme.ts` | `default`, `oled`, `light` or `system`. | No |
 | `hm.tts` | `voice.ts` (`TTS`) | Voice settings `{engine, voice, rate, pitch}` (rate and pitch 0.5–2). | No |
 | `hm.welcomeDone` | `components/Connect.tsx` | `'1'` once the Welcome screen was finished. | No |
-| `hm.lockAssist.v1` | `lockview.ts` (`LOCK_ASSIST_KEY`) | Settings → Voice → Phone assistant → "Talk to Hermes on the lock screen": `'1'` on, `'0'` off; absent = off. Pushed to the shell with `setLockAssist`, which keeps its own copy. | No |
+| `hm.lockAssist.v1` | `lockview.ts` (`LOCK_ASSIST_KEY`) | Settings → Voice → Phone assistant → "Talk to Hermux on the lock screen": `'1'` on, `'0'` off; absent = off. Pushed to the shell with `setLockAssist`, which keeps its own copy. | No |
 | `hm.yolo.v1` | `gateway.ts` (`YOLO_KEY`) | Each chat's own access choice: `{chatId: true (Full) | 'auto' | false (explicit Off)}`; absent = follows `hm.defaultAccess.v1`. | No (chat ids) |
 
 Settings → Danger zone → Uninstall Hermux can put a settings snapshot into the backup: `uninstall.ts`

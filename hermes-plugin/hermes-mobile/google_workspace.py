@@ -89,7 +89,7 @@ def child_env(home: Path) -> dict:
 def run(home: Path, *args: str, timeout: int = TIMEOUT) -> tuple[int, str]:
     script = find_script(home)
     if script is None:
-        raise GoogleError("This Hermes has no google-workspace skill.")
+        raise GoogleError("This agent version has no google-workspace skill.")
     env = child_env(home)
     root = agent_root()
     try:
@@ -170,7 +170,7 @@ def _private(home: Path, name: str) -> None:
 def start(home: Path) -> str:
     """Google's consent link for this profile."""
     if libraries_missing(home):
-        raise GoogleError("Google’s Python libraries aren’t installed in Hermes yet.")
+        raise GoogleError("Google’s Python libraries aren’t installed in Hermux yet.")
     code, out = run(home, "--auth-url")
     _private(home, "google_oauth_pending.json")
     url = next((ln.strip() for ln in reversed(out.splitlines()) if ln.strip().startswith("https://")), "")

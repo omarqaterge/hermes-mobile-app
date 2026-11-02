@@ -4,7 +4,7 @@ const { calls, rpcs, sleep, check } = require('../lib.cjs')
 module.exports = async t => {
   const { browser, page } = t
   // ── #14 drafts are kept per chat ──
-  const box = page.getByPlaceholder('Message Hermes')
+  const box = page.getByPlaceholder('Message Hermux')
   await box.fill('draft for nine')
   await page.evaluate(() => window.hermesOpenSession('s-8'))
   await page.locator('.msg.assistant', { hasText: 'answer s-8' }).waitFor({ timeout: 5000 })
@@ -23,7 +23,7 @@ module.exports = async t => {
   await page.locator('.menu-item', { hasText: 'Share chat' }).click()
   await page.locator('.toast', { hasText: 'Copied as Markdown' }).waitFor({ timeout: 3000 }).catch(() => {})
   const md = await page.evaluate(() => window.__copied)
-  check(md && md.startsWith('# Chat 8\n') && md.includes('**You:**\n\nhello s-8') && md.includes('**Hermes:**\n\nanswer s-8'), `chat exported as Markdown (${JSON.stringify(md && md.slice(0, 90))})`)
+  check(md && md.startsWith('# Chat 8\n') && md.includes('**You:**\n\nhello s-8') && md.includes('**Hermux:**\n\nanswer s-8'), `chat exported as Markdown (${JSON.stringify(md && md.slice(0, 90))})`)
 
   // ── #17 compress suggestion near a full context ──
   await page.evaluate(() => window.hermesOpenSession('s-full'))

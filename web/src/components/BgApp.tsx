@@ -32,7 +32,7 @@ export function BgApp() {
     if (step === 'wait') return
     wantViewer(null)
     if (step === 'open' && !lockView()) setOpen(true)
-    else if (step === 'gone') toast("Hermes isn't using an app any more")
+    else if (step === 'gone') toast("Hermux isn't using an app any more")
   }, [want, chat, active, bg])
   const frame = useBgFrame()
   if (!bg) return null

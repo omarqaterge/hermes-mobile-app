@@ -494,7 +494,7 @@ public class MainActivity extends Activity {
         String cmd = "curl -fsSL " + bootstrapUrl() + " -o hm.sh && HM_APP_TOKEN=" + t + " bash hm.sh";
         try {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            ClipData clip = ClipData.newPlainText("Hermes installer", cmd);
+            ClipData clip = ClipData.newPlainText("Hermux installer", cmd);
             if (Build.VERSION.SDK_INT >= 33) {
                 android.os.PersistableBundle extras = new android.os.PersistableBundle();
                 extras.putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true); // no preview of the token
@@ -930,7 +930,7 @@ public class MainActivity extends Activity {
         if (!profile.isEmpty() && !profile.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,63}")) return false;
         if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return false;
         String hermes = profile.isEmpty() || profile.equals("default") ? "hermes" : "hermes -p " + profile;
-        String script = "clear; echo 'Signing in to " + provider + " for Hermes.'; "
+        String script = "clear; echo 'Signing in to " + provider + " for Hermux.'; "
                 + "echo 'To open the link: long-press it, More, Select URL. Then paste the code back here.'; echo; "
                 + "if " + DEBIAN + " bash -lc '" + hermes + " auth add " + provider + "'; "
                 + "then echo; echo 'Signed in. Go back to Hermux: it shows the login under Subscriptions & accounts.'; "
@@ -2538,14 +2538,14 @@ public class MainActivity extends Activity {
         public void copyText(String key, String text) {
             if (!ok(key)) return;
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newPlainText("Hermes", text));
+            cm.setPrimaryClip(ClipData.newPlainText("Hermux", text));
         }
 
         @JavascriptInterface
         public void copyRich(String key, String text, String html) {
             if (!ok(key)) return;
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newHtmlText("Hermes", text, html));
+            cm.setPrimaryClip(ClipData.newHtmlText("Hermux", text, html));
         }
 
         @JavascriptInterface

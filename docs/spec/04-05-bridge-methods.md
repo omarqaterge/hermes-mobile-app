@@ -53,7 +53,7 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `setupFix` | `what` | nothing | Opens or runs one fixed target (list below). Anything not in the list does nothing. |
 | `isAssistant` | none | boolean | Is Hermes the phone's digital assistant (`RoleManager.ROLE_ASSISTANT`). Always false below Android 10. |
 | `openAssistantSettings` | none | nothing | Opens the system page where the assistant app is chosen: voice input settings, else default apps, else Settings (the role cannot be requested directly). |
-| `setLockAssist` | `on` | nothing | Saves "Talk to Hermes on the lock screen" in the `hm` preferences (`lockAssist`, default false), so the assist gesture knows it before the page loads (after a reboot, from the lock screen). |
+| `setLockAssist` | `on` | nothing | Saves "Talk to Hermux on the lock screen" in the `hm` preferences (`lockAssist`, default false), so the assist gesture knows it before the page loads (after a reboot, from the lock screen). |
 | `requestUnlock` | none | nothing | While the app shows over the lock screen: brings up Android's unlock screen (`askUnlock`). Nothing else happens; the user taps again once unlocked. |
 | `leaveLockScreen` | none | nothing | Live mode ended over the lock screen: stops showing over it (`showOverLock(false)`), so the lock screen covers the app again. |
 | `signInTermux` | `provider`, `profile` | boolean | For logins Hermes only does in a terminal: opens a Termux session in front that runs `hermes auth add <provider>` inside Debian, with a hint on how to open the link and paste the code. `provider` must match `[a-z0-9][a-z0-9-]{0,39}`, `profile` `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (or empty); false if invalid or `RUN_COMMAND` is not granted. |

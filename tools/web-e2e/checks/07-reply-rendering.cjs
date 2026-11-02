@@ -6,7 +6,7 @@ module.exports = async t => {
   const { browser, page } = t
   // ── #25 Mermaid ships as inert text in the built page and runs on the first diagram ──
   check(await page.evaluate(() => document.getElementById('hm-mermaid')?.type === 'text/hm-lazy' && !window.__hmMermaid), 'Mermaid not run at start')
-  await page.getByPlaceholder('Message Hermes').fill('show diagram')
+  await page.getByPlaceholder('Message Hermux').fill('show diagram')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant svg', { hasText: 'Start' }).first().waitFor({ timeout: 15000 }).then(() => check(true, 'diagram renders from the lazy Mermaid'), () => check(false, 'diagram renders from the lazy Mermaid'))
 
@@ -54,7 +54,7 @@ module.exports = async t => {
   {
     const idle = () => page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
     const lastSubmit = () => rpcs('prompt.submit').pop()?.params.text
-    await page.getByPlaceholder('Message Hermes').fill('show ui')
+    await page.getByPlaceholder('Message Hermux').fill('show ui')
     await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
     const card = page.locator('.msg.assistant .hm-openui').last()
     await card.getByText('Pick a plan').waitFor({ timeout: 15000 }).then(() => check(true, 'openui card renders'), () => check(false, 'openui card renders'))
@@ -76,19 +76,19 @@ module.exports = async t => {
     for (let i = 0; i < 30 && rpcs('prompt.submit').length === n; i++) await sleep(100)
     check(lastSubmit() === 'Compare both', `a follow-up sends its words, without the form's values (${JSON.stringify(lastSubmit())})`)
     await idle()
-    await page.getByPlaceholder('Message Hermes').fill('show ui streaming')
+    await page.getByPlaceholder('Message Hermux').fill('show ui streaming')
     await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
     const card2 = page.locator('.msg.assistant .hm-openui').last()
     await card2.getByText('Pick a plan').waitFor({ timeout: 15000 }).then(() => check(true, 'a streamed card renders'), () => check(false, 'a streamed card renders'))
     await idle()
     check((await page.locator('.msg.assistant', { hasText: 'Streaming plans' }).locator('.codeblock').count()) === 0, 'no "not shown" fallback after a streamed card')
-    await page.getByPlaceholder('Message Hermes').fill('show broken ui')
+    await page.getByPlaceholder('Message Hermux').fill('show broken ui')
     await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
     await page.locator('.msg.assistant .codeblock', { hasText: 'openui-lang (not shown)' }).waitFor({ timeout: 15000 }).then(() => check(true, 'broken openui-lang falls back to the code'), () => check(false, 'broken openui-lang falls back to the code'))
     await idle()
     // live data: a Query() card asks the plugin once (POST /openui/call) and draws the answer
     const qcalls = () => calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/openui/call')
-    await page.getByPlaceholder('Message Hermes').fill('show live ui')
+    await page.getByPlaceholder('Message Hermux').fill('show live ui')
     await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
     const liveCard = page.locator('.msg.assistant .hm-openui').last()
     await liveCard.getByText('Mock result one').waitFor({ timeout: 15000 }).then(() => check(true, 'a Query card draws the tool answer'), () => check(false, 'a Query card draws the tool answer'))
@@ -97,7 +97,7 @@ module.exports = async t => {
     // a card form with a required list picker and a required date: pick like a finger (mouse click, then touch tap), send
     const bookFlow = async (p, press, label) => {
       const idleP = () => p.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
-      await p.getByPlaceholder('Message Hermes').fill('show form ui')
+      await p.getByPlaceholder('Message Hermux').fill('show form ui')
       await p.locator('.composer').getByRole('button', { name: 'Send' }).click()
       const c = p.locator('.msg.assistant .hm-openui').last()
       await c.getByText('Book a table').waitFor({ timeout: 15000 }).then(() => check(true, `${label}: the form card renders`), () => check(false, `${label}: the form card renders`))
@@ -126,7 +126,7 @@ module.exports = async t => {
     await bookFlow(page, loc => loc.click({ timeout: 5000 }), 'card form (mouse)')
     const tp = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true })
     await tp.goto(WEB + '/')
-    await tp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await tp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await bookFlow(tp, loc => loc.tap({ timeout: 5000 }), 'card form (touch)')
     await tp.close()
     await idle()
@@ -135,13 +135,13 @@ module.exports = async t => {
   // ── HTML preview inside replies ──
   {
     const idle = () => page.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
-    await page.getByPlaceholder('Message Hermes').fill('show html streaming')
+    await page.getByPlaceholder('Message Hermux').fill('show html streaming')
     await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
     const pb = page.locator('.msg.assistant .codeblock').last().getByRole('button', { name: 'Preview', exact: true })
     await pb.waitFor({ timeout: 10000 }).catch(() => {})
     check((await pb.count()) === 1 && (await pb.isDisabled()), 'html preview: Preview is disabled while the reply streams')
     await idle()
-    await page.getByPlaceholder('Message Hermes').fill('show html')
+    await page.getByPlaceholder('Message Hermux').fill('show html')
     await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
     const blk = page.locator('.msg.assistant .codeblock').last()
     await blk.getByRole('button', { name: 'Preview', exact: true }).waitFor({ timeout: 10000 })
@@ -187,7 +187,7 @@ module.exports = async t => {
   }
 
   // ── tool calls fold into one "Ran N tools" line; tap opens them ──
-  await page.getByPlaceholder('Message Hermes').fill('use tools')
+  await page.getByPlaceholder('Message Hermux').fill('use tools')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant', { hasText: 'All four done.' }).waitFor({ timeout: 5000 })
   const run = page.locator('.tool-run').last()
@@ -209,7 +209,7 @@ module.exports = async t => {
     await run.click()
   }
   // ── a task-list call shows its steps and "1/2 done" instead of JSON ──
-  await page.getByPlaceholder('Message Hermes').fill('plan it')
+  await page.getByPlaceholder('Message Hermux').fill('plan it')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant', { hasText: 'Planned.' }).waitFor({ timeout: 5000 })
   {
@@ -246,7 +246,7 @@ module.exports = async t => {
 
   // ── a turn as the pinned Hermes streams it (the contract check's "read the note" flow): reasoning, one read_file call whose result
   //    comes as parsed JSON in `result` (no result_text), the answer in chunks ──
-  await page.getByPlaceholder('Message Hermes').fill('read the note')
+  await page.getByPlaceholder('Message Hermux').fill('read the note')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant', { hasText: 'The note says: contract note. Nothing else to report.' }).waitFor({ timeout: 5000 })
   const noteTool = page.locator('.tool', { has: page.locator('.tool-name[title="read_file"]') }).last()
@@ -258,7 +258,7 @@ module.exports = async t => {
   await sleep(400)
 
   // ── a turn that wrote files ends with a card listing them; tap a file for its diff ──
-  await page.getByPlaceholder('Message Hermes').fill('edit files')
+  await page.getByPlaceholder('Message Hermux').fill('edit files')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant', { hasText: 'Edited.' }).waitFor({ timeout: 5000 })
   const tc = page.locator('.turn-changes')
@@ -302,7 +302,7 @@ module.exports = async t => {
   await page.getByRole('button', { name: 'Close search' }).click()
 
   // ── web addresses in plain text open with the phone's default handler (window.open in a browser) ──
-  await page.getByPlaceholder('Message Hermes').fill('see https://example.com/b')
+  await page.getByPlaceholder('Message Hermux').fill('see https://example.com/b')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant', { hasText: 'example.com/c' }).last().waitFor({ timeout: 5000 })
   {
@@ -334,9 +334,9 @@ module.exports = async t => {
     const fp = await browser.newPage({ viewport: { width: 375, height: 812 } })
     fp.on('pageerror', e => { console.log('PAGEERROR (math page)', e.message); fail() })
     await fp.goto(WEB + '/')
-    await fp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     check(await fp.evaluate(() => document.getElementById('hm-rich')?.type === 'text/hm-lazy' && !window.__hmRich && !document.getElementById('hm-rich-css')), 'math and code colours not run at start')
-    await fp.getByPlaceholder('Message Hermes').fill('show math')
+    await fp.getByPlaceholder('Message Hermux').fill('show math')
     await fp.locator('.composer').getByRole('button', { name: 'Send' }).click()
     const reply = fp.locator('.msg.assistant', { hasText: 'Math done.' }).last()
     await reply.locator('.katex-display').first().waitFor({ timeout: 15000 }).then(() => check(true, 'display math renders from the lazy KaTeX'), () => check(false, 'display math renders from the lazy KaTeX'))

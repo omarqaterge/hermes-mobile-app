@@ -157,7 +157,7 @@ export function GalleryScreen() {
           )}
         </div>
       )}
-      <Status loading={loading} error={loading ? error : ''} empty={!items.length} emptyText={shownQuery ? `Nothing matches “${shownQuery}”.` : 'Nothing here yet. Everything Hermes or you put on a chat’s canvas shows up here.'} />
+      <Status loading={loading} error={loading ? error : ''} empty={!items.length} emptyText={shownQuery ? `Nothing matches “${shownQuery}”.` : 'Nothing here yet. Everything Hermux or you put on a chat’s canvas shows up here.'} />
       {shown.length > 0 && (
         <div className="gallery-grid">
           {shown.map(i => (

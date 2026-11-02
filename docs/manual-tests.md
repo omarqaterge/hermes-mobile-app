@@ -6,7 +6,7 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
 ## Voice (Live mode)
 
 - [ ] **Approval by voice (#33).** Start Live mode in a test chat and say "run chmod 777 /tmp/x".
-      Expected: Hermes asks "Hermes needs your permission. Allow or deny?" (short, not the whole command);
+      Expected: Hermes asks "Hermux needs your permission. Allow or deny?" (short, not the whole command);
       saying "allow" runs it, "deny" refuses it. Say something unclear twice: the approval sheet appears instead.
 - [ ] **Live mode in the background.** While Hermes is speaking in Live mode, press Home.
       Expected: it keeps speaking to the end; Live mode is off when you come back to the app.
@@ -35,7 +35,7 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
       Expected: same as above, and a first message gets a reply. (The emulator run can't check vendor battery
       restrictions or a real Shizuku start.)
 - [ ] **Setup flow at the Shizuku step.** On a phone where Hermes is installed but Shizuku isn't started, open the
-      setup flow at "Hermes can see and use the screen (Shizuku)", tap Open Shizuku, start it, come back.
+      setup flow at "Hermux can see and use the screen (Shizuku)", tap Open Shizuku, start it, come back.
       Expected: Shizuku asks whether Termux may use it (tap Allow all the time); within a few seconds the page moves
       on by itself, without leaving the app again.
 
@@ -160,7 +160,7 @@ check on a real phone:
 ## Confirm approvals with fingerprint (owner only: needs the phone's fingerprint or PIN)
 
 - [ ] With Auto off, ask Hermes for something it must approve; tap Allow once. Expected: the fingerprint prompt
-      ("Allow Hermes to run this?" with the command); after it, the command runs. A second approval in the same chat
+      ("Allow Hermux to run this?" with the command); after it, the command runs. A second approval in the same chat
       doesn't ask.
 - [ ] Cancel the prompt: nothing runs, the sheet stays, the toast says why. Deny never asks.
 - [ ] Leave the app with an approval waiting, tap Allow once on the notification (phone unlocked): the app opens on
@@ -191,7 +191,7 @@ plugin: `~/bin/hermes-debian sh -c 'cp -a /root/.hermes/plugins/hermes-mobile /r
    Replies → Dynamic UI is there, and every profile's `plugins/hermes-mobile` is a link to the main copy.
 2. **Never during a chat.** With an update waiting, start a long turn and leave the app: nothing restarts until the
    turn ends; about 15 s after it does, Hermes restarts once and the row reads "Up to date".
-3. **Tap to update.** With the app open and Hermes idle, tap the row: "Updating… Hermes restarts for a moment", the
+3. **Tap to update.** With the app open and Hermes idle, tap the row: "Updating… Hermux restarts for a moment", the
    chat reconnects by itself, and the row reads "Up to date".
 4. **Rollback.** Make the APK's plugin fail to load (a test build whose `plugin_api.py` raises on import), tap the
    row: after up to 3 minutes the row says "Couldn’t update (load rolled-back). The plugin that was there still works",

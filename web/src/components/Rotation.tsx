@@ -170,7 +170,7 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
   return (
     <Section
       title="Fallback models"
-      footer="When the main model is rate-limited, out of credit, refuses its key or is gone, Hermes switches to the next model in this list and goes back to the main one once it works again."
+      footer="When the main model is rate-limited, out of credit, refuses its key or is gone, Hermux switches to the next model in this list and goes back to the main one once it works again."
     >
       {error ? (
         <div className="notice notice-error">{error}</div>
@@ -297,7 +297,7 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
   const remove = (e: PoolEntry & { provider: string }) =>
     void confirmDialog({
       title: `Remove ${e.label || 'this key'}?`,
-      message: e.source?.startsWith('env:') ? `Hermes deletes ${e.source.slice(4)} from this bot’s .env and stops using it.` : 'Hermes forgets it and stops using it.',
+      message: e.source?.startsWith('env:') ? `Hermux deletes ${e.source.slice(4)} from this bot’s .env and stops using it.` : 'Hermux forgets it and stops using it.',
       confirmLabel: 'Remove',
       danger: true
     }).then(
@@ -322,7 +322,7 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
   return (
     <Section
       title={`Keys and logins · ${list.length}`}
-      footer="Hermes switches to another key here when one is rate-limited or out of credit, and to the next fallback model when none is left. Status is from each key’s last use."
+      footer="Hermux switches to another key here when one is rate-limited or out of credit, and to the next fallback model when none is left. Status is from each key’s last use."
     >
       {error && <div className="notice notice-error">{error}</div>}
       {list.map(e => (

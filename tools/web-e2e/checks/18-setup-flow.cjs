@@ -13,13 +13,13 @@ module.exports = async t => {
     await fp.addInitScript(nativeShell)
     return fp
   }
-  const flowShown = fp => fp.getByText('Set up Hermes', { exact: true }).count().then(n => n > 0)
+  const flowShown = fp => fp.getByText('Set up Hermux', { exact: true }).count().then(n => n > 0)
   // a. PC-installed phone, everything working: straight to chat, no flow, and it is not checked again
   await mock({ configured: true, pluginEnabled: true })
   {
     const fa = await flowPage(OK)
     await fa.goto(WEB + '/')
-    await fa.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fa.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await fa.waitForFunction(() => localStorage.getItem('hm.setupFlowDone') === '1', null, { timeout: 8000 }).catch(() => {})
     check(!(await flowShown(fa)), 'flow: everything set up → straight to chat, no setup flow')
     check(await fa.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1' && localStorage.getItem('hm.welcomeDone') === '1'), 'flow: nothing missing is remembered (not checked again)')
@@ -31,7 +31,7 @@ module.exports = async t => {
   {
     const fb = await flowPage({ ...OK, batteryApp: false })
     await fb.goto(WEB + '/')
-    await fb.getByText('Connect Hermes to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'flow: no model → opens at the model step'), () => check(false, 'flow: no model → opens at the model step'))
+    await fb.getByText('Connect Hermux to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'flow: no model → opens at the model step'), () => check(false, 'flow: no model → opens at the model step'))
     check((await fb.locator('.flow-progress-label').textContent()) === 'Step 1 of 1', `flow: progress counts only the missing required steps (${await fb.locator('.flow-progress-label').textContent()})`)
     await fb.locator('.providers .set-row', { hasText: 'OpenAI' }).first().click()
     await fb.locator('.set-row', { hasText: 'ChatGPT Plus / Pro' }).getByRole('button', { name: 'Sign in' }).click()
@@ -49,9 +49,9 @@ module.exports = async t => {
     })
     await fb.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'flow: coming back to the app re-checks: All set'), () => check(false, 'flow: coming back to the app re-checks: All set'))
     await fb.getByRole('button', { name: 'Done', exact: true }).click()
-    await fb.getByText('Set up Hermes', { exact: true }).waitFor({ state: 'detached', timeout: 4000 }).then(() => check(true, 'flow: Done goes to the chat'), () => check(false, 'flow: Done goes to the chat'))
+    await fb.getByText('Set up Hermux', { exact: true }).waitFor({ state: 'detached', timeout: 4000 }).then(() => check(true, 'flow: Done goes to the chat'), () => check(false, 'flow: Done goes to the chat'))
     await fb.reload()
-    await fb.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fb.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await sleep(2000)
     check(!(await flowShown(fb)), 'flow: not shown again after Done')
     check(await fb.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1'), 'flow: hm.setupFlowDone is set')
@@ -79,7 +79,7 @@ module.exports = async t => {
       window.__setup = { ...window.__setup, shizukuAuto: { sdk: true, wss: true, paired: true, last: 'ok' } }
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    await fn.getByText('Connect Hermes to a model').waitFor({ timeout: 8000 }).then(() => check(true, 'flow nav: once paired, the next page is the model step'), () => check(false, 'flow nav: once paired, the next page is the model step'))
+    await fn.getByText('Connect Hermux to a model').waitFor({ timeout: 8000 }).then(() => check(true, 'flow nav: once paired, the next page is the model step'), () => check(false, 'flow nav: once paired, the next page is the model step'))
     check((await label()) === 'Step 2 of 2', `flow nav: model is step 2 of 2 (${await label()})`)
     await fn.getByRole('button', { name: 'Previous step' }).click()
     await fn.locator('.flow-card-title', { hasText: 'Shizuku starts by itself' }).waitFor({ timeout: 4000 }).then(() => check(true, 'flow nav: Back shows the finished pairing page'), () => check(false, 'flow nav: Back shows the finished pairing page'))
@@ -87,17 +87,17 @@ module.exports = async t => {
     check((await label()) === 'Step 1 of 2', `flow nav: the counter follows the page shown (${await label()})`)
     check(!(await disabled('Next step')) && (await disabled('Previous step')), 'flow nav: on page 1 Next is on and Back is off')
     await fn.getByRole('button', { name: 'Next step' }).click()
-    await fn.getByText('Connect Hermes to a model').waitFor({ timeout: 4000 }).then(() => check(true, 'flow nav: Next walks forward to the model step'), () => check(false, 'flow nav: Next walks forward to the model step'))
+    await fn.getByText('Connect Hermux to a model').waitFor({ timeout: 4000 }).then(() => check(true, 'flow nav: Next walks forward to the model step'), () => check(false, 'flow nav: Next walks forward to the model step'))
     check((await fn.getByRole('button', { name: 'Next step' }).count()) === 0 || (await disabled('Next step')), 'flow nav: Next stops at the current step')
     await fn.evaluate(() => window.hermesBack())
     await fn.locator('.flow-card-title', { hasText: 'Shizuku starts by itself' }).waitFor({ timeout: 4000 }).then(() => check(true, 'flow nav: Android Back goes to the previous page'), () => check(false, 'flow nav: Android Back goes to the previous page'))
     check(await flowShown(fn), 'flow nav: Android Back did not leave the flow')
     await fn.getByRole('button', { name: 'Next step' }).click()
-    await fn.getByText('Connect Hermes to a model').waitFor({ timeout: 4000 })
+    await fn.getByText('Connect Hermux to a model').waitFor({ timeout: 4000 })
     await fn.getByRole('button', { name: 'Back', exact: true }).click()
     await fn.locator('.flow-card-title', { hasText: 'Shizuku starts by itself' }).waitFor({ timeout: 4000 }).then(() => check(true, 'flow nav: the header arrow goes to the previous page'), () => check(false, 'flow nav: the header arrow goes to the previous page'))
     await fn.getByRole('button', { name: 'Back', exact: true }).click()
-    await fn.getByText('Set up Hermes', { exact: true }).waitFor({ state: 'detached', timeout: 4000 }).then(() => check(true, 'flow nav: the header arrow on the first page leaves the flow'), () => check(false, 'flow nav: the header arrow on the first page leaves the flow'))
+    await fn.getByText('Set up Hermux', { exact: true }).waitFor({ state: 'detached', timeout: 4000 }).then(() => check(true, 'flow nav: the header arrow on the first page leaves the flow'), () => check(false, 'flow nav: the header arrow on the first page leaves the flow'))
     await fn.close()
     await mock({ looseStatus: false })
   }
@@ -129,11 +129,11 @@ module.exports = async t => {
   {
     const fc = await flowPage(OK)
     await fc.goto(WEB + '/')
-    await fc.getByRole('button', { name: 'Start Hermes' }).waitFor({ timeout: 30000 }).then(() => check(true, 'flow: Hermes not running → opens at Start Hermes'), () => check(false, 'flow: Hermes not running → opens at Start Hermes'))
-    await fc.getByRole('button', { name: 'Start Hermes' }).click().catch(() => {})
+    await fc.getByRole('button', { name: 'Start Hermux' }).waitFor({ timeout: 30000 }).then(() => check(true, 'flow: Hermes not running → opens at Start Hermes'), () => check(false, 'flow: Hermes not running → opens at Start Hermes'))
+    await fc.getByRole('button', { name: 'Start Hermux' }).click().catch(() => {})
     check((await fc.evaluate(() => window.__fixes || [])).includes('start'), 'flow: Start Hermes asks the shell to start it')
     await fc.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 40000 }).then(() => check(true, 'flow: moves on by itself once Hermes is back (All set)'), () => check(false, 'flow: moves on by itself once Hermes is back (All set)'))
-    check((await fc.locator('.flow-done', { hasText: 'Hermes is running' }).count()) === 1, 'flow: Hermes is running is ticked off')
+    check((await fc.locator('.flow-done', { hasText: 'Hermux is running' }).count()) === 1, 'flow: Hermes is running is ticked off')
     await fc.close()
   }
   // d. Autostart: only on phones whose maker has the switch (the shell says which page it opens), never ✓/✗ until the
@@ -143,7 +143,7 @@ module.exports = async t => {
     const XIAOMI = { ...OK, maker: 'xiaomi', autostart: 'list', autostartName: 'Autostart', autostartWhere: 'Settings → Apps → Background autostart' }
     const fd = await flowPage(XIAOMI)
     await fd.goto(WEB + '/')
-    await fd.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fd.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await sleep(2500)
     check(!(await flowShown(fd)), 'flow: the Autostart tip alone does not open the flow')
     await fd.locator('.conn-dot').click()
@@ -163,7 +163,7 @@ module.exports = async t => {
     // A maker whose page is per app, or none of whose pages opens: one button per app (Hermux, Termux)
     const fi = await flowPage({ ...OK, maker: 'xiaomi', autostart: 'info', autostartName: 'Autostart', autostartWhere: 'Settings → Apps → Background autostart' })
     await fi.goto(WEB + '/')
-    await fi.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fi.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await fi.locator('.conn-dot').click()
     await fi.getByRole('button', { name: 'Setup check' }).click()
     const tipI = fi.locator('.setup-item.info', { hasText: 'Autostart' })
@@ -178,7 +178,7 @@ module.exports = async t => {
     // AOSP emulator / Pixel: the shell reports no Autostart page → no row, even before any Done
     const fg = await flowPage({ ...OK, maker: 'google', autostart: '', autostartName: '', autostartWhere: '' })
     await fg.goto(WEB + '/')
-    await fg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await fg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await fg.locator('.conn-dot').click()
     await fg.getByRole('button', { name: 'Setup check' }).click()
     await fg.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 })
@@ -333,7 +333,7 @@ module.exports = async t => {
     // Shizuku auto-detect: the step stays put while the app says Shizuku is not running, then shows a green row and moves on by itself
     await fe.waitForTimeout(3600)
     check((await fe.getByRole('button', { name: /skip/i }).count()) === 0, 'shizuku required: no Skip button on Start Shizuku')
-    check((await fe.getByText('Hermes needs Shizuku', { exact: false }).count()) === 1 && (await fe.getByText(/recommended|optional|skip it/i).count()) === 0, 'shizuku required: the step says Hermes needs Shizuku, never recommended/optional')
+    check((await fe.getByText('Hermux needs Shizuku', { exact: false }).count()) === 1 && (await fe.getByText(/recommended|optional|skip it/i).count()) === 0, 'shizuku required: the step says Hermes needs Shizuku, never recommended/optional')
     check((await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).count()) === 0, 'shizuku-check: no green row before it runs')
     check((await fe.getByRole('button', { name: 'Shizuku is running: continue' }).count()) === 1, 'shizuku-check: the fallback button is “Shizuku is running: continue”')
     check((await fe.getByText('Rooted phone: open Shizuku and tap Start.').count()) === 1, 'shizuku required: rooted phones get their one line')
@@ -350,7 +350,7 @@ module.exports = async t => {
     check((await fe.evaluate(() => window.__probes || 0)) >= 1, 'app-first: the flow probed Termux once it was allowed to')
     // "Hermes already installed? Check": the only probe the shell sends before Termux accepted a command (a user tap)
     check((await fe.evaluate(() => window.__probesNow || 0)) === 0, 'app-first: no forced Termux probe without a tap')
-    await fe.getByRole('button', { name: 'Hermes already installed? Check' }).click({ timeout: 3000 }).catch(() => {})
+    await fe.getByRole('button', { name: 'Hermux already installed? Check' }).click({ timeout: 3000 }).catch(() => {})
     check((await fe.evaluate(() => window.__probesNow || 0)) === 1, 'app-first: Check sends the one forced probe')
     await fe.locator('.toast', { hasText: 'Run the installer' }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: Check, Termux still refuses → says to run the installer'), () => check(false, 'app-first: Check, Termux still refuses → says to run the installer'))
     check((await fe.getByText('Run the installer', { exact: true }).count()) === 1, 'app-first: Check without Hermes keeps the installer step')
@@ -369,7 +369,7 @@ module.exports = async t => {
     await fe.evaluate(() => (window.__dt = 102))
     await push(['STEP access Access'])
     await fe.evaluate(() => (window.__dt = 10))
-    await push([ 'phone: tap Allow on Android’s prompt, so Hermes can read and save your files', 'STEP android limit', 'android: child-process limit lifted (via Shizuku)', 'STEP debian Debian'])
+    await push([ 'phone: tap Allow on Android’s prompt, so Hermux can read and save your files', 'STEP android limit', 'android: child-process limit lifted (via Shizuku)', 'STEP debian Debian'])
     check((await fe.locator('.install-step', { hasText: 'Termux packages' }).locator('.install-time').textContent()) === '1:42', 'step times: a finished step shows how long it took (1:42)')
     const t0 = await fe.locator('.install-step.run .install-time').textContent()
     await sleep(2300)
@@ -390,7 +390,7 @@ module.exports = async t => {
     // A short wait: once the view has moved on there is no total, and the default 30 s wait for it was the slowest
     // step of the browser tests.
     check(/^Total \d+:\d\d$/.test(((await fe.locator('.install-total').textContent({ timeout: 1000 }).catch(() => '')) || '').trim()) || (await fe.locator('.install-total').count()) === 0, 'step times: after DONE the total stops (or the view has moved on)')
-    await fe.getByText('Connect Hermes to a model').waitFor({ timeout: 20000 }).then(() => check(true, 'app-first: DONE → connects → the model step'), () => check(false, 'app-first: DONE → connects → the model step'))
+    await fe.getByText('Connect Hermux to a model').waitFor({ timeout: 20000 }).then(() => check(true, 'app-first: DONE → connects → the model step'), () => check(false, 'app-first: DONE → connects → the model step'))
     await fe.close()
   }
   // f. a PC-installed phone on a new app build: the new rows never show, and Termux is not probed while Hermes answers
@@ -398,14 +398,14 @@ module.exports = async t => {
   {
     const ff = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, termuxBootStopped: false, shizuku: true, canInstall: true, devOptions: true, wirelessDebugging: true, termuxSigner: 'fdroid', probe: true, maker: 'google' })
     await ff.goto(WEB + '/')
-    await ff.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await ff.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await sleep(2000)
     check(!(await flowShown(ff)), 'app-first: a set-up phone goes straight to chat')
     await ff.locator('.conn-dot').click()
     await ff.getByRole('button', { name: 'Setup check' }).click()
     await ff.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'app-first: Setup check is All set with the new rows'), () => check(false, 'app-first: Setup check is All set with the new rows'))
     check((await ff.locator('.setup-item', { hasText: 'Start Shizuku' }).count()) === 0, 'app-first: no Start Shizuku row on a set-up phone')
-    check((await ff.locator('.setup-item.ok', { hasText: 'Hermes is installed' }).count()) === 1 && (await ff.locator('.setup-item.ok', { hasText: 'Shizuku are installed' }).count()) === 1, 'app-first: the apps and installer rows are ✓ on a set-up phone')
+    check((await ff.locator('.setup-item.ok', { hasText: 'Hermux is installed' }).count()) === 1 && (await ff.locator('.setup-item.ok', { hasText: 'Shizuku are installed' }).count()) === 1, 'app-first: the apps and installer rows are ✓ on a set-up phone')
     check((await ff.evaluate(() => window.__probes || 0)) === 0, 'app-first: Termux is not probed while Hermes answers')
     await ff.close()
   }
@@ -417,7 +417,7 @@ module.exports = async t => {
   {
     const fs = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, shizuku: true, shizukuRunning: true })
     await fs.goto(WEB + '/')
-    const card = fs.locator('.flow-card', { hasText: 'Hermes can see and use the screen' })
+    const card = fs.locator('.flow-card', { hasText: 'Hermux can see and use the screen' })
     await card.waitFor({ timeout: 15000 }).then(() => check(true, 'flow: Shizuku not reachable → opens at the Shizuku step'), () => check(false, 'flow: Shizuku not reachable → opens at the Shizuku step'))
     const t = (await card.textContent().catch(() => '')) || ''
     check(t.includes('Shizuku is running, but Termux can’t use it yet') && !t.includes('isn’t running'), `flow: the app sees Shizuku running → says Termux can't use it yet, not "isn't running" (${t.slice(0, 120)})`)

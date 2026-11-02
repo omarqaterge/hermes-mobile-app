@@ -254,7 +254,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   }
 
   const offline = conn !== 'open' || !!opening
-  const placeholder = opening ? 'Opening your chat…' : quotes.length && !text ? 'Ask about the quote…' : offline ? 'Offline: type now, it sends when Hermes is back' : running ? 'Queue or steer a follow-up…' : 'Message Hermes'
+  const placeholder = opening ? 'Opening your chat…' : quotes.length && !text ? 'Ask about the quote…' : offline ? 'Offline: type now, it sends when Hermux is back' : running ? 'Queue or steer a follow-up…' : 'Message Hermux'
 
   // Fit the box to its text (or placeholder). Measure again when the placeholder changes and when Live mode
   // gives the box back: a chat switched while it was hidden was measured at the wrong width and stayed 2 rows.
@@ -288,7 +288,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
     <div className="composer-wrap">
       {queued && (
         <div className="queued-chip">
-          <span className="queued-text">⏳ Sends when Hermes is back: {queued.text.length > 80 ? queued.text.slice(0, 78) + '…' : queued.text}{queued.atts?.length ? ` (📎 ${queued.atts.length} attached)` : ''}</span>
+          <span className="queued-text">⏳ Sends when Hermux is back: {queued.text.length > 80 ? queued.text.slice(0, 78) + '…' : queued.text}{queued.atts?.length ? ` (📎 ${queued.atts.length} attached)` : ''}</span>
           <button
             className="icon-btn"
             aria-label="Don't send"
@@ -368,7 +368,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           <span className="live-dot" />
           <div className="live-text">
             <div className="live-phase">
-              Live · {liveMuted ? 'Mic muted' : live === 'listening' ? 'Listening…' : live === 'thinking' ? 'Hermes is thinking…' : 'Hermes is speaking…'}
+              Live · {liveMuted ? 'Mic muted' : live === 'listening' ? 'Listening…' : live === 'thinking' ? 'Hermux is thinking…' : 'Hermux is speaking…'}
             </div>
             {liveMuted ? (
               <div className="live-hint">Replies are still read aloud</div>
@@ -557,7 +557,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           <button key="live"
             className="send live-btn"
             aria-label="Live conversation"
-            title={`Live: talk, pause ${fmtPause(getLivePause())} to send, Hermes answers out loud`}
+            title={`Live: talk, pause ${fmtPause(getLivePause())} to send, Hermux answers out loud`}
             disabled={busy || offline}
             onClick={() => {
               haptic()

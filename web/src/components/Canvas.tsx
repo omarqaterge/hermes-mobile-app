@@ -181,7 +181,7 @@ function HistorySheet({ doc, onClose }: { doc: Doc; onClose: () => void }) {
           {versions.map(v => (
             <div key={v.rev} className="ver">
               <button className="ver-head" onClick={() => void show(v.rev)}>
-                <span className={`by by-${v.by}`}>{v.by === 'agent' ? 'Hermes' : 'You'}</span>
+                <span className={`by by-${v.by}`}>{v.by === 'agent' ? 'Hermux' : 'You'}</span>
                 <span className="set-text">
                   <span className="set-title">
                     Version {v.rev}
@@ -341,7 +341,7 @@ function WritingBanner({ since }: { since: number }) {
   const secs = useElapsed(since)
   return (
     <div className="canvas-writing-bar" role="status">
-      <Spinner small /> Hermes is rewriting this document… {secs}s
+      <Spinner small /> Hermux is rewriting this document… {secs}s
     </div>
   )
 }
@@ -354,7 +354,7 @@ function CanvasWriting({ since, title, preview }: { since: number; title?: strin
       <div className="canvas-writing-bar">
         <Spinner small />
         <span>
-          {preview != null ? 'Saving' : 'Hermes is writing'} {title ? <b>“{title}”</b> : 'a document'}… {secs}s
+          {preview != null ? 'Saving' : 'Hermux is writing'} {title ? <b>“{title}”</b> : 'a document'}… {secs}s
         </span>
       </div>
       {preview != null ? (
@@ -592,7 +592,7 @@ export function CanvasPanel() {
           <div className="canvas-empty">
             <div className="canvas-empty-icon">🗒</div>
             <div className="canvas-empty-title">Your canvas is empty</div>
-            <div className="dim">Ask Hermes to write something here, or start your own.</div>
+            <div className="dim">Ask Hermux to write something here, or start your own.</div>
             <button className="btn primary" onClick={() => setMenu('new')}>
               New document
             </button>
@@ -614,7 +614,7 @@ export function CanvasPanel() {
                   Edit
                 </button>
               </div>
-              <span className={`save-state s-${save}`}>{save === 'saving' ? 'Saving…' : save === 'dirty' ? 'Unsaved' : save === 'saved' ? 'Saved ✓' : save === 'conflict' ? 'Conflict' : save === 'error' ? 'Not saved' : doc ? `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermes' : doc.by === 'user' ? ' · You' : ''}` : ''}</span>
+              <span className={`save-state s-${save}`}>{save === 'saving' ? 'Saving…' : save === 'dirty' ? 'Unsaved' : save === 'saved' ? 'Saved ✓' : save === 'conflict' ? 'Conflict' : save === 'error' ? 'Not saved' : doc ? `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermux' : doc.by === 'user' ? ' · You' : ''}` : ''}</span>
               {meta.type === 'html' && mode === 'view' && (
                 <button className={`canvas-tool${net[meta.id] ? ' on' : ''}`} title="Allow the page to use the network" onClick={() => setNet(n => ({ ...n, [meta.id]: !n[meta.id] }))}>
                   {net[meta.id] ? '🌐 Online' : '🚫 Offline'}
@@ -631,8 +631,8 @@ export function CanvasPanel() {
             {writing && writing.docId === meta.id && <WritingBanner since={writing.since} />}
             {remote === meta.id && (
               <div className="canvas-banner">
-                <span>Hermes changed this document while you were editing.</span>
-                <button onClick={() => void takeTheirs(meta.id)}>Use Hermes’s</button>
+                <span>Hermux changed this document while you were editing.</span>
+                <button onClick={() => void takeTheirs(meta.id)}>Use Hermux’s</button>
                 <button onClick={() => void keepMine(meta.id)}>Keep mine</button>
               </div>
             )}
@@ -649,7 +649,7 @@ export function CanvasPanel() {
 
             {sel && (
               <div className="canvas-sel">
-                <span className="canvas-sel-label">Ask Hermes about the selection</span>
+                <span className="canvas-sel-label">Ask Hermux about the selection</span>
                 <div className="canvas-chips">
                   {ACTIONS.map(([label, instr]) => (
                     <button key={label} onClick={() => send(instr, sel)}>
@@ -658,7 +658,7 @@ export function CanvasPanel() {
                   ))}
                   <button
                     onClick={() =>
-                      void promptDialog({ title: 'What should Hermes do with it?', placeholder: 'e.g. make it more formal', confirmLabel: 'Send' }).then(t => t && send(t, sel))
+                      void promptDialog({ title: 'What should Hermux do with it?', placeholder: 'e.g. make it more formal', confirmLabel: 'Send' }).then(t => t && send(t, sel))
                     }
                   >
                     Other…
@@ -677,7 +677,7 @@ export function CanvasPanel() {
                 setAsk('')
               }}
             >
-              <input value={ask} onChange={e => setAsk(e.target.value)} placeholder={`Ask Hermes to change “${meta.title}”…`} enterKeyHint="send" />
+              <input value={ask} onChange={e => setAsk(e.target.value)} placeholder={`Ask Hermux to change “${meta.title}”…`} enterKeyHint="send" />
               <button type="submit" className="canvas-send" aria-label="Send" disabled={!ask.trim()}>
                 ➤
               </button>

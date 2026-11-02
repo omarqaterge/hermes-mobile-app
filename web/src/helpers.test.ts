@@ -125,7 +125,7 @@ test('chatMarkdown', () => {
     new Date(0)
   )
   expect(md.startsWith('# Trip\n\n_Exported from Hermux on ')).toBe(true)
-  expect(md).toContain('**You:**\n\nPlan it\n\n_Attached: a.png_\n\n_🔧 web_search: flights_\n\n**Hermes:**\n\nDone.\n')
+  expect(md).toContain('**You:**\n\nPlan it\n\n_Attached: a.png_\n\n_🔧 web_search: flights_\n\n**Hermux:**\n\nDone.\n')
 })
 
 describe('voiceChoice (live mode approvals)', async () => {
@@ -152,7 +152,7 @@ describe('approvalPrompt (live mode)', async () => {
   const live = await import('./live')
   test('asks the short question and never reads the command out', () => {
     const t = live.approvalPrompt(['once', 'session', 'deny'])
-    expect(t).toBe('Hermes needs your permission. Allow or deny?')
+    expect(t).toBe('Hermux needs your permission. Allow or deny?')
     expect(t).not.toMatch(/\b(rm|chmod|command)\b/) // "permission" contains "rm"
   })
 })

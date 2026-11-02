@@ -11,7 +11,7 @@ export type ToolStore = { load(k: string): unknown; save(k: string, v: Record<st
 
 export const QUERY_FRESH_MS = 15 * 60_000
 export const QUERY_MAX_CALLS = 30
-export const QUERY_TOO_OFTEN = 'This card asked for data too often. Ask Hermes to refresh it.'
+export const QUERY_TOO_OFTEN = 'This card asked for data too often. Ask Hermux to refresh it.'
 
 const err = (text: string): McpResult => ({ isError: true, content: [{ type: 'text', text }] })
 

@@ -36,7 +36,7 @@ export async function receiveShare(count: number, text: string): Promise<void> {
   if (text.trim()) composerPrefill.set(text.trim())
   if (count <= 0) return
   if (!(await whenOnline(60_000))) {
-    toast('Hermes is offline: share the files again once it runs', 'error')
+    toast('Hermux is offline: share the files again once it runs', 'error')
     return
   }
   for (let i = 0; i < count; i++) {
@@ -66,5 +66,5 @@ window.hermesShortcut = (kind: string) => {
   startDraft()
   if (kind !== 'live') return
   if (!liveAvailable()) return toast('Live mode needs the phone app’s voice features', 'warn')
-  void whenOnline(30_000).then(ok => (ok ? startLive() : toast('Hermes is offline', 'error')))
+  void whenOnline(30_000).then(ok => (ok ? startLive() : toast('Hermux is offline', 'error')))
 }

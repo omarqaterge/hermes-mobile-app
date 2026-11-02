@@ -90,7 +90,7 @@ check used "log says the image was used; image's patches reverted for install.sh
 
 go missing PRE='rm -rf "$SERVE"/*'
 check missing "no image for this pin (404) -> normal install, image itself never fetched" \
-  "grep -q 'image: none for this Hermes' calls/say && [ \$(wc -l < calls/curl) = 1 ] && [ -e $C/normal-install ] && ! grep -q '^restore' calls/proot-distro"
+  "grep -q 'image: none for this agent version' calls/say && [ \$(wc -l < calls/curl) = 1 ] && [ -e $C/normal-install ] && ! grep -q '^restore' calls/proot-distro"
 
 go img404 PRE='rm -f "$SERVE"/*/*/*/*/*/*.zst'
 check img404 "sha256 there but image 404 -> download failed, normal install" \

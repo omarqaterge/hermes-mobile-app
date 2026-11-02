@@ -140,13 +140,13 @@ image_restore() {
   # The .sha256 next to the image: a small download that also tells whether an image exists for this pin.
   sum=$(curl -fsSL --retry 2 "$url.sha256" 2>/dev/null | head -1 | cut -c1-64 || true)
   case "$sum" in
-    *[!0-9a-f]* | "") say "image: none for this Hermes ($url), installing Debian normally"; return 1 ;;
+    *[!0-9a-f]* | "") say "image: none for this agent version ($url), installing Debian normally"; return 1 ;;
   esac
   [ ${#sum} = 64 ] || { say "image: bad sha256 file, installing Debian normally"; return 1; }
   free=$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {print int($4/1024)}' || true)
   [ "${free:-0}" -ge "${HM_IMAGE_MB:-$HERMES_IMAGE_MB}" ] || {
     say "image: ${free:-?} MB free, it needs ${HM_IMAGE_MB:-$HERMES_IMAGE_MB} MB; installing Debian normally"; return 1; }
-  say "image: downloading the ready-made Debian + Hermes (about 900 MB)"
+  say "image: downloading the ready-made Debian + Hermux (about 900 MB)"
   rm -f "$img"
   if ! curl -fL --retry 3 --retry-delay 5 -o "$img" "$url"; then
     rm -f "$img"; say "image: download failed, installing Debian normally"; return 1
@@ -167,7 +167,7 @@ image_restore() {
   rm -f "$img"
   # The image has the patches of its build; install.sh applies this installer's own set, so take the image's out first.
   deb "bash /root/.hermes/scripts/hermes-patches.sh revert /root/.hermes/hermes-mobile-patches" >/dev/null 2>&1 || true
-  say "image: using the ready-made Debian + Hermes (Debian and Hermes install steps skipped)"
+  say "image: using the ready-made Debian + Hermux (Debian and Hermux install steps skipped)"
 }
 # --- end of ready-made image -----------------------------------------------------------------------------------------
 
@@ -200,7 +200,7 @@ PROFILE
 CHROMIUM_LIBS="libglib2.0-0t64 libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 libcups2t64 libdbus-1-3 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64"
 deb "export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y curl git ca-certificates xz-utils procps libatomic1 && apt-get install -y --no-install-recommends $CHROMIUM_LIBS"
 
-step hermes "Hermes Agent (most of the wait)"
+step hermes "Hermux agent (most of the wait)"
 # libatomic1 (above): the glibc Node.js Hermes downloads links it, minimal Debian lacks it, and the pinned build's installer
 # (unlike the hosted one) does not install it.
 # install-stamp.json is written only when Hermes's installer finished; a crashed install can still leave a working `hermes`.
@@ -212,7 +212,7 @@ deb 'find /root/.local/bin -maxdepth 1 -name "hermes*" -type f -size 0 -delete 2
 # here, like the installer itself does for a clone with no commits: moved aside, never deleted.
 deb 'd=/root/.hermes/hermes-agent; if [ -d "$d" ] && [ ! -L "$d" ] && [ ! -e "$d/.git" ] && [ ! -f "$d/install-stamp.json" ] && [ -n "$(ls -A "$d")" ]; then mv "$d" "$d.broken-$(date -u +%Y%m%d-%H%M%S)"; fi; true'
 if deb "hermes --version 2>/dev/null | grep -q Hermes && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
-  say "hermes already installed, skipping"
+  say "Hermux agent already installed, skipping"
 else
   # The pin's own installer script (not the hosted one), so the install is reproducible: the hosted one changes over time.
   # Downloaded to a file first: piped into bash, a failed download (GitHub answers 429 when busy) ran an empty script and
@@ -235,7 +235,7 @@ has_browser='ls /root/.hermes/tools/agent-browser-*/bin/agent-browser-* >/dev/nu
 if ! deb "$has_browser"; then
   say "browser tools missing, installing them again"
   deb "hermes pm install agent-browser" || true
-  deb "$has_browser" || say "TODO browser: Hermes has no web browser yet. Run the installer again later (bash hm.sh)"
+  deb "$has_browser" || say "TODO browser: Hermux has no web browser yet. Run the installer again later (bash hm.sh)"
 fi
 
 step plugin "Hermux plugin, supervisor, and access to the phone (files, Termux:API, Shizuku; no root needed)"
@@ -250,7 +250,7 @@ mkdir -p "$HOME/.termux/boot"
 printf '#!/data/data/com.termux/files/usr/bin/bash\n~/bin/hermes-services\n' > "$HOME/.termux/boot/10-hermes"
 chmod +x "$HOME/.termux/boot/10-hermes"
 
-step start "Starting Hermes (first start can take a minute or two)"
+step start "Starting Hermux (first start can take a minute or two)"
 "$HOME/bin/hermes-services"
 for _ in $(seq 1 90); do
   curl -fs -o /dev/null http://127.0.0.1:9119/ && break
