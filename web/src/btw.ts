@@ -40,6 +40,15 @@ export function closeBtw(): void {
   set({ open: false })
 }
 
+/**
+ * Empty the side chat: its exchanges go, so the next question carries no earlier side answers. Hermes keeps nothing
+ * of it between questions (each one runs on a fresh snapshot), so this is the whole reset. Answers still on their
+ * way are dropped when they arrive (their task ids stay known, so they don't show up in the main chat).
+ */
+export function clearBtw(): void {
+  set({ msgs: [] })
+}
+
 export async function askBtw(question: string): Promise<void> {
   const a = getState().active
   const q = question.trim()

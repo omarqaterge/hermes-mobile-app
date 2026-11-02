@@ -5,15 +5,18 @@ import { getState } from './store'
 // Pull up past the last message of a chat: the list stretches like a rubber band, and a firm pull opens the
 // side chat (/btw) about this chat. Released early, it springs back and nothing happens.
 
-/** Finger travel (px) that arms the gesture. */
-export const PULL_TRIGGER_PX = 160
+/** Finger travel (px) that arms the gesture (raised twice by the owner: docs/decisions/btw-pull-up-harder.md). */
+export const PULL_TRIGGER_PX = 230
 /** The list never stretches further than this (px), however far the finger goes. */
 export const PULL_MAX_PX = 120
 
-/** How far the list shows stretched (px) for a finger travel of `dy` px: about half at first, flattening out. */
+/** Rubber-band stiffness: the share of the finger travel the list follows at first (lower = heavier). */
+export const PULL_GIVE = 0.4
+
+/** How far the list shows stretched (px) for a finger travel of `dy` px: about 40 % at first, flattening out. */
 export function rubber(dy: number): number {
   if (!(dy > 0)) return 0
-  return PULL_MAX_PX * (1 - 1 / ((dy / PULL_MAX_PX) * 0.55 + 1))
+  return PULL_MAX_PX * (1 - 1 / ((dy / PULL_MAX_PX) * PULL_GIVE + 1))
 }
 
 export function shouldOpen(fingerDy: number, atBottomAtStart: boolean, hasChat: boolean): boolean {
