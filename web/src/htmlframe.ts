@@ -6,9 +6,13 @@ const GUARD =
   `<script>try{delete window.HermesAndroid}catch(e){}try{window.HermesAndroid=undefined}catch(e){}` +
   `window.addEventListener('error',function(e){parent.postMessage({hmCanvasError:String(e.message)},'*')});` +
   `window.alert=function(m){parent.postMessage({hmCanvasAlert:String(m===undefined?'':m)},'*')};` +
-  // Links would load the site inside the frame (sub-frame navigations never reach the Android shell): hand them to the app.
+  // Links would load the site inside the frame (sub-frame navigations never reach the Android shell): web and mail
+  // links go to the app, which opens them outside; other links stay put (javascript: ones still run, # ones scroll).
+  `var hmL=function(u){parent.postMessage({hmCanvasLink:String(u)},'*')},hmOk=function(u){return/^(https?:|mailto:)/i.test(u)};` +
   `document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');` +
-  `if(!a||/^#/.test(a.getAttribute('href')))return;e.preventDefault();parent.postMessage({hmCanvasLink:a.href},'*')},true);`
+  `if(!a||/^\\s*(#|javascript:)/i.test(a.getAttribute('href')))return;e.preventDefault();if(hmOk(a.href))hmL(a.href)},true);` +
+  // window.open has no popup to open in a sandbox: hand a web or mail address to the app the same way.
+  `window.open=function(u){if(u==null)return null;try{var h=new URL(String(u),document.baseURI).href;if(hmOk(h))hmL(h)}catch(x){}return null};`
 
 // Only for the inline preview: tell the app how tall the page is so the frame can grow to fit.
 const HEIGHT =
@@ -30,4 +34,11 @@ export function frameDoc(html: string, network: boolean, autoHeight = false): st
 export function frameHeight(reported: unknown, min: number, max: number): number | null {
   if (typeof reported !== 'number' || !Number.isFinite(reported)) return null
   return Math.min(max, Math.max(min, Math.ceil(reported)))
+}
+
+/** A link the frame asked to open, if it is one the app opens outside: http(s) or mailto, at most 2000 characters
+ * (scheme in lower case: the Android shell compares it exactly). */
+export function frameLink(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length > 2000 || !/^(?:https?:\/\/|mailto:)\S/i.test(raw)) return null
+  return raw.replace(/^[a-z]+:/i, s => s.toLowerCase())
 }

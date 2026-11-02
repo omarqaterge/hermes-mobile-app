@@ -51,8 +51,12 @@ A test build (`devtoolsBuild()`) keeps debugging on whatever this setting does: 
   referrerPolicy="no-referrer" srcDoc>` (`web/src/components/HtmlFrame.tsx` `HtmlFrame`, srcDoc built by `frameDoc` in `web/src/htmlframe.ts`; also used for the inline chat preview). No `allow-same-origin`, so the frame has no
   access to the app page, its storage or its cookies.
 - A guard script is injected first (right after the doctype): it deletes `window.HermesAndroid`, reports errors,
-  routes `alert()` to an app toast and turns link clicks into a message to the page. The page asks "Open link?"
-  before opening an `http(s)` link (the frame could post the message without a tap).
+  routes `alert()` to an app toast and turns taps on `http(s)` and `mailto` links, and `window.open` calls with
+  such an address, into a message to the page (`#` and `javascript:` links are left to the frame; other links are
+  stopped). The page accepts only `http(s)` and `mailto` addresses of up to 2,000 characters (`frameLink`) and opens
+  them with `openExternal`. It opens right away only when the message follows a real tap in the frame (the page has
+  transient user activation, `navigator.userActivation`, and the frame has focus), at most one link per 5 s; otherwise (a page posting on its
+  own) it asks "Open link?" first. The Android shell also blocks every navigation of a sub-frame.
 - Unless the document's Online switch is on, a CSP blocks all network (`default-src 'none'`, inline script/style
   only, images and media from `data:`/`blob:`, `form-action 'none'`, `base-uri 'none'`).
 - The real isolation is the bridge key: the raw bridge object is visible inside frames even after the guard, but

@@ -11,6 +11,7 @@ import { DocView } from './DocView'
 import { ScreenShell, Sheet, Status } from './Screens'
 import { Row, Section, Segmented } from './ui'
 import { Spinner } from './Spinner'
+import { Linked } from './Linked'
 
 function shareText(title: string, text: string): void {
   if (!nativeShare(title, text)) void copyText(text).then(() => toast('Copied (sharing works in the phone app)'))
@@ -108,7 +109,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
         </div>
         <div className="lib-viewer-body">
           {error ? (
-            <div className="notice notice-error">{error}</div>
+            <div className="notice notice-error"><Linked text={error} /></div>
           ) : text == null ? (
             <div className="pad" aria-busy="true">
               <Spinner />

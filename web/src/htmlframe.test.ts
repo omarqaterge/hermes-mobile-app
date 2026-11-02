@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { frameDoc, frameHeight } from './htmlframe'
+import { frameDoc, frameHeight, frameLink } from './htmlframe'
 
 describe('frameDoc', () => {
   it('puts the guard first, after the doctype when there is one', () => {
@@ -34,5 +34,26 @@ describe('frameHeight', () => {
   })
   it('ignores anything that is not a finite number', () => {
     for (const v of ['300', NaN, Infinity, null, undefined, {}]) expect(frameHeight(v, 160, 400)).toBeNull()
+  })
+})
+
+describe('frameLink', () => {
+  it('passes web and mail links', () => {
+    for (const u of ['https://example.com/x', 'http://a.io', 'mailto:a@b.org']) expect(frameLink(u)).toBe(u)
+    expect(frameLink('HTTPS://A.IO')).toBe('https://A.IO')
+  })
+  it('refuses other schemes, non-strings and very long links', () => {
+    for (const v of ['javascript:alert(1)', 'data:text/html,x', 'file:///etc/hosts', 'intent://x', 'tel:123', 'about:srcdoc', 'https://', '', 5, null, {}])
+      expect(frameLink(v)).toBeNull()
+    expect(frameLink('https://a.io/' + 'x'.repeat(2000))).toBeNull()
+  })
+})
+
+describe('frame guard', () => {
+  it('hands links and window.open to the app, but leaves # and javascript: links alone', () => {
+    const d = frameDoc('<p>a</p>', false)
+    expect(d).toContain('hmCanvasLink')
+    expect(d).toContain('window.open=function')
+    expect(d).toContain('(#|javascript:)')
   })
 })
