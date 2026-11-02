@@ -145,13 +145,13 @@ check on a real phone:
 
 ## Checks from 2026-11-02 (docs/status/phone-checks-2026-11-02.md)
 
-- [ ] **Done chip stays (#67).** With a build that has #67: send a short prompt, press Home before the reply ends.
+- [x] **Done chip stays (#67).** (2026-11-02, 0.8.72-plugintest: stayed over 2 min, cleared on open.) With a build that has #67: send a short prompt, press Home before the reply ends.
       Expected: the green Done chip appears and stays (wait 2 minutes) until you open the app or the chat.
-- [ ] **/yolo from Auto access.** In a chat whose Auto button (beside the model chip) shows Auto access, type `/yolo`.
+- [x] **/yolo from Auto access.** (2026-11-02, 0.8.72-plugintest: Full access in 0.86 s; `ls ~` ran without asking.) In a chat whose Auto button (beside the model chip) shows Auto access, type `/yolo`.
       Expected: "⚡ Full access on…", the button reads ⚡ Full access; `/yolo` again: "Back to Auto access". Note how long
       the notice takes right after opening a chat.
 
-- [ ] **Start with Hermes stopped.** With a build that has the fix: in Termux, stop the dashboard
+- [ ] **Start with Hermes stopped.** (2026-11-02: BLOCKED, the app has no action that stops Hermes; use the Termux commands below.) With a build that has the fix: in Termux, stop the dashboard
       (`~/bin/hermes-debian --restart`, or `pkill -f 'hermes dashboard'`; the service loop starts it again within about
       10 s), force stop the app and open it at once. In Termux, watch
       `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9119/` turn 200. Expected: the app connects within about
@@ -159,7 +159,7 @@ check on a real phone:
 
 ## Confirm approvals with fingerprint (owner only: needs the phone's fingerprint or PIN)
 
-- [ ] With Auto off, ask Hermes for something it must approve; tap Allow once. Expected: the fingerprint prompt
+- [x] (2026-11-02, 0.8.72-plugintest: asked once per chat, the second approval didn't ask.) With Auto off, ask Hermes for something it must approve; tap Allow once. Expected: the fingerprint prompt
       ("Allow Hermux to run this?" with the command); after it, the command runs. A second approval in the same chat
       doesn't ask.
 - [ ] Cancel the prompt: nothing runs, the sheet stays, the toast says why. Deny never asks.
@@ -201,3 +201,32 @@ plugin: `~/bin/hermes-debian sh -c 'cp -a /root/.hermes/plugins/hermes-mobile /r
    Remove the hold file when done.
 6. **Interrupted.** During step 3, force-stop Termux right after "Updating…" shows; open Termux and the app again: the
    next check settles it (the new plugin kept if it serves, else the old one back), never a missing plugin.
+
+## Phone pass of 2026-11-02 (build 0.8.72-plugintest, Android 16)
+
+The owner's test agent ran 16 checks on a real phone. Results as found, with what was really wrong where a check first
+read as a pass:
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Name: launcher, App info and the title say Hermux | PASS. The build predates #86, so the agent subtitle still said "Hermes Agent"; it now says "Hermux agent" (not seen on the phone yet) |
+| 2 | Done chip stays until the chat is opened | PASS: stayed 2+ min, cleared on open |
+| 3 | Tapping the background-app chip opens the viewer | PASS on retest. The first run's setup was wrong: its Calculator ran on the real screen rather than the hidden display, so the tap opened Calculator and there was no thumbnail, which is how the chip is meant to work (#88). In the retest the tap opened the live viewer and the card showed a thumbnail |
+| 4 | Auto button | PASS: beside the model chip; Off / Auto access / Full access; a small 🛡 chip in Live mode |
+| 5 | /yolo | PASS: Full access in 0.86 s; `ls ~` ran without asking |
+| 6 | Confirm approvals with fingerprint | PASS: asked once per chat; the second approval in the same chat didn't ask |
+| 7 | Tool cards | PASS: "Ran ls", "Read" |
+| 8 | Links | PASS: open in the phone's browser |
+| 9 | Hermes settings | PASS: the Memory toggle changed the config and was put back |
+| 10 | Provider rotation | NOT VERIFIED: the Fallback models card stayed on "Loading…" (the phone has no `fallback_providers`). Fixed: the card now loads the config on its own, says "No fallback models yet" when the list is empty, and every settings load ends after 20 s in an error with Try again. Reordering not tested; to check again |
+| 11 | Connectors | PASS: page and statuses right (no server sign-in or key tried) |
+| 12 | Opt-in stats | PASS: no switch and no requests without a key |
+| 13 | What's new | NOT VERIFIED: hidden on test builds, whose version is newer than the latest release, so the new wording wasn't seen |
+| 14 | OpenUI | PASS: the skill `hermes-mobile:openui` loaded and the card rendered inline |
+| 15 | /btw pull and Clear | PASS: the 230 px pull works but needs a deliberate drag from near the bottom; Clear forgets |
+| 16 | Launch with Hermes running / stopped | Running: PASS, chat live in 0.2–0.4 s over 3 cold starts. Stopped: BLOCKED, the app has no action that stops Hermes |
+
+- [ ] **Fallback models again (#10).** With a build that has the fix: Settings → Model providers. Expected: the card
+      shows the main model, "No fallback models yet" and "Add a fallback model" within a second or two, never a
+      "Loading…" that stays. Add two fallbacks, reorder them with ↑ ↓, remove one (the config changes each time), and
+      put the owner's providers back as they were.
