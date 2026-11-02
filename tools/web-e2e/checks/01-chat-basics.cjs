@@ -64,7 +64,7 @@ module.exports = async t => {
   {
     const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto')
     const yolos = () => rpcs('config.set').filter(c => c.params.key === 'yolo')
-    // the model row fits a 360 px phone and a tablet without overflowing (the model name ellipsizes, Auto never shrinks)
+    // the model row fits a 360 px phone and a tablet without overflowing, even with a long model name (it ellipsizes, Auto never shrinks)
     const rowFits = async state => {
       const vp = page.viewportSize()
       for (const width of [360, 1024]) {
@@ -72,6 +72,7 @@ module.exports = async t => {
         await sleep(200)
         const fit = await page.evaluate(() => {
           const row = document.querySelector('.model-row'), r = row.getBoundingClientRect(), btn = row.querySelector('.auto-btn')
+          row.querySelector('.model-chip-name').textContent = 'provider/a-very-long-model-name-that-has-to-ellipsize-20261102' // forces the chip to shrink
           return {
             overflow: row.scrollWidth > row.clientWidth + 1,
             inside: [...row.children].every(c => { const b = c.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1 }),

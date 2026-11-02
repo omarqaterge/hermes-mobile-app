@@ -625,4 +625,25 @@ module.exports = async t => {
     await setNative(null)
     await vp.close()
   }
+
+  // ── Live mode hides the model row, so the Live bar carries the Auto button while approvals are off (Auto / Full) ──
+  for (const mode of ['off', 'full']) {
+    const ap = await browser.newPage({ viewport: { width: 360, height: 780 } })
+    await ap.addInitScript(m => { window.__ttsHold = true; if (m !== 'off') localStorage.setItem('hm.defaultAccess.v1', m) }, mode)
+    await ap.addInitScript(nativeShell)
+    await ap.goto(WEB + '/')
+    await ap.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await ap.evaluate(() => window.hermesShortcut('live'))
+    const bar = ap.locator('.live-bar')
+    await bar.waitFor({ timeout: 5000 }).catch(() => {})
+    if (mode === 'off') check((await bar.locator('.auto-btn').count()) === 0, 'Live bar: no Auto button while Auto is off')
+    else {
+      await ap.evaluate(() => window.__hmVoice('final', 'hello there'))
+      await bar.getByText('Hermes is speaking…').waitFor({ timeout: 10000 }).catch(() => {})
+      check((await bar.locator('.auto-btn.full', { hasText: '⚡' }).count()) === 1, 'Live bar: shows ⚡ for Full access')
+      const fit = await bar.evaluate(b => ({ over: b.scrollWidth > b.clientWidth + 1, right: Math.max(...[...b.children].map(c => c.getBoundingClientRect().right)) <= b.getBoundingClientRect().right + 1 }))
+      check(!fit.over && fit.right, `Live bar with Auto, Interrupt, mute and End fits 360 px (${JSON.stringify(fit)})`)
+    }
+    await ap.close()
+  }
 }
