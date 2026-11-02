@@ -85,5 +85,15 @@ with 0% WER (NeMo 5.6%: "brothel" for "brothels"); timings there varied tenfold 
 downloaded, passed its check (0% WER, 0.24 s) and dictation fell back to the phone's recogniser when the emulator's
 microphone could not be opened. A real phone's speed and battery use are still to measure (docs/manual-tests.md).
 
+### Phone pass of 2026-11-02 (build 0.8.72-plugintest, Android 16)
+
+Verified on a real phone (details in `manual-tests.md`): the Hermux name, the Done chip that stays until the chat is
+opened, the Auto button and `/yolo` to Full access, one fingerprint per chat for approvals, tool card titles, links
+opening in the browser, Hermes settings toggles, the Connectors page, opt-in stats sending nothing without a key,
+OpenUI cards, the /btw pull and Clear, a 0.2–0.4 s launch with Hermes running, and the chip opening the live viewer
+with a thumbnail (on a retest: the first run's app was on the real screen, not the hidden one). Not verified:
+provider rotation (the card never left "Loading…", fixed in web code and browser tests only), What's new on a test
+build, and a launch with Hermes stopped (no way to stop it from the app).
+
 Left out on purpose: anything about Telegram / channels / the bot keeper (decision of 0.7.47), swipe or long-press
 actions the user already rejected, Hermes-side speech-to-text (`voice.record`) and wake word (`wake.*`).

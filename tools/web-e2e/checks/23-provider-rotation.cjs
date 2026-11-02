@@ -84,4 +84,55 @@ module.exports = async t => {
   // Leave the mock as the earlier files expect it.
   await fetch(require('../lib.cjs').MOCK + '/api/env', { method: 'DELETE', body: JSON.stringify({ key: 'DEEPSEEK_API_KEY' }) })
   await mock({ rotation: {}, poolStatus: { 'env-deepseek_api_key': null }, poolSeeded: [] })
+
+  // The card's three states: an empty list says so (never a "Loading…" that stays), a failed load shows the error with
+  // Try again, and a list with entries numbers them after the main model.
+  {
+    const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    const card = pg.locator('.set-section', { hasText: 'Fallback models' })
+    // A fresh page each time; `before` changes the mock once the app is up (a failing /api/config must not break start-up).
+    const open = async before => {
+      await pg.goto(WEB + '/')
+      await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      if (before) await before()
+      await pg.getByRole('button', { name: /^Sessions/ }).click()
+      await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+      await pg.locator('.set-row', { hasText: 'Model providers' }).click()
+    }
+    const ok = (loc, name) => loc.waitFor({ timeout: 5000 }).then(() => check(true, name), () => check(false, name))
+
+    await open()
+    await ok(card.getByText('No fallback models yet'), 'rotation: an empty fallback list says “No fallback models yet”')
+    check((await card.getByText('Loading…').count()) === 0, 'rotation: an empty fallback list shows no “Loading…”')
+    check((await card.locator('.set-row', { hasText: 'Add a fallback model' }).count()) === 1, 'rotation: an empty fallback list keeps “Add a fallback model”')
+
+    await open(() => mock({ routeFail: { 'GET /api/config': 500 } }))
+    await ok(card.locator('.notice-error', { hasText: 'Mock failure' }), 'rotation: a failed load shows the error instead of “Loading…”')
+    check((await card.getByText('Loading…').count()) === 0, 'rotation: a failed load leaves no “Loading…”')
+    await mock({ routeFail: { 'GET /api/config': 0 } })
+    await card.getByRole('button', { name: 'Try again' }).click()
+    await ok(card.getByText('No fallback models yet'), 'rotation: Try again loads the card once Hermes answers')
+
+    await mock({ rotation: { fallback_providers: [{ provider: 'mock', model: 'mock-sonnet' }, { provider: 'deepseek', model: 'deepseek-chat' }] } })
+    await open()
+    await ok(card.locator('.set-row', { hasText: 'deepseek-chat' }), 'rotation: a list with entries shows them')
+    const rows = await card.locator('.set-row').allInnerTexts()
+    check(rows.length === 4 && rows[1].includes('2') && rows[1].includes('mock-sonnet') && rows[2].includes('3') && rows[2].includes('deepseek-chat'), `rotation: entries are numbered after the main model (${JSON.stringify(rows)})`)
+    check((await card.getByText('No fallback models yet').count()) === 0, 'rotation: a list with entries has no empty-state line')
+
+    // A re-read that fails (adding a key re-reads the card) must not leave the old list editable: ✕ would save it.
+    await mock({ envSet: { DEEPSEEK_API_KEY: 'sk-deepseek-mock-0001' }, routeFail: { 'GET /api/config': 500 } })
+    await pg.locator('.providers .set-row', { hasText: 'DeepSeek' }).first().click()
+    const pool = pg.locator('.sheet .set-section', { hasText: 'Keys and logins' })
+    await pool.getByLabel('Another DeepSeek key').fill('sk-deepseek-mock-0003')
+    await pool.getByRole('button', { name: 'Add', exact: true }).click()
+    await ok(card.locator('.notice-error', { hasText: 'Mock failure' }), 'rotation: a failed re-read shows the error')
+    check((await card.getByRole('button', { name: 'Remove deepseek-chat' }).count()) === 0, 'rotation: a failed re-read leaves no old list to edit')
+    await pg.close()
+    await mock({ rotation: {}, routeFail: { 'GET /api/config': 0 } })
+    const MOCK = require('../lib.cjs').MOCK
+    await fetch(MOCK + '/api/env', { method: 'DELETE', body: JSON.stringify({ key: 'DEEPSEEK_API_KEY' }) })
+    await fetch(MOCK + '/api/credentials/pool/deepseek/1?profile=default', { method: 'DELETE' })
+    await mock({ poolSeeded: [] })
+  }
 }

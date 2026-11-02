@@ -87,17 +87,17 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
             onClick={() => setServer(s.name)}
           />
         ))}
+        <Status loading={servers.loading} error={servers.error} empty={!servers.data?.length} emptyText="No servers yet" onRetry={servers.reload} />
         <Row icon="＋" tone="gold" title="Add from the catalog" sub="Services Hermux knows how to connect" chevron onClick={() => setCatalog(true)} />
         <Row icon="＋" tone="blue" title="Add a server" sub="By its address, or a command that starts it" chevron onClick={() => setAdding(true)} />
       </Section>
-      <Status loading={servers.loading} error={servers.error} empty={false} emptyText="" />
       <Section title="Tools with a key or an account" footer="Tap one to turn it on, pick the service it uses and paste its key.">
         {(tools.data || []).map(t => {
           const w = TOOLSET_WORDS[t.name] || { title: t.label, icon: '🧰', sub: t.description || '' }
           return <Row key={t.name} icon={w.icon} tone="teal" title={w.title} sub={w.sub} value={<State s={toolsetState(t)} />} chevron onClick={() => setToolset(t)} />
         })}
+        <Status loading={tools.loading} error={tools.error} empty={!tools.data?.length} emptyText="None to set up in this Hermes" onRetry={tools.reload} />
       </Section>
-      <Status loading={tools.loading} error={tools.error} empty={false} emptyText="" />
       {(keys.data?.length || 0) > 0 && (
         <Section title="Keys for skills" footer="Hermux’s skills for these services read the key from the bot’s .env.">
           {keys.data!.map(([k, r]) => (
@@ -346,7 +346,7 @@ function AddServerSheet({ profile, onClose, onAdded }: { profile: string; onClos
 // ── Hermes's MCP catalog ─────────────────────────────────────
 
 function CatalogSheet({ profile, onClose, onAdded }: { profile: string; onClose: () => void; onAdded: (name: string) => void }) {
-  const { data, error, loading } = useLoader(
+  const { data, error, loading, reload } = useLoader(
     () => api<{ entries: CatalogEntry[] }>('GET', `/api/mcp/catalog?${qs({ profile })}`, undefined, { profile: false }).then(r => r.entries || []),
     [profile]
   )
@@ -405,7 +405,7 @@ function CatalogSheet({ profile, onClose, onAdded }: { profile: string; onClose:
         <input placeholder="Search (e.g. notion, linear)" value={q} onChange={e => setQ(e.target.value)} />
       </label>
       <div className="sheet-scroll">
-        <Status loading={loading} error={error} empty={!shown.length} emptyText="Nothing matches" />
+        <Status loading={loading} error={error} empty={!shown.length} emptyText="Nothing matches" onRetry={reload} />
         <Section>
           {shown.map(e => (
             <Row
@@ -515,7 +515,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
         <Section footer="A change applies to new chats.">
           <ToggleRow title="On" sub="Hermux can use these tools" on={enabled} onChange={v => !busy && toggle(v)} />
         </Section>
-        <Status loading={cfg.loading} error={cfg.error} empty={!cfg.loading && !cfg.error && !cfg.data?.providers.length} emptyText="Nothing to set up: it works as it is." />
+        <Status loading={cfg.loading} error={cfg.error} empty={!cfg.loading && !cfg.error && !cfg.data?.providers.length} emptyText="Nothing to set up: it works as it is." onRetry={cfg.reload} />
         {(cfg.data?.providers.length || 0) > 0 && (
           <Section title="Service">
             {cfg.data!.providers.map(prov => {

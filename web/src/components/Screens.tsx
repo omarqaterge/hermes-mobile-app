@@ -13,6 +13,7 @@ import { Media } from './Media'
 import { previewKind, type PreviewKind } from '../filekind'
 import { Linked } from './Linked'
 import { ReportLink } from './Report'
+import { LOAD_LIMIT_MS, timeLimit, TimeLimitError } from '../timelimit'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -49,29 +50,59 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   )
 }
 
+/**
+ * Loads once per `deps` change; `reload` loads again. A load that takes longer than LOAD_LIMIT_MS ends in an error (so
+ * "Loading…" never stays), and its answer still fills the screen if it comes later. Only the latest load counts.
+ */
 export function useLoader<T>(load: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const seq = useRef(0)
   const reload = useCallback(() => {
+    const n = ++seq.current
+    const mine = () => n === seq.current
     setLoading(true)
-    load()
-      .then(d => {
-        setData(d)
-        setError('')
+    setError('')
+    const p = load()
+    const got = (d: T) => {
+      if (!mine()) return
+      setData(d)
+      setError('')
+    }
+    const failed = (e: unknown) => mine() && setError(errText(e))
+    timeLimit(p, LOAD_LIMIT_MS)
+      .then(got, e => {
+        failed(e)
+        if (e instanceof TimeLimitError) p.then(got, failed) // a late answer still counts
       })
-      .catch(e => setError(errText(e)))
-      .finally(() => setLoading(false))
+      .finally(() => mine() && setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
   useEffect(reload, [reload])
   return { data, error, loading, reload, setData }
 }
 
-export function Status({ loading, error, empty, emptyText }: { loading: boolean; error: string; empty: boolean; emptyText: string }) {
-  if (error) return <div className="notice notice-error"><Linked text={error} /> <ReportLink /></div>
+/** A load's error with "Try again", in a notice. */
+export function LoadError({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  return (
+    <div className="notice notice-error load-error">
+      <span>
+        <Linked text={error} /> <ReportLink />
+      </span>
+      {onRetry && (
+        <button className="btn" onClick={onRetry}>
+          Try again
+        </button>
+      )}
+    </div>
+  )
+}
+
+export function Status({ loading, error, empty, emptyText, onRetry }: { loading: boolean; error: string; empty: boolean; emptyText: string; onRetry?: () => void }) {
+  if (error) return <LoadError error={error} onRetry={onRetry} />
   if (loading && empty) return <div className="dim pad">Loading…</div>
-  if (empty) return <div className="dim pad">{emptyText}</div>
+  if (empty && emptyText) return <div className="dim pad">{emptyText}</div>
   return null
 }
 

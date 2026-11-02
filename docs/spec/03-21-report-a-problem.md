@@ -1,7 +1,7 @@
 ### 3.21 Report a problem
 
 **Opens from:** Settings → About → Report a problem (`ReportRow`, under What's new); the "Report a problem" link in a
-hub screen's error notice (`ReportLink` in `Status`, `components/Screens.tsx`) and under "The installer stopped" in the
+hub screen's error notice (`ReportLink` in `LoadError`, `components/Screens.tsx`) and under "The installer stopped" in the
 setup flow; the Report a problem button of the Backend status sheet while Hermux is offline or has problems (it closes
 that sheet first). `openReport()` opens it from anywhere; `ReportHost`, mounted once in `App.tsx`, shows it.
 **Closes with:** the grip, backdrop, Back, Cancel or Close, but not while a report is sending (30 seconds at most). **Source files:** `web/src/components/Report.tsx` (the

@@ -327,7 +327,7 @@ function KeysTab({ scope, setScope }: { scope: string; setScope: (s: string) => 
         <ToggleRow icon="●" tone="green" title="Only keys that are set" sub="Turn off to see every key Hermux supports" on={onlySet} onChange={setOnlySet} />
         <Row icon="＋" tone="gold" title="Add a custom key" chevron onClick={() => setEdit({ key: '' })} />
       </Section>
-      <Status loading={loading} error={error} empty={!groups.length} emptyText={onlySet ? 'No keys set. Turn off “Only keys that are set” to see every key Hermux supports.' : 'No matches'} />
+      <Status loading={loading} error={error} empty={!groups.length} emptyText={onlySet ? 'No keys set. Turn off “Only keys that are set” to see every key Hermux supports.' : 'No matches'} onRetry={reload} />
       {groups.map(([cat, rows]) => (
         <Section key={cat} title={`${cat} · ${rows.length}`}>
           {rows.map(([k, r]) => (
@@ -557,7 +557,7 @@ function ConfigTab({ scope, setScope }: { scope: string; setScope: (s: string) =
         <span aria-hidden="true">🔍</span>
         <input placeholder={`Search ${data ? Object.entries(data.schema.fields).filter(([k, f]) => !isMessagingField(k, f.category)).length : ''} settings`} value={q} onChange={e => setQ(e.target.value)} />
       </label>
-      <Status loading={loading} error={error} empty={!data} emptyText="" />
+      <Status loading={loading} error={error} empty={!data} emptyText="" onRetry={reload} />
       {needle ? (
         <Section title="Results">{hits.length ? hits.map(row) : <div className="dim pad">No matches</div>}</Section>
       ) : (
@@ -1151,7 +1151,7 @@ export function SettingsScreen() {
       {page === 'accounts' && (
         <>
           <ProfileChips value={scope} onChange={setScope} label="Sign-ins for" />
-          <FallbackSection profile={scope} version={rotation} />
+          <FallbackSection key={scope} profile={scope} version={rotation} />
           <ProviderList profile={scope} onChange={() => setRotation(v => v + 1)} onPicked={() => void loadProfiles()} />
           <div className="dim small pad">Every provider this agent version supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → API keys.</div>
         </>

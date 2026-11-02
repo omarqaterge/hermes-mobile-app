@@ -3919,3 +3919,14 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .report-shot { display: grid; gap: 8px; }
 .report-shot img { max-width: 100%; max-height: 30vh; object-fit: contain; border-radius: 10px; border: 1px solid var(--border); justify-self: start; }
 .report-link { color: var(--accent); text-decoration: underline; font-size: inherit; padding: 0; }
+
+/* A load's error with Try again (LoadError). */
+.load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.load-error .btn {
+  flex: none;
+}

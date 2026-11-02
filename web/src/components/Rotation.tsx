@@ -18,7 +18,7 @@ import { toast, useStore } from '../store'
 import type { ProviderEntry } from '../providers'
 import { ModelPicker } from './Settings'
 import { loadPool, type PoolEntry } from './SignIn'
-import { Status, useLoader } from './Screens'
+import { LoadError, Status, useLoader } from './Screens'
 import { Row, Section, SelectRow } from './ui'
 
 /** Hermes's SUPPORTED_POOL_STRATEGIES (agent/credential_pool.py); a missing or unknown value means fill_first. */
@@ -119,24 +119,20 @@ const saveConfig = (profile: string, config: Record<string, unknown>) => api('PU
  * `version` changes when something on the page was connected or removed, so the cooling-down notes are re-read.
  */
 export function FallbackSection({ profile, version = 0 }: { profile: string; version?: number }) {
-  const { data, error, loading, setData } = useLoader(
-    async () => {
-      const [cfg, pool] = await Promise.all([api<RotationConfig>('GET', `/api/config?${qs({ profile })}`, undefined, { profile: false }), loadPool(profile)])
-      return { cfg, pool }
-    },
-    [profile, version]
-  )
+  // The chain needs only the config; the pool (for "Keys cooling down") loads on its own, so a slow pool never holds it.
+  const { data, error, loading, reload, setData } = useLoader(() => api<RotationConfig>('GET', `/api/config?${qs({ profile })}`, undefined, { profile: false }), [profile, version])
+  const pool = useLoader(() => loadPool(profile), [profile, version]).data
   const prof = useStore(s => s.profiles.find(p => p.name === profile))
   const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState(false)
-  const chain = useMemo(() => chainOf(data?.cfg.fallback_providers), [data])
+  const chain = useMemo(() => chainOf(data?.fallback_providers), [data])
   // Hermes also tries the older single `fallback_model` after the list; this page can't delete it (PUT /api/config merges).
-  const legacy = useMemo(() => chainOf(data?.cfg.fallback_model).filter(l => !chain.some(c => same(c, l))), [data, chain])
+  const legacy = useMemo(() => chainOf(data?.fallback_model).filter(l => !chain.some(c => same(c, l))), [data, chain])
 
   const write = (next: FallbackEntry[], ok?: string) => {
     if (!data) return Promise.resolve(false)
     const before = data
-    setData({ ...data, cfg: { ...data.cfg, fallback_providers: next } }) // at once; put back if Hermes refuses
+    setData({ ...data, fallback_providers: next }) // at once; put back if Hermes refuses
     setBusy(true)
     return saveConfig(profile, { fallback_providers: next })
       .then(() => {
@@ -165,7 +161,7 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
     )
   }
 
-  const status = (provider: string) => (cooling(data?.pool, provider) ? <span className="pool-badge cooling">Keys cooling down</span> : null)
+  const status = (provider: string) => (cooling(pool ?? undefined, provider) ? <span className="pool-badge cooling">Keys cooling down</span> : null)
   const mainProvider = (prof?.provider || '').trim()
   return (
     <Section
@@ -173,7 +169,7 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
       footer="When the main model is rate-limited, out of credit, refuses its key or is gone, Hermux switches to the next model in this list and goes back to the main one once it works again."
     >
       {error ? (
-        <div className="notice notice-error">{error}</div>
+        <LoadError error={error} onRetry={reload} /> // first, so a list from before a failed re-read can't be edited and saved
       ) : !data ? (
         <Status loading={loading} error="" empty emptyText="" />
       ) : (
@@ -222,6 +218,7 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
               }
             />
           ))}
+          {!chain.length && !legacy.length && <div className="dim pad">No fallback models yet</div>}
           {legacy.map(c => (
             <Row key={`legacy-${c.provider}/${c.model}`} title={c.model} sub={`${c.provider} · tried last, from the older fallback_model setting (Advanced settings)`} />
           ))}
@@ -324,7 +321,7 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
       title={`Keys and logins · ${list.length}`}
       footer="Hermux switches to another key here when one is rate-limited or out of credit, and to the next fallback model when none is left. Status is from each key’s last use."
     >
-      {error && <div className="notice notice-error">{error}</div>}
+      {error && <LoadError error={error} onRetry={reload} />}
       {list.map(e => (
         <Row
           key={`${e.provider}/${e.id || e.index}`}
