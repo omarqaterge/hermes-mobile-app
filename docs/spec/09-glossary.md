@@ -3,7 +3,7 @@
 - **Android 16 Live Update**: the Android 16 notification kind (promoted ongoing, `Notification.ProgressStyle`) that shows on the lock screen and status bar. See *Live Update*.
 - **app keeper**: a loop (`app-keeper`) in `phone/hermes-services` that checks every 300 s whether the app's event listener answers on `127.0.0.1:9121`; if not it broadcasts `StartReceiver` (with `FLAG_INCLUDE_STOPPED_PACKAGES`) to restart the app's service, also after a force stop or a Recents clean-up. See 6.2.
 - **Approval**: a request from Hermes to run a dangerous command. It reaches the app as a sheet, or as buttons on the chip/notification when the app is closed. Each answer applies to exactly the request it shows. See 3.6.
-- **Auto access / Full access / yolo**: the three levels of how much a chat may do without asking. Off asks before risky commands. Auto access runs everything except commands on Hermes's dangerous-command list. Full access (`/yolo`) asks nothing. The header Auto button sets it per chat. `/yolo` is the Hermes slash command behind Full access.
+- **Auto access / Full access / yolo**: the three levels of how much a chat may do without asking. Off asks before risky commands. Auto access runs everything except commands on Hermes's dangerous-command list. Full access (`/yolo`) asks nothing. The Auto button beside the composer's model chip sets it per chat. `/yolo` is the Hermes slash command behind Full access.
 - **bot**: the Settings/Hermes-hub name for a Hermes profile (Bots screen).
 - **BgHost**: the Java process (`bg/BgHost`) that runs a virtual hidden display so Hermes can use an app without taking the screen. See 4.7.
 - **/btw**: "by the way", a side question about the current chat that does not interrupt a running reply.

@@ -58,11 +58,11 @@ Constraints the design must respect:
   "By the way" side question, swipe chat rows to archive or delete.
 
 Chat screen elements: top bar with ☰ menu (unread dot), chat title, small coloured status dot, bot name under the
-title, an "Auto" pill (how much Hermes may do without asking), a canvas button, ⋮ menu. Messages: user bubbles on
+title, a canvas button, ⋮ menu. Messages: user bubbles on
 the right; assistant replies full width with a collapsible "Thinking…" line, rich Markdown, a folded line "Ran 6
 tools · 42s" with tool icons, a "3 files changed +40 −12" card, and actions Copy, Read aloud, Retry, Branch plus dim
 stats "~41 tok/s · ctx 2%". Above the composer a status strip "Working… 0:42 · Tasks 2/5". Composer: a model chip
-"Claude Sonnet · med" with a small context ring, then ＋, /, the text box "Queue or steer a follow-up…", and Steer +
+"Claude Sonnet · med", an "Auto" chip beside it (how much Hermes may do without asking) and a small context ring, then ＋, /, the text box "Queue or steer a follow-up…", and Steer +
 Queue buttons (Stop when the box is empty).
 
 Give it a distinctive but restrained identity. Then describe in 5 bullet points the design system you used (colours,
@@ -79,8 +79,7 @@ screen of Hermes Mobile, an Android app for an AI agent that runs on the phone. 
 
 Screen A, a chat in progress, top to bottom:
 - Top bar: ☰ (with a small unread dot), title "Fix the backup script" with a small branch icon, a green status dot,
-  dim bot name "Hermes Agent" under the title, a 🔊 badge (this chat is read aloud), an "Auto" pill in green
-  ("Auto access"), a canvas button with a dot (the chat has documents), ⋮.
+  dim bot name "Hermes Agent" under the title, a 🔊 badge (this chat is read aloud), a canvas button with a dot (the chat has documents), ⋮.
 - A thin gold divider "New since your last visit".
 - User message bubble on the right with a quoted line above the text, a photo thumbnail and a 📎 file chip; small
   Copy and Edit icons under it; the send time shown.
@@ -128,8 +127,8 @@ Every state has these parts, top to bottom (show only the ones that apply):
 - Quote chips "❝ the first words of the quote…" with ✕ (up to three).
 - Attachments row: two photo thumbnails with ✕, a "📎 report.pdf" chip with ✕, an "Attaching…" chip with a spinner,
   a small "clear" button.
-- Model row: a chip with a sparkle icon "Claude Sonnet 4 · med" (opens the model picker), a red "⚡ Full access" chip
-  when that mode is on, a small context ring (gold, amber at 80 %, red at 90 %).
+- Model row: a chip with a sparkle icon "Claude Sonnet 4 · med" (opens the model picker), an "Auto" chip
+  in green ("Auto access"; red "⚡ Full access" in that mode), a small context ring (gold, amber at 80 %, red at 90 %).
 - Input row: "＋" (Add), "/" (commands), the growing text box, and the right-hand button(s).
 
 States:

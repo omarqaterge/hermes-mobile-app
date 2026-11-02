@@ -17,7 +17,7 @@ only while Hermes answers). It turns amber from 80 % and red from 90 %. Tapping 
 - `fmtCtx(ctx)` formats it. `StatusBar` (`App.tsx`) shows `ctx N%` only while running. `CompressHint` (`App.tsx`)
   offers Compress at ≥ 80 % (`COMPRESS_AT`).
 - `Usage` (contract) also has `cost_usd`, `cache_hit_pct`, `input`, `output`, `total`, `context_estimated`.
-- The model row in `Composer.tsx` (`.model-row`) holds the model chip and the Full access chip.
+- The model row in `Composer.tsx` (`.model-row`) holds the model chip and the Auto button.
 
 ## Design
 
