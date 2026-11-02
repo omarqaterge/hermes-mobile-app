@@ -142,3 +142,10 @@ check on a real phone:
    or `top` for the app's CPU share while dictating and once stopped: no CPU once the microphone is off).
 5. Leave the app while dictating: the microphone indicator goes off at once.
 6. A 32-bit (armeabi-v7a) phone, if one is at hand: Moonshine Tiny downloads, checks and dictates.
+
+## Checks from 2026-11-02 (docs/status/phone-checks-2026-11-02.md)
+
+- [ ] **Done chip stays (#67).** With a build that has #67: send a short prompt, press Home before the reply ends.
+      Expected: the green Done chip appears and stays (wait 2 minutes) until you open the app or the chat.
+- [ ] **/yolo from Auto access.** In a chat whose header shows Auto, type `/yolo`. Today it turns approvals back on
+      ("Full access off…"); note how long the notice takes to appear.
