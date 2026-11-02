@@ -64,13 +64,17 @@ function eventsUrl(key: string): string {
 /** With no usable key, the opt-in isn't offered and nothing can be sent. */
 export const statsAvailable = (): boolean => Boolean(eventsUrl(appKey()))
 export const statsOn = (): boolean => statsAvailable() && read(CHOICE) === 'yes'
+let askedNow = false // storage that can't be written still shows the card only once per launch
 /** The opt-in card has not been shown yet. */
-export const statsUndecided = (): boolean => read(CHOICE) === null
+export const statsUndecided = (): boolean => !askedNow && read(CHOICE) === null
 /** The card is on screen: until they say yes it counts as no, so it never shows twice. */
 export const markStatsAsked = (): void => {
   if (statsUndecided()) write(CHOICE, 'no')
+  askedNow = true
 }
 export const statsSourceAsked = (): boolean => read(SOURCE_ASKED) === '1'
+/** The question is on screen: it counts as asked, even if the app is closed before an answer. */
+export const markStatsSourceAsked = (): void => write(SOURCE_ASKED, '1')
 
 /** A random ID that says nothing about the device. Also Aptabase's session ID, so its "sessions" count installs. */
 function installId(): string {
@@ -186,11 +190,8 @@ export function setStatsChoice(on: boolean): void {
   write(INSTALL_ID, null)
 }
 
-/** "How did you hear about us?": asked once; no answer sends nothing. */
-export function answerStatsSource(source: string | null): void {
-  write(SOURCE_ASKED, '1')
-  if (source) track('heard_from', { source })
-}
+/** "How did you hear about us?": no answer sends nothing. */
+export const answerStatsSource = (source: string): void => track('heard_from', { source })
 
 /** Called once at launch. With no key it does nothing at all, not even listen. */
 export function startStats(): void {

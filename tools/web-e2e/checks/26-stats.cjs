@@ -58,6 +58,20 @@ module.exports = async t => {
     await ctx.close()
   }
 
+  // A short screen (landscape): the text scrolls, the buttons stay reachable. The phone locking closes the card.
+  {
+    const { ctx, pg } = await open(browser, { key: KEY })
+    await pg.setViewportSize({ width: 640, height: 300 })
+    await card(pg).waitFor({ timeout: 8000 })
+    await sleep(500)
+    const box = await card(pg).getByRole('button', { name: 'Yes' }).boundingBox()
+    check(box && box.y >= 0 && box.y + box.height <= 300, 'stats: Yes stays on a short screen')
+    await pg.evaluate(() => window.hermesLockView(true))
+    await card(pg).waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'stats: the card closes when the phone locks'), () => check(false, 'stats: the card closes when the phone locks'))
+    check(await pg.evaluate(() => localStorage.getItem('hm.statsChoice')) === 'no', 'stats: locking leaves stats off')
+    await ctx.close()
+  }
+
   // A key and No thanks: nothing is sent, the card doesn't come back, the switch stays off.
   {
     const { ctx, pg, posts, errors } = await open(browser, { key: KEY })
@@ -92,6 +106,7 @@ module.exports = async t => {
     await card(pg).waitFor({ timeout: 8000 })
     await card(pg).getByRole('button', { name: 'Yes' }).click()
     await source(pg).waitFor({ timeout: 3000 })
+    await sleep(500)
     await pg.screenshot({ path: path.join(SHOTS, 'stats-source.png') })
     const choices = await source(pg).locator('.btn').allInnerTexts()
     check(JSON.stringify(choices) === JSON.stringify(['GitHub', 'Reddit', 'X', 'YouTube', 'A friend', 'Search', 'Other', 'Skip']), 'stats: fixed choices, and a skip')

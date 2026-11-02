@@ -77,6 +77,23 @@ test('after a yes: one batch to the key\'s host with only the listed fields', as
   }
 })
 
+test('storage that cannot be written still shows the card once', async () => {
+  sessionStorage.setItem('hm.devStatsKey', KEY)
+  const s = await load()
+  const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full') })
+  expect(s.statsUndecided()).toBe(true)
+  s.markStatsAsked()
+  expect(s.statsUndecided()).toBe(false)
+  set.mockRestore()
+})
+
+test('the question counts as asked once it is on screen', async () => {
+  const s = await load()
+  expect(s.statsSourceAsked()).toBe(false)
+  s.markStatsSourceAsked()
+  expect(s.statsSourceAsked()).toBe(true)
+})
+
 test('anything off the list is dropped', async () => {
   sessionStorage.setItem('hm.devStatsKey', KEY)
   const s = await load()

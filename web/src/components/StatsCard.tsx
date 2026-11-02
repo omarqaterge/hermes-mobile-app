@@ -1,8 +1,8 @@
 // The opt-in card for usage stats (stats.ts), shown once after setup; "How did you hear about us?" after a yes; and the
 // Settings → About switch. None of it renders without an app key.
 import { useEffect, useState } from 'react'
-import { lockView } from '../lockview'
-import { answerStatsSource, markStatsAsked, setStatsChoice, statsAvailable, statsOn, statsSourceAsked, statsUndecided, STATS_SOURCES } from '../stats'
+import { lockView, onLockView } from '../lockview'
+import { answerStatsSource, markStatsAsked, markStatsSourceAsked, setStatsChoice, statsAvailable, statsOn, statsSourceAsked, statsUndecided, STATS_SOURCES } from '../stats'
 import { useStore } from '../store'
 import { useBackHandler } from '../backstack'
 import { useSheetDrag } from './useSheetDrag'
@@ -25,12 +25,13 @@ function StatsSheet({ title, onClose, children }: { title: string; onClose: () =
 
 /** Fixed choices, no free text. Closing it without a choice counts as answered, and sends nothing. */
 function SourceSheet({ onClose }: { onClose: () => void }) {
-  const done = (source: string | null) => {
-    answerStatsSource(source)
+  useEffect(markStatsSourceAsked, [])
+  const done = (source?: string) => {
+    if (source) answerStatsSource(source)
     onClose()
   }
   return (
-    <StatsSheet title="How did you hear about us?" onClose={() => done(null)}>
+    <StatsSheet title="How did you hear about us?" onClose={() => done()}>
       <div className="sheet-desc">Optional, and only asked once.</div>
       <div className="sheet-actions wrap">
         {STATS_SOURCES.map(s => (
@@ -40,7 +41,7 @@ function SourceSheet({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="sheet-actions">
-        <button className="btn" onClick={() => done(null)}>
+        <button className="btn" onClick={() => done()}>
           Skip
         </button>
       </div>
@@ -61,19 +62,23 @@ export function StatsCard() {
     }, 1500)
     return () => clearTimeout(wait)
   }, [free, step])
+  // The phone locked with the card open: it closes (stats stay as they are), Settings can still change them.
+  useEffect(() => onLockView(() => lockView() && setStep(null)), [])
   if (step === 'source') return <SourceSheet onClose={() => setStep(null)} />
   if (step !== 'ask') return null
   return (
     <StatsSheet title="Share anonymous usage stats?" onClose={() => setStep(null)}>
-      <div className="sheet-desc strong">It helps show how many people use the app and which screens matter. It is off unless you say yes.</div>
-      <div className="sheet-desc">
-        What is sent: a random ID made only for this install, the app version, the Android version, and how often the app starts and which screens open.
+      <div className="sheet-scroll">
+        <div className="sheet-desc strong">It helps show how many people use the app and which screens matter. It is off unless you say yes.</div>
+        <div className="sheet-desc">
+          What is sent: a random ID made only for this install, the app version, the Android version, and how often the app starts and which screens open.
+        </div>
+        <div className="sheet-desc">Never your chats, prompts, tool output, file names, model keys, account names or phone number.</div>
+        <div className="sheet-desc">
+          It goes to Aptabase, a stats service. Aptabase sees your internet address when a report arrives: it keeps a rough country and region and a one-day anonymous code from it, not the address.
+        </div>
+        <div className="sheet-desc">You can change this any time in Settings → About.</div>
       </div>
-      <div className="sheet-desc">Never your chats, prompts, tool output, file names, model keys, account names or phone number.</div>
-      <div className="sheet-desc">
-        It goes to Aptabase, a stats service. Aptabase sees your internet address when a report arrives: it keeps a rough country and region and a one-day anonymous code from it, not the address.
-      </div>
-      <div className="sheet-desc">You can change this any time in Settings → About.</div>
       <div className="sheet-actions">
         <button className="btn" onClick={() => setStep(null)}>
           No thanks
