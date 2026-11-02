@@ -30,6 +30,7 @@ import { ProviderList } from './Providers'
 import { FallbackSection } from './Rotation'
 import { HermesSettingsPage } from './HermesSettings'
 import { ConnectorsPage } from './Connectors'
+import { StatsRow } from './StatsCard'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 
@@ -903,6 +904,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <WhatsNewRow />
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
         <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
+        <StatsRow />
         <RemoteDebugRow />
       </Section>
       <UninstallSection />

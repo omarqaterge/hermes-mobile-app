@@ -36,6 +36,8 @@ jobs:
         working-directory: web
       - run: npx vite build
         working-directory: web
+        env:
+          HERMES_STATS_KEY: ${{ vars.APTABASE_APP_KEY }} # not a secret: it ships in the app; empty = no stats
       - uses: actions/upload-artifact@v6
         with:
           name: web-dist

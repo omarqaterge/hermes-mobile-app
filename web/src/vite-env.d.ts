@@ -2,3 +2,4 @@
 
 /** Hermes build this app was written against (vendor/hermes-shared/.hermes-version). */
 declare const __HERMES_TESTED__: string
+declare const __STATS_KEY__: string

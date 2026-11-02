@@ -38,6 +38,13 @@ let unsub: (() => void) | null = null
 /** True while the app is shown over a locked phone's lock screen. */
 export const lockView = (): boolean => on
 
+const lockListeners = new Set<() => void>()
+/** Run `fn` each time the shell shows or stops showing the app over the lock screen. Returns an unsubscribe function. */
+export function onLockView(fn: () => void): () => void {
+  lockListeners.add(fn)
+  return () => lockListeners.delete(fn)
+}
+
 /** Ask Android for the unlock screen (PIN, pattern, fingerprint). Nothing happens on its own: the user taps again. */
 export function askUnlock(why = 'Unlock the phone first'): void {
   toast(why, 'warn')
@@ -64,6 +71,7 @@ declare global {
 
 window.hermesLockView = (v: boolean) => {
   on = Boolean(v)
+  lockListeners.forEach(f => f())
   unsub?.()
   unsub = null
   if (!on) return
