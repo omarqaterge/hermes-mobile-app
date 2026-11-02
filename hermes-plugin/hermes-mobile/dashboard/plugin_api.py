@@ -1211,10 +1211,10 @@ def _google(profile: Optional[str], fn):
     m = _google_mod()
     home = _home(profile)
     try:
-        fn(m, home)
+        warning = fn(m, home)
     except m.GoogleError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return m.status(home)
+    return {**m.status(home), **({"warning": warning} if warning else {})}
 
 
 class GoogleClient(BaseModel):

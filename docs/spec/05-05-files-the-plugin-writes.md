@@ -19,5 +19,5 @@ Paths are in Debian unless noted. "Root" is `~/.hermes`.
 | `/data/local/tmp/hm-bghost.log` (phone shell side) | `BgHost` start | Host start-up log; read back through `rish` on a failed start. |
 | `<profile>/memories/MEMORY.md`, `USER.md` | `POST /memory` | Hermes's own memory files. |
 | `<profile>/auth.json` credential pool | `claude_login.py` | A new `anthropic` entry from the in-app sign-in. |
-| `<profile>/google_client_secret.json`, `google_oauth_pending.json`, `google_token.json` | Hermes's `google-workspace` `setup.py`, run by `google_workspace.py` | The user's OAuth client (made private), the pending sign-in's PKCE state and the Google token; `DELETE /google` deletes the token. A temporary `hm-google-client-*.json` in the profile's home lives only while the client file is stored. |
+| `<profile>/google_client_secret.json`, `google_oauth_pending.json`, `google_token.json` | Hermes's `google-workspace` `setup.py`, run by `google_workspace.py` | The user's OAuth client, the pending sign-in's PKCE state and the Google token, all made private; `DELETE /google` deletes the token. A temporary `hm-google-client-*.json` in the profile's home lives only while the client file is stored. |
 | `~/.hermes-mobile/key` (Termux home) | read only | The shared key for `POST /event` on the app. |

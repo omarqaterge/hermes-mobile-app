@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -43,6 +44,8 @@ with open(home / "calls.log", "a") as f:
 a = sys.argv[1:]
 tok, sec = home / "google_token.json", home / "google_client_secret.json"
 if a[0] == "--check":
+    if tok.exists() and json.loads(tok.read_text()).get("offline"):
+        print("REFRESH_FAILED: no network"); sys.exit(1)
     if tok.exists() and json.loads(tok.read_text()).get("ok"):
         print(f"AUTHENTICATED: Token valid at {tok}"); sys.exit(0)
     print(f"TOKEN_INVALID: Re-run setup."); sys.exit(1)
@@ -60,7 +63,9 @@ if a[0] == "--auth-code":
         print("ERROR: OAuth state mismatch. Run --auth-url again to start a fresh session."); sys.exit(1)
     tok.write_text(json.dumps({"ok": True})); print(f"OK: Authenticated. Token saved to {tok}"); sys.exit(0)
 if a[0] == "--revoke":
-    tok.unlink(missing_ok=True); print("Token revoked with Google."); sys.exit(0)
+    remote = json.loads(tok.read_text()).get("remote_ok", True) if tok.exists() else True
+    tok.unlink(missing_ok=True)
+    print("Token revoked with Google." if remote else "Remote revocation failed (token may already be invalid): x"); sys.exit(0)
 if a[0] == "--install-deps":
     print("Google dependencies synced. Restart Hermes, then rerun setup to continue OAuth."); sys.exit(0)
 '''
@@ -69,7 +74,7 @@ print("google_workspace with Hermes's script faked")
 gw = load("hm_google_workspace", PLUGIN / "google_workspace.py")
 gw.agent_root = lambda: None  # only the home's copy of the skill
 home = Path(tempfile.mkdtemp())
-check("no skill: not available", gw.status(home) == {"available": False, "client_secret": False, "signed_in": False, "detail": ""})
+check("no skill: not available", gw.status(home) == {"available": False, "client_secret": False, "signed_in": False, "unverified": False, "detail": "", "installing": False, "install_error": ""})
 script = home / gw.SCRIPT
 script.parent.mkdir(parents=True)
 script.write_text(FAKE)
@@ -86,7 +91,7 @@ c = TestClient(app)
 G = "/api/plugins/hermes-mobile/google"
 
 r = c.get(G)
-check("status: available, nothing set up, no --check without a token", r.json() == {"available": True, "client_secret": False, "signed_in": False, "detail": ""} and calls() == [], r.text)
+check("status: available, nothing set up, no --check without a token", r.json() == {"available": True, "client_secret": False, "signed_in": False, "unverified": False, "detail": "", "installing": False, "install_error": ""} and calls() == [], r.text)
 r = c.post(G + "/start")
 check("start without a client: 400 with the script's words", r.status_code == 400 and r.json()["detail"] == "No client secret stored. Run --client-secret first.", r.text)
 r = c.put(G + "/client", json={"text": "not json"})
@@ -106,13 +111,30 @@ check("something that isn't an address is refused before the script", r.status_c
 r = c.post(G + "/finish", json={"url": "http://localhost:1/?state=s1&code=4/abc&scope=x"})
 check("the right address signs in", r.status_code == 200 and r.json()["signed_in"] is True and r.json()["detail"] == "", r.text)
 check("status checks the token with --check", calls()[-1] == ["--check"])
+check("the saved token is private", (home / "google_token.json").stat().st_mode & 0o077 == 0)
 r = c.post(G + "/install")
-check("install runs the script's --install-deps", r.status_code == 200 and ["--install-deps"] in calls(), r.text)
+check("install answers at once", r.status_code == 200 and "installing" in r.json(), r.text)
+for _ in range(100):
+    if not c.get(G).json()["installing"]:
+        break
+    time.sleep(0.1)
+check("install runs the script's --install-deps in the background and ends", ["--install-deps"] in calls() and c.get(G).json()["installing"] is False and c.get(G).json()["install_error"] == "")
 r = c.delete(G)
-check("sign out revokes", r.status_code == 200 and r.json()["signed_in"] is False and not (home / "google_token.json").exists(), r.text)
+check("sign out revokes", r.status_code == 200 and r.json()["signed_in"] is False and "warning" not in r.json() and not (home / "google_token.json").exists(), r.text)
+(home / "google_token.json").write_text(json.dumps({"ok": True, "remote_ok": False}))
+r = c.delete(G)
+check("sign out says when Google couldn't be told", r.status_code == 200 and "Google account" in r.json().get("warning", "") and not (home / "google_token.json").exists(), r.text)
+(home / "google_token.json").write_text(json.dumps({"offline": True}))
+r = c.get(G).json()
+check("no network: the saved sign-in stays, unverified", r["unverified"] is True and r["signed_in"] is False and r["detail"].startswith("REFRESH_FAILED"), str(r))
+real_missing = gw.libraries_missing
+gw.libraries_missing = lambda h: True
+r = c.post(G + "/start")
+check("missing libraries are named before the script tries to install them", r.status_code == 400 and "libraries" in r.json()["detail"], r.text)
+gw.libraries_missing = real_missing
 (home / "google_token.json").write_text(json.dumps({"ok": False}))
 r = c.get(G)
-check("a token that no longer works: not signed in, with the reason", r.json()["signed_in"] is False and r.json()["detail"].startswith("TOKEN_INVALID"), r.text)
+check("a token that no longer works: not signed in, with the reason", r.json()["signed_in"] is False and r.json()["unverified"] is False and r.json()["detail"].startswith("TOKEN_INVALID"), r.text)
 check("the message helper keeps the ERROR line without its prefix", gw._message("x\nERROR: boom\ny", "f") == "boom" and gw._message("", "f") == "f")
 
 # ── Part 2: Hermes's real script ──
@@ -127,7 +149,9 @@ if real:
     gw2 = load("hm_google_workspace_real", PLUGIN / "google_workspace.py")
     h2 = Path(tempfile.mkdtemp())
     check("the script is found in the Hermes checkout", gw2.find_script(h2) is not None)
-    check("status on an empty home", gw2.status(h2) == {"available": True, "client_secret": False, "signed_in": False, "detail": ""})
+    check("children get Hermes's checkout first on their path", gw2.child_env(h2)["PYTHONPATH"].split(os.pathsep)[0] == str(gw2.agent_root()))
+    check("children get this profile's home", gw2.child_env(h2)["HERMES_HOME"] == str(h2))
+    check("status on an empty home", gw2.status(h2) == {"available": True, "client_secret": False, "signed_in": False, "unverified": False, "detail": "", "installing": False, "install_error": ""})
     try:
         gw2.start(h2)
         check("start without a client fails", False)

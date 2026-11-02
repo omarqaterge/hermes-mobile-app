@@ -2,7 +2,7 @@
 // skill. Hermes has no dashboard route for it, so the plugin's /google routes run the skill's own setup script for the
 // bot (google_workspace.py): store the user's OAuth client file, make Google's consent link, take back the address the
 // browser lands on (http://localhost:1/?code=…, a page that never loads), check and revoke the token.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, qs } from '../api'
 import { haptic, openExternal } from '../bridge'
 import { STATE_WORDS } from '../connectors'
@@ -16,18 +16,25 @@ export interface GoogleStatus {
   available: boolean
   client_secret: boolean
   signed_in: boolean
+  unverified?: boolean // a saved sign-in Google couldn't be asked about right now (no network)
   detail?: string
+  installing?: boolean
+  install_error?: string
+  warning?: string
 }
 
 const G = '/api/plugins/hermes-mobile/google'
 const CONSOLE = 'https://console.cloud.google.com/apis/credentials'
+/** While the plugin installs Google's libraries: ask every 5 s, for 12 minutes at most (it stops by itself after 10). */
+const INSTALL_POLL_MS = 5000
+const INSTALL_POLLS = 144
 
 /** The Google row of the Connectors page; nothing when this Hermes has no google-workspace skill or the plugin no route. */
 export function GoogleSection({ profile }: { profile: string }) {
   const { data, reload, setData } = useLoader(() => api<GoogleStatus>('GET', `${G}?${qs({ profile })}`, undefined, { profile: false }).catch(() => null), [profile])
   const [open, setOpen] = useState(false)
   if (!data?.available) return null
-  const state = data.signed_in ? 'connected' : 'setup'
+  const state = data.signed_in || data.unverified ? 'connected' : 'setup'
   return (
     <>
       <Section title="Google" footer="Hermes reads and writes your mail, calendar and files through its Google Workspace skill. Ask it in any chat.">
@@ -64,7 +71,38 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
   const [replace, setReplace] = useState(false)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
-  const needsLibs = /dependencies|google_auth|No module named/i.test(error)
+  const needsLibs = /dependencies|librar|google_auth|No module named/i.test(`${error} ${s.detail || ''}`)
+  const connected = s.signed_in || !!s.unverified
+
+  // The install runs in the background: follow it until the plugin says it ended.
+  useEffect(() => {
+    if (!s.installing) return
+    let polls = 0
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = () => {
+      if (++polls > INSTALL_POLLS) return
+      api<GoogleStatus>('GET', `${G}?${p}`, undefined, { profile: false })
+        .then(r => {
+          if (cancelled) return
+          onStatus(r)
+          if (r.installing) timer = setTimeout(poll, INSTALL_POLL_MS)
+          else if (!r.install_error) {
+            setError('')
+            toast('Google’s libraries are installed. If a chat can’t use Google yet, restart Hermes (Settings → Reconnect).', 'info', 8000)
+          }
+        })
+        .catch(() => {
+          if (!cancelled) timer = setTimeout(poll, INSTALL_POLL_MS)
+        })
+    }
+    timer = setTimeout(poll, INSTALL_POLL_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.installing])
 
   const call = async <T,>(what: string, req: () => Promise<T>): Promise<T | null> => {
     setBusy(what)
@@ -85,6 +123,8 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
       onStatus(r)
       setClient('')
       setReplace(false)
+      setStarted(false)
+      setPasted('')
       toast('Sign-in app saved')
     })
   const start = () =>
@@ -102,18 +142,15 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
       toast(r.signed_in ? 'Google connected' : 'Signed in, but the check failed: try again')
     })
   const install = () =>
-    void call('install', () => api<GoogleStatus>('POST', `${G}/install?${p}`, {}, { profile: false })).then(r => {
-      if (!r) return
-      onStatus(r)
-      toast('Google’s libraries are installed. Start the sign-in again.')
-    })
+    void call('install', () => api<GoogleStatus>('POST', `${G}/install?${p}`, {}, { profile: false })).then(r => r && onStatus(r))
   const signOut = () =>
     void confirmDialog({ title: 'Sign out of Google?', message: 'Hermes revokes its access and deletes the saved sign-in. Your sign-in app stays.', confirmLabel: 'Sign out', danger: true }).then(ok => {
       if (!ok) return
       void call('signout', () => api<GoogleStatus>('DELETE', `${G}?${p}`, undefined, { profile: false })).then(r => {
         if (!r) return
         onStatus(r)
-        toast('Signed out of Google')
+        if (r.warning) toast(`Signed out here. ${r.warning}`, 'error', 10000)
+        else toast('Signed out of Google')
       })
     })
 
@@ -121,16 +158,19 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
   return (
     <Sheet title="Google" onClose={onClose}>
       <div className="sheet-scroll">
-        {s.signed_in && !replace && (
+        {connected && (
           <>
-            <div className="notice">Connected. Ask Hermes about your mail, calendar or files in any chat.</div>
-            <Section>
+            {s.signed_in ? (
+              <div className="notice">Connected. Ask Hermes about your mail, calendar or files in any chat.</div>
+            ) : (
+              <div className="notice notice-warn">{`The sign-in is saved, but Google couldn’t be reached to check it right now (${s.detail}). No need to sign in again unless this stays.`}</div>
+            )}
+            <Section footer="To use another Google account or sign-in app, sign out first.">
               <Row icon="↩" tone="red" title="Sign out" danger onClick={busy ? undefined : signOut} />
-              <Row title="Use another sign-in app" sub="Replace the OAuth client file" onClick={() => setReplace(true)} />
             </Section>
           </>
         )}
-        {!s.signed_in && s.detail && <div className="notice notice-warn">{`The saved sign-in doesn’t work any more (${s.detail}). Sign in again.`}</div>}
+        {!connected && s.detail && !needsLibs && <div className="notice notice-warn">{`The saved sign-in doesn’t work any more (${s.detail}). Sign in again.`}</div>}
         {step1 && (
           <Section title="1. Your Google sign-in app">
             <div className="dim small pad">
@@ -145,7 +185,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
             </label>
             <div className="sheet-actions">
               {replace && (
-                <button className="btn" onClick={() => setReplace(false)}>
+                <button className="btn" onClick={() => { setReplace(false); setError('') }}>
                   Cancel
                 </button>
               )}
@@ -155,7 +195,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
             </div>
           </Section>
         )}
-        {s.client_secret && !s.signed_in && !replace && (
+        {s.client_secret && !connected && !replace && (
           <Section title="2. Sign in with Google">
             <Row icon="🔑" tone="gold" title={started ? 'Open the sign-in page again' : 'Sign in'} sub="Opens Google in the browser" onClick={busy ? undefined : start} />
             {started && (
@@ -179,9 +219,10 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
           </Section>
         )}
         {error && <div className="notice notice-error">{error}</div>}
-        {needsLibs && (
-          <Section footer="Hermes needs Google’s Python libraries for this. Installing them can take a few minutes.">
-            <Row icon="⬇" tone="blue" title={busy === 'install' ? 'Installing…' : 'Install Google’s libraries'} onClick={busy ? undefined : install} />
+        {s.install_error && <div className="notice notice-error">{s.install_error}</div>}
+        {(needsLibs || s.installing || s.install_error) && (
+          <Section footer="Hermes needs Google’s Python libraries for this. Installing them can take a few minutes; you can leave this page meanwhile.">
+            <Row icon="⬇" tone="blue" title={s.installing ? 'Installing…' : 'Install Google’s libraries'} onClick={busy || s.installing ? undefined : install} />
           </Section>
         )}
       </div>

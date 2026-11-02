@@ -1286,7 +1286,7 @@ const toolProviders = name =>
   }))
 // The plugin's /google routes (Hermes's google-workspace script): a client file, then a link, then the pasted address.
 let google = { client: false, started: false, signed: false }
-const googleStatus = () => ({ available: true, client_secret: google.client, signed_in: google.signed, detail: '' })
+const googleStatus = () => ({ available: true, client_secret: google.client, signed_in: google.signed, unverified: false, detail: '', installing: false, install_error: '' })
 function googleRoute(p, method, b) {
   const fail = detail => {
     throw Object.assign(new Error(detail), { status: 400 })
