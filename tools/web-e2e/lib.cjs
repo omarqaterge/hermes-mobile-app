@@ -60,6 +60,7 @@ const nativeShell = () => {
       },
       stopSpeaking: key => k(key, 'stopSpeaking'),
       startListening: key => k(key, 'startListening'),
+      startListeningOver: key => k(key, 'startListeningOver'),
       stopListening: key => k(key, 'stopListening'),
       // Setup check: the test sets window.__setup; fixes are recorded in window.__fixes.
       setupState: key => (k(key, 'setupState'), JSON.stringify(window.__setup || { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })),

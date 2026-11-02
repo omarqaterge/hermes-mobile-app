@@ -16,7 +16,7 @@ import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
-import { getLivePause, setLivePause } from '../live'
+import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../live'
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
@@ -647,6 +647,7 @@ function VoiceSettings({ openStt }: { openStt: () => void }) {
   }, [])
   // Every hook above this early return (React calls them in the same order on each render).
   const [livePause, setLivePauseState] = useState(getLivePause)
+  const [bargeIn, setBargeInState] = useState(getLiveBargeIn)
   const stt = useSttModels()
   useEffect(() => {
     if (sttAvailable()) loadSttModels()
@@ -721,8 +722,9 @@ function VoiceSettings({ openStt }: { openStt: () => void }) {
           <Row icon="🎤" tone="teal" title="Speech recognition" value={chosenSttName(stt)} chevron onClick={openStt} />
         </Section>
       )}
-      <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said.">
+      <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said. Interrupt by talking keeps the microphone on while Hermes speaks and stops it when you say something; turn it off if your surroundings cut Hermes off by mistake.">
         <SliderRow icon="⏱" tone="purple" title="Pause before sending" value={livePause} min={0.5} max={6} step={0.5} format={v => `${v.toFixed(1)} s`} onChange={v => { setLivePauseState(v); setLivePause(v) }} />
+        <ToggleRow icon="✋" tone="blue" title="Interrupt by talking" sub="Talk over Hermes to cut it off" on={bargeIn} onChange={v => { setBargeInState(v); setLiveBargeIn(v) }} />
       </Section>
       <AssistantSection />
       <Section>

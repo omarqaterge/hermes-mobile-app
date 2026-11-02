@@ -31,6 +31,7 @@ interface AndroidBridge {
   stopSpeaking?(): void
   ttsControl?(cmd: 'play' | 'pause' | 'toggle' | 'rew' | 'ff' | 'stop'): void // read-aloud, shared with its notification
   startListening?(): void
+  startListeningOver?(): void // Live mode: listen while Hermes speaks, without stopping it (barge-in)
   stopListening?(): void
   sharedItem?(index: number): string
   setLastChat?(id: string, title: string): void

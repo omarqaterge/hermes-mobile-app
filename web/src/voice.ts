@@ -379,6 +379,13 @@ export function startListening(cb: Listener): void {
   native()?.startListening?.()
 }
 
+/** Live mode's barge-in: listen while a reply is being read, without stopping it (only the phone app can). */
+export const canListenOver = (): boolean => !!native()?.startListeningOver
+export function startListeningOver(cb: Listener): void {
+  onSpeech = cb
+  native()?.startListeningOver?.()
+}
+
 export function stopListening(): void {
   native()?.stopListening?.()
 }
