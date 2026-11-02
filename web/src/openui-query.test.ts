@@ -89,7 +89,7 @@ test('the 31st network call of one client is refused without calling', async () 
   const c = makeToolClient(s.call, 'chat1', s.store, s.clock.now)
   for (let i = 0; i < 30; i++) expect((await c.callTool({ name: 'web_search', arguments: { query: `q${i}` } })).isError).toBeUndefined()
   const r = await c.callTool({ name: 'web_search', arguments: { query: 'q30' } })
-  expect(r).toEqual({ isError: true, content: [{ type: 'text', text: 'This card asked for data too often. Ask Hermes to refresh it.' }] })
+  expect(r).toEqual({ isError: true, content: [{ type: 'text', text: 'This card asked for data too often. Ask Hermux to refresh it.' }] })
   expect(s.seen.length).toBe(30)
   // a new client (page reload) has its own budget and is served the saved answer
   expect(await makeToolClient(s.call, 'chat1', s.store, s.clock.now).callTool({ name: 'web_search', arguments: { query: 'q0' } })).toEqual({ structuredContent: { name: 'web_search', args: { query: 'q0' } }, content: [] })

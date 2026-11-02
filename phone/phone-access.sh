@@ -33,7 +33,7 @@ pkg_add() { apt-get -y -o Dpkg::Options::=--force-confold install "$@" </dev/nul
 # installers restart it).
 storage_ok() { ls /storage/emulated/0/ >/dev/null 2>&1; }
 if ! storage_ok; then
-  say "phone: tap Allow on Android's prompt, so Hermes can read and save your files"
+  say "phone: tap Allow on Android's prompt, so Hermux can read and save your files"
   echo y | termux-setup-storage >/dev/null 2>&1   # "y": it asks before rebuilding an existing ~/storage
   for _ in $(seq 1 60); do storage_ok && break; sleep 2; done
 fi

@@ -12,10 +12,10 @@ export interface StepOutcome {
 }
 
 export const STEP_LABEL: Record<StepId, string> = {
-  stop: 'Stop Hermes',
+  stop: 'Stop Hermux',
   backup: 'Backup to Downloads',
   android: 'Phone settings the installer changed',
-  debian: 'Debian, Hermes, chats and keys',
+  debian: 'Debian, Hermux, chats and keys',
   files: 'The installer’s files in Termux',
   termux: 'Termux taking commands from this app'
 }
@@ -66,10 +66,10 @@ export interface AppInfo {
   what: string
 }
 export const APPS: AppInfo[] = [
-  { id: 'termux-api', name: 'Termux:API', what: 'Phone features for Hermes (battery, location, notifications…)' },
-  { id: 'termux-boot', name: 'Termux:Boot', what: 'Started Hermes after a restart' },
-  { id: 'shizuku', name: 'Shizuku', what: 'Screen, taps and apps for Hermes without root' },
-  { id: 'termux', name: 'Termux', what: 'The terminal Debian and Hermes ran in, with everything left in it' },
+  { id: 'termux-api', name: 'Termux:API', what: 'Phone features for Hermux (battery, location, notifications…)' },
+  { id: 'termux-boot', name: 'Termux:Boot', what: 'Started Hermux after a restart' },
+  { id: 'shizuku', name: 'Shizuku', what: 'Screen, taps and apps for Hermux without root' },
+  { id: 'termux', name: 'Termux', what: 'The terminal Debian and Hermux ran in, with everything left in it' },
   { id: 'self', name: 'Hermux', what: 'This app' }
 ]
 

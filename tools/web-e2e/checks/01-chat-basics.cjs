@@ -16,7 +16,7 @@ module.exports = async t => {
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await page.locator('.picker-opt', { hasText: 'mock-model' }).click()
   await page.locator('.row', { hasText: 'mock-sonnet' }).click()
-  await page.getByPlaceholder('Message Hermes').fill('which model?')
+  await page.getByPlaceholder('Message Hermux').fill('which model?')
   await page.getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.user .bubble', { hasText: 'which model?' }).waitFor({ timeout: 5000 })
   for (let i = 0; i < 30 && !rpcs('prompt.submit').length; i++) await sleep(100)
@@ -45,7 +45,7 @@ module.exports = async t => {
     await sleep(300)
     check((await page.locator('.sheet', { hasText: 'Context window' }).count()) === 0, 'Android Back closes the context sheet')
   }
-  await page.getByPlaceholder('Message Hermes').fill('/yolo')
+  await page.getByPlaceholder('Message Hermux').fill('/yolo')
   await page.getByRole('button', { name: 'Send' }).click()
   await sleep(500)
   check(rpcs('config.set').some(c => c.params.key === 'yolo' && c.params.value === '1' && c.params.session_id === 'rt-new-m1'), '/yolo → config.set yolo=1 on this chat')
@@ -104,7 +104,7 @@ module.exports = async t => {
     const n = yolos().length
     await page.locator('.auto-btn').click()
     await page.getByText('Full access', { exact: true }).click()
-    await page.getByText('Give Hermes full access?').waitFor({ timeout: 3000 })
+    await page.getByText('Give Hermux full access?').waitFor({ timeout: 3000 })
     check((await page.getByText(/without asking you first/).count()) === 1, 'Full access shows a warning first')
     await page.getByRole('button', { name: 'Cancel' }).click()
     await sleep(300)
@@ -123,13 +123,13 @@ module.exports = async t => {
     check(await page.evaluate(() => !JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['s-new-m1']), 'nothing remembered after Off')
   }
   // /fast too: Hermes's session-scoped config.set fast (toggle), like Desktop's speed switch
-  await page.getByPlaceholder('Message Hermes').fill('/fast')
+  await page.getByPlaceholder('Message Hermux').fill('/fast')
   await page.getByRole('button', { name: 'Send' }).click()
   await sleep(500)
   check(rpcs('config.set').some(c => c.params.key === 'fast' && c.params.value === 'toggle' && c.params.session_id === 'rt-new-m1'), '/fast → config.set fast=toggle on this chat')
   check(!rpcs('slash.exec').some(c => /^fast\b/.test(c.params.command || '')), '/fast never reaches slash.exec')
   check((await page.getByText('Fast mode on').count()) > 0, '/fast shows a notice')
-  await page.getByPlaceholder('Message Hermes').fill('/fast off')
+  await page.getByPlaceholder('Message Hermux').fill('/fast off')
   await page.getByRole('button', { name: 'Send' }).click()
   await sleep(500)
   check(rpcs('config.set').some(c => c.params.key === 'fast' && c.params.value === 'off') && (await page.getByText('Fast mode off').count()) > 0, '/fast off turns it off')
@@ -155,7 +155,7 @@ module.exports = async t => {
     await page.evaluate(() => window.hermesShortcut('new'))
     await sleep(300)
     check((await page.locator('.auto-btn.auto').count()) === 1, 'the empty new-chat screen already shows the default (Auto access)')
-    await page.getByPlaceholder('Message Hermes').fill('hello default auto')
+    await page.getByPlaceholder('Message Hermux').fill('hello default auto')
     await page.getByRole('button', { name: 'Send' }).click()
     await sleep(1200)
     const put = autoPuts().slice(before).pop()
@@ -170,7 +170,7 @@ module.exports = async t => {
   }
   await page.evaluate(() => localStorage.clear())
   await page.goto(WEB + '/')
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
   // ── model picker favourites: ☆ stars a model (without picking it), Favourites shows at the top and survives a reload ──
@@ -195,7 +195,7 @@ module.exports = async t => {
     await sleep(200)
     check((await page.locator('.fav-group').count()) === 0, 'search hides favourites that do not match')
     await page.reload()
-    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await openModels()
     check((await page.locator('.fav-group .model-row', { hasText: 'mock-sonnet' }).count()) === 1, 'favourite survives a reload')
     await page.locator('.fav-group').getByRole('button', { name: 'Unstar mock-sonnet' }).click()
@@ -208,7 +208,7 @@ module.exports = async t => {
   }
   await page.evaluate(() => localStorage.clear())
   await page.goto(WEB + '/')
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
   // ── a model the catalog lacks: typing its id offers it per connected provider; picked once, it stays as a row ──
@@ -231,7 +231,7 @@ module.exports = async t => {
     check(rpcs('session.create').some(c => c.params.model === 'org/brand-new:1' && (c.params.provider || 'mock') === 'mock'), 'picking the typed id starts the chat with it')
     check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.customModels.v1') || '[]').some(c => c.p === 'mock' && c.m === 'org/brand-new:1')), 'the typed id is remembered')
     await page.goto(WEB + '/')
-    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await openModels()
     check((await page.locator('.model-row', { hasText: 'org/brand-new:1' }).count()) === 1, 'the remembered id is a normal row under its provider')
     await page.getByRole('button', { name: 'Forget org/brand-new:1' }).click()
@@ -241,7 +241,7 @@ module.exports = async t => {
   }
   await page.evaluate(() => localStorage.clear())
   await page.goto(WEB + '/')
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
   // ── a model picked on an empty chat (a photo added and removed) replaces it; typed text stays ──
@@ -252,7 +252,7 @@ module.exports = async t => {
   }
   await page.locator('.attach-thumb img[alt="x.png"]').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: 'Remove x.png' }).click()
-  await page.getByPlaceholder('Message Hermes').fill('kept text')
+  await page.getByPlaceholder('Message Hermux').fill('kept text')
   await sleep(300)
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await page.locator('.picker-opt', { hasText: 'mock-model' }).click()
@@ -263,12 +263,12 @@ module.exports = async t => {
     const closed = rpcs('session.close').map(c => c.params.session_id)
     check(cr.length === 2 && cr[1].params.model === 'mock-sonnet' && sets.length === 0, `empty chat: model pick creates a new chat, no switch (${cr.length} creates, ${sets.length} switches)`)
     check(closed.includes('rt-new'), `the empty chat is closed (${JSON.stringify(closed)})`)
-    check((await page.getByPlaceholder('Message Hermes').inputValue()) === 'kept text', 'typed text stays in the composer')
+    check((await page.getByPlaceholder('Message Hermux').inputValue()) === 'kept text', 'typed text stays in the composer')
   }
-  await page.getByPlaceholder('Message Hermes').fill('')
+  await page.getByPlaceholder('Message Hermux').fill('')
   await page.evaluate(() => localStorage.clear())
   await page.goto(WEB + '/')
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 
   // ── /yolo goes to Full access from Off or Auto access, and back to the previous mode from Full access; a /yolo
@@ -276,12 +276,12 @@ module.exports = async t => {
   {
     const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto')
     const send = async text => {
-      await page.getByPlaceholder('Message Hermes').fill(text)
+      await page.getByPlaceholder('Message Hermux').fill(text)
       await page.getByRole('button', { name: 'Send' }).click()
     }
     await page.evaluate(() => localStorage.setItem('hm.defaultAccess.v1', 'auto'))
     await page.goto(WEB + '/')
-    await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await send('hello yolo')
     await page.locator('.msg.assistant', { hasText: 'OK' }).first().waitFor({ timeout: 5000 })
     await send('/yolo')
@@ -296,7 +296,7 @@ module.exports = async t => {
     check((await page.locator('.model-row .auto-btn.auto').count()) === 1, 'a second /yolo goes back to Auto access, the mode before')
     check((autoPuts().pop() || {}).body?.mode === 'auto', 'back to Auto access writes the plugin list again')
     await send('/yolo off')
-    await page.getByText('Auto off: Hermes asks before risky commands again').last().waitFor({ timeout: 3000 }).catch(() => {})
+    await page.getByText('Auto off: Hermux asks before risky commands again').last().waitFor({ timeout: 3000 }).catch(() => {})
     await sleep(300)
     check((await page.locator('.model-row .auto-btn.off').count()) === 1, '/yolo off turns approvals back on')
     await send('/yolo')
@@ -313,6 +313,6 @@ module.exports = async t => {
   }
   await page.evaluate(() => localStorage.clear())
   await page.goto(WEB + '/')
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   fs.writeFileSync(LOG, '')
 }

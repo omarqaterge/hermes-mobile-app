@@ -42,7 +42,7 @@ function Inner({ msgs }: { msgs: ReturnType<typeof useBtw>['msgs'] }) {
             Clear
           </button>
         </div>
-        <div className="btw-hint dim small">Ask about this chat without interrupting it. Hermes sees the conversation so far.</div>
+        <div className="btw-hint dim small">Ask about this chat without interrupting it. Hermux sees the conversation so far.</div>
         <div className="sheet-scroll btw-list">
           {msgs.map(m => (
             <div key={m.id}>

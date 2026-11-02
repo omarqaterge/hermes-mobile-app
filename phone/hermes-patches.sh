@@ -31,7 +31,7 @@ case $cmd in
       s=$(state "$p")
       if [ "$s" = conflict ]; then
         for ((i = ${#done_now[@]} - 1; i >= 0; i--)); do git apply -R "${done_now[$i]}"; done
-        echo "conflict $(basename "$p"): Hermes changed there, the patch needs updating; nothing was changed" >&2
+        echo "conflict $(basename "$p"): the agent changed there, the patch needs updating; nothing was changed" >&2
         exit 2
       fi
       if [ "$s" = pending ]; then git apply "$p"; done_now+=("$p"); echo "applied $(basename "$p")"

@@ -72,7 +72,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 1. Hermes needs approval for a command. Two things happen at once:
    - The gateway sends a server→client request `approval` on the page's WebSocket. `client.onRequest` adds it to
      `requests` (the request sheet, 3.6). The page does not notify for `approval` or `clarify` itself; it only
-     posts "Hermes needs your input" for masked prompts (`secret`, `sudo`, `otp`, `connection.request`) and only
+     posts "Hermux needs your input" for masked prompts (`secret`, `sudo`, `otp`, `connection.request`) and only
      while in the background.
    - The plugin's `pre_approval_request` hook sends an `approval` event (urgent) to `127.0.0.1:9121/event` with
      the command, a cleaned-up description, `request_id`, the session key, the timeout and `allow_session`.
@@ -138,9 +138,9 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    `token(true)`, which GETs `http://127.0.0.1:9119/` (2.5 s connect, 4 s read) and reads
    `window.__HERMES_SESSION_TOKEN__` from the HTML; the answer comes back as `window.__hmToken(id, token)`. The
    page gives up after 15 s. A token is never cached across connects because Hermes mints a new one on each start.
-5. No token: `conn` becomes `error` with "Hermes is not running yet" and `scheduleReconnect` retries. The delay is
+5. No token: `conn` becomes `error` with "Hermux is not running yet" and `scheduleReconnect` retries. The delay is
    `min(15 s, 600 ms × 2^min(attempt, 5))`, so 0.6, 1.2, 2.4, 4.8, 9.6, then 15 s. The header detail says
-   "Reconnecting…" for the first two tries and "Starting Hermes…" after that. The 2nd try and every 6th try call
+   "Reconnecting…" for the first two tries and "Starting Hermux…" after that. The 2nd try and every 6th try call
    `startHermes()` again (the 8 s throttle still applies). The first try of an outage also asks the shell to watch
    for Hermes (bridge `watchHermes`, 4.4): when the dashboard answers, `window.__hmHermesReady` runs the waiting try at
    once, or, with a try under way (`readySeen`), lets the next one go with no delay should that one fail. It leaves

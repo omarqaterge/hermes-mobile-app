@@ -133,7 +133,7 @@ export function ClaudeSignInSheet({ profile, onClose, onDone, onTermux }: { prof
           </>
         ) : !start ? (
           <div className="device-wait dim small">
-            <Spinner small /> Asking Hermes for a sign-in link…
+            <Spinner small /> Asking Hermux for a sign-in link…
           </div>
         ) : (
           <div className="device-login">
@@ -173,7 +173,7 @@ export function ClaudeSignInSheet({ profile, onClose, onDone, onTermux }: { prof
                 {busy ? 'Signing in…' : 'Sign in'}
               </button>
             )}
-            <div className="dim small">Hermes saves the login on this phone, like `hermes auth add anthropic` does. The code works once and only for 10 minutes.</div>
+            <div className="dim small">Hermux saves the login on this phone, like `hermes auth add anthropic` does. The code works once and only for 10 minutes.</div>
             <button className="btn block" onClick={onTermux}>
               Use Termux instead
             </button>

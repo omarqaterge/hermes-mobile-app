@@ -56,7 +56,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Last start-up timings (Settings) and faster start-up (the last chat drawn from its cache before Hermes answers) | 3.15, 2.2.5 |
 | Bots (profiles) with their own default model, keys and SOUL.md; the plugin is linked into every profile | 3.16, 6.1 |
 | Model providers: every provider Hermes supports, Paste API key, Sign in (ChatGPT, Grok, Nous Portal), search | 3.17 |
-| Hermes settings: Hermes's options in groups and in words (limits, memory, long chats, sub-agents, web and tools, safety, housekeeping), checked input, Use default | 3.15 |
+| Hermux settings: Hermux's options in groups and in words (limits, memory, long chats, sub-agents, web and tools, safety, housekeeping), checked input, Use default | 3.15 |
 | Connectors: MCP servers (add by address or command, from Hermes's catalog, on/off, test, account sign-in in the browser, remove), tools with a key or an account (web search, Home Assistant, image generation…: on/off, pick the service, paste or remove its key), keys for skills | 3.15 |
 | Provider rotation: fallback models (add, reorder, remove), several keys per provider, which key to use, cooling down / in use | 3.17 |
 | Claude signs in inside the app (claude.ai code), Use Termux instead | 3.17, 5.4 |

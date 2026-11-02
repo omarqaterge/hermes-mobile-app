@@ -206,7 +206,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
     void run(api('DELETE', `/api/providers/oauth/${encodeURIComponent(s.account.id)}?${p}`, undefined, { profile: false }), `Signed out of ${s.label}`)
   }
   const removeEndpoint = () =>
-    void confirmDialog({ title: `Remove ${e.name}?`, message: 'Hermes forgets this endpoint and its key.', confirmLabel: 'Remove', danger: true }).then(
+    void confirmDialog({ title: `Remove ${e.name}?`, message: 'Hermux forgets this endpoint and its key.', confirmLabel: 'Remove', danger: true }).then(
       ok => ok && e.endpoint && run(api('DELETE', `/api/providers/custom-endpoints/${encodeURIComponent(e.endpoint.id)}?${p}`, undefined, { profile: false }), `${e.name} removed`).then(done => done && onClose())
     )
 
@@ -220,7 +220,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
           <Section title="Endpoint">
             <Row title="Address" sub={<span className="mono small">{e.endpoint.base_url}</span>} />
             {e.endpoint.model && <Row title="Model" sub={e.endpoint.model} />}
-            <Row title="API key" sub={e.endpoint.has_api_key ? 'Saved in Hermes’s .env' : 'None'} />
+            <Row title="API key" sub={e.endpoint.has_api_key ? 'Saved in Hermux’s .env' : 'None'} />
             <Row title="Remove this endpoint" danger onClick={removeEndpoint} />
           </Section>
         )}
@@ -249,7 +249,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
           </Section>
         )}
         {e.key && (
-          <Section title="API key" footer={`Saved in Hermes’s .env on this phone (${e.key.env}). It never leaves the phone except to call ${e.name}.`}>
+          <Section title="API key" footer={`Saved in Hermux’s .env on this phone (${e.key.env}). It never leaves the phone except to call ${e.name}.`}>
             {e.key.set && (
               <Row
                 title="Saved key"
@@ -394,7 +394,7 @@ function EndpointSheet({ preset, profile, onClose, onSaved }: { preset: Preset; 
   return (
     <Sheet title={preset.name ? `Connect ${preset.name}` : 'Your own endpoint'} onClose={onClose}>
       <div className="sheet-scroll">
-        {!preset.base_url && <div className="dim small pad">Any server that speaks the OpenAI API. Hermes runs on this phone, so 127.0.0.1 is the phone itself.</div>}
+        {!preset.base_url && <div className="dim small pad">Any server that speaks the OpenAI API. Hermux runs on this phone, so 127.0.0.1 is the phone itself.</div>}
         <label className="field">
           <span>Name</span>
           <input value={name} onChange={ev => setName(ev.target.value)} placeholder="My server" />
@@ -426,7 +426,7 @@ function EndpointSheet({ preset, profile, onClose, onSaved }: { preset: Preset; 
             <input className="mono" autoCapitalize="off" autoCorrect="off" value={model} onChange={ev => setModel(ev.target.value)} placeholder="e.g. mistral-large-latest" />
           </label>
         )}
-        <div className="dim small">The key is saved in Hermes’s .env on this phone, not in its config file.</div>
+        <div className="dim small">The key is saved in Hermux’s .env on this phone, not in its config file.</div>
       </div>
       <div className="sheet-actions">
         <button className="btn primary" disabled={busy || !ready} onClick={save}>

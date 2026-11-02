@@ -1,7 +1,7 @@
 ---
 rank: big
 ---
-- **Queue a follow-up while Hermes works.** When a reply is running and you have typed something, the send button
+- **Queue a follow-up while Hermux works.** When a reply is running and you have typed something, the send button
   splits in two: Steer (as before, the words go into the running task now) and Queue. A queued message waits as a
   dashed bubble at the end of the chat (edit it, remove it, or send it now) and is sent by itself when the reply ends,
   then the next one. Stop or an error pauses the queue (Queue paused, Resume), and a chat you open starts paused.

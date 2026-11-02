@@ -6,7 +6,7 @@ const { LOG, SHOTS, calls, rpcs, sleep, check, mock } = require('../lib.cjs')
 module.exports = async t => {
   const { page } = t
   // ── #3 streaming a long code reply ───────────────────
-  await page.getByPlaceholder('Message Hermes').fill('long code please')
+  await page.getByPlaceholder('Message Hermux').fill('long code please')
   await page.getByRole('button', { name: 'Send' }).click()
   const more = page.locator('.codeblock-more')
   await more.waitFor({ timeout: 10000 })
@@ -79,7 +79,7 @@ module.exports = async t => {
 
   // ── a rate-limited chat title (Hermes's "Auxiliary title generation failed: HTTP 429") stays out of the status line ──
   {
-    await page.getByPlaceholder('Message Hermes').fill('title busy')
+    await page.getByPlaceholder('Message Hermux').fill('title busy')
     await page.getByRole('button', { name: 'Send' }).click()
     await page.locator('.status-line').waitFor({ timeout: 3000 })
     await sleep(600) // the warning arrives 200 ms into the turn

@@ -102,7 +102,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Pinned status of the on-device Hermes agent and delivery of its notifications" />
+                android:value="Pinned status of the on-device Hermux agent and delivery of its notifications" />
         </service>
         <!-- On-device speech models are first loaded here, in a process of their own (LocalStt.probe): a model file the
              speech engine can't run ends only this process, not the app. -->

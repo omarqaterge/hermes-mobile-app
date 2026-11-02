@@ -323,10 +323,10 @@ function KeysTab({ scope, setScope }: { scope: string; setScope: (s: string) => 
         <input placeholder="Search keys (e.g. openai, tavily)" value={q} onChange={e => setQ(e.target.value)} />
       </label>
       <Section>
-        <ToggleRow icon="●" tone="green" title="Only keys that are set" sub="Turn off to see every key Hermes supports" on={onlySet} onChange={setOnlySet} />
+        <ToggleRow icon="●" tone="green" title="Only keys that are set" sub="Turn off to see every key Hermux supports" on={onlySet} onChange={setOnlySet} />
         <Row icon="＋" tone="gold" title="Add a custom key" chevron onClick={() => setEdit({ key: '' })} />
       </Section>
-      <Status loading={loading} error={error} empty={!groups.length} emptyText={onlySet ? 'No keys set. Turn off “Only keys that are set” to see every key Hermes supports.' : 'No matches'} />
+      <Status loading={loading} error={error} empty={!groups.length} emptyText={onlySet ? 'No keys set. Turn off “Only keys that are set” to see every key Hermux supports.' : 'No matches'} />
       {groups.map(([cat, rows]) => (
         <Section key={cat} title={`${cat} · ${rows.length}`}>
           {rows.map(([k, r]) => (
@@ -751,9 +751,9 @@ function VoiceSettings({ openStt }: { openStt: () => void }) {
           <Row icon="🎤" tone="teal" title="Speech recognition" value={chosenSttName(stt)} chevron onClick={openStt} />
         </Section>
       )}
-      <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said. Interrupt by talking keeps the microphone on while Hermes speaks and stops it when you say something; turn it off if your surroundings cut Hermes off by mistake.">
+      <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said. Interrupt by talking keeps the microphone on while Hermux speaks and stops it when you say something; turn it off if your surroundings cut Hermux off by mistake.">
         <SliderRow icon="⏱" tone="purple" title="Pause before sending" value={livePause} min={0.5} max={6} step={0.5} format={v => `${v.toFixed(1)} s`} onChange={v => { setLivePauseState(v); setLivePause(v) }} />
-        <ToggleRow icon="✋" tone="blue" title="Interrupt by talking" sub="Talk over Hermes to cut it off" on={bargeIn} onChange={v => { setBargeInState(v); setLiveBargeIn(v) }} />
+        <ToggleRow icon="✋" tone="blue" title="Interrupt by talking" sub="Talk over Hermux to cut it off" on={bargeIn} onChange={v => { setBargeInState(v); setLiveBargeIn(v) }} />
       </Section>
       <AssistantSection />
       <Section>
@@ -784,7 +784,7 @@ function AssistantSection() {
       title="Phone assistant"
       footer={
         (on
-          ? 'Long-press the power button (or swipe in from a bottom corner) to talk to Hermes in Live mode. If it still opens another assistant, set the power-button shortcut to the assistant in the phone’s settings.'
+          ? 'Long-press the power button (or swipe in from a bottom corner) to talk to Hermux in Live mode. If it still opens another assistant, set the power-button shortcut to the assistant in the phone’s settings.'
           : 'Choose Hermux under “Digital assistant app”. Then long-pressing the power button opens Hermux in Live mode, from any app.') +
         (lockAssistAvailable()
           ? onLock
@@ -795,7 +795,7 @@ function AssistantSection() {
     >
       <Row icon="✦" tone="gold" title="Use Hermux as phone assistant" value={on ? 'On' : 'Off'} chevron onClick={() => bridge.openAssistantSettings?.()} />
       {lockAssistAvailable() && (
-        <ToggleRow icon="🔒" tone="purple" title="Talk to Hermes on the lock screen" on={onLock} onChange={v => { setOnLock(v); setLockAssist(v) }} />
+        <ToggleRow icon="🔒" tone="purple" title="Talk to Hermux on the lock screen" on={onLock} onChange={v => { setOnLock(v); setLockAssist(v) }} />
       )}
     </Section>
   )
@@ -862,7 +862,7 @@ function AppearancePage() {
 // ── screen: a hub of grouped rows, each opening its own page ─
 
 type Page = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'accounts' | 'keys' | 'connectors' | 'hermes' | 'config'
-const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Default models', accounts: 'Model providers', keys: 'API keys', connectors: 'Connectors', hermes: 'Hermes settings', config: 'Advanced settings' }
+const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Default models', accounts: 'Model providers', keys: 'API keys', connectors: 'Connectors', hermes: 'Hermux settings', config: 'Advanced settings' }
 
 function Hub({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
@@ -885,8 +885,8 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row icon="👤" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
         <Row icon="🔌" tone="teal" title="Connectors" sub="MCP servers, web search, Home Assistant and other services" chevron onClick={() => go('connectors')} />
-        <Row icon="🎛️" tone="purple" title="Hermes settings" sub="Limits, memory, long chats, sub-agents, safety" chevron onClick={() => go('hermes')} />
-        <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermes option, by its config name" chevron onClick={() => go('config')} />
+        <Row icon="🎛️" tone="purple" title="Hermux settings" sub="Limits, memory, long chats, sub-agents, safety" chevron onClick={() => go('hermes')} />
+        <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermux option, by its config name" chevron onClick={() => go('config')} />
       </Section>
       <Section title="Permissions" footer="What new and existing chats start in. A chat you set with its own Auto button keeps that choice.">
         <DefaultAccessRow />
@@ -896,7 +896,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
       <BgAppsSection />
       <Section title="Connection">
         <Row icon="📶" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
-        <Row icon="↻" tone="blue" title="Reconnect / start Hermes" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
+        <Row icon="↻" tone="blue" title="Reconnect / start Hermux" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
         <Row icon="✓" tone="teal" title="Setup check" sub="Permissions, background running, the plugin" chevron onClick={() => setState({ screen: 'setup' })} />
       </Section>
       <Section title="About">
@@ -987,9 +987,9 @@ function BgAppsSection() {
   return (
     <Section title="Background apps">
       {cfg.available ? (
-        <ToggleRow icon="📱" tone="teal" title="Allow banking, payment, password and 2FA apps" sub="Off: Hermes won't open them in the background" on={cfg.allow_sensitive} onChange={set} />
+        <ToggleRow icon="📱" tone="teal" title="Allow banking, payment, password and 2FA apps" sub="Off: Hermux won't open them in the background" on={cfg.allow_sensitive} onChange={set} />
       ) : (
-        <Row icon="📱" tone="gray" title="Allow banking, payment, password and 2FA apps" sub={cfg.reason || 'Hermes can’t use apps in the background on this phone'} />
+        <Row icon="📱" tone="gray" title="Allow banking, payment, password and 2FA apps" sub={cfg.reason || 'Hermux can’t use apps in the background on this phone'} />
       )}
     </Section>
   )
@@ -1047,7 +1047,7 @@ function PluginRow() {
         if (!row.action) return
         if (row.action === 'force' && !(await confirmDialog({
           title: 'Replace the plugin?',
-          message: 'The plugin in Hermes was changed by hand. Replace it with this app’s copy? Hermes restarts for a moment.',
+          message: 'The plugin in Hermux was changed by hand. Replace it with this app’s copy? Hermux restarts for a moment.',
           confirmLabel: 'Replace'
         }))) return
         const why = updateAnswer(pluginUpdate(row.action === 'force'))
@@ -1126,7 +1126,7 @@ function HermesRow({ version }: { version: string }) {
   }, [])
   const mismatch = ['newer', 'older'].includes(compat(h.current))
   const sub = !mismatch ? undefined : app.phase === 'available' ? `Different from what this app was made for. Update the app (${app.latest}).` : 'Different from what this app was made for. If something breaks, update the app.'
-  return <Row icon="⚕️" tone={mismatch ? 'gold' : 'teal'} title="Hermes" value={version} sub={sub} />
+  return <Row icon="⚕️" tone={mismatch ? 'gold' : 'teal'} title="Hermux agent" value={version} sub={sub} />
 }
 
 export function SettingsScreen() {
@@ -1151,7 +1151,7 @@ export function SettingsScreen() {
           <ProfileChips value={scope} onChange={setScope} label="Sign-ins for" />
           <FallbackSection profile={scope} version={rotation} />
           <ProviderList profile={scope} onChange={() => setRotation(v => v + 1)} onPicked={() => void loadProfiles()} />
-          <div className="dim small pad">Every provider this Hermes supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → API keys.</div>
+          <div className="dim small pad">Every provider this agent version supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → API keys.</div>
         </>
       )}
       {page === 'keys' && <KeysTab scope={scope} setScope={setScope} />}

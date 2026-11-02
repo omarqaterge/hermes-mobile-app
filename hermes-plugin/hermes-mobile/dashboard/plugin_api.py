@@ -967,7 +967,7 @@ def _snapshot_of(session: str, workdir: str, snap: str):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not found:
-        raise HTTPException(status_code=404, detail="This snapshot is gone (Hermes keeps 20 per folder).")
+        raise HTTPException(status_code=404, detail="This snapshot is gone (Hermux keeps 20 per folder).")
     return found
 
 
@@ -1092,7 +1092,7 @@ async def claude_login_start(profile: Optional[str] = None):
     try:
         return await _in_profile(profile, lambda: m.start(profile))
     except Exception as e:  # Hermes moved its helpers: the app falls back to Termux
-        raise HTTPException(status_code=501, detail=f"In-app Claude sign-in isn't available with this Hermes ({str(e)[:120]})")
+        raise HTTPException(status_code=501, detail=f"In-app Claude sign-in isn't available with this agent version ({str(e)[:120]})")
 
 
 @router.post("/claude-login/finish")

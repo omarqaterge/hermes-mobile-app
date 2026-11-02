@@ -45,7 +45,7 @@ module.exports = async t => {
   check((await page.locator('.title', { hasText: 's-slow' }).count()) === 1, 'header shows the opening chat while it loads')
   check((await page.locator('.msg-actions button, .msg-act').count()) === 0, 'no message actions on the cached copy')
   check((await page.getByPlaceholder('Opening your chat…').count()) === 1, 'composer waits for the real chat')
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 5000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
   check((await page.locator('.msg.assistant', { hasText: 'answer s-slow' }).count()) === 1, 'real transcript replaces the cached one, no duplicates')
   await open('s-4')
   await open('s-6')

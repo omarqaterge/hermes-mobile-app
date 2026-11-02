@@ -124,16 +124,16 @@ def check(tool_name: Any, args: Any, session_id: Optional[str]) -> Optional[dict
         except Exception:
             # Hermes's detector is missing or broke: the safe side is to ask the user to choose a mode.
             return {"action": "block", "message": (
-                "BLOCKED by Auto access: Hermes's dangerous-command check is unavailable, so shell commands and code "
+                "BLOCKED by Auto access: Hermux's dangerous-command check is unavailable, so shell commands and code "
                 "can't run in Auto access right now. Tell the user; they can switch the chat to Full access or turn "
-                "Auto off (then Hermes asks before risky commands).")}
+                "Auto off (then Hermux asks before risky commands).")}
         if not dangerous or _approved(text, pattern_key):
             continue
         what = "command" if name == "terminal" else "script"
         return {"action": "block", "message": (
-            f"BLOCKED by Auto access: this {what} is on Hermes's dangerous-command list ({description}). "
+            f"BLOCKED by Auto access: this {what} is on Hermux's dangerous-command list ({description}). "
             "Auto access runs everything else without asking but never runs these. Do not try to get around it with "
             "another command or tool. Tell the user exactly what you want to run and why; they can allow it by "
-            "switching the chat to Full access (the Auto button at the top) or by turning Auto off, so Hermes asks "
+            "switching the chat to Full access (the Auto button at the top) or by turning Auto off, so Hermux asks "
             "for approval.")}
     return None

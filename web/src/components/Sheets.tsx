@@ -322,7 +322,7 @@ export function ChatMenuSheet() {
               <span className="mi-icon">⏪</span>
               <span className="mi-text">
                 File checkpoints
-                <span className="mi-sub">See and undo Hermes's file changes</span>
+                <span className="mi-sub">See and undo Hermux's file changes</span>
               </span>
             </button>
             <button className="menu-item" disabled={running} onClick={act(() => void undoLast())}>
@@ -487,7 +487,7 @@ export function StatusSheet() {
   const shRow = shizukuRow(setupState(), shz)
   const dot = dotState(conn, h)
   const headline =
-    dot === 'ok' ? 'Everything is working' : dot === 'wait' ? 'Connecting to Hermes…' : dot === 'err' ? 'Hermes is offline' : 'Hermes is up, with problems'
+    dot === 'ok' ? 'Everything is working' : dot === 'wait' ? 'Connecting to Hermux…' : dot === 'err' ? 'Hermux is offline' : 'Hermux is up, with problems'
   const mem = h?.memory
   return (
     <Shell title="Backend status">
@@ -498,7 +498,7 @@ export function StatusSheet() {
             <div className="status-headline">{headline}</div>
             <div className="dim small">
               {h ? `Checked ${ago(h.checkedAt)}` : 'Checking…'}
-              {h?.version ? ` · Hermes v${h.version}` : ''}
+              {h?.version ? ` · Hermux agent v${h.version}` : ''}
             </div>
           </div>
         </div>
@@ -506,9 +506,9 @@ export function StatusSheet() {
           label="Connection"
           value={conn === 'open' ? (h?.pingMs != null ? `${h.pingMs} ms` : 'Connected') : word(conn)}
           state={conn === 'open' ? 'ok' : conn === 'connecting' ? 'wait' : 'err'}
-          note={conn === 'open' ? 'Live link to Hermes on this phone' : detail || null}
+          note={conn === 'open' ? 'Live link to Hermux on this phone' : detail || null}
         />
-        <Row label="Dashboard" value={h?.error ? 'Unreachable' : word(h?.components?.dashboard?.status || (h ? 'ok' : undefined))} state={h?.error ? 'err' : tone(h?.components?.dashboard?.status || 'ok')} note={h?.error ? "Can't reach Hermes's dashboard on the phone" : null} />
+        <Row label="Dashboard" value={h?.error ? 'Unreachable' : word(h?.components?.dashboard?.status || (h ? 'ok' : undefined))} state={h?.error ? 'err' : tone(h?.components?.dashboard?.status || 'ok')} note={h?.error ? "Can't reach Hermux's dashboard on the phone" : null} />
         {h?.active_agents != null && <Row label="Agents running" value={String(h.active_agents)} state={h.active_agents ? 'wait' : 'ok'} />}
         {mem && (
           <Row
@@ -546,7 +546,7 @@ export function StatusSheet() {
               toast('Reconnecting…')
             }}
           >
-            Reconnect / start Hermes
+            Reconnect / start Hermux
           </button>
           <button className="btn" onClick={() => setState({ sheet: null, screen: 'setup' })}>
             Setup check
@@ -675,7 +675,7 @@ export function RollbackSheet() {
             )}
           </>
         ) : folders.length === 0 ? (
-          <div className="dim pad">No checkpoints yet. Hermes snapshots a folder before this chat first edits a file in it, once per turn.</div>
+          <div className="dim pad">No checkpoints yet. Hermux snapshots a folder before this chat first edits a file in it, once per turn.</div>
         ) : (
           folders.map(f => (
             <div key={f.workdir}>
@@ -698,7 +698,7 @@ export function RollbackSheet() {
               ))}
               {f.pruned > 0 && (
                 <div className="dim small pad">
-                  {f.pruned} older snapshot{f.pruned === 1 ? '' : 's'} pruned (Hermes keeps 20 per folder)
+                  {f.pruned} older snapshot{f.pruned === 1 ? '' : 's'} pruned (Hermux keeps 20 per folder)
                 </div>
               )}
             </div>
@@ -831,7 +831,7 @@ export function ContextSheet() {
             <div>
               {ctx.used.toLocaleString()} of {ctx.max.toLocaleString()} tokens
             </div>
-            {usage?.context_estimated ? <div className="dim small">estimated by Hermes</div> : null}
+            {usage?.context_estimated ? <div className="dim small">estimated by Hermux</div> : null}
           </>
         ) : (
           <div className="dim">Nothing to show yet.</div>

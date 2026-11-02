@@ -56,13 +56,13 @@ How picking works (`setModel` in `gateway.ts`):
 | Read every reply aloud | 🔊 with sub-line "On" / "Off", plus " · this chat only" when the chat overrides the global setting or " · all chats" when the global setting is on. | Toggles read-aloud for this chat only (`setAutoReadFor`), toast "Reading every reply aloud in this chat" / "Read-aloud off for this chat". | none | |
 | Canvas | 🗒 with sub-line "N document(s)" or "Documents, notes and pages beside the chat". | Opens the canvas (3.7). | none | |
 | Share chat | 📤 "As Markdown, to any app" | Shares the whole chat as Markdown through the Android share sheet (`shareText` bridge call, up to 400,000 characters). Outside the app it copies instead and toasts "Copied as Markdown (sharing works in the phone app)". | none | |
-| File checkpoints | ⏪ "See and undo Hermes's file changes" | Swaps to the Rollback sheet. | none | |
+| File checkpoints | ⏪ "See and undo Hermux's file changes" | Swaps to the Rollback sheet. | none | |
 | Undo last turn | ↶ | Closes the sheet and runs `session.undo`, reloads the chat, toast "Last turn undone". | none | Disabled while a reply runs. |
 | Chat details | ℹ️ | Swaps to the Chat details sheet. | none | |
 | Delete | 🗑 (red) | Asks "Delete “<title>”?" ("The whole conversation is removed. This cannot be undone."). On confirm: `deleteSession` and toast "Deleted". | none | |
 
 **Data:** `PATCH /api/sessions/<id>`, `session.undo`, `session.delete`, `session.close`, plugin `POST /cleanup` (removes the deleted chat's photos, files and canvas from the phone, keeping what is still attached in the composer), plugin `DELETE /checkpoints`.
-**Rules:** deleting a chat first closes its live sessions, because Hermes refuses to delete a chat that still has one. The share text format is `chatMarkdown` (`web/src/export.ts`): `# <title>`, `_Exported from Hermux on <date>_`, then `**You:**` and `**Hermes:**` blocks, attachments as `_Attached: …_`, tool calls as one italic line `_🔧 name: context (failed)_`, sub-agents as `_🤖 Sub-agent: goal_`, error notices as `> ⚠ …` quotes; info notices are left out. Pin and archive are not in this menu; they live on the drawer's session rows (3.13).
+**Rules:** deleting a chat first closes its live sessions, because Hermes refuses to delete a chat that still has one. The share text format is `chatMarkdown` (`web/src/export.ts`): `# <title>`, `_Exported from Hermux on <date>_`, then `**You:**` and `**Hermux:**` blocks, attachments as `_Attached: …_`, tool calls as one italic line `_🔧 name: context (failed)_`, sub-agents as `_🤖 Sub-agent: goal_`, error notices as `> ⚠ …` quotes; info notices are left out. Pin and archive are not in this menu; they live on the drawer's session rows (3.13).
 
 #### Draft menu sheet
 **Opens from:** Chat options on the empty new-chat screen. **Closes with:** an item, tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `DraftMenuSheet`.
@@ -86,7 +86,7 @@ Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat
 #### Context window sheet
 **Opens from:** the context ring in the composer's model row (`setState({ sheet: 'context' })`). **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ContextSheet`, `useCompress`.
 
-**Layout, top to bottom:** title "Context window"; a bar (`.ctx-bar`) filled to the percent (amber from 80 %, red from 90 %) and "N% used"; "12,345 of 128,000 tokens" (`toLocaleString()`), and "estimated by Hermes" when `usage.context_estimated`; when `usage` has them: "This chat so far: input N · output N", "Cost: $0.0123" (`cost_usd`, 4 decimals under $1 via `fmtCost`) and "Cache hits: 63%" (`cache_hit_pct`); the button "Compress older turns" (`session.compress` through `compressChat`, spinner while it runs, then a toast with the result). The button is disabled while a reply runs, with the note "Wait for the reply to finish". `useCompress` is the small hook (`{ busy, run }`) that `CompressHint` shares with this sheet.
+**Layout, top to bottom:** title "Context window"; a bar (`.ctx-bar`) filled to the percent (amber from 80 %, red from 90 %) and "N% used"; "12,345 of 128,000 tokens" (`toLocaleString()`), and "estimated by Hermux" when `usage.context_estimated`; when `usage` has them: "This chat so far: input N · output N", "Cost: $0.0123" (`cost_usd`, 4 decimals under $1 via `fmtCost`) and "Cache hits: 63%" (`cache_hit_pct`); the button "Compress older turns" (`session.compress` through `compressChat`, spinner while it runs, then a toast with the result). The button is disabled while a reply runs, with the note "Wait for the reply to finish". `useCompress` is the small hook (`{ busy, run }`) that `CompressHint` shares with this sheet.
 
 #### Backend status sheet
 **Opens from:** the header status dot; Settings → Status. **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `StatusSheet`.
@@ -96,15 +96,15 @@ Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
 |---|---|---|---|---|
 | Title | "Backend status" | | | |
-| Hero | A big dot and a headline: "Everything is working", "Connecting to Hermes…", "Hermes is offline" or "Hermes is up, with problems"; under it "Checked 12s ago · Hermes v<version>". | | | "Checking…" until the first check ends. |
-| Connection row | Value: the ping in ms, "Connected", or Offline / Connecting. Note: "Live link to Hermes on this phone", or the connection detail when not open. | | | |
-| Dashboard row | Value: OK, Degraded, Failed… or "Unreachable" with the note "Can't reach Hermes's dashboard on the phone". | | | |
+| Hero | A big dot and a headline: "Everything is working", "Connecting to Hermux…", "Hermux is offline" or "Hermux is up, with problems"; under it "Checked 12s ago · Hermux agent v<version>". | | | "Checking…" until the first check ends. |
+| Connection row | Value: the ping in ms, "Connected", or Offline / Connecting. Note: "Live link to Hermux on this phone", or the connection detail when not open. | | | |
+| Dashboard row | Value: OK, Degraded, Failed… or "Unreachable" with the note "Can't reach Hermux's dashboard on the phone". | | | |
 | Agents running | Number of agents running now. | | | Only when the dashboard reports it. |
 | Memory row | "N GB free", note "N GB swap in use". | | | Only when reported. |
 | Storage row | "N GB free". | | | Only when reported. |
-| Shizuku row | Value from `shizukuRow` (`web/src/statusrows.ts`): Running (note "Restarts by itself" or "Start it by hand after a restart"), Not installed (note "Lets Hermes see and use the screen. Install it from Setup check."), Not running ("Open Shizuku and start it."), Termux not allowed ("In Shizuku, allow Termux."; also when the app sees Shizuku running but Hermes can't reach it), Not answering ("Set Shizuku’s and Termux’s Battery to Unrestricted."), Not set up for Hermes ("Run the installer in Termux again."), or "Checking…". | Open Shizuku fixes: opens the Shizuku app (`setupFix('open-shizuku')`). Setup fixes: closes the sheet and opens the `setup` screen. | none | Hidden outside the phone app or with no answer. |
+| Shizuku row | Value from `shizukuRow` (`web/src/statusrows.ts`): Running (note "Restarts by itself" or "Start it by hand after a restart"), Not installed (note "Lets Hermux see and use the screen. Install it from Setup check."), Not running ("Open Shizuku and start it."), Termux not allowed ("In Shizuku, allow Termux."; also when the app sees Shizuku running but Hermes can't reach it), Not answering ("Set Shizuku’s and Termux’s Battery to Unrestricted."), Not set up for Hermux ("Run the installer in Termux again."), or "Checking…". | Open Shizuku fixes: opens the Shizuku app (`setupFix('open-shizuku')`). Setup fixes: closes the sheet and opens the `setup` screen. | none | Hidden outside the phone app or with no answer. |
 | Check again | Primary button. | Re-runs `checkHealth()` (a `gateway.ping` plus `GET /api/status`) and asks `GET /phone-access` again. | none | Reads "Checking…" and is disabled while running. |
-| Reconnect / start Hermes | Button. | `reconnectNow()` (starts Hermes through the shell, then reconnects); toast "Reconnecting…". | none | |
+| Reconnect / start Hermux | Button. | `reconnectNow()` (starts Hermes through the shell, then reconnects); toast "Reconnecting…". | none | |
 | Setup check | Button. | Closes the sheet and opens the `setup` screen. | none | |
 
 **Data:** `store.health` from `web/src/health.ts` (`gateway.ping` every minute while the app is in front, the full `GET /api/status` every 10 minutes or when this sheet opens), `GET /phone-access` (plugin), the `setupState` bridge call. A late answer after the sheet closes is dropped.
@@ -125,8 +125,8 @@ Hermes snapshots a folder before it edits a file there (once per turn). The plug
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
 |---|---|---|---|---|
 | Title | "File checkpoints", or "Snapshot · <date>" inside a snapshot. | | | |
-| Folder list | A heading per folder (`~/projects/app`, long paths shortened to the last two folders) and a row per snapshot: date (the newest says "latest"), the reason ("Before patch", "Before a restore") and the files edited. | Opens that snapshot. | none | "No checkpoints yet. Hermes snapshots a folder before this chat first edits a file in it, once per turn." when empty. "Loading…" first. |
-| Pruned note | "N older snapshots pruned (Hermes keeps 20 per folder)". | | | Only when some were pruned. |
+| Folder list | A heading per folder (`~/projects/app`, long paths shortened to the last two folders) and a row per snapshot: date (the newest says "latest"), the reason ("Before patch", "Before a restore") and the files edited. | Opens that snapshot. | none | "No checkpoints yet. Hermux snapshots a folder before this chat first edits a file in it, once per turn." when empty. "Loading…" first. |
+| Pruned note | "N older snapshots pruned (Hermux keeps 20 per folder)". | | | Only when some were pruned. |
 | All checkpoints | `‹` row inside a snapshot. | Back to the list. | none | |
 | Changed files | For each file changed since the snapshot: a tag new / changed / deleted, the name, `+added −removed`, and its diff (header lines cut, `DiffView`). | Restore file puts back that one file. | none | Shown only when the file was edited in that snapshot, can be restored (not "new") and several files changed. "Nothing changed since this snapshot." when empty. |
 | Restore button | Red full-width button: "Restore <file>" (one file) or "Restore these N files". | Confirms (dialog "Restore this folder?" or "Restore <file>?" listing each file: "deleted (made after this snapshot)", "brought back", "back to how it was"), then restores. | none | Reads "Restoring…" while busy. |

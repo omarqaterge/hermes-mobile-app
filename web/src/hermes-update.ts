@@ -65,5 +65,5 @@ function noteCompat(): void {
   } catch {
     /* show it anyway */
   }
-  toast('This Hermes is a different version than the app was made for. If something breaks, update the app in Settings → About.', 'info', 9000)
+  toast('This Hermux agent is a different version than the app was made for. If something breaks, update the app in Settings → About.', 'info', 9000)
 }

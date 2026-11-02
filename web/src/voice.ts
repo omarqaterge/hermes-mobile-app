@@ -510,7 +510,7 @@ export function loadVoices(): void {
 export const ttsAvailable = (): boolean => Boolean(native()?.listVoices)
 
 export function testVoice(): void {
-  speak('test', 'This is how Hermes will sound when reading your replies aloud.')
+  speak('test', 'This is how Hermux will sound when reading your replies aloud.')
 }
 
 // Tell the service about the current mode as soon as the page loads.

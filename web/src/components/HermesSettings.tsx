@@ -81,7 +81,7 @@ export function HermesSettingsPage({ scope, setScope }: { scope: string; setScop
           {g.items.map(row)}
         </Section>
       ))}
-      {data && <div className="dim small pad">Every other Hermes option, by its name in config.yaml, is under Settings → Advanced settings.</div>}
+      {data && <div className="dim small pad">Every other Hermux option, by its name in config.yaml, is under Settings → Advanced settings.</div>}
       {edit && data && <SettingSheet s={edit} value={value(edit)} def={def(edit)} zones={data.zones} scope={scope} onClose={() => setEdit(null)} onSave={(v, all) => save(edit, v, all)} />}
     </>
   )
@@ -171,7 +171,7 @@ function SettingSheet({ s, value, def, zones, scope, onClose, onSave }: { s: HSe
         {range && !isNull && <div className="dim small pad">{range}{s.kind === 'number' && s.zeroLabel ? ` · 0 = ${s.zeroLabel.toLowerCase()}` : ''}</div>}
         {err && <div className="notice notice-error">{err}</div>}
         <Section>
-          <Row title="Use default" sub={`Hermes’s default: ${shown(s, def)}`} onClick={useDefault} />
+          <Row title="Use default" sub={`Hermux’s default: ${shown(s, def)}`} onClick={useDefault} />
         </Section>
         <Section footer={`Saving to ${all ? 'every bot' : scope}. New chats use it.`}>
           <ToggleRow title="Apply to all bots" on={all} onChange={setAll} />

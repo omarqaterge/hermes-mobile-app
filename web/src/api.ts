@@ -63,7 +63,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   } catch {
     data = res.body
   }
-  if (res.status === 0) throw new ApiError(`Hermes unreachable: ${res.body}`, 0)
+  if (res.status === 0) throw new ApiError(`Hermux unreachable: ${res.body}`, 0)
   if (res.status >= 400) {
     const detail = (data as { detail?: unknown })?.detail
     throw new ApiError(typeof detail === 'string' ? detail : `HTTP ${res.status}`, res.status)

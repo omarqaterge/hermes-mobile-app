@@ -12,7 +12,7 @@ A small side chat about the open chat, in a bottom sheet, that does not interrup
 |---|---|---|---|---|
 | Title | By the way | | Drag down closes | |
 | Clear (right of the title, `btw-clear`) | A small pill button "Clear" | Asks "Clear this side chat?" in the app's own dialog (`confirmDialog`; Clear / Cancel); Clear calls `clearBtw`, which empties the side chat and leaves the sheet open | Its pointerdown is its own, so the sheet's drag-to-close doesn't take the tap | Off (dimmed) while the side chat is empty |
-| Hint | "Ask about this chat without interrupting it. Hermes sees the conversation so far." | | | |
+| Hint | "Ask about this chat without interrupting it. Hermux sees the conversation so far." | | | |
 | List | Each exchange: your question as a bubble on the right, the answer under it as Markdown (cards are drawn but not interactive here) | | Scrolls; the newest scrolls into view | A spinner while the answer is pending; the error text in red when it failed |
 | Input | A text area "Ask a quick question…" (focused on open) and a send button (aria-label Send, disabled while empty) | Send asks. Enter sends; Shift+Enter makes a new line. | | |
 

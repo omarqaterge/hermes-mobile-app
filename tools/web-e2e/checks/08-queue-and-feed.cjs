@@ -6,7 +6,7 @@ module.exports = async t => {
   // ── battery: while the open chat's turn waits on a command, the app doesn't poll the canvas (closed) and
   //    polls the activity feed at the idle pace, not every 3 s; one poll right after the turn ends ──
   const waitMark = calls().length
-  await page.getByPlaceholder('Message Hermes').fill('wait a while')
+  await page.getByPlaceholder('Message Hermux').fill('wait a while')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await sleep(6500)
   const during = calls().slice(waitMark)
@@ -118,7 +118,7 @@ module.exports = async t => {
   }
 
   // ── canvas: a long canvas call opens the panel on a "writing" state, then shows the document ──
-  await page.getByPlaceholder('Message Hermes').fill('write canvas')
+  await page.getByPlaceholder('Message Hermux').fill('write canvas')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await sleep(400)
   check((await page.locator('.canvas-panel').count()) === 0, 'a short tool call does not open the canvas')
@@ -129,7 +129,7 @@ module.exports = async t => {
   check((await page.locator('.canvas-writing').count()) === 0 && (await page.locator('.canvas-btn.writing').count()) === 0, 'writing state gone')
   // ── canvas: "Saved ✓" goes back to "<when> · <who>" (it used to stay forever) ──
   await sleep(300)
-  check(/just now · Hermes/.test(await page.locator('.save-state').innerText()), `idle label says who wrote it (${await page.locator('.save-state').innerText()})`)
+  check(/just now · Hermux/.test(await page.locator('.save-state').innerText()), `idle label says who wrote it (${await page.locator('.save-state').innerText()})`)
   await page.locator('.canvas-toolbar .seg button', { hasText: 'Edit' }).click()
   await page.locator('textarea.editor-text').fill('# Plan\n\nStep one x')
   await page.locator('.save-state', { hasText: 'Saved ✓' }).waitFor({ timeout: 3000 }).then(() => check(true, 'canvas edit shows Saved ✓'), () => check(false, 'canvas edit shows Saved ✓'))
@@ -142,7 +142,7 @@ module.exports = async t => {
 
   // ── #12 media streams through the shell's URL (no base64 through /api/files/read) ──
   await page.evaluate(() => (window.HermesAndroid = { mediaBase: () => window.__hmMockBase + '/m?k=K&p=' }))
-  await page.getByPlaceholder('Message Hermes').fill('show media')
+  await page.getByPlaceholder('Message Hermux').fill('show media')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   const img = page.locator('img.media').last()
   await img.waitFor({ state: 'attached', timeout: 5000 })

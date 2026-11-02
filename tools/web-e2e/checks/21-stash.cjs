@@ -7,7 +7,7 @@ module.exports = async t => {
   {
     const sp = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await sp.goto(WEB + '/')
-    const sbox = sp.getByPlaceholder('Message Hermes')
+    const sbox = sp.getByPlaceholder('Message Hermux')
     await sbox.waitFor({ timeout: 15000 })
     const addBtn = () => sp.getByRole('button', { name: 'Add', exact: true }).click()
     const stored = () => sp.evaluate(() => JSON.parse(localStorage.getItem('hm.stash.v1') || '[]').map(s => s.text))

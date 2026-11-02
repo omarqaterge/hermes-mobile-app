@@ -68,10 +68,10 @@ const copyInstall = () => {
 // ── App-first setup: the helper apps, installed one after another by the shell ──
 
 export const HELPERS: { id: HelperApp; name: string; what: string; has: (n: NativeSetup) => boolean; url: string }[] = [
-  { id: 'termux', name: 'Termux', what: 'Linux on the phone: Hermes runs inside it', has: n => n.termux, url: 'https://f-droid.org/packages/com.termux/' },
-  { id: 'termux-api', name: 'Termux:API', what: 'Lets Hermes use the phone: battery, location, notifications…', has: n => Boolean(n.termuxApi), url: 'https://f-droid.org/packages/com.termux.api/' },
-  { id: 'termux-boot', name: 'Termux:Boot', what: 'Starts Hermes again after the phone restarts', has: n => Boolean(n.termuxBoot), url: 'https://f-droid.org/packages/com.termux.boot/' },
-  { id: 'shizuku', name: 'Shizuku', what: 'Lets Hermes see and use the screen, without root', has: n => Boolean(n.shizuku), url: 'https://github.com/RikkaApps/Shizuku/releases' }
+  { id: 'termux', name: 'Termux', what: 'Linux on the phone: Hermux runs inside it', has: n => n.termux, url: 'https://f-droid.org/packages/com.termux/' },
+  { id: 'termux-api', name: 'Termux:API', what: 'Lets Hermux use the phone: battery, location, notifications…', has: n => Boolean(n.termuxApi), url: 'https://f-droid.org/packages/com.termux.api/' },
+  { id: 'termux-boot', name: 'Termux:Boot', what: 'Starts Hermux again after the phone restarts', has: n => Boolean(n.termuxBoot), url: 'https://f-droid.org/packages/com.termux.boot/' },
+  { id: 'shizuku', name: 'Shizuku', what: 'Lets Hermux see and use the screen, without root', has: n => Boolean(n.shizuku), url: 'https://github.com/RikkaApps/Shizuku/releases' }
 ]
 
 interface AppStatus {
@@ -202,7 +202,7 @@ async function replaceTermux() {
   const ok = await confirmDialog({
     title: 'Replace Termux?',
     message:
-      'Your Termux didn’t come from F-Droid, so Termux:API and Termux:Boot can’t work with it. Android will ask you to uninstall it: everything inside Termux is deleted, including Hermes if it is installed there. Then Hermux installs Termux and the other missing apps from their makers, one after another.',
+      'Your Termux didn’t come from F-Droid, so Termux:API and Termux:Boot can’t work with it. Android will ask you to uninstall it: everything inside Termux is deleted, including Hermux if it is installed there. Then Hermux installs Termux and the other missing apps from their makers, one after another.',
     confirmLabel: 'Uninstall Termux',
     icon: '⚠️',
     danger: true
@@ -262,58 +262,58 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       const missing = n ? HELPERS.filter(h => !h.has(n)) : []
       return {
         title: 'Termux, Termux:API, Termux:Boot and Shizuku are installed',
-        help: `Hermes needs ${missing.length ? missing.map(h => h.name).join(', ') : 'these apps'}. Hermux downloads and installs them for you: tap Install on each of Android’s prompts.`,
+        help: `The Hermux agent needs ${missing.length ? missing.map(h => h.name).join(', ') : 'these apps'}. Hermux downloads and installs them for you: tap Install on each of Android’s prompts.`,
         fix: n && appsPlan(n).action !== 'none' ? { label: 'Install all', run: () => installAll(n) } : undefined
       }
     }
     case 'shizuku-start':
       return {
         title: 'Start Shizuku',
-        help: 'Hermes needs Shizuku: it gives Hermes the screen, taps and apps without root, and stops Android from killing the installer (“signal 9”). Also set Shizuku’s Battery to Unrestricted (app info → Battery), or Android may stop it.',
+        help: 'Hermux needs Shizuku: it gives Hermux the screen, taps and apps without root, and stops Android from killing the installer (“signal 9”). Also set Shizuku’s Battery to Unrestricted (app info → Battery), or Android may stop it.',
         fix: { label: 'Open Shizuku', run: () => setupFix('open-shizuku') }
       }
     case 'installer':
       return {
-        title: 'Hermes is installed in Termux',
-        help: 'Copy the command, open Termux, long-press, Paste, then Enter. It installs Debian and Hermes (about 15 minutes); keep Termux open.',
+        title: 'Hermux is installed in Termux',
+        help: 'Copy the command, open Termux, long-press, Paste, then Enter. It installs Debian and Hermux (about 15 minutes); keep Termux open.',
         fix: { label: 'Copy the command', run: copyBootstrap },
         alt: { label: 'Open Termux', run: () => setupFix('open-termux') }
       }
     case 'termux-boot':
       return {
         title: 'Termux:Boot was opened once',
-        help: 'Android only starts Termux:Boot after a restart (and with it Hermes) once it has been opened. Open it once, then come back.',
+        help: 'Android only starts Termux:Boot after a restart (and with it Hermux) once it has been opened. Open it once, then come back.',
         fix: { label: 'Open Termux:Boot', run: () => setupFix('open-termux-boot') }
       }
     case 'termux':
       return {
         title: 'Termux is installed',
-        help: 'Hermes runs inside Termux. Install it from F-Droid (the Play Store version is outdated), then follow the README.',
+        help: 'The Hermux agent runs inside Termux. Install it from F-Droid (the Play Store version is outdated), then follow the README.',
         fix: { label: 'Get Termux', run: () => setupFix('get-termux') }
       }
     case 'run':
       return {
-        title: 'Hermux may start Hermes',
+        title: 'Hermux may start the agent',
         help: 'Android asks once: “Run commands in Termux environment”. Allow it. If you denied it before, turn it on in the app’s permissions.',
         fix: { label: 'Allow', run: () => setupFix('permissions') },
         alt: { label: 'App settings', run: () => setupFix('app-settings') }
       }
     case 'hermes':
       return {
-        title: 'Hermes is running',
+        title: 'Hermux is running',
         help: (
           <>
-            The app starts Hermes through Termux. If it stays offline, Termux may not allow it yet: run the installer in Termux again
+            The app starts Hermux through Termux. If it stays offline, Termux may not allow it yet: run the installer in Termux again
             (it turns on <code>allow-external-apps</code>), then come back.
             {n?.startError ? <span className="dim"> ({n.startError})</span> : null}
           </>
         ),
         fix: {
-          label: 'Start Hermes',
+          label: 'Start Hermux',
           run: () => {
             setupFix('start')
             reconnectNow()
-            toast('Starting Hermes… the first start can take a minute')
+            toast('Starting Hermux… the first start can take a minute')
           }
         },
         alt: { label: 'Copy installer', run: copyInstall }
@@ -321,7 +321,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
     case 'plugin':
       return {
         title: 'The Hermux plugin is installed',
-        help: 'Needed for the status chip, approvals from the notification, the canvas and media. Run the installer in Termux, then restart Hermes.',
+        help: 'Needed for the status chip, approvals from the notification, the canvas and media. Run the installer in Termux, then restart Hermux.',
         fix: { label: 'Copy installer', run: copyInstall },
         alt: { label: 'Open Termux', run: () => setupFix('open-termux') }
       }
@@ -332,7 +332,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         fix: { label: 'Enable', run: enable }
       }
     case 'model':
-      return { title: 'A model is connected', help: 'Hermes thinks with a model in the cloud. Sign in with a subscription or paste an API key.' }
+      return { title: 'A model is connected', help: 'Hermux thinks with a model in the cloud. Sign in with a subscription or paste an API key.' }
     case 'notif':
       return {
         title: 'Notifications allowed',
@@ -349,35 +349,35 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
     case 'bat-termux':
       return {
         title: 'Termux may run in the background',
-        help: 'Hermes lives in Termux. Open Termux’s app info → Battery → Unrestricted.',
+        help: 'Hermux lives in Termux. Open Termux’s app info → Battery → Unrestricted.',
         fix: { label: 'Open Termux settings', run: () => setupFix('battery-termux') }
       }
     case 'bat-shizuku':
       return {
         title: 'Shizuku may run in the background',
-        help: 'Without this Android can stop Shizuku, and Hermes loses the screen until you start Shizuku again. Open Shizuku’s app info → Battery → Unrestricted.',
+        help: 'Without this Android can stop Shizuku, and Hermux loses the screen until you start Shizuku again. Open Shizuku’s app info → Battery → Unrestricted.',
         fix: { label: 'Open Shizuku settings', run: () => setupFix('battery-shizuku') }
       }
     case 'files':
       return {
-        title: 'Hermes can use your files',
-        help: 'Termux needs Android’s files permission, and Hermes only sees it after a restart. Tap Allow, then Restart Hermes.',
+        title: 'Hermux can use your files',
+        help: 'Termux needs Android’s files permission, and Hermux only sees it after a restart. Tap Allow, then Restart Hermux.',
         fix: { label: 'Allow', run: () => setupFix('storage') },
         alt: {
-          label: 'Restart Hermes',
+          label: 'Restart Hermux',
           run: () => {
             setupFix('restart-hermes')
-            toast('Restarting Hermes… back in about half a minute')
+            toast('Restarting Hermux… back in about half a minute')
           }
         }
       }
     case 'termux-api': {
       const apiMissing = n?.termuxApi === false
       return {
-        title: 'Hermes can use the phone’s features (Termux:API)',
+        title: 'Hermux can use the phone’s features (Termux:API)',
         help: apiMissing
           ? 'Battery, location, clipboard, notifications and more go through the Termux:API app. Install it from F-Droid, like Termux.'
-          : 'Termux:API is installed but Hermes can’t reach it yet. Run the installer in Termux again: it adds the termux-* commands.',
+          : 'Termux:API is installed but Hermux can’t reach it yet. Run the installer in Termux again: it adds the termux-* commands.',
         fix: apiMissing ? { label: 'Get Termux:API', run: () => setupFix('get-termux-api') } : { label: 'Copy installer', run: copyInstall },
         alt: apiMissing ? undefined : { label: 'Open Termux', run: () => setupFix('open-termux') }
       }
@@ -385,15 +385,15 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
     case 'shizuku': {
       const missing = n?.shizuku === false
       return {
-        title: 'Hermes can see and use the screen (Shizuku)',
+        title: 'Hermux can see and use the screen (Shizuku)',
         help: missing ? (
-          'Shizuku gives Hermes the screen, taps, apps and logs, without root. Install it, then come back.'
+          'Shizuku gives Hermux the screen, taps, apps and logs, without root. Install it, then come back.'
         ) : sh === 'denied' ? (
           'Shizuku hasn’t allowed Termux yet. Open Shizuku → Application management and turn on Termux.'
         ) : sh === 'blocked' ? (
           'Shizuku doesn’t answer Termux. Set Battery to Unrestricted for both Shizuku and Termux (app info → Battery).'
         ) : sh === 'missing' ? (
-          'Shizuku’s shell isn’t set up for Hermes yet. Run the installer in Termux again.'
+          'Shizuku’s shell isn’t set up for Hermux yet. Run the installer in Termux again.'
         ) : n?.shizukuRunning ? (
           // the app holds Shizuku's binder, but Termux's rish got no answer yet (often: Shizuku's prompt is still open)
           'Shizuku is running, but Termux can’t use it yet. If Shizuku asks whether Termux may use it, tap Allow all the time. If nothing asks, open Shizuku → Application management and turn on Termux.'
@@ -448,7 +448,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       const kind = n?.autostart || 'info'
       const name = n?.autostartName || 'Autostart'
       const where = n?.autostartWhere || ''
-      const why = 'This phone stops apps that may not start by themselves, so Hermes and its notifications would stop after a while or a restart.'
+      const why = 'This phone stops apps that may not start by themselves, so Hermux and its notifications would stop after a while or a restart.'
       const note = ' Android can’t tell us whether it is on: tap Done once both are on.'
       const perApp = kind === 'app' || kind === 'info'
       return {
@@ -636,11 +636,11 @@ export function SetupScreen() {
         <div>
           <div className="setup-hero-title">{bad ? `${bad} thing${bad > 1 ? 's' : ''} to fix` : waiting ? 'Checking…' : 'All set'}</div>
           <div className="dim small">
-            {bad ? 'Tap a button below; this page checks again by itself.' : waiting ? 'Waiting for Hermes to answer.' : 'Everything Hermux needs is in place.'}
+            {bad ? 'Tap a button below; this page checks again by itself.' : waiting ? 'Waiting for Hermux to answer.' : 'Everything Hermux needs is in place.'}
           </div>
         </div>
       </div>
-      {!isNative && <div className="dim small setup-note">In a browser only the Hermes checks run; the Android ones show in the app.</div>}
+      {!isNative && <div className="dim small setup-note">In a browser only the Hermux checks run; the Android ones show in the app.</div>}
       <ul className="setup-list">
         {checks.map(c => (
           <li key={c.id} className={`setup-item ${c.state}`}>
@@ -827,7 +827,7 @@ export function SetupFlow() {
           <div>
             <div className="setup-hero-title">{gaps.length ? 'Almost done' : 'All set'}</div>
             <div className="dim small">
-              {gaps.length ? 'These are recommended. Hermes works without them, but they keep it running in the background.' : 'Everything Hermux needs is in place.'}
+              {gaps.length ? 'These are recommended. Hermux works without them, but they keep it running in the background.' : 'Everything Hermux needs is in place.'}
             </div>
           </div>
         </div>
@@ -866,7 +866,7 @@ export function SetupFlow() {
   }
 
   return (
-    <ScreenShell title="Set up Hermes" onBack={back} className="takeover">
+    <ScreenShell title="Set up Hermux" onBack={back} className="takeover">
       {!loading && nav.page !== 'end' && nav.steps > 0 && (
         <div className="flow-progress" aria-label={`Step ${nav.index + 1} of ${nav.steps}`}>
           <span className="flow-progress-label">
@@ -919,7 +919,7 @@ function AppsStep({ n }: { n: NativeSetup }) {
     <div className="flow-card">
       <div className="flow-card-title">Get the helper apps</div>
       <div className="setup-help">
-        Hermes runs inside Termux and uses these apps to reach your phone. Hermux downloads them (Termux from F-Droid,
+        The Hermux agent runs inside Termux and uses these apps to reach your phone. Hermux downloads them (Termux from F-Droid,
         Shizuku from GitHub) and Android asks you to tap <b>Install</b> for each one.
         {n.canInstall === false && <> First Android asks you to allow Hermux to install apps: turn the switch on, then come back.</>}
       </div>
@@ -1029,13 +1029,13 @@ function ShizukuStep({ n, onDone, onCheck }: { n: NativeSetup; onDone: () => voi
     <div className="flow-card">
       <div className="flow-card-title">Start Shizuku</div>
       <div className="setup-help">
-        Hermes needs Shizuku: it gives Hermes the screen, taps and apps without root, and stops Android from killing the installer
+        Hermux needs Shizuku: it gives Hermux the screen, taps and apps without root, and stops Android from killing the installer
         (“signal 9”). Also set Shizuku’s Battery to Unrestricted (app info → Battery), or Android may stop it.
       </div>
       <ul className="setup-list">
         {needsComputer ? sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Start Shizuku from a computer</div><div className="dim small">On this Android version Shizuku is started from a computer (or with root). On a computer, run the Hermux setup script, or follow Shizuku’s guide.</div></>) : <>
         {sub(n.devOptions, <><div className="setup-title">Turn on Developer options</div><div className="dim small">About phone → tap <i>Build number</i> 7 times (on some phones it is under <i>Software information</i>, or called <i>OS version</i>).</div></>)}
-        {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow. Why: Shizuku uses Android’s own wireless debugging to start itself on the phone, with no computer and no root. That gives Hermes the screen, taps and apps, and lets the installer stop Android killing it. It only works locally on your phone (over your own Wi-Fi); nothing goes to the internet.</div></>)}
+        {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow. Why: Shizuku uses Android’s own wireless debugging to start itself on the phone, with no computer and no root. That gives Hermux the screen, taps and apps, and lets the installer stop Android killing it. It only works locally on your phone (over your own Wi-Fi); nothing goes to the internet.</div></>)}
         {sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Pair and start Shizuku</div><div className="dim small">In Shizuku: <i>Pairing</i>, then <i>Pair device with pairing code</i> in Wireless debugging and type the code into Shizuku’s notification. Then <i>Start</i>.</div></>)}
         </>}
       </ul>
@@ -1111,8 +1111,8 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
         } catch {
           /* ignore */
         }
-        if (raw.result !== 'ran') toast('Termux doesn’t take commands from the app yet, so Hermes isn’t set up. Run the installer: it skips what is already there.', 'info', 7000)
-        else if (!raw.installed && !raw.services) toast('Hermes isn’t installed in Termux yet. Run the installer.', 'info', 5000)
+        if (raw.result !== 'ran') toast('Termux doesn’t take commands from the app yet, so Hermux isn’t set up. Run the installer: it skips what is already there.', 'info', 7000)
+        else if (!raw.installed && !raw.services) toast('Hermux isn’t installed in Termux yet. Run the installer.', 'info', 5000)
       }),
     []
   )
@@ -1141,13 +1141,13 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
           {progress?.active ? 'Waiting for the installer to start… its progress shows here.' : 'It takes about 15 minutes, mostly waiting. Its progress shows here.'}
         </div>
         {!progress?.active && canProbeNow() && (
-          <button className="btn flow-check" onClick={check}>Hermes already installed? Check</button>
+          <button className="btn flow-check" onClick={check}>Hermux already installed? Check</button>
         )}
       </div>
     )
   return (
     <div className="flow-card">
-      <div className="flow-card-title">{v.fail ? 'The installer stopped' : 'Installing Hermes'}</div>
+      <div className="flow-card-title">{v.fail ? 'The installer stopped' : 'Installing Hermux'}</div>
       {v.hint && !v.fail && <div className="setup-help install-hint"><b>{v.hint}</b></div>}
       <ul className="install-steps">
         {v.steps.map(s => (

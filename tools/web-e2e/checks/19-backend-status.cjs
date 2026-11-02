@@ -10,7 +10,7 @@ module.exports = async t => {
     await sp.addInitScript(s => { window.__setup = s }, base)
     await sp.addInitScript(nativeShell)
     await sp.goto(WEB + '/')
-    await sp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await sp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     const shRow = async () => {
       await sp.locator('.conn-dot').first().click()
       await sp.locator('.status-row', { hasText: 'Shizuku' }).waitFor({ timeout: 5000 }).catch(() => {})

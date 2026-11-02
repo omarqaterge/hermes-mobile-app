@@ -25,7 +25,7 @@ async function open(browser, { key, respond, seed } = {}) {
   const pg = await ctx.newPage()
   pg.on('pageerror', e => errors.push(e.message))
   await pg.goto(WEB + '/')
-  await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   return { ctx, pg, posts, errors }
 }
 const toBackground = pg => pg.evaluate(() => {
@@ -87,7 +87,7 @@ module.exports = async t => {
     check((await source(pg).count()) === 0, 'stats: No thanks does not ask where they heard of it')
     await toBackground(pg)
     await pg.reload()
-    await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await sleep(2500)
     check((await card(pg).count()) === 0, 'stats: the card is shown only once')
     await openSettings(pg)

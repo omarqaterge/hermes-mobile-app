@@ -44,7 +44,7 @@ module.exports = async t => {
     await pg.addInitScript(nativeShell)
     await pg.addInitScript(() => { window.HermesAndroid.installUpdate = (key, url) => (window.__installed ||= []).push(url) })
     await pg.goto(WEB + '/')
-    await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
     await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })

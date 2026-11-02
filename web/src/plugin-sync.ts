@@ -33,16 +33,16 @@ const date = (stamp: string) => {
 /** The row for a state (pure, unit-tested). */
 export function pluginRow(s: PluginState): PluginRowView {
   const value = date(s.installed) || (s.installed === '0' ? 'Old version' : '—')
-  if (s.running === 'apply') return { value, sub: 'Updating… Hermes restarts for a moment', action: null, tone: 'blue' }
+  if (s.running === 'apply') return { value, sub: 'Updating… Hermux restarts for a moment', action: null, tone: 'blue' }
   if (s.running === 'check') return { value, sub: 'Checking…', action: null, tone: 'blue' }
-  const tap = 'Tap to update now (Hermes restarts for a moment)'
+  const tap = 'Tap to update now (Hermux restarts for a moment)'
   switch (s.state) {
     case 'current':
       return { value, sub: 'Up to date with this app', action: null, tone: 'green' }
     case 'older':
-      return { value, sub: `This app has a newer version. It installs by itself once Hermes is idle and the app is closed. ${tap}`, action: 'update', tone: 'gold' }
+      return { value, sub: `This app has a newer version. It installs by itself once Hermux is idle and the app is closed. ${tap}`, action: 'update', tone: 'gold' }
     case 'busy':
-      return { value, sub: `Waiting until Hermes has finished its work. ${tap}`, action: 'update', tone: 'gold' }
+      return { value, sub: `Waiting until Hermux has finished its work. ${tap}`, action: 'update', tone: 'gold' }
     case 'newer':
       return { value, sub: 'Newer than this app’s copy, so it was left as it is', action: null, tone: 'green' }
     case 'modified':
@@ -64,9 +64,9 @@ export function pluginRow(s: PluginState): PluginRowView {
 /** What a tap's answer means for the user; '' = it started. */
 export function updateAnswer(r: string): string {
   if (r === 'ok') return ''
-  if (r === 'working') return 'Hermes is working. Try again when it has finished'
+  if (r === 'working') return 'Hermux is working. Try again when it has finished'
   if (r === 'busy') return 'Already checking or updating'
-  if (r === 'not-ready') return 'Hermes isn’t set up yet, or Termux doesn’t take commands from this app'
+  if (r === 'not-ready') return 'Hermux isn’t set up yet, or Termux doesn’t take commands from this app'
   return r.replace(/^error: /, '') || 'Not available in this version of the app'
 }
 

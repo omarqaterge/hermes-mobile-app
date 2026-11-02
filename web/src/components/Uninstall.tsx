@@ -18,8 +18,8 @@ export function UninstallSection() {
   if (!isNative || !canUninstall()) return null // a browser, or an older app build without the uninstall bridge
   return (
     <>
-      <Section title="Danger zone" footer="Removes Hermes, all chats and every helper app from this phone. You can save a backup first.">
-        <Row icon="🗑" danger title="Uninstall Hermux" sub="Hermes, Debian, chats, Termux and the helper apps" chevron onClick={() => setOpen(true)} />
+      <Section title="Danger zone" footer="Removes Hermux, all chats and every helper app from this phone. You can save a backup first.">
+        <Row icon="🗑" danger title="Uninstall Hermux" sub="Hermux, Debian, chats, Termux and the helper apps" chevron onClick={() => setOpen(true)} />
       </Section>
       {open && <UninstallSheet onClose={() => setOpen(false)} />}
     </>
@@ -76,7 +76,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
   const begin = async () => {
     const typed = await promptDialog({
       title: 'Uninstall Hermux?',
-      message: `This deletes Hermes and everything in it on this phone: all chats, memory, skills, settings and keys${withBackup ? ' (after saving the backup)' : ''}. Then Android asks you to remove each app. It can’t be undone. Type uninstall to confirm.`,
+      message: `This deletes Hermux and everything in it on this phone: all chats, memory, skills, settings and keys${withBackup ? ' (after saving the backup)' : ''}. Then Android asks you to remove each app. It can’t be undone. Type uninstall to confirm.`,
       placeholder: 'uninstall',
       match: 'uninstall',
       danger: true,
@@ -102,8 +102,8 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
           <>
             <ul className="setup-list">
               {[
-                ['Hermes, with all chats, memory, skills, settings and API keys', 'Everything Hermes keeps in Debian.'],
-                ['Debian', 'The Linux system Hermes runs in, inside Termux.'],
+                ['Hermux, with all chats, memory, skills, settings and API keys', 'Everything Hermux keeps in Debian.'],
+                ['Debian', 'The Linux system Hermux runs in, inside Termux.'],
                 ['The installer’s files in Termux', '~/bin/hermes-services, ~/bin/hermes-debian, rish, ~/.hermes-mobile, the start-after-restart script, and Termux taking commands from this app.'],
                 ['The phone setting the installer changed', 'Android’s child-process limit goes back to normal (needs Shizuku running; otherwise it stays, which is harmless).'],
                 ...APPS.map(a => [`App: ${a.name}${appInstalled(n, a.id) ? '' : ' (not installed)'}`, a.what])
@@ -118,12 +118,12 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
             <div className="setup-help uninstall-note">
-              Kept: files Hermes saved to your phone’s storage (Downloads, Pictures/Hermes) and the backup. Android asks before removing each
+              Kept: files Hermux saved to your phone’s storage (Downloads, Pictures/Hermes) and the backup. Android asks before removing each
               app; Hermux goes last.
             </div>
             {termuxThere ? (
               <Section title="Backup">
-                <ToggleRow icon="💾" tone="blue" title="Save a backup to Downloads" sub="Chats, memory, skills, Hermes settings and this app’s settings, as hermes-backup-<date>.tar.gz" on={backup} onChange={setBackup} />
+                <ToggleRow icon="💾" tone="blue" title="Save a backup to Downloads" sub="Chats, memory, skills, Hermux settings and this app’s settings, as hermes-backup-<date>.tar.gz" on={backup} onChange={setBackup} />
                 {backup && (
                   <ToggleRow
                     icon="🔑"
@@ -136,7 +136,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
                 )}
               </Section>
             ) : (
-              <div className="setup-help uninstall-note">Termux is not installed, so Debian and Hermes are already gone; nothing to back up.</div>
+              <div className="setup-help uninstall-note">Termux is not installed, so Debian and Hermux are already gone; nothing to back up.</div>
             )}
             {why && <div className="setup-help uninstall-err">{whyText(why)}</div>}
             {why === 'no-permission' && (
@@ -151,8 +151,8 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
         {phase === 'running' && (
           <div className="uninstall-running">
             <Spinner />
-            <div className="setup-title">Removing Hermes…</div>
-            <div className="setup-help">Stopping Hermes, saving the backup if you asked for one, then removing Debian and the installer’s files. This can take a few minutes. You can leave the app and come back here.</div>
+            <div className="setup-title">Removing the Hermux agent…</div>
+            <div className="setup-help">Stopping Hermux, saving the backup if you asked for one, then removing Debian and the installer’s files. This can take a few minutes. You can leave the app and come back here.</div>
           </div>
         )}
 
@@ -199,7 +199,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
 }
 
 function whyText(why: string): string {
-  if (why === 'no-permission') return 'Hermux may not run commands in Termux (Android permission), so it can’t remove Debian. Allow it, or skip: uninstalling Termux deletes Debian and Hermes too, but leaves the phone setting changed.'
+  if (why === 'no-permission') return 'Hermux may not run commands in Termux (Android permission), so it can’t remove Debian. Allow it, or skip: uninstalling Termux deletes Debian and Hermux too, but leaves the phone setting changed.'
   if (why === 'no-termux') return 'Termux is not installed.'
   if (why === 'busy') return 'The cleanup is already running.'
   return `Couldn’t start the cleanup (${why}).`
@@ -222,7 +222,7 @@ function Steps({ report }: { report: ReturnType<typeof parseCleanup> }) {
       </ul>
       {report.backup && (
         <div className="setup-help uninstall-note">
-          Backup saved: <b>Download/{backupName(report.backup)}</b>. To restore it on a new install, unpack it into Hermes’s folder (README → Uninstall).
+          Backup saved: <b>Download/{backupName(report.backup)}</b>. To restore it on a new install, unpack it into Hermux’s folder (README → Uninstall).
         </div>
       )}
     </>
@@ -237,7 +237,7 @@ function Apps({ n, s }: { n: NativeSetup | null; s: UninstallNative | null }) {
     if (id === 'termux' && !ok) {
       const sure = await confirmDialog({
         title: 'Uninstall Termux anyway?',
-        message: 'The cleanup in Termux didn’t finish. Uninstalling Termux deletes Debian and Hermes with it. On a rooted phone that used chroot-distro, restart the phone first.',
+        message: 'The cleanup in Termux didn’t finish. Uninstalling Termux deletes Debian and Hermux with it. On a rooted phone that used chroot-distro, restart the phone first.',
         confirmLabel: 'Uninstall Termux',
         danger: true
       })
@@ -260,7 +260,7 @@ function Apps({ n, s }: { n: NativeSetup | null; s: UninstallNative | null }) {
                 <div className="setup-help">{there ? a.what : 'Removed'}</div>
                 {a.id === 'self' && (
                   <div className="setup-help">
-                    Removed so far: {ok ? 'Hermes, its chats and Debian, the installer’s files' : 'what the steps above show'}
+                    Removed so far: {ok ? 'the Hermux agent, its chats and Debian, the installer’s files' : 'what the steps above show'}
                     {gone.length ? `, ${gone.map(g => g.name).join(', ')}` : ''}. Removing this app is the last step.
                   </div>
                 )}

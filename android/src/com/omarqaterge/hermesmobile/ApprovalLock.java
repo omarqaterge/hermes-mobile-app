@@ -132,7 +132,7 @@ final class ApprovalLock {
     private static void biometric(Activity a, String what, int g) {
         try {
             android.hardware.biometrics.BiometricPrompt.Builder b = new android.hardware.biometrics.BiometricPrompt.Builder(a)
-                    .setTitle("Allow Hermes to run this?")
+                    .setTitle("Allow Hermux to run this?")
                     .setSubtitle(what)
                     .setDescription("Confirm it is you. Other approvals in this chat won't ask again until the app restarts or the chat closes.");
             if (Build.VERSION.SDK_INT >= 30) {
@@ -179,7 +179,7 @@ final class ApprovalLock {
         if (g != gen || credentialUp) return;
         try {
             KeyguardManager km = a.getSystemService(KeyguardManager.class);
-            Intent i = km == null ? null : km.createConfirmDeviceCredentialIntent("Allow Hermes to run this?", what);
+            Intent i = km == null ? null : km.createConfirmDeviceCredentialIntent("Allow Hermux to run this?", what);
             if (i == null) {
                 finish(g, "nolock");
                 return;

@@ -5,11 +5,11 @@ module.exports = async t => {
   const { browser } = t
   const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await pg.goto(WEB + '/')
-  await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
-  await pg.locator('.set-row', { hasText: 'Hermes settings' }).click()
-  await pg.locator('.screen .title', { hasText: 'Hermes settings' }).waitFor({ timeout: 5000 })
+  await pg.locator('.set-row', { hasText: 'Hermux settings' }).click()
+  await pg.locator('.screen .title', { hasText: 'Hermux settings' }).waitFor({ timeout: 5000 })
   await pg.locator('.set-row', { hasText: 'Retries before a fallback' }).waitFor({ timeout: 5000 })
   const groups = await pg.locator('.set-heading').allInnerTexts()
   check(['Memory', 'Long chats', 'Sub-agents', 'Safety and privacy'].every(g => groups.some(x => x.toLowerCase() === g.toLowerCase())), `hermes settings: grouped by section (${groups.join(' | ')})`)
@@ -87,7 +87,7 @@ module.exports = async t => {
   const tz = pg.locator('.sheet', { hasText: 'Time zone' })
   await tz.getByLabel('Time zone').fill('Mars/Base')
   await tz.getByRole('button', { name: 'Save', exact: true }).click()
-  await tz.getByText('Not one Hermes knows').waitFor({ timeout: 3000 }).then(() => check(true, 'hermes settings: an unknown time zone is refused'), () => check(false, 'hermes settings: an unknown time zone is refused'))
+  await tz.getByText('Not one Hermux knows').waitFor({ timeout: 3000 }).then(() => check(true, 'hermes settings: an unknown time zone is refused'), () => check(false, 'hermes settings: an unknown time zone is refused'))
   await tz.getByRole('button', { name: 'Cancel' }).click()
   // Put back what this file changed, for later files.
   await fetch(require('../lib.cjs').MOCK + '/api/config', { method: 'PUT', body: JSON.stringify({ config: { compression: { threshold: 0.5 }, checkpoints: { enabled: false }, agent: { verify_on_stop: false }, approvals: { deny: [] } } }) })

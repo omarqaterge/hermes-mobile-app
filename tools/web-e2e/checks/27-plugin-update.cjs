@@ -15,7 +15,7 @@ async function open(browser, { oldPlugin } = {}) {
   const errors = []
   pg.on('pageerror', e => errors.push(e.message))
   await pg.goto(WEB + '/')
-  await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
   await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
@@ -49,7 +49,7 @@ module.exports = async t => {
     check(/rolled-back/.test(failed) && /still works/.test(failed) && /only when you tap/.test(failed), 'plugin: a failure is shown, with the old plugin still working')
     await pg.evaluate(() => { window.__plugAnswer = 'working' })
     await row(pg).click()
-    await pg.getByText('Hermes is working. Try again when it has finished').waitFor({ timeout: 3000 }).then(() => check(true, 'plugin: retry while Hermes works says so'), () => check(false, 'plugin: retry while Hermes works says so'))
+    await pg.getByText('Hermux is working. Try again when it has finished').waitFor({ timeout: 3000 }).then(() => check(true, 'plugin: retry while Hermes works says so'), () => check(false, 'plugin: retry while Hermes works says so'))
     await pg.evaluate(() => { window.__plugAnswer = 'ok'; window.__plugLog = [] })
 
     await setState(pg, { state: 'modified', installed: '1790000000' })

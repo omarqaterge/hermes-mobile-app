@@ -31,7 +31,7 @@ if [ -z "$here" ] || [ ! -d "$here/hermes-plugin/hermes-mobile" ]; then
   here="$HOME/hermes-mobile"
 fi
 
-echo "1/5 Letting the app start Hermes (allow-external-apps)"
+echo "1/5 Letting the app start Hermux (allow-external-apps)"
 mkdir -p "$HOME/.termux"
 grep -qE '^[[:space:]]*allow-external-apps[[:space:]]*=[[:space:]]*true' "$HOME/.termux/termux.properties" 2>/dev/null \
   || echo "allow-external-apps = true" >> "$HOME/.termux/termux.properties"
@@ -51,7 +51,7 @@ else
   [ -d "$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root" ] \
     || die "Debian is not installed in Termux yet. Run: pkg install -y proot-distro && proot-distro install debian"
 fi
-"$DEB" --exists /root/.hermes || die "Hermes is not set up in Debian yet. Install Hermes Agent and run 'hermes setup' first (see the README)."
+"$DEB" --exists /root/.hermes || die "Hermux is not set up in Debian yet. Install Hermes Agent and run 'hermes setup' first (see the README)."
 
 echo "3/5 Installing the Hermux plugin"
 find "$here/hermes-plugin/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
@@ -65,25 +65,25 @@ bash "$here/phone/plugin-update.sh" stamp "$here/hermes-plugin/hermes-mobile" \
 # Replaces an old copy there: it would never be updated.
 "$DEB" sh -c 'for p in /root/.hermes/profiles/*/; do [ -d "$p" ] || continue; mkdir -p "${p}plugins"
   rm -rf "${p}plugins/hermes-mobile" && ln -s /root/.hermes/plugins/hermes-mobile "${p}plugins/hermes-mobile"; done' \
-  || echo "    Could not add the plugin to every Hermes profile."
+  || echo "    Could not add the plugin to every Hermux profile."
 
 # Our fixes to Hermes itself (hermes/README.md). One that no longer fits this Hermes is skipped, never half-applied.
-echo "    Applying the Hermux fixes to Hermes (hermes/patches)"
+echo "    Applying the Hermux fixes to the agent (hermes/patches)"
 "$DEB" --put "$here/hermes/patches" /root/.hermes/hermes-mobile-patches
 "$DEB" --put "$here/phone/hermes-patches.sh" /root/.hermes/scripts/hermes-patches.sh
 "$DEB" bash -lc 'bash /root/.hermes/scripts/hermes-patches.sh apply /root/.hermes/hermes-mobile-patches' \
-  || echo "    Some fixes did not fit this Hermes version and were skipped; Hermes runs unchanged there."
+  || echo "    Some fixes did not fit this agent version and were skipped; Hermux runs unchanged there."
 
 # Before the restart below: only a Hermes started after Termux got the files permission sees /sdcard.
-echo "    Giving Hermes access to the phone: files, Termux:API, Shizuku (no root needed)"
+echo "    Giving Hermux access to the phone: files, Termux:API, Shizuku (no root needed)"
 bash "$here/phone/phone-access.sh"
 show_todo() {
   [ -s "$HOME/.hermes-mobile/todo" ] || return 0
-  echo; echo "Hermes can't reach all of the phone yet. Still to do:"
+  echo; echo "Hermux can't reach all of the phone yet. Still to do:"
   sed 's/^/  - /' "$HOME/.hermes-mobile/todo"
 }
 
-echo "4/5 Enabling the plugin in Hermes"
+echo "4/5 Enabling the plugin in Hermux"
 enable_in() {  # $1 = "" (the profile `hermes` runs in) or "-p default"
   "$DEB" bash -lc "PATH=\"\$HOME/.local/bin:\$PATH\" hermes $1 plugins enable hermes-mobile" && return 0
   echo "Could not enable it automatically. Run inside Debian:  hermes $1 plugins enable hermes-mobile" | tr -s ' '
@@ -92,18 +92,18 @@ enable_in ""
 # After `hermes profile use <name>` the command above went to that profile; the app starts in the main one.
 active=$("$DEB" sh -c 'cat /root/.hermes/active_profile 2>/dev/null' </dev/null || true)
 if [ -n "$active" ] && [ "$active" != default ]; then
-  echo "    Hermes's active profile is \"$active\": enabling the plugin for the main profile too"
+  echo "    Hermux's active profile is \"$active\": enabling the plugin for the main profile too"
   enable_in "-p default"
 fi
 # A running Hermes still has the old plugin and Hermes files loaded: restart its dashboard (exact PIDs; the
 # hermes-services loop starts it again). Nothing runs yet on a first install.
-echo "    Restarting Hermes (if it runs) so the changes load"
+echo "    Restarting Hermux (if it runs) so the changes load"
 "$DEB" --restart
 
 # Hermes' google-workspace skill (Gmail/Calendar/Drive) is often run with Debian's system python3, which lacks these.
-echo "    Adding the Google client libraries for Hermes' Google skill (optional)"
+echo "    Adding the Google client libraries for Hermux's Google skill (optional)"
 "$DEB" bash -lc 'apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2' >/dev/null 2>&1 \
-  || echo "    Skipped (not needed unless you use Hermes with Google Calendar/Gmail)."
+  || echo "    Skipped (not needed unless you use Hermux with Google Calendar/Gmail)."
 
 if [ -n "${HM_NO_APK:-}" ]; then echo "Done (app download skipped: HM_NO_APK is set)."; exit 0; fi   # bootstrap.sh lists the to-dos itself
 show_todo

@@ -7,14 +7,14 @@ const st = (o: Partial<UninstallNative>): UninstallNative => ({ started: false, 
 const go = { confirmed: false, skipCleanup: false }
 
 // Lines exactly as phone/uninstall.sh prints them (tools/test_uninstall.sh runs the real script).
-const FULL = `HMUNINSTALL STEP stop Stopping Hermes
+const FULL = `HMUNINSTALL STEP stop Stopping Hermux
 HMUNINSTALL OK stop 3 supervisor loop(s) stopped
 HMUNINSTALL STEP backup Saving a backup to Downloads
 HMUNINSTALL BACKUP /storage/emulated/0/Download/hermes-backup-20261023-101500.tar.gz
 HMUNINSTALL OK backup hermes-backup-20261023-101500.tar.gz (412 KB)
 HMUNINSTALL STEP android Undoing the phone settings the installer changed
 HMUNINSTALL SKIP android Shizuku isn't running, so the child-process limit stays lifted
-HMUNINSTALL STEP debian Removing Debian and Hermes
+HMUNINSTALL STEP debian Removing Debian and Hermux
 HMUNINSTALL RM $PREFIX/var/lib/proot-distro/containers/debian
 HMUNINSTALL OK debian removed
 HMUNINSTALL STEP files Removing the installer's files in Termux
@@ -36,7 +36,7 @@ describe('parseCleanup', () => {
     expect(r.steps[2].text).toMatch(/Shizuku/)
   })
   it('a failed backup: FAIL, nothing after it, no DONE', () => {
-    const r = parseCleanup('HMUNINSTALL STEP stop Stopping Hermes\nHMUNINSTALL OK stop 0\nHMUNINSTALL STEP backup Saving\nHMUNINSTALL FAIL backup can\'t write to Downloads; nothing was removed\n', true)
+    const r = parseCleanup('HMUNINSTALL STEP stop Stopping Hermux\nHMUNINSTALL OK stop 0\nHMUNINSTALL STEP backup Saving\nHMUNINSTALL FAIL backup can\'t write to Downloads; nothing was removed\n', true)
     expect(r.done).toBe(false)
     expect(r.steps.find(s => s.id === 'backup')?.state).toBe('fail')
     expect(r.steps.find(s => s.id === 'debian')?.state).toBe('pending')

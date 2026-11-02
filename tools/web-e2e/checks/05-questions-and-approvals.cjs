@@ -5,7 +5,7 @@ module.exports = async t => {
   const { page } = t
   // ── #6 answers typed into a notification (RemoteInput → HermesService → window.hermesAnswer) ──
   await page.getByRole('button', { name: 'Close canvas' }).click()
-  await page.getByPlaceholder('Message Hermes').fill('ask me')
+  await page.getByPlaceholder('Message Hermux').fill('ask me')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   // The question is on the sheet (the clarify tool's card in the chat shows it too, from tool.start, a moment earlier, as with Hermes).
   await page.locator('.sheet').getByText('Which colour?').waitFor({ timeout: 5000 })
@@ -22,7 +22,7 @@ module.exports = async t => {
   check(rs && rs.params.text === 'sent from the notification' && rs.params.session_id === 'rt-s-7', `reply goes to its own chat (${JSON.stringify(rs && rs.params)})`)
 
   // ── Several questions at once: one at a time, a single-choice pick moves on by itself ──
-  await page.getByPlaceholder('Message Hermes').fill('ask me three')
+  await page.getByPlaceholder('Message Hermux').fill('ask me three')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.getByText('Question 1 of 3').waitFor({ timeout: 5000 })
   check((await page.getByText('Colour?').count()) === 1 && (await page.getByText('Size?').count()) === 0, 'several questions: only the first is shown')
@@ -45,10 +45,10 @@ module.exports = async t => {
   await sleep(400)
   const ans3 = calls().filter(c => c.answer === 'srv-clarify-3')
   check(ans3.length === 1 && JSON.stringify(ans3[0].result) === JSON.stringify({ answers: { a: 'Blue', b: 'M', c: 'none' } }), `several questions answered together (${JSON.stringify(ans3)})`)
-  await page.getByPlaceholder('Message Hermes').waitFor({ timeout: 5000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
 
   // ── A huge approval warning: buttons stay on screen, a repeated finding shows once with its count ──
-  await page.getByPlaceholder('Message Hermes').fill('run the long thing')
+  await page.getByPlaceholder('Message Hermux').fill('run the long thing')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.sheet .sheet-title', { hasText: 'Approve' }).waitFor({ timeout: 5000 })
   const vh = page.viewportSize().height

@@ -11,7 +11,7 @@ module.exports = async t => {
   const wel = await browser.newPage({ viewport: { width: 375, height: 812 } })
   wel.on('pageerror', e => { console.log('PAGEERROR', e.message); fail() })
   await wel.goto(WEB + '/')
-  await wel.getByText('Connect Hermes to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'fresh install opens the welcome'), () => check(false, 'fresh install opens the welcome'))
+  await wel.getByText('Connect Hermux to a model').waitFor({ timeout: 15000 }).then(() => check(true, 'fresh install opens the welcome'), () => check(false, 'fresh install opens the welcome'))
   check(await wel.getByRole('button', { name: 'Connect a provider first' }).isDisabled(), 'Pick a model waits for a connected provider')
   await wel.locator('.providers .set-row', { hasText: 'OpenAI' }).first().click()
   await wel.locator('.set-row', { hasText: 'ChatGPT Plus / Pro' }).getByRole('button', { name: 'Sign in' }).click()
@@ -20,16 +20,16 @@ module.exports = async t => {
   await wel.locator('.sheet .set-row', { hasText: 'ChatGPT Plus / Pro' }).getByText('Signed in').waitFor({ timeout: 5000 }).then(() => check(true, 'the provider sheet shows the new sign-in'), () => check(false, 'the provider sheet shows the new sign-in'))
   await wel.getByRole('button', { name: 'Choose a model' }).click({ timeout: 5000 })
   await wel.locator('.picker-opt', { hasText: 'mock-sonnet' }).click()
-  await wel.getByText('Connect Hermes to a model').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'picking a model closes the welcome'), () => check(false, 'picking a model closes the welcome'))
+  await wel.getByText('Connect Hermux to a model').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'picking a model closes the welcome'), () => check(false, 'picking a model closes the welcome'))
   {
     const set = calls().filter(c => c.path === '/api/model/set').pop()
     check(set && set.body.model === 'mock-sonnet', 'the welcome sets the default model')
     check(calls().some(c => c.path === '/api/model/options' && /refresh=true/.test(c.query)), 'the model list is refreshed after a new sign-in')
   }
   await wel.reload()
-  await wel.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await wel.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await sleep(1500)
-  check((await wel.getByText('Connect Hermes to a model').count()) === 0, 'the welcome does not come back')
+  check((await wel.getByText('Connect Hermux to a model').count()) === 0, 'the welcome does not come back')
   await wel.close()
 
   // ── providers: the model step offers every provider the pinned Hermes has (mock = its real /api/env + /api/providers/oauth) ──

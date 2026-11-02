@@ -15,7 +15,7 @@ Every canvas document of every chat and every profile in one list. Nothing is co
 | Top bar | Back arrow and the title Canvas gallery | Back closes the screen | | |
 | Search field | "Search titles and text…" | Typing searches on the server 300 ms after the last key: `GET /gallery?q=<text>`. Hermes searches titles and text. | | The box is empty each time the screen opens; the last search is not kept |
 | Type chips | `All N` and one chip per type with its count (HTML, Markdown, Code…). With 3 or fewer chips they show as a segmented control, with more as a scrolling row of pills. | Filters the list to that type (client-side) | | Not shown without items. A filter on a type that has nothing left falls back to All. |
-| Status text | Plain text line | | | "Loading…" until the first answer (an unreachable Hermes keeps the loading state and shows its error text, never "empty"); with no items: `Nothing matches “<query>”.` after a search, otherwise "Nothing here yet. Everything Hermes or you put on a chat’s canvas shows up here." |
+| Status text | Plain text line | | | "Loading…" until the first answer (an unreachable Hermes keeps the loading state and shows its error text, never "empty"); with no items: `Nothing matches “<query>”.` after a search, otherwise "Nothing here yet. Everything Hermux or you put on a chat’s canvas shows up here." |
 | Cards | A grid. Each card: type icon, type name, title, a snippet when there is one, and a line "💬 <chat title> · <age>", or "Saved copy · <age>" for an old copy that never had a chat, or "Chat deleted · <age>" | Opens the viewer | | |
 
 Viewer (`Viewer`, a tall sheet titled with the item's title):

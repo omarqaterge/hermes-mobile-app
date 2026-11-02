@@ -63,9 +63,9 @@ export const INSTALL_STEPS: { id: string; label: string }[] = [
   { id: 'access', label: 'Access to the phone' },
   { id: 'android', label: 'Android child-process limit' },
   { id: 'debian', label: 'Debian' },
-  { id: 'hermes', label: 'Hermes Agent (most of the wait)' },
+  { id: 'hermes', label: 'Hermux agent (most of the wait)' },
   { id: 'plugin', label: 'Hermux plugin' },
-  { id: 'start', label: 'Starting Hermes' }
+  { id: 'start', label: 'Starting Hermux' }
 ]
 
 export interface ProgressView {

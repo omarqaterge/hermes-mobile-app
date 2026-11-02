@@ -4,7 +4,7 @@
 
 The same port also serves `POST /setup` (the app-first installer's progress, 4.7): it uses its own one-time token, body at most 1,024 bytes, answers `204`, `403` (wrong token) or `400` (line not allowed).
 
-`HermesService.onEvent` switches on the `kind` field. The first twelve kinds below are the `case` labels in that switch; `shizuku-auto` is a thirteenth label that comes from a phone script, not the plugin. Common fields on events from the plugin: `title` (default "Hermes"), `body`, `session` (the chat id), `profile`.
+`HermesService.onEvent` switches on the `kind` field. The first twelve kinds below are the `case` labels in that switch; `shizuku-auto` is a thirteenth label that comes from a phone script, not the plugin. Common fields on events from the plugin: `title` (default "Hermux"), `body`, `session` (the chat id), `profile`.
 
 | Kind | Fields | Effect |
 |---|---|---|

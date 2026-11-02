@@ -16,7 +16,7 @@ module.exports = async t => {
   await np.addInitScript(nativeShell)
   const listsBefore = rpcs('session.list').length
   await np.goto(WEB + '/')
-  await np.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await np.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await sleep(1500)
   const nc = await np.evaluate(() => window.__nativeCalls)
   check(nc.includes('getTokenAsync') && !nc.includes('getToken'), `token fetched asynchronously (${[...new Set(nc)].join(',')})`)
@@ -29,7 +29,7 @@ module.exports = async t => {
     await dv.addInitScript(() => { window.__appVersion = '0.8.66+devtools' })
     await dv.addInitScript(nativeShell)
     await dv.goto(WEB + '/')
-    await dv.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await dv.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     const strip = dv.getByText('Test build: remote debugging is on')
     check(await strip.isVisible(), 'devtools: a +devtools build shows the warning strip')
     const box = await strip.boundingBox()
@@ -55,7 +55,7 @@ module.exports = async t => {
       await pg.addInitScript(init)
       await pg.addInitScript(nativeShell)
       await pg.goto(WEB + '/')
-      await pg.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+      await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
       await pg.getByRole('button', { name: /^Sessions/ }).click()
       await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
       await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
@@ -96,7 +96,7 @@ module.exports = async t => {
   await np.evaluate(() => window.__hmVoice('final', 'run the thing'))
   await np.waitForFunction(() => (window.__spoken || []).some(t => /Allow or deny/.test(t)), null, { timeout: 8000 }).catch(() => {})
   const spoken = await np.evaluate(() => (window.__spoken || []).join(' | '))
-  check(/Hermes needs your permission\. Allow or deny\?/.test(spoken) && !/temp folder|rm -rf/.test(spoken), `approval asked in one short question, the command isn't read out (${spoken})`)
+  check(/Hermux needs your permission\. Allow or deny\?/.test(spoken) && !/temp folder|rm -rf/.test(spoken), `approval asked in one short question, the command isn't read out (${spoken})`)
   await sleep(300)
   await np.evaluate(() => window.__hmVoice('final', 'yes allow it'))
   await sleep(2800)
@@ -240,7 +240,7 @@ module.exports = async t => {
     await np.locator('.nav-tile', { hasText: 'Settings' }).click()
     const bgRow = np.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
     await bgRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the Background apps row'), () => check(false, 'Settings has the Background apps row'))
-    check(/Off: Hermes won't open them in the background/.test((await bgRow.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'row explains what Off means')
+    check(/Off: Hermux won't open them in the background/.test((await bgRow.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'row explains what Off means')
     check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'false', 'switch starts off')
     await bgRow.click({ timeout: 1500 }).catch(() => {})
     await sleep(500)
@@ -288,7 +288,7 @@ module.exports = async t => {
   await sleep(200)
   check(/On/.test((await ar.textContent()) || ''), `assistant row says On after returning (${await ar.textContent()})`)
   // "Talk to Hermes on the lock screen": off by default, each change saved and pushed to the shell.
-  const lr = np.locator('.set-row', { hasText: 'Talk to Hermes on the lock screen' })
+  const lr = np.locator('.set-row', { hasText: 'Talk to Hermux on the lock screen' })
   await lr.waitFor({ timeout: 5000 }).then(() => check(true, 'lock-screen row shown'), () => check(false, 'lock-screen row shown'))
   check((await lr.getByRole('switch').getAttribute('aria-checked')) === 'false', 'lock-screen row is off by default')
   check(/asks you to unlock first/.test((await np.locator('.set-section', { has: ar }).locator('.set-foot').textContent()) || ''), 'footer says the lock screen asks to unlock first')
@@ -311,7 +311,7 @@ module.exports = async t => {
   // The Hermes-side checks answer a moment later than the Android ones.
   await np.waitForFunction(() => document.querySelectorAll('.setup-item.ok').length >= 6, null, { timeout: 6000 }).catch(() => {})
   check((await np.locator('.setup-item.ok').count()) >= 6, `native: the rest are ✓ (${await np.locator('.setup-item.ok').count()})`)
-  await np.locator('.setup-item.bad', { hasText: 'may start Hermes' }).getByRole('button', { name: 'Allow' }).click()
+  await np.locator('.setup-item.bad', { hasText: 'may start the agent' }).getByRole('button', { name: 'Allow' }).click()
   await np.locator('.setup-item.bad', { hasText: 'run in the background' }).getByRole('button', { name: 'Allow' }).click()
   check(JSON.stringify(await np.evaluate(() => window.__fixes)) === '["permissions","battery-app"]', `fix buttons ask the shell (${JSON.stringify(await np.evaluate(() => window.__fixes))})`)
   await np.evaluate(() => (window.__setup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' }))
@@ -364,7 +364,7 @@ module.exports = async t => {
   await np.locator('.setup-hero-title', { hasText: '3 things to fix' }).waitFor({ timeout: 6000 }).then(() => check(true, 'phone access: files, Termux:API and Shizuku counted'), () => check(false, 'phone access: files, Termux:API and Shizuku counted'))
   await np.locator('.setup-item.bad', { hasText: 'Termux:API' }).getByRole('button', { name: 'Get Termux:API' }).click()
   await np.locator('.setup-item.bad', { hasText: 'Shizuku' }).getByRole('button', { name: 'Open Shizuku' }).click()
-  await np.locator('.setup-item.bad', { hasText: 'your files' }).getByRole('button', { name: 'Restart Hermes' }).click()
+  await np.locator('.setup-item.bad', { hasText: 'your files' }).getByRole('button', { name: 'Restart Hermux' }).click()
   const fx = JSON.stringify((await np.evaluate(() => window.__fixes)).slice(-3))
   check(fx === '["get-termux-api","open-shizuku","restart-hermes"]', `phone access fix buttons (${fx})`)
   await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
@@ -388,7 +388,7 @@ module.exports = async t => {
     const listed = (await sheet.locator('.setup-list .setup-title').allTextContents()).join(' | ')
     const squeezed = await sheet.locator('.setup-list').first().evaluate(el => el.scrollHeight - el.clientHeight)
     check(squeezed <= 1, `uninstall: the list is shown whole, not squeezed into a scroll box (${squeezed}px hidden)`)
-    check(['Hermes, with all chats', 'Debian', 'installer’s files', 'phone setting', 'Termux:API', 'Termux:Boot', 'Shizuku', 'App: Termux', 'Hermux'].every(t => listed.includes(t)), `uninstall: lists everything that goes (${listed})`)
+    check(['Hermux, with all chats', 'Debian', 'installer’s files', 'phone setting', 'Termux:API', 'Termux:Boot', 'Shizuku', 'App: Termux', 'Hermux'].every(t => listed.includes(t)), `uninstall: lists everything that goes (${listed})`)
     const bk = sheet.locator('.set-row', { hasText: 'Save a backup to Downloads' })
     const ky = sheet.locator('.set-row', { hasText: 'Include API keys and sign-ins' })
     check((await bk.getByRole('switch').getAttribute('aria-checked')) === 'true', 'uninstall: backup offered, on by default')
@@ -412,7 +412,7 @@ module.exports = async t => {
     check(st0 && JSON.parse(st0.settings).settings['hm.theme'] === 'oled', 'uninstall: the app settings go into the backup')
     // the backup fails: nothing removed, the reason, Try again
     await np.evaluate(() => {
-      window.__un = { started: false, running: false, removed: false, result: { exit: 3, stdout: "HMUNINSTALL STEP stop Stopping Hermes\nHMUNINSTALL OK stop 1\nHMUNINSTALL STEP backup x\nHMUNINSTALL FAIL backup can't write to Downloads (does Termux have access to files?); nothing was removed\n" } }
+      window.__un = { started: false, running: false, removed: false, result: { exit: 3, stdout: "HMUNINSTALL STEP stop Stopping Hermux\nHMUNINSTALL OK stop 1\nHMUNINSTALL STEP backup x\nHMUNINSTALL FAIL backup can't write to Downloads (does Termux have access to files?); nothing was removed\n" } }
       window.hermesUninstallDone()
     })
     await sheet.locator('.uninstall-err', { hasText: 'Stopped before removing anything' }).waitFor({ timeout: 3000 }).then(() => check(true, 'uninstall: failed backup says nothing was removed'), () => check(false, 'uninstall: failed backup says nothing was removed'))
@@ -422,7 +422,7 @@ module.exports = async t => {
     check(log.length === 2 && log[1].start && log[1].start.backup === true, 'uninstall: Try again runs the cleanup again (with the backup)')
     await np.evaluate(() => {
       window.__un = { started: true, running: false, removed: true, result: { exit: 0, stdout: [
-        'HMUNINSTALL STEP stop Stopping Hermes', 'HMUNINSTALL OK stop 3', 'HMUNINSTALL STEP backup x',
+        'HMUNINSTALL STEP stop Stopping Hermux', 'HMUNINSTALL OK stop 3', 'HMUNINSTALL STEP backup x',
         'HMUNINSTALL BACKUP /storage/emulated/0/Download/hermes-backup-20261023-101500.tar.gz', 'HMUNINSTALL OK backup ok',
         'HMUNINSTALL STEP android x', "HMUNINSTALL SKIP android Shizuku isn't running", 'HMUNINSTALL STEP debian x', 'HMUNINSTALL OK debian removed',
         'HMUNINSTALL STEP files x', 'HMUNINSTALL OK files', 'HMUNINSTALL STEP termux x', 'HMUNINSTALL OK termux', 'HMUNINSTALL DONE'].join('\n') } }
@@ -445,7 +445,7 @@ module.exports = async t => {
       await sheet.locator(`[data-app="${id}"]`, { hasText: 'Removed' }).waitFor({ timeout: 3000 }).catch(() => {})
     }
     const self = sheet.locator('[data-app="self"]')
-    check(/Removed so far: Hermes, its chats and Debian, the installer’s files, Termux:API, Termux:Boot, Shizuku, Termux/.test((await self.textContent()) || ''), `uninstall: the last screen says what was removed (${await self.textContent()})`)
+    check(/Removed so far: the Hermux agent, its chats and Debian, the installer’s files, Termux:API, Termux:Boot, Shizuku, Termux/.test((await self.textContent()) || ''), `uninstall: the last screen says what was removed (${await self.textContent()})`)
     check((await np.locator('.dialog').count()) === 0, 'uninstall: Termux after a finished cleanup needs no extra warning')
     await self.getByRole('button', { name: 'Uninstall Hermux' }).click()
     log = await np.evaluate(() => window.__unLog || [])
@@ -473,7 +473,7 @@ module.exports = async t => {
     await cs.addInitScript(nativeShell)
     await mock({ claudeSignedIn: true })
     await cs.goto(WEB + '/')
-    await cs.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await cs.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     const openAccounts = async () => {
       await cs.getByRole('button', { name: /^Sessions/ }).click()
       await cs.locator('.nav-tile', { hasText: 'Settings' }).click()
@@ -524,7 +524,7 @@ module.exports = async t => {
     // An older plugin without the in-app login: the sheet offers Termux instead
     await mock({ claudeSignedIn: false, claudeLoginMissing: true })
     await cs.goto(WEB + '/')
-    await cs.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await cs.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await openAccounts()
     await claudeRow.getByRole('button', { name: 'Sign in' }).click({ timeout: 5000 }).catch(() => {})
     await sheet.getByText('Termux').first().waitFor({ timeout: 5000 }).then(() => check(true, 'claude: without the plugin route the sheet offers Termux'), () => check(false, 'claude: without the plugin route the sheet offers Termux'))
@@ -540,12 +540,12 @@ module.exports = async t => {
     await lp.addInitScript(() => { window.__ttsHold = true })
     await lp.addInitScript(nativeShell)
     await lp.goto(WEB + '/')
-    await lp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await lp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await lp.evaluate(() => window.hermesShortcut('live'))
     await lp.waitForFunction(() => window.__nativeCalls.includes('startListening'), null, { timeout: 5000 })
     await lp.evaluate(() => window.__hmVoice('final', 'hello there'))
     const bar = lp.locator('.live-bar')
-    await bar.getByText('Hermes is speaking…').waitFor({ timeout: 10000 }).then(() => check(true, 'interrupt: the reply is being read'), () => check(false, 'interrupt: the reply is being read'))
+    await bar.getByText('Hermux is speaking…').waitFor({ timeout: 10000 }).then(() => check(true, 'interrupt: the reply is being read'), () => check(false, 'interrupt: the reply is being read'))
     check(await bar.getByText('Talk or tap Interrupt to cut in').isVisible(), 'interrupt: the bar says how to cut in')
     check((await lp.evaluate(() => window.__nativeCalls)).includes('startListeningOver'), 'barge-in: the microphone stays on while Hermes speaks')
     const listens = await lp.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
@@ -558,12 +558,12 @@ module.exports = async t => {
     check(box && box.width <= 375, `interrupt: the bar fits a phone screen (${box && box.width})`)
     // Talking over Hermes: its own words coming back are ignored, yours cut it off and are sent after the pause
     await lp.evaluate(() => window.__hmVoice('final', 'tell me a long story'))
-    await bar.getByText('Hermes is speaking…').waitFor({ timeout: 10000 }).catch(() => {})
+    await bar.getByText('Hermux is speaking…').waitFor({ timeout: 10000 }).catch(() => {})
     const stops = await lp.evaluate(() => window.__nativeCalls.filter(c => c === 'stopSpeaking').length)
     const echo = await lp.evaluate(() => (window.__spoken || []).at(-1).split(/\s+/).slice(0, 4).join(' '))
     await lp.evaluate(t => window.__hmVoice('partial', t), echo)
     await sleep(200)
-    check(await bar.getByText('Hermes is speaking…').isVisible(), `barge-in: Hermes's own voice doesn't cut it off ("${echo}")`)
+    check(await bar.getByText('Hermux is speaking…').isVisible(), `barge-in: Hermes's own voice doesn't cut it off ("${echo}")`)
     const sent = rpcs('prompt.submit').length
     await lp.evaluate(() => window.__hmVoice('partial', 'actually never mind that'))
     await bar.getByText('Listening…').waitFor({ timeout: 3000 }).then(() => check(true, 'barge-in: talking cuts Hermes off'), () => check(false, 'barge-in: talking cuts Hermes off'))
@@ -615,7 +615,7 @@ module.exports = async t => {
     await vp.waitForFunction(() => (window.__seen || []).slice(-1)[0] === 's-5', null, { timeout: 5000 }).catch(() => {})
     await tap('s-6')
     await vp.waitForFunction(() => (window.__seen || []).slice(-1)[0] === 's-6', null, { timeout: 5000 }).then(() => check(true, 'chip tap, app already done: the chat opens'), () => check(false, 'chip tap, app already done: the chat opens'))
-    await vp.locator('.toast', { hasText: "Hermes isn't using an app any more" }).waitFor({ timeout: 3000 }).then(() => check(true, 'chip tap, app already done: says so'), () => check(false, 'chip tap, app already done: says so'))
+    await vp.locator('.toast', { hasText: "Hermux isn't using an app any more" }).waitFor({ timeout: 3000 }).then(() => check(true, 'chip tap, app already done: says so'), () => check(false, 'chip tap, app already done: says so'))
     check((await viewer.count()) === 0, 'chip tap, app already done: no viewer')
     // The request was used up: the app coming back later shows the card, not the viewer by itself.
     await setNative(st)
@@ -632,14 +632,14 @@ module.exports = async t => {
     await ap.addInitScript(m => { window.__ttsHold = true; if (m !== 'off') localStorage.setItem('hm.defaultAccess.v1', m) }, mode)
     await ap.addInitScript(nativeShell)
     await ap.goto(WEB + '/')
-    await ap.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await ap.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await ap.evaluate(() => window.hermesShortcut('live'))
     const bar = ap.locator('.live-bar')
     await bar.waitFor({ timeout: 5000 }).catch(() => {})
     if (mode === 'off') check((await bar.locator('.auto-btn').count()) === 0, 'Live bar: no Auto button while Auto is off')
     else {
       await ap.evaluate(() => window.__hmVoice('final', 'hello there'))
-      await bar.getByText('Hermes is speaking…').waitFor({ timeout: 10000 }).catch(() => {})
+      await bar.getByText('Hermux is speaking…').waitFor({ timeout: 10000 }).catch(() => {})
       check((await bar.locator('.auto-btn.full', { hasText: '⚡' }).count()) === 1, 'Live bar: shows ⚡ for Full access')
       const fit = await bar.evaluate(b => ({ over: b.scrollWidth > b.clientWidth + 1, right: Math.max(...[...b.children].map(c => c.getBoundingClientRect().right)) <= b.getBoundingClientRect().right + 1 }))
       check(!fit.over && fit.right, `Live bar with Auto, Interrupt, mute and End fits 360 px (${JSON.stringify(fit)})`)
@@ -651,7 +651,7 @@ module.exports = async t => {
   const rp = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await rp.addInitScript(nativeShell)
   await rp.goto(WEB + '/')
-  await rp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  await rp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   check((await rp.evaluate(() => window.__watchHermes || 0)) === 0, 'no watch for Hermes while it answers')
   await mock({ drop: 60000 })
   await rp.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
@@ -660,7 +660,7 @@ module.exports = async t => {
   await mock({ up: true })
   const asked = Date.now()
   await rp.evaluate(() => window.__hmHermesReady())
-  await rp.getByPlaceholder('Message Hermes').waitFor({ timeout: 2500 }).then(() => check(true, 'Hermes answers: connected at once'), () => check(false, 'Hermes answers: connected at once'))
+  await rp.getByPlaceholder('Message Hermux').waitFor({ timeout: 2500 }).then(() => check(true, 'Hermes answers: connected at once'), () => check(false, 'Hermes answers: connected at once'))
   check(Date.now() - asked < 2500, `well before the next backoff step (${Date.now() - asked} ms)`)
   await sleep(500)
   const opened = rpcs('session.list').length

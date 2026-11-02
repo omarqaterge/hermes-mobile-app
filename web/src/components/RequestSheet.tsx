@@ -100,7 +100,7 @@ function Clarify({ req }: { req: ServerRequest }) {
   const p = req.params as Record<string, unknown>
   const questions: ClarifyQuestion[] = (p.questions as ClarifyQuestion[] | undefined)?.length
     ? (p.questions as ClarifyQuestion[])
-    : [{ qid: '_', question: String(p.question || 'Hermes has a question'), choices: (p.choices as string[]) || null, multi_select: Boolean(p.multi_select) }]
+    : [{ qid: '_', question: String(p.question || 'Hermux has a question'), choices: (p.choices as string[]) || null, multi_select: Boolean(p.multi_select) }]
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [step, setStep] = useState(0)
   const timer = useRef<number | undefined>(undefined)
@@ -132,7 +132,7 @@ function Clarify({ req }: { req: ServerRequest }) {
   const last = step >= n - 1
   return (
     <>
-      <div className="sheet-title">❓ Hermes asks</div>
+      <div className="sheet-title">❓ Hermux asks</div>
       {multi ? (
         <div className="clarify-steps">
           <span>
@@ -204,7 +204,7 @@ function MaskedValue({ req }: { req: ServerRequest }) {
     <>
       <div className="sheet-title">{title}</div>
       <div className="sheet-scroll">
-        <div className="sheet-desc"><Linked text={String(p.prompt || p.command || p.message || 'Hermes needs a value to continue.')} /></div>
+        <div className="sheet-desc"><Linked text={String(p.prompt || p.command || p.message || 'Hermux needs a value to continue.')} /></div>
       </div>
       <input
         className="sheet-input"

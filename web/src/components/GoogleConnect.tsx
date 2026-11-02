@@ -37,7 +37,7 @@ export function GoogleSection({ profile }: { profile: string }) {
   const state = data.signed_in || data.unverified ? 'connected' : 'setup'
   return (
     <>
-      <Section title="Google" footer="Hermes reads and writes your mail, calendar and files through its Google Workspace skill. Ask it in any chat.">
+      <Section title="Google" footer="Hermux reads and writes your mail, calendar and files through its Google Workspace skill. Ask it in any chat.">
         <Row
           icon="📧"
           tone="red"
@@ -89,7 +89,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
           if (r.installing) timer = setTimeout(poll, INSTALL_POLL_MS)
           else if (!r.install_error) {
             setError('')
-            toast('Google’s libraries are installed. If a chat can’t use Google yet, restart Hermes (Settings → Reconnect).', 'info', 8000)
+            toast('Google’s libraries are installed. If a chat can’t use Google yet, restart Hermux (Settings → Reconnect).', 'info', 8000)
           }
         })
         .catch(() => {
@@ -144,7 +144,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
   const install = () =>
     void call('install', () => api<GoogleStatus>('POST', `${G}/install?${p}`, {}, { profile: false })).then(r => r && onStatus(r))
   const signOut = () =>
-    void confirmDialog({ title: 'Sign out of Google?', message: 'Hermes revokes its access and deletes the saved sign-in. Your sign-in app stays.', confirmLabel: 'Sign out', danger: true }).then(ok => {
+    void confirmDialog({ title: 'Sign out of Google?', message: 'Hermux revokes its access and deletes the saved sign-in. Your sign-in app stays.', confirmLabel: 'Sign out', danger: true }).then(ok => {
       if (!ok) return
       void call('signout', () => api<GoogleStatus>('DELETE', `${G}?${p}`, undefined, { profile: false })).then(r => {
         if (!r) return
@@ -161,7 +161,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
         {connected && (
           <>
             {s.signed_in ? (
-              <div className="notice">Connected. Ask Hermes about your mail, calendar or files in any chat.</div>
+              <div className="notice">Connected. Ask Hermux about your mail, calendar or files in any chat.</div>
             ) : (
               <div className="notice notice-warn">{`The sign-in is saved, but Google couldn’t be reached to check it right now (${s.detail}). No need to sign in again unless this stays.`}</div>
             )}
@@ -221,7 +221,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
         {error && <div className="notice notice-error">{error}</div>}
         {s.install_error && <div className="notice notice-error">{s.install_error}</div>}
         {(needsLibs || s.installing || s.install_error) && (
-          <Section footer="Hermes needs Google’s Python libraries for this. Installing them can take a few minutes; you can leave this page meanwhile.">
+          <Section footer="Hermux needs Google’s Python libraries for this. Installing them can take a few minutes; you can leave this page meanwhile.">
             <Row icon="⬇" tone="blue" title={s.installing ? 'Installing…' : 'Install Google’s libraries'} onClick={busy || s.installing ? undefined : install} />
           </Section>
         )}
