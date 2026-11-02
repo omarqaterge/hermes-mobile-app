@@ -91,6 +91,9 @@ const redact = v => (v.length >= 12 ? `«redacted:${v.slice(0, 4)}...${v.slice(-
 let poolManual = {} // provider -> [{ id, label, key }]
 let poolStatus = {}
 let poolSeq = 0
+// Like Hermes, the pool lists only providers already in auth.json: a .env key is seeded the first time Hermes loads that
+// provider's pool (a chat with it, or a key added to it), not when the key is saved.
+let poolSeeded = new Set()
 // config.yaml's fallback chain and per-provider rotation strategy (read with GET /api/config, merged by PUT /api/config).
 let rotation = { fallback_providers: [], credential_pool_strategies: {} }
 const keyPreview = v => (v.length >= 12 ? `${v.slice(0, 4)}...${v.slice(-4)}` : '***')
@@ -100,7 +103,7 @@ function poolList() {
   const add = (provider, x) => (by[provider] ||= []).push(x)
   for (const [k, v] of Object.entries(envSet)) {
     const info = providerFixture.env[k]
-    if (info?.category === 'provider' && info.is_password && info.provider) add(info.provider, { id: `env-${k.toLowerCase()}`, label: k, auth_type: 'api_key', source: `env:${k}`, key: v, env: k })
+    if (info?.category === 'provider' && info.is_password && info.provider && poolSeeded.has(info.provider)) add(info.provider, { id: `env-${k.toLowerCase()}`, label: k, auth_type: 'api_key', source: `env:${k}`, key: v, env: k })
   }
   for (const [prov, list] of Object.entries(poolManual)) for (const m of list) add(prov, { ...m, auth_type: 'api_key', source: 'manual' })
   for (const c of claudePool) add('anthropic', { id: c.id, label: c.label, auth_type: 'oauth', source: c.source, key: 'sk-ant-oat01-mock-abcd', claude: true })
@@ -143,6 +146,7 @@ const server = http.createServer((req, res) => {
         endpoints = []
         poolManual = {}
         poolStatus = {}
+        poolSeeded = new Set()
         rotation = { fallback_providers: [], credential_pool_strategies: {} }
         codexPolls = 0 // nobody signed in to ChatGPT any more either
       }
@@ -155,6 +159,7 @@ const server = http.createServer((req, res) => {
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
+      if (b.poolSeeded) poolSeeded = new Set(b.poolSeeded)
       if (b.poolStatus) poolStatus = { ...poolStatus, ...b.poolStatus }
       if (b.rotation) rotation = { fallback_providers: [], credential_pool_strategies: {}, ...b.rotation }
       if (b.envSet) envSet = { ...envSet, ...b.envSet }
@@ -347,7 +352,9 @@ const server = http.createServer((req, res) => {
       const prov = String(b.provider || '').trim().toLowerCase()
       const key = String(b.api_key || '').trim()
       if (!prov || !key) return send({ detail: 'provider and api_key are required' }, 400)
+      poolSeeded.add(prov) // load_pool seeds the provider's .env key before the new entry is added
       const n = (poolList().find(x => x.provider === prov)?.entries.length || 0) + 1
+      poolSeeded.add(prov)
       ;(poolManual[prov] ||= []).push({ id: `m${(++poolSeq).toString(16).padStart(5, '0')}`, label: String(b.label || '').trim() || `key #${n}`, key })
       return send({ ok: true, provider: prov, count: n })
     }

@@ -7,6 +7,7 @@ module.exports = async t => {
   // DeepSeek has its .env key (seeded into its pool) and that key is cooling down; one fallback with a hand-written base_url.
   await mock({
     envSet: { DEEPSEEK_API_KEY: 'sk-deepseek-mock-0001' },
+    poolSeeded: ['deepseek'], // Hermes already loaded DeepSeek's pool (a chat used it)
     poolStatus: { 'env-deepseek_api_key': 'exhausted' },
     rotation: { fallback_providers: [{ provider: 'deepseek', model: 'deepseek-chat', base_url: 'https://gw.example/v1' }] }
   })
@@ -82,5 +83,5 @@ module.exports = async t => {
   await pg.close()
   // Leave the mock as the earlier files expect it.
   await fetch(require('../lib.cjs').MOCK + '/api/env', { method: 'DELETE', body: JSON.stringify({ key: 'DEEPSEEK_API_KEY' }) })
-  await mock({ rotation: {}, poolStatus: { 'env-deepseek_api_key': null } })
+  await mock({ rotation: {}, poolStatus: { 'env-deepseek_api_key': null }, poolSeeded: [] })
 }
