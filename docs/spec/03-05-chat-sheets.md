@@ -138,7 +138,7 @@ Hermes snapshots a folder before it edits a file there (once per turn). The plug
 
 - **Add** (composer): see 3.4.
 - **Copy reply** (assistant message): see 3.3.
-- **Auto: run without asking** (header): see 3.2.
+- **Auto: run without asking** (composer's Auto button): see 3.2.
 
 These are `PickerSheet` instances from `web/src/components/ui.tsx` (3.20): a list with an optional icon, a title, a sub-line, and a check on the current choice. Picking closes the picker.
 

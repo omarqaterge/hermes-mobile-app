@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { bargeInAvailable, fmtPause, getLivePause, interruptLive, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
 import { startListening, stopListening, useVoice, voiceErrorText, voiceInputAvailable } from '../voice'
-import { afterChatOpens, attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, setYolo, unqueueMessage } from '../gateway'
+import { afterChatOpens, attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, unqueueMessage } from '../gateway'
 import { getState, setState, toast, useStore, type Attachment } from '../store'
 import { haptic } from '../bridge'
 import { matchCommands, refreshCommands, useCommandCatalog, type CommandEntry } from '../commands'
@@ -13,6 +13,7 @@ import { ctxLevel, ringDash } from '../ctxring'
 import { clearStashes, pushStash, stashes, takeStash } from '../stash'
 import { confirmDialog } from '../dialog'
 import { plainTitle } from './Title'
+import { AutoButton } from './AutoAccess'
 import { ago } from '../unread'
 import { QUEUE_MAX, enqueue, useQueue } from '../queue'
 import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
@@ -84,7 +85,6 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const running = useStore(s => s.active?.running ?? false)
   const model = useStore(s => s.active?.info.model ?? s.defaultModel)
   const effort = useStore(s => s.active?.info.reasoning_effort || s.defaultEffort)
-  const yolo = useStore(s => s.active?.info.yolo === true && !s.active.autoAccess)
   const attachments = useStore(s => s.active?.attachments ?? EMPTY)
   const conn = useStore(s => s.conn)
   const opening = useStore(s => s.opening)
@@ -407,7 +407,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
         </div>
       )}
       {live === 'off' && !showMenu && (
-        // The model Hermes reports for this chat (session.info), or the profile default before a chat exists.
+        // The model Hermes reports for this chat (session.info), or the profile default before a chat exists; beside it the Auto button.
         <div className="model-row">
           <button className="model-chip" aria-label={`Model: ${model || 'none'}${effort && model ? `, reasoning ${effort === 'none' ? 'off' : effort}` : ''}. Change model`} onClick={() => { haptic(); setState({ sheet: 'model' }) }} disabled={offline}>
             <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -416,21 +416,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
             {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
           </button>
-          {yolo && (
-            // Full access (/yolo): commands run without asking. Tap to turn it off (Auto access shows only in the header).
-            <button
-              className="yolo-chip"
-              aria-label="Full access is on: Hermes runs commands without asking. Tap to turn it off"
-              onClick={() => {
-                haptic()
-                const a = getState().active
-                if (a) void setYolo(a, false).then(() => toast('Full access off: Hermes asks before risky commands again'), e => toast(errText(e), 'error'))
-              }}
-              disabled={offline}
-            >
-              ⚡ Full access
-            </button>
-          )}
+          <AutoButton />
           <ContextRing />
         </div>
       )}
