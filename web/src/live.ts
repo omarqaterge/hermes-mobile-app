@@ -1,6 +1,6 @@
 // Live mode: a hands-free voice conversation.
 //   listen → (you pause for 2 s) → send what you said → wait for the reply → read it aloud → listen again …
-// until you press the button again. Android does the listening/speaking (Voice.java); this is the loop.
+// until you press the button again. Interrupt cuts the reading short and listens at once. Android does the listening/speaking (Voice.java); this is the loop.
 // The microphone is off while Hermes thinks and while it speaks, so it never hears itself.
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { answerRequest, errText, sendPrompt } from './gateway'
@@ -216,6 +216,14 @@ export function startLive(): void {
   unTts = onTtsDone(() => phase === 'speaking' && listen())
   goto('listening') // listen() does nothing while the phase is 'off'
   listen()
+}
+
+/** Cut Hermes off while it speaks and listen at once (the Interrupt button). The mic stays off while it speaks, so
+ * this is a tap, not a voice barge-in. An approval question being read stays open: the answer is heard next. */
+export function interruptLive(): void {
+  if (phase !== 'speaking') return
+  stopSpeaking() // its late tts-done is ignored: the phase is no longer 'speaking'
+  listen() // muted: listening with the microphone closed, as after a reply
 }
 
 /** Mic off/on without ending the conversation. Muting throws away what was said but not yet sent. */

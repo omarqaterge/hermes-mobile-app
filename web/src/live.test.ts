@@ -117,3 +117,36 @@ describe('Live mode waits for a phrase still being finished', () => {
     expect(g()).toHaveBeenCalledWith('Hello there.')
   })
 })
+
+describe('Interrupting Hermes while it speaks', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.mocked(v.stopSpeaking).mockClear()
+    live.startLive()
+  })
+  afterEach(() => {
+    live.stopLive()
+    vi.useRealTimers()
+  })
+
+  test('the reading stops and Live mode listens again at once', async () => {
+    const gw = await import('./gateway')
+    voice.hear!('final', 'tell me a long story')
+    vi.advanceTimersByTime(live.getLivePause() * 1000 + 10)
+    voice.bridge.onReply('Once upon a time…')
+    voice.hear = null
+    live.interruptLive()
+    expect(v.stopSpeaking).toHaveBeenCalled()
+    expect(voice.hear).not.toBeNull() // listening again
+    vi.mocked(gw.sendPrompt).mockClear()
+    voice.hear!('final', 'Stop, tell me a short one.')
+    vi.advanceTimersByTime(live.getLivePause() * 1000 + 10)
+    expect(gw.sendPrompt).toHaveBeenCalledWith('Stop, tell me a short one.')
+  })
+
+  test('does nothing while listening', () => {
+    live.interruptLive()
+    expect(v.stopSpeaking).not.toHaveBeenCalled()
+    expect(live.liveOn()).toBe(true)
+  })
+})

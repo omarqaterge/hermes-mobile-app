@@ -533,4 +533,29 @@ module.exports = async t => {
     await mock({ claudeLoginMissing: false })
     await cs.close()
   }
+
+  // ── Live mode: Interrupt cuts Hermes off while it speaks and listens at once ──
+  {
+    const lp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await lp.addInitScript(() => { window.__ttsHold = true })
+    await lp.addInitScript(nativeShell)
+    await lp.goto(WEB + '/')
+    await lp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+    await lp.evaluate(() => window.hermesShortcut('live'))
+    await lp.waitForFunction(() => window.__nativeCalls.includes('startListening'), null, { timeout: 5000 })
+    await lp.evaluate(() => window.__hmVoice('final', 'hello there'))
+    const bar = lp.locator('.live-bar')
+    await bar.getByText('Hermes is speaking…').waitFor({ timeout: 10000 }).then(() => check(true, 'interrupt: the reply is being read'), () => check(false, 'interrupt: the reply is being read'))
+    check(await bar.getByText('Tap Interrupt to talk').isVisible(), 'interrupt: the bar says how to cut in')
+    const listens = await lp.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
+    await bar.getByRole('button', { name: 'Interrupt' }).click()
+    await bar.getByText('Listening…').waitFor({ timeout: 3000 }).then(() => check(true, 'interrupt: Live mode listens again'), () => check(false, 'interrupt: Live mode listens again'))
+    const after = await lp.evaluate(() => window.__nativeCalls)
+    check(after.includes('stopSpeaking') && after.filter(c => c === 'startListening').length > listens, 'interrupt: the reading stops and the microphone opens')
+    check(await bar.getByRole('button', { name: 'Interrupt' }).count() === 0, 'interrupt: the button is gone while listening')
+    const box = await bar.boundingBox()
+    check(box && box.width <= 375, `interrupt: the bar fits a phone screen (${box && box.width})`)
+    await bar.getByRole('button', { name: 'End' }).click()
+    await lp.close()
+  }
 }
