@@ -16,10 +16,20 @@ import { toast } from '../store'
 import { Sheet } from './Screens'
 import { Spinner } from './Spinner'
 
-interface PoolEntry {
+/** One credential in a provider's pool, as Hermes lists it (redacted: a preview, never the token). */
+export interface PoolEntry {
+  /** 1-based position, as `DELETE /api/credentials/pool/<provider>/<index>` takes it. */
+  index?: number
+  id?: string
   label?: string
   auth_type?: string
   source?: string
+  priority?: number
+  /** null / "ok", "exhausted" (cooling down after a rate limit or empty credit), "dead" (its login was revoked). */
+  last_status?: string | null
+  request_count?: number
+  token_preview?: string
+  has_refresh?: boolean
 }
 interface PoolAnswer {
   providers?: { provider: string; entries?: PoolEntry[] }[]

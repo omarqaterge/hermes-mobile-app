@@ -1,6 +1,6 @@
 ### 3.15 Settings
 
-**Source files:** `web/src/components/Settings.tsx` (`SettingsScreen`, the page components, `ModelPicker`, `setProfileModel`, `profileLabel`), `web/src/theme.ts`, `web/src/update.ts`, `web/src/releasenotes.ts`, `web/src/hermes-update.ts`; rows that live in other files are marked below (`AutoAccess.tsx` `DefaultAccessRow`, `Uninstall.tsx` `UninstallSection`, `Providers.tsx` `ProviderList`). Hermes validates and stores every write, exactly as Hermes Desktop would: the app only calls the dashboard's REST routes, scoped with `?profile=`.
+**Source files:** `web/src/components/Settings.tsx` (`SettingsScreen`, the page components, `ModelPicker` (`noEffort` hides the reasoning pills), `setProfileModel`, `profileLabel`), `web/src/theme.ts`, `web/src/update.ts`, `web/src/releasenotes.ts`, `web/src/hermes-update.ts`; rows that live in other files are marked below (`AutoAccess.tsx` `DefaultAccessRow`, `Uninstall.tsx` `UninstallSection`, `Providers.tsx` `ProviderList`). Hermes validates and stores every write, exactly as Hermes Desktop would: the app only calls the dashboard's REST routes, scoped with `?profile=`.
 
 **Opens from:** the ⚙ Settings tile in the drawer; the Bots sheet's "API keys & settings" (opens the API keys page for that bot). **Closes with:** Back arrow (a sub-page goes back to the Settings main page first; Android Back does the same). **Source:** `Settings.tsx` `SettingsScreen`.
 
@@ -93,7 +93,7 @@ Outside the Android app (no `listSttModels`) the page shows "On-device speech re
 The built-in models, the recommended one first: Moonshine Base (English, 142 MB), Moonshine Tiny (English, 44 MB), NeMo FastConformer streaming (English, 137 MB), Zipformer streaming (English, 73 MB). The first model that passes its check is used when none was chosen. The list follows the shell's `stt-models` events, so a download moves on without polling.
 
 #### Default models
-**Opens from:** Settings main page, row Default models. **Closes with:** Back. **Source:** `Settings.tsx` `ModelsTab`, `ModelPicker`, `setProfileModel`.
+**Opens from:** Settings main page, row Default models. **Closes with:** Back. **Source:** `Settings.tsx` `ModelsTab`, `ModelPicker` (`noEffort` hides the reasoning pills), `setProfileModel`.
 
 **Layout, top to bottom:** a section (footer "The model each bot starts new chats with. Change the model of a single chat from the chip in its header.") with the row "Set one model for all bots" (✨); then the section Bots with one row per bot: avatar letter, name, sub "<model> · <provider>" or "no model set". Tapping a row opens the model picker for that bot (or for every bot).
 
@@ -104,7 +104,7 @@ The built-in models, the recommended one first: Moonshine Base (English, 142 MB)
 For "all bots" the call runs once per profile and failures are gathered into one toast. A toast "<model> → <bot>" confirms. The model list is `GET /api/model/options?profile=` (the cached list first, then a live one with `refresh=true`; `refresh` is forced right after a new sign-in or key, because Hermes caches the list for an hour).
 
 #### Model providers (page)
-**Opens from:** Settings main page, row Model providers. **Closes with:** Back. Bot chips "Sign-ins for", then the provider list (3.17) and the note "Every provider this Hermes supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → API keys." **Source:** `Settings.tsx` `SettingsScreen` page `accounts`, `Providers.tsx` `ProviderList`.
+**Opens from:** Settings main page, row Model providers. **Closes with:** Back. Bot chips "Sign-ins for", the Fallback models section (`Rotation.tsx` `FallbackSection`, 3.17 "Provider rotation"), then the provider list (3.17) and the note "Every provider this Hermes supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → API keys." **Source:** `Settings.tsx` `SettingsScreen` page `accounts`, `Providers.tsx` `ProviderList`.
 
 #### API keys (page)
 **Opens from:** Settings main page, row API keys; the Bots sheet's "API keys & settings". **Closes with:** Back. **Source:** `Settings.tsx` `KeysTab`, `KeySheet`.
