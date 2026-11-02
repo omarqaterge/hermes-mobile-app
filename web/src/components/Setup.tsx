@@ -452,18 +452,18 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       const note = ' Android can’t tell us whether it is on: tap Done once both are on.'
       const perApp = kind === 'app' || kind === 'info'
       return {
-        title: `Turn on ${name} for Termux and Hermes Mobile`,
+        title: `Turn on ${name} for Termux and Hermes`,
         help:
           `${why} ` +
           (kind === 'list'
-            ? `The button opens the list of apps that may start by themselves (${name}): switch on Termux and Hermes Mobile.`
+            ? `The button opens the list of apps that may start by themselves (${name}): switch on Termux and Hermes (this app is listed as Hermes).`
             : kind === 'settings'
-              ? `The button opens Settings. Go to ${where} and switch on Termux and Hermes Mobile.`
+              ? `The button opens Settings. Go to ${where} and switch on Termux and Hermes (this app is listed as Hermes).`
               : kind === 'app'
                 ? `Each button opens that app’s page: switch on ${name}.`
                 : `Each button opens that app’s App info. Look for ${name} there${where ? ` (or: ${where})` : ''} and switch it on.`) +
           note,
-        fix: perApp ? { label: 'Hermes Mobile', run: () => setupFix('autostart') } : { label: `Open ${name}`, run: () => setupFix('autostart') },
+        fix: perApp ? { label: 'Hermes', run: () => setupFix('autostart') } : { label: `Open ${name}`, run: () => setupFix('autostart') },
         alt: perApp ? { label: 'Termux', run: () => setupFix('autostart-termux') } : undefined,
         done: autostartDone
       }
