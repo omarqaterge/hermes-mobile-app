@@ -426,7 +426,15 @@ const CASES = [
   // fallback chain and a rotation strategy written to config.yaml and read back, then the chain emptied again.
   { name: 'POST /api/credentials/pool', run: c => c.http('POST', '/api/credentials/pool', { provider: 'openrouter', api_key: 'sk-or-contract-not-a-key-0001' }) },
   { name: 'GET /api/credentials/pool (one key)', run: c => c.http('GET', '/api/credentials/pool') },
-  { name: 'DELETE /api/credentials/pool/openrouter/1', run: c => c.http('DELETE', '/api/credentials/pool/openrouter/1') },
+  {
+    // By the index the list gives the added key (an OPENROUTER_API_KEY in the environment would be another entry).
+    name: 'DELETE /api/credentials/pool/openrouter/<index>',
+    run: async c => {
+      const list = await c.http('GET', '/api/credentials/pool')
+      const e = (list.result?.providers || []).find(x => x.provider === 'openrouter')?.entries?.find(x => x.source === 'manual')
+      return c.http('DELETE', `/api/credentials/pool/openrouter/${e?.index ?? 1}`)
+    }
+  },
   {
     name: 'PUT /api/config (fallback chain, strategy)',
     run: c => c.http('PUT', '/api/config', { config: { fallback_providers: [{ provider: 'openrouter', model: 'contract/fallback' }], credential_pool_strategies: { openrouter: 'round_robin' } } })

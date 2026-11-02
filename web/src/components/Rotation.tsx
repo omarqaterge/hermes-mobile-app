@@ -41,15 +41,12 @@ interface RotationConfig {
   credential_pool_strategies?: Record<string, string> | null
 }
 
-/** Config list → entries, like Hermes's reader: dicts with a provider and a model; legacy "provider/model" strings too. */
+/** Config list → entries, like Hermes's reader: only dicts with a provider and a model (it skips anything else). */
 export function chainOf(raw: unknown): FallbackEntry[] {
   const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : []
   const out: FallbackEntry[] = []
   for (const x of list) {
-    if (typeof x === 'string') {
-      const i = x.indexOf('/')
-      if (i > 0) out.push({ provider: x.slice(0, i), model: x.slice(i + 1) })
-    } else if (x && typeof x === 'object') {
+    if (x && typeof x === 'object' && !Array.isArray(x)) {
       const r = x as Record<string, unknown>
       const provider = String(r.provider ?? '').trim()
       const model = String(r.model ?? '').trim()
@@ -101,6 +98,17 @@ const entriesFor = (pool: Record<string, PoolEntry[]>, slugs: string[]) =>
 const cooling = (pool: Record<string, PoolEntry[]> | undefined, provider: string) => {
   const list = pool?.[provider] || []
   return list.length > 0 && !list.some(usable)
+}
+
+/**
+ * Hermes removes by position, and positions move (Take turns reorders the pool on every use): find the entry's current
+ * index by its id right before deleting, so a key that moved meanwhile is never mistaken for another.
+ */
+async function removeById(profile: string, e: PoolEntry & { provider: string }) {
+  const now = (await loadPool(profile))[e.provider] || []
+  const cur = e.id ? now.find(x => x.id === e.id) : now.find(x => x.index === e.index)
+  if (!cur?.index) throw new Error('That key is already gone. The list is up to date now.')
+  return api<{ hints?: string[] }>('DELETE', `/api/credentials/pool/${encodeURIComponent(e.provider)}/${cur.index}?${qs({ profile })}`, undefined, { profile: false })
 }
 
 const saveConfig = (profile: string, config: Record<string, unknown>) => api('PUT', `/api/config?${qs({ profile })}`, { config }, { profile: false })
@@ -253,7 +261,7 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
       const [pool, cfg] = await Promise.all([loadPool(profile), api<RotationConfig>('GET', `/api/config?${qs({ profile })}`, undefined, { profile: false }).catch(() => null)])
       return { pool, cfg }
     },
-    [profile]
+    [profile, p.key?.set, p.key?.preview] // saving or replacing the main key in this sheet changes the pool
   )
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
@@ -261,7 +269,10 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
   const list = data ? entriesFor(data.pool, slugs) : []
   // The pool keys belong to the provider id itself (OPENROUTER_API_KEY → openrouter): new keys and the strategy go there.
   const strategy = strategyOf(data?.cfg, p.id)
-  const next = nextUp(list.filter(e => e.provider === p.id), strategy)
+  const own = list.filter(e => e.provider === p.id) // the strategy only rotates these (not a grouped sign-in's pool)
+  const next = nextUp(own, strategy)
+  // Hermes deliberately keeps a raw Copilot token out of the pool (it gets 400s): no extra keys there.
+  const canAdd = Boolean(p.key) && p.id !== 'copilot'
   if (p.endpoint || (!p.key && !list.length)) return null
 
   const done = (what: Promise<unknown>, ok: string | ((r: unknown) => string)) => {
@@ -292,7 +303,7 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
     }).then(
       ok =>
         ok &&
-        done(api<{ hints?: string[] }>('DELETE', `/api/credentials/pool/${encodeURIComponent(e.provider)}/${e.index}?${qs({ profile })}`, undefined, { profile: false }), r => {
+        done(removeById(profile, e), r => {
           const hint = (r as { hints?: string[] } | null)?.hints?.[0]
           return `${e.label || 'Key'} removed${hint ? `. ${hint}` : ''}`
         })
@@ -338,7 +349,7 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
           }
         />
       ))}
-      {list.length > 1 && (
+      {own.length > 1 && (
         <SelectRow
           title="Which key to use"
           options={STRATEGIES.map(s => ({ value: s.value, label: s.label, sub: s.sub }))}
@@ -346,7 +357,7 @@ export function KeyPoolSection({ entry: p, profile, onChanged }: { entry: Provid
           onChange={pickStrategy}
         />
       )}
-      {p.key && (
+      {canAdd && (
         <div className="provider-key">
           <input className="mono" type="password" autoComplete="off" value={key} onChange={ev => setKey(ev.target.value)} placeholder="Add another key" aria-label={`Another ${p.name} key`} />
           <button className="btn" disabled={busy || !key.trim() || !data} onClick={add}>
