@@ -971,7 +971,7 @@ wss.on('connection', ws => {
           const edits = [
             ['write_file', { path: '/root/projects/site/a.txt', content: 'x\ny' }, '--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1,2 @@\n+x\n+y',
               { bytes_written: 3, dirs_created: true, verified: true, lint: { status: 'skipped', message: 'No linter for .txt files' }, resolved_path: '/root/projects/site/a.txt', files_modified: ['/root/projects/site/a.txt'] }],
-            ['patch', { path: '/root/projects/site/b.txt', old_string: 'old', new_string: 'new' }, '--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old\n+new',
+            ['patch', { path: '/root/projects/site/b.txt', old_string: 'old', new_string: 'new' }, '--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old\n+new see https://example.com/diff',
               { success: true, diff: '--- a//root/projects/site/b.txt\n+++ b//root/projects/site/b.txt\n@@ -1 +1 @@\n-old\n+new', files_modified: ['/root/projects/site/b.txt'], lint: { status: 'skipped', message: 'No linter for .txt files' }, resolved_path: '/root/projects/site/b.txt' }]
           ]
           const steps = [['message.start', undefined]]
