@@ -1207,11 +1207,12 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Read once: a recreated activity (rotation, theme) re-reads its intent and must not reopen the viewer. */
+    /** Read once: a recreated activity (rotation, theme) re-reads its intent, and Recents re-sends the original one
+     *  (FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY); neither may reopen the viewer. */
     static boolean takeBgView(Intent in) {
         if (in == null || !in.getBooleanExtra(EXTRA_BG_VIEW, false)) return false;
         in.removeExtra(EXTRA_BG_VIEW);
-        return true;
+        return (in.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0;
     }
 
     void openPendingSession() {

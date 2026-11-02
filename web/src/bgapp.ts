@@ -175,6 +175,8 @@ export const VIEW_WAIT_MS = 30_000
 export interface ViewWanted {
   session: string
   until: number
+  /** That chat has been shown or opening since the request (set by viewerStep). */
+  seen?: boolean
 }
 
 let viewWanted: ViewWanted | null = null
@@ -200,11 +202,13 @@ export function useViewWanted(): ViewWanted | null {
 
 /** What a pending request does now. `chat` is the chat shown or opening, `active` whether it has finished opening.
  *  open: the app is still in use for that chat; gone: the chat is open but Hermes is done with the app (the chat
- *  stays, nothing else opens); expired: too late; wait: that chat isn't showing yet. */
+ *  stays, nothing else opens); expired: too late, or that chat showed and something else replaced it (its open
+ *  failed, or the user moved on); wait: that chat isn't showing yet. */
 export function viewerStep(want: ViewWanted | null, chat: string | null | undefined, active: boolean, bg: BgState | null, now = Date.now()): 'open' | 'gone' | 'expired' | 'wait' {
   if (!want) return 'wait'
   if (now > want.until) return 'expired'
-  if (!chat || chat !== want.session) return 'wait'
+  if (!chat || chat !== want.session) return want.seen ? 'expired' : 'wait'
+  want.seen = true
   if (bgForChat(bg, chat)) return 'open'
   return active ? 'gone' : 'wait'
 }
