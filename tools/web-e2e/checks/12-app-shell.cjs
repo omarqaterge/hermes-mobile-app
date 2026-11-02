@@ -389,6 +389,8 @@ module.exports = async t => {
     const squeezed = await sheet.locator('.setup-list').first().evaluate(el => el.scrollHeight - el.clientHeight)
     check(squeezed <= 1, `uninstall: the list is shown whole, not squeezed into a scroll box (${squeezed}px hidden)`)
     check(['Hermux, with all chats', 'Debian', 'installer’s files', 'phone setting', 'Termux:API', 'Termux:Boot', 'Shizuku', 'App: Termux', 'Hermux'].every(t => listed.includes(t)), `uninstall: lists everything that goes (${listed})`)
+    const keptNote = (await sheet.locator('.uninstall-note').first().textContent().catch(() => '')) || ''
+    check(keptNote.includes('Pictures/Hermux') && keptNote.includes('older pictures still in Pictures/Hermes'), `uninstall: the note names both picture folders as kept (${keptNote})`)
     const bk = sheet.locator('.set-row', { hasText: 'Save a backup to Downloads' })
     const ky = sheet.locator('.set-row', { hasText: 'Include API keys and sign-ins' })
     check((await bk.getByRole('switch').getAttribute('aria-checked')) === 'true', 'uninstall: backup offered, on by default')

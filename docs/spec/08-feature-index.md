@@ -15,7 +15,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Models: picker, favourites (starred models on top), reasoning level per chat | 3.4, 3.5 |
 | KaTeX equations, sortable tables with "Copy table", task lists, Obsidian-style callouts, coloured diffs, collapsing long code, inline SVG and HTML cards | 3.3 |
 | Mermaid diagrams, full screen with pinch zoom | 3.3 |
-| Photo viewer: pinch and double-tap zoom, save to Pictures/Hermes, share, open with another app | 3.3, 2.2.7 |
+| Photo viewer: pinch and double-tap zoom, save to Pictures/Hermux (older saves moved there from Pictures/Hermes), share, open with another app | 3.3, 2.2.7 |
 | Links open in the default app everywhere (messages, tool cards, thinking, sheets, canvas) | 3.3, 2.3 |
 | Every memory write shown as a diff | 3.3 |
 | File checkpoints: folders a chat changed, diff per file, restore (undoable) | 3.5 |

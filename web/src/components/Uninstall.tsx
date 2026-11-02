@@ -118,7 +118,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
             <div className="setup-help uninstall-note">
-              Kept: files Hermux saved to your phone’s storage (Downloads, Pictures/Hermes) and the backup. Android asks before removing each
+              Kept: files Hermux saved to your phone’s storage (Downloads, Pictures/Hermux, and any older pictures still in Pictures/Hermes) and the backup. Android asks before removing each
               app; Hermux goes last.
             </div>
             {termuxThere ? (

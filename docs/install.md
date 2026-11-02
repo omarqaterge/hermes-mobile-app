@@ -208,7 +208,7 @@ and sign-ins (`auth.json`, `*token*.json`) are left out unless you switch on *In
 Downloads could read them. A key typed straight into `config.yaml` is not filtered. To restore on a new install, unpack it into Hermes's
 folder in Debian (`~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermes-backup-<date>.tar.gz -C /root/.hermes'`) and restart Hermes.
 
-Kept: files Hermes saved to your storage (Downloads, Pictures/Hermes). The phone setting needs Shizuku running; without it Android's
+Kept: files Hermux saved to your storage (Downloads, Pictures/Hermux, and any older pictures still in Pictures/Hermes). The phone setting needs Shizuku running; without it Android's
 child-process limit stays lifted, which is harmless (Android 14+: Developer options → *Disable child process restrictions* → off).
 
 ### By hand, without the app
