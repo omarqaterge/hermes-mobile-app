@@ -4,7 +4,7 @@
 # Idempotent: safe to run from boot, widget, the app, or by hand.
 #
 # Battery: no permanent `termux-wake-lock` (it kept the phone out of deep sleep around the clock).
-# The Hermes app holds a wake lock only while Hermes works, and wakes the phone for due cron jobs.
+# The Hermux app holds a wake lock only while Hermes works, and wakes the phone for due cron jobs.
 mkdir -p ~/logs ~/.hermes-mobile
 boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
 if [ -z "$boot" ] || [ "$(cat ~/.hermes-mobile/unlocked 2>/dev/null)" != "$boot" ]; then
