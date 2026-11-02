@@ -211,6 +211,13 @@ describe('linkParts', () => {
     expect(linkParts('fooxhttps://a.com')).toEqual([{ text: 'fooxhttps://a.com' }])
     expect(linkParts('')).toEqual([])
   })
+  test('mailto: addresses are links, a bare mailto: is not', () => {
+    expect(linkParts('write to mailto:a@b.org.')).toEqual([{ text: 'write to ' }, { text: 'mailto:a@b.org', href: 'mailto:a@b.org' }, { text: '.' }])
+    expect(linkParts('mailto: someone')).toEqual([{ text: 'mailto: someone' }])
+  })
+  test('the link has its scheme in lower case', () => {
+    expect(linkParts('HTTPS://A.io/X')[0]).toEqual({ text: 'HTTPS://A.io/X', href: 'https://A.io/X' })
+  })
 })
 
 describe('tidyApprovalText', () => {

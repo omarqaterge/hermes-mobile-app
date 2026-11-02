@@ -321,10 +321,10 @@ export function tidyApprovalText(s: string): string {
   return [...seen.values()].map(v => (v.n > 1 ? `${v.text} (×${v.n})` : v.text)).join('; ')
 }
 
-const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi
+const URL_RE = /\b(?:https?:\/\/|www\.|mailto:)[^\s<>"'`]+/gi
 const count = (s: string, c: string) => s.split(c).length - 1
 export type LinkPart = { text: string; href?: string }
-/** Split plain text into text and web addresses (trailing punctuation and an unbalanced ")" belong to the sentence). */
+/** Split plain text into text and web and `mailto:` addresses (trailing punctuation and an unbalanced ")" belong to the sentence). */
 export function linkParts(s: string): LinkPart[] {
   const out: LinkPart[] = []
   let last = 0
@@ -332,9 +332,10 @@ export function linkParts(s: string): LinkPart[] {
     let url = m[0]
     while (/[.,;:!?'"\]]$/.test(url) || (url.endsWith(')') && count(url, ')') > count(url, '('))) url = url.slice(0, -1)
     const at = m.index ?? 0
-    if (!/^(?:https?:\/\/|www\.)./i.test(url)) continue
+    if (!/^(?:https?:\/\/|www\.)./i.test(url) && !/^mailto:[^@]+@[^@]+\.\w/i.test(url)) continue
     if (at > last) out.push({ text: s.slice(last, at) })
-    out.push({ text: url, href: /^www\./i.test(url) ? `https://${url}` : url })
+    // The scheme in lower case: the Android shell compares it exactly.
+    out.push({ text: url, href: /^www\./i.test(url) ? `https://${url}` : url.replace(/^[a-z]+:/i, x => x.toLowerCase()) })
     last = at + url.length
   }
   if (last < s.length) out.push({ text: s.slice(last) })
