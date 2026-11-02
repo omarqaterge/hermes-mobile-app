@@ -11,6 +11,7 @@ import { Markdown } from './Markdown'
 import { DocView } from './DocView'
 import { Media } from './Media'
 import { previewKind, type PreviewKind } from '../filekind'
+import { Linked } from './Linked'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -67,7 +68,7 @@ export function useLoader<T>(load: () => Promise<T>, deps: unknown[]) {
 }
 
 export function Status({ loading, error, empty, emptyText }: { loading: boolean; error: string; empty: boolean; emptyText: string }) {
-  if (error) return <div className="notice notice-error">{error}</div>
+  if (error) return <div className="notice notice-error"><Linked text={error} /></div>
   if (loading && empty) return <div className="dim pad">Loading…</div>
   if (empty) return <div className="dim pad">{emptyText}</div>
   return null
@@ -448,7 +449,7 @@ export function CronScreen() {
             Next: {fmtTime(j.next_run_at ?? j.next_run)} · Last: {fmtTime(j.last_run_at ?? j.last_run)}
             {j.last_status ? ` (${String(j.last_status)})` : ''}
           </div>
-          {j.prompt ? <div className="card-text">{String(j.prompt).slice(0, 240)}</div> : null}
+          {j.prompt ? <div className="card-text"><Linked text={String(j.prompt).slice(0, 240)} /></div> : null}
           <div className="card-actions">
             <button onClick={() => void act(j, 'trigger')}>▶ Run now</button>
             <button onClick={() => void act(j, jobPaused(j) ? 'resume' : 'pause')}>{jobPaused(j) ? 'Resume' : 'Pause'}</button>
@@ -705,7 +706,7 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
             {preview.media && <Media src={preview.media} alt={preview.entry.name} />}
             {preview.text != null && preview.doc &&
               (preview.doc.type === 'text' ? (
-                <pre className="tool-pre">{preview.text.slice(0, 200_000)}</pre>
+                <pre className="tool-pre"><Linked text={preview.text.slice(0, 200_000)} /></pre>
               ) : (
                 <DocView type={preview.doc.type} lang={preview.doc.lang} title={preview.entry.name} text={preview.text} network={false} />
               ))}

@@ -2,6 +2,8 @@
 // output) and ```diff blocks in chat: green/red rows, blue hunk headers, bold file headers and
 // yellow `!` lines.
 
+import { Linked } from './Linked'
+
 /** Hermes renders inline diffs for its terminal UI: strip the ANSI colour codes. */
 // eslint-disable-next-line no-control-regex
 export const stripAnsi = (t: string) => t.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
@@ -36,7 +38,7 @@ export function DiffView({ text: raw, max = 20000 }: { text: string; max?: numbe
     <pre className="diff-view">
       {lines.map((l, i) => (
         <span key={i} className={`dl dl-${lineClass(l)}`}>
-          {l || ' '}
+          {l ? <Linked text={l} /> : ' '}
         </span>
       ))}
       {body !== text && <span className="dl dl-meta">… (truncated)</span>}

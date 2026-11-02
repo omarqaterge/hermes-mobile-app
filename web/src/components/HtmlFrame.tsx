@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { openExternal } from '../bridge'
+import { haptic, openExternal } from '../bridge'
 import { toast } from '../store'
 import { confirmDialog } from '../dialog'
-import { frameDoc, frameHeight } from '../htmlframe'
+import { frameDoc, frameHeight, frameLink } from '../htmlframe'
 
 /**
  * HTML runs in a sandboxed frame: scripts yes, but no access to the app (no `allow-same-origin`), and no network
@@ -10,6 +10,7 @@ import { frameDoc, frameHeight } from '../htmlframe'
  */
 export function HtmlFrame({ html, network, autoHeight, className }: { html: string; network: boolean; autoHeight?: { min: number; max: number }; className?: string }) {
   const frame = useRef<HTMLIFrameElement>(null)
+  const lastDirect = useRef(0)
   const [err, setErr] = useState('')
   const [h, setH] = useState<number | null>(null)
   const auto = !!autoHeight
@@ -22,10 +23,17 @@ export function HtmlFrame({ html, network, autoHeight, className }: { html: stri
       if (e.source !== frame.current?.contentWindow || !e.data) return
       if (typeof e.data.hmCanvasError === 'string') setErr(e.data.hmCanvasError)
       else if (typeof e.data.hmCanvasAlert === 'string' && e.data.hmCanvasAlert.trim()) toast(e.data.hmCanvasAlert.slice(0, 300), 'info', 5000)
-      else if (typeof e.data.hmCanvasLink === 'string' && /^https?:\/\//i.test(e.data.hmCanvasLink)) {
-        const url = e.data.hmCanvasLink.slice(0, 2000)
-        // The page could post this without a tap, so the user confirms.
-        confirmDialog({ title: 'Open link?', message: url, confirmLabel: 'Open' }).then(ok => ok && openExternal(url))
+      else if ('hmCanvasLink' in e.data) {
+        const url = frameLink(e.data.hmCanvasLink)
+        if (!url) return
+        // A tap inside the frame focuses it and gives this page user activation (Chromium passes it up to the
+        // parent): open right away. A page posting on its own has neither, so the user confirms first. Activation
+        // lasts a few seconds and opening doesn't use it up, so only one link opens that way per 5 s.
+        if (navigator.userActivation?.isActive && document.activeElement === frame.current && Date.now() - lastDirect.current > 5000) {
+          lastDirect.current = Date.now()
+          haptic()
+          openExternal(url)
+        } else confirmDialog({ title: 'Open link?', message: url, confirmLabel: 'Open' }).then(ok => ok && openExternal(url))
       } else if (auto && 'hmFrameHeight' in e.data) {
         const next = frameHeight(e.data.hmFrameHeight, min, max)
         if (next != null) setH(next)
