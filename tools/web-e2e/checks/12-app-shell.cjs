@@ -534,7 +534,7 @@ module.exports = async t => {
     await cs.close()
   }
 
-  // ── Live mode: Interrupt cuts Hermes off while it speaks and listens at once ──
+  // ── Live mode: Interrupt (a tap, or talking over Hermes) cuts Hermes off while it speaks and listens at once ──
   {
     const lp = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await lp.addInitScript(() => { window.__ttsHold = true })
@@ -546,7 +546,8 @@ module.exports = async t => {
     await lp.evaluate(() => window.__hmVoice('final', 'hello there'))
     const bar = lp.locator('.live-bar')
     await bar.getByText('Hermes is speaking…').waitFor({ timeout: 10000 }).then(() => check(true, 'interrupt: the reply is being read'), () => check(false, 'interrupt: the reply is being read'))
-    check(await bar.getByText('Tap Interrupt to talk').isVisible(), 'interrupt: the bar says how to cut in')
+    check(await bar.getByText('Talk or tap Interrupt to cut in').isVisible(), 'interrupt: the bar says how to cut in')
+    check((await lp.evaluate(() => window.__nativeCalls)).includes('startListeningOver'), 'barge-in: the microphone stays on while Hermes speaks')
     const listens = await lp.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
     await bar.getByRole('button', { name: 'Interrupt' }).click()
     await bar.getByText('Listening…').waitFor({ timeout: 3000 }).then(() => check(true, 'interrupt: Live mode listens again'), () => check(false, 'interrupt: Live mode listens again'))
@@ -555,6 +556,21 @@ module.exports = async t => {
     check(await bar.getByRole('button', { name: 'Interrupt' }).count() === 0, 'interrupt: the button is gone while listening')
     const box = await bar.boundingBox()
     check(box && box.width <= 375, `interrupt: the bar fits a phone screen (${box && box.width})`)
+    // Talking over Hermes: its own words coming back are ignored, yours cut it off and are sent after the pause
+    await lp.evaluate(() => window.__hmVoice('final', 'tell me a long story'))
+    await bar.getByText('Hermes is speaking…').waitFor({ timeout: 10000 }).catch(() => {})
+    const stops = await lp.evaluate(() => window.__nativeCalls.filter(c => c === 'stopSpeaking').length)
+    const echo = await lp.evaluate(() => (window.__spoken || []).at(-1).split(/\s+/).slice(0, 4).join(' '))
+    await lp.evaluate(t => window.__hmVoice('partial', t), echo)
+    await sleep(200)
+    check(await bar.getByText('Hermes is speaking…').isVisible(), `barge-in: Hermes's own voice doesn't cut it off ("${echo}")`)
+    const sent = rpcs('prompt.submit').length
+    await lp.evaluate(() => window.__hmVoice('partial', 'actually never mind that'))
+    await bar.getByText('Listening…').waitFor({ timeout: 3000 }).then(() => check(true, 'barge-in: talking cuts Hermes off'), () => check(false, 'barge-in: talking cuts Hermes off'))
+    check((await lp.evaluate(() => window.__nativeCalls.filter(c => c === 'stopSpeaking').length)) > stops, 'barge-in: the reading stops')
+    await lp.evaluate(() => window.__hmVoice('final', 'Actually, never mind that.'))
+    await lp.waitForFunction(() => document.querySelector('.live-bar.live-thinking, .live-bar.live-speaking'), null, { timeout: 8000 }).catch(() => {})
+    check(rpcs('prompt.submit').length > sent, 'barge-in: what you said is sent after the pause')
     await bar.getByRole('button', { name: 'End' }).click()
     await lp.close()
   }

@@ -79,6 +79,7 @@ final class LocalStt {
     /** One dictation: its own stop flag, so a new one can start while the last one is still finishing its phrase. */
     private static final class Run {
         volatile boolean stop = false;
+        boolean echo; // Live mode listens while Hermes speaks: the voice-call microphone with its echo canceller
     }
     private volatile Run current; // the dictation the page hears from; an older one still finishing is silent
 
@@ -704,10 +705,17 @@ final class LocalStt {
      * go of the microphone, which it does before decoding that phrase.
      */
     synchronized boolean start(Sink sink) {
+        return start(sink, false);
+    }
+
+    /** `echo`: listen while the phone speaks (Live mode's barge-in), through the voice-call microphone source and the
+     * phone's echo canceller where it has one, so less of Hermes's own voice is heard. */
+    synchronized boolean start(Sink sink, boolean echo) {
         final File d = chosenDir();
         if (d == null) return false;
         if (listening()) return true; // already on
         final Run r = new Run();
+        r.echo = echo;
         current = r;
         audio.execute(() -> listen(d, gate(r, sink), r));
         return true;
@@ -737,6 +745,7 @@ final class LocalStt {
      */
     private void listen(File d, Sink sink, Run run) {
         AudioRecord rec = null;
+        android.media.audiofx.AcousticEchoCanceler aec = null;
         Thread reader = null;
         final java.util.concurrent.atomic.AtomicBoolean micOn = new java.util.concurrent.atomic.AtomicBoolean(true);
         try {
@@ -747,7 +756,7 @@ final class LocalStt {
                 int min = AudioRecord.getMinBufferSize(r, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
                 if (min <= 0) continue;
                 try {
-                    rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, r, AudioFormat.CHANNEL_IN_MONO,
+                    rec = new AudioRecord(run.echo ? MediaRecorder.AudioSource.VOICE_COMMUNICATION : MediaRecorder.AudioSource.VOICE_RECOGNITION, r, AudioFormat.CHANNEL_IN_MONO,
                             AudioFormat.ENCODING_PCM_16BIT, Math.max(min, r / 5 * 2));
                 } catch (SecurityException e) {
                     sink.failed("mic-denied");
@@ -764,6 +773,7 @@ final class LocalStt {
                 sink.failed("stt-mic");
                 return;
             }
+            if (run.echo) aec = echoCanceller(rec);
             // The microphone is read on its own thread into a queue: AudioRecord holds only ~0.4 s, and loading the model
             // or decoding a phrase on a slow phone takes longer. Previews wait while decoding is behind.
             final AudioRecord r = rec;
@@ -813,10 +823,23 @@ final class LocalStt {
             sink.failed("stt-start");
         } finally {
             if (rec != null) rec.release();
+            if (aec != null) aec.release();
             sink.end();
             synchronized (this) {
                 if (current == run) current = null;
             }
+        }
+    }
+
+    /** The phone's echo canceller on this recording, when it has one (most do on the voice-call source already). */
+    private static android.media.audiofx.AcousticEchoCanceler echoCanceller(AudioRecord rec) {
+        try {
+            if (!android.media.audiofx.AcousticEchoCanceler.isAvailable()) return null;
+            android.media.audiofx.AcousticEchoCanceler e = android.media.audiofx.AcousticEchoCanceler.create(rec.getAudioSessionId());
+            if (e != null) e.setEnabled(true);
+            return e;
+        } catch (Throwable t) {
+            return null;
         }
     }
 

@@ -42,6 +42,7 @@ Live mode (hands-free voice conversation) is page code (`web/src/live.ts`). The 
 - The launcher shortcut "Live mode" (long-press the app icon; `res/xml/shortcuts.xml`, extra `shortcut` = `live`) and the shortcut "New chat" (`new`). `MainActivity.shortcutOf` reads the extra; `deliverShortcut` waits for the page to be ready and calls `window.hermesShortcut(kind)`. The page starts a new draft and, for `live`, starts Live mode once Hermes is online (waits up to 30 s).
 - The assist gesture or a headset voice button (see below) is turned into `live` by the same function.
 - The microphone closes when the activity pauses; the page ends Live mode when it is hidden, and lets a reply that is being read finish.
+- **Barge-in** (`Voice.startListeningOver`, bridge `startListeningOver`): listening while a reply is read, without the `stopSpeaking` that `startListening` does first. With the microphone not allowed it only sends `end` (no permission prompt in the middle of a reply). An on-device model gets `LocalStt.start(sink, true)`: that `Run` (`echo`) records from `VOICE_COMMUNICATION` instead of `VOICE_RECOGNITION`, which most phones run through their echo canceller and noise suppressor, and also enables `AcousticEchoCanceler` on the recording when the phone has one (`echoCanceller`, released when the dictation ends). Android's recogniser is started as usual and uses its own microphone. Telling Hermes's voice from yours is the page's job (3.11).
 
 #### Phone assistant role
 
