@@ -1934,9 +1934,7 @@ public class MainActivity extends Activity {
 
     /** Only this project's release assets (https), nothing else is ever downloaded and installed. */
     static boolean updateUrlOk(Uri u) {
-        String path = u == null ? null : u.getPath();
-        return u != null && "https".equals(u.getScheme()) && "github.com".equals(u.getHost()) && path != null
-                && path.startsWith("/omarqaterge/hermes-mobile-app/releases/download/") && path.endsWith(".apk") && !path.contains("..");
+        return u != null && UpdateUrl.ok(u.getScheme(), u.getHost(), u.getPath());
     }
 
     void updateState(String state, int pct, String msg) {

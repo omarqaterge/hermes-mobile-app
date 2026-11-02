@@ -275,8 +275,11 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    `repos/omarqaterge/hermes-mobile-app/releases/latest`; newer = dotted-number compare with `appVersion()`. The
    service also checks every 12 h (`UpdateNotice`) and posts a notice whose tap opens the app with an `updateUrl`
    extra. When the release is newer, the page also reads `CHANGELOG.md` at its tag for What's new (3.15).
-2. Update → `installUpdate(url)` → `MainActivity.startUpdate`. `updateUrlOk` accepts only
-   `https://github.com/omarqaterge/hermes-mobile-app/releases/download/….apk` (no `..`).
+2. Update → `installUpdate(url)` → `MainActivity.startUpdate`. `updateUrlOk` (`UpdateUrl.ok`) accepts only
+   `https://github.com/omarqaterge/hermes-mobile-app/releases/download/….apk` or the same under the repository's next
+   name, `https://github.com/omarqaterge/hermux/releases/download/….apk` (no `..`). GitHub's API gives release links
+   under the repository's current name, so a copy that accepts both keeps updating across the rename
+   (`docs/status/repo-rename.md`).
 3. Without "install unknown apps" permission the shell reports `permission` and opens that system page.
 4. The download (`download`) follows at most 6 redirects, each https on `github.com` or `*.githubusercontent.com`,
    and stops above 150 MB. It writes `cache/update/hermes-mobile.apk`.
