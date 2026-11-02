@@ -56,4 +56,4 @@ Defined in `phone_app.py`. Hermes uses an app on a **hidden virtual screen** whi
 - It sends `bgapp` events (`state` open / act / done, `pkg`, `label`, `action`, `port`, and `token` while open) so the app can show its card and the viewer. The chip says "Using <app>" while an app is open in that chat.
 
 #### `openui_reference`
-Defined in `openui.py`. No arguments. Returns `openui_reference.txt` (about 51,000 characters), the language and component reference for cards. The model calls it once per chat before its first openui-lang block. If the file is missing it returns an error JSON saying to answer without cards.
+Defined in `openui.py`. No arguments. Returns the body of `skills/openui/SKILL.md` without its frontmatter (`reference()`, about 51,000 characters): the same language and component reference that `skill_view("hermes-mobile:openui")` serves (5.6). New chats are pointed at the skill; the tool stays for chats whose frozen prompt still names it and for a Hermes without `ctx.register_skill`, whose prompt section names the tool instead. If the file is missing it returns an error JSON saying to answer without cards.

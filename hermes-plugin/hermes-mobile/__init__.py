@@ -723,7 +723,7 @@ def _canvas():
 
 
 def _openui():
-    """Cards in replies: prompt section, openui_reference tool, setting."""
+    """Cards in replies: prompt section, openui skill and openui_reference tool, setting."""
     return _load("hm_openui", "openui.py")
 
 
@@ -839,6 +839,10 @@ def register(ctx):
         _dbg(f"phone_app not registered: {type(e).__name__}: {e}")
     try:
         ou = _openui()
+        try:  # the reference as a Hermes skill, skill_view("hermes-mobile:openui")
+            ou.register_skill(ctx)
+        except Exception as e:
+            _dbg(f"openui skill not registered: {type(e).__name__}: {e}")
         ctx.register_tool(name="openui_reference", toolset="canvas", schema=ou.TOOL_SCHEMA, handler=ou.tool_handler,
                           description="The openui-lang reference for cards, tables, charts and forms in a reply", emoji="🧩")
         ctx.register_system_prompt_section("hermes-mobile.openui", ou.prompt_section, position="after_memory", max_chars=900)
