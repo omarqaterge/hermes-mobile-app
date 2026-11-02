@@ -123,34 +123,6 @@ textarea {
 .icon-btn:active {
   background: var(--surface-2);
 }
-/* The header's Auto button: off = outlined and dim; Auto access = green; Full access = red. */
-.auto-btn {
-  flex: none;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  color: var(--dim);
-  font-size: 0.82rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.auto-btn.auto {
-  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
-  background: color-mix(in srgb, var(--ok) 16%, transparent);
-  color: var(--ok);
-}
-.auto-btn.full {
-  border-color: var(--err-border);
-  background: color-mix(in srgb, var(--err) 18%, transparent);
-  color: var(--err);
-}
-.auto-btn:active {
-  background: var(--press);
-}
-.auto-btn:disabled {
-  opacity: 0.5;
-}
 .title-btn {
   flex: 1;
   min-width: 0;
@@ -2867,7 +2839,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 
 .md svg:not(.katex svg) { max-width: 100%; }
 
-/* The chat's model, above the composer (Composer.tsx). */
+/* The chat's model and Auto button, above the composer (Composer.tsx). */
 .model-row {
   display: flex;
   padding: 0 4px 6px;
@@ -2947,7 +2919,9 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .ctx-compress {
   margin-top: 16px;
 }
-.yolo-chip {
+/* The Auto button beside the model chip (AutoAccess.tsx), same chip shape: off = outlined and dim; Auto access = green;
+   Full access = red with ⚡. It never shrinks; the model name ellipsizes first on narrow phones. */
+.auto-btn {
   display: inline-flex;
   align-items: center;
   flex: none;
@@ -2955,14 +2929,27 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   margin-left: 6px;
   padding: 2px 10px;
   border-radius: 14px;
-  border: 1px solid var(--warn-border);
-  background: var(--warn-bg);
-  color: var(--warn);
+  border: 1px solid var(--border);
+  color: var(--dim);
   font-size: 0.74rem;
   font-weight: 600;
+  white-space: nowrap;
 }
-.yolo-chip:active {
+.auto-btn.auto {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
+}
+.auto-btn.full {
+  border-color: var(--err-border);
+  background: color-mix(in srgb, var(--err) 18%, transparent);
+  color: var(--err);
+}
+.auto-btn:active {
   background: var(--press);
+}
+.auto-btn:disabled {
+  opacity: 0.5;
 }
 .model-chip-effort {
   flex: none;

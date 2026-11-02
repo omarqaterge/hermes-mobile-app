@@ -51,19 +51,46 @@ module.exports = async t => {
   check(rpcs('config.set').some(c => c.params.key === 'yolo' && c.params.value === '1' && c.params.session_id === 'rt-new-m1'), '/yolo → config.set yolo=1 on this chat')
   check(!rpcs('slash.exec').some(c => /^yolo\b/.test(c.params.command || '')), '/yolo never reaches slash.exec')
   check((await page.getByText('Full access on').count()) > 0, '/yolo shows a notice')
-  check((await page.locator('.yolo-chip').count()) === 1, 'Full access chip shown above the composer')
-  check((await page.locator('.auto-btn.full').count()) === 1, 'header Auto button shows Full access')
+  check((await page.locator('.model-row .auto-btn.full', { hasText: '⚡ Full access' }).count()) === 1, 'the Auto button beside the model chip reads ⚡ Full access')
+  check((await page.locator('.yolo-chip').count()) === 0, 'no separate Full access chip any more')
   check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['s-new-m1'] === true), 'YOLO remembered for this chat (re-applied on resume)')
-  if (await page.locator('.yolo-chip').count()) await page.locator('.yolo-chip').click()
+  await page.locator('.auto-btn').click()
+  await page.getByText('Off', { exact: true }).click()
   await sleep(400)
-  check(rpcs('config.set').some(c => c.params.key === 'yolo' && c.params.value === '0'), 'tapping the chip turns YOLO off')
-  check((await page.locator('.yolo-chip').count()) === 0, 'chip gone after off')
+  check(rpcs('config.set').some(c => c.params.key === 'yolo' && c.params.value === '0'), 'Auto button → Off turns YOLO off')
+  check((await page.locator('.auto-btn.off', { hasText: /^Auto$/ }).count()) === 1, 'button back to plain Auto after off')
   check(await page.evaluate(() => !JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['s-new-m1']), 'YOLO forgotten for this chat after off')
-  // ── the header's Auto button: Auto access (plugin list first, then /yolo) and Full access (warning first) ──
+  // ── the Auto button beside the model chip: Auto access (plugin list first, then /yolo) and Full access (warning first) ──
   {
     const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto')
     const yolos = () => rpcs('config.set').filter(c => c.params.key === 'yolo')
-    check((await page.locator('.auto-btn.off', { hasText: 'Auto' }).count()) === 1, 'Auto button in the header, off')
+    // the model row fits a 360 px phone and a tablet without overflowing, even with a long model name (it ellipsizes, Auto never shrinks)
+    const rowFits = async state => {
+      const vp = page.viewportSize()
+      for (const width of [360, 1024]) {
+        await page.setViewportSize({ width, height: vp.height })
+        await sleep(200)
+        const fit = await page.evaluate(() => {
+          const row = document.querySelector('.model-row'), r = row.getBoundingClientRect(), btn = row.querySelector('.auto-btn')
+          row.querySelector('.model-chip-name').textContent = 'provider/a-very-long-model-name-that-has-to-ellipsize-20261102' // forces the chip to shrink
+          return {
+            overflow: row.scrollWidth > row.clientWidth + 1,
+            inside: [...row.children].every(c => { const b = c.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1 }),
+            clipped: btn.scrollWidth > btn.clientWidth + 1
+          }
+        })
+        check(!fit.overflow && fit.inside && !fit.clipped, `model row fits at ${width} px in ${state} (${JSON.stringify(fit)})`)
+      }
+      await page.setViewportSize(vp)
+    }
+    check((await page.locator('.model-row .auto-btn.off', { hasText: 'Auto' }).count()) === 1, 'Auto button in the composer\'s model row, off')
+    check((await page.locator('.topbar .auto-btn').count()) === 0, 'no Auto button in the header')
+    {
+      // right after the model chip, same chip height
+      const chip = await page.locator('.model-chip').boundingBox(), btn = await page.locator('.auto-btn').boundingBox()
+      check(chip && btn && btn.x >= chip.x + chip.width && btn.x - (chip.x + chip.width) < 12 && Math.abs(btn.height - chip.height) <= 2, `Auto sits right after the model chip, same height (${JSON.stringify([chip, btn])})`)
+      await rowFits('off')
+    }
     await page.locator('.auto-btn').click()
     await page.getByText('Auto access', { exact: true }).click()
     await sleep(500)
@@ -71,7 +98,7 @@ module.exports = async t => {
     check(put && put.body.session === 's-new-m1' && put.body.mode === 'auto', `Auto access tells the plugin this chat's id (${JSON.stringify(put && put.body)})`)
     check(put && y && y.params.value === '1' && put.t <= y.t, 'the plugin list is written BEFORE /yolo goes on')
     check((await page.locator('.auto-btn.auto').count()) === 1, 'button shows Auto access')
-    check((await page.locator('.yolo-chip').count()) === 0, 'no Full access chip in Auto access')
+    check((await page.locator('.auto-btn.auto').innerText()).trim() === 'Auto', 'Auto access keeps the short label Auto')
     check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['s-new-m1'] === 'auto'), 'Auto access remembered for this chat')
     // Full access asks first; Cancel changes nothing
     const n = yolos().length
@@ -88,6 +115,7 @@ module.exports = async t => {
     await sleep(500)
     const off = autoPuts().pop()
     check((await page.locator('.auto-btn.full').count()) === 1 && off.body.mode === '', 'Allow → Full access, the plugin entry removed')
+    await rowFits('Full access')
     await page.locator('.auto-btn').click()
     await page.getByText('Off', { exact: true }).click()
     await sleep(500)
@@ -132,7 +160,7 @@ module.exports = async t => {
     await sleep(1200)
     const put = autoPuts().slice(before).pop()
     check(put && put.body.mode === 'auto', `a new chat starts in Auto access (${JSON.stringify(put && put.body)})`)
-    check((await page.locator('.auto-btn.auto').count()) === 1, 'header shows Auto access on the new chat')
+    check((await page.locator('.auto-btn.auto').count()) === 1, 'the Auto button shows Auto access on the new chat')
     check(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')).every(k => k !== 's-new')), 'the default is not stored as the chat\'s own choice')
     // an explicit Off on this chat survives a reopen even though the default is Auto
     await page.locator('.auto-btn').click()
