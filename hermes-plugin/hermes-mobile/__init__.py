@@ -1,6 +1,6 @@
-"""Hermes Mobile companion plugin (runs inside Hermes on the phone).
+"""Hermux companion plugin (runs inside Hermes on the phone).
 
-Sends Hermes's activity to the Hermes Mobile app, which posts every notification with its own
+Sends Hermes's activity to the Hermux app, which posts every notification with its own
 icon and keeps a pinned status line ("Running `ls /sdcard`", "Thinking…", "Ready"):
 
   status    what Hermes is doing now (throttled; "Ready" when every turn has finished)

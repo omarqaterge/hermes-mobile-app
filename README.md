@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/img/hero.png" alt="Hermes Mobile: your agent, on your phone" width="100%">
+  <img src="docs/img/hero.png" alt="Hermux (the picture still shows its earlier name, Hermes Mobile): your agent, on your phone" width="100%">
 </p>
 
 <p align="center">
@@ -22,7 +22,9 @@
 
 > Unofficial community project. Not affiliated with or endorsed by Nous Research.
 
-Hermes Agent is a powerful agent, but it lives in a terminal. Hermes Mobile gives it a proper phone interface: streaming chat,
+**Hermux was called Hermes Mobile.** Only the name changed: it is the same app, and Hermes is still the agent running inside it.
+
+Hermes Agent is a powerful agent, but it lives in a terminal. Hermux gives it a proper phone interface: streaming chat,
 live tool cards, approvals you can answer from the status bar, a canvas for building things together, and notifications that work
 while the app is closed. Hermes runs in Termux on the same phone, so the whole thing is self-contained.
 
@@ -53,7 +55,7 @@ unless you allow it. Every change is a version with a diff you can restore.
 
 ### Your phone's assistant
 
-Pick Hermes as your *Digital assistant app* (under Default apps) and long-pressing the power button opens it in hands-free
+Pick Hermux as your *Digital assistant app* (under Default apps) and long-pressing the power button opens it in hands-free
 Live mode.
 
 <p align="center"><img src="docs/img/assistant.png" alt="Long-press power opens Hermes in Live mode" width="100%"></p>
@@ -108,7 +110,7 @@ free tier). It takes about 15 minutes, mostly waiting.
    install it and open it.
 2. Tap **Install all** to get Termux, Termux:API, Termux:Boot (from F-Droid) and Shizuku.
 3. Start Shizuku with Wireless debugging (needed: it gives Hermes the screen and apps; the app shows how). After that,
-   Hermes Mobile starts Shizuku again by itself after a restart, on Wi-Fi.
+   Hermux starts Shizuku again by itself after a restart, on Wi-Fi.
 4. Tap **Copy the command**, then **Open Termux**, paste it and press Enter. Allow what Termux asks and keep the screen on.
 5. Back in the app, sign in with your subscription or paste an API key.
 
@@ -132,7 +134,7 @@ Or let your AI coding agent (Claude Code, Codex, Cursor…) do it, with this pro
 Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermes on my Android phone.
 ```
 
-**Afterwards:** set battery to *Unrestricted* for Hermes Mobile, Termux and Shizuku, or Android may stop them. If something
+**Afterwards:** set battery to *Unrestricted* for Hermux, Termux and Shizuku, or Android may stop them. If something
 doesn't work, open **Settings → Setup check** in the app.
 
 The [full install guide](docs/install.md) has every step in detail, the by-hand route, rooted phones (chroot-distro),
@@ -166,7 +168,7 @@ The app installs on Android 8.0 and newer (arm64). Some parts need a newer Andro
 | 16 | The status chip as an Android Live Update (on older Android it is a normal pinned notification) |
 
 **Android System WebView must be up to date** (Chrome 100 or newer). The app draws its screens with it. Phones with the
-Play Store update it by themselves. If it was never updated, the app says "Hermes Mobile can't start": update
+Play Store update it by themselves. If it was never updated, the app says "Hermux can't start": update
 *Android System WebView* (or *Chrome*) from your app store and reopen the app.
 
 > Tested on Android 15 (clean emulator install) and Android 16 (a real phone). On Android 8.0 (emulator) only the
@@ -190,7 +192,7 @@ What is kept and how to uninstall by hand: [docs/install.md](docs/install.md#uni
 flowchart LR
   subgraph phone["📱 All on your phone"]
     direction LR
-    ui["💬 <b>Hermes Mobile</b><br/>chat screen"]
+    ui["💬 <b>Hermux</b><br/>chat screen"]
     hermes["🤖 <b>Hermes Agent</b><br/>in Termux → Debian<br/>+ mobile plugin"]
     svc["🔔 <b>Island &amp; notifications</b><br/>work with the app closed"]
   end

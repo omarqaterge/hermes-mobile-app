@@ -1,7 +1,7 @@
 {
   "name": "hermes-mobile",
-  "label": "Hermes Mobile",
-  "description": "Backend API for the Hermes Mobile Android app (memory entries, always-on bots).",
+  "label": "Hermux",
+  "description": "Backend API for the Hermux Android app (memory entries, always-on bots).",
   "version": "1.0.0",
   "tab": { "hidden": true },
   "entry": "dist/index.js",

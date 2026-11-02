@@ -14,7 +14,7 @@
 | `Scheduled jobs` | `jobs2` | DEFAULT | no | `cron` events (a scheduled job finished or failed). |
 | `Reading aloud` | `playback` | LOW | no | The `TtsMedia` card (id 7). |
 | `Phone access` | `phone` | DEFAULT | no | The Shizuku notice (id 9) from `ShizukuKeeper`. |
-| `App updates` | `update` | DEFAULT | no | "Hermes Mobile X is available" from `UpdateNotice` (id 10). |
+| `App updates` | `update` | DEFAULT | no | "Hermux X is available" from `UpdateNotice` (id 10). |
 | `Remote debugging` | `devtools` | LOW | no | The ongoing notification from `DevTools` (id 11) while remote debugging is on: "Remote debugging is on · turns off at HH:MM" with the action Turn off (`DevTools.ACTION_OFF`, handled in `HermesService.onStartCommand`). Gone when it turns off. |
 | `Pairing` | `pairing` | HIGH | no | The Pairing notification from `AdbPairing` (tag `pair`, id 1): "Pair Termux: enter the code" with the Enter code field ("6-digit code"), then "Pairing…", "Termux is paired" or what went wrong. Only after the user tapped Start pairing; gone 10 minutes after that tap. |
 

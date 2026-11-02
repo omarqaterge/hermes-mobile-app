@@ -2,20 +2,20 @@
 
 Renaming this GitHub repository from `omarqaterge/hermes-mobile-app` to `omarqaterge/hermux` is optional and for much
 later, only on the owner's explicit go-ahead ([decision](../decisions/hermux-name-update-path.md)). This file is the
-runbook for that day. The package ID (`com.omarqaterge.hermesmobile`), the app's visible name, the phone folder
+runbook for that day. The package ID (`com.omarqaterge.hermesmobile`), the app's visible name (Hermux), the phone folder
 `~/hermes-mobile`, the plugin name `hermes-mobile`, the release file `hermes-mobile.apk` and the `v*` and `hermes-image-*`
 tags are separate names, and the rename changes none of them.
 
-**State (2026-11-02):** nothing is renamed. The code now accepts both names: `UpdateUrl.ok` (in-app update) and
+**State (2026-11-02):** the repository is not renamed. The app's visible name is now Hermux in the code, which is the separate step the decision describes; it reaches people with the next release, and no address, package ID or file name changed with it. The code also accepts both repository names: `UpdateUrl.ok` (in-app update) and
 `phone/uninstall.sh`. Every address the app and scripts fetch stays on the old name, because the new one answers 404
 until the rename. No release has shipped this yet.
 
-**Next:** nothing here until the owner gives the go-ahead. The HERMUX release doesn't wait for this and doesn't include
+**Next:** nothing here until the owner gives the go-ahead. The Hermux release doesn't wait for this and doesn't include
 it: see the first rule of [The order](#the-order).
 
 **Needs a real phone:**
 - Before the rename, on a test build: call `installUpdate` with a `hermux` release address. Expected: "Download failed
-  (HTTP 404)", not "That isn't an official Hermes Mobile download." Allow it to install unknown apps first, or it asks for
+  (HTTP 404)", not "That isn't an official Hermux download." Allow it to install unknown apps first, or it asks for
   that instead.
 - After the rename, on the kept phone (steps 1 and 6): the check in Settings, the notification, and a real update to the
   next release, the first one with a `hermux` address. A local test build can't do this: its signing key differs, so the
@@ -46,8 +46,8 @@ accepts both names has to go out, and people have to update, before the rename.
 
 ## The order
 
-**First rule: the HERMUX release comes from the current name, and the repository rename isn't part of it.** The update
-that changes the app's visible name to HERMUX is published from `omarqaterge/hermes-mobile-app`, with the same package ID,
+**First rule: the Hermux release comes from the current name, and the repository rename isn't part of it.** The update
+that changes the app's visible name to Hermux is published from `omarqaterge/hermes-mobile-app`, with the same package ID,
 the same release signing key, a higher version and an `.apk` release file (keep `hermes-mobile.apk`). Installed versions
 look for any `.apk` file in the latest release and accept only old-name addresses, so everyone can update inside the app.
 Everything below happens later, only on the owner's explicit go-ahead.

@@ -152,7 +152,7 @@ module.exports = async t => {
     await tip.waitFor({ timeout: 5000 }).then(() => check(true, 'setup: a phone with an Autostart page shows the Autostart tip'), () => check(false, 'setup: a phone with an Autostart page shows the Autostart tip'))
     check((await fd.locator('.setup-item.ok, .setup-item.bad', { hasText: 'Autostart' }).count()) === 0, 'setup: the Autostart tip is neither ✓ nor ✗')
     const help = (await tip.locator('.setup-help').textContent().catch(() => '')) || ''
-    check(/list of apps that may start by themselves \(Autostart\): switch on Termux and Hermes \(this app is listed as Hermes\)/.test(help) && help.includes('tap Done'), `setup: the tip names the page that opens (${help.slice(0, 90)}…)`)
+    check(/list of apps that may start by themselves \(Autostart\): switch on Termux and Hermux\./.test(help) && help.includes('tap Done'), `setup: the tip names the page that opens (${help.slice(0, 90)}…)`)
     await tip.getByRole('button', { name: 'Open Autostart' }).click()
     const fx = await fd.evaluate(() => window.__fixes || [])
     check(fx.includes('autostart') && !fx.includes('app-settings'), `setup: the Autostart button opens the phone's Autostart page (${JSON.stringify(fx)})`)
@@ -160,7 +160,7 @@ module.exports = async t => {
     await fd.locator('.setup-item.ok', { hasText: 'Autostart' }).waitFor({ timeout: 5000 }).then(() => check(true, 'setup: Done ticks the Autostart row'), () => check(false, 'setup: Done ticks the Autostart row'))
     check(await fd.evaluate(() => localStorage.getItem('hm.autostartDone') === '1'), 'setup: Done on Autostart is remembered')
     await fd.close()
-    // A maker whose page is per app, or none of whose pages opens: one button per app (Hermes Mobile, Termux)
+    // A maker whose page is per app, or none of whose pages opens: one button per app (Hermux, Termux)
     const fi = await flowPage({ ...OK, maker: 'xiaomi', autostart: 'info', autostartName: 'Autostart', autostartWhere: 'Settings → Apps → Background autostart' })
     await fi.goto(WEB + '/')
     await fi.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
@@ -171,7 +171,7 @@ module.exports = async t => {
     const helpI = (await tipI.locator('.setup-help').textContent().catch(() => '')) || ''
     check(helpI.includes('App info') && helpI.includes('Settings → Apps → Background autostart'), `setup: App info fallback says where else to look (${helpI.slice(0, 90)}…)`)
     await tipI.getByRole('button', { name: 'Termux', exact: true }).click().catch(() => {})
-    await tipI.getByRole('button', { name: 'Hermes', exact: true }).click().catch(() => {})
+    await tipI.getByRole('button', { name: 'Hermux', exact: true }).click().catch(() => {})
     const fxI = await fi.evaluate(() => window.__fixes || [])
     check(fxI.includes('autostart-termux') && fxI.includes('autostart'), `setup: per-app Autostart buttons ask for each app (${JSON.stringify(fxI)})`)
     await fi.close()
@@ -185,7 +185,7 @@ module.exports = async t => {
     check((await fg.locator('.setup-item', { hasText: 'Autostart' }).count()) === 0, 'setup: AOSP (no Autostart page) has no Autostart row')
     await fg.close()
   }
-  // e. app-first: only Hermes Mobile is installed. The flow opens at once at the helper apps, installs all four in order,
+  // e. app-first: only Hermux is installed. The flow opens at once at the helper apps, installs all four in order,
   // requires Start Shizuku (no Skip), asks for the Termux permission, copies the installer command, shows its progress
   // lines, and after DONE connects and lands on the model step.
   await mock({ unconfigured: true, pluginEnabled: true, drop: 600000 })

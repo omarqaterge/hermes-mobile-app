@@ -5,7 +5,7 @@ Android 15 emulator (AVD `hmtest`, Google APIs arm64) with a throw-away spike bu
 A real phone (vendor ROMs, a real Wi-Fi network, a first-time user) can behave differently; those checks are listed at
 the end.
 
-Goal: a user installs only Hermes Mobile (the APK from GitHub) and the app walks them to a working chat. The new steps go
+Goal: a user installs only Hermux (the APK from GitHub) and the app walks them to a working chat. The new steps go
 at the top of Stream B's one ordered list (`web/src/setupflow.ts` `setupSteps()` / `nextStep()`, drawn by `SetupFlow`),
 so the same flow also covers a computer-route install, a manual install and a half-finished one: it always resumes at the
 first thing that is missing. There is no second wizard.
@@ -14,9 +14,9 @@ first thing that is missing. There is no second wizard.
 
 | C1 question | Answer (evidence below) |
 |---|---|
-| 1. Install Termux, Termux:API, Termux:Boot, Shizuku from the app | **Works** with the existing PackageInstaller session code. One "Install" tap per app; before the first one, Android's "Install unknown apps" toggle for Hermes Mobile once. |
+| 1. Install Termux, Termux:API, Termux:Boot, Shizuku from the app | **Works** with the existing PackageInstaller session code. One "Install" tap per app; before the first one, Android's "Install unknown apps" toggle for Hermux once. |
 | 2. Start the installer without RUN_COMMAND | **Copy + paste is the only path.** Termux refuses every RUN_COMMAND until `allow-external-apps = true`, which only the installer writes. Paste works with Termux's long-press menu. |
-| 3. Progress channel | **Works:** a `curl` POST from `bootstrap.sh`'s `say()` reached HermesService on `127.0.0.1:9121` for every step of a fresh install (fresh Termux, Hermes Mobile in the background). |
+| 3. Progress channel | **Works:** a `curl` POST from `bootstrap.sh`'s `say()` reached HermesService on `127.0.0.1:9121` for every step of a fresh install (fresh Termux, Hermux in the background). |
 | 4. Shizuku pairing | **Fully on the phone**, no computer: Developer options → Wireless debugging → Shizuku's own "Pairing" notification → Start. The app can deep-link Developer options and Shizuku, and can read whether Developer options and Wireless debugging are on; it cannot read whether Shizuku runs before Hermes exists. |
 | 5. Installed-but-stopped vs never-installed | **A precise signal exists:** RUN_COMMAND with a result `PendingIntent`. Termux answers in ~30 ms with `err=2 "allow-external-apps"` (installer never got to its first step), or runs a fixed probe that says whether the install finished and whether the dashboard answers. No 60 s guess needed. It needs one new marker file written at `DONE` (mid-install looks like "stopped" otherwise). |
 
@@ -41,7 +41,7 @@ Spike: a temporary `Spike.java` driven by `am start … --es spike <cmd>`, loggi
 | After install | All four `installer=com.omarqaterge.hermesmobile`, `FLAG_STOPPED=true` until first opened |
 | Signers (SHA-256 of the cert) | Termux, Termux:API, Termux:Boot from F-Droid: `228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42`. Shizuku v13.6.0 (GitHub): `268b5590e868fb08bae7e0ac413564cd1ff88f5ccff74af9dbd0dc918e30db30` |
 | F-Droid API | `suggestedVersionCode`: Termux 1002 (0.118.3; the list also has 0.119 betas, so use `suggestedVersionCode`, not the newest), Termux:API 1002 (0.53.0), Termux:Boot 1000 (0.8.1). All `targetSdk 28` (Android 15 installs it; it refuses below 24). |
-| RUN_COMMAND permission when Termux arrives after Hermes Mobile | Becomes requestable: `requestPermissions` shows **"Allow Hermes to execute arbitrary commands within Termux environment and access files?"** (Hermes Mobile was installed first). Before Termux exists the permission is undefined and isn't asked. |
+| RUN_COMMAND permission when Termux arrives after Hermux | Becomes requestable: `requestPermissions` shows **"Allow Hermes to execute arbitrary commands within Termux environment and access files?"** (Hermux was installed first). Before Termux exists the permission is undefined and isn't asked. |
 
 ### 2. Starting the installer
 
@@ -94,7 +94,7 @@ The RUN_COMMAND result PendingIntent (`com.termux.RUN_COMMAND_PENDING_INTENT`, r
 
 | Probe answer | Means | Flow goes to |
 |---|---|---|
-| `SecurityException` (no RUN_COMMAND permission) | not allowed yet | "Allow Hermes Mobile to run Termux commands" |
+| `SecurityException` (no RUN_COMMAND permission) | not allowed yet | "Allow Hermux to run Termux commands" |
 | `err=2 allow-external-apps` | the installer never reached `install.sh` step 1 (never run, or stopped in its first minutes) | Run the installer |
 | ran, no `installed=yes` | Termux allows us, but the install never finished (a half-finished run) | Run the installer (safe to run again); the progress view instead while a token is active |
 | ran, `installed=yes`, `dash≠200` | installed but stopped | B's "Hermes is running" step (Start Hermes; the app's onResume `startHermes()` usually does it already) |
@@ -129,10 +129,10 @@ the `DONE` line.
 
 | # | Row (id) | Required | Done when (source) | The step's view |
 |---|---|---|---|---|
-| 1 | Get the apps (`apps`) | Termux: yes. Termux:API, Termux:Boot, Shizuku: see open question 1 | each package present (`setupState()`: `termux`, `termuxApi`, `termuxBoot`, `shizuku`, plus `termuxSigner`) | Four lines with a ✓ or an **Install** button, and **Install all** (one after another, one system dialog each, Termux first). Before the first install, if `canInstall` is false: "Allow Hermes Mobile to install apps" → the system toggle; the flow re-checks on return (B's `visibilitychange`) and only then commits a session (Back on the toggle page cancels a pending session). Download progress per app from the native callback. |
+| 1 | Get the apps (`apps`) | Termux: yes. Termux:API, Termux:Boot, Shizuku: see open question 1 | each package present (`setupState()`: `termux`, `termuxApi`, `termuxBoot`, `shizuku`, plus `termuxSigner`) | Four lines with a ✓ or an **Install** button, and **Install all** (one after another, one system dialog each, Termux first). Before the first install, if `canInstall` is false: "Allow Hermux to install apps" → the system toggle; the flow re-checks on return (B's `visibilitychange`) and only then commits a session (Back on the toggle page cancels a pending session). Download progress per app from the native callback. |
 | 2 | Termux:Boot opened once (part of `apps`) | no | `termuxBootStopped == false` (`ApplicationInfo.FLAG_STOPPED`) | "Open Termux:Boot once" button (`setupFix('open-termux-boot')`); Android only delivers BOOT_COMPLETED to an app that was opened. |
 | 3 | Start Shizuku (`shizuku-start`) | yes (needed; no Skip) | can't be known before Hermes exists → `info` with sub-checks: Developer options on (`devOptions`), Wireless debugging on (`wirelessDebugging`) | Three short steps with buttons: **Turn on Developer options** (About phone; "tap Build number 7 times"; Xiaomi: "OS version"), **Open Shizuku** (Pairing → its notification → Start), **Shizuku is running: continue** (a fallback for a Shizuku started before the app's first launch; the required `shizuku` row still checks it later). Android 10 and older (no Wireless debugging) get a note to start it from a computer and a guide link. Says why: it lets the installer stop Android from killing the install ("signal 9") and gives Hermes screen/app control. The installer's `android:` line later says whether it worked. |
-| 4 | Allow Hermes Mobile to run Termux commands (`run`, exists) | yes once Termux is present | RUN_COMMAND granted | B's existing row, moved before the installer: the probe needs it. |
+| 4 | Allow Hermux to run Termux commands (`run`, exists) | yes once Termux is present | RUN_COMMAND granted | B's existing row, moved before the installer: the probe needs it. |
 | 5 | Run the installer (`installer`) | yes | probe (above): `installed=yes` | **Copy the command** (native builds it with a fresh token and copies it), **Open Termux**, then "long-press → Paste → Enter. Stay in Termux and tap Allow on what it asks (notifications, battery, files, Shizuku: Allow all the time)." Once lines arrive, the view turns into the progress list below. |
 | 6 | Installing (substate of `installer`) | — | `DONE` line, or probe `installed=yes` | Steps with ✓ / spinner (packages, access, android, debian, hermes, the longest step, plugin, start), the latest `phone:` hint in bold (e.g. "tap Allow…"), `TODO` lines listed, `FAIL <step>` → "The installer stopped at <step>. Open Termux to see why, then paste the same command again (finished steps are skipped)." with Copy + Open Termux. The service also puts the current step into its existing notification while the user is in Termux. |
 | — | then B's rows | | | `hermes` (Start Hermes), `plugin`, `enabled`, `model`, recommended items, "All set". |
@@ -200,8 +200,8 @@ own `termux-wake-lock` is unchanged (bounded by the script).
 
 ## What stays manual
 
-1. Download and install Hermes Mobile itself (browser "install unknown apps" for the browser).
-2. "Allow from this source" for Hermes Mobile, once.
+1. Download and install Hermux itself (browser "install unknown apps" for the browser).
+2. "Allow from this source" for Hermux, once.
 3. One "Install" tap per helper app (4).
 4. Opening Termux, Paste, Enter; Termux's own prompts during the install (notifications, "always run in background", files,
    "Allow Termux to access Shizuku").
@@ -232,7 +232,7 @@ own `termux-wake-lock` is unchanged (bounded by the script).
 
 ## Phone tests for the test phase (not done; emulator only so far)
 
-1. A brand-new phone, only Hermes Mobile installed → the flow installs the four apps (record each system screen, especially
+1. A brand-new phone, only Hermux installed → the flow installs the four apps (record each system screen, especially
    vendor installers: Xiaomi's "Install via USB"/security scan screens may differ) → Shizuku pairing on real Wi-Fi →
    paste → progress lines arrive while in Termux → DONE → model step → chat.
 2. Back on the "Install unknown apps" toggle page: the pending install is cancelled; the flow shows Install again.

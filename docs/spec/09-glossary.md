@@ -14,6 +14,7 @@
 - **Debian**: the Debian 13 userland that runs Hermes inside Termux (through proot-distro, or chroot-distro on rooted phones).
 - **Done chip**: the sticky green notification listing chats that finished while the app was closed.
 - **gallery**: the Hermes-hub list of every canvas document of every chat and profile (it replaced the Library).
+- **Hermux**: the app's name, the one people see (earlier name: Hermes Mobile). Hermes is the agent that runs inside it, so text about what the agent does or holds still says Hermes. The old name stays on purpose wherever installs and updates depend on it: the package ID `com.omarqaterge.hermesmobile`, the repository `hermes-mobile-app`, the file `hermes-mobile.apk`, the phone folder `~/hermes-mobile` and the plugin `hermes-mobile`.
 - **Hermes pin**: the exact Hermes commit the app is tested against (`web/vendor/hermes-shared/.hermes-commit`, mirrored in `phone/bootstrap.sh`).
 - **island**: the status chip as shown in a phone's pill/island area; the README calls answering from it "Answer from the island".
 - **Live Update**: Android 16's promoted ongoing notification; the app uses it for the status chip.
@@ -25,7 +26,7 @@
 - **read-aloud**: speaking a reply through Android text-to-speech with a player (in the app and in the notification shade).
 - **ready-made image**: the prebuilt Debian + Hermes archive (`hermes-debian-<pin12>-arm64.tar.zst`) that `bootstrap.sh` restores instead of installing Debian and Hermes on the phone.
 - **rish**: Shizuku's shell wrapper; Hermes and the installer use it to run commands with shell permissions (extracted from Shizuku's APK by `phone/phone-access.sh`).
-- **Shizuku**: an app that gives other apps shell-level access through Wireless debugging, no root. Hermes Mobile needs it for the screen, hidden-display apps and battery settings.
+- **Shizuku**: an app that gives other apps shell-level access through Wireless debugging, no root. Hermux needs it for the screen, hidden-display apps and battery settings.
 - **ShizukuKeeper**: the Java class that starts Shizuku again by itself when it stops (on Wi-Fi, through Wireless debugging).
 - **tui_gateway**: Hermes's JSON-RPC backend (the one its TUI and Desktop use). The app speaks to it over the WebSocket `/api/ws` of the dashboard.
 - **Termux**: the Android terminal app where Hermes runs. **Termux:API** gives Hermes phone functions (battery, files); **Termux:Boot** starts it after a restart. Install all of them from F-Droid.

@@ -68,7 +68,7 @@ final class AdbPairing {
         NotificationChannel ch = nm.getNotificationChannel(CH_PAIR);
         if (!nm.areNotificationsEnabled() || (ch != null && ch.getImportance() == NotificationManager.IMPORTANCE_NONE)) {
             Log.i(TAG, "notifications off: opening the app's notification settings");
-            android.widget.Toast.makeText(a, "Allow notifications for Hermes Mobile first: the pairing code is typed into one",
+            android.widget.Toast.makeText(a, "Allow notifications for Hermux first: the pairing code is typed into one",
                     android.widget.Toast.LENGTH_LONG).show();
             try {
                 a.startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)

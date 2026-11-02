@@ -64,7 +64,7 @@ export const INSTALL_STEPS: { id: string; label: string }[] = [
   { id: 'android', label: 'Android child-process limit' },
   { id: 'debian', label: 'Debian' },
   { id: 'hermes', label: 'Hermes Agent (most of the wait)' },
-  { id: 'plugin', label: 'Hermes Mobile plugin' },
+  { id: 'plugin', label: 'Hermux plugin' },
   { id: 'start', label: 'Starting Hermes' }
 ]
 

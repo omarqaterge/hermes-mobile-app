@@ -49,9 +49,9 @@ Defined in `phone_app.py`. Hermes uses an app on a **hidden virtual screen** whi
   intent actions that show a screen (`SAFE_ACTIONS`: view, send, sendto, insert, edit, search, web search, dial,
   main, alarms and timers), `android.settings.*` pages and an app's own actions, and no `file:`, `intent:`,
   `javascript:` or `android-app:` links.
-- A host older than the plugin answers 404 for a new action: the tool says the Hermes Mobile app needs an update.
+- A host older than the plugin answers 404 for a new action: the tool says the Hermux app needs an update.
 - How it works: the app's `BgHost` (a small program started through Shizuku's `rish` with `app_process`) listens on `127.0.0.1:9131`. `ensure_host()` starts it with a random per-start token, passed on stdin, never on a command line; it exits after about two idle minutes. If the port is still held by an older host, it is killed and restarted once. Calls carry `X-HM-Token`.
-- Rules: the user is asked once per app per chat through Hermes's approval gate (`request_tool_approval`; `/yolo` skips it). Banking, payment, password, 2FA and similar apps are refused (matched by package name or label against the `SENSITIVE` pattern) unless the user switched on the Background apps setting (`GET`/`PUT /bgapps`, file `bgapps.json`). The app itself ("Hermes Mobile") cannot be opened.
+- Rules: the user is asked once per app per chat through Hermes's approval gate (`request_tool_approval`; `/yolo` skips it). Banking, payment, password, 2FA and similar apps are refused (matched by package name or label against the `SENSITIVE` pattern) unless the user switched on the Background apps setting (`GET`/`PUT /bgapps`, file `bgapps.json`). The app itself ("Hermux") cannot be opened.
 - One app at a time on the phone. If another chat owns it and has been silent for 130 s (`STALE_S`), or its turn is over and quiet for 20 s (`STALE_IDLE_S`), it is closed and taken over. `on_session_end` and `api_request_error` call `end_session`, so the app closes when the turn ends.
 - It sends `bgapp` events (`state` open / act / done, `pkg`, `label`, `action`, `port`, and `token` while open) so the app can show its card and the viewer. The chip says "Using <app>" while an app is open in that chat.
 

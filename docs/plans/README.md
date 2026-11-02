@@ -1,6 +1,6 @@
 # Feature plans
 
-Plans for chat features Hermes Mobile lacks. Each file is written so an agent new to the idea can build it: what to
+Plans for chat features Hermux lacks. Each file is written so an agent new to the idea can build it: what to
 make, which files and functions to touch, what to test, and what "done" means.
 
 | # | Plan | Effort | Depends on |

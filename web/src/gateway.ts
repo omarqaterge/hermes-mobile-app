@@ -889,7 +889,7 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean, s
     try {
       await setPluginAuto(a.storedId, true)
     } catch (e) {
-      throw new Error(`Auto access needs the updated Hermes Mobile plugin (${errText(e)})`)
+      throw new Error(`Auto access needs the updated Hermux plugin (${errText(e)})`)
     }
     if (stale()) {
       // Stop before /yolo changes; the newer request may fail before its own switch, so leave no entry it didn't ask for.
@@ -1278,7 +1278,7 @@ client.onRequest((req: ServerRequest) => {
   // Approvals and questions are notified by the hermes-mobile plugin on the phone (works while
   // the app is closed); only masked prompts (password / secret / code) are notified from here.
   if (appInBackground() && req.method !== 'approval' && req.method !== 'clarify') {
-    notify('Hermes needs your input', 'Open Hermes to continue', `req-${req.id}`)
+    notify('Hermes needs your input', 'Open Hermux to continue', `req-${req.id}`)
   }
   return true
 })

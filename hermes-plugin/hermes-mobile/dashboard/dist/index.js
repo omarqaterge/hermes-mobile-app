@@ -1,1 +1,1 @@
-/* Hermes Mobile: API-only dashboard plugin, no UI. */
+/* Hermux: API-only dashboard plugin, no UI. */

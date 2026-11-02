@@ -1,6 +1,6 @@
 # UI inventory
 
-Every screen, region and element of the Hermes Mobile interface, in one place, for designing the planned UI revamp
+Every screen, region and element of the Hermux interface, in one place, for designing the planned UI revamp
 ([status](../status/ui-revamp.md)). It is the source for the image-generation prompts in
 [chatgpt-ui-prompts.md](chatgpt-ui-prompts.md). The behaviour itself is specified in `docs/spec/03-*.md`; this file is
 a designer's map of it (what is on screen, what it is for, which states it has), checked against
@@ -12,7 +12,7 @@ Format: **Label or icon** · kind · job · states.
 
 ## 1. The app in one paragraph
 
-Hermes Mobile is an Android chat app for Hermes, an open-source AI agent that runs on the phone itself (inside
+Hermux is an Android chat app for Hermes, an open-source AI agent that runs on the phone itself (inside
 Termux and a Debian userland). Hermes can run commands, read and write files, browse, use phone apps, schedule jobs
 and remember things; the app is its front end: streaming replies with visible thinking and tool calls, approvals for
 risky actions, many chats and several "bots" (profiles), skills, memory, scheduled jobs, files, projects, a canvas for
@@ -95,7 +95,7 @@ activity banner, status bar, compress hint, read-aloud player, background-app ca
 ### 6.1 Header
 - **☰** · icon button · open the chat list (wide: show or hide the docked list) · small unread dot when another chat
   finished unseen.
-- **Title** · button · open the Chat menu · chat title / "New chat" / "Hermes" on the empty screen; branch icon for a
+- **Title** · button · open the Chat menu · chat title / "New chat" / "Hermux" on the empty screen; branch icon for a
   branched chat.
 - **Status dot** · indicator button · open Backend status · green ok / amber warn / red offline / blinking amber
   connecting.
@@ -330,7 +330,7 @@ Sub-pages:
 - **Appearance** · four theme swatch cards (Default, OLED black, Light, System) with mini previews and ✓; text size
   sample sentence + segmented 90 % · 100 % · 110 % · 120 % · 135 %.
 - **Voice** · Read aloud toggle; Speech engine and Voice pickers; Speed and Pitch sliders; Dictation → Speech
-  recognition; Live mode: Pause before sending slider, Interrupt by talking toggle; Phone assistant: Use Hermes as
+  recognition; Live mode: Pause before sending slider, Interrupt by talking toggle; Phone assistant: Use Hermux as
   phone assistant, Talk to Hermes on the lock screen; ▶ Test voice, ↺ Reset voice settings.
 - **Speech recognition** · Phone’s speech recognition row ("✓ In use"); on-device model cards (name, size, tags
   Recommended / In use / words while you speak / punctuation, 👍 good at, 👎 weaker at, download progress bar,
@@ -364,7 +364,7 @@ Full-screen takeover, also on wide screens.
 - **Chrome** · ‹ Back, "Step 3 of 11" + progress bar, ‹ Back / Next › buttons, list of finished steps "✓ …",
   loading "Checking what is already set up…".
 - **Steps, in order** (required unless marked): get the helper apps (Termux, Termux:API, Termux:Boot, Shizuku) ·
-  start Shizuku · allow Hermes Mobile to run commands in Termux · install Hermes (run the installer) · Hermes is
+  start Shizuku · allow Hermux to run commands in Termux · install Hermes (run the installer) · Hermes is
   running · the plugin is installed · the plugin is enabled for the bot · Hermes can see and use the screen
   (Shizuku) · Shizuku starts by itself (wireless pairing) · connect a model · recommended: notifications, run in the
   background (app, Termux, Shizuku), Termux:Boot opened once, files access, Termux:API, the maker's Autostart page.
@@ -377,7 +377,7 @@ Full-screen takeover, also on wide screens.
   Shizuku · buttons About phone / Developer options / Open Shizuku / "Shizuku is running: continue".
 - **Installer page** · before: numbered instructions, **Copy the command**, **Open Termux**, "It takes about 15
   minutes…" · running: "Installing Hermes", latest hint, step list with marks and durations (Termux packages, Access
-  to the phone, Android child-process limit, Debian, Hermes Agent, Hermes Mobile plugin, Starting Hermes), "So far /
+  to the phone, Android child-process limit, Debian, Hermes Agent, Hermux plugin, Starting Hermes), "So far /
   Total", to-do list after install · failed: "The installer stopped" + retry instructions.
 - **Connect a model page** · "Connect Hermes to a model", explanation, the provider list (as in Settings), **Pick a
   model** (disabled "Connect a provider first"), **Skip for now**.
@@ -392,7 +392,7 @@ Full-screen takeover, also on wide screens.
 - **Running** · big spinner, "Removing Hermes…", **Close**.
 - **Failed / lost** · step list with ✓ / – / ✕ / · marks (Stop Hermes, Backup, Phone settings, Debian…, installer
   files, Termux access), error line, **Continue to the apps**, **Try again**.
-- **Apps** · rows Termux:API, Termux:Boot, Shizuku, Termux, Hermes Mobile with installed / removed marks and
+- **Apps** · rows Termux:API, Termux:Boot, Shizuku, Termux, Hermux with installed / removed marks and
   **Uninstall <app>** buttons (the next one solid red), backup location note, **Close**.
 
 ## 19. Outside the page (for context, not redesigned here)

@@ -13,4 +13,4 @@ Order:
 5. **files**: removes `~/.hermes-mobile`, `~/bin/hermes-services hermes-debian hm-shizuku rish rish_shizuku.dex`, the boot script `~/.termux/boot/10-hermes`, the loops' pid and log files, `hm.sh`, `hm-install.sh`, `hm-phone-access.sh`, the downloaded APK and image, `~/.cache/hermes-open`, and `~/hermes-mobile` only when a remote in its git config is this project's GitHub repository, under either of its names (`omarqaterge/hermes-mobile-app` or `omarqaterge/hermux`).
 6. **termux**: last, removes `allow-external-apps = true` from `~/.termux/termux.properties` (skipped after any failure so the app can run the script again).
 
-It does not uninstall any app: the Hermes Mobile app asks Android to remove Termux:API, Termux:Boot, Shizuku, Termux and itself last. Files Hermes saved to shared storage (Downloads, Pictures/Hermes) are kept.
+It does not uninstall any app: the Hermux app asks Android to remove Termux:API, Termux:Boot, Shizuku, Termux and itself last. Files Hermes saved to shared storage (Downloads, Pictures/Hermes) are kept.

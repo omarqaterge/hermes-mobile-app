@@ -42,7 +42,7 @@ person holding the phone.
    - `turnOff(Context)`: `until = 0`, apply, cancel the notification. Also called when Developer options are found off.
 2. **Enable flow** (`MainActivity`): the page may only *ask to open* the native confirmation:
    - Bridge method `openRemoteDebugging(key)`: shows a native `AlertDialog` (not the web dialog): title
-     "Turn on remote debugging?", text explaining that a connected computer can read and control Hermes Mobile for
+     "Turn on remote debugging?", text explaining that a connected computer can read and control Hermux for
      60 minutes, buttons Cancel / Continue. Returns nothing.
    - Continue → `KeyguardManager.createConfirmDeviceCredentialIntent(title, description)` → `startActivityForResult`.
      (Deprecated from API 29 but works through current Android and needs no new dependency. If you prefer

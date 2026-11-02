@@ -1,6 +1,6 @@
 ## 5. Hermes plugin
 
-The plugin is the part of Hermes Mobile that runs **inside Hermes** (in the Debian container on the phone). It has two jobs:
+The plugin is the part of Hermux that runs **inside Hermes** (in the Debian container on the phone). It has two jobs:
 
 1. **Tell the app what Hermes is doing** (hooks, 5.1): status line, replies, approvals, questions, learning, cron results, errors. The app turns these into notifications and the status chip.
 2. **Give the app and the model extra abilities** (tools 5.2, prompt sections 5.3, HTTP routes 5.4): canvas documents, chat search, background apps, cards in replies, Auto access, file checkpoints, media streaming, Claude sign-in, and so on.

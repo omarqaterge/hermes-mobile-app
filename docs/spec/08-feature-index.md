@@ -43,7 +43,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Read-aloud says "card shown in the app" for a card | 4.6 |
 | Dictation and hands-free Live mode; approvals asked and answered by voice in Live mode | 3.11, 4.6 |
 | On-device speech recognition: offline models (Moonshine, NeMo, Zipformer) or your own sherpa-onnx model, each checked on a test recording | 3.15, 4.6 |
-| Hermes as the phone's Digital assistant (long-press power opens Live mode) | 4.6 |
+| Hermux as the phone's Digital assistant (long-press power opens Live mode) | 4.6 |
 
 **Navigation and settings**
 
@@ -77,7 +77,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Notifications while the app is closed: replies, questions, cron results, a "failed" note | 4.3, 4.4 |
 | "Learning" (memory/skills review) and "Answering a side question" statuses | 4.3, 5.1 |
 | No permanent wake lock; phone sleeps while Hermes is idle | 2.5, 6.2 |
-| Hermes Mobile service revived after a force stop (app keeper) | 6.2 |
+| Hermux service revived after a force stop (app keeper) | 6.2 |
 
 **Setup and install**
 

@@ -1,6 +1,6 @@
 ## 1. What it is
 
-Hermes Mobile is an Android chat app for the Hermes agent (NousResearch). Hermes runs on the same phone, inside
+Hermux is an Android chat app for the Hermes agent (NousResearch). Hermes runs on the same phone, inside
 Termux → proot-distro Debian. The app gives the agent a native-feeling front end: streaming replies, thinking,
 tool cards, approvals, chats and profiles, skills, memory, cron, files, projects, a canvas, cards in replies,
 voice and Live mode, and notifications that keep working while the app is closed (the pinned status chip, which
@@ -24,7 +24,7 @@ phone.
   - **Termux:** the supervisor script `~/bin/hermes-services` and its restart loops, `sshd` if installed, the
     helper scripts `hm-shizuku` and `rish`.
   - **proot Debian (inside Termux):** Hermes itself: its dashboard server on `127.0.0.1:9119`, the `tui_gateway`
-    JSON-RPC WebSocket at `/api/ws`, the Hermes Mobile plugin, the cron ticker and the memory sync.
+    JSON-RPC WebSocket at `/api/ws`, the Hermux plugin, the cron ticker and the memory sync.
   - **Shizuku** (a separate app whose server runs as the shell user): `rish` and the background-app host `BgHost`.
   - **Your model provider:** the only thing off the phone; Hermes calls it over HTTPS.
 

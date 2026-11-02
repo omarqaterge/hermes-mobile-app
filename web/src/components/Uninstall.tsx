@@ -119,7 +119,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
             </ul>
             <div className="setup-help uninstall-note">
               Kept: files Hermes saved to your phone’s storage (Downloads, Pictures/Hermes) and the backup. Android asks before removing each
-              app; Hermes Mobile goes last.
+              app; Hermux goes last.
             </div>
             {termuxThere ? (
               <Section title="Backup">
@@ -199,7 +199,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
 }
 
 function whyText(why: string): string {
-  if (why === 'no-permission') return 'Hermes Mobile may not run commands in Termux (Android permission), so it can’t remove Debian. Allow it, or skip: uninstalling Termux deletes Debian and Hermes too, but leaves the phone setting changed.'
+  if (why === 'no-permission') return 'Hermux may not run commands in Termux (Android permission), so it can’t remove Debian. Allow it, or skip: uninstalling Termux deletes Debian and Hermes too, but leaves the phone setting changed.'
   if (why === 'no-termux') return 'Termux is not installed.'
   if (why === 'busy') return 'The cleanup is already running.'
   return `Couldn’t start the cleanup (${why}).`
@@ -248,7 +248,7 @@ function Apps({ n, s }: { n: NativeSetup | null; s: UninstallNative | null }) {
   const gone = APPS.filter(a => a.id !== 'self' && !appInstalled(n, a.id))
   return (
     <>
-      <div className="setup-help uninstall-note">Android asks before removing each app. Tap Uninstall, then OK on Android’s screen. Removing Termux makes Android close this app: open Hermes Mobile again to finish.</div>
+      <div className="setup-help uninstall-note">Android asks before removing each app. Tap Uninstall, then OK on Android’s screen. Removing Termux makes Android close this app: open Hermux again to finish.</div>
       <ul className="setup-list uninstall-apps">
         {APPS.map(a => {
           const there = appInstalled(n, a.id)
@@ -267,7 +267,7 @@ function Apps({ n, s }: { n: NativeSetup | null; s: UninstallNative | null }) {
                 {there && (
                   <div className="setup-actions">
                     <button className={`btn ${a.id === next ? 'danger-solid' : ''}`} onClick={() => void remove(a.id)}>
-                      {a.id === 'self' ? 'Uninstall Hermes Mobile' : `Uninstall ${a.name}`}
+                      {a.id === 'self' ? 'Uninstall Hermux' : `Uninstall ${a.name}`}
                     </button>
                   </div>
                 )}

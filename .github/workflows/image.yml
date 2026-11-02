@@ -64,7 +64,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
               --title "Ready-made Debian + Hermes ($TAG)" \
-              --notes "Debian 13 (arm64) with Hermes Agent $PIN and the Hermes Mobile patches, for phone/bootstrap.sh on new installs. Built by .github/workflows/image.yml from $GITHUB_SHA."
+              --notes "Debian 13 (arm64) with Hermes Agent $PIN and the Hermux patches, for phone/bootstrap.sh on new installs. Built by .github/workflows/image.yml from $GITHUB_SHA."
           fi
           # image first, sha256 second: a half-replaced pair fails bootstrap's sha256 check, which then installs normally
           gh release upload "$TAG" "image-out/$FILE" --clobber

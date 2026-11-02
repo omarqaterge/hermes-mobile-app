@@ -52,7 +52,7 @@ public class KeeperPlanTest {
             String t = KeeperPlan.noticeText(r).toLowerCase(Locale.ROOT);
             check(!t.isEmpty() && !t.contains("xiaomi") && !t.contains("hyperos") && !t.contains("miui") && !t.contains("samsung"), r + " text is vendor-neutral");
         }
-        check(KeeperPlan.opensApp("unpaired") && KeeperPlan.opensApp("no-permission") && KeeperPlan.opensApp("no-termux"), "set-up problems open Hermes Mobile");
+        check(KeeperPlan.opensApp("unpaired") && KeeperPlan.opensApp("no-permission") && KeeperPlan.opensApp("no-termux"), "set-up problems open Hermux");
         check(!KeeperPlan.opensApp("failed") && !KeeperPlan.opensApp("old-android"), "failed / old Android open Shizuku");
 
         // bounded attempts: 0 s, 30 s, 120 s after the down event, then one final check, then nothing

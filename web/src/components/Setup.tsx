@@ -202,7 +202,7 @@ async function replaceTermux() {
   const ok = await confirmDialog({
     title: 'Replace Termux?',
     message:
-      'Your Termux didn’t come from F-Droid, so Termux:API and Termux:Boot can’t work with it. Android will ask you to uninstall it: everything inside Termux is deleted, including Hermes if it is installed there. Then Hermes Mobile installs Termux and the other missing apps from their makers, one after another.',
+      'Your Termux didn’t come from F-Droid, so Termux:API and Termux:Boot can’t work with it. Android will ask you to uninstall it: everything inside Termux is deleted, including Hermes if it is installed there. Then Hermux installs Termux and the other missing apps from their makers, one after another.',
     confirmLabel: 'Uninstall Termux',
     icon: '⚠️',
     danger: true
@@ -262,7 +262,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       const missing = n ? HELPERS.filter(h => !h.has(n)) : []
       return {
         title: 'Termux, Termux:API, Termux:Boot and Shizuku are installed',
-        help: `Hermes needs ${missing.length ? missing.map(h => h.name).join(', ') : 'these apps'}. Hermes Mobile downloads and installs them for you: tap Install on each of Android’s prompts.`,
+        help: `Hermes needs ${missing.length ? missing.map(h => h.name).join(', ') : 'these apps'}. Hermux downloads and installs them for you: tap Install on each of Android’s prompts.`,
         fix: n && appsPlan(n).action !== 'none' ? { label: 'Install all', run: () => installAll(n) } : undefined
       }
     }
@@ -293,7 +293,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       }
     case 'run':
       return {
-        title: 'Hermes Mobile may start Hermes',
+        title: 'Hermux may start Hermes',
         help: 'Android asks once: “Run commands in Termux environment”. Allow it. If you denied it before, turn it on in the app’s permissions.',
         fix: { label: 'Allow', run: () => setupFix('permissions') },
         alt: { label: 'App settings', run: () => setupFix('app-settings') }
@@ -320,7 +320,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       }
     case 'plugin':
       return {
-        title: 'The Hermes Mobile plugin is installed',
+        title: 'The Hermux plugin is installed',
         help: 'Needed for the status chip, approvals from the notification, the canvas and media. Run the installer in Termux, then restart Hermes.',
         fix: { label: 'Copy installer', run: copyInstall },
         alt: { label: 'Open Termux', run: () => setupFix('open-termux') }
@@ -342,7 +342,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       }
     case 'bat-app':
       return {
-        title: 'Hermes Mobile may run in the background',
+        title: 'Hermux may run in the background',
         help: 'Without this Android stops the app’s notification service after a while.',
         fix: { label: 'Allow', run: () => setupFix('battery-app') }
       }
@@ -400,7 +400,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         ) : (
           <>
             Shizuku isn’t running. Open it and start it. No root: <i>Start via Wireless debugging</i> (pair once).
-            Rooted: <i>Start</i>. Once “Shizuku starts by itself” below is ✓, Hermes Mobile starts it again after a
+            Rooted: <i>Start</i>. Once “Shizuku starts by itself” below is ✓, Hermux starts it again after a
             restart, on Wi-Fi.
             {(n?.shizukuAuto?.sdk === false || (n?.sdk != null && n.sdk < 30)) && ' On Android 10 and older Shizuku has to be started from a computer after each restart.'}
           </>
@@ -423,17 +423,17 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         title: 'Shizuku starts by itself',
         help:
           kind === 'ok'
-            ? 'Hermes Mobile restarts Shizuku after a restart or a crash, as long as the phone is on Wi-Fi.'
+            ? 'Hermux restarts Shizuku after a restart or a crash, as long as the phone is on Wi-Fi.'
             : kind === 'installer'
-              ? 'Hermes Mobile needs one more permission to do this, which the installer gives it. Run the installer again in Termux.'
+              ? 'Hermux needs one more permission to do this, which the installer gives it. Run the installer again in Termux.'
               : (
                 <>
-                  After a restart Android stops Shizuku. Pair Termux with Wireless debugging once and Hermes Mobile starts
+                  After a restart Android stops Shizuku. Pair Termux with Wireless debugging once and Hermux starts
                   Shizuku again by itself (Android 11+, on Wi-Fi). You do the taps yourself, as when you paired Shizuku.
                   <ol className="setup-help flow-steps">
-                    <li>Tap <b>Start pairing</b>. Settings opens at <i>Wireless debugging</i> (on some phones at Developer options: tap <i>Wireless debugging</i>), and Hermes Mobile shows a <i>Pairing</i> notification.</li>
+                    <li>Tap <b>Start pairing</b>. Settings opens at <i>Wireless debugging</i> (on some phones at Developer options: tap <i>Wireless debugging</i>), and Hermux shows a <i>Pairing</i> notification.</li>
                     <li>Turn Wireless debugging on if it is off, then tap <i>Pair device with pairing code</i>.</li>
-                    <li>Pull down the notifications, tap <b>Enter code</b> on Hermes Mobile’s notification and type the 6-digit code.</li>
+                    <li>Pull down the notifications, tap <b>Enter code</b> on Hermux’s notification and type the 6-digit code.</li>
                     <li>When it says <i>Termux is paired</i>, come back here.</li>
                   </ol>
                   {trust && 'Android asks “Allow wireless debugging on this network?”: tap Allow (tick Always allow on this network).'}
@@ -452,18 +452,18 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
       const note = ' Android can’t tell us whether it is on: tap Done once both are on.'
       const perApp = kind === 'app' || kind === 'info'
       return {
-        title: `Turn on ${name} for Termux and Hermes`,
+        title: `Turn on ${name} for Termux and Hermux`,
         help:
           `${why} ` +
           (kind === 'list'
-            ? `The button opens the list of apps that may start by themselves (${name}): switch on Termux and Hermes (this app is listed as Hermes).`
+            ? `The button opens the list of apps that may start by themselves (${name}): switch on Termux and Hermux.`
             : kind === 'settings'
-              ? `The button opens Settings. Go to ${where} and switch on Termux and Hermes (this app is listed as Hermes).`
+              ? `The button opens Settings. Go to ${where} and switch on Termux and Hermux.`
               : kind === 'app'
                 ? `Each button opens that app’s page: switch on ${name}.`
                 : `Each button opens that app’s App info. Look for ${name} there${where ? ` (or: ${where})` : ''} and switch it on.`) +
           note,
-        fix: perApp ? { label: 'Hermes', run: () => setupFix('autostart') } : { label: `Open ${name}`, run: () => setupFix('autostart') },
+        fix: perApp ? { label: 'Hermux', run: () => setupFix('autostart') } : { label: `Open ${name}`, run: () => setupFix('autostart') },
         alt: perApp ? { label: 'Termux', run: () => setupFix('autostart-termux') } : undefined,
         done: autostartDone
       }
@@ -636,7 +636,7 @@ export function SetupScreen() {
         <div>
           <div className="setup-hero-title">{bad ? `${bad} thing${bad > 1 ? 's' : ''} to fix` : waiting ? 'Checking…' : 'All set'}</div>
           <div className="dim small">
-            {bad ? 'Tap a button below; this page checks again by itself.' : waiting ? 'Waiting for Hermes to answer.' : 'Everything Hermes Mobile needs is in place.'}
+            {bad ? 'Tap a button below; this page checks again by itself.' : waiting ? 'Waiting for Hermes to answer.' : 'Everything Hermux needs is in place.'}
           </div>
         </div>
       </div>
@@ -827,7 +827,7 @@ export function SetupFlow() {
           <div>
             <div className="setup-hero-title">{gaps.length ? 'Almost done' : 'All set'}</div>
             <div className="dim small">
-              {gaps.length ? 'These are recommended. Hermes works without them, but they keep it running in the background.' : 'Everything Hermes Mobile needs is in place.'}
+              {gaps.length ? 'These are recommended. Hermes works without them, but they keep it running in the background.' : 'Everything Hermux needs is in place.'}
             </div>
           </div>
         </div>
@@ -919,9 +919,9 @@ function AppsStep({ n }: { n: NativeSetup }) {
     <div className="flow-card">
       <div className="flow-card-title">Get the helper apps</div>
       <div className="setup-help">
-        Hermes runs inside Termux and uses these apps to reach your phone. Hermes Mobile downloads them (Termux from F-Droid,
+        Hermes runs inside Termux and uses these apps to reach your phone. Hermux downloads them (Termux from F-Droid,
         Shizuku from GitHub) and Android asks you to tap <b>Install</b> for each one.
-        {n.canInstall === false && <> First Android asks you to allow Hermes Mobile to install apps: turn the switch on, then come back.</>}
+        {n.canInstall === false && <> First Android asks you to allow Hermux to install apps: turn the switch on, then come back.</>}
       </div>
       <ul className="setup-list app-list">
         {HELPERS.map(h => {
@@ -1033,7 +1033,7 @@ function ShizukuStep({ n, onDone, onCheck }: { n: NativeSetup; onDone: () => voi
         (“signal 9”). Also set Shizuku’s Battery to Unrestricted (app info → Battery), or Android may stop it.
       </div>
       <ul className="setup-list">
-        {needsComputer ? sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Start Shizuku from a computer</div><div className="dim small">On this Android version Shizuku is started from a computer (or with root). On a computer, run the Hermes Mobile setup script, or follow Shizuku’s guide.</div></>) : <>
+        {needsComputer ? sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Start Shizuku from a computer</div><div className="dim small">On this Android version Shizuku is started from a computer (or with root). On a computer, run the Hermux setup script, or follow Shizuku’s guide.</div></>) : <>
         {sub(n.devOptions, <><div className="setup-title">Turn on Developer options</div><div className="dim small">About phone → tap <i>Build number</i> 7 times (on some phones it is under <i>Software information</i>, or called <i>OS version</i>).</div></>)}
         {sub(n.wirelessDebugging, <><div className="setup-title">Turn on Wireless debugging</div><div className="dim small">Connect to Wi-Fi, then Developer options → <i>Wireless debugging</i> → Allow. Why: Shizuku uses Android’s own wireless debugging to start itself on the phone, with no computer and no root. That gives Hermes the screen, taps and apps, and lets the installer stop Android killing it. It only works locally on your phone (over your own Wi-Fi); nothing goes to the internet.</div></>)}
         {sub(running, running ? <div className="setup-title">Shizuku is running</div> : <><div className="setup-title">Pair and start Shizuku</div><div className="dim small">In Shizuku: <i>Pairing</i>, then <i>Pair device with pairing code</i> in Wireless debugging and type the code into Shizuku’s notification. Then <i>Start</i>.</div></>)}

@@ -182,7 +182,7 @@ def _apk_path() -> str:
             return line[len("package:"):].strip()
     if "Server is not running" in out or "not running" in out.lower():
         raise PhoneAppError("Shizuku isn't running. Ask the user to open Shizuku and start it, then try again.")
-    raise PhoneAppError("The Hermes Mobile app isn't installed (or Shizuku can't see it).")
+    raise PhoneAppError("The Hermux app isn't installed (or Shizuku can't see it).")
 
 
 def ensure_host(_retry: bool = False) -> None:
@@ -228,7 +228,7 @@ def call(path: str, body: Optional[dict] = None) -> dict:
         r = _request(path, body)
     except urllib.error.HTTPError as e:
         if e.code == 404:  # the plugin is newer than the app on the phone
-            raise PhoneAppError(f"this needs a newer Hermes Mobile app ({path[1:]} is missing); ask the user to update it") from e
+            raise PhoneAppError(f"this needs a newer Hermux app ({path[1:]} is missing); ask the user to update it") from e
         raise PhoneAppError(f"the background host answered {e.code}") from e
     except urllib.error.URLError as e:
         raise PhoneAppError(f"lost the background host ({e.reason}); open the app again") from e
@@ -629,7 +629,7 @@ def _open(a: dict, sid: str) -> dict:
         app = resolve_app(str(a.get("app") or ""))
         pkg, label = app["pkg"], app.get("label") or app["pkg"]
     if pkg == APP_PKG:
-        raise PhoneAppError("that is Hermes Mobile itself")
+        raise PhoneAppError("that is Hermux itself")
     if is_sensitive(pkg, label) and not read_prefs().get("allow_sensitive"):
         raise PhoneAppError(f"{label} looks like a banking, payment, password or 2FA app. The user has not allowed "
                             "those (Settings → Background apps in the phone app); don't try another way.")

@@ -1,7 +1,7 @@
 ### 2.2 Data flows
 
 Each flow lists the steps in the order the code runs them. "Page" = the WebView page, "service" =
-`HermesService`, "plugin" = the Hermes Mobile plugin inside Hermes.
+`HermesService`, "plugin" = the Hermux plugin inside Hermes.
 
 #### 2.2.1 Send a message and stream the reply
 

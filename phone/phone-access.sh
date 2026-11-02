@@ -79,7 +79,7 @@ if [ -n "$ok" ]; then
   # Take Shizuku off Android's battery limits (it would be stopped in the background and Hermes would lose the screen).
   # Same list the computer route fills; the shell user may do it. Never fails the installer.
   "$HOME/bin/rish" -c 'dumpsys deviceidle whitelist +moe.shizuku.privileged.api' </dev/null >/dev/null 2>&1 || true
-  # Lets Hermes Mobile turn Wireless debugging on when Shizuku is down, so Shizuku starts again by itself. An app
+  # Lets Hermux turn Wireless debugging on when Shizuku is down, so Shizuku starts again by itself. An app
   # version that doesn't ask for this permission yet just refuses the grant.
   "$HOME/bin/rish" -c 'pm grant com.omarqaterge.hermesmobile android.permission.WRITE_SECURE_SETTINGS' </dev/null >/dev/null 2>&1 || true
   # Shizuku remembers "Termux may use Shizuku" properly only when Allow was tapped while rish was still waiting. A late
@@ -89,7 +89,7 @@ if [ -n "$ok" ]; then
     todo "Shizuku will ask once more whether Termux may use it after its next restart: tap Allow all the time right away then"
   fi
   # Pairing Termux's own adb with Wireless debugging (Android 11+, lets Shizuku start again by itself) is done by the
-  # user, once, in Hermes Mobile after the install (Setup -> "Shizuku starts by itself"). The installer never opens or
+  # user, once, in Hermux after the install (Setup -> "Shizuku starts by itself"). The installer never opens or
   # taps the screen, and prints no TODO for it (re-running the installer can't pair).
 else
   todo "Shizuku: start it and tap Allow when it asks whether Termux may use it (no root: Start via Wireless debugging, pair once; rooted: Start; not installed: https://shizuku.rikka.app/download/), then run the installer again"

@@ -1,6 +1,6 @@
-# Hermes Mobile: full specification
+# Hermux: full specification
 
-The specification describes what the code of Hermes Mobile does: the architecture, every feature, every screen and
+The specification describes what the code of Hermux does: the architecture, every feature, every screen and
 every UI element, the Android shell, the Hermes plugin, the phone-side scripts, and how the app is built, tested and
 released. This file is its index; the text is in [docs/spec/](spec/), one file per section below (`NN-MM-name.md`), so
 parallel changes to different areas don't touch the same file. Read the contents list, then only the files for the
