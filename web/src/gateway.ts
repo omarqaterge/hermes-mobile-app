@@ -827,20 +827,38 @@ async function yoloRpc(a: ActiveSession, on: boolean): Promise<boolean> {
 }
 
 /** Switch a chat's access. Ordered so the chat is never in Full access by accident: Auto writes the plugin's
- *  block list BEFORE /yolo goes on, and leaving Auto turns /yolo off (or keeps it for Full) before the entry goes. */
+ *  block list BEFORE /yolo goes on, and leaving Auto turns /yolo off (or keeps it for Full) before the entry goes.
+ *  One chat's switches run one at a time, and the newest request wins: one still waiting is dropped and one running
+ *  Auto access stops before turning /yolo on, so a /yolo typed while the chat's start-up switch runs applies right after it. */
 export function setAccess(a: ActiveSession, mode: Access, remember = true): Promise<Access> {
-  // One at a time: a chat that starts in the default mode is still being switched when its Auto button is tapped.
-  const run = accessQueue.catch(() => {}).then(() => setAccessNow(a, mode, remember))
-  accessQueue = run
-  return run
+  let q = accessRuns.get(a.runtimeId)
+  if (!q) accessRuns.set(a.runtimeId, (q = { tail: Promise.resolve(), gen: 0, latest: Promise.resolve('off') }))
+  const run = q
+  const gen = ++run.gen
+  const stale = () => run.gen !== gen
+  const work = run.tail.catch(() => {}).then(() => (stale() ? SUPERSEDED : setAccessNow(a, mode, remember, stale)))
+  run.tail = work
+  void work.catch(() => {}).then(() => {
+    if (!stale()) accessRuns.delete(a.runtimeId)
+  })
+  // A dropped request answers with what the newer one did (never awaited by the queue itself, so no deadlock).
+  const result: Promise<Access> = work.then(r => (r === SUPERSEDED ? run.latest : r))
+  run.latest = result
+  return result
 }
-let accessQueue: Promise<unknown> = Promise.resolve()
-async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean): Promise<Access> {
+const SUPERSEDED = Symbol('superseded')
+/** Per chat (runtime id): the queue's tail, the newest request's number and its result. */
+const accessRuns = new Map<string, { tail: Promise<unknown>; gen: number; latest: Promise<Access> }>()
+/** The mode a chat was in before /yolo (or the Auto button) put it in Full access, for the next bare /yolo. */
+const beforeFull = new Map<string, Access>()
+async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean, stale: () => boolean): Promise<Access | typeof SUPERSEDED> {
   // Over the lock screen nothing turns Auto or Full access on (a resume re-applying it, /yolo by voice): unlock first.
   if (mode !== 'off' && lockView()) {
     askUnlock('Unlock the phone to change access')
     throw new Error('Unlock the phone to change access')
   }
+  const live = getState().active
+  const was = accessOf(live?.runtimeId === a.runtimeId ? live : a)
   let on: boolean
   if (mode === 'auto') {
     try {
@@ -848,13 +866,20 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean): 
     } catch (e) {
       throw new Error(`Auto access needs the updated Hermes Mobile plugin (${errText(e)})`)
     }
+    if (stale()) {
+      // Stop before /yolo changes; the newer request may fail before its own switch, so leave no entry it didn't ask for.
+      if (was !== 'auto') await setPluginAuto(a.storedId, false).catch(() => {})
+      return SUPERSEDED
+    }
     on = await yoloRpc(a, true)
     if (!on) await setPluginAuto(a.storedId, false).catch(() => {})
   } else {
-    on = await yoloRpc(a, mode === 'full')
+    on = await yoloRpc(a, mode === 'full') // once /yolo changed, finish (one cheap step) so the screen matches Hermes
     await setPluginAuto(a.storedId, false).catch(() => {}) // an older plugin has no /auto: nothing to remove
   }
   const got: Access = !on ? 'off' : mode === 'auto' ? 'auto' : 'full'
+  if (got === 'full' && was !== 'full') beforeFull.set(a.storedId, was)
+  else if (got !== 'full') beforeFull.delete(a.storedId)
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on }, autoAccess: got === 'auto' } : {}))
   if (remember) rememberYolo(a.storedId, got) // the default from Settings isn't the chat's own choice: it follows the default
   return got
@@ -862,12 +887,22 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean): 
 
 /** YOLO for one chat, Hermes Desktop's way (config.set, in-process, instant). Through slash.exec it ran in the
  * slash worker, a separate process: slow to start, and its flag never reached the agent that asks for approvals.
- * `want` null = toggle. Hermes (b8a8be18) doesn't persist the flag, so it is remembered here and re-applied on resume.
- * /yolo on = Full access; off (or toggling from Auto) = asks again. */
-export async function setYolo(a: ActiveSession, want: boolean | null): Promise<boolean> {
+ * Hermes (b8a8be18) doesn't persist the flag, so it is remembered here and re-applied on resume.
+ * `want` true = Full access, false = Off. A bare /yolo (null) goes to Full access from Off or Auto access, and from
+ * Full access back to the mode the chat was in before (Off when unknown, e.g. after a restart). */
+export async function setYolo(a: ActiveSession, want: boolean | null): Promise<Access> {
   const cur = a.info.yolo ? accessOf(a) : rememberedAccess(a.storedId) // info.yolo is unknown until Hermes sends session.info after a restart
-  const next = want ?? cur === 'off'
-  return (await setAccess(a, next ? 'full' : 'off')) !== 'off'
+  const back = lockView() ? 'off' : beforeFull.get(a.storedId) ?? 'off' // over the lock screen only Off is allowed
+  const next: Access = want === true ? 'full' : want === false ? 'off' : cur !== 'full' ? 'full' : back
+  if (next !== 'auto') return setAccess(a, next)
+  // Leaving Full access must always work: if Auto access can't be set (older plugin), go to Off instead.
+  return setAccess(a, 'auto').catch(() => setAccess(a, 'off'))
+}
+/** The notice after /yolo: names the mode the chat is in now. */
+const YOLO_NOTICE: Record<Access, string> = {
+  full: '⚡ Full access on for this chat (/yolo): Hermes runs commands without asking',
+  auto: 'Back to Auto access: dangerous commands are blocked, everything else runs',
+  off: 'Auto off: Hermes asks before risky commands again'
 }
 
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
@@ -881,8 +916,8 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     const w = arg.toLowerCase()
     const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
     try {
-      const on = await setYolo(a, want)
-      pushItem({ kind: 'notice', id: newId('n'), text: on ? '⚡ Full access on for this chat (/yolo): Hermes runs commands without asking' : 'Full access off: Hermes asks before risky commands again', level: on ? 'warn' : 'info' })
+      const now = await setYolo(a, want)
+      pushItem({ kind: 'notice', id: newId('n'), text: YOLO_NOTICE[now], level: now === 'full' ? 'warn' : 'info' })
     } catch (err) {
       pushItem({ kind: 'notice', id: newId('n'), text: `/yolo: ${errText(err)}`, level: 'error' })
     }

@@ -29,8 +29,9 @@ the code.
 **Next:**
 - A: let the service tell the page as soon as Hermes's dashboard answers, and reconnect then instead of waiting for
   the next backoff step (touches `gateway.ts` and `HermesService.java`). Measure a start with Hermes stopped.
-- B: owner's choice. Proposal: `/yolo` from Auto goes to Full access (`next = want ?? cur !== 'full'` in `setYolo`),
-  and the notice says which mode the chat is in now.
+- B: decided and done (`docs/decisions/yolo-goes-to-full-access.md`): `/yolo` from Off or Auto goes to Full access,
+  from Full access back to the previous mode; the notice names the mode; the newest access switch wins. Still to see
+  on the phone.
 
 **Needs a real phone:** yes. C with a build that has #67 (send a prompt, press Home, the chip stays until the app is
 opened); B on the phone; A with Hermes stopped.

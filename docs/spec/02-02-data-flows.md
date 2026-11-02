@@ -56,7 +56,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 
 #### 2.2.1a Access mode (Auto / Full) on new and resumed chats
 
-- `setAccess(a, mode, remember)` runs through one promise queue (`accessQueue`), so mode changes never overlap.
+- `setAccess(a, mode, remember)` runs through a promise queue per chat (`accessRuns`), so one chat's mode changes never overlap, and the newest request wins: an older one still waiting is skipped and one switching to Auto access stops before `yolo` goes on.
 - Auto: `PUT /api/plugins/hermes-mobile/auto` `{session, mode:'auto'}` first (the plugin's block list, 5),
   then `config.set yolo 1`. If yolo didn't turn on, the plugin entry is removed again.
 - Full: `config.set yolo 1`, then the plugin entry is removed. Off: `config.set yolo 0`, entry removed.

@@ -57,7 +57,7 @@ One slot, six faces, decided in this order:
 
 `runSlash`: shows the command as a user item, then:
 
-- `/yolo [on|off]` toggles Full access (3.2).
+- `/yolo [on|off]` switches Full access (3.2): a bare `/yolo` goes to Full access from Off or Auto access, and from Full access back to the mode the chat was in before.
 - `/fast [on|off|status]` sets Hermes's fast mode for this chat with `config.set` key `fast` (value `toggle` when no argument), and a notice reports "Fast mode on for this chat" or "off". It is run this way because Hermes's slash worker process is slow to start on a phone.
 - Everything else: `slash.exec`; if that fails (skills and routed commands), `command.dispatch`. The answer's type decides: `alias` runs the target command (up to 3 levels), `prefill` puts the message in the composer, `send` or `skill` submits the message as a prompt (`display_kind: 'skill'` for skills), anything else shows the output as a notice.
 
