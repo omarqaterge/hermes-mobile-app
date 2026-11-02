@@ -1,10 +1,11 @@
 // The app Hermes drives on a hidden display: a small card above the composer (name, action, live thumbnail)
 // that opens a full-screen viewer with Take over / Stop. Frames come from the shell (bgapp.ts), only while
-// this is on screen and the page is visible.
+// this is on screen and the page is visible. Tapping the status chip opens the viewer straight away (viewerStep).
 import { useEffect, useState } from 'react'
-import { bgForChat, useBgFrame, wantFrames } from '../bgapp'
+import { bgForChat, useBgFrame, useViewWanted, viewerStep, wantFrames, wantViewer } from '../bgapp'
 import { bgAction, haptic } from '../bridge'
 import { useBackHandler } from '../backstack'
+import { lockView } from '../lockview'
 import { toast, useStore } from '../store'
 import { useSheetDrag } from './useSheetDrag'
 
@@ -13,7 +14,9 @@ const VIEW_W = 540
 
 export function BgApp() {
   const chat = useStore(s => (s.active ? s.active.storedId : s.opening))
+  const active = useStore(s => s.active != null && s.active.storedId === chat)
   const bg = useStore(s => bgForChat(s.bg, chat))
+  const want = useViewWanted()
   const [open, setOpen] = useState(false)
   const shown = bg != null
   useEffect(() => {
@@ -23,6 +26,14 @@ export function BgApp() {
   useEffect(() => {
     if (!shown) setOpen(false)
   }, [shown])
+  // The chip was tapped (shell → hermesOpenBgView): open the viewer once that chat shows; the app already done = the chat alone.
+  useEffect(() => {
+    const step = viewerStep(want, chat, active, bg)
+    if (step === 'wait') return
+    wantViewer(null)
+    if (step === 'open' && !lockView()) setOpen(true)
+    else if (step === 'gone') toast("Hermes isn't using an app any more")
+  }, [want, chat, active, bg])
   const frame = useBgFrame()
   if (!bg) return null
   return (
