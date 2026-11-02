@@ -10,9 +10,6 @@ While Hermes is answering, the user can type a follow-up and choose:
   the chat as a dashed bubble the user can edit, cancel or send right away.
 - **Steer**: today's behaviour (`session.steer`, injected into the running turn).
 
-T3 Code: `apps/web/src/components/chat/QueuedRunsControl.tsx` (dashed rows with edit/cancel at the end of the
-timeline) and `apps/mobile/src/features/threads/ComposerQueuedEdit.tsx`.
-
 ## What exists today
 
 - `web/src/gateway.ts`, `sendPrompt(text)`: when `a.running` is true it calls `session.steer` and adds a

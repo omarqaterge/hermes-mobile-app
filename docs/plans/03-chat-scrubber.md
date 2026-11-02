@@ -8,8 +8,7 @@ In a long chat, a thin rail on the right edge of the message list has one tick p
 finger along the rail shows a bubble with the message under the finger ("Fix the login bug…"); letting go scrolls the
 chat to that message. The tick of the message currently at the top of the screen is highlighted.
 
-T3 Code: `apps/web/src/components/chat/TimelineMinimap.tsx` (+ `MessagesTimeline.logic.ts`): a strip of marks, a
-magnified hover preview, click to jump. Ours is the touch version.
+This is the touch version of a timeline minimap: a strip of marks, a magnified preview, tap or drag to jump.
 
 ## What exists today
 
@@ -114,4 +113,4 @@ e.g. via `window.hermesOpenSession('s-long')`).
 
 ## Out of scope
 
-Ticks for Hermes's replies or tool runs, a zoomed "fisheye" preview like T3's, desktop mouse-wheel on the rail.
+Ticks for Hermes's replies or tool runs, a zoomed "fisheye" preview, desktop mouse-wheel on the rail.

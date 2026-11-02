@@ -1,11 +1,9 @@
-# How t3code shows agent work in chat, and what we took
+# Showing agent work in chat: patterns, and what we took
 
-Research written 2026-11-02 from t3code's source ([github.com/pingdotgg/t3code](https://github.com/pingdotgg/t3code),
-MIT licence, © T3 Tools Inc.): the chat components in `apps/web/src/components/chat/` and the shared work-log logic in
-`packages/client-runtime/src/work-log/`. No code was copied; the ideas below were rewritten for Hermes's tool names in
-`web/src/toolsay.ts`.
+Notes written 2026-11-02 on how a chat can show an agent's tool calls so they read at a glance. The ideas below were
+written for Hermes's tool names in `web/src/toolsay.ts`.
 
-## What t3code does
+## Patterns that work
 
 - **One quiet line per tool call.** No card around a tool: a 24 px row, a muted icon, a truncated label and a chevron.
   The label is a verb with the object: "Ran git" (the program, with `bash -lc` and `sudo` wrappers stripped),

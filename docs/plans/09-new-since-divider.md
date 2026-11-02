@@ -8,8 +8,6 @@ When the user opens a chat that got new messages while they were away (Hermes fi
 bot wrote into it), a divider `New since your last visit` sits before the first message they haven't seen, and the
 chat opens scrolled so that divider is near the top, instead of at the very end of a long reply.
 
-T3 Code: `apps/web/src/components/chat/ThreadVisitWatermark.tsx` (tracks the last visit and marks the timeline).
-
 ## What exists today
 
 - `web/src/unread.ts`: per profile, `localStorage` `hm.seen.v1.<profile>` keeps the **message count** seen per chat,

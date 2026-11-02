@@ -13,4 +13,4 @@ for redesign concepts.
 **Links:** [decision](../decisions/no-ui-test-work-before-revamp.md), [UI inventory](../design/ui-inventory.md),
 [ChatGPT prompts](../design/chatgpt-ui-prompts.md),
 [research: how people use Hermes and what to keep on a phone](../research/hermes-usage-and-phone-ui.md) (2026-11-02),
-[research: how t3code shows agent work in chat](../research/t3code-chat-visuals.md) (2026-11-02).
+[research: showing agent work in chat](../research/chat-tool-visuals.md) (2026-11-02).

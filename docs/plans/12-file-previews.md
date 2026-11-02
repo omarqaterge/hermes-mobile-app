@@ -9,8 +9,7 @@ Tapping a file in **Files** shows it the way the canvas would: tables for CSV/TS
 rendered Mermaid, a running (offline, sandboxed) HTML page, and a player for audio and video. Today only plain text,
 Markdown and images preview.
 
-T3 Code: `apps/web/src/components/files/*` (`DelimitedTablePreview`, `ReadOnlySourcePreview`, `MermaidFilePreview`,
-`AudioPreview`, `PdfViewer`, `OfficeViewer`…). We take the cheap ones; PDF and Office stay with **Open with…**.
+Only the cheap previews; PDF and Office stay with **Open with…**.
 
 ## What exists today
 

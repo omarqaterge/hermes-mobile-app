@@ -8,10 +8,8 @@ When Hermes's reply contains an ` ```html ` (or ` ```svg `) code block, the bloc
 shows the page right there in the chat, in the same sandbox the canvas uses, sized to its content, with a
 **Full screen** button. No need to open the canvas just to look at a small chart or widget.
 
-T3 Code: `apps/web/src/components/chat/HtmlRenderFrame.tsx` and `HtmlRenderDialog.tsx` (inline sandboxed frame that
-grows to its content, expandable to full screen), `apps/mobile/src/features/threads/HtmlRenderWebView.tsx`.
-T3 also hosts MCP Apps (`McpAppFrame.tsx`); Hermes has no MCP-app support at the pinned commit
-(`web/vendor/hermes-shared/.hermes-commit`), so that part is out of scope.
+Hermes has no MCP-app support at the pinned commit (`web/vendor/hermes-shared/.hermes-commit`), so hosting MCP apps
+inline is out of scope.
 
 ## What exists today
 

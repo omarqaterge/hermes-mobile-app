@@ -8,10 +8,8 @@ The user selects some words in one of Hermes's replies, taps **Quote**, and the 
 composer's text box. The next message they send starts with that quote as a Markdown blockquote, so Hermes knows
 exactly which part they mean.
 
-T3 Code's version: `apps/web/src/components/chat/AssistantSelectionToolbar.tsx` (the floating "Cite selection in
-composer" button) and `AssistantCitationChip.tsx` (the chip in the composer). Ours is simpler: no comments on the
-quote, and the bar sits at the bottom, not next to the selection (Android's own Copy/Share menu floats next to the
-selection, and the two would overlap).
+Keep it simple: no comments on the quote, and the bar sits at the bottom, not next to the selection (Android's own
+Copy/Share menu floats next to the selection, and the two would overlap).
 
 ## What exists today
 
@@ -127,4 +125,4 @@ Also check: ✕ on the chip removes it; a selection in the user's own bubble sho
 
 ## Out of scope
 
-Comments attached to a quote (T3 has them), quoting from tool output or user messages, quotes surviving a reload.
+Comments attached to a quote, quoting from tool output or user messages, quotes surviving a reload.

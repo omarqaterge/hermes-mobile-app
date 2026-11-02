@@ -8,9 +8,6 @@ When a turn wrote or edited files, a small card at the end of that turn says
 `✎ 3 files changed  +42 −7`. Tapping it lists the files, each with its own `+N −M`; tapping a file shows its diff.
 A **Checkpoints** button opens the existing file checkpoints sheet (to undo).
 
-T3 Code: `apps/web/src/components/chat/ChangedFilesTree.tsx` and `DiffStatLabel.tsx` (a per-turn tree of changed
-files with line counts, each opening its diff).
-
 ## What exists today
 
 - Tool items (`ChatItem` kind `tool` in `web/src/store.ts`) carry `name`, `args`, `status` and, for edits,
@@ -108,5 +105,5 @@ the fallback counts without `inlineDiff`; the same file twice merges.
 
 ## Out of scope
 
-A folder tree like T3's (a flat list is enough on a phone), files changed by `terminal` commands (we can't know),
+A folder tree (a flat list is enough on a phone), files changed by `terminal` commands (we can't know),
 counting edits made by sub-agents.

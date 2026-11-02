@@ -9,9 +9,6 @@ Things that open and close in the chat slide open and closed instead of jumping,
 characters, and the reasoning level on the model chip shows as small bars. All motion is off when the phone asks for
 reduced motion.
 
-T3 Code: `apps/web/src/components/AnimatedHeight.tsx` (measured height transition with a fallback timer),
-`MorphIcon.tsx` (icon morphs via the `morphicons` package), `chat/EffortGlyph.tsx` (reasoning level as bars).
-
 ## What exists today
 
 Collapsibles that open instantly today (each renders its body with `{open && …}`):
@@ -36,7 +33,7 @@ end. The model chip shows the effort as text (`EFFORT_SHORT` in `Composer.tsx`: 
    - Closing: animate from the current height to 0, then unmount the children (keep them mounted until `finished`).
      If `open` flips back during the animation, cancel it and start from the current height.
    - Reduced motion (`matchMedia('(prefers-reduced-motion: reduce)').matches`): no animation; mount/unmount at once.
-   - Fallback: if `finished` never resolves (it should), unmount after `duration + 100` ms anyway (T3 does the same).
+   - Fallback: if `finished` never resolves (it should), unmount after `duration + 100` ms anyway.
    - The wrapper has `overflow: hidden` only while animating (so focus rings and shadows aren't clipped at rest).
 2. Use `Collapse` for `ToolCard`'s body, `Reasoning`'s body and the todo list. **Not** for folded tool runs: those
    rely on one child per item for search/jump; leave them instant.

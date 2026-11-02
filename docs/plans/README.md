@@ -1,8 +1,7 @@
-# Feature plans (ideas taken from T3 Code)
+# Feature plans
 
-Plans for features seen in [T3 Code](https://github.com/pingdotgg/t3code) (`apps/web/src/components/chat/*`,
-`apps/mobile`) that Hermes Mobile lacks. Each file is written so an agent that has not seen the comparison can build it:
-what to make, which files and functions to touch, what to test, and what "done" means.
+Plans for chat features Hermes Mobile lacks. Each file is written so an agent new to the idea can build it: what to
+make, which files and functions to touch, what to test, and what "done" means.
 
 | # | Plan | Effort | Depends on |
 |---|---|---|---|

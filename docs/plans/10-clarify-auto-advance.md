@@ -9,9 +9,6 @@ a time: `Question 2 of 3`, the question, its choices. Picking a choice in a sing
 question by itself after a short pause. Back and Next move by hand. The last question has the **Answer** button.
 A single question looks and works as today.
 
-T3 Code: `apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx` (one question at a time, auto-advance after
-a single-select pick, digit shortcuts on desktop).
-
 ## What exists today
 
 `web/src/components/RequestSheet.tsx`:

@@ -8,9 +8,6 @@ A small ring next to the model chip above the composer shows how full the chat's
 only while Hermes answers). It turns amber from 80 % and red from 90 %. Tapping it opens a sheet with the numbers
 (tokens used of the maximum, cost and cache figures when Hermes reports them) and a **Compress older turns** button.
 
-T3 Code: `apps/web/src/components/chat/ContextWindowMeter.tsx` (SVG ring, popover with tokens, cost and a Compact
-button).
-
 ## What exists today
 
 - `ActiveSession.ctx: { used, max, percent } | null` and `usage: Usage | null` (`web/src/store.ts`).
@@ -25,7 +22,7 @@ button).
 ## Design
 
 - **Ring** (`ContextRing`): 18 px SVG circle, stroke `var(--dim)` for the track and `var(--accent)` for the fill
-  (`stroke-dasharray`/`dashoffset`, same maths as T3: `r = 7`, `circumference = 2πr`). Classes `warn` at ≥ 80 % and
+  (`stroke-dasharray`/`dashoffset`: `r = 7`, `circumference = 2πr`). Classes `warn` at ≥ 80 % and
   `full` at ≥ 90 % change the fill colour to the warning/error variables the app already uses for toasts.
   Shown at the right end of `.model-row` when `ctx` is known; hidden in Live mode (the row is hidden then anyway).
   aria-label: `Context 12% used. Show details`.

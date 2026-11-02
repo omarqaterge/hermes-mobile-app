@@ -1,5 +1,5 @@
-// Tool calls in plain words: "Ran git", "Read 3 files and ran 2 commands". Ideas from t3code's work log (MIT),
-// rewritten for Hermes's tool names; see docs/research/t3code-chat-visuals.md.
+// Tool calls in plain words: "Ran git", "Read 3 files and ran 2 commands", for Hermes's tool names;
+// see docs/research/chat-tool-visuals.md.
 import type { ChatItem } from './store'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>

@@ -8,8 +8,6 @@ The user is halfway through writing a message and wants to ask something else fi
 text is put aside and the box is empty. Later, **Stashed drafts** lists what they put aside (in any chat), and tapping
 one puts it back in the box. Like `git stash` for the composer.
 
-T3 Code: `apps/web/src/components/chat/ComposerStashMenu.tsx` and `ComposerStashBadge.tsx`.
-
 ## What exists today
 
 - `web/src/drafts.ts`: one unsent draft per chat (`localStorage` `hm.drafts.v1`), saved as you type.
@@ -76,4 +74,4 @@ corrupt storage gives `[]`.
 
 ## Out of scope
 
-Stashing attachments, syncing stashes to Hermes, a badge on the composer (T3 has one; the Add sheet is enough here).
+Stashing attachments, syncing stashes to Hermes, a badge on the composer (the Add sheet is enough here).

@@ -11,9 +11,6 @@ Two things that say what Hermes is doing right now, shown in the status area abo
 2. **Goal line** when the chat has a goal set (Hermes's `/goal`): `🎯 Ship the login fix · turn 3 of 20 · active`.
    Tapping it opens a sheet with the goal's details and **Pause**/**Resume** and **Clear** buttons.
 
-T3 Code: `apps/web/src/components/chat/AgentElapsed.tsx` (live elapsed timer), `ThreadNow.tsx` and
-`ThreadActivityBanners.tsx` (lines at the end of the timeline: goal, background work, what needs you).
-
 ## What exists today
 
 - `StatusBar` in `web/src/App.tsx`: while running shows a spinner, the status text, `~N tok/s` and `ctx N%`, plus the
