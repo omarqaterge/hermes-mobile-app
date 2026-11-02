@@ -30,6 +30,6 @@ Tapping the working chip (4.3) while Hermes uses an app for the chat it shows op
 
 - The chat shown or opening is that chat and the app is still in use for it: the viewer opens (already while the chat is opening). This covers a cold start from the tap (the request waits until the page has connected and opened the chat), the app open on another chat, and the chat already on screen.
 - That chat has finished opening and Hermes no longer uses an app for it (it finished between the post and the tap): the chat stays open without the viewer, and a toast says "Hermes isn't using an app any more".
-- A request older than `VIEW_WAIT_MS` (30 s) is dropped without opening anything; a request is used once, so the app coming back later shows the card only. Over the lock screen (`lockView`) the viewer does not open.
+- A request older than `VIEW_WAIT_MS` (30 s), or one whose chat showed and was then replaced by another (its opening failed, or the user moved on), is dropped without opening anything; a request is used once, so the app coming back later shows the card only. Over the lock screen (`lockView`) the viewer does not open.
 
 **Rules:** the card is a plain `button`; the viewer is a bottom sheet with `useSheetDrag` and `useBackHandler`, like every other sheet.

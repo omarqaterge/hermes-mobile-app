@@ -33,16 +33,20 @@ test('bgForChat only matches the chat that started it', () => {
 })
 
 test('viewerStep: the chip tap opens the viewer for that chat, falls back to the chat when the app is done', () => {
-  const want = { session: 's-1', until: 10_000 }
+  const w = () => ({ session: 's-1', until: 10_000 }) // a fresh request each time (viewerStep marks it seen)
   expect(viewerStep(null, 's-1', true, st, 0)).toBe('wait')
-  expect(viewerStep(want, 's-1', false, st, 0)).toBe('open') // still opening: the viewer can open already
-  expect(viewerStep(want, 's-1', true, st, 0)).toBe('open')
-  expect(viewerStep(want, 's-2', true, st, 0)).toBe('wait') // another chat shows: wait for ours
-  expect(viewerStep(want, null, false, st, 0)).toBe('wait')
-  expect(viewerStep(want, 's-1', false, null, 0)).toBe('wait') // opening, no app: decide once it is open
-  expect(viewerStep(want, 's-1', true, null, 0)).toBe('gone')
-  expect(viewerStep(want, 's-1', true, { ...st, session: 's-2' }, 0)).toBe('gone') // the app is another chat's now
-  expect(viewerStep(want, 's-1', true, st, 10_001)).toBe('expired')
+  expect(viewerStep(w(), 's-1', false, st, 0)).toBe('open') // still opening: the viewer can open already
+  expect(viewerStep(w(), 's-1', true, st, 0)).toBe('open')
+  expect(viewerStep(w(), 's-2', true, st, 0)).toBe('wait') // another chat shows: wait for ours
+  expect(viewerStep(w(), null, false, st, 0)).toBe('wait')
+  expect(viewerStep(w(), 's-1', false, null, 0)).toBe('wait') // opening, no app: decide once it is open
+  expect(viewerStep(w(), 's-1', true, null, 0)).toBe('gone')
+  expect(viewerStep(w(), 's-1', true, { ...st, session: 's-2' }, 0)).toBe('gone') // the app is another chat's now
+  expect(viewerStep(w(), 's-1', true, st, 10_001)).toBe('expired')
+  const failed = { session: 's-1', until: 10_000 }
+  expect(viewerStep(failed, 's-2', true, st, 0)).toBe('wait')
+  expect(viewerStep(failed, 's-1', false, null, 0)).toBe('wait') // opening…
+  expect(viewerStep(failed, 's-2', true, st, 0)).toBe('expired') // …failed, back on the old chat: forget it
   expect(VIEW_WAIT_MS).toBeGreaterThanOrEqual(10_000)
 })
 
