@@ -84,17 +84,22 @@ public class HermesService extends Service {
 
     /** Every change of the background app reaches the open page (if any) as window.__hmBg(state|null). */
     void setBgApp(BgApp b) {
+        BgApp old = bgApp;
         bgApp = b;
         main.removeCallbacks(expireBgTask);
+        boolean repost = false;
         if (b != null) main.postDelayed(expireBgTask, BG_TTL_MS);
         else {
             main.removeCallbacks(bgThumbTask);
             if (bgThumb != null) {
                 bgThumb = null;
-                synchronized (this) {
-                    if (lastWorking) postStatus();
-                }
+                repost = true;
             }
+        }
+        synchronized (this) {
+            // The chip's tap opens the live viewer only while the app is in use for the chip's chat: re-post when that flips.
+            if (bgForChip(old) != bgForChip(b)) repost = true;
+            if (repost && lastWorking) postStatus();
         }
         MainActivity a = MainActivity.current;
         if (a != null) a.pushBg();
@@ -105,6 +110,11 @@ public class HermesService extends Service {
     volatile android.graphics.Bitmap bgThumb = null;
     final Runnable bgThumbTask = this::fetchBgThumb;
     static final int THUMB_PX = 256;
+
+    /** Hermes is using this app for the chat the working chip shows. */
+    boolean bgForChip(BgApp b) {
+        return b != null && b.session.equals(lastSession);
+    }
 
     void fetchBgThumb() {
         final BgApp b = bgApp;
@@ -957,12 +967,18 @@ public class HermesService extends Service {
         return openApp(session, false);
     }
 
-    /** clearDone: tapping the card also clears the sticky Done chip (all of it), even when the chat it names is gone. */
     PendingIntent openApp(String session, boolean clearDone) {
+        return openApp(session, clearDone, false);
+    }
+
+    /** clearDone: tapping the card also clears the sticky Done chip (all of it), even when the chat it names is gone.
+     *  bgView: the chat opens with the live viewer of the app Hermes uses for it (MainActivity.EXTRA_BG_VIEW). */
+    PendingIntent openApp(String session, boolean clearDone, boolean bgView) {
         Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         if (session != null && !session.isEmpty()) open.putExtra("session", session);
         if (clearDone) open.putExtra("clearDone", true);
-        int code = (session == null ? 0 : session.hashCode()) + (clearDone ? 31 : 0);
+        if (bgView) open.putExtra(MainActivity.EXTRA_BG_VIEW, true);
+        int code = (session == null ? 0 : session.hashCode()) + (clearDone ? 31 : 0) + (bgView ? 17 : 0);
         return PendingIntent.getActivity(this, code, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
@@ -1029,7 +1045,7 @@ public class HermesService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(true)
-                .setContentIntent(openApp(lastSession));
+                .setContentIntent(openApp(lastSession, false, bgForChip(bgApp)));
         if (workingSince > 0) b.setWhen(workingSince).setUsesChronometer(true);
         if (!head.isEmpty()) b.setSubText(String.join(" \u00B7 ", head));
         if (Build.VERSION.SDK_INT >= 36) {

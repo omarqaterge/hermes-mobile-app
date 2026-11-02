@@ -69,6 +69,9 @@ public class MainActivity extends Activity {
     volatile String cachedToken = "";
     String pendingSession = null;
     String pendingDraft = null;
+    /** The working chip was tapped while Hermes used an app for that chat: open its live viewer too. */
+    static final String EXTRA_BG_VIEW = "bgView";
+    boolean pendingBgView = false;
     /** The live activity, so HermesService can hand it answers typed into notifications. */
     static volatile MainActivity current;
     /** "Share to Hermes": files another app shared, read on demand by the page (Bridge.sharedItem). */
@@ -192,6 +195,7 @@ public class MainActivity extends Activity {
         if (getIntent().getBooleanExtra("clearDone", false)) { getIntent().removeExtra("clearDone"); HermesService.clearDoneChip(); }
         pendingSession = getIntent().getStringExtra("session");
         pendingDraft = getIntent().getStringExtra("draft");
+        pendingBgView = takeBgView(getIntent());
         takeShare(getIntent());
         pendingShortcut = shortcutOf(getIntent());
         applyLockScreen(getIntent());
@@ -954,9 +958,11 @@ public class MainActivity extends Activity {
         startUpdateFromIntent(intent);
         if (intent.getBooleanExtra("clearDone", false)) { intent.removeExtra("clearDone"); HermesService.clearDoneChip(); }
         String s = intent.getStringExtra("session");
+        boolean bgView = takeBgView(intent);
         if (s != null) {
             pendingSession = s;
             pendingDraft = intent.getStringExtra("draft");
+            pendingBgView = bgView;
             openPendingSession();
         }
         if (takeShare(intent)) deliverShare();
@@ -1201,13 +1207,23 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Read once: a recreated activity (rotation, theme) re-reads its intent and must not reopen the viewer. */
+    static boolean takeBgView(Intent in) {
+        if (in == null || !in.getBooleanExtra(EXTRA_BG_VIEW, false)) return false;
+        in.removeExtra(EXTRA_BG_VIEW);
+        return true;
+    }
+
     void openPendingSession() {
         if (!pageReady || pendingSession == null) return;
         String id = pendingSession.replaceAll("[^A-Za-z0-9_.:-]", "");
         pendingSession = null;
         String draft = pendingDraft == null ? "" : pendingDraft;
         pendingDraft = null;
-        web.evaluateJavascript("window.hermesOpenSession && window.hermesOpenSession('" + id + "'," + JSONObject.quote(draft) + ")", null);
+        // The viewer request goes first, so the page knows it when the chat starts opening (bgapp.ts viewerStep).
+        String view = pendingBgView ? "window.hermesOpenBgView && window.hermesOpenBgView('" + id + "');" : "";
+        pendingBgView = false;
+        web.evaluateJavascript(view + "window.hermesOpenSession && window.hermesOpenSession('" + id + "'," + JSONObject.quote(draft) + ")", null);
     }
 
     /** An answer typed into a notification (HermesService): the page owns the connection Hermes asked on.
