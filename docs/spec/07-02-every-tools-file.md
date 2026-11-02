@@ -70,6 +70,7 @@
 | `test_phone_access.py` | The phone-access probe (`phone_access_now`): one retry so a sleeping Termux:API app does not flash red. Skipped without `fastapi`. |
 | `test_profile_link.py` | `link_profiles`: the plugin is linked into every Hermes profile. Skipped without `fastapi`. |
 | `test_sent_counts.py` | `sent_counts` (plugin `POST /sent-counts`): only the messages the user typed count, across a compression lineage, not Hermes's own notices or a sub-agent's task. Skipped without `fastapi`. |
+| `test_google_workspace.py` | `google_workspace.py` and the plugin's `/google` routes. Part 1 puts a fake `setup.py` in a throwaway home and checks what each route runs and answers (client file checks, the temporary copy deleted and the stored file private, link, wrong and right pasted address, install, sign out, a token that no longer works); part 2 runs only when Hermes is importable (`~/.hermes/hermes-agent/venv/bin/python3 tools/test_google_workspace.py`) and runs Hermes's real script on a throwaway home for the steps that need no Google account. Needs fastapi and httpx. |
 
 **Phone-script and install tests (shell, no phone unless noted; CI job `hermes-patches` unless noted)**
 
