@@ -145,6 +145,7 @@ const server = http.createServer((req, res) => {
       return res.end('<!-- MOCK-HERMES --><script>window.__HERMES_SESSION_TOKEN__ = "tok"</script>')
     }
     const p = url.pathname
+    if (connectorsRoute(p, req.method, url, body, send)) return // Settings → Connectors (defined at the end)
     if (p === '/m') {
       // Stand-in for the shell's streamed media URL (MainActivity.media → plugin /media).
       const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
@@ -316,7 +317,7 @@ const server = http.createServer((req, res) => {
       })
     if (p === '/api/env' && req.method === 'GET') {
       const out = {}
-      for (const [k, v] of Object.entries(providerFixture.env)) out[k] = envSet[k] ? { ...v, is_set: true, redacted_value: redact(envSet[k]) } : v
+      for (const [k, v] of Object.entries({ ...providerFixture.env, ...SKILL_ENV })) out[k] = envSet[k] ? { ...v, is_set: true, redacted_value: redact(envSet[k]) } : v
       return send(out)
     }
     if (p === '/api/env' && req.method === 'DELETE') {
@@ -1228,3 +1229,153 @@ server.on('error', e => {
 server.listen(PORT, '127.0.0.1', () => console.log(`mock on ${PORT}`))
 // A plain `kill` (run.sh stopping it) ends it quietly, without bash's "Terminated" line.
 process.on('SIGTERM', () => process.exit(0))
+
+// ── Settings → Connectors: Hermes's MCP, MCP catalog and toolset routes (hermes_cli/web_routers/mcp.py, tools.py) ──
+// Rows of /api/env for keys bundled skills read (category "skill"), shaped like the pinned Hermes's.
+const SKILL_ENV = Object.fromEntries(
+  [
+    ['NOTION_API_KEY', 'Notion integration token (used by the `notion` skill)', 'https://www.notion.so/my-integrations'],
+    ['LINEAR_API_KEY', 'Linear personal API key (used by the `linear` skill)', 'https://linear.app/settings/account/security']
+  ].map(([k, description, url]) => [k, { advanced: false, category: 'skill', channel_managed: false, custom: false, description, is_password: true, is_set: false, provider: null, provider_label: null, provider_primary: false, provider_profiles: [], redacted_value: null, tools: [], url }])
+)
+let mcpServers = { files: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/sdcard'], enabled: true } }
+const mcpFlows = {} // flow_id -> { polls, server }
+const MCP_CATALOG = [
+  { name: 'notion', description: 'Notion pages and databases', transport: 'http', auth_type: 'oauth', required_env: [], url: 'https://mcp.notion.com/mcp' },
+  { name: 'context7', description: 'Up-to-date library docs', transport: 'stdio', auth_type: 'api_key', required_env: [{ name: 'CONTEXT7_API_KEY', prompt: 'Context7 API key', required: true }], command: 'npx', args: ['-y', '@upstash/context7-mcp'] }
+]
+const mcpSummary = (name, c) => ({
+  name,
+  transport: c.url ? 'http' : c.command ? 'stdio' : 'unknown',
+  url: c.url || null,
+  command: c.command || null,
+  args: c.args || [],
+  env: Object.fromEntries(Object.keys(c.env || {}).map(k => [k, '***'])),
+  auth: c.auth || (c.headers ? 'header' : null),
+  enabled: c.enabled !== false,
+  tools: null,
+  source: 'config',
+  plugin: null
+})
+const CONN_TOOLSETS = [
+  ['web', 'Web Search & Scraping', 'web_search, web_extract', true],
+  ['file', 'File Operations', 'read, write, patch, search', true],
+  ['tts', 'Text-to-Speech', 'text_to_speech', true],
+  ['homeassistant', 'Home Assistant', 'smart home device control', false]
+]
+let toolsetOn = Object.fromEntries(CONN_TOOLSETS.map(([n, , , on]) => [n, on]))
+let webProvider = 'Tavily'
+const TOOL_PROVIDERS = {
+  web: [
+    { name: 'Tavily', tag: 'Keyless basic search', env: [['TAVILY_API_KEY', 'Tavily API key', 'https://app.tavily.com/home']] },
+    { name: 'Exa', tag: 'Neural search', env: [['EXA_API_KEY', 'Exa API key', 'https://exa.ai']] }
+  ],
+  tts: [{ name: 'Microsoft Edge TTS', tag: 'Free', env: [] }],
+  homeassistant: [{ name: 'Home Assistant', tag: '', env: [['HASS_URL', 'Home Assistant URL', null], ['HASS_TOKEN', 'Long-lived access token', null]] }]
+}
+const toolProviders = name =>
+  (TOOL_PROVIDERS[name] || []).map((x, i) => ({
+    name: x.name,
+    badge: '',
+    tag: x.tag,
+    env_vars: x.env.map(([key, prompt, url]) => ({ key, prompt, url, default: null, is_set: !!envSet[key] })),
+    post_setup: null,
+    requires_nous_auth: false,
+    is_active: name === 'web' ? x.name === webProvider : i === 0,
+    status: 'ready'
+  }))
+const toolConfigured = name => name !== 'homeassistant' || (!!envSet.HASS_URL && !!envSet.HASS_TOKEN)
+function connectorsRoute(p, method, url, body, send) {
+  const b = () => JSON.parse(body || '{}')
+  if (p === '/api/mcp/servers' && method === 'GET') return send({ servers: Object.keys(mcpServers).sort().map(n => mcpSummary(n, mcpServers[n])) }), true
+  if (p === '/api/mcp/servers' && method === 'POST') {
+    const x = b()
+    if (mcpServers[x.name]) return send({ detail: `Server '${x.name}' already exists` }, 409), true
+    if (!!x.url === !!x.command) return send({ detail: 'Provide exactly one of URL (HTTP/SSE) or command (stdio)' }, 400), true
+    const c = x.url ? { url: x.url } : { command: x.command, args: x.args || [], env: x.env || {} }
+    if (x.auth === 'oauth') c.auth = 'oauth'
+    if (x.auth === 'header') {
+      c.headers = { Authorization: `Bearer \${MCP_${x.name.toUpperCase()}_API_KEY}` }
+      envSet[`MCP_${x.name.toUpperCase()}_API_KEY`] = x.bearer_token
+    }
+    mcpServers[x.name] = c
+    return send(mcpSummary(x.name, c)), true
+  }
+  let m = /^\/api\/mcp\/servers\/([^/]+)(\/enabled|\/test|\/auth)?$/.exec(p)
+  if (m) {
+    const name = decodeURIComponent(m[1])
+    const c = mcpServers[name]
+    if (!c) return send({ detail: `Server '${name}' not found` }, 404), true
+    if (!m[2] && method === 'DELETE') return delete mcpServers[name], send({ ok: true }), true
+    if (m[2] === '/enabled') return (c.enabled = !!b().enabled), send({ ok: true, name, enabled: c.enabled }), true
+    if (m[2] === '/test') {
+      if (c.auth === 'oauth' && !c.signedIn) return send({ ok: false, error: 'OAuth authentication required — no token found.', tools: [] }), true
+      return send({ ok: true, tools: [{ name: 'read_file', description: 'Read a file' }, { name: 'list_directory', description: 'List a folder' }], prompts: 0, resources: 0 }), true
+    }
+    if (m[2] === '/auth') {
+      if (!c.url) return send({ detail: 'stdio servers authenticate via env keys, not OAuth' }, 400), true
+      const flow_id = `flow-${Object.keys(mcpFlows).length + 1}`
+      mcpFlows[flow_id] = { polls: 0, server: name }
+      return send({ flow_id, server_name: name, status: 'authorization_required', authorization_url: `https://auth.example.com/authorize?server=${name}`, error: null }), true
+    }
+  }
+  m = /^\/api\/mcp\/oauth\/flows\/([^/]+)$/.exec(p)
+  if (m) {
+    const f = mcpFlows[decodeURIComponent(m[1])]
+    if (method === 'DELETE') return send({ ok: true, status: f ? 'error' : 'expired' }), true
+    if (!f) return send({ detail: 'OAuth flow not found or expired' }, 404), true
+    // Approved on the second poll, like a user who signed in in the browser.
+    const status = ++f.polls >= 2 ? 'approved' : 'authorization_required'
+    if (status === 'approved' && mcpServers[f.server]) mcpServers[f.server].signedIn = true
+    return send({ flow_id: m[1], server_name: f.server, status, authorization_url: 'https://auth.example.com/authorize', error: null, tools: status === 'approved' ? ['search'] : [] }), true
+  }
+  if (p === '/api/mcp/catalog')
+    return (
+      send({
+        entries: MCP_CATALOG.map(e => ({ connector_slug: null, source: 'nous', command: null, args: [], url: null, install_url: null, install_ref: null, bootstrap: [], default_enabled: null, post_install: '', suggest: null, ...e, needs_install: false, installed: !!mcpServers[e.name], enabled: !!mcpServers[e.name] })),
+        diagnostics: []
+      }),
+      true
+    )
+  if (p === '/api/mcp/catalog/install') {
+    const x = b()
+    const e = MCP_CATALOG.find(e => e.name === x.name)
+    if (!e) return send({ detail: `No catalog entry '${x.name}'` }, 404), true
+    const extra = Object.keys(x.env || {}).filter(k => !e.required_env.some(v => v.name === k))
+    if (extra.length) return send({ detail: `Catalog entry '${x.name}' does not declare environment variable(s): ${extra.join(', ')}` }, 400), true
+    Object.assign(envSet, x.env || {})
+    mcpServers[e.name] = e.url ? { url: e.url, auth: e.auth_type === 'oauth' ? 'oauth' : undefined } : { command: e.command, args: e.args }
+    return send({ ok: true, name: e.name, background: false }), true
+  }
+  if (p === '/api/tools/toolsets' && method === 'GET')
+    return (
+      send(
+        CONN_TOOLSETS.map(([name, label, description]) => ({ name, label, description, platform: 'cli', platform_label: 'CLI', enabled: toolsetOn[name], available: toolsetOn[name], configured: toolConfigured(name), tools: [] }))
+      ),
+      true
+    )
+  m = /^\/api\/tools\/toolsets\/([^/]+)(\/config|\/provider|\/env)?$/.exec(p)
+  if (m) {
+    const name = m[1]
+    if (!(name in toolsetOn)) return send({ detail: `Unknown toolset: ${name}` }, 404), true
+    if (!m[2] && method === 'PUT') return (toolsetOn[name] = !!b().enabled), send({ ok: true, name, platform: 'cli', enabled: toolsetOn[name], post_setup_started: null }), true
+    if (m[2] === '/config') {
+      const providers = toolProviders(name)
+      return send({ name, has_category: providers.length > 0, providers, active_provider: providers.find(x => x.is_active)?.name || null }), true
+    }
+    if (m[2] === '/provider') {
+      if (name === 'web') webProvider = b().provider
+      return send({ ok: true, name, provider: b().provider }), true
+    }
+    if (m[2] === '/env') {
+      const env = b().env || {}
+      const allowed = new Set((TOOL_PROVIDERS[name] || []).flatMap(x => x.env.map(e => e[0])))
+      const unknown = Object.keys(env).filter(k => !allowed.has(k))
+      if (unknown.length) return send({ detail: `Unknown env var(s) for toolset ${name}: ${unknown.sort().join(', ')}` }, 400), true
+      const saved = Object.keys(env).filter(k => env[k].trim())
+      for (const k of saved) envSet[k] = env[k].trim()
+      return send({ ok: true, name, saved, skipped: Object.keys(env).filter(k => !saved.includes(k)), is_set: Object.fromEntries([...allowed].map(k => [k, !!envSet[k]])) }), true
+    }
+  }
+  return false
+}

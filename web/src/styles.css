@@ -3904,3 +3904,11 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .hs-changed { flex: none; font-size: 0.66rem; color: var(--accent); border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; }
 .hs-input { display: flex; align-items: center; gap: 8px; }
 .hs-input .sheet-input { flex: 1; min-width: 0; }
+
+/* Settings → Connectors (Connectors.tsx): the state pill on each row and a service's open form in a tool's sheet. */
+.conn-state { font-size: 0.72rem; border-radius: 999px; padding: 1px 8px; border: 1px solid currentColor; white-space: nowrap; }
+.conn-connected { color: var(--ok); }
+.conn-setup { color: var(--accent); }
+.conn-off { color: var(--dim); }
+.conn-provider { padding: 4px 14px 10px; display: flex; flex-direction: column; gap: 8px; }
+.conn-provider .sheet-actions { padding: 0; flex-wrap: wrap; }

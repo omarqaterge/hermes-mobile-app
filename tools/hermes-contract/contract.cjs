@@ -447,6 +447,17 @@ const CASES = [
   { name: 'GET /api/config/schema', run: c => c.http('GET', '/api/config/schema') },
   { name: 'PUT /api/config (Hermes settings)', run: c => c.http('PUT', '/api/config', { config: { memory: { nudge_interval: 50 }, agent: { max_turns: null }, approvals: { deny: ['rm -rf /*'] } } }) },
   { name: 'GET /api/config (Hermes settings)', run: c => c.http('GET', '/api/config') },
+  // Settings → Connectors: an MCP server added by address (no sign-in, never contacted), listed, turned off, removed; the
+  // catalog; the connector toolsets, one toolset's services, a switch and an empty key save (nothing written).
+  { name: 'POST /api/mcp/servers', run: c => c.http('POST', '/api/mcp/servers', { name: 'contract', url: 'https://mcp.invalid/mcp', auth: 'none' }) },
+  { name: 'GET /api/mcp/servers', run: c => c.http('GET', '/api/mcp/servers') },
+  { name: 'PUT /api/mcp/servers/{name}/enabled', run: c => c.http('PUT', '/api/mcp/servers/contract/enabled', { enabled: false }) },
+  { name: 'DELETE /api/mcp/servers/{name}', run: c => c.http('DELETE', '/api/mcp/servers/contract') },
+  { name: 'GET /api/mcp/catalog', run: c => c.http('GET', '/api/mcp/catalog') },
+  { name: 'GET /api/tools/toolsets', run: c => c.http('GET', '/api/tools/toolsets') },
+  { name: 'GET /api/tools/toolsets/{name}/config', run: c => c.http('GET', '/api/tools/toolsets/web/config') },
+  { name: 'PUT /api/tools/toolsets/{name}', run: c => c.http('PUT', '/api/tools/toolsets/homeassistant', { enabled: false }) },
+  { name: 'PUT /api/tools/toolsets/{name}/env', run: c => c.http('PUT', '/api/tools/toolsets/web/env', { env: { TAVILY_API_KEY: '' } }) },
   ...pluginCases(),
   // The app's client says it answers server → client requests (json-rpc-channel.ts advertiseCapabilities); without it the
   // real Hermes withdraws approvals and skips questions at once.
