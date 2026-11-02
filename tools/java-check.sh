@@ -17,7 +17,7 @@ if [ ! -s "$JAR" ]; then
   mv "$JAR.part" "$JAR"
 fi
 [ "$(sha256 "$JAR")" = "$JAR_SHA256" ] || { rm -f "$JAR"; echo "java-check: $JAR is not the expected android-all jar (SHA-256); removed, run again" >&2; exit 1; }
-SHERPA_JAR=$(../tools/sherpa-onnx.sh --jar-only | head -1) # LocalStt's speech engine (Java API only)
+SHERPA_JAR=$(../tools/sherpa-onnx.sh --jar-only | sed -n 1p) # LocalStt's speech engine (Java API only)
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
 mkdir -p "$OUT/gen/com/omarqaterge/hermesmobile" "$OUT/classes"
 {

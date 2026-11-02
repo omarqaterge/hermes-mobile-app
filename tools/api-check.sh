@@ -12,7 +12,7 @@ PLATFORM=$(ls "$SDK/platforms" 2>/dev/null | sed -n 's/^android-\([0-9]*\)$/\1/p
 [ -n "$PLATFORM" ] || { echo "api-check: no platform under $SDK/platforms" >&2; exit 2; }
 MIN=$(sed -n 's/.*--min-sdk-version \([0-9]*\).*/\1/p' build.sh | head -1)
 [ -n "$MIN" ] || { echo "api-check: no --min-sdk-version in build.sh" >&2; exit 2; }
-SHERPA_JAR=$(../tools/sherpa-onnx.sh --jar-only | head -1) # LocalStt's speech engine, so lint resolves its classes
+SHERPA_JAR=$(../tools/sherpa-onnx.sh --jar-only | sed -n 1p) # LocalStt's speech engine, so lint resolves its classes
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
 cp -R src res "$OUT/"
 sed "s#<application#<uses-sdk android:minSdkVersion=\"$MIN\" />\n    <application#" AndroidManifest.xml > "$OUT/AndroidManifest.xml"
