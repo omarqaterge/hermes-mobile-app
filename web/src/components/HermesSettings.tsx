@@ -75,7 +75,7 @@ export function HermesSettingsPage({ scope, setScope }: { scope: string; setScop
   return (
     <>
       <ProfileChips value={scope} onChange={setScope} label="Settings for" />
-      <Status loading={loading} error={error} empty={!data} emptyText="" />
+      <Status loading={loading} error={error} empty={!data} emptyText="" onRetry={reload} />
       {groups.map(g => (
         <Section key={g.title} title={g.title} footer={g.footer}>
           {g.items.map(row)}

@@ -96,6 +96,8 @@ let poolSeq = 0
 let poolSeeded = new Set()
 // config.yaml's fallback chain and per-provider rotation strategy (read with GET /api/config, merged by PUT /api/config).
 let rotation = { fallback_providers: [], credential_pool_strategies: {} }
+// Test hook `routeFail`: "METHOD /path" -> HTTP status that route answers with instead (a load error), until cleared.
+let routeFail = {}
 // The rest of config.yaml (Settings → Hermes settings): the pinned Hermes's defaults (tools/hermes-config-fixture.py)
 // under what PUT /api/config saved, merged like Hermes's _deep_merge (maps merge, anything else replaces, null over a map
 // is ignored). The model, reasoning, plugin list and rotation keys keep their own handling above and below.
@@ -145,6 +147,7 @@ const server = http.createServer((req, res) => {
       return res.end('<!-- MOCK-HERMES --><script>window.__HERMES_SESSION_TOKEN__ = "tok"</script>')
     }
     const p = url.pathname
+    if (routeFail[`${req.method} ${p}`]) return send({ detail: `Mock failure (${routeFail[`${req.method} ${p}`]})` }, routeFail[`${req.method} ${p}`])
     if (connectorsRoute(p, req.method, url, body, send)) return // Settings → Connectors (defined at the end)
     if (p === '/m') {
       // Stand-in for the shell's streamed media URL (MainActivity.media → plugin /media).
@@ -165,6 +168,7 @@ const server = http.createServer((req, res) => {
         poolSeeded = new Set()
         rotation = { fallback_providers: [], credential_pool_strategies: {} }
         cfgSaved = {}
+        routeFail = {}
         codexPolls = 0 // nobody signed in to ChatGPT any more either
       }
       if (b.configured) providerConfigured = true
@@ -180,6 +184,7 @@ const server = http.createServer((req, res) => {
       if (b.poolStatus) poolStatus = { ...poolStatus, ...b.poolStatus }
       if (b.rotation) rotation = { fallback_providers: [], credential_pool_strategies: {}, ...b.rotation }
       if (b.envSet) envSet = { ...envSet, ...b.envSet }
+      if (b.routeFail) routeFail = Object.fromEntries(Object.entries({ ...routeFail, ...b.routeFail }).filter(([, v]) => v))
       if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.openui) openui = { ...openui, ...b.openui }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }

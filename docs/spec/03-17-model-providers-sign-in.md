@@ -60,7 +60,7 @@ Fields: Name; Address (base URL); API key (marked "(if it needs one)" for preset
 #### Provider rotation (fallback models and key pools)
 **Source:** `Rotation.tsx`. Two of Hermes's own mechanisms, through routes the pinned Hermes has (no plugin route): the fallback chain (`fallback_providers` in config.yaml) and the credential pool (several keys or logins per provider, in `auth.json`) with its rotation strategy (`credential_pool_strategies.<provider>` in config.yaml). Every call is scoped with `?profile=` to the bot chosen in the chips.
 
-**Fallback models** (`FallbackSection`, on Settings → Model providers above the search field; not in the setup flow). Read with `GET /api/config?profile=` (and the pool, for the status notes); re-read when a provider on the page was connected or removed.
+**Fallback models** (`FallbackSection`, on Settings → Model providers above the search field; not in the setup flow). Read with `GET /api/config?profile=`; the pool (for the status notes) loads beside it and never holds the card up. Both are re-read when a provider on the page was connected or removed. While the config loads: "Loading…"; if it fails or takes over 20 s: the error with "Try again" (`useLoader`, 3.20). With no fallback set, "No fallback models yet" sits between the main model and Add.
 | Element | Looks like | Tap | States |
 |---|---|---|---|
 | Main model row | Number 1, the bot's model, sub "Main model · <provider>" | nothing (change it under Default models or a provider's "Choose a model") | "No model set" |
