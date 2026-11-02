@@ -1,4 +1,4 @@
-// Settings → Uninstall Hermes: one flow that removes Hermes, Debian, its data and chats, the installer's changes, then
+// Settings → Uninstall Hermux: one flow that removes Hermes, Debian, its data and chats, the installer's changes, then
 // Termux:API, Termux:Boot, Shizuku, Termux and this app (Android asks once per app). Offers a backup to Downloads first.
 import { useEffect, useState } from 'react'
 import { confirmDialog, promptDialog } from '../dialog'
@@ -19,7 +19,7 @@ export function UninstallSection() {
   return (
     <>
       <Section title="Danger zone" footer="Removes Hermes, all chats and every helper app from this phone. You can save a backup first.">
-        <Row icon="🗑" danger title="Uninstall Hermes" sub="Hermes, Debian, chats, Termux and the helper apps" chevron onClick={() => setOpen(true)} />
+        <Row icon="🗑" danger title="Uninstall Hermux" sub="Hermes, Debian, chats, Termux and the helper apps" chevron onClick={() => setOpen(true)} />
       </Section>
       {open && <UninstallSheet onClose={() => setOpen(false)} />}
     </>
@@ -75,7 +75,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
 
   const begin = async () => {
     const typed = await promptDialog({
-      title: 'Uninstall Hermes?',
+      title: 'Uninstall Hermux?',
       message: `This deletes Hermes and everything in it on this phone: all chats, memory, skills, settings and keys${withBackup ? ' (after saving the backup)' : ''}. Then Android asks you to remove each app. It can’t be undone. Type uninstall to confirm.`,
       placeholder: 'uninstall',
       match: 'uninstall',
@@ -96,7 +96,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Sheet title="Uninstall Hermes" onClose={onClose}>
+    <Sheet title="Uninstall Hermux" onClose={onClose}>
       <div className="sheet-scroll uninstall">
         {phase === 'review' && (
           <>

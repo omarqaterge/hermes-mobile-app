@@ -43,7 +43,7 @@ db.close()
 plugin = load("hermes_mobile_plugin_chip", ROOT / "hermes-plugin" / "hermes-mobile" / "__init__.py")
 posts, sent = [], []
 plugin._post = lambda e: posts.append(e) or True
-plugin._send = lambda kind, title="Hermes", body="", session="", urgent=False, **kw: sent.append(dict(kind=kind, title=title, body=body, **kw))
+plugin._send = lambda kind, title="Hermux", body="", session="", urgent=False, **kw: sent.append(dict(kind=kind, title=title, body=body, **kw))
 plugin.STATUS_MIN_INTERVAL = 0.0
 plugin.HEARTBEAT = 0.2
 

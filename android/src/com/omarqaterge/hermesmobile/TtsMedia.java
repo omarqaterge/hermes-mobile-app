@@ -55,7 +55,7 @@ final class TtsMedia {
         String name = title == null || title.trim().isEmpty() ? "Reading aloud" : title.trim();
         session.setMetadata(new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, name)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, "Hermes")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, "Hermux")
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, Math.max(1, durationMs))
                 .build());
         // position + speed + the time it was true at: the system extrapolates the bar itself, no timer on our side
@@ -76,7 +76,7 @@ final class TtsMedia {
         Notification.Builder b = new Notification.Builder(app, CH_PLAYBACK)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setContentTitle(name)
-                .setContentText(playing ? "Hermes is reading aloud" : "Paused")
+                .setContentText(playing ? "Hermux is reading aloud" : "Paused")
                 .setVisibility(Notification.VISIBILITY_PUBLIC) // controls on the lock screen
                 .setCategory(Notification.CATEGORY_TRANSPORT)
                 .setShowWhen(false)

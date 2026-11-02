@@ -55,7 +55,7 @@ One React page; no URLs. The chat is always mounted underneath; everything else 
 |---|---|---|---|
 | Chat | Header, banners, messages, composer | Start | never |
 | Drawer | Chat list, bots, navigation | ☰, swipe right | backdrop, swipe left, Back, picking a chat |
-| Full-screen pages | Hermes hub, Skills, Memory, Scheduled jobs, Files, Projects, Canvas gallery, Bots, Settings, Setup check, Set up Hermes | drawer tiles, hub cards, banners | ‹ Back, Android Back |
+| Full-screen pages | Hermux hub, Skills, Memory, Scheduled jobs, Files, Projects, Canvas gallery, Bots, Settings, Setup check, Set up Hermes | drawer tiles, hub cards, banners | ‹ Back, Android Back |
 | Bottom sheets | Model, Chat menu, Draft menu, Chat details, Backend status, Context window, Goal, File checkpoints | header and composer controls | drag down, tap outside, Back |
 | Request sheet | Approvals, questions, passwords | Hermes asks | only by answering |
 | Canvas panel | Documents beside the chat | canvas button, swipe left | ✕, swipe right on its bar, Back |
@@ -282,7 +282,7 @@ Side question about the current chat without interrupting it; 70 % high.
 - **Row menu** · ✏️ Rename, 📌 Pin to top / Unpin, 🗄 Archive / Unarchive, 🗑 Delete.
 - States: "Loading sessions…", "No sessions yet", "Nothing archived. Swipe a chat right to archive it.".
 
-## 13. Hermes hub and its pages
+## 13. Hermux hub and its pages
 
 - **Hub** · six cards, each an icon chip + title + live one-line summary + ›: ✦ Skills ("12 enabled of 40"), 🧠 Memory
   ("8 notes · 64% full · 3 about you" + thin meter, red at 90 %), ⏱ Scheduled jobs ("2 active · next 9:00"), 📁 Files,
@@ -324,7 +324,7 @@ Main page, in order (Section → rows):
 7. **Connection** · 📶 Status (Connected / Connecting… / Offline), ↻ Reconnect / start Hermes, ✓ Setup check.
 8. **About** · App version, ⬆️ Check for updates (checking / up to date / update available / downloading N % /
    installing), 📝 What's new, ⚕️ Hermes version (warning when it differs), Last start-up, Remote debugging.
-9. **Danger zone** · 🗑 Uninstall Hermes (red).
+9. **Danger zone** · 🗑 Uninstall Hermux (red).
 
 Sub-pages:
 - **Appearance** · four theme swatch cards (Default, OLED black, Light, System) with mini previews and ✓; text size
@@ -383,7 +383,7 @@ Full-screen takeover, also on wide screens.
   model** (disabled "Connect a provider first"), **Skip for now**.
 - **End page** · ✓ "All set" or … "Almost done" + remaining recommended items with their buttons, **Done**.
 
-## 18. Uninstall Hermes (sheet from Settings → Danger zone)
+## 18. Uninstall Hermux (sheet from Settings → Danger zone)
 
 - **Review** · "Will be removed" list with ✕ marks (Hermes with chats, memory, skills, settings and keys; Debian; the
   installer's files; the phone setting it changed; each helper app), "Kept:" note, Backup section (💾 Save a backup

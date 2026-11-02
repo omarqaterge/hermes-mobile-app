@@ -182,7 +182,7 @@ const nativeShell = () => {
         setTimeout(() => window.__hmBg(null), 30) // the shell clears the state once the host answered
         return 'ok'
       },
-      // Settings → Uninstall Hermes: every call goes to window.__unLog in order; the test answers through
+      // Settings → Uninstall Hermux: every call goes to window.__unLog in order; the test answers through
       // window.__un (the native state) + window.hermesUninstallDone(), like Uninstall.java does.
       uninstallState: key => (k(key, 'uninstallState'), JSON.stringify(window.__un || JSON.parse(localStorage.getItem('__hmUn') || 'null') || { started: false, running: false, removed: false, result: null })),
       uninstallStart: (key, backup, keys, settings) => {

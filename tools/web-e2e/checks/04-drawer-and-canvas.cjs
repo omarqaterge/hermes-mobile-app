@@ -117,7 +117,7 @@ module.exports = async t => {
   await page.evaluate(() => window.hermesBack())
   await page.getByRole('button', { name: 'Close canvas' }).click()
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: 'Canvas gallery' }).filter({ hasText: /\d+ documents/ }).waitFor({ timeout: 5000 }).then(() => check(true, 'hub: gallery summary'), () => check(false, 'hub: gallery summary'))
   await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
   await page.locator('.lib-cats button', { hasText: 'HTML 1' }).waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: categories are the types, with counts'), () => check(false, 'gallery: categories are the types, with counts'))
@@ -189,7 +189,7 @@ module.exports = async t => {
   await page.getByRole('button', { name: 'Close canvas' }).click()
   // Go to chat: back to Chat 5 without the canvas.
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
   await page.locator('.gallery-card', { hasText: 'Soup' }).click()
   await page.getByRole('button', { name: 'Go to chat' }).click()
@@ -197,7 +197,7 @@ module.exports = async t => {
   check((await page.locator('.canvas-panel').count()) === 0 && (await page.locator('.screen').count()) === 0, 'gallery: Go to chat leaves the canvas closed')
   // Delete removes it from its chat's canvas.
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
   await page.locator('.gallery-card', { hasText: 'Plan' }).click()
   await page.getByRole('button', { name: 'Item options' }).click()

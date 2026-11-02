@@ -6,7 +6,7 @@ Every canvas document of every chat and every profile in one list. Nothing is co
 
 #### Canvas gallery (screen block)
 
-**Opens from:** Hermes hub → the row Canvas gallery (`HUB` in `web/src/components/Screens.tsx`; `Screen` value `gallery`). **Closes with:** Back in the top bar (`ScreenShell`). **Source:** `web/src/components/Gallery.tsx` `GalleryScreen`, state in `web/src/gallery.ts` (`useGallery`).
+**Opens from:** Hermux hub → the row Canvas gallery (`HUB` in `web/src/components/Screens.tsx`; `Screen` value `gallery`). **Closes with:** Back in the top bar (`ScreenShell`). **Source:** `web/src/components/Gallery.tsx` `GalleryScreen`, state in `web/src/gallery.ts` (`useGallery`).
 
 **Layout, top to bottom:**
 

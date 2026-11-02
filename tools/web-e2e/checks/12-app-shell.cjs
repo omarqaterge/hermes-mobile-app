@@ -369,7 +369,7 @@ module.exports = async t => {
   check(fx === '["get-termux-api","open-shizuku","restart-hermes"]', `phone access fix buttons (${fx})`)
   await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
 
-  // ── Settings → Uninstall Hermes: what goes is listed, backup offered (keys off), typed confirm, the Termux cleanup
+  // ── Settings → Uninstall Hermux: what goes is listed, backup offered (keys off), typed confirm, the Termux cleanup
   //    first (a failed backup removes nothing and can be retried), then each app in order, this app last ──
   {
     await np.evaluate(() => {
@@ -379,11 +379,11 @@ module.exports = async t => {
     })
     await np.getByRole('button', { name: /^Sessions/ }).click()
     await np.locator('.nav-tile', { hasText: 'Settings' }).click()
-    const unRow = np.locator('.set-row', { hasText: 'Uninstall Hermes' })
-    await unRow.waitFor({ timeout: 5000 }).then(() => check(true, 'uninstall: Settings has the Uninstall Hermes row'), () => check(false, 'uninstall: Settings has the Uninstall Hermes row'))
+    const unRow = np.locator('.set-row', { hasText: 'Uninstall Hermux' })
+    await unRow.waitFor({ timeout: 5000 }).then(() => check(true, 'uninstall: Settings has the Uninstall Hermux row'), () => check(false, 'uninstall: Settings has the Uninstall Hermux row'))
     check((await np.locator('.set-heading', { hasText: 'Danger zone' }).count()) === 1, 'uninstall: in its own Danger zone section')
     await unRow.click()
-    const sheet = np.locator('.sheet', { hasText: 'Uninstall Hermes' }).last()
+    const sheet = np.locator('.sheet', { hasText: 'Uninstall Hermux' }).last()
     await sheet.locator('.setup-title', { hasText: 'Debian' }).first().waitFor({ timeout: 3000 }).catch(() => {})
     const listed = (await sheet.locator('.setup-list .setup-title').allTextContents()).join(' | ')
     const squeezed = await sheet.locator('.setup-list').first().evaluate(el => el.scrollHeight - el.clientHeight)
@@ -397,7 +397,7 @@ module.exports = async t => {
     check((await sheet.locator('select, input[type=checkbox], input[type=radio]').count()) === 0, 'uninstall: no native controls')
     check(!(await np.evaluate(() => window.__unLog || [])).length, 'uninstall: nothing called before confirming')
     await sheet.getByRole('button', { name: 'Uninstall…' }).click()
-    const dlg = np.locator('.dialog', { hasText: 'Uninstall Hermes?' })
+    const dlg = np.locator('.dialog', { hasText: 'Uninstall Hermux?' })
     await dlg.waitFor({ timeout: 3000 })
     const okBtn = dlg.getByRole('button', { name: 'Uninstall', exact: true })
     check(await okBtn.isDisabled(), 'uninstall: confirm disabled until typed')
@@ -459,8 +459,8 @@ module.exports = async t => {
     // app goes straight back to the uninstall sheet so the last steps aren't lost.
     await np.evaluate(() => localStorage.setItem('__hmUn', JSON.stringify({ started: true, running: false, removed: true, result: { exit: 0, stdout: 'HMUNINSTALL STEP debian x\nHMUNINSTALL OK debian removed\nHMUNINSTALL DONE' } })))
     await np.reload()
-    await np.locator('.sheet', { hasText: 'Uninstall Hermes' }).locator('.uninstall-apps').waitFor({ timeout: 8000 }).then(() => check(true, 'uninstall: reopened after a cleanup, the app shows the remaining apps'), () => check(false, 'uninstall: reopened after a cleanup, the app shows the remaining apps'))
-    check(/open Hermux again/.test((await np.locator('.sheet', { hasText: 'Uninstall Hermes' }).textContent()) || ''), 'uninstall: says Android closes the app when Termux goes')
+    await np.locator('.sheet', { hasText: 'Uninstall Hermux' }).locator('.uninstall-apps').waitFor({ timeout: 8000 }).then(() => check(true, 'uninstall: reopened after a cleanup, the app shows the remaining apps'), () => check(false, 'uninstall: reopened after a cleanup, the app shows the remaining apps'))
+    check(/open Hermux again/.test((await np.locator('.sheet', { hasText: 'Uninstall Hermux' }).textContent()) || ''), 'uninstall: says Android closes the app when Termux goes')
     await np.evaluate(() => localStorage.removeItem('__hmUn'))
   }
   await np.close()

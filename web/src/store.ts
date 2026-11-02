@@ -139,7 +139,7 @@ export interface AppState {
   screen: Screen
   /** Profile a Settings screen opens scoped to (from a bot's page); null = the current one. */
   screenProfile: string | null
-  /** Where Back from `screen` goes (the Hermes hub opened it); null = the chat. */
+  /** Where Back from `screen` goes (the Hermux hub opened it); null = the chat. */
   screenBack: Screen
   toasts: Toast[]
   textScale: number

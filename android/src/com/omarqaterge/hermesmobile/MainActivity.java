@@ -242,7 +242,7 @@ public class MainActivity extends Activity {
     }
 
     void startHermesNow() {
-        if (Uninstall.started(this)) return; // Settings → Uninstall Hermes removed (or is removing) it
+        if (Uninstall.started(this)) return; // Settings → Uninstall Hermux removed (or is removing) it
         long now = System.currentTimeMillis();
         if (now - lastStartRequest < 8000) return;
         lastStartRequest = now;
@@ -2667,7 +2667,7 @@ public class MainActivity extends Activity {
             return MainActivity.this.copySetupCommand();
         }
 
-        /** Settings → Uninstall Hermes: run phone/uninstall.sh in Termux (fixed flags + the app's settings JSON). */
+        /** Settings → Uninstall Hermux: run phone/uninstall.sh in Termux (fixed flags + the app's settings JSON). */
         @JavascriptInterface
         public String uninstallStart(String key, boolean backup, boolean keys, String settings) {
             if (!ok(key)) return "error";

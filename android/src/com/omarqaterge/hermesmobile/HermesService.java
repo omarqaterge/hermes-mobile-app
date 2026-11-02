@@ -562,7 +562,7 @@ public class HermesService extends Service {
     }
 
     void shareKeyWithTermux() {
-        if (Uninstall.started(this)) return; // Settings → Uninstall Hermes: nothing more goes into Termux
+        if (Uninstall.started(this)) return; // Settings → Uninstall Hermux: nothing more goes into Termux
         if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
         keyShared = true;
         try {
@@ -669,7 +669,7 @@ public class HermesService extends Service {
     // ── events → notifications ──────────────────────────────
     synchronized void onEvent(JSONObject e) {
         String kind = e.optString("kind");
-        String title = e.optString("title", "Hermes");
+        String title = e.optString("title", "Hermux");
         String body = e.optString("body", "");
         String session = e.optString("session", null);
         String profile = e.optString("profile", "");
@@ -680,7 +680,7 @@ public class HermesService extends Service {
                 if (working && workingSince == 0) workingSince = System.currentTimeMillis();
                 if (!working) workingSince = 0;
                 lastStatus = body.isEmpty() ? (working ? "Working…" : "Ready") : body;
-                lastShort = working ? e.optString("short", "Hermes") : "";
+                lastShort = working ? e.optString("short", "Hermux") : "";
                 if (session != null && !session.isEmpty()) lastSession = session;
                 lastSub = profile.isEmpty() || "default".equals(profile) ? null : profile;
                 // The turn's progress for the expanded chip (plugin 0.8.36+; older plugins send none of these).
@@ -974,7 +974,7 @@ public class HermesService extends Service {
         Notification.Builder sum = new Notification.Builder(this, CH_LEARN)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setColor(Color.parseColor("#D9A441"))
-                .setContentTitle("Hermes")
+                .setContentTitle("Hermux")
                 .setGroup(GROUP)
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
@@ -1044,7 +1044,7 @@ public class HermesService extends Service {
     Notification workingNotification(String text, String sub) {
         JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
         boolean isStopping = stopping != null && stopping.equals(lastSession);
-        String chat = lastTitle.isEmpty() ? "Hermes" : lastTitle;
+        String chat = lastTitle.isEmpty() ? "Hermux" : lastTitle;
 
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder();
         t.append(isStopping ? "Stopping\u2026" : codeSpans(text));
@@ -1111,7 +1111,7 @@ public class HermesService extends Service {
                     PendingIntent.getService(this, ("stop:" + lastSession).hashCode(), stop,
                             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
         }
-        promote(b, lastShort.isEmpty() ? "Hermes" : lastShort);
+        promote(b, lastShort.isEmpty() ? "Hermux" : lastShort);
         // Hermes is using an app on the hidden screen for this chat: the expanded card shows a picture of it.
         // The lock screen gets the same card without the picture (it can show the user's own data).
         BgApp bg = bgApp;
@@ -1140,7 +1140,7 @@ public class HermesService extends Service {
                 String[] res = MainActivity.rawHttp("POST", path, dashboardToken(false), body);
                 if ("401".equals(res[0]) || "403".equals(res[0]))
                     res = MainActivity.rawHttp("POST", path, dashboardToken(true), body);
-                if ("404".equals(res[0])) err = "it isn't running in the app's Hermes";
+                if ("404".equals(res[0])) err = "it isn't running in Hermux";
                 else if (!res[0].startsWith("2")) err = "HTTP " + res[0];
             } catch (Exception ex) {
                 err = ex.getMessage();
@@ -1153,7 +1153,7 @@ public class HermesService extends Service {
                     postStatus();
                 }
                 NotificationManager nm = getSystemService(NotificationManager.class);
-                postGrouped(nm, tag("stop", session), alert(CH_ALERT, "Couldn't stop Hermes",
+                postGrouped(nm, tag("stop", session), alert(CH_ALERT, "Couldn't stop Hermux",
                         "Open the chat to stop it (" + failed + ")", session, true));
             });
         }, "hermes-stop").start();
@@ -1210,7 +1210,7 @@ public class HermesService extends Service {
         JSONObject a = pendingAsk;
         String session = a.optString("session", "");
         String q = a.optString("body", "").trim();
-        if (q.isEmpty()) q = "Hermes has a question";
+        if (q.isEmpty()) q = "Hermux has a question";
         java.util.ArrayList<String> choices = new java.util.ArrayList<>();
         org.json.JSONArray ch = a.optJSONArray("choices");
         if (ch != null) for (int k = 0; k < ch.length() && choices.size() < 5; k++) {
@@ -1228,7 +1228,7 @@ public class HermesService extends Service {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setColor(GOLD)
-                .setContentTitle("Hermes asks")
+                .setContentTitle("Hermux asks")
                 .setContentText(t)
                 .setSubText(sub)
                 .setStyle(new Notification.BigTextStyle().bigText(t))
@@ -1298,7 +1298,7 @@ public class HermesService extends Service {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_shield)
                 .setColor(barColor)
-                .setContentTitle("Hermes wants to run a command")
+                .setContentTitle("Hermux wants to run a command")
                 .setContentText(t)
                 .setSubText((sub != null ? sub + " · " : "") + "expires in " + secs + "s")
                 .setOngoing(true)
@@ -1338,7 +1338,7 @@ public class HermesService extends Service {
         if (e == null) return;
         String session = e.optString("session", null);
         NotificationManager nm = getSystemService(NotificationManager.class);
-        Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermes"), "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
+        Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermux"), "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
         b.addAction(approveAction(e, "once", "Allow once"));
         if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
         b.addAction(approveAction(e, "deny", "Deny"));
@@ -1379,7 +1379,7 @@ public class HermesService extends Service {
         }
         StringBuilder titles = new StringBuilder();
         for (String[] v : unseen.values()) titles.append(titles.length() > 0 ? "\n" : "").append(v[0].isEmpty() ? "Chat" : v[0]);
-        String title = n == 1 ? (latest[0].isEmpty() ? "Hermes" : latest[0]) : n + " chats finished";
+        String title = n == 1 ? (latest[0].isEmpty() ? "Hermux" : latest[0]) : n + " chats finished";
         // One chat: the start of the reply, and how long the turn took / how many steps. Several: their titles.
         JSONObject info = n == 1 ? doneInfo.get(latestId) : null;
         String reply = info == null ? "" : info.optString("reply", "");
@@ -1542,7 +1542,7 @@ public class HermesService extends Service {
     /** A text field on the notification (RemoteInput). Its PendingIntent must be mutable to receive the text;
      *  it is explicit (this service), so nothing else can fill it in. */
     Notification.Action answerAction(String kind, String session, String label, java.util.List<CharSequence> choices) {
-        android.app.RemoteInput.Builder ri = new android.app.RemoteInput.Builder(REMOTE_TEXT).setLabel("ask".equals(kind) ? "Your answer" : "Message Hermes");
+        android.app.RemoteInput.Builder ri = new android.app.RemoteInput.Builder(REMOTE_TEXT).setLabel("ask".equals(kind) ? "Your answer" : "Message Hermux");
         if (choices != null && !choices.isEmpty()) ri.setChoices(choices.toArray(new CharSequence[0]));
         Intent i = new Intent(this, HermesService.class).setAction(ACTION_ANSWER)
                 .putExtra("kind", kind)
@@ -1588,7 +1588,7 @@ public class HermesService extends Service {
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             Notification.Builder b = alertBuilder(CH_ALERT, "Couldn't send your answer",
                     "ask".equals(kind) ? "The question is no longer open here. Tap to open the chat; your text is in the box."
-                            : "Hermes isn't connected. Tap to open the chat; your text is in the box.", session, false)
+                            : "Hermux isn't connected. Tap to open the chat; your text is in the box.", session, false)
                     .setContentIntent(pi);
             postGrouped(nm, t, b.build());
         };
@@ -1631,17 +1631,17 @@ public class HermesService extends Service {
     static void createChannels(Context ctx) {
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         NotificationChannel status = new NotificationChannel(CH_STATUS, "Status", NotificationManager.IMPORTANCE_LOW);
-        status.setDescription("Pinned: what Hermes is doing right now");
+        status.setDescription("Pinned: what Hermux is doing right now");
         status.setShowBadge(false);
         NotificationChannel idle = new NotificationChannel(CH_IDLE, "Idle", NotificationManager.IMPORTANCE_LOW);
-        idle.setDescription("The small card shown while Hermes is idle. Set it to Minimised to hide its status-bar icon.");
+        idle.setDescription("The small card shown while Hermux is idle. Set it to Minimised to hide its status-bar icon.");
         idle.setShowBadge(false);
         NotificationChannel alert = new NotificationChannel(CH_ALERT, "Needs you", NotificationManager.IMPORTANCE_HIGH);
-        alert.setDescription("Approvals and questions from Hermes");
+        alert.setDescription("Approvals and questions from Hermux");
         NotificationChannel reply = new NotificationChannel(CH_REPLY, "Replies", NotificationManager.IMPORTANCE_DEFAULT);
         reply.setDescription("A reply finished while the app was closed");
         NotificationChannel learn = new NotificationChannel(CH_LEARN, "Learning", NotificationManager.IMPORTANCE_LOW);
-        learn.setDescription("Skill and memory updates from Hermes's self-improvement");
+        learn.setDescription("Skill and memory updates from Hermux's self-improvement");
         learn.setShowBadge(false);
         NotificationChannel jobs = new NotificationChannel(CH_JOBS, "Scheduled jobs", NotificationManager.IMPORTANCE_DEFAULT);
         jobs.setDescription("Cron job results");

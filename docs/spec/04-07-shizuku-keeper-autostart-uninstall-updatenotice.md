@@ -62,7 +62,7 @@ Generic fallback, in `MainActivity`:
 
 #### Uninstall (`Uninstall`)
 
-Settings → Danger zone → Uninstall Hermes calls bridge `uninstallStart(backup, keys, settings)`.
+Settings → Danger zone → Uninstall Hermux calls bridge `uninstallStart(backup, keys, settings)`.
 
 1. `Uninstall.run` refuses with `busy` (a run is under way and less than 20 min old), `no-termux`, `no-permission`, or `error: …`.
 2. It reads `assets/phone/uninstall.sh` and sends it to Termux's `bash` with `RUN_COMMAND` (background, with a result `PendingIntent`). Arguments are fixed flags only: `hm-uninstall`, and with a backup `--backup`, `--keys` (include secrets), `--settings <JSON>` (the app's settings object, at most 64,000 characters, rejected if it is not a JSON object). The settings are one argv entry, never code.

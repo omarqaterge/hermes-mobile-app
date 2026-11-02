@@ -151,7 +151,7 @@ module.exports = async t => {
   // Wide screens keep the canvas as a column beside the chat.
   const cvw = await browser.newPage({ viewport: { width: 1100, height: 800 } })
   await cvw.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
-  // The native shell (Settings → Uninstall Hermes needs it), with setup complete so no setup flow takes over.
+  // The native shell (Settings → Uninstall Hermux needs it), with setup complete so no setup flow takes over.
   await cvw.addInitScript(s => { window.__setup = s }, { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '', termuxApi: true, termuxBoot: true, shizuku: true })
   await cvw.addInitScript(nativeShell)
   await cvw.goto(WEB + '/')
@@ -166,13 +166,13 @@ module.exports = async t => {
   }
   await cvw.evaluate(() => window.hermesBack())
   await cvw.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 2000 }).catch(() => {})
-  // Wide screens: a sheet opened on a page (Settings → Uninstall Hermes) covers the docked chat list, not under it.
+  // Wide screens: a sheet opened on a page (Settings → Uninstall Hermux) covers the docked chat list, not under it.
   {
     const listX = async () => (await cvw.locator('.drawer').boundingBox())?.x ?? -9999
     check((await listX()) >= 0, 'wide screen: the chat list is docked by default')
     await cvw.locator('.nav-tile', { hasText: 'Settings' }).click()
-    await cvw.locator('.set-row', { hasText: 'Uninstall Hermes' }).click()
-    const sh = cvw.locator('.sheet', { hasText: 'Uninstall Hermes' }).last()
+    await cvw.locator('.set-row', { hasText: 'Uninstall Hermux' }).click()
+    const sh = cvw.locator('.sheet', { hasText: 'Uninstall Hermux' }).last()
     await sh.waitFor({ timeout: 3000 })
     await sleep(300)
     const top = await cvw.evaluate(() => {

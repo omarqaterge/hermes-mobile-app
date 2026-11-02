@@ -1,11 +1,11 @@
-### 3.14 Hermes hub + Skills, Memory, Cron, Files, Projects
+### 3.14 Hermux hub + Skills, Memory, Cron, Files, Projects
 
 **Source files:** `web/src/components/Screens.tsx` holds `HubScreen`, `SkillsScreen`, `MemoryScreen`, `CronScreen`, `FilesScreen`, `ProjectsScreen` and the shared pieces `ScreenShell`, `Sheet`, `Status`, `useLoader` (see 3.20). `App.tsx` mounts the screen that matches the store's `screen` value (`hub`, `skills`, `memory`, `cron`, `files`, `projects`, `gallery`).
 
-#### Hermes hub
-**Opens from:** the ☤ Hermes tile in the drawer. **Closes with:** the Back arrow (`aria-label` "Back") or Android Back. **Source:** `Screens.tsx` `HubScreen`.
+#### Hermux hub
+**Opens from:** the ☤ Hermux tile in the drawer. **Closes with:** the Back arrow (`aria-label` "Back") or Android Back. **Source:** `Screens.tsx` `HubScreen`.
 
-**Layout, top to bottom:** title "Hermes", then six cards in this order. Each card has a coloured icon chip, a title, a one-line summary and a › arrow.
+**Layout, top to bottom:** title "Hermux", then six cards in this order. Each card has a coloured icon chip, a title, a one-line summary and a › arrow.
 | Card | Summary line | Tap | States |
 |---|---|---|---|
 | ✦ Skills | "N enabled" or "N enabled of M" (from `GET /api/skills`) | Opens Skills | |

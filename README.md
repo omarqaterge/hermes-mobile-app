@@ -176,7 +176,7 @@ Play Store update it by themselves. If it was never updated, the app says "Hermu
 
 ### Uninstall
 
-**Settings → Danger zone → Uninstall Hermes** removes Hermes and its data, then the helper apps, after an optional backup to
+**Settings → Danger zone → Uninstall Hermux** removes Hermes and its data, then the helper apps, after an optional backup to
 `Download/hermes-backup-<date>.tar.gz` (API keys and sign-ins are left out unless you include them). To restore it on a new
 install, run this in Termux and restart Hermes:
 

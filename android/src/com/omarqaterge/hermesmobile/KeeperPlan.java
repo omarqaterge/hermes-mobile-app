@@ -128,7 +128,7 @@ final class KeeperPlan {
             case "too-many":
                 return "It stopped again right after each start. Tap to open Shizuku and start it.";
             default:
-                return "Hermes can\u2019t see or use the screen until you start Shizuku again.";
+                return "Hermux can\u2019t see or use the screen until you start Shizuku again.";
         }
     }
 

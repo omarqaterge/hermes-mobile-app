@@ -110,7 +110,7 @@ def _termux_fallback(event: dict) -> None:
     session = event.get("session") or ""
     action = f"am start -n {APP_COMPONENT}" + (f" --es session {session}" if session else "")
     try:
-        subprocess.Popen([NOTIFY_BIN, "--id", f"hm-{event.get('kind')}-{session}", "--title", event.get("title", "Hermes"),
+        subprocess.Popen([NOTIFY_BIN, "--id", f"hm-{event.get('kind')}-{session}", "--title", event.get("title", "Hermux"),
                           "--content", event.get("body", ""), "--action", action, "--priority", "high"],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
@@ -118,7 +118,7 @@ def _termux_fallback(event: dict) -> None:
         pass
 
 
-def _send(kind: str, title: str = "Hermes", body: str = "", session: str = "", urgent: bool = False, **extra) -> None:
+def _send(kind: str, title: str = "Hermux", body: str = "", session: str = "", urgent: bool = False, **extra) -> None:
     """Fire-and-forget: never block a turn on notification delivery."""
     event = {"kind": kind, "title": title, "body": " ".join((body or "").split())[:500], "session": session or "",
              "profile": _profile(), **extra}
@@ -507,7 +507,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
                 if single and isinstance(first, dict) and isinstance(first.get("choices"), list):
                     choices = [str(c)[:80] for c in first["choices"][:5]]
         # The app's notification answers a single question in place (choices become quick replies).
-        _send("ask", "Hermes asks", q or "Hermes has a question", session_id or "", urgent=True,
+        _send("ask", "Hermux asks", q or "Hermux has a question", session_id or "", urgent=True,
               choices=choices, single=single)
     return None  # observe only
 
@@ -642,7 +642,7 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
         if again or _last_end.get(session_id, 0) >= failed_at:  # or a session_end already reported it
             return
         name = _profile()
-        title = _chat_title(session_id) or ("Hermes" if name == "default" else name)
+        title = _chat_title(session_id) or ("Hermux" if name == "default" else name)
         _send("error", f"{title} · failed", body, session_id)
 
     t = threading.Timer(FAIL_GRACE, notify)
@@ -690,7 +690,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     if interrupted:
         return
     name = _profile()
-    title = _chat_title(session_id) or ("Hermes" if name == "default" else name)
+    title = _chat_title(session_id) or ("Hermux" if name == "default" else name)
     if platform == "cron":
         _send("cron", "Scheduled job finished" if not failed else "Scheduled job failed",
               text or str(turn_exit_reason or ""), session_id, id=session_id)

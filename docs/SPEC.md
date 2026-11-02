@@ -52,7 +52,7 @@ where, and what is still open, is in [docs/improvements.md](improvements.md) and
   - [3.11 Read-aloud player (and the web side of voice input and Live mode)](spec/03-11-read-aloud-player.md)
   - [3.12 By the way (/btw)](spec/03-12-by-the-way.md)
   - [3.13 Drawer + session list](spec/03-13-drawer-session-list.md)
-  - [3.14 Hermes hub + Skills, Memory, Cron, Files, Projects](spec/03-14-hermes-hub-skills-memory-cron.md)
+  - [3.14 Hermux hub + Skills, Memory, Cron, Files, Projects](spec/03-14-hermes-hub-skills-memory-cron.md)
   - [3.15 Settings](spec/03-15-settings.md)
   - [3.16 Bots](spec/03-16-bots.md)
   - [3.17 Model providers + sign-in](spec/03-17-model-providers-sign-in.md)

@@ -18,7 +18,7 @@ import java.util.ArrayList;
 import org.json.JSONObject;
 
 /**
- * Settings → Uninstall Hermes, native half. (1) The Termux-side cleanup: phone/uninstall.sh, shipped in the APK
+ * Settings → Uninstall Hermux, native half. (1) The Termux-side cleanup: phone/uninstall.sh, shipped in the APK
  * (assets/phone/uninstall.sh, copied by android/build.sh), run through Termux's RUN_COMMAND with a result PendingIntent;
  * only fixed flags and a JSON object of the app's settings reach it, as argv (never as code). (2) The apps: Android's own
  * uninstall prompt (ACTION_DELETE, REQUEST_DELETE_PACKAGES), one fixed package per name. Once a cleanup has run,

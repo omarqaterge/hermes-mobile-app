@@ -230,10 +230,10 @@ module.exports = async t => {
   check(!((await hv.textContent()) || '').includes('Different from what the app was made for'), 'a Hermes build equal to the tested one raises no warning')
   await page.evaluate(() => window.hermesBack())
 
-  // ── Hermes hub: one screen with a summary per page ──
+  // ── Hermux hub: one screen with a summary per page ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  check((await page.locator('.nav-tile').count()) === 3, 'drawer has three tiles (Hermes, Bots, Settings)')
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  check((await page.locator('.nav-tile').count()) === 3, 'drawer has three tiles (Hermux, Bots, Settings)')
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: '2 enabled of 3' }).waitFor({ timeout: 5000 }).then(() => check(true, 'hub: skills summary'), () => check(false, 'hub: skills summary'))
   check((await page.locator('.hub-card', { hasText: '2 notes · 50% full · 1 about you' }).count()) === 1, 'hub: memory summary')
   check((await page.locator('.hub-card', { hasText: '1 active' }).count()) === 1, 'hub: cron summary')

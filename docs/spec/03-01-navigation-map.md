@@ -6,7 +6,7 @@ The page is one React tree (`web/src/App.tsx` `App`). There are no URLs or route
 - `sheet` (type `Sheet`): one bottom sheet owned by the chat area.
 - `drawer`: the sessions drawer is open.
 - `requests`: the queue of questions Hermes asks the user (approval, clarify, password). The first one is drawn as a sheet that cannot be dismissed.
-- `screenBack`: where Back from `screen` goes. `null` = the chat. Only the Hermes hub sets it (to `hub`).
+- `screenBack`: where Back from `screen` goes. `null` = the chat. Only the Hermux hub sets it (to `hub`).
 - `screenProfile`: the bot (profile) a Settings page is scoped to. `null` = the current profile.
 
 The chat is never unmounted. Screens, the drawer and sheets are drawn on top of it, so the draft text, the scroll position and a running reply survive a trip to Settings.
@@ -15,7 +15,7 @@ The chat is never unmounted. Screens, the drawer and sheets are drawn on top of 
 flowchart TD
   Chat["Chat (screen = null)<br/>Header, banners, messages, Composer"]
   Drawer["Sessions drawer"]
-  Hub["hub: Hermes hub"]
+  Hub["hub: Hermux hub"]
   Skills["skills"]
   Memory["memory"]
   Cron["cron: Scheduled jobs"]
@@ -76,7 +76,7 @@ flowchart TD
 | Value | What it is | Opened from | Closes with | Described in |
 |---|---|---|---|---|
 | `null` | The chat (no page on top). | Start-up; Back from any screen. | Not closable. | 3.2 to 3.6 |
-| `hub` | The Hermes hub: one card per area below, each with a one-line summary. | Drawer tile Hermes (`Drawer.tsx`). | Back, Android Back: goes to the chat. | 3.14 |
+| `hub` | The Hermux hub: one card per area below, each with a one-line summary. | Drawer tile Hermux (`Drawer.tsx`). | Back, Android Back: goes to the chat. | 3.14 |
 | `skills` | Skills list and viewer. | Hub card Skills. | Back: goes to the hub (`screenBack`). The button "Use in chat" fills the composer with `/<skill> ` and returns to the chat. | 3.14 |
 | `memory` | Hermes's memory notes. | Hub card Memory. | Back: hub. | 3.14 |
 | `cron` | Scheduled jobs. | Hub card Scheduled jobs. | Back: hub. | 3.14 |
@@ -140,7 +140,7 @@ Pulling the chat up past its end opens the By the way sheet (`web/src/pullbtw.ts
 
 #### Wide screens (tablets, unfolded foldables, landscape)
 
-Two CSS blocks in `web/src/styles.css` turn the layout into columns. From `@media (min-width: 700px)` (upright tablets, unfolded foldables) an open canvas is a column beside the chat with a draggable divider, and a pull tab and swipe at the right edge bring it in (3.7, `web/src/splitview.ts`); the chat list stays a slide-over there. From `@media (min-width: 840px)` the chat list docks too. The drawer becomes a docked 320 px column on the left (`--side`) and full-screen pages (`screen`) open to the right of that column, above it (z-index 22 over the drawer's 21), so a sheet or dialog a page opens (they sit inside the page's stacking context, e.g. Settings → Uninstall Hermes) covers the whole width instead of being cut off by the column. The user can hide the column: the menu button `☰` (`aria-label` "Hide chat list" / "Show chat list" on wide screens) toggles it, and a `«` button at the top of the docked column (`aria-label` "Hide the chat list", class `side-hide`, shown only while docked) hides it from any page. `web/src/sidepanel.ts` (`setSideHidden`, `toggleSide`, `useSidePanel`) keeps the choice in localStorage `hm.sideHidden.v1` and sets `html[data-side="hidden"]` at start-up, before the first paint; every docked rule is scoped to `html:not([data-side='hidden'])`, so a hidden column means the phone layout (swipe right opens the drawer over the chat, its backdrop closes it). The setup flow ("Set up Hermes", class `takeover`) still covers the whole width. While docked, `--side-w` is the column's width (0 otherwise); the canvas width is computed from the room beside it. The chat's text column is kept at about 820 px, with at least 52 px on the right so the scrubber stays out of the 24 px edge strip. An open canvas at its side size becomes a right-hand column (`--canvas-w`, 3.7 "Divider and width on wide screens"); full size still covers everything.
+Two CSS blocks in `web/src/styles.css` turn the layout into columns. From `@media (min-width: 700px)` (upright tablets, unfolded foldables) an open canvas is a column beside the chat with a draggable divider, and a pull tab and swipe at the right edge bring it in (3.7, `web/src/splitview.ts`); the chat list stays a slide-over there. From `@media (min-width: 840px)` the chat list docks too. The drawer becomes a docked 320 px column on the left (`--side`) and full-screen pages (`screen`) open to the right of that column, above it (z-index 22 over the drawer's 21), so a sheet or dialog a page opens (they sit inside the page's stacking context, e.g. Settings → Uninstall Hermux) covers the whole width instead of being cut off by the column. The user can hide the column: the menu button `☰` (`aria-label` "Hide chat list" / "Show chat list" on wide screens) toggles it, and a `«` button at the top of the docked column (`aria-label` "Hide the chat list", class `side-hide`, shown only while docked) hides it from any page. `web/src/sidepanel.ts` (`setSideHidden`, `toggleSide`, `useSidePanel`) keeps the choice in localStorage `hm.sideHidden.v1` and sets `html[data-side="hidden"]` at start-up, before the first paint; every docked rule is scoped to `html:not([data-side='hidden'])`, so a hidden column means the phone layout (swipe right opens the drawer over the chat, its backdrop closes it). The setup flow ("Set up Hermes", class `takeover`) still covers the whole width. While docked, `--side-w` is the column's width (0 otherwise); the canvas width is computed from the room beside it. The chat's text column is kept at about 820 px, with at least 52 px on the right so the scrubber stays out of the 24 px edge strip. An open canvas at its side size becomes a right-hand column (`--canvas-w`, 3.7 "Divider and width on wide screens"); full size still covers everything.
 
 #### Entry points from outside the page
 

@@ -206,7 +206,7 @@ print('BADPATCH', c(action='patch', edits=[{'find':'zzz','replace':'y'}])['ok'])
 
 def t_approval():
     print("approval notification")
-    event({"kind": "approval", "title": "Hermes", "body": "e2e approval (ignore)", "what": "e2e", "command": "echo hi",
+    event({"kind": "approval", "title": "Hermux", "body": "e2e approval (ignore)", "what": "e2e", "command": "echo hi",
            "session": "e2e-appr", "timeout": 60})
     time.sleep(3)
     n = notifications()

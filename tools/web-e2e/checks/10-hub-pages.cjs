@@ -5,7 +5,7 @@ module.exports = async t => {
   const { page } = t
   // ── #21 Files: Back goes up one folder, then leaves ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: 'Files' }).click()
   const crumbText = () => page.locator('.crumbs').textContent()
   await page.locator('.file-row', { hasText: /^📁a/ }).click()
@@ -21,14 +21,14 @@ module.exports = async t => {
   await page.evaluate(() => window.hermesBack())
   await sleep(300)
   check((await page.locator('.crumbs').count()) === 0, 'at the root chip Back leaves Files')
-  check((await page.locator('.hub-card').count()) === 6, '…back to the Hermes hub that opened it')
+  check((await page.locator('.hub-card').count()) === 6, '…back to the Hermux hub that opened it')
   await page.evaluate(() => window.hermesBack())
   await sleep(200)
   check((await page.locator('.hub-card').count()) === 0, 'Back again closes the hub')
 
   // ── Files previews: table, code, page, player, and the note for files with no preview ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: 'Files' }).click()
   // Android Back closes the open preview sheet; wait until it is gone before the next tap.
   const closeSheet = async () => {
@@ -65,7 +65,7 @@ module.exports = async t => {
 
   // ── #22 Projects: tap a chat to open it ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: 'Projects' }).click()
   await page.locator('.card', { hasText: 'Thesis' }).click()
   await page.locator('.project-chat', { hasText: 'Chat 4' }).click({ timeout: 5000 })
@@ -74,7 +74,7 @@ module.exports = async t => {
 
   // ── #23 Cron: edit a job (falls back to replace when PUT isn't there), open a run's output ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
   await page.locator('.hub-card', { hasText: 'Scheduled jobs' }).click()
   await page.locator('.card', { hasText: 'Morning brief' }).getByRole('button', { name: 'Edit' }).click()
   check((await page.locator('.field textarea').inputValue()) === 'Brief me', 'edit form is filled in')

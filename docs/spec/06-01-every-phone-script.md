@@ -12,7 +12,7 @@
 | `cron_ticker.py` | Debian | `hermes-services` loop `cron-ticker` | Runs Hermes's cron scheduler and tells the app when to wake the phone. |
 | `hermes_memory_sync.py` | Debian | `hermes-services` loop `memory-sync` (only if the file exists) | Two-device memory sync through a private git repo. |
 | `keep_note.py` | Debian or Termux | the model/skills by hand | Creates a Google Keep note by driving Keep's share sheet. |
-| `uninstall.sh` | Termux | the app (Settings → Danger zone → Uninstall Hermes), or by hand | Removes what the installers put on the phone (6.5). |
+| `uninstall.sh` | Termux | the app (Settings → Danger zone → Uninstall Hermux), or by hand | Removes what the installers put on the phone (6.5). |
 
 #### `bootstrap.sh` in order
 
