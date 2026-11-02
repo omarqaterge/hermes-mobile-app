@@ -34,7 +34,7 @@ import type {
 } from '@hermes/shared/gateway-contract.generated'
 import { askUnlock, lockView } from './lockview'
 import { onChatOpen, runChatOpen } from './chatopen'
-import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, wsUrl } from './bridge'
+import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, watchHermes, wsUrl } from './bridge'
 import {
   type ActiveSession,
   type Attachment,
@@ -61,6 +61,13 @@ const SERVER_REQUESTS = new Set(['approval', 'clarify', 'secret', 'sudo', 'otp',
 let attempt = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let started = false
+let readySeen = false // Hermes answered while a connect was under way: if that one fails, the next goes at once
+
+declare global {
+  interface Window {
+    __hmHermesReady?: () => void
+  }
+}
 
 // On a phone Hermes answered session.list / session.resume in 30–70 ms alone but in ~1.2 s when the app's other
 // start-up requests (status, commands, skills, model, config, plugin routes) reached the dashboard with them: they
@@ -76,6 +83,7 @@ client.onState(conn => {
     bootMark('socket')
     aliveAt = Date.now()
     attempt = 0
+    readySeen = false
     setState({ connDetail: '' })
   }
   if ((conn === 'closed' || conn === 'error') && started) scheduleReconnect()
@@ -83,14 +91,29 @@ client.onState(conn => {
 
 function scheduleReconnect(): void {
   if (reconnectTimer) return
-  const delay = Math.min(15_000, 600 * 2 ** Math.min(attempt, 5))
+  const delay = readySeen ? 0 : Math.min(15_000, 600 * 2 ** Math.min(attempt, 5))
+  readySeen = false
   attempt++
   setState({ connDetail: attempt > 2 ? 'Starting Hermes…' : 'Reconnecting…' })
+  if (attempt === 1) watchHermes() // once per outage; these steps stay as the fallback
   if (attempt === 2 || attempt % 6 === 0) startHermes()
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     void connect()
   }, delay)
+}
+
+// The shell saw Hermes's dashboard answer (bridge watchHermes): don't wait for the next backoff step. attempt stays as
+// it is, so a dashboard that answers while the socket keeps failing falls back to the backoff instead of looping here.
+window.__hmHermesReady = () => {
+  if (!started || getState().conn === 'open') return
+  if (!reconnectTimer) {
+    readySeen = true
+    return
+  }
+  clearTimeout(reconnectTimer)
+  reconnectTimer = null
+  void connect()
 }
 
 export async function connect(): Promise<void> {

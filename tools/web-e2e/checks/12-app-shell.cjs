@@ -646,4 +646,27 @@ module.exports = async t => {
     }
     await ap.close()
   }
+
+  // ── Hermes comes back: the shell says so and the page reconnects at once, not at its next backoff step ──
+  const rp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  await rp.addInitScript(nativeShell)
+  await rp.goto(WEB + '/')
+  await rp.getByPlaceholder('Message Hermes').waitFor({ timeout: 15000 })
+  check((await rp.evaluate(() => window.__watchHermes || 0)) === 0, 'no watch for Hermes while it answers')
+  await mock({ drop: 60000 })
+  await rp.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
+  await sleep(5200) // tries at about 0.6, 1.8 and 4.2 s have failed; the next is at about 9 s
+  check((await rp.evaluate(() => window.__watchHermes)) === 1, 'the shell is asked to watch once in an outage, not on every try')
+  await mock({ up: true })
+  const asked = Date.now()
+  await rp.evaluate(() => window.__hmHermesReady())
+  await rp.getByPlaceholder('Message Hermes').waitFor({ timeout: 2500 }).then(() => check(true, 'Hermes answers: connected at once'), () => check(false, 'Hermes answers: connected at once'))
+  check(Date.now() - asked < 2500, `well before the next backoff step (${Date.now() - asked} ms)`)
+  await sleep(500)
+  const opened = rpcs('session.list').length
+  await rp.evaluate(() => window.__hmHermesReady())
+  await sleep(300)
+  check(rpcs('session.list').length === opened, 'with the socket open the signal does nothing')
+  await rp.close()
+  await sleep(4000) // the other open pages are back on their own backoff by now
 }

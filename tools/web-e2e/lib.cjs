@@ -154,6 +154,7 @@ const nativeShell = () => {
         }, 200)
       },
       startHermes: key => k(key, 'startHermes'),
+      watchHermes: key => (k(key, 'watchHermes'), window.__watchHermes = (window.__watchHermes || 0) + 1),
       isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
       openAssistantSettings: key => k(key, 'openAssistantSettings'),
       // Talk to Hermes on the lock screen: the values pushed to the shell are recorded.

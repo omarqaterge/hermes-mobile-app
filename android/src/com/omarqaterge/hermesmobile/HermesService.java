@@ -453,6 +453,36 @@ public class HermesService extends Service {
         return null;
     }
 
+    // ── telling the page when Hermes answers ────────────────
+    static final long READY_POLL_MS = 500;
+    static final long READY_WATCH_MS = 180_000;
+    private final java.util.concurrent.atomic.AtomicBoolean readyWatch = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** The page lost Hermes: look at the dashboard until it answers, then tell the page, which otherwise only notices at
+     *  its next backoff step (up to 15 s late). Only while the app is on screen, READY_WATCH_MS at most; a port nobody
+     *  listens on refuses at once, so a try costs next to nothing and Python is touched only once it is up. */
+    static void watchReady() {
+        HermesService s = instance;
+        if (s == null || !MainActivity.visible || !s.readyWatch.compareAndSet(false, true)) return;
+        new Thread(s::runReadyWatch, "hermes-ready").start();
+    }
+
+    private void runReadyWatch() {
+        long end = android.os.SystemClock.elapsedRealtime() + READY_WATCH_MS;
+        try {
+            while (instance == this && MainActivity.visible && android.os.SystemClock.elapsedRealtime() < end) {
+                Thread.sleep(READY_POLL_MS);
+                if (!MainActivity.visible || !MainActivity.dashboardAnswers()) continue;
+                MainActivity a = MainActivity.current;
+                if (a != null) a.pushHermesReady();
+                return;
+            }
+        } catch (InterruptedException ignored) {
+        } finally {
+            readyWatch.set(false);
+        }
+    }
+
     // ── key shared with the plugin ──────────────────────────
     String ensureKey() {
         SharedPreferences p = getSharedPreferences("hermes", MODE_PRIVATE);

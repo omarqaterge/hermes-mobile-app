@@ -34,6 +34,7 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `openFile` | `path` | nothing | Absolute path without `..` or NUL. Runs a fixed script in Termux: `hermes-debian --open` (maps a path inside Debian) or `termux-open`; the path travels as an argument, never as code. `hostPath` maps `/root/...` and `/sdcard...` to what Termux can open. |
 | `getBaseUrl` | none | `http://127.0.0.1:9119` | Returns the dashboard base URL. |
 | `startHermes` | none | nothing | `startHermes()` on the main thread: asks Termux to run `~/bin/hermes-services`. Skipped until Termux accepted a command once (`termuxOk`), while the installer runs, and after an uninstall; at most once per 8 s. |
+| `watchHermes` | none | nothing | `HermesService.watchReady`: answers `window.__hmHermesReady()` once the dashboard answers (4.4). Ignored while the app is off screen or a watch already runs; ends after 3 minutes at most. |
 | `notify` | `title`, `body`, `tag` | nothing | Posts a notification on `Needs you` (id 1, the given tag) that opens the app. For prompts the page cannot show while hidden. |
 | `setBackground` | `hex` | nothing | Stores the colour (`hm` preferences `bg`) and sets the status bar, navigation bar, root view and `WebView` background, plus light/dark bar icons from the colour's brightness. The next launch starts with this colour, so there is no flash. |
 | `isSystemDark` | none | boolean | Is the phone in dark mode (for the System theme). |

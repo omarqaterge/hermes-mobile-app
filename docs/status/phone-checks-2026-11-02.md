@@ -27,8 +27,9 @@ the code.
   Autostart switch on this phone. Fixed in #66 (the step says "Hermes").
 
 **Next:**
-- A: let the service tell the page as soon as Hermes's dashboard answers, and reconnect then instead of waiting for
-  the next backoff step (touches `gateway.ts` and `HermesService.java`). Measure a start with Hermes stopped.
+- A: fixed in code: the service tells the page as soon as Hermes's dashboard answers (bridge `watchHermes`,
+  `window.__hmHermesReady`) and the page reconnects then; the backoff stays as the fallback. Tested in unit and browser
+  tests only. Still to measure on the phone: a start with Hermes stopped (`docs/manual-tests.md`).
 - B: decided and done (`docs/decisions/yolo-goes-to-full-access.md`): `/yolo` from Off or Auto goes to Full access,
   from Full access back to the previous mode; the notice names the mode; the newest access switch wins. Still to see
   on the phone.

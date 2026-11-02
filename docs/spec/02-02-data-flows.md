@@ -141,7 +141,11 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 5. No token: `conn` becomes `error` with "Hermes is not running yet" and `scheduleReconnect` retries. The delay is
    `min(15 s, 600 ms × 2^min(attempt, 5))`, so 0.6, 1.2, 2.4, 4.8, 9.6, then 15 s. The header detail says
    "Reconnecting…" for the first two tries and "Starting Hermes…" after that. The 2nd try and every 6th try call
-   `startHermes()` again (the 8 s throttle still applies).
+   `startHermes()` again (the 8 s throttle still applies). The first try of an outage also asks the shell to watch
+   for Hermes (bridge `watchHermes`, 4.4): when the dashboard answers, `window.__hmHermesReady` runs the waiting try at
+   once, or, with a try under way (`readySeen`), lets the next one go with no delay should that one fail. It leaves
+   `attempt` alone, so a dashboard that answers while the socket keeps failing falls back to the backoff. The backoff
+   stays as the fallback (an older shell, a watch that ran out).
 6. With a token the page opens `ws://127.0.0.1:9119/api/ws?token=…` and runs `afterConnect` (2.2.5).
 7. Coming back to the app calls `window.hermesResume`, which reconnects at once (and asks Termux again) when the
    socket isn't open.
