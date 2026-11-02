@@ -28,6 +28,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.hermesSeen` | `hermes-update.ts` | The Hermes version already warned about ("This Hermes is a different version…"), so the toast shows once per version. | No |
 | `hm.lastSession` | `gateway.ts`, `store.ts` | The chat to reopen on start: `{id, profile}`; used only when the profile matches. | Records the profile |
 | `hm.live.pause` (inventory name `hm.live`) | `live.ts` (`PAUSE_KEY`) | Live mode: seconds of silence before sending (0.5–10, default 2). | No |
+| `hm.live.bargein` | `live.ts` (`BARGE_KEY`) | Live mode: talking over Hermes cuts it off (`"0"` = off; anything else or absent = on). | No |
 | `hm.oled` | `theme.ts` | Legacy OLED switch (`'1'`), read only when `hm.theme` is absent. | No |
 | `hm.queue.v1` | `queue.ts` | Follow-ups queued while Hermes works: `{storedChatId: [{id, text, at}]}`, oldest first, at most 10 per chat; a deleted chat's entry is removed. | No |
 | `hm.openui.v1` | `openui-msg.ts` | Card form/variable state: `{"<chatId>:<hash of card code>": {at, s}}`; newest 150 cards, ≤ 300,000 characters. | No (chat ids) |
@@ -51,7 +52,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 
 Settings → Danger zone → Uninstall Hermes can put a settings snapshot into the backup: `uninstall.ts`
 `SETTINGS_KEYS` (`hm.theme`, `hm.oled`, `hm.textScale`, `hm.tts`, `hm.autoread`, `hm.autoread.chats`,
-`hm.favModels.v1`, `hm.customModels.v1`, `hm.live.pause`, `hm.profile`, `hm.yolo.v1`). Caches, drafts and chat data are left out (3.19).
+`hm.favModels.v1`, `hm.customModels.v1`, `hm.live.pause`, `hm.live.bargein`, `hm.profile`, `hm.yolo.v1`). Caches, drafts and chat data are left out (3.19).
 
 In-memory page state (`store.ts` `AppState`, not persisted): connection state, the open chat (`active`) and the
 one being opened (`opening`, `preview`), pending server requests, open sheet/screen/drawer, toasts, health,
