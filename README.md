@@ -58,7 +58,7 @@ unless you allow it. Every change is a version with a diff you can restore.
 Pick Hermux as your *Digital assistant app* (under Default apps) and long-pressing the power button opens it in hands-free
 Live mode.
 
-<p align="center"><img src="docs/img/assistant.png" alt="Long-press power opens Hermes in Live mode" width="100%"></p>
+<p align="center"><img src="docs/img/assistant.png" alt="Long-press power opens Hermux in Live mode" width="100%"></p>
 
 ### Uses your apps without taking your screen
 

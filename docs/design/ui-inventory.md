@@ -115,7 +115,7 @@ activity banner, status bar, compress hint, read-aloud player, background-app ca
 ### 6.3 Message list
 - **Opening skeleton** · four grey bubble shapes shimmering + "Opening your chat…" · or a read-only cached preview
   of the chat without actions.
-- **Empty new-chat screen** · ☤ logo, "Hermes", "Your agent, on your phone." or "Profile: <bot>", up to four
+- **Empty new-chat screen** · ☤ logo, "Hermux", "Your agent, on your phone." or "Profile: <bot>", up to four
   suggestion buttons (recent prompts, skills, built-in ideas) that fill the composer.
 - **Earlier messages…** · row with spinner at the top while older messages load.
 - **New since your last visit** · gold divider line.
