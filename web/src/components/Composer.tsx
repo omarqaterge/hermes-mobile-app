@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { fmtPause, getLivePause, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
+import { fmtPause, getLivePause, interruptLive, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
 import { startListening, stopListening, useVoice, voiceErrorText, voiceInputAvailable } from '../voice'
 import { afterChatOpens, attachFile, clearAttachments, composerPrefill, detachAttachment, errText, interrupt, queueMessage, sendPrompt, setYolo, unqueueMessage } from '../gateway'
 import { getState, setState, toast, useStore, type Attachment } from '../store'
@@ -374,10 +374,18 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
               <div className="live-hint">Replies are still read aloud</div>
             ) : live === 'listening' && livePartial ? (
               <div className="live-partial">{livePartial}</div>
+            ) : live === 'speaking' ? (
+              <div className="live-hint">Tap Interrupt to talk</div>
             ) : (
               <div className="live-hint">Pause for {fmtPause(getLivePause())} to send</div>
             )}
           </div>
+          {live === 'speaking' && (
+            // Cut the reading short and listen now (the mic is off while Hermes speaks, so voice can't do it).
+            <button className="btn live-interrupt" onClick={() => { haptic(); interruptLive() }}>
+              Interrupt
+            </button>
+          )}
           <button
             className={`live-mute${liveMuted ? ' on' : ''}`}
             aria-label={liveMuted ? 'Unmute microphone' : 'Mute microphone'}
