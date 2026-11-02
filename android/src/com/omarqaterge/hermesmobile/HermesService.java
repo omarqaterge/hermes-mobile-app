@@ -1424,6 +1424,18 @@ public class HermesService extends Service {
         return true;
     }
 
+    /** Opens the app on that chat, whose approval sheet asks for the fingerprint or screen lock on Allow. */
+    void openToConfirm(String session) {
+        Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (session != null && !session.isEmpty()) open.putExtra("session", session);
+        try {
+            startActivity(open);
+        } catch (Exception e) {
+            // background start refused: nothing is allowed; the approval still waits in the app
+            android.widget.Toast.makeText(this, "Open Hermes to allow this", android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
     /** On the lock screen, Android asks to unlock before this answer goes through (API 31+): whoever holds a locked
      *  phone can't allow a command or tell Hermes what to do. Deny stays one tap. */
     static Notification.Action.Builder unlockFirst(Notification.Action.Builder b) {
@@ -1433,6 +1445,14 @@ public class HermesService extends Service {
 
     PendingIntent approveIntent(JSONObject e, String choice) {
         String session = e.optString("session", "");
+        if (Build.VERSION.SDK_INT >= 31 && !"deny".equals(choice) && ApprovalLock.needed(this, session)) {
+            // Android 12+ refuses to open an activity from a service a notification started (trampoline): the
+            // chat's first Allow opens the app on that chat directly, where the sheet asks for the fingerprint.
+            Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            if (!session.isEmpty()) open.putExtra("session", session);
+            return PendingIntent.getActivity(this, ("confirm" + session + choice).hashCode(), open,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        }
         Intent i = new Intent(this, HermesService.class).setAction(ACTION_APPROVE)
                 .putExtra("session", session)
                 .putExtra("key", e.optString("key", ""))
@@ -1448,6 +1468,11 @@ public class HermesService extends Service {
         String session = i.getStringExtra("session");
         String choice = i.getStringExtra("choice");
         if (!"deny".equals(choice) && openToUnlock(session, null, "approval " + choice)) return;
+        // Confirm approvals with fingerprint: the chat's first Allow is confirmed in the app (its sheet asks).
+        if (!"deny".equals(choice) && ApprovalLock.needed(this, session)) {
+            openToConfirm(session);
+            return;
+        }
         String t = tag("approval", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
         new Thread(() -> {

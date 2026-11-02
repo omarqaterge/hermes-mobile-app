@@ -20,6 +20,7 @@ import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../l
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
+import { approvalLockAvailable, approvalLockState, setApprovalLock } from '../approval-lock'
 import { Markdown } from './Markdown'
 import { SttSettings } from './SttSettings'
 import { chosenSttName, loadSttModels, sttAvailable, useSttModels } from '../stt'
@@ -31,6 +32,25 @@ import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 
 // ── shared ───────────────────────────────────────────────────
+
+/** Permissions → "Confirm approvals with fingerprint" (approval-lock.ts); only inside the Android shell. */
+function ApprovalLockRow() {
+  const [st, setSt] = useState(approvalLockState)
+  if (!approvalLockAvailable()) return null
+  const sub = !st.secure
+    ? 'This phone has no screen lock: approvals go through without it'
+    : 'The first Allow in each chat asks for your fingerprint or screen lock, until the app restarts or the chat closes'
+  return (
+    <ToggleRow
+      icon="🔐"
+      tone="green"
+      title="Confirm approvals with fingerprint"
+      sub={sub}
+      on={st.on}
+      onChange={v => void setApprovalLock(v).then(done => done && setSt(approvalLockState()))}
+    />
+  )
+}
 
 interface ModelProvider {
   slug: string
@@ -865,6 +885,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
       </Section>
       <Section title="Permissions" footer="What new and existing chats start in. A chat you set with its own Auto button keeps that choice.">
         <DefaultAccessRow />
+        <ApprovalLockRow />
       </Section>
       <OpenUISection />
       <BgAppsSection />

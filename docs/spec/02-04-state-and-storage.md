@@ -14,6 +14,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.chatcache.v1` | `chatcache.ts` | One chat for the next cold start: `{profile, storedId, title, items}` (≤ 60 items, ≤ 1,500,000 characters). | Records the profile |
 | `hm.cmds.v1` (suffix `.<profile>`) | `commands.ts` | The slash-command and skill catalog `[{name, desc, kind}]` from `commands.catalog`; refreshed when older than 10 minutes. | Yes |
 | `hm.connectedOnce` | `components/Setup.tsx` | `'1'` once Hermes ever answered; after that a launch never opens the first-run flow by itself. | No |
+| `hm.approvalNoLockHint.v1` | `approval-lock.ts` | `'1'` once the "no screen lock" hint for Confirm approvals with fingerprint was shown. | No |
 | `hm.defaultAccess.v1` | `gateway.ts` (`DEFAULT_ACCESS_KEY`) | Settings → Auto for all chats: `'auto'` or `'full'`; absent = Off. | No |
 | `hm.devBase` | `bridge.ts` | Development only, and in `sessionStorage`, not `localStorage`: the dashboard base URL the dev server injects. | No |
 | `hm.devToken` | `bridge.ts` | Development only, `sessionStorage`: the dashboard token the dev server injects. | No |

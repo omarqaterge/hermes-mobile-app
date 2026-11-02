@@ -1790,6 +1790,10 @@ public class MainActivity extends Activity {
             stt.addFromFiles(uris);
             return;
         }
+        if (req == ApprovalLock.REQ) {
+            ApprovalLock.onResult(result);
+            return;
+        }
         if (req == REQ_DEVTOOLS) {
             boolean asked = devtoolsPending;
             devtoolsPending = false;
@@ -1847,6 +1851,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (current == this) current = null;
+        ApprovalLock.activityGone(this);
         voice.destroy();
         stt.destroy();
         super.onDestroy();
@@ -2126,6 +2131,40 @@ public class MainActivity extends Activity {
         public void setLockAssist(String key, boolean on) {
             if (!ok(key)) return;
             getSharedPreferences("hm", MODE_PRIVATE).edit().putBoolean("lockAssist", on).apply();
+        }
+
+        /** Allow on an approval (ApprovalLock): asks for the biometric or screen lock unless this chat session is already
+         *  confirmed or the setting is off, then calls window.hermesApprovalConfirm(id, "ok" | "cancel" | "nolock"). */
+        @JavascriptInterface
+        public void confirmApproval(String key, int id, String session, String what) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                java.util.function.Consumer<String> done = r -> {
+                    if (web != null) web.evaluateJavascript("window.hermesApprovalConfirm && window.hermesApprovalConfirm(" + id + ",'" + r + "')", null);
+                };
+                if (!foreground || isFinishing()) done.accept("cancel"); // a prompt needs the app on screen
+                else ApprovalLock.ask(MainActivity.this, session, what == null ? "" : what, done);
+            });
+        }
+
+        /** {"on":bool,"secure":bool}: Settings → Permissions → "Confirm approvals with fingerprint". */
+        @JavascriptInterface
+        public String approvalLockState(String key) {
+            if (!ok(key)) return "";
+            return ApprovalLock.stateJson(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void setApprovalLock(String key, boolean on) {
+            if (!ok(key)) return;
+            ApprovalLock.setOn(MainActivity.this, on);
+        }
+
+        /** The chat's live Hermes session closed: its next Allow asks again. */
+        @JavascriptInterface
+        public void forgetApproval(String key, String session) {
+            if (!ok(key)) return;
+            ApprovalLock.forget(session);
         }
 
         /** Shown over the lock screen: bring up Android's unlock screen before something that acts. */

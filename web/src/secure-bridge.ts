@@ -16,7 +16,8 @@ const METHODS = [
   'saveImage', 'shareImage', 'chatSeen', 'setUnseen', 'installHelperApp', 'probeTermux', 'probeTermuxNow', 'setupCommand', 'setupProgress',
   'bgState', 'bgFrameAsync', 'bgAction',
   'openRemoteDebugging', 'remoteDebuggingState', 'turnOffRemoteDebugging', // none of these can turn remote debugging on: the shell asks for the screen lock itself
-  'uninstallStart', 'uninstallState', 'uninstallApp'
+  'uninstallStart', 'uninstallState', 'uninstallApp',
+  'confirmApproval', 'approvalLockState', 'setApprovalLock', 'forgetApproval' // the shell asks for the screen lock itself; nothing here can skip it
 ]
 
 const w = window as unknown as { HermesAndroid?: unknown }

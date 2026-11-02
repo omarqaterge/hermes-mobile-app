@@ -23,6 +23,7 @@
 |---|---|---|
 | `INTERNET` | normal | Loopback sockets to Hermes (`127.0.0.1:9119`), the GitHub update check and APK download (`UpdateNotice`, `MainActivity.startUpdate`), the helper-app downloads from F-Droid and GitHub. |
 | `POST_NOTIFICATIONS` | runtime (Android 13+) | Every notification. Asked at start by `MainActivity.requestRuntimePermissions`; also fixable from the Setup check (`setupFix` `notifications`). |
+| `USE_BIOMETRIC` | normal | Confirm approvals with fingerprint (3.6): `ApprovalLock` shows `BiometricPrompt` on API 28+. Without it the prompt would fail and only the screen lock would be offered. |
 | `VIBRATE` | normal | Declared. The code never calls `Vibrator` and does not turn on channel vibration; the bridge `haptic` uses `performHapticFeedback`, which needs no permission. |
 | `FOREGROUND_SERVICE` | normal | `HermesService` runs in the foreground (`startForeground`). |
 | `FOREGROUND_SERVICE_SPECIAL_USE` | normal (Android 14+) | The service type `specialUse` that `HermesService` declares. |
