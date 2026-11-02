@@ -1284,9 +1284,45 @@ const toolProviders = name =>
     is_active: name === 'web' ? x.name === webProvider : i === 0,
     status: 'ready'
   }))
+// The plugin's /google routes (Hermes's google-workspace script): a client file, then a link, then the pasted address.
+let google = { client: false, started: false, signed: false }
+const googleStatus = () => ({ available: true, client_secret: google.client, signed_in: google.signed, detail: '' })
+function googleRoute(p, method, b) {
+  const fail = detail => {
+    throw Object.assign(new Error(detail), { status: 400 })
+  }
+  if (p.endsWith('/google/client')) {
+    let d
+    try {
+      d = JSON.parse(b().text)
+    } catch {
+      fail('That isn’t the JSON file Google gave you. Paste the whole file.')
+    }
+    if (!d.installed && !d.web) fail('That isn’t an OAuth client file: create a Desktop app client and download its JSON.')
+    google.client = true
+  }
+  if (p.endsWith('/google/finish')) {
+    if (!google.started || !/^http:\/\/localhost:1\/\?state=mock&code=/.test(b().url)) fail('OAuth state mismatch. Run --auth-url again to start a fresh session.')
+    google.signed = true
+  }
+  if (p.endsWith('/google') && method === 'DELETE') google.signed = false
+}
 const toolConfigured = name => name !== 'homeassistant' || (!!envSet.HASS_URL && !!envSet.HASS_TOKEN)
 function connectorsRoute(p, method, url, body, send) {
   const b = () => JSON.parse(body || '{}')
+  if (p.startsWith('/api/plugins/hermes-mobile/google')) {
+    if (p.endsWith('/google/start')) {
+      if (!google.client) return send({ detail: 'No client secret stored. Run --client-secret first.' }, 400), true
+      google.started = true
+      return send({ url: 'https://accounts.google.com/o/oauth2/auth?state=mock&client_id=x' }), true
+    }
+    try {
+      googleRoute(p, method, b)
+    } catch (e) {
+      return send({ detail: e.message }, e.status || 500), true
+    }
+    return send(googleStatus()), true
+  }
   if (p === '/api/mcp/servers' && method === 'GET') return send({ servers: Object.keys(mcpServers).sort().map(n => mcpSummary(n, mcpServers[n])) }), true
   if (p === '/api/mcp/servers' && method === 'POST') {
     const x = b()

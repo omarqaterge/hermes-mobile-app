@@ -1189,3 +1189,71 @@ try:  # the dashboard imports this file once at start
     link_profiles()
 except Exception:
     pass
+
+
+# ── Google Workspace (Settings → Connectors): Hermes's google-workspace skill script, run for the ?profile= home
+# (google_workspace.py). Plain defs: the script blocks, so FastAPI runs them on its thread pool. ──
+
+def _google_mod():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_google_workspace")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_google_workspace", Path(__file__).resolve().parent.parent / "google_workspace.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_google_workspace"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+def _google(profile: Optional[str], fn):
+    m = _google_mod()
+    home = _home(profile)
+    try:
+        fn(m, home)
+    except m.GoogleError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return m.status(home)
+
+
+class GoogleClient(BaseModel):
+    text: str
+
+
+class GoogleFinish(BaseModel):
+    url: str
+
+
+@router.get("/google")
+def google_get(profile: Optional[str] = None):
+    return _google(profile, lambda m, home: None)
+
+
+@router.put("/google/client")
+def google_client(body: GoogleClient, profile: Optional[str] = None):
+    return _google(profile, lambda m, home: m.save_client_secret(home, body.text))
+
+
+@router.post("/google/start")
+def google_start(profile: Optional[str] = None):
+    m = _google_mod()
+    try:
+        return {"url": m.start(_home(profile))}
+    except m.GoogleError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/google/finish")
+def google_finish(body: GoogleFinish, profile: Optional[str] = None):
+    return _google(profile, lambda m, home: m.finish(home, body.url))
+
+
+@router.post("/google/install")
+def google_install(profile: Optional[str] = None):
+    return _google(profile, lambda m, home: m.install_deps(home))
+
+
+@router.delete("/google")
+def google_delete(profile: Optional[str] = None):
+    return _google(profile, lambda m, home: m.revoke(home))

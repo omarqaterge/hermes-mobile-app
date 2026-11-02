@@ -19,6 +19,7 @@ Source folder: `hermes-plugin/hermes-mobile/`. `phone/install.sh` copies it to `
 | `chat_search.py` | The `find_chats` tool, the leftover-upload cleanup used by `POST /cleanup`, and the profile list over every `state.db`. |
 | `checkpoints.py` | Per-chat file checkpoints: ledger, listing, diff, restore, git speed-up shim, daily maintenance. |
 | `claude_login.py` | In-app Claude sign-in (two-step PKCE login) behind `/claude-login/*`. |
+| `google_workspace.py` | Google Workspace sign-in behind `/google*`: runs Hermes's `google-workspace` skill script for the profile (5.4). |
 | `gallery.py` | The canvas gallery: every chat's canvas documents (and old Library items) in one searchable list. |
 | `library.py` | The old Library (saved canvas copies from older app versions). Still readable, never written by the app now. |
 | `openui.py` | Cards in replies: the system-prompt section, the `openui` skill (`register_skill`), the `openui_reference` tool, the on/off setting, and `strip_ui`. |

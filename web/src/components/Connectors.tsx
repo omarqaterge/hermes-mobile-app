@@ -27,6 +27,7 @@ import { confirmDialog } from '../dialog'
 import { errText } from '../gateway'
 import { toast } from '../store'
 import { Sheet, Status, useLoader } from './Screens'
+import { GoogleSection } from './GoogleConnect'
 import { ProfileChips } from './Settings'
 import { Row, Section, Segmented, ToggleRow } from './ui'
 
@@ -72,6 +73,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
   return (
     <>
       <ProfileChips value={scope} onChange={setScope} label="Connectors for" />
+      <GoogleSection profile={scope} />
       <Section title="Apps and services (MCP)" footer="MCP servers give Hermes tools from other services: Notion, Linear, GitHub, your own server… A change applies to new chats.">
         {(servers.data || []).map(s => (
           <Row

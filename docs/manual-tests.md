@@ -149,3 +149,13 @@ check on a real phone:
       Expected: the green Done chip appears and stays (wait 2 minutes) until you open the app or the chat.
 - [ ] **/yolo from Auto access.** In a chat whose Auto button (beside the model chip) shows Auto access, type `/yolo`. Today it turns approvals back on
       ("Full access off…"); note how long the notice takes to appear.
+
+## Connectors (Settings → Connectors)
+
+- [ ] **MCP sign-in on the phone.** Add a remote MCP server with an account sign-in (for example from the catalog) and tap Sign in.
+      Expected: the service's page opens in the browser, its redirect reaches Hermes on the phone ("Authorization received"),
+      and back in the app the sheet says "Signed in."; Test lists its tools; a new chat can use them.
+- [ ] **A command server.** Add a server by a command whose program is installed in Debian; Test lists its tools.
+- [ ] **Google with a real account.** Paste an OAuth client file, sign in, paste back the localhost:1 address from the browser's address bar.
+      Expected: the row reads Connected and Hermes reads your calendar in a new chat; Sign out returns to the sign-in step.
+- [ ] **A tool with a key.** Web search: save a key for another service; it reads "In use" and a new chat searches with it. Disconnect deletes the key.

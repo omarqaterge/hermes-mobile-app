@@ -458,6 +458,9 @@ const CASES = [
   { name: 'GET /api/tools/toolsets/{name}/config', run: c => c.http('GET', '/api/tools/toolsets/web/config') },
   { name: 'PUT /api/tools/toolsets/{name}', run: c => c.http('PUT', '/api/tools/toolsets/homeassistant', { enabled: false }) },
   { name: 'PUT /api/tools/toolsets/{name}/env', run: c => c.http('PUT', '/api/tools/toolsets/web/env', { env: { TAVILY_API_KEY: '' } }) },
+  // The plugin's Google routes: the state, and a client file both sides refuse (nothing is stored; the rest needs a Google account).
+  { name: 'GET plugin /google', run: c => c.http('GET', `${PLUGIN}/google`) },
+  { name: 'PUT plugin /google/client (not a client file)', expectError: 400, run: c => c.http('PUT', `${PLUGIN}/google/client`, { text: '{"other": {}}' }) },
   ...pluginCases(),
   // The app's client says it answers server → client requests (json-rpc-channel.ts advertiseCapabilities); without it the
   // real Hermes withdraws approvals and skips questions at once.
