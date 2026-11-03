@@ -38,6 +38,27 @@ module.exports = async t => {
   await page.evaluate(() => window.hermesOpenSession('s-8'))
   await page.evaluate(() => window.hermesOpenSession('s-full'))
   await page.locator('.ctx-ring.warn').waitFor({ timeout: 5000 }).then(() => check(true, 'ring turns amber at 85%'), () => check(false, 'ring turns amber at 85%'))
+  // a reopened chat Hermes has no figures for yet: the ring shows the last saved fill, or the one in old reply stats
+  {
+    const label = () => page.locator('.ctx-ring').getAttribute('aria-label').catch(() => null)
+    await page.evaluate(() => window.hermesOpenSession('s-cold'))
+    await page.locator('.msg.assistant', { hasText: 'answer s-cold' }).waitFor({ timeout: 5000 })
+    await sleep(300)
+    check((await label()) === 'Context not known yet. Show details', `no figures yet: an empty ring (${await label()})`)
+    await page.evaluate(() => localStorage.setItem('hm.stats.v1', JSON.stringify({ 's-cold:1': '58 tok/s · ctx 37% · 370/1k' })))
+    await page.evaluate(() => window.hermesOpenSession('s-8'))
+    await page.evaluate(() => window.hermesOpenSession('s-cold'))
+    await page.locator('.ctx-ring[aria-label="Context 37% used. Show details"]').waitFor({ timeout: 5000 }).then(() => check(true, 'ring filled from old reply stats'), () => check(false, 'ring filled from old reply stats'))
+    const meta = await page.locator('.msg.assistant', { hasText: 'answer s-cold' }).innerText()
+    check(meta.includes('58 tok/s') && !meta.includes('ctx 37%'), `old reply stats shown without the context part (${JSON.stringify(meta)})`)
+    await page.evaluate(() => localStorage.setItem('hm.ctx.v1', JSON.stringify({ 's-cold': { used: 420, max: 1000, percent: 42 } })))
+    await page.evaluate(() => window.hermesOpenSession('s-8'))
+    await page.evaluate(() => window.hermesOpenSession('s-cold'))
+    await page.locator('.ctx-ring[aria-label="Context 42% used. Show details"]').waitFor({ timeout: 5000 }).then(() => check(true, 'ring filled from the saved fill'), () => check(false, 'ring filled from the saved fill'))
+    await page.evaluate(() => window.hermesOpenSession('s-full'))
+    await page.locator('.ctx-ring.warn').waitFor({ timeout: 5000 }).catch(() => {})
+    check(JSON.parse(await page.evaluate(() => localStorage.getItem('hm.ctx.v1')))['s-full']?.percent === 85, 'a live figure is saved for next time')
+  }
   {
     const before = rpcs('session.compress').length
     await page.locator('.ctx-ring').click()

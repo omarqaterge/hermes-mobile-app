@@ -42,7 +42,8 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.setupFlowDone` | `components/Setup.tsx` | `'1'` once the first-run setup flow finished. | No |
 | `hm.shizukuStepDone` | `components/Setup.tsx` | `'1'` once Shizuku was seen running (or the user said it runs). | No |
 | `hm.replaceTermux` | `components/Setup.tsx` | Time (ms) the user confirmed Replace Termux; cleared once F-Droid's set is being installed, or after 10 minutes. | No |
-| `hm.stats.v1` | `gateway.ts` (`STATS_KEY`) | Turn stats under replies: `{"<chatId>:<user row id>": "~41 tok/s · 1m 23s · ctx 2% · …"}`; newest 2,000. | No (chat ids) |
+| `hm.stats.v1` | `gateway.ts` (`STATS_KEY`) | Turn stats under replies: `{"<chatId>:<user row id>": "~41 tok/s · 1m 23s"}`; newest 2,000. Entries from older builds end in `ctx 2% · 8k/200k`: hidden when shown, and read by `savedCtx` for a chat with no `hm.ctx.v1` entry. | No (chat ids) |
+| `hm.ctx.v1` | `gateway.ts` (`CTX_KEY`, `saveCtx`, `savedCtx`) | Each chat's last known context fill, `{"<chatId>": {"used", "max", "percent"}}`, written whenever `refreshCtx` gets a figure; newest 500. Fills the context ring at once when the chat is reopened. | No (chat ids) |
 | `hm.statsChoice` | `stats.ts` | Usage stats: `'yes'` or `'no'`. Absent = the card (3.18) was not shown yet; it is written `'no'` as the card opens, so it never shows twice and closing it leaves stats off (with storage that can't be written: once per launch). | No |
 | `hm.statsId` | `stats.ts` | Usage stats: the random install ID. Exists only while opted in; turning stats off deletes it. | No |
 | `hm.statsSourceAsked` | `stats.ts` | `'1'` once "How did you hear about us?" was shown. The answer itself is not kept. | No |

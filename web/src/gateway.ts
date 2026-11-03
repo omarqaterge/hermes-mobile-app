@@ -34,6 +34,7 @@ import type {
 } from '@hermes/shared/gateway-contract.generated'
 import { askUnlock, lockView } from './lockview'
 import { onChatOpen, runChatOpen } from './chatopen'
+import { ctxFromStatText, stripCtxStat } from './ctxring'
 import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, watchHermes, wsUrl } from './bridge'
 import {
   type ActiveSession,
@@ -1886,6 +1887,46 @@ export async function refreshCtx(usage?: Usage | null): Promise<Ctx | null> {
     }
   }
   if (ctx && getState().active?.runtimeId === a.runtimeId) updateActive(() => ({ ctx }))
+  if (ctx) saveCtx(a.storedId, ctx)
+  return ctx
+}
+
+const CTX_KEY = 'hm.ctx.v1'
+
+function loadCtxs(): Record<string, Ctx> {
+  try {
+    return JSON.parse(localStorage.getItem(CTX_KEY) || '{}') as Record<string, Ctx>
+  } catch {
+    return {}
+  }
+}
+
+/** Remember the chat's last context fill, so its ring shows at once when the chat is reopened. */
+function saveCtx(storedId: string, ctx: Ctx): void {
+  const all = loadCtxs()
+  delete all[storedId] // re-insert last so the cap drops the oldest
+  all[storedId] = { used: ctx.used, max: ctx.max, percent: ctx.percent }
+  const keys = Object.keys(all)
+  for (const k of keys.slice(0, Math.max(0, keys.length - 500))) delete all[k]
+  try {
+    localStorage.setItem(CTX_KEY, JSON.stringify(all))
+  } catch {
+    /* storage full / unavailable */
+  }
+}
+
+/** The chat's last saved context fill; for chats from before it was saved, the one in its newest reply stats. */
+function savedCtx(storedId: string): Ctx | null {
+  const own = loadCtxs()[storedId]
+  if (own?.max) return own
+  const stats = loadStats()
+  let best = -1, ctx: Ctx | null = null
+  for (const [k, meta] of Object.entries(stats)) {
+    if (!k.startsWith(`${storedId}:`)) continue
+    const row = Number(k.slice(storedId.length + 1))
+    const c = ctxFromStatText(meta)
+    if (c && row > best) (best = row), (ctx = c)
+  }
   return ctx
 }
 
@@ -1904,19 +1945,14 @@ export async function compressChat(): Promise<string> {
   return text
 }
 
-// A reopened chat shows its context fill under its last reply.
+// A reopened chat fills its context ring at once from the last saved figure, then from Hermes. Until the chat's
+// first turn Hermes often has no agent for it and answers 0, which keeps the saved figure.
 onChatOpen('context-fill', ({ chat, kind }) => {
   if (kind !== 'resume') return
-  void refreshCtx(chat.usage).then(ctx => {
-    const id = lastAssistantId()
-    if (ctx && id) patchItem(id, it => (it.kind === 'assistant' && !it.meta ? { ...it, meta: fmtCtx(ctx) } : it))
-  })
+  const saved = savedCtx(chat.storedId)
+  if (saved) updateActive(x => (x.runtimeId === chat.runtimeId && !x.ctx ? { ctx: saved } : null))
+  void refreshCtx(chat.usage)
 })
-
-export function fmtCtx(c: Ctx): string {
-  const k = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
-  return `ctx ${c.percent < 1 ? '<1' : Math.round(c.percent)}% · ${k(c.used)}/${k(c.max)}`
-}
 
 onChatOpen('goal', () => void loadGoal())
 
@@ -1954,8 +1990,8 @@ function turnStartSecs(): number | null {
 async function finishTurnStats(itemId: string | null, usage?: Usage | null, secs: number | null = null): Promise<void> {
   const reported = usage?.avg_tps && usage.avg_tps > 0 ? Math.round(usage.avg_tps) : null
   const tps = reported ?? (stream.ms > 400 ? estTps() : wallTps())
-  const ctx = await refreshCtx(usage)
-  const parts = [tps ? `${reported ? '' : '~'}${tps} tok/s` : '', secs != null && secs >= 1 ? fmtDuration(secs) : '', ctx ? fmtCtx(ctx) : ''].filter(Boolean)
+  await refreshCtx(usage)
+  const parts = [tps ? `${reported ? '' : '~'}${tps} tok/s` : '', secs != null && secs >= 1 ? fmtDuration(secs) : ''].filter(Boolean)
   if (!itemId || !parts.length) return
   const meta = parts.join(' · ')
   patchItem(itemId, it => (it.kind === 'assistant' ? { ...it, meta } : it))
@@ -2011,7 +2047,8 @@ function applySavedStats(items: ChatItem[], storedId: string): ChatItem[] {
   out.forEach((it, i) => {
     if (it.kind === 'user') {
       flush()
-      meta = it.rowId != null ? all[`${storedId}:${it.rowId}`] : undefined
+      const saved = it.rowId != null ? all[`${storedId}:${it.rowId}`] : undefined
+      meta = saved ? stripCtxStat(saved) || undefined : undefined
       lastReply = -1
     } else if (it.kind === 'assistant' && it.text.trim()) lastReply = i
   })

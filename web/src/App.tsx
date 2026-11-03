@@ -2,7 +2,7 @@ import { HERMUX_MARK } from './components/hermux-mark'
 import { appVersion, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { afterChatOpens, compressChat, connect, errText, fmtCtx, openSessionFromNotification, reconnectNow } from './gateway'
+import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { stepMark } from './toolsay'
@@ -278,7 +278,6 @@ function StatusBar() {
   const status = useStore(s => s.active?.status ?? '')
   const todos = useStore(s => s.active?.todos ?? EMPTY_TODOS)
   const tps = useStore(s => s.active?.tps ?? null)
-  const ctx = useStore(s => s.active?.ctx ?? null)
   const turnStart = useStore(s => s.active?.turnStart ?? null)
   const goal = useStore(s => s.active?.goal ?? null)
   const [openTodos, setOpenTodos] = useState(false)
@@ -294,7 +293,6 @@ function StatusBar() {
           <Spinner small /> <span className="status-text">{status || 'Working…'}</span>
           {elapsed >= 3000 ? <span className="dim small status-elapsed">{fmtClock(elapsed / 1000)}</span> : null}
           {tps ? <span className="dim small">~{tps} tok/s</span> : null}
-          {ctx && <span className="dim small">{fmtCtx(ctx).split(' · ')[0]}</span>}
         </div>
       )}
       {showGoal && goal && (

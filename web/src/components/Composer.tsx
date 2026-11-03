@@ -627,12 +627,12 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
 /** Small ring at the right end of the model row: how full the chat's context window is. Tap for the details sheet. */
 function ContextRing() {
   const ctx = useStore(s => s.active?.ctx)
-  if (!ctx) return null
-  const pct = Math.min(100, Math.max(0, ctx.percent))
+  // Always there: an empty ring until the fill is known (a new chat, or Hermes has not reported it yet).
+  const pct = ctx ? Math.min(100, Math.max(0, ctx.percent)) : 0
   const { dasharray, dashoffset } = ringDash(pct, 7)
   const label = pct > 0 && pct < 1 ? '<1' : String(Math.round(pct))
   return (
-    <button className={`ctx-ring ${ctxLevel(pct)}`} aria-label={`Context ${label}% used. Show details`} onClick={() => { haptic(); setState({ sheet: 'context' }) }}>
+    <button className={`ctx-ring ${ctxLevel(pct)}`} aria-label={ctx ? `Context ${label}% used. Show details` : 'Context not known yet. Show details'} onClick={() => { haptic(); setState({ sheet: 'context' }) }}>
       <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true" fill="none" strokeWidth="2.5">
         <circle className="ctx-ring-track" cx="9" cy="9" r="7" />
         <circle className="ctx-ring-fill" cx="9" cy="9" r="7" strokeLinecap="round" strokeDasharray={dasharray} strokeDashoffset={dashoffset} transform="rotate(-90 9 9)" />

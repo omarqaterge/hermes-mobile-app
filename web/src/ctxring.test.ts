@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ctxLevel, fmtCost, ringDash } from './ctxring'
+import { ctxFromStatText, ctxLevel, fmtCost, ringDash, stripCtxStat } from './ctxring'
 
 describe('ctxring', () => {
   it('levels switch at 80 and 90', () => {
@@ -21,5 +21,16 @@ describe('ctxring', () => {
   it('formats cost', () => {
     expect(fmtCost(0.0123)).toBe('$0.0123')
     expect(fmtCost(2.5)).toBe('$2.50')
+  })
+  it('reads the context part of old reply stats', () => {
+    expect(ctxFromStatText('58 tok/s · ctx 5% · 47k/1M')).toEqual({ used: 47000, max: 1e6, percent: 5 })
+    expect(ctxFromStatText('ctx <1% · 900/200k')).toEqual({ used: 900, max: 200000, percent: 0.5 })
+    expect(ctxFromStatText('~41 tok/s · 1m 23s')).toBeNull()
+    expect(ctxFromStatText('ctx 5% · 0/0')).toBeNull()
+  })
+  it('strips the context part from old reply stats', () => {
+    expect(stripCtxStat('58 tok/s · 1m 2s · ctx 5% · 47k/1M')).toBe('58 tok/s · 1m 2s')
+    expect(stripCtxStat('ctx 5% · 47k/1M')).toBe('')
+    expect(stripCtxStat('~41 tok/s')).toBe('~41 tok/s')
   })
 })
