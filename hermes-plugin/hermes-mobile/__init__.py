@@ -807,7 +807,9 @@ _LINKS_PROMPT = (
     "mention one of the user's other chats (found with session_search or the session list), link it that way using its "
     "session id (like 20260929_194711_8c8b2a) and a short title. To find the user's chats by words, or chats with "
     "images, screenshots, files, audio or video in them, call the find_chats tool once (load it with tool_describe "
-    "if needed) instead of searching state.db, logs or folders yourself."
+    "if needed) instead of searching state.db, logs or folders yourself. YouTube, Vimeo, Dailymotion, Streamable, Loom "
+    "and video-file links play in the chat: put each on its own line. For another https player write "
+    "<iframe src=\"https://...\"></iframe>."
 )
 
 

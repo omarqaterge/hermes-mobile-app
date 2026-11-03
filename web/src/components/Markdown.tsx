@@ -19,6 +19,8 @@ import { runLazy } from '../lazy'
 import { loadRich, needsRich, richApi, subscribeRich, type RichApi } from '../rich'
 import { OpenUIBlock, OpenUICtx } from './OpenUIBlock'
 import { HtmlFrame } from './HtmlFrame'
+import { VideoEmbedTag } from './VideoEmbed'
+import { MAX_VIDEOS, embedOf, frameEmbed } from '../videoembed'
 
 /** True while the reply being rendered is still arriving (a context, so code blocks aren't rebuilt per stream batch). */
 const StreamingCtx = createContext(false)
@@ -381,11 +383,14 @@ const SVG_ATTRS = ['viewBox', 'width', 'height', 'fill', 'fillOpacity', 'fillRul
 const schema = {
   ...defaultSchema,
   protocols: { ...defaultSchema.protocols, href: [...(defaultSchema.protocols?.href || []), 'hermes-chat'] },
-  tagNames: [...(defaultSchema.tagNames || []), ...SVG_TAGS, 'mark', 'u', 'small', 'big', 'abbr', 'cite', 'dfn', 'figure', 'figcaption', 'caption', 'center'],
+  tagNames: [...(defaultSchema.tagNames || []), ...SVG_TAGS, 'mark', 'u', 'small', 'big', 'abbr', 'cite', 'dfn', 'figure', 'figcaption', 'caption', 'center', 'iframe', 'video'],
   attributes: {
     ...defaultSchema.attributes,
     '*': [...(defaultSchema.attributes?.['*'] || []), 'style'],
     ...Object.fromEntries(SVG_TAGS.map(t => [t, SVG_ATTRS])),
+    // Never drawn as they are: rehypeVideoEmbeds turns each into a player card or removes it.
+    iframe: ['src'],
+    video: ['src'],
     code: [['className', /^language-./, 'math-inline', 'math-display']]
   }
 }
@@ -518,6 +523,71 @@ const KATEX_MACROS = {
   '\\intclockwise': '\\int'
 }
 
+// Videos in a reply. A finished reply gets a player card (VideoEmbedTag) for each video link, after the paragraph or list
+// item it is in, and a link that is its whole paragraph becomes the card. Links in tables, headings and code stay links.
+// `<iframe src>` and `<video src>` from the model are allowed through the sanitizer only to get here: each becomes a card or
+// goes, so no frame ever loads without a tap. While a reply streams they just go (a half-typed address must not draw a card).
+function rehypeVideoEmbeds({ live }: { live: boolean }) {
+  const card = (url: string, frame: boolean): Element => ({
+    type: 'element',
+    tagName: 'video-embed',
+    properties: frame ? { dataUrl: url, dataFrame: 'y' } : { dataUrl: url },
+    children: []
+  })
+  const urlOf = (el: Element, key: 'href' | 'src') => (typeof el.properties?.[key] === 'string' ? (el.properties[key] as string) : '')
+  return (tree: Root) => {
+    const seen = new Set<string>()
+    const take = (src: string) => {
+      if (seen.has(src) || seen.size >= MAX_VIDEOS) return false
+      seen.add(src)
+      return true
+    }
+    // Video links among inline content, depth first, not into nested blocks.
+    const links = (el: Element, out: { url: string; bare: boolean }[]) => {
+      for (const c of el.children) {
+        if (c.type !== 'element' || ['ul', 'ol', 'p', 'pre', 'code', 'table', 'blockquote', 'video-embed'].includes(c.tagName)) continue
+        const url = c.tagName === 'a' ? urlOf(c, 'href') : c.tagName === 'img' ? urlOf(c, 'src') : ''
+        if (url) out.push({ url, bare: c.tagName === 'img' || (c.children.length === 1 && c.children[0].type === 'text' && c.children[0].value === url) })
+        else links(c, out)
+      }
+      return out
+    }
+    const walk = (parent: Root | Element) => {
+      for (let i = 0; i < parent.children.length; i++) {
+        const c = parent.children[i]
+        if (c.type !== 'element') continue
+        if (c.tagName === 'iframe' || c.tagName === 'video') {
+          const url = urlOf(c, 'src')
+          const e = !live && url ? frameEmbed(url) : null
+          if (e && take(e.src)) parent.children[i] = card(url, true)
+          else parent.children.splice(i--, 1)
+          continue
+        }
+        if (['pre', 'code', 'table', 'svg', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(c.tagName)) continue
+        walk(c)
+        if (live || (c.tagName !== 'p' && c.tagName !== 'li')) continue
+        const found = links(c, [])
+        const cards = found.flatMap(l => {
+          const e = embedOf(l.url)
+          // A local-file or Markdown image of a video file is already drawn by Media.
+          return e && !(e.file && l.bare && urlIsImage(c, l.url)) && take(e.src) ? [card(l.url, false)] : []
+        })
+        if (!cards.length) continue
+        const solid = c.children.filter(n => !(n.type === 'text' && !n.value.trim()))
+        if (c.tagName === 'li') c.children.push(...cards)
+        else if (solid.length === 1 && found.length === 1 && found[0].bare) parent.children.splice(i, 1, ...cards)
+        else {
+          parent.children.splice(i + 1, 0, ...cards)
+          i += cards.length
+        }
+      }
+    }
+    walk(tree)
+  }
+}
+const urlIsImage = (el: Element, url: string): boolean =>
+  el.children.some(c => c.type === 'element' && ((c.tagName === 'img' && c.properties?.src === url) || urlIsImage(c, url)))
+
 const isLocal = (href: string) => /^(\/|~\/|file:)/.test(href)
 // Links to another chat: [title](hermes-chat:<session id>). A bare session id in a reply becomes one too.
 const CHAT_HREF = /^hermes-chat:([\w-]{1,80})$/
@@ -531,6 +601,7 @@ const rehypeFor = (detect: boolean, rich: RichApi | null) => [
   rehypeRaw,
   [rehypeSanitize, schema],
   rehypeSafeStyle,
+  [rehypeVideoEmbeds, { live: !detect }],
   rehypeSvgRefs,
   rehypeCallouts,
   ...(rich ? [[rich.rehypeKatex, { throwOnError: false, strict: false, macros: KATEX_MACROS }]] : []),
@@ -649,6 +720,7 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
       )
     },
     img: ({ src, alt }) => (typeof src === 'string' && src ? <Media src={src} alt={alt} /> : null),
+    ...({ 'video-embed': VideoEmbedTag } as unknown as Components),
     a: ({ href, children }) => {
       if (href?.startsWith('#')) {
         // Footnotes: jump within this message (ids get the sanitizer's user-content- prefix).

@@ -14,6 +14,7 @@ import { runLabel, type ToolRun } from '../fold'
 import { commandLabel, stepMark, thoughtLine, todoSteps, toolTitle } from '../toolsay'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
+import { VideoEmbeds } from './VideoEmbed'
 
 // Stored outputs fetched for cards restored from history (resumed transcripts omit them).
 const outputCache = new Map<string, string>()
@@ -378,6 +379,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
           </blockquote>
         ))}
         <Linked text={quoted.body} />
+        <VideoEmbeds text={quoted.body} />
       </div>
       {time.node}
       {actions && (
@@ -508,7 +510,7 @@ function useTimeTap(at?: number): { toggle: (e: React.MouseEvent) => void; node:
   const toggle = (e: React.MouseEvent) => {
     if (!at) return
     const t = e.target as Element
-    if (t.closest('a, button, input, textarea, summary, pre, code, table, .katex, .media, svg, .msg-actions')) return
+    if (t.closest('a, button, input, textarea, summary, pre, code, table, .katex, .media, svg, .msg-actions, .video-embed')) return
     if (String(window.getSelection?.() || '')) return
     setShow(v => !v)
   }

@@ -4,6 +4,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
 
 - `main.tsx` — entry point; imports `secure-bridge.ts` first, then applies the theme, opens the first-run flow on a
   fresh install and renders `App` (3.1).
+- `videoembed.ts` — which addresses play inside the chat and each one's player address; `VideoEmbed.tsx` (in `components/`) draws the card and the player (3.3, Video player).
 - `stats.ts` — opt-in usage stats (spec 2.3): `startStats` runs once from `main.tsx`, after the first render; with no app key it does nothing.
 - `report.ts` — Report a problem (spec 3.21): what a report holds (`reportDetails`), the log scrubber (`scrubLog`), the filled-in GitHub new-issue link (`fallbackUrl`) and sending through the relay (`sendReport`).
 - `Report.tsx` (in `components/`) — the Report a problem sheet, its Settings row and the link error states show (spec 3.21).

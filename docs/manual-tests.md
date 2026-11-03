@@ -277,3 +277,11 @@ On an Android 15 (API 35) emulator: pictures saved by a build from before #87 (1
 - [ ] **The log after a crash.** See [status/diagnostic-log.md](status/diagnostic-log.md) for the full list. Force stop
       the app, open it, then open Report a problem and switch on Include diagnostic log. Expected: an `app exit` line
       with a reason (Android 11+), four sections, no chat text, no file names.
+
+## Videos in the chat
+
+YouTube was seen playing in an Android 15 emulator's WebView (Chrome 124) through the shell's page, with fullscreen, turning with the phone, Back and the page going hidden on Home. The cards themselves were checked in the browser tests only.
+
+- [ ] **YouTube on a phone.** Send a YouTube link, tap the card. Expected: it plays in the chat, no "Error 153". Fullscreen turns with the phone; Back returns to the chat. Home stops the sound, and coming back shows the card.
+- [ ] **The other sites on a phone.** Try one public video each from Vimeo, Dailymotion, Streamable and Loom. Vimeo answered "Unable to play video" on the emulator's WebView, with or without the shell's page and sandbox; Dailymotion answered "Forbidden" for the one test address tried. Streamable and Loom were not tried. If a site refuses every WebView, take it out of `embedOf` so its links stay links.
+- [ ] **Open.** The card's Open hands the address to the site's app or the browser, and stops the player.
