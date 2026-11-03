@@ -109,7 +109,8 @@ if [ -n "${HM_NO_APK:-}" ]; then echo "Done (app download skipped: HM_NO_APK is 
 show_todo
 echo "5/5 Downloading the app"
 apk="$HOME/hermes-mobile.apk"
-if curl -fsL -o "$apk" "$REPO/releases/latest/download/hermes-mobile.apk"; then
+# hermux.apk, or the old name if the latest release doesn't have it yet.
+if curl -fsL -o "$apk" "$REPO/releases/latest/download/hermux.apk" || curl -fsL -o "$apk" "$REPO/releases/latest/download/hermes-mobile.apk"; then
   echo
   echo "Done. Android's installer opens now: tap Install (allow Termux to install apps if it asks)."
   echo "If nothing opens, run:  termux-open $apk"

@@ -9,9 +9,12 @@ of them; one published after a repository rename doesn't.
 
 **So:**
 - Publish the Hermux release from `omarqaterge/hermes-mobile-app`, with the same package ID
-  (`com.omarqaterge.hermesmobile`), the same release signing key, a higher version and an `.apk` release file (keep the
-  name `hermes-mobile.apk`).
-- Renaming the repository isn't part of that release. It's a separate, optional step for much later, only on the owner's
-  explicit go-ahead, because anyone still on a version that doesn't accept both names would then have to update by hand.
-  The runbook is [docs/status/repo-rename.md](../status/repo-rename.md).
-- Keep the code that accepts both repository names (`UpdateUrl`, `phone/uninstall.sh`), so the later rename stays possible.
+  (`com.omarqaterge.hermesmobile`), the same release signing key, a higher version and an `.apk` release file.
+- ~~Keep the file name `hermes-mobile.apk`.~~ Changed 2026-11-03, by the owner: every release carries the same file under
+  two names, `hermux.apk` for new downloads and `hermes-mobile.apk` for old scripts and links. Don't remove the old name.
+  Installed versions take any `.apk`, so both work for them.
+- Renaming the repository isn't part of that release. It's a separate step, on the owner's go-ahead, because anyone still
+  on a version that doesn't accept the new name would then have to update by hand. The runbook is
+  [docs/status/repo-rename.md](../status/repo-rename.md), and the plan for it is in
+  [repo-stays-under-owner.md](repo-stays-under-owner.md) (changed 2026-11-03: it was "optional, for much later").
+- Keep the code that accepts the repository's names (`UpdateUrl`, `phone/uninstall.sh`), so the later rename stays possible.

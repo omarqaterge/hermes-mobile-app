@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with the progress bar
 
 $RAW = 'https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main'
-$APK_URL = 'https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk'
+$APK_URL = 'https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermux.apk'
+$APK_URL_OLD = 'https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk'   # if the latest release has no hermux.apk yet
 $APP = 'com.omarqaterge.hermesmobile'
 $WORK = if ($env:HM_WORK) { $env:HM_WORK } else { Join-Path $HOME '.hermes-mobile-setup' }
 New-Item -ItemType Directory -Force -Path $WORK | Out-Null
@@ -216,7 +217,7 @@ if ($env:HM_SKIP_MODEL -or -not $prov) {
 # ---------------------------------------------------------------- 8. app
 B '8/9 Hermux app'
 $apk = Join-Path $WORK 'hermes-mobile.apk'
-Get $APK_URL $apk
+try { Get $APK_URL $apk } catch { Get $APK_URL_OLD $apk }
 $o = A install -r $apk
 Remove-Item $apk -ErrorAction SilentlyContinue
 if ($script:rc -ne 0) {

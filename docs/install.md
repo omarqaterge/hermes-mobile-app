@@ -1,6 +1,6 @@
 # Installing Hermux: the full guide
 
-Hermux was called Hermes Mobile. Older guides, and the file `hermes-mobile.apk`, still use that name.
+Hermux was called Hermes Mobile. Older guides still use that name. Releases carry the app as `hermux.apk` and, for those guides, as `hermes-mobile.apk`: the same file.
 
 Hermux runs the open-source [Hermes Agent](https://github.com/NousResearch/hermes-agent) on your phone, in Debian inside Termux.
 
@@ -48,7 +48,7 @@ The install takes about 15 minutes, mostly waiting.
 
 Install only Hermux; the app walks you through the rest and picks up wherever you stopped.
 
-1. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest) on
+1. Download **hermux.apk** (`hermes-mobile.apk` on older releases) from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest) on
    the phone, install it and open it (allow your browser to *install unknown apps* if Android asks).
 2. **Get the helper apps:** tap **Install all**. Android first asks you to allow Hermux to *install unknown apps*: turn
    the switch on and go back. Then tap **Install** on Android's prompt for each app: Termux, Termux:API and Termux:Boot (from
@@ -226,7 +226,7 @@ rather type it yourself:
 4. Remove Debian: `proot-distro remove debian` (rooted, chroot-distro: `chroot-distro kill debian && chroot-distro remove debian`; never
    delete a chroot's folder by hand, it can still have the phone's storage mounted inside).
 5. Remove the installer's files: `rm -rf ~/.hermes-mobile ~/bin/hermes-services ~/bin/hermes-debian ~/bin/hm-shizuku ~/bin/rish ~/bin/rish_shizuku.dex
-   ~/.termux/boot/10-hermes ~/hermes-mobile ~/hermes-mobile.apk ~/hm.sh`, and the `allow-external-apps = true` line in
+   ~/.termux/boot/10-hermes ~/hermes-mobile ~/hermes-mobile.apk ~/hermux.apk ~/hm.sh`, and the `allow-external-apps = true` line in
    `~/.termux/termux.properties`.
 6. Uninstall the apps in Android's settings: Termux:API, Termux:Boot, Shizuku, Termux, Hermux. Uninstalling Termux alone also
    deletes steps 1-5 (except the phone setting of step 3) with it; on a rooted phone using chroot-distro, restart the phone first.

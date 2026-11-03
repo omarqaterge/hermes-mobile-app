@@ -266,12 +266,14 @@ while IFS= read -r t; do [ -n "$t" ] && say "TODO $t"; done < "$HOME/.hermes-mob
 # HM_APP_TOKEN, the app is already installed and running this). Never fails the setup.
 if [ -z "${HM_NO_APK:-}${HM_APP_TOKEN:-}" ]; then
   apk="$HOME/hermes-mobile.apk"
-  if curl -fsL -o "$apk" "https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"; then
+  # hermux.apk, or the old name if the latest release doesn't have it yet.
+  if curl -fsL -o "$apk" "https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermux.apk" \
+    || curl -fsL -o "$apk" "https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"; then
     say "phone: tap Install (if Android asks which app to use, pick Package installer; allow Termux to install apps if asked), then open Hermux"
     termux-open --content-type application/vnd.android.package-archive "$apk" 2>/dev/null || say "TODO app: open $apk (termux-open $apk) to install Hermux"
   else
     rm -f "$apk"
-    say "TODO app: download hermes-mobile.apk from the latest release (github.com/omarqaterge/hermes-mobile-app/releases)"
+    say "TODO app: download hermux.apk from the latest release (github.com/omarqaterge/hermes-mobile-app/releases)"
   fi
 fi
 say "DONE"
