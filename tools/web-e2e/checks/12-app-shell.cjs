@@ -615,6 +615,28 @@ module.exports = async t => {
     await viewer.waitFor({ timeout: 3000 }).then(() => check(true, 'chip tap, that chat already open: the viewer opens'), () => check(false, 'chip tap, that chat already open: the viewer opens'))
     await vp.evaluate(() => window.hermesBack())
     await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    // The composer had focus when the app was left: the viewer takes it away, so the keyboard stays down.
+    await vp.locator('textarea').first().focus()
+    await tap('s-6')
+    await viewer.waitFor({ timeout: 3000 }).catch(() => {})
+    check(await vp.evaluate(() => document.activeElement?.tagName !== 'TEXTAREA'), 'chip tap: the composer loses focus, no keyboard under the viewer')
+    // Hermes finishes with the app right after the tap: the viewer closes and says why.
+    await setNative(null)
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'app done with the viewer open: it closes'), () => check(false, 'app done with the viewer open: it closes'))
+    await vp.locator('.toast', { hasText: "Hermux isn't using an app any more" }).waitFor({ timeout: 3000 }).then(() => check(true, 'app done with the viewer open: says so'), () => check(false, 'app done with the viewer open: says so'))
+    await vp.locator('.toast', { hasText: "isn't using an app" }).waitFor({ state: 'detached', timeout: 8000 }).catch(() => {})
+    await setNative(st)
+    await vp.locator('.bg-card').waitFor({ timeout: 3000 }).catch(() => {})
+    // Stop from the viewer closes it with its own message only.
+    await tap('s-6')
+    await viewer.waitFor({ timeout: 3000 }).catch(() => {})
+    await viewer.getByRole('button', { name: 'Stop' }).click()
+    await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await setNative(null)
+    await sleep(300)
+    check((await vp.locator('.toast', { hasText: "isn't using an app" }).count()) === 0, 'Stop from the viewer: only its own message')
+    await vp.locator('.toast').first().waitFor({ state: 'detached', timeout: 8000 }).catch(() => {})
+    await setNative(st)
     // Hermes finished with the app before the tap: the chat opens, no viewer, a short note.
     await setNative(null)
     await vp.evaluate(() => window.hermesOpenSession('s-5'))

@@ -780,8 +780,9 @@ _PHONE_PROMPT = (
 _PHONE_RISH = (
     " For system-level access (dumpsys, logcat, screencap, uiautomator, input, am, pm) run the command through "
     f"`{RISH_BIN} -c \"<command>\"`; it runs as the shell user via Shizuku. If it says the server isn't running, say "
-    "so and ask the user to start Shizuku, rather than guessing another route. To DO something in an app (add a note, "
-    "look something up, fill a form), use the phone_app tool: it works on a hidden screen so the user keeps their own; "
+    "so and ask the user to start Shizuku, rather than guessing another route. Lines from rish itself like 'getprop: "
+    "inaccessible or not found' are harmless here (the container has no getprop): the command still ran. To DO "
+    "something in an app (add a note, look something up, fill a form), use the phone_app tool: it works on a hidden screen so the user keeps their own; "
     "only start apps on the real screen (`am start`) when the user wants to see them."
 )
 
