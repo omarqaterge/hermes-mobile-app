@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/img/hero.png" alt="Hermux: your agent, on your phone" width="100%">
+  <img src="docs/img/hero.png" alt="Hermux: an agent that evolves with you. It learns, adapts and gets things done, securely on your phone." width="100%">
 </p>
 
 <p align="center">
-  <b>A full AI agent that lives on your Android phone, and can use it.</b><br>
-  It chats, codes, builds things with you, runs your apps and answers from your lock screen.<br>
-  Everything runs on the phone. No laptop, no server, no root.
+  <b>An agent that evolves with you.</b><br>
+  It learns, adapts and gets things done: it chats, codes, builds with you and uses your apps.<br>
+  Securely on your phone. No laptop, no server, no root.
 </p>
 
 <p align="center">
