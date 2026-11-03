@@ -1162,6 +1162,11 @@ wss.on('connection', ws => {
           later(200, () => event('message.complete', sid, { text: 'Earlier we talked in [Old chat](hermes-chat:s-6) and in 20260929_194711_8c8b2a, plus some more words to read out loud for the player.' }))
           return
         }
+        if (/^show video$/.test(params.text)) {
+          later(100, () => event('message.start', sid, {}))
+          later(200, () => event('message.complete', sid, { text: 'Videos:\n\nhttps://youtu.be/dQw4w9WgXcQ\n\nAlso see [this talk](https://vimeo.com/76979871) today.\n\n<iframe src="https://player.example.com/v/1" onload="window.__evil=1" sandbox="allow-top-navigation"></iframe>\n\n<iframe src="http://insecure.example.com/"></iframe>\n\nOver the limit: https://youtu.be/aaaaaaaaaaa\n\nIn code: `https://youtu.be/bbbbbbbbbbb` and an ordinary [page](https://example.com/page).' }))
+          return
+        }
         if (/^show media$/.test(params.text)) {
           later(100, () => event('message.start', sid, {}))
           later(200, () => event('message.complete', sid, { text: 'Here it is:\n\nMEDIA:/root/pics/my pic.png' }))

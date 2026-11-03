@@ -177,13 +177,14 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
+                if (EMBED_HOST.equals(u.getHost())) return embedPage(u);
                 if (!MEDIA_HOST.equals(u.getHost())) return null;
                 return media(u, req.getRequestHeaders());
             }
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
-                // Canvas pages run in sandboxed frames: their navigations never leave the app.
+                // Canvas pages and video players run in sandboxed frames: their navigations never leave the app.
                 if (!req.isForMainFrame()) return true;
                 Uri u = req.getUrl();
                 if ("file".equals(u.getScheme())) return false;
@@ -212,6 +213,21 @@ public class MainActivity extends Activity {
                     return false;
                 }
                 return true;
+            }
+
+            /** A video player's fullscreen button (or the page's own request). */
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback cb) {
+                if (fullView != null) {
+                    cb.onCustomViewHidden();
+                    return;
+                }
+                enterFullscreen(view, cb);
+            }
+
+            @Override
+            public void onHideCustomView() {
+                leaveFullscreen();
             }
         });
 
@@ -1364,6 +1380,31 @@ public class MainActivity extends Activity {
     // the plugin's /media (with the session token and the player's Range header) and hand the socket's stream
     // straight to the WebView. The per-page key keeps canvas frames (which could also request the URL) out.
     static final String MEDIA_HOST = "hm-media.invalid";
+    /** Answered here, never by the network: the page around a video player. The app's own page is a file:, which sends
+     *  players no Referer, and YouTube then refuses to play ("Error 153"). Its guidance for apps is this very form,
+     *  https://<application id>. Nothing here reaches the bridge: that takes the per-page key. */
+    static final String EMBED_HOST = "com.omarqaterge.hermesmobile";
+
+    /** The page for one player, or null when the address isn't a plain https one. */
+    static String embedHtml(String target) {
+        if (target == null || target.length() > 2000 || !target.startsWith("https://")) return null;
+        for (int i = 0; i < target.length(); i++) {
+            char c = target.charAt(i);
+            if (c <= ' ' || c == 127) return null;
+        }
+        String src = target.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;");
+        return "<!doctype html><meta charset=utf-8>"
+                + "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; frame-src https:; style-src 'unsafe-inline'\">"
+                + "<style>html,body,iframe{margin:0;width:100%;height:100%;border:0;background:#000;overflow:hidden;display:block}</style>"
+                + "<iframe src=\"" + src + "\" allow=\"autoplay; encrypted-media; fullscreen; picture-in-picture\" allowfullscreen referrerpolicy=\"origin\"></iframe>";
+    }
+
+    static WebResourceResponse embedPage(Uri u) {
+        String html = "/embed".equals(u.getPath()) ? embedHtml(u.getQueryParameter("u")) : null;
+        byte[] body = (html == null ? "" : html).getBytes(StandardCharsets.UTF_8);
+        return new WebResourceResponse(html == null ? "text/plain" : "text/html", "utf-8", html == null ? 404 : 200, html == null ? "Not Found" : "OK",
+                java.util.Collections.singletonMap("Cache-Control", "no-store"), new java.io.ByteArrayInputStream(body));
+    }
     /** Dashboard calls from the page: idle threads are reused (a new one only when all are busy, so a slow call never queues others). */
     static final java.util.concurrent.ExecutorService HTTP_POOL = java.util.concurrent.Executors.newCachedThreadPool();
     private volatile String mediaKey = "";
@@ -1752,9 +1793,57 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (fullView != null) {
+            leaveFullscreen();
+            return;
+        }
         web.evaluateJavascript("(window.hermesBack && window.hermesBack()) ? 'y' : 'n'", v -> {
             if (!"\"y\"".equals(v)) moveTaskToBack(true);
         });
+    }
+
+    // ---- A video player in fullscreen: its view covers the page, without the system bars, turning with the phone ----
+    View fullView;
+    WebChromeClient.CustomViewCallback fullCallback;
+
+    void enterFullscreen(View view, WebChromeClient.CustomViewCallback cb) {
+        fullView = view;
+        fullCallback = cb;
+        view.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(Color.BLACK);
+        root.addView(view, new FrameLayout.LayoutParams(-1, -1));
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+        systemBars(false);
+    }
+
+    /** From Back, or from the player's own button. Safe to call twice: the callback tells the page, which may call back. */
+    void leaveFullscreen() {
+        View view = fullView;
+        if (view == null) return;
+        WebChromeClient.CustomViewCallback cb = fullCallback;
+        fullView = null;
+        fullCallback = null;
+        root.removeView(view);
+        root.setBackgroundColor(getSharedPreferences("hm", MODE_PRIVATE).getInt("bg", Color.parseColor("#0E1115")));
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        systemBars(true);
+        if (cb != null) cb.onCustomViewHidden();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void systemBars(boolean show) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            android.view.WindowInsetsController c = getWindow().getInsetsController();
+            if (c == null) return;
+            if (show) c.show(WindowInsets.Type.systemBars());
+            else {
+                c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                c.hide(WindowInsets.Type.systemBars());
+            }
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(show ? View.SYSTEM_UI_FLAG_VISIBLE
+                    : View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
     }
 
     /** Composer → Camera (`<input capture>`): the camera app writes a full-size photo into our cache. */

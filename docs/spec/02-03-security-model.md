@@ -62,6 +62,10 @@ A test build (`devtoolsBuild()`) keeps debugging on whatever this setting does: 
 - The real isolation is the bridge key: the raw bridge object is visible inside frames even after the guard, but
   useless without the key.
 
+**Video player frames (3.3, Video player).**
+- A player is a site's page in `<iframe sandbox="allow-scripts allow-same-origin allow-presentation" allow="autoplay; encrypted-media; fullscreen; picture-in-picture">`, loaded only after the user taps its card. `allow-same-origin` lets the frame keep its own site's storage, which players need; the address is always https, so it is never the app's origin. No `allow-popups` and no `allow-top-navigation`: nothing in the frame can navigate the app's main frame, which is what guards the bridge key (a main-frame load makes a new key that the first caller gets). The players' own links therefore do nothing, and the card's Open button is the way out. The bridge object is visible inside the frame like in any other, and useless without the key. Anything but `http`/`https` a player tries (`intent:`, `vnd.youtube:`) is blocked as a sub-frame navigation.
+- `MainActivity.shouldInterceptRequest` answers the host `EMBED_HOST` itself, never over the network (`embedPage`): `/embed?u=<address>` gives a small page (`embedHtml`) holding the player in an inner frame, with a CSP allowing only https frames. Only a plain https address of up to 2,000 characters is accepted, and it is HTML-escaped; anything else answers 404. Why it exists: the app's page is a `file:`, which sends a player no `Referer`, and YouTube refuses to play without one. `https://<application id>` is the form YouTube asks apps to send. The page holds no secret and any page may load it.
+
 **rehype-sanitize (chat messages).** Markdown from the model may contain raw HTML; `Markdown.tsx` renders it
 through `rehype-raw` and then `rehype-sanitize` with an extended schema: a list of safe extra tags, inline SVG with
 presentation attributes only (no `script`, `foreignObject`, `use`, `image`, `a`, `style`, animation), `style` on

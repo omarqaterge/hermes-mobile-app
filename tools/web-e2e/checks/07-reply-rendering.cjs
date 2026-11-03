@@ -370,4 +370,62 @@ module.exports = async t => {
     check(await fp.locator('.chat').evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 80), 'the chat stays at the end once the formulas are drawn')
     await fp.close()
   }
+
+  // ── Video links play inside the chat, only after a tap, one at a time ──
+  {
+    const vp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    vp.on('pageerror', e => { console.log('PAGEERROR (video page)', e.message); fail() })
+    // No real network in the tests: every outside address answers with a small page, and is counted.
+    const hits = []
+    await vp.route(/youtube-nocookie\.com|vimeo\.com|player\.example\.com|insecure\.example\.com/, r => {
+      hits.push(r.request().url())
+      return r.fulfill({ contentType: 'text/html', body: '<title>player</title>' })
+    })
+    await vp.route(/i\.ytimg\.com/, r => r.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>' }))
+    await vp.goto(WEB + '/')
+    const box = vp.getByPlaceholder('Message Hermux')
+    await box.waitFor({ timeout: 15000 })
+    await box.fill('show video')
+    await vp.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const reply = vp.locator('.msg.assistant', { hasText: 'Over the limit' }).last()
+    await reply.waitFor({ timeout: 15000 })
+    const cards = reply.locator('.video-embed')
+    await cards.first().waitFor({ timeout: 5000 }).catch(() => {})
+    check((await cards.count()) === 3, `video: a reply draws at most three players (${await cards.count()})`)
+    const labels = await reply.locator('.video-embed-label').allInnerTexts()
+    check(JSON.stringify(labels) === JSON.stringify(['YouTube', 'Vimeo', 'player.example.com']), `video: each card names its source (${JSON.stringify(labels)})`)
+    check((await reply.locator('iframe').count()) === 0 && hits.length === 0, 'video: no frame and no player request before a tap')
+    check((await reply.locator('a', { hasText: 'this talk' }).count()) === 1, 'video: a link inside a sentence stays a link, with its card after it')
+    check((await reply.locator('a[href="https://youtu.be/dQw4w9WgXcQ"]').count()) === 0, 'video: a link that is its whole paragraph becomes the card')
+    check((await reply.locator('a[href="https://youtu.be/aaaaaaaaaaa"]').count()) === 1, 'video: a link over the limit stays a link')
+    check((await reply.locator('code', { hasText: 'bbbbbbbbbbb' }).count()) === 1 && (await reply.locator('a[href="https://example.com/page"]').count()) === 1, 'video: code and ordinary links are left alone')
+    await reply.getByRole('button', { name: 'Play video from YouTube' }).click()
+    const frame = reply.locator('.video-embed iframe')
+    await frame.waitFor({ timeout: 3000 })
+    const src = await frame.getAttribute('src')
+    check(src.startsWith('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?') && src.includes('autoplay=1'), `video: tap loads the site's player (${src})`)
+    const sb = (await frame.getAttribute('sandbox')) || ''
+    check(sb.includes('allow-scripts') && !sb.includes('allow-popups') && !sb.includes('allow-top-navigation'), `video: the frame cannot replace the app's page or open another (${sb})`)
+    await reply.getByRole('button', { name: 'Play video from player.example.com' }).click()
+    await sleep(100)
+    check((await frame.count()) === 1 && (await frame.getAttribute('src')) === 'https://player.example.com/v/1', 'video: starting a player stops the one before it')
+    check(!(await frame.getAttribute('onload')) && (await frame.getAttribute('sandbox')) === sb && !(await vp.evaluate(() => window.__evil)), 'video: attributes the model wrote on a frame are dropped')
+    check(!hits.some(h => h.includes('insecure.example.com')), 'video: a frame without https is dropped')
+    await reply.getByRole('button', { name: 'Stop video' }).click()
+    check((await frame.count()) === 0, 'video: Stop goes back to the card')
+    await reply.getByRole('button', { name: 'Play video from Vimeo' }).click()
+    await frame.waitFor({ timeout: 3000 })
+    await vp.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+      document.dispatchEvent(new Event('visibilitychange'))
+      delete document.hidden
+    })
+    await sleep(100)
+    check((await frame.count()) === 0, 'video: leaving the app stops the player')
+    await box.fill('look at https://youtu.be/ccccccccccc please')
+    await vp.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const mine = vp.locator('.msg.user', { hasText: 'look at' }).last()
+    await mine.locator('.video-embed').waitFor({ timeout: 5000 }).then(() => check(true, 'video: a link in your own message gets a player too'), () => check(false, 'video: a link in your own message gets a player too'))
+    await vp.close()
+  }
 }

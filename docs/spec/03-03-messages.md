@@ -94,6 +94,7 @@ Rendering rules:
 - **Inline code and formulas.** Tap inline code to copy it (toast "Copied"); tap a formula to copy its LaTeX (toast "LaTeX copied"). Inline code that is only a web address opens it. Selecting text suppresses these taps.
 - **Links.** Web links open with the phone's default handler (`openExternal` bridge call). `hermes-chat:<id>` links (and bare session ids) open that chat with a chat icon. `#footnote` links scroll inside the message. Links to local paths (`/`, `~/`, `file:`) become a file chip or inline media.
 - **Images.** Markdown images are drawn with `Media`.
+- **Videos.** Video links get a player in the chat (see Video player below).
 - **Callouts.** `> [!note] Title` blockquotes become titled boxes; `-` or `+` after the type makes them collapsible (`+` starts open).
 
 #### Media
@@ -106,6 +107,18 @@ Rendering rules:
 - **Audio:** the app's own player: play/pause, a seek slider (aria-label Seek), elapsed and total time, and a speed button (aria-label Playback speed) that cycles 1×, 1.5×, 2×.
 - **File chip:** `📎 name`; tap opens the file with the phone's default app (`openFile`; outside the app a toast says "Open works in the phone app").
 - **Failures:** a file that cannot load becomes a chip with the reason in brackets. While loading it reads "Loading image…" (or video / audio).
+
+#### Video player
+
+`web/src/components/VideoEmbed.tsx` `VideoPlayer` plays a video inside the chat. Which addresses play, and each one's player address, is decided by `embedOf` in `web/src/videoembed.ts`.
+
+- **What plays.** YouTube (`watch`, `youtu.be`, `shorts`, `live`, `embed`, playlists; the start time and playlist are kept), Vimeo, Dailymotion, Streamable and Loom through each site's own player page (YouTube's privacy address, `youtube-nocookie.com`), and a link to a video file through `Media`. Any other https page plays only when a reply asks for it with `<iframe src="https://…">` (`frameEmbed`); `<video src>` works the same way. Twitch and other sites that accept only named embedding pages stay ordinary links.
+- **Where cards appear.** In anything drawn by `Markdown` (replies, the canvas, files, By the way), `rehypeVideoEmbeds` runs after the sanitizer on a finished reply and adds one card (the element `video-embed`, drawn by `VideoEmbedTag`) after the paragraph or list item holding a video link. A link that is its whole paragraph becomes the card; a link with its own words stays and the card follows it. A `MEDIA:` line or Markdown image with a video site address becomes a card too. Links in tables, headings and code stay links. Raw `iframe` and `video` tags pass the sanitizer with `src` only, and only to reach this step, which turns each into a card or removes it, so nothing the model writes loads a frame by itself. While a reply streams there are no cards yet. In your own bubble `VideoEmbeds` finds the links with `embedsInText`.
+- **Limit.** At most three players per message (`MAX_VIDEOS`), without repeats; further links stay links.
+- **The card.** 16:9, with the site's preview picture where it has one at a known address (YouTube; the picture does load from the site without a tap), a play button (aria-label "Play video from <source>") and a bar under it with the source's name and Open (aria-label "Open in <source>"), which stops the player and hands the address to the phone (`openExternal`). No player page loads until the tap.
+- **Playing.** The tap swaps in the player's frame, autoplaying. Stop (aria-label "Stop video") goes back to the card. Starting a player stops the one before it (`stopCurrent`). Leaving the app (`visibilitychange` to hidden: home, another app, screen off) stops it too, since there would be sound with no way to stop it; the position is lost and coming back shows the card.
+- **Fullscreen.** The player's own button; in the phone app see 4.1 (`enterFullscreen`).
+- **The frame** is described in 2.3. In the phone app it goes through the shell's page (`frameSrc`, `EMBED_HOST`).
 
 #### Diff view
 
