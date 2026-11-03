@@ -105,20 +105,12 @@ function Header() {
       <button className="icon-btn menu-btn" aria-label={menuLabel} onClick={() => (wide ? toggleSide() : setState({ drawer: true }))}>
         ☰{unread && <span className="unread-dot on-menu" />}
       </button>
-      <button className="title-btn" onClick={() => hasActive && setState({ sheet: 'chat-menu' })}>
+      <button className="title-btn" onClick={() => setState({ sheet: 'status' })}>
         <span className="title">
           <Title text={title} fallback={hasActive ? 'New chat' : 'Hermux'} />
         </span>
         <span className="subtitle">
-          <span
-            className={`conn-dot ${dot}`}
-            role="button"
-            aria-label="Backend status"
-            onClick={e => {
-              e.stopPropagation()
-              setState({ sheet: 'status' })
-            }}
-          />
+          <span className={`conn-dot ${dot}`} aria-label="Backend status" />
           {reading ? <span className="reading-badge" title="Reading replies aloud">🔊</span> : null}
           {profile !== 'default' ? profile : 'Hermux agent'}
         </span>
