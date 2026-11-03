@@ -230,32 +230,41 @@ function reducedMotion(): boolean {
   }
 }
 
-/** Slides its children open and closed (height and opacity, Web Animations API). Under reduced motion it mounts and unmounts at once. */
+/** Slides its children open and closed (height and opacity, Web Animations API). Under reduced motion it mounts and unmounts at once.
+ *  A finished close holds height 0 inline until the unmount, so the body never shows at full size for a frame in between. */
 export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
   const [mounted, setMounted] = useState(open)
   const el = useRef<HTMLDivElement>(null)
   const anim = useRef<Animation | null>(null)
   const timer = useRef<number | undefined>(undefined)
   const first = useRef(true)
+  const lastNode = useRef<HTMLDivElement | null>(null)
   if (open && !mounted) setMounted(true)
 
   useLayoutEffect(() => {
     const node = el.current
     const wasFirst = first.current
     first.current = false
+    // A body mounted by this open starts from nothing; one already on screen starts where it is.
+    const fresh = node !== lastNode.current
+    lastNode.current = node
     const stop = () => {
       window.clearTimeout(timer.current)
       anim.current?.cancel()
       anim.current = null
-      if (node) node.style.overflow = ''
+      if (node) {
+        node.style.overflow = ''
+        node.style.height = ''
+        node.style.opacity = ''
+      }
     }
     if (!node || wasFirst || typeof node.animate !== 'function' || reducedMotion()) {
       stop()
       if (!open) setMounted(false)
       return stop
     }
-    const from = node.getBoundingClientRect().height
-    const fromOp = Number(getComputedStyle(node).opacity) || 0
+    const from = fresh ? 0 : node.getBoundingClientRect().height
+    const fromOp = fresh ? 0 : Number(getComputedStyle(node).opacity) || 0
     stop()
     node.style.overflow = 'hidden'
     const to = open ? node.scrollHeight : 0
@@ -268,9 +277,13 @@ export function Collapse({ open, children }: { open: boolean; children: ReactNod
       if (anim.current !== a) return
       window.clearTimeout(timer.current)
       anim.current = null
+      if (!open) {
+        node.style.height = '0px'
+        node.style.opacity = '0'
+      }
       a.cancel()
-      node.style.overflow = ''
-      if (!open) setMounted(false)
+      if (open) node.style.overflow = ''
+      else setMounted(false)
     }
     a.onfinish = done
     timer.current = window.setTimeout(done, COLLAPSE_MS + 100)
