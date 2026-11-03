@@ -10,6 +10,9 @@ pictures the app saved itself from `Pictures/Hermes` once after the update (Andr
 update: a move, never a copy). On Android 10, and for any it can't move, pictures stay in `Pictures/Hermes`, as the
 uninstall note says.
 
+The Uninstall sheet describes the installer's files in plain words, and new backups are `hermux-backup-<date>.tar.gz`
+(2026-11-03; nothing looks for a backup by name, and older backups keep theirs).
+
 **Next:** redo README's top picture with the interface redo. Delete this file then.
 
 **Needs a real phone:** a look through Setup, Settings, the approval prompt and the fingerprint sheet for any Hermes

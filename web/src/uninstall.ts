@@ -17,7 +17,7 @@ export const STEP_LABEL: Record<StepId, string> = {
   android: 'Phone settings the installer changed',
   debian: 'Debian, Hermux, chats and keys',
   files: 'The installer’s files in Termux',
-  termux: 'Termux taking commands from this app'
+  termux: 'Termux accepting commands from other apps'
 }
 const ORDER: StepId[] = ['stop', 'backup', 'android', 'debian', 'files', 'termux']
 
@@ -142,7 +142,7 @@ export function settingsSnapshot(get: (k: string) => string | null): string {
   return JSON.stringify({ app: 'hermes-mobile', settings: o })
 }
 
-/** The backup's file name for the screen ("hermes-backup-….tar.gz" in Download). */
+/** The backup's file name for the screen ("hermux-backup-….tar.gz" in Download). */
 export function backupName(path: string): string {
   return path.split('/').pop() || path
 }

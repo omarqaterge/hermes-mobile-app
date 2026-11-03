@@ -8,10 +8,10 @@ const go = { confirmed: false, skipCleanup: false }
 
 // Lines exactly as phone/uninstall.sh prints them (tools/test_uninstall.sh runs the real script).
 const FULL = `HMUNINSTALL STEP stop Stopping Hermux
-HMUNINSTALL OK stop 3 supervisor loop(s) stopped
+HMUNINSTALL OK stop Hermux stopped
 HMUNINSTALL STEP backup Saving a backup to Downloads
-HMUNINSTALL BACKUP /storage/emulated/0/Download/hermes-backup-20261023-101500.tar.gz
-HMUNINSTALL OK backup hermes-backup-20261023-101500.tar.gz (412 KB)
+HMUNINSTALL BACKUP /storage/emulated/0/Download/hermux-backup-20261023-101500.tar.gz
+HMUNINSTALL OK backup hermux-backup-20261023-101500.tar.gz (412 KB)
 HMUNINSTALL STEP android Undoing the phone settings the installer changed
 HMUNINSTALL SKIP android Shizuku isn't running, so the child-process limit stays lifted
 HMUNINSTALL STEP debian Removing Debian and Hermux
@@ -22,7 +22,7 @@ HMUNINSTALL RM ~/.hermes-mobile
 HMUNINSTALL RM ~/bin/hermes-services
 HMUNINSTALL OK files
 HMUNINSTALL STEP termux Turning off commands from other apps in Termux
-HMUNINSTALL OK termux allow-external-apps removed from ~/.termux/termux.properties
+HMUNINSTALL OK termux commands from other apps turned off
 HMUNINSTALL DONE
 `
 
@@ -31,7 +31,7 @@ describe('parseCleanup', () => {
     const r = parseCleanup(FULL, true)
     expect(r.done).toBe(true)
     expect(r.steps.map(s => `${s.id}:${s.state}`)).toEqual(['stop:ok', 'backup:ok', 'android:skip', 'debian:ok', 'files:ok', 'termux:ok'])
-    expect(r.backup).toBe('/storage/emulated/0/Download/hermes-backup-20261023-101500.tar.gz')
+    expect(r.backup).toBe('/storage/emulated/0/Download/hermux-backup-20261023-101500.tar.gz')
     expect(r.removed).toEqual(['$PREFIX/var/lib/proot-distro/containers/debian', '~/.hermes-mobile', '~/bin/hermes-services'])
     expect(r.steps[2].text).toMatch(/Shizuku/)
   })

@@ -179,12 +179,14 @@ Play Store update it by themselves. If it was never updated, the app says "Hermu
 ### Uninstall
 
 **Settings → Danger zone → Uninstall Hermux** removes Hermes and its data, then the helper apps, after an optional backup to
-`Download/hermes-backup-<date>.tar.gz` (API keys and sign-ins are left out unless you include them). To restore it on a new
+`Download/hermux-backup-<date>.tar.gz` (API keys and sign-ins are left out unless you include them). To restore it on a new
 install, run this in Termux and restart Hermes:
 
 ```bash
-~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermes-backup-<date>.tar.gz -C /root/.hermes'
+~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermux-backup-<date>.tar.gz -C /root/.hermes'
 ```
+
+A backup made by an older version is called `hermes-backup-<date>.tar.gz` and restores the same way.
 
 What is kept and how to uninstall by hand: [docs/install.md](docs/install.md#uninstall).
 

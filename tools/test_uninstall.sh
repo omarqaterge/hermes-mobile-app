@@ -144,10 +144,13 @@ check 'echo "$out" | grep -q "SKIP debian not installed"' "second run: Debian mi
 
 # ── 3. backup: chats, memory, skills, settings; no program files, logs or keys ──
 T="$ROOT/t3"; mkdir -p "$T"; mkbin "$T"; mktree "$T"
+mkdir -p "$T/sdcard/Download"; echo old-backup > "$T/sdcard/Download/hermes-backup-20260101-000000.tar.gz"
 run "$T" --backup --settings '{"hm.theme":"oled"}'
-bk=$(ls "$T/sdcard/Download"/hermes-backup-*.tar.gz 2>/dev/null | head -1)
+check '[ "$(cat "$T/sdcard/Download/hermes-backup-20260101-000000.tar.gz")" = old-backup ]' "a backup with the old name stays untouched"
+check '! echo "$out" | grep -E "^HMUNINSTALL (OK|SKIP) " | grep -qi hermes' "the lines the app shows don't say Hermes"
+bk=$(ls "$T/sdcard/Download"/hermux-backup-*.tar.gz 2>/dev/null | head -1)
 check '[ $rc = 0 ] && [ -s "$bk" ]' "backup written to Downloads (rc=$rc)"
-check 'echo "$out" | grep -q "^HMUNINSTALL BACKUP $T/sdcard/Download/hermes-backup-"' "BACKUP line names the file"
+check 'echo "$out" | grep -q "^HMUNINSTALL BACKUP $T/sdcard/Download/hermux-backup-"' "BACKUP line names the file"
 list=$(tar -tzf "$bk" 2>/dev/null | sed 's#^\./##' | sort)
 for f in state.db state.db-wal config.yaml memories/MEMORY.md mobile/canvas/a.json skills/x/bin/run.sh profiles/p1/state.db profiles/p1/skills/s/bin/tool.sh hermes-mobile-settings.json; do
   check 'echo "$list" | grep -qx "$f"' "backup has $f"
@@ -162,7 +165,7 @@ check '[ -z "$(ls -A "$T/home" | grep hermes-mobile-backup)" ]' "backup work fol
 # --keys: keys and sign-ins included
 T="$ROOT/t4"; mkdir -p "$T"; mkbin "$T"; mktree "$T"
 run "$T" --backup --keys
-bk=$(ls "$T/sdcard/Download"/hermes-backup-*.tar.gz 2>/dev/null | head -1)
+bk=$(ls "$T/sdcard/Download"/hermux-backup-*.tar.gz 2>/dev/null | head -1)
 list=$(tar -tzf "$bk" 2>/dev/null | sed 's#^\./##' | sort)
 for f in .env auth.json profiles/p1/.env profiles/p1/auth.json google_token.json; do check 'echo "$list" | grep -qx "$f"' "--keys: backup has $f"; done
 check '! echo "$list" | grep -qx hermes-mobile-settings.json' "no --settings: no settings file"
@@ -204,7 +207,7 @@ check '[ $rc = 0 ] && [ "$before" = "$(snap "$T")" ]' "nothing installed: DONE, 
 T="$ROOT/t9"; mkdir -p "$T"; mkbin "$T"; mktree "$T"; echo chroot > "$T/home/.hermes-mobile/distro"
 rm -rf "$T/usr/var/lib/proot-distro/containers/debian"; mkhermes "$T/usr/var/lib/chroot-distro/containers/debian/rootfs/root/.hermes"
 run "$T" --backup
-bk=$(ls "$T/sdcard/Download"/hermes-backup-*.tar.gz 2>/dev/null | head -1)
+bk=$(ls "$T/sdcard/Download"/hermux-backup-*.tar.gz 2>/dev/null | head -1)
 check '[ $rc = 0 ] && [ -s "$bk" ]' "chroot: backup through Debian, DONE (rc=$rc)"
 check 'tar -tzf "$bk" | grep -q "state.db$" && ! tar -tzf "$bk" | grep -q "/.env$"' "chroot: backup has the chats, no keys"
 check 'grep -q "^chroot-distro kill debian" "$T/calls" && grep -q "^chroot-distro remove debian" "$T/calls"' "chroot: kill, then remove debian"

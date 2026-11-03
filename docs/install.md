@@ -202,11 +202,11 @@ removes Hermes with all chats, memory, skills, settings and keys, Debian, the in
 `phone/uninstall.sh`). After that Android asks you to confirm each app: Termux:API, Termux:Boot, Shizuku, Termux, and Hermux last.
 Removing Termux makes Android close the app; open it again and it shows the last step.
 
-**Backup** (on by default): `Download/hermes-backup-<date>.tar.gz` with Hermes's chats (`state.db`), memory, skills, cron jobs, canvas
+**Backup** (on by default): `Download/hermux-backup-<date>.tar.gz` with Hermes's chats (`state.db`), memory, skills, cron jobs, canvas
 documents, config, profiles and this app's settings (`hermes-mobile-settings.json`); no program files, caches or logs. API keys (`.env`)
 and sign-ins (`auth.json`, `*token*.json`) are left out unless you switch on *Include API keys and sign-ins*: any app that may read your
 Downloads could read them. A key typed straight into `config.yaml` is not filtered. To restore on a new install, unpack it into Hermes's
-folder in Debian (`~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermes-backup-<date>.tar.gz -C /root/.hermes'`) and restart Hermes.
+folder in Debian (`~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermux-backup-<date>.tar.gz -C /root/.hermes'`) and restart Hermes. A backup made by an older version is called `hermes-backup-<date>.tar.gz` and restores the same way.
 
 Kept: files Hermux saved to your storage (Downloads, Pictures/Hermux, and any older pictures still in Pictures/Hermes). The phone setting needs Shizuku running; without it Android's
 child-process limit stays lifted, which is harmless (Android 14+: Developer options → *Disable child process restrictions* → off).

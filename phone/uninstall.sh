@@ -5,7 +5,7 @@
 # and the installer's files in Termux. It does NOT uninstall any app: the Hermux app does that afterwards (Android
 # asks once per app), Termux last but one. Run by the app (Settings → Uninstall Hermux, through Termux's RUN_COMMAND), or
 # by hand:  bash uninstall.sh [--backup [--keys]]
-#   --backup          first save chats, memory, skills and settings to Download/hermes-backup-<date>.tar.gz; if that
+#   --backup          first save chats, memory, skills and settings to Download/hermux-backup-<date>.tar.gz; if that
 #                     fails NOTHING is removed (exit 3)
 #   --keys            include API keys (.env) and sign-ins (auth.json) in the backup (left out by default: other apps
 #                     with file access can read Downloads)
@@ -77,14 +77,13 @@ kill_tree() {  # PID: stop it (so a loop can't start its command again), its chi
   for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done
   kill -9 "$1" 2>/dev/null
 }
-stopped=0
 for n in dashboard memory-sync cron-ticker app-keeper bot-keeper; do
   f="$HOME/logs/$n.pid"
   [ -f "$f" ] || continue
   pid=$(tr -cd 0-9 < "$f")
   # only when that PID is still the supervisor's loop (a PID can be reused after a reboot)
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -o args= -p "$pid" 2>/dev/null | grep -q hermes-services; then
-    kill_tree "$pid"; stopped=$((stopped + 1))
+    kill_tree "$pid"
   fi
 done
 # The dashboard by its exact command line (as hermes-debian --restart does), and any proot process still running in
@@ -96,7 +95,7 @@ else
     [ "$pid" = $$ ] || kill -9 "$pid" 2>/dev/null
   done
 fi
-say "OK stop $stopped supervisor loop(s) stopped"
+say "OK stop Hermux stopped"
 
 # ── 2. backup (optional). Any problem: stop here, nothing is removed ──
 # hm_backup SRC OUT KEYS SETTINGS: tar.gz of Hermes's folder without its program files, caches and logs (and without
@@ -140,7 +139,7 @@ hm_backup() {
 if [ "$backup" = 1 ]; then
   say "STEP backup Saving a backup to Downloads"
   stamp=$(date +%Y%m%d-%H%M%S)
-  name="hermes-backup-$stamp.tar.gz"
+  name="hermux-backup-$stamp.tar.gz"
   work="$HOME/.hermes-mobile-backup.$$"   # Debian sees Termux's home at the same path (proot and chroot)
   rm -rf "$work"; mkdir -p "$work" || { say "FAIL backup can't write in Termux's home; nothing was removed"; exit 3; }
   extra=""
@@ -230,7 +229,7 @@ if [ "$failed" = 0 ] && [ -z "${debian_left:-}" ]; then
   if grep -qxE 'allow-external-apps = true' "$props" 2>/dev/null && inside "$props"; then
     grep -vxE 'allow-external-apps = true' "$props" > "$props.hm-tmp"; mv -f "$props.hm-tmp" "$props"
     has termux-reload-settings && termux-reload-settings >/dev/null 2>&1
-    say "OK termux allow-external-apps removed from ~/.termux/termux.properties"
+    say "OK termux commands from other apps turned off"
   else
     say "SKIP termux already off"
   fi
