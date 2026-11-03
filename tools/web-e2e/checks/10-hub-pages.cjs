@@ -92,8 +92,15 @@ module.exports = async t => {
   await page.locator('.card.as-button', { hasText: 'chat run' }).click()
   await page.locator('.msg.assistant', { hasText: 'answer s-6' }).waitFor({ timeout: 5000 }).then(() => check(true, 'a run with a chat opens that chat'), () => check(false, 'a run with a chat opens that chat'))
 
-  // ── #26 title tap = the ⋮ menu; Chat details is read-only ──
+  // ── title tap opens the Backend status sheet; Chat details (from ⋮) is read-only ──
   await page.locator('header.topbar .title-btn').click()
+  await page.locator('.sheet', { hasText: 'Backend status' }).waitFor({ timeout: 3000 }).then(() => check(true, 'title tap opens the Backend status sheet'), () => check(false, 'title tap opens the Backend status sheet'))
+  check((await page.locator('.menu-item', { hasText: 'Chat details' }).count()) === 0, 'title tap does not open the chat menu')
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('header.topbar .subtitle').click()
+  await page.locator('.sheet', { hasText: 'Backend status' }).waitFor({ timeout: 3000 }).then(() => check(true, 'tapping "Hermux agent" opens the Backend status sheet'), () => check(false, 'tapping "Hermux agent" opens the Backend status sheet'))
+  await page.evaluate(() => window.hermesBack())
+  await page.locator('header.topbar').getByRole('button', { name: 'Chat options' }).click()
   await page.locator('.menu-item', { hasText: 'Chat details' }).click({ timeout: 3000 })
   const details = page.locator('.sheet', { hasText: 'Chat details' })
   await details.waitFor({ timeout: 3000 })

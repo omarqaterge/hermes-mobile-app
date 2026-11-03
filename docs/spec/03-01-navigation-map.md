@@ -95,10 +95,10 @@ flowchart TD
 | Name | Kind | Opened from | Closes with | Section |
 |---|---|---|---|---|
 | `model` | `Sheet` value, `ModelSheet` | Model chip in the composer; the "Add" picker's first row; draft menu "Change model". | Drag down on the top strip, tap outside, Android Back. Picking a model closes it. | 3.5 |
-| `chat-menu` | `Sheet` value, `ChatMenuSheet` | Header title (when a chat exists); header Chat options button. | Same. | 3.5 |
+| `chat-menu` | `Sheet` value, `ChatMenuSheet` | Header Chat options button. | Same. | 3.5 |
 | `draft-menu` | `Sheet` value, `DraftMenuSheet` | Chat options on the empty new-chat screen. | Same. | 3.5 |
 | `session-actions` | `Sheet` value, `SessionActionsSheet` ("Chat details") | Chat menu row Chat details. | Same. | 3.5 |
-| `status` | `Sheet` value, `StatusSheet` ("Backend status") | The status dot in the header; Settings row Status. | Same. | 3.5 |
+| `status` | `Sheet` value, `StatusSheet` ("Backend status") | The header title, the line under it and its status dot; Settings row Status. | Same. | 3.5 |
 | `context` | `Sheet` value, `ContextSheet` ("Context window") | The context ring in the composer's model row. | Same. | 3.5 |
 | `rollback` | `Sheet` value, `RollbackSheet` ("File checkpoints") | Chat menu row File checkpoints. | Same. Inside it, Back first steps from a snapshot to the list. | 3.5 |
 | `commands` | `Sheet` value, `CommandsSheet` | No control sets it in the current code. The composer's "/" button opens the inline autocomplete instead (3.4). The sheet is still mounted by `App` if `sheet` is ever `commands`. | Same. | 3.5 |
