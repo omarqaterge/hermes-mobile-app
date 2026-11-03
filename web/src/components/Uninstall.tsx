@@ -104,7 +104,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
               {[
                 ['Hermux, with all chats, memory, skills, settings and API keys', 'Everything Hermux keeps in Debian.'],
                 ['Debian', 'The Linux system Hermux runs in, inside Termux.'],
-                ['The installer’s files in Termux', '~/bin/hermes-services, ~/bin/hermes-debian, rish, ~/.hermes-mobile, the start-after-restart script, and Termux taking commands from this app.'],
+                ['The installer’s files in Termux', 'The helper scripts and setup records the installer added, their logs, leftover install files, the installer’s copy of the project’s source code (if there is one), the start-after-restart script, and Termux accepting commands from other apps.'],
                 ['The phone setting the installer changed', 'Android’s child-process limit goes back to normal (needs Shizuku running; otherwise it stays, which is harmless).'],
                 ...APPS.map(a => [`App: ${a.name}${appInstalled(n, a.id) ? '' : ' (not installed)'}`, a.what])
               ].map(([t, h]) => (
@@ -123,7 +123,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
             </div>
             {termuxThere ? (
               <Section title="Backup">
-                <ToggleRow icon="💾" tone="blue" title="Save a backup to Downloads" sub="Chats, memory, skills, Hermux settings and this app’s settings, as hermes-backup-<date>.tar.gz" on={backup} onChange={setBackup} />
+                <ToggleRow icon="💾" tone="blue" title="Save a backup to Downloads" sub="Chats, memory, skills, Hermux settings and this app’s settings, as hermux-backup-<date>.tar.gz" on={backup} onChange={setBackup} />
                 {backup && (
                   <ToggleRow
                     icon="🔑"

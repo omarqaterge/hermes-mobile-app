@@ -389,6 +389,10 @@ module.exports = async t => {
     const squeezed = await sheet.locator('.setup-list').first().evaluate(el => el.scrollHeight - el.clientHeight)
     check(squeezed <= 1, `uninstall: the list is shown whole, not squeezed into a scroll box (${squeezed}px hidden)`)
     check(['Hermux, with all chats', 'Debian', 'installer’s files', 'phone setting', 'Termux:API', 'Termux:Boot', 'Shizuku', 'App: Termux', 'Hermux'].every(t => listed.includes(t)), `uninstall: lists everything that goes (${listed})`)
+    const reviewText = (await sheet.textContent()) || ''
+    check(reviewText.includes('The helper scripts and setup records the installer added') && !/~\/bin|\brish|hm-shizuku/.test(reviewText), 'uninstall: the installer’s files are said in plain words, no file names')
+    check(reviewText.includes('hermux-backup-<date>.tar.gz'), 'uninstall: the backup switch names hermux-backup')
+    check(!/hermes/i.test(reviewText.replace(/Pictures\/Hermes/g, '')), 'uninstall: the sheet says Hermes only for the real Pictures/Hermes folder')
     const keptNote = (await sheet.locator('.uninstall-note').first().textContent().catch(() => '')) || ''
     check(keptNote.includes('Pictures/Hermux') && keptNote.includes('older pictures still in Pictures/Hermes'), `uninstall: the note names both picture folders as kept (${keptNote})`)
     const bk = sheet.locator('.set-row', { hasText: 'Save a backup to Downloads' })
@@ -425,13 +429,13 @@ module.exports = async t => {
     await np.evaluate(() => {
       window.__un = { started: true, running: false, removed: true, result: { exit: 0, stdout: [
         'HMUNINSTALL STEP stop Stopping Hermux', 'HMUNINSTALL OK stop 3', 'HMUNINSTALL STEP backup x',
-        'HMUNINSTALL BACKUP /storage/emulated/0/Download/hermes-backup-20261023-101500.tar.gz', 'HMUNINSTALL OK backup ok',
+        'HMUNINSTALL BACKUP /storage/emulated/0/Download/hermux-backup-20261023-101500.tar.gz', 'HMUNINSTALL OK backup ok',
         'HMUNINSTALL STEP android x', "HMUNINSTALL SKIP android Shizuku isn't running", 'HMUNINSTALL STEP debian x', 'HMUNINSTALL OK debian removed',
         'HMUNINSTALL STEP files x', 'HMUNINSTALL OK files', 'HMUNINSTALL STEP termux x', 'HMUNINSTALL OK termux', 'HMUNINSTALL DONE'].join('\n') } }
       window.hermesUninstallDone()
     })
     await sheet.locator('.uninstall-apps').waitFor({ timeout: 3000 }).then(() => check(true, 'uninstall: after the cleanup the apps are next'), () => check(false, 'uninstall: after the cleanup the apps are next'))
-    check(/hermes-backup-20261023-101500\.tar\.gz/.test((await sheet.textContent()) || ''), 'uninstall: names the backup file')
+    check(/hermux-backup-20261023-101500\.tar\.gz/.test((await sheet.textContent()) || ''), 'uninstall: names the backup file')
     check((await sheet.locator('[data-step=debian][data-state=ok]').count()) === 1 && (await sheet.locator('[data-step=android][data-state=skip]').count()) === 1, 'uninstall: each step’s outcome (Debian ✓, phone setting skipped)')
     const field = { 'termux-api': 'termuxApi', 'termux-boot': 'termuxBoot', shizuku: 'shizuku', termux: 'termux' }
     for (const [id, name] of [['termux-api', 'Termux:API'], ['termux-boot', 'Termux:Boot'], ['shizuku', 'Shizuku'], ['termux', 'Termux']]) {
