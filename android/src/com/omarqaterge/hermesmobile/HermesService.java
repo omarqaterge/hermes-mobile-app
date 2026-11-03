@@ -231,6 +231,7 @@ public class HermesService extends Service {
     public void onCreate() {
         super.onCreate();
         createChannels(this);
+        HermuxApp.log(this).event("service", "app_service_start");
         DevTools.recheck(this); // a restarted process has remote debugging off: drop a notification the old one left
         loadUnseen();
         key = ensureKey();
@@ -443,6 +444,7 @@ public class HermesService extends Service {
 
     @Override
     public void onDestroy() {
+        HermuxApp.log(this).event("service", "app_service_stop");
         running = false;
         instance = null;
         ShizukuKeeper.stop(); // also removes the 90 s check
@@ -537,6 +539,14 @@ public class HermesService extends Service {
         c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).apply();
     }
 
+    /** The installer's steps in the diagnostic log: the step's name and whether it failed, never the line's words. */
+    private void logSetupLine(String line) {
+        String[] p = line.split(" ", 3);
+        if (line.startsWith("STEP ")) HermuxApp.log(this).event("setup", "step", "name", p[1]);
+        else if (line.startsWith("FAIL ")) HermuxApp.log(this).event("setup", "fail", "step", p[1]);
+        else if (line.equals("DONE")) HermuxApp.log(this).event("setup", "done");
+    }
+
     /** POST /setup {token, line}: keep it, push it to the page, show the step in the notification. */
     int setupPost(String body) {
         String[] tl = SetupLines.parse(body);
@@ -545,6 +555,7 @@ public class HermesService extends Service {
         int r = sl.add(tl[0], tl[1], tl[2], System.currentTimeMillis() / 1000);
         if (r != SetupLines.OK) return r;
         String line = tl[1];
+        logSetupLine(line);
         MainActivity a = MainActivity.current;
         if (a != null) a.pushSetupLine(line);
         String text = null;

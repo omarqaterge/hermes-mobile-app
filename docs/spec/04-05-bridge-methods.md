@@ -67,6 +67,11 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `probeTermuxNow` | none | nothing (async) | Same, but really sends it even before Termux accepted a command (the "Already installed? Check" button). May show Termux's own error. |
 | `setupCommand` | none | boolean | Makes a new one-time progress token, registers it with the service, and puts `curl -fsSL <bootstrap.sh URL> -o hm.sh && HM_APP_TOKEN=<token> bash hm.sh` on the clipboard (marked sensitive on Android 13+). The page never sees the token. The URL is `main`'s `phone/bootstrap.sh`; test builds may use `http://10.0.2.2:<port>/…`. |
 | `setupProgress` | none | JSON string | `SetupLines.json()`: `{active, lines, times, done, fail}`. |
+| `diagLog` | none | JSON string | The diagnostic log for the report sheet (3.21): `{enabled, phone, lines}`. Sends nothing. |
+| `diagEnabled` | none | boolean | Whether the diagnostic log is on, for Settings; reads nothing of the log. |
+| `diagEvent` | `area`, `event`, `fields` (JSON array of names and values) | none | One event from the page; `DiagLog` checks every part again, so the page can't write free text either. |
+| `diagClear` | none | none | Deletes the app's diagnostic log. |
+| `setDiagEnabled` | `on` (boolean) | none | Settings → About → Keep a diagnostic log; off also deletes what was kept. |
 | `bgState` | none | JSON string or `""` | The background app's state (no port or token), or `""` when none. |
 | `bgFrameAsync` | `id`, `maxW` (120–1080) | nothing (async) | Fetches a JPEG of the hidden display from `BgHost` (`GET /frame`) and answers `window.__hmBgFrame(id, "data:image/jpeg;base64,…")`, or `""` on none/error. |
 | `bgAction` | `what` (`stop` or `take_over`) | `ok` or `error: …` | Tells `BgHost` `/close` (stop) or `/hand_over` (move the app to the real screen). Returns at once; the card goes away when the host answers 200. |

@@ -1,7 +1,7 @@
 // Tests for the report relay with a stand-in KV and a mocked GitHub API: `node --test` in relay/report.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import worker, { LIMITS, issueBody, readReport } from './worker.js'
+import worker, { LIMITS, LOG_DAYS, issueBody, readReport } from './worker.js'
 
 const ID = 'a'.repeat(32)
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString('base64')
@@ -11,7 +11,7 @@ function kv() {
   return {
     m,
     async get(k) { return m.has(k) ? m.get(k).value : null },
-    async put(k, value, opts) { m.set(k, { value, metadata: opts?.metadata }) },
+    async put(k, value, opts) { m.set(k, { value, metadata: opts?.metadata, ttl: opts?.expirationTtl }) },
     async delete(k) { m.delete(k) },
     async getWithMetadata(k) { const e = m.get(k); return e ? { value: e.value, metadata: e.metadata } : { value: null, metadata: null } }
   }
@@ -32,7 +32,7 @@ const report = (extra = {}) => ({ installId: ID, title: 'Chat list is empty', te
 test('creates the issue with the label and answers with its URL', async () => {
   const res = await post(report())
   assert.equal(res.status, 201)
-  assert.deepEqual(await res.json(), { url: 'https://github.com/owner/repo/issues/7', number: 7, screenshot: false })
+  assert.deepEqual(await res.json(), { url: 'https://github.com/owner/repo/issues/7', number: 7, screenshot: false, log: false })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].url, 'https://api.github.com/repos/owner/repo/issues')
   assert.equal(calls[0].init.headers.authorization, 'Bearer test-token')
@@ -119,10 +119,82 @@ test('a GitHub failure or a missing setup is an error the app can fall back from
   assert.equal((await post(report())).status, 503)
 })
 
-test('the issue body cannot mention people or break out of the log block', () => {
-  const r = readReport(report({ text: 'ping @someone\n```\nopen fence', log: 'line\n```\n# heading' }))
+test('the issue body cannot mention people or break out of a code block', () => {
+  const r = readReport(report({ text: 'ping @someone\n```\nopen fence' }))
   const body = issueBody(r, '')
   assert.ok(!/@someone/.test(body))
-  assert.ok(body.includes('@​someone'))
-  assert.equal(body.match(/^```/gm).length, 2)
+  assert.ok(body.includes('@\u200bsomeone'))
+  assert.ok(!/^```/m.test(body))
+})
+
+const LOG = 'crash java type=RuntimeException\nCANARY in the log'
+const logKeys = () => [...env.REPORTS.m.keys()].filter(k => k.startsWith('log:'))
+const readLog = (id, key) =>
+  worker.fetch(new Request(`https://relay.example/l/${id}`, key === undefined ? {} : { headers: { authorization: `Bearer ${key}` } }), env)
+
+test('a diagnostic log is kept privately: the public issue only names it', async () => {
+  const res = await post(report({ log: LOG }))
+  const answer = await res.json()
+  assert.equal(res.status, 201)
+  assert.equal(answer.log, true)
+  const [key] = logKeys()
+  assert.ok(key, 'stored')
+  const id = key.slice(4)
+  assert.match(id, /^[0-9a-f]{32}$/)
+  assert.equal(env.REPORTS.m.get(key).ttl, LOG_DAYS * 86400, 'it expires')
+  assert.ok(!calls[0].body.body.includes('CANARY'), 'the log is not in the issue')
+  assert.ok(calls[0].body.body.includes(id), 'the issue names it')
+  assert.ok(!JSON.stringify(env.REPORTS.m.get(key)).includes(ID), 'the stored log does not say who sent it')
+})
+
+test('reading a log takes the key, and every other answer says nothing', async () => {
+  env.LOG_READ_KEY = 'the-read-key'
+  await post(report({ log: LOG }))
+  const id = logKeys()[0].slice(4)
+  assert.equal((await readLog(id)).status, 401, 'no key')
+  assert.equal((await readLog(id, 'wrong')).status, 401, 'a wrong key')
+  assert.equal((await readLog(id, '')).status, 401, 'an empty key')
+  const ok = await readLog(id, 'the-read-key')
+  assert.equal(ok.status, 200)
+  assert.equal(await ok.text(), LOG)
+  assert.equal(ok.headers.get('cache-control'), 'no-store')
+  assert.equal(ok.headers.get('access-control-allow-origin'), null, 'no web page may read it')
+  assert.equal((await readLog('f'.repeat(32), 'the-read-key')).status, 404)
+  assert.equal((await readLog('../shot', 'the-read-key')).status, 404)
+})
+
+test('with no read key set, nobody reads a log through the Worker, even with an empty key', async () => {
+  delete env.LOG_READ_KEY
+  await post(report({ log: LOG }))
+  const id = logKeys()[0].slice(4)
+  assert.equal((await readLog(id)).status, 401)
+  assert.equal((await readLog(id, '')).status, 401)
+  assert.equal((await readLog(id, 'undefined')).status, 401)
+})
+
+test('a log that could not be stored stays out of the issue too', async () => {
+  const put = env.REPORTS.put
+  env.REPORTS.put = async (k, v, o) => {
+    if (k.startsWith('log:')) throw new Error('KV down')
+    return put(k, v, o)
+  }
+  const res = await post(report({ log: LOG }))
+  assert.equal(res.status, 201)
+  assert.equal((await res.json()).log, false)
+  assert.ok(!calls[0].body.body.includes('CANARY'))
+  assert.ok(!calls[0].body.body.includes('Diagnostic log'))
+})
+
+test('no issue: its log is deleted again', async () => {
+  answer = () => new Response('{}', { status: 500 })
+  const res = await post(report({ log: LOG }))
+  assert.equal(res.status, 502)
+  assert.equal(logKeys().length, 0)
+})
+
+test('a report without a log says so and stores none', async () => {
+  const res = await post(report())
+  assert.equal((await res.json()).log, false)
+  assert.equal(logKeys().length, 0)
+  assert.ok(!calls[0].body.body.includes('Diagnostic log'))
 })

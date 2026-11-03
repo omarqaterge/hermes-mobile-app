@@ -271,3 +271,9 @@ On an Android 15 (API 35) emulator: pictures saved by a build from before #87 (1
 
 - [ ] **Live viewer tap, the viewer's closing message and the keyboard.** NOT TESTED on this build. Last seen on
       0.8.74-chiptest (see PR #92 in this repository).
+
+## Diagnostic log
+
+- [ ] **The log after a crash.** See [status/diagnostic-log.md](status/diagnostic-log.md) for the full list. Force stop
+      the app, open it, then open Report a problem and switch on Include diagnostic log. Expected: an `app exit` line
+      with a reason (Android 11+), four sections, no chat text, no file names.

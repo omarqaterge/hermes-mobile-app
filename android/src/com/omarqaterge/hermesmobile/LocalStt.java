@@ -675,8 +675,9 @@ final class LocalStt {
     }
 
     /** An error for the card: our own messages as they are, anything unexpected with its type (and in logcat). */
-    private static String why(Exception e) {
+    private String why(Exception e) {
         android.util.Log.w("LocalStt", "stt", e);
+        HermuxApp.log(a).event("voice", "stt_failed", "error", e.getClass().getSimpleName());
         String m = e.getMessage();
         if (e instanceof java.io.IOException && !(e instanceof java.io.FileNotFoundException))
             return "Network or storage error: " + (m == null ? e.getClass().getSimpleName() : m);

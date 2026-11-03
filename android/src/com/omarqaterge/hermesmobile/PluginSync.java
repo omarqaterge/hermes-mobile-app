@@ -190,6 +190,7 @@ final class PluginSync {
         } catch (Exception e) {
             running = false;
             token = null;
+            HermuxApp.log(app).event("plugin", "update_failed", "error", e.getClass().getSimpleName());
             return "error: " + e.getMessage();
         }
     }

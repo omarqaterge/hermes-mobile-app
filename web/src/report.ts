@@ -2,14 +2,16 @@
 // turns it into a public GitHub issue. Without a relay URL in the build (__REPORT_URL__, set from HERMES_REPORT_URL,
 // empty by default), when the relay fails, or when this phone has reached its limit, the app opens GitHub's new-issue
 // page with the report filled in instead, and the user submits it there.
-// Besides the user's own words a report holds only the app, Android and Hermes versions; the recent app log
-// (applog.ts) only if the user ticks it, after scrubLog; a screenshot only if the user picks one (relay only).
+// Besides the user's own words a report holds only the app, Android and Hermes versions; the diagnostic log
+// (diagnostics.ts) only if the user ticks it, after scrubLog; a screenshot only if the user picks one (relay only).
+// Through the relay the log is kept privately and the public issue only names it. On GitHub's page it would be public,
+// so it goes there only in a build without a relay, where the sheet said so before the user chose it.
 import { appVersion, isNative } from './bridge'
 
 export const REPORT_REPO = 'omarqaterge/hermes-mobile-app'
 export const MAX_TITLE = 120 // the relay's limits (relay/report/worker.js)
 export const MAX_TEXT = 6000
-export const MAX_LOG = 20_000
+export const MAX_LOG = 60_000
 const MAX_FALLBACK_URL = 7500 // GitHub answers 414 to much longer links
 const SEND_TIMEOUT_MS = 30_000
 const INSTALL_ID = 'hm.reportId'
@@ -109,7 +111,7 @@ export interface Report {
 export function issueText(r: Report, note = ''): string {
   const parts = [r.text.trim(), '', '---', '', '**Details**', '', `- App: ${r.details.app || 'unknown'}`, `- Android: ${r.details.android || 'unknown'}`, `- Hermux agent: ${r.details.hermes || 'unknown'}`]
   if (note) parts.push('', note)
-  if (r.log) parts.push('', '<details><summary>Recent app log (personal details removed in the app)</summary>', '', '```text', r.log.replace(/^(\s*)(`{3,})/gm, '$1​$2'), '```', '', '</details>')
+  if (r.log) parts.push('', '<details><summary>Diagnostic log (personal details removed in the app)</summary>', '', '```text', r.log.replace(/^(\s*)(`{3,})/gm, '$1​$2'), '```', '', '</details>')
   return parts.join('\n')
 }
 
@@ -165,7 +167,7 @@ export interface Screenshot {
 }
 
 export type SendResult =
-  | { kind: 'sent'; url: string; screenshot: boolean }
+  | { kind: 'sent'; url: string; screenshot: boolean; log: boolean }
   | { kind: 'fallback'; why: 'no-relay' | 'limit' | 'failed' }
 
 /** Sends through the relay. Anything but a created issue is a fallback, with why. */
@@ -182,9 +184,9 @@ export async function sendReport(r: Report, shot?: Screenshot | null): Promise<S
       signal: ctl.signal
     })
     if (res.status === 429) return { kind: 'fallback', why: 'limit' }
-    const body = (await res.json().catch(() => null)) as { url?: unknown; screenshot?: unknown } | null
+    const body = (await res.json().catch(() => null)) as { url?: unknown; screenshot?: unknown; log?: unknown } | null
     if (!res.ok || typeof body?.url !== 'string' || !body.url.startsWith(`https://github.com/${REPORT_REPO}/issues/`)) return { kind: 'fallback', why: 'failed' }
-    return { kind: 'sent', url: body.url, screenshot: body.screenshot === true }
+    return { kind: 'sent', url: body.url, screenshot: body.screenshot === true, log: body.log === true }
   } catch {
     return { kind: 'fallback', why: 'failed' }
   } finally {

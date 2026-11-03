@@ -214,6 +214,7 @@ rmdir_empty "$HOME/bin"
 rmp "$HOME/.termux/boot/10-hermes"
 rmdir_empty "$HOME/.termux/boot"
 for n in dashboard memory-sync cron-ticker app-keeper bot-keeper; do rmp "$HOME/logs/$n.pid"; rmp "$HOME/logs/$n.log"; done
+rmp "$HOME/logs/loop-events.log"
 rmdir_empty "$HOME/logs"
 for f in hermes-mobile.apk hermux.apk hm.sh hm-install.sh hm-phone-access.sh hm-debian-image.tar.zst; do rmp "$HOME/$f"; done
 rmp "$HOME/.cache/hermes-open"

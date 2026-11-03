@@ -49,6 +49,8 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.statsSourceAsked` | `stats.ts` | `'1'` once "How did you hear about us?" was shown. The answer itself is not kept. | No |
 | `hm.devStatsKey` | `stats.ts` | Development and browser tests only, in `sessionStorage`, not `localStorage`: an Aptabase app key for a build that has none. Ignored inside the Android app. | No |
 | `hm.reportId` | `report.ts` | Report a problem: a random install ID (16 random bytes, made on the first report sent through the relay) so the relay can limit how often one install sends (3.21). Not the stats ID, nothing about the device. | No |
+| `hm.diagOff` | `diaglog.ts`, `diagnostics.ts` | The diagnostic log's switch is off (`1`); in the app the shell's preference `diagOff` is what counts, and it also stops the log there (3.21). | No |
+| `hm.diagPending` | `diagnostics.ts` | What Hermes's side of the diagnostic log hasn't been told yet, while it is offline: `{enabled?, clear?}`. | No |
 | `hm.devReportUrl` | `report.ts` | Development and browser tests only, in `sessionStorage`, not `localStorage`: a relay URL for a build that has none. Ignored inside the Android app. | No |
 | `hm.tasks.v1` | `tasks.ts` | Ticked task-list boxes in replies: `{<message hash>: {<box index>: bool}}`; newest 300 messages. | No |
 | `hm.textScale` | `store.ts`, `components/Settings.tsx` | Text size factor (0.9, 1, 1.1, 1.2, 1.35). | No |
@@ -103,6 +105,7 @@ Paths are inside Debian; `~` is `/root`. Exact formats are in 5.5.
 | `~/.hermes/mobile/checkpoints/<session>.jsonl` | `checkpoints.py` | File checkpoints per chat (rollback sheet). |
 | `~/.hermes/cache/phone_app/` | `phone_app.py` | Background-app screenshots. |
 | `~/.hermes/logs/mobile-status.log` | plugin | Status-chip trace (≤ 200 KB, rotated once). |
+| `~/.hermes/mobile/diag.log`, `diag.log.1` | plugin `diag.py` | The diagnostic log on Hermes's side (3.21). |
 | `~/.hermes/plugins/hermes-mobile/` | installer | The plugin itself. |
 | `/root/.hermes/scripts/cron_ticker.py`, `hermes_memory_sync.py` | installer | Run by the supervisor loops. |
 
@@ -124,7 +127,9 @@ and canvas, keeping whatever is still attached in an open composer.
 | `~/.hermes-mobile/todo` | `phone/bootstrap.sh` | What the installer couldn't finish, shown at the end. |
 | `~/.hermes-mobile/unlocked` | `hermes-services` | The boot id for which an old Termux wake lock was already released. |
 | `~/.hermes-mobile/adb-paired`, `hm-shizuku.log` | `hm-shizuku` | Termux's adb is paired; its log. |
-| `~/logs/<loop>.pid`, `~/logs/<loop>.log` | `run_loop` | One pid and log per loop: `dashboard`, `memory-sync`, `cron-ticker`, `app-keeper`. |
+| `~/logs/loop-events.log` | `loop_exit` in `hermes-services` | Fixed lines for the diagnostic log: a loop's name and exit code (64 KB at most; 3.21). |
+| `~/.hermes-mobile/diag-off` | plugin `diag.set_enabled` | The diagnostic log's switch is off; `loop_exit` and `diag.py` both respect it. |
+| `~/logs/<loop>.pid`, `~/logs/<loop>.log` | `run_loop` | One pid and log per loop: `dashboard`, `memory-sync`, `cron-ticker`, `app-keeper`. Each log is 2 MB at most (`trim_log`). |
 
 Debian's root file system under proot is
 `/data/data/com.termux/files/usr/var/lib/proot-distro/containers/debian/rootfs` (`MainActivity.hostPath` maps

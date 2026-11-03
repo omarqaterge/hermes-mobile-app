@@ -81,6 +81,10 @@ public class MainActivity extends Activity {
     boolean pageReady = false;
     FrameLayout root;
     final Handler handler = new Handler(Looper.getMainLooper());
+    static final long RENDER_GONE_WINDOW_MS = 60_000;
+    static final int RENDER_GONE_MAX = 3;
+    static long renderGoneAt = 0;
+    static int renderGoneCount = 0;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -146,6 +150,28 @@ public class MainActivity extends Activity {
                 deliverShare();
                 if (overLock) web.evaluateJavascript("window.hermesLockView && window.hermesLockView(true)", null);
                 deliverShortcut();
+            }
+
+            /** The page's renderer died (out of memory, or a crash). Without this, Android ends the whole app with it,
+             *  the service and its notifications too. This WebView can't be used again: a new activity makes a new one. */
+            @Override
+            public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
+                HermuxApp.log(MainActivity.this).event("webview", "render_gone",
+                        "crashed", String.valueOf(detail.didCrash()), "priority", String.valueOf(detail.rendererPriorityAtExit()));
+                root.removeView(view);
+                view.destroy();
+                long now = android.os.SystemClock.elapsedRealtime();
+                renderGoneCount = now - renderGoneAt < RENDER_GONE_WINDOW_MS ? renderGoneCount + 1 : 1;
+                renderGoneAt = now;
+                // A page that kills its renderer every time must not restart for ever: back to the launcher, service still on.
+                if (renderGoneCount > RENDER_GONE_MAX) finishAndRemoveTask();
+                else {
+                    // What opened this activity was delivered already: the new page must not jump to that chat or apply its draft again.
+                    getIntent().removeExtra("session");
+                    getIntent().removeExtra("draft");
+                    recreate();
+                }
+                return true;
             }
 
             @Override
@@ -260,6 +286,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             // Termux missing or allow-external-apps disabled: the UI shows "Hermes is offline".
             startError = String.valueOf(e.getMessage());
+            HermuxApp.log(this).event("service", "start_failed", "error", e.getClass().getSimpleName());
         }
     }
 
@@ -2730,6 +2757,52 @@ public class MainActivity extends Activity {
         public void installUpdate(String key, final String url) {
             if (!ok(key)) return;
             MainActivity.this.startUpdate(url);
+        }
+
+        /** The diagnostic log, for Report a problem and nothing else: {enabled, phone, lines}. Read on the phone; only
+         *  the page's own report sheet can send it, after showing it (web/src/report.ts). */
+        @JavascriptInterface
+        public String diagLog(String key) {
+            if (!ok(key)) return "";
+            org.json.JSONObject o = new org.json.JSONObject();
+            try {
+                DiagLog d = HermuxApp.log(MainActivity.this);
+                o.put("enabled", d.enabled());
+                o.put("phone", d.enabled() ? HermuxApp.phoneFacts(MainActivity.this) : new org.json.JSONObject());
+                o.put("lines", new org.json.JSONArray(d.read(System.currentTimeMillis() / 1000)));
+            } catch (Exception ignored) {
+            }
+            return o.toString();
+        }
+
+        /** Whether the log is on, for Settings: reads nothing of the log. */
+        @JavascriptInterface
+        public boolean diagEnabled(String key) {
+            return ok(key) && HermuxApp.log(MainActivity.this).enabled();
+        }
+
+        /** One event from the page; DiagLog checks every part, so the page can't write free text either. */
+        @JavascriptInterface
+        public void diagEvent(String key, String area, String event, String fields) {
+            if (!ok(key)) return;
+            try {
+                org.json.JSONArray a = new org.json.JSONArray(fields == null || fields.isEmpty() ? "[]" : fields);
+                String[] kv = new String[Math.min(a.length(), 2 * DiagLog.MAX_FIELDS)];
+                for (int i = 0; i < kv.length; i++) kv[i] = a.optString(i);
+                HermuxApp.log(MainActivity.this).event(area, event, kv);
+            } catch (Exception ignored) {
+            }
+        }
+
+        @JavascriptInterface
+        public void diagClear(String key) {
+            if (ok(key)) HermuxApp.log(MainActivity.this).clear();
+        }
+
+        /** Settings → About → Keep a diagnostic log. Off also deletes what was kept. */
+        @JavascriptInterface
+        public void setDiagEnabled(String key, boolean on) {
+            if (ok(key)) HermuxApp.setEnabled(MainActivity.this, on);
         }
 
         @JavascriptInterface

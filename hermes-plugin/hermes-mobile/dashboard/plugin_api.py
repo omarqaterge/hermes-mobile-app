@@ -459,6 +459,48 @@ async def get_plugin_info():
     return plugin_info()
 
 
+# ── the diagnostic log on this side (diag.py): only for Report a problem, and only checked lines leave ──
+
+def _diag_mod():
+    import importlib.util
+    import sys
+
+    mod = sys.modules.get("hm_diag")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("hm_diag", Path(__file__).resolve().parent.parent / "diag.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hm_diag"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+class DiagPrefs(BaseModel):
+    enabled: bool = True
+
+
+@router.get("/diag")
+async def get_diag():
+    import asyncio
+
+    return await asyncio.to_thread(lambda: _diag_mod().snapshot(plugin_info()["stamp"]))
+
+
+@router.put("/diag")
+async def put_diag(body: DiagPrefs):
+    import asyncio
+
+    await asyncio.to_thread(_diag_mod().set_enabled, body.enabled)
+    return {"ok": True}
+
+
+@router.delete("/diag")
+async def delete_diag():
+    import asyncio
+
+    await asyncio.to_thread(_diag_mod().clear)
+    return {"ok": True}
+
+
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
 @router.get("/activity")
