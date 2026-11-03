@@ -1,3 +1,4 @@
+import { HERMUX_MARK } from './components/hermux-mark'
 import { appVersion, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -359,7 +360,7 @@ function Empty({ onPick }: { onPick: (t: string) => void }) {
   const picks = useMemo(() => suggestions(catalog), [catalog, profile])
   return (
     <div className="empty">
-      <div className="logo">☤</div>
+      <svg className="logo" viewBox="0 0 100 100" role="img" aria-label="Hermux" dangerouslySetInnerHTML={{ __html: HERMUX_MARK }} />
       <div className="empty-title">Hermux</div>
       <div className="dim">{profile === 'default' ? 'Your agent, on your phone.' : `Profile: ${profile}`}</div>
       <div className="suggestions">

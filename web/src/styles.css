@@ -947,7 +947,8 @@ textarea {
   text-align: center;
 }
 .logo {
-  font-size: 3rem;
+  width: 5.5rem;
+  height: 5.5rem;
   color: var(--accent);
 }
 .empty-title {

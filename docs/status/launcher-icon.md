@@ -5,7 +5,7 @@
 SVG come from `tools/icon/make-icon.cjs`. The monochrome (themed icon) layer is the same image with transparent gaps.
 Nothing else in the app, README images or docs showed the old launcher artwork.
 
-**Next:** decide whether the small notification icon should become a simpler mark that matches (owner has not decided).
+**Next:** decide whether the drawer's Hermux tile (still the ☤ glyph) should use the mark; decide whether the small notification icon should become a simpler mark that matches (owner has not decided).
 
 **Needs a real phone:** how the icon looks in the phone's own launcher shape and in Android 13+ themed icons. A launcher
 may keep showing the old icon until it refreshes (restart the launcher, or reinstall the shortcut).

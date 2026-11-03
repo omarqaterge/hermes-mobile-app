@@ -14,3 +14,4 @@ thickness, stroke 9) with their tips toward the staff, at the closest-to-the-sta
 - Keep the whole mark inside the central 66 dp of the 108 dp adaptive icon.
 - The caduceus in the icon is drawn for it and is not the ☤ glyph that the empty chat shows (that one comes from the
   phone's system font). The small notification icon (`ic_stat_hermes.xml`) is a separate drawing and was not changed.
+- The empty new-chat screen shows the same mark (added 2026-11-03, the owner pointed out it still had the old glyph). The drawer's Hermux tile still uses the ☤ text glyph; whether to change it is open.
