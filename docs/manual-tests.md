@@ -258,3 +258,16 @@ On an Android 15 (API 35) emulator: pictures saved by a build from before #87 (1
       steps as above on an API 30 emulator or phone, with test pictures.
 - [ ] **A real phone with old pictures.** NOT VERIFIED. Update from a build before #87 on a phone with test pictures in
       `Pictures/Hermes`. Expected: each is in `Pictures/Hermux` once, and the gallery still shows them.
+
+## 2026-11-03, app 0.8.75-test on Android 16
+
+| Check | Result |
+|---|---|
+| Data kept across the update | PASS |
+| The plugin updated by itself about a minute after install | PASS: Settings shows it up to date, it compiles, no errors in the logs |
+| The new `rish` instruction | PASS: the agent treated the `getprop` lines as harmless |
+| The Uninstall wording | PASS |
+| The start-up line reaching `chat-live` | PASS: 0.4 s on 3 cold starts |
+
+- [ ] **Live viewer tap, the viewer's closing message and the keyboard.** NOT TESTED on this build. Last seen on
+      0.8.74-chiptest (see PR #92 in this repository).
