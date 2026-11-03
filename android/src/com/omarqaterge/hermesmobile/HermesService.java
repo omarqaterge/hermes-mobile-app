@@ -1088,6 +1088,7 @@ public class HermesService extends Service {
         else if (lastSteps > 0) head.add(lastSteps == 1 ? "1 step" : lastSteps + " steps");
         if (lastMore > 0) head.add("+" + lastMore + (lastMore == 1 ? " chat" : " chats"));
 
+        BgApp bg = bgApp; // one read: the card's picture and its tap never disagree
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setColor(GOLD)
@@ -1096,7 +1097,7 @@ public class HermesService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(true)
-                .setContentIntent(openApp(lastSession, false, bgForChip(bgApp)));
+                .setContentIntent(openApp(lastSession, false, bgForChip(bg)));
         if (workingSince > 0) b.setWhen(workingSince).setUsesChronometer(true);
         if (!head.isEmpty()) b.setSubText(String.join(" \u00B7 ", head));
         if (Build.VERSION.SDK_INT >= 36) {
@@ -1135,9 +1136,8 @@ public class HermesService extends Service {
         promote(b, lastShort.isEmpty() ? "Hermux" : lastShort);
         // Hermes is using an app on the hidden screen for this chat: the expanded card shows a picture of it.
         // The lock screen gets the same card without the picture (it can show the user's own data).
-        BgApp bg = bgApp;
         android.graphics.Bitmap thumb = bgThumb;
-        if (bg != null && thumb != null && bg.session.equals(lastSession)) {
+        if (thumb != null && bgForChip(bg)) {
             // build() hands back the builder's own Notification: clone it, or the card becomes its own public version.
             b.setPublicVersion(b.build().clone());
             b.setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(thumb));

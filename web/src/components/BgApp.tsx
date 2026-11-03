@@ -6,11 +6,12 @@ import { bgForChat, useBgFrame, useViewWanted, viewerStep, wantFrames, wantViewe
 import { bgAction, haptic } from '../bridge'
 import { useBackHandler } from '../backstack'
 import { lockView } from '../lockview'
-import { toast, useStore } from '../store'
+import { getState, toast, useStore } from '../store'
 import { useSheetDrag } from './useSheetDrag'
 
 const THUMB_W = 200
 const VIEW_W = 540
+const APP_GONE = "Hermux isn't using an app any more"
 
 export function BgApp() {
   const chat = useStore(s => (s.active ? s.active.storedId : s.opening))
@@ -23,16 +24,20 @@ export function BgApp() {
     if (!shown) return
     return wantFrames(THUMB_W)
   }, [shown])
+  // The viewer can't outlive the app. Hermes finishing with it (it can come right after the chip's tap) gets a word,
+  // or the viewer would just vanish; another chat opening closes it silently.
   useEffect(() => {
-    if (!shown) setOpen(false)
-  }, [shown])
+    if (shown || !open) return
+    setOpen(false)
+    if (!getState().bg) toast(APP_GONE)
+  }, [shown, open])
   // The chip was tapped (shell → hermesOpenBgView): open the viewer once that chat shows; the app already done = the chat alone.
   useEffect(() => {
     const step = viewerStep(want, chat, active, bg)
     if (step === 'wait') return
     wantViewer(null)
     if (step === 'open' && !lockView()) setOpen(true)
-    else if (step === 'gone') toast("Hermux isn't using an app any more")
+    else if (step === 'gone') toast(APP_GONE)
   }, [want, chat, active, bg])
   const frame = useBgFrame()
   if (!bg) return null
@@ -55,6 +60,10 @@ function BgViewer({ label, action, onClose }: { label: string; action: string; o
   const drag = useSheetDrag(onClose)
   useBackHandler(onClose)
   useEffect(() => wantFrames(VIEW_W), [])
+  // The composer may still have focus from before the app was left: the keyboard must not come back under the sheet.
+  useEffect(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  }, [])
   const frame = useBgFrame()
   const run = (what: 'stop' | 'take_over') => {
     haptic()

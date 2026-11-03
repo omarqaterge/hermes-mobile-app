@@ -99,7 +99,10 @@ Tried on a Xiaomi phone, Android 16 (HyperOS), normal build 0.8.66-test (commit 
       Seen on an Android 16 phone, build 0.8.72-plugintest (2026-11-02): both as expected. An earlier report of the tap
       opening Calculator with no picture came from a run where Calculator was started on the real screen with
       `am start` (no hidden display was created), and the logged taps landed on other apps' notifications, never
-      Hermux's (by design, spec 3.10). Seen in passing: the keyboard came up under the viewer after the tap.
+      Hermux's (by design, spec 3.10). A later report of the chat opening without the viewer (0.8.73-test): the log has
+      that tap 354 ms before the hidden display went away, because the turn was ending; the same steps at "2 steps" and
+      at "9 steps" after 80 s in the background opened the viewer each time. Also try: the composer focused before Home,
+      then the tap. Expected: no keyboard under the viewer.
 - [ ] **A banking app with the Settings toggle on** (opens; FLAG_SECURE screens may show black in the live view).
 - [ ] **Faster steps.** Ask for something with several taps (a new note with a title). Expected: the steps run without a
       fixed pause between them, Hermes points at buttons by their text, and no keyboard shows in the live view.
