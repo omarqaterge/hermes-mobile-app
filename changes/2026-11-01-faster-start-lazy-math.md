@@ -1,4 +1,0 @@
----
-rank: normal
----
-- **Less to load at start.** The math (KaTeX) and code-colour (highlight.js) libraries now load the first time a message needs them instead of at every start, so the app reads about 0.8 MB less before the message box shows. On a phone the app's own script starts about 0.1 s sooner; the whole start is mostly the wait for the chat list and the chat, so the difference is hard to notice. Formulas, code colours, tapping a formula to copy its LaTeX and the light theme were checked on an Android phone.
