@@ -116,7 +116,8 @@ and canvas, keeping whatever is still attached in an open composer.
 
 | Path (Termux home) | Written by | Used for |
 |---|---|---|
-| `~/bin/hermes-services` | installer | The supervisor (2.1). |
+| `~/bin/hermes-services` | installer, then the app's plugin update (6.6) | The supervisor (2.1). |
+| `~/.hermes-mobile/services.sha`, `services-new`, `hermes-services.bak` | `plugin-update.sh` | The supervisor last installed from an APK; the dashboard's loop still runs an older one; the copy before it (6.6). |
 | `~/bin/hermes-debian` | installer | Runs a command in Debian under proot-distro or chroot-distro; `--open` and `--exists` helpers. Missing on older installs, which use `proot-distro login debian --`. |
 | `~/bin/hm-shizuku` | installer | Shizuku pair/start/status (2.2.9). |
 | `~/bin/rish`, `~/bin/rish_shizuku.dex` | `phone/phone-access.sh` | Shizuku's shell, taken from Shizuku's own APK. |

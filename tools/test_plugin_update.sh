@@ -178,6 +178,61 @@ rm -rf "$HOME/.hermes-mobile/plugin-update.lock"
 check "a run removes its own lock" "$(run check "$STAMP" "$HASH" >/dev/null; ls "$HOME/.hermes-mobile/plugin-update.lock" 2>/dev/null)" ""
 check "bad arguments" "$(bash "$S" apply 12 nothex 2>/dev/null; echo $?)" 2
 
+echo "the supervisor script"
+SVC="$HOME/bin/hermes-services"; SVCSHA="$HOME/.hermes-mobile/services.sha"; MARK="$HOME/.hermes-mobile/services-new"
+printf '#!/usr/bin/env bash\n# new supervisor, hermes dashboard --host 127.0.0.1 --port 9119\nexit 0\n' > "$t/new-services"
+printf '#!/usr/bin/env bash\n# old supervisor\nexit 0\n' > "$t/old-services"
+E="$t/embedded.sh"; bash "$S" embed "$t/new-services" "$E"
+bash -n "$E" && echo "  ok   the embedded script parses" || { echo "  FAIL the embedded script parses"; fails=$((fails + 1)); }
+check "the embedded text doesn't hold the dashboard's command line" "$(grep -c 'hermes dashboard --host 127.0.0.1' "$E")" 0
+check "it fits one argument of bash -c (128 KB)" "$(( $(bash "$S" embed "$here/phone/hermes-services" "$t/real.sh"; wc -c < "$t/real.sh") < 100000 ))" 1
+erun() { bash -c "$(cat "$E")" hm-plugin "$@" 2>/dev/null | grep '^HMPLUGIN' | tail -1; }
+reset_svc() { cp "$t/old-services" "$SVC"; chmod +x "$SVC"; rm -f "$SVCSHA" "$MARK" "$HOME/.hermes-mobile/hermes-services.bak"; }
+install_old; cp -R "$NEW/." "$P/"; bash "$S" stamp "$P" "$STAMP" apk; reset_svc
+check "the state line is unchanged" "$(erun check "$STAMP" "$HASH")" "HMPLUGIN STATE current $STAMP"
+check "check installs the new script" "$(cmp -s "$SVC" "$t/new-services" && echo same)" same
+check "it stays runnable" "$([ -x "$SVC" ] && echo yes)" yes
+check "the old one is kept beside" "$(cmp -s "$HOME/.hermes-mobile/hermes-services.bak" "$t/old-services" && echo same)" same
+check "no temporary file stays" "$(ls "$SVC.new" 2>/dev/null)" ""
+check "it notes the loop is still old" "$([ -f "$MARK" ] && echo yes)" yes
+rm -f "$MARK"; erun check "$STAMP" "$HASH" >/dev/null
+check "already up to date: nothing happens" "$([ -f "$MARK" ] && echo yes || echo no)" no
+echo "# my own change" >> "$SVC"; cp "$SVC" "$t/hand"; erun check "$STAMP" "$HASH" >/dev/null
+check "a copy changed by hand is left alone" "$(cmp -s "$SVC" "$t/hand" && echo same)" same
+rm -f "$SVCSHA"; erun check "$STAMP" "$HASH" >/dev/null
+check "after install.sh (no record) it may be replaced" "$(cmp -s "$SVC" "$t/new-services" && echo same)" same
+reset_svc; bash "$S" check "$STAMP" "$HASH" >/dev/null
+check "the plain script (no copy inside) leaves it alone" "$(cmp -s "$SVC" "$t/old-services" && echo same)" same
+rm -f "$SVC"; erun check "$STAMP" "$HASH" >/dev/null
+check "no script yet: not created" "$(ls "$SVC" 2>/dev/null)" ""
+reset_svc; touch "$W/hold" 2>/dev/null || { mkdir -p "$W"; touch "$W/hold"; }; erun check "$STAMP" "$HASH" >/dev/null
+check "a held plugin: left alone" "$(cmp -s "$SVC" "$t/old-services" && echo same)" same
+rm -f "$W/hold"
+reset_svc; echo newer > "$P/from-a-newer-clone"; bash "$S" stamp "$P" "$((STAMP + 5))" install
+check "a newer plugin" "$(erun check "$STAMP" "$HASH")" "HMPLUGIN STATE newer $((STAMP + 5))"
+check "a newer plugin: left alone" "$(cmp -s "$SVC" "$t/old-services" && echo same)" same
+rm -f "$P/from-a-newer-clone"; bash "$S" stamp "$P" "$STAMP" apk
+printf '#!/usr/bin/env bash\nif then (\n' > "$t/bad-services"; bash "$S" embed "$t/bad-services" "$t/bad.sh"; reset_svc
+bash -c "$(cat "$t/bad.sh")" hm-plugin check "$STAMP" "$HASH" >/dev/null
+check "a copy that doesn't parse is never installed" "$(cmp -s "$SVC" "$t/old-services" && echo same; ls "$SVC.new" 2>/dev/null)" same
+# apply: the script updates too, and the dashboard's loop starts again with Hermes's restart. The loop's check needs /proc.
+install_old; reset_svc; echo 0 > "$t/loaded"
+check "apply succeeds with the new script" "$(erun apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN OK $STAMP"
+check "apply installs it" "$(cmp -s "$SVC" "$t/new-services" && echo same)" same
+check "the note is used up by the restart" "$([ -f "$MARK" ] && echo yes || echo no)" no
+if [ -d /proc/self ]; then
+  install_old; reset_svc; echo 0 > "$t/loaded"; mkdir -p "$HOME/logs"
+  cp "$t/old-services" "$t/hermes-services"; printf 'sleep 300\n' >> "$t/hermes-services"; sed -i '/^exit 0/d' "$t/hermes-services"
+  bash "$t/hermes-services" & lp=$!; echo "$lp" > "$HOME/logs/dashboard.pid"; sleep 0.3
+  erun apply "$STAMP" "$HASH" "$SHA" aaa111 >/dev/null
+  check "the old loop is stopped" "$(kill -0 "$lp" 2>/dev/null && echo alive || echo gone)" gone
+  kill "$lp" 2>/dev/null; rm -f "$HOME/logs/dashboard.pid"
+  sleep 300 & lp=$!; echo "$lp" > "$HOME/logs/dashboard.pid"; : > "$MARK"; install_old; bash "$S" stamp "$P" 1 apk; echo 0 > "$t/loaded"
+  erun apply "$STAMP" "$HASH" "$SHA" aaa111 >/dev/null
+  check "a reused pid that is no loop is not killed" "$(kill -0 "$lp" 2>/dev/null && echo alive || echo gone)" alive
+  kill "$lp" 2>/dev/null; rm -f "$HOME/logs/dashboard.pid"
+else echo "  skip the old loop is stopped (needs /proc; CI runs it)"; fi
+
 echo "source-stamp"
 check "not a checkout: now" "$(( $(bash "$S" source-stamp "$t") >= $(date +%s) - 5 ))" 1
 

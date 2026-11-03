@@ -14,12 +14,14 @@
 #   plugin-update.sh stamp DIR STAMP SOURCE      write DIR/BUILD_STAMP
 #   plugin-update.sh pack DIR OUT.tgz STAMP      the bundle for the APK; prints "STAMP HASH SHA256"
 #   plugin-update.sh hash DIR                    a folder's content hash (BUILD_STAMP and __pycache__ left out)
+#   plugin-update.sh embed SERVICES OUT          writes this script to OUT with the supervisor script inside it (the APK's copy)
 # BUILD_STAMP holds "STAMP HASH SOURCE". STAMP orders versions (bigger = newer; the phone's clock is never involved).
 # A developer keeps the app's hands off a plugin under test with:  touch /root/.hermes/hermes-mobile-plugin/hold
 # Every result line starts with "HMPLUGIN ":
 #   STATE <not-ready|current|adopted|newer|older|modified|held> <installed stamp> · BUSY <why>
 #   OK <stamp> [unverified] · FAIL <step> <why> (the old plugin is in place)
 # Exit: 0 (the result is in the lines) · 2 usage
+# The APK's copy also brings ~/bin/hermes-services up to date on check and apply (sync_services).
 
 read -r -d '' COMMON <<'EOF'
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
@@ -105,6 +107,11 @@ DASH_RE='[h]ermes dashboard --host 127[.]0[.]0[.]1 --port 9119'
 # Every Debian login gets a time limit: a hung proot-distro or chroot-distro must not hold the run forever.
 tmo() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 TERMUX_HOME=$HOME
+# The supervisor script, base64, filled in by `embed`: as plain text it would put the dashboard's command line on this
+# process's command line (see DASH_RE). Empty outside the APK's copy: then ~/bin/hermes-services is left alone.
+SERVICES_B64=""
+SERVICES_SHA="$TERMUX_HOME/.hermes-mobile/services.sha"  # what was last installed from an APK; install.sh removes it
+SERVICES_NEW="$TERMUX_HOME/.hermes-mobile/services-new"  # installed, but the dashboard's loop still runs the old one
 say() { echo "HMPLUGIN $*"; }
 deb() {  # run the Debian half; hermes-debian knows proot-distro and chroot-distro, an older install is proot-distro
   if [ -x "$HOME/bin/hermes-debian" ]; then tmo 240 "$HOME/bin/hermes-debian" bash -c "$COMMON
@@ -136,7 +143,17 @@ wait_up() {  # SECONDS [dash]: until the plugin (or only the dashboard) answers
   while [ "$SECONDS" -lt "$end" ]; do $f && return 0; sleep "${HM_PLUGIN_POLL:-3}"; done
   return 1
 }
+# A new supervisor script reaches running loops only when they start again. Hermes is about to restart anyway, so its
+# loop goes now, and the check below starts a new one. The other loops follow at the phone's next restart.
+restart_loop() {
+  [ -f "$SERVICES_NEW" ] || return 0
+  rm -f "$SERVICES_NEW"
+  local pid; pid=$(cat "$HOME/logs/dashboard.pid" 2>/dev/null)
+  [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ] && tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q hermes-services && kill "$pid" 2>/dev/null
+  return 0
+}
 restart() {
+  restart_loop
   "$HOME/bin/hermes-debian" --restart 2>/dev/null \
     || { pids=$(pgrep -f "$DASH_RE") && kill -9 $pids 2>/dev/null; }
   # The supervisor loop starts it again; start the loop itself if it is gone. All output away: Termux waits on open pipes.
@@ -160,7 +177,7 @@ settle() {  # STAMP: a swap whose run was cut off: keep it when the new plugin s
   deb rollback | last >/dev/null; restart
 }
 
-usage() { echo "usage: plugin-update.sh check|apply|source-stamp|stamp|pack|hash ..." >&2; exit 2; }
+usage() { echo "usage: plugin-update.sh check|apply|source-stamp|stamp|pack|hash|embed ..." >&2; exit 2; }
 valid() { case "$1" in ''|*[!0-9]*) usage ;; esac; case "$2" in ''|*[!0-9a-f]*) usage ;; esac; }
 LOCK="$TERMUX_HOME/.hermes-mobile/plugin-update.lock"
 take_lock() {
@@ -176,6 +193,27 @@ drop_lock() {  # only our own: a run that outlived its lock must not remove the 
   [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK"
   return 0
 }
+# Brings ~/bin/hermes-services up to the APK's copy. Only where the plugin may be replaced too (not newer, changed by hand,
+# held or not ready), never creates it (the installer does), and leaves a copy changed by hand since the last one from an
+# APK. A rename: a run of the old script that is reading it carries on undisturbed. Says nothing: the app reads the last line.
+sync_services() {  # the plugin's state line
+  case "$1" in "HMPLUGIN STATE current "*|"HMPLUGIN STATE adopted "*|"HMPLUGIN STATE older "*) ;; *) return 0 ;; esac
+  [ -n "$SERVICES_B64" ] || return 0
+  local f="$HOME/bin/hermes-services" new have known want
+  [ -f "$f" ] || return 0
+  new="$f.new"
+  have=$(sha "$f" | cut -d' ' -f1); known=$(cat "$SERVICES_SHA" 2>/dev/null)
+  [ -z "$known" ] || [ "$known" = "$have" ] || return 0
+  if ! printf %s "$SERVICES_B64" | base64 -d > "$new" 2>/dev/null || [ ! -s "$new" ] || ! bash -n "$new" 2>/dev/null; then
+    rm -f "$new"; return 0
+  fi
+  want=$(sha "$new" | cut -d' ' -f1)
+  if [ "$want" = "$have" ]; then rm -f "$new"; echo "$want" > "$SERVICES_SHA"; return 0; fi
+  cp -p "$f" "$TERMUX_HOME/.hermes-mobile/hermes-services.bak" 2>/dev/null
+  chmod +x "$new" && mv "$new" "$f" && echo "$want" > "$SERVICES_SHA" && : > "$SERVICES_NEW"
+  rm -f "$new"
+  return 0
+}
 inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets $line
   line=$(deb inspect "$@" | last)
   case "$line" in
@@ -186,6 +224,10 @@ inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets
 cmd=${1:-}; [ $# -gt 0 ] && shift
 case "$cmd" in
   hash) [ -d "${1:-}" ] || usage; tree_hash "$1" ;;
+  embed)
+    [ -f "${1:-}" ] && [ -n "${2:-}" ] || usage
+    b=$(base64 < "$1" | tr -d '\n')
+    sed "s|^SERVICES_B64=.*|SERVICES_B64=\"$b\"|" "$0" > "$2" ;;
   stamp)
     [ -d "${1:-}" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] || usage
     printf '%s %s %s\n' "$2" "$(tree_hash "$1")" "$3" > "$1/BUILD_STAMP" ;;
@@ -208,12 +250,14 @@ case "$cmd" in
     [ $# -eq 2 ] || usage; valid "$1" "$2"
     take_lock
     inspect "$1" "$2" no
+    sync_services "$line"
     echo "${line:-HMPLUGIN FAIL check no-answer}" ;;
   apply)
     [ $# -ge 4 ] || usage; valid "$1" "$2"; valid "$1" "$3"; valid "$1" "$4"
     stamp=$1 hash=$2 want=$3 tok=$4 force=no; [ "${5:-}" = --force ] && force=force
     take_lock
     inspect "$stamp" "$hash" "$force"
+    sync_services "$line"
     case "$line" in
       "HMPLUGIN STATE older "*) ;;
       "") say FAIL check no-answer; exit 0 ;;
