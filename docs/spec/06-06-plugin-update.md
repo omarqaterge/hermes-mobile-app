@@ -5,7 +5,7 @@ moment. Before this, only `phone/install.sh` copied the plugin, so a phone updat
 plugin of its first install.
 
 **What the APK carries.** `android/build.sh` puts three files in `assets/phone/`: `plugin-update.sh` (a copy of
-`phone/plugin-update.sh`), `plugin.tgz` (the plugin folder without `__pycache__`, with a `BUILD_STAMP` file; about
+`phone/plugin-update.sh` with `~/bin/hermes-services` inside it, `plugin-update.sh embed`), `plugin.tgz` (the plugin folder without `__pycache__`, with a `BUILD_STAMP` file; about
 90 KB) and `plugin.txt` (`STAMP HASH SHA256`). STAMP orders versions: the time of the last commit
 (`plugin-update.sh source-stamp`), or the build time when the plugin folder has uncommitted changes. HASH is a hash of
 the plugin's files (names and contents, `BUILD_STAMP` and `__pycache__` left out); SHA256 is the bundle's checksum.
@@ -63,6 +63,17 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
   `FAIL <step> <why>` (steps `check`, `fetch`, `stage`, `swap`, `load`). After any FAIL the plugin that was there is in
   place.
 
+**The supervisor script comes along** (`sync_services`). On `check` and `apply`, when the plugin's state is `current`, `adopted` or
+`older`, the APK's copy of `phone/hermes-services` replaces `~/bin/hermes-services`, so an existing phone gets a new supervisor even
+when its plugin needs nothing. It travels base64 in `SERVICES_B64`: as plain text it would put the dashboard's command line on the
+process's command line, which `hermes-debian --restart` kills by. It checks that the copy parses (`bash -n`) and renames it into place, so
+a running copy is undisturbed. It keeps the old one as `~/.hermes-mobile/hermes-services.bak`. It never creates the file, and leaves a copy
+that no longer matches the last one from an APK (`~/.hermes-mobile/services.sha`, which `install.sh` removes), so a hand-changed script
+stays; so do a `newer`, `modified`, `held` or `not-ready` plugin's. Running loops keep the old script: `~/.hermes-mobile/services-new`
+makes the next Hermes restart (`restart_loop`) stop the `dashboard` loop too, only if that pid is still a `hermes-services` process, and
+start it anew. The other loops follow when the phone restarts. Until then a run of the script still trims the logs (6.2), but only new
+loops record `loop_exit`.
+
 **What the app shows.** Settings → About → Hermux plugin (3.15), from `PluginSync.state` through the bridge
 (`pluginState`, `pluginUpdate`, 4.5; `web/src/plugin-sync.ts`). The state lives in the `hermes` preferences (2.4).
 
@@ -76,4 +87,4 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
 | No Debian yet, or setup still running | Nothing runs (`termuxOk` false, setup installing, or `not-ready`). |
 | A developer testing a plugin | `install.sh` from a newer clone stamps it newer; a hand-edited copy reads `modified`; the `hold` file stops the app entirely. |
 
-The Hermes patches and the Hermes pin are not part of this: they still change only with `install.sh` (6.4).
+The Hermes patches, the Hermes pin and the other scripts in `~/bin` are not part of this: they still change only with `install.sh` (6.4).

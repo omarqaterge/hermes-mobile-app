@@ -40,6 +40,7 @@ command -v termux-reload-settings >/dev/null && termux-reload-settings || true
 echo "2/5 Installing the supervisor scripts (~/bin/hermes-services, ~/bin/hermes-debian, ~/bin/hm-shizuku)"
 mkdir -p "$HOME/bin"
 cp "$here/phone/hermes-services" "$HOME/bin/hermes-services"
+rm -f "$HOME/.hermes-mobile/services.sha"  # this copy is the installer's: the app's plugin update may replace it (plugin-update.sh)
 cp "$here/phone/hermes-debian" "$HOME/bin/hermes-debian"
 # hm-shizuku: lets Shizuku start again by itself after a restart (Termux's own adb; phone-access.sh pairs it).
 cp "$here/phone/hm-shizuku" "$HOME/bin/hm-shizuku"
