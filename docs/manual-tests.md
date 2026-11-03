@@ -240,3 +240,21 @@ read as a pass:
       shows the main model, "No fallback models yet" and "Add a fallback model" within a second or two, never a
       "Loading…" that stays. Add two fallbacks, reorder them with ↑ ↓, remove one (the config changes each time), and
       put the owner's providers back as they were.
+
+## Moving pictures to Pictures/Hermux (emulator, 2026-11-03)
+
+On an Android 15 (API 35) emulator: pictures saved by a build from before #87 (1aeb309), then updated with
+`adb install -r` to a build from `main` (6489374). An emulator pass only: no real phone, and no phone with old pictures.
+
+| Check | Result |
+|---|---|
+| The app's 3 pictures moved from `Pictures/Hermes` to `Pictures/Hermux` | PASS: identical checksums, the same MediaStore rows, readable through their content URIs |
+| Name clash with a different `same.png` already in `Pictures/Hermux` | PASS: the moved one became `same (1).png`; the one already there was unchanged |
+| A file the app didn't save | PASS: stayed in `Pictures/Hermes` |
+| A new save | PASS: went to `Pictures/Hermux` |
+| A restart after the move | PASS: nothing changed, no errors in the log |
+
+- [ ] **Android 11 (API 30).** NOT VERIFIED: the oldest version the move runs on; not run, for lack of disk space. Same
+      steps as above on an API 30 emulator or phone, with test pictures.
+- [ ] **A real phone with old pictures.** NOT VERIFIED. Update from a build before #87 on a phone with test pictures in
+      `Pictures/Hermes`. Expected: each is in `Pictures/Hermux` once, and the gallery still shows them.
