@@ -29,4 +29,6 @@ in Termux.
   pictures in `Pictures/Hermux`, and on Android 11+ the app moves the pictures it saved itself there from
   `Pictures/Hermes`. On Android 10 (its move could overwrite a picture with the same name), and for any it can't
   move, they stay where they were.
-- The old name in README's top picture and the released sections of CHANGELOG.md stay until the interface redo.
+- ~~The old name in README's top picture and the released sections of CHANGELOG.md stay until the interface redo.~~
+  Changed 2026-11-03, by the owner: the README images are retaken with the new name now. The released sections of
+  CHANGELOG.md stay as history.
