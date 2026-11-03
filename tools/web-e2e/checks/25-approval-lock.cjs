@@ -1,6 +1,6 @@
 // Confirm approvals with fingerprint: the first Allow in a chat session asks the shell for the biometric or screen
 // lock (faked here: window.__al is the shell's answer), later approvals in that chat don't; Deny never asks.
-const { WEB, calls, check, sleep, nativeShell } = require('../lib.cjs')
+const { WEB, calls, check, sleep, nativeShell, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -74,6 +74,32 @@ module.exports = async t => {
     c = await confirms(pg)
     check(await pg.evaluate(() => window.__al.on === false && window.__alCalls.some(x => x.set === false)), 'approval lock: turning it off after confirming saves it in the shell')
     check(c.slice(-1)[0]?.session === '', 'approval lock: turning it off asks for the screen lock (no chat)')
+    await pg.close()
+  }
+  {
+    // Settings → Background apps: turning on banking, payment, password and 2FA apps asks first; turning it off doesn't
+    await mock({ bgapps: { allow_sensitive: false, available: true } })
+    const pg = await open({ on: true, secure: true, result: 'cancel' })
+    await pg.getByRole('button', { name: /^Sessions/ }).click()
+    await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+    const row = pg.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
+    await row.waitFor({ timeout: 5000 })
+    const puts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/bgapps')
+    const before = puts().length
+    check((await row.getByRole('switch').getAttribute('aria-checked')) === 'false', 'sensitive apps: off by default')
+    await row.click()
+    await sleep(300)
+    let c = await confirms(pg)
+    check(c.length === 1 && c[0].session === '' && /banking/.test(c[0].what), `sensitive apps: turning on asks for the fingerprint (${JSON.stringify(c)})`)
+    check(puts().length === before && (await row.getByRole('switch').getAttribute('aria-checked')) === 'false', 'sensitive apps: a cancelled confirmation keeps it off and saves nothing')
+    await pg.evaluate(() => (window.__al.result = 'ok'))
+    await row.click()
+    await sleep(400)
+    check(puts().length === before + 1 && puts().slice(-1)[0].body.allow_sensitive === true, 'sensitive apps: confirmed, it turns on')
+    await row.click()
+    await sleep(400)
+    c = await confirms(pg)
+    check(c.length === 2 && puts().slice(-1)[0].body.allow_sensitive === false, 'sensitive apps: turning off does not ask')
     await pg.close()
   }
   {
