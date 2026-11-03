@@ -161,9 +161,9 @@ check on a real phone:
       Expected: "⚡ Full access on…", the button reads ⚡ Full access; `/yolo` again: "Back to Auto access". Note how long
       the notice takes right after opening a chat.
 
-- [ ] **Start with Hermes stopped.** (2026-11-02: BLOCKED, the app has no action that stops Hermes; use the Termux commands below.) With a build that has the fix: in Termux, stop the dashboard
-      (`~/bin/hermes-debian --restart`, or `pkill -f 'hermes dashboard'`; the service loop starts it again within about
-      10 s), force stop the app and open it at once. In Termux, watch
+- [x] **Start with Hermes stopped.** (2026-11-03, 0.8.73-test: the shell asked for the token within 0.02 s of a phone-side curl loop's first 200, with the app opened 0, 3 and 5 s after the stop, each time before the next backoff step. 3 starts opened at once: `socket` 18.1–18.3 s, `sessions` 19.3–19.5 s, `chat-live` 20.5–20.8 s.) With a build that has the fix: in Termux, stop the dashboard
+      (`~/bin/hermes-debian --restart`, which stops it at once; a plain `pkill -f 'hermes dashboard'` can leave it answering for a while. The service
+      loop starts it after 10 s and it answers about 18 s after the stop), force stop the app and open it at once. In Termux, watch
       `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9119/` turn 200. Expected: the app connects within about
       a second of that, not up to 15 s later. Note the `socket` and `sessions` times in Settings → About → Last start-up.
 
