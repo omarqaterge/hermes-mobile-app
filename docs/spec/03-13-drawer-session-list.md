@@ -36,10 +36,9 @@ The drawer is the left-hand panel with the profile switcher, the New chat button
 | 🗄 Archived (n) ▸ | Toggle button, the count appears once loaded | Opens / closes the archived list and loads it | — | "Loading…", then the rows, or "Nothing archived. Swipe a chat right to archive it." |
 
 A session row shows, from left to right:
-- a working dot (`aria-label` "Working") while the chat is running (the open chat's own turn, or any chat in the plugin's activity feed; a background memory/skills review does not count);
 - an unread dot (`aria-label` "Finished, not opened yet") when the chat has more messages than you last saw, it is not the open chat and it is not working;
 - 📌 for a pinned chat;
-- the title (via `Title`, which also renders the branch marker), else the first-message preview, else "Untitled";
+- the title (via `Title`, which also renders the branch marker), else the first-message preview, else "Untitled". While the chat is running (the open chat's own turn, or any chat in the plugin's activity feed; a background memory/skills review does not count) a soft band of light sweeps across the title line (`.session-title.working`, keyframes `working-shimmer`) and screen readers hear "Working". The band is a mask over the line, so the 📌, the branch icon and any emoji keep their colours. It redraws 24 times a second, is paused while the chat list is closed on a phone (the docked list on a wide screen keeps it running), and with reduced motion the line stays still and dimmed;
 - under it, in dim text: time since last activity (now, N min, N h, N d, N wk, or a date after about two months), then ` · N msgs`, where N counts only the messages you sent (no replies, tool calls or Hermux's own notices; `sentCounts` in the store, filled by `loadSentCounts` in `web/src/sent-counts.ts` from the plugin's `POST /sent-counts` after each `session.list`, asking again only for chats whose `message_count` changed; left out until that answer arrives or when the plugin is too old to have the route), then ` · <source>` when the chat did not come from this app (`source` other than `mobile`);
 - a ⋮ button on the right (`aria-label` "Chat options") that opens the item menu. It stops the pointer from starting a swipe or drag.
 
