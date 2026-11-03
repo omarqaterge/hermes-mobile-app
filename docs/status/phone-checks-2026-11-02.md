@@ -28,14 +28,14 @@ the code.
 
 **Next:**
 - A: fixed in code: the service tells the page as soon as Hermes's dashboard answers (bridge `watchHermes`,
-  `window.__hmHermesReady`) and the page reconnects then; the backoff stays as the fallback. Tested in unit and browser
-  tests only. Still to measure on the phone: a start with Hermes stopped (`docs/manual-tests.md`).
+  `window.__hmHermesReady`) and the page reconnects then; the backoff stays as the fallback. Measured on the phone on
+  2026-11-03: it connects as the dashboard answers, about 18 s after a restart (`docs/performance-history.md`).
 - B: decided and done (`docs/decisions/yolo-goes-to-full-access.md`): `/yolo` from Off or Auto goes to Full access,
   from Full access back to the previous mode; the notice names the mode; the newest access switch wins. Still to see
   on the phone.
 
 **Needs a real phone:** yes. C with a build that has #67 (send a prompt, press Home, the chip stays until the app is
-opened); B on the phone; A with Hermes stopped.
+opened); B on the phone.
 
 **Links:** #66, #67, `docs/spec/03-06-approvals-and-questions.md`, `docs/spec/04-03-notifications.md`,
 `docs/spec/04-07-shizuku-keeper-autostart-uninstall-updatenotice.md`.

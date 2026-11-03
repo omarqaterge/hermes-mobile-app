@@ -53,4 +53,19 @@ module.exports = async t => {
   check((await scv.locator('.msg', { hasText: 'old answer' }).count()) === 1, 'the chat that was loading still opens after tapping the canvas (no new empty chat)')
   check((await scv.locator('.canvas-panel').count()) === 1 && (await scv.locator('.canvas-tab-title', { hasText: 'Life' }).count()) === 1, 'canvas stays open on the chat once it has loaded')
   await scv.close()
+
+  // ── Settings → About → Last start-up follows the marks while it is on screen (it used to stop at the mark it opened with) ──
+  const sbt = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  await sbt.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
+  await sbt.goto(WEB + '/')
+  await sleep(600) // connected, the slow resume is in flight (its start closes the drawer)
+  await sbt.getByRole('button', { name: 'Sessions' }).click()
+  await sbt.locator('.nav-tile', { hasText: 'Settings' }).click()
+  const bootRow = sbt.locator('.screen', { hasText: 'Last start-up' }).getByText(/^script /)
+  await bootRow.waitFor({ timeout: 5000 })
+  check(!/chat-live/.test(await bootRow.innerText()), 'Last start-up: opened while the chat is still loading, no chat-live yet')
+  await sbt.waitForFunction(() => /chat-live/.test(localStorage.getItem('hm.boot.v1') || ''), null, { timeout: 6000 })
+  await sleep(100)
+  check(/chat-live/.test(await bootRow.innerText()), 'Last start-up: the mark that arrives appears without leaving the screen')
+  await sbt.close()
 }

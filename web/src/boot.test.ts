@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, test } from 'vitest'
-import { bootMark, bootSummary, lastBoot, resetBootForTest } from './boot'
+import { bootMark, bootSummary, lastBoot, onBootMark, resetBootForTest } from './boot'
 
 describe('start-up timing marks', () => {
   beforeEach(() => {
@@ -24,6 +24,16 @@ describe('start-up timing marks', () => {
     bootMark('chat-live', 2460)
     expect(bootSummary(lastBoot())).toBe('script 0.1s · chat-live 2.5s')
     expect(bootSummary([])).toBe('')
+  })
+  test('a new mark tells whoever listens, a repeated one does not', () => {
+    let told = 0
+    const stop = onBootMark(() => told++)
+    bootMark('socket', 18200)
+    bootMark('socket', 25000)
+    expect(told).toBe(1)
+    stop()
+    bootMark('chat-live', 20400)
+    expect(told).toBe(1)
   })
   test('a broken stored value reads as no marks', () => {
     localStorage.setItem('hm.boot.v1', '{oops')

@@ -11,7 +11,7 @@ import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gatewa
 import { getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic, openExternal, openRemoteDebugging, turnOffRemoteDebugging } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
-import { bootSummary, lastBoot } from '../boot'
+import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
 import { headlines } from '../releasenotes'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
@@ -867,6 +867,7 @@ const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appeara
 
 function Hub({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
+  const bootLine = useBootSummary()
   // The open chat knows the version; without one, the health check (/api/status) does.
   const hermesVersion = useStore(s => s.active?.info?.version || s.health?.version || '')
   const [theme] = useState<Theme>(savedTheme)
@@ -907,7 +908,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <ReportRow />
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
         <PluginRow />
-        <Row title="Last start-up" sub={bootSummary(lastBoot()) || 'Not measured yet'} />
+        <Row title="Last start-up" sub={bootLine || 'Not measured yet'} />
         <StatsRow />
         <RemoteDebugRow />
       </Section>
