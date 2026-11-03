@@ -36,7 +36,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    - `message.complete` drops leftover generating cards, puts the final text on the reply (`fullReply` keeps the
      streamed text unless the final one is longer and ends with it), adds an error notice on failure, hands the
      reply to Live mode or to auto read-aloud (only while the app is in front), sets `running: false`, and
-     `finishTurnStats` writes "~N tok/s · 1m 23s · ctx N% · used/max" under the reply (the turn's duration, from 1 s on) and saves it in `hm.stats.v1`.
+     `finishTurnStats` writes "~N tok/s · 1m 23s" under the reply (the turn's duration, from 1 s on) and saves it in `hm.stats.v1`; its `refreshCtx` updates the context ring and saves the fill in `hm.ctx.v1`.
    - `review.summary`, `background.complete` and an unclaimed `btw.complete` become info notices.
    - Events of other chats only refresh the drawer (`session.title`, `message.complete` → `loadSessionsSoon`);
      `sessions.changed` refreshes it too. `notification.show` becomes a toast; `request.cancel` closes a request

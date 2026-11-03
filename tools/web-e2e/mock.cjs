@@ -1208,6 +1208,8 @@ wss.on('connection', ws => {
         return reply({ categories: [], skills: {}, pairs: [] })
       case 'session.context_breakdown':
         if (params.session_id === 'rt-s-full') return reply({ context_used: 850, context_max: 1000, context_percent: 85 })
+        // Like Hermes before a reopened chat's first turn: no agent yet, so no figures
+        if (params.session_id === 'rt-s-cold') return reply({ context_used: 0, context_max: 0, context_percent: 0 })
         return reply({ context_used: 100, context_max: 1000, context_percent: 10 })
       case 'projects.list':
         return reply({ projects: [{ id: 'p1', name: 'Thesis', primary_path: '/root/projects/thesis', folders: [{ path: '/root/projects/thesis' }] }] })

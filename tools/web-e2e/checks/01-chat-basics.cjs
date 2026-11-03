@@ -16,6 +16,8 @@ module.exports = async t => {
     const m = await page.evaluate(() => { const e = document.querySelector('.empty svg.logo'); const r = e && e.getBoundingClientRect(); return e && { label: e.getAttribute('aria-label'), w: r.width, paths: e.querySelectorAll('path').length } })
     check(m && m.label === 'Hermux' && m.w > 60 && m.paths > 20, `empty chat shows the Hermux mark as an SVG (${JSON.stringify(m)})`)
     check(!(await page.locator('.empty .logo', { hasText: '☤' }).count()), 'empty chat no longer uses the ☤ text glyph')
+    // the context ring is there before anything is known: an empty ring, not a missing one
+    check((await page.locator('.ctx-ring').getAttribute('aria-label').catch(() => null)) === 'Context not known yet. Show details', 'a new chat shows an empty context ring')
   }
 
   // ── model picked before the first message: the chat is created with it (no switch, so no model-switch marker
@@ -38,7 +40,8 @@ module.exports = async t => {
   // ── context ring: shows after the first turn, the sheet lists tokens, cost and cache hits ──
   {
     const ring = page.locator('.ctx-ring')
-    await ring.waitFor({ timeout: 5000 }).catch(() => {})
+    await page.locator('.ctx-ring[aria-label="Context 10% used. Show details"]').waitFor({ timeout: 5000 }).catch(() => {})
+    check(!/ctx \d/.test(await page.locator('.msg.assistant').last().innerText()), 'the reply stats no longer repeat the context fill')
     check((await ring.getAttribute('aria-label')) === 'Context 10% used. Show details', 'ring shows 10% after the first turn')
     const box = await ring.boundingBox(), rowBox = await page.locator('.model-row').boundingBox()
     check(box && rowBox && box.x + box.width <= rowBox.x + rowBox.width + 1 && box.x >= 0, 'ring sits inside the model row')
