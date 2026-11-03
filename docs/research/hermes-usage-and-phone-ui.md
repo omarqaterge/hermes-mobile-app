@@ -6,7 +6,7 @@ pleasant to look at and to use.
 
 **How it was done.** Web research on the Hermes agent (its GitHub tracker, docs, reviews, Reddit posts reached through
 mirrors) and on the mobile apps of ChatGPT, Claude, Gemini, Perplexity and the remote coding-agent clients (Codex
-mobile, Happy, CC Pocket, cc-mobile, GitHub Copilot). It was then compared with what Hermes Mobile has today
+mobile, Happy, CC Pocket, cc-mobile, GitHub Copilot). It was then compared with what Hermux has today
 ([spec section 3](../spec/03-00-screens-and-ui-elements.md), [feature index](../spec/08-feature-index.md)).
 
 **How far to trust it.** The Hermes tracker has about 52,000 issues and the repo about 260,000 stars (checked with
@@ -80,7 +80,7 @@ through Firebase, package `ai.nousresearch.hermes.mobile` ([page](https://hermes
 [#147269](https://github.com/NousResearch/hermes-agent/issues/147269): the Android beta is full). It is a client for
 an agent running elsewhere, while ours runs Hermes on the phone itself. A
 [third-party guide](https://www.hermify.io/en/blog/hermes-agent-on-phone-mobile) already has to explain that the two
-are different apps. The owner should decide whether this matters for our name and store listing.
+are different apps. The owner should decide whether this matters for our name and store listing. (Our app has since been renamed Hermux.)
 
 ## 4. How the leading mobile AI apps do it
 
@@ -171,9 +171,9 @@ a row touches one, the decision is linked and the change is only a question for 
 | Background app card with thumbnail, Take over, Stop (3.10) | **Keep** | Same as Gemini's "View progress" and the "Take over" step in ChatGPT agent and Gemini. |
 | Activity banner for other chats (3.2) | **Keep, merge later** | Useful, but it overlaps the drawer dots and the status chip (judgement). If the drawer gets a "needs you" state, the banner could show only chats that need you. |
 | By the way pull-up (3.12) | **Keep** | Mirrors Hermes's `/btw`. The pull distance is an [owner decision](../decisions/btw-pull-up-harder.md). |
-| Hermes hub: Skills, Memory, Scheduled jobs, Files, Projects, Canvas gallery (3.14) | **Keep, reorder** | Skills, cron and memory are three of the four most-used Hermes features. Put Scheduled jobs first, and let a cron run open as a chat with an unread dot ([#75123](https://github.com/NousResearch/hermes-agent/issues/75123)). |
-| Settings (3.15) | **Keep, slim the top level** | Top level should read as: Appearance, Voice, Notifications, Models, Permissions, Memory, Connection, About. Advanced settings (every Hermes option), API keys and Last start-up are for the few: one "Advanced" row (judgement). |
-| Notification settings | **Add** | We have no simple user-facing control. Claude's model is two switches: tell me when a task finishes, and when Hermes needs me. |
+| Hermux hub: Skills, Memory, Scheduled jobs, Files, Projects, Canvas gallery (3.14) | **Keep, reorder** | Skills, cron and memory are three of the four most-used Hermes features. Put Scheduled jobs first, and let a cron run open as a chat with an unread dot ([#75123](https://github.com/NousResearch/hermes-agent/issues/75123)). |
+| Settings (3.15) | **Keep, slim the top level** | Top level should read as: Appearance, Voice, Notifications, Models, Permissions, Memory, Connection, About. Advanced settings (every Hermux option), API keys and Last start-up are for the few: one "Advanced" row (judgement). |
+| Notification settings | **Add** | We have no simple user-facing control. Claude's model is two switches: tell me when a task finishes, and when Hermux needs me. |
 | Bots (3.16) | **Keep** | Hermes profiles; heavy users have several. |
 | Messaging-gateway UI (Telegram and the rest) | **Leave out** | The most-used Hermes surface, but the [owner decision](../decisions/app-is-the-only-front-end.md) is that this app is the only front end. |
 
@@ -227,7 +227,7 @@ a row touches one, the decision is linked and the change is only a question for 
 | 2 | **Fold a finished turn's work into one summary line** ("Worked 1 m 20 s · 14 steps"), and show the reasoning time. | Makes chats readable; the biggest visual calm-down for the least risk. | S–M |
 | 3 | **Plain-language "why" on approvals**, a sheet that shrinks to a bar so the chat stays readable, and a visible "sent" confirmation after answering from a notification. | Safety and trust; answers Hermes [#27604](https://github.com/NousResearch/hermes-agent/issues/27604), [#133514](https://github.com/NousResearch/hermes-agent/issues/133514). | M |
 | 4 | **Cost next to context**: session cost in the context sheet and per turn on tap; drop tok/s from the live bar and from the default reply line. | Top Hermes complaint; less noise at the same time. | S |
-| 5 | **Two notification switches** in Settings: "When a task finishes" and "When Hermes needs me", with cron results opening as a chat with an unread dot. | Matches the best apps; fixes "too quiet" and "too noisy" with one rule. | M |
+| 5 | **Two notification switches** in Settings: "When a task finishes" and "When Hermux needs me", with cron results opening as a chat with an unread dot. | Matches the best apps; fixes "too quiet" and "too noisy" with one rule. | M |
 | 6 | **Slimmer Settings top level** with one Advanced row for everything Hermes-specific. | First impression for new users; nothing removed. | S–M |
 | 7 | **Hub: Scheduled jobs first**, with next run and last result on the card. | Cron is the second job people use Hermes for. | S |
 | 8 | **Quieter chrome**: dim or hide the green status dot, consider moving the Auto mode next to the model chip, put Branch in a "more" menu. | Visual calm; each is a small change the owner should approve. | S each |

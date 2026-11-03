@@ -3,8 +3,8 @@
 The Android shell is a Gradle-less APK (`android/build.sh`: `aapt2`, `javac`, `d8`, `zipalign`, `apksigner`). Package `com.omarqaterge.hermesmobile`. It has three jobs:
 
 1. It hosts the web UI in a `WebView` (`MainActivity`) and gives that page the few things a web page cannot do (the bridge, 4.5).
-2. It keeps a foreground service alive (`HermesService`) that receives events from the Hermes plugin on `127.0.0.1:9121` and turns them into notifications (4.3, 4.4).
-3. It starts and watches the helper apps Hermes depends on: Termux (runs Hermes), Termux:API, Termux:Boot and Shizuku (4.7).
+2. It keeps a foreground service alive (`HermesService`) that receives events from the Hermux plugin on `127.0.0.1:9121` and turns them into notifications (4.3, 4.4).
+3. It starts and watches the helper apps Hermux depends on: Termux (runs Hermes), Termux:API, Termux:Boot and Shizuku (4.7).
 
 **Versions.** `android/build.sh` compiles against Android 16 (`android-36.jar`, because Live Update APIs live there), links with `--min-sdk-version 26` (Android 8.0) and `--target-sdk-version 35`, and runs `d8 --min-api 26`. The shell needs no root.
 

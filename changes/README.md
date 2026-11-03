@@ -14,7 +14,7 @@ so branches worked on in parallel never conflict over the changelog.
   ---
   rank: big
   ---
-  - **Talk to Hermes on the lock screen.** Settings → Voice → Phone assistant has a new row… Seen on an Android 16 phone.
+  - **Talk to Hermux on the lock screen.** Settings → Voice → Phone assistant has a new row… Seen on an Android 16 phone.
   ```
 
   `big`: a new feature or a change most users will notice and want to hear about first. `normal`: a visible

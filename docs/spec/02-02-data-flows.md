@@ -109,7 +109,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 4. Tapping the notification opens `MainActivity` with the extra `session`. `onCreate` or `onNewIntent` stores it as
    `pendingSession`; once the page has loaded, `openPendingSession` (the id filtered to `[A-Za-z0-9_.:-]`) calls
    `window.hermesOpenSession`, which runs `openSessionFromNotification` → `resumeSession`. When the tapped notification
-   is the working chip while Hermes uses an app for that chat, the intent also has `bgView` (`EXTRA_BG_VIEW`), and
+   is the working chip while Hermux uses an app for that chat, the intent also has `bgView` (`EXTRA_BG_VIEW`), and
    `openPendingSession` first calls `window.hermesOpenBgView(id)` so the chat opens with the live viewer (3.10).
 5. The page's store subscription calls `chatSeen(storedId)` whenever the chat on screen changes (also for a chat
    created by its first message), so the service drops that chat's Done chip, badge and reply notification.
@@ -230,7 +230,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 7. Save and Share in the image viewer reuse the same route (`mediaBytes`, up to 30 MB) or take base64 from the
    page, write to Pictures/Hermux or a share-cache file, and answer through `window.__hmImage(id, ok)`.
 
-#### 2.2.8 Background app (Hermes uses an app on a hidden screen)
+#### 2.2.8 Background app (Hermux uses an app on a hidden screen)
 
 1. The plugin's `phone_app` tool (5.2) starts `BgHost` if it isn't running: through `~/bin/rish` it runs
    `app_process` as the shell user with a fresh token; `BgHost` listens on `127.0.0.1:9131` and drives a virtual

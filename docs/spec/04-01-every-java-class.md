@@ -34,7 +34,7 @@ All sources are under `android/src/com/omarqaterge/hermesmobile` (package `com.o
 Support files that are not counted as classes:
 
 - `android/src/moe/shizuku/api/BinderContainer.java` is a copy of the parcelable Shizuku's server wraps its binder in (Apache-2.0, RikkaApps). The class name is part of the wire format, so it must keep that package. `ShizukuProvider.call` reads it.
-- `android/res/values/strings.xml`: `app_name` is `Hermes`; `sc_new` New chat; `sc_live` Live mode; `sc_live_long` Talk to Hermes (Live mode).
+- `android/res/values/strings.xml`: `app_name` is `Hermux`; `sc_new` New chat; `sc_live` Live mode; `sc_live_long` Talk to Hermux (Live mode).
 - `android/res/values/styles.xml`: theme `HermesTheme` (Material, no action bar, window/status/navigation bar colour `bg` = `#0E1115`) and the colours `bg`, `gold` (`#D9A441`), `icon_bg` (`#FFFFFF`).
 - `android/res/drawable/ic_stat_hermes.xml` (the small notification icon) and `ic_stat_shield.xml` (the approval chip icon).
 - `android/res/mipmap-*/ic_launcher_fg.png` and `mipmap-anydpi-v26/ic_launcher.xml`: adaptive launcher icon with a white background, the foreground image, and the same image as the monochrome (themed icon) layer.

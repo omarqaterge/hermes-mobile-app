@@ -1,12 +1,12 @@
 ### 4.2 Manifest: components and permissions
 
-**Application.** `android:allowBackup="false"`, theme `HermesTheme`, label `Hermes`, network security config as above.
+**Application.** `android:allowBackup="false"`, theme `HermesTheme`, label `Hermux`, network security config as above.
 
 **Components.**
 
 | Component | Exported | What it is |
 |---|---|---|
-| `.MainActivity` | yes | `launchMode="singleTask"`, `windowSoftInputMode="adjustResize"`, handles `orientation`, `screenSize`, `screenLayout`, `keyboardHidden`, `keyboard`, `uiMode`, `density` itself (no restart on rotate or dark-mode change; `onConfigurationChanged` tells the page to re-resolve the System theme). Intent filters: `MAIN`/`LAUNCHER`; `ASSIST` and `VOICE_COMMAND` with `DEFAULT` (phone assistant, 4.6); `SEND` and `SEND_MULTIPLE` for `*/*` (Share to Hermes: text, links, photos, PDFs, any file). Meta-data `android.app.shortcuts` points at `res/xml/shortcuts.xml`. |
+| `.MainActivity` | yes | `launchMode="singleTask"`, `windowSoftInputMode="adjustResize"`, handles `orientation`, `screenSize`, `screenLayout`, `keyboardHidden`, `keyboard`, `uiMode`, `density` itself (no restart on rotate or dark-mode change; `onConfigurationChanged` tells the page to re-resolve the System theme). Intent filters: `MAIN`/`LAUNCHER`; `ASSIST` and `VOICE_COMMAND` with `DEFAULT` (phone assistant, 4.6); `SEND` and `SEND_MULTIPLE` for `*/*` (Share to Hermux: text, links, photos, PDFs, any file). Meta-data `android.app.shortcuts` points at `res/xml/shortcuts.xml`. |
 | `.HermesService` | no | `foregroundServiceType="specialUse"` with the property `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` = "Pinned status of the on-device Hermux agent and delivery of its notifications". |
 | `.SttProbe` | no | `android:process=":sttprobe"`: checks an on-device speech model in a process of its own, so a model the speech engine can't run ends only that process (4.6). |
 | `.CameraProvider` | no | Authority `com.omarqaterge.hermesmobile.camera`, `grantUriPermissions="true"`. |
@@ -31,7 +31,7 @@
 | `POST_PROMOTED_NOTIFICATIONS` | normal (Android 16) | Lets the status notification be promoted to a Live Update (status-bar chip, the "island" on some phones). Without it the notification is still posted as a normal ongoing one. |
 | `REQUEST_DELETE_PACKAGES` | normal | Android's uninstall prompt for the helper apps and this app (`Uninstall.uninstallApp`, `ACTION_DELETE`). |
 | `RECORD_AUDIO` | runtime | Dictation and Live mode (`Voice.startListening`). Asked on first use; denial reports `mic-denied` to the page. |
-| `WAKE_LOCK` | normal | `HermesService.updateWake` holds a partial wake lock (`hermes:working`) only while Hermes works, an approval waits, or a cron job is due. |
+| `WAKE_LOCK` | normal | `HermesService.updateWake` holds a partial wake lock (`hermes:working`) only while Hermux works, an approval waits, or a cron job is due. |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | normal | The Setup check's "let it run in the background" prompt (`setupFix` `battery-app`). |
 | `USE_EXACT_ALARM` | normal (Android 13+) | The exact alarm that wakes the phone for a due cron job (`scheduleWake` uses `setExactAndAllowWhileIdle` when `canScheduleExactAlarms()` is true, otherwise `setAndAllowWhileIdle`). |
 | `REQUEST_INSTALL_PACKAGES` | special app access | Hands the downloaded release APK and the helper apps to the system installer (`PackageInstaller` sessions). The user confirms each install; `setupFix` `install-permission` opens the "install unknown apps" page for this app. |

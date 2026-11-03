@@ -1,7 +1,7 @@
 # Hermux: full specification
 
 The specification describes what the code of Hermux does: the architecture, every feature, every screen and
-every UI element, the Android shell, the Hermes plugin, the phone-side scripts, and how the app is built, tested and
+every UI element, the Android shell, the Hermux plugin, the phone-side scripts, and how the app is built, tested and
 released. This file is its index; the text is in [docs/spec/](spec/), one file per section below (`NN-MM-name.md`), so
 parallel changes to different areas don't touch the same file. Read the contents list, then only the files for the
 area you work on.
@@ -9,7 +9,7 @@ area you work on.
 **How to read this.** Sections 1 and 2 give the big picture: what the app is, which processes run where, and how a
 message, an approval or a notification travels between them. Section 3 walks every screen, sheet and panel of the app
 (what each element looks like, what a tap, long-press or swipe does, and its empty, loading, error and disabled
-states). Sections 4 to 6 describe the parts outside the page: the Android shell, the Hermes plugin, and the scripts on
+states). Sections 4 to 6 describe the parts outside the page: the Android shell, the Hermux plugin, and the scripts on
 the phone. Section 7 covers build, tests, CI and releases. Section 8 is a feature index that points to the section
 describing each feature; section 9 is a glossary. Identifiers are written in backticks exactly as in the code
 (`speak`, `GET /canvas/doc`, `hm.yolo.v1`, `MainActivity`); text the user reads on screen is written as shown, without
@@ -68,7 +68,7 @@ where, and what is still open, is in [docs/improvements.md](improvements.md) and
   - [4.5 Bridge methods](spec/04-05-bridge-methods.md)
   - [4.6 Voice, read-aloud, Live mode, phone assistant](spec/04-06-voice-read-aloud-live-mode.md)
   - [4.7 Shizuku keeper, Autostart, Uninstall, UpdateNotice, BgHost and the rest](spec/04-07-shizuku-keeper-autostart-uninstall-updatenotice.md)
-- [5. Hermes plugin](spec/05-00-hermes-plugin.md)
+- [5. Hermux plugin](spec/05-00-hermes-plugin.md)
   - [5.1 Hooks (12)](spec/05-01-hooks.md)
   - [5.2 Tools (4)](spec/05-02-tools.md)
   - [5.3 System-prompt sections (4)](spec/05-03-system-prompt-sections.md)

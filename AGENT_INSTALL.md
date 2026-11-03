@@ -1,9 +1,9 @@
-# Install Hermes on an Android phone: instructions for an AI agent
+# Install Hermux on an Android phone: instructions for an AI agent
 
 **Human:** plug your phone into your computer and give your coding agent (Claude Code, Codex, Cursor, Gemini CLI…) this prompt:
 
 ```text
-Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermes on my Android phone.
+Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermux on my Android phone.
 ```
 
 Everything below is for the agent.
@@ -17,7 +17,7 @@ Set up, on the user's Android phone, from their computer (macOS, Windows or Linu
 1. **Termux** (a Linux terminal app) with **Debian** inside it (proot-distro; on a rooted phone, chroot-distro if the user asks
    for it: run the setup script with `HM_DISTRO=chroot`, and the user taps Grant when the root manager asks about Termux).
 2. **Hermes Agent** (github.com/NousResearch/hermes-agent) inside Debian, with a model the user chooses.
-3. **Hermux** (this repo): the Hermes plugin, a supervisor script, and the Android app.
+3. **Hermux** (this repo): the Hermux plugin, a supervisor script, and the Android app.
 
 You drive the phone with `adb`: install apps, change a few settings, and type commands into Termux with
 `adb shell input text`. The phone-side work is one script, [`phone/bootstrap.sh`](phone/bootstrap.sh), which reports its
@@ -61,7 +61,7 @@ Steps 1-9 below are automated in one script. Use it first; fall back to the manu
    ```
 
    Subscription, or no key yet? Use `HM_SKIP_MODEL=1` instead (the other `HM_` variables aren't needed): the app opens on
-   **Connect Hermes to a model** the first time.
+   **Connect Hermux to a model** the first time.
 4. Read `setup.log` every minute or so. It prints `1/9` … `9/9`, the phone-side progress (`STEP …`), and ends with
    `Done.` or `ERROR: …`. On an error, fix the cause (the matching step below explains it; a screenshot of Termux is saved
    in `~/.hermes-mobile-setup/termux-error.png`) and run the script again: finished parts are skipped.
@@ -105,8 +105,8 @@ Needs `arm64-v8a`, SDK ≥ 26 (Android 8), and at least **6 GB** free. Stop and 
 
 ## 3. Install Termux, Termux:API, Termux:Boot and Shizuku
 
-All four are needed: Termux runs Hermes, Termux:API lets Hermes use the phone (battery, location, clipboard, notifications, SMS…),
-Termux:Boot starts Hermes after a reboot, and Shizuku gives Hermes adb-level access (screen, taps, apps, logs) **without root**.
+All four are needed: Termux runs Hermes Agent, Termux:API lets Hermux use the phone (battery, location, clipboard, notifications, SMS…),
+Termux:Boot starts Hermes Agent after a reboot, and Shizuku gives Hermux adb-level access (screen, taps, apps, logs) **without root**.
 Check what is there: `adb shell pm list packages | grep -E 'com.termux|moe.shizuku'`.
 
 - **Not installed:** download the current builds from F-Droid and install them. Find each version code with
@@ -135,9 +135,9 @@ adb shell dumpsys deviceidle whitelist +moe.shizuku.privileged.api
 ```
 
 Keeps the screen on during the install (undone in step 9) and stops Android from killing Termux and Shizuku in the background
-(Shizuku is needed: if Android stops it, Hermes loses the screen).
+(Shizuku is needed: if Android stops it, Hermux loses the screen).
 
-Give Termux the files permission (Hermes reads and saves files through it), start Shizuku the way its own *Start by connecting
+Give Termux the files permission (Hermux reads and saves files through it), start Shizuku the way its own *Start by connecting
 to a computer* does, and let Shizuku restart itself after a reboot (Android 13+, once the user starts it via Wireless debugging):
 
 ```bash
@@ -207,7 +207,7 @@ Steps: `packages` → `debian` → `hermes` (the long one) → `plugin` → `sta
 
 During `plugin` (`HMSETUP phone: …` lines), Shizuku asks on the phone whether Termux may use it: ask the user to tap **Allow all
 the time** (the installer waits up to a minute). The installer never taps or reads the phone's screen. On Android 11+, once the app opens after `DONE`, it asks the user to pair Termux with Wireless debugging once ("Shizuku starts by itself": Start pairing, then the code goes into Hermux's notification; needs Wi-Fi). Tell the user to do that step: it lets Shizuku start again by itself after a restart.
-`HMSETUP TODO …` lines just before `DONE` name what Hermes still can't reach (files, Termux:API, Shizuku) and how to fix it; fix it and re-run `bash hm.sh`.
+`HMSETUP TODO …` lines just before `DONE` name what Hermux still can't reach (files, Termux:API, Shizuku) and how to fix it; fix it and re-run `bash hm.sh`.
 
 **`HMSETUP FAIL <step> (line N)`:** the real error is on the Termux screen. Read it with a screenshot
 (`adb exec-out screencap -p > screen.png`), or scroll back in Termux. Common causes:
@@ -229,7 +229,7 @@ To re-run, type `bash hm.sh` + Enter. It skips what is done.
 Ask the user how they want to pay for the model:
 
 - **A subscription** (ChatGPT Plus / Pro or Codex, Claude Pro / Max, SuperGrok / X Premium+, Nous Portal): skip this step. When the
-  app first opens it shows **Connect Hermes to a model**, where the user signs in themselves (ChatGPT, Claude, Grok and Nous in
+  app first opens it shows **Connect Hermux to a model**, where the user signs in themselves (ChatGPT, Claude, Grok and Nous in
   the app; Claude can also use Termux with Hermes's own `hermes auth add anthropic`). Never handle their account login yourself.
 - **An API key:** ask which provider and for the key. Easy default: **OpenRouter** (one key, every model,
   https://openrouter.ai/keys). Others: `anthropic` (`ANTHROPIC_API_KEY`), `openai` (`OPENAI_API_KEY`), `gemini`
@@ -268,10 +268,10 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
 
 ## 9. Check it works, then clean up
 
-1. The app should show the chat screen within a minute, not "Hermes is offline". If it does show offline, it opens a
+1. The app should show the chat screen within a minute, not "Hermux is offline". If it does show offline, it opens a
    **Setup check** screen by itself: take a screenshot and fix what it marks red. Otherwise open it (tap the dot next to the
    chat title → Setup check) and check the last three rows: files, Termux:API, Shizuku.
-2. If step 7 was skipped, the app shows **Connect Hermes to a model**: let the user sign in or paste a key there and pick a model.
+2. If step 7 was skipped, the app shows **Connect Hermux to a model**: let the user sign in or paste a key there and pick a model.
 3. Ask the user to send "hi" in the app. A streamed answer means the install is complete.
 4. Put the phone back:
 
@@ -281,7 +281,7 @@ adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity
 
 5. Tell the user, briefly:
    - On **Xiaomi/HyperOS** also turn on **Autostart** for Termux and Hermux (Settings → Apps), or Android may still stop them.
-   - The **Termux notification must stay**: Hermes runs inside Termux.
+   - The **Termux notification must stay**: Hermes Agent runs inside Termux.
    - **Shizuku stops when the phone restarts.** Android 11+: Hermux starts it again by itself once the phone is on Wi-Fi
      (after the install the app asks you once to pair Termux's adb: "Shizuku starts by itself" → Start pairing, type the code into its notification; on a new Wi-Fi Android asks once to allow wireless debugging there: tick
      *Always allow on this network* and tap *Allow*). If it doesn't come back: Hermux → Setup check → *Start pairing*.

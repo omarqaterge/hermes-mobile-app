@@ -11,7 +11,7 @@ app log), `relay/report/` (the relay, below). Decision: [report-a-problem](../de
 **The form** ("Report a problem"): a warning first, "Reports are public: anyone can read them on GitHub. Don't write
 anything private."; the fields Title (up to `MAX_TITLE`, 120 characters) and What happened (up to `MAX_TEXT`, 6000); a
 line naming what is sent with it ("Sent with it: app …, Android …, Hermux agent …. Nothing else about your phone.",
-from `reportDetails`: `appVersion()`, the Android version from the WebView's identification, and the Hermes version of
+from `reportDetails`: `appVersion()`, the Android version from the WebView's identification, and the Hermux agent version of
 the open chat or the health check); the switch Include recent app log (off every time the app starts; while on, the
 exact text that will be sent, read once when switched on, shows below it, scrolled in a box labelled "App log to send",
 with a note on what the app takes out and that it can miss some); and the screenshot row. With a relay in the build, the row Add a screenshot opens the phone's picture

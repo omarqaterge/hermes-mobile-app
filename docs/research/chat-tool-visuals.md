@@ -24,7 +24,7 @@ written for Hermes's tool names in `web/src/toolsay.ts`.
 - **Small things:** failures dim the icon and add a small ✕ (not a red label) and say "tool call failed" to screen
   readers; timestamps only on hover; expanded state remembered per row.
 
-## What Hermes Mobile already had
+## What Hermux already had
 
 Most of the structure: tool cards that open on tap ([3.3](../spec/03-03-messages.md)), runs of 3+ calls folded into
 "Ran 7 tools · 42s", a changed-files card per turn with per-file diffs, the turn's duration in the reply's stats, a

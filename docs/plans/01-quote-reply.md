@@ -14,7 +14,7 @@ Copy/Share menu floats next to the selection, and the two would overlap).
 ## What exists today
 
 - `web/src/components/Canvas.tsx`, `CanvasPanel`: a `selectionchange` listener (search `selectionchange`) that shows a
-  bar "Ask Hermes about the selection" when more than 2 characters are selected. Copy its approach.
+  bar "Ask Hermux about the selection" when more than 2 characters are selected. Copy its approach.
 - `web/src/components/ChatItems.tsx`, `AssistantMsg`: renders a reply as `<div className="msg assistant">` with the
   Markdown inside `.md`. `useTimeTap` already ignores taps while text is selected.
 - `web/src/components/Composer.tsx`, `Composer` and `send()`: the composer, its attachment row (`.attach-row`) and

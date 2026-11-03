@@ -96,7 +96,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
           const w = TOOLSET_WORDS[t.name] || { title: t.label, icon: '🧰', sub: t.description || '' }
           return <Row key={t.name} icon={w.icon} tone="teal" title={w.title} sub={w.sub} value={<State s={toolsetState(t)} />} chevron onClick={() => setToolset(t)} />
         })}
-        <Status loading={tools.loading} error={tools.error} empty={!tools.data?.length} emptyText="None to set up in this Hermes" onRetry={tools.reload} />
+        <Status loading={tools.loading} error={tools.error} empty={!tools.data?.length} emptyText="None to set up in this Hermux" onRetry={tools.reload} />
       </Section>
       {(keys.data?.length || 0) > 0 && (
         <Section title="Keys for skills" footer="Hermux’s skills for these services read the key from the bot’s .env.">

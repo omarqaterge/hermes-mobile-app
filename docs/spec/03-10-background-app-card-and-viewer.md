@@ -2,7 +2,7 @@
 
 **Files:** `BgApp.tsx` (card and viewer), `bgapp.ts` (state from the shell, the frame loop).
 
-Hermes can drive an Android app on a hidden display (a "background app"). The shell (see section 4) owns the display and tells the page about it. The page shows a card above the composer and a live viewer.
+Hermux can drive an Android app on a hidden display (a "background app"). The shell (see section 4) owns the display and tells the page about it. The page shows a card above the composer and a live viewer.
 
 #### Background app card (screen block)
 
@@ -26,13 +26,13 @@ Hermes can drive an Android app on a hidden display (a "background app"). The sh
 
 #### Opened from the status chip
 
-Tapping the working chip (4.3) while Hermes uses an app for the chat it shows opens the app on that chat with the viewer already open. The shell calls `window.hermesOpenBgView(id)` and then `window.hermesOpenSession(id)`; `hermesOpenBgView` stores the request (`wantViewer`, which also re-reads `bgState`) and `BgApp` acts on it through `useViewWanted` and `viewerStep`:
+Tapping the working chip (4.3) while Hermux uses an app for the chat it shows opens the app on that chat with the viewer already open. The shell calls `window.hermesOpenBgView(id)` and then `window.hermesOpenSession(id)`; `hermesOpenBgView` stores the request (`wantViewer`, which also re-reads `bgState`) and `BgApp` acts on it through `useViewWanted` and `viewerStep`:
 
 - The chat shown or opening is that chat and the app is still in use for it: the viewer opens (already while the chat is opening). This covers a cold start from the tap (the request waits until the page has connected and opened the chat), the app open on another chat, and the chat already on screen.
-- That chat has finished opening and Hermes no longer uses an app for it (it finished between the post and the tap): the chat stays open without the viewer, and a toast says "Hermux isn't using an app any more".
+- That chat has finished opening and Hermux no longer uses an app for it (it finished between the post and the tap): the chat stays open without the viewer, and a toast says "Hermux isn't using an app any more".
 - A request older than `VIEW_WAIT_MS` (30 s), or one whose chat showed and was then replaced by another (its opening failed, or the user moved on), is dropped without opening anything; a request is used once, so the app coming back later shows the card only. Over the lock screen (`lockView`) the viewer does not open.
 
-**Hermes finishing while the viewer is open.** The hidden screen lasts until the turn ends, whatever the chip's sub-text says ("N steps" is only the count). When Hermes finishes while the viewer is open, including just after the chip's tap, the viewer closes and the same toast says "Hermux isn't using an app any more" (`APP_GONE`). Take over and Stop show their own toast instead, and another chat opening closes the viewer with no toast. The viewer takes focus away from the composer when it opens, so a composer that had focus when the app was left doesn't bring the keyboard back under the sheet.
+**Hermux finishing while the viewer is open.** The hidden screen lasts until the turn ends, whatever the chip's sub-text says ("N steps" is only the count). When Hermux finishes while the viewer is open, including just after the chip's tap, the viewer closes and the same toast says "Hermux isn't using an app any more" (`APP_GONE`). Take over and Stop show their own toast instead, and another chat opening closes the viewer with no toast. The viewer takes focus away from the composer when it opens, so a composer that had focus when the app was left doesn't bring the keyboard back under the sheet.
 
 **Only for the hidden display.** The card, the viewer, the chip's thumbnail and the chip's tap to the viewer exist only while Hermes uses an app through `phone_app` (the shell's background app). When Hermes instead starts an app on the real screen through `rish` (`am start`, `input`, which the prompt keeps for when the user wants to see the app, 5.3), there is no hidden display and no background app: the chip has no picture, its tap opens the chat alone, and each later `am start` from Hermes brings that app back to the front, over Hermux if the user had just opened it. That is by design: there is nothing hidden to show.
 
