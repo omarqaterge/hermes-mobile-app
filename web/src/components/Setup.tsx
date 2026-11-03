@@ -16,6 +16,7 @@ import { WelcomeBody, markWelcomeDone, welcomeDone } from './Connect'
 import { ScreenShell } from './Screens'
 import { Spinner } from './Spinner'
 import { formatDuration } from '../text'
+import { ReportLink } from './Report'
 
 // Setup check (drawer → Settings, the status sheet, the offline banner) and the first-run SetupFlow. Both draw the same
 // rows from setupSteps() (setupflow.ts): the check lists every row with a ✓ or ✗ and a button that fixes it or opens
@@ -1169,7 +1170,7 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
         <>
           <div className="setup-help">
             The installer stopped at <b>{v.steps.find(s => s.id === v.fail)?.label ?? v.fail}</b>. Open Termux to see why, then paste the same
-            command again: finished steps are skipped.
+            command again: finished steps are skipped. Still stuck? <ReportLink />
           </div>
           {actions}
         </>

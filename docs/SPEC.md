@@ -59,6 +59,7 @@ where, and what is still open, is in [docs/improvements.md](improvements.md) and
   - [3.18 Setup flow + Setup check + Welcome](spec/03-18-setup-flow-setup-check-welcome.md)
   - [3.19 Uninstall](spec/03-19-uninstall.md)
   - [3.20 Shared UI kit + hard UI rules](spec/03-20-shared-ui-kit-hard-ui.md)
+  - [3.21 Report a problem](spec/03-21-report-a-problem.md)
 - [4. Android shell](spec/04-00-android-shell.md)
   - [4.1 Every Java class](spec/04-01-every-java-class.md)
   - [4.2 Manifest: components and permissions](spec/04-02-manifest-components-and-permissions.md)

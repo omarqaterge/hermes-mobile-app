@@ -18,7 +18,8 @@ else. `CLAUDE.md` imports this file.
 
 The map: `web/` the app's interface (React, TypeScript), `android/` the Android shell (Java), `hermes-plugin/` the
 plugin inside Hermes on the phone (Python), `phone/` the phone-side install and service scripts, `hermes/` the pinned
-Hermes and its patches, `tools/` tests and developer tools, `docs/` spec, status, decisions and plans.
+Hermes and its patches, `relay/` small services the owner deploys (the Report a problem relay), `tools/` tests and
+developer tools, `docs/` spec, status, decisions and plans.
 
 - Changes users notice go in a new file in [changes/](changes/README.md) (a plain-words headline first, and a `rank`
   so the biggest changes lead the release notes), never at the top of CHANGELOG.md; checks and

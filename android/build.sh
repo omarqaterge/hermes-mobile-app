@@ -27,7 +27,8 @@ KS="${KEYSTORE:-$HOME/.android/hermes-mobile.keystore}"  # CI passes the release
 [ -x "$BT/aapt2" ] || { echo "missing build-tools 35.0.0"; exit 1; }
 
 # 1. web UI → assets. HM_SKIP_WEB_BUILD=1 uses the web/dist/index.html already there: the release workflow builds it in
-# a job of its own, so no npm package's code runs where the signing key is.
+# a job of its own, so no npm package's code runs where the signing key is. The web build reads HERMES_STATS_KEY and
+# HERMES_REPORT_URL from the environment (both optional, empty by default).
 if [ "${HM_SKIP_WEB_BUILD:-}" = 1 ]; then
   [ -s ../web/dist/index.html ] || { echo "HM_SKIP_WEB_BUILD=1 but there is no web/dist/index.html" >&2; exit 1; }
 else

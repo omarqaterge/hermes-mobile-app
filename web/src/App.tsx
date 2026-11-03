@@ -36,6 +36,7 @@ import { dotState, startHealthPolling, checkHealth } from './health'
 import { SettingsScreen } from './components/Settings'
 import { SetupFlow, SetupScreen, checkSetupFlow, watchFirstRun } from './components/Setup'
 import { StatsCard } from './components/StatsCard'
+import { ReportHost } from './components/Report'
 import { BotsScreen } from './components/Bots'
 import { GalleryScreen } from './components/Gallery'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
@@ -864,6 +865,7 @@ export function App() {
       {sheet === 'rollback' && <RollbackSheet />}
       {sheet === 'context' && <ContextSheet />}
       <StatsCard />
+      <ReportHost />
       {request && <RequestSheet key={request.id} req={request} />}
       <UninstallResume />
       <CanvasPanel />

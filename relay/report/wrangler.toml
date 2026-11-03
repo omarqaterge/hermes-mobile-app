@@ -1,0 +1,17 @@
+# Cloudflare Worker for the app's "Report a problem" (see README.md). Free plan: Workers + one KV namespace.
+name = "hermux-report"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+REPO = "omarqaterge/hermes-mobile-app"
+LABEL = "from-app"
+
+# Reports per day per install and per address, and uploaded screenshots. Put your namespace's ID here
+# (README step 3); an ID is not a secret.
+[[kv_namespaces]]
+binding = "REPORTS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Secrets (README step 4), never in this file: GITHUB_TOKEN, and optionally IP_SALT.

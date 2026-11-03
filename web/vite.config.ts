@@ -64,7 +64,7 @@ const hermesTested = readFileSync(fileURLToPath(new URL('./vendor/hermes-shared/
 
 export default defineConfig({
   base: './',
-  define: { __HERMES_TESTED__: JSON.stringify(hermesTested), __STATS_KEY__: JSON.stringify(process.env.HERMES_STATS_KEY || '') },
+  define: { __HERMES_TESTED__: JSON.stringify(hermesTested), __STATS_KEY__: JSON.stringify(process.env.HERMES_STATS_KEY || ''), __REPORT_URL__: JSON.stringify(process.env.HERMES_REPORT_URL || '') },
   plugins: [katexWoff2Only, react(), viteSingleFile(), lazyBundle('hm-mermaid', './mermaid-entry.js'), lazyBundle('hm-openui', './src/openui-entry.tsx'), lazyBundle('hm-rich', './src/rich-entry.ts')],
   resolve: {
     alias: { '@hermes/shared': fileURLToPath(new URL('./vendor/hermes-shared', import.meta.url)) }

@@ -12,6 +12,7 @@ import { DocView } from './DocView'
 import { Media } from './Media'
 import { previewKind, type PreviewKind } from '../filekind'
 import { Linked } from './Linked'
+import { ReportLink } from './Report'
 import { LOAD_LIMIT_MS, timeLimit, TimeLimitError } from '../timelimit'
 
 // ── shared building blocks ──────────────────────────────────
@@ -86,7 +87,9 @@ export function useLoader<T>(load: () => Promise<T>, deps: unknown[]) {
 export function LoadError({ error, onRetry }: { error: string; onRetry?: () => void }) {
   return (
     <div className="notice notice-error load-error">
-      <Linked text={error} />
+      <span>
+        <Linked text={error} /> <ReportLink />
+      </span>
       {onRetry && (
         <button className="btn" onClick={onRetry}>
           Try again

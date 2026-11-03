@@ -22,6 +22,7 @@ import { DiffView } from './Diff'
 import { useBackHandler } from '../backstack'
 import { Spinner } from './Spinner'
 import { fmtCost } from '../ctxring'
+import { openReport } from './Report'
 
 function Shell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
   const close = onClose ?? (() => setState({ sheet: null }))
@@ -548,6 +549,11 @@ export function StatusSheet() {
           >
             Reconnect / start Hermux
           </button>
+          {dot !== 'ok' && dot !== 'wait' && (
+            <button className="btn" onClick={() => { setState({ sheet: null }); openReport() }}>
+              Report a problem
+            </button>
+          )}
           <button className="btn" onClick={() => setState({ sheet: null, screen: 'setup' })}>
             Setup check
           </button>
