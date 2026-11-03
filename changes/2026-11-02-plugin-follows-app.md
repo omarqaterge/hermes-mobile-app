@@ -1,4 +1,0 @@
----
-rank: big
----
-- **App updates now bring the Hermux plugin up to date too.** Until now an in-app update left the plugin inside Hermux at the version of the first install, so newer features (cards in replies, the Google row in Connectors, the new notification wording) didn't arrive. The app now carries the plugin and swaps it in by itself once Hermux is idle and the app is closed; Hermux restarts for a moment then. It never replaces a newer or hand-changed plugin, and if the new one doesn't load the old one is put back. Settings → About → Hermux plugin shows where it stands and can update now or try again. Seen on an Android phone: a plugin from an older install was replaced after the app update, Hermux came back with the new plugin, every profile followed, and Settings showed it up to date.
