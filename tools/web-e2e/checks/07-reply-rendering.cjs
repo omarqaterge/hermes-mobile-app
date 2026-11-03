@@ -233,6 +233,26 @@ module.exports = async t => {
   check((await card0.locator('.tool-body').count()) === 1, 'motion: the body is still there right after closing')
   await sleep(400)
   check((await card0.locator('.tool-body').count()) === 0, 'motion: the body is gone after the close animation')
+  {
+    // Height of the card's body every frame for 400 ms after a tap (0 once it is unmounted).
+    const frames = () => card0.evaluate(card => new Promise(res => {
+      const hs = []
+      const t0 = performance.now()
+      const tick = () => {
+        const c = card.querySelector('.collapse')
+        hs.push(c ? c.getBoundingClientRect().height : 0)
+        if (performance.now() - t0 < 400) requestAnimationFrame(tick)
+        else res(hs)
+      }
+      card.querySelector('.tool-head').click()
+      requestAnimationFrame(tick)
+    }))
+    const rises = hs => hs.some((h, i) => i > 0 && h > hs[i - 1] + 0.5)
+    const opening = await frames()
+    check(opening[0] < opening[opening.length - 1] - 1 && !opening.slice(1).some((h, i) => h < opening[i] - 0.5), `motion: opening grows from nothing (${opening.map(Math.round).join(',')})`)
+    const closing = await frames()
+    check(closing[closing.length - 1] === 0 && !rises(closing), `motion: closing never jumps back to full size (${closing.map(Math.round).join(',')})`)
+  }
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await card0.locator('.tool-head').click()
   await card0.locator('.tool-body').waitFor({ timeout: 3000 })
