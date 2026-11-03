@@ -16,8 +16,12 @@ The Uninstall sheet describes the installer's files in plain words, and new back
 **Next:** redo README's top picture with the interface redo. Delete this file then.
 
 **Needs a real phone:** a look through Setup, Settings, the approval prompt and the fingerprint sheet for any Hermes
-left on screen. The picture move on Android 11 or newer: save a picture with the old build, update, check it is in
+left on screen. The picture move on a real phone: save a picture with the old build, update, check it is in
 `Pictures/Hermux` once and `Pictures/Hermes` is empty (use test pictures, not the owner's). On Android 10, check old
 pictures stay put.
+
+**Picture move tested** (2026-11-03): passed on an Android 15 (API 35) emulator, updating from a build before #87 to
+one from `main`; results in [manual-tests.md](../manual-tests.md). **Not verified:** Android 11 (API 30), the oldest
+version the move runs on, wasn't run for lack of disk space, and no real phone with old pictures was tried.
 
 **Links:** [hermux-name-update-path.md](../decisions/hermux-name-update-path.md), [changes entry](../../changes/2026-11-02-hermux-everywhere.md).
