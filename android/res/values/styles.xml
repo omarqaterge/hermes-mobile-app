@@ -7,5 +7,5 @@
     </style>
     <color name="bg">#0E1115</color>
     <color name="gold">#D9A441</color>
-    <color name="icon_bg">#FFFFFF</color>
+    <color name="icon_bg">#0E1115</color>
 </resources>
