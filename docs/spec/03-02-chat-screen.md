@@ -35,7 +35,7 @@ The chat screen is the home of the app: what the user sees when no `screen` is o
 
 Shown when there is no open chat and none is opening (`Empty`).
 
-- A ☤ logo, the title "Hermux", and a line: "Your agent, on your phone." for the default profile, or "Profile: <name>".
+- The Hermux mark (the launcher icon's caduceus and arrows, an inline SVG from `HERMUX_MARK` in `hermux-mark.ts` in `web/src/components`, in the accent colour; `tools/icon/make-icon.cjs` generates it), the title "Hermux", and a line: "Your agent, on your phone." for the default profile, or "Profile: <name>".
 - Up to four suggestion buttons, built by `suggestions()` in order, without repeats: the three latest prompts this profile sent (`web/src/recent.ts` `recentPrompts`, shortened to 70 characters), then up to two skills ("/<skill> · <description>", from the command catalog, `commands.ts`), then four built-in suggestions (calendar today, summarise unread email, a quiz prompt, files in Downloads).
 - Tapping a suggestion does not send it. It puts the text into the composer (a trailing space added) and focuses it.
 - Nothing is created on Hermes's side until the first message (or the first attachment, a model pick, or an Auto choice).

@@ -11,6 +11,13 @@ module.exports = async t => {
     check(await page.evaluate(() => window.__hmRan === true), 'app start flag set (no old-WebView note)')
   }
 
+  {
+    // the empty new-chat screen shows the Hermux mark (an SVG, not the ☤ font glyph that looked different per phone)
+    const m = await page.evaluate(() => { const e = document.querySelector('.empty svg.logo'); const r = e && e.getBoundingClientRect(); return e && { label: e.getAttribute('aria-label'), w: r.width, paths: e.querySelectorAll('path').length } })
+    check(m && m.label === 'Hermux' && m.w > 60 && m.paths > 20, `empty chat shows the Hermux mark as an SVG (${JSON.stringify(m)})`)
+    check(!(await page.locator('.empty .logo', { hasText: '☤' }).count()), 'empty chat no longer uses the ☤ text glyph')
+  }
+
   // ── model picked before the first message: the chat is created with it (no switch, so no model-switch marker
   //    in Hermes's history that would swallow the first message) ──
   await page.getByRole('button', { name: 'Add', exact: true }).click()
