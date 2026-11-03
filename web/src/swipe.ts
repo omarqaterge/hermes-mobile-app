@@ -1,4 +1,4 @@
-import { getState, setState } from './store'
+import { getState, setState, toast } from './store'
 import { canvasState, openCanvas } from './canvas'
 import { newSession } from './gateway'
 import { DOCK, dragCancel, dragEnd, dragTo, dragging, edgePullStart } from './splitview'
@@ -6,10 +6,11 @@ import { drawerDragEnd, drawerDragStart, drawerDragTo, drawerDragging, drawerSli
 
 /** The header canvas button (and the swipe left): open the chat's canvas. The canvas belongs to a chat: on the empty
  * screen, start the chat first. A chat still opening (cold start) has its canvas already: creating a chat here would
- * abandon that resume and land on an empty chat. */
+ * abandon that resume and land on an empty chat. Before the connection opens a new chat can't start: say so. */
 export function openChatCanvas(): void {
   const s = getState()
   if (s.active || s.opening) openCanvas()
+  else if (s.conn !== 'open') toast('Still connecting, try again in a moment')
   else void newSession().then(() => openCanvas()).catch(() => {})
 }
 

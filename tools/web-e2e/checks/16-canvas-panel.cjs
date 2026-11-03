@@ -354,4 +354,36 @@ module.exports = async t => {
     await pe.locator('.canvas-panel').waitFor({ timeout: 5000 }).then(() => check(true, 'swipe left on the empty new-chat screen opens a canvas'), () => check(false, 'swipe left on the empty new-chat screen opens a canvas'))
     await pe.close()
   }
+
+  // Before the connection opens a new chat can't start: the swipe and the canvas button say so instead of doing nothing.
+  {
+    const pc = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await pc.addInitScript(() => {
+      window.WebSocket = class {
+        readyState = 0
+        addEventListener() {}
+        removeEventListener() {}
+        send() {}
+        close() {}
+      }
+    })
+    await pc.goto(WEB + '/')
+    await pc.locator('.empty .suggestion').first().waitFor({ timeout: 8000 })
+    await pc.locator('.conn-banner').waitFor({ timeout: 5000 })
+    const said = () => pc.locator('.toast', { hasText: 'Still connecting, try again in a moment' })
+    await pc.evaluate(() => {
+      const el = document.querySelector('.empty')
+      const mk = (type, px) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: px, clientY: 300 })] })
+      el.dispatchEvent(mk('touchstart', 300))
+      el.dispatchEvent(mk('touchmove', 200))
+      el.dispatchEvent(mk('touchmove', 80))
+      el.dispatchEvent(mk('touchend', 80))
+    })
+    await said().waitFor({ timeout: 3000 }).then(() => check(true, 'still connecting: a swipe left says so'), () => check(false, 'still connecting: a swipe left says so'))
+    check((await pc.locator('.canvas-panel').count()) === 0, 'still connecting: a swipe left opens no canvas')
+    await said().waitFor({ state: 'detached', timeout: 6000 })
+    await pc.locator('.canvas-btn').click()
+    await said().waitFor({ timeout: 3000 }).then(() => check(true, 'still connecting: the canvas button says so'), () => check(false, 'still connecting: the canvas button says so'))
+    await pc.close()
+  }
 }
