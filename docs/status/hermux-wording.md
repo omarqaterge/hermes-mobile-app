@@ -15,11 +15,12 @@ The Uninstall sheet describes the installer's files in plain words, and new back
 
 **Docs and README** (2026-11-03): the README and the docs now say Hermux too. What stays under the old name is the
 repository and the file identifiers listed in [the glossary](../spec/09-glossary.md) (the repository
-`hermes-mobile-app`, `hermes-mobile.apk`, the package ID, the plugin folder, and the like). README images that still
-show the old name wait for the owner's decision.
+`hermes-mobile-app`, `hermes-mobile.apk`, the package ID, the plugin folder, and the like). The five README images
+that showed the old name were retaken on 2026-11-03. Their chats are test data: the screens come from the web build on
+the mock, and the two notifications from a test build on an Android 15 emulator, so they show its normal notification,
+not an Android 16 Live Update. The demo video the README's preview links to, on X, still shows the old name.
 
-**Next:** redo README's top picture with the interface redo, and decide about the README images that still show the
-old name. Delete this file then.
+**Next:** the phone checks below, then delete this file.
 
 **Needs a real phone:** a look through Setup, Settings, the approval prompt and the fingerprint sheet for any Hermes
 left on screen. The picture move on a real phone: save a picture with the old build, update, check it is in

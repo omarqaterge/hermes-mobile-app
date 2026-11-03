@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/img/hero.png" alt="Hermux (the picture still shows its earlier name, Hermes Mobile): your agent, on your phone" width="100%">
+  <img src="docs/img/hero.png" alt="Hermux: your agent, on your phone" width="100%">
 </p>
 
 <p align="center">
@@ -35,9 +35,9 @@ while the app is closed. Hermes Agent runs in Termux on the same phone, so the w
 ### Answer from the island
 
 Approvals and questions show up on the status chip (an Android 16 Live Update; older versions get a normal notification).
-One tap, pick an answer, done. The app does not need to be open.
+Pick an answer or tap Deny, and the app does not need to be open. The first Allow in a chat opens the app to ask for your fingerprint.
 
-<p align="center"><img src="docs/img/island.png" alt="An approval and a question on the island chip" width="100%"></p>
+<p align="center"><img src="docs/img/island.png" alt="An approval and a question as notifications" width="100%"></p>
 
 ### Renders everything, natively
 
