@@ -21,7 +21,7 @@ import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../l
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
-import { approvalLockAvailable, approvalLockState, confirmAllow, setApprovalLock } from '../approval-lock'
+import { approvalLockAvailable, approvalLockState, confirmAlways, setApprovalLock } from '../approval-lock'
 import { Markdown } from './Markdown'
 import { SttSettings } from './SttSettings'
 import { chosenSttName, loadSttModels, sttAvailable, useSttModels } from '../stt'
@@ -980,8 +980,8 @@ function BgAppsSection() {
   }, [])
   if (!cfg) return null
   const set = async (v: boolean) => {
-    // Turning it on asks for the biometric or screen lock first (approval-lock.ts); turning it off never asks.
-    if (v && !(await confirmAllow('', 'Allow banking, payment, password and 2FA apps'))) return
+    // Every change, on or off, asks for the biometric or screen lock first (approval-lock.ts).
+    if (!(await confirmAlways(`${v ? 'Allow' : 'Stop allowing'} banking, payment, password and 2FA apps`))) return
     const prev = cfg
     setCfg({ ...cfg, allow_sensitive: v })
     api('PUT', BGAPPS, { allow_sensitive: v }, { profile: false }).catch(e => {

@@ -15,6 +15,10 @@ module.exports = async t => {
           window.__alCalls.push({ key, session, what })
           setTimeout(() => window.hermesApprovalConfirm(id, window.__al.result), 30)
         },
+        confirmIdentity: (key, id, what) => {
+          window.__alCalls.push({ key, what, always: true })
+          setTimeout(() => window.hermesApprovalConfirm(id, window.__al.result), 30)
+        },
         approvalLockState: () => JSON.stringify({ on: window.__al.on, secure: window.__al.secure }),
         setApprovalLock: (key, on) => {
           window.__al.on = on
@@ -77,9 +81,9 @@ module.exports = async t => {
     await pg.close()
   }
   {
-    // Settings → Background apps: turning on banking, payment, password and 2FA apps asks first; turning it off doesn't
+    // Settings → Background apps: every change to banking, payment, password and 2FA apps asks, even with approvals' switch off
     await mock({ bgapps: { allow_sensitive: false, available: true } })
-    const pg = await open({ on: true, secure: true, result: 'cancel' })
+    const pg = await open({ on: false, secure: true, result: 'cancel' })
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
     const row = pg.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
@@ -90,16 +94,26 @@ module.exports = async t => {
     await row.click()
     await sleep(300)
     let c = await confirms(pg)
-    check(c.length === 1 && c[0].session === '' && /banking/.test(c[0].what), `sensitive apps: turning on asks for the fingerprint (${JSON.stringify(c)})`)
+    check(c.length === 1 && c[0].always && c[0].key === 'K' && /^Allow banking/.test(c[0].what), `sensitive apps: turning on asks for the fingerprint (${JSON.stringify(c)})`)
     check(puts().length === before && (await row.getByRole('switch').getAttribute('aria-checked')) === 'false', 'sensitive apps: a cancelled confirmation keeps it off and saves nothing')
     await pg.evaluate(() => (window.__al.result = 'ok'))
     await row.click()
     await sleep(400)
     check(puts().length === before + 1 && puts().slice(-1)[0].body.allow_sensitive === true, 'sensitive apps: confirmed, it turns on')
+    await pg.evaluate(() => (window.__al.result = 'cancel'))
     await row.click()
     await sleep(400)
     c = await confirms(pg)
-    check(c.length === 2 && puts().slice(-1)[0].body.allow_sensitive === false, 'sensitive apps: turning off does not ask')
+    check(c.length === 3 && /^Stop allowing/.test(c[2].what), `sensitive apps: turning off asks too (${c.length} prompts)`)
+    check(puts().length === before + 1 && (await row.getByRole('switch').getAttribute('aria-checked')) === 'true', 'sensitive apps: a cancelled confirmation keeps it on')
+    await pg.evaluate(() => (window.__al.result = 'ok'))
+    await row.click()
+    await sleep(400)
+    check((await confirms(pg)).length === 4 && puts().slice(-1)[0].body.allow_sensitive === false, 'sensitive apps: confirmed, it turns off')
+    await row.click()
+    await sleep(400)
+    check((await confirms(pg)).length === 5 && puts().slice(-1)[0].body.allow_sensitive === true, 'sensitive apps: turning it on again asks again')
+    await mock({ bgapps: { allow_sensitive: false } })
     await pg.close()
   }
   {

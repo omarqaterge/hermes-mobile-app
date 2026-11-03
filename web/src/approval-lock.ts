@@ -7,6 +7,7 @@ import { toast } from './store'
 
 type LockBridge = {
   confirmApproval?: (id: number, session: string, what: string) => void
+  confirmIdentity?: (id: number, what: string) => void
   approvalLockState?: () => string
   setApprovalLock?: (on: boolean) => void
   forgetApproval?: (session: string) => void
@@ -77,6 +78,26 @@ export function confirmAllow(session: string, what: string): Promise<boolean> {
     })
     try {
       b.confirmApproval!(id, session, what)
+    } catch {
+      waiting.delete(id)
+      resolve(false)
+    }
+  })
+}
+
+/** A setting that asks on every change, whatever the approvals setting; true when the change may go through. */
+export function confirmAlways(what: string): Promise<boolean> {
+  const b = bridge()
+  if (!b?.confirmIdentity) return confirmAllow('', what) // an older shell
+  return new Promise(resolve => {
+    const id = ++seq
+    waiting.set(id, result => {
+      if (result === 'nolock') noLockHint()
+      else if (result !== 'ok') toast('Not changed: confirm it’s you to change this')
+      resolve(result === 'ok' || result === 'nolock')
+    })
+    try {
+      b.confirmIdentity!(id, what)
     } catch {
       waiting.delete(id)
       resolve(false)

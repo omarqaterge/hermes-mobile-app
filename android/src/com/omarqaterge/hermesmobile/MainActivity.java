@@ -2158,6 +2158,20 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** A setting that asks on every change (ApprovalLock.askAlways): always asks for the biometric or screen lock, then
+         *  calls window.hermesApprovalConfirm(id, "ok" | "cancel" | "nolock"). */
+        @JavascriptInterface
+        public void confirmIdentity(String key, int id, String what) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                java.util.function.Consumer<String> done = r -> {
+                    if (web != null) web.evaluateJavascript("window.hermesApprovalConfirm && window.hermesApprovalConfirm(" + id + ",'" + r + "')", null);
+                };
+                if (!foreground || isFinishing()) done.accept("cancel"); // a prompt needs the app on screen
+                else ApprovalLock.askAlways(MainActivity.this, what == null ? "" : what, done);
+            });
+        }
+
         /** {"on":bool,"secure":bool}: Settings → Permissions → "Confirm approvals with fingerprint". */
         @JavascriptInterface
         public String approvalLockState(String key) {
