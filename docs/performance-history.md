@@ -6,7 +6,7 @@ measurement so the history stays comparable. Battery and background work have th
 
 ## Time to a usable chat after opening the app
 
-"Usable" means the chat you had open is loaded and the message box says "Message Hermes" (before that it says "Opening
+"Usable" means the chat you had open is loaded and the message box says "Message Hermux" ("Message Hermes" in rows from before the rename; until then it says "Opening
 your chat…"). All rows are on the owner's Android phone unless they say otherwise.
 
 | Date (app) | What changed | Measured |

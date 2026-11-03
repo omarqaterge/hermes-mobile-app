@@ -2,9 +2,9 @@
 
 **Files:** `Btw.tsx` (the sheet), `btw.ts` (side-chat state and calls), `pullbtw.ts` (the pull-up gesture).
 
-A small side chat about the open chat, in a bottom sheet, that does not interrupt the main turn. Hermes sees the conversation so far.
+A small side chat about the open chat, in a bottom sheet, that does not interrupt the main turn. Hermux sees the conversation so far.
 
-**Opens from:** typing `/btw` or `/btw <question>` in the composer (handled in `sendPrompt` in `web/src/gateway.ts` before any other slash command, so it works while Hermes is answering; the question is asked at once); or the pull-up gesture below. **Closes with:** Back, a drag down on the top strip, or a tap outside. **Source:** `web/src/components/Btw.tsx` `BtwSheet`, `web/src/btw.ts` (`openBtw`, `askBtw`, `btwDone`, `closeBtw`, `clearBtw`), `web/src/pullbtw.ts` (`installPullToBtw`).
+**Opens from:** typing `/btw` or `/btw <question>` in the composer (handled in `sendPrompt` in `web/src/gateway.ts` before any other slash command, so it works while Hermux is answering; the question is asked at once); or the pull-up gesture below. **Closes with:** Back, a drag down on the top strip, or a tap outside. **Source:** `web/src/components/Btw.tsx` `BtwSheet`, `web/src/btw.ts` (`openBtw`, `askBtw`, `btwDone`, `closeBtw`, `clearBtw`), `web/src/pullbtw.ts` (`installPullToBtw`).
 
 **Layout, top to bottom (sheet, 70 % of the screen height):**
 

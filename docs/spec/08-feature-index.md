@@ -23,17 +23,17 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Default Auto mode for all chats (Settings → Permissions → Auto for all chats) | 3.15 |
 | Approvals and questions with long warnings scrolling and repeats shown once with a count | 3.6 |
 | `/btw` side questions, opened by pulling up past the last message (about 110 px) | 3.12 |
-| Share to Hermes from any app; attach photos, camera shots and files; share a chat as Markdown | 3.4, 3.5, 4.2, 4.7 |
+| Share to Hermux from any app; attach photos, camera shots and files; share a chat as Markdown | 3.4, 3.5, 4.2, 4.7 |
 | Cards in replies (tables, charts, tabs, buttons, forms) drawn by OpenUI, with live read-only data; off switch in Settings → Replies | 3.9, 3.15, 5.4 |
 
 **Canvas, gallery, apps**
 
 | Feature | Section |
 |---|---|
-| Canvas shared with Hermes: sandboxed HTML, versions with diff and restore | 3.7 |
+| Canvas shared with Hermux: sandboxed HTML, versions with diff and restore | 3.7 |
 | Canvas opens as a panel from the right (tap button or swipe left; swipe right on its top bar, ✕ or Back closes); wide screens keep it beside the chat | 3.7 |
 | Canvas gallery of every document from every chat and profile, type chips, search, rename/copy/share/delete; old Library items shown as "Saved copy" | 3.8 |
-| Hermes uses an app on a hidden screen (`phone_app`), with a card, live thumbnail, Take over and Stop; sensitive apps refused unless allowed in Settings → Background apps | 3.10, 2.2.8, 3.15, 4.7, 5.2 |
+| Hermux uses an app on a hidden screen (`phone_app`), with a card, live thumbnail, Take over and Stop; sensitive apps refused unless allowed in Settings → Background apps | 3.10, 2.2.8, 3.15, 4.7, 5.2 |
 
 **Voice**
 
@@ -52,7 +52,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Drawer: search inside every message, pin, archive, delete, stable order by creation time, Sort by recent | 3.13 |
 | Links from one chat to another (`hermes-chat:` links in replies, bare chat ids become links) | 3.3, 5.3 |
 | Skills, memory screen, cron jobs, files, projects | 3.14 |
-| Settings: Dark / OLED black / Light theme, every Hermes setting | 3.15 |
+| Settings: Dark / OLED black / Light theme, every Hermux setting | 3.15 |
 | Last start-up timings (Settings) and faster start-up (the last chat drawn from its cache before Hermes answers) | 3.15, 2.2.5 |
 | Bots (profiles) with their own default model, keys and SOUL.md; the plugin is linked into every profile | 3.16, 6.1 |
 | Model providers: every provider Hermes supports, Paste API key, Sign in (ChatGPT, Grok, Nous Portal), search | 3.17 |
@@ -77,7 +77,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | App-icon badge with the number of unseen chats | 4.3 |
 | Notifications while the app is closed: replies, questions, cron results, a "failed" note | 4.3, 4.4 |
 | "Learning" (memory/skills review) and "Answering a side question" statuses | 4.3, 5.1 |
-| No permanent wake lock; phone sleeps while Hermes is idle | 2.5, 6.2 |
+| No permanent wake lock; phone sleeps while Hermux is idle | 2.5, 6.2 |
 | Hermux service revived after a force stop (app keeper) | 6.2 |
 
 **Setup and install**

@@ -6,14 +6,14 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
 ## Voice (Live mode)
 
 - [ ] **Approval by voice (#33).** Start Live mode in a test chat and say "run chmod 777 /tmp/x".
-      Expected: Hermes asks "Hermux needs your permission. Allow or deny?" (short, not the whole command);
+      Expected: Hermux asks "Hermux needs your permission. Allow or deny?" (short, not the whole command);
       saying "allow" runs it, "deny" refuses it. Say something unclear twice: the approval sheet appears instead.
-- [ ] **Live mode in the background.** While Hermes is speaking in Live mode, press Home.
+- [ ] **Live mode in the background.** While Hermux is speaking in Live mode, press Home.
       Expected: it keeps speaking to the end; Live mode is off when you come back to the app.
-- [ ] **Interrupt by talking.** In a quiet room, ask Live mode for a long story. Expected: Hermes is not cut off by its
+- [ ] **Interrupt by talking.** In a quiet room, ask Live mode for a long story. Expected: Hermux is not cut off by its
       own voice; saying "what about tomorrow" over it stops it and sends that after the pause; saying just "stop"
       stops it and sends nothing. Repeat with the on-device model and with the phone's recogniser (Settings → Voice →
-      Speech recognition). With barge-in off (Settings → Voice → Live mode), talking over Hermes does nothing.
+      Speech recognition). With barge-in off (Settings → Voice → Live mode), talking over Hermux does nothing.
 
 ## Read-aloud controls
 
@@ -23,9 +23,9 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
       (double/triple press) jump 10 s forward/back.
 - [ ] **Paused card swiped away.** Pause the reading from the notification, swipe the card away.
       Expected: the reading stops; the app shows no player any more.
-- [ ] **Assistant from the lock screen / headset.** With Hermes as the digital assistant app (long-press power while
+- [ ] **Assistant from the lock screen / headset.** With Hermux as the digital assistant app (long-press power while
       unlocked already works), lock the phone and long-press power; also press a headset's voice-assistant button.
-      Expected: Hermes opens in Live mode (after unlocking, if the phone asks).
+      Expected: Hermux opens in Live mode (after unlocking, if the phone asks).
 
 ## Setup on other machines
 
@@ -34,7 +34,7 @@ Tick an item off (or note what went wrong) once it's done; the status per featur
 - [ ] **A brand-new real phone.** Run `tools/setup-phone.sh` against a freshly reset (or never-used) Android phone.
       Expected: same as above, and a first message gets a reply. (The emulator run can't check vendor battery
       restrictions or a real Shizuku start.)
-- [ ] **Setup flow at the Shizuku step.** On a phone where Hermes is installed but Shizuku isn't started, open the
+- [ ] **Setup flow at the Shizuku step.** On a phone where Hermux is installed but Shizuku isn't started, open the
       setup flow at "Hermux can see and use the screen (Shizuku)", tap Open Shizuku, start it, come back.
       Expected: Shizuku asks whether Termux may use it (tap Allow all the time); within a few seconds the page moves
       on by itself, without leaving the app again.
@@ -84,16 +84,16 @@ Tried on a Xiaomi phone, Android 16 (HyperOS), normal build 0.8.66-test (commit 
 
 ## Background apps (phone_app)
 
-- [ ] **While you use the phone.** Watch a video, then by voice or from a chat ask Hermes to do something in an app
+- [ ] **While you use the phone.** Watch a video, then by voice or from a chat ask Hermux to do something in an app
       (e.g. add a Keep note). Expected: the video keeps playing, no keyboard pops up, the chip says "Using <app>",
       the task gets done.
 - [ ] **Locked phone.** Same with the screen locked (it worked in a test with the screen off; a real task not yet).
 - [ ] **App lock.** An app behind the phone's app lock (HyperOS, Samsung, OnePlus/ColorOS… each has one) is refused
-      with "another app opened instead … app lock": decide whether to take it out of the lock for Hermes.
+      with "another app opened instead … app lock": decide whether to take it out of the lock for Hermux.
 - [ ] **Other phone makers.** Tested on a Xiaomi (Android 16) and an AOSP emulator (Android 15) only. On a Samsung,
       Pixel, OnePlus or Motorola with Android 14+: open an app, tap, type, Take over. Android 11-13: Settings →
       Background apps should say "Needs Android 14 or newer".
-- [x] **Chip opens the viewer (#63).** Ask Hermes to use `phone_app` in Calculator for a few steps, press Home, pull
+- [x] **Chip opens the viewer (#63).** Ask Hermux to use `phone_app` in Calculator for a few steps, press Home, pull
       down the shade while the chip says "Using Calculator" and tap the card's body (not Stop). Expected: the expanded
       card shows a picture of the app; the tap opens Hermux on that chat with the live viewer (Take over / Stop).
       Seen on an Android 16 phone, build 0.8.72-plugintest (2026-11-02): both as expected. An earlier report of the tap
@@ -105,7 +105,7 @@ Tried on a Xiaomi phone, Android 16 (HyperOS), normal build 0.8.66-test (commit 
       then the tap. Expected: no keyboard under the viewer.
 - [ ] **A banking app with the Settings toggle on** (opens; FLAG_SECURE screens may show black in the live view).
 - [ ] **Faster steps.** Ask for something with several taps (a new note with a title). Expected: the steps run without a
-      fixed pause between them, Hermes points at buttons by their text, and no keyboard shows in the live view.
+      fixed pause between them, Hermux points at buttons by their text, and no keyboard shows in the live view.
 - [ ] **Straight to a screen.** "Share 'milk, eggs' to Keep" or "open this link in YouTube". Expected: one approval for
       that app, then the app's share or link screen in the background.
 - [ ] **A switch.** "Turn on Do not disturb" (in Settings). Expected: `toggle` changes it once and says it is on; asking
@@ -169,7 +169,7 @@ check on a real phone:
 
 ## Confirm approvals with fingerprint (owner only: needs the phone's fingerprint or PIN)
 
-- [x] (2026-11-02, 0.8.72-plugintest: asked once per chat, the second approval didn't ask.) With Auto off, ask Hermes for something it must approve; tap Allow once. Expected: the fingerprint prompt
+- [x] (2026-11-02, 0.8.72-plugintest: asked once per chat, the second approval didn't ask.) With Auto off, ask Hermux for something it must approve; tap Allow once. Expected: the fingerprint prompt
       ("Allow Hermux to run this?" with the command); after it, the command runs. A second approval in the same chat
       doesn't ask.
 - [ ] Cancel the prompt: nothing runs, the sheet stays, the toast says why. Deny never asks.
@@ -186,7 +186,7 @@ check on a real phone:
       and back in the app the sheet says "Signed in."; Test lists its tools; a new chat can use them.
 - [ ] **A command server.** Add a server by a command whose program is installed in Debian; Test lists its tools.
 - [ ] **Google with a real account.** Paste an OAuth client file, sign in, paste back the localhost:1 address from the browser's address bar.
-      Expected: the row reads Connected and Hermes reads your calendar in a new chat; Sign out returns to the sign-in step.
+      Expected: the row reads Connected and Hermux reads your calendar in a new chat; Sign out returns to the sign-in step.
 - [ ] **A tool with a key.** Web search: save a key for another service; it reads "In use" and a new chat searches with it. Disconnect deletes the key.
 
 ## The plugin follows the app (Settings → About → Hermux plugin; spec 6.6)
@@ -258,3 +258,16 @@ On an Android 15 (API 35) emulator: pictures saved by a build from before #87 (1
       steps as above on an API 30 emulator or phone, with test pictures.
 - [ ] **A real phone with old pictures.** NOT VERIFIED. Update from a build before #87 on a phone with test pictures in
       `Pictures/Hermes`. Expected: each is in `Pictures/Hermux` once, and the gallery still shows them.
+
+## 2026-11-03, app 0.8.75-test on Android 16
+
+| Check | Result |
+|---|---|
+| Data kept across the update | PASS |
+| The plugin updated by itself about a minute after install | PASS: Settings shows it up to date, it compiles, no errors in the logs |
+| The new `rish` instruction | PASS: the agent treated the `getprop` lines as harmless |
+| The Uninstall wording | PASS |
+| The start-up line reaching `chat-live` | PASS: 0.4 s on 3 cold starts |
+
+- [ ] **Live viewer tap, the viewer's closing message and the keyboard.** NOT TESTED on this build. Last seen on
+      0.8.74-chiptest (see PR #92 in this repository).

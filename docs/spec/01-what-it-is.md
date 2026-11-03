@@ -1,13 +1,13 @@
 ## 1. What it is
 
-Hermux is an Android chat app for the Hermes agent (NousResearch). Hermes runs on the same phone, inside
-Termux → proot-distro Debian. The app gives the agent a native-feeling front end: streaming replies, thinking,
+Hermux is an Android app that runs the open-source Hermes Agent (NousResearch) on the phone. Hermes Agent runs
+inside Termux → proot-distro Debian on the same phone. The app gives the agent a native-feeling front end: streaming replies, thinking,
 tool cards, approvals, chats and profiles, skills, memory, cron, files, projects, a canvas, cards in replies,
 voice and Live mode, and notifications that keep working while the app is closed (the pinned status chip, which
 Android 16 shows as a Live Update). It aims to match Hermes Desktop's behaviour wherever that makes sense on a
 phone.
 
-- **Who it is for:** anyone with an Android phone who runs (or wants to run) Hermes on it. It is built for every
+- **Who it is for:** anyone with an Android phone who runs (or wants to run) Hermes Agent on it. It is built for every
   Android phone, not one maker: public/AOSP APIs come first, and vendor-specific handling (for example the
   Autostart pages in `Autostart.java`, 4.7) sits behind a generic fallback.
 - **Android versions:** minimum Android 8.0 (API 26, `--min-sdk-version 26` in `android/build.sh`), target API 35,

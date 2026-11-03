@@ -50,7 +50,7 @@ Owner decision: `docs/decisions/approval-needs-fingerprint.md`. `web/src/approva
 
 #### Auto mode and approvals
 
-With the Auto button (beside the model chip) on Auto access or Full access (3.2), Hermes does not ask for most commands, so the sheet appears rarely: Auto access still stops on Hermes's dangerous list (the plugin blocks them, so no approval is possible); Full access stops on nothing but the catastrophic list. With Auto off, every command Hermes flags raises the sheet.
+With the Auto button (beside the model chip) on Auto access or Full access (3.2), Hermux does not ask for most commands, so the sheet appears rarely: Auto access still stops on Hermes's dangerous list (the plugin blocks them, so no approval is possible); Full access stops on nothing but the catastrophic list. With Auto off, every command Hermux flags raises the sheet.
 
 ---
 
@@ -105,7 +105,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `visit.ts` | Last time each chat was on screen (`lastVisit`, `markVisit`) and the first message newer than that (`firstUnseen`), for the "New since your last visit" divider; leaving and coming back with the same chat open (`noteAway`, `noteBack`, `isAway`, `lastBack`, `onBack`, `newWhileAway`, `BACK_GRACE_MS`). |
 | `checkpoints.ts` | Client for the plugin's checkpoint routes and the labels the File checkpoints sheet shows. |
 | `export.ts` | A chat as Markdown for Share chat. |
-| `share.ts` | Share-to-Hermes and launcher shortcuts. |
+| `share.ts` | Share-to-Hermux and launcher shortcuts. |
 | `notif-answer.ts` | Answers typed into notifications. |
 | `approval-lock.ts` | Confirm approvals with fingerprint: asks the shell before a chat's first Allow. |
 | `backstack.ts` | The Back-button layer stack. |

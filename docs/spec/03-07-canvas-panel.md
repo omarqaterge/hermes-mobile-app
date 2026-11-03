@@ -2,7 +2,7 @@
 
 **Files:** `Canvas.tsx` (panel, editor, menus, history sheet), `DocView.tsx` (`DocView`, `CsvTable`, `fenced`: the viewer for each document type), `HtmlFrame.tsx` (sandboxed HTML frame, shared with the chat), `htmlframe.ts` (`frameDoc`, `frameHeight`), `canvas.ts` (state, sync with the plugin, the agent's tool events, line diff).
 
-The canvas is a set of documents that belong to one chat. Hermes writes them with its `canvas` tool, you read, edit and run them, and they stay with the chat. The panel is `web/src/components/Canvas.tsx` `CanvasPanel`. Its state and its sync with the phone are in `web/src/canvas.ts` (`useCanvas`, `canvasState`).
+The canvas is a set of documents that belong to one chat. Hermux writes them with its `canvas` tool, you read, edit and run them, and they stay with the chat. The panel is `web/src/components/Canvas.tsx` `CanvasPanel`. Its state and its sync with the phone are in `web/src/canvas.ts` (`useCanvas`, `canvasState`).
 
 #### What the user sees
 
@@ -22,7 +22,7 @@ The canvas is a set of documents that belong to one chat. Hermes writes them wit
 | Code block button "Canvas" (`web/src/components/Markdown.tsx`) | Shown on a code block of 3 lines or more. Makes a document from the block (`createDoc`; type html, svg, markdown, json or csv from the fence language, else code) and shows the toast "Opened in the canvas". |
 | Files → a text file → "Open in canvas" | `openFileInCanvas`: opens the file as a document linked to it (`POST /canvas/open-file`). |
 | Canvas gallery → "Open canvas" | See 3.8. |
-| Hermes writes a document | The panel opens by itself (see "While Hermes writes"). |
+| Hermux writes a document | The panel opens by itself (see "While Hermes writes"). |
 
 #### Ways to close it
 
@@ -49,15 +49,15 @@ The canvas is a set of documents that belong to one chat. Hermes writes them wit
 |---|---|---|---|---|
 | Tab row | One chip per document: type icon + title; the active one is highlighted. A last chip "＋" (aria-label New document). | Tab: `selectDoc` (saves a pending edit, clears a conflict flag, loads the document). ＋: opens the New document sheet. | Scrolls sideways. Swipe right at its start closes the panel. | Not shown in full-screen size. |
 | ✕ | Round close button, aria-label Close canvas | Closes the panel | Swipe right on the bar closes | |
-| Writing state | Replaces the body while Hermes writes a document that is not on a tab yet: spinner, "Hermes is writing a document…" (or "Saving “Title”…" once the call has text), a seconds counter, and the text so far in a box (cut at 40,000 characters) or grey skeleton lines | | | Shown only while the model streams a `canvas` call |
+| Writing state | Replaces the body while Hermes writes a document that is not on a tab yet: spinner, "Hermux is writing a document…" (or "Saving “Title”…" once the call has text), a seconds counter, and the text so far in a box (cut at 40,000 characters) or grey skeleton lines | | | Shown only while the model streams a `canvas` call |
 | Loading | Spinner and "Loading the canvas…" | | | While the chat's document list has not arrived (chat still opening, or Hermes unreachable) |
 | Empty | 🗒, "Your canvas is empty", "Ask Hermux to write something here, or start your own." and a button New document | New document opens the New document sheet | | No documents |
 | Toolbar | Segmented control View / Edit (View is called Run for an HTML document); a status text; for an HTML document in View, a toggle "🚫 Offline" / "🌐 Online"; a button ⛶ (aria-label Fill the whole screen); a button ⋮ (aria-label More) | View: saves, then shows the document. Edit: shows the editor. Offline/Online: lets the page use the network (per document, kept until the app restarts). ⛶: full-screen size. ⋮: document menu. | | Status text: "Saving…", "Unsaved", "Saved ✓" (2 s, then back), "Conflict", "Not saved", otherwise "<when> · Hermux" or "<when> · You" (the age, such as "2 min ago", refreshes every 30 s while the panel is open and the page is visible) |
-| Rewrite banner | Spinner and "Hermux is rewriting this document… Ns" | | | While Hermes writes into the open document |
-| Conflict banner | "Hermux changed this document while you were editing." with buttons "Use Hermux’s" and "Keep mine" | Use Hermes’s: drops your unsaved text and reloads. Keep mine: reloads, puts your text back and saves it over Hermes's. | | Shown when Hermes changed a document you have unsaved edits in, or a save fails with a conflict |
+| Rewrite banner | Spinner and "Hermux is rewriting this document… Ns" | | | While Hermux writes into the open document |
+| Conflict banner | "Hermux changed this document while you were editing." with buttons "Use Hermux’s" and "Keep mine" | Use Hermux’s: drops your unsaved text and reloads. Keep mine: reloads, puts your text back and saves it over Hermes's. | | Shown when Hermux changed a document you have unsaved edits in, or a save fails with a conflict |
 | Body | The document: a viewer, or the editor in Edit | Tapping links in a text document opens them (`Linked`) | Selecting text in the viewer shows the selection bar | "Loading…" until the full document arrives |
 | Selection bar | Label "Ask Hermux about the selection" and chips Rewrite, Shorter, Longer, Fix, Explain, Other… | A chip sends a chat message (see below). Other… asks "What should Hermux do with it?" first. | | Shown in View when more than 2 characters of the document are selected; cleared when the tab or mode changes |
-| Ask bar | Text field "Ask Hermes to change “Title”…" and a send button (aria-label Send, disabled while the field is empty) | Sends the text as a chat message about this document | | Hidden in Edit |
+| Ask bar | Text field "Ask Hermux to change “Title”…" and a send button (aria-label Send, disabled while the field is empty) | Sends the text as a chat message about this document | | Hidden in Edit |
 | Exit full screen | Round button ⤓ at the top right (aria-label Exit full screen) | Back to the side size | | Only in full-screen size |
 
 In full-screen size (`size` = `max`) the tab row, toolbar, selection bar, ask bar and conflict banner are hidden; only the document and the Exit full screen button show.
@@ -85,7 +85,7 @@ Messages sent from the panel (`send` in `CanvasPanel`): the text starts with `Ab
 
 Code, json and mermaid are wrapped in a fence long enough that backticks inside the document cannot close it (`fenced`).
 
-New documents you create yourself (New document sheet) can be: Notes / document (markdown, "Markdown with a live preview"), Web page (html, "HTML you can run right here"), Code (a source file, language python), Plain text ("Just text"). After the title prompt ("New notes / document" etc., button Create) the document opens in Edit. The other types (json, csv, svg, mermaid) come from Hermes or from a file.
+New documents you create yourself (New document sheet) can be: Notes / document (markdown, "Markdown with a live preview"), Web page (html, "HTML you can run right here"), Code (a source file, language python), Plain text ("Just text"). After the title prompt ("New notes / document" etc., button Create) the document opens in Edit. The other types (json, csv, svg, mermaid) come from Hermux or from a file.
 
 #### HTML runs in a sandbox (`HtmlFrame`)
 
@@ -119,7 +119,7 @@ A bottom sheet titled with the document's title (`DocMenu`, built on `Sheetish`)
 
 #### Version history and restore
 
-- The sheet "Version history" (`HistorySheet`) lists versions newest first. Each row shows who made it (Hermes or You), "Version N" (with " · current" on the newest), the age and an optional note.
+- The sheet "Version history" (`HistorySheet`) lists versions newest first. Each row shows who made it (Hermux or You), "Version N" (with " · current" on the newest), the age and an optional note.
 - Tapping a row opens its body: "Changes from this version to the current one" as a line diff (`lineDiff`, shown with `DiffView`; two lines of context; a whole-block replace for very large texts). The text of the old version is fetched with `GET /canvas/version`.
 - On an older version a button "Restore this version" asks "Restore version N?" ("The current text is kept in the history, so you can come back.", button Restore). Restoring calls `POST /canvas/restore`, reloads the document, closes the sheet and shows the toast "Version restored". It drops any unsaved edit and the writing state.
 

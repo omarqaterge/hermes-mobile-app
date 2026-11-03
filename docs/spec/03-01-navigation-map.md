@@ -50,7 +50,7 @@ flowchart TD
   Chat -->|"canvas button, swipe left"| Canvas
   Canvas -->|"Open a file from the phone"| Files
   Chat -->|"pull up at the end of the chat"| Btw
-  Chat -->|"Hermes asks the user"| Req
+  Chat -->|"Hermux asks the user"| Req
 
   subgraph Sheets["Chat sheets (store.sheet)"]
     Model["model"]
@@ -78,7 +78,7 @@ flowchart TD
 | `null` | The chat (no page on top). | Start-up; Back from any screen. | Not closable. | 3.2 to 3.6 |
 | `hub` | The Hermux hub: one card per area below, each with a one-line summary. | Drawer tile Hermux (`Drawer.tsx`). | Back, Android Back: goes to the chat. | 3.14 |
 | `skills` | Skills list and viewer. | Hub card Skills. | Back: goes to the hub (`screenBack`). The button "Use in chat" fills the composer with `/<skill> ` and returns to the chat. | 3.14 |
-| `memory` | Hermes's memory notes. | Hub card Memory. | Back: hub. | 3.14 |
+| `memory` | Hermux's memory notes. | Hub card Memory. | Back: hub. | 3.14 |
 | `cron` | Scheduled jobs. | Hub card Scheduled jobs. | Back: hub. | 3.14 |
 | `files` | File browser on the phone. | Hub card Files; Canvas panel row "Open a file from the phone…" (closes the canvas first). | Back: hub (or the chat when opened from the canvas). The preview button "Use in chat" fills the composer with "Look at the file <path> and " and returns to the chat. | 3.14 |
 | `projects` | Projects (chat folders). | Hub card Projects. | Back: hub. | 3.14 |
@@ -102,12 +102,12 @@ flowchart TD
 | `context` | `Sheet` value, `ContextSheet` ("Context window") | The context ring in the composer's model row. | Same. | 3.5 |
 | `rollback` | `Sheet` value, `RollbackSheet` ("File checkpoints") | Chat menu row File checkpoints. | Same. Inside it, Back first steps from a snapshot to the list. | 3.5 |
 | `commands` | `Sheet` value, `CommandsSheet` | No control sets it in the current code. The composer's "/" button opens the inline autocomplete instead (3.4). The sheet is still mounted by `App` if `sheet` is ever `commands`. | Same. | 3.5 |
-| Request sheet | `RequestSheet`, driven by `requests[0]` | Hermes asks (approval, question, password, code). | Only by answering (or Skip/Cancel). Not dismissible by tap or drag. | 3.6 |
+| Request sheet | `RequestSheet`, driven by `requests[0]` | Hermux asks (approval, question, password, code). | Only by answering (or Skip/Cancel). Not dismissible by tap or drag. | 3.6 |
 | Drawer | `Drawer`, `drawer` flag | Header menu button; swipe right on the chat (it follows the finger). | Tap the backdrop, swipe left on the drawer or the backdrop, Android Back, picking a session or New chat. | 3.13 |
 | Canvas panel | `CanvasPanel` | Header canvas button; swipe left on the chat or the empty new-chat screen; chat menu row Canvas; code-block button Canvas. | Close canvas (✕), swipe right on its top bar (phones), Android Back (from full size Back first returns to the side size). Not by a tap outside. | 3.7 |
 | By the way | `BtwSheet` | Pull up past the end of the chat; the `/btw` command. | Drag down on the top strip, tap outside, Android Back (it has no close button). | 3.12 |
 | Read-aloud player | `TtsPlayer` | Starts when something is read aloud. | Close player. | 3.11 |
-| Background app card | `BgApp` | Hermes drives an app on the hidden display. | Its own buttons. | 3.10 |
+| Background app card | `BgApp` | Hermux drives an app on the hidden display. | Its own buttons. | 3.10 |
 | Dialogs | `DialogHost` (`dialog.tsx`) | `confirmDialog` / `promptDialog` calls. | Cancel, tap outside, Android Back. | 3.20 |
 | Picker sheets | `PickerSheet` (`ui.tsx`) | Auto button, Add, Copy reply. | Same as sheets. | 3.20 |
 | Lightbox, diagram viewer | `Lightbox` (`Media.tsx`), `DiagramViewer` (`Markdown.tsx`) | Tap an image / a drawn diagram. | Close button, tap the dark area, Android Back. | 3.3 |
@@ -152,8 +152,8 @@ The Android shell and other code call these globals (declared in `App.tsx`, `sha
 | `window.hermesResume()` | Shell, app returns to the foreground | Reconnects if the socket is not open (`reconnectNow`), refreshes the background-app card, and tells the open chat it is back (`noteBack`, for the "New since your last visit" divider). |
 | `window.hermesPause()` | Shell, app leaves the foreground (`onPause`) | Notes that the open chat was seen until now (`noteAway`); messages arriving meanwhile get the "New since your last visit" divider on return. |
 | `window.hermesOpenSession(id, draft?)` | Notification tap | `openSessionFromNotification`: remembers the chat, closes screens, sheets and drawer, resumes it (now, or right after connecting). A `draft` (an answer typed into a notification that could not be delivered) goes into the composer. |
-| `window.hermesOpenBgView(id)` | Tap on the working chip while Hermes uses an app for that chat (called right before `hermesOpenSession`) | `wantViewer` in `bgapp.ts`: once that chat shows, the background-app card opens its live viewer (3.10, "Opened from the status chip"). |
-| `window.hermesShared(count, text)` | Android share sheet | `receiveShare` in `share.ts`: see 3.4 "Share to Hermes". |
+| `window.hermesOpenBgView(id)` | Tap on the working chip while Hermux uses an app for that chat (called right before `hermesOpenSession`) | `wantViewer` in `bgapp.ts`: once that chat shows, the background-app card opens its live viewer (3.10, "Opened from the status chip"). |
+| `window.hermesShared(count, text)` | Android share sheet | `receiveShare` in `share.ts`: see 3.4 "Share to Hermux". |
 | `window.hermesShortcut(kind)` | Launcher shortcuts | Closes screens, sheets and drawer, starts a new chat; kind `live` also starts Live mode. |
 | `window.hermesApprovalConfirm(id, result)` | `confirmApproval` finished | `approval-lock.ts`: the biometric or screen-lock answer (`ok`, `cancel`, `nolock`) for an Allow (3.6). |
 | `window.hermesLockView(on)` | Assist gesture over the lock screen | `lockview.ts`: true while the app shows over a locked phone's lock screen (talking only, see 4.6 "Talking on the lock screen"); false once unlocked or hidden again. |

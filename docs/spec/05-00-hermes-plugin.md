@@ -1,4 +1,4 @@
-## 5. Hermes plugin
+## 5. Hermux plugin
 
 The plugin is the part of Hermux that runs **inside Hermes** (in the Debian container on the phone). It has two jobs:
 

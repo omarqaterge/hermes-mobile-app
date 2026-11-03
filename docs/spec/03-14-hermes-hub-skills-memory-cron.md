@@ -40,7 +40,7 @@ Skill sheet (title = skill name): a dim line "<category> · <provenance, default
 | Element | Looks like | Tap | Long-press / swipe | States |
 |---|---|---|---|---|
 | ＋ (`aria-label` "Add") | Top-bar button | Opens the "New memory" sheet | | |
-| Memory / About you | Two-segment switch | Chooses Hermes's notes (`memory`) or the notes about the user (`user`) | | |
+| Memory / About you | Two-segment switch | Chooses Hermux's notes (`memory`) or the notes about the user (`user`) | | |
 | Usage bar | A bar, then "<used> / <limit> characters · N entries" | | | The bar turns red above 92 % |
 | Entries | One button per saved entry; entries starting with "Mac:" or "Phone:" get a device style | Opens the "Edit memory" sheet | | "Nothing saved yet" when empty |
 | Footnote | "Synced with your Mac. Start an entry with “Phone:” to keep it on this phone only." | | | |
@@ -74,7 +74,7 @@ Runs sheet ("Runs · <name>", `GET /api/cron/jobs/<id>/runs?limit=20`): one card
 |---|---|---|---|---|
 | ⤒ (`aria-label` "Upload") | Top-bar button | Opens the Android file picker (a hidden file input, several files allowed). Each file is read as a data URL and sent with `POST /api/files/upload` (no overwrite); toast "Uploaded <name>" or the error. The list reloads | | |
 | ＋ (`aria-label` "New folder") | Top-bar button | Shows the inline form | | |
-| Root chips | Phone (`/sdcard`), Downloads (`/sdcard/Download`), Photos (`/sdcard/DCIM`), Documents (`/sdcard/Documents`), Hermes (`/root/.hermes`), Home (`/root`) | Jump to that folder | | The screen starts at `/sdcard` |
+| Root chips | Phone (`/sdcard`), Downloads (`/sdcard/Download`), Photos (`/sdcard/DCIM`), Documents (`/sdcard/Documents`), Hermux (`/root/.hermes`), Home (`/root`) | Jump to that folder | | The screen starts at `/sdcard` |
 | Breadcrumbs | `/` (`aria-label` "Top folder") and one button per path part | Jump to that folder | | |
 | New-folder form | Field "Folder name", Create button, ✕ button (`aria-label` "Cancel") | Create calls `POST /api/files/mkdir`; names containing `/` are ignored | | Enter also creates |
 | ".." row | Shown when the folder has a parent | Goes up | | |
@@ -94,7 +94,7 @@ Preview sheet (title = file name, path in monospace). What shows is decided by `
 | `.mp3`, `.m4a`, `.ogg`, `.wav`, `.flac`, `.mp4`, `.webm`, `.mov`, `.mkv` | A player (`Media`). The file is not read into the page (it streams from the phone), so there is no size limit |
 | `.pdf`, Office files, everything else | "No preview here. Use Open with… to view it in another app." |
 
-Files read into the page (everything except players) over 3 MB say "Too large to preview (<size>)." Buttons: Delete (confirms, then `DELETE /api/files`), Open with… (the `openFile` bridge call, which uses `termux-open`; outside the app the toast says "Open works in the phone app"), Open in canvas (documents read as text only: closes the screen and opens the file in the canvas, 3.7) and Ask Hermes (puts "Look at the file <path> and " into the composer and returns to the chat).
+Files read into the page (everything except players) over 3 MB say "Too large to preview (<size>)." Buttons: Delete (confirms, then `DELETE /api/files`), Open with… (the `openFile` bridge call, which uses `termux-open`; outside the app the toast says "Open works in the phone app"), Open in canvas (documents read as text only: closes the screen and opens the file in the canvas, 3.7) and Ask Hermux (puts "Look at the file <path> and " into the composer and returns to the chat).
 **Data:** `GET /api/files`, `GET /api/files/read`, `POST /api/files/upload`, `POST /api/files/mkdir`, `DELETE /api/files` (all sent without the profile scope).
 
 #### Projects

@@ -13,7 +13,13 @@ uninstall note says.
 The Uninstall sheet describes the installer's files in plain words, and new backups are `hermux-backup-<date>.tar.gz`
 (2026-11-03; nothing looks for a backup by name, and older backups keep theirs).
 
-**Next:** redo README's top picture with the interface redo. Delete this file then.
+**Docs and README** (2026-11-03): the README and the docs now say Hermux too. What stays under the old name is the
+repository and the file identifiers listed in [the glossary](../spec/09-glossary.md) (the repository
+`hermes-mobile-app`, `hermes-mobile.apk`, the package ID, the plugin folder, and the like). README images that still
+show the old name wait for the owner's decision.
+
+**Next:** redo README's top picture with the interface redo, and decide about the README images that still show the
+old name. Delete this file then.
 
 **Needs a real phone:** a look through Setup, Settings, the approval prompt and the fingerprint sheet for any Hermes
 left on screen. The picture move on a real phone: save a picture with the old build, update, check it is in

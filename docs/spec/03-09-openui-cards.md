@@ -2,7 +2,7 @@
 
 **Files:** `OpenUIBlock.tsx` (the block in a message), `openui-entry.tsx` (lazy renderer bundle), `openui-lib.ts` (component library and the reference text), `openui-date.tsx` (the DatePicker replacement), `openui-msg.ts` (button text, link check, saved form state, day text), `openui-query.ts` (the live-data tool client).
 
-Hermes may answer with interactive cards (tables, charts, buttons, forms, steps) instead of prose. The reply contains a fenced block with the language `openui-lang` (the language `openui` also works). The app draws it with OpenUI's own chat component library. This is the one place where the app does not use its own native-style controls (owner decision); the canvas stays for things the user asks to build or write.
+Hermux may answer with interactive cards (tables, charts, buttons, forms, steps) instead of prose. The reply contains a fenced block with the language `openui-lang` (the language `openui` also works). The app draws it with OpenUI's own chat component library. This is the one place where the app does not use its own native-style controls (owner decision); the canvas stays for things the user asks to build or write.
 
 #### How a card is drawn
 
@@ -17,7 +17,7 @@ Hermes may answer with interactive cards (tables, charts, buttons, forms, steps)
 | Card action | Result |
 |---|---|
 | Button / list item / follow-up with `@ToAssistant("...")` | Sends that text as the user's next message (`actionMessage` in `web/src/openui-msg.ts`): the words, then, when the button is inside a form, the form's values as lines `- field: value` (booleans as yes/no, lists joined with commas, empty values left out, `$`-variables never sent), then an optional `(context)`. Haptic tap, then `sendPrompt`. |
-| Same, while Hermes is still answering | Nothing is sent; toast "Hermux is still answering. Try again when it’s done" |
+| Same, while Hermux is still answering | Nothing is sent; toast "Hermux is still answering. Try again when it’s done" |
 | Same, in a view that is not a chat reply (canvas, files, /btw) | Toast "Open the chat to use this". Only chat replies are interactive (`interactive` is set in `ChatItems.tsx`). |
 | `@OpenUrl` | Opens the link outside the app, only for `http` or `https` (`safeHttpUrl`); otherwise toast "That link can’t be opened" |
 | Any other action type | Ignored |

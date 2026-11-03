@@ -24,9 +24,9 @@
 
 **Hermux was called Hermes Mobile.** Only the name changed: it is the same app, and Hermes is still the agent running inside it.
 
-Hermes Agent is a powerful agent, but it lives in a terminal. Hermux gives it a proper phone interface: streaming chat,
+Hermux runs the open-source [Hermes Agent](https://github.com/NousResearch/hermes-agent) on your phone. Hermes Agent is a powerful agent, but it lives in a terminal. Hermux gives it a proper phone interface: streaming chat,
 live tool cards, approvals you can answer from the status bar, a canvas for building things together, and notifications that work
-while the app is closed. Hermes runs in Termux on the same phone, so the whole thing is self-contained.
+while the app is closed. Hermes Agent runs in Termux on the same phone, so the whole thing is self-contained.
 
 **[Install](#install)** · **[Full install guide](docs/install.md)** · **[What's new](CHANGELOG.md)**
 
@@ -46,9 +46,9 @@ pinch to zoom), coloured diffs, long code that collapses, inline SVG and HTML ca
 
 <p align="center"><img src="docs/img/rendering.png" alt="Equations, tables, task lists, diagrams and diffs" width="100%"></p>
 
-### A canvas you and Hermes share
+### A canvas you and Hermux share
 
-Ask for an interactive page or a 3D scene and Hermes builds it live in a document beside the chat. HTML runs in a sandbox that is offline
+Ask for an interactive page or a 3D scene and Hermux builds it live in a document beside the chat. HTML runs in a sandbox that is offline
 unless you allow it. Every change is a version with a diff you can restore.
 
 <p align="center"><img src="docs/img/canvas.png" alt="An interactive 3D solar system in the canvas" width="100%"></p>
@@ -62,20 +62,20 @@ Live mode.
 
 ### Uses your apps without taking your screen
 
-Ask Hermes to do something in an app ("add milk to my Keep list") and it opens that app on a hidden screen, reads it, taps and
+Ask Hermux to do something in an app ("add milk to my Keep list") and it opens that app on a hidden screen, reads it, taps and
 types, while you keep using your phone. The status chip says **Using <app>** and **Take over** brings the app to your screen.
 It asks once per app per chat; banking, payment, password and 2FA apps stay off unless you allow them. Needs Android 14+ and Shizuku.
 
 ### Knows your phone
 
-Hermes runs on the phone it talks about, so you can just ask: battery, storage, files in Downloads, what's installed. It uses
+Hermux runs on the phone it talks about, so you can just ask: battery, storage, files in Downloads, what's installed. It uses
 Termux's phone commands, and with Shizuku it gets system-level access (settings, apps, logs) through `rish`. If Shizuku has
 stopped, it tells you instead of guessing.
 
 ### Your chats, your memory, your look
 
-Search inside every message, pin, archive, link chats to chats, or ask Hermes to find "the chat where I sent the receipt photo". Every memory write is shown as a diff, and there is a screen to see
-what Hermes remembers. Dark, OLED black or light.
+Search inside every message, pin, archive, link chats to chats, or ask Hermux to find "the chat where I sent the receipt photo". Every memory write is shown as a diff, and there is a screen to see
+what Hermux remembers. Dark, OLED black or light.
 
 <p align="center"><img src="docs/img/more.png" alt="Drawer, memory screen and light theme" width="100%"></p>
 
@@ -86,16 +86,16 @@ what Hermes remembers. Dark, OLED black or light.
 | **Chat** | Stop or steer a running reply, or queue follow-ups that send when it ends; edit, retry or branch any turn; quote part of a reply or ask to explain it; `/btw` side questions (pull up past the last message); `/` autocomplete for every skill and command; per-chat drafts and stashed drafts |
 | **Long chats** | A rail on the right edge to jump between your messages; a "New since your last visit" line where unread messages start; several questions asked one at a time |
 | **See the work** | Reasoning, live tool cards, sub-agents, the to-do list, how long the turn has run and the chat's `/goal`; a card with the files a turn changed and their diffs; file checkpoints to undo them; a ring showing how full the context is, with Compress |
-| **Cards in replies** | Hermes can answer with interactive cards (tables, charts, tabs, buttons, forms) drawn by OpenUI; a card can show live, read-only data (off switch: Settings → Replies → Dynamic UI). HTML and SVG code blocks get a Preview button |
+| **Cards in replies** | Hermux can answer with interactive cards (tables, charts, tabs, buttons, forms) drawn by OpenUI; a card can show live, read-only data (off switch: Settings → Replies → Dynamic UI). HTML and SVG code blocks get a Preview button |
 | **Voice** | Read replies aloud with a player (pause, seek, speed, any installed speech engine), dictation and hands-free Live mode, optionally over the lock screen. Dictation can run on the phone, offline: built-in English models (Moonshine, NeMo, Zipformer) or your own sherpa-onnx model |
 | **Models & profiles** | Sign in with ChatGPT, Claude, Grok or Nous Portal, or use API keys; switch model and reasoning level per chat; bots (Hermes profiles) with their own default model, keys and SOUL.md |
 | **Notifications** | Reply, answer questions and allow commands right from the notification (a locked phone asks you to unlock first); a Done chip and app-icon badge for chats that finished while you were away; cron results; a "failed" note when a model call fails |
-| **Screens** | Skills, memory, cron jobs, projects, a canvas gallery, every Hermes setting, and files with previews (tables for CSV, code, JSON, Mermaid, HTML, audio and video) |
-| **Share** | "Share to Hermes" from any app; attach photos, camera shots and files; share a chat as Markdown |
+| **Screens** | Skills, memory, cron jobs, projects, a canvas gallery, every Hermux setting, and files with previews (tables for CSV, code, JSON, Mermaid, HTML, audio and video) |
+| **Share** | "Share to Hermux" from any app; attach photos, camera shots and files; share a chat as Markdown |
 | **Offline-friendly** | Messages typed offline send on reconnect; the last chat list is cached |
 | **Shortcuts & big screens** | Launcher shortcuts (New chat, Live mode, last chat); a two-column layout on tablets and foldables |
 | **Setup check** | One screen that checks Termux, permissions, the plugin and battery settings, with a fix button for each |
-| **Battery** | No permanent wake lock: the phone sleeps while Hermes is idle |
+| **Battery** | No permanent wake lock: the phone sleeps while Hermux is idle |
 | **Updates** | A notification when a new release is out; one tap in Settings → About installs it |
 
 ## Install
@@ -109,7 +109,7 @@ free tier). It takes about 15 minutes, mostly waiting.
 1. Download **hermes-mobile.apk** from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest),
    install it and open it.
 2. Tap **Install all** to get Termux, Termux:API, Termux:Boot (from F-Droid) and Shizuku.
-3. Start Shizuku with Wireless debugging (needed: it gives Hermes the screen and apps; the app shows how). After that,
+3. Start Shizuku with Wireless debugging (needed: it gives Hermux the screen and apps; the app shows how). After that,
    Hermux starts Shizuku again by itself after a restart, on Wi-Fi.
 4. Tap **Copy the command**, then **Open Termux**, paste it and press Enter. Allow what Termux asks and keep the screen on.
 5. Back in the app, sign in with your subscription or paste an API key.
@@ -131,7 +131,7 @@ irm https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/tools/s
 Or let your AI coding agent (Claude Code, Codex, Cursor…) do it, with this prompt:
 
 ```text
-Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermes on my Android phone.
+Read https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/AGENT_INSTALL.md and follow it to set up Hermux on my Android phone.
 ```
 
 **Afterwards:** set battery to *Unrestricted* for Hermux, Termux and Shizuku, or Android may stop them. If something
@@ -161,12 +161,12 @@ The app installs on Android 8.0 and newer (arm64). Some parts need a newer Andro
 
 | Android | What you get |
 |---|---|
-| 8.0 - 10 | The app and Hermes. Set up from a computer, and start Shizuku from a computer again after every restart (Wireless debugging, which lets the phone start it by itself, only exists from Android 11). |
+| 8.0 - 10 | The app and the agent. Set up from a computer, and start Shizuku from a computer again after every restart (Wireless debugging, which lets the phone start it by itself, only exists from Android 11). |
 | 10+ | Save pictures from a chat to Pictures/Hermux (on 8-9 only Share) |
 | 11+ | Setup on the phone itself, no computer needed; Shizuku starts again by itself after a restart (on Wi-Fi); pictures saved before the rename move from Pictures/Hermes to Pictures/Hermux |
-| 12+ | Allowing a command or answering Hermes from a notification on the lock screen asks for your unlock right there (on 8-11 the tap opens the app, which asks for the unlock) |
+| 12+ | Allowing a command or answering Hermux from a notification on the lock screen asks for your unlock right there (on 8-11 the tap opens the app, which asks for the unlock) |
 | 13+ | The app asks for the notification permission (older Android allows notifications from the start) |
-| 14+ | Hermes using your apps in the background, without taking your screen |
+| 14+ | Hermux using your apps in the background, without taking your screen |
 | 16 | The status chip as an Android Live Update (on older Android it is a normal pinned notification) |
 
 **Android System WebView must be up to date** (Chrome 100 or newer). The app draws its screens with it. Phones with the
@@ -178,9 +178,9 @@ Play Store update it by themselves. If it was never updated, the app says "Hermu
 
 ### Uninstall
 
-**Settings → Danger zone → Uninstall Hermux** removes Hermes and its data, then the helper apps, after an optional backup to
+**Settings → Danger zone → Uninstall Hermux** removes the Hermux agent and its data, then the helper apps, after an optional backup to
 `Download/hermux-backup-<date>.tar.gz` (API keys and sign-ins are left out unless you include them). To restore it on a new
-install, run this in Termux and restart Hermes:
+install, run this in Termux and restart Hermux:
 
 ```bash
 ~/bin/hermes-debian bash -c 'tar -xzf /sdcard/Download/hermux-backup-<date>.tar.gz -C /root/.hermes'
@@ -216,7 +216,7 @@ flowchart LR
 ```
 
 Hermes's dashboard runs on the phone at `127.0.0.1:9119`, and the app talks to it over the same `tui_gateway` JSON-RPC connection
-Hermes Desktop uses (it also starts Hermes when it isn't running). A small Hermes plugin sends status, approvals and replies to
+Hermes Desktop uses (it also starts Hermes when it isn't running). A small Hermux plugin sends status, approvals and replies to
 the app's background service, so the island chip and notifications work even when the app is closed.
 
 | Folder | What it is |

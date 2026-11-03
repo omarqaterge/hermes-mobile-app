@@ -11,7 +11,7 @@ else. `CLAUDE.md` imports this file.
    phone) and the open pull requests. **Before changing a screen or a behaviour,** read the owner's decisions that
    touch it in [docs/decisions/](docs/decisions/README.md); don't undo one without asking.
 3. **Find the code:** the contents list in [docs/SPEC.md](docs/SPEC.md), then only the `docs/spec/` files for the area
-   you work on (architecture, every screen and UI element, the Android shell, the Hermes plugin, the phone scripts,
+   you work on (architecture, every screen and UI element, the Android shell, the Hermux plugin, the phone scripts,
    build, tests and releases). Use them instead of guessing.
 4. **Check your work:** `tools/check.sh` runs the checks your branch's changes need, with one summary (`--all` for
    everything). CI runs the same on every PR.

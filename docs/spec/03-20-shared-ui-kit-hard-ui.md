@@ -25,7 +25,7 @@
 
 **`Screens.tsx` primitives.** `ScreenShell` is the frame of every full screen: top bar with the Back button (`aria-label` "Back", calls `closeScreen()` or the screen's own `onBack`), the title, optional action buttons, then the body. `Sheet` is the tall bottom sheet used by every form (grip, title, content; backdrop tap, grip drag and Android Back close it). `useLoader(load, deps)` runs an async load, keeps `data`, `error`, `loading`, `reload` and `setData`, and reloads when `deps` change; only the latest load counts (an older one that answers late is dropped). A load that takes longer than `LOAD_LIMIT_MS` (20 s, `web/src/timelimit.ts` `timeLimit`, which rejects with a `TimeLimitError`) ends in the error "Hermux didn’t answer in time.", so "Loading…" never stays; if its answer still comes later it fills the screen. `Status` shows the shared states: an error notice (`LoadError`: the error and, when the screen passes `onRetry`, a "Try again" button that calls `reload`), "Loading…" while loading with nothing yet, or the screen's empty text (nothing when that is empty).
 
-**`Linked.tsx`.** `Linked` renders plain text with web addresses (`http(s)://`, `www.`) and `mailto:` addresses as links (`linkParts` in `web/src/text.ts`) that open through the `openExternal` bridge call, so outside the app in the default browser or mail app (a tap on a link stops the message bubble's own tap). It is used wherever plain text from Hermes or the user is shown: tool cards and reasoning blocks in the chat, user and queued messages, approval and question sheets, subagent cards, diff lines (`DiffView`), text documents in the canvas, gallery and file browser, the scheduled-task prompt, and the error notices of hub screens and the gallery.
+**`Linked.tsx`.** `Linked` renders plain text with web addresses (`http(s)://`, `www.`) and `mailto:` addresses as links (`linkParts` in `web/src/text.ts`) that open through the `openExternal` bridge call, so outside the app in the default browser or mail app (a tap on a link stops the message bubble's own tap). It is used wherever plain text from Hermux or the user is shown: tool cards and reasoning blocks in the chat, user and queued messages, approval and question sheets, subagent cards, diff lines (`DiffView`), text documents in the canvas, gallery and file browser, the scheduled-task prompt, and the error notices of hub screens and the gallery.
 
 **`theme.ts`.** See Appearance (3.15): `savedTheme`, `resolveTheme`, `applyTheme`, `setTheme`, `systemDark`.
 
@@ -34,7 +34,7 @@
 - All colours come from CSS variables, never hard-coded, because a Light theme exists (`data-theme="light"`).
 - No messaging-channel UI (Telegram and the like). The app is the only front end; the Keys and Advanced settings pages hide those fields.
 - Session list gestures stay as in 3.13: swipe right Archive, swipe left Delete with confirm, ⋮ menu, long-press-drag-release reorder with no mode or handles, drag into Pinned.
-- No "update Hermes" button: Hermes updates ship with an app release.
+- No "update Hermes" button: agent updates ship with an app release.
 - Store selectors must never return a fresh `[]` or `{}`; no periodic loop or wake lock without a bound.
 
 **File index for sections 3.13 to 3.20** (bare file names; all under `web/src/`, the screens and sheets in `components/`):
