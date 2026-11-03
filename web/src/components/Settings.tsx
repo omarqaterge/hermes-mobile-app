@@ -21,7 +21,7 @@ import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../l
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
-import { approvalLockAvailable, approvalLockState, setApprovalLock } from '../approval-lock'
+import { approvalLockAvailable, approvalLockState, confirmAllow, setApprovalLock } from '../approval-lock'
 import { Markdown } from './Markdown'
 import { SttSettings } from './SttSettings'
 import { chosenSttName, loadSttModels, sttAvailable, useSttModels } from '../stt'
@@ -979,7 +979,9 @@ function BgAppsSection() {
     }
   }, [])
   if (!cfg) return null
-  const set = (v: boolean) => {
+  const set = async (v: boolean) => {
+    // Turning it on asks for the biometric or screen lock first (approval-lock.ts); turning it off never asks.
+    if (v && !(await confirmAllow('', 'Allow banking, payment, password and 2FA apps'))) return
     const prev = cfg
     setCfg({ ...cfg, allow_sensitive: v })
     api('PUT', BGAPPS, { allow_sensitive: v }, { profile: false }).catch(e => {
@@ -990,7 +992,7 @@ function BgAppsSection() {
   return (
     <Section title="Background apps">
       {cfg.available ? (
-        <ToggleRow icon="📱" tone="teal" title="Allow banking, payment, password and 2FA apps" sub="Off: Hermux won't open them in the background" on={cfg.allow_sensitive} onChange={set} />
+        <ToggleRow icon="📱" tone="teal" title="Allow banking, payment, password and 2FA apps" sub="Off: Hermux won't open them in the background" on={cfg.allow_sensitive} onChange={v => void set(v)} />
       ) : (
         <Row icon="📱" tone="gray" title="Allow banking, payment, password and 2FA apps" sub={cfg.reason || 'Hermux can’t use apps in the background on this phone'} />
       )}
