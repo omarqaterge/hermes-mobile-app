@@ -1,9 +1,9 @@
-// The "New since your last visit" divider.
+// The "New Messages" divider.
 const { WEB, sleep, check } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
-  // ── "New since your last visit" divider (visit.ts) ──
+  // ── "New Messages" divider (visit.ts) ──
   {
     const vp = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await vp.addInitScript(() => {
@@ -15,7 +15,7 @@ module.exports = async t => {
     })
     await vp.goto(WEB + '/')
     await vp.locator('.msg.assistant', { hasText: 'answer s-7' }).waitFor({ timeout: 5000 })
-    check((await vp.locator('.visit-divider').count()) === 1 && (await vp.locator('.visit-divider').textContent()) === 'New since your last visit', 'visit: the divider shows in a chat with newer messages')
+    check((await vp.locator('.visit-divider').count()) === 1 && (await vp.locator('.visit-divider').textContent()) === 'New Messages', 'visit: the divider shows in a chat with newer messages')
     check((await vp.locator('.visit-divider').getAttribute('role')) === 'separator', 'visit: the divider has the separator role')
     check(await vp.evaluate(() => { const d = document.querySelector('.visit-divider'); return !!d && d.parentElement.parentElement.classList.contains('chat') && d.parentElement.querySelector('.msg.assistant')?.textContent.includes('answer s-7') }), 'visit: the divider sits in the wrapper of the first unseen message, one child of the chat')
     check(await vp.evaluate(() => [...document.querySelector('.chat').children].filter(c => c.matches('.msg.user, .msg.assistant') || c.querySelector('.msg.user, .msg.assistant')).length === 2), 'visit: the chat still has one element per message')

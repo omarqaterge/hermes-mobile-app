@@ -1718,7 +1718,7 @@ public class MainActivity extends Activity {
         HermesService.openChat = null; // nothing is on screen any more: a chat finishing now counts as unseen
         voice.stopListening(); // never leave the microphone open in the background
         stt.release(); // nor an on-device speech model in memory
-        // The open chat was seen until now: messages that arrive meanwhile get "New since your last visit" on return.
+        // The open chat was seen until now: messages that arrive meanwhile get "New Messages" on return.
         web.evaluateJavascript("window.hermesPause && window.hermesPause()", null);
         super.onPause();
     }

@@ -118,7 +118,7 @@ activity banner, status bar, compress hint, read-aloud player, background-app ca
 - **Empty new-chat screen** · ☤ logo, "Hermux", "Your agent, on your phone." or "Profile: <bot>", up to four
   suggestion buttons (recent prompts, skills, built-in ideas) that fill the composer.
 - **Earlier messages…** · row with spinner at the top while older messages load.
-- **New since your last visit** · gold divider line.
+- **New Messages** · gold divider line.
 - **↓ Scroll to the newest message** · round floating button · shown when away from the end.
 - **User message** · right-aligned tinted bubble · text with links, quoted lines above it, photo thumbnails, 📎 file
   chips · tap shows the send time · actions under it: **Copy** (✓ flash), **Edit** (pencil; disabled while a reply

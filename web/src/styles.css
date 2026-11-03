@@ -630,7 +630,7 @@ textarea {
   flex-direction: column;
   gap: 6px;
 }
-/* "New since your last visit" (visit.ts): a thin line with the text in the middle. */
+/* "New Messages" (visit.ts): a thin line with the text in the middle. */
 .visit-divider {
   display: flex;
   align-items: center;

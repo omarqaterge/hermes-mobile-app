@@ -149,8 +149,8 @@ The Android shell and other code call these globals (declared in `App.tsx`, `sha
 | Global | Caller | What it does |
 |---|---|---|
 | `window.hermesBack()` | Android Back | See above. |
-| `window.hermesResume()` | Shell, app returns to the foreground | Reconnects if the socket is not open (`reconnectNow`), refreshes the background-app card, and tells the open chat it is back (`noteBack`, for the "New since your last visit" divider). |
-| `window.hermesPause()` | Shell, app leaves the foreground (`onPause`) | Notes that the open chat was seen until now (`noteAway`); messages arriving meanwhile get the "New since your last visit" divider on return. |
+| `window.hermesResume()` | Shell, app returns to the foreground | Reconnects if the socket is not open (`reconnectNow`), refreshes the background-app card, and tells the open chat it is back (`noteBack`, for the "New Messages" divider). |
+| `window.hermesPause()` | Shell, app leaves the foreground (`onPause`) | Notes that the open chat was seen until now (`noteAway`); messages arriving meanwhile get the "New Messages" divider on return. |
 | `window.hermesOpenSession(id, draft?)` | Notification tap | `openSessionFromNotification`: remembers the chat, closes screens, sheets and drawer, resumes it (now, or right after connecting). A `draft` (an answer typed into a notification that could not be delivered) goes into the composer. |
 | `window.hermesOpenBgView(id)` | Tap on the working chip while Hermux uses an app for that chat (called right before `hermesOpenSession`) | `wantViewer` in `bgapp.ts`: once that chat shows, the background-app card opens its live viewer (3.10, "Opened from the status chip"). |
 | `window.hermesShared(count, text)` | Android share sheet | `receiveShare` in `share.ts`: see 3.4 "Share to Hermux". |

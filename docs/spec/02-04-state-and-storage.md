@@ -19,7 +19,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.devBase` | `bridge.ts` | Development only, and in `sessionStorage`, not `localStorage`: the dashboard base URL the dev server injects. | No |
 | `hm.devToken` | `bridge.ts` | Development only, `sessionStorage`: the dashboard token the dev server injects. | No |
 | `hm.draft` | `drafts.ts` | Legacy single draft (before `hm.drafts.v1`); moved into `hm.drafts.v1` as `new:<profile>` and deleted on first read. | No |
-| `hm.visit.v1` | `visit.ts` | When each chat was last on screen: `{chatId: ms}`; newest 500 kept. Drives the "New since your last visit" divider. | No |
+| `hm.visit.v1` | `visit.ts` | When each chat was last on screen: `{chatId: ms}`; newest 500 kept. Drives the "New Messages" divider. | No |
 | `hm.stash.v1` | `stash.ts` | Drafts put aside from the composer: `[{id, text, at, chat}]`, newest first, at most 20 (`chat` is the stored chat id or null). | No |
 | `hm.drafts.v1` | `drafts.ts` | Unsent composer text: `{chatId: text}`, plus `new:<profile>` for the new-chat screen; newest 100 kept. | Mixed (new-chat drafts per profile) |
 | `hm.favModels.v1` | `favs.ts` | Starred models `[{p: provider, m: model}]` in starring order. | No (shared by all profiles) |
