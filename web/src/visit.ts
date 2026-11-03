@@ -1,5 +1,5 @@
 // When each chat was last on screen (localStorage hm.visit.v1: chat id → ms), so a chat opened after new messages
-// arrived can show "New since your last visit" before the first message the user has not seen.
+// arrived can show "New Messages" before the first message the user has not seen.
 import type { ChatItem } from './store'
 
 const KEY = 'hm.visit.v1'

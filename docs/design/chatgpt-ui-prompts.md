@@ -80,7 +80,7 @@ screen of Hermux, an Android app for an AI agent that runs on the phone. Dark th
 Screen A, a chat in progress, top to bottom:
 - Top bar: ☰ (with a small unread dot), title "Fix the backup script" with a small branch icon, a green status dot,
   dim bot name "Hermux agent" under the title, a 🔊 badge (this chat is read aloud), a canvas button with a dot (the chat has documents), ⋮.
-- A thin gold divider "New since your last visit".
+- A thin gold divider "New Messages".
 - User message bubble on the right with a quoted line above the text, a photo thumbnail and a 📎 file chip; small
   Copy and Edit icons under it; the send time shown.
 - Assistant reply, full width: a collapsed "Thought process" line with a brain icon and chevron; Markdown text with

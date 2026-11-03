@@ -425,7 +425,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [showJump, setShowJump] = useState(false)
-  // "New since your last visit" (visit.ts): the last-seen time is read once when the chat opens (before leaving it
+  // "New Messages" (visit.ts): the last-seen time is read once when the chat opens (before leaving it
   // marks anything) and the first newer message is found once, from the chat itself (not its cached preview).
   const visitRef = useRef<{ key: string | undefined; since: number | null; idx: number | null; applied: boolean }>({ key: undefined, since: null, idx: null, applied: false })
   const awayRef = useRef<{ at: number; back: number } | null>(null)
@@ -725,7 +725,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
         const f = folds.get(start + i)
         const card = changes.get(start + i)
         const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
-        const mark = start + i === dividerIdx ? <div className="visit-divider" role="separator">New since your last visit</div> : null
+        const mark = start + i === dividerIdx ? <div className="visit-divider" role="separator">New Messages</div> : null
         if (!f) {
           if (card) return <div key={it.id} className="turn-end">{mark}{view}<TurnChangesCard changes={card} /></div>
           return mark ? <div key={it.id} className="visit-wrap">{mark}{view}</div> : view
