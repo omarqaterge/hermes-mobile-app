@@ -154,8 +154,8 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
         }}
       >
         <span className="session-main">
-          <span className="session-title">
-            {working && <span className="working-dot" aria-label="Working" />}
+          {working && <span className="visually-hidden">Working</span>}
+          <span className={`session-title${working ? ' working' : ''}`}>
             {unread && <span className="unread-dot" aria-label="Finished, not opened yet" />}
             {pinned && <span className="pin-dot">📌 </span>}
             {s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}

@@ -1,6 +1,6 @@
-// Older chats, deleting a chat, canvas saving, canvas HTML, the canvas gallery.
+// Older chats, deleting a chat, the working shimmer, canvas saving, canvas HTML, the canvas gallery.
 const path = require('path')
-const { SHOTS, calls, rpcs, sleep, check } = require('../lib.cjs')
+const { SHOTS, calls, rpcs, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -26,6 +26,31 @@ module.exports = async t => {
   const delRpcs = rpcs("session.delete")
   const cleanups = calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/cleanup')
   check(delRpcs.length === 1 && cleanups.length === 1 && Array.isArray(cleanups[0].body?.keep), `deleting a chat asks the plugin to clean up (${delRpcs.length} delete, ${cleanups.length} cleanup, row ${JSON.stringify(delId.slice(0, 30))})`)
+  // ── a working chat's title shimmers in the list (no dot), and only while the list can be seen ──
+  await mock({ activity: [{ session: 's-9', text: 'Thinking…', short: 'Thinking', profile: 'default', review: false, ts: Date.now() / 1000 }] })
+  const workingRow = page.locator('.drawer .session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 9$/ }) })
+  const shimmer = workingRow.locator('.session-title.working')
+  await shimmer.waitFor({ timeout: 12000 }).then(() => check(true, 'working chat: its title shimmers'), () => check(false, 'working chat: its title shimmers'))
+  await shimmer.scrollIntoViewIfNeeded()
+  const shimmerState = () => shimmer.evaluate(el => { const c = getComputedStyle(el); return { name: c.animationName, play: c.animationPlayState, pos: c.maskPosition || c.webkitMaskPosition } })
+  const s1 = await shimmerState()
+  await sleep(300)
+  const s2 = await shimmerState()
+  check(s1.name === 'working-shimmer' && s1.play === 'running' && s1.pos !== s2.pos, `working chat: the band moves (${s1.pos} → ${s2.pos})`)
+  check((await workingRow.locator('.working-dot').count()) === 0, 'working chat: no blinking dot')
+  check((await workingRow.locator('.visually-hidden', { hasText: 'Working' }).count()) === 1, 'working chat: screen readers hear Working')
+  await page.screenshot({ path: path.join(SHOTS, 'working-title-shimmer.png') })
+  await page.mouse.click(360, 400)
+  await sleep(400)
+  check((await shimmerState()).play === 'paused', 'working chat: the shimmer stops while the list is closed')
+  await page.getByRole('button', { name: 'Sessions' }).click()
+  await sleep(400)
+  check((await shimmerState()).play === 'running', 'working chat: the shimmer starts again with the list open')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  check((await shimmerState()).name === 'none', 'working chat: no shimmer with reduced motion')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await mock({ activity: [] })
+  await shimmer.waitFor({ state: 'detached', timeout: 8000 }).then(() => check(true, 'working chat: the shimmer ends with the turn'), () => check(false, 'working chat: the shimmer ends with the turn'))
   await page.mouse.click(360, 400) // close drawer (backdrop)
   await sleep(400)
 

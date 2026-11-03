@@ -326,20 +326,41 @@ textarea {
   margin-right: 6px;
   vertical-align: middle;
 }
-/* Chat list: Hermes is working in this chat right now. */
-.working-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ok);
-  margin-right: 6px;
-  vertical-align: middle;
-  animation: working-blink 1.1s step-end infinite; /* a blink, not a fade: 2 redraws per cycle */
+/* Chat list: Hermes is working in this chat right now. A soft band sweeps across the title. It is a mask, not coloured
+   text, so emoji, the pin and the branch icon keep their colours, and both themes work. Stepped to 24 redraws a second
+   of this one line (battery), and paused while the chat list is closed. */
+.session-title.working {
+  align-self: flex-start; /* as wide as the text, so a short title gets the whole sweep */
+  max-width: 100%;
+  -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: working-shimmer 2s steps(48) infinite;
 }
-@keyframes working-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.15; }
+.drawer:not(.open) .session-title.working {
+  animation-play-state: paused;
+}
+@keyframes working-shimmer {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+  to { -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-title.working {
+    animation: none;
+    -webkit-mask-position: 50% 0;
+    mask-position: 50% 0;
+  }
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .menu-btn {
   position: relative;
@@ -3379,6 +3400,9 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
     width: var(--side);
     transform: none;
     padding-top: env(safe-area-inset-top);
+  }
+  html:not([data-side='hidden']) .drawer .session-title.working {
+    animation-play-state: running; /* the docked list is on screen whether or not it counts as open */
   }
   html:not([data-side='hidden']) .drawer-backdrop {
     display: none;
