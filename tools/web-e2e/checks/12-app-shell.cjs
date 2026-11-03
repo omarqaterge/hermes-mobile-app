@@ -352,8 +352,8 @@ module.exports = async t => {
     // On Android 10 and older the Shizuku row says it has to be started from a computer after each restart.
     await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'off' } }) })
     await setAuto({ sdk: true, wss: true, paired: true, last: 'ok' })
-    await np.locator('.setup-item.bad', { hasText: 'see and use the screen' }).waitFor({ timeout: 6000 }).catch(() => {})
-    check(!((await np.locator('.setup-item.bad', { hasText: 'see and use the screen' }).textContent().catch(() => '')) || '').includes('Android 10'), 'shizuku auto: no Android 10 sentence on Android 11+')
+    // The row can still show the Android 10 sentence from the step before, until the next check of the phone: wait for it to go.
+    await np.locator('.setup-item.bad', { hasText: 'see and use the screen', hasNotText: 'Android 10' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku auto: no Android 10 sentence on Android 11+'), () => check(false, 'shizuku auto: no Android 10 sentence on Android 11+'))
     await setAuto({ sdk: false, wss: false, paired: false, last: '' })
     await np.locator('.setup-item.bad', { hasText: 'Android 10 and older' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku auto: Shizuku row says Android 10 and older needs a computer'), () => check(false, 'shizuku auto: Shizuku row says Android 10 and older needs a computer'))
     await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ phone: { files: true, shizuku: 'ok' } }) })
