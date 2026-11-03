@@ -116,7 +116,7 @@ module.exports = async t => {
 
   // The log: shown scrubbed, sent scrubbed.
   {
-    const { ctx, pg, posts } = await open(browser, { warn: 'token=supersecret123 from 192.168.4.4 mail a@b.org' })
+    const { ctx, pg, posts } = await open(browser, { warn: 'token=supersecret123 call my doctor' })
     const sheet = await openSheet(pg)
     await fill(sheet, 'Log test', 'Checking the log')
     check((await sheet.getByLabel('Diagnostic log to send').count()) === 0, 'report: the log is hidden while the switch is off')
@@ -126,17 +126,17 @@ module.exports = async t => {
     await sheet.getByText('# Agent side').waitFor({ timeout: 6000 })
     const log = await box.innerText()
     check(log.includes('[removed]') && log.includes('[ip]') && log.includes('[email]'), 'report: the log box shows [removed], [ip] and [email]')
-    check(!/supersecret123|192\.168\.4\.4|a@b\.org/.test(log), 'report: the log box does not show the secret, IP or email')
+    check(!/supersecret123|doctor|192\.168\.4\.4|a@b\.org/.test(log), 'report: the log box shows no console words, IP or email')
     check(/crash service=dashboard type=ValueError count=2 at=gateway\/run\.py:12/.test(log) && /loop_exit name=dashboard code=137/.test(log) && /service name=dashboard alive=true/.test(log), 'report: the log holds the agent side (crash shape, service state, loop exit)')
     check(!/sk-planted/.test(log), 'report: a key in the agent side is scrubbed too')
-    check(/# Agent side[\s\S]*# Recent app log/.test(log), 'report: the sections are named, the app log after the agent side')
+    check(!/Recent app log/.test(log), 'report: free text from the console is no part of it')
     check(((await box.boundingBox())?.height || 0) > 100, 'report: the log box is tall enough to read in, not squeezed to a line')
     await sheet.getByText('stays private').waitFor({ timeout: 3000 })
     check((await sheet.getByRole('button', { name: 'Submit' }).isEnabled()), 'report: Submit works once the log is ready')
     await pg.screenshot({ path: path.join(SHOTS, 'report-log.png') })
     await sheet.getByRole('button', { name: 'Submit' }).click()
     await pg.locator('.sheet', { hasText: 'Report sent' }).waitFor({ timeout: 5000 })
-    check(posts[0]?.log === log && !/supersecret123|192\.168\.4\.4|a@b\.org/.test(posts[0].log), 'report: the posted log is the scrubbed text shown')
+    check(posts[0]?.log === log && !/supersecret123|doctor|192\.168\.4\.4|a@b\.org/.test(posts[0].log), 'report: the posted log is the scrubbed text shown')
     await ctx.close()
   }
 

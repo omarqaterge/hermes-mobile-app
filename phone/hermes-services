@@ -37,7 +37,7 @@ run_loop() {  # name, command...
       trim_log ~/logs/$name.log 2097152 524288
       "$@" < /dev/null >> ~/logs/$name.log 2>&1
       rc=$?
-      # Two loops end every few minutes on purpose (they sleep, then exit 0): only a failure counts for those.
+      # Two loops end every few minutes on purpose (they sleep, then exit): only a failure counts for those.
       case "$name:$rc" in memory-sync:0 | app-keeper:0) ;; *) loop_exit "$name" "$rc" ;; esac
       sleep 10
     done ) &
@@ -53,7 +53,7 @@ run_loop dashboard $deb bash -lc "exec hermes dashboard --host 127.0.0.1 --port 
 ms=/root/.hermes/scripts/hermes_memory_sync.py
 if [ -x "$HOME/bin/hermes-debian" ]; then has_ms() { "$HOME/bin/hermes-debian" --exists $ms; }
 else has_ms() { [ -f $PREFIX/var/lib/proot-distro/containers/debian/rootfs$ms ]; }; fi
-has_ms && run_loop memory-sync bash -c "$deb python3 $ms sync; sleep 590"
+has_ms && run_loop memory-sync bash -c "$deb python3 $ms sync; rc=\$?; sleep 590; exit \$rc"
 run_loop cron-ticker $deb bash -lc "$PY; exec \$PY /root/.hermes/scripts/cron_ticker.py"
 # The always-on bot keeper (a 4 s loop) and its messaging gateway are retired: the app is the only front
 # end. Stop a keeper left running by an older version of this script, then the keeper process and gateway.

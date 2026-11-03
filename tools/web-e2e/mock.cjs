@@ -246,7 +246,7 @@ const server = http.createServer((req, res) => {
         facts: { plugin_stamp: 1234, python: '3.12.1', debian: 'proot' },
         services: [{ name: 'dashboard', alive: true, log_kb: 12 }],
         crashes: [{ service: 'dashboard', type: 'ValueError', at: ['gateway/run.py:12'], count: 2 }],
-        events: ['11-03 12:00:00 turn api_error status=429 key=sk-planted-in-the-mock-abcdefghijkl', '11-03 12:00:05 service loop_exit name=dashboard code=137']
+        events: ['11-03 12:00:00 turn api_error status=429 key=sk-planted-in-the-mock-abcdefghijkl from 192.168.4.4 mail a@b.org', '11-03 12:00:05 service loop_exit name=dashboard code=137']
       })
     }
     if (p === '/api/plugins/hermes-mobile/prefs') {

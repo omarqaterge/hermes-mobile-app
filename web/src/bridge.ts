@@ -52,6 +52,7 @@ interface AndroidBridge {
   probeTermuxNow?(): void // same, always sent (a user tap)
   setupCommand?(): boolean // copies the installer command with a fresh progress token
   diagLog?(): string // the diagnostic log: {enabled, phone, lines}, read only for Report a problem
+  diagEnabled?(): boolean
   diagEvent?(area: string, event: string, fields: string): void // fields: JSON ["name", "value", …]; DiagLog.java checks every part
   diagClear?(): void
   setDiagEnabled?(on: boolean): void // off also deletes what was kept
@@ -402,6 +403,7 @@ export function installUpdate(url: string): boolean {
 
 export const diagBridge = {
   read: (): string => native?.diagLog?.() || '',
+  enabled: (): boolean | undefined => native?.diagEnabled?.(),
   event: (area: string, event: string, fields: string[]): void => native?.diagEvent?.(area, event, JSON.stringify(fields)),
   clear: (): void => native?.diagClear?.(),
   setEnabled: (on: boolean): void => native?.setDiagEnabled?.(on)

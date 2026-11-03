@@ -28,15 +28,17 @@ final class DiagLog {
     static final int MAX_VALUE = 32;
     static final int MAX_FIELDS = 8;
     static final int MAX_FRAMES = 8;
+    static final int MAX_STACK = 400;
 
     private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_]{0,23}");
     private static final Pattern VALUE = Pattern.compile("[A-Za-z0-9_.:+-]{1," + MAX_VALUE + "}");
     /** A filtered stack, built only by stackOf: Class.method:line,Class.method:line */
-    private static final Pattern STACK = Pattern.compile("[A-Za-z0-9_.:$<>,-]{1,400}");
+    private static final Pattern STACK = Pattern.compile("[A-Za-z0-9_.:$<>,-]{1," + MAX_STACK + "}");
 
     private final File current;
     private final File older;
     private boolean enabled = true;
+    private long prunedAt = 0;
     private long rateMinute = 0;
     private int rateCount = 0;
     private int dropped = 0;
@@ -78,8 +80,9 @@ final class DiagLog {
                 extra = stamp(atSec) + " log dropped count=" + dropped + "\n";
                 dropped = 0;
             }
+            pruneDaily();
             write(extra + stamp(atSec) + " " + line(area, name, fields) + "\n");
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
             // Logging must never take the app down.
         }
     }
@@ -124,9 +127,10 @@ final class DiagLog {
         for (StackTraceElement f : t.getStackTrace()) {
             String c = f.getClassName();
             if (ownPackage == null || !c.startsWith(ownPackage + ".")) continue;
-            if (n++ == MAX_FRAMES) break;
+            String frame = c.substring(ownPackage.length() + 1) + "." + f.getMethodName() + ":" + f.getLineNumber();
+            if (n++ == MAX_FRAMES || s.length() + frame.length() + 1 > MAX_STACK) break; // a longer value would be refused whole
             if (s.length() > 0) s.append(',');
-            s.append(c.substring(ownPackage.length() + 1)).append('.').append(f.getMethodName()).append(':').append(f.getLineNumber());
+            s.append(frame);
         }
         return s.length() == 0 ? "none" : s.toString();
     }
@@ -153,6 +157,37 @@ final class DiagLog {
             }
         }
         return out;
+    }
+
+    /** Once a day at most: a quiet phone must not keep old lines on disk until the file happens to fill up. */
+    private void pruneDaily() {
+        long now = System.currentTimeMillis() / 1000;
+        if (now - prunedAt < 86_400) return;
+        prunedAt = now;
+        prune(now);
+    }
+
+    /** Takes lines older than MAX_AGE_SEC out of both files. */
+    synchronized void prune(long nowSec) {
+        long oldest = nowSec - MAX_AGE_SEC;
+        for (File f : new File[]{older, current}) {
+            if (!f.isFile()) continue;
+            try {
+                List<String> keep = new ArrayList<>();
+                for (String l : Files.readAllLines(f.toPath(), StandardCharsets.UTF_8)) {
+                    int sp = l.indexOf(' ');
+                    try {
+                        if (sp > 0 && Long.parseLong(l.substring(0, sp)) >= oldest) keep.add(l);
+                    } catch (NumberFormatException ignored) {
+                        // not one of ours: goes
+                    }
+                }
+                if (keep.isEmpty()) f.delete();
+                else Files.write(f.toPath(), keep, StandardCharsets.UTF_8);
+            } catch (Exception ignored) {
+                // left for the next time
+            }
+        }
     }
 
     synchronized void clear() {

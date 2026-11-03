@@ -59,10 +59,14 @@ export const clearMemoryEvents = (): void => {
   memory.length = 0
 }
 
-/** Where an error happened: script file names and places, up to 6. Not the stack's text: it can quote the error's words. */
+/** Where an error happened: script file names and places, up to 6, only from the stack's "at" lines: the first lines
+ *  hold the error's words, which can look like a place too. */
 export function stackFrames(e: Error): string {
   const out: string[] = []
-  for (const m of (e.stack || '').matchAll(/([\w.-]+\.(?:js|mjs|ts|tsx)):(\d+):(\d+)/g)) {
+  const frames = (e.stack || '').split('\n').filter(l => /^\s+at\s/.test(l))
+  for (const line of frames) {
+    const m = /([\w.-]+\.(?:js|mjs|ts|tsx)):(\d+):(\d+)\)?\s*$/.exec(line)
+    if (!m) continue
     const f = `${m[1]}:${m[2]}:${m[3]}`
     if (!out.includes(f)) out.push(f)
     if (out.length === 6) break

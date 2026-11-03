@@ -61,6 +61,20 @@ public class DiagLogTest {
         check(DiagLog.stackOf(e, OWN).equals("Voice.speak:3"), "only our own frames");
         check(DiagLog.stackOf(new RuntimeException(), "no.such.pkg").equals("none"), "no frames of our own");
 
+        StackTraceElement[] longFrames = new StackTraceElement[8];
+        for (int i = 0; i < 8; i++) longFrames[i] = new StackTraceElement(OWN + ".AVeryLongClassNameThatGoesOnAndOnAndOnAndOnAndOn" + i, "aLongMethodNameThatAlsoGoesOnAndOn", null, 1000 + i);
+        e = new RuntimeException("x");
+        e.setStackTrace(longFrames);
+        String st = DiagLog.stackOf(e, OWN);
+        check(st.length() <= DiagLog.MAX_STACK && st.startsWith("AVery") && DiagLog.line("a", "b", "at", st).contains("at=AVery"), "a long stack is cut, not refused whole");
+
+        // Old lines leave the disk.
+        log.clear();
+        log.event(now - DiagLog.MAX_AGE_SEC - 10, "old", "line");
+        log.event(now - 60, "new", "line");
+        log.prune(now);
+        check(new String(java.nio.file.Files.readAllBytes(new File(dir, "events.log").toPath())).indexOf("old line") < 0, "prune takes old lines out of the file");
+
         // Lines read back with a date and no year, and old ones go.
         log.clear();
         log.event(now - DiagLog.MAX_AGE_SEC - 10, "old", "line");

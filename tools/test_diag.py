@@ -131,6 +131,13 @@ check("no canary in the shapes", not leaks(shapes), shapes)
 check("the type and the frames in known code are kept", shapes[0] == {"type": "httpx.ConnectError", "at": ["gateway/run.py:120", "httpx/_client.py:9"], "count": 1}, shapes[0])
 check("the same one twice is counted", shapes[1] == {"type": "FileNotFoundError", "at": ["canvas.py:7"], "count": 2}, shapes[1])
 check("words where a type belongs aren't kept", shapes[2]["type"] == "unknown", shapes[2])
+for line in ["Alice: my private message", "my_private_diary.txt: No such file", "sk_" + "live_" + "fake" * 8, "SecretPlan: call my doctor", "Error"]:
+    got = diag.traceback_shapes(f'Traceback (most recent call last):\n  File "/root/.hermes/hermes-agent/x.py", line 1, in y\n    z()\n{line}\n')
+    check(f"not a type: {line[:24]}", got[0]["type"] == "unknown", got)
+long_type = "a.very.long.module.path.that.keeps.going.on.ConnectTimeoutError"
+check("a long module path keeps the class's name", diag.traceback_shapes(f'Traceback (most recent call last):\n{long_type}: x\n')[0]["type"] == "ConnectTimeoutError")
+user_folder = diag.traceback_shapes('Traceback (most recent call last):\n  File "/storage/emulated/0/hermes-agent/omar_notes.py", line 3, in x\n    y()\n  File "/root/hermes-mobile/notes.py", line 3, in x\n    y()\nValueError: z\n')
+check("a user's folder named like the code isn't code", user_folder[0]["at"] == [], user_folder)
 
 print("what the app is given")
 (termux / "logs" / "dashboard.log").write_text(LOG)
@@ -151,6 +158,18 @@ check("the facts", snap["facts"]["debian"] == "chroot" and snap["facts"]["plugin
 (termux / ".hermes-mobile" / "distro").write_text("something-else\n")
 check("only a known install kind", diag.facts()["debian"] == "proot")
 check("never raises", diag.event("a", "b", x=object()) is None)
+
+print("old lines leave the disk, not only the read")
+old = now - 8 * 86400
+diag.log_path().write_text(f"{old} old line\n{now} new line\nnot ours at all\n")
+(termux / "logs" / "loop-events.log").write_text(f"{old} service loop_exit name=dashboard code=1\n")
+diag.prune()
+check("prune keeps only young checked lines", diag.log_path().read_text() == f"{now} new line\n", diag.log_path().read_text())
+check("prune covers the supervisor's file", (termux / "logs" / "loop-events.log").read_text() == "")
+diag._pruned_at[0] = 0
+diag.log_path().write_text(f"{old} old line\n")
+diag.event("a", "b")
+check("an event prunes once a day", "old line" not in diag.log_path().read_text())
 
 print("delete and off")
 diag.clear()

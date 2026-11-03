@@ -11,7 +11,8 @@ because battery savers differ by maker; this is what changed from the [report de
 messages, tool data, file names or paths, app names, IDs, network details, or another app's data (no logcat).
 
 **How that's enforced.** Every event part is checked against a fixed shape when it's written, so free text can't get in;
-the scrubber is the second layer, because a scrubber only removes what it recognises. Tests plant a key and chat text
+the scrubber is the second layer, because a scrubber only removes what it recognises. That's also why the page's console
+and error words are no longer collected at all, not even in memory. Tests plant a key and chat text
 everywhere the log reads from and fail if they come out.
 
 **Where it goes.** Kept on the phone for 7 days at most, in two small files on each side, on by default (a log has to exist

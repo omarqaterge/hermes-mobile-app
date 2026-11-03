@@ -10,8 +10,9 @@ test of `DiagLog`, a stand-in relay and the browser tests. **Not yet run on a ph
 **Needs a real phone:**
 - The app starts normally with the new `HermuxApp`, and Settings → About shows the two rows.
 - A real crash and a force stop show as `crash java` and `app exit` in the log after the next start.
-- `onRenderProcessGone`: killing the renderer brings the page back instead of ending the app, and four deaths within a
-  minute go back to the launcher with the service still running.
+- `onRenderProcessGone`: killing the renderer brings the page back instead of ending the app, four deaths within a minute
+  go back to the launcher with the service still running, and nothing crashes from calls to the destroyed WebView before the
+  new activity starts (assumed from Chromium ignoring such calls, not seen).
 - The report sheet's box shows all four sections, and `GET /diag` reads `~/logs` under proot and under chroot.
 - Off: `diag-off` written from Debian stops `loop_exit` in Termux; on chroot that file belongs to root, so check Termux
   still reads it and the uninstaller removes it.

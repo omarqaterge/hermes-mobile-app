@@ -46,11 +46,17 @@ public class HermuxApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        if (!mainProcess()) return; // the speech-model probe has its own process: its starts and native crashes say nothing about the app
         DiagLog d = log(this);
         Thread.UncaughtExceptionHandler next = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, e) -> {
-            d.crash(e, thread == null ? "" : thread.getName(), getPackageName());
-            if (next != null) next.uncaughtException(thread, e); // Android's own handler ends the process as before
+            try {
+                d.crash(e, thread == null ? "" : thread.getName(), getPackageName());
+            } catch (Throwable ignored) {
+                // Out of memory, say: the process must still end as it always did.
+            } finally {
+                if (next != null) next.uncaughtException(thread, e); // Android's own handler ends the process as before
+            }
         });
         new Thread(() -> {
             exitReasons(d);
@@ -63,9 +69,23 @@ public class HermuxApp extends Application {
         }, "hermes-diag").start();
     }
 
+    /** Application.getProcessName is API 28; this file works on every Android. */
+    private boolean mainProcess() {
+        try (java.io.FileInputStream in = new java.io.FileInputStream("/proc/self/cmdline")) {
+            byte[] b = new byte[256];
+            int n = in.read(b);
+            int end = 0;
+            while (end < n && b[end] != 0) end++;
+            return new String(b, 0, end, java.nio.charset.StandardCharsets.UTF_8).equals(getPackageName());
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
+        if (!mainProcess()) return;
         // Only the levels that mean the phone is short of memory, not every hide of the app.
         if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL || level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
             log(this).event("app", "low_memory", "level", String.valueOf(level));
@@ -85,6 +105,7 @@ public class HermuxApp extends Application {
                 ApplicationExitInfo x = list.get(i);
                 if (x.getTimestamp() <= seen) continue;
                 newest = Math.max(newest, x.getTimestamp());
+                if (!getPackageName().equals(x.getProcessName())) continue; // the speech-model probe's own process
                 // Not getDescription() or the trace: free text from the system.
                 d.event(x.getTimestamp() / 1000, "app", "exit",
                         "reason", exitReason(x.getReason()),

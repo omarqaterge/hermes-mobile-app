@@ -652,6 +652,8 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
     _event("turn", "api_error", chat=_alias(session_id), status=status_code, retryable=retryable, final=final,
            retries=retry_count, reason=reason, provider=provider, model=str(model or "").rsplit("/", 1)[-1] or None,
            error=type(error).__name__ if isinstance(error, BaseException) else None)
+    if final:
+        _turn_started.pop(session_id, None)  # no session_end follows this: the next turn is a new start
     if not final or not session_id or session_id in _subagents:
         return
     if _is_review(turn_id, session_id):  # background work failed: drop its label, never the chat's own turn

@@ -2,7 +2,7 @@
 // switch and delete button of Settings → About. Nothing leaves the phone from here: the sheet shows the text, and only
 // its Submit sends it (report.ts).
 import { api } from './api'
-import { appLog, clearAppLog, openChatText } from './applog'
+import { openChatText } from './applog'
 import { diagBridge, isNative } from './bridge'
 import { clearMemoryEvents, memoryEvents } from './diaglog'
 import { scrubLog } from './report'
@@ -13,7 +13,6 @@ const PENDING = 'hm.diagPending' // what Hermes's side hasn't been told yet: {en
 const PLUGIN_WAIT_MS = 5000
 const MAX_EVENTS = 22_000
 const MAX_AGENT = 22_000
-const MAX_APP_LOG = 10_000
 
 interface NativeLog {
   enabled?: boolean
@@ -60,17 +59,16 @@ function newest(lines: string[], max: number): string[] {
 
 /** Sections in this order because a GitHub link that's too long loses the top first (fallbackUrl), and the phone's
  *  facts and the app's own events say the most in the least space. */
-export function diagnosticsText(native: NativeLog | null, plugin: PluginLog | null, recent: string, chat: string[], browserEvents: string[]): string {
+export function diagnosticsText(native: NativeLog | null, plugin: PluginLog | null, chat: string[], browserEvents: string[]): string {
   const sections: string[] = []
   const section = (title: string, lines: string[]) => {
     if (lines.length) sections.push(`# ${title}\n${lines.join('\n')}`)
   }
   if (plugin) {
-    const crashes = (plugin.crashes || []).map(c => `crash service=${c.service} type=${c.type} count=${c.count} at=${(c.at || []).join(',') || 'none'}`)
+    const crashes = (plugin.crashes || []).map(c => `crash service=${c.service} type=${/^[A-Za-z0-9_.]{1,32}$/.test(c.type) ? c.type : 'unknown'} count=${c.count} at=${(c.at || []).join(',') || 'none'}`)
     const services = (plugin.services || []).map(s => `service name=${s.name} alive=${s.alive} log_kb=${s.log_kb}`)
     section('Agent side', newest([facts(plugin.facts), ...services, ...crashes, ...(plugin.events || [])].filter(Boolean), MAX_AGENT))
   } else section('Agent side', ['Not available: Hermux is offline, or its plugin is older than this app.'])
-  section('Recent app log', newest(recent ? recent.split('\n') : [], MAX_APP_LOG))
   section('App events', newest(native ? native.lines || [] : browserEvents, MAX_EVENTS))
   if (native) section('Phone', [facts(native.phone)].filter(Boolean))
   return scrubLog(sections.join('\n\n'), chat)
@@ -78,12 +76,12 @@ export function diagnosticsText(native: NativeLog | null, plugin: PluginLog | nu
 
 /** The text the sheet shows, and sends only if the user submits it. */
 export async function collectDiagnostics(): Promise<string> {
-  return diagnosticsText(nativeLog(), await pluginLog(), appLog(), openChatText(), memoryEvents())
+  return diagnosticsText(nativeLog(), await pluginLog(), openChatText(), memoryEvents())
 }
 
 export function diagnosticsEnabled(): boolean {
-  const n = nativeLog()
-  if (n && typeof n.enabled === 'boolean') return n.enabled
+  const n = diagBridge.enabled()
+  if (typeof n === 'boolean') return n
   try {
     return localStorage.getItem(OFF) !== '1'
   } catch {
@@ -129,7 +127,6 @@ export function flushDiagToPlugin(): void {
 
 export function clearDiagnostics(): void {
   diagBridge.clear()
-  clearAppLog()
   clearMemoryEvents()
   setPending({ ...pending(), clear: true })
   flushDiagToPlugin()
@@ -144,10 +141,7 @@ export function setDiagnosticsEnabled(on: boolean): void {
   } catch {
     /* private mode */
   }
-  if (!on) {
-    clearAppLog()
-    clearMemoryEvents()
-  }
+  if (!on) clearMemoryEvents()
   setPending({ ...pending(), enabled: on })
   flushDiagToPlugin()
 }

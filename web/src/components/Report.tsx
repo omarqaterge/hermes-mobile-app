@@ -1,10 +1,9 @@
 // "Report a problem": a sheet that turns what the user writes into a public GitHub issue (report.ts). Opened from
 // Settings → About and from error states (openReport). What goes with the words is on screen before Submit.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { appLog, openChatText } from '../applog'
 import { openExternal } from '../bridge'
 import { collectDiagnostics } from '../diagnostics'
-import { fallbackUrl, MAX_TEXT, MAX_TITLE, prepareScreenshot, relayUrl, reportDetails, REPORT_REPO, scrubLog, sendReport, type Report, type Screenshot } from '../report'
+import { fallbackUrl, MAX_TEXT, MAX_TITLE, prepareScreenshot, relayUrl, reportDetails, REPORT_REPO, sendReport, type Report, type Screenshot } from '../report'
 import { toast, useStore } from '../store'
 import { Sheet } from './Screens'
 import { Row, ToggleRow } from './ui'
@@ -55,7 +54,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
         if (live) setLog(t)
       },
       () => {
-        if (live) setLog(scrubLog(appLog(), openChatText()))
+        if (live) setLog('')
       }
     )
     return () => {

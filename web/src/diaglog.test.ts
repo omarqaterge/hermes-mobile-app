@@ -56,6 +56,9 @@ describe('what is taken from an error', () => {
     const e = new TypeError('Cannot read /sdcard/Documents/private.pdf for me@example.org')
     e.stack = `TypeError: Cannot read /sdcard/Documents/private.pdf for me@example.org\n    at send (file:///android_asset/assets/index-abc.js:12:34)\n    at file:///android_asset/assets/index-abc.js:56:78\n    at file:///android_asset/assets/index-abc.js:56:78`
     expect(stackFrames(e)).toBe('index-abc.js:12:34,index-abc.js:56:78')
+    const msg = new Error('could not open my_private_diary.ts:12:3')
+    msg.stack = `Error: could not open my_private_diary.ts:12:3\n    at run (file:///a/index-abc.js:1:2)`
+    expect(stackFrames(msg)).toBe('index-abc.js:1:2')
     const noStack = new Error('words')
     noStack.stack = ''
     expect(stackFrames(noStack)).toBe('none')
@@ -109,14 +112,19 @@ describe('the text a report may send', () => {
   }
 
   it('has every section, with the phone last so a cut keeps it', () => {
-    const t = diagnosticsText(native, plugin, '12:00:03 conn closed', [], [])
-    expect(t.indexOf('# Agent side')).toBeLessThan(t.indexOf('# Recent app log'))
-    expect(t.indexOf('# Recent app log')).toBeLessThan(t.indexOf('# App events'))
+    const t = diagnosticsText(native, plugin, [], [])
+    expect(t.indexOf('# Agent side')).toBeLessThan(t.indexOf('# App events'))
     expect(t.indexOf('# App events')).toBeLessThan(t.indexOf('# Phone'))
     expect(t).toContain('maker=somemaker api=34')
     expect(t).toContain('at=MainActivity.onCreate:12')
     expect(t).toContain('crash service=dashboard type=ValueError count=2 at=gateway/run.py:12')
     expect(t).toContain('service name=dashboard alive=false log_kb=3')
+  })
+
+  it('a crash type of the wrong shape from the plugin is not shown', () => {
+    const t = diagnosticsText(native, { ...plugin, crashes: [{ service: 'dashboard', type: 'Alice my private message', at: [], count: 1 }] }, [], [])
+    expect(t).toContain('type=unknown')
+    expect(t).not.toContain('Alice')
   })
 
   it('scrubs every section, so a line that got past the rules is still caught', () => {
@@ -125,34 +133,32 @@ describe('the text a report may send', () => {
     const t = diagnosticsText(
       { ...native, lines: [`x ${key}`, `y ${chat}`, 'z me@example.org'] },
       { ...plugin, events: [`a ${key}`, `b ${chat}`], crashes: [] },
-      `warn ${key} from 192.168.1.20 ${chat}`,
       [chat],
       []
     )
     expect(t).not.toContain(key)
     expect(t).not.toContain('call my doctor')
     expect(t).not.toContain('me@example.org')
-    expect(t).not.toContain('192.168.1.20')
   })
 
   it('a phone-side version survives the scrubber', () => {
-    const t = diagnosticsText({ ...native, phone: { webview: '140.0.7339.207', termux: '0.118.1', android: '14' } }, null, '', [], [])
+    const t = diagnosticsText({ ...native, phone: { webview: '140.0.7339.207', termux: '0.118.1', android: '14' } }, null, [], [])
     expect(t).toContain('webview=140.0.7339.207 termux=0.118.1 android=14')
   })
 
   it('says when the agent side is missing', () => {
-    expect(diagnosticsText(native, null, '', [], [])).toContain('Not available')
+    expect(diagnosticsText(native, null, [], [])).toContain('Not available')
   })
 
   it('in a plain browser it has the memory events and no phone section', () => {
-    const t = diagnosticsText(null, plugin, '', [], ['11-03 12:00:00 conn lost state=closed'])
+    const t = diagnosticsText(null, plugin, [], ['11-03 12:00:00 conn lost state=closed'])
     expect(t).toContain('conn lost')
     expect(t).not.toContain('# Phone')
   })
 
   it('stays under what the relay takes, even with every section full', () => {
     const many = Array.from({ length: 2000 }, (_, i) => `11-03 12:00:00 fill the_log number=${i} aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`)
-    const t = diagnosticsText({ ...native, lines: many }, { ...plugin, events: many }, many.join('\n'), [], [])
+    const t = diagnosticsText({ ...native, lines: many }, { ...plugin, events: many }, [], [])
     expect(t.length).toBeLessThanOrEqual(60_000)
     expect(t).toContain('# Phone')
     expect(t).toContain('number=1999')

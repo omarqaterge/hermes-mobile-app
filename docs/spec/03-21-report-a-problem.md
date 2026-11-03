@@ -6,7 +6,7 @@ setup flow; the Report a problem button of the Backend status sheet while Hermux
 that sheet first). `openReport()` opens it from anywhere; `ReportHost`, mounted once in `App.tsx`, shows it.
 **Closes with:** the grip, backdrop, Back, Cancel or Close, but not while a report is sending (30 seconds at most). **Source files:** `web/src/components/Report.tsx` (the
 sheet), `web/src/report.ts` (what is sent, the log scrubber, the GitHub link, sending), `web/src/diagnostics.ts` (the
-diagnostic log the sheet shows), `web/src/applog.ts` (the recent app log), `relay/report/` (the relay, below). Decisions:
+diagnostic log the sheet shows), `web/src/applog.ts` (what the page itself adds to it), `relay/report/` (the relay, below). Decisions:
 [report-a-problem](../decisions/report-a-problem.md), [diagnostic-log](../decisions/diagnostic-log.md).
 
 **The form** ("Report a problem"): a warning first, "Reports are public: anyone can read them on GitHub. Don't write
@@ -48,25 +48,25 @@ log's oldest lines go first, then the end of the text, marked "(Cut: the rest di
 **The diagnostic log** (`diagnostics.ts`, decision [diagnostic-log](../decisions/diagnostic-log.md)). `collectDiagnostics`
 puts it together on the phone from every layer, and `diagnosticsText` runs all of it through `scrubLog`. The sections, in this
 order because a link that is too long loses the top first: **# Agent side** (`GET /diag`, 5 seconds at most; "Not available…"
-when Hermux is offline or its plugin is older), **# Recent app log** (`appLog`, below), **# App events** (`DiagLog`), **# Phone**
+when Hermux is offline or its plugin is older), **# App events** (`DiagLog`), **# Phone**
 (`HermuxApp.phoneFacts`: Android version and API, the phone's maker but never its model, CPU type, WebView, Termux and Shizuku
 versions, whether Shizuku runs, battery exemptions, notifications allowed, total memory rounded to a GB, free storage as a
-range). Nothing reads it but this sheet, and nothing leaves until Submit. **The rule on every layer:** an event is an area, a
+range). Only this sheet reads it (Settings asks the shell only whether it is on, `diagEnabled`), and nothing leaves until Submit. **The rule on every layer:** an event is an area, a
 name and short fields, each checked against a fixed shape when written (`logEvent` in `web/src/diaglog.ts`, `DiagLog.java`,
 `diag.py`; a value is letters, digits and `_.:+-`, 32 characters at most, or it is written as `?`; only the `at` field may hold
 a stack), so a message, a path or an error's words can't get in; `scrubLog` is the second layer. What is logged:
 
 | Layer | Events |
 |---|---|
-| The page (`applog.ts`, `gateway.ts`, `api.ts`) | `web js_error` (the error's type and script places from `stackFrames`, never its words); `conn lost`, `conn open` with `down_s` and `tries`, `conn connect_failed` (`noteConn`: one outage is two lines); `rpc fail` and `rpc slow` (`noteRpc`: the method's name, the time, the error's code; never its parameters; slow means 10 seconds or more); `api fail` for a dashboard call answering 500 or more or not at all (`routeName`: the path's first part only) |
+| The page (`applog.ts`, `gateway.ts`, `api.ts`) | `web js_error` and `console_error` (the error's type and script places from the stack's "at" lines, `stackFrames`, never its words), `error_toast` (only that one showed); `conn lost`, `conn open` with `down_s` and `tries`, `conn connect_failed` (`noteConn`: one outage is two lines); `rpc fail` and `rpc slow` (`noteRpc`: the method's name, the time, the error's code; never its parameters; slow means 10 seconds or more); `api fail` for a dashboard call answering 500 or more or not at all (`routeName`: the path's first part only) |
 | The Android shell | `crash java` (`DiagLog.crash`: type and root cause's type, our own frames, never the words or a thread's name); `app start`; `app exit` (Android 11+, `getHistoricalProcessExitReasons`: why each earlier run ended, with its status, importance and memory, not the system's description or trace); `app low_memory`; `webview render_gone`; `service app_service_start`, `app_service_stop`, `start_failed`; `setup step`, `fail`, `done` (the installer's step names from `POST /setup`, never a line's words); `shizuku keeper`; `plugin update_failed`; `voice stt_failed` |
 | Hermes's side (`__init__.py` → `diag.py`) | `turn start`, `turn end` (seconds, `completed`, `failed`, `interrupted`, the exit reason), `turn api_error` (status, whether it retries, the reason, provider, model, the error's type, never its words), `turn stale`; a chat is `chat=` an alias that means nothing outside its process (`alias`), never its ID; `plugin not_registered`, `hook_failed` |
 | The supervisor (`hermes-services`) | `service loop_exit` with the loop's name and exit code, except the loops that end on purpose |
-| Hermes's service logs, read only (`diag.py`) | `crash service=… type=… count=… at=…`: `traceback_shapes` keeps only the exception's type and the frames in Hermes, the plugin or an installed package, from the last 256 KB of each `~/logs/<loop>.log`; never the error's words, a code line, a frame in any other file, or any other line. `services` adds each loop's state (`alive`, `log_kb`) |
+| Hermes's service logs, read only (`diag.py`) | `crash service=… type=… count=… at=…`: `traceback_shapes` keeps only the exception's type (a name Python's way, or `unknown`) and the frames in Hermes, the plugin or an installed package, from the last 256 KB of each `~/logs/<loop>.log`; never the error's words, a code line, a frame in any other file, or any other line. `services` adds each loop's state (`alive`, `log_kb`) |
 
-**Kept on the phone:** on each side two files of 128 KB at most, lines older than 7 days dropped when read, at most 30 events a
+**Kept on the phone:** on each side two files of 128 KB at most, lines older than 7 days dropped when read and taken out of the files once a day (`prune`), at most 30 events a
 minute in the app and 60 a process on Hermes's side (a `log dropped` line says how many went; a crash always gets through).
-Times are month, day and UTC time, no year or time zone. The app's files are in `getNoBackupFilesDir()/diag`, which no device
+Times are month, day and UTC time, no year or time zone. `HermuxApp` does this only in the app's main process, not in the speech-model probe's. The app's files are in `getNoBackupFilesDir()/diag`, which no device
 backup holds; `HermuxApp.log` is the app's one `DiagLog`. In a plain browser events stay in memory (`memoryEvents`, the last 300).
 
 **The switch and delete button** (`DiagRows` in `web/src/components/DiagRows.tsx`, Settings → About): "Keep a diagnostic log" (on by
@@ -77,12 +77,7 @@ the app's and Hermes's files and empties the service logs the crash shapes come 
 next connection if it is offline (`hm.diagPending`, `flushDiagToPlugin`); `hm.diagOff` keeps the choice in a plain browser. What
 was already sent can't be taken back from here: see the relay below.
 
-**The app log** (`applog.ts`): `startAppLog` (from `main.tsx`) keeps the last 150 lines, in memory only, of page errors,
-unhandled promise failures, `console.error` and `console.warn`, connection changes (`conn` and its detail) and error
-toasts, each `HH:MM:SS kind message` (UTC time of day), cut to 400 characters. `logLine` adds one, `appLog` reads them, `clearAppLog` empties them. Nothing reads it but this sheet. Free text is why it stays in
-memory: only the shape of an error also goes to the kept log, through `keepError`. Each line loses the open chat's text as it is added, before the cut (`openChatText`,
-the title and last 300 messages; `removeChatText`), and an error toast keeps only what failed: its words up to the first
-`: `, with quoted names replaced. `wellFormed` drops half an emoji left by a cut.
+**The page's part** (`applog.ts`): `startAppLog` (from `main.tsx`) adds `keepError`'s shape of page errors, unhandled promise failures and console errors, and `error_toast`, never their words, which can hold the user's own text. `openChatText` gives the open chat's title and last 300 messages to the scrubber; `removeChatText` takes them out, and `wellFormed` drops half an emoji left by a cut.
 
 **Scrubbing** (`scrubLog`, before the log is shown): any line of the open chat's title or messages (12 characters or
 more; spaces evened out, also in JSON form; a long line also by its first 40 characters, to the end of the log line)

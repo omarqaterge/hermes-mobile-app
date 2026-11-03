@@ -165,7 +165,12 @@ public class MainActivity extends Activity {
                 renderGoneAt = now;
                 // A page that kills its renderer every time must not restart for ever: back to the launcher, service still on.
                 if (renderGoneCount > RENDER_GONE_MAX) finishAndRemoveTask();
-                else recreate();
+                else {
+                    // What opened this activity was delivered already: the new page must not jump to that chat or apply its draft again.
+                    getIntent().removeExtra("session");
+                    getIntent().removeExtra("draft");
+                    recreate();
+                }
                 return true;
             }
 
@@ -2754,6 +2759,12 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
             }
             return o.toString();
+        }
+
+        /** Whether the log is on, for Settings: reads nothing of the log. */
+        @JavascriptInterface
+        public boolean diagEnabled(String key) {
+            return ok(key) && HermuxApp.log(MainActivity.this).enabled();
         }
 
         /** One event from the page; DiagLog checks every part, so the page can't write free text either. */

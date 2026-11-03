@@ -30,11 +30,15 @@ _NAME = re.compile(r"[a-z][a-z0-9_]{0,23}\Z")
 _VALUE = re.compile(r"[A-Za-z0-9_.:+-]{1,32}\Z")  # holds a model's name, not a sentence, a path or the common keys (40 and more)
 _LINE = re.compile(r"(\d{9,11}) ([a-z][a-z0-9_]{0,23}) ([a-z][a-z0-9_]{0,23})((?: [a-z][a-z0-9_]{0,23}=(?:\?|[A-Za-z0-9_.:+-]{1,32}))*)\Z")
 _FRAME = re.compile(r'\s+File "([^"]+)", line (\d+), in ([\w<>.]+)\s*\Z')
-_ERROR_TYPE = re.compile(r"([A-Za-z_][\w.]{0,80})(?::|\s*\Z)")
+# An exception's type at the start of the line ending a traceback, by how Python names them. Anything else in that place
+# (another program's line, printed between) isn't one: "Alice: hello" must not be kept as a type.
+_ERROR_TYPE = re.compile(r"((?:[A-Za-z_]\w*\.)*[A-Z]\w*(?:Error|Exception|Warning|Interrupt|Exit|Timeout|Cancelled))(?::|\s*\Z)")
 _CODE_ROOTS = ("/site-packages/", "/hermes-agent/", "/hermes-mobile/")
+_INSTALL_ROOTS = ("/root/.hermes/", "/root/.local/", "/usr/lib/", "/usr/local/lib/")  # where those folders really are
 
 _salt = secrets.token_hex(8)  # chat aliases mean nothing outside this process
 _rate = {"minute": 0, "count": 0, "dropped": 0}
+_pruned_at = [0.0]
 
 
 def termux_home() -> Path:
@@ -95,6 +99,9 @@ def event(area: str, name: str, **fields) -> None:
         if _rate["dropped"]:
             text = format_line(now, "log", "dropped", {"count": _rate["dropped"]}) + "\n" + text
             _rate["dropped"] = 0
+        if now - _pruned_at[0] >= 86_400:
+            _pruned_at[0] = now
+            prune(now)
         path = log_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists() and path.stat().st_size + len(text) > MAX_BYTES:
@@ -107,6 +114,27 @@ def event(area: str, name: str, **fields) -> None:
             os.close(fd)
     except Exception:
         pass
+
+
+def prune(now=None) -> None:
+    """Takes lines older than MAX_AGE_SEC out of the files, once a day at most: a quiet phone must not keep them on disk
+    until a file happens to fill up."""
+    now = now or time.time()
+    path = log_path()
+    for p in (Path(f"{path}.1"), path, termux_home() / "logs" / "loop-events.log"):
+        try:
+            lines = p.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        keep = [l for l in lines if (m := _LINE.match(l)) and now - int(m.group(1)) <= MAX_AGE_SEC]
+        if len(keep) == len(lines):
+            continue
+        try:
+            tmp = Path(f"{p}.tmp")
+            tmp.write_text("".join(f"{l}\n" for l in keep))
+            os.replace(tmp, p)
+        except OSError:
+            pass
 
 
 def _pretty(at: int) -> str:
@@ -132,6 +160,8 @@ def read_lines(paths, now=None) -> list:
 
 
 def _clean_frame(path: str, line: str, func: str):
+    if not path.startswith(_INSTALL_ROOTS) and not path.startswith(f"{Path.home()}/.hermes/"):
+        return None  # a folder of the user's can be called hermes-agent too
     for root in _CODE_ROOTS:
         at = path.find(root)
         if at >= 0:
@@ -160,6 +190,9 @@ def traceback_shapes(text: str) -> list:
             continue  # a code line, or an indented part of the error: never kept
         m = _ERROR_TYPE.match(line)
         kind = m.group(1) if m else "unknown"
+        if not _VALUE.match(kind):
+            kind = kind.rsplit(".", 1)[-1]  # a long module path: the class's own name says enough
+            kind = kind if _VALUE.match(kind) else "unknown"
         at = tuple(frames[-MAX_FRAMES:])
         item = found.pop((kind, at), {"type": kind, "at": list(at), "count": 0})
         item["count"] += 1
