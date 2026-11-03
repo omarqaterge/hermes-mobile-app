@@ -29,7 +29,7 @@ const nativeShell = () => {
     }
     window.HermesAndroid = {
       handshake: () => (taken ? '' : ((taken = true), 'K')),
-      getBaseUrl: key => (k(key, 'getBaseUrl'), window.__hmMockBase || 'http://127.0.0.1:9119'),
+      getBaseUrl: key => (k(key, 'getBaseUrl'), window.__hmMockBase || ''),
       getToken: key => (k(key, 'getToken'), 'tok'),
       getTokenAsync: (key, id) => {
         k(key, 'getTokenAsync')

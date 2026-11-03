@@ -37,6 +37,13 @@ async function main() {
   }
   fs.writeFileSync(LOG, '')
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined })
+  // Every page and context learns this run's mock: the fake shell's getBaseUrl has no other way to know it.
+  const newContext = browser.newContext.bind(browser)
+  browser.newContext = async opts => {
+    const c = await newContext(opts)
+    await c.addInitScript(b => { window.__hmMockBase = b }, MOCK)
+    return c
+  }
   const newPage = browser.newPage.bind(browser)
   browser.newPage = async opts => {
     const p = await newPage(opts)
