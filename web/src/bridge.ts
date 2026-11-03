@@ -56,6 +56,7 @@ interface AndroidBridge {
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermux; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
   confirmApproval?(id: number, session: string, what: string): void // fingerprint / screen lock for an Allow; answers window.hermesApprovalConfirm(id, result)
+  confirmIdentity?(id: number, what: string): void // the same prompt, every time, whatever the approvals setting
   approvalLockState?(): string // {on, secure}: Confirm approvals with fingerprint
   setApprovalLock?(on: boolean): void
   forgetApproval?(session: string): void // the chat's live session closed: its next Allow asks again

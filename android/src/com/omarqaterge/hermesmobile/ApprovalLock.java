@@ -76,6 +76,16 @@ final class ApprovalLock {
             done.accept("ok");
             return;
         }
+        prompt(a, session, "Allow Hermux to run this?", what,
+                "Confirm it is you. Other approvals in this chat won't ask again until the app restarts or the chat closes.", done);
+    }
+
+    /** The same prompt for a setting that must ask on every change: ignores the approvals setting and confirmed chats. */
+    static void askAlways(Activity a, String what, Consumer<String> done) {
+        prompt(a, "", "Confirm it is you", what, "Hermux asks every time this setting changes.", done);
+    }
+
+    private static void prompt(Activity a, String session, String title, String what, String description, Consumer<String> done) {
         if (!secure(a)) {
             done.accept("nolock");
             return;
@@ -95,8 +105,8 @@ final class ApprovalLock {
         pendingSession = session;
         pendingActivity = a;
         int g = ++gen;
-        if (Build.VERSION.SDK_INT >= 28) biometric(a, what, g);
-        else credential(a, what, g);
+        if (Build.VERSION.SDK_INT >= 28) biometric(a, title, what, description, g);
+        else credential(a, title, what, g);
     }
 
     /** MainActivity.onDestroy: a prompt it started can't answer any more. */
@@ -129,19 +139,19 @@ final class ApprovalLock {
     }
 
     @android.annotation.TargetApi(28) // called only on API 28+; newer calls below have their own checks
-    private static void biometric(Activity a, String what, int g) {
+    private static void biometric(Activity a, String title, String what, String description, int g) {
         try {
             android.hardware.biometrics.BiometricPrompt.Builder b = new android.hardware.biometrics.BiometricPrompt.Builder(a)
-                    .setTitle("Allow Hermux to run this?")
+                    .setTitle(title)
                     .setSubtitle(what)
-                    .setDescription("Confirm it is you. Other approvals in this chat won't ask again until the app restarts or the chat closes.");
+                    .setDescription(description);
             if (Build.VERSION.SDK_INT >= 30) {
                 b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
                         | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
             } else if (Build.VERSION.SDK_INT >= 29) {
                 b.setDeviceCredentialAllowed(true);
             } else {
-                b.setNegativeButton("Use screen lock", a.getMainExecutor(), (d, w) -> credential(a, what, g));
+                b.setNegativeButton("Use screen lock", a.getMainExecutor(), (d, w) -> credential(a, title, what, g));
             }
             cancel = new CancellationSignal();
             b.build().authenticate(cancel, a.getMainExecutor(), new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
@@ -159,7 +169,7 @@ final class ApprovalLock {
                             || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_NO_BIOMETRICS
                             || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT
                             || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT)) {
-                        credential(a, what, g);
+                        credential(a, title, what, g);
                         return;
                     }
                     // the API 28 "Use screen lock" button reports a cancel after starting the screen-lock screen
@@ -168,18 +178,18 @@ final class ApprovalLock {
                 }
             });
         } catch (Exception e) {
-            credential(a, what, g);
+            credential(a, title, what, g);
         }
     }
 
     static final int REQ = 45;
     private static boolean credentialUp;
 
-    private static void credential(Activity a, String what, int g) {
+    private static void credential(Activity a, String title, String what, int g) {
         if (g != gen || credentialUp) return;
         try {
             KeyguardManager km = a.getSystemService(KeyguardManager.class);
-            Intent i = km == null ? null : km.createConfirmDeviceCredentialIntent("Allow Hermux to run this?", what);
+            Intent i = km == null ? null : km.createConfirmDeviceCredentialIntent(title, what);
             if (i == null) {
                 finish(g, "nolock");
                 return;

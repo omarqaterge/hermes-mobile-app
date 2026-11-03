@@ -155,7 +155,7 @@ The Android shell and other code call these globals (declared in `App.tsx`, `sha
 | `window.hermesOpenBgView(id)` | Tap on the working chip while Hermux uses an app for that chat (called right before `hermesOpenSession`) | `wantViewer` in `bgapp.ts`: once that chat shows, the background-app card opens its live viewer (3.10, "Opened from the status chip"). |
 | `window.hermesShared(count, text)` | Android share sheet | `receiveShare` in `share.ts`: see 3.4 "Share to Hermux". |
 | `window.hermesShortcut(kind)` | Launcher shortcuts | Closes screens, sheets and drawer, starts a new chat; kind `live` also starts Live mode. |
-| `window.hermesApprovalConfirm(id, result)` | `confirmApproval` finished | `approval-lock.ts`: the biometric or screen-lock answer (`ok`, `cancel`, `nolock`) for an Allow (3.6). |
+| `window.hermesApprovalConfirm(id, result)` | `confirmApproval` or `confirmIdentity` finished | `approval-lock.ts`: the biometric or screen-lock answer (`ok`, `cancel`, `nolock`) for an Allow (3.6). |
 | `window.hermesLockView(on)` | Assist gesture over the lock screen | `lockview.ts`: true while the app shows over a locked phone's lock screen (talking only, see 4.6 "Talking on the lock screen"); false once unlocked or hidden again. |
 | `window.hermesAnswer(kind, session, text)` | Notification reply / question answer | `answerFromNotification` in `notif-answer.ts`: see 3.6. Returns `'y'` when the page took the answer, `'n'` otherwise. |
 

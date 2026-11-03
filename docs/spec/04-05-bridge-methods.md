@@ -74,6 +74,7 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `remoteDebuggingState` | none | JSON string | Read-only `{"available":bool,"on":bool,"minutesLeft":int}`. `available` = Android Developer options are on. |
 | `turnOffRemoteDebugging` | none | nothing | `DevTools.turnOff` (a test build keeps debugging on). Turning off is always allowed. |
 | `confirmApproval` | `id`, `session` (stored chat id, `""` for Settings), `what` (the command) | nothing (async) | `ApprovalLock.ask`: answers `window.hermesApprovalConfirm(id, result)` with `ok` (confirmed now, or the chat already was, or the setting is off), `cancel` (dismissed, failed, or the app is not on screen) or `nolock` (no screen lock). The page cannot confirm anything itself (3.6). |
+| `confirmIdentity` | `id`, `what` (shown on the prompt) | nothing (async) | `ApprovalLock.askAlways`: always asks for the biometric or screen lock, ignoring the approvals setting and confirmed chats, for a setting that asks on every change (3.15). Answers `window.hermesApprovalConfirm(id, result)` with `ok`, `cancel` or `nolock`. |
 | `approvalLockState` | none | JSON string | Read-only `{"on":bool,"secure":bool}`: Confirm approvals with fingerprint, and whether the phone has a screen lock. |
 | `setApprovalLock` | `on` | nothing | Saves the switch (preference `approvalLock`). The page asks `confirmApproval` first when turning it off. |
 | `forgetApproval` | `session` | nothing | The chat's live Hermes session closed: its next Allow asks again. |
