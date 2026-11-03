@@ -14,7 +14,8 @@
 set -euo pipefail
 
 RAW="https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main"
-APK_URL="https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"
+APK_URL="https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermux.apk"
+APK_URL_OLD="https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk"   # if the latest release has no hermux.apk yet
 APP=com.omarqaterge.hermesmobile
 WORK="${HM_WORK:-$HOME/.hermes-mobile-setup}"
 mkdir -p "$WORK"
@@ -224,7 +225,7 @@ fi
 
 # ---------------------------------------------------------------- 8. app
 b "8/9 Hermux app"
-curl -fL --progress-bar -o "$WORK/hermes-mobile.apk" "$APK_URL"
+curl -fL --progress-bar -o "$WORK/hermes-mobile.apk" "$APK_URL" || curl -fL --progress-bar -o "$WORK/hermes-mobile.apk" "$APK_URL_OLD"
 if ! out=$(adb install -r "$WORK/hermes-mobile.apk" 2>&1); then
   case "$out" in *UPDATE_INCOMPATIBLE*) die "Another build of Hermux is installed (signed differently). Uninstall it from the phone and run this again." ;;
     *) die "Installing the app failed: $out" ;; esac

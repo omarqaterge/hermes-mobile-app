@@ -31,7 +31,7 @@ Inputs: `HM_DISTRO=chroot` (rooted phones; stored in `~/.hermes-mobile/distro`),
 8. **STEP hermes**: removes empty launchers an interrupted install left, moves a half-installed `~/.hermes/hermes-agent` (no `.git`) aside, then, unless `hermes --version` works and `install-stamp.json` exists, downloads the **pinned** installer (`raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh`) to a file and runs it with `--non-interactive --commit $HERMES_COMMIT` (one retry with uv's Python on PATH, a proot workaround). Then checks `hermes --version`, and tries `hermes pm install agent-browser` again if the browser tools are missing (only a TODO line if that fails).
 9. **STEP plugin**: runs `install.sh` with `HM_NO_APK=1` (from the clone, or downloaded as `~/hm-install.sh`), then writes `~/.termux/boot/10-hermes` which calls `~/bin/hermes-services` at boot.
 10. **STEP start**: runs `~/bin/hermes-services`, waits up to 90 x 4 s for `127.0.0.1:9119`; otherwise `FAIL start`.
-11. Prints each line of `~/.hermes-mobile/todo` as `TODO <text>`. If neither `HM_NO_APK` nor `HM_APP_TOKEN` is set (the phone-only route), downloads `releases/latest/download/hermes-mobile.apk` and opens Android's installer with `termux-open`. Then `say DONE`.
+11. Prints each line of `~/.hermes-mobile/todo` as `TODO <text>`. If neither `HM_NO_APK` nor `HM_APP_TOKEN` is set (the phone-only route), downloads `releases/latest/download/hermux.apk` (or `hermes-mobile.apk` if the latest release doesn't have that yet) to `~/hermes-mobile.apk` and opens Android's installer with `termux-open`. Then `say DONE`.
 
 #### `install.sh` in order
 

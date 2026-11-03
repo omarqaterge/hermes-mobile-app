@@ -276,10 +276,14 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    service also checks every 12 h (`UpdateNotice`) and posts a notice whose tap opens the app with an `updateUrl`
    extra. When the release is newer, the page also reads `CHANGELOG.md` at its tag for What's new (3.15).
 2. Update → `installUpdate(url)` → `MainActivity.startUpdate`. `updateUrlOk` (`UpdateUrl.ok`) accepts only
-   `https://github.com/omarqaterge/hermes-mobile-app/releases/download/….apk` or the same under the repository's next
-   name, `https://github.com/omarqaterge/hermux/releases/download/….apk` (no `..`). GitHub's API gives release links
-   under the repository's current name, so a copy that accepts both keeps updating across the rename
-   (`docs/status/repo-rename.md`).
+   `https://github.com/omarqaterge/hermes-mobile-app/releases/download/….apk`, the same under the repository's next
+   name, `https://github.com/omarqaterge/hermux/releases/download/….apk`, or under the organization reserved for a
+   possible later move, `https://github.com/hermuxlab/hermux/releases/download/….apk` (no `..`). Owner and repository
+   ignore letter case (A-Z only), as GitHub does; everything else is exact. GitHub's API gives release links under the
+   repository's current name, so a copy that accepts these keeps updating across a rename or move
+   (`docs/status/repo-rename.md`). The page takes the first `.apk` of the release and `UpdateNotice` the last;
+   releases carry `hermes-mobile.apk` and `hermux.apk`, the same file, so either works, and the page has no address
+   check of its own.
 3. Without "install unknown apps" permission the shell reports `permission` and opens that system page.
 4. The download (`download`) follows at most 6 redirects, each https on `github.com` or `*.githubusercontent.com`,
    and stops above 150 MB. It writes `cache/update/hermes-mobile.apk`.

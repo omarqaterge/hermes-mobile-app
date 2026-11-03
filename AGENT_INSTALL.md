@@ -254,8 +254,9 @@ The user can change all of this later in the app: Settings → Model providers /
 ## 8. Install the app
 
 ```bash
-curl -fL -o hermes-mobile.apk https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk
-adb install -r hermes-mobile.apk
+curl -fL -o hermux.apk https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermux.apk \
+  || curl -fL -o hermux.apk https://github.com/omarqaterge/hermes-mobile-app/releases/latest/download/hermes-mobile.apk
+adb install -r hermux.apk
 adb shell pm grant com.omarqaterge.hermesmobile com.termux.permission.RUN_COMMAND
 adb shell pm grant com.omarqaterge.hermesmobile android.permission.POST_NOTIFICATIONS
 adb shell pm grant com.omarqaterge.hermesmobile android.permission.WRITE_SECURE_SETTINGS

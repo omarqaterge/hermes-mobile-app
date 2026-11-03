@@ -22,7 +22,7 @@ in Termux.
 - New on-screen text says Hermux, never Hermes.
 - Hermes stays only where people don't read it as the app's name, or where Hermux would be untrue: code identifiers,
   file, class and folder names, the package ID, `localStorage` keys, bridge method names, paths such as
-  `/root/.hermes`, the `hermes` command, the plugin folder `hermes-mobile`, the APK file `hermes-mobile.apk`, the
+  `/root/.hermes`, the `hermes` command, the plugin folder `hermes-mobile`, the build output `android/build/hermes-mobile.apk` (releases also carry it as `hermux.apk` since 2026-11-03: [hermux-name-update-path.md](hermux-name-update-path.md)), the
   update address checks ([hermux-name-update-path.md](hermux-name-update-path.md)), credits and links to the upstream
   project, and the instruction to install Hermes Agent itself.
 - ~~The phone folder `Pictures/Hermes` keeps its name.~~ Changed 2026-11-02, by the owner ("move it"): Save puts

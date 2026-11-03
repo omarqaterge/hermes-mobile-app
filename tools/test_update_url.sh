@@ -1,6 +1,6 @@
 #!/bin/bash
 # Tests which addresses the in-app update accepts (android/.../UpdateUrl.java) with a plain JDK: release files under
-# both names of this repository, nothing looser. URLs are split with java.net.URI, which decodes the path as android.net.Uri does. Needs javac 11+.
+# the names of this repository, in any letter case, nothing looser. URLs are split with java.net.URI, which decodes the path as android.net.Uri does. Needs javac 11+.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -25,10 +25,35 @@ public class UpdateUrlTest {
         // what GitHub's API returns: browser_download_url under the current name, before and after the rename
         check(true, "https://github.com/omarqaterge/hermes-mobile-app" + apk);
         check(true, "https://github.com/omarqaterge/hermux" + apk);
+        check(true, "https://github.com/hermuxlab/hermux" + apk);
+        // both release file names
+        check(true, "https://github.com/omarqaterge/hermes-mobile-app/releases/download/v0.9.6/hermux.apk");
+        check(true, "https://github.com/hermuxlab/hermux/releases/download/v0.9.6/hermux.apk");
+        // GitHub ignores case in owner and repository names, and its API returns the canonical casing
+        check(true, "https://github.com/HermuxLab/hermux" + apk);
+        check(true, "https://github.com/hermuxlab/HERMUX" + apk);
+        check(true, "https://github.com/omarqaterge/Hermux" + apk);
+        check(true, "https://github.com/omarqaterge/HERMUX" + apk);
+        check(true, "https://github.com/OmarQaterge/Hermes-Mobile-App" + apk);
+        // only the names ignore case: the rest stays exact
+        check(false, "https://github.com/hermuxlab/hermux/Releases/download/v0.9.6/hermux.apk");
+        check(false, "https://github.com/hermuxlab/hermux/releases/DOWNLOAD/v0.9.6/hermux.apk");
+        check(false, "https://github.com/hermuxlab/hermux/releases/download/v0.9.6/hermux.APK");
+        check(false, "HTTPS://github.com/hermuxlab/hermux" + apk);
+        // characters that Unicode case folding would turn into a letter of a name: long s, dotless i, dotted I, Kelvin
+        check(false, "https://github.com/omarqaterge/herme%C5%BF-mobile-app" + apk);
+        check(false, "https://github.com/omarqaterge/hermes-mob%C4%B1le-app" + apk);
+        check(false, "https://github.com/omarqaterge/hermes-mob%C4%B0le-app" + apk);
+        check(false, "https://github.com/hermu%E2%84%AAlab/hermux" + apk);
         // lookalike names
-        for (String repo : new String[] {"hermux-evil", "hermuxx", "hermu", "Hermux", "HERMUX", "hermux.git", "hermes-mobile-app-evil",
+        for (String repo : new String[] {"hermux-evil", "hermuxx", "hermu", "hermux.git", "hermes-mobile-app-evil",
                 "hermes-mobile-appx", "hermes-mobile", "xhermux", "hermes-mobile-app/hermux", "hermux/hermux"})
             check(false, "https://github.com/omarqaterge/" + repo + apk);
+        for (String name : new String[] {"hermuxlab2/hermux", "hermuxlabs/hermux", "xhermuxlab/hermux", "hermux-lab/hermux", "hermuxlab-evil/hermux",
+                "HermuxLab2/hermux", "hermuxlab/hermuxx", "hermuxlab/hermux-evil", "hermuxlab/hermes-mobile-app", "hermux/hermux", "hermuxlab/hermuxlab",
+                "someone/hermuxlab/hermux", "hermuxlab//hermux", "/hermuxlab/hermux", "hermuxlab/hermux/x"})
+            check(false, "https://github.com/" + name + apk);
+        check(false, "https://github.com/hermuxlab" + apk);
         // another owner
         check(false, "https://github.com/someone/hermux" + apk);
         check(false, "https://github.com/someone/hermes-mobile-app" + apk);

@@ -67,7 +67,7 @@ mktree() {
   for f in dashboard.pid dashboard.log cron-ticker.log app-keeper.log; do echo 1 > "$H/logs/$f"; done
   echo mine > "$H/logs/mine.log"
   printf '[remote "origin"]\n\turl = https://github.com/omarqaterge/hermes-mobile-app.git\n' > "$H/hermes-mobile/.git/config"
-  echo x > "$H/hm.sh"; echo x > "$H/hermes-mobile.apk"; echo mine > "$H/notes.txt"; echo mine > "$H/projects/a.py"
+  echo x > "$H/hm.sh"; echo x > "$H/hermes-mobile.apk"; echo x > "$H/hermux.apk"; echo mine > "$H/notes.txt"; echo mine > "$H/projects/a.py"
   echo mine > "$H/.cache/other/c"
   echo precious > "$T/outside/dir/precious"
   ln -s "$T/outside/dir" "$H/.cache/hermes-open"           # a symlink out of Termux: only the link may go
@@ -114,6 +114,7 @@ expected='./home/.cache/hermes-open
 ./home/bin/rish_shizuku.dex
 ./home/hermes-mobile
 ./home/hermes-mobile.apk
+./home/hermux.apk
 ./home/hm.sh
 ./home/logs/app-keeper.log
 ./home/logs/cron-ticker.log
@@ -220,7 +221,7 @@ check '[ -f "$T/usr/var/lib/chroot-distro/containers/debian/rootfs/root/.hermes/
 check 'grep -qx "allow-external-apps = true" "$T/home/.termux/termux.properties"' "after a failure Termux still takes the app's commands (re-run possible)"
 check '! echo "$out" | grep -qx "HMUNINSTALL DONE"' "no DONE after a failure"
 
-# ── the installer's clone goes under either name of the repository; any other clone at that path stays ──
+# ── the installer's clone goes under any name of the repository; any other clone at that path stays ──
 n=0
 while read -r want url; do
   n=$((n+1)); T="$ROOT/clone$n"; mkdir -p "$T"; mkbin "$T"; mktree "$T"
@@ -233,15 +234,20 @@ gone https://github.com/omarqaterge/hermes-mobile-app.git
 gone https://github.com/omarqaterge/hermux.git
 gone https://github.com/omarqaterge/hermux
 gone git@github.com:omarqaterge/hermux.git
+gone https://github.com/hermuxlab/hermux.git
+gone git@github.com:hermuxlab/hermux.git
 gone git@github.com:omarqaterge/hermes-mobile-app.git
 kept https://github.com/omarqaterge/hermux-evil.git
+kept https://github.com/hermuxlab2/hermux.git
+kept https://github.com/hermuxlab/hermux-evil.git
+kept https://github.com/hermuxlab/hermes-mobile-app.git
 kept https://github.com/omarqaterge/hermuxx.git
 kept https://github.com/omarqaterge/hermes-mobile-app-fork.git
 kept https://github.com/someone/hermux.git
 kept https://github.com/notomarqaterge/hermux.git
 kept https://gitlab.com/x/omarqaterge/hermux.git
 URLS
-check '[ "$n" = 11 ]' "all 11 clone addresses were tried ($n)"
+check '[ "$n" = 16 ]' "all 16 clone addresses were tried ($n)"
 
 echo
 if [ "$fails" = 0 ]; then echo "test_uninstall: PASSED"; else echo "test_uninstall: $fails FAILED"; exit 1; fi
