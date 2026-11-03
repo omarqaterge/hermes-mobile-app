@@ -149,7 +149,7 @@ describe('sendReport', () => {
     sessionStorage.setItem('hm.devReportUrl', 'https://relay.test/')
     const answer = (status: number, body: unknown) => vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })))
     answer(201, { url: `https://github.com/${REPORT_REPO}/issues/3`, screenshot: false })
-    expect(await sendReport(r)).toEqual({ kind: 'sent', url: `https://github.com/${REPORT_REPO}/issues/3`, screenshot: false })
+    expect(await sendReport(r)).toEqual({ kind: 'sent', url: `https://github.com/${REPORT_REPO}/issues/3`, screenshot: false, log: false })
     answer(429, {})
     expect(await sendReport(r)).toEqual({ kind: 'fallback', why: 'limit' })
     answer(502, { error: 'x' })

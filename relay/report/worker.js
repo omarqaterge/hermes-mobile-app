@@ -3,6 +3,8 @@
 // (GITHUB_TOKEN, a fine-grained token that may only create issues on one repository) and creates the issue for it.
 //   POST /        a report (JSON, see readReport) → 201 {url, number, screenshot}; 429 when a limit is reached
 //   GET  /s/<id>  a screenshot a report uploaded (stored in the KV namespace REPORTS, linked from the issue)
+//   GET  /l/<id>  a report's diagnostic log, only with the secret LOG_READ_KEY (Authorization: Bearer …). The log is the
+//                 one thing a report holds that is NOT public: the issue only names it, and it is deleted after LOG_DAYS.
 // Limits, all kept in REPORTS: MAX_PER_INSTALL reports a day for each random per-install ID the app makes (never a
 // phone identifier), MAX_PER_IP a day for each sender address (stored only as a salted hash), MAX_PER_DAY in all, and
 // size caps on every field. KV isn't atomic, so a burst of requests at the same moment can pass a little over a limit.
@@ -15,11 +17,12 @@ export const LIMITS = {
   MAX_BODY: 4_500_000, // bytes of request JSON (the screenshot is in it, base64)
   MAX_TITLE: 120,
   MAX_TEXT: 6000,
-  MAX_LOG: 20_000,
+  MAX_LOG: 60_000,
   MAX_SHOT: 3_000_000 // bytes of decoded screenshot
 }
 const SHOT_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 const DAY_SECONDS = 86_400
+export const LOG_DAYS = 30
 const CORS = {
   'access-control-allow-origin': '*', // the app's page is a file:// page: its origin is "null"
   'access-control-allow-methods': 'POST, GET, OPTIONS',
@@ -58,12 +61,12 @@ export function readReport(body) {
 const quiet = s => s.replace(/@(?=[\w-])/g, '@​')
 const fenced = s => s.replace(/^(\s*)(`{3,}|~{3,})/gm, '$1​$2')
 
-/** The issue's Markdown. */
-export function issueBody(r, shotUrl) {
+/** The issue's Markdown. The log itself never goes in it: only that one exists, and the name to read it by. */
+export function issueBody(r, shotUrl, logId) {
   const lines = [fenced(quiet(r.text)), '', '---', '', '**Details**', '']
   lines.push(`- App: ${r.details.app || 'unknown'}`, `- Android: ${r.details.android || 'unknown'}`, `- Hermux agent: ${r.details.hermes || 'unknown'}`)
   if (shotUrl) lines.push('', `![Screenshot](${shotUrl})`)
-  if (r.log) lines.push('', '<details><summary>Recent app log (personal details removed in the app)</summary>', '', '```text', fenced(quiet(r.log)), '```', '', '</details>')
+  if (logId) lines.push('', `Diagnostic log: kept privately as \`${logId}\`, deleted after ${LOG_DAYS} days.`)
   lines.push('', '_Sent from the app\'s "Report a problem"._')
   return lines.join('\n')
 }
@@ -116,7 +119,7 @@ function decodeShot(shot) {
   return ok ? bytes : null
 }
 
-async function createIssue(env, r, shotUrl) {
+async function createIssue(env, r, shotUrl, logId) {
   const repo = env.REPO || 'omarqaterge/hermes-mobile-app'
   const res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
     method: 'POST',
@@ -127,7 +130,7 @@ async function createIssue(env, r, shotUrl) {
       'content-type': 'application/json',
       'user-agent': 'hermux-report-relay'
     },
-    body: JSON.stringify({ title: r.title, body: issueBody(r, shotUrl), labels: [env.LABEL || 'from-app'] })
+    body: JSON.stringify({ title: r.title, body: issueBody(r, shotUrl, logId), labels: [env.LABEL || 'from-app'] })
   })
   if (!res.ok) return null
   const issue = await res.json()
@@ -159,12 +162,39 @@ async function report(request, env) {
     await env.REPORTS.put(shotKey, bytes, { metadata: { type: r.shot.type } })
     shotUrl = `${new URL(request.url).origin}/s/${id}`
   }
-  const issue = await createIssue(env, r, shotUrl)
+  // Only the log: not the install ID or the address, so a kept log can't be tied back to who sent it.
+  let logId = ''
+  if (r.log) {
+    const id = crypto.randomUUID().replace(/-/g, '')
+    try {
+      await env.REPORTS.put(`log:${id}`, r.log, { expirationTtl: LOG_DAYS * DAY_SECONDS })
+      logId = id
+    } catch {
+      // The report still goes, without its log; never with the log in the public issue.
+    }
+  }
+  const issue = await createIssue(env, r, shotUrl, logId)
   if (!issue) {
     if (shotKey) await env.REPORTS.delete(shotKey) // no issue links to it
+    if (logId) await env.REPORTS.delete(`log:${logId}`)
     return json(502, { error: 'GitHub refused the issue' })
   }
-  return json(201, { ...issue, screenshot: Boolean(shotUrl) })
+  return json(201, { ...issue, screenshot: Boolean(shotUrl), log: Boolean(logId) })
+}
+
+/** The same answer for a wrong key and no key set: both compared as hashes, so the time says nothing about the key. */
+async function keyMatches(request, env) {
+  const key = env.LOG_READ_KEY
+  if (!key) return false
+  const given = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+  return (await sha256(given)) === (await sha256(key))
+}
+
+async function privateLog(id, request, env) {
+  const plain = { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+  if (!env.REPORTS || !(await keyMatches(request, env))) return new Response('Not allowed', { status: 401, headers: plain })
+  const text = /^[0-9a-f]{32}$/.test(id) ? await env.REPORTS.get(`log:${id}`) : null
+  return text == null ? new Response('Not found', { status: 404, headers: plain }) : new Response(text, { headers: plain })
 }
 
 async function screenshot(id, env) {
@@ -182,6 +212,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
     if (request.method === 'POST' && url.pathname === '/') return report(request, env)
     if (request.method === 'GET' && url.pathname.startsWith('/s/')) return screenshot(url.pathname.slice(3), env)
+    if (request.method === 'GET' && url.pathname.startsWith('/l/')) return privateLog(url.pathname.slice(3), request, env)
     return json(404, { error: 'not found' })
   }
 }

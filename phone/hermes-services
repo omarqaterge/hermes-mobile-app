@@ -15,11 +15,32 @@ fi
 lock='^[[:space:]]*termux-wake-lock[[:space:]]*$'  # only a line that is just the command
 [ -f ~/.termux/boot/10-hermes ] && grep -q "$lock" ~/.termux/boot/10-hermes && sed -i "/$lock/d" ~/.termux/boot/10-hermes
 command -v sshd >/dev/null && { pgrep -x sshd >/dev/null || sshd; }
+trim_log() {  # file, largest size, size to keep: the newest part stays. A program still appending carries on at the new end.
+  [ -f "$1" ] || return 0
+  [ "$(wc -c < "$1")" -gt "$2" ] || return 0
+  tail -c "$3" "$1" > "$1.tmp" && cat "$1.tmp" > "$1"
+  rm -f "$1.tmp"
+}
+loop_exit() {  # name, exit code: for the app's diagnostic log (plugin diag.py checks each line again when it reads it)
+  [ -f ~/.hermes-mobile/diag-off ] && return 0
+  trim_log ~/logs/loop-events.log 65536 32768
+  printf '%s service loop_exit name=%s code=%s\n' "$(date +%s)" "$1" "$2" >> ~/logs/loop-events.log
+}
+# A service log is only there for looking into a problem: 2 MB at most, checked each time a loop (re)starts its program
+# and each time this script runs, also for a program that never exits.
+for f in ~/logs/*.log; do [ -f "$f" ] && trim_log "$f" 2097152 524288; done
 run_loop() {  # name, command...
   local name=$1; shift
   local pidf=~/logs/$name.pid
   if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then return; fi
-  ( while true; do "$@" < /dev/null >> ~/logs/$name.log 2>&1; sleep 10; done ) &
+  ( while true; do
+      trim_log ~/logs/$name.log 2097152 524288
+      "$@" < /dev/null >> ~/logs/$name.log 2>&1
+      rc=$?
+      # Two loops end every few minutes on purpose (they sleep, then exit): only a failure counts for those.
+      case "$name:$rc" in memory-sync:0 | app-keeper:0) ;; *) loop_exit "$name" "$rc" ;; esac
+      sleep 10
+    done ) &
   echo $! > "$pidf"
 }
 # Debian runs under proot-distro or (rooted phones) chroot-distro: ~/bin/hermes-debian knows which. An older install
@@ -32,7 +53,7 @@ run_loop dashboard $deb bash -lc "exec hermes dashboard --host 127.0.0.1 --port 
 ms=/root/.hermes/scripts/hermes_memory_sync.py
 if [ -x "$HOME/bin/hermes-debian" ]; then has_ms() { "$HOME/bin/hermes-debian" --exists $ms; }
 else has_ms() { [ -f $PREFIX/var/lib/proot-distro/containers/debian/rootfs$ms ]; }; fi
-has_ms && run_loop memory-sync bash -c "$deb python3 $ms sync; sleep 590"
+has_ms && run_loop memory-sync bash -c "$deb python3 $ms sync; rc=\$?; sleep 590; exit \$rc"
 run_loop cron-ticker $deb bash -lc "$PY; exec \$PY /root/.hermes/scripts/cron_ticker.py"
 # The always-on bot keeper (a 4 s loop) and its messaging gateway are retired: the app is the only front
 # end. Stop a keeper left running by an older version of this script, then the keeper process and gateway.

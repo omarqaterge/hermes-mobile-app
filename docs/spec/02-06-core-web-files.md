@@ -7,7 +7,10 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `stats.ts` — opt-in usage stats (spec 2.3): `startStats` runs once from `main.tsx`, after the first render; with no app key it does nothing.
 - `report.ts` — Report a problem (spec 3.21): what a report holds (`reportDetails`), the log scrubber (`scrubLog`), the filled-in GitHub new-issue link (`fallbackUrl`) and sending through the relay (`sendReport`).
 - `Report.tsx` (in `components/`) — the Report a problem sheet, its Settings row and the link error states show (spec 3.21).
-- `applog.ts` — the recent app log a report may include: `startAppLog` runs once from `main.tsx`; the last 150 lines of errors, warnings, connection changes and error toasts, in memory only.
+- `DiagRows.tsx` (in `components/`) — Settings → About's switch and delete button for the diagnostic log (3.21).
+- `applog.ts` — what the page itself adds to the diagnostic log: `startAppLog` runs once from `main.tsx`; the shape of page errors and error toasts, never their words. `openChatText` gives the scrubber the open chat's text.
+- `diaglog.ts` — the page's side of the diagnostic log: `logEvent` checks every part of an event (`checkedFields`) and hands it to the shell, or keeps it in memory in a plain browser; `stackFrames`, `noteConn`, `noteRpc` and `routeName` say what is taken from an error, a connection, a gateway call and a dashboard path. It sends nothing.
+- `diagnostics.ts` — what Report a problem may include (`collectDiagnostics`, `diagnosticsText`) and the Settings switch and delete button (`diagnosticsEnabled`, `setDiagnosticsEnabled`, `clearDiagnostics`, `flushDiagToPlugin`).
 - `secure-bridge.ts` — takes the bridge key with `handshake()` and replaces `window.HermesAndroid` with the keyed
   wrapper over `METHODS` (2.3).
 - `bridge.ts` — typed wrappers over the native bridge with browser fallbacks: `baseUrl`, `wsUrl` (fresh token per
@@ -34,7 +37,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
   and rows a resume repeats), `splitAttachments` (`@file:` / `@image:` back into chips), `addsToScreen` and
   `closeScreen`. The initial state reads `hm.profile`, `hm.textScale`, `hm.lastSession`, `hm.outbox.v1` and the
   cached chat.
-- `approval-lock.ts` — Confirm approvals with fingerprint (3.6): `approvalLockAvailable`, `approvalLockState`, `approvalNeedsConfirm`, `confirmAllow` (bridge `confirmApproval`, answered through `window.hermesApprovalConfirm`), `setApprovalLock`, `forgetApprovalConfirm`.
+- `approval-lock.ts` — Confirm approvals with fingerprint (3.6): `approvalLockAvailable`, `approvalLockState`, `approvalNeedsConfirm`, `confirmAllow` (bridge `confirmApproval`, answered through `window.hermesApprovalConfirm`), `confirmAlways` (bridge `confirmIdentity`, for a setting that asks on every change), `setApprovalLock`, `forgetApprovalConfirm`.
 - `chatcache.ts` — last-seen items of recent chats (`rememberChat`, `cachedChat`, `forgetChat`, `saveChatToDisk`)
   (2.2.5).
 - `boot.ts` — start-up timing marks (`bootMark`, `lastBoot`, `bootSummary`; `onBootMark` tells listeners about each new mark and `useBootSummary` is the live line for Settings) in `hm.boot.v1`; the shell logs its own

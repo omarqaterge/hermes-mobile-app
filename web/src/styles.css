@@ -3916,7 +3916,7 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 
 /* Report a problem (components/Report.tsx) */
 .report .field textarea { min-height: 110px; }
-.report-log { max-height: 26vh; font-size: 0.72rem; }
+.report-log { flex: none; max-height: 26vh; overflow: auto; font-size: 0.72rem; } /* flex: none: the sheet's column would squeeze it to one line */
 .report-shot { display: grid; gap: 8px; }
 .report-shot img { max-width: 100%; max-height: 30vh; object-fit: contain; border-radius: 10px; border: 1px solid var(--border); justify-self: start; }
 .report-link { color: var(--accent); text-decoration: underline; font-size: inherit; padding: 0; }

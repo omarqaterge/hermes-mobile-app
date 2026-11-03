@@ -1,6 +1,6 @@
 ### 4.2 Manifest: components and permissions
 
-**Application.** `android:allowBackup="false"`, theme `HermesTheme`, label `Hermux`, network security config as above.
+**Application.** `android:name=".HermuxApp"` (the diagnostic log, 4.1), `android:allowBackup="false"`, theme `HermesTheme`, label `Hermux`, network security config as above.
 
 **Components.**
 
@@ -45,3 +45,5 @@ Other-package permissions:
 - `moe.shizuku.manager.permission.API_V23`: only listed, never asked for. Shizuku's server calls the providers of apps that list it, which is how `ShizukuProvider` learns Shizuku is running.
 
 **Version checks.** Every call above API 26 is behind a `Build.VERSION.SDK_INT` check; `tools/api-check.sh` (7.2) proves it in CI. Checked on an Android 8.0 emulator: the app starts and its service runs. The page itself needs a WebView that runs ES2022 (`web/vite.config.ts` target): an old, never-updated Android System WebView (for example Chrome 58 on a stock Android 8 image) can't run it, and `web/index.html` then shows "Hermux can't start" with the WebView version and asks to update Android System WebView or Chrome (only when the app hasn't started after 8 s and the WebView is older than Chrome 100; `main.tsx` sets `window.__hmRan` once it has).
+
+**Android versions of the diagnostic log:** why earlier runs ended (`getHistoricalProcessExitReasons`) needs Android 11 (API 30); on older Android the log has everything else. Listed in the README's "Android versions" table.

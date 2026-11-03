@@ -1,9 +1,9 @@
 // "Report a problem": a sheet that turns what the user writes into a public GitHub issue (report.ts). Opened from
 // Settings → About and from error states (openReport). What goes with the words is on screen before Submit.
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { appLog, openChatText } from '../applog'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { openExternal } from '../bridge'
-import { fallbackUrl, MAX_TEXT, MAX_TITLE, prepareScreenshot, relayUrl, reportDetails, REPORT_REPO, scrubLog, sendReport, type Report, type Screenshot } from '../report'
+import { collectDiagnostics } from '../diagnostics'
+import { fallbackUrl, MAX_TEXT, MAX_TITLE, prepareScreenshot, relayUrl, reportDetails, REPORT_REPO, sendReport, type Report, type Screenshot } from '../report'
 import { toast, useStore } from '../store'
 import { Sheet } from './Screens'
 import { Row, ToggleRow } from './ui'
@@ -20,7 +20,11 @@ export const openReport = (): void => setShown(true)
 // The draft outlives a closed sheet (a tap outside it, Back), until it is sent.
 const draft = { title: '', text: '', withLog: false }
 
-type Phase = { kind: 'edit' } | { kind: 'sending' } | { kind: 'sent'; url: string; screenshot: boolean } | { kind: 'github'; why: 'no-relay' | 'limit' | 'failed'; url: string }
+type Phase =
+  | { kind: 'edit' }
+  | { kind: 'sending' }
+  | { kind: 'sent'; url: string; screenshot: boolean; log: boolean }
+  | { kind: 'github'; why: 'no-relay' | 'limit' | 'failed'; url: string; logLeftOut: boolean }
 
 const SHOT_NOTE = '_Screenshot: add it to this box before creating the issue._'
 
@@ -36,10 +40,29 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
     Object.assign(draft, { title, text, withLog })
   }, [title, text, withLog])
   const details = reportDetails(hermes)
-  // Read once when switched on: what is shown is what is sent, and typing doesn't scrub it again.
-  const log = useMemo(() => (withLog ? scrubLog(appLog(), openChatText()) : ''), [withLog])
+  // Read once when switched on: what is shown is what is sent. null while it is being put together.
+  const [log, setLog] = useState<string | null>('')
+  useEffect(() => {
+    if (!withLog) {
+      setLog('')
+      return
+    }
+    let live = true
+    setLog(null)
+    collectDiagnostics().then(
+      t => {
+        if (live) setLog(t)
+      },
+      () => {
+        if (live) setLog('')
+      }
+    )
+    return () => {
+      live = false
+    }
+  }, [withLog])
   const relay = Boolean(relayUrl())
-  const ready = title.trim() && text.trim() && phase.kind === 'edit'
+  const ready = title.trim() && text.trim() && phase.kind === 'edit' && log !== null
   // A send in progress finishes on screen (30 seconds at most): closed, it could open GitHub out of nowhere or be sent twice.
   const close = () => {
     if (phase.kind !== 'sending') onClose()
@@ -47,7 +70,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
 
   const submit = async () => {
     if (!ready) return
-    const r: Report = { title: title.trim(), text: text.trim(), details, log: log || undefined }
+    const r: Report = { title: title.trim(), text: text.trim(), details, log: withLog && log ? log : undefined }
     setPhase({ kind: 'sending' })
     try {
       const res = await sendReport(r, shot && { type: shot.type, data: shot.data })
@@ -56,8 +79,10 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
         setPhase(res)
         return
       }
-      const url = fallbackUrl(r, shot ? SHOT_NOTE : '')
-      setPhase({ kind: 'github', why: res.why, url })
+      // The sheet said the log stays private through the relay: it doesn't quietly become public on GitHub's page instead.
+      const logLeftOut = Boolean(r.log) && res.why !== 'no-relay'
+      const url = fallbackUrl(logLeftOut ? { ...r, log: undefined } : r, shot ? SHOT_NOTE : '')
+      setPhase({ kind: 'github', why: res.why, url, logLeftOut })
       openExternal(url)
     } catch {
       setPhase({ kind: 'edit' })
@@ -71,6 +96,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
         <div className="sheet-scroll">
           <div className="sheet-desc strong">Thanks. Your report is now an issue on GitHub{phase.screenshot ? ', with the screenshot' : ''}.</div>
           {shot && !phase.screenshot && <div className="sheet-desc">The screenshot didn't go with it: you can add it on GitHub.</div>}
+          {withLog && !phase.log && <div className="sheet-desc">The diagnostic log didn't go with it.</div>}
         </div>
         <div className="sheet-actions">
           <button className="btn" onClick={onClose}>Close</button>
@@ -92,6 +118,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
             GitHub's new-issue page has your report filled in: sign in there and tap Create.
           </div>
           {shot && <div className="sheet-desc">Add your screenshot there yourself: GitHub's text box takes files.</div>}
+          {phase.logLeftOut && <div className="sheet-desc">Your diagnostic log isn't in it: on GitHub it would be public.</div>}
           <div className="sheet-desc">Your words stay here until a report is sent, so nothing is lost if you close this.</div>
         </div>
         <div className="sheet-actions">
@@ -114,13 +141,18 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
           <textarea className="sheet-input" rows={5} value={text} maxLength={MAX_TEXT} placeholder="What you did, what you expected, what happened instead" onChange={e => setText(e.target.value)} />
         </label>
         <div className="sheet-desc">
-          Sent with it: app {details.app}, Android {details.android || 'unknown'}, Hermux agent {details.hermes || 'unknown'}. Nothing else about your phone.
+          Sent with it: app {details.app}, Android {details.android || 'unknown'}, Hermux agent {details.hermes || 'unknown'}. Nothing else about your phone, unless you include the log.
         </div>
-        <ToggleRow title="Include recent app log" sub="Errors and connection changes from this session. You can read it below first" on={withLog} onChange={setWithLog} />
+        <ToggleRow title="Include diagnostic log" sub="Errors, crashes and restarts from the last 7 days, and your phone's maker and versions. You can read it below first" on={withLog} onChange={setWithLog} />
         {withLog && (
           <>
-            <pre className="sheet-code report-log" aria-label="App log to send">{log || 'Nothing logged yet.'}</pre>
-            <div className="sheet-desc">The app takes out keys, tokens, emails, internet addresses, links' details, home folders and chat text it recognises. It can miss some: read it, because it will be public.</div>
+            <pre className="sheet-code report-log" aria-label="Diagnostic log to send">{log === null ? 'Putting the log together…' : log || 'Nothing logged yet.'}</pre>
+            <div className="sheet-desc">
+              {relay
+                ? "The log stays private: it isn't in the public issue, only Hermux's maintainer can read it, and it's deleted after 30 days. "
+                : 'The log will be public with your report, so read it first. '}
+              It never holds your chats. The app also takes out keys, tokens, emails, internet addresses, links' details, home folders and chat text it recognises, but it can miss some.
+            </div>
           </>
         )}
         {relay ? (

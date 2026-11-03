@@ -7,6 +7,8 @@ import { isAway, markVisit, noteAway, noteBack } from './visit'
 import { rememberPrompt } from './recent'
 import { clearQueue, isPaused, queuedFor, restoreFirst, setPaused, takeFirst } from './queue'
 import { api } from './api'
+import { logEvent, noteConn, noteRpc } from './diaglog'
+import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -80,7 +82,9 @@ export const afterChatOpens = (): Promise<void> => chatOpened
 
 client.onState(conn => {
   setState({ conn })
+  noteConn(conn)
   if (conn === 'open') {
+    flushDiagToPlugin()
     bootMark('socket')
     aliveAt = Date.now()
     attempt = 0
@@ -138,6 +142,7 @@ export async function connect(): Promise<void> {
     await client.connect(url)
     await afterConnect()
   } catch (err) {
+    if (attempt === 0) logEvent('conn', 'connect_failed', { error: err instanceof Error ? err.name : 'other' }) // the first of an outage
     setState({ connDetail: err instanceof Error ? err.message : String(err) })
     scheduleReconnect()
   }
@@ -335,7 +340,13 @@ function rememberSession(id: string | null): void {
 export function rpc<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
   if (method === 'session.close') chatClosed(String(params.session_id || ''))
   const profile = getState().profile
-  return client.request<T>(method, { profile, ...params }, timeoutMs)
+  const at = Date.now()
+  const answer = client.request<T>(method, { profile, ...params }, timeoutMs)
+  void Promise.resolve(answer).then(
+    () => noteRpc(method, Date.now() - at),
+    e => noteRpc(method, Date.now() - at, e)
+  )
+  return answer
 }
 
 export async function loadProfiles(): Promise<void> {

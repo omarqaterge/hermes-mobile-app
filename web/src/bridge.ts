@@ -51,11 +51,17 @@ interface AndroidBridge {
   probeTermux?(): void // answers window.hermesTermuxProbe(json); not sent to Termux before it accepted a command once
   probeTermuxNow?(): void // same, always sent (a user tap)
   setupCommand?(): boolean // copies the installer command with a fresh progress token
+  diagLog?(): string // the diagnostic log: {enabled, phone, lines}, read only for Report a problem
+  diagEnabled?(): boolean
+  diagEvent?(area: string, event: string, fields: string): void // fields: JSON ["name", "value", …]; DiagLog.java checks every part
+  diagClear?(): void
+  setDiagEnabled?(on: boolean): void // off also deletes what was kept
   setupProgress?(): string // {active, lines, times?, done, fail}; new lines also come through window.hermesSetupLine(line)
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermux; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
   confirmApproval?(id: number, session: string, what: string): void // fingerprint / screen lock for an Allow; answers window.hermesApprovalConfirm(id, result)
+  confirmIdentity?(id: number, what: string): void // the same prompt, every time, whatever the approvals setting
   approvalLockState?(): string // {on, secure}: Confirm approvals with fingerprint
   setApprovalLock?(on: boolean): void
   forgetApproval?(session: string): void // the chat's live session closed: its next Allow asks again
@@ -394,6 +400,14 @@ export function installUpdate(url: string): boolean {
   } catch {
     return false
   }
+}
+
+export const diagBridge = {
+  read: (): string => native?.diagLog?.() || '',
+  enabled: (): boolean | undefined => native?.diagEnabled?.(),
+  event: (area: string, event: string, fields: string[]): void => native?.diagEvent?.(area, event, JSON.stringify(fields)),
+  clear: (): void => native?.diagClear?.(),
+  setEnabled: (on: boolean): void => native?.setDiagEnabled?.(on)
 }
 
 export function appVersion(): string {

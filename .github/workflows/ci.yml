@@ -171,6 +171,7 @@ jobs:
       - run: python3 tools/test_openui_query.py
       - run: python3 tools/test_claude_login.py
       - run: python3 tools/test_phone_access.py
+      - run: python3 tools/test_diag.py
       - run: python3 tools/test_profile_link.py
       - run: python3 tools/test_sent_counts.py
       - run: python3 tools/test_google_workspace.py
@@ -196,6 +197,7 @@ jobs:
       - run: bash tools/test_uninstall.sh
       - run: bash tools/test_plugin_update.sh
       - run: bash tools/test_hm_shizuku.sh
+      - run: bash tools/test_service_logs.sh
       - run: bash tools/test_device_lock.sh
       - run: bash tools/test_ci_changes.sh
 
@@ -218,6 +220,7 @@ jobs:
       - run: tools/java-check.sh
       - run: tools/api-check.sh
       - run: tools/test_setup_lines.sh
+      - run: tools/test_diag_log.sh
       - run: tools/test_update_url.sh
       - run: tools/test_autostart.sh
       - run: tools/test_devtools_guard.sh

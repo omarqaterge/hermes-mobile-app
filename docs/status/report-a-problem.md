@@ -16,7 +16,7 @@ build until the owner sets the relay up sends reports through GitHub's filled-in
 filled in (and the user signed in there); with a relay, a report from the app's `file://` page reaching it (CORS) and
 the screenshot showing in the issue.
 
-**Open points:** the app log is the web page's own (errors, warnings, connection changes, error toasts). The Android
-shell's own log isn't included; that would need a bridge method.
+**Open points:** the log the sheet offers is now the diagnostic log, with its own status:
+[diagnostic-log](diagnostic-log.md). The relay also needs the secret `LOG_READ_KEY` (its README, step 4).
 
 **Links:** [spec 3.21](../spec/03-21-report-a-problem.md), [decision](../decisions/report-a-problem.md).

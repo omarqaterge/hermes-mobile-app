@@ -16,8 +16,12 @@ What it does (`worker.js`, details in [spec 3.21](../../docs/spec/03-21-report-a
   atomic, so many requests at the same moment can pass a little over a limit.
 - A screenshot the user picked (at most 3 MB) is stored in the same KV namespace and served at `/s/<random>.jpg`, so the
   issue can show it.
+- A diagnostic log the user included is the one part of a report that is **not public**: it's stored in the same namespace
+  for 30 days and the issue only names it. Reading it takes the secret `LOG_READ_KEY` (see "Read a diagnostic log"). The
+  stored log doesn't say which install or address sent it.
 
-All of this fits Cloudflare's free plan (Workers: 100,000 requests a day; KV: 1 GB, 1,000 writes a day). The free
+All of this fits Cloudflare's free plan (Workers: 100,000 requests a day; KV: 1 GB, 1,000 writes a day; a report takes at
+most five writes, so the limit of 200 reports a day stays inside it). The free
 plan needs no payment card.
 
 Tests: `node --test relay/report/worker.test.js` (CI runs them).
@@ -61,7 +65,14 @@ but you may keep that change local instead of committing it.
 npx wrangler secret put GITHUB_TOKEN
 ```
 
-Paste the token from step 1. Optionally also a salt for the address hashes (any long random text):
+Paste the token from step 1. Then the key that lets you read diagnostic logs (make one with `openssl rand -hex 32`, and
+keep it in your password manager, never in this repo). Without it nobody can read a log through the Worker:
+
+```bash
+npx wrangler secret put LOG_READ_KEY
+```
+
+Optionally also a salt for the address hashes (any long random text):
 
 ```bash
 npx wrangler secret put IP_SALT
@@ -91,6 +102,20 @@ Releases are built with it from then on (`release.yml`). For a local build:
 ```bash
 cd web && HERMES_REPORT_URL=https://hermux-report.<your-subdomain>.workers.dev npx vite build
 ```
+
+## Read a diagnostic log
+
+An issue from the app can say `Diagnostic log: kept privately as <id>`. With `LOG_READ_KEY` in your shell:
+
+```bash
+curl -s -H "Authorization: Bearer $LOG_READ_KEY" https://hermux-report.<your-subdomain>.workers.dev/l/<id>
+```
+
+Or without the key, from your Cloudflare sign-in: `npx wrangler kv key get --binding REPORTS --remote "log:<id>"`.
+
+**Keep it private:** don't paste a log into an issue or a chat. The app removes what it recognises, but it can miss some.
+To delete one early (someone asks, or it holds something it shouldn't): `npx wrangler kv key delete --binding REPORTS
+--remote "log:<id>"`. Everything else goes by itself after 30 days.
 
 ## Later
 
