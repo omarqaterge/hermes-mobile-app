@@ -8,10 +8,10 @@ workers_dev = true
 REPO = "omarqaterge/hermes-mobile-app"
 LABEL = "from-app"
 
-# Reports per day per install and per address, and uploaded screenshots. Put your namespace's ID here
+# Reports per day per install and per address, uploaded screenshots, and private diagnostic logs. Put your namespace's ID here
 # (README step 3); an ID is not a secret.
 [[kv_namespaces]]
 binding = "REPORTS"
 id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 
-# Secrets (README step 4), never in this file: GITHUB_TOKEN, and optionally IP_SALT.
+# Secrets (README step 4), never in this file: GITHUB_TOKEN, LOG_READ_KEY, and optionally IP_SALT.

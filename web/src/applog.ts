@@ -1,6 +1,7 @@
 // The recent app log a problem report may include (components/Report.tsx). In memory only, never written to disk or
 // sent by itself: the last MAX_LINES lines of page errors, unhandled promise failures, console errors and warnings,
 // connection changes and error toasts. What leaves the phone is scrubLog's copy, shown to the user first (report.ts).
+import { logEvent, stackFrames } from './diaglog'
 import { removeChatText, wellFormed } from './report'
 import { getState, subscribe } from './store'
 
@@ -37,13 +38,30 @@ export function logLine(kind: string, ...parts: unknown[]): void {
 /** The log as it is now, oldest line first. */
 export const appLog = (): string => lines.join('\n')
 
+/** Settings → About → Delete the diagnostic log. */
+export const clearAppLog = (): void => {
+  lines.length = 0
+}
+
+/** The kept part of a page error: its type and where, never its words (those stay in this memory-only log). */
+const keepError = (e: unknown): void => {
+  if (e instanceof Error) logEvent('web', 'js_error', { type: e.name, at: stackFrames(e) })
+  else logEvent('web', 'js_error', { type: 'not_an_error' })
+}
+
 let started = false
 /** Starts collecting (main.tsx, once). */
 export function startAppLog(): void {
   if (started) return
   started = true
-  window.addEventListener('error', e => logLine('error', e.message || 'script error'))
-  window.addEventListener('unhandledrejection', e => logLine('unhandled', e.reason))
+  window.addEventListener('error', e => {
+    logLine('error', e.message || 'script error')
+    keepError(e.error)
+  })
+  window.addEventListener('unhandledrejection', e => {
+    logLine('unhandled', e.reason)
+    keepError(e.reason)
+  })
   for (const level of ['error', 'warn'] as const) {
     const orig = console[level].bind(console)
     console[level] = (...args: unknown[]) => {

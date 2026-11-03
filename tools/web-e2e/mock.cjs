@@ -47,6 +47,7 @@ const toolResults = new Map()
 // The plugin's /memory (MEMORY.md / USER.md) and /bots, kept so POST /memory and PUT /bots/<name> change what the next GET says.
 const memory = { memory: { target: 'memory', entries: ['x', 'y'], used: 1100, limit: 2200 }, user: { target: 'user', entries: ['z'], used: 10, limit: 1375 } }
 let botKeep = []
+let diagOn = true // the diagnostic log's switch on Hermes's side (plugin PUT /diag)
 let prefsOrder = null // PUT /prefs (the chat list's pinned / manual order)
 // Canvas versions (the plugin keeps one per save): `${session}/${doc}` -> [{ rev, at, by, note, content }], started when first asked.
 const canvasHist = new Map()
@@ -234,6 +235,19 @@ const server = http.createServer((req, res) => {
       // Messages the user sent (plugin /sent-counts): half of message_count here, each turn being a message and a reply.
       const ids = JSON.parse(body || '{}').ids || []
       return send({ counts: Object.fromEntries(ids.map(id => [id, Math.ceil((allSessions.find(x => x.id === id)?.message_count || 0) / 2)])) })
+    }
+    if (p === '/api/plugins/hermes-mobile/diag') {
+      // The diagnostic log on Hermes's side (plugin diag.py). The token is planted: the app's scrubber must catch it.
+      if (req.method === 'PUT') diagOn = JSON.parse(body || '{}').enabled !== false
+      if (req.method !== 'GET') return send({ ok: true })
+      if (!diagOn) return send({ enabled: false, facts: {}, events: [], services: [], crashes: [] })
+      return send({
+        enabled: true,
+        facts: { plugin_stamp: 1234, python: '3.12.1', debian: 'proot' },
+        services: [{ name: 'dashboard', alive: true, log_kb: 12 }],
+        crashes: [{ service: 'dashboard', type: 'ValueError', at: ['gateway/run.py:12'], count: 2 }],
+        events: ['11-03 12:00:00 turn api_error status=429 key=sk-planted-in-the-mock-abcdefghijkl', '11-03 12:00:05 service loop_exit name=dashboard code=137']
+      })
     }
     if (p === '/api/plugins/hermes-mobile/prefs') {
       // The chat list's order (plugin /prefs): PUT keeps what the app sent, the next GET returns it.

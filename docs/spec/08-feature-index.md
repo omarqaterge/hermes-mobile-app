@@ -65,6 +65,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | One-tap app update (Settings → About) and the "App updates" notification | 2.2.10, 3.15, 4.7 |
 | Opt-in usage stats (card once after setup, Settings → About switch, "How did you hear about us?"); needs an app key in the build | 2.3, 2.4, 3.15, 3.18 |
 | Report a problem (Settings → About, error states): a public GitHub issue through the owner's relay, or GitHub's filled-in page | 2.3, 2.4, 3.15, 3.21, 7.1 |
+| Diagnostic log (Settings → About; on the phone, sent only inside a report, private through the relay): crashes, why Android ended the app, failed calls, the agent's turns and service restarts, never chats | 2.3, 2.4, 3.15, 3.21, 4.1, 4.5, 5.1, 5.4, 6.2 |
 | Uninstall Hermux (Settings → Danger zone), with a backup offer | 3.19, 4.7, 6.5 |
 
 **Notifications and background**

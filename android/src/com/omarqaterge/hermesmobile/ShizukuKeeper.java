@@ -143,6 +143,7 @@ final class ShizukuKeeper {
         ed.putString(P_DETAIL, detail.length() > 200 ? detail.substring(0, 200) : detail);
         ed.apply();
         Log.i(TAG, "shizuku-auto paired=" + e.opt("paired") + " result=" + last);
+        HermuxApp.log(ctx).event("shizuku", "keeper", "paired", String.valueOf(e.opt("paired")), "result", last);
     }
 
     /** setupState.shizukuAuto: {sdk (Android 11+), wss, paired, last}. */

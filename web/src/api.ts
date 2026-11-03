@@ -1,6 +1,7 @@
 // REST calls to the Hermes dashboard on the phone (skills, cron, files, plugin memory API).
 // Inside the app the Java bridge performs them (it holds the session token, and a file:// page
 // can't make cross-origin requests); in a desktop browser the dev server proxies /__api/*.
+import { logEvent, routeName } from './diaglog'
 import { getState } from './store'
 
 interface HttpBridge {
@@ -63,6 +64,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   } catch {
     data = res.body
   }
+  if (res.status === 0 || res.status >= 500) logEvent('api', 'fail', { method: method.toLowerCase(), route: routeName(path), status: res.status })
   if (res.status === 0) throw new ApiError(`Hermux unreachable: ${res.body}`, 0)
   if (res.status >= 400) {
     const detail = (data as { detail?: unknown })?.detail

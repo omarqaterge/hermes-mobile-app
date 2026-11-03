@@ -22,3 +22,6 @@ user attaches it there. Every report says before Submit that it will be public o
 **So:** don't add fields to a report, turn the log on by default, send anything before Submit, or put a token, a
 deployed relay's address or anything else secret in the repository. The row lives in Settings → About near the update
 row, which keeps its own behaviour. Spec 3.21.
+
+**Changed 2026-11-03, by the owner:** the log became the diagnostic log, and through the relay it no longer goes in the
+public issue. It may now hold the phone's maker. See [diagnostic-log](diagnostic-log.md); the rest above still stands.

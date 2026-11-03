@@ -2,6 +2,8 @@
 
 `register(ctx)` calls `ctx.register_hook(...)` for each of these. Event kinds are the `kind` values `HermesService.onEvent` switches on (section 4.4).
 
+**Diagnostic log.** `_event` writes a checked line through `diag.py` (3.21): `pre_llm_call` the start of a turn, `on_session_end` its end, `api_request_error` the failure (the error's type, never its words), the status loop a turn gone stale, and `register` and the tool hooks what failed to load or run. A chat is an alias (`_alias`), never its ID.
+
 **Status loop.** Most hooks only update an in-memory table (`_active`: chat id → label, short label, time, profile, turn data). A daemon thread (`_status_loop`) turns that table into `status` events: it sleeps until a hook marks a change (no timer while idle), waits at least `STATUS_MIN_INTERVAL` between sends, sends every `HEARTBEAT` while something is active, and reports the **oldest running turn first** so the chip does not jump between chats. A `status` event has `working` (true/false), `body` (the label, or "Ready"), `short` (chip word such as Shell, Files, Web, Thinking, Approve?), `title` (chat title from the profile's `state.db`, read-only, cached, an untitled chat is looked up again every 20 s), `since`, `steps`, `todo` (done/total/current/states), `others` (up to 3 other running chats), `more`, `review`. The same table is written to `~/.hermes/mobile/activity.json` for `GET /activity`.
 
 | Hook | When Hermes fires it | What the plugin does | Event kind sent to the app |

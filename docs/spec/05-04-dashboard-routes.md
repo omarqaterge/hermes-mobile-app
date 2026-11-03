@@ -1,4 +1,4 @@
-### 5.4 Dashboard routes (all 52)
+### 5.4 Dashboard routes (all 55)
 
 Base path: `/api/plugins/hermes-mobile`. Most routes accept a `?profile=` query that the app adds through its `api` helper (routes marked "global" are sent without it). Errors are standard `HTTPException`s. The web page reaches these through `web/src/api.ts` `api`; `HermesService` and `MainActivity` call a few from Java.
 
@@ -11,6 +11,9 @@ Base path: `/api/plugins/hermes-mobile`. Most routes accept a `?profile=` query 
 | `GET /bots` | State of the always-on bots: `keep`, `host_running`, `running`, `parked`, `platforms`, `keeper_alive`. | No caller in the app today (`web/src/components/Bots.tsx` defines the base path but uses `/api/profiles`) |
 | `PUT /bots/{name}` | Switch one bot on/off in `bots.json` (`keep`, `restart`); 404 for an unknown profile. | No caller in the app today |
 | `GET /bots/log` | Tail of `mobile-gateway.log`. | No caller in the app today |
+| `GET /diag` | The diagnostic log on this side (`diag.snapshot`): `{enabled, facts, events, services, crashes}`, only checked lines and traceback shapes (3.21). Only `facts`' plugin stamp, Python version and install kind. Global. | Report a problem (`web/src/diagnostics.ts`) |
+| `PUT /diag` | The log's switch, `{enabled}`; off leaves `~/.hermes-mobile/diag-off` and deletes what was kept (`set_enabled`). Global. | Settings → About (`web/src/diagnostics.ts`) |
+| `DELETE /diag` | Deletes the log and empties the service logs the crash shapes come from (`clear`). Global. | Settings → About |
 | `POST /approve` | Answer a pending approval from a notification button: opens Hermes's dashboard WebSocket (token scraped from the dashboard page) and sends `approval.respond` with `choice` once / session / always / deny. Refuses (409) when no `request_id` is given, so it never answers the wrong approval. | `HermesService` (notification actions) |
 | `POST /stop` | Interrupt a running turn: finds the live runtime with `session.active_list` and sends `session.interrupt`. 404 when the chat is not running here. | `HermesService` (chip Stop button) |
 | `GET /media` | Streams a phone file with HTTP Range support (206/416), so `<video>` can seek. Path is made absolute with `realpath`. | `MainActivity` (`shouldInterceptRequest`) |

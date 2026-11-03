@@ -51,6 +51,10 @@ interface AndroidBridge {
   probeTermux?(): void // answers window.hermesTermuxProbe(json); not sent to Termux before it accepted a command once
   probeTermuxNow?(): void // same, always sent (a user tap)
   setupCommand?(): boolean // copies the installer command with a fresh progress token
+  diagLog?(): string // the diagnostic log: {enabled, phone, lines}, read only for Report a problem
+  diagEvent?(area: string, event: string, fields: string): void // fields: JSON ["name", "value", …]; DiagLog.java checks every part
+  diagClear?(): void
+  setDiagEnabled?(on: boolean): void // off also deletes what was kept
   setupProgress?(): string // {active, lines, times?, done, fail}; new lines also come through window.hermesSetupLine(line)
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermux; answers window.__hmImage(id, ok)
@@ -394,6 +398,13 @@ export function installUpdate(url: string): boolean {
   } catch {
     return false
   }
+}
+
+export const diagBridge = {
+  read: (): string => native?.diagLog?.() || '',
+  event: (area: string, event: string, fields: string[]): void => native?.diagEvent?.(area, event, JSON.stringify(fields)),
+  clear: (): void => native?.diagClear?.(),
+  setEnabled: (on: boolean): void => native?.setDiagEnabled?.(on)
 }
 
 export function appVersion(): string {

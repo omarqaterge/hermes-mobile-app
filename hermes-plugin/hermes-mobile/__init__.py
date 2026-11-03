@@ -93,6 +93,22 @@ def _dbg(msg: str) -> None:
         pass
 
 
+def _event(area: str, name: str, **fields) -> None:
+    """One line in the diagnostic log (diag.py checks every part: no free text). Never raises."""
+    try:
+        _diag().event(area, name, **fields)
+    except Exception:
+        pass
+
+
+def _alias(session_id) -> str:
+    """The chat's short name in the diagnostic log, not its ID."""
+    try:
+        return _diag().alias(session_id)
+    except Exception:
+        return "none"
+
+
 def _post(event: dict) -> bool:
     key = _key()
     if not key:
@@ -255,6 +271,7 @@ def _status_loop() -> None:
             for sid in stale:
                 _active.pop(sid, None)
                 _dbg(f"stale-expired {sid}")
+                _event("turn", "stale", chat=_alias(sid))
         if stale:
             _publish_activity()
         # Only report changes: several Hermes processes load this plugin, and an idle one
@@ -440,6 +457,12 @@ def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
         _remember(_review_turns, turn_id)
         _dbg(f"review-start {session_id} {turn_id}")
         _bg_status(session_id, turn_id)
+        return None
+    if session_id and session_id not in _subagents and session_id not in _turn_started:
+        if len(_turn_started) > 64:  # a turn that never ended must not grow this for ever
+            _turn_started.clear()
+        _turn_started[session_id] = time.time()
+        _event("turn", "start", chat=_alias(session_id))
     return None
 
 
@@ -478,6 +501,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
     except Exception as e:
         verdict = None
         _dbg(f"auto mode check: {type(e).__name__}: {e}")
+        _event("plugin", "hook_failed", what="auto_mode_check", error=type(e).__name__)
     if verdict is not None:
         _dbg(f"auto mode blocked {tool_name} in {session_id}")
         return verdict
@@ -487,6 +511,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
             _checkpoints().pre_tool(tool_name, args, session_id, task_id, tool_call_id)
         except Exception as e:
             _dbg(f"checkpoint pre: {type(e).__name__}: {e}")
+            _event("plugin", "hook_failed", what="checkpoint_pre", error=type(e).__name__)
     if _is_review(turn_id, session_id):
         _bg_status(session_id, turn_id, _tool_label(tool_name or "tool", args).removeprefix("Using "))
         return None
@@ -520,6 +545,7 @@ def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, sess
             _checkpoints().post_tool(tool_name, args, session_id, turn_id, tool_call_id)
         except Exception as e:
             _dbg(f"checkpoint post: {type(e).__name__}: {e}")
+            _event("plugin", "hook_failed", what="checkpoint_post", error=type(e).__name__)
     if session_id in _active:
         if tool_name in ("todo", "todo_list") and not _is_review(turn_id, session_id):  # todo_list = its registered name
             todo = _todo_summary(result)
@@ -616,12 +642,16 @@ def _on_post_approval_response(session_key=None, session_id=None, **_):
 
 
 def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retryable=None, retry_count=None,
-                          max_retries=None, reason=None, error=None, **_):
+                          max_retries=None, reason=None, error=None, provider=None, model=None, **_):
     # A turn whose model call fails for good (bad key, quota, unknown model…) ends with this hook and NO
     # session_end / post_llm_call, so the chip, the activity banner and the app's wake lock used to stay on
     # "Thinking" until STALE_AFTER. Retryable errors are retried by Hermes (a new stream_start follows).
     final = retryable is False or (retry_count is not None and max_retries is not None and retry_count >= max_retries)
     _dbg(f"api_error {session_id} turn={turn_id} status={status_code} retryable={retryable} final={final}")
+    # The error's type, not its words: a provider's error can quote the request.
+    _event("turn", "api_error", chat=_alias(session_id), status=status_code, retryable=retryable, final=final,
+           retries=retry_count, reason=reason, provider=provider, model=str(model or "").rsplit("/", 1)[-1] or None,
+           error=type(error).__name__ if isinstance(error, BaseException) else None)
     if not final or not session_id or session_id in _subagents:
         return
     if _is_review(turn_id, session_id):  # background work failed: drop its label, never the chat's own turn
@@ -665,9 +695,16 @@ def _end_phone_app(session_id):
 _bgapp_enders: list = []
 
 
+_turn_started: dict = {}  # session id → when its turn began, for the diagnostic log
+
+
 def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, interrupted=None,
                     turn_exit_reason=None, platform=None, **_):
     _dbg(f"session_end {session_id} turn={turn_id} completed={completed} interrupted={interrupted}")
+    t0 = _turn_started.pop(session_id, None)
+    if t0 is not None:
+        _event("turn", "end", chat=_alias(session_id), secs=int(time.time() - t0), completed=completed,
+               failed=failed, interrupted=interrupted, reason=turn_exit_reason)
     if not session_id or session_id in _subagents:
         return
     _last_end[session_id] = time.time()
@@ -715,6 +752,11 @@ def _load(name: str, filename: str):
         sys.modules[name] = mod
         spec.loader.exec_module(mod)
     return mod
+
+
+def _diag():
+    """The diagnostic log (only what happened, never what was said)."""
+    return _load("hm_diag", "diag.py")
 
 
 def _canvas():
@@ -817,18 +859,21 @@ def register(ctx):
         _checkpoints().install_git_env_shim()
     except Exception as e:
         _dbg(f"checkpoint git shim not installed: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="checkpoint_git_shim", error=type(e).__name__)
     try:
         c = _canvas()
         ctx.register_tool(name="canvas", toolset="canvas", schema=c.TOOL_SCHEMA, handler=c.tool_handler,
                           description="Show documents, code and pages on the user's canvas in the phone app", emoji="🗒")
     except Exception as e:  # the rest of the plugin must load even if the canvas can't
         _dbg(f"canvas tool not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="canvas_tool", error=type(e).__name__)
     try:
         m = _chat_search()
         ctx.register_tool(name="find_chats", toolset="canvas", schema=m.TOOL_SCHEMA, handler=m.tool_handler,
                           description="Find the user's chats by text, or by the images, files, audio or video in them", emoji="🔎")
     except Exception as e:
         _dbg(f"find_chats not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="find_chats", error=type(e).__name__)
     try:
         pa = _phone_app()
         pa.notify, pa.log = _send, _dbg
@@ -838,29 +883,35 @@ def register(ctx):
                               description="Use a phone app on a hidden screen without taking the user's screen", emoji="📱")
     except Exception as e:
         _dbg(f"phone_app not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="phone_app", error=type(e).__name__)
     try:
         ou = _openui()
         try:  # the reference as a Hermes skill, skill_view("hermes-mobile:openui")
             ou.register_skill(ctx)
         except Exception as e:
             _dbg(f"openui skill not registered: {type(e).__name__}: {e}")
+            _event("plugin", "not_registered", what="openui_skill", error=type(e).__name__)
         ctx.register_tool(name="openui_reference", toolset="canvas", schema=ou.TOOL_SCHEMA, handler=ou.tool_handler,
                           description="The openui-lang reference for cards, tables, charts and forms in a reply", emoji="🧩")
         ctx.register_system_prompt_section("hermes-mobile.openui", ou.prompt_section, position="after_memory", max_chars=900)
     except Exception as e:
         _dbg(f"openui not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="openui", error=type(e).__name__)
     try:
         ctx.register_system_prompt_section("hermes-mobile.canvas", _canvas_prompt, position="after_memory", max_chars=900)
     except Exception as e:
         _dbg(f"canvas prompt section not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="canvas_prompt_section", error=type(e).__name__)
     try:
         ctx.register_system_prompt_section("hermes-mobile.links", _links_prompt, position="after_memory", max_chars=700)
     except Exception as e:
         _dbg(f"links prompt section not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="links_prompt_section", error=type(e).__name__)
     try:
         ctx.register_system_prompt_section("hermes-mobile.phone", _phone_prompt, position="after_memory", max_chars=1200)
     except Exception as e:
         _dbg(f"phone prompt section not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="phone_prompt_section", error=type(e).__name__)
     ctx.register_hook("pre_llm_call", _on_pre_llm_call)
     ctx.register_hook("post_llm_call", _on_post_llm_call)
     ctx.register_hook("on_stream_start", _on_stream_start)
