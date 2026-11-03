@@ -341,6 +341,8 @@ module.exports = async t => {
     const pe = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await pe.goto(WEB + '/')
     await pe.locator('.empty .suggestion').first().waitFor({ timeout: 8000 })
+    // The suggestions show before the socket opens, and starting the chat needs the socket: wait for it, or a slow run swipes too early.
+    await pe.locator('.conn-banner').waitFor({ state: 'detached', timeout: 15000 })
     await pe.evaluate(() => {
       const el = document.querySelector('.empty')
       const mk = (type, px) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: px, clientY: 300 })] })
