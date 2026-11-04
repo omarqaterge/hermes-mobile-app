@@ -2,10 +2,11 @@
 // proper controls, limits and a way back to Hermes's default. Same routes as Advanced settings: GET /api/config for the
 // bot's values, GET /api/config/defaults (once per run) for the defaults, PUT /api/config with the value nested under its
 // path; Hermes validates and stores it. Options the running Hermes doesn't know are left out.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api, qs } from '../api'
 import { haptic } from '../bridge'
 import { HERMES_SETTINGS, hasPath, inputText, nested, parseInput, readPath, sameValue, shown, type HSetting, type Json } from '../hermes-settings'
+import { setKnownHermesKeys } from '../settings-search'
 import { toast } from '../store'
 import { Sheet, Status, useLoader } from './Screens'
 import { ProfileChips, forProfiles } from './Settings'
@@ -30,6 +31,10 @@ export function HermesSettingsPage({ scope, setScope }: { scope: string; setScop
     () => (data ? HERMES_SETTINGS.map(g => ({ ...g, items: g.items.filter(s => hasPath(data.defaults, s.key) || hasPath(data.config, s.key)) })).filter(g => g.items.length) : []),
     [data]
   )
+  // Settings search lists only the options this Hermes has.
+  useEffect(() => {
+    if (data) setKnownHermesKeys(k => hasPath(data.defaults, k) || hasPath(data.config, k))
+  }, [data])
   const value = (s: HSetting): Json | undefined => (data && hasPath(data.config, s.key) ? readPath(data.config, s.key) : readPath(data?.defaults, s.key))
   const def = (s: HSetting) => readPath(data?.defaults, s.key)
   const changed = (s: HSetting) => hasPath(data?.defaults, s.key) && !sameValue(value(s), def(s))

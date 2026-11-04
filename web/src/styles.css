@@ -2654,6 +2654,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   background: var(--surface); border: 1px solid var(--border);
 }
 .set-search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; padding: 12px 0; color: inherit; font: inherit; }
+.set-search-clear { flex: none; background: none; border: 0; color: var(--dim); font: inherit; padding: 8px; margin-right: -8px; cursor: pointer; }
 .avatar-sm { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--accent-2); }
 .key-name { font-family: var(--mono); font-size: 0.85rem; }
 .dot-set { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ok); }

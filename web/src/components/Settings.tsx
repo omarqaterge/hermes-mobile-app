@@ -21,6 +21,8 @@ import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../l
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
+import { searchSettings, type SettingsEntry } from '../settings-search'
+import { findSettingsTarget, flashElement } from '../flash'
 import { approvalLockAvailable, approvalLockState, confirmAlways, setApprovalLock } from '../approval-lock'
 import { Markdown } from './Markdown'
 import { SttSettings } from './SttSettings'
@@ -866,7 +868,9 @@ function AppearancePage() {
 type Page = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'accounts' | 'keys' | 'connectors' | 'hermes' | 'config'
 const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Default models', accounts: 'Model providers', keys: 'API keys', connectors: 'Connectors', hermes: 'Hermux settings', config: 'Advanced settings' }
 
-function Hub({ go }: { go: (p: Page) => void }) {
+function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => void }) {
+  const [q, setQ] = useState('')
+  const hits = useMemo(() => searchSettings(q), [q])
   const conn = useStore(s => s.conn)
   const bootLine = useBootSummary()
   // The open chat knows the version; without one, the health check (/api/status) does.
@@ -874,8 +878,26 @@ function Hub({ go }: { go: (p: Page) => void }) {
   const [theme] = useState<Theme>(savedTheme)
   const [autoRead, setAutoReadState] = useState(autoReadOn)
   const connLabel = conn === 'open' ? 'Connected' : conn === 'connecting' ? 'Connecting…' : 'Offline'
+  const search = (
+    <label className="set-search">
+      <span aria-hidden="true">🔍</span>
+      <input placeholder="Search settings" aria-label="Search settings" value={q} autoCapitalize="off" autoCorrect="off" onChange={e => setQ(e.target.value)} />
+      {q && <button className="set-search-clear" aria-label="Clear search" onClick={() => setQ('')}>✕</button>}
+    </label>
+  )
+  if (q.trim()) {
+    return (
+      <>
+        {search}
+        <Section title={hits.length ? `Results · ${hits.length}` : undefined}>
+          {hits.length ? hits.map(h => <Row key={`${h.page}/${h.where}/${h.title}`} title={h.title} sub={<>{h.where}{h.sub ? ` · ${h.sub}` : ''}</>} chevron onClick={() => pick(h)} />) : <div className="dim pad">No settings match “{q.trim()}”</div>}
+        </Section>
+      </>
+    )
+  }
   return (
     <>
+      {search}
       <Section title="Appearance">
         <Row icon="🎨" tone="purple" title="Appearance" sub="Theme and text size" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
       </Section>
@@ -922,13 +944,16 @@ function Hub({ go }: { go: (p: Page) => void }) {
 /** Developer option (Android Developer options on): remote debugging for 60 minutes. Tapping when off only asks the
  *  shell to show its own confirmation and the screen-lock prompt; the page can't turn it on. */
 function RemoteDebugRow() {
-  const row = remoteDebugRow(useRemoteDebug())
+  const state = useRemoteDebug()
+  const row = remoteDebugRow(state)
   if (!row) return null
+  // The switch shows the shell's real state; flipping it only asks (on) or turns off (off). It stays off until the shell confirms.
   return (
-    <Row
+    <ToggleRow
       title="Remote debugging"
       sub={row.sub}
-      onClick={() => { haptic(); if (row.action === 'open') openRemoteDebugging(); else turnOffRemoteDebugging() }}
+      on={state.on}
+      onChange={v => { if (v) openRemoteDebugging(); else turnOffRemoteDebugging() }}
     />
   )
 }
@@ -1145,10 +1170,28 @@ export function SettingsScreen() {
   useEffect(() => {
     void loadProfiles()
   }, [])
+  // A chosen search result: open its page, then flash its row once it is drawn (some pages fill in after a request).
+  const [target, setTarget] = useState<{ find: string; n: number } | null>(null)
+  const pick = (en: SettingsEntry) => {
+    setPage(en.page)
+    setTarget(en.find ? { find: en.find, n: Date.now() } : null)
+  }
+  useEffect(() => {
+    if (!target) return
+    let tries = 0
+    let raf = 0
+    const look = () => {
+      const el = findSettingsTarget(document, target.find)
+      if (el) return flashElement(el)
+      if (++tries < 90) raf = requestAnimationFrame(look) // about 1.5 s
+    }
+    raf = requestAnimationFrame(look)
+    return () => cancelAnimationFrame(raf)
+  }, [target])
   useBackHandler(() => setPage(page === 'stt' ? 'voice' : 'hub'), page !== 'hub') // Back on a sub-page returns to the hub (Speech recognition: to Voice)
   return (
     <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : () => setPage(page === 'stt' ? 'voice' : 'hub')}>
-      {page === 'hub' && <Hub go={setPage} />}
+      {page === 'hub' && <Hub go={setPage} pick={pick} />}
       {page === 'appearance' && <AppearancePage />}
       {page === 'voice' && <VoiceSettings openStt={() => setPage('stt')} />}
       {page === 'stt' && <SttSettings />}
