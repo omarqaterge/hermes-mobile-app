@@ -76,17 +76,20 @@ module.exports = async t => {
     await rowOff.click()
     check(JSON.stringify(await rd.evaluate(() => window.__rdCalls)) === '["open"]', 'remote debugging: tapping Off calls openRemoteDebugging only')
     // the shell turns it on (after the lock screen): the page follows when the shell says so
-    await rd.evaluate(() => { window.__rd = { available: true, on: true, minutesLeft: 42 }; window.dispatchEvent(new Event('hm-devtools')) })
-    await rd.locator('.set-sub', { hasText: 'On · 42 min left' }).waitFor({ timeout: 5000 })
-    check(await strip(rd).isVisible() && (await strip(rd).innerText()).includes('Remote debugging is on · 42 min left'), 'remote debugging: the strip shows while on')
+    await rd.evaluate(() => { window.__rd = { available: true, on: true, minutesLeft: 42, secondsLeft: 2520 }; window.dispatchEvent(new Event('hm-devtools')) })
+    await rd.locator('.set-sub', { hasText: /On · (42:00|41:5\d) left/ }).waitFor({ timeout: 5000 })
+    const t1 = await rd.locator('.set-sub', { hasText: 'On · ' }).innerText()
+    await rd.waitForFunction(t => ![...document.querySelectorAll('.set-sub')].some(e => e.textContent === t), t1, { timeout: 5000 })
+    check(true, 'remote debugging: the countdown ticks (' + t1 + ' → next second)')
+    check(await strip(rd).isVisible() && (await strip(rd).innerText()).match(/Remote debugging is on · (42:00|41:\d\d) left/), 'remote debugging: the strip shows while on')
     await rd.locator('.set-row', { hasText: 'Remote debugging' }).first().click()
     await rd.locator('.devtools-strip').waitFor({ state: 'detached', timeout: 5000 })
     check(JSON.stringify(await rd.evaluate(() => window.__rdCalls)) === '["open","off"]', 'remote debugging: tapping On calls turnOffRemoteDebugging')
     check((await strip(rd).count()) === 0, 'remote debugging: the strip goes when it is turned off')
     await rd.close()
     // already on when the page loads
-    rd = await rdPage(() => { window.__rd = { available: true, on: true, minutesLeft: 42 } })
-    check((await rd.locator('.set-sub', { hasText: 'On · 42 min left' }).count()) === 1 && (await strip(rd).isVisible()), 'remote debugging: shows "On · 42 min left" and the strip when already on')
+    rd = await rdPage(() => { window.__rd = { available: true, on: true, minutesLeft: 42, secondsLeft: 2520 } })
+    check((await rd.locator('.set-sub', { hasText: /On · (42:00|41:5\d) left/ }).count()) === 1 && (await strip(rd).isVisible()), 'remote debugging: shows the countdown and the strip when already on')
     await rd.close()
   }
 

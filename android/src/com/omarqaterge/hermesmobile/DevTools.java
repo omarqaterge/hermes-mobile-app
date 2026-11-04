@@ -58,6 +58,12 @@ final class DevTools {
         return left <= 0 ? 0 : (int) ((left + 59_999) / 60_000);
     }
 
+    /** Whole seconds left, rounded up (0 when off): the page counts down from this between reads. */
+    static int secondsLeft() {
+        long left = until - SystemClock.elapsedRealtime();
+        return left <= 0 ? 0 : (int) ((left + 999) / 1000);
+    }
+
     /** Android Developer options are on (the row only exists then). The screen lock is checked when turning on. */
     static boolean developerOptionsOn(Context ctx) {
         try {
@@ -74,7 +80,7 @@ final class DevTools {
         return km != null && km.isDeviceSecure();
     }
 
-    /** {"available":bool,"on":bool,"minutesLeft":int}: what the page may read. */
+    /** {"available":bool,"on":bool,"minutesLeft":int,"secondsLeft":int}: what the page may read. */
     static String stateJson(Context ctx) {
         boolean avail = developerOptionsOn(ctx);
         boolean on = avail && isOn();
