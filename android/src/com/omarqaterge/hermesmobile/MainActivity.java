@@ -141,6 +141,7 @@ public class MainActivity extends Activity {
                 bootLog("page-started");
                 newBridgeKey();
                 PhoneDataGrants.fullAccess("", false); // no Full access pass outlives the page that set it; resume re-applies them
+                RemoteGuard.reset(); // fail closed: remote loads stay refused until this page reports the active chat
             }
 
             @Override
@@ -179,7 +180,7 @@ public class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
                 if (EMBED_HOST.equals(u.getHost())) return embedPage(u);
-                if (!MEDIA_HOST.equals(u.getHost())) return null;
+                if (!MEDIA_HOST.equals(u.getHost())) return RemoteGuard.blocks(u.toString()) ? remoteRefused() : null;
                 return media(u, req.getRequestHeaders());
             }
 
@@ -1496,6 +1497,11 @@ public class MainActivity extends Activity {
                 + "<iframe src=\"" + src + "\" allow=\"autoplay; encrypted-media; fullscreen; picture-in-picture\" allowfullscreen referrerpolicy=\"origin\"></iframe>";
     }
 
+    /** An empty 403: a chat that has read phone data, and the request is for the internet (RemoteGuard). */
+    static WebResourceResponse remoteRefused() {
+        return new WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", new java.util.HashMap<String, String>(), new java.io.ByteArrayInputStream(new byte[0]));
+    }
+
     static WebResourceResponse embedPage(Uri u) {
         String html = "/embed".equals(u.getPath()) ? embedHtml(u.getQueryParameter("u")) : null;
         byte[] body = (html == null ? "" : html).getBytes(StandardCharsets.UTF_8);
@@ -2443,6 +2449,20 @@ public class MainActivity extends Activity {
         public void phoneDataFullAccess(String key, String session, boolean on) {
             if (!ok(key)) return;
             PhoneDataGrants.fullAccess(session, on);
+        }
+
+        /** The page says whether the chat on screen has read phone data: while true, RemoteGuard refuses every request to the internet. */
+        @JavascriptInterface
+        public void remoteBlock(String key, boolean on) {
+            if (!ok(key)) return;
+            RemoteGuard.setBlocked(on);
+        }
+
+        /** The user tapped "Tap to load" for exactly this address: RemoteGuard lets that one request through, once, for 60 s. */
+        @JavascriptInterface
+        public void remoteAllowOnce(String key, String url) {
+            if (!ok(key)) return;
+            RemoteGuard.allowOnce(url);
         }
 
         /** {"on":bool,"secure":bool}: Settings → Permissions → "Confirm approvals with fingerprint". */

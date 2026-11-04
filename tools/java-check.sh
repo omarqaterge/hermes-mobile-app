@@ -47,3 +47,6 @@ echo "java-check: STT models test $(tail -1 "$OUT/stt.txt")"
 # The phone-data gate (grants, the Full access pass, the wording of a request) on a plain JDK; the wording uses the jar above.
 ../tools/test_phone_data_grants.sh > "$OUT/pdgrants.txt" 2>&1 || { grep -v '^PASS' "$OUT/pdgrants.txt"; echo "java-check: phone data grants test FAILED"; exit 1; }
 echo "java-check: phone data grants test $(tail -1 "$OUT/pdgrants.txt")"
+# The remote-request filter for chats that have read phone data (RemoteGuard.java) on a plain JDK.
+../tools/test_remote_guard.sh > "$OUT/remoteguard.txt" 2>&1 || { grep -v '^PASS' "$OUT/remoteguard.txt"; echo "java-check: remote guard test FAILED"; exit 1; }
+echo "java-check: remote guard test $(tail -1 "$OUT/remoteguard.txt")"
