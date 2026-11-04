@@ -58,7 +58,16 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
   thumbnail. Links, inline-code addresses, file chips, links in an HTML preview and a card's `@OpenUrl` show the full address
   (site, address, and the query on its own) in an in-app dialog and open only on confirmation. Local files and attachments
   load as always. The state is derived from the chat's items, so it survives a reload or a resume and covers replies already
-  drawn when the read happens.
+  drawn when the read happens. These guards are the part the user sees; they also cover tool cards, notices, the canvas,
+  reasoning and subagent text, card images, Mermaid image shapes and `srcset`.
+- **The native filter is the enforcement.** While the page says the chat on screen has read phone data, the app answers
+  every request the page makes to a host other than `localhost`, `127.0.0.1` or `[::1]` with an empty 403, for every
+  resource type (images, media, scripts, styles, frames, fonts, fetch), whatever the page renders. File, data and blob
+  sources are untouched. It starts each page load blocked and opens only when the page reports an untainted chat. The one
+  thing the user can tap through is "Tap to load" on an image: the app lets that exact address through once, for 60
+  seconds. Video and audio don't load in the page in such a chat: their tap shows the address and opens the browser.
+  While it is on, the page's own web requests (update check, anonymous stats, Report a problem) are refused too and
+  retry later.
 - **The plugin, except in Full access.** The chat is remembered (in memory, and in a small bounded file under
   `~/.hermes/mobile/`: chat ids only, never data). Its `pre_tool_call` hook then makes Hermes ask the user before terminal
   commands that match network tools, code that talks to the network, web and browser tools, and message-sending tools. The
@@ -72,4 +81,11 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
 - In Full access and in Auto access, Hermes's gate approves without asking, so the plugin's ask never shows. Only the
   page's protection holds there.
 - The agent runs in Termux and can edit the plugin's state file to make a chat look unread.
+- The native filter blocks what the page requests. It does not stop what the agent's own tools send (a terminal command,
+  a web tool): that is the plugin's part, and only a speed bump. It cannot stop the Shizuku routes, and a WebSocket from
+  the page is not covered by it.
+- The filter was compiled and unit-tested (`tools/test_remote_guard.sh`) but not yet run in a real WebView; that needs a
+  phone.
+- A subagent counts as having read phone data on the page only when its own tool event named `phone_data`; one reloaded
+  from history shows no tool names there.
 - Shizuku routes are unchanged (see above).

