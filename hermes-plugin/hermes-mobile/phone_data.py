@@ -132,17 +132,27 @@ def _post(body: dict, timeout: float) -> Optional[tuple]:
     return code, obj if isinstance(obj, dict) else {}
 
 
-def status(timeout: float = STATUS_TIMEOUT) -> Optional[dict]:
-    """{"kinds": {kind: bool}} when the app answered `ready`, else None (no answer, 404, older app, not ready)."""
+def status_state(timeout: float = STATUS_TIMEOUT) -> tuple:
+    """("ready", {"kinds": {kind: bool}}) when the app answered `ready`; ("unavailable", None) for an app that is not
+    ready or an older one (404, redirect); ("none", None) for no usable answer (no key, refused, timeout, junk)."""
     res = _post({"op": "status"}, timeout)
-    if not res or res[0] != 200:
-        return None
-    st = res[1]
-    if st.get("ok") is not True or st.get("ready") is not True:
-        return None
+    if not res:
+        return "none", None
+    code, st = res
+    if code == 404 or 300 <= code < 400:
+        return "unavailable", None
+    if code != 200 or st.get("ok") is not True:
+        return "none", None
+    if st.get("ready") is not True:
+        return "unavailable", None
     kinds = st.get("kinds")
     kinds = kinds if isinstance(kinds, dict) else {}
-    return {"kinds": {k: kinds.get(k) is True for k in KINDS}}
+    return "ready", {"kinds": {k: kinds.get(k) is True for k in KINDS}}
+
+
+def status(timeout: float = STATUS_TIMEOUT) -> Optional[dict]:
+    """{"kinds": {kind: bool}} when the app answered `ready`, else None (no answer, 404, older app, not ready)."""
+    return status_state(timeout)[1]
 
 
 # ── arguments ───────────────────────────────────────────────────────────────
@@ -332,7 +342,9 @@ def prompt_section(info) -> str:
     try:
         if str(info.get("platform", "")) not in ("mobile", "tui"):
             return ""
-        st = status(PROMPT_TIMEOUT)
+        state, st = status_state(PROMPT_TIMEOUT)
+        if state == "unavailable":
+            return ""   # the feature isn't live in this app (yet): don't point people at a Settings section that isn't there
         on = [k for k in KINDS if st and st["kinds"].get(k)]
         if not on:
             return _OFF_PROMPT

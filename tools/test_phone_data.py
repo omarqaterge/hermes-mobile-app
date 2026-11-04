@@ -357,9 +357,20 @@ check("all off", pd.prompt_section(info) == pd._OFF_PROMPT and "Settings → Pho
 check("off text is not frozen as a fact", "when this chat started" in pd._OFF_PROMPT and "call `phone_data`" in pd._OFF_PROMPT
       and "current state" in pd._OFF_PROMPT and len(pd._OFF_PROMPT) <= 1000)
 reset(mode="404")
-check("404 reads as off", pd.prompt_section(info) == pd._OFF_PROMPT)
+check("404 (older app): no section", pd.prompt_section(info) == "")
+reset(mode="notready")
+check("ready false: no section", pd.prompt_section(info) == "")
+reset(mode="redirect")
+check("redirect: no section", pd.prompt_section(info) == "")
+reset(mode="html")
+check("junk answer: the off text", pd.prompt_section(info) == pd._OFF_PROMPT)
+keyfile.write_text("")
+check("no key: the off text", pd.prompt_section(info) == pd._OFF_PROMPT)
+keyfile.write_text(KEY)
+reset(kinds={k: False for k in pd.KINDS})
+check("ready, nothing on: the off text", pd.prompt_section(info) == pd._OFF_PROMPT)
 pd.URL = "http://127.0.0.1:1/phonedata"
-check("unreachable reads as off", pd.prompt_section(info) == pd._OFF_PROMPT)
+check("unreachable (no answer): the off text", pd.prompt_section(info) == pd._OFF_PROMPT)
 pd.URL = srv_url
 reset()
 check("other platforms: empty, app not asked", pd.prompt_section({"platform": "cli"}) == "" and not APP["calls"])
