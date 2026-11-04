@@ -166,6 +166,7 @@ jobs:
       - run: python3 tools/test_approval.py
       - run: python3 tools/test_chip.py
       - run: python3 tools/test_phone_app.py
+      - run: python3 tools/test_phone_data.py
       - run: python3 tools/test_auto_mode.py
       - run: python3 tools/test_openui.py
       - run: python3 tools/test_openui_query.py
