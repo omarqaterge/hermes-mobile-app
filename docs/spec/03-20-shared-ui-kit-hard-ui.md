@@ -66,6 +66,8 @@
 | `releasenotes.ts` | Pure version comparison (`isNewer`), the What's new sections of the changelog (`notesSince`), and a section's one-line-per-change summary (`headlines`, `NotesGroup`) |
 | `SttSettings.tsx` | Settings → Voice → Speech recognition: the phone's recogniser, the on-device model cards and Your own model |
 | `stt.ts` | The on-device model list from the shell (`listSttModels`, `stt-models` events), its actions, `fmtSize`, `chosenSttName`, `testSummary` |
+| `settings-search.ts` | Settings search: the list of everything in Settings and `searchSettings` (3.15) |
+| `flash.ts` | `findSettingsTarget` and `flashElement`: scroll to a Settings row and flash it |
 | `hermes-update.ts` | The phone's Hermes version and its match with the version the app was made for |
 | `theme.ts` | The four themes and how they reach the page and Android |
 | `ui.tsx` | Sections, rows, switches, pickers, sliders, segmented control, `Collapse`, `Chevron` |

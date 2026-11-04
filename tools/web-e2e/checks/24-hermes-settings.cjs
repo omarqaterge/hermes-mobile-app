@@ -91,5 +91,16 @@ module.exports = async t => {
   await tz.getByRole('button', { name: 'Cancel' }).click()
   // Put back what this file changed, for later files.
   await fetch(require('../lib.cjs').MOCK + '/api/config', { method: 'PUT', body: JSON.stringify({ config: { compression: { threshold: 0.5 }, checkpoints: { enabled: false }, agent: { verify_on_stop: false }, approvals: { deny: [] } } }) })
+  // Settings search: live results, a result opens its page and flashes the row.
+  await pg.goto(WEB + '/')
+  await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+  await pg.getByRole('button', { name: /^Sessions/ }).click()
+  await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+  const find = pg.getByLabel('Search settings')
+  await find.fill('checkpoint')
+  await pg.locator('.set-row', { hasText: 'File checkpoints' }).first().waitFor({ timeout: 3000 }).then(() => check(true, 'settings search: results show while typing'), () => check(false, 'settings search: results show while typing'))
+  await pg.locator('.set-row', { hasText: 'File checkpoints' }).first().click()
+  await pg.locator('.hit-flash').first().waitFor({ timeout: 4000 }).then(() => check(true, 'settings search: the chosen setting is flashed on its page'), () => check(false, 'settings search: the chosen setting is flashed on its page'))
+  check((await pg.locator('.hit-flash').first().innerText()).includes('File checkpoints'), 'settings search: the flashed row is the chosen one')
   await pg.close()
 }
