@@ -228,4 +228,106 @@ module.exports = async t => {
     check(oth && oth.imgs > 0 && oth.links > 0 && hits.length > 0, `phone data card: another tool's card still shows media and links (${JSON.stringify(oth && { imgs: oth.imgs, links: oth.links })}, ${hits.length} fetches)`)
     await pg.close()
   }
+  {
+    // A chat that has read phone data (a phone_data tool item, whatever its outcome): text the agent wrote can't load anything
+    // remote before a tap, and an address is shown in full before it opens. Every access mode, Full access included. A chat
+    // with no phone_data call is unchanged. Derived from the chat's items, so it comes back with a reload.
+    const hits = []
+    const setup = async sid => {
+      const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(sid => {
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+        window.__opened = []
+        window.open = u => (window.__opened.push(String(u)), null) // openExternal's browser path
+        window.__socks = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+          }
+        }
+      }, sid)
+      await pg.route(/^https?:\/\/beacon\.test\//, r => {
+        hits.push(r.request().url())
+        return r.fulfill({ status: 200, contentType: 'image/png', body: png })
+      })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await sleep(700)
+      return pg
+    }
+    const media = pg => pg.evaluate(() => ({ imgs: [...document.querySelectorAll('.msg.assistant img.media')].length, holds: [...document.querySelectorAll('.msg.assistant .remote-hold')].map(h => h.innerText) }))
+    const dialogText = pg => pg.locator('.dialog').innerText({ timeout: 3000 }).catch(() => null)
+    const opened = pg => pg.evaluate(() => window.__opened)
+
+    // control: no phone_data call -> exactly as before
+    hits.length = 0
+    let pg = await setup('s-pd-ctl')
+    let m = await media(pg)
+    check(m.imgs === 1 && m.holds.length === 0 && hits.some(h => h.includes('/p.png')), `phone data taint: a chat with no phone_data call loads its image as before (${JSON.stringify(m)}, ${hits.length} fetches)`)
+    await pg.locator('.msg.assistant a', { hasText: 'see more' }).click()
+    await sleep(300)
+    check((await pg.locator('.dialog').count()) === 0 && (await opened(pg)).length === 1 && (await opened(pg))[0].includes('/page?d=ROWS'), 'phone data taint: a link in a chat with no phone_data call opens at once')
+    await pg.locator('.hm-openui').last().getByRole('button', { name: 'Visit site' }).click({ timeout: 15000 })
+    await sleep(300)
+    check((await pg.locator('.dialog').count()) === 0 && (await opened(pg)).some(u => u.startsWith('https://beacon.test/card')), 'phone data taint: a card open_url in a chat with no phone_data call opens at once')
+
+    // taint appears while the items are already drawn: the image goes back behind a tap
+    await pg.evaluate(() => {
+      const s = window.__socks.filter(x => x.readyState === 1).pop()
+      const ev = (type, payload) => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: 'rt-s-pd-ctl', payload } }) }))
+      ev('tool.start', { tool_id: 'pd-live', name: 'phone_data', args: { kind: 'sms' } })
+      ev('tool.complete', { tool_id: 'pd-live', name: 'phone_data', args: { kind: 'sms' }, duration_s: 0.1, result: 'x' })
+    })
+    await sleep(700)
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1, `phone data taint: a read that happens after the reply was drawn covers it too (${JSON.stringify(m)})`)
+    await pg.close()
+
+    // tainted: nothing before the tap
+    hits.length = 0
+    pg = await setup('s-pd')
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1 && /beacon\.test/.test(m.holds[0]) && /Tap to load/.test(m.holds[0]), `phone data taint: the image waits behind its host name and "Tap to load" (${JSON.stringify(m)})`)
+    check(hits.length === 0, `phone data taint: no network request before the tap (${JSON.stringify(hits)})`)
+    await pg.locator('.msg.assistant .remote-hold').click()
+    await sleep(700)
+    m = await media(pg)
+    check(m.imgs === 1 && hits.some(h => h.includes('/p.png?d=ROWS')), `phone data taint: it loads after the tap (${JSON.stringify(m)})`)
+
+    // links and cards show the address first
+    await pg.locator('.msg.assistant a', { hasText: 'see more' }).click()
+    const d1 = await dialogText(pg)
+    check(d1 && d1.includes('http://beacon.test/page?d=ROWS') && /Site: beacon\.test/.test(d1) && d1.includes('?d=ROWS'), `phone data taint: a link shows the full address, host and query first (${d1})`)
+    check((await opened(pg)).length === 0, 'phone data taint: and has opened nothing yet')
+    await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+    await sleep(300)
+    check((await opened(pg)).length === 0, 'phone data taint: Cancel opens nothing')
+    await pg.locator('.msg.assistant a', { hasText: 'see more' }).click()
+    await pg.locator('.dialog').getByRole('button', { name: 'Open' }).click()
+    await sleep(300)
+    check((await opened(pg)).length === 1 && (await opened(pg))[0] === 'http://beacon.test/page?d=ROWS', 'phone data taint: Open on the dialog opens it')
+    await pg.locator('.hm-openui').last().getByRole('button', { name: 'Visit site' }).click({ timeout: 15000 })
+    const d2 = await dialogText(pg)
+    check(d2 && d2.includes('https://beacon.test/card?d=ROWS') && (await opened(pg)).length === 1, `phone data taint: a card open_url shows the address first and opens nothing yet (${d2})`)
+    await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+    await sleep(300)
+
+    // a new load: derived from the items, so it comes back
+    hits.length = 0
+    await pg.reload()
+    await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(900)
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1 && hits.length === 0, `phone data taint: survives a page reload (${JSON.stringify(m)}, ${hits.length} fetches)`)
+
+    // Full access (the app's /yolo) does not lift it
+    await pg.getByPlaceholder('Message Hermux').fill('/yolo on')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await sleep(900)
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1 && hits.length === 0, `phone data taint: Full access still holds the image (${JSON.stringify(m)}, ${hits.length} fetches)`)
+    await pg.close()
+  }
 }

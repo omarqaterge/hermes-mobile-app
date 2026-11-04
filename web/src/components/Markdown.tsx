@@ -6,7 +6,8 @@ import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { visit } from 'unist-util-visit'
 import type { Root, Element } from 'hast'
-import { copyText, haptic, openExternal } from '../bridge'
+import { copyText, haptic } from '../bridge'
+import { GuardCtx, openChecked } from '../phone-data-taint'
 import { openSessionFromNotification } from '../gateway'
 import { FileChip, Media } from './Media'
 import { backgroundLuminance, chatLinks, mediaKind, prepare } from '../text'
@@ -620,7 +621,8 @@ function rehypePlugins(streaming: boolean, rich: RichApi | null) {
 const urlTransform = (url: string) => (isLocal(url) || CHAT_HREF.test(url) ? url : defaultUrlTransform(url))
 
 // interactive: card buttons may send (chat replies only; canvas, files and /btw just show cards).
-export const Markdown = memo(function Markdown({ text, streaming = false, interactive = false }: { text: string; streaming?: boolean; interactive?: boolean }) {
+// guard: the chat has read phone data (phone-data-taint.ts): remote media waits for a tap and addresses are shown before opening.
+export const Markdown = memo(function Markdown({ text, streaming = false, interactive = false, guard = false }: { text: string; streaming?: boolean; interactive?: boolean; guard?: boolean }) {
   const ui = useMemo(() => ({ streaming, interactive }), [streaming, interactive])
   const seed = useRef('')
   seed.current = useMemo(() => hashText(text), [text])
@@ -636,6 +638,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
   return (
     <OpenUICtx.Provider value={ui}>
     <StreamingCtx.Provider value={streaming}>
+    <GuardCtx.Provider value={guard}>
     <div
       className="md"
       onClick={e => {
@@ -669,12 +672,31 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
         {prepare(chatLinks(text))}
       </ReactMarkdown>
     </div>
+    </GuardCtx.Provider>
     </StreamingCtx.Provider>
     </OpenUICtx.Provider>
   )
 })
 
 const REMARK_REHYPE = { clobberPrefix: '' }
+
+/** A link to the web: opens in the browser; in a chat that has read phone data, only after the address is shown in full. */
+function ExtLink({ href, className, buzz, children }: { href?: string; className?: string; buzz?: boolean; children?: ReactNode }) {
+  const guarded = useContext(GuardCtx)
+  return (
+    <a
+      href={href}
+      className={className}
+      onClick={e => {
+        e.preventDefault()
+        if (buzz) haptic()
+        if (href) void openChecked(href, guarded)
+      }}
+    >
+      {children}
+    </a>
+  )
+}
 
 function mdComponents(seed: { current: string }, nextBox: { current: number }): Components {
   return {
@@ -706,17 +728,9 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
       const url = !className && typeof children === 'string' && /^https?:\/\/\S+$/.test(children) ? children : ''
       if (!url) return <code className={className}>{children}</code>
       return (
-        <a
-          href={url}
-          className="code-link"
-          onClick={e => {
-            e.preventDefault()
-            haptic()
-            openExternal(url)
-          }}
-        >
+        <ExtLink href={url} className="code-link" buzz>
           <code>{children}</code>
-        </a>
+        </ExtLink>
       )
     },
     img: ({ src, alt }) => (typeof src === 'string' && src ? <Media src={src} alt={alt} /> : null),
@@ -761,17 +775,7 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
       if (href && isLocal(href)) {
         return mediaKind(href) === 'file' ? <FileChip src={href} label={textOf(children).replace(/^📎\s*/, '')} /> : <Media src={href} alt={textOf(children)} />
       }
-      return (
-        <a
-          href={href}
-          onClick={e => {
-            e.preventDefault()
-            if (href) openExternal(href)
-          }}
-        >
-          {children}
-        </a>
-      )
+      return <ExtLink href={href}>{children}</ExtLink>
     },
     table: ({ children }) => <MdTable>{children}</MdTable>
   }

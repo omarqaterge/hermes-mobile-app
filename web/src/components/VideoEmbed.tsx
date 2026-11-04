@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { haptic, isNative, openExternal } from '../bridge'
+import { useContext, useEffect, useMemo, useState } from 'react'
+import { haptic, isNative } from '../bridge'
+import { GuardCtx, confirmAddress, openChecked } from '../phone-data-taint'
 import { embedOf, embedsInText, frameEmbed, frameSrc, type VideoEmbed } from '../videoembed'
 import { Media } from './Media'
 
@@ -11,6 +12,7 @@ let stopCurrent: (() => void) | null = null
  *  or open another. `allow-same-origin` only gives the frame its own site's storage; it is never the app's origin. */
 export function VideoPlayer({ embed }: { embed: VideoEmbed }) {
   const [playing, setPlaying] = useState(false)
+  const guarded = useContext(GuardCtx) // a chat that has read phone data: no thumbnail, and an address check before anything loads
 
   useEffect(() => {
     if (!playing) return
@@ -48,10 +50,10 @@ export function VideoPlayer({ embed }: { embed: VideoEmbed }) {
             aria-label={`Play video from ${embed.label}`}
             onClick={() => {
               haptic()
-              setPlaying(true)
+              void confirmAddress(embed.url, guarded, 'Load this video?').then(ok => ok && setPlaying(true))
             }}
           >
-            {embed.thumb && <img src={embed.thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+            {embed.thumb && !guarded && <img src={embed.thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />}
             <span className="video-embed-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
                 <path d="M8 5v14l11-7z" />
@@ -78,7 +80,7 @@ export function VideoPlayer({ embed }: { embed: VideoEmbed }) {
           onClick={() => {
             haptic()
             setPlaying(false)
-            openExternal(embed.url)
+            void openChecked(embed.url, guarded)
           }}
         >
           Open

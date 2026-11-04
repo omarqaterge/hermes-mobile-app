@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { haptic, openExternal } from '../bridge'
 import { toast } from '../store'
 import { confirmDialog } from '../dialog'
 import { frameDoc, frameHeight, frameLink } from '../htmlframe'
+import { GuardCtx, openChecked } from '../phone-data-taint'
 
 /**
  * HTML runs in a sandboxed frame: scripts yes, but no access to the app (no `allow-same-origin`), and no network
@@ -11,6 +12,7 @@ import { frameDoc, frameHeight, frameLink } from '../htmlframe'
 export function HtmlFrame({ html, network, autoHeight, className }: { html: string; network: boolean; autoHeight?: { min: number; max: number }; className?: string }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const lastDirect = useRef(0)
+  const guarded = useContext(GuardCtx) // a chat that has read phone data: every link shows its address first
   const [err, setErr] = useState('')
   const [h, setH] = useState<number | null>(null)
   const auto = !!autoHeight
@@ -29,7 +31,8 @@ export function HtmlFrame({ html, network, autoHeight, className }: { html: stri
         // A tap inside the frame focuses it and gives this page user activation (Chromium passes it up to the
         // parent): open right away. A page posting on its own has neither, so the user confirms first. Activation
         // lasts a few seconds and opening doesn't use it up, so only one link opens that way per 5 s.
-        if (navigator.userActivation?.isActive && document.activeElement === frame.current && Date.now() - lastDirect.current > 5000) {
+        if (guarded) void openChecked(url, true)
+        else if (navigator.userActivation?.isActive && document.activeElement === frame.current && Date.now() - lastDirect.current > 5000) {
           lastDirect.current = Date.now()
           haptic()
           openExternal(url)
@@ -41,7 +44,7 @@ export function HtmlFrame({ html, network, autoHeight, className }: { html: stri
     }
     window.addEventListener('message', on)
     return () => window.removeEventListener('message', on)
-  }, [srcDoc, auto, min, max])
+  }, [srcDoc, auto, min, max, guarded])
   return (
     <div className={`html-wrap${auto ? ' auto' : ''}`}>
       {err && <div className="html-err">⚠ {err}</div>}

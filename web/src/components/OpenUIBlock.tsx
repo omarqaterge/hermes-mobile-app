@@ -4,7 +4,8 @@ import { runLazy } from '../lazy'
 import { actionMessage, isCommandText, loadUiState, safeHttpUrl, saveUiState, type UiAction } from '../openui-msg'
 import { makeToolClient } from '../openui-query'
 import { api } from '../api'
-import { haptic, openExternal } from '../bridge'
+import { haptic } from '../bridge'
+import { GuardCtx, openChecked } from '../phone-data-taint'
 import { sendPrompt } from '../gateway'
 import { getState, toast } from '../store'
 import { hashText } from '../tasks'
@@ -41,6 +42,9 @@ const chatId = () => {
 /** A ```openui-lang block: OpenUI draws it (lazy bundle, own shadow root); `fallback` shows if it can't. */
 export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactNode }) {
   const { streaming, interactive } = useContext(OpenUICtx)
+  const guarded = useContext(GuardCtx)
+  const guard = useRef(guarded)
+  guard.current = guarded
   const mode = useThemeMode()
   const host = useRef<HTMLDivElement>(null)
   const handle = useRef<BlockHandle | null>(null)
@@ -64,7 +68,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   const onAction = (e: UiAction) => {
     if (e.type === 'open_url') {
       const url = safeHttpUrl(e.params?.url)
-      if (url) openExternal(url)
+      if (url) void openChecked(url, guard.current) // after a phone-data read: the address is shown first
       else toast('That link can’t be opened', 'error')
       return
     }
