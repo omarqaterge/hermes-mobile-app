@@ -79,7 +79,7 @@ def _norm(ids: Any) -> List[str]:
 def _with_parents(ids: List[str]) -> List[str]:
     out = list(ids)
     for i in list(out):
-        for _ in range(8):   # a chain of subagents
+        for _ in range(16):   # a chain of subagents
             i = _parents.get(i, "")
             if not i or i in out:
                 break

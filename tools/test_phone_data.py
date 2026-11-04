@@ -194,17 +194,50 @@ _pt.link_subagent("child-a", "grand-a")
 pd.tool_handler({"kind": "photos"}, session_id="grand-a")
 check("a subagent sends itself, then its parents up the chain",
       reads()[-1]["chats"] == ["grand-a", "child-a", "parent-a"], reads()[-1]["chats"])
-for k in range(1, 13):
+for k in range(1, 21):
     _pt.link_subagent(f"anc-{k + 1}", f"anc-{k}")
 pd.tool_handler({"kind": "photos"}, session_id="anc-1")
 got = reads()[-1]["chats"]
-check("at most 8 ids, the chat first", len(got) == 8 and got[0] == "anc-1", got)
+check("at most 16 ids, the chat first, the nearest ancestors kept",
+      len(got) == 16 and got[0] == "anc-1" and got[1] == "anc-2" and got[15] == "anc-16", got)
 _pt.link_subagent("p" * 129, "child-long")
 pd.tool_handler({"kind": "photos"}, session_id="child-long")
 check("an id over 128 characters is dropped", reads()[-1]["chats"] == ["child-long"])
 check("ids are strings with no empties or repeats",
       pd._chats("x", "") == ["x"] and pd._chats("", "") == [] and pd._chats("  ", "") == []
       and all(isinstance(i, str) and i for i in got) and len(set(got)) == len(got))
+# compression ancestors: a real sqlite file shaped like Hermes's sessions table
+import sqlite3
+_db = Path(tempfile.mkdtemp()) / "state.db"
+_c = sqlite3.connect(_db)
+_c.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, end_reason TEXT)")
+_c.executemany("INSERT INTO sessions VALUES (?,?,?)", [
+    ("s1", None, "compression"), ("s2", "s1", "compression"), ("s3", "s2", None),
+    ("sub", "s3", "delegated"), ("solo", None, None), ("loopa", "loopb", "compression"), ("loopb", "loopa", "compression"),
+    ("k0", None, "compression")] + [(f"k{i}", f"k{i - 1}", "compression") for i in range(1, 25)])
+_c.commit()
+_c.close()
+pd._state_db = lambda: _db
+check("compression ancestors: nearest first", pd.compression_ancestors("s3") == ["s2", "s1"], pd.compression_ancestors("s3"))
+check("a parent that did not end by compression is not an ancestor", pd.compression_ancestors("sub") == [])
+check("no parent, unknown id, empty id: none", pd.compression_ancestors("solo") == [] and pd.compression_ancestors("nope") == []
+      and pd.compression_ancestors("") == [])
+check("a cycle ends", sorted(pd.compression_ancestors("loopa")) == ["loopb"], pd.compression_ancestors("loopa"))
+pd.tool_handler({"kind": "photos"}, session_id="s3")
+check("the read sends the chat then its compression segments, nearest first", reads()[-1]["chats"] == ["s3", "s2", "s1"], reads()[-1]["chats"])
+pd.tool_handler({"kind": "photos"}, session_id="k24")
+got = reads()[-1]["chats"]
+check("a long compression chain is cut at 16, nearest first", len(got) == 16 and got[:3] == ["k24", "k23", "k22"], got)
+_pt.link_subagent("s2", "kid-of-s2")
+pd.tool_handler({"kind": "photos"}, session_id="kid-of-s2")
+check("a subagent's parent also brings its compression segments", reads()[-1]["chats"] == ["kid-of-s2", "s2", "s1"], reads()[-1]["chats"])
+pd._state_db = lambda: Path("/nonexistent/state.db")
+check("no database: just the chat", pd._chats("s3", "") == ["s3"])
+def _boom():
+    raise RuntimeError("x")
+pd._state_db = _boom
+check("a failing lookup never raises", pd._chats("s3", "") == ["s3"])
+del pd._state_db
 check("the body stays under the app's 4 KiB limit", len(json.dumps(reads()[-1])) < 4096)
 
 print("nonce can't look like a Telegram token")
