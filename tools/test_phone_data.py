@@ -355,11 +355,11 @@ reset()
 cases = [
     ({"kind": "calendar", "to_ms": N + 91 * D}, False), ({"kind": "calendar", "to_ms": N - 1}, False),
     ({"kind": "calendar", "to_ms": N + 90 * D}, False), ({"kind": "calendar", "to_ms": N + 90 * D - 30000}, False),
-    ({"kind": "calendar", "to_ms": N + 90 * D - 120000}, True), ({"kind": "calendar", "from_ms": N + 100 * D}, True),
+    ({"kind": "calendar", "to_ms": N + 90 * D - 11 * 60000}, True), ({"kind": "calendar", "to_ms": N + 90 * D - 9 * 60000}, False), ({"kind": "calendar", "from_ms": N + 100 * D}, True),
     ({"kind": "calendar", "from_ms": N + 100 * D, "to_ms": N + 99 * D}, False),
     ({"kind": "calls", "from_ms": N - 91 * D}, False), ({"kind": "calls", "from_ms": N + 1000}, False),
     ({"kind": "calls", "from_ms": N - 90 * D}, False), ({"kind": "calls", "from_ms": N - 90 * D + 30000}, False),
-    ({"kind": "calls", "from_ms": N - 90 * D + 120000}, True), ({"kind": "calls", "from_ms": N - 90 * D, "to_ms": N}, True), ({"kind": "calls", "to_ms": 5 * D}, True),
+    ({"kind": "calls", "from_ms": N - 90 * D + 9 * 60000}, False), ({"kind": "calls", "from_ms": N - 90 * D + 11 * 60000}, True), ({"kind": "calls", "from_ms": N - 90 * D, "to_ms": N}, True), ({"kind": "calls", "to_ms": 5 * D}, True),
     ({"kind": "calls", "to_ms": 4102444800001}, False), ({"kind": "calls", "from_ms": 4102444800001, "to_ms": 4102444800002}, False),
     ({"kind": "calendar", "from_ms": 4102444800000, "to_ms": 4102444800000}, True),
 ]
