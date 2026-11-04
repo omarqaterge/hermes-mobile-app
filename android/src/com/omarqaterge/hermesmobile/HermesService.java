@@ -482,7 +482,7 @@ public class HermesService extends Service {
         try {
             while (instance == this && MainActivity.visible && android.os.SystemClock.elapsedRealtime() < end) {
                 Thread.sleep(READY_POLL_MS);
-                if (!MainActivity.visible || !MainActivity.dashboardAnswers()) continue;
+                if (!MainActivity.visible || !MainActivity.dashboardAnswers(this)) continue;
                 MainActivity a = MainActivity.current;
                 if (a != null) a.pushHermesReady();
                 return;
@@ -515,6 +515,17 @@ public class HermesService extends Service {
         HermesService s = instance;
         if (s == null) return;
         s.keyShared = false;
+        s.shareKeyWithTermux();
+    }
+
+    static boolean keyResent = false;
+
+    /** The dashboard withheld its token from us, so Termux's key isn't ours: send it again, once per process. */
+    static void keyRefused() {
+        HermesService s = instance;
+        if (s == null || keyResent) return;
+        if (s.checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
+        keyResent = true;
         s.shareKeyWithTermux();
     }
 
@@ -1643,9 +1654,7 @@ public class HermesService extends Service {
 
     synchronized String dashboardToken(boolean refresh) {
         if (refresh || dashToken.isEmpty()) {
-            String html = MainActivity.httpGet(MainActivity.BASE_URL + "/");
-            java.util.regex.Matcher m = html == null ? null : MainActivity.TOKEN.matcher(html);
-            dashToken = (m != null && m.find()) ? m.group(1) : "";
+            dashToken = MainActivity.dashboardToken(this);
         }
         return dashToken;
     }

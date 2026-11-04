@@ -59,6 +59,10 @@ find "$home/plugins" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || t
 (cd "$src" && HOME="$uhome" HERMES_HOME="$home" HM_FAKE_MODEL_URL="http://127.0.0.1:$(cat "$work/model.port")/v1" \
   .venv/bin/python "$here/tools/hermes-contract/seed.py")
 
+# The plugin's token guard reads the event key from a file only on a phone; here it is told where (HM_DASH_KEY_FILE).
+printf '%s' "${HM_CONTRACT_KEY:-contract-event-key}" > "$work/event-key"
+export HM_DASH_KEY_FILE="$work/event-key"
+
 cd "$src"
 # The plugin finds the chats and the bots under /root/.hermes unless told (the phone's Debian home).
 # File checkpoints (snapshots before write_file / patch, for the plugin's /checkpoints) are on, as the app uses them.

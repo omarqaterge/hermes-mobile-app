@@ -1383,18 +1383,32 @@ public class MainActivity extends Activity {
 
     String token(boolean refresh) {
         if (refresh || cachedToken.isEmpty()) {
-            String html = httpGet(BASE_URL + "/");
-            Matcher m = html == null ? null : TOKEN.matcher(html);
-            cachedToken = (m != null && m.find()) ? m.group(1) : "";
+            cachedToken = dashboardToken(this);
             if (!cachedToken.isEmpty()) setTermuxOk(this); // the dashboard answers: Termux runs Hermes
         }
         return cachedToken;
     }
 
     /** The dashboard serves its page with a session token: the page can connect now. */
-    static boolean dashboardAnswers() {
-        String html = httpGet(BASE_URL + "/");
-        return html != null && TOKEN.matcher(html).find();
+    static boolean dashboardAnswers(Context c) {
+        return !dashboardToken(c).isEmpty();
+    }
+
+    /**
+     * The session token from the dashboard's page, "" without one. The plugin only leaves it in for a caller sending
+     * the event key, so no other app on the phone can read it (spec 2.3). A page saying it was withheld means Hermes
+     * runs but Termux's copy of the key is missing or old (a reinstall): Termux counts as working, and it gets the key.
+     */
+    static String dashboardToken(Context c) {
+        String html = httpGet(BASE_URL + "/", c.getSharedPreferences("hermes", MODE_PRIVATE).getString("event_key", ""));
+        if (html == null) return "";
+        Matcher m = TOKEN.matcher(html);
+        if (m.find()) return m.group(1);
+        if (html.contains("__HERMUX_TOKEN_WITHHELD__")) {
+            setTermuxOk(c);
+            HermesService.keyRefused();
+        }
+        return "";
     }
 
     /** HermesService saw the dashboard answer: the page reconnects now. Any thread. */
@@ -2037,11 +2051,12 @@ public class MainActivity extends Activity {
         super.onActivityResult(req, result, data);
     }
 
-    static String httpGet(String url) {
+    static String httpGet(String url, String eventKey) {
         try {
             HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
             c.setConnectTimeout(2500);
             c.setReadTimeout(4000);
+            if (eventKey != null && !eventKey.isEmpty()) c.setRequestProperty("X-Hermes-Mobile-Key", eventKey);
             try (InputStream in = c.getInputStream()) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 byte[] buf = new byte[16384];
@@ -2631,10 +2646,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getToken(String key) {
             if (!ok(key)) return "";
-            String html = httpGet(BASE_URL + "/");
-            if (html == null) return "";
-            Matcher m = TOKEN.matcher(html);
-            return m.find() ? m.group(1) : "";
+            return dashboardToken(MainActivity.this);
         }
 
 

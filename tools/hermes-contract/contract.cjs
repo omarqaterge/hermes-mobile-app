@@ -11,6 +11,8 @@ const REAL = process.argv[3] || 'http://127.0.0.1:9229'
 
 // The Android shell reads the session token from the dashboard page with this pattern (MainActivity.TOKEN).
 const TOKEN = /__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/
+// The plugin's token guard (plugin_api.py) leaves the token in only for a caller with the event key; run.sh sets it.
+const KEY = process.env.HM_CONTRACT_KEY || ''
 
 // Keys the mock sends that the real Hermes may leave out, with why. Paths as printed by the check.
 const ALLOW_MISSING = {}
@@ -23,7 +25,7 @@ const kind = v => (v === null || v === undefined ? 'null' : Array.isArray(v) ? '
 
 // One connection to a Hermes (or the mock): the page with the token, REST with the token header, /api/ws JSON-RPC.
 async function connect(base) {
-  const page = await fetch(base + '/').then(r => r.text())
+  const page = await fetch(base + '/', { headers: { 'X-Hermes-Mobile-Key': KEY } }).then(r => r.text())
   const m = TOKEN.exec(page)
   if (!m) throw new Error(`${base}/ has no session token the Android shell can read`)
   const token = m[1]
@@ -531,6 +533,16 @@ async function main() {
   }
   const mock = await connect(MOCK)
   const real = await connect(REAL)
+  // Any other app on a phone: no key, or a wrong one, must not get the token from any page.
+  for (const [path, headers] of [['/', {}], ['/chat', {}], ['/', { 'X-Hermes-Mobile-Key': 'wrong' }]]) {
+    const r = await fetch(REAL + path, { headers })
+    const page = await r.text()
+    if (TOKEN.test(page) || !page.includes('__HERMUX_TOKEN_WITHHELD__')) {
+      throw new Error(`${path} gave a caller without the key its session token (or no withheld mark): HTTP ${r.status}`)
+    }
+    if (Number(r.headers.get('content-length')) !== Buffer.byteLength(page)) throw new Error(`${path}: wrong Content-Length after the guard`)
+  }
+  console.log('token guard: pages withhold the session token without the key')
   mock.stored = 's-0'
   real.stored = 'contract-chat'
   mock.turns = {}
