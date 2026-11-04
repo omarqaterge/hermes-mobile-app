@@ -276,6 +276,8 @@ The app installs on Android 8.0 and newer (arm64). Some parts need a newer Andro
 | 11+ | The diagnostic log also says why Android ended the app (memory, a crash, battery limits); on older Android it has everything else |
 | 12+ | Allowing a command or answering Hermux from a notification on the lock screen asks for your unlock right there (on 8-11 the tap opens the app, which asks for the unlock) |
 | 13+ | The app asks for the notification permission (older Android allows notifications from the start) |
+| 10+ | The agent reading your location while the app isn't on screen can get an old position or none |
+| 13+ | Letting the agent read your photo details asks for a different permission (older Android: storage); on 14+, if you only share selected photos, the agent sees just what Android allows |
 | 14+ | Hermux using your apps in the background, without taking your screen |
 | 16 | The status chip as an Android Live Update (on older Android it is a normal pinned notification) |
 
