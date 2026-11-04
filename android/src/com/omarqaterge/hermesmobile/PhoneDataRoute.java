@@ -7,9 +7,6 @@ import com.omarqaterge.hermesmobile.phonedata.Result;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.text.DateFormat;
-import java.util.Date;
-import java.util.Iterator;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -27,6 +24,9 @@ final class PhoneDataRoute {
 
     /** The largest request body (the args are tiny). */
     static final int MAX_BODY = 4096;
+    /** One socket read waits at most this long, and the whole request (headers and body) must be in within the deadline. */
+    static final int READ_TIMEOUT_MS = 1500;
+    static final long READ_DEADLINE_MS = 4000;
 
     /** Two reads at a time, four waiting; more is answered {@code failed} at once. Threads end when idle. */
     static final ThreadPoolExecutor POOL = new ThreadPoolExecutor(2, 2, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<>(4), r -> {
@@ -95,9 +95,8 @@ final class PhoneDataRoute {
             } catch (JSONException e) {
                 return done(c, kind, "bad_request");
             }
-            // off: the master, the kind's switch or its Android permission is missing (the contract also names
-            // no_permission; PhoneData.allowed is one yes/no, so both answer off until it can tell them apart).
-            if (!PhoneData.allowed(c, kind)) return done(c, kind, "off");
+            String gate = gate(c, kind);
+            if (gate != null) return done(c, kind, gate);
             if (MainActivity.keyguardLocked(c)) return done(c, kind, "locked");
             // The pass first, so a grant is not used up needlessly; otherwise the one-use grant for exactly this read.
             boolean pass = PhoneDataGrants.hasFullAccess(session);
@@ -117,6 +116,16 @@ final class PhoneDataRoute {
         }
     }
 
+    /** The contract's off / no_permission, or null when the kind may be read. {@code no_permission} is answered when the
+     *  master and the kind's switches are on but Android no longer lets the app read: {@code PhoneData.allowed} then
+     *  switches the kind off (it sweeps), so the next read answers {@code off}. */
+    static String gate(Context c, String kind) {
+        boolean switches = PhoneData.switchOn(c, "master") && PhoneData.switchOn(c, kind);
+        boolean allowed = PhoneData.allowed(c, kind); // sweeps a kind whose permission is gone
+        if (allowed) return null;
+        return PhoneDataGrants.gateReason(switches, PhoneData.permitted(c, kind));
+    }
+
     private static String done(Context c, String kind, String reason) {
         log(c, kind, reason);
         return fail(reason);
@@ -129,103 +138,5 @@ final class PhoneDataRoute {
         } catch (Throwable ignored) {
             // logging never matters here
         }
-    }
-
-    // ── wording: what the user is asked to allow, written from the decoded args, never from plugin text ──
-
-    private static final int MAX_TEXT = 64;
-
-    /** The plain sentence for a phone-data approval text, or null when it doesn't parse or its args are not exactly the
-     *  contract's (then the app offers Deny only). The decoded text is data: it is shown as text, never as markup. */
-    static String wording(String description) {
-        PhoneDataGrants.Parsed p = PhoneDataGrants.parse(description);
-        if (p == null) return null;
-        try {
-            JSONObject a = new JSONObject(p.args);
-            String[] allowed = allowedKeys(p.kind);
-            for (Iterator<String> it = a.keys(); it.hasNext(); ) {
-                String key = it.next();
-                boolean ok = false;
-                for (String x : allowed) ok |= x.equals(key);
-                if (!ok) return null;
-            }
-            int limit = 20;
-            if (a.has("limit")) {
-                Object l = a.get("limit");
-                if (!(l instanceof Integer) || (Integer) l < 1 || (Integer) l > 50) return null;
-                limit = (Integer) l;
-            }
-            String query = text(a, "query");
-            String sender = text(a, "sender");
-            if ((a.has("query") && query == null) || (a.has("sender") && sender == null)) return null;
-            Long from = ms(a, "from_ms"), to = ms(a, "to_ms");
-            if ((a.has("from_ms") && from == null) || (a.has("to_ms") && to == null)) return null;
-            String box = "all";
-            if (a.has("box")) {
-                Object b = a.get("box");
-                if (!(b instanceof String) || !("inbox".equals(b) || "sent".equals(b) || "all".equals(b))) return null;
-                box = (String) b;
-            }
-            switch (p.kind) {
-                case "contacts":
-                    return "Read up to " + limit + (limit == 1 ? " contact" : " contacts")
-                            + (query != null && !query.isEmpty() ? " matching “" + query + "”" : "") + " from your address book";
-                case "calendar":
-                    return "Read up to " + limit + (limit == 1 ? " calendar event" : " calendar events") + range(from, to, "in the next 7 days");
-                case "calls":
-                    return "Read up to " + limit + (limit == 1 ? " call log entry" : " call log entries") + range(from, to, "from the last 7 days");
-                case "sms":
-                    return "Read up to " + limit + (limit == 1 ? " text message" : " text messages")
-                            + ("inbox".equals(box) ? " you received" : "sent".equals(box) ? " you sent" : "")
-                            + (sender != null && !sender.isEmpty() ? " from or to “" + sender + "”" : "");
-                case "location":
-                    return "Read your approximate location";
-                case "photos":
-                    return "Read the date, size and dimensions of your latest " + limit + (limit == 1 ? " photo" : " photos") + " (no pictures)";
-                default:
-                    return null;
-            }
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static String[] allowedKeys(String kind) {
-        switch (kind) {
-            case "contacts": return new String[]{"limit", "query"};
-            case "calendar":
-            case "calls": return new String[]{"limit", "from_ms", "to_ms"};
-            case "sms": return new String[]{"limit", "box", "sender"};
-            case "photos": return new String[]{"limit"};
-            default: return new String[0];
-        }
-    }
-
-    /** A string arg of at most 64 characters with control characters turned into spaces; null if absent or not that. */
-    private static String text(JSONObject a, String key) {
-        if (!a.has(key)) return null;
-        Object v = a.opt(key);
-        if (!(v instanceof String) || ((String) v).length() > MAX_TEXT) return null;
-        return ((String) v).replaceAll("[\\p{Cntrl}\\p{Cf}\\u2028\\u2029]", " ").trim();
-    }
-
-    private static Long ms(JSONObject a, String key) {
-        if (!a.has(key)) return null;
-        Object v = a.opt(key);
-        if (v instanceof Integer) return ((Integer) v).longValue();
-        if (v instanceof Long) return (Long) v;
-        return null;
-    }
-
-    private static String range(Long from, Long to, String dflt) {
-        if (from == null && to == null) return " " + dflt;
-        DateFormat f = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT);
-        return " between " + (from == null ? "now" : f.format(new Date(from))) + " and " + (to == null ? "the end of the default range" : f.format(new Date(to)));
-    }
-
-    /** The text of a phone-data approval notification: the wording, or a warning when the request can't be read. */
-    static String notificationText(String description) {
-        String w = wording(description);
-        return w != null ? w + "?" : "Hermux got a phone data request it can't read. Deny it.";
     }
 }

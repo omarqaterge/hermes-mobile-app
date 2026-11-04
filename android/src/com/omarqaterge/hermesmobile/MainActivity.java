@@ -140,6 +140,7 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
                 bootLog("page-started");
                 newBridgeKey();
+                PhoneDataGrants.fullAccess("", false); // no Full access pass outlives the page that set it; resume re-applies them
             }
 
             @Override
@@ -2421,7 +2422,7 @@ public class MainActivity extends Activity {
             return ok(key) && PhoneDataGrants.issue(description);
         }
 
-        /** The user moved this chat (its stored id) in or out of Full access: PhoneDataGrants.fullAccess. */
+        /** The user moved this chat (its live session id, the page's runtimeId) in or out of Full access: PhoneDataGrants.fullAccess. */
         @JavascriptInterface
         public void phoneDataFullAccess(String key, String session, boolean on) {
             if (!ok(key)) return;

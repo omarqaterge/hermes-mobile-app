@@ -55,7 +55,7 @@ REASONS = {
                       "Hermux → Settings → Phone data."),
     "locked": "The phone is locked. Try again after the user unlocks it.",
     "no_grant": ("No approval from the user. In Auto access phone data can't be read, because it can't ask: use Off, "
-                 "which asks each time, or Full access. Scheduled jobs can't read it either."),
+                 "which asks each time, or Full access (if the chat is already in Full access, ask the user to switch it off and on again). Scheduled jobs can't read it either."),
     "bad_request": "The app refused the request as malformed. Check the arguments.",
     "failed": FAILED,
     "not_ready": UNAVAILABLE,

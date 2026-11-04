@@ -187,7 +187,7 @@ module.exports = async t => {
     const send = id => pg.evaluate(([id, d]) => {
       window.__pdId = id
       const s = window.__socks.filter(x => x.readyState === 1).pop()
-      s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', id, method: 'approval', params: { session_id: 'rt-new', tool_name: 'phone_data', description: d } }) }))
+      s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', id, method: 'approval', params: { session_id: 'rt-new', tool_name: 'phone_data', description: d, command: '<phone_data> (plugin approval rule)' } }) }))
     }, [id, desc])
     const out = id => pg.evaluate(id => window.__out.filter(m => m.id === id && 'result' in m), id)
     const grants = () => pg.evaluate(() => window.__pd.filter(x => 'grant' in x))

@@ -6,6 +6,7 @@
 // compared with what Hermes is saying, and only words that aren't Hermes's own echo cut it off.
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { answerRequest, errText, sendPrompt } from './gateway'
+import { phoneDataTextOf } from './phone-data-request'
 import { leaveLockView } from './lockview'
 import { getState, toast } from './store'
 import { canListenOver, liveBridge, onTtsDone, setLiveMuted, setLivePhase, speak, speakable, startListening, startListeningOver, stopListening, stopSpeaking, voiceErrorText, voiceInputAvailable } from './voice'
@@ -256,8 +257,16 @@ export function approvalPrompt(_choices: string[]): string {
   return 'Hermux needs your permission. Allow or deny?'
 }
 
+/** Said instead of the usual question for a phone-data request: audio could be answering it, so it is never allowed by voice. */
+export const PHONE_DATA_VOICE = 'Hermux wants to read your phone. Tap Allow or Deny on the screen.'
+
 function onApproval(req: ServerRequest) {
   if (phase === 'off') return
+  if (phoneDataTextOf(req.params as Record<string, unknown>) !== null) {
+    approval = null // never answered by voice; the sheet stays
+    askAloud(PHONE_DATA_VOICE)
+    return
+  }
   approval = { req, tries: 0 }
   askAloud(approvalPrompt(approvalChoices(req)))
 }
@@ -276,6 +285,11 @@ function answerByVoice(said: string) {
   if (!a) return
   if (!stillOpen(a.req)) {
     approval = null // answered on the screen meanwhile
+    return
+  }
+  if (phoneDataTextOf(a.req.params as Record<string, unknown>) !== null) {
+    approval = null // a phone-data request is never allowed (or denied) by voice: it needs a tap in the app
+    toast('Reading the phone needs a tap in the app', 'warn')
     return
   }
   const choice = voiceChoice(said, approvalChoices(a.req))

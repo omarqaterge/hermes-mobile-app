@@ -176,6 +176,12 @@ final class PhoneDataGrants {
         }
     }
 
+    /** Why a kind can't be read, once {@code PhoneData.allowed} said no: {@code no_permission} when the master and the kind's
+     *  switches were on but Android no longer lets the app read, otherwise {@code off}. */
+    static String gateReason(boolean switchesWereOn, boolean permitted) {
+        return switchesWereOn && !permitted ? "no_permission" : "off";
+    }
+
     /** For tests only: forget everything. */
     static void reset() {
         synchronized (GRANTS) {

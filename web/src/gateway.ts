@@ -918,7 +918,7 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean, s
   const got: Access = !on ? 'off' : mode === 'auto' ? 'auto' : 'full'
   if (got === 'full' && was !== 'full') beforeFull.set(a.storedId, was)
   else if (got !== 'full') beforeFull.delete(a.storedId)
-  setPhoneDataFullAccess(a.storedId, got === 'full') // the phone-data pass follows Full access exactly: Off and Auto never read without asking
+  setPhoneDataFullAccess(a.runtimeId, mode === 'full' && on) // the phone-data pass: only what the user asked for (Full), confirmed by Hermes; keyed by the live session id the plugin reads from Hermes
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on }, autoAccess: got === 'auto' } : {}))
   if (remember) rememberYolo(a.storedId, got) // the default from Settings isn't the chat's own choice: it follows the default
   return got
@@ -1308,20 +1308,22 @@ onChatOpen('approval-lock', ({ chat }) => {
   chatOfRuntime.set(chat.runtimeId, chat.storedId)
 })
 function chatClosed(runtimeId: string): void {
+  setPhoneDataFullAccess(runtimeId, false) // the live session is gone: the Full access pass for phone data goes with it
   const storedId = chatOfRuntime.get(runtimeId)
   if (storedId === undefined) return
   chatOfRuntime.delete(runtimeId)
   forgetApprovalConfirm(storedId)
-  setPhoneDataFullAccess(storedId, false) // the live session is gone: the Full access pass for phone data goes with it
 }
-// A page that (re)loads doesn't know which chats were in Full access: start with none. Each chat's access is re-applied
-// by setAccess when it opens, and the pass comes back only through that.
+// A page that (re)loads doesn't know which chats were in Full access: start with none (the shell also clears every pass
+// when a page starts). Each chat's access is re-applied by setAccess when it opens, and the pass comes back only
+// through that. The pass is keyed by the live session id (runtimeId), which the plugin reads from Hermes and which a
+// context compression does not change.
 setPhoneDataFullAccess('', false)
-// A chat opening (new or resumed) starts without the pass: Hermes forgets /yolo on a resume. It comes back from
-// setAccessNow when the remembered Full access is re-applied, or here when Hermes still has the chat in Full access.
+// A chat opening (new or resumed) starts without the pass: Hermes forgets /yolo on a resume. A chat the user left in
+// Full access that Hermes still has in yolo gets setAccess run again, which is the only thing that gives the pass.
 onChatOpen('phone-data-pass', ({ chat }) => {
-  setPhoneDataFullAccess(chat.storedId, false)
-  if (chat.info.yolo && rememberedAccess(chat.storedId) === 'full' && !lockView()) setPhoneDataFullAccess(chat.storedId, true)
+  setPhoneDataFullAccess(chat.runtimeId, false)
+  if (chat.info.yolo && rememberedAccess(chat.storedId) === 'full' && !lockView()) void setAccess(chat, 'full', false).catch(() => {})
 })
 /** The stored chat id an approval came from (Hermes names the live session). */
 function approvalChat(req: ServerRequest): string {

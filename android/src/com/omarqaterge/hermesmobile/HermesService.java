@@ -625,6 +625,10 @@ public class HermesService extends Service {
         boolean setupReq = line != null && line.startsWith("POST /setup ");
         // POST /phonedata = the agent's phone-data read (PhoneDataRoute): the /event key, always a JSON answer.
         boolean phoneReq = line != null && line.startsWith("POST /phonedata ");
+        // A /phonedata request must arrive within PhoneDataRoute.READ_DEADLINE_MS in total (each read waits at most
+        // PhoneDataRoute.READ_TIMEOUT_MS), so a client that trickles bytes can't hold the thread that takes /event.
+        final long phoneDeadline = System.nanoTime() + PhoneDataRoute.READ_DEADLINE_MS * 1_000_000L;
+        if (phoneReq) s.setSoTimeout(PhoneDataRoute.READ_TIMEOUT_MS);
         // GET /plugin-bundle/<token> = phone/plugin-update.sh fetching this APK's plugin (PluginSync, one-time token).
         String bundleToken = line != null && line.startsWith("GET /plugin-bundle/") && line.endsWith(" HTTP/1.1")
                 ? line.substring(19, line.length() - 9) : null;
@@ -633,6 +637,7 @@ public class HermesService extends Service {
         int headers = 0;
         while ((line = in.readLine()) != null && !line.isEmpty()) {
             if (++headers > 40 || line.length() > 2048) throw new java.io.IOException("bad request");
+            if (phoneReq && System.nanoTime() > phoneDeadline) throw new java.io.IOException("slow request");
             String l = line.toLowerCase();
             if (l.startsWith("content-length:")) len = Integer.parseInt(line.substring(15).trim());
             if (l.startsWith("x-hermes-mobile-key:")) gotKey = line.substring(20).trim();
@@ -648,6 +653,7 @@ public class HermesService extends Service {
         int bytes = 0;
         char[] buf = new char[4096];
         while (bytes < len) {
+            if (phoneReq && System.nanoTime() > phoneDeadline) throw new java.io.IOException("slow request");
             int r = in.read(buf, 0, Math.min(buf.length, len - bytes));
             if (r < 0) break;
             body.append(buf, 0, r);
@@ -690,6 +696,9 @@ public class HermesService extends Service {
     /** Writes a /phonedata answer (JSON, nothing else) and closes the socket, on whichever thread this runs. Always
      *  true: the socket is closed here, so the accept loop must not touch it again. */
     boolean phoneDataReply(Socket s, String status, String json) {
+        // A client that stops reading must not hold this thread: a socket has no write timeout, so close it after 5 s.
+        final Runnable killer = () -> { try { s.close(); } catch (Exception ignored) { } };
+        main.postDelayed(killer, 5000);
         try (Socket sock = s) {
             byte[] b = json.getBytes(StandardCharsets.UTF_8);
             OutputStream o = sock.getOutputStream();
@@ -698,6 +707,8 @@ public class HermesService extends Service {
             o.flush();
         } catch (Exception ignored) {
             // the plugin went away: nothing to tell it
+        } finally {
+            main.removeCallbacks(killer);
         }
         return true;
     }
@@ -1428,27 +1439,20 @@ public class HermesService extends Service {
      *  Allow once and Deny. Any other approval comes back unchanged. {@code phone_data} marks such an event;
      *  {@code phone_data_unreadable} means the text didn't parse, so there is no Allow at all. */
     static JSONObject phoneDataEvent(JSONObject e) {
-        String raw = null;
-        for (String f : new String[]{"what", "body", "command"}) {
-            String v = e.optString(f, "");
-            int nl = v.indexOf('\n');
-            if (nl >= 0) v = v.substring(0, nl);
-            if (PhoneDataGrants.isPhoneData(v)) {
-                raw = v;
-                break;
-            }
-        }
+        // Only the plugin's own request counts: the description names the read AND Hermes's label for the tool is the
+        // command. A shell command that mentions phone_data: anywhere else is an ordinary approval, shown as it is.
+        String raw = PhoneDataWording.rawOf(e.optString("what", ""), e.optString("command", ""));
         if (raw == null) return e;
         try {
             JSONObject c = new JSONObject(e.toString());
-            String text = PhoneDataRoute.notificationText(raw);
+            String text = PhoneDataWording.notificationText(raw);
             c.put("what", text).put("body", text).put("command", "").put("allow_session", false).put("allow_permanent", false)
-                    .put("phone_data", true).put("phone_data_unreadable", PhoneDataRoute.wording(raw) == null);
+                    .put("phone_data", true).put("phone_data_unreadable", PhoneDataWording.wording(raw) == null);
             return c;
         } catch (Exception ex) {
             JSONObject safe = new JSONObject();
             try {
-                String text = "Hermux got a phone data request it can't read. Deny it.";
+                String text = PhoneDataWording.WARNING;
                 safe.put("session", e.optString("session", "")).put("key", e.optString("key", "")).put("request_id", e.optString("request_id", ""))
                         .put("profile", e.optString("profile", "")).put("timeout", e.optLong("timeout", 60)).put("what", text).put("body", text)
                         .put("allow_session", false).put("phone_data", true).put("phone_data_unreadable", true);

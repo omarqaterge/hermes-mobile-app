@@ -74,9 +74,7 @@ Checks, in order: key, `not_ready`, `bad_request`, `off`, `no_permission`, `lock
 (`no_grant`). Failures while reading answer `failed`, with no details. A plugin tool that gets no answer, a 404 or an older
 app says the feature isn't available.
 
-`session` is the tool handler's `session_id` kwarg. It is the same chat id as the page's `storedId` and the approval hook's
-`session_id`, which `ApprovalLock` already relies on. Stream F must confirm this on the pinned Hermes; if they differ, reads
-in Full access fail closed.
+`session` is the gateway's live session id: `HERMES_UI_SESSION_ID`, which Hermes sets per turn to the gateway `sid` (`prompt_turn.py`), the page's `runtimeId`. The plugin reads it from the context variable and falls back to the tool handler's `session_id` (which a context compression rotates, so it never matches the page's id: Full access then fails closed to `no_grant`). Changed from the tool handler's `session_id` after a security review: compression rotated that id.
 
 ### Bridge methods (key first, in `web/src/secure-bridge.ts`)
 
@@ -86,7 +84,7 @@ in Full access fail closed.
 | `phoneDataSet(id, kind, on)` | `kind` is a kind or `master`. Turning on runs `ApprovalLock.askAlways`, then the Android permission dialog. Answers `window.hermesPhoneData(id, result)`, where `result` is `ok`, `cancel`, `nolock`, `denied` or `blocked` (Android won't ask again). Turning off is immediate |
 | `phoneDataOpenSettings()` | Opens Android's settings page for this app |
 | `phoneDataGrant(description)` | The user tapped Allow on this approval text: `PhoneDataGrants.issue` |
-| `phoneDataFullAccess(session, on)` | The user moved this chat (its stored id) in or out of Full access: `PhoneDataGrants.fullAccess` |
+| `phoneDataFullAccess(session, on)` | The user moved this chat (its live session id, `runtimeId`) in or out of Full access: `PhoneDataGrants.fullAccess` |
 
 ### Who owns what
 

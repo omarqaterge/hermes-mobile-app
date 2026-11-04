@@ -4,7 +4,7 @@ import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-con
 import { answerRequest, rejectRequest } from '../gateway'
 import { haptic } from '../bridge'
 import { Linked } from './Linked'
-import { phoneDataTextOf, phoneDataView } from '../phone-data-request'
+import { phoneDataTextOf, phoneDataView, splitUntrusted } from '../phone-data-request'
 import { tidyApprovalText } from '../text'
 import { useBackHandler } from '../backstack'
 import { ADVANCE_MS, nextStep } from '../clarify'
@@ -25,7 +25,18 @@ function PhoneDataApproval({ req, text }: { req: ServerRequest; text: string }) 
     <>
       <div className="sheet-title">{v.ok ? '⚠ Let Hermux read your phone?' : '⚠ Unreadable phone data request'}</div>
       <div className="sheet-scroll">
-        <div className="sheet-desc">{v.text}</div>
+        <div className="sheet-desc">
+          {splitUntrusted(v.text).map((p, i) =>
+            p.untrusted ? (
+              // text that came from the request: its own element, plain text, visibly different from the app's words
+              <code key={i} className="pd-untrusted" style={{ fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4, background: 'color-mix(in srgb, currentColor 14%, transparent)', border: '1px solid color-mix(in srgb, currentColor 30%, transparent)' }}>
+                {p.text}
+              </code>
+            ) : (
+              <span key={i}>{p.text}</span>
+            )
+          )}
+        </div>
         {v.ok ? <div className="sheet-desc">Only this once. What it reads goes into the chat and to your model provider.</div> : null}
       </div>
       <div className="sheet-actions col">

@@ -233,7 +233,7 @@ want = {
     "off": "Contacts access is off. Ask the user to enable it in Hermux → Settings → Phone data.",
     "no_permission": "turn the switch off and on",
     "locked": "unlocks it",
-    "no_grant": "No approval from the user. In Auto access phone data can't be read, because it can't ask: use Off, which asks each time, or Full access. Scheduled jobs can't read it either.",
+    "no_grant": "No approval from the user. In Auto access phone data can't be read, because it can't ask: use Off, which asks each time, or Full access (if the chat is already in Full access, ask the user to switch it off and on again). Scheduled jobs can't read it either.",
     "bad_request": "malformed",
     "failed": "failed",
     "not_ready": "isn't available",

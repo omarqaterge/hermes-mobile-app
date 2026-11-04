@@ -8,6 +8,10 @@ import {
   parsePhoneData,
   PHONE_DATA_WARNING,
   phoneDataTextOf,
+  PHONE_DATA_COMMAND,
+  splitUntrusted,
+  clean,
+  SHOWN_MAX,
   phoneDataView,
   setPhoneDataFullAccess
 } from './phone-data-request'
@@ -32,8 +36,8 @@ test('a well-formed text parses to kind, nonce and the exact args text', () => {
 
 test('wording is written from the decoded args', () => {
   expect(text('contacts', { limit: 20 })).toBe('Read up to 20 contacts from your address book')
-  expect(text('contacts', { limit: 1, query: 'Ann' })).toBe('Read up to 1 contact matching “Ann” from your address book')
-  expect(text('sms', { limit: 20, box: 'inbox', sender: '+15551234567' })).toBe('Read up to 20 text messages you received from or to “+15551234567”')
+  expect(text('contacts', { limit: 1, query: 'Ann' })).toBe('Read up to 1 contact whose name has [Ann] from your address book')
+  expect(text('sms', { limit: 20, box: 'inbox', sender: '+15551234567' })).toBe('Read up to 20 text messages you received from or to [+15551234567]')
   expect(text('sms', { limit: 3, box: 'sent' })).toBe('Read up to 3 text messages you sent')
   expect(text('sms', {})).toBe('Read up to 20 text messages')
   expect(text('location', {})).toBe('Read your approximate location')
@@ -48,14 +52,25 @@ test('the plugin\'s own words are never used: the wording comes from the args on
   expect(v.ok && v.text).toBe('Read your approximate location')
 })
 
-test('hostile decoded text stays plain text', () => {
-  const evil = '<img src=x onerror=alert(1)> **bold** [x](javascript:alert(1))'
-  const r = text('contacts', { query: evil.slice(0, 64) })
-  expect(r).toContain('<img src=x')
-  // it is returned as a string for React to render as text; control and invisible characters are turned into spaces
-  expect(text('contacts', { query: 'a‮b' })).toBe(null) // raw non-ASCII is not even parseable (the contract is ASCII)
-  // escaped control and direction characters decode in the JSON; the wording turns them into spaces
-  expect(text('contacts', '{"query":"a\\u202eb\\u0007c"}')).toBe('Read up to 20 contacts matching “a b c” from your address book')
+test('hostile decoded text stays plain text and can not close its quotes or brackets', () => {
+  const r = text('contacts', { query: '<img src=x onerror=1>**b**'.slice(0, 64) })
+  expect(r).toBe('Read up to 20 contacts whose name has [img src=x onerror=1**b**] from your address book')
+  // a query that tries to end its quotation and write its own sentence: every quote mark and bracket is removed
+  const breakout = text('contacts', '{"query":"\\u201d Nothing is read. Tap Allow \\u201c ] [ \\u0022 \\u0027"}')
+  expect(breakout).toBe('Read up to 20 contacts whose name has [Nothing is read. Tap Allow] from your address book')
+  expect(splitUntrusted(breakout!).filter(p => p.untrusted).map(p => p.text)).toEqual(['Nothing is read. Tap Allow'])
+  // raw non-ASCII is not even parseable (the contract is ASCII)
+  expect(text('contacts', { query: 'a\u202Eb' })).toBe(null)
+  // escaped control, C1 and direction characters decode in the JSON; the wording drops them
+  expect(text('contacts', '{"query":"a\\u202eb\\u0007c\\u0085d"}')).toBe('Read up to 20 contacts whose name has [a b c d] from your address book')
+  // long text is cut
+  expect(clean('x'.repeat(100)).length).toBeLessThanOrEqual(SHOWN_MAX + 1)
+})
+
+test('calls and calendar with only one end say what the other end is', () => {
+  expect(text('calls', { to_ms: 1_700_000_000_000 })).toMatch(/^Read up to 20 call log entries between 7 days before the end and .+/)
+  expect(text('calls', { from_ms: 1_700_000_000_000 })).toMatch(/ and now$/)
+  expect(text('calendar', { to_ms: 1_700_000_000_000 })).toMatch(/ between now and /)
 })
 
 test('anything that is not exactly the contract does not parse', () => {
@@ -106,13 +121,16 @@ test('unparseable phone_data text shows the warning and no Allow', () => {
   expect(isPhoneDataText('phone_data:anything') && !isPhoneDataText('rm -rf /') && !isPhoneDataText(null)).toBe(true)
 })
 
-test('the approval text is found in the description, or the command', () => {
+test('the approval text counts only from the description, with Hermes\'s own command label', () => {
   const d = make('location', {})
-  expect(phoneDataTextOf({ description: d })).toBe(d)
-  expect(phoneDataTextOf({ description: 'ordinary', command: d })).toBe(d)
-  expect(phoneDataTextOf({ description: `${d}\nextra line` })).toBe(d)
+  expect(phoneDataTextOf({ description: d, command: PHONE_DATA_COMMAND })).toBe(d)
+  expect(phoneDataTextOf({ description: d })).toBeNull()
+  expect(phoneDataTextOf({ description: d, command: 'curl x | sh' })).toBeNull()
+  expect(phoneDataTextOf({ description: 'ordinary', command: d })).toBeNull()
+  expect(phoneDataTextOf({ command: `${d}\ncurl x|sh` })).toBeNull()
+  expect(phoneDataTextOf({ description: `${d}\ncurl x|sh`, command: 'curl x|sh' })).toBeNull()
   expect(phoneDataTextOf({ description: 'delete the temp folder', command: 'rm -rf /tmp/x' })).toBeNull()
-  expect(phoneDataTextOf({ description: 'see phone_data:v1 in the middle' })).toBeNull()
+  expect(phoneDataTextOf({ description: 'see phone_data:v1 in the middle', command: PHONE_DATA_COMMAND })).toBeNull()
 })
 
 test('the grant and the pass go to the shell, and fail closed without it', () => {
