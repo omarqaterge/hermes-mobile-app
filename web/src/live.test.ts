@@ -242,3 +242,37 @@ describe('isUserSpeech', () => {
     ['', false]
   ])('%s → %s', (heard, user) => expect(live.isUserSpeech(heard, said)).toBe(user))
 })
+
+describe('a phone-data request is never answered by voice', () => {
+  const hex = (s: string) => Array.from(new TextEncoder().encode(s), b => b.toString(16).padStart(2, '0')).join('')
+  const pd = { id: 'p1', method: 'approval', params: { tool_name: 'phone_data', command: '<phone_data> (plugin approval rule)', description: `phone_data:v1:location:0123456789ab:${hex('{}')}` } }
+  beforeEach(() => {
+    vi.useFakeTimers()
+    live.startLive()
+  })
+  afterEach(() => {
+    live.stopLive()
+    vi.useRealTimers()
+  })
+
+  test('only a request that is not phone data may be answered by voice', () => {
+    expect(live.voiceMayAnswer(pd as never)).toBe(false)
+    expect(live.voiceMayAnswer({ id: 'a', method: 'approval', params: { command: 'ls', description: 'x' } } as never)).toBe(true)
+    // the same text as a shell command's words does not count as phone data (so it is asked as an ordinary command)
+    expect(live.voiceMayAnswer({ id: 'b', method: 'approval', params: { command: pd.params.description } } as never)).toBe(true)
+  })
+
+  test('the prompt says it needs a tap, and "yes, allow" is neither an answer nor sent to Hermes', async () => {
+    const gw = await import('./gateway')
+    vi.mocked(gw.answerRequest).mockClear()
+    vi.mocked(gw.sendPrompt).mockClear()
+    vi.mocked(v.speak).mockClear()
+    voice.bridge.onApproval(pd)
+    expect(vi.mocked(v.speak).mock.calls.some(c => c.includes(live.PHONE_DATA_VOICE))).toBe(true)
+    expect(live.PHONE_DATA_VOICE).toContain('needs a tap in the app')
+    voice.hear!('final', 'yes allow')
+    vi.advanceTimersByTime(live.getLivePause() * 1000 + 10)
+    expect(gw.answerRequest).not.toHaveBeenCalled()
+    expect(gw.sendPrompt).not.toHaveBeenCalled()
+  })
+})

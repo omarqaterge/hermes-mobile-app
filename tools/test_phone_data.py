@@ -179,6 +179,19 @@ pd.tool_handler({"kind": "photos"}, session_id="durable")
 check("os.environ is never used", reads()[-1]["session"] == "durable")
 del sys.modules["gateway.session_context"], sys.modules["gateway"]
 
+print("nonce can't look like a Telegram token")
+import re
+TELEGRAM = re.compile(r"(?<!\d)(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})")  # agent/redact.py _TELEGRAM_RE at the pinned Hermes
+ns = [pd.new_nonce() for _ in range(3000)]
+check("every nonce is 12 lowercase hex ending in a letter a-f", all(len(n) == 12 and all(c in "0123456789abcdef" for c in n) and n[-1] in "abcdef" for n in ns))
+check("nonces are random (not all alike)", len(set(ns)) > 2900)
+worst = ["000000000000"[:-1] + "a", "123456789012"[:-1] + "f", "99999999999a"]
+long_args = '{"limit":50,"query":"' + "q" * 40 + '"}'
+check("worst-case nonces with long args never match the redaction rule",
+      all(not TELEGRAM.search(pd.description("contacts", n, long_args)) for n in worst + ns))
+check("the old digits-only nonce did match (the rule is real)", TELEGRAM.search(pd.description("contacts", "123456789012", long_args)) is not None)
+check("args hex has no colon, so no other digit run can precede one", ":" not in long_args.encode().hex())
+
 print("phone number and empty args")
 reset()
 pd.tool_handler({"kind": "sms", "sender": "+15550123", "box": "inbox"}, session_id="c")

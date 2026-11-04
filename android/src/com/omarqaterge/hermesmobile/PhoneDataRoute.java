@@ -95,9 +95,10 @@ final class PhoneDataRoute {
             } catch (JSONException e) {
                 return done(c, kind, "bad_request");
             }
-            String gate = gate(c, kind);
-            if (gate != null) return done(c, kind, gate);
-            if (MainActivity.keyguardLocked(c)) return done(c, kind, "locked");
+            boolean switches = PhoneData.switchOn(c, "master") && PhoneData.switchOn(c, kind);
+            boolean allowed = PhoneData.allowed(c, kind); // sweeps a kind whose permission is gone (so no_permission is answered once)
+            String why = PhoneDataGrants.refusal(true, true, switches, allowed, PhoneData.permitted(c, kind), MainActivity.keyguardLocked(c));
+            if (why != null) return done(c, kind, why);
             // The pass first, so a grant is not used up needlessly; otherwise the one-use grant for exactly this read.
             boolean pass = PhoneDataGrants.hasFullAccess(session);
             if (!pass && !PhoneDataGrants.consume(nonce, kind, args)) return done(c, kind, "no_grant");
@@ -114,16 +115,6 @@ final class PhoneDataRoute {
         } catch (Throwable t) {
             return done(c, kind, "failed");
         }
-    }
-
-    /** The contract's off / no_permission, or null when the kind may be read. {@code no_permission} is answered when the
-     *  master and the kind's switches are on but Android no longer lets the app read: {@code PhoneData.allowed} then
-     *  switches the kind off (it sweeps), so the next read answers {@code off}. */
-    static String gate(Context c, String kind) {
-        boolean switches = PhoneData.switchOn(c, "master") && PhoneData.switchOn(c, kind);
-        boolean allowed = PhoneData.allowed(c, kind); // sweeps a kind whose permission is gone
-        if (allowed) return null;
-        return PhoneDataGrants.gateReason(switches, PhoneData.permitted(c, kind));
     }
 
     private static String done(Context c, String kind, String reason) {

@@ -59,7 +59,7 @@ request_tool_approval("phone_data", "phone_data:v1:<kind>:<nonce>:<hex of the ar
 The args are hex because Hermes masks phone numbers and key-like text in approval descriptions, and a changed text would no
 longer match the read. The page sees this text as `req.params.description`, and the service as the `approval` event's
 `what`. `body` is cut to 500 characters, so don't use it. The app parses the text and writes its own wording, and offers
-only Allow once and Deny. Anything that doesn't parse gets no grant.
+only Allow once and Deny. Anything that doesn't parse gets no grant. The nonce's last character is always a letter a-f: Hermes redacts `<8+ digits>:<30+ word characters>` as a bot token, and a nonce ending in digits next to the args hex matched about 2.3% of the time (the app and the plugin still accept any 12 lowercase hex).
 
 ### `POST /phonedata` on `127.0.0.1:9121`
 

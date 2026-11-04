@@ -111,6 +111,13 @@ public class PhoneDataGrantsTest {
         // what a refused read says (the route's off / no_permission)
         check("no_permission".equals(PhoneDataGrants.gateReason(true, false)), "switches on, Android permission gone: no_permission");
         check("off".equals(PhoneDataGrants.gateReason(false, false)) && "off".equals(PhoneDataGrants.gateReason(false, true)) && "off".equals(PhoneDataGrants.gateReason(true, true)), "a switch off: off (and off again once the sweep cleared the switch)");
+        // the contract's order: not_ready, bad_request, off / no_permission, locked, then (checked after) the pass or the grant
+        check("not_ready".equals(PhoneDataGrants.refusal(false, false, false, false, false, true)), "order: not_ready beats everything");
+        check("bad_request".equals(PhoneDataGrants.refusal(true, false, false, false, false, true)), "order: bad_request beats off, no_permission and locked");
+        check("off".equals(PhoneDataGrants.refusal(true, true, false, false, true, true)), "order: off beats locked");
+        check("no_permission".equals(PhoneDataGrants.refusal(true, true, true, false, false, true)), "order: no_permission beats locked");
+        check("locked".equals(PhoneDataGrants.refusal(true, true, true, true, true, true)), "order: locked comes after the switches");
+        check(PhoneDataGrants.refusal(true, true, true, true, true, false) == null, "order: nothing refused before the grant check");
 
         System.out.println(fails == 0 ? "ALL PASSED" : fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);

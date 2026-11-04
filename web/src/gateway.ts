@@ -951,6 +951,12 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   const name = body.split(/\s+/)[0]
   const arg = body.slice(name.length).trim()
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
+  // Only a command the user typed directly (depth 0) can change access. Anything reached through an alias (depth > 0)
+  // is refused, however the target is spelled (spaces, extra slashes, upper case).
+  if (depth > 0 && name.replace(/^[\s/]+/, '').toLowerCase().startsWith('yolo')) {
+    pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
+    return
+  }
   if (name.toLowerCase() === 'yolo') {
     const w = arg.toLowerCase()
     const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
@@ -989,11 +995,6 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   }
 
   const type = String(r?.type || 'exec')
-  if (type === 'alias' && r?.target && /^yolo(\s|$)/i.test(bare(r.target).trim())) {
-    // A server-side alias must never change access: only a /yolo the user typed (or the Auto button) does.
-    pushItem({ kind: 'notice', id: newId('n'), text: `/${name}: a command alias can’t change access. Type /yolo yourself.`, level: 'error' })
-    return
-  }
   if (type === 'alias' && r?.target && depth < 3) {
     await runSlash(a, `/${bare(r.target)}${arg ? ` ${arg}` : ''}`, depth + 1)
     return

@@ -209,6 +209,14 @@ def canonical(args: Dict[str, Any]) -> str:
     return json.dumps(args, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
+def new_nonce() -> str:
+    """12 lowercase hex characters whose LAST one is a letter a-f. Hermes redacts ``<8 or more digits>:<30 or more of
+    [-A-Za-z0-9_]>`` as a Telegram token (agent/redact.py, ``_TELEGRAM_RE``); a nonce ending in 8+ digits, followed by
+    the args hex, matched about 2.3% of the time and the app saw masked text. The only colon between the nonce and the
+    args hex is the one after the nonce, so a letter right before it rules the pattern out; the args hex has no colon."""
+    return secrets.token_hex(6)[:-1] + secrets.choice("abcdef")
+
+
 def description(kind: str, nonce: str, args_text: str) -> str:
     """The approval text the app parses (hex, because Hermes masks numbers and key-like text in descriptions)."""
     return f"phone_data:v1:{kind}:{nonce}:{args_text.encode('utf-8').hex()}"
@@ -277,7 +285,7 @@ def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", 
         if not st["kinds"].get(kind):
             _ev(kind, "off")
             return f"{LABELS[kind]} access is off. Ask the user to enable it in Hermux → Settings → Phone data."
-        nonce = secrets.token_hex(6)
+        nonce = new_nonce()
         denied = _approve(kind, nonce, args_text)
         if denied is not None:
             _ev(kind, "denied")

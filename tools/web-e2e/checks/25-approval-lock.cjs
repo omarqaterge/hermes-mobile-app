@@ -1,6 +1,6 @@
 // Confirm approvals with fingerprint: the first Allow in a chat session asks the shell for the biometric or screen
 // lock (faked here: window.__al is the shell's answer), later approvals in that chat don't; Deny never asks.
-const { WEB, calls, check, sleep, nativeShell, mock, png } = require('../lib.cjs')
+const { WEB, calls, rpcs, check, sleep, nativeShell, mock, png } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -15,6 +15,7 @@ module.exports = async t => {
         window.__socks = []
         window.__pd = []
         if (pd.full) localStorage.setItem('hm.defaultAccess.v1', 'full')
+        if (pd.auto) localStorage.setItem('hm.defaultAccess.v1', 'auto')
         const Orig = window.WebSocket
         window.WebSocket = class extends Orig {
           constructor(...a) {
@@ -261,6 +262,34 @@ module.exports = async t => {
     await sleep(1000)
     const f = await full()
     check(chat && f.some(x => x.full === chat && x.on === false && f.indexOf(x) > f.findIndex(y => y.full === chat && y.on === true)), `phone data: closing the chat takes the pass away (${JSON.stringify(f)})`)
+    await pg.close()
+  }
+
+  {
+    // An alias (a server quick command) can never change access, however its target is spelled: only a /yolo typed directly does.
+    const pg = await open({ on: false, secure: true, result: 'ok' }, {})
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    const yoloSets = () => rpcs('config.set').filter(c => c.params.key === 'yolo').length
+    const before = yoloSets()
+    for (let i = 0; i < 6; i++) {
+      await pg.getByPlaceholder('Message Hermux').fill(`/evilalias${i}`)
+      await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+      await sleep(500)
+    }
+    const f = await pg.evaluate(() => window.__pd.filter(x => 'full' in x && x.on === true))
+    check(yoloSets() === before && f.length === 0 && (await pg.evaluate(() => localStorage.getItem('hm.yolo.v1') === null || !/true/.test(localStorage.getItem('hm.yolo.v1')))), `alias: six spellings of an alias to /yolo on change no access and give no pass (${yoloSets() - before} yolo sets, ${JSON.stringify(f)})`)
+    check((await pg.getByText('A command alias can’t change access').count()) >= 1, 'alias: the refusal is shown')
+    await pg.close()
+  }
+  {
+    // Auto access never gives the phone-data pass (Hermes shows no prompt there, so reads need Off or Full access).
+    const pg = await open({ on: false, secure: true, result: 'ok' }, { auto: true })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await pg.getByPlaceholder('Message Hermux').fill('hello')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await sleep(1200)
+    const full = await pg.evaluate(() => window.__pd.filter(x => 'full' in x))
+    check(full.length >= 1 && full.every(x => x.on === false), `phone data: Auto access gives no pass (${JSON.stringify(full)})`)
     await pg.close()
   }
 }

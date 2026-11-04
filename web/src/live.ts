@@ -229,7 +229,7 @@ function onReply(text: string) {
 // ── approvals by voice ──
 // Hermes asks to run something: read it out, listen, and map what you say to an answer. The sheet stays on
 // screen, so a tap works too; two answers that aren't clear leave it to the sheet.
-let approval: { req: ServerRequest; tries: number } | null = null
+let approval: { req: ServerRequest; tries: number; tapOnly?: boolean } | null = null
 
 /** "allow" / "yes" → once, "… this chat/session" → session, "deny" / "no" / "don't" → deny, else null. */
 export function voiceChoice(said: string, choices: string[]): string | null {
@@ -258,12 +258,18 @@ export function approvalPrompt(_choices: string[]): string {
 }
 
 /** Said instead of the usual question for a phone-data request: audio could be answering it, so it is never allowed by voice. */
-export const PHONE_DATA_VOICE = 'Hermux wants to read your phone. Tap Allow or Deny on the screen.'
+export const PHONE_DATA_VOICE = 'Hermux wants to read your phone. This needs a tap in the app. Tap Allow or Deny on the screen.'
+
+/** May this request be answered by voice? Never a phone-data request: audio could be answering it. */
+export function voiceMayAnswer(req: ServerRequest): boolean {
+  return phoneDataTextOf(req.params as Record<string, unknown>) === null
+}
 
 function onApproval(req: ServerRequest) {
   if (phase === 'off') return
-  if (phoneDataTextOf(req.params as Record<string, unknown>) !== null) {
-    approval = null // never answered by voice; the sheet stays
+  if (!voiceMayAnswer(req)) {
+    // Said once, then anything heard is NOT an answer (it is kept apart from the prompts below): the sheet stays.
+    approval = { req, tries: 0, tapOnly: true }
     askAloud(PHONE_DATA_VOICE)
     return
   }
@@ -287,10 +293,12 @@ function answerByVoice(said: string) {
     approval = null // answered on the screen meanwhile
     return
   }
-  if (phoneDataTextOf(a.req.params as Record<string, unknown>) !== null) {
-    approval = null // a phone-data request is never allowed (or denied) by voice: it needs a tap in the app
+  if (a.tapOnly || !voiceMayAnswer(a.req)) {
+    // Whatever was said, a phone-data request is not answered by voice (allow or deny): say it once more, then leave it.
+    if (++a.tries < 2) return askAloud(PHONE_DATA_VOICE)
+    approval = null
     toast('Reading the phone needs a tap in the app', 'warn')
-    return
+    return listen()
   }
   const choice = voiceChoice(said, approvalChoices(a.req))
   if (choice) {

@@ -2064,6 +2064,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (current == this) current = null;
         ApprovalLock.activityGone(this);
+        PhoneDataGrants.fullAccess("", false); // the page that set a Full access pass is gone with the activity
         phoneDataGen++;
         phoneDataBusy = false; // a change waiting on Android's permission dialog is dropped: nothing is stored
         phoneDataKind = null;

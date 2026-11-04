@@ -598,17 +598,26 @@ public class HermesService extends Service {
     }
 
     // ── loopback event listener ─────────────────────────────
+    /** The longest one connection may hold the listener thread, whatever it sends (see serve). */
+    static final long REQUEST_DEADLINE_MS = 10_000;
     void serve() {
         try {
             server = new ServerSocket(PORT, 16, InetAddress.getByName("127.0.0.1"));
             while (running) {
                 Socket s = server.accept();
                 boolean handedOff = false;
+                // Each read waits at most 3 s, but a client that trickles a byte at a time (even a first line with no
+                // newline) would keep this one thread for ever: the whole request, read and answered, gets 10 s, then
+                // the socket is closed under it. Ordinary requests take milliseconds, so they are not affected.
+                final Socket sock = s;
+                final Runnable watchdog = () -> { try { sock.close(); } catch (Exception ignored) { } };
+                main.postDelayed(watchdog, REQUEST_DEADLINE_MS);
                 try {
                     s.setSoTimeout(3000);
                     handedOff = handle(s);
                 } catch (Exception ignored) {
                 } finally {
+                    main.removeCallbacks(watchdog);
                     if (!handedOff) try { s.close(); } catch (Exception ignored) { }
                 }
             }

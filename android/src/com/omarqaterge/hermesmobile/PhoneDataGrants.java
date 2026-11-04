@@ -182,6 +182,17 @@ final class PhoneDataGrants {
         return switchesWereOn && !permitted ? "no_permission" : "off";
     }
 
+    /** The contract's order of refusals for a read, as pure logic: {@code not_ready}, {@code bad_request}, then {@code off}
+     *  or {@code no_permission} (see {@link #gateReason}), then {@code locked}; null when none applies (the pass or the
+     *  grant is checked after, because that one has a side effect). Key and body size are checked before, in HermesService. */
+    static String refusal(boolean ready, boolean wellFormed, boolean switchesWereOn, boolean allowed, boolean permitted, boolean locked) {
+        if (!ready) return "not_ready";
+        if (!wellFormed) return "bad_request";
+        if (!allowed) return gateReason(switchesWereOn, permitted);
+        if (locked) return "locked";
+        return null;
+    }
+
     /** For tests only: forget everything. */
     static void reset() {
         synchronized (GRANTS) {

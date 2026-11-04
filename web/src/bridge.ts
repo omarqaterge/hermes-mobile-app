@@ -69,7 +69,7 @@ interface AndroidBridge {
   phoneDataSet?(id: number, kind: string, on: boolean): void // kind is a kind or "master"; on asks for the screen lock, then Android's permission; answers window.hermesPhoneData(id, result)
   phoneDataOpenSettings?(): void // Android's settings page for this app
   phoneDataGrant?(description: string): boolean // the user tapped Allow on this phone-data approval text
-  phoneDataFullAccess?(session: string, on: boolean): void // the chat (its stored id) moved in or out of Full access
+  phoneDataFullAccess?(session: string, on: boolean): void // the chat (its live session id, runtimeId) moved in or out of Full access
 }
 
 declare global {
