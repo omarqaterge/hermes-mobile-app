@@ -17,6 +17,15 @@
     <!-- Settings → Uninstall Hermux: Android's uninstall prompt for the helper apps and this app (normal permission). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Phone data for the agent (Settings → Phone data for the agent): read-only, each asked for only when its switch is turned on,
+         never at start-up or by Setup. No write, send or fine-location permission, and not READ_MEDIA_VISUAL_USER_SELECTED. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Battery: a partial wake lock only while Hermes works, and an alarm that wakes the phone for a due cron job. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Setup check: the "let it run in the background" prompt (ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS). -->

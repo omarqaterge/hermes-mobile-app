@@ -9,7 +9,7 @@ import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
-import { appVersion, haptic, openExternal, openRemoteDebugging, turnOffRemoteDebugging } from '../bridge'
+import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataOpenSettings, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
@@ -19,7 +19,7 @@ import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../live'
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
-import { Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
+import { Collapse, Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
 import { searchSettings, type SettingsEntry } from '../settings-search'
 import { findSettingsTarget, flashElement } from '../flash'
@@ -918,6 +918,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
         <ApprovalLockRow />
       </Section>
       <OpenUISection />
+      <PhoneDataSection />
       <BgAppsSection />
       <Section title="Connection">
         <Row icon="📶" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
@@ -983,6 +984,73 @@ function OpenUISection() {
   return (
     <Section title="Replies">
       <ToggleRow icon="🧩" tone="green" title="Dynamic UI" sub="Tables, charts and forms you can tap. Applies to new chats" on={on} onChange={set} />
+    </Section>
+  )
+}
+
+/** Phone data for the agent (docs/decisions/phone-data-read-only.md): one master switch and one per kind. Turning one on is
+ *  decided in the shell (screen lock, then Android's permission); this only asks and shows the answer. Hidden outside the
+ *  app, in an older shell, and until the feature is switched on in the build. */
+const PHONE_KINDS: { kind: string; icon: string; tone: 'blue' | 'green' | 'gold' | 'teal' | 'purple' | 'gray'; title: string; sub: string }[] = [
+  { kind: 'contacts', icon: '👥', tone: 'blue', title: 'Contacts', sub: 'Names, phone numbers and email addresses' },
+  { kind: 'calendar', icon: '📅', tone: 'green', title: 'Calendar', sub: 'Event titles, times, places and short notes' },
+  { kind: 'calls', icon: '📞', tone: 'teal', title: 'Call log', sub: 'Who called, when, for how long, and whether you answered' },
+  { kind: 'sms', icon: '💬', tone: 'purple', title: 'Messages (SMS)', sub: 'Text messages: who, when and what they say' },
+  { kind: 'location', icon: '📍', tone: 'gold', title: 'Location (approximate)', sub: 'Roughly where the phone is (a city block or so)' },
+  { kind: 'photos', icon: '🖼️', tone: 'gray', title: 'Latest photos', sub: 'Date, size and dimensions only. Never the pictures' }
+]
+function PhoneDataSection() {
+  const [st, setSt] = useState<PhoneDataState | null>(phoneDataState)
+  const [busy, setBusy] = useState(false)
+  const [blocked, setBlocked] = useState<string | null>(null)
+  useEffect(() => {
+    const again = () => {
+      if (document.visibilityState === 'visible') setSt(phoneDataState())
+    }
+    again()
+    document.addEventListener('visibilitychange', again)
+    return () => document.removeEventListener('visibilitychange', again)
+  }, [])
+  if (!st || !st.ready) return null
+  const set = async (kind: string, on: boolean) => {
+    if (busy) return
+    setBusy(true)
+    const r = await phoneDataSet(kind, on)
+    setBusy(false)
+    setSt(phoneDataState())
+    if (r === 'ok') setBlocked(null)
+    else if (r === 'cancel') toast('Not changed: confirm it’s you to change this')
+    else if (r === 'nolock') toast('Set a screen lock first')
+    else if (r === 'denied') toast('Android refused the permission')
+    else if (r === 'blocked') setBlocked(kind)
+  }
+  const master = st.switches.master === true
+  return (
+    <Section
+      title="Phone data for the agent"
+      footer="Results go to your chosen model provider. Hermux only reads: it can’t change or send anything. Each read asks you first, except in Full access, where reads happen without asking. Messages and events can contain text from strangers. Applies to new chats."
+    >
+      <ToggleRow icon="🔒" tone="purple" title="Let the agent read phone data" sub="Off: the agent can’t see any of it" on={master} onChange={v => void set('master', v)} />
+      <Collapse open={master}>
+        {PHONE_KINDS.map(k => {
+          const stored = st.switches[k.kind] === true
+          const held = st.perms[k.kind] === true
+          return (
+            <ToggleRow
+              key={k.kind}
+              icon={k.icon}
+              tone={k.tone}
+              title={k.title}
+              sub={st.removed[k.kind] === true ? 'Android removed this permission' : k.sub}
+              on={stored && held}
+              onChange={v => void set(k.kind, v)}
+            />
+          )
+        })}
+        {blocked && (
+          <Row icon="⚙️" tone="gray" title="Allow it in Android settings" sub="Android won’t show the question. Open app info and allow it under Permissions. For Call log and Messages, if the phone offers “Allow restricted settings” there, allow that first" chevron onClick={() => phoneDataOpenSettings()} />
+        )}
+      </Collapse>
     </Section>
   )
 }

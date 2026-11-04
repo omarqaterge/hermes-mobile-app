@@ -272,8 +272,90 @@ public class MainActivity extends Activity {
             voice.onPermission(results);
             return;
         }
+        if (code == REQ_PHONE_DATA) {
+            phoneDataPermissionResult(results);
+            return;
+        }
         startHermes();
         setupChanged();
+    }
+
+    // ---- Settings → Phone data for the agent: turning a switch on (the bridge's phoneDataSet) ----
+    /** Request code of the one Android permission a phone-data switch asks for; answered before startHermes() in onRequestPermissionsResult. */
+    static final int REQ_PHONE_DATA = 46;
+    /** One phone-data change in flight at a time (main thread): its page id and the kind waiting for Android's permission dialog. */
+    private boolean phoneDataBusy;
+    private int phoneDataId;
+    private String phoneDataKind;
+    /** Bumped by every off (and by onDestroy): a turn-on that started earlier then stores nothing and answers cancel, so an off always wins. */
+    private int phoneDataGen;
+    /** The {@link #phoneDataGen} the in-flight turn-on started under, and whether its permission was asked before (for "won't ask again"). */
+    private int phoneDataMyGen;
+    private boolean phoneDataAskedBefore;
+
+    private void phoneDataReply(int id, String result) {
+        phoneDataBusy = false;
+        phoneDataKind = null;
+        if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'" + result + "')", null);
+    }
+
+    /** Turning on: the screen lock first (always, here in the shell), then the kind's Android permission unless held. */
+    private void phoneDataTurnOn(int id, String kind) {
+        if (phoneDataBusy) {
+            if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
+            return;
+        }
+        if (!ApprovalLock.secure(this)) {
+            if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'nolock')", null);
+            return;
+        }
+        if (!foreground || isFinishing()) { // a prompt needs the app on screen
+            if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
+            return;
+        }
+        phoneDataBusy = true;
+        phoneDataId = id;
+        final int g = phoneDataGen;
+        phoneDataMyGen = g;
+        // the wording is built here from the kind, never from the page
+        String what = "master".equals(kind) ? "Let the agent read phone data" : "Let the agent read phone data: " + kind;
+        ApprovalLock.askAlways(this, what, r -> {
+            if (g != phoneDataGen) {
+                phoneDataReply(id, "cancel"); // switched off meanwhile: the off wins
+            } else if (!"ok".equals(r)) {
+                phoneDataReply(id, "nolock".equals(r) ? "nolock" : "cancel");
+            } else if ("master".equals(kind)) {
+                PhoneData.setSwitch(this, kind, true);
+                phoneDataReply(id, "ok");
+            } else if (PhoneData.permitted(this, kind)) {
+                PhoneData.setSwitch(this, kind, true);
+                phoneDataReply(id, "ok");
+            } else if (isFinishing() || isDestroyed()) {
+                phoneDataReply(id, "cancel");
+            } else {
+                phoneDataKind = kind;
+                phoneDataAskedBefore = PhoneData.asked(this, kind);
+                requestPermissions(new String[]{PhoneData.permission(kind)}, REQ_PHONE_DATA);
+            }
+        });
+    }
+
+    /** Android's answer for the phone-data permission: store the switch only if the permission is now really held. */
+    private void phoneDataPermissionResult(int[] results) {
+        String kind = phoneDataKind;
+        if (kind == null || !phoneDataBusy) return;
+        if (phoneDataMyGen != phoneDataGen || results == null || results.length == 0) {
+            phoneDataReply(phoneDataId, "cancel"); // switched off meanwhile, or the dialog was dismissed
+        } else if (PhoneData.permitted(this, kind)) {
+            PhoneData.markAsked(this, kind);
+            PhoneData.setSwitch(this, kind, true);
+            phoneDataReply(phoneDataId, "ok");
+        } else {
+            PhoneData.markAsked(this, kind);
+            // blocked only when refused with no rationale AND the dialog had been shown before; otherwise a plain denial
+            boolean never = !shouldShowRequestPermissionRationale(PhoneData.permission(kind)) && phoneDataAskedBefore;
+            phoneDataReply(phoneDataId, never ? "blocked" : "denied");
+        }
     }
 
     /** Ask Termux to run ~/bin/hermes-services (sshd + dashboard + memory sync; idempotent). Automatic starts (launch,
@@ -1981,6 +2063,9 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (current == this) current = null;
         ApprovalLock.activityGone(this);
+        phoneDataGen++;
+        phoneDataBusy = false; // a change waiting on Android's permission dialog is dropped: nothing is stored
+        phoneDataKind = null;
         voice.destroy();
         stt.destroy();
         super.onDestroy();
@@ -2286,6 +2371,61 @@ public class MainActivity extends Activity {
                 if (!foreground || isFinishing()) done.accept("cancel"); // a prompt needs the app on screen
                 else ApprovalLock.askAlways(MainActivity.this, what == null ? "" : what, done);
             });
+        }
+
+        /** Settings → Phone data for the agent: JSON of booleans (PhoneData.stateJson). */
+        @JavascriptInterface
+        public String phoneDataState(String key) {
+            if (!ok(key)) return "";
+            return PhoneData.stateJson(MainActivity.this);
+        }
+
+        /** Turns a phone-data switch ("master" or a kind) on or off, then calls window.hermesPhoneData(id, "ok" | "cancel" | "nolock" |
+         *  "denied" | "blocked"). Off is immediate and never touches permissions. On always asks for the screen lock here in the shell
+         *  (no page path skips it), then for the kind's Android permission. */
+        @JavascriptInterface
+        public void phoneDataSet(String key, int id, String kind, boolean on) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                if (kind == null || !PhoneData.isSwitch(kind)) {
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
+                } else if (!on) {
+                    phoneDataGen++; // an on still in flight now stores nothing
+                    PhoneData.setSwitch(MainActivity.this, kind, false);
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'ok')", null);
+                } else if (!PhoneData.READY) {
+                    // the feature is not switched on in this build: no prompt, nothing stored
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
+                } else {
+                    phoneDataTurnOn(id, kind);
+                }
+            });
+        }
+
+        /** Opens Android's settings page for this app (for a permission Android won't ask for again). */
+        @JavascriptInterface
+        public void phoneDataOpenSettings(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+                } catch (Exception ignored) {
+                    // no settings app to open
+                }
+            });
+        }
+
+        /** The user tapped Allow on a phone-data approval text: PhoneDataGrants.issue. */
+        @JavascriptInterface
+        public boolean phoneDataGrant(String key, String description) {
+            return ok(key) && PhoneDataGrants.issue(description);
+        }
+
+        /** The user moved this chat (its stored id) in or out of Full access: PhoneDataGrants.fullAccess. */
+        @JavascriptInterface
+        public void phoneDataFullAccess(String key, String session, boolean on) {
+            if (!ok(key)) return;
+            PhoneDataGrants.fullAccess(session, on);
         }
 
         /** {"on":bool,"secure":bool}: Settings → Permissions → "Confirm approvals with fingerprint". */

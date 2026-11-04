@@ -82,6 +82,11 @@ final class ApprovalLock {
 
     /** The same prompt for a setting that must ask on every change: ignores the approvals setting and confirmed chats. */
     static void askAlways(Activity a, String what, Consumer<String> done) {
+        if (pending != null && pendingActivity != a) finish("cancel"); // its activity is gone: that prompt never answers
+        if (pending != null) {
+            done.accept("cancel"); // answers are never shared: a confirmation covers only the wording it was shown with
+            return;
+        }
         prompt(a, "", "Confirm it is you", what, "Hermux asks every time this setting changes.", done);
     }
 

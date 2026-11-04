@@ -65,6 +65,11 @@ interface AndroidBridge {
   approvalLockState?(): string // {on, secure}: Confirm approvals with fingerprint
   setApprovalLock?(on: boolean): void
   forgetApproval?(session: string): void // the chat's live session closed: its next Allow asks again
+  phoneDataState?(): string // JSON {ready, master, kinds, switches, perms, secure}: booleans only (Settings → Phone data for the agent)
+  phoneDataSet?(id: number, kind: string, on: boolean): void // kind is a kind or "master"; on asks for the screen lock, then Android's permission; answers window.hermesPhoneData(id, result)
+  phoneDataOpenSettings?(): void // Android's settings page for this app
+  phoneDataGrant?(description: string): boolean // the user tapped Allow on this phone-data approval text
+  phoneDataFullAccess?(session: string, on: boolean): void // the chat (its stored id) moved in or out of Full access
 }
 
 declare global {
@@ -441,6 +446,72 @@ export function openRemoteDebugging(): void {
 export function turnOffRemoteDebugging(): void {
   try {
     window.HermesAndroid?.turnOffRemoteDebugging?.()
+  } catch {
+    /* outside the app */
+  }
+}
+
+// ── Settings → Phone data for the agent ──
+export interface PhoneDataState {
+  ready: boolean
+  master: boolean
+  kinds: Record<string, boolean>
+  /** The stored switches, even for a kind whose Android permission is gone. */
+  switches: Record<string, boolean>
+  /** Kind → Android took its permission away while the switch was on (the switch was cleared; turning it on asks for the screen lock again). */
+  removed: Record<string, boolean>
+  /** Kind → the Android permission is held. */
+  perms: Record<string, boolean>
+  /** The phone has a screen lock (needed to turn anything on). */
+  secure: boolean
+}
+export type PhoneDataResult = 'ok' | 'cancel' | 'nolock' | 'denied' | 'blocked'
+
+declare global {
+  interface Window {
+    hermesPhoneData?: (id: number, result: string) => void
+  }
+}
+const phoneWaiting = new Map<number, (r: PhoneDataResult) => void>()
+let phoneSeq = 0
+window.hermesPhoneData = (id, result) => {
+  const done = phoneWaiting.get(id)
+  phoneWaiting.delete(id)
+  done?.((['ok', 'cancel', 'nolock', 'denied', 'blocked'].includes(result) ? result : 'cancel') as PhoneDataResult)
+}
+
+/** The phone-data switches as the shell sees them; null outside the app or in a shell that doesn't have them. */
+export function phoneDataState(): PhoneDataState | null {
+  try {
+    const raw = window.HermesAndroid?.phoneDataState?.()
+    if (!raw) return null
+    const s = JSON.parse(raw)
+    if (!s || typeof s !== 'object' || typeof s.ready !== 'boolean') return null
+    return { ready: s.ready, master: s.master === true, kinds: s.kinds || {}, switches: s.switches || {}, removed: s.removed || {}, perms: s.perms || {}, secure: s.secure !== false }
+  } catch {
+    return null
+  }
+}
+
+/** Turn a switch ("master" or a kind) on or off. On is decided in the shell (screen lock, then Android's permission); this only asks. */
+export function phoneDataSet(kind: string, on: boolean): Promise<PhoneDataResult> {
+  const b = window.HermesAndroid
+  if (!b?.phoneDataSet) return Promise.resolve('cancel')
+  return new Promise(resolve => {
+    const id = ++phoneSeq
+    phoneWaiting.set(id, resolve)
+    try {
+      b.phoneDataSet!(id, kind, on)
+    } catch {
+      phoneWaiting.delete(id)
+      resolve('cancel')
+    }
+  })
+}
+
+export function phoneDataOpenSettings(): void {
+  try {
+    window.HermesAndroid?.phoneDataOpenSettings?.()
   } catch {
     /* outside the app */
   }

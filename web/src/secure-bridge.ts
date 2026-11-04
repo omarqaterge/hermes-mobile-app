@@ -19,7 +19,8 @@ const METHODS = [
   'uninstallStart', 'uninstallState', 'uninstallApp',
   'diagLog', 'diagEnabled', 'diagEvent', 'diagClear', 'setDiagEnabled', // the diagnostic log on the phone; every event part is checked again in DiagLog.java
   'pluginState', 'pluginUpdate', // the plugin update runs only the APK's own copy; nothing from the page reaches the script
-  'confirmApproval', 'confirmIdentity', 'approvalLockState', 'setApprovalLock', 'forgetApproval' // the shell asks for the screen lock itself; nothing here can skip it
+  'confirmApproval', 'confirmIdentity', 'approvalLockState', 'setApprovalLock', 'forgetApproval', // the shell asks for the screen lock itself; nothing here can skip it
+  'phoneDataState', 'phoneDataSet', 'phoneDataOpenSettings', 'phoneDataGrant', 'phoneDataFullAccess' // phone data for the agent: turning a switch on asks for the screen lock inside the shell
 ]
 
 const w = window as unknown as { HermesAndroid?: unknown }
