@@ -37,6 +37,9 @@ const libraryItems = [] // the Library (plugin library.py), newest first
 libraryItems.push({ id: 'lib-old', title: 'Old notes', type: 'markdown', lang: '', category: 'Unsorted', saved: Math.floor(Date.now() / 1000) - 86400, chars: 16, content: 'Kept from before', source: null })
 // Gate for s-slowstart's document list (see the canvas route): held until released.
 const canvasGate = { open: false, held: [] }
+// Gate for s-slowstart's resume: while a test holds it ({holdSlowResume: true} to /__mock), the answer waits for
+// {releaseSlowResume: true}, so a check of the "still loading" state doesn't race the usual 2.5 s.
+const slowResumeGate = { hold: false, held: [] }
 // The chat whose start-up resume is slow already has a canvas (opening it while the chat loads must show it).
 canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Life\n\nGlider' }]
 // A chat with a canvas and things that scroll sideways (code, table, card): the swipe-left-to-canvas checks.
@@ -174,6 +177,11 @@ const server = http.createServer((req, res) => {
       }
       if (b.configured) providerConfigured = true
       if (b.pluginEnabled !== undefined) pluginEnabled = b.pluginEnabled
+      if (b.holdSlowResume) slowResumeGate.hold = true
+      if (b.releaseSlowResume) {
+        slowResumeGate.hold = false
+        for (const go of slowResumeGate.held.splice(0)) go()
+      }
       if (b.releaseCanvas) {
         canvasGate.open = true
         for (const go of canvasGate.held.splice(0)) go()
@@ -808,7 +816,7 @@ wss.on('connection', ws => {
         }
         if (sid === 's-slowstart') {
           // Slow start-up resume: the user starts a new chat while this is loading.
-          return later(2500, () => reply({ session_id: 'rt-slowstart', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
+          return (slowResumeGate.hold ? fn => slowResumeGate.held.push(fn) : fn => later(2500, fn))(() => reply({ session_id: 'rt-slowstart', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [{ role: 'user', text: 'old question', row_id: 1 }, { role: 'assistant', text: 'old answer' }] }))
         }
         if (sid === 's-scrub') {
           // 30 questions with tall answers: the chat scrubber (rail with one tick per question) shows.
