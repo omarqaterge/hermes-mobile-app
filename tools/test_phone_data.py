@@ -180,6 +180,33 @@ pd.tool_handler({"kind": "photos"}, session_id="durable")
 check("os.environ is never used", reads()[-1]["session"] == "durable")
 del sys.modules["gateway.session_context"], sys.modules["gateway"]
 
+print("the read lists the chat and its ancestors")
+pd.tool_handler({"kind": "photos"}, session_id="solo-1")
+check("a plain chat sends its stored id", reads()[-1]["chats"] == ["solo-1"], reads()[-1])
+check("the session key is unchanged next to it", reads()[-1]["session"] == "solo-1")
+pd.tool_handler({"kind": "photos"}, task_id="task-7")
+check("the task id is the fallback chat id", reads()[-1]["chats"] == ["task-7"])
+pd.tool_handler({"kind": "photos"})
+check("no id at all: no chats key", "chats" not in reads()[-1])
+_pt = sys.modules["hm_phone_taint"]   # the module the plugin shares; links are in memory (nothing is marked, nothing written)
+_pt.link_subagent("parent-a", "child-a")
+_pt.link_subagent("child-a", "grand-a")
+pd.tool_handler({"kind": "photos"}, session_id="grand-a")
+check("a subagent sends itself, then its parents up the chain",
+      reads()[-1]["chats"] == ["grand-a", "child-a", "parent-a"], reads()[-1]["chats"])
+for k in range(1, 13):
+    _pt.link_subagent(f"anc-{k + 1}", f"anc-{k}")
+pd.tool_handler({"kind": "photos"}, session_id="anc-1")
+got = reads()[-1]["chats"]
+check("at most 8 ids, the chat first", len(got) == 8 and got[0] == "anc-1", got)
+_pt.link_subagent("p" * 129, "child-long")
+pd.tool_handler({"kind": "photos"}, session_id="child-long")
+check("an id over 128 characters is dropped", reads()[-1]["chats"] == ["child-long"])
+check("ids are strings with no empties or repeats",
+      pd._chats("x", "") == ["x"] and pd._chats("", "") == [] and pd._chats("  ", "") == []
+      and all(isinstance(i, str) and i for i in got) and len(set(got)) == len(got))
+check("the body stays under the app's 4 KiB limit", len(json.dumps(reads()[-1])) < 4096)
+
 print("nonce can't look like a Telegram token")
 import re
 TELEGRAM = re.compile(r"(?<!\d)(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})")  # agent/redact.py _TELEGRAM_RE at the pinned Hermes

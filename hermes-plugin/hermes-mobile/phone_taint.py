@@ -87,6 +87,11 @@ def _with_parents(ids: List[str]) -> List[str]:
     return out
 
 
+def ancestors(ids: Any) -> List[str]:
+    """The ids given and the ids of the chats that spawned them (this process's subagent links), the given ones first."""
+    return _with_parents(_norm(ids))
+
+
 def _read_file() -> Dict[str, float]:
     try:
         d = json.loads(PATH.read_text())
@@ -193,7 +198,8 @@ def link_subagent(parent_id: Any, child_id: Any) -> None:
 _NET_WORDS = frozenset((
     "curl wget nc ncat netcat socat ssh scp sftp rsync ftp lftp tftp telnet nmap nslookup dig host ping traceroute "
     "sendmail mail mutt msmtp ssmtp swaks mosquitto_pub aria2c lynx w3m links httpie http https xh rclone "
-    "termux-sms-send termux-share termux-open termux-open-url termux-telephony-call xdg-open").split())
+    "termux-sms-send termux-share termux-open termux-open-url termux-telephony-call xdg-open "
+    "yt-dlp youtube-dl you-get gallery-dl gdown aria2 axel mosh autossh sshpass adb").split())
 _SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish".split())
 _INTERP = re.compile(r"^(?:python[0-9.]*|pypy3?|node(?:js)?|deno|bun|perl|ruby|php|lua|luajit|tclsh|osascript|Rscript)$")
 _ONELINER = re.compile(r"^(?:-[a-zA-Z]*[ceEr]|-p[ne]?|--eval|--exec|--print)$")   # -c -e -E -r -pe -ne --eval ...
@@ -203,7 +209,6 @@ _GIT_SENDS = frozenset(("push", "clone", "fetch", "pull", "ls-remote", "send-ema
 _GIT_OPT_ARG = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env"))
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PLACEHOLDER = "\x00"   # stands in for a $(...) or backtick substitution inside a word
-_VAR_WORD = re.compile(r"^(?:\x00+|\$[A-Za-z_]\w*|\$\{[^}]*\})$")
 _DECODE = re.compile(
     r"\bbase64\b[^|;&\n]*\s-(?:d|D|-decode)\b|\bbase32\b[^|;&\n]*\s-d\b|\bxxd\b[^|;&\n]*\s-r\b|\buudecode\b"
     r"|\bopenssl\b[^|;&\n]*\benc\b[^|;&\n]*\s-d\b|\bprintf\b[^|;&\n]*\\x[0-9a-fA-F]|\bprintf\b[^|;&\n]*\\[0-7]{3}")
@@ -215,13 +220,25 @@ _WRAP: Dict[str, frozenset] = {
     "time": frozenset(("-f", "-o")), "command": frozenset(), "exec": frozenset(("-a",)), "builtin": frozenset(),
     "nice": frozenset(("-n",)), "ionice": frozenset(("-c", "-n", "-p")), "timeout": frozenset(("-s", "-k")),
     "stdbuf": frozenset(("-i", "-o", "-e")), "setsid": frozenset(), "busybox": frozenset(), "toybox": frozenset(),
-    "watch": frozenset(("-n", "-d")), "then": frozenset(), "do": frozenset(), "else": frozenset(), "elif": frozenset(),
+    "then": frozenset(), "do": frozenset(), "else": frozenset(), "elif": frozenset(),
     "if": frozenset(), "while": frozenset(), "until": frozenset(), "!": frozenset(), "{": frozenset(),
-    "unbuffer": frozenset(), "chrt": frozenset(), "taskset": frozenset(("-c",)),
+    "unbuffer": frozenset(),
 }
+# Commands that run another command or a command line given as text; _unwrap says which one (see there).
+_EXEC_WRAP = frozenset(("flock script strace ltrace proot-distro proot chroot nsenter unshare watch parallel chrt "
+                        "taskset").split())
+_MEDIA = frozenset("ffmpeg ffprobe ffplay mpv mplayer vlc cvlc".split())   # read and write network addresses
+_PKG = frozenset("pip pip3 pipx npm npx yarn pnpm cargo go gem apt apt-get pkg dpkg uv uvx".split())
+_PKG_OPTS = frozenset(("--index-url --extra-index-url --find-links --proxy --https-proxy --trusted-host --registry "
+                       "--source --index --git --repo").split())
+_GH_LOCAL = frozenset(("help", "version", "completion", "config", "alias"))   # gh subcommands that stay on the phone
+_URLISH = re.compile(r"(?<!file)://|^(?:tcp|udp|srt|rist|tls|unix|icecast|rtp|rtsp|rtmp[a-z]*|ftp|sftp)(?:\+[a-z]+)?:", re.I)
+_HOME_PATH = re.compile(r"^\$\{?(?:HOME|PREFIX|PWD|TMPDIR)\}?/[\w./+-]*$")   # `$HOME/bin/tool`: a path, not a built name
+_PLAIN_PATH = re.compile(r"^(?!/(?:dev|proc)/)[\w./~+-]+$")
+_BRACES = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")
 
 # One command of a parsed line: (words, dyn flags, got its input from a pipe)
-_Cmd = Tuple[List[str], List[bool], bool]
+_Cmd = Tuple[List[str], List[bool], bool, List[str]]   # + the heredoc bodies fed to it (data, see _parse)
 
 
 def _parse(text: str) -> List[_Cmd]:
@@ -231,8 +248,10 @@ def _parse(text: str) -> List[_Cmd]:
     t = text[:MAX_SCAN]
     n = len(t)
     cmds: List[_Cmd] = []
-    S: Dict[str, Any] = {"w": [], "d": [], "cur": [], "has": False, "dyn": False, "q": None, "piped": False, "depth": 0}
+    S: Dict[str, Any] = {"w": [], "d": [], "cur": [], "has": False, "dyn": False, "q": None, "piped": False, "depth": 0,
+                         "body": []}
     stack: List[Tuple[str, Dict[str, Any]]] = []
+    pending: List[Tuple[str, bool, bool, List[str]]] = []   # heredocs whose body starts after the next newline
 
     def endword() -> None:
         if S["has"]:
@@ -243,13 +262,14 @@ def _parse(text: str) -> List[_Cmd]:
     def endcmd(piped: bool = False) -> None:
         endword()
         if S["w"]:
-            cmds.append((S["w"], S["d"], S["piped"]))
-        S["w"], S["d"], S["piped"] = [], [], piped
+            cmds.append((S["w"], S["d"], S["piped"], S["body"]))
+        S["w"], S["d"], S["piped"], S["body"] = [], [], piped, []
 
     def push(kind: str) -> None:
         saved = dict(S)
         stack.append((kind, saved))
-        S.update({"w": [], "d": [], "cur": [], "has": False, "dyn": False, "q": None, "piped": False, "depth": 0})
+        S.update({"w": [], "d": [], "cur": [], "has": False, "dyn": False, "q": None, "piped": False, "depth": 0,
+                  "body": []})
 
     def pop() -> None:
         endcmd()
@@ -305,9 +325,49 @@ def _parse(text: str) -> List[_Cmd]:
             S["q"], S["has"] = "'", True
         elif c == '"':
             S["q"], S["has"] = '"', True
+        elif c == "<" and t.startswith("<<<", i):   # a here-string: the next word is its text
+            endword()
+            S["w"].append("<<<")
+            S["d"].append(False)
+            i += 3
+            continue
+        elif c == "<" and t.startswith("<<", i):
+            j = i + 2   # a heredoc `<<WORD`, `<<-WORD`, `<<'WORD'`: its body is text, not commands
+            strip = j < n and t[j] == "-"
+            j += 1 if strip else 0
+            while j < n and t[j] in " \t":
+                j += 1
+            delim: List[str] = []
+            quoted = False
+            while j < n and t[j] not in " \t\r\n;|&<>()":
+                ch = t[j]
+                if ch in "'\"":
+                    quoted = True
+                    k = t.find(ch, j + 1)
+                    k = n if k < 0 else k
+                    delim.append(t[j + 1:k])
+                    j = k + 1
+                elif ch == "\\" and j + 1 < n:
+                    quoted = True
+                    delim.append(t[j + 1])
+                    j += 2
+                else:
+                    delim.append(ch)
+                    j += 1
+            endword()
+            S["w"].append("<<" + "".join(delim))
+            S["d"].append(False)
+            pending.append(("".join(delim), quoted, strip, S["body"]))
+            i = j
+            continue
         elif c in " \t\r":
             endword()
         elif c in ";\n":
+            if c == "\n" and pending:
+                i = _read_heredocs(t, i + 1, pending, cmds)
+                pending.clear()
+                endcmd()
+                continue
             endcmd()
         elif c == "&":
             if t.startswith("&&", i):
@@ -352,6 +412,53 @@ def _parse(text: str) -> List[_Cmd]:
     return cmds
 
 
+def _subs(body: str) -> List[str]:
+    """The texts of `$(...)` and backtick substitutions in an unquoted heredoc body: the shell runs those."""
+    out: List[str] = []
+    i, n = 0, len(body)
+    while i < n:
+        c = body[i]
+        if c == "\\":
+            i += 2
+        elif body.startswith("$(", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                depth += (body[j] == "(") - (body[j] == ")")
+                j += 1
+            out.append(body[i + 2:j - 1 if depth == 0 else j])
+            i = j
+        elif c == "`":
+            j = body.find("`", i + 1)
+            j = n if j < 0 else j
+            out.append(body[i + 1:j])
+            i = j + 1
+        else:
+            i += 1
+    return out
+
+
+def _read_heredocs(t: str, p: int, pending: List[Tuple[str, bool, bool, List[str]]], cmds: List[_Cmd]) -> int:
+    """Read the bodies of the heredocs opened on the line above, from index `p`; returns where the text goes on. A body is
+    data for the command it feeds (kept on that command to look at); only the substitutions inside an unquoted body run."""
+    n = len(t)
+    for delim, quoted, strip, sink in pending:
+        lines: List[str] = []
+        while p < n:
+            e = t.find("\n", p)
+            e = n if e < 0 else e
+            line = t[p:e]
+            p = e + 1
+            if (line.lstrip("\t") if strip else line) == delim:
+                break
+            lines.append(line)
+        body = "\n".join(lines)
+        sink.append(body)
+        if not quoted:
+            for inner in _subs(body):
+                cmds.extend(_parse(inner))
+    return min(p, n)
+
+
 def _base(word: str) -> str:
     return word.rstrip("/").rsplit("/", 1)[-1]
 
@@ -382,8 +489,10 @@ def _split_args(args: List[str], dyn: List[bool]) -> Tuple[List[str], List[bool]
     return out, outd, inline
 
 
-def _strip_wrappers(w: List[str], d: List[bool]) -> int:
-    """Index of the command word after assignments (`X=1`) and wrappers (`sudo`, `env`, `xargs`, `busybox`...)."""
+def _strip_wrappers(w: List[str], d: List[bool]) -> Tuple[int, Optional[Tuple[str, bool]]]:
+    """Index of the command word after assignments (`X=1`) and wrappers (`sudo`, `env`, `xargs`, `busybox`...). For
+    `env -S 'text'` the second value is that text with the rest of the words (and whether any part is built at run time):
+    env splits it into a command line."""
     i = 0
     while i < len(w):
         x = w[i]
@@ -401,6 +510,14 @@ def _strip_wrappers(w: List[str], d: List[bool]) -> int:
             if y == "--":
                 i += 1
                 break
+            if base == "env" and (y == "-S" or y == "--split-string" or (y.startswith("-S") and not y.startswith("--"))
+                                  or y.startswith("--split-string=")):
+                if y in ("-S", "--split-string"):
+                    val, k = (w[i + 1] if i + 1 < len(w) else ""), i + 2
+                    dyn = d[i + 1] if i + 1 < len(d) else False
+                else:
+                    val, k, dyn = (y[2:] if not y.startswith("--") else y.split("=", 1)[1]), i + 1, d[i]
+                return len(w), (" ".join([val] + w[k:]), dyn or any(d[k:]))
             if base == "env" and _ASSIGN.match(y):
                 i += 1
             elif y.startswith("-") and y != "-":
@@ -410,22 +527,165 @@ def _strip_wrappers(w: List[str], d: List[bool]) -> int:
                 i += 1
             else:
                 break
-    return i
+    return i, None
+
+
+def _skip_opts(args: List[str], valued: frozenset, j: int = 0) -> int:
+    """Index of the first word that is not an option (options in `valued` take the next word as their value)."""
+    while j < len(args):
+        a = args[j]
+        if a == "--":
+            return j + 1
+        if a.startswith("-") and a != "-":
+            j += 2 if a in valued else 1
+        else:
+            break
+    return j
+
+
+def _unwrap(base: str, args: List[str], argd: List[bool], fed: bool) -> Optional[Tuple[str, Any, Any]]:
+    """What a command that runs another command runs: ("words", words, dyn flags), ("text", command line, built at run
+    time?), ("ask", why, None), or None when it runs nothing (or nothing we can read)."""
+    def words(j: int) -> Optional[Tuple[str, Any, Any]]:
+        return ("words", args[j:], argd[j:]) if j < len(args) else None
+    if base == "flock":
+        for j, a in enumerate(args):   # options may come after the lock file
+            if a in ("-c", "--command") and j + 1 < len(args):
+                return "text", args[j + 1], argd[j + 1]
+            if a.startswith("--command="):
+                return "text", a.split("=", 1)[1], argd[j]
+        return words(_skip_opts(args, frozenset(("-w", "-E", "--timeout", "--wait", "--conflict-exit-code"))) + 1)   # lock file, then the command
+    if base == "script":
+        for j, a in enumerate(args):
+            if re.match(r"^-[a-zA-Z]*c$", a) or a == "--command":
+                if j + 1 < len(args):
+                    return "text", args[j + 1], argd[j + 1]
+            elif a.startswith("--command="):
+                return "text", a.split("=", 1)[1], argd[j]
+            elif re.match(r"^-c.", a):
+                return "text", a[2:], argd[j]
+        return ("ask", "script (starts a shell on input)", None) if fed else None
+    if base in ("strace", "ltrace"):
+        return words(_skip_opts(args, frozenset("-e -o -p -s -u -E -I -a -P -b -O -S -X -A -l -L -n -F".split())))
+    if base == "proot-distro":
+        return words(args.index("--") + 1) if "--" in args else None
+    if base == "proot":
+        return words(_skip_opts(args, frozenset(
+            "-r -R -b -B -w -q -S -k -i --rootfs --bind --cwd --qemu --kernel-release --mount".split())))
+    if base == "chroot":
+        return words(_skip_opts(args, frozenset(("--userspec", "--groups"))) + 1)
+    if base == "nsenter":
+        return words(_skip_opts(args, frozenset(("-t", "--target", "-S", "--setuid", "-G", "--setgid"))))
+    if base == "unshare":
+        return words(_skip_opts(args, frozenset(("--map-user", "--map-group", "--propagation", "--setgroups", "-S", "-G"))))
+    if base == "watch":
+        j = _skip_opts(args, frozenset(("-n", "--interval")))
+        return ("text", " ".join(args[j:]), any(argd[j:])) if j < len(args) else None
+    if base == "parallel":
+        j = _skip_opts(args, frozenset(
+            "-j -n -N -a -S -L -I -P --jobs --max-args --arg-file --sshlogin --results --joblog".split()))
+        cmd: List[str] = []
+        for x in args[j:]:
+            if x.startswith(":::") or x == "---":
+                break
+            cmd.append(x)
+        if cmd:
+            return "text", " ".join(cmd), any(argd[j:j + len(cmd)])
+        return ("ask", "parallel running commands from its input", None) if fed else None
+    if base == "chrt":
+        if "-p" in args or "--pid" in args:
+            return None
+        return words(_skip_opts(args, frozenset()) + 1)   # the priority, then the command
+    if base == "taskset":
+        if "-p" in args or "--pid" in args:
+            return None
+        j = _skip_opts(args, frozenset(("-c", "--cpu-list")))
+        has_list = any(a in ("-c", "--cpu-list") for a in args[:j])
+        return words(j if has_list else j + 1)   # the mask, then the command
+    return None
+
+
+def _code_risk(code: str, base: str = "") -> bool:
+    """Whether a program's text uses the network or runs commands."""
+    if _RE_NETCODE.search(code) or _RE_SHELLOUT.search(code):
+        return True
+    return base in ("perl", "ruby", "php") and "`" in code
+
+
+def _oneliner(base: str, flag: str, code: str, built: bool) -> Optional[str]:
+    if built:
+        return f"{base} one-liner built at run time"
+    return f"{base} one-liner ({flag}) that uses the network or runs commands" if _code_risk(code, base) else None
+
+
+def _pkg_match(base: str, args: List[str], argd: List[bool]) -> Optional[str]:
+    """A package tool asks when it fetches from an address the text names, when it runs code it downloads (npx...), or
+    when it is pointed at another index. Installing a named package from the tool's usual index does not ask."""
+    opts = set(_PKG_OPTS)
+    if base in ("pip", "pip3", "pipx", "uv", "uvx"):
+        opts |= {"-i", "-f"}
+    if base == "gem":
+        opts |= {"-s"}
+    sub = next((a for a in args if not a.startswith("-")), "")
+    if base in ("npx", "uvx") or (base in ("pnpm", "yarn") and sub in ("dlx", "exec")) \
+            or (base == "npm" and sub in ("exec", "x", "init", "create")) or (base == "pipx" and sub == "run") \
+            or (base == "uv" and sub in ("tool", "run")):
+        return f"{base} {sub}".strip() + " (downloads and runs code)"
+    for a in args:
+        o = a.split("=", 1)[0]
+        if o in opts:
+            return f"{base} with a different package source ({o})"
+        if "://" in a or a.startswith(("git+", "github:", "gitlab:", "bitbucket:", "git@")):
+            return f"{base} fetching from an address"
+        if base in ("npm", "yarn", "pnpm") and sub in ("install", "i", "add", "update") \
+                and re.match(r"^[\w.-]+/[\w.-]+(?:#.*)?$", a) and not a.startswith((".", "/")):
+            return f"{base} installing from a repository"
+        if base == "go" and sub in ("get", "install", "run", "mod", "generate", "build") \
+                and re.match(r"^[\w-]+(?:\.[\w-]+)+/", a):
+            return f"go fetching {a.split('@')[0][:40]}"
+    return None
+
+
+def _fed_code(base: str, body: List[str], piped: bool) -> Optional[str]:
+    """A program that reads its code from input: when the code is a heredoc we can read, ask only if it is risky."""
+    if body and not piped and not _code_risk("\n".join(body), base):
+        return None
+    return f"{base} reading code from input"
 
 
 def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
-    w, d, piped = cmd
-    i = _strip_wrappers(w, d)
+    w, d, piped, body = cmd
+    if depth > MAX_DEPTH:
+        return "commands nested too deeply to read"   # fail closed
+    i, split = _strip_wrappers(w, d)
+    if split is not None:   # env -S 'text'
+        return "command built at run time" if split[1] else _match_text(split[0], depth + 1)
     if i >= len(w):
         return None
     word = w[i]
     base = _base(word)
     args, argd, inline = _split_args(w[i + 1:], d[i + 1:])
     fed = piped or inline   # the command reads text from a pipe or a heredoc
+    # a command word built at run time, or a pattern that picks the name: `$(printf curl)`, `${C:-curl}`, `c?rl`, `cur[l]`
+    if d[i] and not _HOME_PATH.match(word):
+        return "command built at run time"
+    if any(ch.isalpha() for ch in word) and word not in ("[", "[[") and not word.startswith("-") \
+            and (re.search(r"[*?\[]", word) or _BRACES.search(word)):
+        return "command name chosen by a pattern"
     if base in _NET_WORDS:
         return f"network command {base}"
     if base == "gh":
-        return "gh (GitHub CLI)"
+        sub = None
+        j = 0
+        while j < len(args):
+            if args[j] in ("-R", "--repo"):
+                j += 2
+            elif args[j].startswith("-"):
+                j += 1
+            else:
+                sub = args[j]
+                break
+        return None if sub is None or sub in _GH_LOCAL else f"gh {sub} (GitHub CLI)"
     if base == "git":
         j = 0
         while j < len(args):
@@ -439,6 +699,34 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
         return None
     if base == "eval":
         return "eval (runs built text)"
+    if base in ("source", "."):
+        if args and not argd[0] and not fed and _PLAIN_PATH.match(args[0]):
+            return None   # a local script: what it holds is not looked at
+        return f"{base} of something that is not a plain local path"
+    if base == "alias":
+        for a in args:
+            if "=" in a:
+                r = _match_text(a.split("=", 1)[1], depth + 1)
+                if r:
+                    return f"alias for {r}"
+        return None
+    if base in _EXEC_WRAP:
+        got = _unwrap(base, args, argd, fed)
+        if got is None:
+            return None
+        kind, payload, extra = got
+        if kind == "ask":
+            return payload
+        if kind == "text":
+            return "command built at run time" if extra else _match_text(payload, depth + 1)
+        return _match_cmd((payload, extra, False, []), whole, depth + 1)
+    if base in _PKG:
+        return _pkg_match(base, args, argd)
+    if base in _MEDIA:
+        for j, a in enumerate(args):
+            if _URLISH.search(a) or (a == "-i" and j + 1 < len(args) and argd[j + 1]):
+                return f"{base} reading or writing a network address"
+        return None
     if base in _SHELLS or base == "su":
         # `bash -c '...'`: look inside the text it runs; a text built from a substitution that decodes something is asked
         for j, a in enumerate(args):
@@ -455,6 +743,8 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             return None
         scripts = [a for a in args if not a.startswith("-") and a != "-"]
         if (piped or inline) and not scripts:
+            if body and not piped:
+                return _match_text("\n".join(body), depth + 1)   # a heredoc: look at the commands it holds
             return f"text piped into {base}"
         return None
     if _INTERP.match(base):
@@ -462,19 +752,23 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
         while j < len(args):
             a = args[j]
             if a == "-":
-                return f"{base} reading code from input"
+                return _fed_code(base, body, piped)
             if a == "-m" and j + 1 < len(args):
                 mod = args[j + 1]
+                if mod == "pip":
+                    return _pkg_match("pip", args[j + 2:], argd[j + 2:])
                 return f"{base} -m {mod}" if mod.startswith(_NET_MODULES) else None
             if a.startswith("-m") and len(a) > 2:
                 return f"{base} {a}" if a[2:].startswith(_NET_MODULES) else None
+            if a.startswith(("--eval=", "--print=", "--exec=")):
+                return _oneliner(base, a.split("=", 1)[0], a.split("=", 1)[1], argd[j])
             if a.startswith("-"):
                 if _ONELINER.match(a):
-                    return f"{base} one-liner ({a})"
+                    return _oneliner(base, a, args[j + 1], argd[j + 1]) if j + 1 < len(args) else None
                 j += 2 if a in ("-W", "-X", "--require") else 1
                 continue
             return None   # a script file: its contents are not looked at
-        return f"{base} reading code from input" if fed else None
+        return _fed_code(base, body, piped) if fed else None
     if base in ("find", "fd", "fdfind"):
         for j, a in enumerate(args):
             if a in ("-exec", "-execdir", "-ok", "-okdir", "-x", "-X", "--exec", "--exec-batch"):
@@ -484,7 +778,7 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
                         break
                     inner.append(b)
                 if inner:
-                    r = _match_cmd((inner, [False] * len(inner), False), whole, depth)
+                    r = _match_cmd((inner, [False] * len(inner), False, []), whole, depth + 1)
                     if r:
                         return f"{base} {a} {r}"
         return None
@@ -502,16 +796,12 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
         return "monkey"
     if base == "openssl" and args and args[0] == "s_client":
         return "openssl s_client"
-    if d[i] and _VAR_WORD.match(word):
-        # `$(echo ...|base64 -d) arg`, `$X arg`: the command itself is built at run time
-        if _DECODE.search(whole) or "://" in whole:
-            return "command built at run time"
     return None
 
 
 def _match_text(text: str, depth: int = 0) -> Optional[str]:
     if depth > MAX_DEPTH:
-        return None
+        return "commands nested too deeply to read"   # fail closed
     t = text[:MAX_SCAN]
     if re.search(r"/dev/(?:tcp|udp)/", t):
         return "/dev/tcp or /dev/udp"
@@ -523,20 +813,34 @@ def _match_text(text: str, depth: int = 0) -> Optional[str]:
 
 
 _RE_NETCODE = re.compile(
-    r"urllib|requests|http\.client|httplib|httpx|aiohttp|socket|urlopen|ftplib|smtplib|telnetlib|paramiko|asyncssh|websocket"
-    r"|xmlrpc|fetch\s*\(|XMLHttpRequest|net\.connect|require\(\s*['\"](?:https?|net|tls|dgram|child_process)"
-    r"|https?\.(?:get|request)|node:(?:https?|net)|IO::Socket|LWP|Net::|open-uri|file_get_contents|fsockopen|curl_init"
-    r"|\bsubprocess\b|os\.system|os\.popen|\bpopen\b|child_process|\bexec\s*\(|hermes_tools|web_search|web_extract|send_message",
+    r"\b(?:urllib\d?|requests|http\.client|httplib|httpx|aiohttp|socket|socketserver|ssl|urlopen|ftplib|smtplib|telnetlib"
+    r"|paramiko|asyncssh|pycurl|pexpect|websockets?|xmlrpc|webbrowser|open_connection|XMLHttpRequest|IO::Socket|LWP"
+    r"|open-uri|file_get_contents|fsockopen|curl_init|subprocess|child_process|hermes_tools|web_search|web_extract"
+    r"|send_message|popen|__import__|importlib)\b"
+    r"|\bfetch\s*\(|\bexec\s*\(|\beval\s*\(|os\.system|os\.popen|net\.connect|Net::|node:(?:https?|net)"
+    r"|require\(\s*['\"](?:https?|net|tls|dgram|child_process)|https?\.(?:get|request)",
     re.I)
+# A program that starts another program (perl, ruby, php, node, lua one-liners; Python is covered above).
+_RE_SHELLOUT = re.compile(r"\b(?:system|exec[a-z]*|shell_exec|passthru|proc_open|spawn[a-z]*|fork)\b|os\.execute|io\.popen|%x[\[{(]")
 _RE_URL = re.compile(r"https?://", re.I)
 
-_ALWAYS = frozenset({"web_search", "web_extract", "x_search", "send_message", "react_to_message", "computer_use",
-                     "delegate_task", "cronjob_manage", "image_generate", "video_generate", "text_to_speech"})
-_IF_URL = frozenset({"vision_analyze", "video_analyze", "browser_get_images"})
+_IF_URL = frozenset({"vision_analyze", "video_analyze"})   # a web address in the call sends the fetch out
 _PERSIST = frozenset({"memory", "skill_manage"})   # text saved here is read by other chats
-# Never asked, whatever else matches: tools of this plugin and Hermes tools that send nothing out.
-_QUIET = frozenset({"phone_data", "phone_app", "canvas", "clarify", "todo", "todo_list", "read_file", "write_file",
-                    "patch", "search_files", "skill_view", "skills_list", "session_search", "tool_search", "tool_describe"})
+# THE ALLOWLIST. In a chat that has read phone data EVERY tool asks except these (and the few special cases in `classify`:
+# terminal and execute_code by their text, process_manage by action, memory by action, vision by address). A tool this list
+# does not name asks, so a tool added to Hermes later, a plugin's or an MCP server's, asks until someone decides it
+# stays on the device. Each name here sends nothing out:
+#   phone_data, phone_app (the app's own hidden screen), canvas, find_chats, openui_reference: this plugin's tools, local
+#   read_file, write_file, patch, search_files: the phone's files only
+#   todo, todo_list: the chat's task list; clarify: asks the user a question
+#   skill_view, skills_list: read installed skills; session_search: the local chat database
+#   tool_search, tool_describe: Hermes's local tool registry
+# Not on it, decided to ask: kanban_* (boards other agents read), ha_* (a Home Assistant server), feishu_*, yb_*,
+# discord*, spotify_*, manage_connections, manage_catalog, cronjob_manage, delegate_task, image/video_generate,
+# text_to_speech, computer_use, browser_*, web_*, send_*, mcp_*, read_terminal and the other desktop tools.
+_QUIET = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "openui_reference", "clarify", "todo", "todo_list",
+                    "read_file", "write_file", "patch", "search_files", "skill_view", "skills_list", "session_search",
+                    "tool_search", "tool_describe"})
 
 
 def _calls(tool_name: Any, args: Any) -> Iterator[Tuple[str, Dict[str, Any]]]:
@@ -560,11 +864,11 @@ def command_sends_out(text: str) -> bool:
 
 
 def code_match(text: str) -> Optional[str]:
-    """The pattern name when a script given to execute_code can reach the network or run a command."""
-    t = text[:MAX_SCAN]
-    if _RE_NETCODE.search(t):
+    """The pattern name when a script given to execute_code (Python) uses the network or runs commands. The text is
+    read as Python, never as shell: `host = 1` is only an assignment."""
+    if _RE_NETCODE.search(text[:MAX_SCAN]):
         return "code that uses the network or runs commands"
-    return _match_text(t)
+    return None
 
 
 def code_sends_out(text: str) -> bool:
@@ -613,9 +917,10 @@ def classify(name: str, a: Dict[str, Any]) -> Optional[Tuple[str, str, str]]:
     if name in _IF_URL:
         return (name, "", f"{name} with a web address") if any(
             isinstance(v, str) and _RE_URL.search(v) for v in a.values()) else None
-    if name in _ALWAYS or name.startswith("browser_") or name.startswith("mcp_") or name.startswith("send_"):
-        return name, _first_text(a, "url", "query"), f"tool {name}"
-    return None
+    if not name:
+        return None
+    # Fail closed: any other tool may reach outside the device (see _QUIET).
+    return name, _first_text(a, "url", "query"), f"tool {name} (not known to stay on the device)"
 
 
 def _flat(s: str) -> str:
