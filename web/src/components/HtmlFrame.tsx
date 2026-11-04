@@ -45,6 +45,15 @@ export function HtmlFrame({ html, network, autoHeight, className }: { html: stri
     window.addEventListener('message', on)
     return () => window.removeEventListener('message', on)
   }, [srcDoc, auto, min, max, guarded])
+  // A chat that has read phone data gets no frame at all: a script in it could send the rows out through WebRTC or a DNS prefetch,
+  // which neither the frame's policy nor the shell's request filter covers. The source is shown as text and nothing runs.
+  if (guarded)
+    return (
+      <div className="html-wrap html-held">
+        <div className="html-note">This chat has read data from your phone, so HTML previews are off here. The source is shown instead; nothing was run.</div>
+        <pre className="html-src">{html}</pre>
+      </div>
+    )
   return (
     <div className={`html-wrap${auto ? ' auto' : ''}`}>
       {err && <div className="html-err">⚠ {err}</div>}

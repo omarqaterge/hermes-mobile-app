@@ -2816,6 +2816,9 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .canvas-empty-icon { font-size: 44px; }
 .canvas-empty-title { font-size: 1.1rem; font-weight: 650; }
 .html-wrap { display: flex; flex-direction: column; height: 100%; min-height: 240px; }
+.html-held { display: flex; flex-direction: column; gap: 8px; }
+.html-note { font-size: 13px; color: var(--dim); }
+.html-src { margin: 0; padding: 10px; max-height: 40vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; border: 1px solid var(--border); border-radius: 12px; }
 .html-frame { flex: 1; width: 100%; min-height: 240px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
 .html-err { padding: 6px 10px; margin-bottom: 6px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--err-border); color: var(--err); font-size: 0.78rem; font-family: var(--mono); }
 .editor { display: flex; flex-direction: column; height: 100%; }

@@ -44,11 +44,51 @@ export function isTaintedItems(items: readonly ChatItem[] | null | undefined): b
 const shownItems = (s: AppState): readonly ChatItem[] | null =>
   s.opening && s.preview?.storedId === s.opening ? s.preview.items : s.active?.items ?? null
 
-export const useTainted = (): boolean => useStore(s => isTaintedItems(shownItems(s)))
-export const isTaintedNow = (): boolean => isTaintedItems(shownItems(getState()))
+/** The chat ids of what is on screen: the preview's stored id, or the active chat's stored and live ids. */
+const shownIds = (s: AppState): string[] =>
+  s.opening && s.preview?.storedId === s.opening ? [s.opening] : s.active ? [s.active.storedId, s.active.runtimeId] : s.opening ? [s.opening] : []
+
+// The app's own record (PhoneDataChats.java): the items can't tell when the phone_data call is older than the 60 cached items
+// of a preview, outside the tip segment Hermes resumes, or in a subagent whose parent this is. The shell answers at once.
+// A yes is kept for good (a chat never becomes unread); a no is asked again after a second, because a read can arrive later.
+const known = new Set<string>()
+const unknown = new Map<string, number>()
+const RECHECK_MS = 1000
+
+/** Did a phone_data read request for this chat id ever reach the app? False without a shell or with an older one. */
+export function nativeTainted(id: string | null | undefined): boolean {
+  if (!id) return false
+  if (known.has(id)) return true
+  const t = Date.now()
+  const last = unknown.get(id)
+  if (last !== undefined && t - last < RECHECK_MS) return false
+  let yes = false
+  try {
+    yes = remoteBridge()?.phoneDataTainted?.(id) === true
+  } catch {
+    yes = false
+  }
+  if (yes) {
+    known.add(id)
+    unknown.delete(id)
+  } else {
+    if (unknown.size > 200) unknown.clear()
+    unknown.set(id, t)
+  }
+  return yes
+}
+
+const taintedState = (s: AppState): boolean => isTaintedItems(shownItems(s)) || shownIds(s).some(nativeTainted)
+
+export const useTainted = (): boolean => useStore(taintedState)
+export const isTaintedNow = (): boolean => taintedState(getState())
 
 /** Would this address be fetched by the page (an image, video, audio or frame source)? Local files and attachments are not. */
-export const isRemoteUrl = (s: string): boolean => /^(https?:)?\/\//i.test(s.trim())
+export const isRemoteUrl = (s: string): boolean => /^(?:https?:|[\\/]{2})/i.test(plainUrl(s))
+
+/** An address as a browser reads it: whitespace and control characters are dropped (`ht\ttps:evil` is `https:evil`). */
+// eslint-disable-next-line no-control-regex
+const plainUrl = (s: string): string => s.replace(/[\s\u0000-\u001f\u007f]/g, '')
 
 export interface Address {
   host: string
@@ -106,13 +146,19 @@ export async function confirmAddress(url: string, guarded: boolean, title = 'Loa
   })
 }
 
+/** A string literal's text as the card reads it: \\t \\n \\r are whitespace, \\uXXXX and \\xXX their character, any other \\c is c. */
+const unescapeLiteral = (s: string): string =>
+  s.replace(/\\(?:u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|(.))/g, (_a, u?: string, x?: string, c?: string) =>
+    u || x ? String.fromCharCode(parseInt((u || x) as string, 16)) : 'tnr'.includes(c as string) ? ' ' : (c as string)
+  )
+
 /** A card's source (openui-lang) with every remote address in a string emptied, so the chat library's image components
  *  (Image, ImageBlock, ImageGallery, ImageText and any other that draws `<img src>` from a prop) have nothing to fetch. The
  *  address of a button's `@OpenUrl(...)` stays: it opens only through the address dialog. Returns the same text when nothing
  *  was removed. */
 export function dropRemoteStrings(code: string): string {
   return code.replace(/(@OpenUrl\(\s*)?("(?:\\.|[^"\\\n])*")/g, (all, open: string | undefined, str: string) =>
-    open || !/^"\s*(?:(?:https?|ftp)?:)?\/\//i.test(str) ? all : `${open ?? ''}""`
+    open || !/^(?:(?:https?|ftp):|[\\/]{2})/i.test(plainUrl(unescapeLiteral(str.slice(1, -1)))) ? all : `${open ?? ''}""`
   )
 }
 
@@ -129,7 +175,7 @@ export function useGuard(): boolean {
 // kinds: images, media, scripts, styles, frames, fonts, fetch), whatever the page renders. The guards above are what the
 // user sees; this is what holds when one of them is missed. The shell starts each page load BLOCKED until this reports.
 
-type RemoteBridge = { remoteBlock?: (on: boolean) => void; remoteAllowOnce?: (url: string) => void }
+type RemoteBridge = { phoneDataTainted?: (id: string) => boolean; remoteBlock?: (on: boolean) => void; remoteAllowOnce?: (url: string) => void }
 const remoteBridge = () => window.HermesAndroid as unknown as RemoteBridge | undefined
 
 let lastReport = ''

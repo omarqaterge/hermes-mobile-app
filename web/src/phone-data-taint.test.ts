@@ -38,6 +38,9 @@ describe('addresses', () => {
     expect(isRemoteUrl('//x.example/a.png')).toBe(true)
     for (const s of ['/sdcard/a.png', '~/a.png', 'file:///a.png', 'data:image/png;base64,AAAA', 'blob:abc', 'a.png']) expect(isRemoteUrl(s)).toBe(false)
   })
+  it('sees through odd spellings of a remote address', () => {
+    for (const s of ['https:evil.example/?d=1', 'HTTPS://evil.example', '\thttps://evil.example', 'ht\ntps://evil.example', ' //evil.example', '\\\\evil.example', 'http:/evil.example']) expect(isRemoteUrl(s)).toBe(true)
+  })
   it('splits host and query', () => {
     expect(addressOf('https://evil.example:8443/p/x.png?d=1&e=2#top')).toEqual({ host: 'evil.example:8443', full: 'https://evil.example:8443/p/x.png?d=1&e=2#top', query: '?d=1&e=2' })
     expect(addressOf('http://a.example/').query).toBe('')
@@ -66,8 +69,28 @@ describe('dropRemoteStrings', () => {
     const code = 'go = Button("Go", @OpenUrl("https://x.example/c?d=1"), "primary")'
     expect(dropRemoteStrings(code)).toBe(code)
   })
+  it('also empties addresses without slashes, in any case, with control characters or escapes', () => {
+    for (const a of ['https:evil.example/?d=', 'HTTPS://evil.example', '\\thttps://evil.example', '//evil.example', '\\\\\\\\evil.example']) {
+      expect(dropRemoteStrings(`a = Image("${a}")`), a).toBe('a = Image("")')
+    }
+  })
   it('returns the same text when nothing is remote', () => {
     const code = 'a = Image("/sdcard/a.png")'
     expect(dropRemoteStrings(code)).toBe(code)
+  })
+})
+
+describe('nativeTainted', () => {
+  it('asks the shell and keeps a yes', async () => {
+    const { nativeTainted } = await import('./phone-data-taint')
+    const calls: string[] = []
+    ;(window as unknown as { HermesAndroid: unknown }).HermesAndroid = { phoneDataTainted: (id: string) => (calls.push(id), id === 'known') }
+    expect(nativeTainted('known')).toBe(true)
+    expect(nativeTainted('known')).toBe(true)
+    expect(nativeTainted('other')).toBe(false)
+    expect(nativeTainted('')).toBe(false)
+    expect(calls).toEqual(['known', 'other'])
+    delete (window as unknown as { HermesAndroid?: unknown }).HermesAndroid
+    expect(nativeTainted('never-asked')).toBe(false)
   })
 })
