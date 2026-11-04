@@ -81,17 +81,22 @@ was already sent can't be taken back from here: see the relay below.
 
 **Scrubbing** (`scrubLog`, before the log is shown): any line of the open chat's title or messages (12 characters or
 more; spaces evened out, also in JSON form; a long line also by its first 40 characters, to the end of the log line)
-becomes `[chat text]`; then the phone model in a browser identification, URL queries, fragments, user names and path
+becomes `[chat text]`; then quoted text of 25 characters or more (`"[text]"`, judged by its length as written, before the
+rules below shorten it); then the phone model in a browser identification, URL queries, fragments, user names and path
 parts of 20 characters or more (`https://host/path?[removed]`), JWTs, Bearer and Basic values, `sk-`/`pk-`/`rk-` keys,
 GitHub, Slack, Google, Groq, AWS, Telegram and Hugging Face tokens, `token=`/`client_secret=`/`Authorization:`/
 `password=`-style values under any longer name, emails (`[email]`), IPv4 addresses but loopback and IPv6 addresses
-(`[ip]`), latitude and longitude pairs written as decimals with a comma or semicolon (`51.5074, -0.1278`) and `lat=`/`lon=`/
-`latitude`/`longitude` values (`[place]`), phone numbers (`[number]`: `+` and 7 to 15 digits, or 7 to 15 digits in groups split
-by spaces, dashes, dots or a bracketed area code; dates, versions, build numbers and dots-only groups other than 3.3.4 are left),
-whole paths in the Termux, Linux and macOS home folders (`~`) and shared storage (`[storage]`), hex IDs of 32
-characters or more (`[id]`), long encoded strings (`[data]`) and quoted text of 25 characters or more (`"[text]"`). Not caught, so
-timestamps, ports, sizes, durations, line:column and plain integers stay readable: a number with no separators (`5551234567`),
-a coordinate pair split only by a space, a lone coordinate without a `lat`/`lon` name, and numbers with other separators. The result is cut
+(`[ip]`), values named `lat`, `latitude`, `lon`, `long`, `longitude` or `lng` (also with a prefix such as `user_lat`, quoted
+or not, any number of decimals: `[place]`), pairs of decimals with 4 or more decimals each joined by a comma or semicolon
+(`51.5074, -0.1278`, not when a third number follows), values named `number`, `phone`, `address`, `sender`, `tel`, `mobile`,
+`msisdn` or `caller` that hold 7 or more digits (`[number]`; not a dotted address such as `127.0.0.1`), phone numbers (`[number]`:
+`+` and digits, up to the gap before a date or a time; or 7 to 15 digits in groups split by spaces, dashes, dots or a bracketed
+area code, with a leading `1-` allowed; dates, versions, build numbers, dots-only groups other than 3.3.4 and a lone 3+4 pair not
+starting with 0 are left, so `GET /x 200 1234 ms` stays), whole paths in the Termux, Linux and macOS home folders (`~`) and
+shared storage (`[storage]`), hex IDs of 32 characters or more (`[id]`) and long encoded strings (`[data]`). Not caught, so
+timestamps, ports, sizes, durations, line:column and plain integers stay readable: a bare run of digits with no name (`5551234567`),
+a lone coordinate without a name, a coordinate pair split only by a space or with fewer than 4 decimals, and numbers with other
+separators. The result is cut
 to the last `MAX_LOG` (60000) characters.
 
 **The relay** (`relay/report/worker.js`, a Cloudflare Worker on the free plan; setup steps in `relay/report/README.md`):

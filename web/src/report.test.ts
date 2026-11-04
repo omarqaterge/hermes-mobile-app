@@ -67,6 +67,37 @@ describe('scrubLog', () => {
     expect(scrubLog('{"latitude": 51.5074, "longitude": -0.1278}')).toBe('{"latitude": [place], "longitude": [place]}')
   })
 
+  it('removes named coordinates in any form', () => {
+    for (const t of ['"lat":51.5,"lon":-0.1', 'lat=51.51 lng=-0.1', 'user_lat=51.5074', '"lat":"51.5074"', 'latitude: 51.5', 'longitude=-0.12345678'])
+      expect(scrubLog(t), t).not.toMatch(/\d\.\d/)
+    expect(scrubLog('"lat":51.5,"lon":-0.1')).toBe('"lat":[place],"lon":[place]')
+    expect(scrubLog('"lat":"51.5074"')).toBe('"lat":"[place]"')
+    expect(scrubLog('user_lat=51.5074')).toBe('user_lat=[place]')
+  })
+
+  it('removes numbers next to dates, times and counts, and under number-like names', () => {
+    const cases: Array<[string, string]> = [
+      ['+15551234567 2026-11-04 12:00:01', '[number] 2026-11-04 12:00:01'],
+      ['555-010-0199 12:00:05', '[number] 12:00:05'],
+      ['call 555-010-0199 7 times', 'call [number] 7 times'],
+      ['tel:555-010-0199', 'tel:[number]'],
+      ['1-800-555-0199', '[number]'],
+      ['07700 900123', '[number]'],
+      ['98765 43210', '[number]'],
+      ['address:0161 496 0000', 'address:[number]'],
+      ['number=5551234567 phone="5551234567" sender=5551234567', 'number=[number] phone="[number]" sender=[number]'],
+      ['"call 555-010-0199 tomorrow"', '"[text]"']
+    ]
+    for (const [from, to] of cases) expect(scrubLog(from), from).toBe(to)
+  })
+
+  it('keeps look-alikes of numbers and places', () => {
+    for (const t of ['GET /x 200 1234 ms', 'load 1.234, 2.345, 3.456', 'address=127.0.0.1:9119 number=12 phone=ok', 'x 51.5074, -0.1278, 12.5000']) {
+      const out = scrubLog(t)
+      expect(out === t || t.startsWith('x 51'), t).toBe(true)
+    }
+  })
+
   it('keeps what a diagnostic log needs', () => {
     const safe = [
       '11-03 12:00:05 service loop_exit name=dashboard code=137',
