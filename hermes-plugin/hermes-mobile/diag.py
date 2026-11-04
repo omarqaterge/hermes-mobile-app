@@ -68,6 +68,13 @@ def alias(session_id) -> str:
     return hashlib.sha256(f"{_salt}|{session_id}".encode()).hexdigest()[:8] if session_id else "none"
 
 
+def reason_name(text):
+    """The name at the start of a reason: "text_response(finish_reason=stop)" is text_response. What follows can be an
+    error's words ("local_processing_error(...)"), so it never goes along."""
+    m = re.match(r"[a-z][a-z0-9_]{0,31}", text) if isinstance(text, str) else None
+    return m.group(0) if m else None
+
+
 def format_line(at: int, area: str, name: str, fields: dict) -> str:
     """One checked line; anything the wrong shape is written as "?" (a name as "unknown")."""
     def good_name(s):

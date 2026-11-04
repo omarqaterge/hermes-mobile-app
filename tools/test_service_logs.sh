@@ -50,7 +50,8 @@ rm -f "$HOME/.hermes-mobile/diag-off"
 # The real script: a failing loop is recorded, one that ends on purpose isn't. sleep 10 and the Termux-only commands are stubbed.
 mkdir -p "$T/bin"
 for c in termux-wake-unlock am sshd pgrep; do printf '#!/bin/bash\nexit 0\n' > "$T/bin/$c"; done
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+printf '#!/bin/bash\necho "$PPID $1" >> "$SLEEPS"\nexit 0\n' > "$T/bin/sleep"
+export SLEEPS="$T/sleeps"
 cat > "$T/bin/hermes-debian" <<'FAKE'
 #!/bin/bash
 [ "${1:-}" = "--exists" ] && exit 1
@@ -63,8 +64,11 @@ free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",
 export HM_DASH_PORT; HM_DASH_PORT=$(free_port)  # another run or a browser test may hold 9119
 PATH="$T/bin:$PATH" bash phone/hermes-services >/dev/null 2>&1 || true
 for _ in $(seq 1 100); do grep -q 'name=dashboard code=3' "$E" 2>/dev/null && break; perl -e 'select(undef,undef,undef,0.05)'; done
+dash=$(cat "$HOME/logs/dashboard.pid")
+for _ in $(seq 1 100); do [ "$(grep -c "^$dash " "$SLEEPS" 2>/dev/null)" -ge 7 ] && break; perl -e 'select(undef,undef,undef,0.05)'; done
 for p in "$HOME"/logs/*.pid; do kill "$(cat "$p")" 2>/dev/null || true; done
 check "grep -q 'name=dashboard code=3' '$E'" "a failing loop's exit code is recorded"
+check "[ \"\$(grep '^$dash ' '$SLEEPS' | head -7 | cut -d' ' -f2 | tr '\n' ' ')\" = '10 20 40 80 160 300 300 ' ]" "a loop that keeps failing waits longer each time, up to 5 min"
 check "! grep -q 'fake program output' '$E'" "the program's output never goes into the events"
 check "! grep -q 'name=app-keeper code=0' '$E' && ! grep -q 'name=memory-sync' '$E'" "a loop that ends on purpose isn't recorded"
 check "[ \$(wc -c < '$HOME/logs/old.log') -le 524288 ]" "a big log is trimmed when the script runs"
@@ -121,9 +125,9 @@ check "grep -q 'name=dashboard code=1' '$E'" "a real exit is still recorded"
 fresh
 fake_mix() { echo run >> "$STARTS"; [ "$(lines "$STARTS")" = 7 ] && SECONDS=$((SECONDS + 100)); return 3; }
 run_loop dashboard fake_mix
-upto '[ "$(lines "$SLEEPS")" -ge 8 ]' || true
+upto '[ "$(lines "$SLEEPS")" -ge 9 ]' || true
 stop_loop
-check "[ \"\$(head -8 '$SLEEPS' | tr '\n' ' ')\" = '10 20 40 80 120 120 10 20 ' ]" "quick exits wait 10, 20, 40, 80, 120, 120 s; a long run starts over"
+check "[ \"\$(head -9 '$SLEEPS' | tr '\n' ' ')\" = '10 20 40 80 160 300 10 10 20 ' ]" "quick exits wait 10, 20, 40, 80, 160, 300 s; a long run starts over"
 
 # dash_answers: only an HTTP reply counts.
 fresh

@@ -109,6 +109,14 @@ def _alias(session_id) -> str:
         return "none"
 
 
+def _reason(text):
+    """Only the name of a reason, for the diagnostic log."""
+    try:
+        return _diag().reason_name(text)
+    except Exception:
+        return None
+
+
 def _post(event: dict) -> bool:
     key = _key()
     if not key:
@@ -650,7 +658,7 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
     _dbg(f"api_error {session_id} turn={turn_id} status={status_code} retryable={retryable} final={final}")
     # The error's type, not its words: a provider's error can quote the request.
     _event("turn", "api_error", chat=_alias(session_id), status=status_code, retryable=retryable, final=final,
-           retries=retry_count, reason=reason, provider=provider, model=str(model or "").rsplit("/", 1)[-1] or None,
+           retries=retry_count, reason=_reason(reason), provider=provider, model=str(model or "").rsplit("/", 1)[-1] or None,
            error=type(error).__name__ if isinstance(error, BaseException) else None)
     if final:
         _turn_started.pop(session_id, None)  # no session_end follows this: the next turn is a new start
@@ -706,7 +714,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     t0 = _turn_started.pop(session_id, None)
     if t0 is not None:
         _event("turn", "end", chat=_alias(session_id), secs=int(time.time() - t0), completed=completed,
-               failed=failed, interrupted=interrupted, reason=turn_exit_reason)
+               failed=failed, interrupted=interrupted, reason=_reason(turn_exit_reason))
     if not session_id or session_id in _subagents:
         return
     _last_end[session_id] = time.time()

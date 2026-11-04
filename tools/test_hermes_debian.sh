@@ -40,6 +40,27 @@ check "--put copies into the rootfs" "$(cat "$PREFIX/var/lib/proot-distro/contai
 bash "$hd" --exists /root/.hermes/scripts/x.txt; check "--exists finds it" "$?" 0
 bash "$hd" --exists /root/nope; check "--exists misses" "$?" 1
 
+# --restart under proot: Hermes's launcher starts Python without "hermes" before "dashboard", so only the shorter pattern
+# finds it. pgrep is faked so that a dashboard of another run on this machine stays out of it; the processes are real.
+sleep 30 & py=$!
+sleep 30 & outer=$!
+sleep 30 & other=$!
+mkdir -p "$t/pgrep-bin"
+cat > "$t/pgrep-bin/pgrep" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "-f hermes dashboard --host 127.0.0.1 --port 9119") echo $outer ;;
+  "-f dashboard --host 127.0.0.1 --port 9119") printf '%s\\n' $outer $py ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$t/pgrep-bin/pgrep"
+PATH="$t/pgrep-bin:$PATH" bash "$hd" --restart
+wait "$py" 2>/dev/null; check "--restart kills Python, which has no \"hermes\" on its command line" "$?" 137
+wait "$outer" 2>/dev/null; check "--restart kills what runs it" "$?" 137
+kill -0 "$other" 2>/dev/null; check "--restart leaves other processes alone" "$?" 0
+kill -9 "$other" 2>/dev/null; wait "$other" 2>/dev/null
+
 echo "chroot-distro (distro file says chroot)"
 echo chroot > "$HOME/.hermes-mobile/distro"
 check "--which" "$(bash "$hd" --which)" chroot
@@ -52,7 +73,7 @@ bash "$hd" --put "$t/src.txt" "$t/dest/x.txt"
 check "--put copies from inside Debian" "$(cat "$t/dest/x.txt")" hi
 bash "$hd" --restart
 check "--restart asks su, with a pattern that can't match su itself" "$(cat "$HOME/su-args")" \
-  "-c pkill -9 -f '[h]ermes dashboard --host 127.0.0.1 --port 9119'"
+  "-c pkill -9 -f '[d]ashboard --host 127.0.0.1 --port 9119'"
 bash "$hd" --bogus 2>/dev/null; check "unknown option refused" "$?" 2
 
 [ "$fails" -eq 0 ] && echo "hermes-debian: OK" || { echo "hermes-debian: $fails failed"; exit 1; }
