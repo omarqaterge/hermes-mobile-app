@@ -65,7 +65,7 @@ only Allow once and Deny. Anything that doesn't parse gets no grant. The nonce's
 
 Header `X-Hermes-Mobile-Key`, body at most 4 KiB, always a JSON answer.
 
-- `{"op":"status"}` → `{"ok":true,"ready":bool,"master":bool,"kinds":{"contacts":bool,...}}`. Booleans only. A kind is true
+- `{"op":"status"}` → `{"ok":true,"ready":bool,"master":bool,"kinds":{"contacts":bool,...},"locked":bool}`. Booleans only. `locked` comes from the same keyguard check the read uses; when it is true the plugin says the phone is locked and to try after unlocking, and does not ask. A kind is true
   only with `READY`, the master, its switch and its Android permission.
 - `{"op":"read","session":"<chat id>","nonce":"<12 hex>","kind":"<kind>","args":"<the canonical args text>"}` →
   `{"ok":true,"kind":"<kind>","items":[...],"truncated":bool}` or `{"ok":false,"reason":"<token>"}`.

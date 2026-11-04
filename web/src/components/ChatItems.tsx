@@ -70,7 +70,11 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
   const rawOut = item.resultText || stored || ''
   const out = rawOut ? formatOutput(rawOut) : null
   // Media produced by a tool (image generation, screenshots, recordings…).
-  const mediaSrc =
+  // A phone_data result holds the user's own text (an SMS can carry a URL): plain text only, so opening the card
+  // never fetches an image and no link in it can be tapped.
+  const plain = item.name === 'phone_data'
+  const T = (text: string) => (plain ? text : <Linked text={text} />)
+  const mediaSrc = plain ? null :
     /(https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp|gif|mp4|webm|mp3|m4a|wav)|(?:\/|~\/)[^\s"')]+\.(?:png|jpe?g|webp|gif|mp4|webm|mp3|m4a|wav))/i.exec(rawOut)?.[1] || null
   const label = item.context || (item.name === 'phone_app' ? phoneAppLabel(item.args) : '') || commandLabel(item) || argsPreview(item.args) || ''
   const title = toolTitle(item)
@@ -108,13 +112,13 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
           {args && Object.keys(args).length > 0 && (
             <>
               <div className="tool-section">Arguments<span className="dim tool-raw">{item.name}</span></div>
-              <pre className="tool-pre"><Linked text={JSON.stringify(args, null, 2)} /></pre>
+              <pre className="tool-pre">{T(JSON.stringify(args, null, 2))}</pre>
             </>
           )}
           {item.summary && (
             <>
               <div className="tool-section">Summary</div>
-              <div className="tool-text"><Linked text={item.summary} /></div>
+              <div className="tool-text">{T(item.summary)}</div>
             </>
           )}
           {item.inlineDiff && (
@@ -147,7 +151,7 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
               {looksLikeDiff(out.text) ? (
                 <DiffView text={out.text} />
               ) : (
-                <pre className="tool-pre"><Linked text={out.text.length > 20000 ? out.text.slice(0, 20000) + '\n…' : out.text} /></pre>
+                <pre className="tool-pre">{T(out.text.length > 20000 ? out.text.slice(0, 20000) + '\n…' : out.text)}</pre>
               )}
             </>
           )}

@@ -3,7 +3,7 @@
 // Not covered here, because it is Java: the biometric itself, Android's permission dialog, the generation counter that
 // lets an off win over an on in flight, the switch cleared when a permission is seen missing, and blocked detection.
 // Those were only compiled; they need a real phone (docs/status/phone-data.md).
-const { WEB, check, sleep, nativeShell } = require('../lib.cjs')
+const { WEB, check, sleep, nativeShell, png } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -152,6 +152,80 @@ module.exports = async t => {
     const pg = await open(fresh())
     await pg.getByLabel('Search settings').fill('phone data')
     await pg.locator('.set-row', { hasText: 'Let the agent read phone data' }).first().waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: Settings search finds it'), () => check(false, 'phone data: Settings search finds it'))
+    await pg.close()
+  }
+  {
+    // A phone_data result is the user's own text (an SMS can carry a URL): opening its card shows plain text only, with no media
+    // preview, no fetch and no link. Another tool's card with the same text still has both.
+    const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await pg.addInitScript(nativeShell)
+    await pg.addInitScript(() => {
+      window.__socks = []
+      window.__sid = ''
+      const Orig = window.WebSocket
+      window.WebSocket = class extends Orig {
+        constructor(...a) {
+          super(...a)
+          window.__socks.push(this)
+          this.addEventListener('message', e => {
+            try {
+              const m = JSON.parse(e.data)
+              if (m.params && m.params.session_id) window.__sid = m.params.session_id
+            } catch {
+              /* not JSON */
+            }
+          })
+        }
+      }
+    })
+    const hits = []
+    await pg.route('http://beacon.test/**', r => {
+      hits.push(r.request().url())
+      return r.fulfill({ status: 200, contentType: 'image/png', body: png })
+    })
+    await pg.goto(WEB + '/')
+    const box = pg.getByPlaceholder('Message Hermux')
+    await box.waitFor({ timeout: 15000 })
+    await box.fill('hello')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await pg.waitForFunction(() => window.__sid, null, { timeout: 8000 })
+    await sleep(2500)
+    const text = 'Your code is at http://beacon.test/track.png?u=1 and see http://beacon.test/page'
+    const tool = (name, id) =>
+      pg.evaluate(([name, id, text]) => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        const ev = (type, payload) => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: window.__sid, payload } }) }))
+        ev('tool.start', { tool_id: id, name, args: { kind: 'sms' } })
+        ev('tool.complete', { tool_id: id, name, args: { kind: 'sms' }, duration_s: 0.1, result: text })
+      }, [name, id, text])
+    const expandAll = async () => {
+      for (let k = 0; k < 3; k++) {
+        const runs = pg.locator('.tool-run[aria-expanded="false"]')
+        if (!(await runs.count())) break
+        await runs.first().click()
+        await sleep(200)
+      }
+      const heads = pg.locator('.tool-head')
+      for (let k = 0; k < (await heads.count()); k++) if ((await heads.nth(k).getAttribute('aria-expanded')) !== 'true') await heads.nth(k).click()
+      await sleep(700)
+    }
+    const card = name =>
+      pg.evaluate(name => {
+        const c = [...document.querySelectorAll('.tool')].find(x => x.querySelector('.tool-name')?.getAttribute('title') === name)
+        return c && { imgs: c.querySelectorAll('img, video, audio').length, links: c.querySelectorAll('a').length, text: c.innerText }
+      }, name)
+    await tool('phone_data', 'pdtool-1')
+    await sleep(500)
+    await expandAll()
+    const pdc = await card('phone_data')
+    check(pdc && pdc.text.includes('http://beacon.test/track.png?u=1'), 'phone data card: the result text is shown as it is')
+    check(pdc && pdc.imgs === 0 && pdc.links === 0, `phone data card: no media preview and no link (${JSON.stringify(pdc && { imgs: pdc.imgs, links: pdc.links })})`)
+    check(hits.length === 0, `phone data card: opening it fetches nothing (${JSON.stringify(hits)})`)
+    await tool('terminal', 'othertool-1')
+    await sleep(500)
+    await expandAll()
+    const oth = await card('terminal')
+    check(oth && oth.imgs > 0 && oth.links > 0 && hits.length > 0, `phone data card: another tool's card still shows media and links (${JSON.stringify(oth && { imgs: oth.imgs, links: oth.links })}, ${hits.length} fetches)`)
     await pg.close()
   }
 }

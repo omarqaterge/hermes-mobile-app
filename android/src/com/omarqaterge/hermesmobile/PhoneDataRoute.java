@@ -66,7 +66,8 @@ final class PhoneDataRoute {
             if ("status".equals(op)) {
                 JSONObject s = PhoneData.status(c);
                 return new JSONObject().put("ok", true).put("ready", s.optBoolean("ready")).put("master", s.optBoolean("master"))
-                        .put("kinds", s.optJSONObject("kinds")).toString();
+                        .put("kinds", s.optJSONObject("kinds"))
+                        .put("locked", MainActivity.keyguardLocked(c)).toString();
             }
             if (!PhoneData.READY) return fail("not_ready");
             return read(c, req);
