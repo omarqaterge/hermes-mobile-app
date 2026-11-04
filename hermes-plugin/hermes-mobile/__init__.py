@@ -516,6 +516,9 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
     if verdict is not None:
         _dbg(f"auto mode blocked {tool_name} in {session_id}")
         return verdict
+    taint = _taint_directive(tool_name, args, session_id, task_id)
+    if taint is not None:
+        return taint
     tool_name, args = _peel_bridge(tool_name, args)
     if tool_name in ("write_file", "patch"):
         try:
@@ -790,6 +793,50 @@ def _chat_search():
 def _phone_app():
     """The phone_app tool (an app on a hidden screen, driven through the app's background host)."""
     return _load("hm_phone_app", "phone_app.py")
+
+
+def _phone_taint():
+    """After a chat has read phone data, ask before anything that can send it out (phone_taint.py)."""
+    return _load("hm_phone_taint", "phone_taint.py")
+
+
+_READ_CHATS: set = set()   # chats that called phone_data in this process, kept even if phone_taint.py cannot load
+
+
+def _taint_directive(tool_name, args, session_id, task_id):
+    """The pre_tool_call directive for a chat that has read phone data (an ask or a block), or None. Marks the chat on a
+    phone_data call whatever its outcome. Never logs a command; failing to load the check blocks sending tools there."""
+    inner = []
+    try:
+        calls = _phone_taint()._calls
+        inner = [n for n, _a in calls(tool_name, args)]
+    except Exception:
+        inner = [str(tool_name or "")]
+    chat = ""
+    try:
+        chat = _phone_taint().chat_id(session_id, task_id)
+    except Exception:
+        chat = str(session_id or task_id or "")
+    if "phone_data" in inner:
+        if chat:
+            if len(_READ_CHATS) > 500:
+                _READ_CHATS.clear()
+            _READ_CHATS.add(chat)
+        try:
+            _phone_taint().mark(chat)
+        except Exception:
+            pass
+    try:
+        return _phone_taint().check(tool_name, args, chat)
+    except Exception:
+        _event("plugin", "hook_failed", what="phone_taint")
+        coarse = ("terminal", "execute_code", "tool_call", "web_search", "web_extract", "send_message", "delegate_task",
+                  "computer_use", "cronjob_manage")
+        if chat in _READ_CHATS and any(n in coarse or n.startswith(("browser_", "mcp_", "send_")) for n in inner):
+            return {"action": "block", "message": (
+                "BLOCKED: this chat has read phone data and Hermux's check for actions that send data out could not "
+                "run. Tell the user; they can start a new chat.")}
+        return None
 
 
 def _phone_data():
