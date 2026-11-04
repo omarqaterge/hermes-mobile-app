@@ -59,6 +59,9 @@ describe('what is taken from an error', () => {
     const msg = new Error('could not open my_private_diary.ts:12:3')
     msg.stack = `Error: could not open my_private_diary.ts:12:3\n    at run (file:///a/index-abc.js:1:2)`
     expect(stackFrames(msg)).toBe('index-abc.js:1:2')
+    const inApp = new Error('x')
+    inApp.stack = 'Error: x\n    at run (file:///android_asset/www/index.html:2:81234)\n    at file:///android_asset/www/index.html:2:555'
+    expect(stackFrames(inApp)).toBe('index.html:2:81234,index.html:2:555')
     const noStack = new Error('words')
     noStack.stack = ''
     expect(stackFrames(noStack)).toBe('none')

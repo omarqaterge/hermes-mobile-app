@@ -33,13 +33,19 @@ run_loop() {  # name, command...
   local name=$1; shift
   local pidf=~/logs/$name.pid
   if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then return; fi
-  ( while true; do
+  # A program that keeps ending at once (a dashboard already running without this loop, say) waits longer each time, up to
+  # 5 min: a Debian start every 14 s all day costs real battery. One that ran for a minute or more starts again after 10 s.
+  ( delay=10
+    while true; do
       trim_log ~/logs/$name.log 2097152 524288
+      started=$SECONDS
       "$@" < /dev/null >> ~/logs/$name.log 2>&1
       rc=$?
       # Two loops end every few minutes on purpose (they sleep, then exit): only a failure counts for those.
       case "$name:$rc" in memory-sync:0 | app-keeper:0) ;; *) loop_exit "$name" "$rc" ;; esac
-      sleep 10
+      if [ $((SECONDS - started)) -ge 60 ]; then delay=10; sleep 10; continue; fi
+      sleep "$delay"
+      delay=$((delay * 2)); [ "$delay" -gt 300 ] && delay=300
     done ) &
   echo $! > "$pidf"
 }

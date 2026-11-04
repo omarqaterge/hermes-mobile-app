@@ -49,7 +49,8 @@ rm -f "$HOME/.hermes-mobile/diag-off"
 # The real script: a failing loop is recorded, one that ends on purpose isn't. sleep 10 and the Termux-only commands are stubbed.
 mkdir -p "$T/bin"
 for c in termux-wake-unlock am sshd pgrep; do printf '#!/bin/bash\nexit 0\n' > "$T/bin/$c"; done
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+printf '#!/bin/bash\necho "$PPID $1" >> "$SLEEPS"\nexit 0\n' > "$T/bin/sleep"
+export SLEEPS="$T/sleeps"
 cat > "$T/bin/hermes-debian" <<'FAKE'
 #!/bin/bash
 [ "${1:-}" = "--exists" ] && exit 1
@@ -60,8 +61,11 @@ mkdir -p "$HOME/bin"; cp "$T/bin/hermes-debian" "$HOME/bin/hermes-debian"
 head -c 2200000 /dev/zero | tr '\0' q > "$HOME/logs/old.log"
 PATH="$T/bin:$PATH" bash phone/hermes-services >/dev/null 2>&1 || true
 for _ in $(seq 1 100); do grep -q 'name=dashboard code=3' "$E" 2>/dev/null && break; perl -e 'select(undef,undef,undef,0.05)'; done
+dash=$(cat "$HOME/logs/dashboard.pid")
+for _ in $(seq 1 100); do [ "$(grep -c "^$dash " "$SLEEPS" 2>/dev/null)" -ge 7 ] && break; perl -e 'select(undef,undef,undef,0.05)'; done
 for p in "$HOME"/logs/*.pid; do kill "$(cat "$p")" 2>/dev/null || true; done
 check "grep -q 'name=dashboard code=3' '$E'" "a failing loop's exit code is recorded"
+check "[ \"\$(grep '^$dash ' '$SLEEPS' | head -7 | cut -d' ' -f2 | tr '\n' ' ')\" = '10 20 40 80 160 300 300 ' ]" "a loop that keeps failing waits longer each time, up to 5 min"
 check "! grep -q 'fake program output' '$E'" "the program's output never goes into the events"
 check "! grep -q 'name=app-keeper code=0' '$E' && ! grep -q 'name=memory-sync' '$E'" "a loop that ends on purpose isn't recorded"
 check "[ \$(wc -c < '$HOME/logs/old.log') -le 524288 ]" "a big log is trimmed when the script runs"
