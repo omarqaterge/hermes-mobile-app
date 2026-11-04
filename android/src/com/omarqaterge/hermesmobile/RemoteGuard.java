@@ -91,6 +91,27 @@ final class RemoteGuard {
         for (Iterator<Object[]> it = allowed.iterator(); it.hasNext(); ) if ((Long) it.next()[1] <= now) it.remove();
     }
 
+    /** Schemes that hand the text of a link to another app: a mail or phone composer, a map, the store, an Android intent. */
+    private static final String[] APP_SCHEMES = {"mailto", "tel", "sms", "smsto", "mms", "mmsto", "geo", "market", "intent", "android-app", "voicemail", "content"};
+
+    /**
+     * Should a bare main-frame navigation be refused while blocked? The internet, and every link that opens another app
+     * with the text of the link (mailto:x?body=..., sms:, tel:, geo:, market:, intent:). The page's address dialog shows
+     * these in full and its confirmed open (openExternal) is the only way out.
+     */
+    static boolean refusesNavigation(String url) {
+        if (isRemoteTarget(url)) return true;
+        if (url == null) return false;
+        StringBuilder b = new StringBuilder(url.length());
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch > ' ' && ch != 0x7f && !Character.isWhitespace(ch) && !Character.isISOControl(ch)) b.append(ch); // as a browser reads it
+        }
+        String sc = scheme(b.toString());
+        for (String s : APP_SCHEMES) if (s.equals(sc)) return true;
+        return false;
+    }
+
     /** The address without its #fragment (the WebView never sends one), or null when empty. */
     static String key(String url) {
         if (url == null) return null;

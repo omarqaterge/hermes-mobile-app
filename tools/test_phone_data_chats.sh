@@ -31,32 +31,70 @@ public class PhoneDataChatsTest {
         // invalid entries are ignored, valid ones in the same list still count
         List<Object> mixed = new ArrayList<>(Arrays.asList(null, 5, "", rep("x", 129), "bad\nline", "tab\tid", "good-1", true, new ArrayList<>(), "ninth"));
         c.record("chat-3", mixed);
-        check(c.contains("good-1") && c.contains("chat-3") && c.size() == 6, "invalid entries are ignored; the valid one stays");
+        check(c.contains("good-1") && c.contains("chat-3") && c.contains("ninth") && c.size() == 7, "invalid entries are ignored; the valid ones stay");
         check(!c.contains("") && !c.contains(null) && !c.contains(rep("x", 129)) && !c.contains("bad\nline"), "invalid ids are never known");
         c.record("", mixed); c.record(null, "not a list"); c.record(7, 8);
-        check(c.size() == 6, "an invalid session or a non-list chats changes nothing and throws nothing");
+        check(c.size() == 7, "an invalid session or a non-list chats changes nothing and throws nothing");
         check(!m.text.contains("bad") && !m.text.contains("tab"), "nothing invalid reached the stored text");
-        // up to 8 in the list
+        // up to 16 in the list, and at most 17 new ids per request
         PhoneDataChats d = new PhoneDataChats(new Mem());
-        List<Object> ten = new ArrayList<>();
-        for (int i = 0; i < 10; i++) ten.add("anc-" + i);
-        d.record("s", ten);
-        check(d.contains("anc-7") && !d.contains("anc-8") && !d.contains("anc-9"), "only the first 8 entries of the list count");
+        List<Object> twenty = new ArrayList<>();
+        for (int i = 0; i < 20; i++) twenty.add("anc-" + i);
+        d.record("s", twenty);
+        check(d.contains("anc-15") && !d.contains("anc-16") && !d.contains("anc-19") && d.size() == 17, "only the first 16 entries of the list count (17 new ids with the session)");
         d.record(rep("y", 128), null);
         check(d.contains(rep("y", 128)), "a 128-character id is accepted");
-        // bound
+        // no eviction under 30 days: a flood fills the record, the real chat stays and the overflow flag is set
+        long[] now = {1_000_000_000_000L};
         Mem big = new Mem();
-        PhoneDataChats e = new PhoneDataChats(big);
-        for (int i = 0; i < PhoneDataChats.MAX + 50; i++) e.record("id-" + i, null);
+        PhoneDataChats e = new PhoneDataChats(big, () -> now[0]);
+        e.record("real-chat", null);
+        for (int i = 0; i < 400; i++) { now[0] += 1000; e.record("flood-" + i, Arrays.asList("fa-" + i, "fb-" + i, "fc-" + i, "fd-" + i, "fe-" + i, "ff-" + i, "fg-" + i, "fh-" + i)); }
         check(e.size() == PhoneDataChats.MAX, "no more than MAX ids are kept");
-        check(!e.contains("id-0") && !e.contains("id-49") && e.contains("id-50") && e.contains("id-" + (PhoneDataChats.MAX + 49)), "the oldest are dropped, the newest kept");
-        check(new PhoneDataChats(big).size() == PhoneDataChats.MAX, "the bound holds after a restart");
-        e.record("id-50", null);
-        e.record("fresh", null);
-        check(e.contains("id-50") && !e.contains("id-51"), "a chat that reads again counts as newest");
+        check(e.overflowed(), "a flood past MAX sets the overflow flag");
+        check(e.contains("real-chat") && e.contains("flood-0"), "no id younger than 30 days was evicted");
+        check(e.contains("never-seen-chat"), "with the flag set every valid chat counts as tainted (fail closed)");
+        check(!e.contains("") && !e.contains(null), "an invalid id is still never known");
+        check(new PhoneDataChats(big, () -> now[0]).overflowed() && new PhoneDataChats(big, () -> now[0]).contains("another"), "the flag survives a restart");
+        check(e.any(), "any() is true once something was recorded");
+        e.forgetAll();
+        check(!e.overflowed() && e.size() == 0 && !e.contains("real-chat") && !e.any(), "forgetAll clears the flag and the ids");
+        check(!new PhoneDataChats(big, () -> now[0]).contains("real-chat") && !new PhoneDataChats(big, () -> now[0]).overflowed(), "and stays cleared after a restart");
+        // eviction only of ids older than 30 days, oldest first
+        long[] t2 = {2_000_000_000_000L};
+        Mem m2 = new Mem();
+        PhoneDataChats h = new PhoneDataChats(m2, () -> t2[0]);
+        for (int i = 0; i < PhoneDataChats.MAX; i++) h.record("old-" + i, null);
+        t2[0] += PhoneDataChats.KEEP_MS - 1000;
+        h.record("old-0", null); // seen again: young
+        h.record("new-a", null); // full and nothing older than 30 days yet
+        check(h.overflowed() && h.contains("zzz-missing"), "full of recent ids: the new one sets overflow");
+        h.forgetAll();
+        for (int i = 0; i < PhoneDataChats.MAX; i++) h.record("old-" + i, null);
+        t2[0] += PhoneDataChats.KEEP_MS + 1000;
+        h.record("keep-me", null);
+        check(!h.overflowed() && h.size() == PhoneDataChats.MAX && h.contains("keep-me") && !h.contains("old-0"), "past 30 days the oldest is evicted for a new id, no flag");
+        // age refresh by the page asking
+        long[] t3 = {3_000_000_000_000L};
+        PhoneDataChats k = new PhoneDataChats(new Mem(), () -> t3[0]);
+        for (int i = 0; i < PhoneDataChats.MAX; i++) k.record("c-" + i, null);
+        t3[0] += PhoneDataChats.KEEP_MS - 1000;
+        check(k.contains("c-0"), "c-0 is asked about at day 30 minus a second");
+        t3[0] += 2000;
+        k.record("fresh", null);
+        check(k.contains("c-0") && !k.contains("c-1") && !k.overflowed(), "the id the page asked about is kept; the older untouched one is evicted");
+        // a restart keeps the times: an old record without times loads as seen now
+        Mem legacy = new Mem();
+        legacy.text = "old-a\nold-b";
+        PhoneDataChats lg = new PhoneDataChats(legacy);
+        check(lg.contains("old-a") && lg.contains("old-b") && lg.size() == 2 && !lg.overflowed(), "a record from the first version (ids only) still loads");
         boolean idsOnly = true;
-        for (String l : big.text.split("\n")) if (!(l.startsWith("id-") || l.equals("fresh"))) idsOnly = false;
-        check(idsOnly, "the stored text holds ids only");
+        for (String l : big.text.split("\n")) {
+            if (l.startsWith("v2 ")) continue;
+            String[] p = l.split("\t");
+            if (p.length != 2 || !p[1].matches("[0-9]+") || p[0].isEmpty()) idsOnly = false;
+        }
+        check(idsOnly, "the stored text holds ids and times only");
         // a store that throws
         PhoneDataChats f = new PhoneDataChats(new PhoneDataChats.Store() {
             public String load() { throw new RuntimeException("x"); }
