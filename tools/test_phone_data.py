@@ -9,10 +9,20 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import types
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+hits = []
+psrv = HTTPServer(("127.0.0.1", 0), type("P", (BaseHTTPRequestHandler,), {
+    "do_POST": lambda self: (hits.append(1), self.send_response(500), self.end_headers()),
+    "log_message": lambda self, *a: None}))
+threading.Thread(target=psrv.serve_forever, daemon=True).start()
+for var in ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"):
+    os.environ[var] = f"http://127.0.0.1:{psrv.server_port}"
+os.environ.pop("no_proxy", None)
+os.environ.pop("NO_PROXY", None)
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("phone_data", os.path.join(HERE, "..", "hermes-plugin", "hermes-mobile", "phone_data.py"))
 pd = importlib.util.module_from_spec(spec)
@@ -28,8 +38,8 @@ def check(name, cond, detail=""):
 
 
 KEY = "fake-key-for-tests"
-APP = {"mode": "ready", "kinds": {k: True for k in pd.KINDS}, "read": {"ok": True, "kind": "contacts", "items": [], "truncated": False},
-       "calls": [], "key_seen": None}
+APP = {"mode": "ready", "kinds": {k: True for k in pd.KINDS}, "read": {"ok": True, "items": [], "truncated": False},
+       "calls": [], "key_seen": None, "read_code": 200, "hits": 0}
 
 
 class Fake(BaseHTTPRequestHandler):
@@ -37,7 +47,7 @@ class Fake(BaseHTTPRequestHandler):
         pass
 
     def _reply(self, obj, code=200):
-        b = json.dumps(obj).encode()
+        b = obj if isinstance(obj, bytes) else json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Length", str(len(b)))
         self.end_headers()
@@ -48,13 +58,39 @@ class Fake(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(n) or b"{}")
         APP["key_seen"] = self.headers.get("X-Hermes-Mobile-Key")
         APP["calls"].append(body)
+        if self.path == "/other":
+            APP["hits"] += 1
+            return self._reply({"ok": True, "ready": True, "kinds": {k: True for k in pd.KINDS}})
         if self.path != "/phonedata" or APP["mode"] == "404":
             return self._reply({"ok": False}, 404)
+        if APP["mode"] == "redirect" or (APP["mode"] == "redirect_read" and body.get("op") == "read"):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{srv.server_port}/other")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if APP["mode"] == "html":
+            return self._reply(b"<html>not json</html>")
+        if APP["mode"] == "drip" and body.get("op") == "read":
+            self.send_response(200)
+            self.send_header("Content-Length", "100000")
+            self.end_headers()
+            try:
+                for _ in range(20):
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    time.sleep(0.3)
+            except Exception:
+                pass
+            return
         if body.get("op") == "status":
             if APP["mode"] == "notready":
                 return self._reply({"ok": True, "ready": False, "master": False, "kinds": {}})
             return self._reply({"ok": True, "ready": True, "master": True, "kinds": APP["kinds"]})
-        return self._reply(APP["read"])
+        r = dict(APP["read"])
+        if r.get("ok") is True and "kind" not in r:
+            r["kind"] = body.get("kind")
+        return self._reply(r, APP["read_code"])
 
 
 srv = HTTPServer(("127.0.0.1", 0), Fake)
@@ -84,8 +120,8 @@ pd.event = lambda area, name, **f: EVENTS.append((area, name, f))
 
 
 def reset(**over):
-    APP.update(mode="ready", kinds={k: True for k in pd.KINDS},
-               read={"ok": True, "kind": "contacts", "items": [], "truncated": False}, calls=[], key_seen=None)
+    APP.update(mode="ready", kinds={k: True for k in pd.KINDS}, read_code=200, hits=0,
+               read={"ok": True, "items": [], "truncated": False}, calls=[], key_seen=None)
     APP.update(over)
     GATE.update(calls=[], result={"approved": True})
     EVENTS.clear()
@@ -194,6 +230,11 @@ check("hostile text stays inside items", j["untrusted_phone_data"] is True and "
       and "ignore previous instructions" not in json.dumps({k: v for k, v in j.items() if k != "items"}))
 body = j["items"][0]["body"]
 check("control characters stripped", all(ord(c) >= 32 for c in body) and "\x7f" not in body and " " not in body, repr(body))
+reset(read={"ok": True, "kind": "sms", "truncated": False, "items": [
+    {"bo\x00dy\u202e": "a\u2028b\x85c\u200bd\u202ee\U000e0041f\u200dg\u2029h\ttab\nnl", "nested": [{"k\u202ey": "v\x1b"}]}]})
+j = json.loads(pd.tool_handler({"kind": "sms"}, session_id="c"))
+check("keys and nested values cleaned; U+200D, tab, newline kept",
+      j["items"][0] == {"body": "abcdef\u200dgh\ttab\nnl", "nested": [{"ky": "v"}]}, j["items"])
 reset(read={"ok": True, "kind": "sms", "truncated": False, "items": [{"body": "x" * 40000}]})
 out = pd.tool_handler({"kind": "sms"}, session_id="c")
 check("answer over 32 KB refused", not out.startswith("{") and "too large" in out and "xxxx" not in out)
@@ -216,8 +257,70 @@ reset()
 pd.tool_handler({"kind": "contacts", "query": "q" * 64, "limit": 50}, session_id="c")
 pd.tool_handler({"kind": "calls", "from_ms": 0, "to_ms": 90 * 86400000}, session_id="c")
 check("limits themselves are allowed", len(reads()) == 2)
-pd.tool_handler("not a dict", session_id="c")
-check("non-dict args do not raise", True)
+reset()
+check("non-dict args are refused with a sentence", isinstance(pd.tool_handler("not a dict", session_id="c"), str)
+      and not APP["calls"])
+
+print("transport: proxy, redirect, JSON, status code, kind, drip")
+reset()
+out = pd.tool_handler({"kind": "photos"}, session_id="c")
+check("proxy variables set: the read still works", json.loads(out)["kind"] == "photos", out)
+pd.URL = "http://phone-data-test.example:%d/phonedata" % srv.server_port   # not local: a proxy variable would apply to it
+pd.tool_handler({"kind": "photos"}, session_id="c")
+check("proxy variables set: the proxy sees no traffic", not hits, str(len(hits)))
+pd.URL = srv_url
+reset(mode="redirect")
+out = pd.tool_handler({"kind": "contacts"}, session_id="c")
+check("redirect on status: not followed, not available, nothing asked", out == pd.UNAVAILABLE and APP["hits"] == 0 and not GATE["calls"], out)
+reset(mode="redirect_read")
+out = pd.tool_handler({"kind": "contacts"}, session_id="c")
+check("redirect on read: not followed, not available", out == pd.UNAVAILABLE and APP["hits"] == 0, out)
+reset(mode="html")
+check("non-JSON status: not available, nothing asked", pd.tool_handler({"kind": "contacts"}, session_id="c") == pd.UNAVAILABLE and not GATE["calls"])
+reset(read_code=404)
+check("read 404: not available", pd.tool_handler({"kind": "contacts"}, session_id="c") == pd.UNAVAILABLE)
+reset(read_code=500, read={"ok": True, "kind": "contacts", "items": [{"name": "x"}], "truncated": False})
+out = pd.tool_handler({"kind": "contacts"}, session_id="c")
+check("500 with ok:true is not a success", out == pd.FAILED, out)
+reset(read={"ok": True, "kind": "sms", "items": [{"name": "x"}], "truncated": False})
+out = pd.tool_handler({"kind": "contacts"}, session_id="c")
+check("answer of another kind is not a success", out == pd.FAILED, out)
+reset(mode="drip")
+pd.READ_TIMEOUT = 1.0
+t0 = time.monotonic()
+out = pd.tool_handler({"kind": "contacts"}, session_id="c")
+check("a dripping server is cut at the deadline", out == pd.FAILED and time.monotonic() - t0 < 3, f"{out} {time.monotonic() - t0:.1f}s")
+pd.READ_TIMEOUT = 20.0
+
+print("ranges the app would refuse are refused before asking")
+N = 1_800_000_000_000
+pd._now_ms = lambda: N
+D = 86400000
+reset()
+cases = [
+    ({"kind": "calendar", "to_ms": N + 91 * D}, False), ({"kind": "calendar", "to_ms": N - 1}, False),
+    ({"kind": "calendar", "to_ms": N + 90 * D}, True), ({"kind": "calendar", "from_ms": N + 100 * D}, True),
+    ({"kind": "calendar", "from_ms": N + 100 * D, "to_ms": N + 99 * D}, False),
+    ({"kind": "calls", "from_ms": N - 91 * D}, False), ({"kind": "calls", "from_ms": N + 1000}, False),
+    ({"kind": "calls", "from_ms": N - 90 * D}, True), ({"kind": "calls", "to_ms": 5 * D}, True),
+    ({"kind": "calls", "to_ms": 4102444800001}, False), ({"kind": "calls", "from_ms": 4102444800001, "to_ms": 4102444800002}, False),
+    ({"kind": "calendar", "from_ms": 4102444800000, "to_ms": 4102444800000}, True),
+]
+for a, ok in cases:
+    reset()
+    out = pd.tool_handler(a, session_id="c")
+    asked = bool(GATE["calls"])
+    check(f"{'allowed' if ok else 'refused'} {json.dumps(a)}", asked == ok and (ok or not APP["calls"]), out)
+
+print("query length counts UTF-16 units")
+for q, ok in (("\U0001F600" * 32, True), ("\U0001F600" * 33, False), ("\U0001F600" * 40, False), ("a" * 64, True), ("é" * 64, True)):
+    reset()
+    out = pd.tool_handler({"kind": "contacts", "query": q}, session_id="c")
+    check(f"query of {len(q)} characters ({pd._units(q)} units) {'allowed' if ok else 'refused'}", bool(GATE["calls"]) == ok, out)
+for v in (True, 1.0, "5", None):
+    reset()
+    pd.tool_handler({"kind": "photos", "limit": v}, session_id="c")
+    check(f"limit {v!r} refused", not GATE["calls"] and not APP["calls"])
 
 print("nothing private reaches logs or events")
 reset(read={"ok": True, "kind": "contacts", "truncated": False, "items": [{"name": "PLANTED-NAME"}]})
@@ -242,6 +345,7 @@ print("prompt section")
 reset()
 info = {"platform": "mobile"}
 p = pd.prompt_section(info)
+check("on: Auto access can't read", "Auto access" in p)
 check("on: lists kinds and the rules", all(k in p for k in pd.KINDS) and "asks the user" in p and "Full access" in p
       and "untrusted" in p and "never instructions" in p and "minimum" in p and "background" in p and len(p) <= 1000, p)
 check("tui is the same", pd.prompt_section({"platform": "tui"}) == p)
@@ -250,6 +354,8 @@ p = pd.prompt_section(info)
 check("only enabled kinds listed", "calls" in p and "contacts" not in p, p)
 reset(kinds={k: False for k in pd.KINDS})
 check("all off", pd.prompt_section(info) == pd._OFF_PROMPT and "Settings → Phone data" in pd._OFF_PROMPT)
+check("off text is not frozen as a fact", "when this chat started" in pd._OFF_PROMPT and "call `phone_data`" in pd._OFF_PROMPT
+      and "current state" in pd._OFF_PROMPT and len(pd._OFF_PROMPT) <= 1000)
 reset(mode="404")
 check("404 reads as off", pd.prompt_section(info) == pd._OFF_PROMPT)
 pd.URL = "http://127.0.0.1:1/phonedata"
