@@ -7,13 +7,16 @@ module.exports = async t => {
   const spf = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await spf.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
   const nBoot = calls().length
+  // This page's own requests: the shared call log also has the polling of pages opened by earlier checks.
+  const spfHttp = []
+  spf.on('request', r => spfHttp.push(new URL(r.url()).pathname.replace(/^\/__api/, '')))
   await spf.goto(WEB + '/')
   await sleep(1200) // connected, the slow resume (2.5 s) is in flight
   const early = calls().slice(nBoot).map(c => c.rpc)
   check(early.includes('session.resume') && early.includes('session.list') && !early.includes('profiles.list'), `profiles.list not sent while the chat opens (${early.filter(Boolean).join(',')})`)
   // The rest of the start-up burst waits too: on a phone it made session.list / session.resume ~20× slower.
   const BURST = ['/api/status', '/api/skills', '/api/model/info', '/api/config', '/api/plugins/hermes-mobile/activity']
-  const earlyHttp = calls().slice(nBoot).map(c => c.path).filter(Boolean)
+  const earlyHttp = [...spfHttp]
   check(!early.includes('commands.catalog') && !BURST.some(p => earlyHttp.includes(p)), `status, commands, skills, model, config and activity not sent while the chat opens (${[...new Set(earlyHttp)].join(',')})`)
   await spf.locator('.msg', { hasText: 'old answer' }).waitFor({ timeout: 6000 })
   await sleep(300)
@@ -57,13 +60,15 @@ module.exports = async t => {
   // ── Settings → About → Last start-up follows the marks while it is on screen (it used to stop at the mark it opened with) ──
   const sbt = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await sbt.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
+  await mock({ holdSlowResume: true }) // however slowly this machine opens Settings, the chat is still loading
   await sbt.goto(WEB + '/')
-  await sleep(600) // connected, the slow resume is in flight (its start closes the drawer)
+  await sleep(600) // connected, the held resume is in flight (its start closes the drawer)
   await sbt.getByRole('button', { name: 'Sessions' }).click()
   await sbt.locator('.nav-tile', { hasText: 'Settings' }).click()
   const bootRow = sbt.locator('.screen', { hasText: 'Last start-up' }).getByText(/^script /)
   await bootRow.waitFor({ timeout: 5000 })
   check(!/chat-live/.test(await bootRow.innerText()), 'Last start-up: opened while the chat is still loading, no chat-live yet')
+  await mock({ releaseSlowResume: true })
   await sbt.waitForFunction(() => /chat-live/.test(localStorage.getItem('hm.boot.v1') || ''), null, { timeout: 6000 })
   await sleep(100)
   check(/chat-live/.test(await bootRow.innerText()), 'Last start-up: the mark that arrives appears without leaving the screen')
