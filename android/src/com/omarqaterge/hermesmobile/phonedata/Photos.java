@@ -33,10 +33,10 @@ public final class Photos {
             MediaStore.Images.Media.WIDTH,
             MediaStore.Images.Media.HEIGHT,
         };
-        // No LIMIT in the sort order: the loop stops at the limit instead. Newest by date added; a row's time is the
-        // date taken when it has one.
+        // No LIMIT in the sort order: the loop stops at the limit instead. Plain columns, newest date taken first, then
+        // date added; rows with no date taken sort after dated ones. A row's time is the date taken, else date added.
         Cursor cur = c.getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection,
-            null, null, MediaStore.Images.Media.DATE_ADDED + " DESC");
+            null, null, MediaStore.Images.Media.DATE_TAKEN + " DESC, " + MediaStore.Images.Media.DATE_ADDED + " DESC");
         if (cur == null) return new Result(rows, false);
         try {
             while (cur.moveToNext()) {

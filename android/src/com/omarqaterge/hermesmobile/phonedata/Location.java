@@ -21,13 +21,21 @@ public final class Location {
         JSONArray rows = new JSONArray();
         if (lm == null) return new Result(rows, false);
         android.location.Location fix = last(lm, LocationManager.NETWORK_PROVIDER);
-        if (fix == null) fix = last(lm, LocationManager.PASSIVE_PROVIDER);
+        if (fix == null) {
+            // Android 8-10 want the fine permission for the passive provider, which we don't hold: that is no fix, not
+            // a failure. The network call above still throws when the coarse permission is gone.
+            try {
+                fix = last(lm, LocationManager.PASSIVE_PROVIDER);
+            } catch (SecurityException e) {
+                fix = null;
+            }
+        }
         if (fix == null) return new Result(rows, false);
         try {
             JSONObject row = new JSONObject();
             row.put("lat", round2(fix.getLatitude()));
             row.put("lon", round2(fix.getLongitude()));
-            row.put("accuracy_m", fix.hasAccuracy() ? Math.round(fix.getAccuracy()) : 0L);
+            row.put("accuracy_m", fix.hasAccuracy() ? Math.max(1000L, Math.round(fix.getAccuracy())) : 1000L);
             row.put("time_ms", fix.getTime());
             rows.put(row);
         } catch (JSONException e) {
