@@ -1236,8 +1236,9 @@ public class HermesService extends Service {
         return sp;
     }
 
-    /** A question from Hermes, as a Live Update: "Answer?" chip; expanded, the question in bold, the choices
-     * listed and one button per choice (a long list: the first two plus a text field with all as quick replies). */
+    /** A question from Hermes, as a Live Update: "Answer?" chip; expanded, the question in bold, the choices listed,
+     * up to two choice buttons and Answer. HyperOS drops a RemoteInput field from a promoted card (the same action
+     * draws on the Needs you card), so tapping the card or Answer opens AnswerBox, which has the field. */
     Notification askNotification(String sub) {
         JSONObject a = pendingAsk;
         String session = a.optString("session", "");
@@ -1247,16 +1248,18 @@ public class HermesService extends Service {
         org.json.JSONArray ch = a.optJSONArray("choices");
         if (ch != null) for (int k = 0; k < ch.length() && choices.size() < 5; k++) {
             String c = ch.optString(k, "").trim();
-            if (!c.isEmpty()) choices.add(c.length() > 40 ? c.substring(0, 40) : c);
+            if (!c.isEmpty()) choices.add(c); // whole: a tap answers with this text; only the card's list is cut
         }
         boolean single = a.optBoolean("single", true);
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder(q);
         t.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, t.length(), 0);
         if (single) for (String c : choices) {
             int st = t.length();
-            t.append("\n\u25CB ").append(c);
+            t.append("\n\u25CB ").append(c.length() > 40 ? c.substring(0, 40) : c);
             t.setSpan(new android.text.style.ForegroundColorSpan(GOLD), st + 1, st + 2, 0);
         }
+        if (single) t.append("\nTap to answer");
+        PendingIntent box = answerBox(session, q, choices);
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setColor(GOLD)
@@ -1267,20 +1270,23 @@ public class HermesService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
-                .setContentIntent(openApp(session));
+                .setContentIntent(single ? box : openApp(session));
         if (single) {
-            if (choices.isEmpty()) {
-                b.addAction(answerAction("ask", session, "Answer", null));
-            } else if (choices.size() <= 3) {
-                for (int k = 0; k < choices.size(); k++) b.addAction(choiceAction(session, choices.get(k), k));
-            } else {
-                b.addAction(choiceAction(session, choices.get(0), 0));
-                b.addAction(choiceAction(session, choices.get(1), 1));
-                b.addAction(answerAction("ask", session, "More\u2026", new java.util.ArrayList<CharSequence>(choices)));
-            }
+            // A notification shows three actions at most: keep the last one for Answer.
+            for (int k = 0; k < Math.min(2, choices.size()); k++) b.addAction(choiceAction(session, choices.get(k), k));
+            b.addAction(new Notification.Action.Builder(null, colored("Answer", GOLD), box).build());
         }
         promote(b, "Answer?");
         return b.build();
+    }
+
+    /** Opens AnswerBox on this question. An activity, so a locked phone asks for the unlock before it shows. */
+    PendingIntent answerBox(String session, String question, java.util.ArrayList<String> choices) {
+        Intent i = new Intent(this, AnswerBox.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(AnswerBox.EXTRA_SESSION, session == null ? "" : session)
+                .putExtra(AnswerBox.EXTRA_QUESTION, question)
+                .putStringArrayListExtra(AnswerBox.EXTRA_CHOICES, choices);
+        return PendingIntent.getActivity(this, ("box:" + session).hashCode(), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     /** A button that answers the open question with one fixed choice. */

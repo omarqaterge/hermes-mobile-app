@@ -6,6 +6,7 @@
 
 | Component | Exported | What it is |
 |---|---|---|
+| `.AnswerBox` | no | `launchMode="singleTask"`, its own task (`taskAffinity=""`), `excludeFromRecents`, `windowSoftInputMode="adjustResize\|stateVisible"`. Not shown over the lock screen. The question chip's answer box (4.3). |
 | `.MainActivity` | yes | `launchMode="singleTask"`, `windowSoftInputMode="adjustResize"`, handles `orientation`, `screenSize`, `screenLayout`, `keyboardHidden`, `keyboard`, `uiMode`, `density` itself (no restart on rotate or dark-mode change; `onConfigurationChanged` tells the page to re-resolve the System theme). Intent filters: `MAIN`/`LAUNCHER`; `ASSIST` and `VOICE_COMMAND` with `DEFAULT` (phone assistant, 4.6); `SEND` and `SEND_MULTIPLE` for `*/*` (Share to Hermux: text, links, photos, PDFs, any file). Meta-data `android.app.shortcuts` points at `res/xml/shortcuts.xml`. |
 | `.HermesService` | no | `foregroundServiceType="specialUse"` with the property `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` = "Pinned status of the on-device Hermux agent and delivery of its notifications". |
 | `.SttProbe` | no | `android:process=":sttprobe"`: checks an on-device speech model in a process of its own, so a model the speech engine can't run ends only that process (4.6). |

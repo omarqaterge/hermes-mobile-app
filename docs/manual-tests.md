@@ -285,3 +285,13 @@ YouTube was seen playing in an Android 15 emulator's WebView (Chrome 124) throug
 - [ ] **YouTube on a phone.** Send a YouTube link, tap the card. Expected: it plays in the chat, no "Error 153". Fullscreen turns with the phone; Back returns to the chat. Home stops the sound, and coming back shows the card.
 - [ ] **The other sites on a phone.** Try one public video each from Vimeo, Dailymotion, Streamable and Loom. Vimeo answered "Unable to play video" on the emulator's WebView, with or without the shell's page and sandbox; Dailymotion answered "Forbidden" for the one test address tried. Streamable and Loom were not tried. If a site refuses every WebView, take it out of `embedOf` so its links stay links.
 - [ ] **Open.** The card's Open hands the address to the site's app or the browser, and stops the player.
+
+## Answer field on the question chip
+
+- [x] (2026-11-04, 0.9.15-chiptest, Android 16: with three choices, not again with none; not from the shade.) With the
+      app in the background, have Hermux ask a question with no choices, then one with three choices. Expand the chip
+      and tap it. Expected: a box with the question, its choices and a field; a typed answer and a choice each reach
+      the chat and the chip goes back to the status. Back leaves the question open. Same from the shade.
+- [ ] Have Hermux ask a question with choices over 80 characters, after Hermes has restarted on the new plugin.
+      Expected: the box shows them whole.
+- [ ] Same with the phone locked. Expected: the unlock comes first, then the box.
