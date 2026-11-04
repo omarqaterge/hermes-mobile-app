@@ -8,7 +8,7 @@ import { errText, newSession, resumeSession, rpc } from '../gateway'
 import { closeScreen, setState, toast, useStore, type Screen } from '../store'
 import { haptic, openFile } from '../bridge'
 import { Markdown } from './Markdown'
-import { DocView } from './DocView'
+import { DocView, HeldScope } from './DocView'
 import { Media } from './Media'
 import { previewKind, type PreviewKind } from '../filekind'
 import { Linked } from './Linked'
@@ -738,9 +738,9 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
             {preview.media && <Media src={preview.media} alt={preview.entry.name} />}
             {preview.text != null && preview.doc &&
               (preview.doc.type === 'text' ? (
-                <pre className="tool-pre"><Linked text={preview.text.slice(0, 200_000)} /></pre>
+                <HeldScope from={null}><pre className="tool-pre"><Linked text={preview.text.slice(0, 200_000)} /></pre></HeldScope>
               ) : (
-                <DocView type={preview.doc.type} lang={preview.doc.lang} title={preview.entry.name} text={preview.text} network={false} />
+                <DocView type={preview.doc.type} lang={preview.doc.lang} title={preview.entry.name} text={preview.text} network={false} from={null} />
               ))}
             {preview.note && <div className="dim">{preview.note}</div>}
             {!preview.image && !preview.media && preview.text == null && !preview.note && <div className="dim">Loading…</div>}

@@ -5,9 +5,10 @@
 //
 // "Tainted" = the chat's items hold a phone_data tool call, whatever its outcome (allowed, denied, failed). It is derived
 // from the items, so it survives a reload or a resume (the history brings the tool items back) and nothing is stored.
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useLayoutEffect } from 'react'
 import { openExternal } from './bridge'
 import { confirmDialog } from './dialog'
+import { lineageOf } from './lineage'
 import { getState, subscribe, useStore, type AppState, type ChatItem } from './store'
 
 /** True inside an assistant message of a chat that has read phone data (set by Markdown). */
@@ -44,9 +45,13 @@ export function isTaintedItems(items: readonly ChatItem[] | null | undefined): b
 const shownItems = (s: AppState): readonly ChatItem[] | null =>
   s.opening && s.preview?.storedId === s.opening ? s.preview.items : s.active?.items ?? null
 
-/** The chat ids of what is on screen: the preview's stored id, or the active chat's stored and live ids. */
-const shownIds = (s: AppState): string[] =>
-  s.opening && s.preview?.storedId === s.opening ? [s.opening] : s.active ? [s.active.storedId, s.active.runtimeId] : s.opening ? [s.opening] : []
+/** The chat ids of what is on screen: the preview's stored id, or the active chat's stored and live ids, and every other id the
+ *  page knows for the same chat (lineage.ts: the segments before a context compression, earlier live ids). A chat that read in an
+ *  earlier segment has no phone_data item in the tip segment and a new live id after a restart, so its own two ids know nothing. */
+const shownIds = (s: AppState): string[] => {
+  const own = s.opening && s.preview?.storedId === s.opening ? [s.opening] : s.active ? [s.active.storedId, s.active.runtimeId] : s.opening ? [s.opening] : []
+  return [...new Set(own.flatMap(id => [id, ...lineageOf(id)]))]
+}
 
 // The app's own record (PhoneDataChats.java): the items can't tell when the phone_data call is older than the 60 cached items
 // of a preview, outside the tip segment Hermes resumes, or in a subagent whose parent this is. The shell answers at once.
@@ -55,18 +60,23 @@ const known = new Set<string>()
 const unknown = new Map<string, number>()
 const RECHECK_MS = 1000
 
-/** Did a phone_data read request for this chat id ever reach the app? False without a shell or with an older one. */
-export function nativeTainted(id: string | null | undefined): boolean {
+/** Did a phone_data read request for this chat id ever reach the app? Fails closed: a bridge call that throws means yes. Without
+ *  a shell (a browser run) the answer is no. With a shell that lacks the method (it ships with the page, so this is a broken
+ *  install) it is `strict`: yes for a document or a chat whose items can't be judged, no for a chat the page can see. */
+export function nativeTainted(id: string | null | undefined, strict = false): boolean {
   if (!id) return false
   if (known.has(id)) return true
+  const b = remoteBridge()
+  if (!b) return false
   const t = Date.now()
   const last = unknown.get(id)
   if (last !== undefined && t - last < RECHECK_MS) return false
   let yes = false
   try {
-    yes = remoteBridge()?.phoneDataTainted?.(id) === true
+    if (typeof b.phoneDataTainted !== 'function') return strict
+    yes = b.phoneDataTainted(id) === true
   } catch {
-    yes = false
+    return true // the record could not answer: closed (not remembered, asked again next time)
   }
   if (yes) {
     known.add(id)
@@ -78,9 +88,54 @@ export function nativeTainted(id: string | null | undefined): boolean {
   return yes
 }
 
-const taintedState = (s: AppState): boolean => isTaintedItems(shownItems(s)) || shownIds(s).some(nativeTainted)
+const taintedState = (s: AppState): boolean => isTaintedItems(shownItems(s)) || shownIds(s).some(id => nativeTainted(id))
 
 export const useTainted = (): boolean => useStore(taintedState)
+
+// ── a saved document drawn out of its chat (the Gallery, Files) ──
+// The chat on screen says nothing about the document: the agent may have saved a page holding the rows from a chat that read,
+// and the user opens it from the Gallery with another chat (or none) on screen. So such a document is judged by ITS chat:
+// every id of that chat (its own and the page's lineage for it). A document whose chat is unknown (an old saved copy, a file
+// from the phone) counts as tainted once the app has recorded any read at all, or when the record can't answer.
+type DocBridge = { phoneDataAnyRead?: () => boolean }
+
+/** Has the app recorded any read (or lost track of some to an overflow)? A shell that can't say, or throws: yes. No shell: no. */
+function anyRead(): boolean {
+  const b = remoteBridge() as (RemoteBridge & DocBridge) | undefined
+  if (!b) return false
+  try {
+    return typeof b.phoneDataAnyRead === 'function' ? b.phoneDataAnyRead() === true : true
+  } catch {
+    return true
+  }
+}
+
+/** Did the chat this document belongs to read phone data? `from` is that chat's stored id, or null when it is unknown. */
+export function docTainted(from: string | null): boolean {
+  if (!from) return anyRead() || isTaintedNow()
+  const s = getState()
+  if (s.active?.storedId === from && taintedState(s)) return true
+  return [from, ...lineageOf(from)].some(id => nativeTainted(id, true))
+}
+
+let heldDocs = 0
+
+/** Is this document held back (no HTML run, remote media behind a tap, addresses checked)? `from` undefined means the document
+ *  is drawn inside its own chat (the chat on screen decides, as everywhere else); a string is its chat; null is unknown. While a
+ *  held document is on screen the shell's request filter is on, whatever chat is open. */
+export function useDocHeld(from: string | null | undefined): boolean {
+  const held = useStore(() => (from === undefined ? false : docTainted(from)))
+  useLayoutEffect(() => {
+    if (!held) return
+    heldDocs++
+    reportRemoteBlock()
+    return () => {
+      heldDocs--
+      reportRemoteBlock()
+    }
+  }, [held])
+  return held
+}
 export const isTaintedNow = (): boolean => taintedState(getState())
 
 /** Would this address be fetched by the page (an image, video, audio or frame source)? Local files and attachments are not. */
@@ -184,7 +239,7 @@ let lastReport = ''
  *  start (a reload): a new page load starts blocked in the shell and is only opened by this. */
 function reportRemoteBlock(): void {
   const s = getState()
-  const tainted = isTaintedNow()
+  const tainted = isTaintedNow() || heldDocs > 0
   const key = `${s.opening || s.active?.runtimeId || ''}|${tainted}`
   if (key === lastReport) return
   lastReport = key

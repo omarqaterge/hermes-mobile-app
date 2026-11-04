@@ -10,6 +10,7 @@ import { api } from './api'
 import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
+import { noteLineage, noteListRow } from './lineage'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -412,6 +413,7 @@ export async function loadSessions(): Promise<void> {
     const r = await rpc<SessionListResult>('session.list', { limit: sessionLimit })
     bootMark('sessions')
     setState({ sessions: r.sessions ?? [] })
+    for (const row of r.sessions ?? []) noteListRow(row) // the chat's other ids, for the phone-data record (lineage.ts)
     noteSessions(r.sessions ?? [])
     void loadSentCounts(r.sessions ?? [])
     try {
@@ -556,6 +558,7 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
     ...(opts.model && opts.effort ? { reasoning_effort: opts.effort } : {})
   })
   const active = baseActive(r, r.stored_session_id)
+  noteLineage([active.storedId, r.stored_session_id], active.runtimeId)
   if (opts.cwd) chosenCwd.set(active.runtimeId, opts.cwd)
   trackBuild(active.runtimeId)
   keepPreview(prev)
@@ -629,6 +632,8 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   trackBuild(r.session_id) // a fresh resume builds its agent in the background too
   if (opts.auto && openSeq !== seq) return // the user went elsewhere while this was loading
   const next = baseActive(r, storedId)
+  // the id asked for, the one Hermes resumed and the stored one are the same chat; its live id joins them (lineage.ts)
+  noteLineage([storedId, r.resumed, r.stored_session_id, r.info?.stored_session_id], next.runtimeId)
   next.items = applySavedStats(next.items, next.storedId)
   if (opts.keepItemsIfSame && prev && prev.storedId === next.storedId && !addsToScreen(next.items, prev.items)) {
     next.items = prev.items
@@ -1635,6 +1640,12 @@ client.onEvent((ev: GatewayEvent) => {
       }
       break
     case 'session.info':
+      {
+        // A context compression gives the chat a new stored id: link it to the old one before anything asks the app about it.
+        const a = getState().active
+        const sid = (payload as { stored_session_id?: unknown }).stored_session_id
+        if (a && typeof sid === 'string' && sid && sid !== a.storedId) noteLineage([a.storedId, sid], a.runtimeId)
+      }
       updateActive(x => ({ info: { ...x.info, ...(payload as object) } }))
       break
     case 'session.title':
@@ -1994,6 +2005,7 @@ export async function compressChat(): Promise<string> {
   if (!a) throw new Error('No chat open')
   if (a.running) throw new Error('Wait until Hermux has finished')
   const r = await rpc<SessionCompressResult>('session.compress', { session_id: a.runtimeId }, 300_000)
+  noteLineage([a.storedId, r.info?.stored_session_id, r.stored_session_id], a.runtimeId) // the compressed chat has a new stored id (lineage.ts)
   if (r.compressed === false || r.summary?.noop || r.summary?.aborted || r.summary?.refused_would_grow) return r.message || r.summary?.headline || 'Nothing to compress'
   const b = r.before_messages, n = r.after_messages
   const text = b != null && n != null ? `Context compressed: ${b} → ${n} messages` : 'Context compressed'
