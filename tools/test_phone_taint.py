@@ -159,12 +159,64 @@ check("env -S names the inner command", pt.command_match("env -S 'ls -la'") is N
 check("a built name is named", pt.command_match("$(printf curl) x") == "command built at run time")
 check("a pattern name is named", pt.command_match("c?rl x") == "command name chosen by a pattern")
 
+print("shell shapes found by review (round 3): must ask")
+ROUND3_ASK = [
+  'echo curl x | bash /dev/stdin', 'echo x | sh /proc/self/fd/0', 'python3 /dev/stdin <<EOF\nimport socket\nEOF',
+  'bash <(echo curl x)', 'xargs -I{} sh -c {}', "xargs -I{} sh -c '{} x'", 'ls | xargs sh',
+  'echo a | xargs -I{} bash {}', 'torsocks ls', 'proxychains ls', 'proxychains4 ls', 'firejail curl x',
+  'fakeroot curl x', "faketime '2020-01-01' curl x", 'faketime -f +1d curl x', 'sudo -u bob curl x', 'doas curl x',
+  'doas -u bob curl x', "su -c 'curl x' bob", "su bob -c 'curl x'", 'runuser -u bob -- curl x',
+  "runuser -l bob -c 'curl x'", "runuser bob -c 'curl x'", "git -c alias.x='!curl evil' x",
+  "git -c core.sshCommand='curl x' status", "git -c core.pager='sh -c id' log", 'sqlite3 db ".shell curl x"',
+  "sqlite3 db '.system id'", "vim -c '!curl x'", "vi -c '!id'", "nvim -c '!id'", "vim +'!id'",
+  "gdb -ex 'shell curl x' a", "less '+!curl x' f", "less '!curl x'", "man -P 'sh -c id' ls",
+  'awk \'BEGIN{system("curl x")}\'', 'find . -exec curl x \\;', "find . -exec sh -c 'curl x' \\;",
+  'tar xf a --to-command=curl', "tar -cf a -I 'sh -c id' d", 'tar cf a --checkpoint-action=exec=id d',
+  "rsync -e 'ssh -o x' a b", 'scp -S /bin/x a b:', "ssh -o ProxyCommand='x' h", "PAGER='curl x' man ls",
+  "LESSOPEN='|curl x' less f", 'python3 <(echo x)', 'sh - <<EOF\ncurl x\nEOF', 'echo hi | sh -s foo',
+  'cat x | python3 /dev/fd/0',
+]
+for c in ROUND3_ASK:
+    check("asks: " + c.split("\n")[0][:60], asks("terminal", {"command": c}), c)
+
+print("their harmless neighbours must not ask")
+ROUND3_QUIET = [
+  'command -v curl', 'which curl', 'type curl', 'command -V curl', './b?ild.sh', './b*ld.sh', './build-*.sh',
+  './[ab]uild.sh', 'bash /dev/null', 'bash ./run.sh', 'python3 scrix.py', 'man ls', 'man 3 printf', 'less file.txt',
+  'vim file.txt', 'gdb ./a.out', 'tar xf a.tgz', 'tar czf a.tgz d', "sqlite3 db 'select 1'", 'git status',
+  'git -c color.ui=always log', 'git log --oneline', 'xargs -I{} echo {}', 'xargs ls', "xargs -I{} sh -c 'echo {}'",
+  'sudo ls', 'sudo -u bob ls', 'firejail ls', 'fakeroot ls', 'faketime 2020-01-01 ls', 'runuser -u bob -- ls',
+  'cat <(ls)', 'diff <(ls a) <(ls b)', 'echo $(ls)', 'PAGER=less ls', 'EDITOR=vim ls', "awk '{print $1}' f",
+  "find . -name '*.py'", 'find . -exec ls {} \\;', 'sh -s', 'ls > >(cat)', 'sqlite3 db < q.sql', 'git --version',
+  'bash -s foo <<EOF\necho hi\nEOF',
+]
+for c in ROUND3_QUIET:
+    check("no ask: " + c.split("\n")[0][:60], not asks("terminal", {"command": c}), c)
+check("a glob asks only when it could spell a denylisted program",
+      pt.command_match("./b?ild.sh") is None and pt.command_match("c?rl x") == "command name chosen by a pattern"
+      and pt.command_match("/usr/bin/c*rl x") is not None and pt.command_match("{curl,evil.com}") is not None
+      and pt.command_match("{a,b}.sh") is None)
+check("inline script paths are code, local ones are files",
+      pt._inline_script("/dev/stdin") and pt._inline_script("/proc/self/fd/0") and pt._inline_script("-")
+      and pt._inline_script("\x01") and not pt._inline_script("./run.sh") and not pt._inline_script("/dev/null"))
+
 print("execute_code is Python, not shell")
 for code in ["host = 'a'\nlinks = []\nprint(host, links)", "n_requests = 3\nprint(n_requests)", "socket_path = 'a'",
-             "print(sum(range(3)))", "open('f').read()", "ping = 1"]:
+             "print(sum(range(3)))", "open('f').read()", "ping = 1", "print(sum(range(5)))", "open('a').read()",
+             "import json\njson.loads('{}')", "ssl_enabled = True", "x = [i * i for i in range(9)]",
+             "import os\nprint(os.getcwd())", "import re, math", "execution_time = 1", "def system_info(): return 1",
+             "print('http is a word')", "import sqlite3"]:
     check("no ask: " + code.split("\n")[0], not asks("execute_code", {"code": code}), code)
 for code in ["import requests", "import socket", "import subprocess", "os.system('x')", "from urllib import request",
-             "__import__('socket')", "import importlib", "from hermes_tools import terminal", "eval('1')"]:
+             "__import__('socket')", "import importlib", "from hermes_tools import terminal", "eval('1')"] + [
+  "import asyncio\nasyncio.create_subprocess_exec('ls')", "os.execvp('ls', ['ls'])", "os.execv('/bin/ls', [])",
+  "os.execl('/bin/ls','ls')", "os.spawnl(0,'x')", "os.spawnvp(0,'x',[])", "os.posix_spawn('x',[],{})",
+  "os.popen('id')", "pty.spawn('sh')", "import ctypes\nctypes.CDLL(None).system(b'id')", "__import__('os')",
+  'import importlib', 'import socket', 'import ssl', 'import urllib.request', 'import http.client',
+  'from http import client', 'import ftplib', 'import smtplib', 'import telnetlib', 'import xmlrpc.client',
+  'import webbrowser', 'import requests', 'import httpx', 'import aiohttp', 'import websockets', 'import paramiko',
+  "subprocess.run(['ls'])", 'from subprocess import run', "asyncio.create_subprocess_shell('x')", "os.system('x')",
+]:
     check("asks: " + code, asks("execute_code", {"code": code}), code)
 
 print("a tool nobody decided about asks (fail closed)")
@@ -281,6 +333,28 @@ check("read_file not blocked", init._taint_directive("read_file", {}, "c5", "") 
 check("an unknown tool is blocked too (fail closed)", init._taint_directive("yb_send_dm", {}, "c5", "")["action"] == "block")
 check("a tool through the bridge is blocked", init._taint_directive("tool_call", {}, "c5", "")["action"] == "block")
 check("another chat not blocked", init._taint_directive("terminal", {"command": "ls"}, "c8", "") is None)
+# a chat that read before this process started is known only from the state file
+init._READ_FILE = pt.PATH
+init._READ_CHATS.clear()
+pt.PATH.parent.mkdir(parents=True, exist_ok=True)
+pt.PATH.write_text(json.dumps({"chats": {"c-old": 1.0}}))
+check("fallback: a chat in the state file is blocked after a restart",
+      init._taint_directive("terminal", {"command": "ls"}, "c-old", "")["action"] == "block")
+check("fallback: a different chat id is not blocked", init._taint_directive("terminal", {"command": "ls"}, "other", "") is None)
+check("fallback: a local tool is not blocked there", init._taint_directive("read_file", {}, "c-old", "") is None)
+check("fallback: a chat not in the file is not blocked", init._taint_directive("terminal", {"command": "ls"}, "c-new", "") is None)
+pt.PATH.unlink()
+check("fallback: no state file means nobody has read", init._taint_directive("terminal", {"command": "ls"}, "c-old", "") is None)
+for label, content in (("not JSON", "{oops"), ("no chats key", "{}"), ("chats is a list", '{"chats": []}')):
+    pt.PATH.write_text(content)
+    check("fallback fails closed, " + label,
+          init._taint_directive("terminal", {"command": "ls"}, "c-never", "")["action"] == "block")
+pt.PATH.unlink()
+pt.PATH.mkdir()
+check("fallback fails closed, state file unreadable (a directory)",
+      init._taint_directive("terminal", {"command": "ls"}, "c-never", "")["action"] == "block")
+check("fallback unreadable: a local tool still runs", init._taint_directive("read_file", {}, "c-never", "") is None)
+pt.PATH.rmdir()
 init._phone_taint = good
 
 print("nothing about commands or results is logged")

@@ -79,7 +79,7 @@ def _norm(ids: Any) -> List[str]:
 def _with_parents(ids: List[str]) -> List[str]:
     out = list(ids)
     for i in list(out):
-        for _ in range(8):   # a chain of subagents
+        for _ in range(16):   # a chain of subagents
             i = _parents.get(i, "")
             if not i or i in out:
                 break
@@ -199,13 +199,16 @@ _NET_WORDS = frozenset((
     "curl wget nc ncat netcat socat ssh scp sftp rsync ftp lftp tftp telnet nmap nslookup dig host ping traceroute "
     "sendmail mail mutt msmtp ssmtp swaks mosquitto_pub aria2c lynx w3m links httpie http https xh rclone "
     "termux-sms-send termux-share termux-open termux-open-url termux-telephony-call xdg-open "
-    "yt-dlp youtube-dl you-get gallery-dl gdown aria2 axel mosh autossh sshpass adb").split())
+    "yt-dlp youtube-dl you-get gallery-dl gdown aria2 axel mosh autossh sshpass adb "
+    "torsocks tsocks proxychains proxychains4").split())
 _SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish".split())
 _INTERP = re.compile(r"^(?:python[0-9.]*|pypy3?|node(?:js)?|deno|bun|perl|ruby|php|lua|luajit|tclsh|osascript|Rscript)$")
 _ONELINER = re.compile(r"^(?:-[a-zA-Z]*[ceEr]|-p[ne]?|--eval|--exec|--print)$")   # -c -e -E -r -pe -ne --eval ...
 _NET_MODULES = ("http.server", "SimpleHTTPServer", "smtpd", "smtplib", "ftplib", "telnetlib", "socket", "urllib",
                 "http.client", "xmlrpc", "pyftpdlib", "aiohttp", "requests", "httpx", "uvicorn", "websockets")
-_GIT_SENDS = frozenset(("push", "clone", "fetch", "pull", "ls-remote", "send-email", "request-pull"))
+_GIT_SENDS = frozenset(("push", "clone", "fetch", "pull", "ls-remote", "send-email", "request-pull", "submodule", "svn",
+                        "imap-send", "difftool", "mergetool", "daemon", "http-push", "http-fetch", "remote-http",
+                        "remote-https", "remote-ext"))
 _GIT_OPT_ARG = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env"))
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PLACEHOLDER = "\x00"   # stands in for a $(...) or backtick substitution inside a word
@@ -222,11 +225,74 @@ _WRAP: Dict[str, frozenset] = {
     "stdbuf": frozenset(("-i", "-o", "-e")), "setsid": frozenset(), "busybox": frozenset(), "toybox": frozenset(),
     "then": frozenset(), "do": frozenset(), "else": frozenset(), "elif": frozenset(),
     "if": frozenset(), "while": frozenset(), "until": frozenset(), "!": frozenset(), "{": frozenset(),
-    "unbuffer": frozenset(),
+    "unbuffer": frozenset(), "firejail": frozenset(), "fakeroot": frozenset(("-l", "-i", "-s", "-u", "-b", "--lib", "--faked")),
 }
 # Commands that run another command or a command line given as text; _unwrap says which one (see there).
 _EXEC_WRAP = frozenset(("flock script strace ltrace proot-distro proot chroot nsenter unshare watch parallel chrt "
-                        "taskset").split())
+                        "taskset faketime").split())
+# Environment variables that name a program some command then runs (`PAGER=... man x`, `LESSOPEN='|...' less f`).
+_ENV_RUNS = frozenset(("LESSOPEN LESSCLOSE MANPAGER PAGER GIT_PAGER GIT_SSH_COMMAND GIT_SSH GIT_PROXY_COMMAND GIT_ASKPASS "
+                       "SSH_ASKPASS SUDO_ASKPASS RSYNC_RSH BASH_ENV PYTHONSTARTUP LD_PRELOAD PROMPT_COMMAND "
+                       "GIT_EXTERNAL_DIFF").split())
+# git -c KEY=VALUE keys that run a program
+_GIT_CFG_RUNS = re.compile(r"^(?:alias\..+|core\.(?:sshcommand|pager|editor|fsmonitor|askpass|gitproxy|hookspath)|"
+                           r"credential(?:\..+)?\.helper|sequence\.editor|diff\.external|gpg\.program|"
+                           r"protocol\.ext\.allow|http\.proxy|url\..+\.insteadof|diff\..+\.textconv|"
+                           r"filter\..+\.(?:clean|smudge|process)|merge\..+\.driver|pager\..+)$", re.I)
+_PLAIN_PAGER = re.compile(r"^(?:/[\w./-]*/)?(?:less|more|cat|most)(?: -[A-Za-z]+)*$")
+_VI = frozenset("vim vi nvim view ex vimdiff rvim rview gvim nvi neovim".split())
+_INTERP_NAMES = ("python python3 pypy pypy3 node nodejs deno bun perl ruby php lua luajit tclsh osascript Rscript "
+                 "awk gawk mawk find fd sqlite3 vim vi nvim gdb less man tar").split()
+_RISKY_NAMES: Optional[frozenset] = None
+
+
+def _risky_names() -> frozenset:
+    """Program names a command word may not expand into (the denylist the glob check compares against)."""
+    global _RISKY_NAMES
+    if _RISKY_NAMES is None:
+        _RISKY_NAMES = frozenset(_NET_WORDS | _SHELLS | set(_WRAP) | _EXEC_WRAP | _MEDIA | _PKG | _VI
+                                 | {"git", "gh", "eval", "source", "su", "doas", "sudo", "python3.11", "python3.12"}
+                                 | set(_INTERP_NAMES))
+    return _RISKY_NAMES
+
+
+def _brace_alts(base: str) -> List[str]:
+    """The words a `{a,b}` brace list in `base` expands to (one list at a time, at most 64 words); ranges are left alone."""
+    outs = [base]
+    for _ in range(4):
+        nxt: List[str] = []
+        changed = False
+        for w in outs:
+            m = re.search(r"\{([^{}]*,[^{}]*)\}", w)
+            if not m:
+                nxt.append(w)
+                continue
+            changed = True
+            for alt in m.group(1).split(","):
+                nxt.append(w[:m.start()] + alt + w[m.end():])
+        outs = nxt[:64]
+        if not changed:
+            break
+    return outs
+
+
+def _pattern_may_be_risky(word: str) -> bool:
+    """Whether a command word with `*`, `?`, `[...]` or `{a,b}` in it could expand into the name of a program on the
+    denylist. `./b?ild.sh` can't; `c?rl`, `cur[l]` and `/usr/bin/c*rl` can."""
+    import fnmatch
+    base = _base(word)
+    for alt in _brace_alts(base):
+        if not re.search(r"[*?\[]", alt):
+            if alt in _risky_names():
+                return True
+            continue
+        if any(fnmatch.fnmatchcase(n, alt) for n in _risky_names()):
+            return True
+    return False
+
+
+def _inline_script(a: str) -> bool:
+    return bool(_INLINE_PATH.match(a)) or _PROCSUB in a
 _MEDIA = frozenset("ffmpeg ffprobe ffplay mpv mplayer vlc cvlc".split())   # read and write network addresses
 _PKG = frozenset("pip pip3 pipx npm npx yarn pnpm cargo go gem apt apt-get pkg dpkg uv uvx".split())
 _PKG_OPTS = frozenset(("--index-url --extra-index-url --find-links --proxy --https-proxy --trusted-host --registry "
@@ -235,6 +301,9 @@ _GH_LOCAL = frozenset(("help", "version", "completion", "config", "alias"))   # 
 _URLISH = re.compile(r"(?<!file)://|^(?:tcp|udp|srt|rist|tls|unix|icecast|rtp|rtsp|rtmp[a-z]*|ftp|sftp)(?:\+[a-z]+)?:", re.I)
 _HOME_PATH = re.compile(r"^\$\{?(?:HOME|PREFIX|PWD|TMPDIR)\}?/[\w./+-]*$")   # `$HOME/bin/tool`: a path, not a built name
 _PLAIN_PATH = re.compile(r"^(?!/(?:dev|proc)/)[\w./~+-]+$")
+_PROCSUB = "\x01"   # stands in for a process substitution `<(...)` or `>(...)` inside a word
+# A "script" path that is really code from input: stdin, a file descriptor, `-` or a process substitution.
+_INLINE_PATH = re.compile(r"^(?:-|/dev/(?:stdin|fd/\d+|tty)|/proc/(?:self|thread-self|\d+)/fd/\d+)$")
 _BRACES = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")
 
 # One command of a parsed line: (words, dyn flags, got its input from a pipe)
@@ -276,7 +345,7 @@ def _parse(text: str) -> List[_Cmd]:
         _kind, saved = stack.pop()
         S.clear()
         S.update(saved)
-        S["cur"] = list(S["cur"]) + [_PLACEHOLDER]
+        S["cur"] = list(S["cur"]) + [_PROCSUB if _kind == "<(" else _PLACEHOLDER]
         S["has"], S["dyn"] = True, True
 
     i = 0
@@ -301,6 +370,10 @@ def _parse(text: str) -> List[_Cmd]:
             continue
         if c == "$" and t.startswith("$(", i):
             push("$(")
+            i += 2
+            continue
+        if c in "<>" and q is None and t.startswith("(", i + 1):   # a process substitution <(...) or >(...)
+            push("<(")
             i += 2
             continue
         if c == "`":
@@ -394,7 +467,7 @@ def _parse(text: str) -> List[_Cmd]:
             if S["depth"] > 0:
                 S["depth"] -= 1
                 endcmd()
-            elif stack and stack[-1][0] == "$(":
+            elif stack and stack[-1][0] in ("$(", "<("):
                 pop()
             else:
                 endcmd()
@@ -503,6 +576,8 @@ def _strip_wrappers(w: List[str], d: List[bool]) -> Tuple[int, Optional[Tuple[st
         if base not in _WRAP:
             break
         opts = _WRAP[base]
+        if base == "command" and any(re.match(r"^-[a-zA-Z]*[vV][a-zA-Z]*$", y) for y in w[i + 1:i + 3]):
+            return len(w), None   # `command -v curl` only looks a name up
         i += 1
         duration = base == "timeout"
         while i < len(w):
@@ -592,6 +667,8 @@ def _unwrap(base: str, args: List[str], argd: List[bool], fed: bool) -> Optional
         if cmd:
             return "text", " ".join(cmd), any(argd[j:j + len(cmd)])
         return ("ask", "parallel running commands from its input", None) if fed else None
+    if base == "faketime":
+        return words(_skip_opts(args, frozenset()) + 1)   # the time, then the command
     if base == "chrt":
         if "-p" in args or "--pid" in args:
             return None
@@ -658,6 +735,10 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
     if depth > MAX_DEPTH:
         return "commands nested too deeply to read"   # fail closed
     i, split = _strip_wrappers(w, d)
+    for x in w[:i]:   # `PAGER='curl ...' man ls`: a variable that names a program some command runs
+        name, _eq, val = x.partition("=")
+        if _ASSIGN.match(x) and name in _ENV_RUNS and val and not _PLAIN_PAGER.match(val):
+            return f"{name} set to a program to run"
     if split is not None:   # env -S 'text'
         return "command built at run time" if split[1] else _match_text(split[0], depth + 1)
     if i >= len(w):
@@ -666,11 +747,21 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
     base = _base(word)
     args, argd, inline = _split_args(w[i + 1:], d[i + 1:])
     fed = piped or inline   # the command reads text from a pipe or a heredoc
+    # xargs hands its input to the command: a shell or interpreter it runs may get code (or a script name) that way
+    repl = {"{}"}
+    xa = False
+    for k, x in enumerate(w[:i]):
+        if _base(x) == "xargs":
+            xa = True
+        if x == "-I" and k + 1 < len(w):
+            repl.add(w[k + 1])
+        elif x.startswith("-I") and len(x) > 2:
+            repl.add(x[2:])
     # a command word built at run time, or a pattern that picks the name: `$(printf curl)`, `${C:-curl}`, `c?rl`, `cur[l]`
     if d[i] and not _HOME_PATH.match(word):
         return "command built at run time"
     if any(ch.isalpha() for ch in word) and word not in ("[", "[[") and not word.startswith("-") \
-            and (re.search(r"[*?\[]", word) or _BRACES.search(word)):
+            and (re.search(r"[*?\[]", word) or _BRACES.search(word)) and _pattern_may_be_risky(word):
         return "command name chosen by a pattern"
     if base in _NET_WORDS:
         return f"network command {base}"
@@ -690,6 +781,10 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
         j = 0
         while j < len(args):
             a = args[j]
+            if a in ("-c", "--config-env") and j + 1 < len(args):
+                key, _eq, val = args[j + 1].partition("=")
+                if _GIT_CFG_RUNS.match(key.strip()) or val.lstrip().startswith("!"):
+                    return f"git -c {key.strip()[:40]} (setting that runs a program)"
             if a in _GIT_OPT_ARG:
                 j += 2
             elif a.startswith("-"):
@@ -710,6 +805,9 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
                 if r:
                     return f"alias for {r}"
         return None
+    if base == "runuser" and ("--" in args or "-u" in args or "--user" in args):   # runuser -u USER -- command
+        k = args.index("--") + 1 if "--" in args else (args.index("-u") if "-u" in args else args.index("--user")) + 2
+        return _match_cmd((args[k:], argd[k:], False, []), whole, depth + 1) if k < len(args) else None
     if base in _EXEC_WRAP:
         got = _unwrap(base, args, argd, fed)
         if got is None:
@@ -727,22 +825,32 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             if _URLISH.search(a) or (a == "-i" and j + 1 < len(args) and argd[j + 1]):
                 return f"{base} reading or writing a network address"
         return None
-    if base in _SHELLS or base == "su":
+    if base in _SHELLS or base in ("su", "runuser"):
         # `bash -c '...'`: look inside the text it runs; a text built from a substitution that decodes something is asked
         for j, a in enumerate(args):
             if a == "--":
                 break
             if re.match(r"^-[a-zA-Z]+$", a) and "c" in a[1:] and j + 1 < len(args):
+                if xa and args[j + 1].strip().startswith(tuple(repl) + ("$1", '"$1"', "$@", '"$@"')):
+                    return f"{base} -c running text from xargs input"
                 r = _match_text(args[j + 1], depth + 1)
                 if r:
                     return r
                 if argd[j + 1] and _DECODE.search(whole):
                     return f"text decoded and run by {base} -c"
                 return None
-        if base == "su":
+        if base in ("su", "runuser"):
             return None
-        scripts = [a for a in args if not a.startswith("-") and a != "-"]
-        if (piped or inline) and not scripts:
+        stdin_script = any(re.match(r"^-[a-zA-Z]*s[a-zA-Z]*$", a) for a in args if a.startswith("-") and a != "--")
+        pos = [a for a in args if not a.startswith("-") or a == "-"]
+        if stdin_script and pos and not _inline_script(pos[0]):
+            pos = []   # `bash -s arg`: the words after -s are arguments, the script comes from input
+        first = pos[0] if pos else None
+        if first is not None and (_inline_script(first) or (xa and first in repl)):
+            if body and not piped and _PROCSUB not in first:
+                return _match_text("\n".join(body), depth + 1)   # `bash /dev/stdin <<EOF`: look at the heredoc
+            return f"{base} running code from {'xargs input' if xa and first in repl else 'input'}"
+        if (piped or inline) and first is None:
             if body and not piped:
                 return _match_text("\n".join(body), depth + 1)   # a heredoc: look at the commands it holds
             return f"text piped into {base}"
@@ -767,8 +875,37 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
                     return _oneliner(base, a, args[j + 1], argd[j + 1]) if j + 1 < len(args) else None
                 j += 2 if a in ("-W", "-X", "--require") else 1
                 continue
+            if _inline_script(a) or (xa and a in repl):   # /dev/stdin, /proc/self/fd/0, <(...): code, not a local file
+                return _fed_code(base, body, piped) if body and not piped and _PROCSUB not in a \
+                    else f"{base} running code from input"
             return None   # a script file: its contents are not looked at
         return _fed_code(base, body, piped) if fed else None
+    if base in ("sqlite3", "sqlite"):
+        text = " ".join(args + body)
+        if re.search(r"(?:^|[\s;'\"])\.(?:shell|system|load|cd|open\s+\S*\|)\b|\.(?:import|output|once)\s+['\"]?\|", text) \
+                or any(_PROCSUB in a for a in args):
+            return f"{base} command that runs a program"
+        return f"{base} reading commands from input" if piped and not body else None
+    if base in _VI:
+        if fed or any(re.match(r"^(?:-c|--cmd|-S|-s|-es|-E|\+.)", a) for a in args):
+            return f"{base} running commands given to it"
+        return None
+    if base in ("emacs", "emacsclient"):
+        return f"{base} evaluating code" if any(
+            re.match(r"^-{1,2}(?:eval|funcall|f|batch|l|load|script)\b", a) for a in args) else None
+    if base == "gdb":
+        return "gdb running commands" if fed or any(re.match(
+            r"^(?:-ex|--ex|-iex|-ix|-x|--command|--eval-command|--init-eval-command|--init-command|-batch|--batch)", a)
+            for a in args) else None
+    if base in ("less", "more", "most", "pager"):
+        return f"{base} given a command to run" if any(a.startswith("+") or "!" in a for a in args) else None
+    if base in ("man", "info", "apropos", "whatis"):
+        return f"{base} with a pager or browser program" if any(re.match(
+            r"^(?:-P|-H|-B|-b|--pager|--html|--browser|--prompt)", a) or "!" in a for a in args) else None
+    if base in ("tar", "bsdtar", "star"):
+        return "tar running a program" if any(
+            re.match(r"^--(?:to-command|use-compress-program|checkpoint-action|rsh-command|info-script|new-volume-script)", a)
+            or re.match(r"^-[a-zA-Z]*[IF]$", a) or re.match(r"^-[IF].+", a) for a in args) else None
     if base in ("find", "fd", "fdfind"):
         for j, a in enumerate(args):
             if a in ("-exec", "-execdir", "-ok", "-okdir", "-x", "-X", "--exec", "--exec-batch"):
@@ -813,11 +950,18 @@ def _match_text(text: str, depth: int = 0) -> Optional[str]:
 
 
 _RE_NETCODE = re.compile(
-    r"\b(?:urllib\d?|requests|http\.client|httplib|httpx|aiohttp|socket|socketserver|ssl|urlopen|ftplib|smtplib|telnetlib"
-    r"|paramiko|asyncssh|pycurl|pexpect|websockets?|xmlrpc|webbrowser|open_connection|XMLHttpRequest|IO::Socket|LWP"
-    r"|open-uri|file_get_contents|fsockopen|curl_init|subprocess|child_process|hermes_tools|web_search|web_extract"
-    r"|send_message|popen|__import__|importlib)\b"
-    r"|\bfetch\s*\(|\bexec\s*\(|\beval\s*\(|os\.system|os\.popen|net\.connect|Net::|node:(?:https?|net)"
+    # words that stand alone (`socket_path` or `n_requests` are not them)
+    r"\b(?:urllib\d?|requests|grequests|http\.client|http\.server|httplib|httpx|aiohttp|socket|socketserver|ssl|urlopen"
+    r"|ftplib|smtplib|telnetlib|poplib|imaplib|nntplib|paramiko|asyncssh|pycurl|pexpect|websockets?|xmlrpc|webbrowser"
+    r"|open_connection|start_server|create_connection|create_server|XMLHttpRequest|IO::Socket|LWP|open-uri"
+    r"|file_get_contents|fsockopen|curl_init|child_process|hermes_tools|web_search|web_extract|send_message|__import__"
+    r"|importlib|ctypes|cffi|pty|multiprocessing\.connection)\b"
+    r"|\b(?:from|import)\s+http\b"
+    # the subprocess family, with no word boundary: asyncio.create_subprocess_exec, os.popen, posix_spawn, check_output
+    r"|subprocess|popen|posix_spawn|getoutput|getstatusoutput|check_output|check_call"
+    r"|\bos\.(?:system|exec\w*|spawn\w*|fork\w*|startfile)|\bpty\.spawn"
+    r"|\b(?:system|exec[lv]\w*|spawn[lv]\w*)\s*\("
+    r"|\bfetch\s*\(|\bexec\s*\(|\beval\s*\(|net\.connect|Net::|node:(?:https?|net)"
     r"|require\(\s*['\"](?:https?|net|tls|dgram|child_process)|https?\.(?:get|request)",
     re.I)
 # A program that starts another program (perl, ruby, php, node, lua one-liners; Python is covered above).

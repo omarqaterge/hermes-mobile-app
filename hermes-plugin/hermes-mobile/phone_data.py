@@ -276,13 +276,49 @@ def _chat_id(session_id: str = "", task_id: str = "") -> str:
     return session_id or task_id or ""
 
 
-MAX_CHATS = 8      # the chat and its ancestors sent with a read
+MAX_CHATS = 16     # the chat and its ancestors sent with a read (the app's native side takes at most 16)
 MAX_CHAT_ID = 128
+
+
+def _state_db() -> Path:
+    """The running agent's session database (a test points this elsewhere)."""
+    from hermes_constants import get_hermes_home
+    return Path(get_hermes_home()) / "state.db"
+
+
+def compression_ancestors(sid: str, limit: int = MAX_CHATS) -> list:
+    """The stored ids a context compression rotated away from, nearest first: a chat that read in segment S1 and was
+    compressed to S2 is known to the app as S1 only. Walks `parent_session_id` upward while the parent ended by
+    compression (the same relation the dashboard's sent-counts walks downward). Read-only; [] when there is no database,
+    no such session or anything fails."""
+    out: list = []
+    try:
+        import sqlite3
+        db = _state_db()
+        if not sid or not db.exists():
+            return out
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+        try:
+            cur = sid
+            for _ in range(limit):
+                row = con.execute(
+                    "SELECT p.id FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
+                    "WHERE c.id = ? AND p.end_reason = 'compression'", (cur,)).fetchone()
+                if not row or not isinstance(row[0], str) or not row[0] or row[0] == sid or row[0] in out:
+                    break
+                out.append(row[0])
+                cur = row[0]
+        finally:
+            con.close()
+    except Exception:
+        pass
+    return out
 
 
 def _chats(session_id: str = "", task_id: str = "") -> list:
     """The stored id of this chat and of the chats that spawned it (phone_taint's subagent links), the chat first: the
-    app keeps its own record of which chats have read, and a subagent's read marks its parents too. At most MAX_CHATS
+    app keeps its own record of which chats have read, and a subagent's read marks its parents too. Each id is followed
+    by the compression segments before it (compression_ancestors), nearest first. At most MAX_CHATS
     ids, each at most MAX_CHAT_ID characters, no empty ones and no repeats. Never raises."""
     sid = str(session_id or task_id or "").strip()
     ids = [sid] if sid else []
@@ -300,8 +336,13 @@ def _chats(session_id: str = "", task_id: str = "") -> list:
         pass
     out: list = []
     for i in ids:
-        if isinstance(i, str) and i and len(i) <= MAX_CHAT_ID and i not in out:
-            out.append(i)
+        if not (isinstance(i, str) and i):
+            continue
+        for j in [i] + compression_ancestors(i):
+            if len(j) <= MAX_CHAT_ID and j not in out:
+                out.append(j)
+        if len(out) >= MAX_CHATS:
+            break
     return out[:MAX_CHATS]
 
 

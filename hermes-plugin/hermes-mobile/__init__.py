@@ -810,6 +810,25 @@ _LOCAL_TOOLS = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "op
                           "todo_list", "read_file", "write_file", "patch", "search_files", "skill_view", "skills_list",
                           "session_search", "tool_search", "tool_describe"})
 _READ_CHATS: set = set()   # chat ids that called phone_data in this process, kept even if phone_taint.py cannot load
+_READ_FILE = Path.home() / ".hermes" / "mobile" / "phone-read.json"   # phone_taint.PATH, read directly by the fallback
+
+
+def _read_before(ids) -> bool:
+    """Fallback for when phone_taint.py cannot load (it imports nothing from it): whether one of these chats has read phone
+    data, in this process (`_READ_CHATS`) or before, in the state file (`{"chats": {id: time}}`). A missing file means no chat
+    has read; a file that exists but cannot be read or understood fails closed (every chat counts as having read)."""
+    if any(i in _READ_CHATS for i in ids):
+        return True
+    try:
+        raw = json.loads(_READ_FILE.read_text())
+        chats = raw["chats"]
+        if not isinstance(chats, dict):
+            return True
+        return any(str(i)[:200] in chats for i in ids)
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return True
 
 
 def _taint_directive(tool_name, args, session_id, task_id):
@@ -840,7 +859,7 @@ def _taint_directive(tool_name, args, session_id, task_id):
         return _phone_taint().check(tool_name, args, ids)
     except Exception:
         _event("plugin", "hook_failed", what="phone_taint")
-        if any(i in _READ_CHATS for i in ids) and any(n not in _LOCAL_TOOLS for n in inner):
+        if any(n not in _LOCAL_TOOLS for n in inner) and _read_before(ids):
             return {"action": "block", "message": (
                 "BLOCKED: this chat has read phone data and Hermux's check for actions that send data out could not "
                 "run. Tell the user; they can start a new chat.")}
