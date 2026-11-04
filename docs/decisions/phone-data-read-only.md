@@ -61,9 +61,9 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
   drawn when the read happens. These guards are the part the user sees; they also cover tool cards, notices, the canvas,
   reasoning and subagent text, card images, Mermaid image shapes and `srcset`.
 - **The native filter is the enforcement.** While the page says the chat on screen has read phone data, the app answers
-  every request the page makes to a host other than `localhost`, `127.0.0.1` or `[::1]` with an empty 403, for every
+  a request the page makes to a host other than `localhost`, `127.0.0.1` or `[::1]` with an empty 403, for every
   resource type (images, media, scripts, styles, frames, fonts, fetch), whatever the page renders. File, data and blob
-  sources are untouched. It starts each page load blocked and opens only when the page reports an untainted chat. The one
+  sources are untouched. It starts each page load blocked and opens only when the page reports an untainted chat; before it draws a chat (a cached preview too) the page asks the app, which keeps its own record of every chat that sent a read request, so a long chat whose `phone_data` call is outside the items on screen is still known. A bare link tapped in such a chat is refused natively too (main-frame navigation); the address dialog's confirmed open is the only way out. In such a chat no HTML preview or canvas page runs (a script could leak through WebRTC or a DNS prefetch, which the filter can't see): the source shows as text. The one
   thing the user can tap through is "Tap to load" on an image: the app lets that exact address through once, for 60
   seconds. Video and audio don't load in the page in such a chat: their tap shows the address and opens the browser.
   While it is on, the page's own web requests (update check, anonymous stats, Report a problem) are refused too and
