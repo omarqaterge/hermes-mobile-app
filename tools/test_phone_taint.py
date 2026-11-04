@@ -333,6 +333,28 @@ check("read_file not blocked", init._taint_directive("read_file", {}, "c5", "") 
 check("an unknown tool is blocked too (fail closed)", init._taint_directive("yb_send_dm", {}, "c5", "")["action"] == "block")
 check("a tool through the bridge is blocked", init._taint_directive("tool_call", {}, "c5", "")["action"] == "block")
 check("another chat not blocked", init._taint_directive("terminal", {"command": "ls"}, "c8", "") is None)
+# a chat that read before this process started is known only from the state file
+init._READ_FILE = pt.PATH
+init._READ_CHATS.clear()
+pt.PATH.parent.mkdir(parents=True, exist_ok=True)
+pt.PATH.write_text(json.dumps({"chats": {"c-old": 1.0}}))
+check("fallback: a chat in the state file is blocked after a restart",
+      init._taint_directive("terminal", {"command": "ls"}, "c-old", "")["action"] == "block")
+check("fallback: a different chat id is not blocked", init._taint_directive("terminal", {"command": "ls"}, "other", "") is None)
+check("fallback: a local tool is not blocked there", init._taint_directive("read_file", {}, "c-old", "") is None)
+check("fallback: a chat not in the file is not blocked", init._taint_directive("terminal", {"command": "ls"}, "c-new", "") is None)
+pt.PATH.unlink()
+check("fallback: no state file means nobody has read", init._taint_directive("terminal", {"command": "ls"}, "c-old", "") is None)
+for label, content in (("not JSON", "{oops"), ("no chats key", "{}"), ("chats is a list", '{"chats": []}')):
+    pt.PATH.write_text(content)
+    check("fallback fails closed, " + label,
+          init._taint_directive("terminal", {"command": "ls"}, "c-never", "")["action"] == "block")
+pt.PATH.unlink()
+pt.PATH.mkdir()
+check("fallback fails closed, state file unreadable (a directory)",
+      init._taint_directive("terminal", {"command": "ls"}, "c-never", "")["action"] == "block")
+check("fallback unreadable: a local tool still runs", init._taint_directive("read_file", {}, "c-never", "") is None)
+pt.PATH.rmdir()
 init._phone_taint = good
 
 print("nothing about commands or results is logged")
