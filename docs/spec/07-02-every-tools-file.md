@@ -63,6 +63,7 @@
 | `test_approval.py` | The approval event carries the id of the exact request, so a notification button cannot answer a different waiting approval. |
 | `test_chip.py` | What the plugin tells the app about a running turn (title, steps, task list, other busy chats, how it ended) and the `/stop` endpoint behind the chip's Stop button. |
 | `test_phone_data.py` | The `phone_data` tool (`phone_data.py`) against a fake app and a fake Hermes approval gate: every refusal reason, approval text, wrapper, stripped control characters, nothing private in the diagnostic log, the prompt section. |
+| `test_phone_taint.py` | `phone_taint.py` and its use in the `pre_tool_call` hook: an ask for each listed network pattern (pipelines, `bash -c`, interpreter one-liners), none for ordinary commands or other tools, none in a chat that has not read, the state file across a restart and when broken, its bound, the fail-closed block, and that no command text reaches the logs. |
 | `test_phone_app.py` | The `phone_app` tool (`phone_app.py`) against a fake background host. |
 | `test_auto_mode.py` | `auto_mode.py` (Auto access) with Hermes's approval modules faked. |
 | `test_openui.py` | `openui.py` and its wiring in `__init__.py` (cards in replies). |

@@ -8,6 +8,7 @@ Paths are in Debian unless noted. "Root" is `~/.hermes`.
 | `~/.hermes/logs/mobile-status.log` | `_dbg` | Status trace for a chip stuck on "Thinking"; rotated to `.1` above 200,000 bytes. |
 | `~/.hermes/mobile/diag.log`, `diag.log.1` | `diag.py` (`event`) | The diagnostic log on this side (3.21): checked lines only, 128 KB each, owner-only. Deleted by `clear`. |
 | `~/.hermes/mobile/auto.json` | `auto_mode.set_mode` | `{"chats": {chat id: "auto"}}`. |
+| `~/.hermes/mobile/phone-read.json` | `phone_taint.mark` | `{"chats": {chat id: time}}`: the chats that have called `phone_data`, newest last, at most 200. Ids and times only, never data or commands; written to a temp file and replaced. A broken file means no entries. |
 | `~/.hermes/mobile/canvas/<chat>/<doc>.json` | `canvas.py` | One document with versions; `.lock` file beside them. |
 | `~/.hermes/mobile/library/<id>.json` | `library.py` | Old saved copies (500 items at most). |
 | `~/.hermes/mobile/checkpoints/<chat>.jsonl` | `checkpoints.py` | Snapshot ledger lines `{ts, turn, tool, file, workdir, base, tree, date, reason}`. The checkpoint store itself is Hermes's (its base folder gets a `.hm_maintained` marker). |

