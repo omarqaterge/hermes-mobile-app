@@ -5,7 +5,7 @@ side: redaction, two groups of readers, the plugin tool, the Settings switches, 
 until `PhoneData.READY` is set to true in the feature's final pull request, so their pull requests can merge in any order.
 The rules are in the decision [phone-data-read-only](../decisions/phone-data-read-only.md). Only the coordinating session edits this file.
 
-**Next:** finish the six streams; then a full test run, an attack review and a real-phone test; then docs and the
+**Next:** finish the six streams, plus the protection for chats that have read phone data (built on `claude/phone-data-after-read`, see the decision); then a full test run, an attack review and a real-phone test; then docs and the
 final pull request.
 
 **Needs a real phone:** the biometric then permission flow, a read refused on a locked phone, permission revoked in Android

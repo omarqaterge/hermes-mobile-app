@@ -3999,3 +3999,9 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .load-error .btn {
   flex: none;
 }
+
+/* A remote image, video or audio held back in a chat that has read phone data (phone-data-taint.ts): nothing is fetched until a tap. */
+.remote-hold { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; padding: 10px 14px; margin: 6px 0; border-radius: 12px; border: 1px dashed var(--border); background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; }
+.remote-hold-host { font-size: 0.92rem; font-weight: 600; overflow-wrap: anywhere; }
+.remote-hold-tap { font-size: 0.82rem; color: var(--accent); }
+.remote-hold-data { font-size: 0.8rem; color: var(--warn, var(--text-dim)); }

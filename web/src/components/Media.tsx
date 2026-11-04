@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../api'
 import { useBackHandler } from '../backstack'
-import { canNativeImage, haptic, nativeImage, openExternal, openFile } from '../bridge'
+import { canNativeImage, haptic, nativeImage, openFile } from '../bridge'
 import { toast } from '../store'
+import { addressOf, allowRemoteOnce, isRemoteUrl, openChecked, useGuard } from '../phone-data-taint'
 
 export { mediaKind, type MediaKind } from '../text'
 import { mediaKind } from '../text'
@@ -71,8 +72,8 @@ function useSrc(src: string): { url: string | null; error: string } {
   return { url, error }
 }
 
-function openWith(src: string) {
-  if (isRemote(src) && !src.startsWith('data:')) openExternal(src)
+function openWith(src: string, guarded = false) {
+  if (isRemote(src) && !src.startsWith('data:')) void openChecked(src, guarded)
   else if (!openFile(localPath(src))) toast('Open works in the phone app', 'warn')
 }
 
@@ -117,6 +118,7 @@ const ONE: View = { z: 1, x: 0, y: 0 }
 
 /** Full-screen image: pinch to zoom, drag to pan, double-tap for 1× / 2.5×, Save / Share / Open with…; Back closes. */
 export function Lightbox({ src, url, alt, onClose }: { src: string; url: string; alt?: string; onClose: () => void }) {
+  const guarded = useGuard()
   const [view, setView] = useState<View>(ONE)
   const pts = useRef(new Map<number, { x: number; y: number }>())
   const pinch = useRef<{ d: number; z: number } | null>(null)
@@ -198,7 +200,7 @@ export function Lightbox({ src, url, alt, onClose }: { src: string; url: string;
       <div className="lightbox-bar">
         <button onClick={() => void imageAction('save', src, url, name)}>Save</button>
         <button onClick={() => void imageAction('share', src, url, name)}>Share</button>
-        {local || /^https?:/i.test(src) ? <button onClick={() => openWith(src)}>Open with…</button> : null}
+        {local || /^https?:/i.test(src) ? <button onClick={() => openWith(src, guarded)}>Open with…</button> : null}
       </div>
     </div>,
     document.body
@@ -206,9 +208,10 @@ export function Lightbox({ src, url, alt, onClose }: { src: string; url: string;
 }
 
 export function FileChip({ src, label }: { src: string; label?: string }) {
+  const guarded = useGuard()
   const name = label || localPath(src).split('/').pop() || src
   return (
-    <button className="file-chip" onClick={() => openWith(src)}>
+    <button className="file-chip" onClick={() => openWith(src, guarded)}>
       📎 <span>{name}</span>
     </button>
   )
@@ -296,7 +299,42 @@ function AudioPlayer({ url, name, onError }: { url: string; name: string; onErro
   )
 }
 
+/** In a chat that has read phone data, a remote image, video or audio is not fetched until a tap (the address can carry the
+ *  data out; the shell refuses it too until then: RemoteGuard.java). Local files and attachments load as always. */
 export function Media({ src, alt }: { src: string; alt?: string }) {
+  const guarded = useGuard()
+  const [allowed, setAllowed] = useState(false)
+  if (guarded && !allowed && isRemoteUrl(src) && mediaKind(src) !== 'file') return <RemoteHold src={src} onLoad={() => setAllowed(true)} />
+  return <MediaView src={src} alt={alt} />
+}
+
+/** The placeholder for a remote image, video or audio held back: the host, and a line when the address carries a query.
+ *  An image's tap lets the shell pass that one address once, then loads it. Video and audio make several requests, so their
+ *  tap shows the address in full and opens it in the browser instead. */
+function RemoteHold({ src, onLoad }: { src: string; onLoad: () => void }) {
+  const a = addressOf(src)
+  const kind = mediaKind(src)
+  const inline = kind === 'image'
+  return (
+    <button
+      className="remote-hold"
+      onClick={() => {
+        haptic()
+        if (inline) {
+          allowRemoteOnce(src)
+          onLoad()
+        } else void openChecked(src, true)
+      }}
+      aria-label={`${inline ? 'Load' : 'Open'} ${kind} from ${a.host}`}
+    >
+      <span className="remote-hold-host">{a.host}</span>
+      {a.query && <span className="remote-hold-data">has data in the address</span>}
+      <span className="remote-hold-tap">{inline ? 'Tap to load' : 'Tap to open'}</span>
+    </button>
+  )
+}
+
+function MediaView({ src, alt }: { src: string; alt?: string }) {
   const kind = mediaKind(src)
   const { url, error } = useSrc(kind === 'file' ? '' : src)
   const [zoom, setZoom] = useState(false)

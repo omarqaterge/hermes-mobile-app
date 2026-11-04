@@ -118,5 +118,6 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `notif-answer.ts` | Answers typed into notifications. |
 | `approval-lock.ts` | Confirm approvals with fingerprint: asks the shell before a chat's first Allow. |
 | `phone-data-request.ts` | Phone data approvals: `parsePhoneData` (strict), `phoneDataWording`, `phoneDataView`, `phoneDataTextOf`, and the shell calls `mintPhoneDataGrant` and `setPhoneDataFullAccess` (3.6, 2.3). |
+| `phone-data-taint.ts` | A chat that has read phone data (3.3, 2.3): `isTaintedItems` (a `phone_data` tool item, also inside a `tool_call` batch, cached per items array), `useTainted`, `isRemoteUrl`, `addressOf`, `openChecked` and `confirmAddress` (the address dialogs), `GuardCtx` and `useGuard`, `dropRemoteStrings` (a card's source with remote address strings emptied), and the shell side: `startRemoteBlock` (called by `main.tsx`: reports the chat on screen's state with `remoteBlock` at start and on every change of chat or state) and `allowRemoteOnce` (`remoteAllowOnce` for one tapped address). |
 | `backstack.ts` | The Back-button layer stack. |
 | `swipe.ts` | Swipe right for the drawer, swipe left for the canvas. |

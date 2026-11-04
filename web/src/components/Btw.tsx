@@ -5,6 +5,7 @@ import { haptic } from '../bridge'
 import { confirmDialog } from '../dialog'
 import { useSheetDrag } from './useSheetDrag'
 import { Markdown } from './Markdown'
+import { useTainted } from '../phone-data-taint'
 import { Spinner } from './Spinner'
 
 /** /btw: a small side chat about the open chat, as a bottom sheet over it. */
@@ -18,6 +19,7 @@ function Inner({ msgs }: { msgs: ReturnType<typeof useBtw>['msgs'] }) {
   const drag = useSheetDrag(closeBtw)
   useBackHandler(closeBtw)
   const [text, setText] = useState('')
+  const tainted = useTainted()
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
@@ -47,7 +49,7 @@ function Inner({ msgs }: { msgs: ReturnType<typeof useBtw>['msgs'] }) {
           {msgs.map(m => (
             <div key={m.id}>
               <div className="btw-q">{m.q}</div>
-              <div className={`btw-a${m.error ? ' err' : ''}`}>{m.a === null ? <Spinner small /> : <Markdown text={m.a} />}</div>
+              <div className={`btw-a${m.error ? ' err' : ''}`}>{m.a === null ? <Spinner small /> : <Markdown text={m.a} guard={tainted} />}</div>
             </div>
           ))}
           <div ref={end} />

@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { type ChatItem, toast } from '../store'
 import { branchAt, filesOf, imagesOf, resendFrom, retryTurn, type MsgFile, type MsgImage } from '../gateway'
 import { Markdown } from './Markdown'
+import { useTainted } from '../phone-data-taint'
 import { copyRich, copyText, haptic } from '../bridge'
 import { Chevron, Collapse, PickerSheet } from './ui'
 import { toggleSpeak, useVoice } from '../voice'
@@ -466,10 +467,11 @@ export const ItemView = memo(function ItemView({ item, actions = false, busy = f
 
 function AssistantMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'assistant' }>; actions: boolean; busy: boolean }) {
   const time = useTimeTap(item.streaming ? undefined : item.at)
+  const tainted = useTainted() // the chat has read phone data: remote media waits for a tap, addresses are checked first
   return (
         <div className="msg assistant" onClick={time.toggle}>
           <Reasoning text={item.reasoning} live={item.streaming && !item.text} />
-          {item.text && <Markdown text={item.text} streaming={item.streaming} interactive />}
+          {item.text && <Markdown text={item.text} streaming={item.streaming} interactive guard={tainted} />}
           {item.streaming && item.text && <span className="caret" />}
           {item.warning && <div className="warn-line">⚠ {item.warning}</div>}
           {!item.streaming && item.text && actions && (

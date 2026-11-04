@@ -6,7 +6,8 @@ import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { visit } from 'unist-util-visit'
 import type { Root, Element } from 'hast'
-import { copyText, haptic, openExternal } from '../bridge'
+import { copyText, haptic } from '../bridge'
+import { GuardCtx, openChecked, useGuard, useTainted } from '../phone-data-taint'
 import { openSessionFromNotification } from '../gateway'
 import { FileChip, Media } from './Media'
 import { backgroundLuminance, chatLinks, mediaKind, prepare } from '../text'
@@ -49,11 +50,18 @@ function getMermaid() {
   return mermaidReady
 }
 
+// A Mermaid diagram can draw an image from an address (`img:` shapes, <img> in a label) and fetches it while it draws, with
+// no tap. In a chat that has read phone data a diagram whose source names an image or any address is shown as code instead.
+const MERMAID_REMOTE = /\bimg\b|<\s*img|(https?:)?\/\/|\burl\s*\(|\bhref\b/i
+
 function Mermaid({ code }: { code: string }) {
+  const guarded = useGuard()
+  const held = guarded && MERMAID_REMOTE.test(code)
   const id = `mmd-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   const [svg, setSvg] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
+    if (held) return
     let alive = true
     const t = setTimeout(() => {
       getMermaid()
@@ -77,8 +85,17 @@ function Mermaid({ code }: { code: string }) {
       alive = false
       clearTimeout(t)
     }
-  }, [code, id])
+  }, [code, id, held])
   const [full, setFull] = useState(false)
+  if (held)
+    return (
+      <div className="codeblock">
+        <div className="codeblock-bar">
+          <span>mermaid (not drawn: it names an image or an address, and this chat has read phone data)</span>
+        </div>
+        <pre>{code}</pre>
+      </div>
+    )
   if (svg && !failed)
     return (
       <>
@@ -596,6 +613,29 @@ const REMARK = [remarkGfm, [remarkMath, { singleDollarTextMath: true }]] as cons
 // Guessing the language of an unlabelled code block is costly: while a reply streams it would run on every
 // update, so it waits until the reply is complete. KaTeX and highlight.js join once their lazy bundle is loaded
 // (rich.ts); until then a formula shows as its TeX and code without colours.
+// In a chat that has read phone data: no <picture>, <source> or srcset (a srcset is never rewritten, so it would fetch a
+// remote address the image guard doesn't see). Runs after rehype-sanitize, which stays in front of everything.
+function rehypeTaintStrip() {
+  return (tree: Root) => {
+    const walk = (parent: Root | Element) => {
+      for (let i = 0; i < parent.children.length; i++) {
+        const c = parent.children[i]
+        if (c.type !== 'element') continue
+        if (c.tagName === 'source') {
+          parent.children.splice(i--, 1)
+          continue
+        }
+        if (c.properties) for (const k of Object.keys(c.properties)) if (/^srcset$/i.test(k)) delete c.properties[k]
+        walk(c)
+        if (c.tagName === 'picture') {
+          parent.children.splice(i, 1, ...c.children)
+          i += c.children.length - 1
+        }
+      }
+    }
+    walk(tree)
+  }
+}
 const rehypeFor = (detect: boolean, rich: RichApi | null) => [
   rehypeMathInHtml,
   rehypeRaw,
@@ -610,18 +650,32 @@ const rehypeFor = (detect: boolean, rich: RichApi | null) => [
 ]
 const PLAIN = { done: rehypeFor(true, null), live: rehypeFor(false, null) }
 let withRich: { api: RichApi; done: ReturnType<typeof rehypeFor>; live: ReturnType<typeof rehypeFor> } | null = null
-function rehypePlugins(streaming: boolean, rich: RichApi | null) {
+function baseRehype(streaming: boolean, rich: RichApi | null) {
   if (!rich) return streaming ? PLAIN.live : PLAIN.done
   if (withRich?.api !== rich) withRich = { api: rich, done: rehypeFor(true, rich), live: rehypeFor(false, rich) }
   return streaming ? withRich.live : withRich.done
+}
+const guardedPlugins = new WeakMap<object, ReturnType<typeof rehypeFor>>()
+function rehypePlugins(streaming: boolean, rich: RichApi | null, guarded: boolean) {
+  const base = baseRehype(streaming, rich)
+  if (!guarded) return base
+  let g = guardedPlugins.get(base)
+  if (!g) {
+    g = [...base, rehypeTaintStrip] as ReturnType<typeof rehypeFor>
+    guardedPlugins.set(base, g)
+  }
+  return g
 }
 
 // Keep local paths (react-markdown would otherwise strip unknown schemes but leaves /paths alone).
 const urlTransform = (url: string) => (isLocal(url) || CHAT_HREF.test(url) ? url : defaultUrlTransform(url))
 
 // interactive: card buttons may send (chat replies only; canvas, files and /btw just show cards).
-export const Markdown = memo(function Markdown({ text, streaming = false, interactive = false }: { text: string; streaming?: boolean; interactive?: boolean }) {
+// guard: the chat has read phone data (phone-data-taint.ts): remote media waits for a tap and addresses are shown before opening.
+export const Markdown = memo(function Markdown({ text, streaming = false, interactive = false, guard = false }: { text: string; streaming?: boolean; interactive?: boolean; guard?: boolean }) {
   const ui = useMemo(() => ({ streaming, interactive }), [streaming, interactive])
+  const tainted = useTainted() // wherever this text is shown (chat, notice, canvas, tool card), a chat that has read phone data guards it
+  const guarded = guard || tainted
   const seed = useRef('')
   seed.current = useMemo(() => hashText(text), [text])
   const nextBox = useRef(0)
@@ -636,6 +690,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
   return (
     <OpenUICtx.Provider value={ui}>
     <StreamingCtx.Provider value={streaming}>
+    <GuardCtx.Provider value={guarded}>
     <div
       className="md"
       onClick={e => {
@@ -660,7 +715,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
     >
       <ReactMarkdown
         remarkPlugins={REMARK as unknown as Options['remarkPlugins']}
-        rehypePlugins={rehypePlugins(streaming, rich) as unknown as Options['rehypePlugins']}
+        rehypePlugins={rehypePlugins(streaming, rich, guarded) as unknown as Options['rehypePlugins']}
         // Sanitize adds the user-content- prefix to ids itself; don't let remark-rehype add it too.
         remarkRehypeOptions={REMARK_REHYPE}
         urlTransform={urlTransform}
@@ -669,12 +724,31 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
         {prepare(chatLinks(text))}
       </ReactMarkdown>
     </div>
+    </GuardCtx.Provider>
     </StreamingCtx.Provider>
     </OpenUICtx.Provider>
   )
 })
 
 const REMARK_REHYPE = { clobberPrefix: '' }
+
+/** A link to the web: opens in the browser; in a chat that has read phone data, only after the address is shown in full. */
+function ExtLink({ href, className, buzz, children }: { href?: string; className?: string; buzz?: boolean; children?: ReactNode }) {
+  const guarded = useGuard()
+  return (
+    <a
+      href={href}
+      className={className}
+      onClick={e => {
+        e.preventDefault()
+        if (buzz) haptic()
+        if (href) void openChecked(href, guarded)
+      }}
+    >
+      {children}
+    </a>
+  )
+}
 
 function mdComponents(seed: { current: string }, nextBox: { current: number }): Components {
   return {
@@ -706,17 +780,9 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
       const url = !className && typeof children === 'string' && /^https?:\/\/\S+$/.test(children) ? children : ''
       if (!url) return <code className={className}>{children}</code>
       return (
-        <a
-          href={url}
-          className="code-link"
-          onClick={e => {
-            e.preventDefault()
-            haptic()
-            openExternal(url)
-          }}
-        >
+        <ExtLink href={url} className="code-link" buzz>
           <code>{children}</code>
-        </a>
+        </ExtLink>
       )
     },
     img: ({ src, alt }) => (typeof src === 'string' && src ? <Media src={src} alt={alt} /> : null),
@@ -761,17 +827,7 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
       if (href && isLocal(href)) {
         return mediaKind(href) === 'file' ? <FileChip src={href} label={textOf(children).replace(/^📎\s*/, '')} /> : <Media src={href} alt={textOf(children)} />
       }
-      return (
-        <a
-          href={href}
-          onClick={e => {
-            e.preventDefault()
-            if (href) openExternal(href)
-          }}
-        >
-          {children}
-        </a>
-      )
+      return <ExtLink href={href}>{children}</ExtLink>
     },
     table: ({ children }) => <MdTable>{children}</MdTable>
   }
