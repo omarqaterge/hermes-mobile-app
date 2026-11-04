@@ -5,7 +5,7 @@ import { actionMessage, isCommandText, loadUiState, safeHttpUrl, saveUiState, ty
 import { makeToolClient } from '../openui-query'
 import { api } from '../api'
 import { haptic } from '../bridge'
-import { GuardCtx, openChecked } from '../phone-data-taint'
+import { dropRemoteStrings, openChecked, useGuard } from '../phone-data-taint'
 import { sendPrompt } from '../gateway'
 import { getState, toast } from '../store'
 import { hashText } from '../tasks'
@@ -42,9 +42,11 @@ const chatId = () => {
 /** A ```openui-lang block: OpenUI draws it (lazy bundle, own shadow root); `fallback` shows if it can't. */
 export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactNode }) {
   const { streaming, interactive } = useContext(OpenUICtx)
-  const guarded = useContext(GuardCtx)
+  const guarded = useGuard()
   const guard = useRef(guarded)
   guard.current = guarded
+  const shown = guarded ? dropRemoteStrings(code) : code // a card's image components must not fetch an address in this chat
+  const heldImages = shown !== code
   const mode = useThemeMode()
   const host = useRef<HTMLDivElement>(null)
   const handle = useRef<BlockHandle | null>(null)
@@ -85,7 +87,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   }
 
   const props = (): BlockProps => ({
-    code,
+    code: shown,
     streaming,
     mode,
     initialState: initial.current,
@@ -127,7 +129,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   }, [])
   useEffect(() => {
     handle.current?.update(props())
-  }, [code, streaming, mode, interactive])
+  }, [shown, streaming, mode, interactive])
 
   return (
     <>
@@ -135,6 +137,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
       {!ready && !failed && <div className="dim">Loading card…</div>}
       {/* Taps inside the card are the card's: no time toggle, no tap-to-copy, no swipe (swipe.ts SKIP). */}
       <div ref={host} className="hm-openui" hidden={failed} onClick={e => e.stopPropagation()} />
+      {heldImages && !failed && <div className="warn-line">Images from the web are held back: this chat has read phone data</div>}
       {partial && !failed && <div className="warn-line">⚠ Part of this card couldn’t be shown</div>}
     </>
   )

@@ -59,6 +59,8 @@ export type ChatItem =
       detail?: string
       summary?: string | null
       tools: number
+      /** One of its own tool events named phone_data: the chat counts as having read phone data (phone-data-taint.ts). */
+      phoneData?: boolean
     }
 
 export interface Todo {

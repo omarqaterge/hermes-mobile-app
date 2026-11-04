@@ -1,9 +1,9 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { haptic, openExternal } from '../bridge'
 import { toast } from '../store'
 import { confirmDialog } from '../dialog'
 import { frameDoc, frameHeight, frameLink } from '../htmlframe'
-import { GuardCtx, openChecked } from '../phone-data-taint'
+import { openChecked, useGuard } from '../phone-data-taint'
 
 /**
  * HTML runs in a sandboxed frame: scripts yes, but no access to the app (no `allow-same-origin`), and no network
@@ -12,13 +12,13 @@ import { GuardCtx, openChecked } from '../phone-data-taint'
 export function HtmlFrame({ html, network, autoHeight, className }: { html: string; network: boolean; autoHeight?: { min: number; max: number }; className?: string }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const lastDirect = useRef(0)
-  const guarded = useContext(GuardCtx) // a chat that has read phone data: every link shows its address first
+  const guarded = useGuard() // a chat that has read phone data: every link shows its address first, and a canvas page gets no network
   const [err, setErr] = useState('')
   const [h, setH] = useState<number | null>(null)
   const auto = !!autoHeight
   const min = autoHeight?.min ?? 0
   const max = autoHeight?.max ?? 0
-  const srcDoc = useMemo(() => frameDoc(html, network, auto), [html, network, auto])
+  const srcDoc = useMemo(() => frameDoc(html, network && !guarded, auto), [html, network, guarded, auto])
   useEffect(() => {
     setErr('')
     const on = (e: MessageEvent) => {

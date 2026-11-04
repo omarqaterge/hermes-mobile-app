@@ -5,10 +5,10 @@
 //
 // "Tainted" = the chat's items hold a phone_data tool call, whatever its outcome (allowed, denied, failed). It is derived
 // from the items, so it survives a reload or a resume (the history brings the tool items back) and nothing is stored.
-import { createContext } from 'react'
+import { createContext, useContext } from 'react'
 import { openExternal } from './bridge'
 import { confirmDialog } from './dialog'
-import { getState, useStore, type AppState, type ChatItem } from './store'
+import { getState, subscribe, useStore, type AppState, type ChatItem } from './store'
 
 /** True inside an assistant message of a chat that has read phone data (set by Markdown). */
 export const GuardCtx = createContext(false)
@@ -17,6 +17,8 @@ const TOOL = 'phone_data'
 
 /** A tool item for phone_data, also when it was called through Hermes's Tool Search bridge (`tool_call`). */
 export function isPhoneDataCall(it: ChatItem): boolean {
+  // A subagent counts only when its own events named the tool (gateway.ts sets `phoneData`); one that never did is left alone.
+  if (it.kind === 'subagent') return it.phoneData === true
   if (it.kind !== 'tool') return false
   if (it.name === TOOL) return true
   if (it.name !== 'tool_call') return false
@@ -102,4 +104,64 @@ export async function confirmAddress(url: string, guarded: boolean, title = 'Loa
     confirmLabel: 'Load',
     cancelLabel: 'Cancel'
   })
+}
+
+/** A card's source (openui-lang) with every remote address in a string emptied, so the chat library's image components
+ *  (Image, ImageBlock, ImageGallery, ImageText and any other that draws `<img src>` from a prop) have nothing to fetch. The
+ *  address of a button's `@OpenUrl(...)` stays: it opens only through the address dialog. Returns the same text when nothing
+ *  was removed. */
+export function dropRemoteStrings(code: string): string {
+  return code.replace(/(@OpenUrl\(\s*)?("(?:\\.|[^"\\\n])*")/g, (all, open: string | undefined, str: string) =>
+    open || !/^"\s*(?:(?:https?|ftp)?:)?\/\//i.test(str) ? all : `${open ?? ''}""`
+  )
+}
+
+/** True inside a chat that has read phone data: the Markdown context when there is one (the chat's text, /btw), else the
+ *  chat on screen itself (tool cards, notices, the canvas, reasoning and other places with no Markdown around). */
+export function useGuard(): boolean {
+  const ctx = useContext(GuardCtx)
+  const tainted = useTainted()
+  return ctx || tainted
+}
+
+// ── the shell's side: the one place that really refuses (RemoteGuard.java) ──
+// While the chat on screen is tainted the shell answers every request the page makes to the internet with an empty 403 (all
+// kinds: images, media, scripts, styles, frames, fonts, fetch), whatever the page renders. The guards above are what the
+// user sees; this is what holds when one of them is missed. The shell starts each page load BLOCKED until this reports.
+
+type RemoteBridge = { remoteBlock?: (on: boolean) => void; remoteAllowOnce?: (url: string) => void }
+const remoteBridge = () => window.HermesAndroid as unknown as RemoteBridge | undefined
+
+let lastReport = ''
+
+/** Tell the shell whether the chat on screen has read phone data. On every change of chat or of the answer, and once at
+ *  start (a reload): a new page load starts blocked in the shell and is only opened by this. */
+function reportRemoteBlock(): void {
+  const s = getState()
+  const tainted = isTaintedNow()
+  const key = `${s.opening || s.active?.runtimeId || ''}|${tainted}`
+  if (key === lastReport) return
+  lastReport = key
+  try {
+    remoteBridge()?.remoteBlock?.(tainted)
+  } catch {
+    // no shell, or an older one: the page's own guards still hold
+  }
+}
+
+/** Start reporting (main.tsx). It subscribes to the store, so the moment the first phone_data item appears the shell is
+ *  told, before the reply that follows it is drawn. */
+export function startRemoteBlock(): void {
+  reportRemoteBlock()
+  subscribe(reportRemoteBlock)
+}
+
+/** The user tapped "Tap to load" for exactly this address: the shell lets that one request through, once, for 60 s. */
+export function allowRemoteOnce(url: string): void {
+  try {
+    const t = url.trim()
+    remoteBridge()?.remoteAllowOnce?.(new URL(t.startsWith('//') ? `https:${t}` : t).href)
+  } catch {
+    // not an address: nothing to allow
+  }
 }

@@ -1611,13 +1611,14 @@ client.onEvent((ev: GatewayEvent) => {
       const exists = getState().active!.items.some(i => i.id === id)
       const detail = p.tool_preview || p.text || p.tool_name || undefined
       const status = type === 'subagent.complete' ? String(p.status || 'done') : String(p.status || 'running')
+      const readsPhone = (p as { tool_name?: string }).tool_name === 'phone_data' // sticky: the chat has read phone data
       if (!exists) {
         closeAssistant()
-        pushItem({ kind: 'subagent', id, goal: p.goal, status, detail, summary: p.summary, tools: p.tool_count || 0 })
+        pushItem({ kind: 'subagent', id, goal: p.goal, status, detail, summary: p.summary, tools: p.tool_count || 0, ...(readsPhone ? { phoneData: true } : {}) })
       } else
         patchItem(id, it =>
           it.kind === 'subagent'
-            ? { ...it, status, detail: detail ?? it.detail, summary: p.summary ?? it.summary, tools: p.tool_count ?? it.tools }
+            ? { ...it, status, detail: detail ?? it.detail, summary: p.summary ?? it.summary, tools: p.tool_count ?? it.tools, ...(readsPhone ? { phoneData: true } : {}) }
             : it
         )
       break

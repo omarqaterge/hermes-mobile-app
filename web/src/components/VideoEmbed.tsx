@@ -1,6 +1,6 @@
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { haptic, isNative } from '../bridge'
-import { GuardCtx, confirmAddress, openChecked } from '../phone-data-taint'
+import { openChecked, useGuard } from '../phone-data-taint'
 import { embedOf, embedsInText, frameEmbed, frameSrc, type VideoEmbed } from '../videoembed'
 import { Media } from './Media'
 
@@ -12,7 +12,7 @@ let stopCurrent: (() => void) | null = null
  *  or open another. `allow-same-origin` only gives the frame its own site's storage; it is never the app's origin. */
 export function VideoPlayer({ embed }: { embed: VideoEmbed }) {
   const [playing, setPlaying] = useState(false)
-  const guarded = useContext(GuardCtx) // a chat that has read phone data: no thumbnail, and an address check before anything loads
+  const guarded = useGuard() // a chat that has read phone data: no thumbnail, and the player never loads in the page (the shell refuses it)
 
   useEffect(() => {
     if (!playing) return
@@ -50,7 +50,8 @@ export function VideoPlayer({ embed }: { embed: VideoEmbed }) {
             aria-label={`Play video from ${embed.label}`}
             onClick={() => {
               haptic()
-              void confirmAddress(embed.url, guarded, 'Load this video?').then(ok => ok && setPlaying(true))
+              if (guarded) void openChecked(embed.url, true) // the address first, then the browser: a player in the page would need requests the shell refuses
+              else setPlaying(true)
             }}
           >
             {embed.thumb && !guarded && <img src={embed.thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />}

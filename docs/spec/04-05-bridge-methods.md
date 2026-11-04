@@ -88,6 +88,8 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `phoneDataOpenSettings` | none | nothing | Opens Android's settings page for this app (after `blocked`). |
 | `phoneDataGrant` | `description` (the approval text) | boolean | The user tapped Allow on a phone-data approval: `PhoneDataGrants.issue`. |
 | `phoneDataFullAccess` | `session` (stored chat id), `on` | nothing | The user moved this chat in or out of Full access: `PhoneDataGrants.fullAccess`. |
+| `remoteBlock` | `on` | nothing | The page's report that the chat on screen has (true) or hasn't (false) read phone data: `RemoteGuard.setBlocked`. While true the shell refuses every request to the internet. Sent at start, on every change of chat, and the moment the first `phone_data` item appears. |
+| `remoteAllowOnce` | `url` | nothing | The user tapped "Tap to load" for exactly this image address: `RemoteGuard.allowOnce` lets that one request through, once, for 60 s. |
 | `uninstallStart` | `backup`, `keys`, `settings` (JSON text) | `ok`, `busy`, `no-termux`, `no-permission`, `error: …` | `Uninstall.run`. 4.7. |
 | `uninstallState` | none | JSON string | `Uninstall.state`: `{started, running, removed, result}`. |
 | `pluginState` | none | JSON string | `PluginSync.state`: `{state, detail, installed, apk, running, tries, maxTries, at}` for Settings → About → Hermux plugin (6.6). The shell calls `window.hermesPluginState()` when a check or update starts or ends. |

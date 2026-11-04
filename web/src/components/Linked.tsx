@@ -1,9 +1,11 @@
 import { Fragment } from 'react'
-import { haptic, openExternal } from '../bridge'
+import { haptic } from '../bridge'
+import { openChecked, useGuard } from '../phone-data-taint'
 import { linkParts } from '../text'
 
 /** Plain text whose web addresses open with the phone's default handler (browser, or the app that owns the link). */
 export function Linked({ text }: { text: string }) {
+  const guarded = useGuard() // a chat that has read phone data: the address is shown in full before it opens
   return (
     <>
       {linkParts(text).map((p, i) =>
@@ -17,7 +19,7 @@ export function Linked({ text }: { text: string }) {
               e.preventDefault()
               e.stopPropagation()
               haptic()
-              openExternal(p.href!)
+              void openChecked(p.href!, guarded)
             }}
           >
             {p.text}
