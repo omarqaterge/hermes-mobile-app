@@ -44,6 +44,13 @@ CANARIES = [
     "canary@example.org",
     "https://canary.example.org/?token=abc",
     "CANARY_WORDS",
+    # Phone data (contacts, messages, location) must never reach the log: a number, a place and a message's words.
+    # Not listed: a lone token such as +15551234567, 555-010-0199 or 51.5074 has the same shape as a count or a status
+    # and passes the shape check by design; the app's scrubLog ([number], [place]) is the layer that removes those.
+    "(555) 010-0199",
+    "51.5074,-0.1278",
+    "Your code is 123456, call me",
+    "Meet at 5pm, the door code is 4821",
 ]
 
 

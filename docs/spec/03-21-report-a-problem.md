@@ -85,8 +85,13 @@ becomes `[chat text]`; then the phone model in a browser identification, URL que
 parts of 20 characters or more (`https://host/path?[removed]`), JWTs, Bearer and Basic values, `sk-`/`pk-`/`rk-` keys,
 GitHub, Slack, Google, Groq, AWS, Telegram and Hugging Face tokens, `token=`/`client_secret=`/`Authorization:`/
 `password=`-style values under any longer name, emails (`[email]`), IPv4 addresses but loopback and IPv6 addresses
-(`[ip]`), whole paths in the Termux, Linux and macOS home folders (`~`) and shared storage (`[storage]`), hex IDs of 32
-characters or more (`[id]`), long encoded strings (`[data]`) and quoted text of 25 characters or more (`"[text]"`). The result is cut
+(`[ip]`), latitude and longitude pairs written as decimals with a comma or semicolon (`51.5074, -0.1278`) and `lat=`/`lon=`/
+`latitude`/`longitude` values (`[place]`), phone numbers (`[number]`: `+` and 7 to 15 digits, or 7 to 15 digits in groups split
+by spaces, dashes, dots or a bracketed area code; dates, versions, build numbers and dots-only groups other than 3.3.4 are left),
+whole paths in the Termux, Linux and macOS home folders (`~`) and shared storage (`[storage]`), hex IDs of 32
+characters or more (`[id]`), long encoded strings (`[data]`) and quoted text of 25 characters or more (`"[text]"`). Not caught, so
+timestamps, ports, sizes, durations, line:column and plain integers stay readable: a number with no separators (`5551234567`),
+a coordinate pair split only by a space, a lone coordinate without a `lat`/`lon` name, and numbers with other separators. The result is cut
 to the last `MAX_LOG` (60000) characters.
 
 **The relay** (`relay/report/worker.js`, a Cloudflare Worker on the free plan; setup steps in `relay/report/README.md`):

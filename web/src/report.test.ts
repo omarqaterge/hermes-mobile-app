@@ -54,6 +54,38 @@ describe('scrubLog', () => {
     expect(scrubLog('12:30:45 conn closed')).toBe('12:30:45 conn closed')
   })
 
+  it('removes phone numbers in international and local forms', () => {
+    const numbers = ['+15551234567', '+44 20 7946 0958', '+1 (555) 010-0199', '555-010-0199', '(555) 010-0199', '0161 496 0000', '555.010.0199', '555 0100 199']
+    for (const n of numbers) expect(scrubLog(`call from ${n} failed`), n).toBe('call from [number] failed')
+    expect(scrubLog('{"address":"+15551234567","x":1}')).toBe('{"address":"[number]","x":1}')
+  })
+
+  it('removes coordinates', () => {
+    expect(scrubLog('fix 51.5074, -0.1278 done')).toBe('fix [place] done')
+    expect(scrubLog('at 40.71280;-74.00600')).toBe('at [place]')
+    expect(scrubLog('lat=51.5074 lon=-0.1278')).toBe('lat=[place] lon=[place]')
+    expect(scrubLog('{"latitude": 51.5074, "longitude": -0.1278}')).toBe('{"latitude": [place], "longitude": [place]}')
+  })
+
+  it('keeps what a diagnostic log needs', () => {
+    const safe = [
+      '11-03 12:00:05 service loop_exit name=dashboard code=137',
+      '2026-11-04T12:30:45.123Z start',
+      '2026-11-04 12:30:45 start',
+      'date 2026-11-04 and 04.11.2026 and 04/11/2026',
+      'v1.2.3 and 10.0.19045.1234 and 1.2.3-beta.4',
+      'at run (web/src/App.tsx:1234:56)',
+      'File "gateway/run.py", line 120, in handle',
+      'listening on 127.0.0.1:9119 and port 9121',
+      'heap 134217728 bytes, 128 MB, 1.5 GB',
+      'took 1234 ms, 12.345 s, retry in 30 s',
+      'epoch 1730000000000 count 1234567 id 98765432',
+      'build 20261104-123456 abc-1234-5678',
+      'version 3.141 2.718 ratio 0.5'
+    ].join('\n')
+    expect(scrubLog(safe)).toBe(safe)
+  })
+
   it('replaces home and storage paths, and the phone model', () => {
     const out = scrubLog('open /data/data/com.termux/files/home/notes/a.md\n/home/alex/x and /Users/alex/y\n/storage/emulated/0/Download/z.png\nMozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A) Chrome\n(Linux; U; Android 9; SM-G960F)')
     expect(out).not.toMatch(/alex|Pixel|SM-G960F|com\.termux\/files\/home|emulated|a\.md|z\.png/)
