@@ -139,7 +139,7 @@ def status_state(timeout: float = STATUS_TIMEOUT) -> tuple:
     if not res:
         return "none", None
     code, st = res
-    if code == 404 or 300 <= code < 400:
+    if code in (204, 404) or 300 <= code < 400:   # 204: an app without the route takes the POST as an event
         return "unavailable", None
     if code != 200 or st.get("ok") is not True:
         return "none", None
@@ -272,7 +272,7 @@ def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", 
             _ev(kind, "failed")
             return FAILED
         code, ans = res
-        if code == 404 or 300 <= code < 400:
+        if code in (204, 404) or 300 <= code < 400:
             _ev(kind, "unavailable")
             return UNAVAILABLE
         if code != 200 or ans.get("ok") is not True or ans.get("kind") != kind:

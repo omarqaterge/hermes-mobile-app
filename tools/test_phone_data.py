@@ -69,6 +69,10 @@ class Fake(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if APP["mode"] == "204" or (APP["mode"] == "204_read" and body.get("op") == "read"):
+            self.send_response(204)
+            self.end_headers()
+            return
         if APP["mode"] == "html":
             return self._reply(b"<html>not json</html>")
         if APP["mode"] == "drip" and body.get("op") == "read":
@@ -277,6 +281,11 @@ out = pd.tool_handler({"kind": "contacts"}, session_id="c")
 check("redirect on read: not followed, not available", out == pd.UNAVAILABLE and APP["hits"] == 0, out)
 reset(mode="html")
 check("non-JSON status: not available, nothing asked", pd.tool_handler({"kind": "contacts"}, session_id="c") == pd.UNAVAILABLE and not GATE["calls"])
+reset(mode="204")
+check("204 on status (app without the route): not available, nothing asked", pd.tool_handler({"kind": "contacts"}, session_id="c") == pd.UNAVAILABLE and not GATE["calls"])
+reset(mode="204_read")
+out = pd.tool_handler({"kind": "contacts"}, session_id="c")
+check("204 on read: not available, never a success", out == pd.UNAVAILABLE, out)
 reset(read_code=404)
 check("read 404: not available", pd.tool_handler({"kind": "contacts"}, session_id="c") == pd.UNAVAILABLE)
 reset(read_code=500, read={"ok": True, "kind": "contacts", "items": [{"name": "x"}], "truncated": False})
@@ -360,6 +369,8 @@ reset(mode="404")
 check("404 (older app): no section", pd.prompt_section(info) == "")
 reset(mode="notready")
 check("ready false: no section", pd.prompt_section(info) == "")
+reset(mode="204")
+check("204 (app without the route): no section", pd.prompt_section(info) == "")
 reset(mode="redirect")
 check("redirect: no section", pd.prompt_section(info) == "")
 reset(mode="html")
