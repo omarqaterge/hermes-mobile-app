@@ -18,7 +18,7 @@
 
 **`<queries>`** (package visibility for Android 11+): `com.termux`, `com.termux.api`, `moe.shizuku.privileged.api`, `com.termux.boot`, the twelve phone-maker system apps that `Autostart` knows (`com.miui.securitycenter`, `com.hihonor.systemmanager`, `com.huawei.systemmanager`, `com.coloros.safecenter`, `com.oppo.safe`, `com.oneplus.security`, `com.vivo.permissionmanager`, `com.iqoo.secure`, `com.asus.mobilemanager`, `com.meizu.safe`, `com.letv.android.letvsafe`, `com.transsion.phonemaster`), the intents `TTS_SERVICE` and `RecognitionService` (to bind the system speech services), and `PROCESS_TEXT` with `text/plain` (so the text-selection menu can list other apps' Speak and Translate).
 
-**Permissions.** 16 are named in the manifest as `android.permission.*`; two more are other-package permissions.
+**Permissions.** 23 are named in the manifest as `android.permission.*`; two more are other-package permissions.
 
 | Permission | Kind | Why the app needs it |
 |---|---|---|
@@ -32,6 +32,13 @@
 | `POST_PROMOTED_NOTIFICATIONS` | normal (Android 16) | Lets the status notification be promoted to a Live Update (status-bar chip, the "island" on some phones). Without it the notification is still posted as a normal ongoing one. |
 | `REQUEST_DELETE_PACKAGES` | normal | Android's uninstall prompt for the helper apps and this app (`Uninstall.uninstallApp`, `ACTION_DELETE`). |
 | `RECORD_AUDIO` | runtime | Dictation and Live mode (`Voice.startListening`). Asked on first use; denial reports `mic-denied` to the page. |
+| `READ_CONTACTS` | runtime | Phone data for the agent (3.15 "Phone data for the agent"): the contacts reader. Asked only when the Contacts switch is turned on (`MainActivity.phoneDataTurnOn`, request code `REQ_PHONE_DATA`), never at start-up (`requestRuntimePermissions` does not list it) or by Setup. |
+| `READ_CALENDAR` | runtime | Phone data for the agent: the calendar reader. Asked only when the Calendar switch is turned on. |
+| `READ_CALL_LOG` | runtime | Phone data for the agent: the call log reader. Asked only when the Call log switch is turned on. |
+| `READ_SMS` | runtime | Phone data for the agent: the messages reader (read only; no send or receive permission is declared). Asked only when the Messages (SMS) switch is turned on. |
+| `ACCESS_COARSE_LOCATION` | runtime | Phone data for the agent: approximate location only (no fine location is declared). Asked only when the Location (approximate) switch is turned on. |
+| `READ_MEDIA_IMAGES` | runtime (Android 13+) | Phone data for the agent: the latest-photos details reader (`PhoneData.permission` picks it on API 33+). `READ_MEDIA_VISUAL_USER_SELECTED` is not declared. |
+| `READ_EXTERNAL_STORAGE` | runtime (`maxSdkVersion` 32) | The same photos reader on Android 8 to 12. Not declared for Android 13+. |
 | `WAKE_LOCK` | normal | `HermesService.updateWake` holds a partial wake lock (`hermes:working`) only while Hermux works, an approval waits, or a cron job is due. |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | normal | The Setup check's "let it run in the background" prompt (`setupFix` `battery-app`). |
 | `USE_EXACT_ALARM` | normal (Android 13+) | The exact alarm that wakes the phone for a due cron job (`scheduleWake` uses `setExactAndAllowWhileIdle` when `canScheduleExactAlarms()` is true, otherwise `setAndAllowWhileIdle`). |

@@ -37,6 +37,8 @@ const STATIC: SettingsEntry[] = [
   e('hub', 'Auto for all chats', 'Settings › Permissions', 'What new and existing chats start in', 'yolo full access approve run without asking permission'),
   e('hub', 'Confirm approvals with fingerprint', 'Settings › Permissions', undefined, 'biometric lock screen security approval'),
   e('hub', 'Dynamic UI', 'Settings › Replies', 'Tables, charts and forms you can tap', 'openui cards plugin'),
+  e('hub', 'Phone data for the agent', 'Settings', 'Contacts, calendar, call log, messages, location and latest photos', 'read permission privacy sms contacts calls location photos'),
+  e('hub', 'Let the agent read phone data', 'Settings › Phone data for the agent', undefined, 'contacts calendar call log messages sms location photos privacy master'),
   e('hub', 'Allow banking, payment, password and 2FA apps', 'Settings › Background apps', "Off: Hermux won't open them in the background", 'hidden screen phone control sensitive'),
   e('hub', 'Status', 'Settings › Connection', undefined, 'connected offline'),
   e('hub', 'Reconnect / start Hermux', 'Settings › Connection', undefined, 'restart connection'),

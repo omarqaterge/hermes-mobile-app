@@ -11,7 +11,7 @@ Source folder: `hermes-plugin/hermes-mobile/`. `phone/install.sh` copies it to `
 
 | File | What it is |
 |---|---|
-| `__init__.py` | The plugin entry. `register(ctx)` registers 4 tools, 4 prompt sections, 1 skill and 12 hooks. Holds the status loop, the event sender (`_send`, `_post`), the "Using <app>" chip text, tool labels, and loads the other modules by path (`_load`; the folder is not an importable package, each module gets a name like `hm_canvas` in `sys.modules`). |
+| `__init__.py` | The plugin entry. `register(ctx)` registers 5 tools, 5 prompt sections, 1 skill and 12 hooks. Holds the status loop, the event sender (`_send`, `_post`), the "Using <app>" chip text, tool labels, and loads the other modules by path (`_load`; the folder is not an importable package, each module gets a name like `hm_canvas` in `sys.modules`). |
 | `plugin.yaml` | Hermes's plugin manifest: name `hermes-mobile`, version `1.0.0`, description, and a `provides_hooks` list. The list names 9 hooks. `pre_llm_call`, `post_llm_call` and `post_approval_response` are registered in code but missing from the list. |
 | `auto_mode.py` | Auto access: the list of chats in Auto mode and the blocking rule for dangerous commands (5.1, `pre_tool_call`). |
 | `bots.py` | Always-on bot keeper helpers: state file, parking of profiles, host gateway start/stop. Imported by `plugin_api.py` for `/bots*`. Its `keep` loop is retired (see 6.2); `off` cleans up. |
@@ -24,6 +24,7 @@ Source folder: `hermes-plugin/hermes-mobile/`. `phone/install.sh` copies it to `
 | `library.py` | The old Library (saved canvas copies from older app versions). Still readable, never written by the app now. |
 | `openui.py` | Cards in replies: the system-prompt section, the `openui` skill (`register_skill`), the `openui_reference` tool, the on/off setting, and `strip_ui`. |
 | `openui_query.py` | The read-only tool calls cards may make (`POST /openui/call`), limited by `openui_tools.json`. |
+| `phone_data.py` | The `phone_data` tool: reads contacts, calendar, call log, messages, location and photo details from the app, only after the user agrees (5.2). |
 | `phone_app.py` | The `phone_app` tool: drives an app on a hidden screen through the app's background host. |
 | `plugin_api.py` (in `dashboard/`) | The FastAPI router: all 46 routes (5.4), the battery slow-downs for Hermes Desktop's watchers, and profile linking. |
 | `dashboard/manifest.json` | Dashboard plugin manifest: `tab.hidden: true` (no tab in Hermes's web UI), `entry: dist/index.js` (a one-line comment file, the plugin has no UI), `api: plugin_api.py`. |

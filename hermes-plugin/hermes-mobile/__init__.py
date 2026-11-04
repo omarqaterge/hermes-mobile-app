@@ -349,6 +349,9 @@ def _tool_label(tool_name: str, args) -> str:
             return _phone_app().action_label(a)
         except Exception:
             return "Using an app in the background"
+    if tool_name == "phone_data":
+        k = a.get("kind")  # only a word from a fixed list: never the arguments
+        return f"Reading phone data: {k}" if k in ("contacts", "calendar", "calls", "sms", "location", "photos") else "Reading phone data"
     if tool_name == "canvas":
         verb = {"create": "Writing to the canvas", "write": "Updating the canvas", "patch": "Editing the canvas",
                 "read": "Reading the canvas", "open_file": "Opening a file on the canvas"}.get(str(a.get("action", "")), "Using the canvas")
@@ -365,7 +368,7 @@ _SHORT = {
     "search_files": "Files", "web_search": "Web", "web_extract": "Web", "browser_navigate": "Browser",
     "skill_view": "Skill", "skill_manage": "Skill", "memory": "Memory", "delegate_task": "Agents",
     "clarify": "Asking", "todo": "Tasks", "todo_list": "Tasks", "vision_analyze": "Vision", "image_generate": "Image",
-    "send_message": "Message", "canvas": "Canvas", "tool_search": "Tools", "tool_describe": "Tools", "tool_call": "Tools",
+    "send_message": "Message", "canvas": "Canvas", "phone_data": "Phone", "tool_search": "Tools", "tool_describe": "Tools", "tool_call": "Tools",
 }
 
 
@@ -789,6 +792,11 @@ def _phone_app():
     return _load("hm_phone_app", "phone_app.py")
 
 
+def _phone_data():
+    """The phone_data tool (contacts, calendar, calls, messages, location, photos; read-only, gated by the app)."""
+    return _load("hm_phone_data", "phone_data.py")
+
+
 def _auto_mode():
     """Auto access (the app's Auto button): which chats block Hermes's dangerous-command list under /yolo."""
     return _load("hm_auto_mode", "auto_mode.py")
@@ -896,6 +904,15 @@ def register(ctx):
     except Exception as e:
         _dbg(f"phone_app not registered: {type(e).__name__}: {e}")
         _event("plugin", "not_registered", what="phone_app", error=type(e).__name__)
+    try:
+        pd = _phone_data()
+        pd.event = _event
+        ctx.register_tool(name="phone_data", toolset="canvas", schema=pd.TOOL_SCHEMA, handler=pd.tool_handler,
+                          description="Read the user's contacts, calendar, call log, messages, location or latest photos (read-only, asks the user)", emoji="📇")
+        ctx.register_system_prompt_section("hermes-mobile.phone_data", pd.prompt_section, position="after_memory", max_chars=1000)
+    except Exception as e:
+        _dbg(f"phone_data not registered: {type(e).__name__}: {e}")
+        _event("plugin", "not_registered", what="phone_data", error=type(e).__name__)
     try:
         ou = _openui()
         try:  # the reference as a Hermes skill, skill_view("hermes-mobile:openui")
