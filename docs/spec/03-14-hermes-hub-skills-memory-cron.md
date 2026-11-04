@@ -67,7 +67,7 @@ Create / edit sheet ("New scheduled job" / "Edit job"): fields Name, Schedule, a
 Runs sheet ("Runs · <name>", `GET /api/cron/jobs/<id>/runs?limit=20`): one card per run with title / status, start time and a preview or "N msgs · reason". "No runs yet" when empty. Tap a run: if it has a chat (the dashboard lists runs as chats with source `cron`) the screen closes and that chat opens; otherwise a sheet shows its saved output (inline text, else the file read through `GET /api/files/read`, else the preview or "This run saved no output.").
 
 #### Files
-**Opens from:** the hub's Files card. **Closes with:** Back. Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`, `web/src/filekind.ts`.
+**Opens from:** the hub's Files card. **Closes with:** Back. Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`, `web/src/filekind.ts`. A file's preview goes through `DocView` (or `HeldScope` for plain text) with an unknown chat: once the app has recorded any phone-data read (`phoneDataAnyRead`), an HTML file is not run (its source shows as text), remote images wait behind a tap and links ask first, and the shell's request filter is on while the preview is open (2.3).
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |

@@ -90,6 +90,23 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
   from history shows no tool names there.
 - Shizuku routes are unchanged (see above).
 
+**Update 2026-11-05 (round 3 of the app side).** From a review of the first launch candidate.
+
+- **The plugin's protection is a speed bump.** The agent can use `write_file` to rewrite the plugin's own files
+  (`phone_taint.py`, `phone-read.json`, a boot script), so nothing the plugin does can be relied on. The enforcement is the app: its own record
+  (`PhoneDataChats`), the request filter (`RemoteGuard`) and the page's address dialogs.
+- **Lineage.** The page asks the record about every id of a chat it knows (stored id, live id and the links it has seen: a resume, the
+  session list, a compression, a `session.info`), kept in `hm.lineage.v1`. The `chats` list a read may carry is now up to 16 entries (the plugin
+  sends the compression chain). Not covered: a link the page never saw (compressed on another device, page storage cleared).
+- **Flooding.** An id seen within 30 days is never evicted. When the record is full of such ids a new one sets an overflow flag instead:
+  every chat then counts as having read, until the user clears it in Settings → Phone data (behind the screen lock) or clears the app's data.
+  Asking about an id or a read naming it refreshes its age; one request adds at most 17 new ids. Refused reads are still recorded.
+- **Documents.** A saved document (Gallery, Files) is judged by its own chat, not the chat on screen. A document with no known chat is held once
+  any read was recorded (so a phone that never used phone data sees no change).
+- **Links to other apps.** While blocked, a bare `mailto:`, `tel:`, `sms:`, `geo:`, `market:` or `intent:` link is refused natively; the
+  address dialog shows its full text and its confirmed open is the only way.
+- **Failure closes.** A record that throws means tainted; a shell without the method counts as tainted for documents and unjudgeable chats.
+
 ### Plugin side of the after-read protection
 
 Added 2026-11-04 after an independent review of the first version. The page side above is unchanged.

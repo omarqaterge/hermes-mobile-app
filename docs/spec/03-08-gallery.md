@@ -26,7 +26,7 @@ Viewer (`Viewer`, a tall sheet titled with the item's title):
 | Open canvas | Primary button | Switches profile if the chat belongs to another one, opens the chat, and opens its canvas on this document (side size) | Not shown for old copies or when the chat is gone |
 | Go to chat | Button | Opens the chat the document was made in (same profile switch). If the chat no longer exists: error toast "The chat this was made in no longer exists". | Shown when the chat exists |
 | ⋮ | Icon button, aria-label Item options | Opens the item menu | |
-| Body | The document through `DocView` (HTML runs offline in the same sandbox as on the canvas, never with network) | | Spinner while loading; error box with the message if it fails |
+| Body | The document through `DocView` with `from` = the item's chat (HTML runs offline in the same sandbox as on the canvas, never with network). A document is judged by ITS chat, not the one on screen: when that chat (or an earlier segment of it, `lineage.ts`) has read phone data the page is not run (the source shows as text), remote images wait behind a tap, addresses are checked first, and the shell's request filter is on while it is open; an old saved copy with no chat is held once the app has recorded any read (2.3) | | Spinner while loading; error box with the message if it fails |
 
 Item menu (`ItemMenu`, a sheet titled with the item's title):
 
