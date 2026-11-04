@@ -27,3 +27,17 @@ side can protect this data.
   with no Termux:API fallback. Photos are metadata only: no image, EXIF or GPS.
 - **Never logged.** No names, numbers, message text, queries or coordinates in logs, the diagnostic log or Report a problem
   ([diagnostic-log](diagnostic-log.md), [report-a-problem](report-a-problem.md)). Results do stay in the chat history.
+
+## The limit of this gate: Shizuku
+
+**Decided:** 2026-11-04, by the owner: the fingerprint stays on the chat's first Allow only, not on every read.
+
+Shizuku is required ([shizuku-is-required](shizuku-is-required.md)), and it lets the agent act as Android's shell user. So
+the switches and approvals protect the `phone_data` tool, but they don't fully stop an agent that misuses Shizuku:
+
+- `phone_app` can open Messages or Contacts and read the screen, after its own once-per-app ask.
+- A shell command could tap Allow with `input tap`. It can't fake a fingerprint, but after a chat's first one, later Allows
+  don't ask for it.
+- A shell command might read some of this data directly with `content query`. This has not been tested.
+
+**So:** Say this plainly in the privacy doc. Don't describe the gate as stopping everything the agent can do on the phone.
