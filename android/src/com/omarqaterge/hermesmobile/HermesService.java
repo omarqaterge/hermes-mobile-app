@@ -1236,8 +1236,9 @@ public class HermesService extends Service {
         return sp;
     }
 
-    /** A question from Hermes, as a Live Update: "Answer?" chip; expanded, the question in bold, the choices
-     * listed and one button per choice (a long list: the first two plus a text field with all as quick replies). */
+    /** A question from Hermes, as a Live Update: "Answer?" chip; expanded, the question in bold, the choices listed,
+     * up to two choice buttons and always a text field (with every choice as a quick reply when they don't all fit).
+     * Android 16 uses ProgressStyle, like the approval and working chips, whose buttons HyperOS's island draws. */
     Notification askNotification(String sub) {
         JSONObject a = pendingAsk;
         String session = a.optString("session", "");
@@ -1263,21 +1264,22 @@ public class HermesService extends Service {
                 .setContentTitle("Hermux asks")
                 .setContentText(t)
                 .setSubText(sub)
-                .setStyle(new Notification.BigTextStyle().bigText(t))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
                 .setContentIntent(openApp(session));
+        if (Build.VERSION.SDK_INT >= 36) {
+            b.setStyle(new Notification.ProgressStyle()
+                    .setStyledByProgress(false)
+                    .setProgressSegments(java.util.List.of(new Notification.ProgressStyle.Segment(100).setColor(GOLD)))
+                    .setProgress(100));
+        } else {
+            b.setStyle(new Notification.BigTextStyle().bigText(t));
+        }
         if (single) {
-            if (choices.isEmpty()) {
-                b.addAction(answerAction("ask", session, "Answer", null));
-            } else if (choices.size() <= 3) {
-                for (int k = 0; k < choices.size(); k++) b.addAction(choiceAction(session, choices.get(k), k));
-            } else {
-                b.addAction(choiceAction(session, choices.get(0), 0));
-                b.addAction(choiceAction(session, choices.get(1), 1));
-                b.addAction(answerAction("ask", session, "More\u2026", new java.util.ArrayList<CharSequence>(choices)));
-            }
+            // A notification shows three actions at most: keep the last one for the text field.
+            for (int k = 0; k < Math.min(2, choices.size()); k++) b.addAction(choiceAction(session, choices.get(k), k));
+            b.addAction(answerAction("ask", session, "Answer", choices.size() > 2 ? new java.util.ArrayList<CharSequence>(choices) : null));
         }
         promote(b, "Answer?");
         return b.build();
