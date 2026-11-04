@@ -594,6 +594,10 @@ def _on_skill_lifecycle(action=None, skill_name=None, session_id=None, **_):
 
 
 def _on_subagent_start(child_session_id=None, parent_session_id=None, child_goal=None, **_):
+    try:
+        _phone_taint().link_subagent(parent_session_id, child_session_id)   # a child that reads taints its parent
+    except Exception:
+        pass
     if child_session_id:
         with _lock:
             _subagents.add(child_session_id)
@@ -800,39 +804,41 @@ def _phone_taint():
     return _load("hm_phone_taint", "phone_taint.py")
 
 
-_READ_CHATS: set = set()   # chats that called phone_data in this process, kept even if phone_taint.py cannot load
+_READ_CHATS: set = set()   # chat ids that called phone_data in this process, kept even if phone_taint.py cannot load
 
 
 def _taint_directive(tool_name, args, session_id, task_id):
     """The pre_tool_call directive for a chat that has read phone data (an ask or a block), or None. Marks the chat on a
-    phone_data call whatever its outcome. Never logs a command; failing to load the check blocks sending tools there."""
+    phone_data call whatever its outcome. A chat is known by its runtime id and its stored id (phone_taint.chat_ids), so
+    a resume or a compression keeps it marked. Never logs a command; failing to load the check blocks sending tools there."""
     inner = []
     try:
         calls = _phone_taint()._calls
         inner = [n for n, _a in calls(tool_name, args)]
     except Exception:
         inner = [str(tool_name or "")]
-    chat = ""
+    ids = ()
     try:
-        chat = _phone_taint().chat_id(session_id, task_id)
+        ids = _phone_taint().chat_ids(session_id, task_id)
     except Exception:
-        chat = str(session_id or task_id or "")
+        ids = tuple(x for x in (str(session_id or task_id or ""),) if x)
     if "phone_data" in inner:
-        if chat:
+        if ids:
             if len(_READ_CHATS) > 500:
                 _READ_CHATS.clear()
-            _READ_CHATS.add(chat)
+            _READ_CHATS.update(ids)
         try:
-            _phone_taint().mark(chat)
+            _phone_taint().mark(ids)
         except Exception:
             pass
     try:
-        return _phone_taint().check(tool_name, args, chat)
+        return _phone_taint().check(tool_name, args, ids)
     except Exception:
         _event("plugin", "hook_failed", what="phone_taint")
         coarse = ("terminal", "execute_code", "tool_call", "web_search", "web_extract", "send_message", "delegate_task",
-                  "computer_use", "cronjob_manage")
-        if chat in _READ_CHATS and any(n in coarse or n.startswith(("browser_", "mcp_", "send_")) for n in inner):
+                  "computer_use", "cronjob_manage", "process_manage", "memory", "skill_manage", "text_to_speech")
+        if any(i in _READ_CHATS for i in ids) and any(
+                n in coarse or n.startswith(("browser_", "mcp_", "send_")) for n in inner):
             return {"action": "block", "message": (
                 "BLOCKED: this chat has read phone data and Hermux's check for actions that send data out could not "
                 "run. Tell the user; they can start a new chat.")}
