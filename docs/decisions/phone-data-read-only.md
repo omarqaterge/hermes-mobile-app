@@ -120,3 +120,30 @@ program that runs a command from inside, or an unusual construction can hide a c
 directory can also persist text, and is not asked. In Full access and Auto access, Hermes's own gate approves without
 asking, so no ask shows there (accepted). Choosing "Always" on an ask saves a random one-use key that never matches again,
 because Hermes offers no way to switch that choice off; it is harmless but useless.
+
+**Update 2026-11-05 (pre-launch review of the plugin side).**
+
+- **Tools: ask by default.** A list of tools that send data out always misses the next tool (the review found `discord`,
+  `discord_admin`, `ha_call_service`, `yb_send_dm`, `yb_send_sticker` and two Feishu comment tools passing). So in a chat
+  that has read, every tool asks except an allowlist of tools that stay on the device: `phone_data`, `phone_app`, `canvas`,
+  `find_chats`, `openui_reference`, `read_file`, `write_file`, `patch`, `search_files`, `todo`, `todo_list`, `clarify`,
+  `skill_view`, `skills_list`, `session_search`, `tool_search`, `tool_describe`. `terminal` and `execute_code` ask by what
+  they run, `process_manage` by action, `memory` and `skill_manage` as before, vision tools only given a web address. A new
+  Hermes tool, a plugin's or an MCP server's asks until someone decides it stays on the device. If the check cannot load,
+  everything off the list is blocked in a chat that has read. Decided to ask, not allow: `kanban_*` (boards other agents
+  read), `ha_*` reads (they query a server, and the arguments can carry text), `feishu_*`, `spotify_*`,
+  `manage_connections`, the desktop pane tools and every `browser_*`.
+- **Commands.** A command word built by expansion (`$(printf curl)`, `${C:-curl}`, `$X`), chosen by a pattern (`c?rl`,
+  `cur[l]`), `eval`, and `source`/`.` of anything but a plain local path ask. Commands that run another command are read
+  through to it: `env -S`, `flock`, `script -c`, `strace`, `ltrace`, `proot-distro ... --`, `proot`, `chroot`, `nsenter`,
+  `unshare`, `watch`, `parallel`, `chrt`, `taskset`. Media tools (`ffmpeg`, `mpv`...) ask given a network address; `yt-dlp`,
+  `youtube-dl`, `aria2c` always; package tools (`pip`, `npm`, `cargo`, `go`, `gem`, `apt`, `pkg`, `dpkg`...) ask given an
+  address, a git source, another index, or when they download and run code (`npx`); a plain `pip install name` does not,
+  though a package can run code when installed. Nesting deeper than the reader goes asks.
+- **Fewer needless asks.** A heredoc body is text (only `$(...)` inside an unquoted one runs); `execute_code` is read as
+  Python, not shell, and asks only for network modules and process calls (word boundaries, so `n_requests` is fine);
+  `gh --version` and other local `gh` subcommands, and `python3 -c` without network or process words, do not ask.
+- **Known limits, unchanged.** A script file that makes the call (`bash run.sh`, a Python file) is not read; an alias or
+  function set in an earlier call is not remembered; in Full access and Auto access Hermes's gate approves without asking.
+- **The app is told the ancestors.** A read also carries `chats`: the stored id of the chat and of every chat that spawned
+  it (at most 8, each at most 128 characters), so the app's own record marks the parents of a subagent that read.

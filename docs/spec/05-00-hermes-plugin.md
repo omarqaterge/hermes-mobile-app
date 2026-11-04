@@ -25,7 +25,7 @@ Source folder: `hermes-plugin/hermes-mobile/`. `phone/install.sh` copies it to `
 | `openui.py` | Cards in replies: the system-prompt section, the `openui` skill (`register_skill`), the `openui_reference` tool, the on/off setting, and `strip_ui`. |
 | `openui_query.py` | The read-only tool calls cards may make (`POST /openui/call`), limited by `openui_tools.json`. |
 | `phone_data.py` | The `phone_data` tool: reads contacts, calendar, call log, messages, location and photo details from the app, only after the user agrees (5.2). |
-| `phone_taint.py` | After a chat has read phone data: asks the user before commands and tools that can send data out (5.1, `pre_tool_call`). |
+| `phone_taint.py` | After a chat has read phone data: asks the user before every tool except an allowlist of tools that stay on the device, and before terminal commands that can send data out (5.1, `pre_tool_call`). |
 | `phone_app.py` | The `phone_app` tool: drives an app on a hidden screen through the app's background host. |
 | `plugin_api.py` (in `dashboard/`) | The FastAPI router: all 46 routes (5.4), the battery slow-downs for Hermes Desktop's watchers, and profile linking. |
 | `dashboard/manifest.json` | Dashboard plugin manifest: `tab.hidden: true` (no tab in Hermes's web UI), `entry: dist/index.js` (a one-line comment file, the plugin has no UI), `api: plugin_api.py`. |

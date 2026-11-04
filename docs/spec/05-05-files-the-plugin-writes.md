@@ -9,7 +9,7 @@ Paths are in Debian unless noted. "Root" is `~/.hermes`.
 | `~/.hermes/mobile/diag.log`, `diag.log.1` | `diag.py` (`event`) | The diagnostic log on this side (3.21): checked lines only, 128 KB each, owner-only. Deleted by `clear`. |
 | `~/.hermes/mobile/auto.json` | `auto_mode.set_mode` | `{"chats": {chat id: "auto"}}`. |
 | `~/.hermes/mobile/phone-read.json.lock` | `phone_taint.mark` | Empty file whose `flock` makes the read-modify-write of `phone-read.json` exclusive between processes. |
-| `~/.hermes/mobile/phone-read.json` | `phone_taint.mark` | `{"chats": {chat id: time}}`: every id of the chats that have called `phone_data` (the gateway's runtime id and the stored chat id), newest last, at most 2000. Ids and times only, never data or commands; written to a temp file and replaced while holding a lock on `phone-read.json.lock`. A broken file means no entries. |
+| `~/.hermes/mobile/phone-read.json` | `phone_taint.mark` | `{"chats": {chat id: time}}`: every id of the chats that have called `phone_data` (the gateway's runtime id and the stored chat id, and the stored ids of the parents of a subagent that read), newest last, at most 2000. Ids and times only, never data or commands; written to a temp file and replaced while holding a lock on `phone-read.json.lock`. A broken file means no entries. |
 | `~/.hermes/mobile/canvas/<chat>/<doc>.json` | `canvas.py` | One document with versions; `.lock` file beside them. |
 | `~/.hermes/mobile/library/<id>.json` | `library.py` | Old saved copies (500 items at most). |
 | `~/.hermes/mobile/checkpoints/<chat>.jsonl` | `checkpoints.py` | Snapshot ledger lines `{ts, turn, tool, file, workdir, base, tree, date, reason}`. The checkpoint store itself is Hermes's (its base folder gets a `.hm_maintained` marker). |
