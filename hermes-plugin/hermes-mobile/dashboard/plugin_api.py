@@ -5,7 +5,12 @@ file locks, character limits and threat scanning as the agent's memory tool — 
 sync script sees ordinary, canonical files.
 """
 
+import hmac
 import json
+import logging
+import os
+import re
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +18,101 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 router = APIRouter()
+_log = logging.getLogger(__name__)
+
+# ── who may read the dashboard's session token ──
+# Hermes puts its session token into every page it serves, which is fine on a computer. On Android every app shares
+# 127.0.0.1, so any installed app with internet access could read that page and then drive Hermes. Pages keep the token
+# only for a caller holding the app's event key (a file only Termux's user can read); everyone else gets a page saying
+# it was withheld. This lives in the plugin, not in a Hermes patch, because the plugin follows every app update.
+_TERMUX_HOME = "/data/data/com.termux/files/home"
+_KEY_HEADER = "X-Hermes-Mobile-Key"
+_PAGE_TOKEN = re.compile(rb"window\.__HERMES_SESSION_TOKEN__\s*=\s*[^;<]*;")
+_WITHHELD = b"window.__HERMUX_TOKEN_WITHHELD__=1;"
+
+
+def _key_file() -> Optional[Path]:
+    """The event key's file, or None off a phone, where loopback isn't shared and nothing needs withholding."""
+    override = os.environ.get("HM_DASH_KEY_FILE")  # the contract check's throwaway Hermes
+    if override:
+        return Path(override)
+    return Path(_TERMUX_HOME, ".hermes-mobile", "key") if os.path.isdir(_TERMUX_HOME) else None
+
+
+def _event_key() -> str:
+    path = _key_file()
+    try:
+        return path.read_text().strip() if path else ""
+    except OSError:
+        return ""
+
+
+class _TokenGuard:
+    """ASGI middleware: takes the session token out of HTML pages unless the request carries the event key."""
+
+    def __init__(self, app):
+        self.app = app
+
+    def _allowed(self, scope) -> bool:
+        path = _key_file()
+        if path is None:
+            return True
+        key = _event_key().encode()
+        given = dict(scope.get("headers") or []).get(_KEY_HEADER.lower().encode(), b"")
+        return bool(key) and hmac.compare_digest(given, key)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["path"].startswith("/api/") or self._allowed(scope):
+            return await self.app(scope, receive, send)
+        start = None
+        body = []
+
+        async def guarded(message):
+            nonlocal start
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers") or [])
+                if not headers.get(b"content-type", b"").startswith(b"text/html"):
+                    return await send(message)
+                start = message
+                return
+            if start is None:
+                return await send(message)
+            body.append(message.get("body", b""))
+            if message.get("more_body"):
+                return
+            html = _PAGE_TOKEN.sub(_WITHHELD, b"".join(body))
+            headers = [(k, v) for k, v in start.get("headers", []) if k != b"content-length"]
+            headers.append((b"content-length", str(len(html)).encode()))
+            await send({**start, "headers": headers})
+            await send({"type": "http.response.body", "body": html})
+
+        await self.app(scope, receive, guarded)
+
+
+def _install_token_guard() -> None:
+    """Runs when the dashboard imports this file, before its server starts. Without the guard, pages stay as Hermes
+    serves them, so say so in the log: tools/hermes-contract fails if the pinned Hermes ever stops allowing this."""
+    server = sys.modules.get("hermes_cli.web_server")
+    app = getattr(server, "app", None)
+    if app is None or any(getattr(m.cls, "__name__", "") == "_TokenGuard" for m in app.user_middleware):
+        return
+    try:
+        app.add_middleware(_TokenGuard)
+    except Exception as e:
+        _log.error("hermes-mobile: session token guard not installed: %s", e)
+
+
+_install_token_guard()
+
+
+def _own_page_token() -> str:
+    """The session token for the plugin's own calls to the gateway (/approve, /stop). Blocking: call it in a thread."""
+    import urllib.request
+
+    req = urllib.request.Request("http://127.0.0.1:9119/", headers={_KEY_HEADER: _event_key()})
+    page = urllib.request.urlopen(req, timeout=5).read().decode()
+    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
+    return m.group(1) if m else ""
 
 
 def _home(profile: Optional[str]) -> Path:
@@ -191,12 +291,11 @@ async def approve(body: Approve):
     if not body.request_id:
         # Without an id Hermes answers the session's oldest waiting approval, which may not be the one shown.
         raise HTTPException(status_code=409, detail="no request id: answer in the app")
-    page = await asyncio.to_thread(lambda: urllib.request.urlopen("http://127.0.0.1:9119/", timeout=5).read().decode())
-    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
-    if not m:
+    token = await asyncio.to_thread(_own_page_token)
+    if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
     last = None
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={m.group(1)}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         for n, sid in enumerate(dict.fromkeys(x for x in (body.session, body.key) if x), 1):
             params = {"session_id": sid, "choice": body.choice}
             if body.request_id:
@@ -231,12 +330,11 @@ async def stop(body: Stop):
 
     if not body.session:
         raise HTTPException(status_code=400, detail="no session")
-    page = await asyncio.to_thread(lambda: urllib.request.urlopen("http://127.0.0.1:9119/", timeout=5).read().decode())
-    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
-    if not m:
+    token = await asyncio.to_thread(_own_page_token)
+    if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
 
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={m.group(1)}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         async def call(n, method, params):
             await ws.send(json.dumps({"jsonrpc": "2.0", "id": n, "method": method, "params": params}))
             while True:

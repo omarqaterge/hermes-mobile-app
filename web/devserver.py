@@ -21,7 +21,8 @@ PORT = int(os.environ.get("HM_DEV_PORT", "5180"))
 
 def hermes_token() -> str:
     try:
-        html = urllib.request.urlopen(HERMES + "/", timeout=5).read().decode()
+        import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
+        html = urllib.request.urlopen(urllib.request.Request(HERMES + "/", headers={"X-Hermes-Mobile-Key": _key}), timeout=5).read().decode()
         return re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', html).group(1)
     except Exception:
         return ""

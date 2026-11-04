@@ -121,7 +121,7 @@ $IN_DEBIAN" hm-plugin "$@" </dev/null; fi
 }
 # One word of the Debian half's last HMPLUGIN line, so that noise from a login shell can't be taken for an answer.
 last() { grep '^HMPLUGIN ' | tail -1; }
-token() { curl -s -m 5 "$DASH/" 2>/dev/null | sed -n 's/.*__HERMES_SESSION_TOKEN__ *= *"\([^"]*\)".*/\1/p' | head -1; }
+token() { curl -s -m 5 -H "X-Hermes-Mobile-Key: $(cat "$HOME/.hermes-mobile/key" 2>/dev/null)" "$DASH/" 2>/dev/null | sed -n 's/.*__HERMES_SESSION_TOKEN__ *= *"\([^"]*\)".*/\1/p' | head -1; }
 route() {  # PATH: the body when the plugin's route answers 200, else non-zero. The token changes with every dashboard start.
   local t out; t=$(token); [ -n "$t" ] || return 1
   out=$(curl -s -m 5 -H "X-Hermes-Session-Token: $t" -w '\n%{http_code}' "$DASH/api/plugins/hermes-mobile/$1" 2>/dev/null) || return 1

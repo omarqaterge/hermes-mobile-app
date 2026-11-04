@@ -226,7 +226,8 @@ def t_live():
     print("live turn + WebSocket dropped mid-turn (uses a little model quota)")
     code = r'''
 import asyncio, json, re, urllib.request, websockets
-page = urllib.request.urlopen("http://127.0.0.1:9119/").read().decode()
+import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
+page = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:9119/", headers={"X-Hermes-Mobile-Key": _key})).read().decode()
 token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
 async def main():
     async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:

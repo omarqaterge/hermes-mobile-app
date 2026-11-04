@@ -12,7 +12,8 @@ import websockets
 
 BASE = os.environ.get("HM_GW_URL", "http://127.0.0.1:9119")
 SETTLE_S = float(os.environ.get("HM_GW_SETTLE", "4"))
-page = urllib.request.urlopen(BASE + "/").read().decode()
+import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
+page = urllib.request.urlopen(urllib.request.Request(BASE + "/", headers={"X-Hermes-Mobile-Key": _key})).read().decode()
 token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
 WS = BASE.replace("http", "ws", 1) + f"/api/ws?token={token}"
 # What the app sends over HTTP in the same few milliseconds as session.list / session.resume at start-up (seen against
