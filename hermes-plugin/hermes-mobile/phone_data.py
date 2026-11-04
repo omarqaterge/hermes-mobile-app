@@ -147,11 +147,11 @@ def status_state(timeout: float = STATUS_TIMEOUT) -> tuple:
         return "unavailable", None
     kinds = st.get("kinds")
     kinds = kinds if isinstance(kinds, dict) else {}
-    return "ready", {"kinds": {k: kinds.get(k) is True for k in KINDS}}
+    return "ready", {"kinds": {k: kinds.get(k) is True for k in KINDS}, "locked": st.get("locked") is True}
 
 
 def status(timeout: float = STATUS_TIMEOUT) -> Optional[dict]:
-    """{"kinds": {kind: bool}} when the app answered `ready`, else None (no answer, 404, older app, not ready)."""
+    """{"kinds": {kind: bool}, "locked": bool} when the app answered `ready`, else None (no answer, 404, older app, not ready)."""
     return status_state(timeout)[1]
 
 
@@ -285,6 +285,9 @@ def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", 
         if not st["kinds"].get(kind):
             _ev(kind, "off")
             return f"{LABELS[kind]} access is off. Ask the user to enable it in Hermux → Settings → Phone data."
+        if st.get("locked"):   # asking would put the request on the lock screen: say so and ask nothing
+            _ev(kind, "locked")
+            return "The phone is locked. Ask the user to unlock it, then try again."
         nonce = new_nonce()
         denied = _approve(kind, nonce, args_text)
         if denied is not None:

@@ -243,6 +243,42 @@ module.exports = async t => {
     await pg.close()
   }
   {
+    // Turning Full access off fails closed: the pass goes BEFORE the config.set call, so a call that fails (the agent
+    // can make it) leaves the chat without the pass.
+    const pg = await open({ on: false, secure: true, result: 'ok' }, { full: true })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await sleep(500)
+    const full = () => pg.evaluate(() => window.__pd.filter(x => 'full' in x))
+    const say = async text => {
+      await pg.getByPlaceholder('Message Hermux').fill(text)
+      await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+      await sleep(800)
+    }
+    await say('/yolo on')
+    let f = await full()
+    const chat = (f.find(x => x.on === true) || {}).full
+    check(chat && f.slice(-1)[0].on === true, `phone data: Full access has the pass before the failing switch (${JSON.stringify(f.slice(-2))})`)
+    await pg.evaluate(() => {
+      for (const s of window.__socks) {
+        const real = s.send.bind(s)
+        s.send = d => {
+          const m = JSON.parse(d)
+          if (m.method === 'config.set' && m.params && m.params.key === 'yolo') {
+            window.__yoloFailed = (window.__yoloFailed || 0) + 1
+            setTimeout(() => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32000, message: 'config.set failed' } }) })), 20)
+            return
+          }
+          return real(d)
+        }
+      }
+    })
+    await say('/yolo off')
+    f = await full()
+    check((await pg.evaluate(() => window.__yoloFailed || 0)) >= 1, 'phone data: the Off switch really hit a failing config.set')
+    check(f.slice(-1)[0] && f.slice(-1)[0].full === chat && f.slice(-1)[0].on === false, `phone data: a failed switch to Off still takes the pass away (${JSON.stringify(f.slice(-2))})`)
+    await pg.close()
+  }
+  {
     // Closing the chat's live session takes the pass away (an empty chat is replaced when a model is picked).
     const pg = await open({ on: false, secure: true, result: 'ok' }, { full: true })
     await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })

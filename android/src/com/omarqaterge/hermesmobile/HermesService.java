@@ -855,6 +855,7 @@ public class HermesService extends Service {
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
+                hideOnLockScreen(b, ev.optBoolean("phone_data", false));
                 // Answer right from the popup, like the in-app sheet.
                 if (!ev.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(ev, "once", "Allow once"));
                 if (ev.optBoolean("allow_session", true)) b.addAction(approveAction(ev, "session", "Allow session"));
@@ -1429,8 +1430,21 @@ public class HermesService extends Service {
         if (a.optBoolean("allow_session", true))
             b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
         b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
+        hideOnLockScreen(b, a.optBoolean("phone_data", false));
         promote(b, secs + "s");
         return b.build();
+    }
+
+    /** A phone-data approval (kind, search text, wording) never shows on the lock screen: private, with a public version
+     *  that only says Hermux needs an answer. For a phone that locks after the notification was posted. Other
+     *  notifications are unchanged. */
+    void hideOnLockScreen(Notification.Builder b, boolean phoneData) {
+        if (!phoneData) return;
+        b.setVisibility(Notification.VISIBILITY_PRIVATE);
+        b.setPublicVersion(new Notification.Builder(this, CH_ALERT)
+                .setSmallIcon(R.drawable.ic_stat_shield)
+                .setContentTitle("Hermux needs your approval")
+                .build());
     }
 
     /** A notification line kept short enough that the answer buttons stay in view. */
@@ -1447,6 +1461,7 @@ public class HermesService extends Service {
         String session = e.optString("session", null);
         NotificationManager nm = getSystemService(NotificationManager.class);
         Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermux"), "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
+        hideOnLockScreen(b, e.optBoolean("phone_data", false));
         if (!e.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(e, "once", "Allow once"));
         if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
         b.addAction(approveAction(e, "deny", "Deny"));

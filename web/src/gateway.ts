@@ -898,6 +898,9 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean, s
   const live = getState().active
   const was = accessOf(live?.runtimeId === a.runtimeId ? live : a)
   let on: boolean
+  // Fail closed: any mode but Full drops the phone-data pass BEFORE the RPC, so a config.set that fails (or is made to
+  // fail) leaves the chat without it. Full sets it only after Hermes confirmed the switch (below).
+  if (mode !== 'full') setPhoneDataFullAccess(a.runtimeId, false)
   if (mode === 'auto') {
     try {
       await setPluginAuto(a.storedId, true)

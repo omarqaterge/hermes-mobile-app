@@ -90,7 +90,8 @@ class Fake(BaseHTTPRequestHandler):
         if body.get("op") == "status":
             if APP["mode"] == "notready":
                 return self._reply({"ok": True, "ready": False, "master": False, "kinds": {}})
-            return self._reply({"ok": True, "ready": True, "master": True, "kinds": APP["kinds"]})
+            return self._reply({"ok": True, "ready": True, "master": True, "kinds": APP["kinds"],
+                                         "locked": APP.get("locked", False)})
         r = dict(APP["read"])
         if r.get("ok") is True and "kind" not in r:
             r["kind"] = body.get("kind")
@@ -124,7 +125,7 @@ pd.event = lambda area, name, **f: EVENTS.append((area, name, f))
 
 
 def reset(**over):
-    APP.update(mode="ready", kinds={k: True for k in pd.KINDS}, read_code=200, hits=0,
+    APP.update(locked=False, mode="ready", kinds={k: True for k in pd.KINDS}, read_code=200, hits=0,
                read={"ok": True, "items": [], "truncated": False}, calls=[], key_seen=None)
     APP.update(over)
     GATE.update(calls=[], result={"approved": True})
@@ -227,6 +228,16 @@ reset(kinds={**{k: True for k in pd.KINDS}, "sms": False})
 out = pd.tool_handler({"kind": "sms"}, session_id="c")
 check("kind off: sentence, nothing asked, no read", out == "Messages access is off. Ask the user to enable it in Hermux → Settings → Phone data."
       and not GATE["calls"] and not reads(), out)
+for lk in (True, "yes", 1):   # locked: say so, ask nothing (only a real true counts)
+    reset(locked=lk)
+    out = pd.tool_handler({"kind": "sms", "sender": "Dr Hassan"}, session_id="c")
+    if lk is True:
+        check("locked: says unlock, nothing asked, no read", "locked" in out and "unlock" in out and "Hassan" not in out
+              and not GATE["calls"] and not reads(), out)
+    else:
+        check(f"locked={lk!r} is not true: asks as usual", len(GATE["calls"]) == 1, out)
+reset()
+check("status keeps locked a plain boolean", pd.status() == {"kinds": {k: True for k in pd.KINDS}, "locked": False})
 for mode in ("404", "notready"):
     reset(mode=mode)
     out = pd.tool_handler({"kind": "contacts"}, session_id="c")
