@@ -157,6 +157,28 @@ check("read carries session, kind, op", rd["session"] == "chat1" and rd["kind"] 
 check("kind is not in the args text", "kind" not in json.loads(rd["args"]))
 check("task id is the fallback session", (pd.tool_handler({"kind": "photos"}, task_id="t9"), reads()[-1]["session"] == "t9")[1])
 
+# Full access is keyed on the gateway's live session id (a ContextVar), which a compression does not rotate.
+import contextvars
+import types
+_ui = contextvars.ContextVar("HERMES_UI_SESSION_ID", default=object())
+_mod = types.ModuleType("gateway.session_context")
+_mod._SESSION_UI_SESSION_ID = _ui
+sys.modules["gateway"] = types.ModuleType("gateway")
+sys.modules["gateway.session_context"] = _mod
+_ui.set("rt-live-1")
+pd.tool_handler({"kind": "photos"}, session_id="durable-after-compression")
+check("session is the live UI session id, not the durable one", reads()[-1]["session"] == "rt-live-1", reads()[-1]["session"])
+_ui.set("")
+pd.tool_handler({"kind": "photos"}, session_id="durable")
+check("an empty UI id falls back to the durable id", reads()[-1]["session"] == "durable")
+_ui.set(object())
+pd.tool_handler({"kind": "photos"}, session_id="durable")
+check("an unset UI id (not a string) falls back", reads()[-1]["session"] == "durable")
+os.environ["HERMES_UI_SESSION_ID"] = "other-chat-from-environ"
+pd.tool_handler({"kind": "photos"}, session_id="durable")
+check("os.environ is never used", reads()[-1]["session"] == "durable")
+del sys.modules["gateway.session_context"], sys.modules["gateway"]
+
 print("phone number and empty args")
 reset()
 pd.tool_handler({"kind": "sms", "sender": "+15550123", "box": "inbox"}, session_id="c")

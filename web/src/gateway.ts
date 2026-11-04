@@ -989,6 +989,11 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   }
 
   const type = String(r?.type || 'exec')
+  if (type === 'alias' && r?.target && /^yolo(\s|$)/i.test(bare(r.target).trim())) {
+    // A server-side alias must never change access: only a /yolo the user typed (or the Auto button) does.
+    pushItem({ kind: 'notice', id: newId('n'), text: `/${name}: a command alias can’t change access. Type /yolo yourself.`, level: 'error' })
+    return
+  }
   if (type === 'alias' && r?.target && depth < 3) {
     await runSlash(a, `/${bare(r.target)}${arg ? ` ${arg}` : ''}`, depth + 1)
     return

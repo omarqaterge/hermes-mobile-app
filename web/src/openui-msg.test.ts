@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, test } from 'vitest'
-import { actionMessage, dayText, formFields, loadUiState, rangeText, safeHttpUrl, saveUiState, textDay } from './openui-msg'
+import { actionMessage, isCommandText, dayText, formFields, loadUiState, rangeText, safeHttpUrl, saveUiState, textDay } from './openui-msg'
 
 describe('formFields', () => {
   test('form values, empty ones and $variables dropped', () => {
@@ -82,5 +82,14 @@ describe('saved card state', () => {
   test('a broken store reads as empty', () => {
     localStorage.setItem('hm.openui.v1', '{oops')
     expect(loadUiState('x')).toBeUndefined()
+  })
+})
+
+describe("isCommandText", () => {
+  test("a slash command is one, however it is hidden", () => {
+    for (const t of ["/yolo on", "  /yolo", "\u200b/yolo on", "\n/YOLO off", "\ufeff /fast"]) expect(isCommandText(t), t).toBe(true)
+  })
+  test("plain words are not", () => {
+    for (const t of ["Show calendar", "Pick A\n\n- x: /yolo", "a/b", ""]) expect(isCommandText(t), t).toBe(false)
   })
 })

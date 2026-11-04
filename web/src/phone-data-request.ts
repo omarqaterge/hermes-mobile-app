@@ -66,40 +66,65 @@ export function parsePhoneData(description: unknown): PhoneDataRequest | null {
   return { kind, nonce: p[3], argsText, args: a }
 }
 
-/** Decoded text made safe to show: control and invisible formatting characters become spaces. */
-const clean = (s: string): string => s.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ').trim()
+/** Longest piece of the agent's or a stranger's text shown in a request. */
+export const SHOWN_MAX = 40
+
+/** Decoded text made safe to show: control, invisible and format characters and every kind of quote mark and bracket are
+ *  removed (so it can't close a quotation or a bracket and write its own sentence), spaces collapse, and it is cut to
+ *  SHOWN_MAX characters. */
+export const clean = (s: string): string => {
+  const t = s
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
+    .replace(/["'`\u2018-\u201F\u2039\u203A\u00AB\u00BB\u300C-\u300F\u301D-\u301F\uFF02\uFF07<>[\]{}]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const cps = Array.from(t)
+  return cps.length > SHOWN_MAX ? cps.slice(0, SHOWN_MAX).join('').trim() + '…' : t
+}
+
+/** Untrusted text inside a sentence: always in square brackets, which clean() makes impossible to close from inside. The
+ *  sheet draws what is between them as a separate, visibly different element (splitUntrusted). */
+const mark = (s: string): string => `[${s}]`
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 
-function range(a: Record<string, unknown>, dflt: string): string {
+function range(a: Record<string, unknown>, from: string, to: string, dflt: string): string {
   const has = (k: string) => typeof a[k] === 'number'
   if (!has('from_ms') && !has('to_ms')) return ` ${dflt}`
   const f = (k: string, none: string) => (has(k) ? new Date(a[k] as number).toLocaleString() : none)
-  return ` between ${f('from_ms', 'now')} and ${f('to_ms', 'the end of the default range')}`
+  return ` between ${f('from_ms', from)} and ${f('to_ms', to)}`
 }
 
-/** The sentence the user is asked to allow, from the decoded args. */
+/** The sentence the user is asked to allow, from the decoded args. Text that came from the request is in [brackets]. */
 export function phoneDataWording(r: PhoneDataRequest): string {
   const a = r.args
   const limit = typeof a.limit === 'number' ? a.limit : 20
   switch (r.kind) {
     case 'contacts': {
       const q = typeof a.query === 'string' ? clean(a.query) : ''
-      return `Read up to ${plural(limit, 'contact', 'contacts')}${q ? ` matching “${q}”` : ''} from your address book`
+      return `Read up to ${plural(limit, 'contact', 'contacts')}${q ? ` whose name has ${mark(q)}` : ''} from your address book`
     }
     case 'calendar':
-      return `Read up to ${plural(limit, 'calendar event', 'calendar events')}${range(a, 'in the next 7 days')}`
+      return `Read up to ${plural(limit, 'calendar event', 'calendar events')}${range(a, 'now', 'the end of the default range (7 days from the start)', 'in the next 7 days')}`
     case 'calls':
-      return `Read up to ${plural(limit, 'call log entry', 'call log entries')}${range(a, 'from the last 7 days')}`
+      return `Read up to ${plural(limit, 'call log entry', 'call log entries')}${range(a, '7 days before the end', 'now', 'from the last 7 days')}`
     case 'sms': {
       const s = typeof a.sender === 'string' ? clean(a.sender) : ''
-      return `Read up to ${plural(limit, 'text message', 'text messages')}${a.box === 'inbox' ? ' you received' : a.box === 'sent' ? ' you sent' : ''}${s ? ` from or to “${s}”` : ''}`
+      return `Read up to ${plural(limit, 'text message', 'text messages')}${a.box === 'inbox' ? ' you received' : a.box === 'sent' ? ' you sent' : ''}${s ? ` from or to ${mark(s)}` : ''}`
     }
     case 'location':
       return 'Read your approximate location'
     case 'photos':
       return `Read the date, size and dimensions of your latest ${plural(limit, 'photo', 'photos')} (no pictures)`
   }
+}
+
+/** Splits a wording into plain and untrusted pieces, so the sheet can draw the untrusted ones as a separate element. */
+export function splitUntrusted(text: string): Array<{ text: string; untrusted: boolean }> {
+  return text
+    .split(/(\[[^\]]*\])/)
+    .filter(Boolean)
+    .map(p => (p.startsWith('[') && p.endsWith(']') ? { text: p.slice(1, -1), untrusted: true } : { text: p, untrusted: false }))
 }
 
 export const PHONE_DATA_WARNING = 'Hermux got a phone data request it can’t read, so it can’t be allowed. Deny it.'
@@ -141,11 +166,13 @@ export function setPhoneDataFullAccess(session: string, on: boolean): void {
   }
 }
 
-/** The phone-data text of an approval's params (the description; the command as a fallback), or null for an ordinary approval. */
+/** What Hermes names as the "command" of a plugin approval for the tool phone_data (display_target in tools/approval.py). */
+export const PHONE_DATA_COMMAND = '<phone_data> (plugin approval rule)'
+
+/** The phone-data text of an approval's params, or null for any other approval. It counts only from `description`, and
+ *  only when `command` is exactly Hermes's label for the phone_data tool: a shell command that merely mentions
+ *  phone_data: (in its description or its command) is an ordinary approval, shown as it is and never granted anything. */
 export function phoneDataTextOf(params: Record<string, unknown>): string | null {
-  for (const v of [params.description, params.command]) {
-    const first = typeof v === 'string' ? v.split('\n')[0] : ''
-    if (isPhoneDataText(first)) return first
-  }
-  return null
+  const d = params.description
+  return typeof d === 'string' && isPhoneDataText(d) && params.command === PHONE_DATA_COMMAND ? d : null
 }

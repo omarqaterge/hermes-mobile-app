@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { BlockHandle, BlockProps, OpenUIApi } from '../openui-entry' // types only: erased, OpenUI stays lazy
 import { runLazy } from '../lazy'
-import { actionMessage, loadUiState, safeHttpUrl, saveUiState, type UiAction } from '../openui-msg'
+import { actionMessage, isCommandText, loadUiState, safeHttpUrl, saveUiState, type UiAction } from '../openui-msg'
 import { makeToolClient } from '../openui-query'
 import { api } from '../api'
 import { haptic, openExternal } from '../bridge'
@@ -73,6 +73,9 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
     if (getState().active?.running) return toast('Hermux is still answering. Try again when it’s done')
     const text = actionMessage(e)
     if (!text) return
+    // A card is written by the agent: its text must never be a command (/yolo would turn on Full access under a
+    // label that hides it), so any text that starts with "/" (after spaces and invisible characters) is refused.
+    if (isCommandText(text)) return toast('Cards can’t run commands. Type the command yourself.', 'error')
     haptic()
     sendPrompt(text).catch(err => toast(err instanceof Error ? err.message : String(err), 'error'))
   }

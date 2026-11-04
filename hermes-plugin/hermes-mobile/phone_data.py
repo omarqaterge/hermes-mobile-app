@@ -248,6 +248,22 @@ def _approve(kind: str, nonce: str, args_text: str) -> Optional[str]:
     return None
 
 
+def _chat_id(session_id: str = "", task_id: str = "") -> str:
+    """The id the app keeps Full access under: the gateway's live session id (``HERMES_UI_SESSION_ID``), which the app's
+    page also uses (``runtimeId``). Hermes sets it per turn in a ContextVar, so concurrent chats each see their own;
+    it does not change when a context compression rotates the durable session id. Read from the ContextVar itself, never
+    from ``os.environ`` (process-wide, another chat's could be there). Without it the durable id is sent, which the
+    app's Full access never matches, so a read then asks the user as usual."""
+    try:
+        from gateway.session_context import _SESSION_UI_SESSION_ID
+        v = _SESSION_UI_SESSION_ID.get()
+        if isinstance(v, str) and v:
+            return v
+    except Exception:
+        pass
+    return session_id or task_id or ""
+
+
 def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", **_: Any) -> str:
     kind: Any = ""
     try:
@@ -266,7 +282,7 @@ def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", 
         if denied is not None:
             _ev(kind, "denied")
             return denied
-        res = _post({"op": "read", "session": session_id or task_id or "", "nonce": nonce, "kind": kind,
+        res = _post({"op": "read", "session": _chat_id(session_id, task_id), "nonce": nonce, "kind": kind,
                      "args": args_text}, READ_TIMEOUT)
         if res is None:
             _ev(kind, "failed")
