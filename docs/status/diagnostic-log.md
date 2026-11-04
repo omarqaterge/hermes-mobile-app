@@ -21,7 +21,7 @@ every 14 s (now it waits up to 5 min).
   the next plugin update, without leaving the old dashboard running. The other loops need a phone restart before they record `loop_exit`.
 - `at=index.html:…` on a real page error, our own frames in a real `crash java` line (the test crash has none), and a real `reason=` name.
 - The page looking right after a renderer death (the pass confirmed its script runs, not how it looks).
-- `hermes-debian --restart` leaving no new `OSError` crash in `dashboard.log` (the pattern was checked against a running dashboard, the restart was not run). Chroot installs: that it stops Python.
+- Chroot installs: that `hermes-debian --restart` stops Python (under proot, one restart on a phone left no new `OSError` crash in `dashboard.log`).
 - `turn api_error`: whether Hermes's hook passes `provider` and `model`. Chroot installs. Android 8-10 (no exit reasons there).
 
 **Open points:** what a user already sent can't be deleted from the app: it expires after 30 days, or the owner deletes it. An exit code
