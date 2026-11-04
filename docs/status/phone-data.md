@@ -5,7 +5,7 @@ side: redaction, two groups of readers, the plugin tool, the Settings switches, 
 until `PhoneData.READY` is set to true in the feature's final pull request, so their pull requests can merge in any order.
 The rules are in the decision [phone-data-read-only](../decisions/phone-data-read-only.md). Only the coordinating session edits this file.
 
-**Next:** finish the six streams, plus the protection for chats that have read phone data (built on `claude/phone-data-after-read`, see the decision); then a full test run, an attack review and a real-phone test; then docs and the
+**Next:** finish the six streams, plus the protection for chats that have read phone data (built on `claude/phone-data-after-read-final` (pull request 137) and `claude/phone-data-prelaunch-web`, see the decision); then a full test run, an attack review and a real-phone test; then docs and the
 final pull request.
 
 **Needs a real phone:** the biometric then permission flow, a read refused on a locked phone, permission revoked in Android
@@ -67,8 +67,10 @@ Header `X-Hermes-Mobile-Key`, body at most 4 KiB, always a JSON answer.
 
 - `{"op":"status"}` → `{"ok":true,"ready":bool,"master":bool,"kinds":{"contacts":bool,...},"locked":bool}`. Booleans only. `locked` comes from the same keyguard check the read uses; when it is true the plugin says the phone is locked and to try after unlocking, and does not ask. A kind is true
   only with `READY`, the master, its switch and its Android permission.
-- `{"op":"read","session":"<chat id>","nonce":"<12 hex>","kind":"<kind>","args":"<the canonical args text>"}` →
+- `{"op":"read","session":"<chat id>","nonce":"<12 hex>","kind":"<kind>","args":"<the canonical args text>","chats":["<chat id>",...]}` →
   `{"ok":true,"kind":"<kind>","items":[...],"truncated":bool}` or `{"ok":false,"reason":"<token>"}`.
+
+`chats` is optional: up to 8 strings of at most 128 characters, the chat id and its ancestors (the plugin sends them). The app records `session` and every valid `chats` entry as chats that have read, **whatever the outcome** (refused, off, locked, no grant, bad request, failed), in a bounded store (2000 ids, oldest dropped, ids only) in app-private preferences; an invalid entry is ignored, never an error. The page asks the bridge method `phoneDataTainted(id)` before it draws a chat.
 
 Checks, in order: key, `not_ready`, `bad_request`, `off`, `no_permission`, `locked`, then the grant or Full access pass
 (`no_grant`). Failures while reading answer `failed`, with no details. A plugin tool that gets no answer, a 404 or an older
@@ -84,6 +86,7 @@ app says the feature isn't available.
 | `phoneDataSet(id, kind, on)` | `kind` is a kind or `master`. Turning on runs `ApprovalLock.askAlways`, then the Android permission dialog. Answers `window.hermesPhoneData(id, result)`, where `result` is `ok`, `cancel`, `nolock`, `denied` or `blocked` (Android won't ask again). Turning off is immediate |
 | `phoneDataOpenSettings()` | Opens Android's settings page for this app |
 | `phoneDataGrant(description)` | The user tapped Allow on this approval text: `PhoneDataGrants.issue` |
+| `phoneDataTainted(id)` | Boolean, synchronous: did a read request for this chat id (or one sent in `chats`) ever reach the app? The page calls it before rendering a chat's items, the cached preview included, and joins it with the item-derived state for `remoteBlock` |
 | `phoneDataFullAccess(session, on)` | The user moved this chat (its live session id, `runtimeId`) in or out of Full access: `PhoneDataGrants.fullAccess` |
 
 ### Who owns what

@@ -49,6 +49,37 @@ final class PhoneDataRoute {
         }
     }
 
+    private static PhoneDataChats chats;
+
+    /** The app's record of chats that asked to read phone data (ids only, in app-private preferences). */
+    static synchronized PhoneDataChats chats(Context c) {
+        if (chats == null) {
+            final Context app = c.getApplicationContext() != null ? c.getApplicationContext() : c;
+            chats = new PhoneDataChats(new PhoneDataChats.Store() {
+                @Override public String load() {
+                    return app.getSharedPreferences("hm_phone_chats", Context.MODE_PRIVATE).getString("ids", null);
+                }
+                @Override public void save(String text) {
+                    app.getSharedPreferences("hm_phone_chats", Context.MODE_PRIVATE).edit().putString("ids", text).apply();
+                }
+            });
+        }
+        return chats;
+    }
+
+    /** Remember the chat of a read request before anything else decides its outcome: refused, off, locked or failed all count. */
+    private static void remember(Context c, JSONObject req) {
+        try {
+            if (req == null || !"read".equals(req.optString("op", ""))) return;
+            java.util.List<Object> extra = new java.util.ArrayList<>();
+            org.json.JSONArray a = req.optJSONArray("chats");
+            if (a != null) for (int i = 0; i < a.length() && i < PhoneDataChats.MAX_LIST; i++) extra.add(a.opt(i));
+            chats(c).record(req.opt("session"), extra);
+        } catch (Throwable ignored) {
+            // never changes the answer
+        }
+    }
+
     static String fail(String reason) {
         return "{\"ok\":false,\"reason\":\"" + reason + "\"}";
     }
@@ -69,6 +100,7 @@ final class PhoneDataRoute {
                         .put("kinds", s.optJSONObject("kinds"))
                         .put("locked", MainActivity.keyguardLocked(c)).toString();
             }
+            remember(c, req);
             if (!PhoneData.READY) return fail("not_ready");
             return read(c, req);
         } catch (Throwable t) {

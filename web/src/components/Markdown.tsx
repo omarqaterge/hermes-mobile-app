@@ -626,6 +626,17 @@ function rehypeTaintStrip() {
           continue
         }
         if (c.properties) for (const k of Object.keys(c.properties)) if (/^srcset$/i.test(k)) delete c.properties[k]
+        if (typeof c.properties?.style === 'string') {
+          // CSS can fetch too: url(), image-set("…"), src(), cross-fade() and escaped spellings of them. Keep a declaration only when
+          // its value has no backslash and calls nothing but colour and arithmetic functions.
+          const kept = c.properties.style.split(';').filter(d => {
+            const v = d.slice(d.indexOf(':') + 1).toLowerCase()
+            if (v.includes('\\') || /\/\*|@import/.test(v)) return false
+            return [...v.matchAll(/([a-z-]*)\s*\(/g)].every(m => /^(?:rgb|rgba|hsl|hsla|hwb|calc|min|max|clamp)$/.test(m[1]))
+          })
+          if (kept.length) c.properties.style = kept.join(';')
+          else delete c.properties.style
+        }
         walk(c)
         if (c.tagName === 'picture') {
           parent.children.splice(i, 1, ...c.children)

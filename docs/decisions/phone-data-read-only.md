@@ -61,9 +61,9 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
   drawn when the read happens. These guards are the part the user sees; they also cover tool cards, notices, the canvas,
   reasoning and subagent text, card images, Mermaid image shapes and `srcset`.
 - **The native filter is the enforcement.** While the page says the chat on screen has read phone data, the app answers
-  every request the page makes to a host other than `localhost`, `127.0.0.1` or `[::1]` with an empty 403, for every
+  a request the page makes to a host other than `localhost`, `127.0.0.1` or `[::1]` with an empty 403, for every
   resource type (images, media, scripts, styles, frames, fonts, fetch), whatever the page renders. File, data and blob
-  sources are untouched. It starts each page load blocked and opens only when the page reports an untainted chat. The one
+  sources are untouched. It starts each page load blocked and opens only when the page reports an untainted chat; before it draws a chat (a cached preview too) the page asks the app, which keeps its own record of every chat that sent a read request, so a long chat whose `phone_data` call is outside the items on screen is still known. A bare link tapped in such a chat is refused natively too (main-frame navigation); the address dialog's confirmed open is the only way out. In such a chat no HTML preview or canvas page runs (a script could leak through WebRTC or a DNS prefetch, which the filter can't see): the source shows as text. The one
   thing the user can tap through is "Tap to load" on an image: the app lets that exact address through once, for 60
   seconds. Video and audio don't load in the page in such a chat: their tap shows the address and opens the browser.
   While it is on, the page's own web requests (update check, anonymous stats, Report a problem) are refused too and
@@ -120,3 +120,30 @@ program that runs a command from inside, or an unusual construction can hide a c
 directory can also persist text, and is not asked. In Full access and Auto access, Hermes's own gate approves without
 asking, so no ask shows there (accepted). Choosing "Always" on an ask saves a random one-use key that never matches again,
 because Hermes offers no way to switch that choice off; it is harmless but useless.
+
+**Update 2026-11-05 (pre-launch review of the plugin side).**
+
+- **Tools: ask by default.** A list of tools that send data out always misses the next tool (the review found `discord`,
+  `discord_admin`, `ha_call_service`, `yb_send_dm`, `yb_send_sticker` and two Feishu comment tools passing). So in a chat
+  that has read, every tool asks except an allowlist of tools that stay on the device: `phone_data`, `phone_app`, `canvas`,
+  `find_chats`, `openui_reference`, `read_file`, `write_file`, `patch`, `search_files`, `todo`, `todo_list`, `clarify`,
+  `skill_view`, `skills_list`, `session_search`, `tool_search`, `tool_describe`. `terminal` and `execute_code` ask by what
+  they run, `process_manage` by action, `memory` and `skill_manage` as before, vision tools only given a web address. A new
+  Hermes tool, a plugin's or an MCP server's asks until someone decides it stays on the device. If the check cannot load,
+  everything off the list is blocked in a chat that has read. Decided to ask, not allow: `kanban_*` (boards other agents
+  read), `ha_*` reads (they query a server, and the arguments can carry text), `feishu_*`, `spotify_*`,
+  `manage_connections`, the desktop pane tools and every `browser_*`.
+- **Commands.** A command word built by expansion (`$(printf curl)`, `${C:-curl}`, `$X`), chosen by a pattern (`c?rl`,
+  `cur[l]`), `eval`, and `source`/`.` of anything but a plain local path ask. Commands that run another command are read
+  through to it: `env -S`, `flock`, `script -c`, `strace`, `ltrace`, `proot-distro ... --`, `proot`, `chroot`, `nsenter`,
+  `unshare`, `watch`, `parallel`, `chrt`, `taskset`. Media tools (`ffmpeg`, `mpv`...) ask given a network address; `yt-dlp`,
+  `youtube-dl`, `aria2c` always; package tools (`pip`, `npm`, `cargo`, `go`, `gem`, `apt`, `pkg`, `dpkg`...) ask given an
+  address, a git source, another index, or when they download and run code (`npx`); a plain `pip install name` does not,
+  though a package can run code when installed. Nesting deeper than the reader goes asks.
+- **Fewer needless asks.** A heredoc body is text (only `$(...)` inside an unquoted one runs); `execute_code` is read as
+  Python, not shell, and asks only for network modules and process calls (word boundaries, so `n_requests` is fine);
+  `gh --version` and other local `gh` subcommands, and `python3 -c` without network or process words, do not ask.
+- **Known limits, unchanged.** A script file that makes the call (`bash run.sh`, a Python file) is not read; an alias or
+  function set in an earlier call is not remembered; in Full access and Auto access Hermes's gate approves without asking.
+- **The app is told the ancestors.** A read also carries `chats`: the stored id of the chat and of every chat that spawned
+  it (at most 8, each at most 128 characters), so the app's own record marks the parents of a subagent that read.

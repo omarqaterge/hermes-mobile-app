@@ -65,6 +65,15 @@ public class RemoteGuardTest {
         RemoteGuard.setBlocked(false);
         RemoteGuard.setBlocked(true);
         check(RemoteGuard.blocks(u), "a new block drops allowances");
+        // main-frame navigation (a tapped bare link): which addresses reach the internet
+        check(RemoteGuard.isRemoteTarget("https://evil.example/?d=1") && RemoteGuard.isRemoteTarget("http://evil.example/"), "navigation: http and https are remote");
+        check(RemoteGuard.isRemoteTarget("https:evil.com/?d=") && RemoteGuard.isRemoteTarget("http:evil.com") && RemoteGuard.isRemoteTarget("https:/evil.com") && RemoteGuard.isRemoteTarget("https:\\\\evil.com"), "navigation: no or odd slashes are remote");
+        check(RemoteGuard.isRemoteTarget("HTTPS://evil.com") && RemoteGuard.isRemoteTarget("HtTp://evil.com"), "navigation: any case");
+        check(RemoteGuard.isRemoteTarget("\thttps://evil.com") && RemoteGuard.isRemoteTarget("  https://evil.com") && RemoteGuard.isRemoteTarget("ht\ntps://evil.com") && RemoteGuard.isRemoteTarget("h\u0000ttp://evil.com") && RemoteGuard.isRemoteTarget("\u0001 https://evil.com"), "navigation: whitespace and control characters are stripped");
+        check(RemoteGuard.isRemoteTarget("//evil.com/x") && RemoteGuard.isRemoteTarget("\\\\evil.com") && RemoteGuard.isRemoteTarget("/\\evil.com") && RemoteGuard.isRemoteTarget(" //evil.com"), "navigation: scheme-relative is remote");
+        check(RemoteGuard.isRemoteTarget("http://localhost@evil.example/") && RemoteGuard.isRemoteTarget("http://localhost.evil.example/") && RemoteGuard.isRemoteTarget("http://evil.example\\@localhost/") && RemoteGuard.isRemoteTarget("https://127.0.0.1.evil.example/") && RemoteGuard.isRemoteTarget("//localhost@evil.example"), "navigation: user info and look-alikes are remote");
+        check(!RemoteGuard.isRemoteTarget("http://localhost:9119/") && !RemoteGuard.isRemoteTarget("http://127.0.0.1/x") && !RemoteGuard.isRemoteTarget("http://[::1]:1/") && !RemoteGuard.isRemoteTarget("//localhost/x"), "navigation: local hosts are not");
+        check(!RemoteGuard.isRemoteTarget("mailto:a@b.example") && !RemoteGuard.isRemoteTarget("tel:123") && !RemoteGuard.isRemoteTarget("file:///x") && !RemoteGuard.isRemoteTarget("/path") && !RemoteGuard.isRemoteTarget("") && !RemoteGuard.isRemoteTarget(null) && !RemoteGuard.isRemoteTarget("httpx://a") && !RemoteGuard.isRemoteTarget("xhttps://a"), "navigation: other schemes and paths are not");
         System.out.println(fails == 0 ? "ALL PASSED" : fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }

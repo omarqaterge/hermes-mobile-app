@@ -198,8 +198,9 @@ export function Lightbox({ src, url, alt, onClose }: { src: string; url: string;
         ✕
       </button>
       <div className="lightbox-bar">
-        <button onClick={() => void imageAction('save', src, url, name)}>Save</button>
-        <button onClick={() => void imageAction('share', src, url, name)}>Share</button>
+        {/* A remote image in a chat that has read phone data was loaded by a tap; saving or sharing would fetch it again, which the shell refuses. */}
+        {guarded && isRemoteUrl(src) ? null : <button onClick={() => void imageAction('save', src, url, name)}>Save</button>}
+        {guarded && isRemoteUrl(src) ? null : <button onClick={() => void imageAction('share', src, url, name)}>Share</button>}
         {local || /^https?:/i.test(src) ? <button onClick={() => openWith(src, guarded)}>Open with…</button> : null}
       </div>
     </div>,

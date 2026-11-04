@@ -70,6 +70,7 @@ interface AndroidBridge {
   phoneDataOpenSettings?(): void // Android's settings page for this app
   phoneDataGrant?(description: string): boolean // the user tapped Allow on this phone-data approval text
   phoneDataFullAccess?(session: string, on: boolean): void // the chat (its live session id, runtimeId) moved in or out of Full access
+  phoneDataTainted?(id: string): boolean // the app's own record: did a phone_data read request for this chat id (live session, stored chat or an ancestor) ever reach it? Answered at once
   remoteBlock?(on: boolean): void // the chat on screen has (true) or hasn't read phone data: while true the shell refuses every request to the internet (RemoteGuard.java)
   remoteAllowOnce?(url: string): void // the user tapped "Tap to load" for exactly this address: the shell lets that one request through, once, for 60 s
 }

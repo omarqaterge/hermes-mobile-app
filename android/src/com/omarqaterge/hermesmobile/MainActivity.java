@@ -190,6 +190,8 @@ public class MainActivity extends Activity {
                 if (!req.isForMainFrame()) return true;
                 Uri u = req.getUrl();
                 if ("file".equals(u.getScheme())) return false;
+                // A chat that has read phone data: a bare link the page didn't wrap must not leave the app (the address dialog's confirmed path is openExternal).
+                if (RemoteGuard.isBlocked() && RemoteGuard.isRemoteTarget(u.toString())) return true;
                 if (safeLink(u)) {
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -2456,6 +2458,12 @@ public class MainActivity extends Activity {
         public void remoteBlock(String key, boolean on) {
             if (!ok(key)) return;
             RemoteGuard.setBlocked(on);
+        }
+
+        /** Did a read request for this chat id (the live session, the stored chat or an ancestor) ever reach the app? The page asks before it draws a chat. */
+        @JavascriptInterface
+        public boolean phoneDataTainted(String key, String id) {
+            return ok(key) && PhoneDataRoute.chats(MainActivity.this).contains(id);
         }
 
         /** The user tapped "Tap to load" for exactly this address: RemoteGuard lets that one request through, once, for 60 s. */

@@ -134,6 +134,33 @@ final class RemoteGuard {
         return auth.toLowerCase(java.util.Locale.ROOT);
     }
 
+    /**
+     * Would opening this address as the page itself (a main-frame navigation, a tapped bare link) reach the internet? Any
+     * {@code http:} or {@code https:} prefix in any case, with whitespace and control characters ignored (a browser drops
+     * them), with or without the slashes ({@code https:evil.example} loads), and scheme-relative {@code //host} (or with
+     * backslashes) all count; only an address whose host is localhost, 127.0.0.1 or [::1] does not.
+     */
+    static boolean isRemoteTarget(String url) {
+        if (url == null) return false;
+        StringBuilder b = new StringBuilder(url.length());
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch > ' ' && ch != 0x7f && !Character.isWhitespace(ch) && !Character.isISOControl(ch)) b.append(ch);
+        }
+        String n = b.toString();
+        String low = n.toLowerCase(java.util.Locale.ROOT);
+        boolean rel = n.length() >= 2 && (n.charAt(0) == '/' || n.charAt(0) == '\\') && (n.charAt(1) == '/' || n.charAt(1) == '\\');
+        if (!rel && !low.startsWith("http:") && !low.startsWith("https:")) return false;
+        String full = rel ? "https:" + n.replace('\\', '/') : n;
+        if (full.toLowerCase(java.util.Locale.ROOT).startsWith("http:") || full.toLowerCase(java.util.Locale.ROOT).startsWith("https:")) {
+            String rest = full.substring(full.indexOf(':') + 1);
+            int k = 0;
+            while (k < rest.length() && (rest.charAt(k) == '/' || rest.charAt(k) == '\\')) k++;
+            if (k >= 2 && isLocalHost(hostOf("x://" + rest.substring(k).replace('\\', '/')))) return false;
+        }
+        return true;
+    }
+
     static boolean isLocalHost(String host) {
         return host.equals("localhost") || host.equals("127.0.0.1") || host.equals("[::1]");
     }
