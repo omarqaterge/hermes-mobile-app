@@ -1,6 +1,6 @@
 ### 4.1 Every Java class
 
-All sources are under `android/src/com/omarqaterge/hermesmobile` (package `com.omarqaterge.hermesmobile`), plus `bg/BgHost.java` and `android/src/moe/shizuku/api/BinderContainer.java`. There are 25 source files in that package. They are plain `javac` code with no AndroidX.
+All sources are under `android/src/com/omarqaterge/hermesmobile` (package `com.omarqaterge.hermesmobile`), plus `bg/BgHost.java`, the phone-data readers in `phonedata/`, and `android/src/moe/shizuku/api/BinderContainer.java`. There are 30 source files in that package. They are plain `javac` code with no AndroidX.
 
 | Class | Purpose | Main methods | Who calls it |
 |---|---|---|---|
@@ -33,6 +33,11 @@ All sources are under `android/src/com/omarqaterge/hermesmobile` (package `com.o
 | `StartReceiver` | Lets Termux's app keeper restart the service when it died (the service is not exported). Carries no data. | `onReceive` | Termux-side keeper script (exported receiver) |
 | `WakeReceiver` | The cron alarm receiver: a scheduled job is due, keep the phone awake for it. | `onReceive` | `AlarmManager` (set by `HermesService.scheduleWake`) |
 | `BgHost` | The background-app host. It does not run inside the app: the plugin starts it as the shell user through Shizuku's `rish` (`app_process ... com.omarqaterge.hermesmobile.bg.BgHost <port>`). Owns one hidden virtual display and drives an app on it. Reads the screen through `UiAutomation` (subscribed only to the events that say a screen changed, used by `settle` to answer as soon as the hidden app stops changing: 200 ms after its last change, 500 ms when nothing changes, at most 1.5 s); no keyboard is shown on the hidden display (IME policy hide, local as the fallback). `scan`/`walk` number the elements, name rows with the text inside them (`folds`, `nameOf`) and leave keyboard windows out; `find` matches an element by its text; `node` refuses an element that left or changed. `frame` sends the last JPEG again while nothing new was drawn; `drawMarks` draws the numbers for `som` (with lines, `digit`: `app_process` has no font, and `drawText` crashes it); `allBlack` notices a secure (black) screen. | `main`, `handle`, `resolve`, `open`, `capture`, `scan`, `find`, `tap`, `swipeReq`, `setText`, `type`, `key`, `submit`, `toggle`, `scroll`, `scrollTo` (a list scroll that moves nothing is retried as a swipe), `waitFor`, `handOver`, `frame`, `settle` | The plugin's `phone_app` tool (over HTTP on loopback); `MainActivity.bgRequest` (frame, close, hand over) |
+| `PhoneData` | Phone data for the agent: the switches, which the app holds because the agent can edit anything in Termux, and the read dispatch (decision [phone-data-read-only](../decisions/phone-data-read-only.md)). `READY` is false until the feature's final pull request, so the Settings section stays hidden and reads are refused. | `allowed`, `status`, `read`, `isKind`; constants `READY`, `KINDS` | `HermesService`, `MainActivity.Bridge` |
+| `PhoneDataGrants` | What lets one phone-data read through: a one-use grant from a tap on Allow in the app, or the app's memory-only record that the user put this chat in Full access. It refuses everything for now. | `issue`, `consume`, `fullAccess`, `hasFullAccess` | `HermesService`, `MainActivity.Bridge` |
+| `Contacts`, `Calendar`, `CallLog`, `Sms`, `Location`, `Photos` | The phone-data readers in `phonedata/`, one per kind. Each returns one `Result` with rows capped by `Caps`. They return no rows for now. | `read` (static) | `PhoneData` |
+| `Result` | One reader's answer: `items`, and `truncated` when a cap cut rows off. | | the readers, `PhoneData` |
+| `Caps` | The limits on phone-data results, applied in the app because the plugin isn't trusted to apply them. | `rows`, `text`; constants `DEFAULT_ROWS`, `MAX_ROWS`, `MAX_BYTES`, `MAX_FIELD`, `MAX_SMS_BODY`, `MAX_CALENDAR_DESCRIPTION`, `MAX_QUERY`, `MAX_RANGE_MS` | the readers |
 
 Support files that are not counted as classes:
 
