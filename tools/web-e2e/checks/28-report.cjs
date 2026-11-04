@@ -7,7 +7,7 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 const ISSUE = 'https://github.com/omarqaterge/hermes-mobile-app/issues/12'
 
 // relay: false = no relay URL; otherwise { status, body } the stand-in relay answers POSTs with.
-async function open(browser, { relay, theme, warn } = {}) {
+async function open(browser, { relay, theme, warn, plant } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } })
   const posts = []
   const errors = []
@@ -18,6 +18,16 @@ async function open(browser, { relay, theme, warn } = {}) {
     const r = relay || { status: 201, body: { url: ISSUE, number: 12, screenshot: false } }
     return route.fulfill({ status: r.status, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.body || {}) })
   })
+  if (plant) {
+    // Extra agent-side events with a phone number, coordinates and message-like text: the scrubber must remove them.
+    await ctx.route(/\/api\/plugins\/hermes-mobile\/diag$/, async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const res = await route.fetch()
+      const body = await res.json()
+      body.events = [...(body.events || []), ...plant]
+      return route.fulfill({ response: res, json: body })
+    })
+  }
   await ctx.addInitScript(([url, th]) => {
     try {
       if (!localStorage.getItem('hm.welcomeDone')) { localStorage.setItem('hm.welcomeDone', '1'); localStorage.setItem('hm.setupFlowDone', '1'); localStorage.setItem('hm.connectedOnce', '1') }
@@ -116,7 +126,11 @@ module.exports = async t => {
 
   // The log: shown scrubbed, sent scrubbed.
   {
-    const { ctx, pg, posts } = await open(browser, { warn: 'token=supersecret123 call my doctor' })
+    const plant = [
+      '11-03 12:00:10 sms_read address=+15551234567 body="Your code is 123456, call 555-010-0199 about the parcel" fix=51.5074,-0.1278',
+      '11-03 12:00:11 call_read number=(555) 010-0199 lat=51.5074 lon=-0.1278 took=1234ms port=9119 v1.2.3'
+    ]
+    const { ctx, pg, posts } = await open(browser, { warn: 'token=supersecret123 call my doctor', plant })
     const sheet = await openSheet(pg)
     await fill(sheet, 'Log test', 'Checking the log')
     check((await sheet.getByLabel('Diagnostic log to send').count()) === 0, 'report: the log is hidden while the switch is off')
@@ -129,6 +143,9 @@ module.exports = async t => {
     check(!/supersecret123|doctor|192\.168\.4\.4|a@b\.org/.test(log), 'report: the log box shows no console words, IP or email')
     check(/crash service=dashboard type=ValueError count=2 at=gateway\/run\.py:12/.test(log) && /loop_exit name=dashboard code=137/.test(log) && /service name=dashboard alive=true/.test(log), 'report: the log holds the agent side (crash shape, service state, loop exit)')
     check(!/sk-planted/.test(log), 'report: a key in the agent side is scrubbed too')
+    const PLANTED = /15551234567|555-010-0199|\(555\) 010|51\.5074|0\.1278|Your code is|about the parcel/
+    check(!PLANTED.test(log), 'report: a planted phone number, coordinates and message text are absent from the log')
+    check(log.includes('[number]') && log.includes('[place]') && /took=1234ms port=9119 v1\.2\.3/.test(log), 'report: they became [number] and [place], and a duration, port and version stay')
     check(!/Recent app log/.test(log), 'report: free text from the console is no part of it')
     check(((await box.boundingBox())?.height || 0) > 100, 'report: the log box is tall enough to read in, not squeezed to a line')
     await sheet.getByText('stays private').waitFor({ timeout: 3000 })
@@ -136,7 +153,7 @@ module.exports = async t => {
     await pg.screenshot({ path: path.join(SHOTS, 'report-log.png') })
     await sheet.getByRole('button', { name: 'Submit' }).click()
     await pg.locator('.sheet', { hasText: 'Report sent' }).waitFor({ timeout: 5000 })
-    check(posts[0]?.log === log && !/supersecret123|doctor|192\.168\.4\.4|a@b\.org/.test(posts[0].log), 'report: the posted log is the scrubbed text shown')
+    check(posts[0]?.log === log && !/supersecret123|doctor|192\.168\.4\.4|a@b\.org/.test(posts[0].log) && !PLANTED.test(posts[0].log),'report: the posted log is the scrubbed text shown')
     await ctx.close()
   }
 

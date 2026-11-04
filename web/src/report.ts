@@ -41,8 +41,35 @@ export function reportDetails(hermes: string): ReportDetails {
   }
 }
 
+const digitCount = (s: string): number => s.replace(/\D/g, '').length
+/** Two decimals joined by a comma or semicolon that are a place on Earth (two numbers split by a space only could be
+ *  anything, so they stay). */
+const isCoordinatePair = (m: string): boolean => {
+  const [lat, lon] = m.split(/\s*[,;]\s*/).map(Number)
+  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180
+}
+/** Digits in groups split by spaces, dashes or dots: 7 to 15 of them, not a date (2026-11-04, 04.11.2026), not dots alone
+ *  unless they are 3.3.4 (a version or a build number is dots alone), and not two groups of 3 and 4 (a status and a size,
+ *  "200 1234") unless it starts with 0. */
+const isLocalNumber = (m: string): boolean => {
+  const n = digitCount(m)
+  if (n < 7 || n > 15) return false
+  if (/^\d{4}[ .-]\d{1,2}[ .-]\d{1,2}(?:[ .-]\d{1,4})?$/.test(m) || /^\d{1,2}[ .-]\d{1,2}[ .-]\d{2,4}$/.test(m)) return false
+  if (/^\d{3}[ .-]\d{4}$/.test(m) && !m.startsWith('0')) return false
+  if (!/[ -]/.test(m)) return /^\d{3}(\.\d{3}\.\d{4})$/.test(m)
+  return true
+}
+const GROUP = String.raw`\(?\d{1,15}\)?(?![\d:])` // a run of digits that isn't part of a time or a longer number
+/** A value of a field named for a number (number=, phone=, address=, sender=, tel:) that holds 7 or more digits. */
+const namedNumber = (m: string, key: string, value: string): string => {
+  if (digitCount(value) < 7) return m
+  if (/^[\d.]+$/.test(value) && value.includes('.') && !/^\d{3}\.\d{3}\.\d{4}$/.test(value)) return m // 127.0.0.1, a version
+  return `${key}[number]`
+}
 /** Replaced in a log before anyone sees it. Order matters: secrets inside URLs go with the URL's query. */
 const RULES: Array<[RegExp, string | ((...m: string[]) => string)]> = [
+  // Quoted text in an error can be a message. First, so its length is the one written: the rules below shorten text.
+  [/"[^"\n]{25,}"|“[^”\n]{25,}”|'[^'\n]{25,}'/g, '"[text]"'],
   [/\(Linux;[^)]*Android[^)]*\)/g, '(Linux; Android)'], // a browser identification names the phone model
   [/\b(https?|wss?):\/\/[^\s"'<>]+/gi, url => cleanUrl(url)],
   [/\beyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]{6,}/g, '[token]'], // JWT
@@ -55,12 +82,18 @@ const RULES: Array<[RegExp, string | ((...m: string[]) => string)]> = [
   [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, ip => (/^(127\.|0\.0\.0\.0$)/.test(ip) ? ip : '[ip]')],
   [/\b(?:[0-9a-f]{1,4}:){3,7}[0-9a-f]{1,4}\b/gi, '[ip]'],
   [/(?<![\w:])[0-9a-f]{0,4}(?::[0-9a-f]{0,4})*::(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?(?![\w:])/gi, m => (m === '::' || m === '::1' ? m : '[ip]')],
+  // Coordinates and phone numbers (a contact's number or a place can be in an error). Shapes a log needs stay: see below.
+  [/(?<![A-Za-z])((?:[\w-]*[_-])?(?:lat|latitude|lon|long|longitude|lng)["']?\s*[=:]\s*)(["']?)-?\d+(?:\.\d*)?\2/gi, (_m, k, q) => `${k}${q}[place]${q}`],
+  [/(?<![\w.])-?\d{1,3}\.\d{4,}\s*[,;]\s*-?\d{1,3}\.\d{4,}(?![\w]|\.\d|\s*[,;]\s*-?\d)/g, m => (isCoordinatePair(m) ? '[place]' : m)],
+  [new RegExp(String.raw`(?<![A-Za-z])((?:[\w-]*[_-])?(?:number|phone|address|sender|tel|mobile|msisdn|caller)["']?\s*[=:]\s*["']?)(\+?${GROUP}(?:[ .-]?${GROUP})*)`, 'gi'), (m, k, v) => namedNumber(m, k, v)],
+  [new RegExp(String.raw`(?<![\w.])\+\d{1,15}(?![\d:])(?:[ .-]?(?!\d{4}-\d{2}-\d{2})${GROUP}){0,8}(?![\w:])`, 'g'), m => (digitCount(m) >= 7 ? '[number]' : m)],
+  [/(?<![\w.:/+-])\(\d{2,5}\)[ .-]?\d{2,4}(?![\d:])(?:[ .-]\d{2,4}(?![\d:])){0,3}(?![\w/]|[.-]\d)/g, m => (digitCount(m) >= 7 && digitCount(m) <= 15 ? '[number]' : m)],
+  [/(?<![\w.:/+-])(?:\d-)?\d{2,5}(?![\d:])(?:[ .-]\d{2,6}(?![\d:])){1,4}(?![\w/]|[.-]\d)/g, m => (isLocalNumber(m) ? '[number]' : m)],
   // A file's name can be as private as the folder's, so the whole path goes.
   [/(?:\/data\/data\/com\.termux\/files\/home|\/data\/user\/\d+\/com\.termux\/files\/home|\/home\/[^\s/"':]+|\/Users\/[^\s/"':]+|\/root(?=\/|\b))[^\s"':,)]*/g, '~'],
   [/(?:\/storage\/emulated\/\d+|\/sdcard)[^\s"':,)]*/g, '[storage]'],
   [/\b[0-9a-f]{32,}\b/gi, '[id]'],
-  [/[A-Za-z0-9+_-]{40,}={0,2}/g, '[data]'],
-  [/"[^"\n]{25,}"|“[^”\n]{25,}”|'[^'\n]{25,}'/g, '"[text]"'] // quoted text in an error can be a message
+  [/[A-Za-z0-9+_-]{40,}={0,2}/g, '[data]']
 ]
 function cleanUrl(url: string): string {
   try {
@@ -93,7 +126,7 @@ export function removeChatText(text: string, chat: string[]): string {
 export const wellFormed = (s: string): string => s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
 
 /** The log with personal details taken out: tokens, keys, emails, IP addresses, URL queries, home and storage paths,
- *  long IDs, quoted text, and any line of the given chat text (`chat`: the open chat's messages). */
+ *  long IDs, phone numbers (`[number]`) and coordinates (`[place]`), quoted text, and any line of the given chat text (`chat`: the open chat's messages). */
 export function scrubLog(log: string, chat: string[] = []): string {
   let out = removeChatText(log, chat) // first, before the other rules change the text
   for (const [re, to] of RULES) out = out.replace(re, to as string)
