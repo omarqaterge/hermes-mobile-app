@@ -3475,8 +3475,8 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .btw-q { align-self: flex-end; margin-left: auto; max-width: 85%; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; border-radius: 16px 16px 4px 16px; width: fit-content; }
 .btw-a { margin-top: 8px; max-width: 95%; background: var(--panel-2, rgba(127, 127, 127, 0.14)); padding: 8px 12px; border-radius: 16px 16px 16px 4px; }
 .btw-a.err { color: var(--danger, #e5604f); }
-.btw-input { display: flex; gap: 8px; align-items: flex-end; }
-.btw-input textarea { flex: 1; resize: none; max-height: 120px; }
+/* The side chat reuses the main chat's composer look; only the bar's own top border and background go. */
+.btw-input.composer-wrap { border-top: 0; background: transparent; padding: 8px 0 0; }
 
 /* Connecting a model: first-run welcome and device-code sign-in */
 .welcome-hero {
