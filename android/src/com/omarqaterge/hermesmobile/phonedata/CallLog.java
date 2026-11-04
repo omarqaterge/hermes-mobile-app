@@ -28,19 +28,20 @@ public final class CallLog {
                 android.provider.CallLog.Calls.TYPE, date, android.provider.CallLog.Calls.DURATION};
         JSONArray rows = new JSONArray();
         boolean truncated = false;
+        Caps.Cut cut = new Caps.Cut();
         try (Cursor q = c.getContentResolver().query(android.provider.CallLog.Calls.CONTENT_URI, proj,
                 date + " >= ? AND " + date + " <= ?", new String[]{String.valueOf(from), String.valueOf(to)}, date + " DESC")) {
             while (q != null && q.moveToNext()) {
                 if (rows.length() >= limit) { truncated = true; break; }
                 rows.put(new JSONObject()
-                        .put("number", Caps.text(q.getString(0), Caps.MAX_FIELD))
-                        .put("name", Caps.text(q.getString(1), Caps.MAX_FIELD))
+                        .put("number", Caps.text(q.getString(0), Caps.MAX_FIELD, cut))
+                        .put("name", Caps.text(q.getString(1), Caps.MAX_FIELD, cut))
                         .put("type", type(q.getInt(2)))
                         .put("time_ms", q.getLong(3))
                         .put("duration_s", q.getLong(4)));
             }
         }
-        return Caps.fit(rows, truncated);
+        return Caps.fit(rows, truncated || cut.cut);
     }
 
     /** The contract's word for a call type; voicemail and answered-elsewhere are "other". */

@@ -20,23 +20,47 @@ public final class Caps {
     public static final int MAX_QUERY = 64;
     public static final long MAX_RANGE_MS = 90L * 24 * 60 * 60 * 1000;
 
-    /** The asked-for row count, kept between 1 and {@link #MAX_ROWS}. */
-    public static int rows(JSONObject args) {
-        int n = args == null ? DEFAULT_ROWS : args.optInt("limit", DEFAULT_ROWS);
-        return Math.max(1, Math.min(MAX_ROWS, n));
+    /** Set by the {@code text} helpers when they cut something off, so a reader can report {@code truncated}. */
+    public static final class Cut {
+        public boolean cut;
     }
 
-    /** Text with control characters removed and cut to {@code max} characters; never null. */
+    /** The asked-for row count: the default when absent; refuses (IllegalArgumentException) a non-integer or a value outside 1 to {@link #MAX_ROWS}. */
+    public static int rows(JSONObject args) {
+        if (args == null || !args.has("limit")) return DEFAULT_ROWS;
+        Object v = args.opt("limit");
+        if (!(v instanceof Integer || v instanceof Long)) throw new IllegalArgumentException("limit");
+        long n = ((Number) v).longValue();
+        if (n < 1 || n > MAX_ROWS) throw new IllegalArgumentException("limit");
+        return (int) n;
+    }
+
+    /** Text with unsafe characters removed and cut to {@code max} characters; never null. */
     public static String text(String s, int max) {
+        return text(s, max, null);
+    }
+
+    /**
+     * Text cut to {@code max} characters, never null. Control characters (a newline, tab or return becomes a space), the
+     * line and paragraph separators and format characters (bidi controls, tag characters) are removed, except U+200D so
+     * emoji keep their joins. {@code cut.cut} is set when a character was dropped for length.
+     */
+    public static String text(String s, int max, Cut cut) {
         if (s == null) return "";
         StringBuilder out = new StringBuilder(Math.min(s.length(), max));
-        for (int i = 0; i < s.length() && out.length() < max; i++) {
-            char c = s.charAt(i);
-            if (c == '\n' || c == '\t') out.append(' ');
-            else if (!Character.isISOControl(c)) out.append(c);
+        for (int i = 0; i < s.length(); ) {
+            int cp = s.codePointAt(i);
+            i += Character.charCount(cp);
+            int t = Character.getType(cp);
+            if (cp == '\n' || cp == '\t' || cp == '\r') cp = ' ';
+            else if (Character.isISOControl(cp) || t == Character.LINE_SEPARATOR || t == Character.PARAGRAPH_SEPARATOR
+                    || (t == Character.FORMAT && cp != 0x200D)) continue;
+            if (out.length() + Character.charCount(cp) > max) {
+                if (cut != null) cut.cut = true;
+                break;
+            }
+            out.appendCodePoint(cp);
         }
-        int end = out.length();
-        if (end > 0 && Character.isHighSurrogate(out.charAt(end - 1))) out.setLength(end - 1);
         return out.toString();
     }
 
@@ -79,10 +103,10 @@ public final class Caps {
         return "%" + s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
     }
 
-    /** The rows as a result of at most {@link #MAX_BYTES} in all: later rows are dropped, and truncated set, until it fits. */
+    /** The rows as a result whose whole answer (rows plus a 256-byte reserve for the wrapper) stays under {@link #MAX_BYTES}: later rows are dropped, and truncated set, until it fits. */
     public static Result fit(JSONArray rows, boolean truncated) {
         JSONArray out = new JSONArray();
-        int size = 2;
+        int size = 2 + 256;
         for (int i = 0; i < rows.length(); i++) {
             JSONObject o = rows.optJSONObject(i);
             if (o == null) continue;

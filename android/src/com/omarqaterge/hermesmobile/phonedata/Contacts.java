@@ -36,30 +36,31 @@ public final class Contacts {
         List<Long> ids = new ArrayList<>();
         List<String> names = new ArrayList<>();
         boolean truncated = false;
+        Caps.Cut cut = new Caps.Cut();
         try (Cursor q = c.getContentResolver().query(android.provider.ContactsContract.Contacts.CONTENT_URI, proj, sel, selArgs,
                 name + " COLLATE NOCASE ASC")) {
             while (q != null && q.moveToNext()) {
                 if (ids.size() >= limit) { truncated = true; break; }
                 ids.add(q.getLong(0));
-                names.add(Caps.text(q.getString(1), Caps.MAX_FIELD));
+                names.add(Caps.text(q.getString(1), Caps.MAX_FIELD, cut));
             }
         }
         // One query for all the numbers and one for all the emails, not one per contact.
         List<List<String>> numbers = detail(c, android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 android.provider.ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
-                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER, ids);
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER, ids, cut);
         List<List<String>> emails = detail(c, android.provider.ContactsContract.CommonDataKinds.Email.CONTENT_URI,
                 android.provider.ContactsContract.CommonDataKinds.Email.CONTACT_ID,
-                android.provider.ContactsContract.CommonDataKinds.Email.ADDRESS, ids);
+                android.provider.ContactsContract.CommonDataKinds.Email.ADDRESS, ids, cut);
         JSONArray rows = new JSONArray();
         for (int i = 0; i < ids.size(); i++) {
             rows.put(new JSONObject().put("name", names.get(i))
                     .put("numbers", new JSONArray(numbers.get(i))).put("emails", new JSONArray(emails.get(i))));
         }
-        return Caps.fit(rows, truncated);
+        return Caps.fit(rows, truncated || cut.cut);
     }
 
-    private static List<List<String>> detail(Context c, Uri uri, String idCol, String valCol, List<Long> ids) {
+    private static List<List<String>> detail(Context c, Uri uri, String idCol, String valCol, List<Long> ids, Caps.Cut cut) {
         List<List<String>> out = new ArrayList<>();
         for (int i = 0; i < ids.size(); i++) out.add(new ArrayList<String>());
         if (ids.isEmpty()) return out;
@@ -73,8 +74,10 @@ public final class Contacts {
         try (Cursor q = c.getContentResolver().query(uri, new String[]{idCol, valCol}, in.toString(), a, null)) {
             while (q != null && q.moveToNext()) {
                 int at = ids.indexOf(q.getLong(0));
-                String v = Caps.text(q.getString(1), Caps.MAX_FIELD);
-                if (at >= 0 && !v.isEmpty() && out.get(at).size() < MAX_PER_CONTACT && !out.get(at).contains(v)) out.get(at).add(v);
+                String v = Caps.text(q.getString(1), Caps.MAX_FIELD, cut);
+                if (at < 0 || v.isEmpty() || out.get(at).contains(v)) continue;
+                if (out.get(at).size() < MAX_PER_CONTACT) out.get(at).add(v);
+                else cut.cut = true;
             }
         }
         return out;
