@@ -273,7 +273,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (code == REQ_PHONE_DATA) {
-            phoneDataPermissionResult();
+            phoneDataPermissionResult(results);
             return;
         }
         startHermes();
@@ -287,6 +287,11 @@ public class MainActivity extends Activity {
     private boolean phoneDataBusy;
     private int phoneDataId;
     private String phoneDataKind;
+    /** Bumped by every off (and by onDestroy): a turn-on that started earlier then stores nothing and answers cancel, so an off always wins. */
+    private int phoneDataGen;
+    /** The {@link #phoneDataGen} the in-flight turn-on started under, and whether its permission was asked before (for "won't ask again"). */
+    private int phoneDataMyGen;
+    private boolean phoneDataAskedBefore;
 
     private void phoneDataReply(int id, String result) {
         phoneDataBusy = false;
@@ -310,9 +315,14 @@ public class MainActivity extends Activity {
         }
         phoneDataBusy = true;
         phoneDataId = id;
+        final int g = phoneDataGen;
+        phoneDataMyGen = g;
+        // the wording is built here from the kind, never from the page
         String what = "master".equals(kind) ? "Let the agent read phone data" : "Let the agent read phone data: " + kind;
         ApprovalLock.askAlways(this, what, r -> {
-            if (!"ok".equals(r)) {
+            if (g != phoneDataGen) {
+                phoneDataReply(id, "cancel"); // switched off meanwhile: the off wins
+            } else if (!"ok".equals(r)) {
                 phoneDataReply(id, "nolock".equals(r) ? "nolock" : "cancel");
             } else if ("master".equals(kind)) {
                 PhoneData.setSwitch(this, kind, true);
@@ -324,21 +334,27 @@ public class MainActivity extends Activity {
                 phoneDataReply(id, "cancel");
             } else {
                 phoneDataKind = kind;
+                phoneDataAskedBefore = PhoneData.asked(this, kind);
                 requestPermissions(new String[]{PhoneData.permission(kind)}, REQ_PHONE_DATA);
             }
         });
     }
 
     /** Android's answer for the phone-data permission: store the switch only if the permission is now really held. */
-    private void phoneDataPermissionResult() {
+    private void phoneDataPermissionResult(int[] results) {
         String kind = phoneDataKind;
         if (kind == null || !phoneDataBusy) return;
-        if (PhoneData.permitted(this, kind)) {
+        if (phoneDataMyGen != phoneDataGen || results == null || results.length == 0) {
+            phoneDataReply(phoneDataId, "cancel"); // switched off meanwhile, or the dialog was dismissed
+        } else if (PhoneData.permitted(this, kind)) {
+            PhoneData.markAsked(this, kind);
             PhoneData.setSwitch(this, kind, true);
             phoneDataReply(phoneDataId, "ok");
         } else {
-            boolean again = shouldShowRequestPermissionRationale(PhoneData.permission(kind));
-            phoneDataReply(phoneDataId, again ? "denied" : "blocked");
+            PhoneData.markAsked(this, kind);
+            // blocked only when refused with no rationale AND the dialog had been shown before; otherwise a plain denial
+            boolean never = !shouldShowRequestPermissionRationale(PhoneData.permission(kind)) && phoneDataAskedBefore;
+            phoneDataReply(phoneDataId, never ? "blocked" : "denied");
         }
     }
 
@@ -2047,6 +2063,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (current == this) current = null;
         ApprovalLock.activityGone(this);
+        phoneDataGen++;
         phoneDataBusy = false; // a change waiting on Android's permission dialog is dropped: nothing is stored
         phoneDataKind = null;
         voice.destroy();
@@ -2360,7 +2377,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String phoneDataState(String key) {
             if (!ok(key)) return "";
-            return PhoneData.stateJson(MainActivity.this, PhoneData.READY);
+            return PhoneData.stateJson(MainActivity.this);
         }
 
         /** Turns a phone-data switch ("master" or a kind) on or off, then calls window.hermesPhoneData(id, "ok" | "cancel" | "nolock" |
@@ -2373,8 +2390,12 @@ public class MainActivity extends Activity {
                 if (kind == null || !PhoneData.isSwitch(kind)) {
                     if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
                 } else if (!on) {
+                    phoneDataGen++; // an on still in flight now stores nothing
                     PhoneData.setSwitch(MainActivity.this, kind, false);
                     if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'ok')", null);
+                } else if (!PhoneData.READY) {
+                    // the feature is not switched on in this build: no prompt, nothing stored
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
                 } else {
                     phoneDataTurnOn(id, kind);
                 }

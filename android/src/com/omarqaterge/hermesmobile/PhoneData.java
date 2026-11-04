@@ -52,7 +52,30 @@ final class PhoneData {
     /** Stores a switch. Turning on is only called after the screen lock was confirmed (MainActivity.phoneDataSet). */
     static void setSwitch(Context c, String name, boolean on) {
         if (!isSwitch(name)) return;
-        prefs(c).edit().putBoolean("phoneData." + name, on).apply();
+        // a turn-on or an explicit off ends "Android removed this permission"
+        prefs(c).edit().putBoolean("phoneData." + name, on).remove("phoneData.removed." + name).apply();
+    }
+
+    /** Android took this kind's permission away while its switch was on: the switch was cleared, and stays off until the
+     *  user turns it on again with the screen lock (a later grant in Android's settings or by {@code pm grant} can't revive it). */
+    static boolean removed(Context c, String kind) {
+        return isKind(kind) && prefs(c).getBoolean("phoneData.removed." + kind, false);
+    }
+
+    /** Was this kind's Android permission dialog ever answered (so a refusal with no rationale means "won't ask again"). */
+    static boolean asked(Context c, String kind) {
+        return isKind(kind) && prefs(c).getBoolean("phoneData.asked." + kind, false);
+    }
+
+    static void markAsked(Context c, String kind) {
+        if (isKind(kind)) prefs(c).edit().putBoolean("phoneData.asked." + kind, true).apply();
+    }
+
+    /** A kind whose switch is on but whose permission is gone: clear the switch and remember {@code removed}. */
+    private static void sweep(Context c, String kind) {
+        if (switchOn(c, kind) && !permitted(c, kind)) {
+            prefs(c).edit().putBoolean("phoneData." + kind, false).putBoolean("phoneData.removed." + kind, true).apply();
+        }
     }
 
     /** The Android permission this kind needs: photos use READ_MEDIA_IMAGES on Android 13+ and READ_EXTERNAL_STORAGE before. */
@@ -75,39 +98,36 @@ final class PhoneData {
         return p != null && c.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED;
     }
 
-    /** May this kind be read now: READY, master on, the kind's switch on and its Android permission held. */
+    /** May this kind be read now: READY, master on, the kind's switch on and its Android permission held. A kind whose
+     *  permission is gone is switched off (and marked removed) here, whoever asks first. */
     static boolean allowed(Context c, String kind) {
-        return allowed(c, kind, READY);
-    }
-
-    /** {@link #allowed} with READY given, so the switches can be tried before the feature is turned on. */
-    static boolean allowed(Context c, String kind, boolean ready) {
-        return ready && isKind(kind) && switchOn(c, MASTER) && switchOn(c, kind) && permitted(c, kind);
+        if (!isKind(kind)) return false;
+        sweep(c, kind);
+        return READY && switchOn(c, MASTER) && switchOn(c, kind) && permitted(c, kind);
     }
 
     /** Booleans only, never data: {@code {"ready":false,"master":false,"kinds":{"contacts":false,...}}}. */
     static JSONObject status(Context c) throws Exception {
-        return status(c, READY);
-    }
-
-    /** {@link #status} with READY given (READY itself never changes). */
-    static JSONObject status(Context c, boolean ready) throws Exception {
         JSONObject kinds = new JSONObject();
-        for (String k : KINDS) kinds.put(k, allowed(c, k, ready));
-        return new JSONObject().put("ready", ready).put("master", ready && switchOn(c, MASTER)).put("kinds", kinds);
+        for (String k : KINDS) kinds.put(k, allowed(c, k));
+        return new JSONObject().put("ready", READY).put("master", READY && switchOn(c, MASTER)).put("kinds", kinds);
     }
 
-    /** What Settings shows (phoneDataState): {@link #status} plus {@code switches} (each stored switch, even when its permission
-     *  is gone), {@code perms} (kind to Android permission held) and {@code secure} (the phone has a screen lock). Booleans only. */
-    static String stateJson(Context c, boolean ready) {
+    /** What Settings shows (phoneDataState): {@link #status} plus {@code switches} (each stored switch), {@code removed}
+     *  (kinds whose permission Android took away), {@code perms} (kind to Android permission held) and {@code secure}
+     *  (the phone has a screen lock). Booleans only. */
+    static String stateJson(Context c) {
         try {
+            JSONObject st = status(c); // sweeps first
             JSONObject sw = new JSONObject().put("master", switchOn(c, MASTER));
+            JSONObject rem = new JSONObject();
             JSONObject perms = new JSONObject();
             for (String k : KINDS) {
                 sw.put(k, switchOn(c, k));
+                rem.put(k, removed(c, k));
                 perms.put(k, permitted(c, k));
             }
-            return status(c, ready).put("switches", sw).put("perms", perms).put("secure", ApprovalLock.secure(c)).toString();
+            return st.put("switches", sw).put("removed", rem).put("perms", perms).put("secure", ApprovalLock.secure(c)).toString();
         } catch (Exception e) {
             return "{}";
         }

@@ -1,5 +1,8 @@
 // Settings → Phone data for the agent: master + per-kind switches, decided by the shell (faked here: window.__pd is the
 // shell's state and window.__pd.result its answer to phoneDataSet). The page only flips a switch on "ok".
+// Not covered here, because it is Java: the biometric itself, Android's permission dialog, the generation counter that
+// lets an off win over an on in flight, the switch cleared when a permission is seen missing, and blocked detection.
+// Those were only compiled; they need a real phone (docs/status/phone-data.md).
 const { WEB, check, sleep, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
@@ -17,6 +20,7 @@ module.exports = async t => {
           master: !!pd.switches.master,
           kinds: Object.fromEntries(kinds.map(k => [k, !!(pd.switches.master && pd.switches[k] && pd.perms[k])])),
           switches: pd.switches,
+          removed: pd.removed || {},
           perms: pd.perms,
           secure: pd.secure
         })
@@ -117,7 +121,8 @@ module.exports = async t => {
   }
   {
     // permission removed by Android: shows off with the reason, turning on goes through the normal flow
-    const pg = await open(fresh({ switches: { master: true, sms: true }, perms: { sms: false } }))
+    // (the shell has already cleared the switch and set the removed flag)
+    const pg = await open(fresh({ switches: { master: true }, removed: { sms: true }, perms: { sms: false } }))
     await row(pg, 'Messages (SMS)').waitFor({ timeout: 5000 })
     check(!(await isOn(pg, 'Messages (SMS)')), 'phone data: a kind whose permission is gone shows off')
     check((await row(pg, 'Messages (SMS)').innerText()).includes('Android removed this permission'), 'phone data: it says Android removed the permission')
@@ -125,6 +130,21 @@ module.exports = async t => {
     await sleep(400)
     const c = await calls(pg)
     check(c.length === 1 && c[0].kind === 'sms' && c[0].on === true && (await isOn(pg, 'Messages (SMS)')), 'phone data: turning it on again goes through phoneDataSet')
+    await pg.close()
+  }
+  {
+    // coming back to the foreground re-reads the state
+    const pg = await open(fresh())
+    await row(pg, MASTER).waitFor({ timeout: 5000 })
+    check(!(await isOn(pg, MASTER)), 'phone data: foreground re-read starts with the master off')
+    await pg.evaluate(() => {
+      window.__pd.switches.master = true
+      window.__pd.removed = { calls: true }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await row(pg, 'Call log').waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: coming back to the foreground re-reads the switches'), () => check(false, 'phone data: coming back to the foreground re-reads the switches'))
+    check(await isOn(pg, MASTER), 'phone data: the master shows the re-read state')
+    check((await row(pg, 'Call log').innerText()).includes('Android removed this permission'), 'phone data: a removed permission shows after the re-read')
     await pg.close()
   }
   {

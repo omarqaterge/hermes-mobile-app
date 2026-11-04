@@ -458,6 +458,8 @@ export interface PhoneDataState {
   kinds: Record<string, boolean>
   /** The stored switches, even for a kind whose Android permission is gone. */
   switches: Record<string, boolean>
+  /** Kind → Android took its permission away while the switch was on (the switch was cleared; turning it on asks for the screen lock again). */
+  removed: Record<string, boolean>
   /** Kind → the Android permission is held. */
   perms: Record<string, boolean>
   /** The phone has a screen lock (needed to turn anything on). */
@@ -485,7 +487,7 @@ export function phoneDataState(): PhoneDataState | null {
     if (!raw) return null
     const s = JSON.parse(raw)
     if (!s || typeof s !== 'object' || typeof s.ready !== 'boolean') return null
-    return { ready: s.ready, master: s.master === true, kinds: s.kinds || {}, switches: s.switches || {}, perms: s.perms || {}, secure: s.secure !== false }
+    return { ready: s.ready, master: s.master === true, kinds: s.kinds || {}, switches: s.switches || {}, removed: s.removed || {}, perms: s.perms || {}, secure: s.secure !== false }
   } catch {
     return null
   }

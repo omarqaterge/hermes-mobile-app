@@ -1041,14 +1041,14 @@ function PhoneDataSection() {
               icon={k.icon}
               tone={k.tone}
               title={k.title}
-              sub={stored && !held ? 'Android removed this permission' : k.sub}
+              sub={st.removed[k.kind] === true ? 'Android removed this permission' : k.sub}
               on={stored && held}
               onChange={v => void set(k.kind, v)}
             />
           )
         })}
         {blocked && (
-          <Row icon="⚙️" tone="gray" title="Allow it in Android settings" sub="Android won’t ask again. Open this app’s permissions and allow it there" chevron onClick={() => phoneDataOpenSettings()} />
+          <Row icon="⚙️" tone="gray" title="Allow it in Android settings" sub="Android won’t show the question. Open app info and allow it under Permissions. For Call log and Messages, if the phone offers “Allow restricted settings” there, allow that first" chevron onClick={() => phoneDataOpenSettings()} />
         )}
       </Collapse>
     </Section>
