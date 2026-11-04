@@ -7,13 +7,15 @@
 #   hermes-debian --rootfs             print Debian's root folder as Termux sees it (under chroot only root can read it)
 #   hermes-debian --exists PATH        exit 0 when PATH (a Debian path) exists
 #   hermes-debian --put SRC DEST       copy a Termux file or folder to DEST in Debian, replacing DEST
-#   hermes-debian --restart            stop Hermes's dashboard (exact command line); the hermes-services loop starts it again
+#   hermes-debian --restart            stop Hermes's dashboard and what runs it (by command line); the hermes-services loop starts it again
 #   hermes-debian --open PATH          open a file Hermes sees (a Debian path) in an Android app
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 d=$(cat "$HOME/.hermes-mobile/distro" 2>/dev/null)
 [ "$d" = chroot ] || d=proot
 ROOTFS="$PREFIX/var/lib/$d-distro/containers/debian/rootfs"
-DASH='hermes dashboard --host 127.0.0.1 --port 9119'
+# What every process of the dashboard has on its command line. Hermes's launcher starts Python without the word "hermes"
+# before "dashboard" (python3 -I -c CODE dashboard --host ...), so this leaves it out.
+DASH='dashboard --host 127.0.0.1 --port 9119'
 
 # chroot-distro gives Debian a fresh /dev. Termux:API's commands (they call Android's `am`) need the property area and
 # /dev/socket from the real one, and /dev/binder links into the binderfs chroot-distro does bring along.
@@ -49,11 +51,17 @@ case "${1:-}" in
     fi ;;
   --restart)
     if [ "$d" = chroot ]; then
-      # The dashboard runs as root, which Termux can neither see nor stop. "[h]" keeps pkill from matching su's own
+      # The dashboard runs as root, which Termux can neither see nor stop. "[d]" keeps pkill from matching su's own
       # command line (killed, su would leave the terminal in raw mode).
-      su -c "pkill -9 -f '[h]${DASH#h}'" </dev/null 2>/dev/null
+      su -c "pkill -9 -f '[d]${DASH#d}'" </dev/null 2>/dev/null
     else
-      pids=$(pgrep -f "$DASH") && kill -9 $pids 2>/dev/null
+      # Python first, then what runs it. A Python that outlives its proot gets "Function not implemented" from its system
+      # calls and fills dashboard.log with tracebacks that read as a crash.
+      outer=" $(pgrep -f "hermes $DASH" | tr '\n' ' ')"
+      for pid in $(pgrep -f "$DASH"); do
+        case "$outer" in *" $pid "*) ;; *) kill -9 "$pid" 2>/dev/null ;; esac
+      done
+      kill -9 $outer 2>/dev/null
     fi
     true ;;
   --open)
