@@ -29,17 +29,37 @@ loop_exit() {  # name, exit code: for the app's diagnostic log (plugin diag.py c
 # A service log is only there for looking into a problem: 2 MB at most, checked each time a loop (re)starts its program
 # and each time this script runs, also for a program that never exits.
 for f in ~/logs/*.log; do [ -f "$f" ] && trim_log "$f" 2097152 524288; done
+dash_port=${HM_DASH_PORT:-9119}  # the tests' free port; on a phone always the one in the dashboard's command below
+dash_answers() {  # the port gives an HTTP reply: Debian's Python serves it. A bare connect isn't enough: a Python left without its
+  # proot (hermes-debian --restart) keeps the port open and never replies. A refused port costs nothing and reaches no Python.
+  ( exec 3<>"/dev/tcp/127.0.0.1/$dash_port" && printf 'HEAD /api/status HTTP/1.0\r\n\r\n' >&3 && IFS= read -r -t 5 line <&3 \
+    && [ "${line#HTTP/}" != "$line" ] ) 2>/dev/null
+}
+# A dashboard this loop didn't start can hold the port: its old loop was stopped (killing a loop leaves its program running),
+# `hermes update` brought it back detached, or two runs of this script both started a loop. A new `hermes dashboard` would only
+# print "already running" and exit 0, one Debian start each time: wait here instead. Never wakes the phone: `sleep` stops in deep sleep.
+wait_other_dashboard() {
+  dash_answers || return 1
+  echo "$(date -u +%FT%TZ) hermes-services: a dashboard this loop did not start answers on port $dash_port; waiting for it to stop" >> ~/logs/dashboard.log
+  while dash_answers; do sleep 60; done
+}
 run_loop() {  # name, command...
   local name=$1; shift
   local pidf=~/logs/$name.pid
   if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then return; fi
-  ( while true; do
+  ( pause=10
+    while true; do
+      [ "$name" = dashboard ] && wait_other_dashboard && pause=10
       trim_log ~/logs/$name.log 2097152 524288
+      started=$SECONDS
       "$@" < /dev/null >> ~/logs/$name.log 2>&1
       rc=$?
       # Two loops end every few minutes on purpose (they sleep, then exit): only a failure counts for those.
       case "$name:$rc" in memory-sync:0 | app-keeper:0) ;; *) loop_exit "$name" "$rc" ;; esac
-      sleep 10
+      # 10 s after a program that ran a while. One that ends within a minute waits longer each time (at most 2 min): each start costs Debian.
+      [ $((SECONDS - started)) -ge 60 ] && pause=10
+      sleep "$pause"
+      pause=$((pause * 2)); [ "$pause" -gt 120 ] && pause=120
     done ) &
   echo $! > "$pidf"
 }

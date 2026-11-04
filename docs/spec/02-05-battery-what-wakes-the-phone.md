@@ -5,6 +5,9 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
 
 - **No permanent wake lock.** `hermes-services` releases a Termux wake lock left by older versions once per boot
   and removes `termux-wake-lock` from the boot script.
+- **Supervisor loops.** A program that keeps ending within a minute is started less often (10 s doubling to 2 min), and the
+  `dashboard` loop starts nothing while another dashboard answers: one HTTP request a minute from bash while the phone is
+  awake, instead of Debian every 14 s (6.2).
 - **Working wake lock.** `HermesService.updateWake` holds one non-reference-counted partial wake lock
   (`hermes:working`) until the latest of: the last status beat + 55 s while a turn works, an approval's deadline
   + 5 s, the cron alarm's hold. A turn whose beats stop for 50 s (`WORKING_TTL_MS`) is treated as over.
