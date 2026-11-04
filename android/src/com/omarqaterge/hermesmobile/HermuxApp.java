@@ -135,6 +135,9 @@ public class HermuxApp extends Application {
             case ApplicationExitInfo.REASON_SIGNALED: return "signaled";
             case ApplicationExitInfo.REASON_USER_REQUESTED: return "user_requested";
             case ApplicationExitInfo.REASON_USER_STOPPED: return "user_stopped";
+            case 14: return "freezer"; // these three are newer than the compile-time names older Android has
+            case 15: return "package_state_change";
+            case 16: return "package_updated";
             default: return "code_" + r;
         }
     }
