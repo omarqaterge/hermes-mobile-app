@@ -276,6 +276,35 @@ def _chat_id(session_id: str = "", task_id: str = "") -> str:
     return session_id or task_id or ""
 
 
+MAX_CHATS = 8      # the chat and its ancestors sent with a read
+MAX_CHAT_ID = 128
+
+
+def _chats(session_id: str = "", task_id: str = "") -> list:
+    """The stored id of this chat and of the chats that spawned it (phone_taint's subagent links), the chat first: the
+    app keeps its own record of which chats have read, and a subagent's read marks its parents too. At most MAX_CHATS
+    ids, each at most MAX_CHAT_ID characters, no empty ones and no repeats. Never raises."""
+    sid = str(session_id or task_id or "").strip()
+    ids = [sid] if sid else []
+    try:
+        import importlib.util
+        import sys
+        pt = sys.modules.get("hm_phone_taint")
+        if pt is None:   # the same module name the plugin uses, so both share one set of subagent links
+            spec = importlib.util.spec_from_file_location("hm_phone_taint", Path(__file__).with_name("phone_taint.py"))
+            pt = importlib.util.module_from_spec(spec)
+            sys.modules["hm_phone_taint"] = pt
+            spec.loader.exec_module(pt)
+        ids = list(pt.ancestors(ids))
+    except Exception:
+        pass
+    out: list = []
+    for i in ids:
+        if isinstance(i, str) and i and len(i) <= MAX_CHAT_ID and i not in out:
+            out.append(i)
+    return out[:MAX_CHATS]
+
+
 def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", **_: Any) -> str:
     kind: Any = ""
     try:
@@ -297,8 +326,12 @@ def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", 
         if denied is not None:
             _ev(kind, "denied")
             return denied
-        res = _post({"op": "read", "session": _chat_id(session_id, task_id), "nonce": nonce, "kind": kind,
-                     "args": args_text}, READ_TIMEOUT)
+        body: Dict[str, Any] = {"op": "read", "session": _chat_id(session_id, task_id), "nonce": nonce, "kind": kind,
+                                "args": args_text}
+        chats = _chats(session_id, task_id)
+        if chats:
+            body["chats"] = chats
+        res = _post(body, READ_TIMEOUT)
         if res is None:
             _ev(kind, "failed")
             return FAILED

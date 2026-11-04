@@ -804,6 +804,11 @@ def _phone_taint():
     return _load("hm_phone_taint", "phone_taint.py")
 
 
+# The tools that stay on the device (the same names as phone_taint._QUIET; a test keeps the two equal). Used only when
+# phone_taint.py cannot load: then every other tool is blocked in a chat that has read.
+_LOCAL_TOOLS = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "openui_reference", "clarify", "todo",
+                          "todo_list", "read_file", "write_file", "patch", "search_files", "skill_view", "skills_list",
+                          "session_search", "tool_search", "tool_describe"})
 _READ_CHATS: set = set()   # chat ids that called phone_data in this process, kept even if phone_taint.py cannot load
 
 
@@ -835,14 +840,11 @@ def _taint_directive(tool_name, args, session_id, task_id):
         return _phone_taint().check(tool_name, args, ids)
     except Exception:
         _event("plugin", "hook_failed", what="phone_taint")
-        coarse = ("terminal", "execute_code", "tool_call", "web_search", "web_extract", "send_message", "delegate_task",
-                  "computer_use", "cronjob_manage", "process_manage", "memory", "skill_manage", "text_to_speech")
-        if any(i in _READ_CHATS for i in ids) and any(
-                n in coarse or n.startswith(("browser_", "mcp_", "send_")) for n in inner):
+        if any(i in _READ_CHATS for i in ids) and any(n not in _LOCAL_TOOLS for n in inner):
             return {"action": "block", "message": (
                 "BLOCKED: this chat has read phone data and Hermux's check for actions that send data out could not "
                 "run. Tell the user; they can start a new chat.")}
-        return None
+    return None
 
 
 def _phone_data():
