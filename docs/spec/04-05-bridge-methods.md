@@ -83,6 +83,11 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `approvalLockState` | none | JSON string | Read-only `{"on":bool,"secure":bool}`: Confirm approvals with fingerprint, and whether the phone has a screen lock. |
 | `setApprovalLock` | `on` | nothing | Saves the switch (preference `approvalLock`). The page asks `confirmApproval` first when turning it off. |
 | `forgetApproval` | `session` | nothing | The chat's live Hermes session closed: its next Allow asks again. |
+| `phoneDataState` | none | JSON string | Read-only booleans for Settings → Phone data for the agent: `PhoneData.status` (`ready`, `master`, `kinds`) plus `switches` (each stored switch), `perms` (kind to Android permission held) and `secure` (the phone has a screen lock). |
+| `phoneDataSet` | `id`, `kind` (a kind or `master`), `on` | nothing (async) | Off is immediate and never touches permissions. On first needs a screen lock (else `nolock`, nothing stored), then `ApprovalLock.askAlways` in the shell (cancel gives `cancel`), then the kind's Android permission unless held (request code `REQ_PHONE_DATA`, handled before `startHermes()` in `onRequestPermissionsResult`). One change in flight at a time. Answers `window.hermesPhoneData(id, result)` with `ok`, `cancel`, `nolock`, `denied` or `blocked` (Android won't ask again). Unknown kinds answer `cancel`. |
+| `phoneDataOpenSettings` | none | nothing | Opens Android's settings page for this app (after `blocked`). |
+| `phoneDataGrant` | `description` (the approval text) | boolean | The user tapped Allow on a phone-data approval: `PhoneDataGrants.issue`. |
+| `phoneDataFullAccess` | `session` (stored chat id), `on` | nothing | The user moved this chat in or out of Full access: `PhoneDataGrants.fullAccess`. |
 | `uninstallStart` | `backup`, `keys`, `settings` (JSON text) | `ok`, `busy`, `no-termux`, `no-permission`, `error: …` | `Uninstall.run`. 4.7. |
 | `uninstallState` | none | JSON string | `Uninstall.state`: `{started, running, removed, result}`. |
 | `pluginState` | none | JSON string | `PluginSync.state`: `{state, detail, installed, apk, running, tries, maxTries, at}` for Settings → About → Hermux plugin (6.6). The shell calls `window.hermesPluginState()` when a check or update starts or ends. |
