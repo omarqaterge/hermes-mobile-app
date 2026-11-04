@@ -52,23 +52,25 @@ function Inner({ msgs }: { msgs: ReturnType<typeof useBtw>['msgs'] }) {
           ))}
           <div ref={end} />
         </div>
-        <div className="btw-input">
-          <textarea
-            rows={1}
-            autoFocus
-            placeholder="Ask a quick question…"
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              }
-            }}
-          />
-          <button className="send" aria-label="Send" onClick={send} disabled={!text.trim()}>
-            ➤
-          </button>
+        <div className="composer-wrap btw-input">
+          <div className="composer">
+            <textarea
+              rows={1}
+              autoFocus
+              placeholder="Ask a quick question…"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+            />
+            <button className="send" aria-label="Send" onClick={send} disabled={!text.trim()}>
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21.85 12.5c.8-.35.8-1.5 0-1.84L3.4 2.6c-.66-.29-1.39.2-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
