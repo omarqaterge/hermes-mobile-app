@@ -530,7 +530,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
         if isinstance(args, dict):
             q = args.get("question") or ""
             if isinstance(args.get("choices"), list):
-                choices = [str(c)[:80] for c in args["choices"][:5]]
+                choices = [str(c)[:400] for c in args["choices"][:5]]
             if not q and isinstance(args.get("questions"), list) and args["questions"]:
                 # Models often send even one question as a one-item batch; only a real batch
                 # can't be answered from one notification field.
@@ -538,7 +538,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
                 first = args["questions"][0]
                 q = first.get("question", "") if isinstance(first, dict) else str(first)
                 if single and isinstance(first, dict) and isinstance(first.get("choices"), list):
-                    choices = [str(c)[:80] for c in first["choices"][:5]]
+                    choices = [str(c)[:400] for c in first["choices"][:5]]
         # The app's notification answers a single question in place (choices become quick replies).
         _send("ask", "Hermux asks", q or "Hermux has a question", session_id or "", urgent=True,
               choices=choices, single=single)

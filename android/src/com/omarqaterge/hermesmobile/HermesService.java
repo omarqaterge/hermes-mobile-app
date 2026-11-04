@@ -1248,14 +1248,14 @@ public class HermesService extends Service {
         org.json.JSONArray ch = a.optJSONArray("choices");
         if (ch != null) for (int k = 0; k < ch.length() && choices.size() < 5; k++) {
             String c = ch.optString(k, "").trim();
-            if (!c.isEmpty()) choices.add(c.length() > 40 ? c.substring(0, 40) : c);
+            if (!c.isEmpty()) choices.add(c); // whole: a tap answers with this text; only the card's list is cut
         }
         boolean single = a.optBoolean("single", true);
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder(q);
         t.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, t.length(), 0);
         if (single) for (String c : choices) {
             int st = t.length();
-            t.append("\n\u25CB ").append(c);
+            t.append("\n\u25CB ").append(c.length() > 40 ? c.substring(0, 40) : c);
             t.setSpan(new android.text.style.ForegroundColorSpan(GOLD), st + 1, st + 2, 0);
         }
         if (single) t.append("\nTap to answer");

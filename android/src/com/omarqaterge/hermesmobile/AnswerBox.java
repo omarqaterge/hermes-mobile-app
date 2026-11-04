@@ -96,7 +96,6 @@ public class AnswerBox extends Activity {
         sendButton.setEnabled(false);
         sendButton.setOnClickListener(v -> send(session, field.getText().toString().trim()));
         row.addView(sendButton);
-        box.addView(row);
 
         field.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
@@ -106,9 +105,15 @@ public class AnswerBox extends Activity {
             }
         });
 
+        // The buttons stay under the scrolling part, so long choices and the keyboard can't push Send off the screen.
         ScrollView scroll = new ScrollView(this);
         scroll.addView(box);
-        setContentView(scroll, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        row.setPadding(pad, 0, pad, dp(8));
+        root.addView(row);
+        setContentView(root, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         field.requestFocus();
     }

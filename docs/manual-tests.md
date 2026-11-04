@@ -288,7 +288,10 @@ YouTube was seen playing in an Android 15 emulator's WebView (Chrome 124) throug
 
 ## Answer field on the question chip
 
-- [ ] With the app in the background, have Hermux ask a question with no choices, then one with three choices. Expand
-      the chip and tap it. Expected: a box with the question, its choices and a field; a typed answer and a choice
-      each reach the chat and the chip goes back to the status. Back leaves the question open. Same from the shade.
+- [x] (2026-11-04, 0.9.15-chiptest, Android 16: with three choices, not again with none; not from the shade.) With the
+      app in the background, have Hermux ask a question with no choices, then one with three choices. Expand the chip
+      and tap it. Expected: a box with the question, its choices and a field; a typed answer and a choice each reach
+      the chat and the chip goes back to the status. Back leaves the question open. Same from the shade.
+- [ ] Have Hermux ask a question with choices over 80 characters, after Hermes has restarted on the new plugin.
+      Expected: the box shows them whole.
 - [ ] Same with the phone locked. Expected: the unlock comes first, then the box.
