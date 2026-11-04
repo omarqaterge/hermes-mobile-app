@@ -1250,6 +1250,12 @@ wss.on('connection', ws => {
         later(200, () => event('btw.complete', params.session_id, { task_id, text: /^Earlier side questions/.test(params.text || '') ? 'Side answer (with earlier)' : 'Side answer (fresh)' }))
         return reply({ task_id })
       }
+      case 'slash.exec': {
+        // A quick command that is an alias (config quick_commands: {type: alias, target}): /evilalias0 .. 5 aim at /yolo in different spellings.
+        const m = /^evilalias(\d)/.exec(params.command || '')
+        const targets = [' /yolo on', '//yolo on', '/YOLO on', '  //  /yolo', 'yolo on', ' /yolo']
+        return reply(m ? { type: 'alias', target: targets[Number(m[1])] } : {})
+      }
       default:
         return reply({})
     }

@@ -157,6 +157,41 @@ check("read carries session, kind, op", rd["session"] == "chat1" and rd["kind"] 
 check("kind is not in the args text", "kind" not in json.loads(rd["args"]))
 check("task id is the fallback session", (pd.tool_handler({"kind": "photos"}, task_id="t9"), reads()[-1]["session"] == "t9")[1])
 
+# Full access is keyed on the gateway's live session id (a ContextVar), which a compression does not rotate.
+import contextvars
+import types
+_ui = contextvars.ContextVar("HERMES_UI_SESSION_ID", default=object())
+_mod = types.ModuleType("gateway.session_context")
+_mod._SESSION_UI_SESSION_ID = _ui
+sys.modules["gateway"] = types.ModuleType("gateway")
+sys.modules["gateway.session_context"] = _mod
+_ui.set("rt-live-1")
+pd.tool_handler({"kind": "photos"}, session_id="durable-after-compression")
+check("session is the live UI session id, not the durable one", reads()[-1]["session"] == "rt-live-1", reads()[-1]["session"])
+_ui.set("")
+pd.tool_handler({"kind": "photos"}, session_id="durable")
+check("an empty UI id falls back to the durable id", reads()[-1]["session"] == "durable")
+_ui.set(object())
+pd.tool_handler({"kind": "photos"}, session_id="durable")
+check("an unset UI id (not a string) falls back", reads()[-1]["session"] == "durable")
+os.environ["HERMES_UI_SESSION_ID"] = "other-chat-from-environ"
+pd.tool_handler({"kind": "photos"}, session_id="durable")
+check("os.environ is never used", reads()[-1]["session"] == "durable")
+del sys.modules["gateway.session_context"], sys.modules["gateway"]
+
+print("nonce can't look like a Telegram token")
+import re
+TELEGRAM = re.compile(r"(?<!\d)(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})")  # agent/redact.py _TELEGRAM_RE at the pinned Hermes
+ns = [pd.new_nonce() for _ in range(3000)]
+check("every nonce is 12 lowercase hex ending in a letter a-f", all(len(n) == 12 and all(c in "0123456789abcdef" for c in n) and n[-1] in "abcdef" for n in ns))
+check("nonces are random (not all alike)", len(set(ns)) > 2900)
+worst = ["000000000000"[:-1] + "a", "123456789012"[:-1] + "f", "99999999999a"]
+long_args = '{"limit":50,"query":"' + "q" * 40 + '"}'
+check("worst-case nonces with long args never match the redaction rule",
+      all(not TELEGRAM.search(pd.description("contacts", n, long_args)) for n in worst + ns))
+check("the old digits-only nonce did match (the rule is real)", TELEGRAM.search(pd.description("contacts", "123456789012", long_args)) is not None)
+check("args hex has no colon, so no other digit run can precede one", ":" not in long_args.encode().hex())
+
 print("phone number and empty args")
 reset()
 pd.tool_handler({"kind": "sms", "sender": "+15550123", "box": "inbox"}, session_id="c")
@@ -211,7 +246,7 @@ want = {
     "off": "Contacts access is off. Ask the user to enable it in Hermux → Settings → Phone data.",
     "no_permission": "turn the switch off and on",
     "locked": "unlocks it",
-    "no_grant": "No approval from the user. In Auto access phone data can't be read, because it can't ask: use Off, which asks each time, or Full access. Scheduled jobs can't read it either.",
+    "no_grant": "No approval from the user. In Auto access phone data can't be read, because it can't ask: use Off, which asks each time, or Full access (if the chat is already in Full access, ask the user to switch it off and on again). Scheduled jobs can't read it either.",
     "bad_request": "malformed",
     "failed": "failed",
     "not_ready": "isn't available",

@@ -59,7 +59,7 @@ request_tool_approval("phone_data", "phone_data:v1:<kind>:<nonce>:<hex of the ar
 The args are hex because Hermes masks phone numbers and key-like text in approval descriptions, and a changed text would no
 longer match the read. The page sees this text as `req.params.description`, and the service as the `approval` event's
 `what`. `body` is cut to 500 characters, so don't use it. The app parses the text and writes its own wording, and offers
-only Allow once and Deny. Anything that doesn't parse gets no grant.
+only Allow once and Deny. Anything that doesn't parse gets no grant. The nonce's last character is always a letter a-f: Hermes redacts `<8+ digits>:<30+ word characters>` as a bot token, and a nonce ending in digits next to the args hex matched about 2.3% of the time (the app and the plugin still accept any 12 lowercase hex).
 
 ### `POST /phonedata` on `127.0.0.1:9121`
 
@@ -74,9 +74,7 @@ Checks, in order: key, `not_ready`, `bad_request`, `off`, `no_permission`, `lock
 (`no_grant`). Failures while reading answer `failed`, with no details. A plugin tool that gets no answer, a 404 or an older
 app says the feature isn't available.
 
-`session` is the tool handler's `session_id` kwarg. It is the same chat id as the page's `storedId` and the approval hook's
-`session_id`, which `ApprovalLock` already relies on. Stream F must confirm this on the pinned Hermes; if they differ, reads
-in Full access fail closed.
+`session` is the gateway's live session id: `HERMES_UI_SESSION_ID`, which Hermes sets per turn to the gateway `sid` (`prompt_turn.py`), the page's `runtimeId`. The plugin reads it from the context variable and falls back to the tool handler's `session_id` (which a context compression rotates, so it never matches the page's id: Full access then fails closed to `no_grant`). Changed from the tool handler's `session_id` after a security review: compression rotated that id.
 
 ### Bridge methods (key first, in `web/src/secure-bridge.ts`)
 
@@ -86,7 +84,7 @@ in Full access fail closed.
 | `phoneDataSet(id, kind, on)` | `kind` is a kind or `master`. Turning on runs `ApprovalLock.askAlways`, then the Android permission dialog. Answers `window.hermesPhoneData(id, result)`, where `result` is `ok`, `cancel`, `nolock`, `denied` or `blocked` (Android won't ask again). Turning off is immediate |
 | `phoneDataOpenSettings()` | Opens Android's settings page for this app |
 | `phoneDataGrant(description)` | The user tapped Allow on this approval text: `PhoneDataGrants.issue` |
-| `phoneDataFullAccess(session, on)` | The user moved this chat (its stored id) in or out of Full access: `PhoneDataGrants.fullAccess` |
+| `phoneDataFullAccess(session, on)` | The user moved this chat (its live session id, `runtimeId`) in or out of Full access: `PhoneDataGrants.fullAccess` |
 
 ### Who owns what
 

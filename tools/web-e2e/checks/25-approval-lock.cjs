@@ -1,12 +1,53 @@
 // Confirm approvals with fingerprint: the first Allow in a chat session asks the shell for the biometric or screen
 // lock (faked here: window.__al is the shell's answer), later approvals in that chat don't; Deny never asks.
-const { WEB, calls, check, sleep, nativeShell, mock } = require('../lib.cjs')
+const { WEB, calls, rpcs, check, sleep, nativeShell, mock, png } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
-  const open = async al => {
+  const open = async (al, pd) => {
     const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await pg.addInitScript(nativeShell)
+    if (pd) {
+      // The phone-data side of the shell, faked: window.__pd logs every grant and Full access call; window.__out has what the
+      // page sent over the WebSocket (so a grant can be told from an answer, and which came first).
+      await pg.addInitScript(pd => {
+        window.__out = []
+        window.__socks = []
+        window.__pd = []
+        if (pd.full) localStorage.setItem('hm.defaultAccess.v1', 'full')
+        if (pd.auto) localStorage.setItem('hm.defaultAccess.v1', 'auto')
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+          }
+          send(d) {
+            try {
+              window.__out.push(JSON.parse(d))
+            } catch {
+              /* not JSON */
+            }
+            return super.send(d)
+          }
+        }
+        // The shell's phone-data methods on the bridge the page ends up with (no key: this check does not depend on the list in
+        // secure-bridge.ts that makes the wrapper add it).
+        const stubs = {
+          phoneDataGrant: d => (window.__pd.push({ grant: d, answeredYet: window.__out.some(m => m.id === window.__pdId && 'result' in m) }), true),
+          phoneDataFullAccess: (s, on) => window.__pd.push({ full: s, on })
+        }
+        let bridge = window.HermesAndroid
+        Object.defineProperty(window, 'HermesAndroid', {
+          configurable: true,
+          get: () => bridge,
+          set: v => {
+            bridge = v
+            if (v) Object.assign(v, stubs)
+          }
+        })
+      }, pd)
+    }
     await pg.addInitScript(al => {
       window.__al = al
       window.__alCalls = []
@@ -137,6 +178,118 @@ module.exports = async t => {
     check(answers('srv-approval-1').length === before + 1, 'approval lock: with no screen lock the Allow goes through')
     check((await pg.getByText('This phone has no screen lock').count()) > 0, 'approval lock: no screen lock shows a hint')
     check(await pg.evaluate(() => localStorage.getItem('hm.approvalNoLockHint.v1') === '1'), 'approval lock: the hint is shown once')
+    await pg.close()
+  }
+
+  // ── Phone data (docs/status/phone-data.md): a grant is made only after the fingerprint step and never over the lock screen ──
+  {
+    const desc = `phone_data:v1:calls:0123456789ab:${Buffer.from('{"limit":3}', 'utf8').toString('hex')}`
+    const pg = await open({ on: true, secure: true, result: 'cancel' }, {})
+    const send = id => pg.evaluate(([id, d]) => {
+      window.__pdId = id
+      const s = window.__socks.filter(x => x.readyState === 1).pop()
+      s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', id, method: 'approval', params: { session_id: 'rt-new', tool_name: 'phone_data', description: d, command: '<phone_data> (plugin approval rule)' } }) }))
+    }, [id, desc])
+    const out = id => pg.evaluate(id => window.__out.filter(m => m.id === id && 'result' in m), id)
+    const grants = () => pg.evaluate(() => window.__pd.filter(x => 'grant' in x))
+    const sheet = pg.locator('.sheet')
+
+    await send('pdl-1')
+    await sheet.getByText('Read up to 3 call log entries').waitFor({ timeout: 5000 })
+    await sheet.getByRole('button', { name: 'Allow once' }).click()
+    await sleep(300)
+    let c = await confirms(pg)
+    check(c.length === 1 && c[0].what === 'Read up to 3 call log entries from the last 7 days', `phone data: the fingerprint prompt says what will be read, in the app's words (${JSON.stringify(c)})`)
+    check((await grants()).length === 0 && (await out('pdl-1')).length === 0, 'phone data: a cancelled fingerprint makes no grant and answers nothing')
+    await pg.evaluate(() => (window.__al.result = 'ok'))
+    await sheet.getByRole('button', { name: 'Allow once' }).click()
+    await sleep(400)
+    let g = await grants()
+    check(g.length === 1 && g[0].grant === desc && g[0].answeredYet === false && (await out('pdl-1')).length === 1, `phone data: confirmed, the grant is made, then the answer goes (${JSON.stringify(g)})`)
+
+    // Over the lock screen: Allow only asks for an unlock; nothing is granted or answered. Deny works.
+    await pg.evaluate(() => window.__al.on = false) // no fingerprint step, so only the lock screen can stop it
+    await send('pdl-2')
+    await sheet.getByText('Read up to 3 call log entries').waitFor({ timeout: 5000 })
+    await pg.evaluate(() => window.hermesLockView(true))
+    await sheet.getByRole('button', { name: 'Allow once' }).click()
+    await sleep(300)
+    check((await grants()).length === 1 && (await out('pdl-2')).length === 0, 'phone data: over the lock screen an Allow makes no grant and answers nothing')
+    await sheet.getByRole('button', { name: 'Deny' }).click()
+    await sleep(300)
+    check((await grants()).length === 1 && (await out('pdl-2')).length === 1 && (await out('pdl-2'))[0].result.choice === 'deny', 'phone data: over the lock screen a Deny still goes, with no grant')
+    await pg.evaluate(() => window.hermesLockView(false))
+    await pg.close()
+  }
+  {
+    // Full access gives the chat the pass, and takes it away when it goes back to Off and when the chat closes.
+    const pg = await open({ on: false, secure: true, result: 'ok' }, { full: true })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await sleep(500)
+    const full = () => pg.evaluate(() => window.__pd.filter(x => 'full' in x))
+    check((await full()).some(x => x.full === '' && x.on === false), 'phone data: a page load starts with no chat in Full access')
+    await pg.getByPlaceholder('Message Hermux').fill('/yolo off')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await sleep(800)
+    let f = await full()
+    const chat = (f.find(x => x.on === true) || {}).full
+    check(chat, `phone data: Full access (the chat's default) gives the chat the pass (${JSON.stringify(f)})`)
+    check(f.slice(-1)[0] && f.slice(-1)[0].full === chat && f.slice(-1)[0].on === false, `phone data: going back to Off takes the pass away (${JSON.stringify(f.slice(-2))})`)
+    await pg.getByPlaceholder('Message Hermux').fill('/yolo on')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await sleep(800)
+    f = await full()
+    check(f.slice(-1)[0] && f.slice(-1)[0].full === chat && f.slice(-1)[0].on === true, `phone data: /yolo on gives it back (${JSON.stringify(f.slice(-2))})`)
+    await pg.close()
+  }
+  {
+    // Closing the chat's live session takes the pass away (an empty chat is replaced when a model is picked).
+    const pg = await open({ on: false, secure: true, result: 'ok' }, { full: true })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await sleep(800)
+    const full = () => pg.evaluate(() => window.__pd.filter(x => 'full' in x))
+    // a photo added and removed makes the (empty) chat; picking a model then replaces it and closes it
+    await pg.getByRole('button', { name: 'Add', exact: true }).click()
+    const [chooser] = await Promise.all([pg.waitForEvent('filechooser'), pg.locator('.picker-opt', { hasText: 'Photo' }).click()])
+    await chooser.setFiles([{ name: 'x.png', mimeType: 'image/png', buffer: png }])
+    await pg.locator('.attach-thumb img[alt="x.png"]').waitFor({ timeout: 5000 })
+    await pg.getByRole('button', { name: 'Remove x.png' }).click()
+    await sleep(500)
+    const chat = ((await full()).find(x => x.on === true) || {}).full
+    await pg.getByRole('button', { name: 'Add', exact: true }).click()
+    await pg.locator('.picker-opt', { hasText: 'mock-model' }).click()
+    await pg.locator('.row', { hasText: 'mock-sonnet' }).click()
+    await sleep(1000)
+    const f = await full()
+    check(chat && f.some(x => x.full === chat && x.on === false && f.indexOf(x) > f.findIndex(y => y.full === chat && y.on === true)), `phone data: closing the chat takes the pass away (${JSON.stringify(f)})`)
+    await pg.close()
+  }
+
+  {
+    // An alias (a server quick command) can never change access, however its target is spelled: only a /yolo typed directly does.
+    const pg = await open({ on: false, secure: true, result: 'ok' }, {})
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    const yoloSets = () => rpcs('config.set').filter(c => c.params.key === 'yolo').length
+    const before = yoloSets()
+    for (let i = 0; i < 6; i++) {
+      await pg.getByPlaceholder('Message Hermux').fill(`/evilalias${i}`)
+      await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+      await sleep(500)
+    }
+    const f = await pg.evaluate(() => window.__pd.filter(x => 'full' in x && x.on === true))
+    check(yoloSets() === before && f.length === 0 && (await pg.evaluate(() => localStorage.getItem('hm.yolo.v1') === null || !/true/.test(localStorage.getItem('hm.yolo.v1')))), `alias: six spellings of an alias to /yolo on change no access and give no pass (${yoloSets() - before} yolo sets, ${JSON.stringify(f)})`)
+    check((await pg.getByText('A command alias can’t change access').count()) >= 1, 'alias: the refusal is shown')
+    await pg.close()
+  }
+  {
+    // Auto access never gives the phone-data pass (Hermes shows no prompt there, so reads need Off or Full access).
+    const pg = await open({ on: false, secure: true, result: 'ok' }, { auto: true })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await pg.getByPlaceholder('Message Hermux').fill('hello')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await sleep(1200)
+    const full = await pg.evaluate(() => window.__pd.filter(x => 'full' in x))
+    check(full.length >= 1 && full.every(x => x.on === false), `phone data: Auto access gives no pass (${JSON.stringify(full)})`)
     await pg.close()
   }
 }

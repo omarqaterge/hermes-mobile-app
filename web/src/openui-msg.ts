@@ -57,6 +57,12 @@ export function actionMessage(e: UiAction): string {
   return parts.join('\n\n')
 }
 
+/** Does this text start a slash command (after spaces and invisible characters)? A card's text must never be one: the
+ *  button's label can hide it, and `/yolo on` would turn on Full access. */
+export function isCommandText(text: string): boolean {
+  return /^[\s\u200b-\u200f\u2028\u2029\u2060\ufeff]*\//.test(text)
+}
+
 /** A link a card may open: http(s) only, never javascript:, file: or app-internal schemes. */
 export function safeHttpUrl(u: unknown): string | null {
   if (typeof u !== 'string') return null

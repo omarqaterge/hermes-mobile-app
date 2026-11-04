@@ -4,6 +4,7 @@ import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-con
 import { answerRequest, rejectRequest } from '../gateway'
 import { haptic } from '../bridge'
 import { Linked } from './Linked'
+import { phoneDataTextOf, phoneDataView, splitUntrusted } from '../phone-data-request'
 import { tidyApprovalText } from '../text'
 import { useBackHandler } from '../backstack'
 import { ADVANCE_MS, nextStep } from '../clarify'
@@ -15,8 +16,59 @@ const CHOICE_LABEL: Record<ApprovalChoice, string> = {
   deny: 'Deny'
 }
 
+/** A phone-data read (contacts, calendar, calls, messages, location, photos): the app's own wording, written from the
+ *  decoded request and shown as text only, never the plugin's text; only Allow once and Deny. A request that can't be
+ *  parsed shows a warning and Deny only. */
+function PhoneDataApproval({ req, text }: { req: ServerRequest; text: string }) {
+  const v = phoneDataView(text)
+  return (
+    <>
+      <div className="sheet-title">{v.ok ? '⚠ Let Hermux read your phone?' : '⚠ Unreadable phone data request'}</div>
+      <div className="sheet-scroll">
+        <div className="sheet-desc">
+          {splitUntrusted(v.text).map((p, i) =>
+            p.untrusted ? (
+              // text that came from the request: its own element, plain text, visibly different from the app's words
+              <code key={i} className="pd-untrusted" style={{ fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4, background: 'color-mix(in srgb, currentColor 14%, transparent)', border: '1px solid color-mix(in srgb, currentColor 30%, transparent)' }}>
+                {p.text}
+              </code>
+            ) : (
+              <span key={i}>{p.text}</span>
+            )
+          )}
+        </div>
+        {v.ok ? <div className="sheet-desc">Only this once. What it reads goes into the chat and to your model provider.</div> : null}
+      </div>
+      <div className="sheet-actions col">
+        {v.ok ? (
+          <button
+            className="btn primary"
+            onClick={() => {
+              haptic()
+              answerRequest(req, { choice: 'once' })
+            }}
+          >
+            Allow once
+          </button>
+        ) : null}
+        <button
+          className="btn danger"
+          onClick={() => {
+            haptic()
+            answerRequest(req, { choice: 'deny' })
+          }}
+        >
+          Deny
+        </button>
+      </div>
+    </>
+  )
+}
+
 function Approval({ req }: { req: ServerRequest }) {
   const p = req.params as Record<string, unknown>
+  const phoneData = phoneDataTextOf(p)
+  if (phoneData !== null) return <PhoneDataApproval req={req} text={phoneData} />
   const choices = ((p.choices as ApprovalChoice[] | undefined)?.length
     ? (p.choices as ApprovalChoice[])
     : (['once', p.allow_session !== false ? 'session' : null, p.allow_permanent ? 'always' : null, 'deny'].filter(Boolean) as ApprovalChoice[]))

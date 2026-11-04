@@ -44,3 +44,6 @@ echo "java-check: keeper test $(tail -1 "$OUT/keeper.txt")"
 # On-device dictation's model helper (plain JVM): catalogue, model detection, text tidying.
 ../tools/test_stt_models.sh > "$OUT/stt.txt" 2>&1 || { grep -v '^PASS' "$OUT/stt.txt"; echo "java-check: STT models test FAILED"; exit 1; }
 echo "java-check: STT models test $(tail -1 "$OUT/stt.txt")"
+# The phone-data gate (grants, the Full access pass, the wording of a request) on a plain JDK; the wording uses the jar above.
+../tools/test_phone_data_grants.sh > "$OUT/pdgrants.txt" 2>&1 || { grep -v '^PASS' "$OUT/pdgrants.txt"; echo "java-check: phone data grants test FAILED"; exit 1; }
+echo "java-check: phone data grants test $(tail -1 "$OUT/pdgrants.txt")"

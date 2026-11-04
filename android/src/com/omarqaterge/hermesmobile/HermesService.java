@@ -609,14 +609,27 @@ public class HermesService extends Service {
     }
 
     // ── loopback event listener ─────────────────────────────
+    /** The longest one connection may hold the listener thread, whatever it sends (see serve). */
+    static final long REQUEST_DEADLINE_MS = 10_000;
     void serve() {
         try {
             server = new ServerSocket(PORT, 16, InetAddress.getByName("127.0.0.1"));
             while (running) {
-                try (Socket s = server.accept()) {
+                Socket s = server.accept();
+                boolean handedOff = false;
+                // Each read waits at most 3 s, but a client that trickles a byte at a time (even a first line with no
+                // newline) would keep this one thread for ever: the whole request, read and answered, gets 10 s, then
+                // the socket is closed under it. Ordinary requests take milliseconds, so they are not affected.
+                final Socket sock = s;
+                final Runnable watchdog = () -> { try { sock.close(); } catch (Exception ignored) { } };
+                main.postDelayed(watchdog, REQUEST_DEADLINE_MS);
+                try {
                     s.setSoTimeout(3000);
-                    handle(s);
+                    handedOff = handle(s);
                 } catch (Exception ignored) {
+                } finally {
+                    main.removeCallbacks(watchdog);
+                    if (!handedOff) try { s.close(); } catch (Exception ignored) { }
                 }
             }
         } catch (Exception e) {
@@ -624,11 +637,18 @@ public class HermesService extends Service {
         }
     }
 
-    void handle(Socket s) throws Exception {
+    /** True when the socket now belongs to another thread (a /phonedata read), which closes it. */
+    boolean handle(Socket s) throws Exception {
         BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
         String line = in.readLine();
         // POST /setup = the installer's progress (its own one-time token, see SetupLines); everything else is an event.
         boolean setupReq = line != null && line.startsWith("POST /setup ");
+        // POST /phonedata = the agent's phone-data read (PhoneDataRoute): the /event key, always a JSON answer.
+        boolean phoneReq = line != null && line.startsWith("POST /phonedata ");
+        // A /phonedata request must arrive within PhoneDataRoute.READ_DEADLINE_MS in total (each read waits at most
+        // PhoneDataRoute.READ_TIMEOUT_MS), so a client that trickles bytes can't hold the thread that takes /event.
+        final long phoneDeadline = System.nanoTime() + PhoneDataRoute.READ_DEADLINE_MS * 1_000_000L;
+        if (phoneReq) s.setSoTimeout(PhoneDataRoute.READ_TIMEOUT_MS);
         // GET /plugin-bundle/<token> = phone/plugin-update.sh fetching this APK's plugin (PluginSync, one-time token).
         String bundleToken = line != null && line.startsWith("GET /plugin-bundle/") && line.endsWith(" HTTP/1.1")
                 ? line.substring(19, line.length() - 9) : null;
@@ -637,9 +657,15 @@ public class HermesService extends Service {
         int headers = 0;
         while ((line = in.readLine()) != null && !line.isEmpty()) {
             if (++headers > 40 || line.length() > 2048) throw new java.io.IOException("bad request");
+            if (phoneReq && System.nanoTime() > phoneDeadline) throw new java.io.IOException("slow request");
             String l = line.toLowerCase();
             if (l.startsWith("content-length:")) len = Integer.parseInt(line.substring(15).trim());
             if (l.startsWith("x-hermes-mobile-key:")) gotKey = line.substring(20).trim();
+        }
+        if (phoneReq) {
+            boolean keyOk = java.security.MessageDigest.isEqual(key.getBytes(StandardCharsets.UTF_8), gotKey.getBytes(StandardCharsets.UTF_8));
+            if (!keyOk) return phoneDataReply(s, "HTTP/1.1 403 Forbidden", PhoneDataRoute.fail("forbidden"));
+            if (len < 0 || len > PhoneDataRoute.MAX_BODY) return phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.fail("bad_request"));
         }
         if (len < 0 || len > (setupReq ? 1024 : 256 * 1024)) throw new java.io.IOException("too large");
         // Content-Length counts UTF-8 bytes, the reader gives chars: count bytes, or a non-ASCII body waits forever.
@@ -647,6 +673,7 @@ public class HermesService extends Service {
         int bytes = 0;
         char[] buf = new char[4096];
         while (bytes < len) {
+            if (phoneReq && System.nanoTime() > phoneDeadline) throw new java.io.IOException("slow request");
             int r = in.read(buf, 0, Math.min(buf.length, len - bytes));
             if (r < 0) break;
             body.append(buf, 0, r);
@@ -662,14 +689,20 @@ public class HermesService extends Service {
                     : "HTTP/1.1 403 Forbidden\r\nContent-Length: 0").concat("\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
             if (b != null) out.write(b);
             out.flush();
-            return;
+            return false;
         }
         if (setupReq) {
             int r = setupPost(body.toString());
             out.write((r == SetupLines.OK ? "HTTP/1.1 204 No Content\r\n" : r == SetupLines.BAD_TOKEN ? "HTTP/1.1 403 Forbidden\r\n" : "HTTP/1.1 400 Bad Request\r\n")
                     .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
             out.flush();
-            return;
+            return false;
+        }
+        if (phoneReq) {
+            // The read may take seconds (a location fix): not on this thread, which must keep taking /event.
+            final String reqBody = body.toString();
+            if (PhoneDataRoute.submit(() -> phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.answer(this, reqBody)))) return true;
+            return phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.fail("failed"));
         }
         boolean ok = java.security.MessageDigest.isEqual(
                 key.getBytes(StandardCharsets.UTF_8), gotKey.getBytes(StandardCharsets.UTF_8)); // constant time
@@ -677,6 +710,27 @@ public class HermesService extends Service {
                 .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         out.flush();
         if (ok) onEvent(new JSONObject(body.toString()));
+        return false;
+    }
+
+    /** Writes a /phonedata answer (JSON, nothing else) and closes the socket, on whichever thread this runs. Always
+     *  true: the socket is closed here, so the accept loop must not touch it again. */
+    boolean phoneDataReply(Socket s, String status, String json) {
+        // A client that stops reading must not hold this thread: a socket has no write timeout, so close it after 5 s.
+        final Runnable killer = () -> { try { s.close(); } catch (Exception ignored) { } };
+        main.postDelayed(killer, 5000);
+        try (Socket sock = s) {
+            byte[] b = json.getBytes(StandardCharsets.UTF_8);
+            OutputStream o = sock.getOutputStream();
+            o.write((status + "\r\nContent-Type: application/json\r\nContent-Length: " + b.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            o.write(b);
+            o.flush();
+        } catch (Exception ignored) {
+            // the plugin went away: nothing to tell it
+        } finally {
+            main.removeCallbacks(killer);
+        }
+        return true;
     }
 
     // ── read-aloud mode: speak replies while the app is closed or the phone is locked ──
@@ -788,9 +842,13 @@ public class HermesService extends Service {
                 // same buttons (status notification) until the approval is answered. The chip is
                 // armed even while the app is on screen: leaving the app with the sheet unanswered
                 // must still leave a way to answer (it used to return here and the chip had none).
+                // A phone-data read: the app's own wording replaces the plugin's text everywhere (never the raw hex), and
+                // only Allow once and Deny are offered.
+                final JSONObject ev = phoneDataEvent(e);
+                body = ev.optString("body", "");
                 boolean ticking = pendingApproval != null;
                 if (!ticking) lastReAlert = -1;
-                pendingApproval = e;
+                pendingApproval = ev;
                 approvalDeadline = System.currentTimeMillis() + Math.max(1, e.optLong("timeout", 60)) * 1000L;
                 postStatus();
                 updateWake();
@@ -798,9 +856,9 @@ public class HermesService extends Service {
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
                 // Answer right from the popup, like the in-app sheet.
-                b.addAction(approveAction(e, "once", "Allow once"));
-                if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
-                b.addAction(approveAction(e, "deny", "Deny"));
+                if (!ev.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(ev, "once", "Allow once"));
+                if (ev.optBoolean("allow_session", true)) b.addAction(approveAction(ev, "session", "Allow session"));
+                b.addAction(approveAction(ev, "deny", "Deny"));
                 postGrouped(nm, tag(kind, session), b.build());
                 return;
             }
@@ -1347,7 +1405,7 @@ public class HermesService extends Service {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_shield)
                 .setColor(barColor)
-                .setContentTitle("Hermux wants to run a command")
+                .setContentTitle(a.optBoolean("phone_data", false) ? "Hermux wants to read your phone" : "Hermux wants to run a command")
                 .setContentText(t)
                 .setSubText((sub != null ? sub + " · " : "") + "expires in " + secs + "s")
                 .setOngoing(true)
@@ -1366,7 +1424,8 @@ public class HermesService extends Service {
         } else {
             b.setStyle(new Notification.BigTextStyle().bigText(t));
         }
-        b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once"))).build());
+        if (!a.optBoolean("phone_data_unreadable", false))
+            b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once"))).build());
         if (a.optBoolean("allow_session", true))
             b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
         b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
@@ -1388,11 +1447,40 @@ public class HermesService extends Service {
         String session = e.optString("session", null);
         NotificationManager nm = getSystemService(NotificationManager.class);
         Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermux"), "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
-        b.addAction(approveAction(e, "once", "Allow once"));
+        if (!e.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(e, "once", "Allow once"));
         if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
         b.addAction(approveAction(e, "deny", "Deny"));
         nm.cancel(tag("approval", session), 2); // a fresh post is what re-triggers the heads-up
         postGrouped(nm, tag("approval", session), b.build());
+    }
+
+    /** The approval event as the notification shows it. For a phone-data read (the description starts "phone_data:") the
+     *  app writes the wording itself from the decoded args, so the raw hex never reaches a notification, and offers only
+     *  Allow once and Deny. Any other approval comes back unchanged. {@code phone_data} marks such an event;
+     *  {@code phone_data_unreadable} means the text didn't parse, so there is no Allow at all. */
+    static JSONObject phoneDataEvent(JSONObject e) {
+        // Only the plugin's own request counts: the description names the read AND Hermes's label for the tool is the
+        // command. A shell command that mentions phone_data: anywhere else is an ordinary approval, shown as it is.
+        String raw = PhoneDataWording.rawOf(e.optString("what", ""), e.optString("command", ""));
+        if (raw == null) return e;
+        try {
+            JSONObject c = new JSONObject(e.toString());
+            String text = PhoneDataWording.notificationText(raw);
+            c.put("what", text).put("body", text).put("command", "").put("allow_session", false).put("allow_permanent", false)
+                    .put("phone_data", true).put("phone_data_unreadable", PhoneDataWording.wording(raw) == null);
+            return c;
+        } catch (Exception ex) {
+            JSONObject safe = new JSONObject();
+            try {
+                String text = PhoneDataWording.WARNING;
+                safe.put("session", e.optString("session", "")).put("key", e.optString("key", "")).put("request_id", e.optString("request_id", ""))
+                        .put("profile", e.optString("profile", "")).put("timeout", e.optLong("timeout", 60)).put("what", text).put("body", text)
+                        .put("allow_session", false).put("phone_data", true).put("phone_data_unreadable", true);
+            } catch (Exception ignored) {
+                // a JSONObject accepts these keys; nothing to do
+            }
+            return safe;
+        }
     }
 
     /** Ticks the approval countdown once a second until answered or expired. */
@@ -1524,6 +1612,16 @@ public class HermesService extends Service {
 
     PendingIntent approveIntent(JSONObject e, String choice) {
         String session = e.optString("session", "");
+        // A phone-data read is never allowed from a notification: this event arrived on /event, which the agent can
+        // also post to, so only the page (whose request came from Hermes itself) may mint the one-use grant. Allow
+        // opens the app on that chat, where the sheet asks.
+        boolean phoneData = e.optBoolean("phone_data", false);
+        if (phoneData && !"deny".equals(choice)) {
+            Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            if (!session.isEmpty()) open.putExtra("session", session);
+            return PendingIntent.getActivity(this, ("phonedata" + session + choice).hashCode(), open,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        }
         if (Build.VERSION.SDK_INT >= 31 && !"deny".equals(choice) && ApprovalLock.needed(this, session)) {
             // Android 12+ refuses to open an activity from a service a notification started (trampoline): the
             // chat's first Allow opens the app on that chat directly, where the sheet asks for the fingerprint.
@@ -1537,7 +1635,8 @@ public class HermesService extends Service {
                 .putExtra("key", e.optString("key", ""))
                 .putExtra("request_id", e.optString("request_id", ""))
                 .putExtra("profile", e.optString("profile", ""))
-                .putExtra("choice", choice);
+                .putExtra("choice", choice)
+                .putExtra("phone_data", phoneData);
         return PendingIntent.getService(this, (session + choice).hashCode(), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
@@ -1546,6 +1645,12 @@ public class HermesService extends Service {
     void answerApproval(Intent i) {
         String session = i.getStringExtra("session");
         String choice = i.getStringExtra("choice");
+        // Only Deny is ever sent for a phone-data read from here (approveIntent opens the app for Allow); anything
+        // else, even a forged intent, opens the app instead.
+        if (i.getBooleanExtra("phone_data", false) && !"deny".equals(choice)) {
+            openToConfirm(session);
+            return;
+        }
         if (!"deny".equals(choice) && openToUnlock(session, null, "approval " + choice)) return;
         // Confirm approvals with fingerprint: the chat's first Allow is confirmed in the app (its sheet asks).
         if (!"deny".equals(choice) && ApprovalLock.needed(this, session)) {

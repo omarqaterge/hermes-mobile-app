@@ -10,6 +10,7 @@ import { api } from './api'
 import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
+import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
@@ -917,6 +918,7 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean, s
   const got: Access = !on ? 'off' : mode === 'auto' ? 'auto' : 'full'
   if (got === 'full' && was !== 'full') beforeFull.set(a.storedId, was)
   else if (got !== 'full') beforeFull.delete(a.storedId)
+  setPhoneDataFullAccess(a.runtimeId, mode === 'full' && on) // the phone-data pass: only what the user asked for (Full), confirmed by Hermes; keyed by the live session id the plugin reads from Hermes
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on }, autoAccess: got === 'auto' } : {}))
   if (remember) rememberYolo(a.storedId, got) // the default from Settings isn't the chat's own choice: it follows the default
   return got
@@ -949,6 +951,12 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   const name = body.split(/\s+/)[0]
   const arg = body.slice(name.length).trim()
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
+  // Only a command the user typed directly (depth 0) can change access. Anything reached through an alias (depth > 0)
+  // is refused, however the target is spelled (spaces, extra slashes, upper case).
+  if (depth > 0 && name.replace(/^[\s/]+/, '').toLowerCase().startsWith('yolo')) {
+    pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
+    return
+  }
   if (name.toLowerCase() === 'yolo') {
     const w = arg.toLowerCase()
     const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
@@ -1301,11 +1309,23 @@ onChatOpen('approval-lock', ({ chat }) => {
   chatOfRuntime.set(chat.runtimeId, chat.storedId)
 })
 function chatClosed(runtimeId: string): void {
+  setPhoneDataFullAccess(runtimeId, false) // the live session is gone: the Full access pass for phone data goes with it
   const storedId = chatOfRuntime.get(runtimeId)
   if (storedId === undefined) return
   chatOfRuntime.delete(runtimeId)
   forgetApprovalConfirm(storedId)
 }
+// A page that (re)loads doesn't know which chats were in Full access: start with none (the shell also clears every pass
+// when a page starts). Each chat's access is re-applied by setAccess when it opens, and the pass comes back only
+// through that. The pass is keyed by the live session id (runtimeId), which the plugin reads from Hermes and which a
+// context compression does not change.
+setPhoneDataFullAccess('', false)
+// A chat opening (new or resumed) starts without the pass: Hermes forgets /yolo on a resume. A chat the user left in
+// Full access that Hermes still has in yolo gets setAccess run again, which is the only thing that gives the pass.
+onChatOpen('phone-data-pass', ({ chat }) => {
+  setPhoneDataFullAccess(chat.runtimeId, false)
+  if (chat.info.yolo && rememberedAccess(chat.storedId) === 'full' && !lockView()) void setAccess(chat, 'full', false).catch(() => {})
+})
 /** The stored chat id an approval came from (Hermes names the live session). */
 function approvalChat(req: ServerRequest): string {
   const sid = String(req.params.session_id || '')
@@ -1322,23 +1342,45 @@ export function answerRequest(req: ServerRequest, result: Record<string, unknown
     askUnlock(req.method === 'approval' ? 'Unlock the phone to allow this' : 'Unlock the phone to answer')
     return false
   }
+  const pd = req.method === 'approval' ? phoneDataTextOf(req.params) : null
+  if (pd !== null && result.choice !== 'deny') {
+    // A phone-data read is only ever allowed once, for exactly what the app wrote out: anything else (this chat, always,
+    // or text that doesn't parse) is not an Allow. The one-use grant is made in respondNow.
+    if (!phoneDataView(pd).ok) {
+      toast('Can’t allow this phone data request: Hermux can’t read it. Deny it.', 'error')
+      return false
+    }
+    result = { ...result, choice: 'once' }
+  }
   if (req.method === 'approval' && result.choice !== 'deny') {
     const chat = approvalChat(req)
     if (approvalNeedsConfirm(chat)) {
-      const what = String(req.params.command || req.params.description || 'a command').slice(0, 160)
+      const what = (pd !== null ? phoneDataView(pd).text : String(req.params.command || req.params.description || 'a command')).slice(0, 160)
       void confirmAllow(chat, what).then(ok => {
-        if (ok && getState().requests.some(r => r.id === req.id)) respondNow(req, result)
+        if (!ok || !getState().requests.some(r => r.id === req.id)) return
+        if (lockView()) askUnlock('Unlock the phone to allow this') // locked while the prompt was up: nothing is allowed
+        else respondNow(req, result)
       })
       return false
     }
   }
-  respondNow(req, result)
-  return true
+  return respondNow(req, result)
 }
-function respondNow(req: ServerRequest, result: Record<string, unknown>): void {
+/** The last step of every answer: Hermes hears it here. An Allow for a phone-data read first asks the shell for the
+ *  one-use grant (PhoneDataGrants), BEFORE the answer reaches Hermes, because the read starts the moment Hermes hears
+ *  it. If the shell can't make the grant the Allow is not sent and the request stays open. Deny makes no grant. */
+function respondNow(req: ServerRequest, result: Record<string, unknown>): boolean {
+  const pd = req.method === 'approval' ? phoneDataTextOf(req.params) : null
+  if (pd !== null && result.choice !== 'deny') {
+    if (result.choice !== 'once' || !phoneDataView(pd).ok || !mintPhoneDataGrant(pd)) {
+      toast('Can’t allow phone data here: update or reopen Hermux, or deny it', 'error')
+      return false
+    }
+  }
   req.respond(result)
   cancelNotification(`req-${req.id}`)
   setState(s => ({ requests: s.requests.filter(r => r.id !== req.id) }))
+  return true
 }
 
 export function rejectRequest(req: ServerRequest): void {
