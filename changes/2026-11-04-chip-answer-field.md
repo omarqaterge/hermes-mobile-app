@@ -1,6 +1,7 @@
 ---
-rank: small
+rank: normal
 ---
-- **The question chip now always has a place to type your answer.** When Hermux asks you something, the expanded chip
-  offers an Answer field even when the question has choices. It also uses the same card layout as the approval chip,
-  to get the field showing on phones that hid it. Not yet seen on a phone.
+- **Tap the question chip to type your answer.** When Hermux asks you something, tapping the expanded chip or its
+  Answer button opens a small box with the question, its choices and a text field, over whatever you are doing. Some
+  phones don't show a text field on the chip itself. The phone asks for an unlock first if it is locked. Not yet seen
+  working on a phone.

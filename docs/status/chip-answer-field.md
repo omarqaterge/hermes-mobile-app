@@ -1,15 +1,16 @@
 # Answer field on the question chip
 
-**State:** the code is on branch `claude/chip-answer-field`. On an Android 16 Xiaomi phone (HyperOS) the expanded chip
-and the shade card drew no button or field for a question without choices, although the notification carried the
-Answer action (`actions=1`). Why is not known. The change moves the chip to `ProgressStyle`, because the approval and
-working chips use it and buttons were seen on the working chip, and adds the field to questions with choices.
+**State:** on branch `claude/chip-answer-field`. On an Android 16 Xiaomi phone (HyperOS) the expanded chip and the
+shade's chip card draw no field for a question, although the notification carries the action. Moving the chip to
+`ProgressStyle` did not help (seen on that phone). The same `answerAction` does draw on the `Needs you` card, so the
+promoted card is what drops it. Whether HyperOS drops only `RemoteInput` actions or every action on this card is not
+established. The chip now opens `AnswerBox` when tapped, which doesn't depend on that.
 
-**Next:** install a build and ask a question with no choices, then one with three. If the field still doesn't show,
-compare a plain action, one with `setAuthenticationRequired` and one with a `RemoteInput`. If HyperOS draws no
-`RemoteInput` on this chip, make Answer a plain button that opens a small answer box, still behind an unlock.
+**Next:** on a phone, tap the expanded chip with a question open: the box opens, a typed answer and a choice reach the
+chat, Back leaves the question open. Note whether the Answer button is drawn on the chip. Check a locked phone asks for
+the unlock first.
 
-**Needs a real phone:** yes. The fix has not been seen working: adb installs failed on that phone with
-`INSTALL_FAILED_USER_RESTRICTED: Invalid apk`.
+**Needs a real phone:** yes. Installs from adb failed on that phone with `INSTALL_FAILED_USER_RESTRICTED: Invalid apk`;
+the owner installs test builds from File Manager.
 
-**Links:** `android/src/com/omarqaterge/hermesmobile/HermesService.java` (`askNotification`), spec section 4.3.
+**Links:** `android/src/com/omarqaterge/hermesmobile/AnswerBox.java`, `HermesService.askNotification`, spec section 4.3.

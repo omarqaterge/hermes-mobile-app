@@ -1237,8 +1237,8 @@ public class HermesService extends Service {
     }
 
     /** A question from Hermes, as a Live Update: "Answer?" chip; expanded, the question in bold, the choices listed,
-     * up to two choice buttons and always a text field (with every choice as a quick reply when they don't all fit).
-     * Android 16 uses ProgressStyle, like the approval and working chips, whose buttons HyperOS's island draws. */
+     * up to two choice buttons and Answer. HyperOS drops a RemoteInput field from a promoted card (the same action
+     * draws on the Needs you card), so tapping the card or Answer opens AnswerBox, which has the field. */
     Notification askNotification(String sub) {
         JSONObject a = pendingAsk;
         String session = a.optString("session", "");
@@ -1258,31 +1258,35 @@ public class HermesService extends Service {
             t.append("\n\u25CB ").append(c);
             t.setSpan(new android.text.style.ForegroundColorSpan(GOLD), st + 1, st + 2, 0);
         }
+        if (single) t.append("\nTap to answer");
+        PendingIntent box = answerBox(session, q, choices);
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setColor(GOLD)
                 .setContentTitle("Hermux asks")
                 .setContentText(t)
                 .setSubText(sub)
+                .setStyle(new Notification.BigTextStyle().bigText(t))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
-                .setContentIntent(openApp(session));
-        if (Build.VERSION.SDK_INT >= 36) {
-            b.setStyle(new Notification.ProgressStyle()
-                    .setStyledByProgress(false)
-                    .setProgressSegments(java.util.List.of(new Notification.ProgressStyle.Segment(100).setColor(GOLD)))
-                    .setProgress(100));
-        } else {
-            b.setStyle(new Notification.BigTextStyle().bigText(t));
-        }
+                .setContentIntent(single ? box : openApp(session));
         if (single) {
-            // A notification shows three actions at most: keep the last one for the text field.
+            // A notification shows three actions at most: keep the last one for Answer.
             for (int k = 0; k < Math.min(2, choices.size()); k++) b.addAction(choiceAction(session, choices.get(k), k));
-            b.addAction(answerAction("ask", session, "Answer", choices.size() > 2 ? new java.util.ArrayList<CharSequence>(choices) : null));
+            b.addAction(new Notification.Action.Builder(null, colored("Answer", GOLD), box).build());
         }
         promote(b, "Answer?");
         return b.build();
+    }
+
+    /** Opens AnswerBox on this question. An activity, so a locked phone asks for the unlock before it shows. */
+    PendingIntent answerBox(String session, String question, java.util.ArrayList<String> choices) {
+        Intent i = new Intent(this, AnswerBox.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(AnswerBox.EXTRA_SESSION, session == null ? "" : session)
+                .putExtra(AnswerBox.EXTRA_QUESTION, question)
+                .putStringArrayListExtra(AnswerBox.EXTRA_CHOICES, choices);
+        return PendingIntent.getActivity(this, ("box:" + session).hashCode(), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     /** A button that answers the open question with one fixed choice. */

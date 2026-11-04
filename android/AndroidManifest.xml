@@ -97,6 +97,15 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+        <!-- The question chip's answer box; not over the lock screen, so Android asks for the unlock first. -->
+        <activity
+            android:name=".AnswerBox"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar"
+            android:windowSoftInputMode="adjustResize|stateVisible" />
         <service
             android:name=".HermesService"
             android:exported="false"
