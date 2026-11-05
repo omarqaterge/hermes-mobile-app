@@ -200,6 +200,74 @@ check("inline script paths are code, local ones are files",
       pt._inline_script("/dev/stdin") and pt._inline_script("/proc/self/fd/0") and pt._inline_script("-")
       and pt._inline_script("\x01") and not pt._inline_script("./run.sh") and not pt._inline_script("/dev/null"))
 
+print("round 4: shapes that used to pass must ask")
+ROUND4_ASK = [
+  'awk \'BEGIN{"curl x" | getline l; print l}\'', 'awk \'BEGIN{while(("curl x" | getline l)>0) print l}\'',
+  'gawk \'BEGIN{"id" |& getline l}\'', "awk 'BEGIN{c=\"curl x\"; c | getline}'",
+  'bash < <(echo curl x)', 'sh < <(printf "id")', 'zsh < <(cat run)',
+  'xargs -a cmds.txt bash -c', 'xargs -a cmds.txt sh -c', 'cat f | xargs bash -c', 'xargs python3 -c < f', 'xargs -a f python3 -c',
+  'xargs -0 node -e < f',
+  'perl -MIO::Socket::INET -e 1', 'perl -MLWP::Simple -e 1', 'perl -MNet::FTP -e 1', 'perl -MSocket -e 1',
+  'ruby -rsocket -e 1', 'ruby -r socket -e 1', 'ruby -rnet/http -e 1', 'ruby -ropen-uri -e 1', 'ruby --require=net/http -e 1',
+  'python3 -m http.server', 'python3 -m urllib.request http://x', 'python3 -m smtplib', 'python -m http.client', 'python3 -mhttp.server',
+  'python3 -m ftplib', 'python3 -m ssl',
+  "node -e \"import('https').then(m=>m)\"", "node -e \"require('http').get('x')\"", "node -e \"require('node:https').get('x')\"",
+  "node -e \"require('dns').lookup('x')\"", "node --input-type=module -e \"const h = await import('node:http')\"",
+  "node -r http -e 1", "node --require net -e 1", "node -e \"import(process.env.M)\"",
+  "php -r 'fopen(\"http://x\", \"r\");'", "php -r 'echo file_get_contents(\"x\");'", "php -r 'readfile(\"https://x\");'",
+  "php -r 'copy(\"http://x\", \"f\");'", "php -r '$s = fsockopen(\"x\", 80);'",
+  "python3 -c 'from os import system as s; s(\"id\")'", "python3 -c 'import pandas as pd; pd.read_csv(\"http://x/a.csv\")'",
+  "python3 -c 'from urllib.request import urlretrieve as g; g(1)'",
+]
+for c in ROUND4_ASK:
+    check("asks: " + c.split("\n")[0][:70], asks("terminal", {"command": c}), c)
+ROUND4_CODE_ASK = [
+  "from os import system as s\ns('id')", "from os import popen as p", "from os import (\n    getcwd,\n    system as run,\n)",
+  "from os import *", "from os import execv", "from posix import system as s", "from os import kill",
+  "import os as o\no.system('id')", "from socket import socket as S", "from subprocess import Popen as P",
+  "from urllib.request import urlopen as u", "from urllib.request import urlretrieve as u", "import urllib.request as ur",
+  "import pandas as pd\npd.read_csv('http://x/a.csv')", "import pandas as pd\nu = 'https://x/a.csv'\npd.read_csv(u)",
+  "import pandas as pd\npd.read_json('https://x/a.json')", "numpy.loadtxt('https://x/a.txt')", "cv2.VideoCapture('http://x/v')",
+  "import numpy\nnumpy.genfromtxt('ftp://x/a')", "download('https://x/a.zip')", "fopen('http://x', 'r')",
+  "import importlib as il\nil.import_module('s'+'ocket')", "from requests import get as g",
+]
+for code in ROUND4_CODE_ASK:
+    check("execute_code asks: " + code.split("\n")[0][:60], asks("execute_code", {"code": code}), code)
+print("round 4: their harmless neighbours and the false asks must not ask")
+ROUND4_QUIET = [
+  'git submodule status', 'git submodule', 'git submodule summary', 'git submodule status --recursive', 'git difftool', 'git difftool HEAD~1',
+  'git difftool --staged', 'less +F app.log', 'less +G f', 'less +/word f', 'less +5 f', 'man -P cat ls', 'man -Pcat ls', 'man --pager=less ls',
+  'man --pager less ls', 'tar -I zstd -cf a.tzst d', 'tar -I zstd -xf a.tzst', 'tar --use-compress-program=zstd -xf a', "tar -I 'pigz -p 4' -cf a d",
+  'tar -I xz -cf a d', 'tar -Izstd -xf a', 'vim -c wq f', 'vim -c q', 'vim +10 f', 'vim -c "set number" f', 'vim -c 42 f', 'vi -c wq f', 'nvim -c qa',
+  'vim +wq f', 'vim -c "syntax on" f',
+  "awk '{print $1}' f", 'awk \'BEGIN{while((getline l < "f")>0) print l}\'', "awk 'BEGIN{getline; print}' f", "awk '/a|b/ {print}' f",
+  'bash < script.sh', 'sh < setup.sh', 'sort < <(ls)', 'cat < <(ls)', 'diff <(ls a) <(ls b)', 'xargs -a f echo', 'xargs -a f ls -l', 'xargs -a f bash script.sh',
+  'xargs -a f bash -c "echo hi"', 'python3 -m pytest', 'python3 -m json.tool f', 'python3 -m venv .v', 'python3 -m pip list', 'python3 -m unittest',
+  'python3 -m http_helper', 'perl -MData::Dumper -e 1', 'perl -MList::Util=sum -e 1', 'perl -MPOSIX -e 1', 'ruby -rjson -e 1', 'ruby -r json -e 1',
+  'ruby -rset -e 1', 'node -r ./setup.js x.js', "node -e \"require('fs').readFileSync('f')\"", "node -e \"import('fs')\"",
+  "node -e \"console.log(require('path').join('a','b'))\"", "php -r 'echo 1;'", "php -r 'echo strlen(\"x\");'", "php -r 'fopen(\"f.txt\", \"r\");'",
+  "python3 -c 'from os import path; print(path.sep)'", "python3 -c 'from os import getcwd; print(getcwd())'",
+  "python3 -c 'import pandas as pd; pd.read_csv(\"data.csv\")'",
+]
+for c in ROUND4_QUIET:
+    check("no ask: " + c.split("\n")[0][:70], not asks("terminal", {"command": c}), c)
+ROUND4_CODE_QUIET = [
+  "from os import path\nprint(path.sep)", "from os import getcwd, listdir\nprint(getcwd())", "from os import environ as e\nprint(e.get('HOME'))",
+  "import pandas as pd\npd.read_csv('data.csv')", "import pandas as pd\ndf = pd.read_json('local.json')", "print('see https://example.com/docs')",
+  "url = 'https://example.com'\nprint(len(url))", "import numpy\nnumpy.loadtxt('a.txt')", "d = {}\nd.get('k')", "open('notes.txt').read()",
+]
+for code in ROUND4_CODE_QUIET:
+    check("execute_code, no ask: " + code.split("\n")[0][:60], not asks("execute_code", {"code": code}), code)
+check("a vim command that runs a program still asks", all(asks("terminal", {"command": c}) for c in (
+    "vim -c '!id' f", "vim -c 'r !id' f", "vim -c 'wq|!id' f", "vim +'!id' f", "vim -c 'source x' f", "vim -S x f", "vim -es f", "vim -c 'set shell=x|!id'")))
+check("a tar program that is not a compressor still asks", all(asks("terminal", {"command": c}) for c in (
+    "tar -I 'sh -c id' -cf a d", "tar -I curl -xf a", "tar --use-compress-program='zstd;id' -xf a", "tar -I 'zstd $(id)' -xf a", "tar -F x -cf a d")))
+check("man and less with a program still ask", all(asks("terminal", {"command": c}) for c in (
+    "man -P 'sh -c id' ls", "man --pager='curl x' ls", "man -H curl ls", "less '+!id' f", "less '+|cmd' f", "less +'!id' f")))
+check("git submodule update, init, add, sync and foreach still ask; so does difftool -x", all(asks("terminal", {"command": c}) for c in (
+    "git submodule update --init", "git submodule add http://x/r", "git submodule sync", "git submodule foreach 'curl x'",
+    "git difftool -x 'curl x'", "git difftool --extcmd=curl")))
+
 print("execute_code is Python, not shell")
 for code in ["host = 'a'\nlinks = []\nprint(host, links)", "n_requests = 3\nprint(n_requests)", "socket_path = 'a'",
              "print(sum(range(3)))", "open('f').read()", "ping = 1", "print(sum(range(5)))", "open('a').read()",
@@ -295,10 +363,23 @@ for junk in ("{not json", "[]", '{"chats": 5}', '{"chats": {"c1": "x"}}', ""):
     pt._mem.clear()
     pt.PATH.write_text(junk)
     pt._cache = (None, {})
-    check(f"broken file {junk[:14]!r}: no entries, no crash", pt.check("terminal", {"command": "curl http://x"}, "c1") is None)
+    check(f"damaged file {junk[:14]!r}: every chat counts as having read (fail closed), no crash",
+          asks("terminal", {"command": "curl http://x"}, "c1") and asks("terminal", {"command": "curl http://x"}, "never-seen")
+          and pt.has_read("anyone") and not pt.has_read(""))
+    check(f"damaged file {junk[:14]!r}: ordinary commands still run", pt.check("terminal", {"command": "ls"}, "c1") is None)
+    check(f"damaged file {junk[:14]!r}: adopt reports nothing", pt.adopt(["c1", "x"]) == [])
 pt.PATH.write_text("{broken")
 pt.mark("c3")
-check("marking over a broken file works", json.loads(pt.PATH.read_text())["chats"].keys() == {"c3"})
+check("marking over a damaged file leaves it alone (fail closed until it is deleted)", pt.PATH.read_text() == "{broken" and "c3" in pt._mem)
+pt.PATH.unlink()
+pt._cache = (None, {})
+check("deleting the damaged file starts over: nobody has read", not pt.has_read("never-seen"))
+pt._mem.clear()
+pt.PATH.write_text(json.dumps({"chats": {}}))
+pt._cache = (None, {})
+check("an empty but valid file means nobody read", not pt.has_read("never-seen") and pt.check("terminal", {"command": "curl http://x"}, "never-seen") is None)
+pt.PATH.unlink()
+pt._cache = (None, {})
 reset()
 for i in range(pt.MAX_CHATS + 30):
     pt.mark(f"chat{i}")
@@ -344,6 +425,7 @@ check("fallback: a different chat id is not blocked", init._taint_directive("ter
 check("fallback: a local tool is not blocked there", init._taint_directive("read_file", {}, "c-old", "") is None)
 check("fallback: a chat not in the file is not blocked", init._taint_directive("terminal", {"command": "ls"}, "c-new", "") is None)
 pt.PATH.unlink()
+init._READ_CHATS.clear()
 check("fallback: no state file means nobody has read", init._taint_directive("terminal", {"command": "ls"}, "c-old", "") is None)
 for label, content in (("not JSON", "{oops"), ("no chats key", "{}"), ("chats is a list", '{"chats": []}')):
     pt.PATH.write_text(content)
@@ -492,6 +574,154 @@ check("all 360 entries from 6 processes are in the file",
       len(saved) == 360 and all(f"p{k}-{i}" in saved for k in range(6) for i in range(60)), str(len(saved)))
 check("a lock file sits next to the state file", pt.PATH.with_name(pt.PATH.name + ".lock").exists())
 check("the cap is 2000", pt.MAX_CHATS == 2000)
+
+print("a chat that comes back under a new id is marked and reported to the app")
+pd = sys.modules["hm_phone_data"] if "hm_phone_data" in sys.modules else init._phone_data()
+REPORTS = []
+REPORT_OK = [True]
+_real_report = pd.report_taint
+import time as _t
+
+
+def fake_report(ids):
+    REPORTS.append(list(ids))
+    if REPORT_OK[0] == "raise":
+        raise RuntimeError("boom")
+    return REPORT_OK[0] is True
+
+
+pd.report_taint = fake_report
+
+
+def settle():
+    """Wait for the report threads the hooks start."""
+    import threading
+    for th in threading.enumerate():
+        if th is not threading.main_thread() and th.daemon:
+            th.join(2)
+
+
+def fresh():
+    reset()
+    REPORTS.clear()
+    REPORT_OK[0] = True
+    init._ANCESTRY_SEEN.clear()
+    init._UNREPORTED.clear()
+
+
+fresh()
+hook_ids("phone_data", {"kind": "sms"}, "rt-1", "seg-1")
+settle()
+check("the read itself sends no taint report (the read request already carries the ids)", REPORTS == [])
+hook_ids("read_file", {"path": "f"}, "rt-1", "seg-2")   # compression: same runtime id, new stored id
+settle()
+check("the next tool call under the new stored id marks it", pt.has_read("seg-2"))
+check("and tells the app, once, with the new id", len(REPORTS) == 1 and "seg-2" in REPORTS[0] and "seg-1" not in REPORTS[0], str(REPORTS))
+hook_ids("read_file", {"path": "f"}, "rt-1", "seg-2")
+settle()
+check("a second call under the same ids reports nothing more", len(REPORTS) == 1)
+fresh()
+hook_ids("phone_data", {"kind": "sms"}, "rt-1", "seg-1")
+init._on_session_end(session_id="seg-2", turn_id="t", completed=True)   # no tool call: the turn ends under the new id
+settle()
+check("without a runtime id a turn end alone cannot link a new id", not pt.has_read("seg-2") and REPORTS == [])
+tok = sc._SESSION_UI_SESSION_ID.set("rt-1")
+init._on_session_end(session_id="seg-3", turn_id="t", completed=True)
+sc._SESSION_UI_SESSION_ID.reset(tok)
+settle()
+check("on_session_end under the runtime id marks the new stored id and reports it", pt.has_read("seg-3") and any("seg-3" in r for r in REPORTS), str(REPORTS))
+fresh()
+hook_ids("phone_data", {"kind": "sms"}, "rt-1", "seg-1")
+tok = sc._SESSION_UI_SESSION_ID.set("rt-1")
+init._on_session_start(session_id="seg-4")
+sc._SESSION_UI_SESSION_ID.reset(tok)
+settle()
+check("on_session_start under the runtime id does the same", pt.has_read("seg-4") and any("seg-4" in r for r in REPORTS), str(REPORTS))
+check("the plugin registers on_session_start", "ctx.register_hook(\"on_session_start\"" in open(os.path.join(PLUG, "__init__.py")).read())
+fresh()
+hook_ids("read_file", {"path": "f"}, "rt-clean", "clean-1")
+hook_ids("terminal", {"command": "ls"}, "rt-clean", "clean-2")
+init._on_session_end(session_id="clean-3", turn_id="t", completed=True)
+init._on_session_start(session_id="clean-3")
+settle()
+check("a chat that never read sends nothing and is not marked", REPORTS == [] and not pt.has_read("clean-2") and not pt.has_read("rt-clean"))
+# a state.db that shows the compression chain: found without any shared runtime id
+import sqlite3
+_dbp = tmp / "state.db"
+_c = sqlite3.connect(_dbp)
+_c.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, end_reason TEXT)")
+_c.executemany("INSERT INTO sessions VALUES (?,?,?)", [("old-1", None, "compression"), ("old-2", "old-1", "compression"), ("old-3", "old-2", None)])
+_c.commit()
+_c.close()
+pd._state_db = lambda: _dbp
+fresh()
+hook_ids("phone_data", {"kind": "sms"}, "rt-old", "old-1")
+hook_ids("read_file", {"path": "f"}, "rt-new", "old-3")   # runtime id changed too; only the database knows
+settle()
+check("a compression chain in the session database links both a new runtime id and a new stored id",
+      pt.has_read("old-3") and pt.has_read("old-2") and any("old-3" in r for r in REPORTS), str(REPORTS))
+del pd._state_db
+# the app refuses or is away: the ids are kept and sent again with the next report
+fresh()
+REPORT_OK[0] = False
+hook_ids("phone_data", {"kind": "sms"}, "rt-1", "seg-1")
+hook_ids("read_file", {"path": "f"}, "rt-1", "seg-2")
+settle()
+check("a report the app did not accept is kept", init._UNREPORTED == ["seg-2"] or "seg-2" in init._UNREPORTED, str(init._UNREPORTED))
+REPORT_OK[0] = True
+hook_ids("read_file", {"path": "f"}, "rt-1", "seg-3")
+settle()
+check("and sent again with the next one", any("seg-2" in r and "seg-3" in r for r in REPORTS[1:]) and init._UNREPORTED == [], str(REPORTS))
+fresh()
+REPORT_OK[0] = "raise"
+hook_ids("phone_data", {"kind": "sms"}, "rt-1", "seg-1")
+r = hook_ids("read_file", {"path": "f"}, "rt-1", "seg-2")
+settle()
+check("a report that raises never reaches the tool call", r is None and pt.has_read("seg-2"))
+check("adopt and _taint_sync never raise on odd input", pt.adopt(None) == [] and pt.adopt([None, 5, ""]) == [] and init._taint_sync(None) is None)
+pd.report_taint = _real_report
+
+print("the report to the app (phone_data.report_taint)")
+posted = []
+pd._post = lambda body, timeout: (posted.append(body), (200, {"ok": True}))[1]
+check("sends op taint with the ids", pd.report_taint(["a", "b"]) is True and posted[-1] == {"op": "taint", "chats": ["a", "b"]})
+posted.clear()
+many = [f"id-{i}" for i in range(40)] + ["x" * 129, "", None, 7, "id-0"]
+check("at most 16 per request, 128 characters, no empties or repeats",
+      pd.report_taint(many) is True and [len(b["chats"]) for b in posted] == [16, 16, 8] and all(len(i) <= 128 for b in posted for i in b["chats"]))
+posted.clear()
+check("nothing valid: nothing sent", pd.report_taint([]) is False and pd.report_taint(None) is False and pd.report_taint(["", 5]) is False and posted == [])
+pd._post = lambda body, timeout: (404, {})
+check("an older app (404) is False", pd.report_taint(["a"]) is False)
+pd._post = lambda body, timeout: (200, {"ok": False, "reason": "bad_request"})
+check("a refusal is False", pd.report_taint(["a"]) is False)
+pd._post = lambda body, timeout: None
+check("no answer is False", pd.report_taint(["a"]) is False)
+
+
+def _boom(body, timeout):
+    raise RuntimeError("x")
+
+
+pd._post = _boom
+check("a failing post never raises", pd.report_taint(["a"]) is False)
+
+print("the fallback (phone_taint.py cannot load) follows a changed id")
+init._phone_taint = broken
+init._READ_FILE = pt.PATH
+init._READ_CHATS.clear()
+pt.PATH.write_text(json.dumps({"chats": {"fb-old": 1.0}}))
+tokf = sc._SESSION_UI_SESSION_ID.set("fb-rt")
+check("fallback: the chat is found by its old stored id", init._taint_directive("terminal", {"command": "ls"}, "fb-old", "")["action"] == "block")
+check("fallback: and the runtime id joined the record", "fb-rt" in init._READ_CHATS and "fb-rt" in json.loads(pt.PATH.read_text())["chats"])
+check("fallback: so the same chat under a new stored id is still blocked",
+      init._taint_directive("terminal", {"command": "ls"}, "fb-new", "")["action"] == "block")
+sc._SESSION_UI_SESSION_ID.reset(tokf)
+init._READ_CHATS.clear()
+check("fallback: after a restart the new stored id is in the file", init._taint_directive("terminal", {"command": "ls"}, "fb-new", "")["action"] == "block")
+check("fallback: a different chat is not blocked", init._taint_directive("terminal", {"command": "ls"}, "fb-other", "") is None)
+pt.PATH.unlink()
+init._phone_taint = good
 
 print("prompt section")
 src = open(os.path.join(PLUG, "phone_data.py")).read()

@@ -346,6 +346,27 @@ def _chats(session_id: str = "", task_id: str = "") -> list:
     return out[:MAX_CHATS]
 
 
+def report_taint(ids: Any) -> bool:
+    """Tell the app that these chats have read phone data (a chat the plugin already marks got a new id, for example after a
+    context compression): `{"op":"taint","chats":[...]}`, 16 ids at a time, 128 characters each. The app only adds the ids
+    to its own record. True when the app accepted every batch; False (never raising, never logging an id) for no ids, no
+    answer, a refusal or an older app without the op."""
+    try:
+        out: list = []
+        for i in ids or ():
+            if isinstance(i, str) and i and len(i) <= MAX_CHAT_ID and i not in out:
+                out.append(i)
+        if not out:
+            return False
+        for k in range(0, len(out), MAX_CHATS):
+            res = _post({"op": "taint", "chats": out[k:k + MAX_CHATS]}, STATUS_TIMEOUT)
+            if not res or res[0] != 200 or res[1].get("ok") is not True:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def tool_handler(args: Dict[str, Any], session_id: str = "", task_id: str = "", **_: Any) -> str:
     kind: Any = ""
     try:
