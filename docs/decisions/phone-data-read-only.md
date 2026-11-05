@@ -100,7 +100,12 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
   sends the compression chain). Not covered: a link the page never saw (compressed on another device, page storage cleared). Round 4 adds the plugin's `taint` report for the compression case (below).
 - **Flooding.** (Replaced in round 4: nothing is ever evicted any more.) When the record is full a new id sets an overflow flag instead:
   every chat then counts as having read, until the user clears it in Settings → Phone data (behind the screen lock) or clears the app's data.
-  Asking about an id or a read naming it refreshes its age; one request adds at most 17 new ids. Refused reads are still recorded.
+  An id's age is not tracked (no times are kept, and nothing is evicted); one request adds at most 17 new ids. Refused reads are still recorded.
+  **Round 5:** if even the largest record (20,000 ids) is full, an id that has no room is dropped and a separate persisted "ids were lost" flag is set;
+  every chat counts as having read while it is set, "Allow more chats" never clears it, and only Forget does (Settings says "Some chats may not be
+  remembered. Everything stays protected until you Forget."). The record is saved at most once a second, and when the app pauses or the page reads it;
+  a crash can lose the last second of ids, which the plugin re-reports at its next tool call. The plugin looks up the compression chain on its background thread
+  (3 seconds at most), its state file sets its own full flag instead of dropping the oldest chat, and `vim -u NONE` no longer asks.
 - **Documents.** A saved document (Gallery, Files) is judged by its own chat, not the chat on screen. A document with no known chat is held once
   any read was recorded (so a phone that never used phone data sees no change).
 - **Links to other apps.** While blocked, a bare `mailto:`, `tel:`, `sms:`, `geo:`, `market:` or `intent:` link is refused natively; the
