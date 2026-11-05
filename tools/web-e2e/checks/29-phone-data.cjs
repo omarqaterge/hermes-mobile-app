@@ -41,7 +41,22 @@ module.exports = async t => {
               window.hermesPhoneData(id, pd.result)
             }, 40)
           },
-          phoneDataOpenSettings: key => window.__pdCalls.push({ key, settings: true })
+          phoneDataOpenSettings: key => window.__pdCalls.push({ key, settings: true }),
+          phoneDataOverflowed: key => !!pd.overflowed,
+          phoneDataAllowMore: (key, id) => {
+            window.__pdCalls.push({ key, allowMore: true })
+            setTimeout(() => {
+              if (pd.result === 'ok') pd.overflowed = false
+              window.hermesPhoneData(id, pd.result)
+            }, 20)
+          },
+          phoneDataForget: (key, id) => {
+            window.__pdCalls.push({ key, forget: true })
+            setTimeout(() => {
+              if (pd.result === 'ok') pd.overflowed = false
+              window.hermesPhoneData(id, pd.result)
+            }, 20)
+          }
         })
       }, pd)
     }
@@ -118,6 +133,45 @@ module.exports = async t => {
     await sleep(200)
     check((await calls(pg)).some(c => c.settings && c.key === 'K'), 'phone data: the row opens Android settings')
     await pg.close()
+  }
+  {
+    // the record of chats that read is full (overflow): two actions, Allow more chats and Forget (with a plain warning)
+    const none = await open(fresh({ switches: { master: true } }))
+    check((await none.getByText('Allow more chats').count()) === 0 && (await none.getByText('Forget which chats have read phone data').count()) === 0, 'phone data: no overflow rows while the record has room')
+    await none.close()
+    const pg = await open(fresh({ switches: { master: true }, overflowed: true }))
+    await row(pg, 'Allow more chats').waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: overflow shows Allow more chats'), () => check(false, 'phone data: overflow shows Allow more chats'))
+    check((await row(pg, 'Forget which chats have read phone data').count()) === 1, 'phone data: overflow shows Forget')
+    check((await pg.getByText(/makes room for 2000 more, keeps every chat it knows/).count()) > 0, 'phone data: Allow more says it keeps every chat')
+    // Forget asks first, in plain words, and does nothing on Cancel
+    await row(pg, 'Forget which chats have read phone data').click()
+    await pg.locator('.dialog').waitFor({ timeout: 3000 })
+    const msg = await pg.locator('.dialog').innerText()
+    check(/lose their protection/.test(msg), 'phone data: the Forget confirmation says chats lose their protection (' + msg.slice(0, 80).replace(/\n/g, ' ') + ')')
+    await pg.locator('.dialog button', { hasText: 'Cancel' }).click()
+    await sleep(200)
+    check(!(await calls(pg)).some(c => c.forget), 'phone data: Cancel on the Forget confirmation calls nothing')
+    // Allow more goes straight to the shell (screen lock first there), and the rows go away when the flag clears
+    await row(pg, 'Allow more chats').click()
+    await sleep(500)
+    const c = await calls(pg)
+    check(c.some(x => x.allowMore && x.key === 'K') && !c.some(x => x.forget), 'phone data: Allow more calls phoneDataAllowMore with the key and forgets nothing')
+    check((await pg.getByText('Allow more chats').count()) === 0, 'phone data: the overflow rows are gone once the flag clears')
+    await pg.close()
+    // Forget confirmed
+    const pf = await open(fresh({ switches: { master: true }, overflowed: true }))
+    await row(pf, 'Forget which chats have read phone data').click()
+    await pf.locator('.dialog').waitFor({ timeout: 3000 })
+    await pf.locator('.dialog button', { hasText: 'Forget' }).last().click()
+    await sleep(500)
+    check((await calls(pf)).some(x => x.forget && x.key === 'K') && (await pf.getByText('Allow more chats').count()) === 0, 'phone data: confirmed Forget calls phoneDataForget and the rows go')
+    await pf.close()
+    // a refused lock leaves the rows
+    const pc = await open(fresh({ switches: { master: true }, overflowed: true, result: 'cancel' }))
+    await row(pc, 'Allow more chats').click()
+    await pc.getByText('Not changed: confirm it’s you to change this').first().waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: a cancelled lock on Allow more shows Not changed'), () => check(false, 'phone data: a cancelled lock on Allow more shows Not changed'))
+    check((await pc.getByText('Allow more chats').count()) > 0, 'phone data: and the rows stay')
+    await pc.close()
   }
   {
     // permission removed by Android: shows off with the reason, turning on goes through the normal flow

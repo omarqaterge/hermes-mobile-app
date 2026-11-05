@@ -1,38 +1,39 @@
 package com.omarqaterge.hermesmobile;
 
 import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.function.LongSupplier;
 
 /**
  * The app's own record of which chats have asked to read phone data (docs/decisions/phone-data-read-only.md, "Chats that
- * have read phone data"). {@code POST /phonedata} adds the chat id of every read request, whatever its outcome, and the
- * page asks {@code phoneDataTainted(id)} before it draws a chat, so a chat whose {@code phone_data} call is not among the
- * items on screen (a long chat, a cached preview, a parent of a subagent that read) is still known. The agent cannot edit
- * it: it lives in the app's private preferences. Ids and the time each was last seen, never data.
+ * have read phone data"). {@code POST /phonedata} adds the chat id of every read request, whatever its outcome (and the
+ * plugin's {@code taint} op adds ids alone), and the page asks {@code phoneDataTainted(id)} before it draws a chat, so a
+ * chat whose {@code phone_data} call is not among the items on screen (a long chat, a cached preview, a parent of a
+ * subagent that read, a chat compressed while the app was away) is still known. The agent cannot edit it: it lives in the
+ * app's private preferences. Ids only, never data and never a time.
  *
- * <p>Flooding: the key holder can send reads with made-up chat ids. So an id seen within {@link #KEEP_MS} is never
- * evicted. When the record is full of such ids the new one is not stored; the record sets an {@code overflow} flag instead,
- * and from then on {@link #contains} answers true for every chat (fail closed) until the user clears it in Settings
- * ({@link #forgetAll}) or clears the app's data. An id's age is refreshed whenever the page asks about it or a read names
- * it. One request adds at most {@link #MAX_NEW} new ids. Plain Java (the persistence is a {@link Store}) so
- * tools/test_phone_data_chats.sh tests it on a JDK.
+ * <p>Flooding: the key holder can send reads with made-up chat ids. An id is NEVER evicted. The record starts with room for
+ * {@link #START_CAP} ids; the first new id past the cap sets the {@code overflow} flag instead of costing an old chat its
+ * protection, and from then on {@link #contains} answers true for every chat (fail closed). Ids that still arrive are kept
+ * (up to {@link #MAX_CAP}) so that nothing real is lost. The user clears the flag in Settings with {@link #allowMore}
+ * (raises the cap by {@link #STEP}, keeps every id, and clears the flag once the record fits) or {@link #forgetAll}
+ * (forgets every id: chats that read lose their protection). One request adds at most {@link #MAX_NEW} new ids. Plain Java
+ * (the persistence is a {@link Store}) so tools/test_phone_data_chats.sh tests it on a JDK.
  */
 final class PhoneDataChats {
-    static final int MAX = 2000;
+    /** The cap a fresh record starts with: more ids than this set the overflow flag. */
+    static final int START_CAP = 2000;
+    /** "Allow more chats" raises the cap by this many. */
+    static final int STEP = 2000;
+    /** The highest cap, and the most ids ever kept (a record is ids only: a few hundred KB at most). */
+    static final int MAX_CAP = 20000;
     static final int MAX_ID = 128;
     /** The most ids one read request may add besides its own session (the chat and its ancestors, compression chain included). */
     static final int MAX_LIST = 16;
     /** The most NEW ids one request may add (its session and its list). */
     static final int MAX_NEW = MAX_LIST + 1;
-    /** An id seen within this long is never evicted: 30 days. */
-    static final long KEEP_MS = 30L * 24 * 60 * 60 * 1000;
-    /** A refresh from the page is written to the store at most this often per id: one day. */
-    private static final long TOUCH_SAVE_MS = 24L * 60 * 60 * 1000;
-    private static final String HEADER = "v2 ";
+    private static final String HEADER = "v3 ";
+    private static final String HEADER_OLD = "v2 ";
 
     /** Where the record is kept: one text. */
     interface Store {
@@ -41,18 +42,13 @@ final class PhoneDataChats {
     }
 
     private final Store store;
-    private final LongSupplier clock;
-    private final LinkedHashMap<String, Long> ids = new LinkedHashMap<>(); // least recently seen first -> last seen (ms)
+    private final LinkedHashSet<String> ids = new LinkedHashSet<>();
+    private int cap = START_CAP;
     private boolean overflow;
     private boolean loaded;
 
     PhoneDataChats(Store store) {
-        this(store, System::currentTimeMillis);
-    }
-
-    PhoneDataChats(Store store, LongSupplier clock) {
         this.store = store;
-        this.clock = clock;
     }
 
     /** A usable id: a non-empty string of at most 128 characters with no control characters or spaces (it is stored one per line). */
@@ -77,31 +73,29 @@ final class PhoneDataChats {
             // nothing stored, or unreadable: start empty
         }
         if (t == null) return;
-        long now = clock.getAsLong();
         for (String line : t.split("\n")) {
-            if (line.startsWith(HEADER)) {
-                if (line.equals(HEADER + "overflow")) overflow = true;
+            if (line.startsWith(HEADER) || line.startsWith(HEADER_OLD)) {
+                String[] p = line.substring(3).trim().split(" ");
+                if (p.length > 0 && p[0].equals("overflow")) overflow = true;
+                if (line.startsWith(HEADER) && p.length > 1) {
+                    try {
+                        cap = Math.max(START_CAP, Math.min(MAX_CAP, Integer.parseInt(p[1])));
+                    } catch (NumberFormatException ignored) {
+                        // keep the start cap
+                    }
+                }
                 continue;
             }
-            int tab = line.indexOf('\t');
+            int tab = line.indexOf('\t'); // an older record held "id<TAB>time"
             String id = tab < 0 ? line : line.substring(0, tab);
-            if (!validId(id)) continue;
-            long seen = now; // an older record without times: counted as seen now
-            if (tab >= 0) {
-                try {
-                    seen = Math.min(now, Long.parseLong(line.substring(tab + 1)));
-                } catch (NumberFormatException ignored) {
-                    // keep now
-                }
-            }
-            ids.put(id, seen);
+            if (validId(id) && ids.size() < MAX_CAP) ids.add(id);
         }
-        if (ids.size() > MAX) overflow = true; // a record from a build with another bound: fail closed
+        if (ids.size() > cap) overflow = true; // more than the cap allows: fail closed, keep every id
     }
 
     private void save() {
-        StringBuilder b = new StringBuilder(HEADER).append(overflow ? "overflow" : "ok");
-        for (Map.Entry<String, Long> e : ids.entrySet()) b.append('\n').append(e.getKey()).append('\t').append(e.getValue());
+        StringBuilder b = new StringBuilder(HEADER).append(overflow ? "overflow " : "ok ").append(cap);
+        for (String id : ids) b.append('\n').append(id);
         try {
             store.save(b.toString());
         } catch (Throwable ignored) {
@@ -109,19 +103,9 @@ final class PhoneDataChats {
         }
     }
 
-    /** Make room for one new id: drop ids not seen for {@link #KEEP_MS}, oldest first. False when every id is younger. */
-    private boolean makeRoom(long now) {
-        Iterator<Map.Entry<String, Long>> it = ids.entrySet().iterator();
-        while (ids.size() >= MAX && it.hasNext()) {
-            if (now - it.next().getValue() < KEEP_MS) break; // the rest are younger
-            it.remove();
-        }
-        return ids.size() < MAX;
-    }
-
     /**
      * Remember these chats: the session, and the extra list when it is a list (each valid entry; up to {@link #MAX_LIST}).
-     * At most {@link #MAX_NEW} new ids per call. Never throws.
+     * At most {@link #MAX_NEW} new ids per call. Nothing is ever removed. Never throws.
      */
     synchronized void record(Object session, Object chats) {
         try {
@@ -135,24 +119,18 @@ final class PhoneDataChats {
                     if (validId(o)) add.add((String) o);
                 }
             }
-            long now = clock.getAsLong();
             boolean changed = false;
             int fresh = 0;
             for (String id : add) {
-                if (ids.containsKey(id)) {
-                    long seen = ids.remove(id); // seen again: the newest
-                    ids.put(id, now);
-                    if (now - seen >= TOUCH_SAVE_MS) changed = true; // the stored time is refreshed at most daily
-                    continue;
-                }
+                if (ids.contains(id)) continue;
                 if (fresh >= MAX_NEW) continue;
                 fresh++;
-                if (!makeRoom(now)) {
-                    overflow = true; // full of recent ids: remember that something was lost, never drop a real chat
+                if (ids.size() >= cap && !overflow) {
+                    overflow = true; // the record is full: every chat now counts as having read
                     changed = true;
-                    continue;
                 }
-                ids.put(id, now);
+                if (ids.size() >= MAX_CAP) continue; // the hard bound: the flag stays on, only Forget clears it
+                ids.add(id);
                 changed = true;
             }
             if (changed) save();
@@ -161,18 +139,28 @@ final class PhoneDataChats {
         }
     }
 
-    /** Has this chat id asked to read phone data? True for every valid id while the overflow flag is set. Refreshes the id's age. */
+    /**
+     * The plugin's {@code taint} op: these chats have read (a chat it already knows got a new id). Adds ids only. False when
+     * {@code chats} is not a list with at least one valid id among its first {@link #MAX_LIST} entries (a bad body).
+     */
+    synchronized boolean taint(Object chats) {
+        if (!(chats instanceof List)) return false;
+        int n = 0;
+        boolean any = false;
+        for (Object o : (List<?>) chats) {
+            if (n++ >= MAX_LIST) break;
+            if (validId(o)) any = true;
+        }
+        if (!any) return false;
+        record(null, chats);
+        return true;
+    }
+
+    /** Has this chat id asked to read phone data? True for every valid id while the overflow flag is set. */
     synchronized boolean contains(String id) {
         if (!validId(id)) return false;
         load();
-        if (overflow) return true;
-        Long seen = ids.get(id);
-        if (seen == null) return false;
-        long now = clock.getAsLong();
-        ids.remove(id);
-        ids.put(id, now);
-        if (now - seen >= TOUCH_SAVE_MS) save();
-        return true;
+        return overflow || ids.contains(id);
     }
 
     /** Has any read ever been recorded (or lost to overflow)? For documents whose chat is unknown. */
@@ -186,7 +174,25 @@ final class PhoneDataChats {
         return overflow;
     }
 
-    /** The user chose to clear the record (Settings): the overflow flag and every id go. */
+    synchronized int cap() {
+        load();
+        return cap;
+    }
+
+    /**
+     * The user chose "Allow more chats" (Settings): the cap grows by {@link #STEP} up to {@link #MAX_CAP}, every id stays, and
+     * the flag clears when the record fits under the new cap. False when the cap was already at the maximum.
+     */
+    synchronized boolean allowMore() {
+        load();
+        if (cap >= MAX_CAP) return false;
+        cap = Math.min(MAX_CAP, cap + STEP);
+        if (overflow && ids.size() <= cap) overflow = false;
+        save();
+        return true;
+    }
+
+    /** The user chose to forget the record (Settings): every id and the overflow flag go; chats that read lose their protection. */
     synchronized void forgetAll() {
         load();
         ids.clear();

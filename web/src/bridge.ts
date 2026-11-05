@@ -73,7 +73,8 @@ interface AndroidBridge {
   phoneDataTainted?(id: string): boolean // the app's own record: did a phone_data read request for this chat id (live session, stored chat or an ancestor) ever reach it? Answered at once
   phoneDataAnyRead?(): boolean // has the app's record of chats that read phone data anything in it (or an overflow)? For a saved document whose chat is unknown
   phoneDataOverflowed?(): boolean // a flood of read requests filled the record: every chat counts as having read until cleared (Settings → Phone data)
-  phoneDataForget?(id: number): void // clear the record and the overflow flag; asks for the screen lock in the shell; answers window.hermesPhoneData(id, 'ok' | 'cancel' | 'nolock')
+  phoneDataForget?(id: number): void // clear the record and the overflow flag (chats that read lose their protection); asks for the screen lock in the shell; answers window.hermesPhoneData(id, 'ok' | 'cancel' | 'nolock')
+  phoneDataAllowMore?(id: number): void // raise the record's cap by 2000 (max 20000) and clear the overflow flag, forgetting nothing; same lock and answer
   remoteBlock?(on: boolean): void // the chat on screen has (true) or hasn't read phone data: while true the shell refuses every request to the internet (RemoteGuard.java)
   remoteAllowOnce?(url: string): void // the user tapped "Tap to load" for exactly this address: the shell lets that one request through, once, for 60 s
 }
@@ -533,6 +534,22 @@ export function phoneDataForget(): Promise<PhoneDataResult> {
     phoneWaiting.set(id, resolve)
     try {
       b.phoneDataForget!(id)
+    } catch {
+      phoneWaiting.delete(id)
+      resolve('cancel')
+    }
+  })
+}
+
+/** Raise the cap of the app's record by 2000 (at most 20000) and clear its overflow flag; nothing is forgotten. The shell asks for the screen lock first. */
+export function phoneDataAllowMore(): Promise<PhoneDataResult> {
+  const b = window.HermesAndroid
+  if (!b?.phoneDataAllowMore) return Promise.resolve('cancel')
+  return new Promise(resolve => {
+    const id = ++phoneSeq
+    phoneWaiting.set(id, resolve)
+    try {
+      b.phoneDataAllowMore!(id)
     } catch {
       phoneWaiting.delete(id)
       resolve('cancel')
