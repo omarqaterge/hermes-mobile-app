@@ -97,8 +97,8 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
   (`PhoneDataChats`), the request filter (`RemoteGuard`) and the page's address dialogs.
 - **Lineage.** The page asks the record about every id of a chat it knows (stored id, live id and the links it has seen: a resume, the
   session list, a compression, a `session.info`), kept in `hm.lineage.v1`. The `chats` list a read may carry is now up to 16 entries (the plugin
-  sends the compression chain). Not covered: a link the page never saw (compressed on another device, page storage cleared).
-- **Flooding.** An id seen within 30 days is never evicted. When the record is full of such ids a new one sets an overflow flag instead:
+  sends the compression chain). Not covered: a link the page never saw (compressed on another device, page storage cleared). Round 4 adds the plugin's `taint` report for the compression case (below).
+- **Flooding.** (Replaced in round 4: nothing is ever evicted any more.) When the record is full a new id sets an overflow flag instead:
   every chat then counts as having read, until the user clears it in Settings → Phone data (behind the screen lock) or clears the app's data.
   Asking about an id or a read naming it refreshes its age; one request adds at most 17 new ids. Refused reads are still recorded.
 - **Documents.** A saved document (Gallery, Files) is judged by its own chat, not the chat on screen. A document with no known chat is held once
@@ -114,7 +114,7 @@ Added 2026-11-04 after an independent review of the first version. The page side
 **Which chat counts as read.** A chat is known by two ids: the gateway's runtime id (new after a gateway restart or a
 resume) and the agent's stored id (kept by a resume, replaced by a context compression). Both are remembered, and when a
 call matches one the other is added, so a restart plus resume, or a compression, keeps the chat marked. One case is not
-covered: both ids changing before any tool call. The state file is locked while it is written, and holds at most 2000
+covered: both ids changing before any tool call (the session database's compression chain, added in round 4, covers it when it shows the link). The state file is locked while it is written, and holds at most 2000
 chats.
 
 **Subagents.** Hermes tells the plugin who spawned whom (`subagent_start` carries the parent's and the child's stored
@@ -171,7 +171,8 @@ because Hermes offers no way to switch that choice off; it is harmless but usele
   was known to the app as segment 1 only, while the page asked about segment 2. A read's `chats` now follows each id (the
   chat and its subagent parents) with the segments a context compression rotated away from, nearest first, read from the
   agent's `state.db` (`parent_session_id` while the parent ended by compression; any failure gives none). At most 16 ids
-  (the app takes 16), the nearest first.
+  (the app takes 16), the nearest first. **This only covers a read made after the compression.** A compression that comes
+  after the read was not covered by this; round 4 below closes that gap as far as it can be closed.
 - **More shapes ask.** A shell or interpreter reading code from `/dev/stdin`, `/proc/self/fd/N`, `-` or `<(...)`; `xargs`
   feeding `sh -c`; the wrappers `torsocks`, `proxychains`, `firejail`, `fakeroot`, `faketime`, `runuser` (`sudo -u`, `doas`
   and `su -c` were read already); `git -c` keys that run a program; `sqlite3 .shell`; `vim`/`vi`/`nvim -c`; `gdb -ex`;
@@ -185,3 +186,37 @@ because Hermes offers no way to switch that choice off; it is harmless but usele
   can rewrite `phone_taint.py`, `phone-read.json` or a boot script, and a script file it wrote and then runs is not read.
   The plugin's protection is a speed bump. The real enforcement is the native record and filter in the app, which the
   plugin cannot edit.
+
+**Update 2026-11-05 (round 4, from a final review).**
+
+- **The plugin's asks are a speed bump; the app is the enforcement.** In plain words: the agent runs on the phone and has
+  `write_file`, so it can rewrite the plugin's files, its state file or a boot script, and a determined or tricked agent can
+  get around any list of commands. The plugin's questions only slow a careless run down. What actually holds is in the app,
+  where the agent cannot reach: its own record of chats that read (`PhoneDataChats`), the request filter (`RemoteGuard`) and the
+  page's address and image dialogs. Everything the plugin tells the app only makes the app stricter.
+- **Compression while the app isn't watching.** A chat that read in segment 1 and was compressed by Hermes to segment 2 has a
+  new stored id that the page, opening it from the chat list, may not be able to link to segment 1. At the pinned Hermes
+  (`b8a8be185`) the plugin API has `on_session_start`, `on_session_end`, `on_session_finalize` and `on_session_reset` hooks,
+  but none fires at the rotation itself (`conversation_compression.py` mints the new id and sets `agent.session_id`; the
+  context engine's own `on_session_start` is not a plugin hook), and `session.list` rows carry only `id` (no parent, no
+  `resolved_id`; only a title lookup returns `resolved_id`), while resuming a tip names no parent. So the plugin acts at the first
+  moment it sees the new id: the next tool call, `on_session_start` or `on_session_end` (each carries the current id), where it
+  links the new stored id to the chat through the shared runtime id (or the session database's compression chain), marks it,
+  and sends the app a keyed `{"op":"taint","chats":[...]}` on `POST /phonedata`. The app only adds those ids to its record,
+  without a grant and without changing anything else. What is covered: a chat compressed while the plugin runs. What is not: a
+  chat compressed on another device, or while the plugin was down, whose link neither the session database nor the page's
+  lineage (`lineage.ts`, which records every link it is shown: a resume's requested and resumed ids, list rows' `id`,
+  `resolved_id`, `parent_session_id`) ever shows. At the pin that gap is covered only by the page's lineage.
+- **The record never evicts.** Round 3's "not evicted within 30 days" still let a key holder push a real chat out with about 118
+  fake refused reads after a month. Now no id is ever dropped. The record starts with room for 2000 ids; the first id past that
+  sets the overflow flag (every chat counts as having read) and later ids are still kept, up to 20000. Settings → Phone data (behind the
+  screen lock) offers "Allow more chats" (room for 2000 more, up to 20000; forgets nothing; clears the flag once everything fits)
+  and "Forget" (clears the record; its confirmation says plainly that chats that read phone data lose their protection). Ids
+  are small and no time is stored, and the record is written only when an id is new, so the preferences write stays cheap.
+- **More commands ask**, and a few false asks stopped (see the spec, 5.1): `"cmd" | getline` in awk, `bash < <(...)`,
+  `xargs ... bash -c` / `python3 -c` fed from input, network libraries loaded by interpreter flags (`perl -M`, `ruby -r`,
+  `node -r`) and `python -m` of network modules, `node -e` with `import(` / `require(` of a network module, PHP `fopen("http`,
+  `file_get_contents`, pandas-style readers given a web address and aliased process imports in `execute_code`. No longer asked:
+  `git submodule status`, plain `git difftool`, `less +F`, `man -P cat`, `tar -I zstd`, `vim -c wq`.
+- **A damaged state file fails closed in the module too** (every chat counts as having read, as the fallback already did), and the
+  fallback follows a chat whose stored id changed through the same state file.
