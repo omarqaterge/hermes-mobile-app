@@ -92,6 +92,8 @@ class Fake(BaseHTTPRequestHandler):
                 return self._reply({"ok": True, "ready": False, "master": False, "kinds": {}})
             return self._reply({"ok": True, "ready": True, "master": True, "kinds": APP["kinds"],
                                          "locked": APP.get("locked", False)})
+        if body.get("op") == "taint":
+            return self._reply(APP.get("taint", {"ok": True}), APP.get("taint_code", 200))
         r = dict(APP["read"])
         if r.get("ok") is True and "kind" not in r:
             r["kind"] = body.get("kind")
@@ -528,6 +530,38 @@ t = [x for x in reg["tools"] if x["name"] == "phone_data"]
 check("registered once, toolset canvas", len(t) == 1 and t[0]["toolset"] == "canvas" and t[0]["schema"]["name"] == "phone_data")
 s = [x for x in reg["sections"] if x[0] == "hermes-mobile.phone_data"]
 check("prompt section registered", len(s) == 1 and s[0][2] == "after_memory" and s[0][3] == 1000)
+
+# ── the taint report (a chat the plugin marks came back under a new id) ──
+print("report_taint")
+reset()
+taints = lambda: [c for c in APP["calls"] if c.get("op") == "taint"]
+check("sent with the key and the contract's body", pd.report_taint(["seg-2", "rt-1"]) is True and APP["key_seen"] == KEY
+      and taints() == [{"op": "taint", "chats": ["seg-2", "rt-1"]}], str(APP["calls"]))
+reset()
+many = [f"id-{i}" for i in range(40)] + ["x" * 129, "", None, 7, "id-0"]
+check("16 ids per request, 128 characters at most, no empties or repeats",
+      pd.report_taint(many) is True and [len(c["chats"]) for c in taints()] == [16, 16, 8]
+      and all(len(i) <= 128 and i for c in taints() for i in c["chats"]))
+reset()
+check("nothing valid: nothing sent", pd.report_taint([]) is False and pd.report_taint(None) is False
+      and pd.report_taint(["", 5]) is False and taints() == [])
+reset(taint={"ok": False, "reason": "bad_request"})
+check("a refusal is False", pd.report_taint(["a"]) is False)
+reset(taint_code=500)
+check("a 500 is False", pd.report_taint(["a"]) is False)
+reset(mode="404", taint={"ok": True}, taint_code=200)
+check("an older app (404) is False", pd.report_taint(["a"]) is False)
+reset(mode="204")
+check("an app that takes the POST as an event (204) is False", pd.report_taint(["a"]) is False)
+reset(mode="redirect")
+check("a redirect is not followed and is False", pd.report_taint(["a"]) is False and APP["hits"] == 0)
+reset()
+keyfile.write_text("")
+check("without a key nothing is sent", pd.report_taint(["a"]) is False and taints() == [])
+keyfile.write_text(KEY)
+reset()
+check("the report is not a read: no approval is asked", pd.report_taint(["a"]) is True and GATE["calls"] == [])
+check("nothing about the ids reaches the diagnostic log", EVENTS == [])
 
 print("\nFAILED" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

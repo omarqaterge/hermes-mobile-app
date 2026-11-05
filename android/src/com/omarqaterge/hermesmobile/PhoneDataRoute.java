@@ -80,6 +80,24 @@ final class PhoneDataRoute {
         }
     }
 
+    /**
+     * {@code {"op":"taint","chats":[...]}}: the plugin says these chats have read phone data (a chat it already marks got
+     * a new id when Hermes compressed it). Only ADDS ids to the record, with the limits of a read's {@code chats} (16
+     * entries, 128 characters each); no grant is made or needed and no other state changes. A body without a valid id is
+     * {@code bad_request}.
+     */
+    private static String taint(Context c, JSONObject req) {
+        try {
+            org.json.JSONArray a = req == null ? null : req.optJSONArray("chats");
+            if (a == null) return fail("bad_request");
+            java.util.List<Object> list = new java.util.ArrayList<>();
+            for (int i = 0; i < a.length() && i < PhoneDataChats.MAX_LIST; i++) list.add(a.opt(i));
+            return chats(c).taint(list) ? "{\"ok\":true}" : fail("bad_request");
+        } catch (Throwable t) {
+            return fail("failed");
+        }
+    }
+
     static String fail(String reason) {
         return "{\"ok\":false,\"reason\":\"" + reason + "\"}";
     }
@@ -100,6 +118,7 @@ final class PhoneDataRoute {
                         .put("kinds", s.optJSONObject("kinds"))
                         .put("locked", MainActivity.keyguardLocked(c)).toString();
             }
+            if ("taint".equals(op)) return taint(c, req); // the plugin: a chat that has read got a new id (no grant, no READY needed)
             remember(c, req);
             if (!PhoneData.READY) return fail("not_ready");
             return read(c, req);

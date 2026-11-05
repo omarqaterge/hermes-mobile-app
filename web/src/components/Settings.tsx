@@ -9,7 +9,7 @@ import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
-import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataForget, phoneDataOpenSettings, phoneDataOverflowed, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
+import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataAllowMore, phoneDataForget, phoneDataOpenSettings, phoneDataOverflowed, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
@@ -1056,17 +1056,31 @@ function PhoneDataSection() {
         )}
       </Collapse>
       {overflowed && (
-        <Row
-          icon="⚠️"
-          tone="gold"
-          title="Forget which chats have read phone data"
-          sub="Too many read requests arrived, so Hermux now treats every chat as having read phone data: images wait for a tap and links ask first. Clearing turns this off and forgets the record"
-          onClick={async () => {
-            const r = await phoneDataForget()
-            if (r === 'ok') setOverflowed(phoneDataOverflowed())
-            else toast(r === 'nolock' ? 'Set a screen lock first' : 'Not changed: confirm it’s you to change this')
-          }}
-        />
+        <>
+          <Row
+            icon="⚠️"
+            tone="gold"
+            title="Allow more chats"
+            sub="The record of chats that read phone data is full, so Hermux treats every chat as having read it: images wait for a tap and links ask first. This makes room for 2000 more, keeps every chat it knows and turns that off"
+            onClick={async () => {
+              const r = await phoneDataAllowMore()
+              if (r === 'ok') setOverflowed(phoneDataOverflowed())
+              else toast(r === 'nolock' ? 'Set a screen lock first' : 'Not changed: confirm it’s you to change this')
+            }}
+          />
+          <Row
+            icon="🗑️"
+            tone="gray"
+            title="Forget which chats have read phone data"
+            sub="Clears the whole record. Chats that read phone data lose their protection"
+            onClick={async () => {
+              if (!(await confirmDialog({ title: 'Forget which chats have read phone data?', message: 'Chats that have read phone data will lose their protection: images will load and links will open without asking, even if the chat holds phone data. Only do this if you are sure.', confirmLabel: 'Forget', danger: true }))) return
+              const r = await phoneDataForget()
+              if (r === 'ok') setOverflowed(phoneDataOverflowed())
+              else toast(r === 'nolock' ? 'Set a screen lock first' : 'Not changed: confirm it’s you to change this')
+            }}
+          />
+        </>
       )}
     </Section>
   )

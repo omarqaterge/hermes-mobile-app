@@ -19,7 +19,8 @@ Auto access Hermes's gate approves without asking; and a chat whose runtime id a
 call is no longer recognised.
 
 The chats that have read are remembered in memory and in ~/.hermes/mobile/phone-read.json (chat ids and times only,
-never data, at most MAX_CHATS, written atomically under a file lock). A broken file means no entries.
+never data, at most MAX_CHATS, written atomically under a file lock). A damaged file (not JSON, wrong shape)
+means every chat counts as having read, and is left as it is until someone deletes it; a missing file means nobody has.
 Nothing here logs a command, a result or a message.
 """
 
@@ -92,16 +93,26 @@ def ancestors(ids: Any) -> List[str]:
     return _with_parents(_norm(ids))
 
 
-def _read_file() -> Dict[str, float]:
+def _read_file() -> Optional[Dict[str, float]]:
+    """The saved chats; {} when there is no file; None when the file exists but is damaged (not JSON, no `chats` object,
+    a time that is not a number, unreadable): then every chat counts as having read (fail closed, as the fallback in
+    __init__.py does)."""
     try:
-        d = json.loads(PATH.read_text())
-        raw = d.get("chats") if isinstance(d, dict) else None
-        return {str(k)[:200]: float(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+        text = PATH.read_text()
+    except FileNotFoundError:
+        return {}
     except Exception:
-        return {}   # a broken file means no entries
+        return None
+    try:
+        d = json.loads(text)
+        raw = d.get("chats") if isinstance(d, dict) else None
+        return {str(k)[:200]: float(v) for k, v in raw.items()} if isinstance(raw, dict) else None
+    except Exception:
+        return None
 
 
-def _file_chats() -> Dict[str, float]:
+def _file_chats() -> Optional[Dict[str, float]]:
+    """`_read_file`, cached until the file changes."""
     global _cache
     try:
         s = PATH.stat()
@@ -116,11 +127,14 @@ def _file_chats() -> Dict[str, float]:
 
 
 def has_read(ids: Any) -> bool:
+    """Has one of these chats (or a parent) read phone data? True for every chat while the state file is damaged."""
     ids = _with_parents(_norm(ids))
     if not ids:
         return False
     with _lock:
         known = _file_chats()
+        if known is None:
+            return True
         return any(i in _mem or i in known for i in ids)
 
 
@@ -161,6 +175,8 @@ def mark(ids: Any) -> None:
             try:
                 with _file_lock():
                     chats = _read_file()   # read again inside the lock: another process may have added entries
+                    if chats is None:
+                        return   # a damaged file stays as it is (every chat counts as read); delete it to start over
                     for i in ids:
                         chats.pop(i, None)
                         chats[i] = now
@@ -174,6 +190,27 @@ def mark(ids: Any) -> None:
                 pass   # the in-memory entry still holds for this process
     except Exception:
         pass
+
+
+def adopt(ids: Any) -> List[str]:
+    """A chat this module already marks (by one of these ids, or a parent's) shows up under ids it has not marked, for
+    example the new stored id after a context compression: mark them all and return the ids that were new, so the caller
+    can tell the app. [] for a chat that has not read (nothing to do), and while the state file is damaged (every chat
+    counts as read there, but none is new). Never raises."""
+    try:
+        ids = _with_parents(_norm(ids))
+        if not ids:
+            return []
+        with _lock:
+            known = _file_chats() or {}
+            have = [i for i in ids if i in _mem or i in known]
+            missing = [i for i in ids if i not in _mem and i not in known]
+        if not have or not missing:
+            return []
+        mark(ids)
+        return missing
+    except Exception:
+        return []
 
 
 def link_subagent(parent_id: Any, child_id: Any) -> None:
@@ -204,8 +241,21 @@ _NET_WORDS = frozenset((
 _SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish".split())
 _INTERP = re.compile(r"^(?:python[0-9.]*|pypy3?|node(?:js)?|deno|bun|perl|ruby|php|lua|luajit|tclsh|osascript|Rscript)$")
 _ONELINER = re.compile(r"^(?:-[a-zA-Z]*[ceEr]|-p[ne]?|--eval|--exec|--print)$")   # -c -e -E -r -pe -ne --eval ...
-_NET_MODULES = ("http.server", "SimpleHTTPServer", "smtpd", "smtplib", "ftplib", "telnetlib", "socket", "urllib",
-                "http.client", "xmlrpc", "pyftpdlib", "aiohttp", "requests", "httpx", "uvicorn", "websockets")
+_NET_MODULES = ("http.server", "http.client", "SimpleHTTPServer", "smtpd", "smtplib", "ftplib", "telnetlib", "poplib",
+                "imaplib", "nntplib", "socket", "socketserver", "ssl", "urllib", "urllib3", "xmlrpc", "wsgiref", "webbrowser",
+                "pyftpdlib", "aiohttp", "requests", "httpx", "uvicorn", "websockets", "paramiko", "asyncssh", "pycurl", "flask",
+                "fastapi", "tornado", "twisted", "mitmproxy", "pyngrok", "ngrok", "gunicorn", "hypercorn", "daphne",
+                "asyncio.subprocess", "pty", "cgi", "cgitb")
+# Libraries an interpreter loads from a command-line flag (perl -MIO::Socket, ruby -rsocket, node -r http) that talk to the network.
+_LIB_NET = {
+    "perl": re.compile(r"^(?:Socket|IO::(?:Socket|Select)|LWP|HTTP::|Net::|WWW::|Mojo|AnyEvent|IPC::(?:Open[23]|Run)|Curl|"
+                       r"File::Fetch|URI::Fetch|Coro|POE|Parallel::|Proc::|Expect|CGI::Fast)", re.I),
+    "ruby": re.compile(r"^(?:socket|net/|open-uri|openssl|webrick|resolv|drb|open3|pty|mechanize|httparty|faraday|rest-client|"
+                       r"typhoeus|excon|http|eventmachine|em-|rack|sinatra|thin|puma)", re.I),
+    "node": re.compile(r"^(?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process|cluster|worker_threads|repl|inspector|"
+                       r"axios|node-fetch|undici|got|request|ws|socket\.io|express)\b", re.I),
+}
+_LIB_KIND = {"perl": "perl", "ruby": "ruby", "node": "node", "nodejs": "node", "bun": "node", "deno": "node"}
 _GIT_SENDS = frozenset(("push", "clone", "fetch", "pull", "ls-remote", "send-email", "request-pull", "submodule", "svn",
                         "imap-send", "difftool", "mergetool", "daemon", "http-push", "http-fetch", "remote-http",
                         "remote-https", "remote-ext"))
@@ -254,6 +304,110 @@ def _risky_names() -> frozenset:
                                  | {"git", "gh", "eval", "source", "su", "doas", "sudo", "python3.11", "python3.12"}
                                  | set(_INTERP_NAMES))
     return _RISKY_NAMES
+
+
+_COMPRESSORS = frozenset("gzip gunzip zcat bzip2 bunzip2 bzcat xz unxz xzcat lzma unlzma lzcat zstd unzstd zstdcat zstdmt pzstd "
+                         "lz4 lzop lzip pigz unpigz pbzip2 pixz plzip brotli compress uncompress".split())
+_SHELL_META = re.compile(r"[;&|$`<>(){}\\!*?\n]")
+# Harmless vim startup commands (`vim -c wq`): saving, quitting, going to a line, a plain option. Anything with `!`, `|`,
+# `:r`, `:source`, a function call or a shell word is not here.
+_VIM_SAFE = re.compile(r"^:?(?:w|wq|wa|wqa|wqall|x|xa|xall|q|qa|qall|q!|qa!|wq!|\d+|\$|noh|nohlsearch|syntax (?:on|off)|"
+                       r"set +(?:no)?[a-z]+(?:=[\w.,-]*)?)$")
+
+
+def _compress_prog_ok(val: str) -> bool:
+    """`tar -I zstd`, `--use-compress-program='pigz -p 4'`: a known compressor with plain options."""
+    words = val.split()
+    return bool(words) and _base(words[0]) in _COMPRESSORS and not _SHELL_META.search(val) \
+        and all(re.match(r"^-[\w=.-]*$|^\d+$", w) for w in words[1:])
+
+
+def _tar_runs_program(args: List[str]) -> bool:
+    for j, a in enumerate(args):
+        if re.match(r"^--(?:to-command|checkpoint-action|rsh-command|info-script|new-volume-script)", a):
+            return True
+        val = None
+        if a.startswith("--use-compress-program="):
+            val = a.split("=", 1)[1]
+        elif a == "--use-compress-program" and j + 1 < len(args):
+            val = args[j + 1]
+        elif re.match(r"^-[a-zA-Z]*I$", a) and j + 1 < len(args):
+            val = args[j + 1]
+        elif re.match(r"^-I.+", a):
+            val = a[2:]
+        elif re.match(r"^-[a-zA-Z]*F$", a) or re.match(r"^-F.+", a):
+            return True
+        if val is not None and not _compress_prog_ok(val):
+            return True
+        if a.startswith("--use-compress-program") and val is None:
+            return True
+    return False
+
+
+def _man_runs_program(args: List[str]) -> bool:
+    for j, a in enumerate(args):
+        if "!" in a:
+            return True
+        m = re.match(r"^(?:-P|--pager)(?:=?(.*))?$", a)
+        if m:
+            val = m.group(1) or (args[j + 1] if j + 1 < len(args) and a in ("-P", "--pager") else "")
+            if not (val and _PLAIN_PAGER.match(val)):
+                return True
+        elif re.match(r"^(?:-H|-B|-b|--html|--browser|--prompt)", a):
+            return True
+    return False
+
+
+def _less_runs_program(args: List[str]) -> bool:
+    return any(("!" in a or "|" in a) for a in args)
+
+
+def _vim_runs_program(args: List[str]) -> bool:
+    """Whether vi/vim/nvim is given something to run: -c/--cmd/+cmd with more than a harmless command, a script, silent ex mode."""
+    j = 0
+    while j < len(args):
+        a = args[j]
+        if a in ("-c", "--cmd"):
+            val = args[j + 1] if j + 1 < len(args) else ""
+            if not _VIM_SAFE.match(val.strip()):
+                return True
+            j += 2
+            continue
+        m = re.match(r"^\+(.*)$", a)
+        if m and len(a) > 1:
+            if not _VIM_SAFE.match(m.group(1).strip()):
+                return True
+        elif re.match(r"^(?:-S|-s|-es|-E|-u|--cmd=|-c.+)", a) and not re.match(r"^-u(?:NONE|NORC)$", a):
+            return True
+        j += 1
+    return False
+
+
+_RE_AWK_PIPE = re.compile(r'\|\s*"|\|&?\s*getline|\|&')   # `| "cmd"`, `"cmd" | getline`, `|& getline`
+
+
+def _lib_arg(kind: str, args: List[str], j: int) -> Optional[Tuple[str, int]]:
+    """A library an interpreter loads from a flag at args[j]: (its name, how many words the flag took), else None. perl -Mname,
+    ruby -rname / -r name / --require name, node -r name / --require name / --import name."""
+    a = args[j]
+    if kind == "perl":
+        m = re.match(r"^-[Mm](.+)$", a)
+        return (m.group(1).lstrip("-"), 1) if m else None
+    if kind == "ruby":
+        m = re.match(r"^-r(.+)$", a)
+        if m:
+            return m.group(1), 1
+        if a in ("-r", "--require") and j + 1 < len(args):
+            return args[j + 1], 2
+        if a.startswith("--require="):
+            return a.split("=", 1)[1], 1
+        return None
+    if kind == "node":
+        if a in ("-r", "--require", "--import", "--loader", "--experimental-loader") and j + 1 < len(args):
+            return args[j + 1], 2
+        m = re.match(r"^--(?:require|import|loader|experimental-loader)=(.+)$", a)
+        return (m.group(1), 1) if m else None
+    return None
 
 
 def _brace_alts(base: str) -> List[str]:
@@ -547,7 +701,7 @@ def _split_args(args: List[str], dyn: List[bool]) -> Tuple[List[str], List[bool]
     outd: List[bool] = []
     inline = False
     skip = False
-    for a, f in zip(args, dyn):
+    for k, (a, f) in enumerate(zip(args, dyn)):
         if skip:
             skip = False
             continue
@@ -556,6 +710,8 @@ def _split_args(args: List[str], dyn: List[bool]) -> Tuple[List[str], List[bool]
                 inline = True
             if re.match(r"^(?:\d*|&)[<>]+$", a):
                 skip = True   # the target (a file, a here-string, the heredoc word) is the next word
+                if re.match(r"^\d*<$", a) and k + 1 < len(args) and _PROCSUB in args[k + 1]:
+                    inline = True   # `bash < <(...)`: the shell reads its commands from a process substitution
             continue
         out.append(a)
         outd.append(f)
@@ -684,7 +840,7 @@ def _unwrap(base: str, args: List[str], argd: List[bool], fed: bool) -> Optional
 
 def _code_risk(code: str, base: str = "") -> bool:
     """Whether a program's text uses the network or runs commands."""
-    if _RE_NETCODE.search(code) or _RE_SHELLOUT.search(code):
+    if _netcode(code) or _RE_SHELLOUT.search(code):
         return True
     return base in ("perl", "ruby", "php") and "`" in code
 
@@ -790,6 +946,12 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             elif a.startswith("-"):
                 j += 1
             else:
+                if a == "submodule":   # `git submodule status` only looks; update, init, add, sync and foreach fetch or run
+                    rest = [x for x in args[j + 1:] if not x.startswith("-")]
+                    return None if not rest or rest[0] in ("status", "summary", "absorbgitdirs") else "git submodule " + rest[0][:20]
+                if a == "difftool":   # runs the configured diff program; -x / --extcmd names any program
+                    return "git difftool -x (runs a program)" if any(
+                        x == "-x" or x.startswith(("-x", "--extcmd")) for x in args[j + 1:]) else None
                 return f"git {a}" if a in _GIT_SENDS else None
         return None
     if base == "eval":
@@ -827,6 +989,8 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
         return None
     if base in _SHELLS or base in ("su", "runuser"):
         # `bash -c '...'`: look inside the text it runs; a text built from a substitution that decodes something is asked
+        if xa and args and re.match(r"^-[a-zA-Z]+$", args[-1]) and "c" in args[-1][1:]:
+            return f"xargs handing its input to {base} -c as code"   # `xargs -a f bash -c`: the lines are the commands
         for j, a in enumerate(args):
             if a == "--":
                 break
@@ -861,6 +1025,13 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             a = args[j]
             if a == "-":
                 return _fed_code(base, body, piped)
+            kind = _LIB_KIND.get(base)
+            lib = _lib_arg(kind, args, j) if kind else None
+            if lib is not None:
+                if _LIB_NET[kind].match(lib[0]):
+                    return f"{base} loading the network library {lib[0][:30]}"
+                j += lib[1]
+                continue
             if a == "-m" and j + 1 < len(args):
                 mod = args[j + 1]
                 if mod == "pip":
@@ -872,7 +1043,9 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
                 return _oneliner(base, a.split("=", 1)[0], a.split("=", 1)[1], argd[j])
             if a.startswith("-"):
                 if _ONELINER.match(a):
-                    return _oneliner(base, a, args[j + 1], argd[j + 1]) if j + 1 < len(args) else None
+                    if j + 1 >= len(args):
+                        return f"xargs handing its input to {base} {a} as code" if xa else None
+                    return _oneliner(base, a, args[j + 1], argd[j + 1])
                 j += 2 if a in ("-W", "-X", "--require") else 1
                 continue
             if _inline_script(a) or (xa and a in repl):   # /dev/stdin, /proc/self/fd/0, <(...): code, not a local file
@@ -887,7 +1060,7 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             return f"{base} command that runs a program"
         return f"{base} reading commands from input" if piped and not body else None
     if base in _VI:
-        if fed or any(re.match(r"^(?:-c|--cmd|-S|-s|-es|-E|\+.)", a) for a in args):
+        if fed or _vim_runs_program(args):
             return f"{base} running commands given to it"
         return None
     if base in ("emacs", "emacsclient"):
@@ -898,14 +1071,11 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             r"^(?:-ex|--ex|-iex|-ix|-x|--command|--eval-command|--init-eval-command|--init-command|-batch|--batch)", a)
             for a in args) else None
     if base in ("less", "more", "most", "pager"):
-        return f"{base} given a command to run" if any(a.startswith("+") or "!" in a for a in args) else None
+        return f"{base} given a command to run" if _less_runs_program(args) else None
     if base in ("man", "info", "apropos", "whatis"):
-        return f"{base} with a pager or browser program" if any(re.match(
-            r"^(?:-P|-H|-B|-b|--pager|--html|--browser|--prompt)", a) or "!" in a for a in args) else None
+        return f"{base} with a pager or browser program" if _man_runs_program(args) else None
     if base in ("tar", "bsdtar", "star"):
-        return "tar running a program" if any(
-            re.match(r"^--(?:to-command|use-compress-program|checkpoint-action|rsh-command|info-script|new-volume-script)", a)
-            or re.match(r"^-[a-zA-Z]*[IF]$", a) or re.match(r"^-[IF].+", a) for a in args) else None
+        return "tar running a program" if _tar_runs_program(args) else None
     if base in ("find", "fd", "fdfind"):
         for j, a in enumerate(args):
             if a in ("-exec", "-execdir", "-ok", "-okdir", "-x", "-X", "--exec", "--exec-batch"):
@@ -920,7 +1090,7 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
                         return f"{base} {a} {r}"
         return None
     if base in ("awk", "gawk", "mawk", "busybox-awk"):
-        if any(("system(" in a or "/inet/" in a or re.search(r'\|\s*"', a) or "|&" in a) for a in args):
+        if any(("system(" in a or "/inet/" in a or _RE_AWK_PIPE.search(a)) for a in args):
             return f"{base} program that runs commands"
         return None
     if base == "am" and args and args[0] in ("start", "broadcast", "startservice", "start-activity"):
@@ -962,8 +1132,35 @@ _RE_NETCODE = re.compile(
     r"|\bos\.(?:system|exec\w*|spawn\w*|fork\w*|startfile)|\bpty\.spawn"
     r"|\b(?:system|exec[lv]\w*|spawn[lv]\w*)\s*\("
     r"|\bfetch\s*\(|\bexec\s*\(|\beval\s*\(|net\.connect|Net::|node:(?:https?|net)"
-    r"|require\(\s*['\"](?:https?|net|tls|dgram|child_process)|https?\.(?:get|request)",
+    r"|require\(\s*['\"`](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process|cluster|worker_threads)"
+    r"|\bimport\s*\(\s*(?:['\"`](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process|cluster|worker_threads)|[^'\"`\s)])"
+    r"|\bfrom\s+['\"](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process)['\"]|https?\.(?:get|request)"
+    r"|\burlretrieve|\bcurl_exec|\bstream_socket_client|\bSoapClient|\bget_headers\b",
     re.I)
+# A call that reads from a web address: PHP `fopen("http://...")`, pandas `read_csv("https://...")`, `urlopen(...)`, `imread(...)`.
+_RE_URLREAD = re.compile(
+    r"\b(?:fopen|readfile|copy|file|include|include_once|require|require_once|simplexml_load_file|parse_ini_file|getimagesize"
+    r"|imagecreatefrom\w+|SplFileObject|opendir|fsockopen|pfsockopen|read_\w+|loadtxt|genfromtxt|load\w*|download\w*"
+    r"|VideoCapture|imread|wget|Request|from_url|get|post|put|delete|head|request|open|fetch|urlopen)\s*\(?\s*[rRbBuUfF]{0,2}"
+    r"['\"`]\s*(?:https?|ftps?|sftp|s3|gs|ssl|tls|tcp|udp)://", re.I)
+# A pandas-style reader plus a web address anywhere in the code (`url = ...; pd.read_csv(url)`).
+_RE_READER = re.compile(r"\bread_(?:csv|json|html|excel|parquet|table|xml|fwf|feather|orc|stata|sas|spss|pickle|hdf|clipboard)\s*\(")
+_RE_ANYURL = re.compile(r"(?:https?|ftps?|s3|gs)://", re.I)
+# `from os import system as s`: a process call imported under a name this file's other patterns cannot see.
+_RE_FROM_OS = re.compile(r"\bfrom\s+(?:os|posix|nt)\s+import\s+(\([^)]*\)|[^\n;]*)")
+_OS_RUNS = re.compile(r"\b(?:system|popen|exec\w*|spawn\w*|fork\w*|startfile|posix_spawn\w*|kill|killpg)\b|\*")
+
+
+def _netcode(text: str) -> bool:
+    """Whether code (Python, PHP, JavaScript...) uses the network, runs a program, or reads a web address."""
+    t = text[:MAX_SCAN]
+    if _RE_NETCODE.search(t) or _RE_URLREAD.search(t):
+        return True
+    if _RE_READER.search(t) and _RE_ANYURL.search(t):
+        return True
+    return any(_OS_RUNS.search(m.group(1)) for m in _RE_FROM_OS.finditer(t))
+
+
 # A program that starts another program (perl, ruby, php, node, lua one-liners; Python is covered above).
 _RE_SHELLOUT = re.compile(r"\b(?:system|exec[a-z]*|shell_exec|passthru|proc_open|spawn[a-z]*|fork)\b|os\.execute|io\.popen|%x[\[{(]")
 _RE_URL = re.compile(r"https?://", re.I)
@@ -1010,7 +1207,7 @@ def command_sends_out(text: str) -> bool:
 def code_match(text: str) -> Optional[str]:
     """The pattern name when a script given to execute_code (Python) uses the network or runs commands. The text is
     read as Python, never as shell: `host = 1` is only an assignment."""
-    if _RE_NETCODE.search(text[:MAX_SCAN]):
+    if _netcode(text):
         return "code that uses the network or runs commands"
     return None
 
@@ -1097,11 +1294,7 @@ def check(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
     ids = _norm(ids)
     if not has_read(ids):
         return None
-    with _lock:
-        known = _file_chats()
-        missing = [i for i in ids if i not in _mem and i not in known]
-    if missing:
-        mark(ids)
+    adopt(ids)
     for name, a in _calls(tool_name, args):
         hit = classify(name, a)
         if hit is not None:

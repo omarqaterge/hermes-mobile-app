@@ -8,6 +8,10 @@ The rules are in the decision [phone-data-read-only](../decisions/phone-data-rea
 **Next:** finish the six streams, plus the protection for chats that have read phone data (built on `claude/phone-data-after-read-final` (pull request 137) and `claude/phone-data-prelaunch-web`, see the decision); then a full test run, an attack review and a real-phone test; then docs and the
 final pull request.
 
+**Round 4 (2026-11-05, branch `claude/phone-data-round4`):** the plugin reports a chat that comes back under a new stored id (a
+context compression) with the new keyed op `taint`; the app's record never evicts (cap 2000, "Allow more chats" up to 20000, "Forget" with a
+warning); more command shapes ask; a damaged plugin state file fails closed. `PhoneData.READY` is still false. Not verified on a real phone.
+
 **Needs a real phone:** the biometric then permission flow, a read refused on a locked phone, permission revoked in Android
 settings, Full access on and off, real data from each kind, and location when the app isn't on screen (Android 10+ may
 give an old fix or none).
@@ -69,8 +73,14 @@ Header `X-Hermes-Mobile-Key`, body at most 4 KiB, always a JSON answer.
   only with `READY`, the master, its switch and its Android permission.
 - `{"op":"read","session":"<chat id>","nonce":"<12 hex>","kind":"<kind>","args":"<the canonical args text>","chats":["<chat id>",...]}` →
   `{"ok":true,"kind":"<kind>","items":[...],"truncated":bool}` or `{"ok":false,"reason":"<token>"}`.
+- `{"op":"taint","chats":["<chat id>",...]}` → `{"ok":true}` or `{"ok":false,"reason":"bad_request"}`. Added in round 4. The plugin sends it when a
+  chat it already marks as having read turns up under an id it has not seen (Hermes gives a chat a new stored id when it compresses the
+  context, and no hook announces that). `chats` has the limits of a read's: up to 16 strings of at most 128 characters (a body with no valid
+  id, or no list, is `bad_request`; entries past the sixteenth are ignored). The app records those ids in `PhoneDataChats` exactly like a read
+  does and changes nothing else: no grant is made or needed, it works whatever `READY`, the switches and the permissions say, and it can only
+  ADD ids (the key is checked first, as for every op). An older app answers 404/204 and the plugin keeps the ids to send with its next report.
 
-`chats` is optional: up to 16 strings of at most 128 characters, the chat id, its ancestors and its compression chain (the plugin sends them; raised from 8 in round 3, so a request adds at most 17 new ids). The app records `session` and every valid `chats` entry as chats that have read, **whatever the outcome** (refused, off, locked, no grant, bad request, failed), in a bounded store (2000 ids and the time each was last seen, ids only) in app-private preferences: an id seen within 30 days is never evicted, a full store sets an overflow flag instead that makes every chat count as having read until the user clears it in Settings; an invalid entry is ignored, never an error. The page asks the bridge method `phoneDataTainted(id)` before it draws a chat.
+`chats` is optional: up to 16 strings of at most 128 characters, the chat id, its ancestors and its compression chain (the plugin sends them; raised from 8 in round 3, so a request adds at most 17 new ids). The app records `session` and every valid `chats` entry as chats that have read, **whatever the outcome** (refused, off, locked, no grant, bad request, failed), in app-private preferences, ids only (no times): **an id is never evicted**. The record starts with a cap of 2000 ids; the first id past the cap sets an overflow flag that makes every chat count as having read, and ids that still arrive are kept (up to 20000, so a real chat that reads while the record is full is not lost). The user clears the flag in Settings → Phone data, behind the screen lock, with "Allow more chats" (the cap grows by 2000, to 20000 at most, nothing is forgotten, and the flag clears once the record fits under the new cap) or "Forget" (forgets every id; its confirmation says chats that read phone data lose their protection). An invalid entry is ignored, never an error. The page asks the bridge method `phoneDataTainted(id)` before it draws a chat.
 
 Checks, in order: key, `not_ready`, `bad_request`, `off`, `no_permission`, `locked`, then the grant or Full access pass
 (`no_grant`). Failures while reading answer `failed`, with no details. A plugin tool that gets no answer, a 404 or an older
@@ -88,8 +98,9 @@ app says the feature isn't available.
 | `phoneDataGrant(description)` | The user tapped Allow on this approval text: `PhoneDataGrants.issue` |
 | `phoneDataTainted(id)` | Boolean, synchronous: did a read request for this chat id (or one sent in `chats`) ever reach the app? The page calls it before rendering a chat's items, the cached preview included, and joins it with the item-derived state for `remoteBlock` |
 | `phoneDataAnyRead()` | Boolean: has the record anything in it, or has it overflowed? For a saved document whose chat is unknown |
-| `phoneDataOverflowed()` | Boolean: did a flood fill the record? Settings shows the Forget row while true |
-| `phoneDataForget(id)` | Clears the record and the overflow flag after the screen lock; answers `window.hermesPhoneData(id, result)` |
+| `phoneDataOverflowed()` | Boolean: did a flood fill the record (past its cap)? Settings shows "Allow more chats" and "Forget" while true |
+| `phoneDataAllowMore(id)` | Raises the record's cap by 2000 (at most 20000) and clears the overflow flag once the record fits, forgetting nothing, after the screen lock; answers `window.hermesPhoneData(id, result)` |
+| `phoneDataForget(id)` | Forgets every id and clears the flag after the screen lock (chats that read lose their protection; the page asks to confirm first); answers `window.hermesPhoneData(id, result)` |
 | `phoneDataFullAccess(session, on)` | The user moved this chat (its live session id, `runtimeId`) in or out of Full access: `PhoneDataGrants.fullAccess` |
 
 ### Who owns what

@@ -721,6 +721,7 @@ _turn_started: dict = {}  # session id → when its turn began, for the diagnost
 def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, interrupted=None,
                     turn_exit_reason=None, platform=None, **_):
     _dbg(f"session_end {session_id} turn={turn_id} completed={completed} interrupted={interrupted}")
+    _taint_sync(session_id)
     t0 = _turn_started.pop(session_id, None)
     if t0 is not None:
         _event("turn", "end", chat=_alias(session_id), secs=int(time.time() - t0), completed=completed,
@@ -813,22 +814,115 @@ _READ_CHATS: set = set()   # chat ids that called phone_data in this process, ke
 _READ_FILE = Path.home() / ".hermes" / "mobile" / "phone-read.json"   # phone_taint.PATH, read directly by the fallback
 
 
-def _read_before(ids) -> bool:
-    """Fallback for when phone_taint.py cannot load (it imports nothing from it): whether one of these chats has read phone
-    data, in this process (`_READ_CHATS`) or before, in the state file (`{"chats": {id: time}}`). A missing file means no chat
-    has read; a file that exists but cannot be read or understood fails closed (every chat counts as having read)."""
-    if any(i in _READ_CHATS for i in ids):
-        return True
+def _ui_session_id() -> str:
+    """The gateway's runtime chat id (the ContextVar phone_taint.chat_ids reads), for the fallback."""
+    try:
+        from gateway.session_context import _SESSION_UI_SESSION_ID
+        v = _SESSION_UI_SESSION_ID.get()
+        return v if isinstance(v, str) else ""
+    except Exception:
+        return ""
+
+
+def _fallback_save(ids) -> None:
+    """Fallback: add these ids to the state file (the record phone_taint keeps, same shape) when it is a readable one, so a
+    chat whose id changed after a compression is still found. Best effort; a missing or damaged file is left alone."""
     try:
         raw = json.loads(_READ_FILE.read_text())
         chats = raw["chats"]
         if not isinstance(chats, dict):
-            return True
-        return any(str(i)[:200] in chats for i in ids)
-    except FileNotFoundError:
-        return False
+            return
+        new = [str(i)[:200] for i in ids if str(i)[:200] not in chats]
+        if not new:
+            return
+        now = time.time()
+        for i in new:
+            chats[i] = now
+        while len(chats) > 2000:
+            chats.pop(next(iter(chats)))
+        tmp = _READ_FILE.with_name(_READ_FILE.name + f".{os.getpid()}.fb.tmp")
+        tmp.write_text(json.dumps({"chats": chats}))
+        tmp.replace(_READ_FILE)
     except Exception:
-        return True
+        pass
+
+
+def _read_before(ids) -> bool:
+    """Fallback for when phone_taint.py cannot load (it imports nothing from it): whether one of these chats has read phone
+    data, in this process (`_READ_CHATS`) or before, in the state file (`{"chats": {id: time}}`). A missing file means no chat
+    has read; a file that exists but cannot be read or understood fails closed (every chat counts as having read), as
+    phone_taint does. When one id matches, the others join the record (this process and the file), so a chat that got a new
+    stored id after a compression stays marked."""
+    ids = [i for i in ids if i]
+    hit = any(i in _READ_CHATS for i in ids)
+    if not hit:
+        try:
+            raw = json.loads(_READ_FILE.read_text())
+            chats = raw["chats"]
+            if not isinstance(chats, dict):
+                return True
+            hit = any(str(i)[:200] in chats for i in ids)
+        except FileNotFoundError:
+            return False
+        except Exception:
+            return True
+    if hit:
+        if len(_READ_CHATS) > 500:
+            _READ_CHATS.clear()
+        _READ_CHATS.update(ids)
+        _fallback_save(ids)
+    return hit
+
+
+_ANCESTRY_SEEN: set = set()   # stored ids whose compression chain was looked up (once per process each)
+_UNREPORTED: list = []        # ids the app has not accepted yet (retried with the next report)
+_report_lock = threading.Lock()
+
+
+def _report_taint(new) -> None:
+    """Tell the app (POST /phonedata, op taint) that chats the plugin marks got new ids. In a thread, so a tool call never
+    waits for it; ids the app did not accept are kept (at most 64) and sent again with the next report. Never raises."""
+    def run(batch):
+        try:
+            ok = _phone_data().report_taint(batch)
+        except Exception:
+            ok = False
+        if not ok:
+            with _report_lock:
+                _UNREPORTED[:] = (_UNREPORTED + [i for i in batch if i not in _UNREPORTED])[-64:]
+    try:
+        with _report_lock:
+            batch = list(dict.fromkeys(_UNREPORTED + list(new)))[-64:]
+            _UNREPORTED.clear()
+        t = threading.Thread(target=run, args=(batch,), daemon=True)
+        t.start()
+    except Exception:
+        pass
+
+
+def _taint_sync(session_id, task_id="") -> None:
+    """A chat the plugin marks as having read can come back under an id it has not seen: Hermes gave it a new stored id
+    when it compressed the context (no hook announces that; every turn's hooks carry the current id). Mark the new ids and
+    tell the app, so its own record (and with it the page's guards) follows the chat even if the user opens it from the
+    list later. Also looks up the compression chain in the session database once per stored id, so a chat compressed while
+    this plugin was not running is found too. Sends nothing for a chat that has not read. Never raises."""
+    try:
+        ids = list(_phone_taint().chat_ids(session_id, task_id))
+        sid = str(session_id or task_id or "").strip()
+        if sid and sid not in _ANCESTRY_SEEN:
+            if len(_ANCESTRY_SEEN) > 2000:
+                _ANCESTRY_SEEN.clear()
+            _ANCESTRY_SEEN.add(sid)
+            ids += [i for i in _phone_data().compression_ancestors(sid) if i not in ids]
+        new = _phone_taint().adopt(ids)
+        if new:
+            _report_taint(new)
+    except Exception:
+        pass
+
+
+def _on_session_start(session_id=None, **_):
+    _taint_sync(session_id)
 
 
 def _taint_directive(tool_name, args, session_id, task_id):
@@ -845,7 +939,8 @@ def _taint_directive(tool_name, args, session_id, task_id):
     try:
         ids = _phone_taint().chat_ids(session_id, task_id)
     except Exception:
-        ids = tuple(x for x in (str(session_id or task_id or ""),) if x)
+        ids = tuple(dict.fromkeys(x for x in (_ui_session_id(), str(session_id or task_id or "")) if x))
+    _taint_sync(session_id, task_id)   # a known chat under a new id: marked and reported to the app
     if "phone_data" in inner:
         if ids:
             if len(_READ_CHATS) > 500:
@@ -1025,5 +1120,6 @@ def register(ctx):
     ctx.register_hook("subagent_start", _on_subagent_start)
     ctx.register_hook("pre_approval_request", _on_pre_approval_request)
     ctx.register_hook("post_approval_response", _on_post_approval_response)
+    ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("on_session_end", _on_session_end)
     ctx.register_hook("api_request_error", _on_api_request_error)

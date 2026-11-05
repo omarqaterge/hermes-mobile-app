@@ -2479,7 +2479,7 @@ public class MainActivity extends Activity {
             return ok(key) && PhoneDataRoute.chats(MainActivity.this).overflowed();
         }
 
-        /** Settings → Phone data: forget the record of chats that read (and the overflow flag). Asks for the screen lock here; answers window.hermesPhoneData(id, "ok" | "cancel" | "nolock"). */
+        /** Settings → Phone data: forget the record of chats that read (they lose their protection) and the overflow flag. Asks for the screen lock here; answers window.hermesPhoneData(id, "ok" | "cancel" | "nolock"). */
         @JavascriptInterface
         public void phoneDataForget(String key, int id) {
             if (!ok(key)) return;
@@ -2490,6 +2490,23 @@ public class MainActivity extends Activity {
                 }
                 ApprovalLock.askAlways(MainActivity.this, "Forget which chats have read phone data", r -> {
                     if ("ok".equals(r)) PhoneDataRoute.chats(MainActivity.this).forgetAll();
+                    String res = "ok".equals(r) ? "ok" : "nolock".equals(r) ? "nolock" : "cancel";
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'" + res + "')", null);
+                });
+            });
+        }
+
+        /** Settings → Phone data: raise the record's cap by 2000 (up to 20000) and clear the overflow flag; nothing is forgotten. Asks for the screen lock here; answers window.hermesPhoneData(id, "ok" | "cancel" | "nolock"). */
+        @JavascriptInterface
+        public void phoneDataAllowMore(String key, int id) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                if (!foreground || isFinishing()) {
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
+                    return;
+                }
+                ApprovalLock.askAlways(MainActivity.this, "Allow more chats that have read phone data", r -> {
+                    if ("ok".equals(r)) PhoneDataRoute.chats(MainActivity.this).allowMore();
                     String res = "ok".equals(r) ? "ok" : "nolock".equals(r) ? "nolock" : "cancel";
                     if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'" + res + "')", null);
                 });
