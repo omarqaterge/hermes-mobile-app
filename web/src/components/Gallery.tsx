@@ -115,7 +115,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
               <Spinner />
             </div>
           ) : (
-            <DocView type={item.type} lang={item.lang} title={item.title} text={text} network={false} />
+            <DocView type={item.type} lang={item.lang} title={item.title} text={text} network={false} from={item.session || null} />
           )}
         </div>
       </div>

@@ -70,7 +70,7 @@ Header `X-Hermes-Mobile-Key`, body at most 4 KiB, always a JSON answer.
 - `{"op":"read","session":"<chat id>","nonce":"<12 hex>","kind":"<kind>","args":"<the canonical args text>","chats":["<chat id>",...]}` →
   `{"ok":true,"kind":"<kind>","items":[...],"truncated":bool}` or `{"ok":false,"reason":"<token>"}`.
 
-`chats` is optional: up to 8 strings of at most 128 characters, the chat id and its ancestors (the plugin sends them). The app records `session` and every valid `chats` entry as chats that have read, **whatever the outcome** (refused, off, locked, no grant, bad request, failed), in a bounded store (2000 ids, oldest dropped, ids only) in app-private preferences; an invalid entry is ignored, never an error. The page asks the bridge method `phoneDataTainted(id)` before it draws a chat.
+`chats` is optional: up to 16 strings of at most 128 characters, the chat id, its ancestors and its compression chain (the plugin sends them; raised from 8 in round 3, so a request adds at most 17 new ids). The app records `session` and every valid `chats` entry as chats that have read, **whatever the outcome** (refused, off, locked, no grant, bad request, failed), in a bounded store (2000 ids and the time each was last seen, ids only) in app-private preferences: an id seen within 30 days is never evicted, a full store sets an overflow flag instead that makes every chat count as having read until the user clears it in Settings; an invalid entry is ignored, never an error. The page asks the bridge method `phoneDataTainted(id)` before it draws a chat.
 
 Checks, in order: key, `not_ready`, `bad_request`, `off`, `no_permission`, `locked`, then the grant or Full access pass
 (`no_grant`). Failures while reading answer `failed`, with no details. A plugin tool that gets no answer, a 404 or an older
@@ -87,6 +87,9 @@ app says the feature isn't available.
 | `phoneDataOpenSettings()` | Opens Android's settings page for this app |
 | `phoneDataGrant(description)` | The user tapped Allow on this approval text: `PhoneDataGrants.issue` |
 | `phoneDataTainted(id)` | Boolean, synchronous: did a read request for this chat id (or one sent in `chats`) ever reach the app? The page calls it before rendering a chat's items, the cached preview included, and joins it with the item-derived state for `remoteBlock` |
+| `phoneDataAnyRead()` | Boolean: has the record anything in it, or has it overflowed? For a saved document whose chat is unknown |
+| `phoneDataOverflowed()` | Boolean: did a flood fill the record? Settings shows the Forget row while true |
+| `phoneDataForget(id)` | Clears the record and the overflow flag after the screen lock; answers `window.hermesPhoneData(id, result)` |
 | `phoneDataFullAccess(session, on)` | The user moved this chat (its live session id, `runtimeId`) in or out of Full access: `PhoneDataGrants.fullAccess` |
 
 ### Who owns what

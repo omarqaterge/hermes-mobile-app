@@ -9,7 +9,7 @@ import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
-import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataOpenSettings, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
+import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataForget, phoneDataOpenSettings, phoneDataOverflowed, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
@@ -1003,9 +1003,13 @@ function PhoneDataSection() {
   const [st, setSt] = useState<PhoneDataState | null>(phoneDataState)
   const [busy, setBusy] = useState(false)
   const [blocked, setBlocked] = useState<string | null>(null)
+  const [overflowed, setOverflowed] = useState(phoneDataOverflowed)
   useEffect(() => {
     const again = () => {
-      if (document.visibilityState === 'visible') setSt(phoneDataState())
+      if (document.visibilityState === 'visible') {
+        setSt(phoneDataState())
+        setOverflowed(phoneDataOverflowed())
+      }
     }
     again()
     document.addEventListener('visibilitychange', again)
@@ -1051,6 +1055,19 @@ function PhoneDataSection() {
           <Row icon="⚙️" tone="gray" title="Allow it in Android settings" sub="Android won’t show the question. Open app info and allow it under Permissions. For Call log and Messages, if the phone offers “Allow restricted settings” there, allow that first" chevron onClick={() => phoneDataOpenSettings()} />
         )}
       </Collapse>
+      {overflowed && (
+        <Row
+          icon="⚠️"
+          tone="gold"
+          title="Forget which chats have read phone data"
+          sub="Too many read requests arrived, so Hermux now treats every chat as having read phone data: images wait for a tap and links ask first. Clearing turns this off and forgets the record"
+          onClick={async () => {
+            const r = await phoneDataForget()
+            if (r === 'ok') setOverflowed(phoneDataOverflowed())
+            else toast(r === 'nolock' ? 'Set a screen lock first' : 'Not changed: confirm it’s you to change this')
+          }}
+        />
+      )}
     </Section>
   )
 }

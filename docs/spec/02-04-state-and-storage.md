@@ -11,6 +11,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.autoread.chats` (inventory name `hm.autoread`) | `voice.ts` (`AUTO_CHATS`) | Per-chat read-aloud override: `{chatId: boolean}`; wins over the global switch. | No (chat ids) |
 | `hm.autostartDone` | `components/Setup.tsx` | `'1'` once the user confirmed the Autostart step. | No |
 | `hm.boot.v1` | `boot.ts` | The latest start-up's stage marks: `{at, marks: [[stage, ms]…]}` (stages `script`, `token-asked`, `token`, `socket`, `painted`, `resume-start`, `sessions`, `chat-live`; each recorded once per page load). Shown in Settings → About. | No |
+| `hm.lineage.v1` | `lineage.ts` | Which chat ids are one chat: `[{s: [stored ids], r: [live ids]}]` (≤ 300 chats, ≤ 24 stored and ≤ 8 live ids each), learnt from `session.resume`, the session list, `session.compress` and `session.info`. Chat ids only. The page asks the app's phone-data record about every id of the chat on screen, not only today's (2.3). | Records the profile only through the ids |
 | `hm.chatcache.v1` | `chatcache.ts` | One chat for the next cold start: `{profile, storedId, title, items}` (≤ 60 items, ≤ 1,500,000 characters). | Records the profile |
 | `hm.cmds.v1` (suffix `.<profile>`) | `commands.ts` | The slash-command and skill catalog `[{name, desc, kind}]` from `commands.catalog`; refreshed when older than 10 minutes. | Yes |
 | `hm.connectedOnce` | `components/Setup.tsx` | `'1'` once Hermes ever answered; after that a launch never opens the first-run flow by itself. | No |

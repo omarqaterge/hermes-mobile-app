@@ -94,3 +94,45 @@ describe('nativeTainted', () => {
     expect(nativeTainted('never-asked')).toBe(false)
   })
 })
+
+describe('nativeTainted failing closed', () => {
+  const setBridge = (b: unknown) => ((window as unknown as { HermesAndroid?: unknown }).HermesAndroid = b)
+  it('a throwing bridge method means tainted, and is asked again next time', async () => {
+    const { nativeTainted } = await import('./phone-data-taint')
+    let n = 0
+    setBridge({
+      phoneDataTainted: () => {
+        n++
+        throw new Error('boom')
+      }
+    })
+    expect(nativeTainted('t-throw')).toBe(true)
+    expect(nativeTainted('t-throw')).toBe(true)
+    expect(n).toBe(2)
+    setBridge(undefined)
+  })
+  it('a shell without the method: tainted only for what the page cannot judge; no shell: not tainted', async () => {
+    const { nativeTainted, docTainted } = await import('./phone-data-taint')
+    setBridge({})
+    expect(nativeTainted('t-missing')).toBe(false)
+    expect(nativeTainted('t-missing', true)).toBe(true)
+    expect(docTainted('t-doc-chat')).toBe(true)
+    expect(docTainted(null)).toBe(true)
+    setBridge(undefined)
+    expect(nativeTainted('t-none', true)).toBe(false)
+    expect(docTainted('t-doc-chat')).toBe(false)
+    expect(docTainted(null)).toBe(false)
+  })
+  it("a document is judged by its own chat and that chat's lineage; an unknown chat by whether any read was recorded", async () => {
+    const { docTainted } = await import('./phone-data-taint')
+    const { noteLineage } = await import('./lineage')
+    noteLineage(['seg-1', 'seg-2'], 'rt-9')
+    setBridge({ phoneDataTainted: (id: string) => id === 'seg-1', phoneDataAnyRead: () => false })
+    expect(docTainted('seg-2')).toBe(true)
+    expect(docTainted('other-chat')).toBe(false)
+    expect(docTainted(null)).toBe(false)
+    setBridge({ phoneDataTainted: () => false, phoneDataAnyRead: () => true })
+    expect(docTainted(null)).toBe(true)
+    setBridge(undefined)
+  })
+})

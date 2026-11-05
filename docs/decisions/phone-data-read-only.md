@@ -90,6 +90,23 @@ chat has read when a `phone_data` tool call exists in it, whatever its outcome. 
   from history shows no tool names there.
 - Shizuku routes are unchanged (see above).
 
+**Update 2026-11-05 (round 3 of the app side).** From a review of the first launch candidate.
+
+- **The plugin's protection is a speed bump.** The agent can use `write_file` to rewrite the plugin's own files
+  (`phone_taint.py`, `phone-read.json`, a boot script), so nothing the plugin does can be relied on. The enforcement is the app: its own record
+  (`PhoneDataChats`), the request filter (`RemoteGuard`) and the page's address dialogs.
+- **Lineage.** The page asks the record about every id of a chat it knows (stored id, live id and the links it has seen: a resume, the
+  session list, a compression, a `session.info`), kept in `hm.lineage.v1`. The `chats` list a read may carry is now up to 16 entries (the plugin
+  sends the compression chain). Not covered: a link the page never saw (compressed on another device, page storage cleared).
+- **Flooding.** An id seen within 30 days is never evicted. When the record is full of such ids a new one sets an overflow flag instead:
+  every chat then counts as having read, until the user clears it in Settings → Phone data (behind the screen lock) or clears the app's data.
+  Asking about an id or a read naming it refreshes its age; one request adds at most 17 new ids. Refused reads are still recorded.
+- **Documents.** A saved document (Gallery, Files) is judged by its own chat, not the chat on screen. A document with no known chat is held once
+  any read was recorded (so a phone that never used phone data sees no change).
+- **Links to other apps.** While blocked, a bare `mailto:`, `tel:`, `sms:`, `geo:`, `market:` or `intent:` link is refused natively; the
+  address dialog shows its full text and its confirmed open is the only way.
+- **Failure closes.** A record that throws means tainted; a shell without the method counts as tainted for documents and unjudgeable chats.
+
 ### Plugin side of the after-read protection
 
 Added 2026-11-04 after an independent review of the first version. The page side above is unchanged.
@@ -146,4 +163,25 @@ because Hermes offers no way to switch that choice off; it is harmless but usele
 - **Known limits, unchanged.** A script file that makes the call (`bash run.sh`, a Python file) is not read; an alias or
   function set in an earlier call is not remembered; in Full access and Auto access Hermes's gate approves without asking.
 - **The app is told the ancestors.** A read also carries `chats`: the stored id of the chat and of every chat that spawned
-  it (at most 8, each at most 128 characters), so the app's own record marks the parents of a subagent that read.
+  it (at most 16, each at most 128 characters; see round 3 below), so the app's own record marks the parents of a subagent that read.
+
+**Update 2026-11-05 (round 3, plugin).**
+
+- **Compression ancestors are sent.** A chat that read in segment 1, was compressed to segment 2 and then met an app restart
+  was known to the app as segment 1 only, while the page asked about segment 2. A read's `chats` now follows each id (the
+  chat and its subagent parents) with the segments a context compression rotated away from, nearest first, read from the
+  agent's `state.db` (`parent_session_id` while the parent ended by compression; any failure gives none). At most 16 ids
+  (the app takes 16), the nearest first.
+- **More shapes ask.** A shell or interpreter reading code from `/dev/stdin`, `/proc/self/fd/N`, `-` or `<(...)`; `xargs`
+  feeding `sh -c`; the wrappers `torsocks`, `proxychains`, `firejail`, `fakeroot`, `faketime`, `runuser` (`sudo -u`, `doas`
+  and `su -c` were read already); `git -c` keys that run a program; `sqlite3 .shell`; `vim`/`vi`/`nvim -c`; `gdb -ex`;
+  `less !cmd`; `man -P`; `tar --to-command`; variables such as `PAGER` or `LESSOPEN` set to a program. `execute_code` asks for
+  the whole `subprocess` family (no word boundary), `os.exec*`, `os.spawn*`, `pty.spawn`, `ctypes`, `importlib` and the
+  network modules. `command -v curl` and a glob that cannot spell a denylisted program (`./b?ild.sh`) no longer ask.
+- **Hook fallback.** When `phone_taint.py` cannot load, the fallback reads `phone-read.json` itself, so a chat that read
+  before a restart is still blocked; a missing file means nobody read, and a file that exists but cannot be read fails
+  closed (every chat counts as having read).
+- **What this protects, honestly.** `write_file` and `patch` are on the allowlist (they stay on the phone), so a tainted chat
+  can rewrite `phone_taint.py`, `phone-read.json` or a boot script, and a script file it wrote and then runs is not read.
+  The plugin's protection is a speed bump. The real enforcement is the native record and filter in the app, which the
+  plugin cannot edit.

@@ -191,7 +191,8 @@ public class MainActivity extends Activity {
                 Uri u = req.getUrl();
                 if ("file".equals(u.getScheme())) return false;
                 // A chat that has read phone data: a bare link the page didn't wrap must not leave the app (the address dialog's confirmed path is openExternal).
-                if (RemoteGuard.isBlocked() && RemoteGuard.isRemoteTarget(u.toString())) return true;
+                // The same for mailto:, tel:, sms:, geo:, market: and intent: (mailto:x?body=<rows> opens a filled-in email): only the address dialog's confirmed open may.
+                if (RemoteGuard.isBlocked() && RemoteGuard.refusesNavigation(u.toString())) return true;
                 if (safeLink(u)) {
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -2464,6 +2465,35 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean phoneDataTainted(String key, String id) {
             return ok(key) && PhoneDataRoute.chats(MainActivity.this).contains(id);
+        }
+
+        /** Has any read request ever been recorded (or lost to overflow)? For a saved document whose chat is unknown. */
+        @JavascriptInterface
+        public boolean phoneDataAnyRead(String key) {
+            return ok(key) && PhoneDataRoute.chats(MainActivity.this).any();
+        }
+
+        /** Did the record overflow (a flood of read requests filled it)? Then every chat counts as having read until the user clears it in Settings. */
+        @JavascriptInterface
+        public boolean phoneDataOverflowed(String key) {
+            return ok(key) && PhoneDataRoute.chats(MainActivity.this).overflowed();
+        }
+
+        /** Settings → Phone data: forget the record of chats that read (and the overflow flag). Asks for the screen lock here; answers window.hermesPhoneData(id, "ok" | "cancel" | "nolock"). */
+        @JavascriptInterface
+        public void phoneDataForget(String key, int id) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                if (!foreground || isFinishing()) {
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'cancel')", null);
+                    return;
+                }
+                ApprovalLock.askAlways(MainActivity.this, "Forget which chats have read phone data", r -> {
+                    if ("ok".equals(r)) PhoneDataRoute.chats(MainActivity.this).forgetAll();
+                    String res = "ok".equals(r) ? "ok" : "nolock".equals(r) ? "nolock" : "cancel";
+                    if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'" + res + "')", null);
+                });
+            });
         }
 
         /** The user tapped "Tap to load" for exactly this address: RemoteGuard lets that one request through, once, for 60 s. */
