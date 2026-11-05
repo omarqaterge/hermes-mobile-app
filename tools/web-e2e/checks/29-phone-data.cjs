@@ -77,9 +77,9 @@ module.exports = async t => {
   const KINDS = ['Contacts', 'Calendar', 'Call log', 'Messages (SMS)', 'Location (approximate)', 'Latest photos']
 
   {
-    // not ready, or no bridge: hidden
+    // the app reports the feature unavailable (ready false, as an app/plugin mismatch or a build that pulled it), or no bridge: hidden
     let pg = await open(fresh({ ready: false }))
-    check((await pg.getByText('Phone data for the agent').count()) === 0, 'phone data: hidden when the feature is not ready')
+    check((await pg.getByText('Phone data for the agent').count()) === 0, 'phone data: hidden when the app says it is not ready')
     await pg.close()
     pg = await open(fresh(), { bridge: false })
     check((await pg.getByText('Phone data for the agent').count()) === 0, 'phone data: hidden without the native methods')
