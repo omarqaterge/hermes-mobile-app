@@ -1890,6 +1890,7 @@ public class MainActivity extends Activity {
         foreground = false;
         visible = false;
         HermesService.openChat = null; // nothing is on screen any more: a chat finishing now counts as unseen
+        PhoneDataRoute.flushChats(); // write the record of chats that read phone data now (its saves are batched)
         voice.stopListening(); // never leave the microphone open in the background
         stt.release(); // nor an on-device speech model in memory
         // The open chat was seen until now: messages that arrive meanwhile get "New Messages" on return.
@@ -2479,6 +2480,12 @@ public class MainActivity extends Activity {
             return ok(key) && PhoneDataRoute.chats(MainActivity.this).overflowed();
         }
 
+        /** Was an id ever dropped because even the largest record was full? Then every chat counts as having read until Forget. */
+        @JavascriptInterface
+        public boolean phoneDataLost(String key) {
+            return ok(key) && PhoneDataRoute.chats(MainActivity.this).lost();
+        }
+
         /** Settings → Phone data: forget the record of chats that read (they lose their protection) and the overflow flag. Asks for the screen lock here; answers window.hermesPhoneData(id, "ok" | "cancel" | "nolock"). */
         @JavascriptInterface
         public void phoneDataForget(String key, int id) {
@@ -2496,7 +2503,7 @@ public class MainActivity extends Activity {
             });
         }
 
-        /** Settings → Phone data: raise the record's cap by 2000 (up to 20000) and clear the overflow flag; nothing is forgotten. Asks for the screen lock here; answers window.hermesPhoneData(id, "ok" | "cancel" | "nolock"). */
+        /** Settings → Phone data: raise the record's cap by 2000 (up to 20000) and clear the overflow flag; nothing is forgotten. Asks for the screen lock here; answers window.hermesPhoneData(id, "ok" | "full" (already at the maximum) | "cancel" | "nolock"). */
         @JavascriptInterface
         public void phoneDataAllowMore(String key, int id) {
             if (!ok(key)) return;
@@ -2506,8 +2513,8 @@ public class MainActivity extends Activity {
                     return;
                 }
                 ApprovalLock.askAlways(MainActivity.this, "Allow more chats that have read phone data", r -> {
-                    if ("ok".equals(r)) PhoneDataRoute.chats(MainActivity.this).allowMore();
-                    String res = "ok".equals(r) ? "ok" : "nolock".equals(r) ? "nolock" : "cancel";
+                    boolean more = "ok".equals(r) && PhoneDataRoute.chats(MainActivity.this).allowMore();
+                    String res = "ok".equals(r) ? (more ? "ok" : "full") : "nolock".equals(r) ? "nolock" : "cancel";
                     if (web != null) web.evaluateJavascript("window.hermesPhoneData && window.hermesPhoneData(" + id + ",'" + res + "')", null);
                 });
             });

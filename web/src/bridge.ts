@@ -72,6 +72,7 @@ interface AndroidBridge {
   phoneDataFullAccess?(session: string, on: boolean): void // the chat (its live session id, runtimeId) moved in or out of Full access
   phoneDataTainted?(id: string): boolean // the app's own record: did a phone_data read request for this chat id (live session, stored chat or an ancestor) ever reach it? Answered at once
   phoneDataAnyRead?(): boolean // has the app's record of chats that read phone data anything in it (or an overflow)? For a saved document whose chat is unknown
+  phoneDataLost?(): boolean // an id was dropped because even the largest record was full: every chat counts as having read until Forget
   phoneDataOverflowed?(): boolean // a flood of read requests filled the record: every chat counts as having read until cleared (Settings → Phone data)
   phoneDataForget?(id: number): void // clear the record and the overflow flag (chats that read lose their protection); asks for the screen lock in the shell; answers window.hermesPhoneData(id, 'ok' | 'cancel' | 'nolock')
   phoneDataAllowMore?(id: number): void // raise the record's cap by 2000 (max 20000) and clear the overflow flag, forgetting nothing; same lock and answer
@@ -472,7 +473,7 @@ export interface PhoneDataState {
   /** The phone has a screen lock (needed to turn anything on). */
   secure: boolean
 }
-export type PhoneDataResult = 'ok' | 'cancel' | 'nolock' | 'denied' | 'blocked'
+export type PhoneDataResult = 'ok' | 'cancel' | 'nolock' | 'denied' | 'blocked' | 'full' | 'full'
 
 declare global {
   interface Window {
@@ -484,7 +485,7 @@ let phoneSeq = 0
 window.hermesPhoneData = (id, result) => {
   const done = phoneWaiting.get(id)
   phoneWaiting.delete(id)
-  done?.((['ok', 'cancel', 'nolock', 'denied', 'blocked'].includes(result) ? result : 'cancel') as PhoneDataResult)
+  done?.((['ok', 'cancel', 'nolock', 'denied', 'blocked', 'full'].includes(result) ? result : 'cancel') as PhoneDataResult)
 }
 
 /** The phone-data switches as the shell sees them; null outside the app or in a shell that doesn't have them. */
@@ -520,6 +521,15 @@ export function phoneDataSet(kind: string, on: boolean): Promise<PhoneDataResult
 export function phoneDataOverflowed(): boolean {
   try {
     return window.HermesAndroid?.phoneDataOverflowed?.() === true
+  } catch {
+    return false
+  }
+}
+
+/** Was an id ever dropped for lack of room (so some chats may not be remembered)? Only Forget clears it. */
+export function phoneDataLost(): boolean {
+  try {
+    return window.HermesAndroid?.phoneDataLost?.() === true
   } catch {
     return false
   }

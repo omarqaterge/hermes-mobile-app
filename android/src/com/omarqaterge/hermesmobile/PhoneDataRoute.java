@@ -67,6 +67,17 @@ final class PhoneDataRoute {
         return chats;
     }
 
+    /** Write the record now if saves are waiting (they are batched to one a second); the app calls it when it pauses. */
+    static void flushChats() {
+        try {
+            PhoneDataChats c;
+            synchronized (PhoneDataRoute.class) { c = chats; }
+            if (c != null) c.flush();
+        } catch (Throwable ignored) {
+            // best effort
+        }
+    }
+
     /** Remember the chat of a read request before anything else decides its outcome: refused, off, locked or failed all count. */
     private static void remember(Context c, JSONObject req) {
         try {
