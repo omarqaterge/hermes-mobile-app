@@ -3,6 +3,7 @@ package com.omarqaterge.hermesmobile;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.function.LongSupplier;
 
 /**
  * The app's own record of which chats have asked to read phone data (docs/decisions/phone-data-read-only.md, "Chats that
@@ -17,7 +18,10 @@ import java.util.List;
  * protection, and from then on {@link #contains} answers true for every chat (fail closed). Ids that still arrive are kept
  * (up to {@link #MAX_CAP}) so that nothing real is lost. The user clears the flag in Settings with {@link #allowMore}
  * (raises the cap by {@link #STEP}, keeps every id, and clears the flag once the record fits) or {@link #forgetAll}
- * (forgets every id: chats that read lose their protection). One request adds at most {@link #MAX_NEW} new ids. Plain Java
+ * (forgets every id: chats that read lose their protection). When even {@link #MAX_CAP} is full, an id that has no room is
+ * dropped and a SEPARATE {@code lost} flag is set: {@link #allowMore} never clears it, every chat counts as having read while
+ * it is set, and only {@link #forgetAll} clears it. Saves are batched (at most one per {@link #SAVE_EVERY_MS}, and
+ * {@link #flush} when the app pauses or the page reads the record), always the whole text at once. One request adds at most {@link #MAX_NEW} new ids. Plain Java
  * (the persistence is a {@link Store}) so tools/test_phone_data_chats.sh tests it on a JDK.
  */
 final class PhoneDataChats {
@@ -45,10 +49,23 @@ final class PhoneDataChats {
     private final LinkedHashSet<String> ids = new LinkedHashSet<>();
     private int cap = START_CAP;
     private boolean overflow;
+    /** Some id was dropped for lack of room: it may be a real chat, so every chat counts as having read. Only Forget clears it. */
+    private boolean lost;
     private boolean loaded;
+    /** The most often the record is written: a flood would otherwise rewrite up to about 2.6 MB per change. */
+    static final long SAVE_EVERY_MS = 1000;
+    private final LongSupplier clock;
+    private boolean dirty;
+    private long lastSave = Long.MIN_VALUE / 2;
 
     PhoneDataChats(Store store) {
+        this(store, () -> System.nanoTime() / 1_000_000L);
+    }
+
+    /** The clock (milliseconds, any origin) is a parameter so a test can move time. */
+    PhoneDataChats(Store store, LongSupplier clock) {
         this.store = store;
+        this.clock = clock;
     }
 
     /** A usable id: a non-empty string of at most 128 characters with no control characters or spaces (it is stored one per line). */
@@ -77,6 +94,7 @@ final class PhoneDataChats {
             if (line.startsWith(HEADER) || line.startsWith(HEADER_OLD)) {
                 String[] p = line.substring(3).trim().split(" ");
                 if (p.length > 0 && p[0].equals("overflow")) overflow = true;
+                if (line.startsWith(HEADER) && p.length > 2 && p[2].equals("lost")) lost = true;
                 if (line.startsWith(HEADER) && p.length > 1) {
                     try {
                         cap = Math.max(START_CAP, Math.min(MAX_CAP, Integer.parseInt(p[1])));
@@ -88,19 +106,36 @@ final class PhoneDataChats {
             }
             int tab = line.indexOf('\t'); // an older record held "id<TAB>time"
             String id = tab < 0 ? line : line.substring(0, tab);
-            if (validId(id) && ids.size() < MAX_CAP) ids.add(id);
+            if (!validId(id)) continue;
+            if (ids.size() < MAX_CAP) ids.add(id);
+            else if (!ids.contains(id)) lost = true; // a stored record with more ids than the bound: the extra ones have no room
         }
         if (ids.size() > cap) overflow = true; // more than the cap allows: fail closed, keep every id
     }
 
+    /** Write the whole record now (one text, so a crash leaves the old text or the new one, never half). */
     private void save() {
+        dirty = false;
+        lastSave = clock.getAsLong();
         StringBuilder b = new StringBuilder(HEADER).append(overflow ? "overflow " : "ok ").append(cap);
+        if (lost) b.append(" lost");
         for (String id : ids) b.append('\n').append(id);
         try {
             store.save(b.toString());
         } catch (Throwable ignored) {
             // best effort: the in-memory record stays
         }
+    }
+
+    /** A change from a read or a taint: write now unless one was written less than a second ago, else leave it for {@link #flush}. */
+    private void saveSoon() {
+        if (clock.getAsLong() - lastSave >= SAVE_EVERY_MS) save();
+        else dirty = true;
+    }
+
+    /** Write what is waiting (the app pauses, or the page reads the record). A crash can lose only the last second of ids; the plugin re-reports them at its next tool call. */
+    synchronized void flush() {
+        if (dirty) save();
     }
 
     /**
@@ -129,11 +164,14 @@ final class PhoneDataChats {
                     overflow = true; // the record is full: every chat now counts as having read
                     changed = true;
                 }
-                if (ids.size() >= MAX_CAP) continue; // the hard bound: the flag stays on, only Forget clears it
+                if (ids.size() >= MAX_CAP) { // the hard bound: this id has no room; it may be a real chat, so remember that
+                    if (!lost) { lost = true; changed = true; }
+                    continue;
+                }
                 ids.add(id);
                 changed = true;
             }
-            if (changed) save();
+            if (changed) saveSoon();
         } catch (Throwable ignored) {
             // the record is best effort; a failed save leaves the in-memory set
         }
@@ -160,18 +198,28 @@ final class PhoneDataChats {
     synchronized boolean contains(String id) {
         if (!validId(id)) return false;
         load();
-        return overflow || ids.contains(id);
+        flush();
+        return overflow || lost || ids.contains(id);
     }
 
     /** Has any read ever been recorded (or lost to overflow)? For documents whose chat is unknown. */
     synchronized boolean any() {
         load();
-        return overflow || !ids.isEmpty();
+        flush();
+        return overflow || lost || !ids.isEmpty();
     }
 
     synchronized boolean overflowed() {
         load();
+        flush();
         return overflow;
+    }
+
+    /** Was an id ever dropped for lack of room? Then every chat counts as having read until Forget. */
+    synchronized boolean lost() {
+        load();
+        flush();
+        return lost;
     }
 
     synchronized int cap() {
@@ -181,7 +229,8 @@ final class PhoneDataChats {
 
     /**
      * The user chose "Allow more chats" (Settings): the cap grows by {@link #STEP} up to {@link #MAX_CAP}, every id stays, and
-     * the flag clears when the record fits under the new cap. False when the cap was already at the maximum.
+     * the overflow flag clears when the record fits under the new cap (never the {@code lost} flag). False when the cap was
+     * already at the maximum.
      */
     synchronized boolean allowMore() {
         load();
@@ -192,11 +241,12 @@ final class PhoneDataChats {
         return true;
     }
 
-    /** The user chose to forget the record (Settings): every id and the overflow flag go; chats that read lose their protection. */
+    /** The user chose to forget the record (Settings): every id, the overflow flag and the lost flag go; chats that read lose their protection. */
     synchronized void forgetAll() {
         load();
         ids.clear();
         overflow = false;
+        lost = false;
         save();
     }
 

@@ -9,7 +9,7 @@ import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
-import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataAllowMore, phoneDataForget, phoneDataOpenSettings, phoneDataOverflowed, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
+import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataAllowMore, phoneDataForget, phoneDataLost, phoneDataOpenSettings, phoneDataOverflowed, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
@@ -1004,11 +1004,13 @@ function PhoneDataSection() {
   const [busy, setBusy] = useState(false)
   const [blocked, setBlocked] = useState<string | null>(null)
   const [overflowed, setOverflowed] = useState(phoneDataOverflowed)
+  const [lost, setLost] = useState(phoneDataLost)
   useEffect(() => {
     const again = () => {
       if (document.visibilityState === 'visible') {
         setSt(phoneDataState())
         setOverflowed(phoneDataOverflowed())
+        setLost(phoneDataLost())
       }
     }
     again()
@@ -1055,8 +1057,10 @@ function PhoneDataSection() {
           <Row icon="⚙️" tone="gray" title="Allow it in Android settings" sub="Android won’t show the question. Open app info and allow it under Permissions. For Call log and Messages, if the phone offers “Allow restricted settings” there, allow that first" chevron onClick={() => phoneDataOpenSettings()} />
         )}
       </Collapse>
-      {overflowed && (
+      {(overflowed || lost) && (
         <>
+          {lost && <Row icon="⚠️" tone="gold" title="Some chats may not be remembered" sub="Everything stays protected until you Forget." />}
+          {!lost && (
           <Row
             icon="⚠️"
             tone="gold"
@@ -1065,9 +1069,11 @@ function PhoneDataSection() {
             onClick={async () => {
               const r = await phoneDataAllowMore()
               if (r === 'ok') setOverflowed(phoneDataOverflowed())
+              else if (r === 'full') toast('The limit is reached: 20000 chats')
               else toast(r === 'nolock' ? 'Set a screen lock first' : 'Not changed: confirm it’s you to change this')
             }}
           />
+          )}
           <Row
             icon="🗑️"
             tone="gray"
@@ -1076,8 +1082,10 @@ function PhoneDataSection() {
             onClick={async () => {
               if (!(await confirmDialog({ title: 'Forget which chats have read phone data?', message: 'Chats that have read phone data will lose their protection: images will load and links will open without asking, even if the chat holds phone data. Only do this if you are sure.', confirmLabel: 'Forget', danger: true }))) return
               const r = await phoneDataForget()
-              if (r === 'ok') setOverflowed(phoneDataOverflowed())
-              else toast(r === 'nolock' ? 'Set a screen lock first' : 'Not changed: confirm it’s you to change this')
+              if (r === 'ok') {
+                setOverflowed(phoneDataOverflowed())
+                setLost(phoneDataLost())
+              } else toast(r === 'nolock' ? 'Set a screen lock first' : 'Not changed: confirm it’s you to change this')
             }}
           />
         </>

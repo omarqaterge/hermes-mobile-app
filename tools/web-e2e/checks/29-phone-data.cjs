@@ -43,17 +43,18 @@ module.exports = async t => {
           },
           phoneDataOpenSettings: key => window.__pdCalls.push({ key, settings: true }),
           phoneDataOverflowed: key => !!pd.overflowed,
+          phoneDataLost: key => !!pd.lost,
           phoneDataAllowMore: (key, id) => {
             window.__pdCalls.push({ key, allowMore: true })
             setTimeout(() => {
-              if (pd.result === 'ok') pd.overflowed = false
-              window.hermesPhoneData(id, pd.result)
+              if (pd.result === 'ok' && !pd.full) pd.overflowed = false
+              window.hermesPhoneData(id, pd.full && pd.result === 'ok' ? 'full' : pd.result)
             }, 20)
           },
           phoneDataForget: (key, id) => {
             window.__pdCalls.push({ key, forget: true })
             setTimeout(() => {
-              if (pd.result === 'ok') pd.overflowed = false
+              if (pd.result === 'ok') pd.overflowed = pd.lost = false
               window.hermesPhoneData(id, pd.result)
             }, 20)
           }
@@ -172,6 +173,21 @@ module.exports = async t => {
     await pc.getByText('Not changed: confirm it’s you to change this').first().waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: a cancelled lock on Allow more shows Not changed'), () => check(false, 'phone data: a cancelled lock on Allow more shows Not changed'))
     check((await pc.getByText('Allow more chats').count()) > 0, 'phone data: and the rows stay')
     await pc.close()
+    // at the maximum the shell answers full: the page says the limit is reached and the rows stay
+    const pm = await open(fresh({ switches: { master: true }, overflowed: true, full: true }))
+    await row(pm, 'Allow more chats').click()
+    await pm.getByText('The limit is reached: 20000 chats').first().waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: Allow more at the maximum toasts that the limit is reached'), () => check(false, 'phone data: Allow more at the maximum toasts that the limit is reached'))
+    await pm.close()
+    // ids were lost: a plain notice, no Allow more, Forget clears it
+    const pl = await open(fresh({ switches: { master: true }, lost: true }))
+    await pl.getByText('Some chats may not be remembered').first().waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: lost ids show the notice'), () => check(false, 'phone data: lost ids show the notice'))
+    check((await pl.getByText('Everything stays protected until you Forget.').count()) > 0 && (await pl.getByText('Allow more chats').count()) === 0, 'phone data: the notice says everything stays protected, and Allow more is hidden')
+    await row(pl, 'Forget which chats have read phone data').click()
+    await pl.locator('.dialog').waitFor({ timeout: 3000 })
+    await pl.locator('.dialog button', { hasText: 'Forget' }).last().click()
+    await sleep(500)
+    check((await pl.getByText('Some chats may not be remembered').count()) === 0, 'phone data: Forget clears the lost notice')
+    await pl.close()
   }
   {
     // permission removed by Android: shows off with the reason, turning on goes through the normal flow

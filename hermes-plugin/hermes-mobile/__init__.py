@@ -824,25 +824,44 @@ def _ui_session_id() -> str:
         return ""
 
 
+_READ_MAX = 2000   # phone_taint.MAX_CHATS
+
+
 def _fallback_save(ids) -> None:
-    """Fallback: add these ids to the state file (the record phone_taint keeps, same shape) when it is a readable one, so a
-    chat whose id changed after a compression is still found. Best effort; a missing or damaged file is left alone."""
+    """Fallback: add these ids to the state file (the record phone_taint keeps, same shape, same lock file, same bound) when
+    it is a readable one, so a chat whose id changed after a compression is still found. When they do not fit in
+    `_READ_MAX` nothing is dropped: the file's own `full` flag is set and every chat counts as having read. Best effort; a
+    missing or damaged file is left alone."""
     try:
-        raw = json.loads(_READ_FILE.read_text())
-        chats = raw["chats"]
-        if not isinstance(chats, dict):
-            return
-        new = [str(i)[:200] for i in ids if str(i)[:200] not in chats]
-        if not new:
-            return
-        now = time.time()
-        for i in new:
-            chats[i] = now
-        while len(chats) > 2000:
-            chats.pop(next(iter(chats)))
-        tmp = _READ_FILE.with_name(_READ_FILE.name + f".{os.getpid()}.fb.tmp")
-        tmp.write_text(json.dumps({"chats": chats}))
-        tmp.replace(_READ_FILE)
+        fd = None
+        try:
+            import fcntl
+            fd = os.open(str(_READ_FILE) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        except Exception:
+            pass   # no locking here (no fcntl): still write, as phone_taint does
+        try:
+            raw = json.loads(_READ_FILE.read_text())   # read inside the lock: another process may have added entries
+            chats = raw["chats"]
+            if not isinstance(chats, dict) or raw.get("full") is True:
+                return
+            new = [str(i)[:200] for i in ids if str(i)[:200] not in chats]
+            if not new:
+                return
+            full = len(chats) + len(dict.fromkeys(new)) > _READ_MAX
+            if not full:
+                now = time.time()
+                for i in new:
+                    chats[i] = now
+            tmp = _READ_FILE.with_name(_READ_FILE.name + f".{os.getpid()}.fb.tmp")
+            tmp.write_text(json.dumps({"chats": chats, "full": True} if full else {"chats": chats}))
+            tmp.replace(_READ_FILE)
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
     except Exception:
         pass
 
@@ -859,7 +878,7 @@ def _read_before(ids) -> bool:
         try:
             raw = json.loads(_READ_FILE.read_text())
             chats = raw["chats"]
-            if not isinstance(chats, dict):
+            if not isinstance(chats, dict) or raw.get("full") is True:
                 return True
             hit = any(str(i)[:200] in chats for i in ids)
         except FileNotFoundError:
@@ -900,12 +919,31 @@ def _report_taint(new) -> None:
         pass
 
 
+def _ancestry_later(sid, ids) -> None:
+    """Look up the compression chain of `sid` in the session database on a background thread (up to 16 queries, 3 s in
+    all: never on the tool-call thread), then mark and report what the chain adds. Never raises."""
+    def run():
+        try:
+            more = [i for i in _phone_data().compression_ancestors(sid) if i not in ids]
+            if more:
+                new = _phone_taint().adopt(list(ids) + more)
+                if new:
+                    _report_taint(new)
+        except Exception:
+            pass
+    try:
+        threading.Thread(target=run, daemon=True).start()
+    except Exception:
+        pass
+
+
 def _taint_sync(session_id, task_id="") -> None:
     """A chat the plugin marks as having read can come back under an id it has not seen: Hermes gave it a new stored id
     when it compressed the context (no hook announces that; every turn's hooks carry the current id). Mark the new ids and
     tell the app, so its own record (and with it the page's guards) follows the chat even if the user opens it from the
-    list later. Also looks up the compression chain in the session database once per stored id, so a chat compressed while
-    this plugin was not running is found too. Sends nothing for a chat that has not read. Never raises."""
+    list later. Also looks up the compression chain in the session database once per stored id (on a background thread, so
+    the first call after a link only the database knows is not yet asked), so a chat compressed while this plugin was not
+    running is found too. Sends nothing for a chat that has not read. Never raises."""
     try:
         ids = list(_phone_taint().chat_ids(session_id, task_id))
         sid = str(session_id or task_id or "").strip()
@@ -913,7 +951,7 @@ def _taint_sync(session_id, task_id="") -> None:
             if len(_ANCESTRY_SEEN) > 2000:
                 _ANCESTRY_SEEN.clear()
             _ANCESTRY_SEEN.add(sid)
-            ids += [i for i in _phone_data().compression_ancestors(sid) if i not in ids]
+            _ancestry_later(sid, list(ids))
         new = _phone_taint().adopt(ids)
         if new:
             _report_taint(new)

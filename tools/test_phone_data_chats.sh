@@ -19,16 +19,18 @@ public class PhoneDataChatsTest {
         public String load() { return text; }
         public void save(String t) { text = t; saves++; }
     }
+    /** A record whose clock moves 5 s per look, so every change is written at once (the batching has its own tests below). */
+    static PhoneDataChats mk(PhoneDataChats.Store s) { long[] t = {0}; return new PhoneDataChats(s, () -> t[0] += 5000); }
     static void fill(PhoneDataChats c, int n, String prefix) { for (int i = 0; i < n; i++) c.record(prefix + i, null); }
     public static void main(String[] a) {
         Mem m = new Mem();
-        PhoneDataChats c = new PhoneDataChats(m);
+        PhoneDataChats c = mk(m);
         check(!c.contains("chat-1") && c.size() == 0, "empty at first");
         c.record("chat-1", null);
         check(c.contains("chat-1") && !c.contains("chat-2"), "a recorded session is known, another is not");
         c.record("chat-2", Arrays.asList("parent-a", "grand-b"));
         check(c.contains("parent-a") && c.contains("grand-b") && c.contains("chat-2"), "the chats list is recorded with the session");
-        PhoneDataChats again = new PhoneDataChats(m);
+        PhoneDataChats again = mk(m);
         check(again.contains("chat-1") && again.contains("grand-b"), "survives re-creation (a restart)");
         // invalid entries are ignored, valid ones in the same list still count
         List<Object> mixed = new ArrayList<>(Arrays.asList(null, 5, "", rep("x", 129), "bad\nline", "tab\tid", "good-1", true, new ArrayList<>(), "ninth"));
@@ -39,7 +41,7 @@ public class PhoneDataChatsTest {
         check(c.size() == 7, "an invalid session or a non-list chats changes nothing and throws nothing");
         check(!m.text.contains("bad") && !m.text.contains("tab"), "nothing invalid reached the stored text");
         // up to 16 in the list, and at most 17 new ids per request
-        PhoneDataChats d = new PhoneDataChats(new Mem());
+        PhoneDataChats d = mk(new Mem());
         List<Object> twenty = new ArrayList<>();
         for (int i = 0; i < 20; i++) twenty.add("anc-" + i);
         d.record("s", twenty);
@@ -50,7 +52,7 @@ public class PhoneDataChatsTest {
         // ── never evicted: at the cap the flag is set and every id stays ──
         check(PhoneDataChats.START_CAP == 2000 && PhoneDataChats.STEP == 2000 && PhoneDataChats.MAX_CAP == 20000, "the cap starts at 2000, grows by 2000 and stops at 20000");
         Mem big = new Mem();
-        PhoneDataChats e = new PhoneDataChats(big);
+        PhoneDataChats e = mk(big);
         e.record("real-chat", null);
         check(e.cap() == 2000, "a fresh record has the start cap");
         fill(e, 1999, "flood-");
@@ -61,7 +63,7 @@ public class PhoneDataChatsTest {
         check(e.size() == 2001 && e.contains("one-more"), "the id that came after the cap is kept too");
         check(e.contains("never-seen-chat"), "with the flag set every valid chat counts as tainted (fail closed)");
         check(!e.contains("") && !e.contains(null), "an invalid id is still never known");
-        PhoneDataChats e2 = new PhoneDataChats(big);
+        PhoneDataChats e2 = mk(big);
         check(e2.overflowed() && e2.contains("another") && e2.cap() == 2000 && e2.size() == 2001, "the flag, the cap and the ids survive a restart");
         check(e.any(), "any() is true once something was recorded");
         // a flood of reads with fake ids (each 17 new) never costs a real chat
@@ -73,42 +75,42 @@ public class PhoneDataChatsTest {
         check(e.allowMore() && e.cap() == 4000, "Allow more chats raises the cap by 2000");
         check(!e.overflowed() && e.size() == before && e.contains("real-chat") && e.contains("flood-0") && e.contains("fk-49-15"), "the flag clears and nothing is lost");
         check(!e.contains("never-seen-chat"), "an unknown chat is not tainted any more");
-        check(!new PhoneDataChats(big).overflowed() && new PhoneDataChats(big).cap() == 4000 && new PhoneDataChats(big).size() == before, "and that survives a restart");
+        check(!mk(big).overflowed() && mk(big).cap() == 4000 && mk(big).size() == before, "and that survives a restart");
         // the record is still over the new cap: the flag stays on
-        PhoneDataChats h = new PhoneDataChats(new Mem());
+        PhoneDataChats h = mk(new Mem());
         for (int i = 0; i < 2100; i++) h.record("h-" + i, null);
         check(h.overflowed() && h.size() == 2100, "2100 ids: flagged");
         for (int i = 2100; i < 4100; i++) h.record("h-" + i, null);
         check(h.size() == 4100 && h.allowMore() && h.cap() == 4000 && h.overflowed(), "raised to 4000 but 4100 ids are kept: the flag stays until the cap covers them");
         check(h.allowMore() && h.cap() == 6000 && !h.overflowed() && h.size() == 4100, "raised again: the flag clears, all 4100 ids stay");
         // the maximum
-        PhoneDataChats mx = new PhoneDataChats(new Mem());
+        PhoneDataChats mx = mk(new Mem());
         int n = 0;
         while (mx.cap() < PhoneDataChats.MAX_CAP) { check(mx.allowMore(), "allowMore step " + (++n)); }
         check(mx.cap() == 20000 && !mx.allowMore() && mx.cap() == 20000, "the cap stops at 20000");
-        PhoneDataChats hard = new PhoneDataChats(new Mem());
+        PhoneDataChats hard = mk(new Mem());
         for (int i = 0; i < 20010; i++) hard.record("z-" + i, null);
         check(hard.size() == 20000 && hard.overflowed() && hard.contains("z-0") && hard.contains("z-19999") && hard.contains("anything"), "past 20000 ids no more are kept and the flag stays on");
         check(hard.cap() == 2000, "(the cap itself only moves when the user allows more)");
         // an old stored cap above the maximum, or junk, is clamped
         Mem junk = new Mem();
         junk.text = "v3 ok 99999999\nj-1";
-        check(new PhoneDataChats(junk).cap() == 20000 && new PhoneDataChats(junk).contains("j-1"), "a stored cap is clamped to the maximum");
+        check(mk(junk).cap() == 20000 && mk(junk).contains("j-1"), "a stored cap is clamped to the maximum");
         junk.text = "v3 ok banana\nj-1";
-        check(new PhoneDataChats(junk).cap() == 2000, "a stored cap that is not a number falls back to the start cap");
+        check(mk(junk).cap() == 2000, "a stored cap that is not a number falls back to the start cap");
         StringBuilder many = new StringBuilder("v3 ok 2000");
         for (int i = 0; i < 2500; i++) many.append("\nq-").append(i);
         junk.text = many.toString();
-        PhoneDataChats lo = new PhoneDataChats(junk);
+        PhoneDataChats lo = mk(junk);
         check(lo.overflowed() && lo.size() == 2500 && lo.contains("q-0"), "a record bigger than its cap loads flagged with every id kept");
 
         // ── Forget ──
         e.forgetAll();
         check(!e.overflowed() && e.size() == 0 && !e.contains("real-chat") && !e.any(), "Forget clears the flag and the ids");
-        check(!new PhoneDataChats(big).contains("real-chat") && !new PhoneDataChats(big).overflowed(), "and stays cleared after a restart");
+        check(!mk(big).contains("real-chat") && !mk(big).overflowed(), "and stays cleared after a restart");
 
         // ── the plugin's taint op: ids only, only adds ──
-        PhoneDataChats t = new PhoneDataChats(new Mem());
+        PhoneDataChats t = mk(new Mem());
         t.record("keep-1", Arrays.asList("keep-2"));
         check(t.taint(Arrays.asList("new-a", "new-b")) && t.contains("new-a") && t.contains("new-b"), "taint adds the ids");
         check(t.contains("keep-1") && t.contains("keep-2") && t.size() == 4, "and removes nothing");
@@ -122,15 +124,15 @@ public class PhoneDataChatsTest {
         check(t.taint(thirtyTwo) && t.contains("tt-15") && !t.contains("tt-16") && !t.contains("tt-31"), "only the first 16 entries count");
         check(t.taint(Arrays.asList(rep("w", 128))) && t.contains(rep("w", 128)) && !t.taint(Arrays.asList(rep("w", 129))), "128 characters is the longest id");
         Mem tm = new Mem();
-        PhoneDataChats t2 = new PhoneDataChats(tm);
-        check(t2.taint(Arrays.asList("t-1")) && new PhoneDataChats(tm).contains("t-1"), "a tainted id survives a restart");
-        PhoneDataChats t3 = new PhoneDataChats(new Mem());
+        PhoneDataChats t2 = mk(tm);
+        check(t2.taint(Arrays.asList("t-1")) && mk(tm).contains("t-1"), "a tainted id survives a restart");
+        PhoneDataChats t3 = mk(new Mem());
         fill(t3, 2000, "tf-");
         check(t3.taint(Arrays.asList("over")) && t3.overflowed() && t3.contains("tf-0") && t3.contains("over"), "taint at the cap sets the flag like a read and evicts nothing");
 
         // ── what is stored: ids only ──
         Mem store = new Mem();
-        PhoneDataChats s = new PhoneDataChats(store);
+        PhoneDataChats s = mk(store);
         s.record("id-1", Arrays.asList("id-2"));
         String[] lines = store.text.split("\n");
         boolean idsOnly = lines[0].matches("v3 (ok|overflow) [0-9]+") && lines.length == 3 && lines[1].equals("id-1") && lines[2].equals("id-2");
@@ -138,14 +140,14 @@ public class PhoneDataChatsTest {
         // an older record (ids and times, v2) still loads
         Mem old = new Mem();
         old.text = "v2 ok\nold-a\t12345\nold-b\t99";
-        PhoneDataChats lg = new PhoneDataChats(old);
+        PhoneDataChats lg = mk(old);
         check(lg.contains("old-a") && lg.contains("old-b") && lg.size() == 2 && !lg.overflowed() && lg.cap() == 2000, "a v2 record (ids with times) still loads");
         old.text = "v2 overflow\nold-a";
-        check(new PhoneDataChats(old).overflowed(), "a v2 overflow flag still loads");
+        check(mk(old).overflowed(), "a v2 overflow flag still loads");
         old.text = "old-a\nold-b";
-        check(new PhoneDataChats(old).contains("old-b"), "a record from the first version (ids only) still loads");
+        check(mk(old).contains("old-b"), "a record from the first version (ids only) still loads");
         // a store that throws
-        PhoneDataChats f = new PhoneDataChats(new PhoneDataChats.Store() {
+        PhoneDataChats f = mk(new PhoneDataChats.Store() {
             public String load() { throw new RuntimeException("x"); }
             public void save(String t) { throw new RuntimeException("y"); }
         });
@@ -153,10 +155,60 @@ public class PhoneDataChatsTest {
         check(f.contains("k"), "a failing store still remembers in memory");
         // writes stay cheap: a known id, a read or a page question never writes
         Mem q = new Mem();
-        PhoneDataChats g = new PhoneDataChats(q);
+        PhoneDataChats g = mk(q);
         g.record("same", null); g.record("same", null); g.record("same", null);
         g.contains("same"); g.contains("same"); g.taint(Arrays.asList("same"));
         check(q.saves == 1, "a known id and the page's questions do not write again");
+
+        // ── the lost flag: an id with no room is remembered as lost; Allow more never clears it ──
+        Mem lm = new Mem();
+        PhoneDataChats l = mk(lm);
+        for (int i = 0; i < 20000; i++) l.record("fake-" + i, null); // a key holder floods 20000 fake ids
+        check(l.size() == 20000 && l.overflowed() && !l.lost() && l.contains("real-x"), "20000 ids: overflow is on, nothing lost yet, every chat counts as having read");
+        l.record("real-x", null); // a real chat reads while the record is full: dropped
+        check(l.size() == 20000 && l.lost() && l.contains("real-x"), "a real chat past the bound is dropped and the lost flag is set; it still counts as read");
+        int taps = 0;
+        for (int i = 0; i < 9; i++) if (l.allowMore()) taps++;
+        check(taps == 9 && l.cap() == 20000 && !l.overflowed(), "Allow more nine times: the cap is at the maximum and the overflow flag is clear");
+        check(l.lost() && l.contains("real-x") && l.contains("never-seen") && l.any(), "but the lost flag stays: every chat, the dropped one included, is still tainted");
+        check(!l.allowMore() && l.lost() && l.contains("real-x"), "a tenth Allow more is refused (the limit) and changes nothing");
+        PhoneDataChats l2 = mk(lm);
+        check(l2.lost() && l2.contains("real-x") && l2.contains("never-seen") && !l2.overflowed(), "the lost flag survives a restart");
+        check(lm.text.split("\n")[0].equals("v3 ok 20000 lost"), "and is in the stored header");
+        l2.forgetAll();
+        check(!l2.lost() && !l2.overflowed() && !l2.contains("real-x") && !l2.any() && !mk(lm).lost(), "only Forget clears it");
+        Mem ol = new Mem();
+        ol.text = "v3 ok 20000";
+        PhoneDataChats l3 = mk(ol);
+        check(!l3.lost() && !l3.contains("x"), "a record without the flag loads without it (older records)");
+        StringBuilder huge = new StringBuilder("v3 ok 20000");
+        for (int i = 0; i < 20003; i++) huge.append("\nhg-").append(i);
+        ol.text = huge.toString();
+        PhoneDataChats l4 = mk(ol);
+        check(l4.size() == 20000 && l4.lost() && l4.contains("anything"), "a stored record with more ids than the bound loads with the lost flag");
+
+        // ── batched saves: at most one a second, flushed on demand, whole text each time ──
+        long[] now = {1_000_000};
+        Mem bm = new Mem();
+        PhoneDataChats b = new PhoneDataChats(bm, () -> now[0]);
+        b.record("b-0", null);
+        check(bm.saves == 1, "the first change is written at once");
+        for (int i = 1; i <= 500; i++) { now[0] += 1; b.record("b-" + i, null); }
+        check(bm.saves == 1 && b.size() == 501, "500 more changes within a second write nothing more (they wait in memory)");
+        check(b.contains("b-500") && bm.saves == 2 && bm.text.contains("b-500"), "the page reading the record writes what waits");
+        now[0] += 10; b.record("b-501", null);
+        check(bm.saves == 2, "a change right after is held back");
+        b.flush();
+        check(bm.saves == 3 && mk(bm).contains("b-501"), "flush (the app pausing) writes it");
+        b.flush();
+        check(bm.saves == 3, "flush with nothing waiting writes nothing");
+        now[0] += 1500; b.record("b-502", null);
+        check(bm.saves == 4, "after a second the next change is written at once");
+        now[0] += 10; b.record("b-503", null);
+        // a crash now: the file holds everything up to the last write, only the held-back id (the last second) is missing
+        check(mk(bm).size() == 503 && mk(bm).contains("b-502"), "after a crash the file holds everything up to the last write");
+        b.allowMore();
+        check(mk(bm).contains("b-503"), "allowMore writes at once and so includes what waited");
         System.out.println(fails == 0 ? "ALL PASSED" : fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }

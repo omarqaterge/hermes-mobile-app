@@ -286,21 +286,31 @@ def _state_db() -> Path:
     return Path(get_hermes_home()) / "state.db"
 
 
-def compression_ancestors(sid: str, limit: int = MAX_CHATS) -> list:
+ANCESTRY_BUDGET_S = 3.0   # the whole lookup, however many queries; it runs on the background reporting thread
+
+
+def compression_ancestors(sid: str, limit: int = MAX_CHATS, budget: float = ANCESTRY_BUDGET_S) -> list:
     """The stored ids a context compression rotated away from, nearest first: a chat that read in segment S1 and was
     compressed to S2 is known to the app as S1 only. Walks `parent_session_id` upward while the parent ended by
     compression (the same relation the dashboard's sent-counts walks downward). Read-only; [] when there is no database,
-    no such session or anything fails."""
+    no such session or anything fails. The whole lookup stops after `budget` seconds (3), busy waits included, and returns what
+    it found; callers run it off the tool-call thread."""
     out: list = []
     try:
         import sqlite3
+        end = time.monotonic() + budget
         db = _state_db()
         if not sid or not db.exists():
             return out
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=max(0.05, min(2.0, budget)))
         try:
+            con.set_progress_handler(lambda: 1 if time.monotonic() > end else 0, 1000)
             cur = sid
             for _ in range(limit):
+                left = end - time.monotonic()
+                if left <= 0:
+                    break
+                con.execute(f"PRAGMA busy_timeout={int(min(2.0, left) * 1000)}")
                 row = con.execute(
                     "SELECT p.id FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
                     "WHERE c.id = ? AND p.end_reason = 'compression'", (cur,)).fetchone()
