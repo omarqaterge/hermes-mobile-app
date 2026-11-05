@@ -2,6 +2,8 @@
 
 **Decided:** 2026-11-04, by the owner.
 
+**Launched:** 2026-11-05. The owner approved the tests on a real phone (Android 16) before launch.
+
 The agent should be able to read the phone's contacts, calendar, call log, messages, location and latest photos, but this
 data is sensitive, it goes to the model provider, and messages can contain text written by strangers. The agent also runs
 in Termux, where it can read the key the plugin uses and edit any plugin setting, so nothing stored or decided on that

@@ -1,24 +1,30 @@
 # Phone data tools
 
-**State (2026-11-04):** the contract below and placeholders that refuse everything are in. Six streams build on it side by
-side: redaction, two groups of readers, the plugin tool, the Settings switches, and the approval gate. Nothing is live
-until `PhoneData.READY` is set to true in the feature's final pull request, so their pull requests can merge in any order.
-The rules are in the decision [phone-data-read-only](../decisions/phone-data-read-only.md). Only the coordinating session edits this file.
+**State (2026-11-05):** launched. `PhoneData.READY` is true, so the Settings section "Phone data for the agent" shows and
+the agent can read contacts, calendar, call log, messages (SMS), approximate location and latest-photo details when the
+user switches them on (everything starts off). The rules are in the decision
+[phone-data-read-only](../decisions/phone-data-read-only.md); the privacy side is in [privacy](../privacy.md). The
+protections for chats that have read phone data (remote images, links, HTML previews, web requests, commands that can send
+data out) and the record of those chats are in too. Tested on one real phone with Android 16 on 2026-11-05 with the owner
+present; the list is in [manual-tests](../manual-tests.md) under "Phone data for the agent".
 
-**Next:** finish the six streams, plus the protection for chats that have read phone data (pull requests 137 and 140 and the round 5 fixes, see the decision); then a full test run, an attack review and a real-phone test; then docs and the
-final pull request.
+**Next:** the checks that are still to do on a phone (the same list is in [manual-tests](../manual-tests.md)):
 
-**Round 4 (2026-11-05, pull request 140):** the plugin reports a chat that comes back under a new stored id (a
-context compression) with the new keyed op `taint`; the app's record never evicts (cap 2000, "Allow more chats" up to 20000, "Forget" with a
-warning); more command shapes ask; a damaged plugin state file fails closed. `PhoneData.READY` is still false. Not verified on a real phone.
+- a read attempted while the phone is locked;
+- "Tap to load" and the link address dialog in a protected chat;
+- a protected chat that Hermes compresses;
+- the Report a problem text after reads;
+- the overflow, "Allow more chats" and "Forget" rows in Settings;
+- a phone with no screen lock;
+- any Android older than 16 (the minimum is 8.0): above all the SMS and call-log permission dialog on a sideloaded
+  install, and the Android 13 and 14 photo permissions;
+- the case where the model obeys hostile text, so that the native filter is exercised in a real WebView.
 
-**Round 5 (2026-11-05):** a separate `lost` flag when an id had no room (Allow more never clears it, only Forget), `allowMore` answers `full` at the maximum, the record's saves are batched (one a second, plus on pause and page read), the compression lookup runs on the background thread with a 3 second budget, `vim -u NONE f` no longer asks, the fallback writer and the state file never drop a chat (their own `full` flag). `PhoneData.READY` is still false. Not verified on a real phone.
+**Needs a real phone:** all of the above. Anyone may edit this file; change the contract below only after telling the
+other agents working on this feature, because the app and the plugin both build against it.
 
-**Needs a real phone:** the biometric then permission flow, a read refused on a locked phone, permission revoked in Android
-settings, Full access on and off, real data from each kind, and location when the app isn't on screen (Android 10+ may
-give an old fix or none).
-
-**Links:** [decision](../decisions/phone-data-read-only.md), [spec 4.1](../spec/04-01-every-java-class.md).
+**Links:** [decision](../decisions/phone-data-read-only.md), [privacy](../privacy.md),
+[manual tests](../manual-tests.md), [spec 4.1](../spec/04-01-every-java-class.md).
 
 ## The contract
 

@@ -295,3 +295,41 @@ YouTube was seen playing in an Android 15 emulator's WebView (Chrome 124) throug
 - [ ] Have Hermux ask a question with choices over 80 characters, after Hermes has restarted on the new plugin.
       Expected: the box shows them whole.
 - [ ] Same with the phone locked. Expected: the unlock comes first, then the box.
+
+## Phone data for the agent (Settings → Phone data for the agent)
+
+Tested 2026-11-05 on one real phone, Android 16, with the owner present:
+
+- [x] (2026-11-05, Android 16) Off by default: master and every kind start off.
+- [x] (2026-11-05, Android 16) The master and each kind's switch ask for the fingerprint; cancelling leaves them off.
+- [x] (2026-11-05, Android 16) The Android permission dialog for Contacts and Location; denying twice shows the "Allow it in Android settings" row.
+- [x] (2026-11-05, Android 16) Turning a switch off is instant.
+- [x] (2026-11-05, Android 16) Revoking a permission in Android settings shows "Android removed this permission" and the switch stays off after the permission is granted again.
+- [x] (2026-11-05, Android 16) SMS and call log: Android had already granted these permissions on this phone, so no dialog appeared (the fingerprint was still asked).
+- [x] (2026-11-05, Android 16) An approval card with the app's own wording and only Allow once / Deny; the fingerprint on the first Allow only; Deny stops the read.
+- [x] (2026-11-05, Android 16) A switched-off kind is refused without a card.
+- [x] (2026-11-05, Android 16) 50-row cap with `truncated`; one approximate location point.
+- [x] (2026-11-05, Android 16) The lock screen notification shows no details of what is read.
+- [x] (2026-11-05, Android 16) Full access skips the question and Off asks again; Auto access refuses.
+- [x] (2026-11-05, Android 16) In a protected chat (one that has read phone data): an image is blocked, `curl` asks first, and this survives a force-stop; a new chat is unaffected.
+- [x] (2026-11-05, Android 16) A hostile SMS asking for an image: the model ignored it and no request was made.
+- [x] (2026-11-05, Android 16) logcat held no names, numbers or message text.
+
+Still to do (not yet tried on a phone):
+
+- [ ] Locked phone: switch a kind on, lock the phone, and have the agent ask for it (for example from a scheduled
+      chat or by waiting after sending). Expected: refused with "phone is locked", no card, nothing read.
+- [ ] In a protected chat, have the agent write a remote image and a link in its reply. Expected: the image shows
+      "Tap to load" with its host and loads only after the tap; the link opens a dialog with the full address first.
+- [ ] In a protected chat, have the agent give an HTML preview. Expected: it shows as text, not rendered.
+- [ ] Make a protected chat grow until Hermes compresses it, then ask for a remote image. Expected: still blocked.
+- [ ] After some reads, Settings → About → Report a problem, look at the text before sending. Expected: no names,
+      numbers, message text or coordinates.
+- [ ] Fill the record of chats (many chats that read) if you can, or check the rows by their spec: the "Allow more chats"
+      and "Forget" rows in Settings, each asking for the screen lock; "Forget" warns first.
+- [ ] A phone with no screen lock: try to turn a switch on. Expected: it says a screen lock is needed and stays off.
+- [ ] Android 8, 9, 10, 12, 13 and 14 phones, if at hand: turn on SMS and call log on a sideloaded install and note the
+      permission dialog (some Android versions restrict these for sideloaded apps); on 13 and 14 turn on Latest photos
+      and note the permission asked (and, on 14, "selected photos only").
+- [ ] A hostile text that the model does obey (for example, a message telling it to put the data in an image address):
+      confirm the image is still not requested, so the native filter is exercised in a real WebView.

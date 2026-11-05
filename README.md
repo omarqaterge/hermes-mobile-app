@@ -74,8 +74,7 @@ lock screen *and* apps used out of sight *and* a shared canvas. Pick any one of 
 and the guard rails (per-chat access levels, fingerprint on the first Allow, sandboxed pages) that an agent with this
 much reach needs.
 
-**Where others go further, and what we want next** ([the full list](docs/research/phone-agent-landscape.md)): phone data
-tools for the agent (contacts, calendar, SMS, location), a home-screen widget and Quick Settings tile, opt-in notification
+**Where others go further, and what we want next** ([the full list](docs/research/phone-agent-landscape.md)): a home-screen widget and Quick Settings tile, opt-in notification
 summaries, a wake word, and an offline local model. Hermux does not do encrypted
 multi-device sync or multiplayer sessions: your data stays on one phone on purpose.
 
@@ -160,6 +159,10 @@ Live mode. Replies can be read aloud with a full player, and dictation can run o
 Hermux runs on the phone it talks about, so you can just ask: battery, storage, files in Downloads, what's installed. It uses
 Termux's phone commands, and with Shizuku it gets system-level access (settings, apps, logs) through `rish`. If Shizuku has
 stopped, it tells you instead of guessing.
+
+If you switch it on in Settings → "Phone data for the agent", it can also read your contacts, calendar, call log,
+messages, approximate location and the date and size of your latest photos, read-only. It is off by default, each kind
+has its own switch, and every read asks first. [Privacy](docs/privacy.md) says what this does and does not protect.
 
 ### Connects to everything
 

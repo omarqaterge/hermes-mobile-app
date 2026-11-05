@@ -17,14 +17,16 @@ import org.json.JSONObject;
 
 /**
  * Phone data for the agent: the switches and the read dispatch (docs/decisions/phone-data-read-only.md). The switches
- * live here in the app, never in the plugin, because the agent can edit anything in Termux. Off until the feature's
- * final pull request sets {@link #READY}.
+ * live here in the app, never in the plugin, because the agent can edit anything in Termux. Launched 2026-11-05: every
+ * switch still starts off.
  */
 final class PhoneData {
     private PhoneData() {}
 
-    /** False: the Settings section stays hidden and every read is refused with reason {@code not_ready}. */
-    static final boolean READY = false;
+    /** The launch switch, true since 2026-11-05. Set to false only to pull the feature from a build: the Settings section then
+     *  stays hidden and every read is refused with reason {@code not_ready}. (An app too old for the plugin, or the plugin too
+     *  old for the app, still answers {@code not_ready} or 404 and the tool says it isn't available.) */
+    static final boolean READY = true;
 
     static final String[] KINDS = {"contacts", "calendar", "calls", "sms", "location", "photos"};
 
