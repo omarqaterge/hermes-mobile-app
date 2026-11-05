@@ -19,7 +19,8 @@ Auto access Hermes's gate approves without asking; and a chat whose runtime id a
 call is no longer recognised.
 
 The chats that have read are remembered in memory and in ~/.hermes/mobile/phone-read.json (chat ids and times only,
-never data, at most MAX_CHATS, written atomically under a file lock). A damaged file (not JSON, wrong shape)
+never data, at most MAX_CHATS, written atomically under a file lock; an id that has no room is never dropped: the file
+gets a `full` flag and every chat counts as having read, as for a damaged file). A damaged file (not JSON, wrong shape)
 means every chat counts as having read, and is left as it is until someone deletes it; a missing file means nobody has.
 Nothing here logs a command, a result or a message.
 """
@@ -105,6 +106,8 @@ def _read_file() -> Optional[Dict[str, float]]:
         return None
     try:
         d = json.loads(text)
+        if isinstance(d, dict) and d.get("full") is True:
+            return None   # an id had no room (MAX_CHATS): it may be a real chat, so every chat counts as having read
         raw = d.get("chats") if isinstance(d, dict) else None
         return {str(k)[:200]: float(v) for k, v in raw.items()} if isinstance(raw, dict) else None
     except Exception:
@@ -177,14 +180,14 @@ def mark(ids: Any) -> None:
                     chats = _read_file()   # read again inside the lock: another process may have added entries
                     if chats is None:
                         return   # a damaged file stays as it is (every chat counts as read); delete it to start over
-                    for i in ids:
-                        chats.pop(i, None)
-                        chats[i] = now
-                    while len(chats) > MAX_CHATS:
-                        chats.pop(next(iter(chats)))
+                    full = len(chats) + len([i for i in ids if i not in chats]) > MAX_CHATS
+                    if not full:
+                        for i in ids:
+                            chats[i] = now
                     PATH.parent.mkdir(parents=True, exist_ok=True)
                     tmp = PATH.with_name(PATH.name + f".{os.getpid()}.tmp")
-                    tmp.write_text(json.dumps({"chats": chats}))
+                    # no room: never drop an old chat. The file's own `full` flag makes every chat count as having read
+                    tmp.write_text(json.dumps({"chats": chats, "full": True} if full else {"chats": chats}))
                     tmp.replace(PATH)
             except Exception:
                 pass   # the in-memory entry still holds for this process
@@ -372,6 +375,9 @@ def _vim_runs_program(args: List[str]) -> bool:
             if not _VIM_SAFE.match(val.strip()):
                 return True
             j += 2
+            continue
+        if a == "-u" and j + 1 < len(args) and args[j + 1] in ("NONE", "NORC"):
+            j += 2   # `-u NONE`, the split form of `-uNONE`: loads no vimrc
             continue
         m = re.match(r"^\+(.*)$", a)
         if m and len(a) > 1:

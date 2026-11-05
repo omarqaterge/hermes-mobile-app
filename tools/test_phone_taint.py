@@ -239,7 +239,7 @@ ROUND4_QUIET = [
   'git difftool --staged', 'less +F app.log', 'less +G f', 'less +/word f', 'less +5 f', 'man -P cat ls', 'man -Pcat ls', 'man --pager=less ls',
   'man --pager less ls', 'tar -I zstd -cf a.tzst d', 'tar -I zstd -xf a.tzst', 'tar --use-compress-program=zstd -xf a', "tar -I 'pigz -p 4' -cf a d",
   'tar -I xz -cf a d', 'tar -Izstd -xf a', 'vim -c wq f', 'vim -c q', 'vim +10 f', 'vim -c "set number" f', 'vim -c 42 f', 'vi -c wq f', 'nvim -c qa',
-  'vim +wq f', 'vim -c "syntax on" f',
+  'vim +wq f', 'vim -c "syntax on" f', 'vim -u NONE f', 'vim -u NORC f', 'vim -uNONE f', 'vi -u NONE -c wq f', 'nvim -u NONE f',
   "awk '{print $1}' f", 'awk \'BEGIN{while((getline l < "f")>0) print l}\'', "awk 'BEGIN{getline; print}' f", "awk '/a|b/ {print}' f",
   'bash < script.sh', 'sh < setup.sh', 'sort < <(ls)', 'cat < <(ls)', 'diff <(ls a) <(ls b)', 'xargs -a f echo', 'xargs -a f ls -l', 'xargs -a f bash script.sh',
   'xargs -a f bash -c "echo hi"', 'python3 -m pytest', 'python3 -m json.tool f', 'python3 -m venv .v', 'python3 -m pip list', 'python3 -m unittest',
@@ -258,6 +258,8 @@ ROUND4_CODE_QUIET = [
 ]
 for code in ROUND4_CODE_QUIET:
     check("execute_code, no ask: " + code.split("\n")[0][:60], not asks("execute_code", {"code": code}), code)
+check("vim -u with a real file still asks, in both forms", all(asks("terminal", {"command": c}) for c in (
+    "vim -u evil.vim f", "vim -u evil f", "vim -uevil f", "vim -u NONE -S x f", "vim -u")))
 check("a vim command that runs a program still asks", all(asks("terminal", {"command": c}) for c in (
     "vim -c '!id' f", "vim -c 'r !id' f", "vim -c 'wq|!id' f", "vim +'!id' f", "vim -c 'source x' f", "vim -S x f", "vim -es f", "vim -c 'set shell=x|!id'")))
 check("a tar program that is not a compressor still asks", all(asks("terminal", {"command": c}) for c in (
@@ -383,9 +385,13 @@ pt._cache = (None, {})
 reset()
 for i in range(pt.MAX_CHATS + 30):
     pt.mark(f"chat{i}")
-n = len(json.loads(pt.PATH.read_text())["chats"])
-check("the file is bounded and keeps the newest",
-      n == pt.MAX_CHATS and pt.has_read(f"chat{pt.MAX_CHATS + 29}") and "chat0" not in pt._file_chats())
+_raw = json.loads(pt.PATH.read_text())
+check("the file is bounded and keeps the oldest: nothing is dropped",
+      len(_raw["chats"]) == pt.MAX_CHATS and "chat0" in _raw["chats"] and "chat2000" not in _raw["chats"])
+check("an id with no room sets the file's own full flag, so every chat counts as having read",
+      _raw.get("full") is True and pt.has_read("never-seen") and pt.has_read("chat2029") and pt.check("terminal", {"command": "curl http://x"}, "never-seen") is not None)
+pt.PATH.unlink()
+pt._cache = (None, {})
 
 print("the plugin hook")
 reset()
@@ -681,6 +687,28 @@ check("a report that raises never reaches the tool call", r is None and pt.has_r
 check("adopt and _taint_sync never raise on odd input", pt.adopt(None) == [] and pt.adopt([None, 5, ""]) == [] and init._taint_sync(None) is None)
 pd.report_taint = _real_report
 
+print("the compression lookup never runs on the tool-call thread and has a total budget")
+import threading as _th
+_seen_threads = []
+_real_anc = pd.compression_ancestors
+
+
+def _spy_anc(sid, *a, **k):
+    _seen_threads.append(_th.current_thread())
+    return []
+
+
+pd.compression_ancestors = _spy_anc
+fresh()
+hook_ids("read_file", {"path": "f"}, "rt-spy", "spy-1")
+settle()
+check("compression_ancestors ran, and on another thread than the tool call", len(_seen_threads) == 1 and _seen_threads[0] is not _th.main_thread())
+pd.compression_ancestors = _real_anc
+pd._state_db = lambda: _dbp
+check("a budget of 0 stops the lookup at once", pd.compression_ancestors("old-3", budget=0) == [])
+check("the default budget finds the chain (and is 3 seconds)", pd.compression_ancestors("old-3") == ["old-2", "old-1"] and pd.ANCESTRY_BUDGET_S == 3.0)
+del pd._state_db
+
 print("the report to the app (phone_data.report_taint)")
 posted = []
 pd._post = lambda body, timeout: (posted.append(body), (200, {"ok": True}))[1]
@@ -720,6 +748,18 @@ sc._SESSION_UI_SESSION_ID.reset(tokf)
 init._READ_CHATS.clear()
 check("fallback: after a restart the new stored id is in the file", init._taint_directive("terminal", {"command": "ls"}, "fb-new", "")["action"] == "block")
 check("fallback: a different chat is not blocked", init._taint_directive("terminal", {"command": "ls"}, "fb-other", "") is None)
+# the fallback's writer takes the same lock and drops nothing past the bound: it sets the file's own flag
+pt.PATH.write_text(json.dumps({"chats": {f"fbk-{i}": 1.0 for i in range(init._READ_MAX - 1)}}))
+init._READ_CHATS.clear()
+init._fallback_save(["fbk-0", "fbk-new-1"])
+_d = json.loads(pt.PATH.read_text())
+check("fallback: the bound is the module's, and an id that fits is added", init._READ_MAX == pt.MAX_CHATS and "fbk-new-1" in _d["chats"] and "full" not in _d and len(_d["chats"]) == pt.MAX_CHATS)
+init._fallback_save(["fbk-new-2"])
+_d = json.loads(pt.PATH.read_text())
+check("fallback: past the bound nothing is dropped and the file's full flag is set",
+      _d.get("full") is True and "fbk-0" in _d["chats"] and "fbk-new-2" not in _d["chats"] and len(_d["chats"]) == pt.MAX_CHATS)
+check("fallback: with the flag set every chat counts as having read", init._read_before(["fb-never-seen"]) is True)
+check("fallback: it used the module's lock file", pt.PATH.with_name(pt.PATH.name + ".lock").exists())
 pt.PATH.unlink()
 init._phone_taint = good
 
