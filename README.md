@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <b>An agent that evolves with you.</b><br>
+  <b>An agent that evolves with you. **running natively on your phone**</b><br>
   It learns, adapts and gets things done: it chats, codes, builds with you and uses your apps.<br>
   Securely on your phone. No laptop, no server, no root.
 </p>
