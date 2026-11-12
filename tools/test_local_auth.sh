@@ -550,7 +550,9 @@ public class LocalAuthTest {
         // A verified server that never reads: the write gives up at the deadline instead of blocking for ever.
         final byte[] big = new byte[16 << 20];
         java.util.Arrays.fill(big, (byte) '0');
-        try (Fake f = new Fake(server(new Opt().after((c, fk) -> Thread.sleep(LocalClient.ANSWER_DEADLINE_MS + 4000))))) {
+        // The server's wait and the join are far longer than the deadline and the check's slack, so a slow machine has
+        // room, and a write without its bound (done only once the server reads) still fails clearly.
+        try (Fake f = new Fake(server(new Opt().after((c, fk) -> Thread.sleep(LocalClient.ANSWER_DEADLINE_MS + 15000))))) {
             final LocalClient.Session s = LocalClient.open("events", f.port, KEYS);
             final String[] result = {null};
             long t0 = System.nanoTime();
@@ -559,20 +561,37 @@ public class LocalAuthTest {
             });
             t.setDaemon(true);
             t.start();
-            t.join(LocalClient.ANSWER_DEADLINE_MS + 3000);
+            t.join(LocalClient.ANSWER_DEADLINE_MS + 8000);
             long ms = (System.nanoTime() - t0) / 1_000_000L;
-            check("failed".equals(result[0]) && ms < LocalClient.ANSWER_DEADLINE_MS + 2000,
+            check("failed".equals(result[0]) && ms < LocalClient.ANSWER_DEADLINE_MS + 4000,
                     "a peer that never reads: the write fails within the deadline (" + result[0] + ", " + ms + " ms)");
         }
+        // A peer that starts reading after one read timeout: the write waits for it, within the answer deadline. The
+        // server starts its wait once the request's head is in (the client is writing by then), drains the body in
+        // large chunks without keeping it (quick, and small for the test's heap, even on a loaded machine). The body is
+        // far larger than both sockets' buffers, so the write can only finish once the server reads.
+        final long[] late = {-1}; // body bytes the server drained
         try (Fake f = new Fake(server(new Opt().after((c, fk) -> {
-                Thread.sleep(4000); // longer than one read timeout, well inside the answer deadline
-                fk.read(c);
+                InputStream in = c.getInputStream();
+                StringBuilder head = new StringBuilder();
+                while (head.indexOf("\r\n\r\n") < 0) {
+                    int x = in.read();
+                    if (x < 0) return;
+                    head.append((char) x);
+                }
+                Matcher m = Pattern.compile("(?i)\r\ncontent-length: *(\\d+)").matcher(head);
+                long want = m.find() ? Long.parseLong(m.group(1)) : -1;
+                Thread.sleep(LocalClient.READ_MS + 1000); // longer than one read timeout, well inside the answer deadline
+                byte[] buf = new byte[1 << 16];
+                long n = 0;
+                for (int r; n < want && (r = in.read(buf, 0, (int) Math.min(buf.length, want - n))) > 0; ) n += r;
+                late[0] = n;
                 c.getOutputStream().write(utf8("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
             })))) {
             String got;
             try { got = "" + LocalClient.open("events", f.port, KEYS).request("POST", "/event", big).status; }
             catch (IOException e) { got = e.toString(); }
-            check("204".equals(got), "a peer that starts reading late: the write waits for it (" + got + ")");
+            check("204".equals(got) && late[0] == big.length, "a peer that starts reading late: the write waits for it (" + got + ", " + late[0] + " bytes)");
         }
 
         // No proxy: a ProxySelector that would send everything elsewhere plays no part.

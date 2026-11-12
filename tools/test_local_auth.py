@@ -6,6 +6,7 @@ the hello. Then the server halves: the hello answer, the request MAC over the ra
 server nonces (single use, 10 s, at most 256) and the key file cache (an empty file is never kept). Stdlib only.
 Run: python3 tools/test_local_auth.py"""
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -447,7 +448,9 @@ answer_case("answer with a folded header line", b"HTTP/1.1 204 No Content\r\nX-A
 
 # A verified server that never reads: the send gives up at the deadline.
 BIG = b"[" + b"0," * (8 << 20) + b"0]"
-srv = Fake(server(after=lambda c, srv: time.sleep(la.ANSWER_DEADLINE_S + 3)))
+# The server's wait is far longer than the deadline and the check's slack, so a slow machine has room, and a send
+# without its bound (done only once the server reads) still fails clearly.
+srv = Fake(server(after=lambda c, srv: time.sleep(la.ANSWER_DEADLINE_S + 15)))
 s = la.session("events", srv.port, KEY)
 t0 = time.monotonic()
 try:
@@ -455,15 +458,37 @@ try:
     check("a peer that never reads: the send fails", False, "no error")
 except OSError:
     took = time.monotonic() - t0
-    check("a peer that never reads: the send fails within the deadline", took < la.ANSWER_DEADLINE_S + 2, f"{took:.1f} s")
+    check("a peer that never reads: the send fails within the deadline", took < la.ANSWER_DEADLINE_S + 4, f"{took:.1f} s")
 srv.close()
 
 
+# session's default read timeout: the late reader waits longer than it, whatever it is changed to.
+SESSION_READ_S = inspect.signature(la.session).parameters["timeout"].default
+check("the late reader's wait stays inside the answer deadline", 0 < SESSION_READ_S + 1 < la.ANSWER_DEADLINE_S - 2, SESSION_READ_S)
+
+
 def slow_reader(c, srv):
-    time.sleep(4)  # longer than one read timeout, well inside the answer deadline
+    # The wait starts once the request's head is in (the client is sending by then). The body is drained in large
+    # chunks and only counted, never kept: quick even on a loaded machine (joining 16 MB 4 KB at a time was not).
+    raw = c.c
+    head = b""
+    while b"\r\n\r\n" not in head:
+        d = raw.recv(4096)
+        if not d:
+            return
+        head += d
+    head, _, rest = head.partition(b"\r\n\r\n")
+    m = re.search(rb"\r\ncontent-length: *(\d+)", head, re.I)
+    want = int(m.group(1)) if m else -1
+    time.sleep(SESSION_READ_S + 1)  # longer than one read timeout (session's), well inside the answer deadline
     srv.read_started = time.monotonic()
-    r = read_request(c)
-    srv.request_body = r[1] if r else b""
+    got, buf = len(rest), bytearray(1 << 16)
+    while got < want:
+        n = raw.recv_into(buf, min(len(buf), want - got))
+        if not n:
+            break
+        got += n
+    srv.request_length = got
     c.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
 
 
@@ -482,7 +507,8 @@ la._Connection.send = timed_send
 srv = Fake(server(after=slow_reader))
 try:
     a = la.session("events", srv.port, KEY).request("POST", "/event", BIG)
-    check("a peer that starts reading late: the send waits for it", a.status == 204, a.status)
+    check("a peer that starts reading late: the send waits for it", a.status == 204 and getattr(srv, "request_length", -1) == len(BIG),
+          (a.status, getattr(srv, "request_length", None)))
     check("a peer that starts reading late: the send did block until the server read",
           sends_done and sends_done[-1] > getattr(srv, "read_started", float("inf")))
 except OSError as e:

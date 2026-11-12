@@ -775,6 +775,11 @@ public class LocalDashboardTest {
         check(LocalDashboard.alertJs("dashboard").equals("window.__hmLocalAlert && window.__hmLocalAlert('dashboard')"), "alert script: dashboard");
         check(LocalDashboard.alertJs("events").equals("window.__hmLocalAlert && window.__hmLocalAlert('events')"), "alert script: events");
         check(LocalDashboard.alertJs(null).endsWith("(null)") && LocalDashboard.alertJs("x');alert(1)//").endsWith("(null)"), "alert script: none, and nothing else gets in");
+        // What the page is pushed for each state (MainActivity.pushLocalAlert, every resume and page load): none clears.
+        check(LocalDashboard.alertJs(LocalDashboard.alertKind(false, false)).equals("window.__hmLocalAlert && window.__hmLocalAlert(null)")
+                && LocalDashboard.alertJs(LocalDashboard.alertKind(true, false)).endsWith("('events')")
+                && LocalDashboard.alertJs(LocalDashboard.alertKind(true, true)).endsWith("('events')")
+                && LocalDashboard.alertJs(LocalDashboard.alertKind(false, true)).endsWith("('dashboard')"), "alert push: each state's script, none clearing the banner");
         check("events".equals(LocalDashboard.alertKind(true, true)) && "dashboard".equals(LocalDashboard.alertKind(false, true))
                 && LocalDashboard.alertKind(false, false) == null, "alert kind: the app's own port first, then the dashboard");
         check(LocalDashboard.ALERT_TITLE.equals("Hermux stopped talking to Hermes")

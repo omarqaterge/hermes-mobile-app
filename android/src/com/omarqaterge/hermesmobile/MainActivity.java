@@ -150,6 +150,7 @@ public class MainActivity extends Activity {
                 deliverShare();
                 if (overLock) web.evaluateJavascript("window.hermesLockView && window.hermesLockView(true)", null);
                 deliverShortcut();
+                pushLocalAlert(); // the current state, none included: an alert already on when this page loaded shows
             }
 
             /** The page's renderer died (out of memory, or a crash). Without this, Android ends the whole app with it,
@@ -1450,10 +1451,12 @@ public class MainActivity extends Activity {
     }
 
     /** The page's alert banner: whichever alert is on (HermesService.alertKind: the listener's port first, then the
-     *  dashboard), or none. Any thread. */
+     *  dashboard), or none. Any thread. The script is built on the UI thread from the state at that moment, so pushes
+     *  from different threads can't arrive out of order with a stale one last. */
     void pushLocalAlert() {
-        String js = LocalDashboard.alertJs(HermesService.alertKind());
-        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
+        runOnUiThread(() -> {
+            if (web != null) web.evaluateJavascript(LocalDashboard.alertJs(HermesService.alertKind()), null);
+        });
     }
 
     /** Minimal HTTP/1.1 client for the local dashboard: any method may carry a body (DELETE too). */
@@ -1827,7 +1830,7 @@ public class MainActivity extends Activity {
         }
         if (!HermesService.running) HermesService.start(this);
         HermesService.ensureListening(); // its port not open: try again now (rate-limited)
-        if (HermesService.alertKind() != null) pushLocalAlert(); // a page loaded since an alert came up gets it too
+        pushLocalAlert(); // the current state, none included: a page that missed a push (or kept a stale one) catches up
         // Pinned approval popups: the in-app sheet takes over, so none can be left stuck.
         NotificationManager nm = getSystemService(NotificationManager.class);
         for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())
