@@ -17,6 +17,7 @@ import { ScreenShell } from './Screens'
 import { Spinner } from './Spinner'
 import { formatDuration } from '../text'
 import { ReportLink } from './Report'
+import { pluginUpdate, updateAnswer } from '../plugin-sync'
 
 // Setup check (drawer → Settings, the status sheet, the offline banner) and the first-run SetupFlow. Both draw the same
 // rows from setupSteps() (setupflow.ts): the check lists every row with a ✓ or ✗ and a button that fixes it or opens
@@ -444,6 +445,12 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         alt: kind === 'installer' ? { label: 'Open Termux', run: () => setupFix('open-termux') } : undefined
       }
     }
+    case 'scripts':
+      return {
+        title: 'Phone scripts are up to date',
+        help: 'Some of Hermux’s scripts in Termux are older than this app. Updating the Hermux plugin brings them up to date (Hermux restarts for a moment).',
+        fix: { label: 'Update now', run: () => { const why = updateAnswer(pluginUpdate(false)); if (why) toast(why) } }
+      }
     case 'autostart': {
       // Shown only on phones whose maker adds an Autostart switch; the shell picks the page (Autostart.java).
       const kind = n?.autostart || 'info'

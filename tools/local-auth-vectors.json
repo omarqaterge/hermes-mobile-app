@@ -702,5 +702,175 @@
       "answer": "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n",
       "expect": "refused"
     }
+  ],
+  "token_cases_comment": "Answers to the dashboard's token step (GET /hermux/token on the hello's connection, which must carry X-Hermux-Auth: 1 <kid> <ns> <nc> <mac>), after a good dashboard hello. {BODY} is {\"hermux\":1,\"token\":<token>,\"proof\":<proof>} with fields in 'set' replaced by raw JSON text, {LEN} its length, {PAD:n} n letters x. 'proof' says how the proof is made: good (answer, token, over both nonces and the token's SHA-256), other_key, other_token (over another token's SHA-256), client_dir (direction client), swapped (the two nonces swapped), upper (good, in upper case), other_addr (over another port's address), other_role (role events), replay (over an earlier exchange's nonces). expect: 'token <the token>', a reason, or 'error bad answer'.",
+  "token_cases": [
+    {
+      "name": "honest",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "token dashboard-session-token-0123456789"
+    },
+    {
+      "name": "a proof under another key",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "other_key",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a proof over another token's hash",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "other_token",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a client MAC instead of an answer proof",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "client_dir",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "nonces swapped",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "swapped",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "the proof in upper case",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "upper",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a proof over another address",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "other_addr",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a proof for another role",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "other_role",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a proof from an earlier exchange (replayed)",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "replay",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a proof that is too short",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "set": {
+        "proof": "\"abc\""
+      },
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "bad_proof"
+    },
+    {
+      "name": "refused (403)",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "answer": "HTTP/1.1 403 Forbidden\r\nContent-Length: 19\r\n\r\n{\"error\":\"refused\"}",
+      "expect": "refused"
+    },
+    {
+      "name": "no token yet (503)",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "answer": "HTTP/1.1 503 Service Unavailable\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "not JSON",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nnot json",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "no token field",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "set": {
+        "token": "null"
+      },
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "a token with a space",
+      "token": "two words",
+      "proof": "good",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "an empty token",
+      "token": "",
+      "proof": "good",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "a token over 512 characters",
+      "token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "proof": "good",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "version 0",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "set": {
+        "hermux": "0"
+      },
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "version true",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "set": {
+        "hermux": "true"
+      },
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "a repeated name",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "repeat": "token",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "chunked",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "answer": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "nothing at all",
+      "token": "dashboard-session-token-0123456789",
+      "proof": "good",
+      "answer": "",
+      "expect": "error no answer"
+    }
   ]
 }

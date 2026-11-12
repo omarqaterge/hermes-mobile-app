@@ -225,7 +225,7 @@ rather type it yourself:
    (the computer route did the same over `adb shell`).
 4. Remove Debian: `proot-distro remove debian` (rooted, chroot-distro: `chroot-distro kill debian && chroot-distro remove debian`; never
    delete a chroot's folder by hand, it can still have the phone's storage mounted inside).
-5. Remove the installer's files: `rm -rf ~/.hermes-mobile ~/bin/hermes-services ~/bin/hermes-debian ~/bin/hm-shizuku ~/bin/rish ~/bin/rish_shizuku.dex
+5. Remove the installer's files: `rm -rf ~/.hermes-mobile ~/bin/hermes-services ~/bin/hermes-debian ~/bin/hm-shizuku ~/bin/hm-local ~/bin/rish ~/bin/rish_shizuku.dex
    ~/.termux/boot/10-hermes ~/hermes-mobile ~/hermes-mobile.apk ~/hermux.apk ~/hm.sh`, and the `allow-external-apps = true` line in
    `~/.termux/termux.properties`.
 6. Uninstall the apps in Android's settings: Termux:API, Termux:Boot, Shizuku, Termux, Hermux. Uninstalling Termux alone also

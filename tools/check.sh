@@ -60,7 +60,7 @@ case "${1:-}" in
     want() { printf '%s\n' "$changed" | grep -q -E "$1"; }
     ci=$(printf '%s\n' "$changed" | bash tools/ci-changes.sh)
     printf '%s\n' "$ci" | grep -qx 'web=true' && groups+=(web)
-    want '^(hermes-plugin/|relay/|tools/test_[a-z_]+\.py$|tools/[a-z_]+\.py$|tools/local-auth-vectors\.json$)' && groups+=(plugin)
+    want '^(hermes-plugin/|relay/|tools/test_[a-z_]+\.py$|tools/[a-z_]+\.py$|tools/local-auth-vectors\.json$|phone/hm-local$)' && groups+=(plugin)
     printf '%s\n' "$ci" | grep -qx 'patches=true' && groups+=(patches)
     want '^(android/|tools/(java-check|api-check|test_setup_lines|test_diag_log|test_update_url|test_autostart|test_devtools_guard|test_local_auth|test_local_server)\.sh$|tools/local-auth-vectors\.json$)' && groups+=(android)
     ;;

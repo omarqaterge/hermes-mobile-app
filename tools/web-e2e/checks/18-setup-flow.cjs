@@ -425,4 +425,32 @@ module.exports = async t => {
     await card.waitFor({ state: 'detached', timeout: 12000 }).then(() => check(true, 'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'), () => check(false, 'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'))
     await fs.close()
   }
+
+  // g. "Phone scripts are up to date": hidden unless the shell says Termux's scripts are old (no app build says so yet);
+  // then a ✕ row whose button runs the plugin update.
+  await mock({ configured: true, pluginEnabled: true })
+  {
+    const fg = await flowPage(OK)
+    await fg.goto(WEB + '/')
+    await fg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await fg.locator('.conn-dot').click()
+    await fg.getByRole('button', { name: 'Setup check' }).click()
+    await fg.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).catch(() => {})
+    check((await fg.locator('.setup-item', { hasText: 'Phone scripts' }).count()) === 0, 'phone scripts: no row while the shell says nothing about them')
+    await fg.evaluate(() => {
+      window.__setup = { ...window.__setup, phoneScriptsOld: false }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await sleep(800)
+    check((await fg.locator('.setup-item', { hasText: 'Phone scripts' }).count()) === 0, 'phone scripts: no row when they are current')
+    await fg.evaluate(() => {
+      window.__setup = { ...window.__setup, phoneScriptsOld: true }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    const row = fg.locator('.setup-item.bad', { hasText: 'Phone scripts are up to date' })
+    await row.waitFor({ timeout: 6000 }).then(() => check(true, 'phone scripts: old scripts show a ✕ row'), () => check(false, 'phone scripts: old scripts show a ✕ row'))
+    await row.getByRole('button', { name: 'Update now' }).click()
+    check(JSON.stringify(await fg.evaluate(() => window.__plugLog || [])) === '[false]', 'phone scripts: Update now runs the plugin update (not forced)')
+    await fg.close()
+  }
 }

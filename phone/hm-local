@@ -1,0 +1,703 @@
+#!/data/data/com.termux/files/usr/bin/bash
+""":"
+# hm-local: local authentication (hermux-local-v1) from Termux's shell. It verifies that the local Hermux server is the
+# real one (its proof under the shared key) before sending it anything, and signs its one request with the same key.
+# Runs in TERMUX (phone/install.sh puts it in ~/bin; each app update brings it along through the plugin, see
+# phone/plugin-update.sh). The key is read from ~/.hermes-mobile/key inside the script: never from the command line or
+# the environment, and the key, key id, nonces and proofs are never printed.
+#
+#   hm-local hello ROLE PORT   Verify the server for ROLE (dashboard or events) on 127.0.0.1:PORT; sends nothing else.
+#   hm-local token [PORT]      Print the dashboard's session token, from a verified dashboard (default port 9119);
+#                              the token request names both nonces (1 <kid> <ns> <nc> <mac>), as the guard wants.
+#   hm-local post PATH [PORT]  POST the body read from stdin (at most 256 KiB within 5 s, as application/json) to the app's
+#                              port (default 9121) after a verified hello; prints the answer's body on a 2xx status.
+#
+# Exit (the reasons are the closed list of local authentication; the name is also printed on stderr):
+#   0 verified (and sent) · 3 no_answer · 4 no_hello · 5 old_version · 6 bad_addr · 7 unknown_kid · 8 bad_proof ·
+#   9 refused · 10 no key file · 11 the answer after a verified hello was unusable (broken, too large, too slow, or a
+#   status other than 2xx) · 12 no Python in Termux or in Debian · 64 usage · 65 the body on stdin was over 256 KiB or
+#   not complete within 5 s · 70 an internal error · 74 the output could not be written. Python itself exits 1, 2 or
+#   120 when it can't run the file at all; a failed Debian login passes its own code on. None of these overlap.
+#
+# This first part is shell, and Python reads it as a string: it runs this same file with Termux's python3, or else with
+# the Python of Hermes's Debian (through ~/bin/hermes-debian; Debian sees Termux's home at the same path). Without a
+# Python nothing is sent. The rest is Python, stdlib only: the client half of hermes-plugin/hermes-mobile/local_auth.py,
+# copied unchanged (tools/test_hm_local.sh checks that the copy is the same and runs the shared vectors through it).
+self=$0
+case $self in /*) ;; *) self=$PWD/$self ;; esac
+if command -v python3 >/dev/null 2>&1; then exec python3 -I "$self" "$@"; fi
+if [ -x "$HOME/bin/hermes-debian" ]; then
+  exec "$HOME/bin/hermes-debian" sh -c 'h=$1; shift
+for py in $(ls -t /root/.hermes/installs/*/environments/*/venv/bin/python3 2>/dev/null) /root/.hermes/hermes-agent/venv/bin/python3 $(command -v python3); do
+  if [ -x "$py" ]; then HOME=$h; export HOME; exec "$py" -I "$@"; fi
+done
+echo "hm-local: no_python" >&2; exit 12' hm-local "$HOME" "$self" "$@"
+fi
+echo "hm-local: no_python" >&2
+exit 12
+"""
+from __future__ import annotations
+
+import functools
+import hashlib
+import hmac
+import http.client
+import json
+import os
+import re
+import secrets
+import select
+import socket
+import sys
+import time
+
+# ---- the client half of local_auth.py, unchanged from here to the next marker ----
+
+VERSION = "hermux-local-v1"
+EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+DIRS = ("server", "client", "answer")
+ROLES = ("dashboard", "events", "ticker", "bghost")
+NO_NONCE = "-"
+MIN_KEY = 16
+MAX_WHAT = 2048
+REASONS = ("no_answer", "no_hello", "old_version", "bad_addr", "unknown_kid", "bad_proof", "refused")
+
+HOST = "127.0.0.1"
+CONNECT_S = 2.0
+HELLO_DEADLINE_S = 5.0
+ANSWER_DEADLINE_S = 10.0
+MAX_HELLO = 4096
+MAX_HEAD = 8192
+MAX_HEADERS = 64
+MAX_ANSWER = 1 << 20
+MAX_PATH = 2000
+MIN_VERSION = 1
+
+_HEX = re.compile(r"[0-9a-f]+")
+_ADDR = re.compile(r"127\.0\.0\.1:([1-9][0-9]{0,4})")
+_WHAT = re.compile(r"[\x20-\x7e]+")
+_KEY = re.compile(r"[\x21-\x7e]+")
+_METHOD = re.compile(r"[A-Z]{1,16}")
+_PATH = re.compile(r"/[\x21-\x7e]*")
+_DIGITS = re.compile(r"[0-9]{1,9}")
+# The head of an answer, line by line, as strict as the Java side: CRLF endings only, no NUL, no folded header lines,
+# a token before every colon, HTTP/1.1 and no 1xx status (refused, not skipped).
+_STATUS = re.compile(rb"HTTP/1\.1 [2-9][0-9]{2}(?: [^\r\n\x00]*)?\r\n")
+_HEADER = re.compile(rb"[!#$%&'*+\-.^_`|~0-9A-Za-z]+:[^\r\n\x00]*\r\n")
+
+
+class Unverified(Exception):
+    """The server was not verified (or refused our request). ``why`` (also the message) is the reason code, nothing else."""
+
+    def __init__(self, why: str):
+        why = why if why in REASONS else "no_hello"
+        super().__init__(why)
+        self.why = why
+
+
+def _hex(s, n: int) -> bool:
+    return isinstance(s, str) and len(s) == n and _HEX.fullmatch(s) is not None
+
+
+def is_nonce(s) -> bool:
+    """True for exactly 32 lowercase hex characters."""
+    return _hex(s, 32)
+
+
+def is_kid(s) -> bool:
+    return _hex(s, 8)
+
+
+def is_addr(s) -> bool:
+    m = _ADDR.fullmatch(s) if isinstance(s, str) else None
+    return m is not None and 1 <= int(m.group(1)) <= 65535
+
+
+def addr(port: int) -> str:
+    return f"{HOST}:{port}"
+
+
+def nonce() -> str:
+    """16 random bytes as 32 lowercase hex characters."""
+    return secrets.token_hex(16)
+
+
+def _key_text(key) -> str:
+    """Surrounding ASCII whitespace removed (the same set as the Java side), then at least 16 printable ASCII characters."""
+    if not isinstance(key, str):
+        raise ValueError("key")
+    k = key.strip(" \t\r\n\x0b\x0c")
+    if len(k) < MIN_KEY or _KEY.fullmatch(k) is None:
+        raise ValueError("key")
+    return k
+
+
+def sha256hex(b: bytes | None) -> str:
+    return hashlib.sha256(b or b"").hexdigest()
+
+
+def kid(key: str) -> str:
+    """First 8 hex characters of SHA-256 over ``hermux-kid-v1\\n`` and the trimmed key text."""
+    return sha256hex(("hermux-kid-v1\n" + _key_text(key)).encode())[:8]
+
+
+def mac(key: str, dir: str, role: str, addr: str, nc: str, ns: str, what: str, hash: str) -> str:
+    """The MAC of one message. ValueError (naming the field, never its value) for a field outside its alphabet."""
+    k = _key_text(key).encode()
+    if dir not in DIRS:
+        raise ValueError("dir")
+    if role not in ROLES:
+        raise ValueError("role")
+    if not is_addr(addr):
+        raise ValueError("addr")
+    if not is_nonce(nc):
+        raise ValueError("nc")
+    if ns != NO_NONCE and not is_nonce(ns):
+        raise ValueError("ns")
+    if not isinstance(what, str) or len(what) > MAX_WHAT or _WHAT.fullmatch(what) is None:
+        raise ValueError("what")
+    if not _hex(hash, 64):
+        raise ValueError("hash")
+    msg = "\n".join((VERSION, dir, role, addr, nc, ns, what, hash))
+    return hmac.new(k, msg.encode(), hashlib.sha256).hexdigest()
+
+
+def same(a, b) -> bool:
+    """Constant-time equality; False when either is not text or the lengths differ. Never raises (a lone surrogate
+    is encoded as it is, so it simply differs)."""
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+    return hmac.compare_digest(a.encode("utf-8", "surrogatepass"), b.encode("utf-8", "surrogatepass"))
+
+
+# ---- the client ----
+
+class _TooMuch(Exception):
+    pass
+
+
+class _Malformed(Exception):
+    pass
+
+
+class _Wire:
+    """A socket's input for one answer, read as the Java side reads it: at most ``limit`` bytes consumed (``limit(n)``
+    sets a new budget, for the body), each read bounded by ``per_read`` and the whole by ``deadline`` (a trickle of
+    bytes cannot hold the caller), and no read or allocation for a length beyond the budget. Stands in for the file
+    ``http.client`` reads from."""
+
+    def __init__(self, sock: socket.socket, limit: int, deadline: float, per_read: float):
+        self._sock, self._left, self._deadline, self._per_read = sock, limit, deadline, per_read
+        self._buf = b""
+        self.taken = 0
+        self.extra = False  # bytes were left over when the answer was done
+        self.closed = False
+        self._lines = 0
+        self._in_head = True
+
+    def limit(self, n: int) -> None:
+        self._left = n
+
+    def _fill(self) -> bool:
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise socket.timeout()
+        self._sock.settimeout(min(self._per_read, remaining))
+        data = self._sock.recv(4096)
+        if not data:
+            return False
+        self._buf += data
+        return True
+
+    def _take(self, n: int) -> bytes:
+        out = self._buf[:n]
+        if len(out) > self._left:
+            raise _TooMuch()
+        self._buf = self._buf[len(out):]
+        self._left -= len(out)
+        self.taken += len(out)
+        return out
+
+    def readline(self, limit: int = -1) -> bytes:
+        line = self._readline(limit)
+        if self._in_head:
+            if not line:
+                if self._lines:
+                    raise _Malformed()  # the stream ended inside the head
+                return line  # nothing at all: http.client reports it, and taken == 0 says no_answer
+            if self._lines == 0:
+                ok = _STATUS.fullmatch(line) is not None
+            elif line == b"\r\n":
+                ok, self._in_head = True, False
+            else:
+                ok = self._lines <= MAX_HEADERS and _HEADER.fullmatch(line) is not None
+            self._lines += 1
+            if not ok:
+                raise _Malformed()
+        return line
+
+    def _readline(self, limit: int) -> bytes:
+        while True:
+            i = self._buf.find(b"\n")
+            if i >= 0 and (limit < 0 or i < limit):
+                return self._take(i + 1)
+            if 0 <= limit <= len(self._buf):
+                return self._take(limit)
+            if len(self._buf) >= self._left:
+                raise _TooMuch()  # no line end within the budget
+            if not self._fill():
+                return self._take(len(self._buf))
+
+    def read(self, n: int | None = -1) -> bytes:
+        if n is None or n < 0:
+            while len(self._buf) <= self._left and self._fill():
+                pass
+            return self._take(len(self._buf))
+        if n > self._left:
+            raise _TooMuch()  # refused before reading or allocating anything for it
+        while len(self._buf) < n and self._fill():
+            pass
+        return self._take(n)
+
+    def readinto(self, b) -> int:
+        data = self.read(len(b))
+        b[:len(data)] = data
+        return len(data)
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        if self._buf:
+            self.extra = True
+        self.closed = True
+        keep, self.keep = getattr(self, "keep", None), None
+        if keep is not None:
+            keep.close()
+
+
+class _Response(http.client.HTTPResponse):
+    def __init__(self, sock, debuglevel=0, method=None, url=None, *, wire: _Wire):
+        super().__init__(sock, debuglevel, method, url)
+        # Keep the file http.client opened (unused) until the answer is done: while it is open, closing the connection
+        # (http.client does that before reading an answer that ends at the close) leaves the socket readable.
+        wire.keep = self.fp
+        self.fp = wire
+
+    def _check_close(self):
+        # Token by token, as the Java side: "Connection: keep-alive, close" closes, "Connection: closed" does not.
+        for v in self.headers.get_all("Connection") or ():
+            if any(t.strip(" \t").lower() == "close" for t in v.split(",")):
+                return True
+        return False
+
+
+class _Connection(http.client.HTTPConnection):
+    """Dials the literal loopback address within CONNECT_S; never reconnects by itself (see ``session``)."""
+
+    send_deadline = None  # time.monotonic() by which every send of the current request must be done
+
+    def connect(self):
+        self.sock = socket.create_connection((HOST, self.port), timeout=CONNECT_S)
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+    def send(self, data):
+        # http.client sends the head and the body separately: each gets only what is left of one deadline.
+        if self.send_deadline is not None and self.sock is not None:
+            remaining = self.send_deadline - time.monotonic()
+            if remaining <= 0:
+                raise socket.timeout()
+            self.sock.settimeout(remaining)
+        super().send(data)
+
+
+class Answer:
+    def __init__(self, status: int, body: bytes):
+        self.status, self.body = status, body
+
+
+class Session:
+    """A verified connection: ``request`` sends exactly one request on it, then it is closed."""
+
+    def __init__(self, conn: _Connection, role: str, port: int, key: str, kid_: str, nc: str, ns: str, timeout: float):
+        self._conn, self._sock, self._role, self._port = conn, conn.sock, role, port
+        self._key, self.kid, self._nc, self._ns, self._timeout = key, kid_, nc, ns, timeout
+        self._used = False
+
+    def request(self, method: str, path: str, body: bytes | str | None = None, *, with_nc: bool = False) -> Answer:
+        """Send one request (a body goes as application/json). 403 raises ``Unverified("refused")``; a broken or
+        oversized answer raises OSError with a neutral message. The session is closed afterwards. ``with_nc`` names the
+        client nonce in the header too (``1 <kid> <ns> <nc> <mac>``), as the dashboard's token step wants."""
+        if self._used:
+            raise RuntimeError("used")
+        self._used = True
+        try:
+            if not isinstance(method, str) or not _METHOD.fullmatch(method):
+                raise ValueError("request")
+            if not isinstance(path, str) or len(path) > MAX_PATH or not _PATH.fullmatch(path):
+                raise ValueError("request")
+            b = body.encode() if isinstance(body, str) else (body or b"")
+            what = f"{method} {path}"
+            m = mac(self._key, "client", self._role, addr(self._port), self._nc, self._ns, what, sha256hex(b))
+            # The same socket as the hello, or nothing: never a fresh connection to whatever listens now.
+            if self._conn.sock is None or self._conn.sock is not self._sock:
+                raise OSError("no answer")
+            auth = f"1 {self.kid} {self._ns} {self._nc} {m}" if with_nc else f"1 {self.kid} {self._ns} {m}"
+            headers = {"X-Hermux-Auth": auth, "Content-Length": str(len(b)), "Connection": "close"}
+            if b:
+                headers["Content-Type"] = "application/json"
+            deadline = time.monotonic() + ANSWER_DEADLINE_S
+            wire = _Wire(self._sock, MAX_HEAD, deadline, self._timeout)
+            try:
+                # One deadline for sending and for the answer; a send must not inherit a short read timeout.
+                self._conn.send_deadline = deadline
+                self._conn.request(method, path, body=b, headers=headers)
+                self._conn.response_class = functools.partial(_Response, wire=wire)
+                r = self._conn.getresponse()
+                # The same checks, in the same order, as LocalClient.Session.request.
+                if r.status == 403:
+                    raise Unverified("refused")
+                lengths = r.headers.get_all("Content-Length") or []
+                if (r.headers.get_all("Transfer-Encoding") or len(lengths) > 1
+                        or (lengths and not _DIGITS.fullmatch(lengths[0].strip(" \t")))):
+                    raise OSError("bad answer")
+                n = int(lengths[0].strip(" \t")) if lengths else None
+                if r.status in (204, 304):
+                    return Answer(r.status, b"")
+                if n is not None and n > MAX_ANSWER:
+                    raise OSError("answer too large")
+                wire.limit(MAX_ANSWER if n is None else n)
+                return Answer(r.status, r.read())
+            except (Unverified, socket.timeout):
+                raise
+            except _TooMuch:
+                raise OSError("answer too large") from None
+            except (_Malformed, http.client.HTTPException, ValueError):
+                # Nothing at all is "no answer" (Java's Silent); anything else broken is "bad answer".
+                raise OSError("no answer" if wire.taken == 0 else "bad answer") from None
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except OSError:
+            pass
+
+
+def session(role: str, port: int, key: str, timeout: float = 3) -> Session:
+    """Verify the server on 127.0.0.1:port for ``role`` with ``key``; the session may send one request."""
+    if role not in ROLES or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("session")
+    try:
+        want_kid = kid(key)
+    except ValueError:
+        raise Unverified("unknown_kid") from None  # an unusable key: the same reason as the Java side, and nothing is sent
+    deadline = time.monotonic() + HELLO_DEADLINE_S
+    where = addr(port)
+    nc = nonce()
+    conn = _Connection(HOST, port, timeout=timeout)
+    ok = False
+    try:
+        try:
+            conn.connect()
+            conn.auto_open = 0  # a closed socket must never be replaced by a new connection behind our back
+            conn.send_deadline = deadline  # the send, within the hello deadline
+            conn.request("GET", f"/hermux/hello?v=1&nc={nc}", headers={"Connection": "keep-alive"})
+        except OSError:
+            raise Unverified("no_answer") from None
+        wire = _Wire(conn.sock, MAX_HELLO, deadline, timeout)
+        conn.response_class = functools.partial(_Response, wire=wire)
+        try:
+            r = conn.getresponse()
+            lengths = r.headers.get_all("Content-Length") or []
+            if (r.status != 200 or r.headers.get_all("Transfer-Encoding") or r.will_close or r.version != 11
+                    or len(lengths) != 1
+                    or not _DIGITS.fullmatch(lengths[0].strip(" \t")) or r.length is None or r.length > MAX_HELLO):
+                raise Unverified("no_hello")
+            body = r.read()
+            if wire.extra or conn.sock is None:
+                raise Unverified("no_hello")
+        except Unverified:
+            raise
+        except socket.timeout:
+            raise Unverified("no_answer") from None
+        except (OSError, http.client.HTTPException, _TooMuch, _Malformed, ValueError):
+            raise Unverified("no_answer" if wire.taken == 0 else "no_hello") from None
+        try:
+            def pairs(items):
+                d = {}
+                for k, v in items:
+                    if k in d:
+                        raise ValueError("json")
+                    d[k] = v
+                return d
+
+            def no_constant(_):
+                raise ValueError("json")
+
+            j = json.loads(body.decode("utf-8"), object_pairs_hook=pairs, parse_constant=no_constant)
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            raise Unverified("no_hello") from None
+        if not isinstance(j, dict):
+            raise Unverified("no_hello")
+        ver = j.get("hermux")
+        if not isinstance(ver, int) or isinstance(ver, bool):
+            raise Unverified("no_hello")
+        if ver < MIN_VERSION:
+            raise Unverified("old_version")
+        fields = [j.get(n) for n in ("role", "kid", "ns", "addr", "proof")]
+        if not all(isinstance(f, str) for f in fields):
+            raise Unverified("no_hello")
+        s_role, s_kid, ns, s_addr, proof = fields
+        if s_role != role or not is_nonce(ns):
+            raise Unverified("bad_proof")
+        if s_addr != where:
+            raise Unverified("bad_addr")
+        if not is_kid(s_kid) or not same(s_kid, want_kid):
+            raise Unverified("unknown_kid")
+        # Over the address this client dialled, not the server's text (equal here, by the check above).
+        if not _hex(proof, 64) or not same(mac(key, "server", role, where, nc, ns, "hello", EMPTY_HASH), proof):
+            raise Unverified("bad_proof")
+        ok = True
+        return Session(conn, role, port, key, s_kid, nc, ns, timeout)
+    except Unverified:
+        raise
+    except Exception:
+        raise Unverified("no_hello") from None  # last resort: nothing outside the closed list of reasons leaves session()
+    finally:
+        if not ok:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+
+TOKEN_PATH = "/hermux/token"
+_TOKEN_TEXT = re.compile(r"[\x21-\x7e]{1,512}")  # what the dashboard guard hands out
+
+
+def _json_object(body: bytes):
+    """A JSON object read as strictly as a hello answer (no repeated names, no NaN or Infinity), else None."""
+
+    def pairs(items):
+        d = {}
+        for k, v in items:
+            if k in d:
+                raise ValueError("json")
+            d[k] = v
+        return d
+
+    def no_constant(_):
+        raise ValueError("json")
+
+    try:
+        j = json.loads(body.decode("utf-8"), object_pairs_hook=pairs, parse_constant=no_constant)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    return j if isinstance(j, dict) else None
+
+
+def dashboard_token(port: int, key: str, timeout: float = 3) -> str:
+    """The session token of the dashboard on 127.0.0.1:port, from a verified dashboard only: the hello, then
+    ``GET /hermux/token`` on the same connection with ``X-Hermux-Auth: 1 <kid> <ns> <nc> <mac>`` (the guard keeps the
+    server nonce between its two routes, so the client names its own nonce as well), then the answer's own proof
+    (``answer``, ``token``, over both nonces and the token's SHA-256) before the token is returned. A failed hello, a
+    refused request or a wrong proof raises ``Unverified``; any answer other than a 200 with ``hermux``, ``token`` and
+    ``proof`` raises OSError("bad answer"), like a broken answer to ``Session.request``. Nothing else escapes."""
+    s = session("dashboard", port, key, timeout)
+    nc, ns = s._nc, s._ns
+    try:
+        a = s.request("GET", TOKEN_PATH, with_nc=True)
+    except (Unverified, OSError):
+        raise
+    except Exception:
+        raise OSError("bad answer") from None
+    j = _json_object(a.body) if a.status == 200 else None
+    if j is None:
+        raise OSError("bad answer")
+    ver, tok, proof = j.get("hermux"), j.get("token"), j.get("proof")
+    if (not isinstance(ver, int) or isinstance(ver, bool) or ver < MIN_VERSION or not isinstance(tok, str)
+            or not _TOKEN_TEXT.fullmatch(tok) or not isinstance(proof, str)):
+        raise OSError("bad answer")
+    want = mac(key, "answer", "dashboard", addr(port), nc, ns, "token", sha256hex(tok.encode()))
+    if not _hex(proof, 64) or not same(want, proof):
+        raise Unverified("bad_proof")
+    return tok
+
+
+# ---- end of the copy; hm-local itself ----
+
+# The exit codes (also in the comment at the top and in the spec). Python itself only ever exits 1, 2 or 120 (an error
+# before main runs, a file it can't open, a failed flush at exit), and none of those is used here.
+EXIT = {"no_answer": 3, "no_hello": 4, "old_version": 5, "bad_addr": 6, "unknown_kid": 7, "bad_proof": 8, "refused": 9}
+EXIT_NO_KEY, EXIT_ANSWER = 10, 11  # 12 (no Python) comes from the shell part
+EXIT_USAGE, EXIT_BODY, EXIT_INTERNAL, EXIT_OUTPUT = 64, 65, 70, 74
+PORTS = {"dashboard": 9119, "events": 9121}  # the roles that speak HTTP with the shared key
+MAX_BODY = 256 * 1024  # the most the app's port takes in one request
+BODY_DEADLINE_S = 5.0  # the whole body on stdin, however slowly it comes
+MAX_KEY_FILE = 4096
+_PORT = re.compile(r"[1-9][0-9]{0,4}")
+
+
+class _Usage(Exception):
+    pass
+
+
+class _BadBody(Exception):
+    pass
+
+
+class _NoKey(Exception):
+    pass
+
+
+class _BadAnswer(Exception):
+    pass
+
+
+class _Output(Exception):
+    pass
+
+
+def _port(text: str) -> int:
+    if not _PORT.fullmatch(text) or not 1 <= int(text) <= 65535:
+        raise _Usage()
+    return int(text)
+
+
+def _read_key() -> str:
+    """The key file's text; never shown anywhere. A missing, unreadable, oversized or non-ASCII file is no key."""
+    path = os.path.join(os.path.expanduser("~"), ".hermes-mobile", "key")
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(MAX_KEY_FILE + 1)
+        if len(raw) > MAX_KEY_FILE:
+            raise _NoKey()
+        text = raw.decode("ascii")
+    except (OSError, UnicodeDecodeError):
+        raise _NoKey() from None
+    if not text.strip():
+        raise _NoKey()
+    return text
+
+
+def _read_body() -> bytes:
+    """All of stdin, at most MAX_BODY bytes, within BODY_DEADLINE_S: a caller that never closes stdin can't hold this."""
+    try:
+        fd = sys.stdin.fileno()
+    except (AttributeError, OSError, ValueError):
+        raise _BadBody() from None
+    deadline = time.monotonic() + BODY_DEADLINE_S
+    data = b""
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise _BadBody()
+        try:
+            ready, _, _ = select.select([fd], [], [], left)
+            if not ready:
+                raise _BadBody()
+            chunk = os.read(fd, min(65536, MAX_BODY + 1 - len(data)))
+        except (OSError, ValueError):
+            raise _BadBody() from None
+        if not chunk:
+            return data
+        data += chunk
+        if len(data) > MAX_BODY:
+            raise _BadBody()
+
+
+def hello(role: str, port: int, key: str) -> None:
+    """Verify the server and close the connection without sending anything else."""
+    session(role, port, key).close()
+
+
+def token(port: int, key: str) -> str:
+    """The dashboard's session token, through ``dashboard_token`` (the copied client)."""
+    try:
+        return dashboard_token(port, key)
+    except OSError:
+        raise _BadAnswer() from None
+
+
+def post(path: str, body: bytes, port: int, key: str) -> bytes:
+    """POST ``body`` to ``path`` on the events port after a verified hello; the answer's body on a 2xx status."""
+    s = session("events", port, key)
+    try:
+        a = s.request("POST", path, body)
+    except OSError:
+        raise _BadAnswer() from None
+    if not 200 <= a.status < 300:
+        raise _BadAnswer()
+    return a.body
+
+
+def _say(text: str) -> None:
+    """One line on stderr, if there is one: a caller that closed it (2>&-) still gets the documented exit code."""
+    try:
+        sys.stderr.write(text)
+        sys.stderr.flush()
+    except (AttributeError, OSError, ValueError):
+        pass
+
+
+def _write(data: bytes) -> None:
+    try:
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+    except (AttributeError, OSError, ValueError):
+        # No output (closed with >&-, or its reader went away): say so with our own code, and keep Python's exit-time
+        # flush from failing.
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, 1)
+        except OSError:
+            pass
+        raise _Output() from None
+
+
+def main(argv: list[str]) -> int:
+    try:
+        cmd, args = (argv[0], argv[1:]) if argv else ("", [])
+        if cmd == "hello" and len(args) == 2 and args[0] in PORTS:
+            role, port = args[0], _port(args[1])
+            hello(role, port, _read_key())
+        elif cmd == "token" and len(args) <= 1:
+            port = _port(args[0]) if args else PORTS["dashboard"]
+            _write((token(port, _read_key()) + "\n").encode())
+        elif cmd == "post" and 1 <= len(args) <= 2:
+            path = args[0]
+            if len(path) > MAX_PATH or not _PATH.fullmatch(path):
+                raise _Usage()
+            port = _port(args[1]) if len(args) == 2 else PORTS["events"]
+            key = _read_key()
+            body = _read_body()  # all of it before the hello: nothing waits on a verified connection
+            _write(post(path, body, port, key))
+        else:
+            raise _Usage()
+        return 0
+    except _Usage:
+        _say("usage: hm-local hello dashboard|events PORT\n       hm-local token [PORT]\n       hm-local post PATH [PORT] < body\n")
+        return EXIT_USAGE
+    except _BadBody:
+        _say("hm-local: bad_body\n")
+        return EXIT_BODY
+    except _NoKey:
+        _say("hm-local: no_key\n")
+        return EXIT_NO_KEY
+    except Unverified as e:
+        _say(f"hm-local: {e.why}\n")
+        return EXIT[e.why]
+    except _BadAnswer:
+        _say("hm-local: bad_answer\n")
+        return EXIT_ANSWER
+    except _Output:
+        return EXIT_OUTPUT
+    except Exception:  # never a traceback: it could show what was being worked on
+        _say("hm-local: failed\n")
+        return EXIT_INTERNAL
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

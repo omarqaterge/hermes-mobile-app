@@ -565,6 +565,27 @@ for k, v in saved.items():
     else:
         os.environ[k] = v
 
+print("the dashboard's token step (dashboard_token, token_cases)")
+sys.path.insert(0, str(HERE))
+import local_auth_cases as lac  # noqa: E402
+
+for case in V["token_cases"]:
+    ts = lac.TokenServer(la, KEY, OTHER, case)
+    got = lac.outcome(lambda: la.dashboard_token(ts.port, KEY))
+    ts.done.wait(5)
+    check(f"token case: {case['name']}: {case['expect']}", got == case["expect"], got)
+    if case["answer"]:
+        check(f"token case: {case['name']}: the request carried the five-field header", ts.header_ok is True)
+honest = V["token_cases"][0]
+ts = lac.TokenServer(la, KEY, OTHER, honest)
+got = lac.outcome(lambda: la.session("dashboard", ts.port, KEY).request("GET", "/hermux/token").body.decode())
+ts.done.wait(5)
+check("the four-field header (the same-connection form) is refused by the token step", got == "refused" and ts.header_ok is False, got)
+ts = lac.TokenServer(la, OTHER, KEY, honest)
+check("a dashboard with another key: unknown_kid, no token request", lac.outcome(lambda: la.dashboard_token(ts.port, KEY)) == "unknown_kid")
+ts.done.wait(5)
+check("(and the server never saw one)", ts.header_ok is None)
+
 # ---- the server halves ----
 
 print("server halves: hello answer and request MAC")

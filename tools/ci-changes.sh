@@ -21,9 +21,13 @@ while IFS= read -r p; do
     tools/hermes-contract/*|hermes/*) contract=true ;;
   esac
   # What the hermes-patches job reads: the patches and the pin, the phone scripts, and the shell scripts and helpers
-  # directly in tools/ (its tests, device-lock.sh, build-image.sh, pack_image.py, setup-phone.*).
+  # directly in tools/ (its tests, device-lock.sh, build-image.sh, pack_image.py, setup-phone.*); also what the phone
+  # script tests check against: local_auth.py and its vectors (hm-local is a copy of its client half) and the
+  # plugin bundle's packing in android/build.sh.
   case "$p" in
     hermes/*|phone/*|web/vendor/hermes-shared/.hermes-commit) patches=true ;;
+    hermes-plugin/hermes-mobile/local_auth.py|tools/local-auth-vectors.json|android/build.sh) patches=true ;;
+    android/src/com/omarqaterge/hermesmobile/LocalAuth.java|android/src/com/omarqaterge/hermesmobile/LocalClient.java|android/src/com/omarqaterge/hermesmobile/LocalServer.java) patches=true ;;
     tools/*/*) ;;
     tools/*.sh|tools/*.ps1|tools/pack_image.py) patches=true ;;
   esac

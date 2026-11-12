@@ -12,7 +12,9 @@
 #   plugin-update.sh source-stamp REPO           the version of a source tree: its last commit's time, or now if the
 #                                                plugin folder has uncommitted changes (or it is no git checkout)
 #   plugin-update.sh stamp DIR STAMP SOURCE      write DIR/BUILD_STAMP
-#   plugin-update.sh pack DIR OUT.tgz STAMP      the bundle for the APK; prints "STAMP HASH SHA256"
+#   plugin-update.sh pack DIR OUT.tgz STAMP [PHONE]  the bundle for the APK; prints "STAMP HASH SHA256". With PHONE (the
+#                                                repo's phone/ folder) the Termux scripts named in SCRIPTS go in too
+#   plugin-update.sh assemble DIR PHONE OUT      the same folder as pack's (DIR plus PHONE's scripts), not packed: install.sh
 #   plugin-update.sh hash DIR                    a folder's content hash (BUILD_STAMP and __pycache__ left out)
 #   plugin-update.sh embed SERVICES OUT          writes this script to OUT with the supervisor script inside it (the APK's copy)
 # BUILD_STAMP holds "STAMP HASH SOURCE". STAMP orders versions (bigger = newer; the phone's clock is never involved).
@@ -20,8 +22,14 @@
 # Every result line starts with "HMPLUGIN ":
 #   STATE <not-ready|current|adopted|newer|older|modified|held> <installed stamp> · BUSY <why>
 #   OK <stamp> [unverified] · FAIL <step> <why> (the old plugin is in place)
+#   SCRIPTS ok · SCRIPTS fail <no-answer|missing|copy|changed>  the Termux scripts (below); never the last line
 # Exit: 0 (the result is in the lines) · 2 usage
-# The APK's copy also brings ~/bin/hermes-services up to date on check and apply (sync_services).
+# The APK's copy also brings ~/bin/hermes-services up to date on check and apply (sync_services), and copies the Termux
+# scripts the plugin carries in phone-scripts/ to ~/bin after a swap and whenever the plugin is current (sync_scripts).
+
+# The Termux scripts that travel inside the plugin (phone-scripts/), so that every app update brings them along: pack and
+# assemble put them in, sync_scripts copies them to ~/bin. Only these names are ever copied.
+SCRIPTS="hm-local hm-shizuku"
 
 read -r -d '' COMMON <<'EOF'
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
@@ -89,6 +97,12 @@ case "$mode" in
     done
     say SWAPPED ;;
   commit) rm -rf "$W/old"; rm -f "$W/pending"; say COMMITTED ;;
+  scripts)  # NAME...: the SHA-256 of each Termux script the installed plugin carries
+    for n in "$@"; do
+      f="$P/phone-scripts/$n"
+      [ -f "$f" ] && [ ! -L "$f" ] && say SCRIPT "$n" "$(sha "$f" | cut -d' ' -f1)"
+    done
+    say LISTED ;;
   rollback)
     if [ -d "$W/old" ]; then rm -rf "$W/failed"; [ -e "$P" ] && mv "$P" "$W/failed"; mv "$W/old" "$P"; rm -rf "$W/failed"; fi
     rm -f "$W/pending"; say ROLLEDBACK ;;
@@ -163,11 +177,14 @@ restart() {
   fi
   return 0
 }
-restart_ticker() {  # the cron ticker keeps the plugin it first loaded; its loop starts it again. Only between jobs.
+# The cron ticker, whichever copy runs: the plugin's own (it ships in the plugin folder) or an older install's in scripts/.
+# "[c]" keeps the pattern from matching this run's own command line (the app runs the script as `bash -c TEXT`).
+TICKER_RE='/root/[.]hermes/(scripts|plugins/hermes-mobile)/[c]ron_ticker[.]py'
+restart_ticker() {  # the cron ticker keeps the code it first loaded; its loop starts it again. Only between jobs.
   working && return 0
   if [ "$("$HOME/bin/hermes-debian" --which 2>/dev/null)" = chroot ]; then
-    su -c "pkill -f '/root/.hermes/scripts/[c]ron_ticker.py'" </dev/null 2>/dev/null
-  else pkill -f '/root/.hermes/scripts/[c]ron_ticker.py' 2>/dev/null; fi
+    su -c "pkill -f '$TICKER_RE'" </dev/null 2>/dev/null
+  else pkill -f "$TICKER_RE" 2>/dev/null; fi
   return 0
 }
 settle() {  # STAMP: a swap whose run was cut off: keep it when the new plugin serves, else go back
@@ -177,7 +194,21 @@ settle() {  # STAMP: a swap whose run was cut off: keep it when the new plugin s
   deb rollback | last >/dev/null; restart
 }
 
-usage() { echo "usage: plugin-update.sh check|apply|source-stamp|stamp|pack|hash|embed ..." >&2; exit 2; }
+usage() { echo "usage: plugin-update.sh check|apply|source-stamp|stamp|pack|assemble|hash|embed ..." >&2; exit 2; }
+# DIR DEST [PHONE]: DEST (new) = the plugin folder DIR without caches and stamp; with PHONE, the Termux scripts named in
+# SCRIPTS are copied from there into DEST/phone-scripts (all of them, or it fails).
+copy_plugin() {
+  local p n
+  p=$(mktemp -d "${TMPDIR:-/tmp}/hm-copy.XXXXXX") || return 1
+  COPYFILE_DISABLE=1 tar -cf - --exclude __pycache__ --exclude .DS_Store --exclude BUILD_STAMP -C "$(dirname "$1")" "$(basename "$1")" \
+    | tar -xf - -C "$p" && mv "$p/$(basename "$1")" "$2" || { rm -rf "$p"; return 1; }
+  rmdir "$p"
+  [ -n "${3:-}" ] || return 0
+  rm -rf "$2/phone-scripts"; mkdir "$2/phone-scripts" || return 1
+  for n in $SCRIPTS; do
+    [ -f "$3/$n" ] && cp "$3/$n" "$2/phone-scripts/$n" && chmod 755 "$2/phone-scripts/$n" || return 1
+  done
+}
 valid() { case "$1" in ''|*[!0-9]*) usage ;; esac; case "$2" in ''|*[!0-9a-f]*) usage ;; esac; }
 LOCK="$TERMUX_HOME/.hermes-mobile/plugin-update.lock"
 take_lock() {
@@ -214,6 +245,51 @@ sync_services() {  # the plugin's state line
   rm -f "$new"
   return 0
 }
+# Copies the Termux scripts of the installed plugin (phone-scripts/) to ~/bin: only what the Debian half lists with its
+# SHA-256, read through hermes-debian (under chroot only root can read Debian's files) into X.tmp, checked against that
+# SHA-256 and renamed over ~/bin/X, so a running copy is never changed under it. A copy that is already the same is left
+# alone (a second run changes nothing). Unlike sync_services it also creates a script that is missing, because installs
+# from before this never had hm-local. Like sync_services, it leaves a copy changed by hand alone: one that no longer
+# matches what was last copied from a plugin (~/.hermes-mobile/scripts.sha, which install.sh removes), and never follows
+# or writes through a link (~/bin/X or X.tmp). Prints one SCRIPTS line before the run's last line and never fails the run.
+PLUGIN_DIR="${HM_PLUGIN_ROOT:-/root/.hermes}/plugins/hermes-mobile"
+SCRIPTS_SHA="$TERMUX_HOME/.hermes-mobile/scripts.sha"  # "NAME SHA256" per script last copied from a plugin
+deb_cat() {  # DEBIAN_PATH: the file's bytes on stdout
+  if [ -x "$HOME/bin/hermes-debian" ]; then tmo 60 "$HOME/bin/hermes-debian" cat -- "$1" </dev/null
+  else tmo 60 proot-distro login debian -- cat -- "$1" </dev/null; fi
+}
+known_sha() { sed -n "s/^$1 \([0-9a-f]\{64\}\)\$/\1/p" "$SCRIPTS_SHA" 2>/dev/null | tail -1; }
+note_sha() {  # NAME SHA
+  { grep -v "^$1 " "$SCRIPTS_SHA" 2>/dev/null; echo "$1 $2"; } > "$SCRIPTS_SHA.tmp" && mv -f "$SCRIPTS_SHA.tmp" "$SCRIPTS_SHA"
+}
+sync_scripts() {
+  local list n want f tmp have known bad=""
+  list=$(deb scripts $SCRIPTS 2>/dev/null)
+  printf '%s\n' "$list" | grep -qx 'HMPLUGIN LISTED' || { say SCRIPTS fail no-answer; return 0; }
+  mkdir -p "$HOME/bin" 2>/dev/null
+  for n in $SCRIPTS; do
+    want=$(printf '%s\n' "$list" | sed -n "s/^HMPLUGIN SCRIPT $n \([0-9a-f]\{64\}\)\$/\1/p" | tail -1)
+    [ -n "$want" ] || { bad=${bad:-missing}; continue; }
+    f="$HOME/bin/$n"; tmp="$f.tmp"
+    # A link, or something that is no plain file: not ours to replace.
+    if [ -L "$f" ] || { [ -e "$f" ] && [ ! -f "$f" ]; } || [ -L "$tmp" ]; then bad=${bad:-changed}; continue; fi
+    if [ -f "$f" ]; then
+      have=$(sha "$f" | cut -d' ' -f1)
+      if [ "$have" = "$want" ]; then [ -x "$f" ] || chmod 755 "$f"; note_sha "$n" "$want"; continue; fi
+      known=$(known_sha "$n")
+      if [ -n "$known" ] && [ "$known" != "$have" ]; then bad=${bad:-changed}; continue; fi
+    fi
+    rm -f "$tmp"
+    if (set -C; deb_cat "$PLUGIN_DIR/phone-scripts/$n" > "$tmp") 2>/dev/null && [ "$(sha "$tmp" | cut -d' ' -f1)" = "$want" ] \
+      && chmod 755 "$tmp" && mv -f "$tmp" "$f"; then note_sha "$n" "$want"; else rm -f "$tmp"; bad=${bad:-copy}; fi
+  done
+  if [ -z "$bad" ]; then say SCRIPTS ok; else say SCRIPTS fail "$bad"; fi
+  return 0
+}
+scripts_if_current() {  # the plugin's state line: a current plugin's scripts (a copy that failed before is tried again)
+  case "$1" in "HMPLUGIN STATE current "*|"HMPLUGIN STATE adopted "*) sync_scripts ;; esac
+  return 0
+}
 inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets $line
   line=$(deb inspect "$@" | last)
   case "$line" in
@@ -233,14 +309,16 @@ case "$cmd" in
     printf '%s %s %s\n' "$2" "$(tree_hash "$1")" "$3" > "$1/BUILD_STAMP" ;;
   source-stamp)
     [ -d "${1:-}" ] || usage
-    if [ -e "$1/.git" ] && [ -z "$(git -C "$1" status --porcelain -- hermes-plugin/hermes-mobile 2>/dev/null)" ] \
+    if [ -e "$1/.git" ] && [ -z "$(git -C "$1" status --porcelain -- hermes-plugin/hermes-mobile $(for n in $SCRIPTS; do echo "phone/$n"; done) 2>/dev/null)" ] \
       && t=$(git -C "$1" log -1 --format=%ct 2>/dev/null) && [ -n "$t" ]; then echo "$t"; else date +%s; fi ;;
+  assemble)
+    [ -d "${1:-}" ] && [ -d "${2:-}" ] && [ -n "${3:-}" ] && [ ! -e "$3" ] || usage
+    copy_plugin "$1" "$3" "$2" || { rm -rf "$3"; exit 1; } ;;
   pack)
     [ -d "${1:-}" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] || usage
+    [ -z "${4:-}" ] || [ -d "$4" ] || usage
     t=$(mktemp -d "${TMPDIR:-/tmp}/hm-plugin.XXXXXX") || exit 1
-    COPYFILE_DISABLE=1 tar -cf - --exclude __pycache__ --exclude .DS_Store --exclude BUILD_STAMP -C "$(dirname "$1")" "$(basename "$1")" \
-      | tar -xf - -C "$t" || { rm -rf "$t"; exit 1; }
-    [ "$(basename "$1")" = hermes-mobile ] || mv "$t/$(basename "$1")" "$t/hermes-mobile"
+    copy_plugin "$1" "$t/hermes-mobile" "${4:-}" || { rm -rf "$t"; exit 1; }
     hash=$(tree_hash "$t/hermes-mobile")
     printf '%s %s apk\n' "$3" "$hash" > "$t/hermes-mobile/BUILD_STAMP"
     COPYFILE_DISABLE=1 tar -czf "$2" -C "$t" hermes-mobile || { rm -rf "$t"; exit 1; }
@@ -251,6 +329,7 @@ case "$cmd" in
     take_lock
     inspect "$1" "$2" no
     sync_services "$line"
+    scripts_if_current "$line"
     echo "${line:-HMPLUGIN FAIL check no-answer}" ;;
   apply)
     [ $# -ge 4 ] || usage; valid "$1" "$2"; valid "$1" "$3"; valid "$1" "$4"
@@ -258,6 +337,7 @@ case "$cmd" in
     take_lock
     inspect "$stamp" "$hash" "$force"
     sync_services "$line"
+    scripts_if_current "$line"
     case "$line" in
       "HMPLUGIN STATE older "*) ;;
       "") say FAIL check no-answer; exit 0 ;;
@@ -282,10 +362,12 @@ case "$cmd" in
     restart
     if [ "$loaded" = 0 ]; then
       deb commit >/dev/null
+      sync_scripts
       say OK "$stamp" unverified
     elif wait_up "$WAIT" dash && wait_serves "$stamp" "$LOAD_WAIT"; then
       deb commit >/dev/null
       restart_ticker
+      sync_scripts
       say OK "$stamp"
     else
       deb rollback >/dev/null

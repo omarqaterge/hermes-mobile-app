@@ -5,9 +5,9 @@ moment. Before this, only `phone/install.sh` copied the plugin, so a phone updat
 plugin of its first install.
 
 **What the APK carries.** `android/build.sh` puts three files in `assets/phone/`: `plugin-update.sh` (a copy of
-`phone/plugin-update.sh` with `~/bin/hermes-services` inside it, `plugin-update.sh embed`), `plugin.tgz` (the plugin folder without `__pycache__`, with a `BUILD_STAMP` file; about
-90 KB) and `plugin.txt` (`STAMP HASH SHA256`). STAMP orders versions: the time of the last commit
-(`plugin-update.sh source-stamp`), or the build time when the plugin folder has uncommitted changes. HASH is a hash of
+`phone/plugin-update.sh` with `~/bin/hermes-services` inside it, `plugin-update.sh embed`), `plugin.tgz` (the plugin folder without `__pycache__`, with a `BUILD_STAMP` file and the Termux scripts in
+`phone-scripts/`; about 140 KB) and `plugin.txt` (`STAMP HASH SHA256`). STAMP orders versions: the time of the last commit
+(`plugin-update.sh source-stamp`), or the build time when the plugin folder or one of the Termux scripts has uncommitted changes. HASH is a hash of
 the plugin's files (names and contents, `BUILD_STAMP` and `__pycache__` left out); SHA256 is the bundle's checksum.
 `BUILD_STAMP` (in the installed plugin) holds `STAMP HASH SOURCE`, SOURCE being `apk`, `install` (written by
 `install.sh` with the clone's commit time) or `adopted`. It is git-ignored. The plugin reports it at `GET /plugin-info`
@@ -46,7 +46,7 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
   `/activity` a third time (a turn that started during the swap puts the old plugin back, no restart, `BUSY working`);
   restart the dashboard (`hermes-debian --restart`; the supervisor loop starts it again), wait up to 300 s for it to
   answer and then up to 60 s for the new plugin's `GET /plugin-info` to report the new stamp. Then: `OK STAMP` (old copy
-  and marker removed; the cron ticker is restarted too when no job runs, so it loads the new plugin; when a job runs it
+  and marker removed; the cron ticker is restarted too when no job runs, so it loads the new plugin (`restart_ticker` stops it by `TICKER_RE`, whichever copy runs: the plugin folder's `cron_ticker.py` or an older install's in `/root/.hermes/scripts/`; its loop starts it again); when a job runs it
   keeps the old plugin until its next start), or rollback: the old plugin moved back, Hermes restarted again,
   `FAIL load rolled-back`. When the plugin didn't answer within 20 s before the swap (Hermes stopped, or the plugin
   switched off), nothing can prove it loads: `OK STAMP unverified`.
@@ -74,6 +74,28 @@ makes the next Hermes restart (`restart_loop`) stop the `dashboard` loop too, on
 start it anew. The other loops follow when the phone restarts. Until then a run of the script still trims the logs (6.2), but only new
 loops record `loop_exit`.
 
+**The Termux scripts come along** (`SCRIPTS`: `hm-local`, `hm-shizuku`). `plugin-update.sh pack DIR OUT STAMP PHONE`
+(as `android/build.sh` calls it, PHONE = `../phone`) puts them into the bundle as `hermes-mobile/phone-scripts/<name>`;
+`plugin-update.sh assemble DIR PHONE OUT` makes the same folder unpacked, for `install.sh`, so an installed plugin and
+the APK's copy of the same commit have the same files (`current`). Both fail when a script is missing. After an `apply`
+commits (`OK` and `OK unverified`), and on `check` and `apply` whenever the plugin is `current` or `adopted`,
+`sync_scripts` asks the Debian half (`scripts`) for each listed script's SHA-256, reads it out through `hermes-debian cat`
+(`deb_cat`; under chroot only root can read Debian's files) into `~/bin/<name>.tmp`, checks the SHA-256, makes it
+executable and renames it over `~/bin/<name>`, so a running copy is never changed under it. A copy that already matches
+is left alone, so a second run changes nothing. Only the names in `SCRIPTS` are ever copied. Unlike `sync_services`,
+it creates a script that is missing from `~/bin`, because installs from before this never had `hm-local`. Like
+`sync_services`, a copy changed by hand stays: each copy's SHA-256 is recorded in `~/.hermes-mobile/scripts.sha` (`known_sha`, `note_sha`;
+`install.sh` removes the record, so its own copies may be replaced), and a `~/bin` copy that matches neither the plugin's
+nor the recorded one is left alone; so is a link at `~/bin/<name>` or `<name>.tmp`, or anything that is no plain file
+(nothing is written through a link; the temporary file is made with `set -C`). A `held` plugin stops this too. It prints
+one line before the run's last line: `HMPLUGIN SCRIPTS ok`, or `HMPLUGIN SCRIPTS fail <why>` with `no-answer` (Debian
+didn't list them), `missing` (the installed plugin doesn't carry a script), `copy` (a copy failed or had other bytes;
+the old file stays whole) or `changed` (a hand-changed copy or a link was left alone). Cost: one more Debian login per
+`check` of a current plugin (the listing), plus one per script that has to be copied. A failure never changes the run's result
+line. The cron ticker needs no copy step once it lives in the plugin folder: it is then a plugin file like any other.
+The APK's copy of `plugin-update.sh` (with the supervisor inside) is about 30 KB, one `bash -c` argument well under
+Linux's 128 KiB limit for one argument; the scripts travel in the bundle, not in it.
+
 **What the app shows.** Settings → About → Hermux plugin (3.15), from `PluginSync.state` through the bridge
 (`pluginState`, `pluginUpdate`, 4.5; `web/src/plugin-sync.ts`). The state lives in the `hermes` preferences (2.4).
 
@@ -87,4 +109,4 @@ loops record `loop_exit`.
 | No Debian yet, or setup still running | Nothing runs (`termuxOk` false, setup installing, or `not-ready`). |
 | A developer testing a plugin | `install.sh` from a newer clone stamps it newer; a hand-edited copy reads `modified`; the `hold` file stops the app entirely. |
 
-The Hermes patches, the Hermes pin and the other scripts in `~/bin` are not part of this: they still change only with `install.sh` (6.4).
+The Hermes patches, the Hermes pin and the other scripts in `~/bin` (`hermes-debian`, `rish`) are not part of this: they still change only with `install.sh` (6.4).

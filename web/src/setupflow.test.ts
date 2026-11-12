@@ -89,6 +89,14 @@ describe('setupSteps / nextStep', () => {
     expect(nextStep(off)?.id).toBe('shizuku')
     expect(recommendedGaps(off).map(s => s.id)).not.toContain('shizuku')
   })
+  test('the phone scripts row is hidden until the shell says they are old, and never blocks', () => {
+    expect(st(setupSteps(native, 'open', remote, true), 'scripts')).toBe('skip')
+    expect(st(setupSteps({ ...native, phoneScriptsOld: false }, 'open', remote, true), 'scripts')).toBe('skip')
+    const old = setupSteps({ ...native, phoneScriptsOld: true }, 'open', remote, true)
+    expect(st(old, 'scripts')).toBe('bad')
+    expect(old.find(s => s.id === 'scripts')?.required).toBe(false)
+    expect(nextStep(old)).toBeNull()
+  })
   test('Termux:API and Shizuku missing on Android are bad even before Hermes answers', () => {
     const steps = setupSteps({ ...native, termuxApi: false, shizuku: false }, 'closed', null, null)
     expect(st(steps, 'termux-api')).toBe('bad')

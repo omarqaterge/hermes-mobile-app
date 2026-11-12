@@ -37,14 +37,17 @@ grep -qE '^[[:space:]]*allow-external-apps[[:space:]]*=[[:space:]]*true' "$HOME/
   || echo "allow-external-apps = true" >> "$HOME/.termux/termux.properties"
 command -v termux-reload-settings >/dev/null && termux-reload-settings || true
 
-echo "2/5 Installing the supervisor scripts (~/bin/hermes-services, ~/bin/hermes-debian, ~/bin/hm-shizuku)"
+echo "2/5 Installing the supervisor scripts (~/bin/hermes-services, ~/bin/hermes-debian, ~/bin/hm-shizuku, ~/bin/hm-local)"
 mkdir -p "$HOME/bin"
 cp "$here/phone/hermes-services" "$HOME/bin/hermes-services"
 rm -f "$HOME/.hermes-mobile/services.sha"  # this copy is the installer's: the app's plugin update may replace it (plugin-update.sh)
 cp "$here/phone/hermes-debian" "$HOME/bin/hermes-debian"
 # hm-shizuku: lets Shizuku start again by itself after a restart (Termux's own adb; phone-access.sh pairs it).
 cp "$here/phone/hm-shizuku" "$HOME/bin/hm-shizuku"
-chmod +x "$HOME/bin/hermes-services" "$HOME/bin/hermes-debian" "$HOME/bin/hm-shizuku"
+# hm-local: verifies the local Hermux servers before anything is sent to them (local authentication).
+cp "$here/phone/hm-local" "$HOME/bin/hm-local"
+rm -f "$HOME/.hermes-mobile/scripts.sha"  # these copies are the installer's: the app's plugin update may replace them
+chmod +x "$HOME/bin/hermes-services" "$HOME/bin/hermes-debian" "$HOME/bin/hm-shizuku" "$HOME/bin/hm-local"
 DEB="$HOME/bin/hermes-debian"
 if [ "$HM_DISTRO" = chroot ]; then
   "$DEB" true || die "Debian is not installed with chroot-distro yet (or Termux has no root). Run: chroot-distro install --name debian debian:trixie"
@@ -56,10 +59,20 @@ fi
 
 echo "3/5 Installing the Hermux plugin"
 find "$here/hermes-plugin/hermes-mobile" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+# The plugin folder as the app's own copy is built (android/build.sh): with the Termux scripts in phone-scripts/, so the
+# app's plugin update sees the same files and brings the scripts along with every later app update. In Termux's home,
+# which Debian sees at the same path (chroot-distro's --put copies from inside Debian).
+stage="$HOME/.hermes-mobile/plugin-staging"
+rm -rf "$stage"
+# Without its Termux scripts the plugin would never bring them along later: stop here instead of installing half of it.
+bash "$here/phone/plugin-update.sh" assemble "$here/hermes-plugin/hermes-mobile" "$here/phone" "$stage" \
+  || { rm -rf "$stage"; die "Could not prepare the Hermux plugin with its Termux scripts in $stage (is there free space?). Run this installer again."; }
 # Its version, so the app's own plugin update (phone/plugin-update.sh) knows this copy and never replaces a newer one.
-bash "$here/phone/plugin-update.sh" stamp "$here/hermes-plugin/hermes-mobile" \
+bash "$here/phone/plugin-update.sh" stamp "$stage" \
   "$(bash "$here/phone/plugin-update.sh" source-stamp "$here")" install || true
-"$DEB" --put "$here/hermes-plugin/hermes-mobile" /root/.hermes/plugins/hermes-mobile
+put=0; "$DEB" --put "$stage" /root/.hermes/plugins/hermes-mobile && put=1
+rm -rf "$stage"
+[ "$put" = 1 ] || die "Could not copy the Hermux plugin into Debian."
 # Every Hermes profile has its own plugins folder. Link ours into each one, so a profile (also one made the active
 # profile with `hermes profile use`, which `hermes` and the dashboard then run in) loads the same, current plugin.
 # Replaces an old copy there: it would never be updated.

@@ -306,9 +306,10 @@ class Session:
         self._key, self.kid, self._nc, self._ns, self._timeout = key, kid_, nc, ns, timeout
         self._used = False
 
-    def request(self, method: str, path: str, body: bytes | str | None = None) -> Answer:
+    def request(self, method: str, path: str, body: bytes | str | None = None, *, with_nc: bool = False) -> Answer:
         """Send one request (a body goes as application/json). 403 raises ``Unverified("refused")``; a broken or
-        oversized answer raises OSError with a neutral message. The session is closed afterwards."""
+        oversized answer raises OSError with a neutral message. The session is closed afterwards. ``with_nc`` names the
+        client nonce in the header too (``1 <kid> <ns> <nc> <mac>``), as the dashboard's token step wants."""
         if self._used:
             raise RuntimeError("used")
         self._used = True
@@ -323,7 +324,8 @@ class Session:
             # The same socket as the hello, or nothing: never a fresh connection to whatever listens now.
             if self._conn.sock is None or self._conn.sock is not self._sock:
                 raise OSError("no answer")
-            headers = {"X-Hermux-Auth": f"1 {self.kid} {self._ns} {m}", "Content-Length": str(len(b)), "Connection": "close"}
+            auth = f"1 {self.kid} {self._ns} {self._nc} {m}" if with_nc else f"1 {self.kid} {self._ns} {m}"
+            headers = {"X-Hermux-Auth": auth, "Content-Length": str(len(b)), "Connection": "close"}
             if b:
                 headers["Content-Type"] = "application/json"
             deadline = time.monotonic() + ANSWER_DEADLINE_S
@@ -451,6 +453,59 @@ def session(role: str, port: int, key: str, timeout: float = 3) -> Session:
                 conn.close()
             except OSError:
                 pass
+
+
+TOKEN_PATH = "/hermux/token"
+_TOKEN_TEXT = re.compile(r"[\x21-\x7e]{1,512}")  # what the dashboard guard hands out
+
+
+def _json_object(body: bytes):
+    """A JSON object read as strictly as a hello answer (no repeated names, no NaN or Infinity), else None."""
+
+    def pairs(items):
+        d = {}
+        for k, v in items:
+            if k in d:
+                raise ValueError("json")
+            d[k] = v
+        return d
+
+    def no_constant(_):
+        raise ValueError("json")
+
+    try:
+        j = json.loads(body.decode("utf-8"), object_pairs_hook=pairs, parse_constant=no_constant)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    return j if isinstance(j, dict) else None
+
+
+def dashboard_token(port: int, key: str, timeout: float = 3) -> str:
+    """The session token of the dashboard on 127.0.0.1:port, from a verified dashboard only: the hello, then
+    ``GET /hermux/token`` on the same connection with ``X-Hermux-Auth: 1 <kid> <ns> <nc> <mac>`` (the guard keeps the
+    server nonce between its two routes, so the client names its own nonce as well), then the answer's own proof
+    (``answer``, ``token``, over both nonces and the token's SHA-256) before the token is returned. A failed hello, a
+    refused request or a wrong proof raises ``Unverified``; any answer other than a 200 with ``hermux``, ``token`` and
+    ``proof`` raises OSError("bad answer"), like a broken answer to ``Session.request``. Nothing else escapes."""
+    s = session("dashboard", port, key, timeout)
+    nc, ns = s._nc, s._ns
+    try:
+        a = s.request("GET", TOKEN_PATH, with_nc=True)
+    except (Unverified, OSError):
+        raise
+    except Exception:
+        raise OSError("bad answer") from None
+    j = _json_object(a.body) if a.status == 200 else None
+    if j is None:
+        raise OSError("bad answer")
+    ver, tok, proof = j.get("hermux"), j.get("token"), j.get("proof")
+    if (not isinstance(ver, int) or isinstance(ver, bool) or ver < MIN_VERSION or not isinstance(tok, str)
+            or not _TOKEN_TEXT.fullmatch(tok) or not isinstance(proof, str)):
+        raise OSError("bad answer")
+    want = mac(key, "answer", "dashboard", addr(port), nc, ns, "token", sha256hex(tok.encode()))
+    if not _hex(proof, 64) or not same(want, proof):
+        raise Unverified("bad_proof")
+    return tok
 
 
 # ---- the server halves ----

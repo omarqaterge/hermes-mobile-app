@@ -192,6 +192,6 @@ check "grep -q 'Sh \"pm grant \$APP android.permission.WRITE_SECURE_SETTINGS\"' 
 first() { grep -n "$2" "$1" | head -1 | cut -d: -f1; }
 check "[ \"\$(first tools/setup-phone.sh 'hermes-mobile.apk\" 2>&1')\" -lt \"\$(first tools/setup-phone.sh 'pm grant \$APP android.permission.WRITE_SECURE_SETTINGS')\" ]" "setup-phone.sh: the grant comes after the app is installed"
 check "grep -q 'asks you to pair Termux' tools/setup-phone.sh && grep -q 'asks you to pair Termux' tools/setup-phone.ps1 && grep -q 'Android 10 and older' tools/setup-phone.ps1" "setup-phone.sh/.ps1: closing note says the app asks for the pairing"
-check "grep -q 'hermes-debian hm-shizuku rish' phone/uninstall.sh" "uninstall.sh removes ~/bin/hm-shizuku"
+check "grep -qE '^for f in .* hm-shizuku .*; do rmp ' phone/uninstall.sh" "uninstall.sh removes ~/bin/hm-shizuku"
 
 [ "$fails" = 0 ] && echo "ALL PASSED" || { echo "$fails FAILED"; exit 1; }

@@ -176,6 +176,7 @@ jobs:
       - run: python3 tools/test_diag.py
       - run: python3 tools/test_profile_link.py
       - run: python3 tools/test_token_guard.py
+      - run: python3 tools/test_hm_local_guard.py
       - run: python3 tools/test_local_auth.py
       - run: python3 tools/test_cron_ticker.py
       - run: python3 tools/test_sent_counts.py
@@ -202,6 +203,7 @@ jobs:
       - run: bash tools/test_uninstall.sh
       - run: bash tools/test_plugin_update.sh
       - run: bash tools/test_hm_shizuku.sh
+      - run: bash tools/test_hm_local.sh
       - run: bash tools/test_service_logs.sh
       - run: bash tools/test_device_lock.sh
       - run: bash tools/test_ci_changes.sh
