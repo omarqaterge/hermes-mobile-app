@@ -388,11 +388,13 @@ check("answer of another kind is not a success", out == pd.FAILED, out)
 reset(mode="drip")
 la = pd._local_auth()
 saved = la.ANSWER_DEADLINE_S
-la.ANSWER_DEADLINE_S = 1.0  # the answer's deadline after a verified hello (10 s on the phone)
+la.ANSWER_DEADLINE_S = 1.0  # the answer's deadline after a verified hello (10 s on the phone) ...
+pd.READ_TIMEOUT = 1.0  # ... and the per-read timeout, which the deadline is never shorter than
 t0 = time.monotonic()
 out = pd.tool_handler({"kind": "contacts"}, session_id="c")
 check("a dripping server is cut at the deadline", out == pd.FAILED and time.monotonic() - t0 < 3, f"{out} {time.monotonic() - t0:.1f}s")
 la.ANSWER_DEADLINE_S = saved
+pd.READ_TIMEOUT = 20.0
 
 print("ranges the app would refuse are refused before asking")
 N = 1_800_000_000_000

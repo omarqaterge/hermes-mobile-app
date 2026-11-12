@@ -52,6 +52,8 @@ case "$mode" in
     # A power cut between the two renames of a swap: the plugin is in old/, put it back.
     if [ ! -e "$P" ] && [ -d "$W/old" ]; then mv "$W/old" "$P"; rm -f "$W/pending"; fi
     if [ ! -d "$P" ]; then say STATE not-ready 0; exit 0; fi
+    # Whether the installed plugin's dashboard guard answers local authentication's hello, from its files on disk.
+    if grep -q '/hermux/hello' "$P/dashboard/plugin_api.py" 2>/dev/null; then say GUARD hello; else say GUARD old; fi
     if [ -f "$W/pending" ]; then
       # A swap that never got its answer. The caller settles it, unless someone (install.sh) replaced the plugin since.
       if [ "$(cat "$W/pending")" = "$(stamp_of)" ]; then say PENDING "$(stamp_of)"; exit 0; fi
@@ -111,6 +113,7 @@ EOF
 
 # ── Termux side ──
 DASH=${HM_DASHBOARD:-http://127.0.0.1:9119}
+DASH_PORT=${DASH##*:}
 BUNDLE_URL=${HM_BUNDLE_URL:-http://127.0.0.1:9121/plugin-bundle}  # + /TOKEN
 WAIT=${HM_PLUGIN_WAIT:-300}     # seconds for the restarted dashboard to answer at all (a cold start on a phone is slow)
 LOAD_WAIT=${HM_PLUGIN_LOAD_WAIT:-60}  # then for it to serve the new plugin
@@ -135,7 +138,50 @@ $IN_DEBIAN" hm-plugin "$@" </dev/null; fi
 }
 # One word of the Debian half's last HMPLUGIN line, so that noise from a login shell can't be taken for an answer.
 last() { grep '^HMPLUGIN ' | tail -1; }
-token() { curl -s -m 5 -H "X-Hermes-Mobile-Key: $(cat "$HOME/.hermes-mobile/key" 2>/dev/null)" "$DASH/" 2>/dev/null | sed -n 's/.*__HERMES_SESSION_TOKEN__ *= *"\([^"]*\)".*/\1/p' | head -1; }
+# The dashboard's session token, from a verified dashboard only: `hm-local token` checks the guard's proof under the key
+# (the key never leaves hm-local). The one exception: while the old plugin's dashboard still runs (`legacy` yes: the
+# installed plugin's own BUILD_STAMP is older than the APK's, by the Debian-side inspect, and its guard's files have no
+# hello), only in apply and only until Hermes restarts with the new plugin, the old guard can only answer the raw key, as
+# before; that use is noted once in the diagnostic log (`local legacy_key port=dashboard side=termux`). Never decided by
+# anything the port says, and never again in a run that has restarted Hermes (`restarted`: a settle's rollback, or this
+# run's own restart; a rollback waits with a plain probe, no key). And only while the dashboard's own process runs
+# (`dashboard_runs`): with Hermes stopped, whatever answers on the port is not the old guard.
+legacy=no; restarted=""
+# token() runs in command substitutions (subshells), so what it keeps for the run lives in the run's lock folder.
+# Hermes's dashboard process for the port dialled, by its command line ("[h]": the pattern never matches this run's own
+# command line): Termux's user under proot, root under chroot.
+DASH_PROC_RE="[h]ermes dashboard --host 127[.]0[.]0[.]1 --port ${DASH_PORT}( |\$)"
+dashboard_runs() {
+  if [ "$("$HOME/bin/hermes-debian" --which 2>/dev/null)" = chroot ]; then
+    su -c "pgrep -u 0 -f '$DASH_PROC_RE'" </dev/null >/dev/null 2>&1
+  else pgrep -u "$(id -u)" -f "$DASH_PROC_RE" >/dev/null 2>&1; fi
+}
+note_legacy() {  # once per run
+  [ -e "$LOCK/legacy-noted" ] && return 0
+  : > "$LOCK/legacy-noted" 2>/dev/null
+  [ -f "$TERMUX_HOME/.hermes-mobile/diag-off" ] && return 0
+  mkdir -p "$TERMUX_HOME/logs" && printf '%s local legacy_key port=dashboard side=termux\n' "$(date +%s)" >> "$TERMUX_HOME/logs/loop-events.log"
+}
+local_client() {  # the hm-local to run: ~/bin's, else the installed plugin's own copy (taken once, into the lock folder)
+  if [ -f "$HOME/bin/hm-local" ] && [ ! -L "$HOME/bin/hm-local" ]; then echo "$HOME/bin/hm-local"; return 0; fi
+  local f="$LOCK/hm-local"
+  if [ ! -s "$f" ]; then
+    rm -f "$f"
+    (set -C; deb_cat "$PLUGIN_DIR/phone-scripts/hm-local" > "$f") 2>/dev/null && [ -s "$f" ] || { rm -f "$f"; return 1; }
+  fi
+  echo "$f"
+}
+forget_client() { rm -f "$LOCK/hm-local"; return 0; }
+token() {
+  if [ "$legacy" = yes ] && [ -z "$restarted" ] && dashboard_runs; then
+    note_legacy
+    # The header from a file descriptor: the key never goes on a command line (printf is a shell builtin).
+    curl -s -m 5 -H @<(printf 'X-Hermes-Mobile-Key: %s\n' "$(cat "$HOME/.hermes-mobile/key" 2>/dev/null)") "$DASH/" 2>/dev/null | sed -n 's/.*__HERMES_SESSION_TOKEN__ *= *"\([^"]*\)".*/\1/p' | head -1
+    return 0
+  fi
+  local c; c=$(local_client) || return 0
+  bash "$c" token "$DASH_PORT" </dev/null 2>/dev/null | head -1
+}
 route() {  # PATH: the body when the plugin's route answers 200, else non-zero. The token changes with every dashboard start.
   local t out; t=$(token); [ -n "$t" ] || return 1
   out=$(curl -s -m 5 -H "X-Hermes-Session-Token: $t" -w '\n%{http_code}' "$DASH/api/plugins/hermes-mobile/$1" 2>/dev/null) || return 1
@@ -143,7 +189,16 @@ route() {  # PATH: the body when the plugin's route answers 200, else non-zero. 
   printf '%s\n' "${out%$'\n'*}"
 }
 plugin_up() { route activity >/dev/null; }
-dash_up() { [ -n "$(token)" ]; }
+# Hermes answers: a verified token (or, under the exception, the old guard's token), or an HTTP answer that is no hello at
+# all while the installed plugin has one (its guard isn't loaded: "up, plainly without the new plugin"). Only the hello
+# is sent for that.
+dash_up() {
+  [ -n "$(token)" ] && return 0
+  [ "$legacy" = yes ] && return 1
+  local c; c=$(local_client) || return 1
+  bash "$c" hello dashboard "$DASH_PORT" </dev/null >/dev/null 2>&1
+  [ $? = 4 ]
+}
 # Live work by Hermes's own count, in every Hermes process (a second check behind the app's: it may have missed a beat).
 working() { local a; a=$(route activity) || return 1; ! printf %s "$a" | grep -Eq '"items": *\[ *\]'; }
 serves() { route plugin-info | grep -Eq "\"stamp\": *$1([^0-9]|$)"; }
@@ -152,7 +207,12 @@ wait_serves() {  # STAMP SECONDS
   while [ "$SECONDS" -lt "$end" ]; do serves "$1" && return 0; sleep "${HM_PLUGIN_POLL:-3}"; done
   return 1
 }
-wait_up() {  # SECONDS [dash]: until the plugin (or only the dashboard) answers
+http_up() {  # any HTTP answer on the dashboard's port, with no key and no token: only "something answers"
+  local code; code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$DASH/" 2>/dev/null)
+  [ -n "$code" ] && [ "$code" != 000 ]
+}
+back_up() { dashboard_runs && http_up; }  # after a rollback: Hermes's process runs and the port answers (nothing more)
+wait_up() {  # SECONDS [dash|back]: until the plugin (or only the dashboard; or, after a rollback, its process and port) answers
   local end=$((SECONDS + $1)) f=${2:-plugin}_up
   while [ "$SECONDS" -lt "$end" ]; do $f && return 0; sleep "${HM_PLUGIN_POLL:-3}"; done
   return 1
@@ -167,6 +227,7 @@ restart_loop() {
   return 0
 }
 restart() {
+  restarted=1  # from here on the dashboard on the port is not the old plugin's guard: never the raw key again
   restart_loop
   "$HOME/bin/hermes-debian" --restart 2>/dev/null \
     || { pids=$(pgrep -f "$DASH_RE") && kill -9 $pids 2>/dev/null; }
@@ -290,11 +351,20 @@ scripts_if_current() {  # the plugin's state line: a current plugin's scripts (a
   case "$1" in "HMPLUGIN STATE current "*|"HMPLUGIN STATE adopted "*) sync_scripts ;; esac
   return 0
 }
-inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets $line
-  line=$(deb inspect "$@" | last)
+inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets $line and $legacy
+  local out
+  out=$(deb inspect "$@")
+  line=$(printf '%s\n' "$out" | last)
   case "$line" in
-    "HMPLUGIN PENDING "*) settle "${line##* }"; line=$(deb inspect "$@" | last) ;;
+    "HMPLUGIN PENDING "*) settle "${line##* }"; out=$(deb inspect "$@"); line=$(printf '%s\n' "$out" | last) ;;
   esac
+  # The one exception (see token): an older plugin by its own stamp on disk, whose guard has no hello on disk either.
+  legacy=no
+  [ -n "$restarted" ] && return 0  # a settle restarted Hermes: the exception is over for this run
+  case "$line" in
+    "HMPLUGIN STATE older "*) printf '%s\n' "$out" | grep -qx 'HMPLUGIN GUARD old' && legacy=yes ;;
+  esac
+  return 0
 }
 
 cmd=${1:-}; [ $# -gt 0 ] && shift
@@ -336,6 +406,9 @@ case "$cmd" in
     stamp=$1 hash=$2 want=$3 tok=$4 force=no; [ "${5:-}" = --force ] && force=force
     take_lock
     inspect "$stamp" "$hash" "$force"
+    # This run settled an interrupted swap by rolling it back (and restarted Hermes): it can't check Hermes's work or the
+    # new plugin any more (that took the old guard's answer before the restart), so a fresh run does the update.
+    if [ -n "$restarted" ]; then say BUSY settled; exit 0; fi
     sync_services "$line"
     scripts_if_current "$line"
     case "$line" in
@@ -358,7 +431,11 @@ case "$cmd" in
     r=$(deb swap "$stamp" | last)
     [ "$r" = "HMPLUGIN SWAPPED" ] || { echo "${r:-HMPLUGIN FAIL swap no-answer}"; exit 0; }
     # A turn that started during the swap: put the old plugin back (no restart was made) and wait for another moment.
+    # The old plugin's dashboard still runs here, so this busy check still asks its guard the old way (legacy).
     if working; then deb rollback >/dev/null; say BUSY working; exit 0; fi
+    # From the restart on, the dashboard on the port is the new plugin's (or nothing we can trust): never the raw key
+    # again in this run, even after a rollback.
+    legacy=no; forget_client
     restart
     if [ "$loaded" = 0 ]; then
       deb commit >/dev/null
@@ -371,8 +448,10 @@ case "$cmd" in
       say OK "$stamp"
     else
       deb rollback >/dev/null
+      forget_client
       restart
-      wait_up "$BACK_WAIT" && say FAIL load rolled-back || say FAIL load rolled-back-not-up
+      # "rolled-back": restarted with the old plugin, its process running and the port answering; nothing more is known.
+      wait_up "$BACK_WAIT" back && say FAIL load rolled-back || say FAIL load rolled-back-not-up
     fi ;;
   *) usage ;;
 esac

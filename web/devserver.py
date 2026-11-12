@@ -19,12 +19,16 @@ HERMES = os.environ.get("HM_HERMES_URL", "http://127.0.0.1:9119")
 PORT = int(os.environ.get("HM_DEV_PORT", "5180"))
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+from devtoken import dashboard_token  # noqa: E402
+
+
 def hermes_token() -> str:
+    """With the phone's key (HM_EVENT_KEY, or on the phone its key file): a verified dashboard's token only (the key is
+    never sent). Without one, the page's token as served (tools/web-e2e's mock, a throwaway Hermes)."""
     try:
-        import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
-        html = urllib.request.urlopen(urllib.request.Request(HERMES + "/", headers={"X-Hermes-Mobile-Key": _key}), timeout=5).read().decode()
-        return re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', html).group(1)
-    except Exception:
+        return dashboard_token(HERMES, plain=True, timeout=5)
+    except (Exception, SystemExit):
         return ""
 
 

@@ -25,5 +25,6 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
   status sheet opens (`health.ts`), activity poll 3 s while the banner shows something else 9 s (`activity.ts`),
   canvas list every 6 s only while the panel is open. Chromium freezes the hidden page about a minute in; the
   liveness logic treats that gap as a freeze, not a dead socket.
-- **Termux loops:** the app-keeper probes 9121 every 300 s and only starts a Java VM (`am`) when the service is
-  down; memory sync runs only if its script exists.
+- **Termux loops:** the app-keeper probes 9121 every 300 s, verifies it with a `hm-local hello` (one Python start;
+  `HM_KEEPER_HELLO_EVERY` makes it every Nth round), and only starts a Java VM (`am`) when the service is down or
+  doesn't verify; memory sync runs only if its script exists.

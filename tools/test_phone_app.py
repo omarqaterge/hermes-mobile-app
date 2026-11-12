@@ -76,6 +76,8 @@ def host(method, path, headers, raw):
     if p == "/toggle":
         return reply({"ok": True, "checked": True, "changed": not body.get("on")})
     if p in ("/scroll", "/scroll_to", "/wait_for"):
+        if p == "/wait_for" and HOST.get("slow"):
+            _time.sleep(HOST["slow"])  # the host waits for the screen before it answers anything
         return reply({"ok": True, "via": "node"})
     if p in ("/close", "/hand_over"):
         HOST["open"] = None
@@ -406,10 +408,10 @@ before = len([c for c in RISH if "app_process /" in c[0]])
 pa.ensure_host()
 check("a verified host is reused, not started again", len([c for c in RISH if "app_process /" in c[0]]) == before)
 
-liar = FakeLocal("bghost", lambda: HOST["token"], "wrong_key", host)
-liar_events = []
-pa.event = lambda area, name, **f: liar_events.append((area, name, f))
-pa._port = liar.port  # something else answers on the host's port now
+unproven = FakeLocal("bghost", lambda: HOST["token"], "wrong_key", host)
+seen_events = []
+pa.event = lambda area, name, **f: seen_events.append((area, name, f))
+pa._port = unproven.port  # something else answers on the host's port now
 check("a host that doesn't prove the token is not alive", not pa._alive())
 try:
     pa.call("/tap", {"n": 1, "text": "secret words"})
@@ -417,23 +419,23 @@ try:
 except pa.PhoneAppError as e:
     msg = str(e)
 check("a request to it fails with plain words, and it got nothing but the hello", msg == pa.UNVERIFIED
-      and b"secret words" not in liar.received() and HOST["token"].encode() not in liar.received()
-      and all(h.startswith(b"GET /hermux/hello?") for h, _ in liar.raw), (msg, liar.raw))
-check("the diagnostic event has the fixed shape", liar_events and liar_events[-1] == ("local", "unverified",
-      {"port": "bghost", "why": "unknown_kid", "side": "plugin"}), liar_events)
+      and b"secret words" not in unproven.received() and HOST["token"].encode() not in unproven.received()
+      and all(h.startswith(b"GET /hermux/hello?") for h, _ in unproven.raw), (msg, unproven.raw))
+check("the diagnostic event has the fixed shape", seen_events and seen_events[-1] == ("local", "unverified",
+      {"port": "bghost", "why": "unknown_kid", "side": "plugin"}), seen_events)
 for mode, why in (("bad_proof", "bad_proof"), ("wrong_addr", "bad_addr"), ("wrong_role", "bad_proof"),
                   ("garbage", "no_hello"), ("no_hello", "no_hello"), ("refuse", "refused")):
     other = FakeLocal("bghost", lambda: HOST["token"], mode, host)
     pa._port = other.port
-    liar_events.clear()
+    seen_events.clear()
     try:
         pa.call("/type", {"text": "typed secret"})
         failed = False
     except pa.PhoneAppError:
         failed = True
     check(f"a host that answers {mode}: the request fails ({why}), typed text never reaches it as a verified request",
-          failed and not other.verified and liar_events and liar_events[-1][2]["why"] == why
-          and (mode == "refuse" or b"typed secret" not in other.received()), (liar_events, other.raw))
+          failed and not other.verified and seen_events and seen_events[-1][2]["why"] == why
+          and (mode == "refuse" or b"typed secret" not in other.received()), (seen_events, other.raw))
     other.close()
 silent = FakeLocal("bghost", lambda: HOST["token"], "silent", host)
 pa._port = silent.port
@@ -443,11 +445,11 @@ silent.close()
 check("…and nothing private reached it", all(h.startswith(b"GET /hermux/hello?") for h, _ in silent.raw))
 pa.event = lambda area, name, **f: None
 starts = len([c for c in RISH if "app_process /" in c[0]])
-pa._port = liar.port
+pa._port = unproven.port
 pa.ensure_host()
 check("a failed hello means not alive: a fresh host with a new token on its own port",
       len([c for c in RISH if "app_process /" in c[0]]) == starts + 1 and pa._port == srv.port and pa._alive())
-liar.close()
+unproven.close()
 pa._token = "x" * 48  # the token was lost (the plugin restarted with a stale copy): the hello fails
 check("a lost token: not alive", not pa._alive())
 pa.ensure_host()
@@ -461,6 +463,79 @@ except pa.PhoneAppError as e:
     msg = str(e)
 check("the host's own complaint still reaches the model", "Android 14" in msg, msg)
 HOST["log"] = None
+print("an older app's host (no key id in its LISTENING line)")
+pa._token, pa._port = "", 0
+HOST["log"] = "LISTENING 9131\n"
+pa.DEADLINE_S = 8.0
+t0 = _time.time()
+try:
+    pa.ensure_host()
+    msg = ""
+except pa.PhoneAppError as e:
+    msg = str(e)
+check("it asks for the app's update, in a few seconds, and stops that host", msg == pa.OLD_APP and _time.time() - t0 < 5
+      and RISH[-1][0] == "pkill -f 'app_process.*[B]gHost'", (msg, _time.time() - t0))
+reads = []
+
+
+def stale_then_own(cmd, stdin="", timeout=20):
+    if cmd.startswith("tail"):
+        reads.append(1)
+        if len(reads) < 2:
+            return "LISTENING 9131\n"  # left from an earlier start, before this start's own line
+        return f"LISTENING {srv.port} {pa._local_auth().kid(HOST['token'])}\n"
+    return rish(cmd, stdin, timeout)
+
+
+pa._rish = stale_then_own
+HOST["log"] = None
+pa._token, pa._port = "", 0
+pa.ensure_host()
+check("a line without a key id left from before doesn't stop this start's own", pa._alive() and pa._port == srv.port)
+pa._rish = rish
+pa.DEADLINE_S = 1.0
+
+print("a call the host takes long to answer")
+pa._token, pa._port = "", 0
+HOST["log"] = None
+pa.ensure_host()
+pa._state.update(session="chat-slow", pkg="com.google.android.keep", label="Keep notes", at=_time.time())
+HOST["slow"] = 12.5
+t0 = _time.time()
+r = run({"action": "wait_for", "target": "Saved", "seconds": 12, "capture_after": False}, sid="chat-slow")
+check("a wait_for of 12 s answers after about 12.5 s: still a success", r.get("ok") and _time.time() - t0 >= 12, (r, _time.time() - t0))
+saved = dict(pa.DEADLINES)
+pa.DEADLINES["/wait_for"] = 1.0
+HOST["slow"] = 2.5
+t0 = _time.time()
+r = run({"action": "wait_for", "target": "Saved", "seconds": 2, "capture_after": False}, sid="chat-slow")
+check("a call past its own deadline fails at that deadline", not r["ok"] and "lost the background host" in r["error"]
+      and _time.time() - t0 < 2.4, (r, _time.time() - t0))
+pa.DEADLINES.clear()
+pa.DEADLINES.update(saved)
+HOST["slow"] = 0
+_time.sleep(1.5)  # the slow call still running on the host
+check("the deadlines fit the host's longest calls", pa.DEADLINES["/scroll_to"] >= 16 * 1.5 + 8 and pa.DEADLINES["/wait_for"] >= 12 + 5
+      and pa.DEADLINES["/open"] >= 10 + 5)
+check("a quick call keeps the usual 10 s", pa.DEADLINE_DEFAULT == 10.0 and "/tap" not in pa.DEADLINES)
+seen_deadlines = []
+real_request = pa._local_auth().Session.request
+
+
+def record(self, method, path, body=None, **kw):
+    seen_deadlines.append((path, kw.get("deadline_s")))
+    return real_request(self, method, path, body, **kw)
+
+
+pa._local_auth().Session.request = record
+pa._state.update(session="chat-slow", pkg="com.google.android.keep", label="Keep notes", at=_time.time())
+run({"action": "tap", "element": 1, "capture_after": False}, sid="chat-slow")
+run({"action": "scroll_to", "target": "x", "capture_after": False}, sid="chat-slow")
+pa._local_auth().Session.request = real_request
+check("each call gets its own bound: a tap 10 s, scroll_to 45 s", ("/tap", 10.0) in seen_deadlines
+      and ("/scroll_to", 45.0) in seen_deadlines, seen_deadlines)
+pa._state.clear()
+
 pa._rish = rish
 pa.RISH_BIN = tmp / "missing"
 check("unavailable without rish", pa.availability() == (False, "Needs Shizuku (rish isn't set up)"))

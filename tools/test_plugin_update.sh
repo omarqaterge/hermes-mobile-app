@@ -3,7 +3,10 @@
 # folder) and a fake Hermes dashboard (a small Python server that "loads" the plugin when hermes-debian --restart runs):
 # an old plugin is replaced and every profile linked, a current, newer, hand-changed or held one is left alone, nothing
 # is touched while Hermes works, a bad bundle or token installs nothing, a plugin that doesn't load is rolled back, and
-# an interrupted run is settled by the next one. No phone needed.  bash tools/test_plugin_update.sh
+# an interrupted run is settled by the next one. The dashboard's token comes from `hm-local token` (local authentication:
+# the fake's new guard proves the key), and the raw key goes only to an old plugin's guard during apply, before any
+# restart and while the dashboard's process runs, never on a command line, never in any other case. No phone needed.
+#   bash tools/test_plugin_update.sh
 set -u
 here=$(cd "$(dirname "$0")/.." && pwd)
 S="$here/phone/plugin-update.sh"
@@ -20,37 +23,91 @@ P="$HM_PLUGIN_ROOT/plugins/hermes-mobile" W="$HM_PLUGIN_ROOT/hermes-mobile-plugi
 cat > "$HOME/bin/hermes-debian" <<EOF
 #!/usr/bin/env bash
 case "\$1" in
-  --which) echo proot ;;
+  --which) echo "\${HM_FAKE_WHICH:-proot}" ;;
   --restart) echo x >> "$t/restarts"
+    # HM_FAKE_HOLD: from this restart on, something that isn't Hermes answers on the dashboard's port.
+    [ -n "\${HM_FAKE_HOLD:-}" ] && touch "$t/holder"
     # Like the real one: kill by the dashboard's command line (the app runs the script as \`bash -c TEXT\`).
     pkill -9 -f 'hermes dashboard --host 127.0.0.1 --port 9119' 2>/dev/null
+    # The stand-in dashboard process of this run (on the fake's own port: other runs' processes are left alone).
+    pkill -9 -f "hermes dashboard --host 127.0.0.1 --port \$(cat "$t/port") --no-open" 2>/dev/null
+    # Hermes's dashboard process (a stand-in with its command line), unless something else holds the port now.
+    [ -n "\${HM_FAKE_HOLD:-}" ] || "$t/dashproc"
     if [ -f "$P/BROKEN" ] || [ ! -f "$P/plugin.yaml" ]; then rm -f "$t/loaded"
     else s=\$(cut -d' ' -f1 "$P/BUILD_STAMP" 2>/dev/null); echo "\${s:-0}" > "$t/loaded"; fi ;;
   # A copy out of Debian (the Termux scripts): counted; HM_FAKE_CAT=fail makes it fail, =noise gives other bytes.
   cat) echo x >> "$t/cats"
     case "\${HM_FAKE_CAT:-}" in fail) exit 1 ;; noise) echo noise; exit 0 ;; esac
     exec "\$@" ;;
-  *) exec "\$@" ;;
+  # HM_FAKE_BUSY_AFTER_SWAP: a turn starts right after the swap (before the restart).
+  *) if [ -n "\${HM_FAKE_BUSY_AFTER_SWAP:-}" ] && [ "\${5:-}" = swap ]; then
+       "\$@"; rc=\$?; echo '{"items":[{"session":"s9","ts":1}]}' > "$t/activity"; exit \$rc
+     fi
+     exec "\$@" ;;
 esac
 EOF
 chmod +x "$HOME/bin/hermes-debian"
+# A process with the dashboard's command line for the fake's port (what plugin-update.sh looks for before the old guard
+# gets the raw key); started once the fake listens.
+printf '#!/usr/bin/env bash\n(exec -a "hermes dashboard --host 127.0.0.1 --port $(cat "%s/port") --no-open" sleep 900 </dev/null >/dev/null 2>&1 &)\n' "$t" > "$t/dashproc"
+chmod +x "$t/dashproc"
+# Every curl call's arguments are recorded (the key must never be among them).
+mkdir -p "$t/shim"; real_curl=$(command -v curl)
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/curl-argv"\nexec "%s" "$@"\n' "$t" "$real_curl" > "$t/shim/curl"
+chmod +x "$t/shim/curl"; export PATH="$t/shim:$PATH"
+# su (chroot only): records what it is asked to run, runs nothing (no root here).
+printf '#!/usr/bin/env bash\n[ "$1" = -c ] && printf "%%s\\n" "$2" >> "%s/su-args"\nexit 1\n' "$t" > "$t/shim/su"; chmod +x "$t/shim/su"
 
+# The fake dashboard's guard: the loaded plugin's stamp 0 is an old plugin (the page keeps the token only for the raw key,
+# no hello); any other stamp is a new one (the hello and token routes, from local_auth.py's server halves; the page still
+# honours the raw key, as before enforcement). Every raw key it receives is noted with the loaded stamp in rawkey.log.
 cat > "$t/server.py" <<'EOF'
-import http.server, os, sys
-T = sys.argv[1]
+import http.server, importlib.util, json, os, sys
+T, LA = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("la", LA); la = importlib.util.module_from_spec(spec); spec.loader.exec_module(la)
+pending = la.PendingHellos()
+KEYF = os.path.join(os.environ["HOME"], ".hermes-mobile", "key")
 def read(name, default=None):
     try:
         return open(os.path.join(T, name), "rb").read()
     except OSError:
         return default
 class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     def log_message(self, *a): pass
     def send(self, code, body=b"", ctype="application/json"):
         self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(body)))
         self.end_headers(); self.wfile.write(body)
     def do_GET(self):
-        if self.path == "/":
-            return self.send(200, b'<script>window.__HERMES_SESSION_TOKEN__ = "tok1";</script>', "text/html")
+        n = int(self.headers.get("Content-Length") or 0)
+        if n: self.rfile.read(n)
+        key = open(KEYF).read().strip()
+        if read("holder") is not None:  # not Hermes: it notes every key it is sent and offers a page to anyone
+            with open(os.path.join(T, "holder.log"), "a") as f:
+                f.write(f"{self.path} key={self.headers.get('X-Hermes-Mobile-Key')}\n")
+            return self.send(200, b'<script>window.__HERMES_SESSION_TOKEN__ = "anyone";</script>', "text/html")
+        loaded = (read("loaded") or b"").strip()
+        new = loaded not in (b"", b"0")
+        raw = self.headers.get("X-Hermes-Mobile-Key")
+        if raw is not None:
+            with open(os.path.join(T, "rawkey.log"), "a") as f:
+                f.write(f"loaded={loaded.decode() or 'none'} ok={raw == key}\n")
+        where = la.addr(self.server.server_port)
+        if new and self.path.startswith("/hermux/hello?"):
+            nc, hint = la.hello_args(self.path.split("?", 1)[1])
+            ns, j = la.hello_answer(key, "dashboard", where, nc)
+            pending.add(ns, nc, la.kid(key), where)
+            return self.send(200, json.dumps(j).encode())
+        if new and self.path == "/hermux/token":
+            a = la.parse_auth(self.headers.get("X-Hermux-Auth"), with_nc=True)
+            got = pending.take(a[1]) if a else None
+            if not got or not la.request_ok(key, "dashboard", where, a[2], a[1], "GET", self.path, b"", a[3]):
+                return self.send(403, b'{"hermux":1,"error":"refused"}')
+            proof = la.answer_proof(key, "dashboard", where, a[2], a[1], "token", b"tok1")
+            return self.send(200, json.dumps({"hermux": 1, "token": "tok1", "proof": proof}).encode())
+        if self.path == "/" or self.path.startswith("/hermux/"):
+            page = "tok1" if raw == key else "withheld"
+            return self.send(200, ('<script>window.__HERMES_SESSION_TOKEN__ = "%s";</script>' % page).encode(), "text/html")
         if self.path.startswith("/plugin-bundle/"):
             ok = self.path == "/plugin-bundle/" + (read("token", b"") or b"").decode().strip()
             return self.send(200, read("bundle.tgz", b""), "application/gzip") if ok else self.send(403)
@@ -69,10 +126,13 @@ s = http.server.HTTPServer(("127.0.0.1", 0), H)
 open(os.path.join(T, "port"), "w").write(str(s.server_port))
 s.serve_forever()
 EOF
-python3 "$t/server.py" "$t" & srv=$!
-trap 'kill $srv 2>/dev/null; wait $srv 2>/dev/null; rm -rf "$t"' EXIT
+echo "4f1c0e9a7b3d5c2e8a6f4b1d9c7e5a3b2d0f8e6c4a2b1d3f" > "$HOME/.hermes-mobile/key"
+cp "$here/phone/hm-local" "$HOME/bin/hm-local"  # an install that already has it (the scripts part below takes it away)
+python3 "$t/server.py" "$t" "$here/hermes-plugin/hermes-mobile/local_auth.py" & srv=$!
+trap 'kill $srv 2>/dev/null; wait $srv 2>/dev/null; pkill -f "hermes dashboard --host 127.0.0.1 --port $port --no-open" 2>/dev/null; rm -rf "$t"' EXIT
 for _ in $(seq 50); do [ -s "$t/port" ] && break; sleep 0.1; done
 port=$(cat "$t/port")
+"$t/dashproc"
 export HM_DASHBOARD="http://127.0.0.1:$port" HM_BUNDLE_URL="http://127.0.0.1:$port/plugin-bundle"
 export HM_PLUGIN_WAIT=4 HM_PLUGIN_LOAD_WAIT=3 HM_PLUGIN_BACK_WAIT=3 HM_PLUGIN_SETTLE=3 HM_PLUGIN_POLL=0.3 HM_PLUGIN_UP_WAIT=1
 echo aaa111 > "$t/token"
@@ -84,6 +144,7 @@ read -r STAMP HASH SHA <<< "$(bash "$S" pack "$NEW" "$t/bundle.tgz" 2000000000)"
 check "pack prints the stamp" "$STAMP" 2000000000
 check "hash ignores BUILD_STAMP" "$(bash "$S" hash "$NEW")" "$HASH"
 OLD="$t/old"; cp -R "$NEW" "$OLD"; echo "# old" >> "$OLD/plugin.yaml"; rm -f "$OLD/google_workspace.py"
+perl -pi -e 's|/hermux/hello|/hermux/none|g' "$OLD/dashboard/plugin_api.py"  # an old plugin's guard: no hello
 install_old() { rm -rf "$P" "$W"; cp -R "$OLD" "$P"; echo 0 > "$t/loaded"; }
 # As the app runs it: the script's text as \`bash -c\` (so it is on the command line), name hm-plugin.
 run() { bash -c "$(cat "$S")" hm-plugin "$@" 2>/dev/null | grep '^HMPLUGIN' | tail -1; }
@@ -107,8 +168,13 @@ check "a profile's stale copy became a link" "$(readlink "$HM_PLUGIN_ROOT/profil
 check "a linked profile stays linked" "$(readlink "$HM_PLUGIN_ROOT/profiles/linked/plugins/hermes-mobile")" "$P"
 check "no leftovers" "$(ls "$W" 2>/dev/null | tr '\n' ' ')" ""
 check "the bundle file is gone" "$(ls "$HOME/.hermes-mobile/plugin-bundle.tgz" 2>/dev/null)" ""
+check "the raw key went only to the old plugin's guard (before the swap)" "$(grep -c . "$t/rawkey.log") $(grep -vc '^loaded=0 ' "$t/rawkey.log")" "$(grep -c . "$t/rawkey.log") 0"
+check "…it was needed for the busy check" "$([ "$(grep -c . "$t/rawkey.log")" -ge 1 ] && echo yes)" yes
+check "…and noted once in the diagnostic log" "$(grep -c '^[0-9]* local legacy_key port=dashboard side=termux$' "$HOME/logs/loop-events.log")" 1
+rm -f "$t/rawkey.log"
 check "then current" "$(run check "$STAMP" "$HASH")" "HMPLUGIN STATE current $STAMP"
 check "apply again changes nothing" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN STATE current $STAMP"
+check "a current plugin, check and apply: the raw key is never sent" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
 
 echo "the same files without a stamp are adopted, with no restart"
 rm -rf "$P"; cp -R "$NEW" "$P"; : > "$t/restarts"
@@ -125,8 +191,14 @@ check "modified" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN STATE m
 check "modified untouched" "$(same "$EDITED")" yes
 mkdir -p "$W"; touch "$W/hold"
 check "held" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 --force)" "HMPLUGIN STATE held 1900000000"
+check "newer, modified, held: the raw key is never sent" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
 rm -f "$W/hold"
 check "modified, --force" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 --force)" "HMPLUGIN OK $STAMP"
+
+echo "an older stamp whose guard has the hello on disk: no raw key"
+install_old; cp "$NEW/dashboard/plugin_api.py" "$P/dashboard/plugin_api.py"; rm -f "$t/rawkey.log"
+check "it is still replaced (unverified: its own guard isn't the fake's old one)" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 | cut -d' ' -f1-2)" "HMPLUGIN OK"
+check "…and the raw key was never sent" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
 
 echo "nothing while Hermes works"
 install_old; echo '{"items":[{"session":"s1","ts":1}]}' > "$t/activity"
@@ -146,12 +218,63 @@ check "untouched after a bad bundle" "$(same "$OLDHASH")" yes
 check "hash of another bundle" "$(run apply "$STAMP" "$HASH" "$BS" aaa111)" "HMPLUGIN FAIL stage hash"
 cp "$t/good.tgz" "$t/bundle.tgz"
 
+echo "a turn that starts after the swap, before the restart"
+install_old; rm -f "$t/activity" "$t/restarts"
+check "busy after the swap: the old plugin goes back, no restart" "$(HM_FAKE_BUSY_AFTER_SWAP=1 run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN BUSY working"
+check "…the old plugin is in place" "$(same "$OLDHASH")" yes
+check "…and Hermes was not restarted" "$(cat "$t/restarts" 2>/dev/null | wc -l | tr -d ' ')" 0
+rm -f "$t/activity"
+
+echo "something else answers on the dashboard's port after the restart"
+install_old; rm -f "$t/holder" "$t/holder.log"
+o=$(HM_FAKE_HOLD=1 run apply "$STAMP" "$HASH" "$SHA" aaa111)
+check "the new plugin can't be seen serving: rolled back, and no claim that Hermes is back (no dashboard process)" "$o" "HMPLUGIN FAIL load rolled-back-not-up"
+check "…the old plugin is in place" "$(same "$OLDHASH")" yes
+check "…and the port's holder was asked things but never sent the key" "$([ -s "$t/holder.log" ] && ! grep -v ' key=None$' "$t/holder.log" | grep -q . && echo none)" none
+rm -f "$t/holder" "$t/holder.log"
+echo 0 > "$t/loaded"; "$t/dashproc"
+
+echo "a run that settles an interrupted swap first: the exception is over"
+install_old; mkdir -p "$W"; mv "$P" "$W/old"; cp -R "$NEW" "$P"; bash "$S" stamp "$P" "$STAMP" apk; printf %s "$STAMP" > "$W/pending"
+echo 0 > "$t/loaded"; rm -f "$t/rawkey.log"
+o=$(run apply "$STAMP" "$HASH" "$SHA" aaa111)
+check "it settles (rolls back, restarts) and leaves the update to a fresh run" "$o" "HMPLUGIN BUSY settled"
+check "…the old plugin is in place" "$(same "$OLDHASH")" yes
+check "…and never sends the raw key after that restart" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
+check "the next run does the update" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN OK $STAMP"
+
+echo "a run killed after its restart because the new plugin didn't load: the next one doesn't install it again"
+BRK2="$t/brk2/hermes-mobile"; mkdir -p "$t/brk2"; cp -R "$NEW" "$BRK2"; touch "$BRK2/BROKEN"
+read -r _ B2H B2S <<< "$(bash "$S" pack "$BRK2" "$t/bundle.tgz" 2000000000)"
+install_old; mkdir -p "$W"; mv "$P" "$W/old"; cp -R "$BRK2" "$P"; rm -f "$P/BUILD_STAMP"; bash "$S" stamp "$P" "$STAMP" apk
+printf %s "$STAMP" > "$W/pending"; rm -f "$t/loaded"  # it was restarted, and the broken plugin never loaded
+o=$(run apply "$STAMP" "$B2H" "$B2S" aaa111)
+check "it rolls the broken plugin back and stops there" "$o" "HMPLUGIN BUSY settled"
+check "…the old plugin is in place, not the broken one again" "$(same "$OLDHASH")" yes
+cp "$t/good.tgz" "$t/bundle.tgz" 2>/dev/null || true
+
+echo "an old plugin, but no dashboard process: no raw key"
+install_old; pkill -f "hermes dashboard --host 127.0.0.1 --port $port --no-open"; sleep 0.2; rm -f "$t/rawkey.log"
+o=$(run apply "$STAMP" "$HASH" "$SHA" aaa111)
+check "the update still runs" "$(printf %s "$o" | cut -d' ' -f1-2)" "HMPLUGIN OK"
+check "…and the raw key went nowhere (whatever answered was not the old guard's Hermes)" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
+pkill -f "hermes dashboard --host 127.0.0.1 --port $port --no-open"; "$t/dashproc"; install_old  # the next part starts from an old plugin
+
+echo "under chroot the dashboard's process counts only as root's"
+install_old; rm -f "$t/su-args" "$t/rawkey.log"
+HM_FAKE_WHICH=chroot run apply "$STAMP" "$HASH" "$SHA" aaa111 >/dev/null
+check "the process check asks pgrep for root's processes only" "$(grep -c "^pgrep -u 0 -f '" "$t/su-args")" "$(grep -c "pgrep" "$t/su-args")"
+check "…and asked at least once" "$([ "$(grep -c "^pgrep -u 0 -f '" "$t/su-args")" -ge 1 ] && echo yes)" yes
+check "…no root process here: no raw key" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
+install_old
+
 echo "a plugin that doesn't load is rolled back"
 BRK="$t/brk/hermes-mobile"; mkdir -p "$t/brk"; cp -R "$NEW" "$BRK"; touch "$BRK/BROKEN"
 read -r _ KH KS <<< "$(bash "$S" pack "$BRK" "$t/bundle.tgz" 2000000000)"
 check "rolled back" "$(run apply "$STAMP" "$KH" "$KS" aaa111)" "HMPLUGIN FAIL load rolled-back"
 check "the old plugin is back" "$(same "$OLDHASH")" yes
 check "and loaded" "$(cat "$t/loaded" 2>/dev/null)" 0
+check "the raw key only while the old plugin was in place (before the restart; never after the rollback)" "$(grep -vc '^loaded=0 ' "$t/rawkey.log")" 0
 check "no marker left" "$(ls "$W" 2>/dev/null | tr '\n' ' ')" ""
 cp "$t/good.tgz" "$t/bundle.tgz"
 
@@ -162,6 +285,7 @@ check "files" "$(same "$HASH")" yes
 
 echo "an interrupted run is settled by the next one"
 install_old; mkdir -p "$W"; mv "$P" "$W/old"
+rm -f "$t/rawkey.log"
 check "cut between the renames: the old plugin is put back" "$(run check "$STAMP" "$HASH")" "HMPLUGIN STATE older 0"
 check "old in place" "$(same "$OLDHASH")" yes
 install_old; mkdir -p "$W"; mv "$P" "$W/old"; cp -R "$NEW" "$P"; bash "$S" stamp "$P" "$STAMP" apk; printf %s "$STAMP" > "$W/pending"
@@ -173,6 +297,7 @@ check "pending while Hermes doesn't answer: left for later" "$(D=$(cat "$t/port"
 check "pending kept" "$(cat "$W/pending" 2>/dev/null)" "$STAMP"
 check "swapped, new one never served: rolled back" "$(run check "$STAMP" "$HASH")" "HMPLUGIN STATE older 0"
 check "old in place again" "$(same "$OLDHASH")" yes
+check "check, settling an interrupted run: the raw key is never sent" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
 
 echo "one run at a time"
 mkdir "$HOME/.hermes-mobile/plugin-update.lock"; echo 1 > "$HOME/.hermes-mobile/plugin-update.lock/pid"
@@ -271,6 +396,7 @@ check "check on an older plugin copies nothing" "$(scripts_line "$o")" ""
 o=$(runall apply 2000000100 "$SH" "$SS" aaa111)
 check "apply: the last line is still the result" "$(printf '%s\n' "$o" | tail -1)" "HMPLUGIN OK 2000000100"
 check "apply: SCRIPTS ok before it" "$(scripts_line "$o")" "HMPLUGIN SCRIPTS ok"
+check "without ~/bin/hm-local the installed plugin's own copy verified the new guard; nothing of it is left" "$(ls "$HOME/.hermes-mobile/plugin-update.lock" 2>/dev/null)" ""
 check "~/bin/hm-local is phone/hm-local" "$(cmp -s "$BIN/hm-local" "$here/phone/hm-local" && echo same)" same
 check "~/bin/hm-shizuku is phone/hm-shizuku" "$(cmp -s "$BIN/hm-shizuku" "$here/phone/hm-shizuku" && echo same)" same
 check "both are executable" "$([ -x "$BIN/hm-local" ] && [ -x "$BIN/hm-shizuku" ] && echo yes)" yes
@@ -285,7 +411,7 @@ check "the copies are recorded" "$(grep -c '^hm-local [0-9a-f]\{64\}$' "$RECORD"
 sha_of() { python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"; }
 # An older plugin's copy: old bytes, recorded as what that plugin delivered.
 old_copy() {
-  printf '#!/bin/sh\necho old\n' > "$BIN/hm-local"; chmod 755 "$BIN/hm-local"
+  { cat "$here/phone/hm-local"; echo "# an older copy"; } > "$BIN/hm-local"; chmod 755 "$BIN/hm-local"
   { grep -v '^hm-local ' "$RECORD" 2>/dev/null; echo "hm-local $(sha_of "$BIN/hm-local")"; } > "$RECORD.n"; mv "$RECORD.n" "$RECORD"
 }
 old_copy; cp "$BIN/hm-local" "$t/old-hm-local"
@@ -342,6 +468,11 @@ check "an older install's ticker in scripts/ is stopped" "$(alive "$ts")" gone
 check "another process with that file name is left alone" "$(alive "$to")" alive
 kill "$tp" "$ts" "$to" 2>/dev/null; wait "$tp" "$ts" "$to" 2>/dev/null
 check "the APK's copy of this script fits one argument (128 KiB): $(bash "$S" embed "$here/phone/hermes-services" "$t/size.sh"; wc -c < "$t/size.sh" | tr -d ' ') bytes" "$(( $(wc -c < "$t/size.sh") < 131072 ))" 1
+
+echo "the exception's key stays off every command line"
+K=$(cat "$HOME/.hermes-mobile/key")
+check "the exception ran here (curl got the header from a file descriptor)" "$([ "$(grep -c -- '-H @/dev/fd/' "$t/curl-argv")" -ge 1 ] && echo yes)" yes
+check "no curl call ever had the key among its arguments" "$(grep -c "$K" "$t/curl-argv")" 0
 
 echo "source-stamp"
 check "not a checkout: now" "$(( $(bash "$S" source-stamp "$t") >= $(date +%s) - 5 ))" 1

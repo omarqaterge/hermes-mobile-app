@@ -50,6 +50,27 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
   keeps the old plugin until its next start), or rollback: the old plugin moved back, Hermes restarted again,
   `FAIL load rolled-back`. When the plugin didn't answer within 20 s before the swap (Hermes stopped, or the plugin
   switched off), nothing can prove it loads: `OK STAMP unverified`.
+- **The dashboard's token** (for `/activity` and `/plugin-info`, `route`) comes from a verified dashboard only:
+  `token` runs `hm-local token <port>` (`local_client`: `~/bin/hm-local`, or, when there is none yet, the installed
+  plugin's own `phone-scripts/hm-local` read once per run through Debian into the run's lock folder), which checks the
+  guard's proof under the key; the key never leaves `hm-local`. `dash_up` also counts an HTTP answer that is no hello
+  (`hm-local hello` exit 4) as "Hermes answers without the plugin's guard", which is what a settle or a rollback needs
+  to know; only the hello is sent for it. **The one exception** (`legacy`): while the installed plugin is older than
+  local authentication, the old guard can only answer the raw key, so `token` sends the event key to `GET /` as before
+  (as a header read from a file descriptor, never on a command line). Only `apply` uses it (`check` asks for no token
+  but while settling an interrupted run, when the installed plugin is the new one), only when the Debian-side `inspect`
+  (it reads the plugin's own `BUILD_STAMP` from disk, never anything from the port) says `STATE older` and that the
+  installed guard's files have no hello (`GUARD old`, a line before the state line; `GUARD hello` otherwise), only
+  while Hermes's dashboard process runs (`dashboard_runs`: its command line for the port dialled, `DASH_PROC_RE`, under Termux's user, or root's under
+  chroot, `pgrep -u 0` through `su`), and only while the old plugin's dashboard still runs: through the busy checks before and right after the
+  swap, never once this run has restarted Hermes (`restarted`, set by `restart`: this run's own restart, or a settle's
+  rollback before the inspection), not even after a rollback. A rollback's wait (`back_up`) needs the dashboard's
+  process and any HTTP answer on its port (`http_up`, no key, no token); `FAIL load rolled-back` says only that, and
+  `rolled-back-not-up` that they didn't come within `BACK_WAIT`. Each run
+  that uses it adds `local legacy_key port=dashboard side=termux` once to `~/logs/loop-events.log` (`note_legacy`). A current, adopted, newer, changed, held or settling plugin never gets the
+  raw key; neither does an older stamp whose guard has the hello on disk. A remaining limit of this condition: a running
+  process does not prove that it holds the port (a dashboard that starts and fails to open it is visible to `pgrep`
+  for a moment).
 - The app passes the script as `bash -c TEXT`, so its text is on the process's command line. It therefore never spells
   out the dashboard's command line (`DASH_RE` is a pattern that doesn't match itself): `hermes-debian --restart` kills
   by that command line and would otherwise kill the run along with the dashboard. Every Debian login has a 240 s limit
@@ -57,6 +78,9 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
 - An interrupted run (Termux killed, the phone off) is settled by the next one: no plugin but `old/` → `old/` is put
   back; a `pending` marker matching the live plugin → kept if it serves its stamp within 45 s; rolled back (with a
   restart) only when the dashboard answers without it and has no work, else left for a later run (`BUSY settling`).
+  An `apply` that rolled such a swap back stops there with `BUSY settled`: after its restart it can check neither
+  Hermes's work nor whether a new plugin loads, so the next run does the update (and a plugin that didn't load is not
+  installed again blindly).
   A lock (`~/.hermes-mobile/plugin-update.lock` with the run's PID; a run removes only its own, and one older than
   20 min counts as left by a killed run) keeps runs from overlapping (`BUSY another-run`).
 - Every answer line starts with `HMPLUGIN `: `STATE <state> <installed stamp>`, `BUSY <why>`, `OK <stamp> [unverified]`,

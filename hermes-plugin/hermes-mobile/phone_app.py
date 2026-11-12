@@ -173,6 +173,11 @@ def _local_auth():
 
 
 UNVERIFIED = "The background host didn't answer correctly; try again."
+# How long the host may take to answer one call, by what it does: scroll_to swipes up to 16 times, each followed by up
+# to 1.5 s of settling; open waits up to 10 s for the app's first screen; wait_for up to 12 s; a capture with a picture
+# reads the whole screen and encodes it; everything else (one action and its settling, at most 1.5 s) is quick.
+DEADLINES = {"/scroll_to": 45.0, "/open": 30.0, "/wait_for": 30.0, "/capture": 20.0}
+DEADLINE_DEFAULT = 10.0
 
 
 class _HostAnswer(Exception):
@@ -190,7 +195,7 @@ def _unverified(why: str) -> None:
         pass
 
 
-def _request(path: str, body: Optional[dict] = None, timeout: float = 30, raw: bool = False):
+def _request(path: str, body: Optional[dict] = None, timeout: Optional[float] = None, raw: bool = False):
     """One request to this start's host: a hello first (the host proves it holds this start's token, for the port it
     listens on), then the request signed with the token, on the same connection. Raises PhoneAppError (UNVERIFIED) for a
     host that doesn't verify (nothing is sent to it), _HostAnswer for an error status, OSError for a broken answer."""
@@ -199,8 +204,10 @@ def _request(path: str, body: Optional[dict] = None, timeout: float = 30, raw: b
     la = _local_auth()
     data = json.dumps(body or {}).encode() if body is not None or path not in ("/status",) else None
     try:
-        s = la.session("bghost", _port, _token, timeout=min(timeout, 30.0))
-        a = s.request("POST" if data is not None else "GET", path, data)
+        # The call's own bound (DEADLINES), or the caller's shorter one (closing at the end of a turn).
+        limit = DEADLINES.get(path, DEADLINE_DEFAULT) if timeout is None else float(timeout)
+        s = la.session("bghost", _port, _token, timeout=limit)  # the host sends nothing until the call is done
+        a = s.request("POST" if data is not None else "GET", path, data, deadline_s=limit)
     except la.Unverified as e:
         _unverified(e.why)
         raise PhoneAppError(UNVERIFIED) from None
@@ -232,6 +239,9 @@ def _apk_path() -> str:
 
 
 _LISTENING = re.compile(r"LISTENING ([0-9]{1,5}) ([0-9a-f]{8})")
+_LISTENING_OLD = re.compile(r"LISTENING [0-9]{1,5}")  # a host from an app older than local authentication: no key id
+OLD_APP = "The Hermux app on this phone is older than its Hermes plugin. Ask the user to update the Hermux app, then try again."
+OLD_APP_AFTER_S = 2.0  # a line without a key id must stay the only one this long (it may be left from an earlier start)
 
 
 def listening_port(text: str, kid: str) -> int:
@@ -276,6 +286,7 @@ def ensure_host() -> None:
             pass
         deadline = time.time() + DEADLINE_S
         tail = ""
+        old_since = None
         while time.time() < deadline:
             try:
                 tail = _rish("tail -n 20 " + HOST_LOG, timeout=5)
@@ -290,6 +301,12 @@ def ensure_host() -> None:
                 break  # it named our key id but didn't prove it: not ours to use
             if "Android 14" in tail or "HM_TOKEN missing" in tail:
                 break
+            if any(_LISTENING_OLD.fullmatch(l.strip()) for l in tail.splitlines()):
+                old_since = old_since or time.time()
+                if time.time() - old_since >= OLD_APP_AFTER_S:
+                    # It takes only the raw token, which this plugin never sends: stop it and say what to do.
+                    _rish("pkill -f 'app_process.*[B]gHost'", timeout=10)
+                    raise PhoneAppError(OLD_APP)
             time.sleep(0.4)
         if "Android 14" in tail:
             raise PhoneAppError("Background apps need Android 14 or newer.")

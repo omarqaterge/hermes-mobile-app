@@ -43,6 +43,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import math
 import os
 import re
 import secrets
@@ -66,6 +67,7 @@ HOST = "127.0.0.1"
 CONNECT_S = 2.0
 HELLO_DEADLINE_S = 5.0
 ANSWER_DEADLINE_S = 10.0
+MAX_DEADLINE_S = 120.0  # the longest any one request may be given (Session.request's deadline_s)
 MAX_HELLO = 4096
 MAX_HEAD = 8192
 MAX_HEADERS = 64
@@ -334,10 +336,15 @@ class Session:
         self._key, self.kid, self._nc, self._ns, self._timeout = key, kid_, nc, ns, timeout
         self._used = False
 
-    def request(self, method: str, path: str, body: bytes | str | None = None, *, with_nc: bool = False) -> Answer:
+    def request(self, method: str, path: str, body: bytes | str | None = None, *, with_nc: bool = False,
+                deadline_s: float | None = None) -> Answer:
         """Send one request (a body goes as application/json). 403 raises ``Unverified("refused")``; a broken or
         oversized answer raises OSError with a neutral message. The session is closed afterwards. ``with_nc`` names the
-        client nonce in the header too (``1 <kid> <ns> <nc> <mac>``), as the dashboard's token step wants."""
+        client nonce in the header too (``1 <kid> <ns> <nc> <mac>``), as the dashboard's token step wants. ``deadline_s``
+        bounds sending the request and reading its whole answer: ``ANSWER_DEADLINE_S`` (10 s) unless given (a call the
+        server takes longer to answer, such as the background host's waits), and never less than the session's
+        per-read timeout; at most ``MAX_DEADLINE_S`` (120 s) in all. A deadline that is not a finite number above 0
+        raises ValueError and nothing is sent."""
         if self._used:
             raise RuntimeError("used")
         self._used = True
@@ -346,6 +353,17 @@ class Session:
                 raise ValueError("request")
             if not isinstance(path, str) or len(path) > MAX_PATH or not _PATH.fullmatch(path):
                 raise ValueError("request")
+            if deadline_s is None:
+                limit = ANSWER_DEADLINE_S
+            else:
+                if isinstance(deadline_s, bool) or not isinstance(deadline_s, (int, float)):
+                    raise ValueError("deadline")
+                try:
+                    limit = float(deadline_s)
+                except OverflowError:  # an integer too large for a float: refused like any other bad value
+                    raise ValueError("deadline") from None
+                if not math.isfinite(limit) or limit <= 0:
+                    raise ValueError("deadline")
             b = body.encode() if isinstance(body, str) else (body or b"")
             what = f"{method} {path}"
             m = mac(self._key, "client", self._role, self._where, self._nc, self._ns, what, sha256hex(b))
@@ -356,7 +374,7 @@ class Session:
             headers = {"X-Hermux-Auth": auth, "Content-Length": str(len(b)), "Connection": "close"}
             if b:
                 headers["Content-Type"] = "application/json"
-            deadline = time.monotonic() + ANSWER_DEADLINE_S
+            deadline = time.monotonic() + min(max(limit, self._timeout), MAX_DEADLINE_S)
             wire = _Wire(self._sock, MAX_HEAD, deadline, self._timeout)
             try:
                 # One deadline for sending and for the answer; a send must not inherit a short read timeout.

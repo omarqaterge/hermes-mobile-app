@@ -12,9 +12,18 @@ import websockets
 
 BASE = os.environ.get("HM_GW_URL", "http://127.0.0.1:9119")
 SETTLE_S = float(os.environ.get("HM_GW_SETTLE", "4"))
-import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
-page = urllib.request.urlopen(urllib.request.Request(BASE + "/", headers={"X-Hermes-Mobile-Key": _key})).read().decode()
-token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
+def _verified_token(port=9119):
+    """The dashboard's session token from a verified dashboard only (local authentication, through the installed
+    plugin's local_auth.py: the hello, the signed token request, the proof over the answer). The key is never sent."""
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location("hm_local_auth", "/root/.hermes/plugins/hermes-mobile/local_auth.py")
+    la = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(la)
+    k = os.environ.get("HM_EVENT_KEY") or open("/data/data/com.termux/files/home/.hermes-mobile/key").read().strip()
+    return la.dashboard_token(port, k, timeout=10, server=os.environ.get("HM_DASH_ADDR") or None)
+
+
+token = _verified_token(int(BASE.rsplit(":", 1)[1].split("/")[0]))
 WS = BASE.replace("http", "ws", 1) + f"/api/ws?token={token}"
 # What the app sends over HTTP in the same few milliseconds as session.list / session.resume at start-up (seen against
 # the mock): App.tsx's health poll, the default model, the commands' skill descriptions, the plugin's prefs and activity.

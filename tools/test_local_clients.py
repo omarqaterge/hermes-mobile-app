@@ -127,8 +127,8 @@ check("silent: counts as no answer (the app may be starting): no back-off", plug
 silent.close()
 
 print("back-off and recovery")
-liar = FakeLocal("events", KEY, "wrong_key", app)
-fresh(liar.port)
+unproven = FakeLocal("events", KEY, "wrong_key", app)
+fresh(unproven.port)
 plugin._post(event)
 bo = plugin._events["backoff"]
 check("first failure: 1 s", bo._delay == 1.0)
@@ -139,7 +139,7 @@ for _ in range(12):
     bo._until = 0
     plugin._post(event)
 check("at most 300 s", bo._delay == 300.0, bo._delay)
-liar.close()
+unproven.close()
 plugin.EVENTS_PORT = honest.port
 bo._until = 0
 APP.clear()
@@ -165,8 +165,8 @@ plugin._key = real_key
 keyfile.write_text(KEY)
 
 print("urgent events: the fallback")
-liar = FakeLocal("events", KEY, "wrong_key", app)
-fresh(liar.port)
+unproven = FakeLocal("events", KEY, "wrong_key", app)
+fresh(unproven.port)
 plugin._send("approval", "Approval needed", SECRET, "s1", urgent=True)
 check("unverified: one Termux notification in plain words", wait(lambda: len(NOTES) == 1) and NOTES[0]["title"] == "Hermux didn't answer correctly"
       and NOTES[0]["body"] == "Hermes sent nothing to it. Open Hermux; if this stays, restart the phone.", NOTES)
@@ -181,8 +181,8 @@ check("an hour later: one again", wait(lambda: len(NOTES) == 2), NOTES)
 plugin._send("status", "Hermux", "Working", "s1")
 time.sleep(0.5)
 check("a non-urgent event: never a notification", len(NOTES) == 2)
-check("nothing reached the listener but hellos", only_hellos(liar) and nothing_private(liar))
-liar.close()
+check("nothing reached the listener but hellos", only_hellos(unproven) and nothing_private(unproven))
+unproven.close()
 fresh(1)
 plugin._send("approval", "Approval needed", "the command", "s1", urgent=True)
 check("the app isn't running (nothing listens): the request itself as a Termux notification, as before",
@@ -203,12 +203,12 @@ pa = load("hm_phone_app", PLUGIN / "phone_app.py")
 pa.notify = plugin._send
 pa._state.update(session="s1", pkg="com.example", label="Example")
 pa._token, pa._port = "b" * 48, 40001
-liar = FakeLocal("events", KEY, "bad_proof", app)
-fresh(liar.port)
+unproven = FakeLocal("events", KEY, "bad_proof", app)
+fresh(unproven.port)
 pa._event("open", "Opened Example")
 time.sleep(0.6)
-check("to an unverified listener: the host's token never goes", ("b" * 48).encode() not in liar.received() and only_hellos(liar))
-liar.close()
+check("to an unverified listener: the host's token never goes", ("b" * 48).encode() not in unproven.received() and only_hellos(unproven))
+unproven.close()
 fresh(honest.port)
 pa._event("open", "Opened Example")
 check("to the app: delivered with port, token and auth mac", wait(lambda: APP) and APP[-1][2].get("token") == "b" * 48
@@ -264,5 +264,125 @@ check("…and says so once", sum("local_auth.py is missing" in m for m in logs) 
 check("the ticker's log lines hold no key", not any(KEY in m for m in logs))
 
 honest.close()
+
+print("a request's own deadline (Session.request deadline_s)")
+la0 = plugin._local_auth()
+slow = FakeLocal("bghost", KEY, "honest", lambda m, p, h, b: (time.sleep(1.5), (200, b"{}"))[1])
+saved_deadline = la0.ANSWER_DEADLINE_S
+la0.ANSWER_DEADLINE_S = 1.0  # 10 s on the phone; short here
+
+
+def slow_call(**kw):
+    timeout = kw.pop("timeout", 3)
+    try:
+        return la0.session("bghost", slow.port, KEY, timeout=timeout).request("POST", "/wait_for", b"{}", **kw).status
+    except OSError:
+        return "failed"
+
+
+check("by default the answer has ANSWER_DEADLINE_S: a slower one fails", slow_call(timeout=0.5) == "failed")
+check("a longer deadline for a call that takes longer: it succeeds", slow_call(timeout=3, deadline_s=3.0) == 200)
+check("never shorter than the per-read timeout", slow_call(timeout=2.5, deadline_s=0.2) == 200)
+check("a shorter one than the call takes: it fails", slow_call(timeout=0.5, deadline_s=0.8) == "failed")
+la0.ANSWER_DEADLINE_S = saved_deadline
+from importlib.machinery import SourceFileLoader  # noqa: E402
+
+_loader = SourceFileLoader("hm_local_copy", str(HERE.parent / "phone" / "hm-local"))
+hm_copy = importlib.util.module_from_spec(importlib.util.spec_from_loader("hm_local_copy", _loader))
+_loader.exec_module(hm_copy)
+for name, mod in (("local_auth.py", la0), ("hm-local", hm_copy)):
+    for bad in (float("nan"), float("inf"), float("-inf"), 0, -1.0, True, "5", 10 ** 400, -(10 ** 400)):
+        n = len(slow.raw)
+        try:
+            mod.session("bghost", slow.port, KEY, timeout=2).request("POST", "/wait_for", b"{}", deadline_s=bad)
+            got = "sent"
+        except ValueError:
+            got = "refused"
+        except Exception as e:  # anything else (an OverflowError, say) is not the same refusal
+            got = type(e).__name__
+        check(f"{name}: a deadline of {str(bad)[:12]} is refused before anything is sent",
+              got == "refused" and len(slow.raw) == n + 1 and slow.raw[-1][0].startswith(b"GET /hermux/hello?"), (got, slow.raw[n:]))
+    saved_max = mod.MAX_DEADLINE_S
+    mod.MAX_DEADLINE_S = 0.8  # 120 s on the phone
+    t0 = time.monotonic()
+    try:
+        mod.session("bghost", slow.port, KEY, timeout=0.5).request("POST", "/wait_for", b"{}", deadline_s=1e9)
+        got = "answered"
+    except OSError:
+        got = "failed"
+    check(f"{name}: a huge deadline is capped at MAX_DEADLINE_S", got == "failed" and time.monotonic() - t0 < 1.4, (got, time.monotonic() - t0))
+    mod.MAX_DEADLINE_S = saved_max
+slow.close()
+
+print("the developer tools' token (tools/devtoken.py)")
+import http.server  # noqa: E402
+import threading  # noqa: E402
+
+import devtoken  # noqa: E402
+from local_auth_cases import TokenServer  # noqa: E402
+
+V = json.loads((HERE / "local-auth-vectors.json").read_text(encoding="utf-8"))
+la = devtoken.local_auth()
+honest_case, other_case = V["token_cases"][0], V["token_cases"][1]
+os.environ["HM_EVENT_KEY"] = V["key"]
+os.environ.pop("HM_DASH_ADDR", None)
+ts = TokenServer(la, V["key"], V["other_key"], honest_case)
+real = ts.port
+ts.port = 9119  # the phone's dashboard, reached through `adb forward tcp:<real> tcp:9119`: it proves 127.0.0.1:9119
+check("over adb forward: the proof names the phone's address (HM_DASH_ADDR, default 127.0.0.1:9119)",
+      devtoken.dashboard_token(f"http://127.0.0.1:{real}") == honest_case["token"])
+ts = TokenServer(la, V["key"], V["other_key"], honest_case)
+os.environ["HM_DASH_ADDR"] = "127.0.0.1:9119"
+try:
+    devtoken.dashboard_token(f"http://127.0.0.1:{ts.port}")
+    got = "token"
+except SystemExit as e:
+    got = str(e)
+check("a proof for the port dialled, when the phone's address is expected: refused", "bad_addr" in got, got)
+os.environ.pop("HM_DASH_ADDR")
+ts = TokenServer(la, V["key"], V["other_key"], other_case)
+try:
+    devtoken.dashboard_token(f"http://127.0.0.1:{ts.port}")
+    got = "token"
+except SystemExit as e:
+    got = str(e)
+check("a wrong proof over the token: no token, a plain message", "not verified" in got and V["key"] not in got, got)
+seen_keys = []
+
+
+class Page(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        seen_keys.append(self.headers.get("X-Hermes-Mobile-Key"))
+        b = b'<script>window.__HERMES_SESSION_TOKEN__ = "mock-token";</script>'
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+
+mock = http.server.HTTPServer(("127.0.0.1", 0), Page)
+threading.Thread(target=mock.serve_forever, daemon=True).start()
+os.environ["HM_EVENT_KEY"] = ""
+devtoken.KEY_FILE = str(tmp / "no-key-here")
+try:
+    devtoken.dashboard_token(f"http://127.0.0.1:{mock.server_port}")
+    got = "token"
+except SystemExit as e:
+    got = str(e)
+check("no key: the tools for the phone refuse, with what to do", "HM_EVENT_KEY" in got and not seen_keys, got)
+check("no key, a mock (plain): the page's token, sent no key at all",
+      devtoken.dashboard_token(f"http://127.0.0.1:{mock.server_port}", plain=True) == "mock-token" and seen_keys == [None], seen_keys)
+os.environ["HM_EVENT_KEY"] = V["key"]
+seen_keys.clear()
+try:
+    devtoken.dashboard_token(f"http://127.0.0.1:{mock.server_port}", plain=True)
+    got = "token"
+except SystemExit as e:
+    got = str(e)
+check("with a key, a page without the hello: nothing but the hello, no token, the key never sent", "no_hello" in got and seen_keys == [None], (got, seen_keys))
+mock.shutdown()
 print("ALL PASSED" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)
