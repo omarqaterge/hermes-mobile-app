@@ -84,9 +84,14 @@ check("the token answer's proof vector, through hm-local's mac (the MAC itself, 
 check("same() on the not_same pairs", all(not h.same(p["a"], p["b"]) and h.same(p["a"], p["a"]) for p in V["not_same"]))
 hh = V["hello_hint"]
 check("the hello target names the key's kid as its hint (hello_hint vector)", h.hello_target(hh["nc"], h.kid(hh["key"])) == hh["target"])
-check("a malformed hint is left out of the target (hint_cases)",
-      all(h.hello_target(hh["nc"], c["kid"]) == hh["target"].split("&kid=")[0] for c in V["hint_cases"] if h.hint(c["kid"]) is None)
-      and all(h.hint(c["kid"]) == c["kid"] for c in V["hint_cases"] if c["kid"] in (V["kid"], V["other_kid"], "00000000")))
+import re as _re
+_well = lambda k: isinstance(k, str) and _re.fullmatch(r"[0-9a-f]{8}", k) is not None  # judged here, not by hm-local
+bare = hh["target"].split("&kid=")[0]
+check("a malformed or absent hint is refused by hint() and left out of the target (hint_cases)",
+      all(h.hint(c["kid"]) is None and h.hello_target(hh["nc"], c["kid"]) == bare for c in V["hint_cases"] if not _well(c["kid"])))
+check("a well-formed hint is kept by hint() and named in the target (hint_cases)",
+      all(h.hint(c["kid"]) == c["kid"] and h.hello_target(hh["nc"], c["kid"]) == bare + "&kid=" + c["kid"]
+          for c in V["hint_cases"] if _well(c["kid"])))
 sys.exit(1 if bad else 0)
 PY
 

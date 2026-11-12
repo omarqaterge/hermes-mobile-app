@@ -103,6 +103,54 @@ final class LocalAuth {
         return d == 0;
     }
 
+    /**
+     * True when {@code got} is the nonce {@code want} (compared in constant time); false whenever {@code want} is not a
+     * nonce (no run under way, say), so an unset value never matches an unset value.
+     */
+    static boolean nonceMatches(String want, String got) {
+        return isNonce(want) && same(want, got);
+    }
+
+    /**
+     * The nonce one awaited result must carry (a command's result broadcast, say): {@link #arm} makes a fresh one for
+     * each run, {@link #take} accepts only that nonce, once, and nothing while none is awaited. Never logged. Thread-safe.
+     */
+    static final class Awaited {
+        private final java.util.concurrent.atomic.AtomicReference<String> want = new java.util.concurrent.atomic.AtomicReference<>();
+
+        /** A fresh nonce for the next result (the one before it no longer counts). */
+        String arm() {
+            String n = nonce();
+            want.set(n);
+            return n;
+        }
+
+        /** No result is awaited any more. */
+        void clear() { want.set(null); }
+
+        /** True, once, when {@code got} is the awaited nonce (constant time); false otherwise, and then nothing changes. */
+        boolean take(String got) {
+            String w = want.get();
+            return nonceMatches(w, got) && want.compareAndSet(w, null);
+        }
+    }
+
+    private static final java.util.concurrent.atomic.AtomicInteger RUNS = new java.util.concurrent.atomic.AtomicInteger(RANDOM.nextInt());
+
+    /**
+     * The request code of one run's result PendingIntent: {@code base} plus the next value of one process-wide counter
+     * that starts at a random value (so neither a new activity nor a new process starts again at the same code), in
+     * {@code 0..0xffff}. Callers also pass {@code FLAG_CANCEL_CURRENT}, so a code met again replaces the old intent.
+     */
+    static int nextRequestCode(int base) {
+        return requestCode(base, RUNS.incrementAndGet());
+    }
+
+    /** {@code base} plus the low 16 bits of {@code run}. */
+    static int requestCode(int base, int run) {
+        return base + (run & 0xffff);
+    }
+
     /** True for exactly 32 lowercase hex characters; anything else is never "close enough". */
     static boolean isNonce(String s) { return isHex(s, 32); }
 

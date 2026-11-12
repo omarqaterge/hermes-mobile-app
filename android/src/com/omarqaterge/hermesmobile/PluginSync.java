@@ -42,6 +42,10 @@ final class PluginSync {
     /** The one-time token for GET /plugin-bundle/<token>; null when no apply is running or it was used. */
     static volatile String token = null;
     static boolean receiverOn = false;
+    /** The result's extra that must carry the current run's nonce ({@link #awaited}); never logged. */
+    static final String NONCE_EXTRA = "com.omarqaterge.hermesmobile.RUN_NONCE";
+    /** The nonce of the run whose result is awaited (16 random bytes as hex, new for every run); taken once. */
+    static final LocalAuth.Awaited awaited = new LocalAuth.Awaited();
 
     static SharedPreferences prefs(Context c) {
         return c.getSharedPreferences("hermes", Context.MODE_PRIVATE);
@@ -121,7 +125,9 @@ final class PluginSync {
         HermesService s = HermesService.instance;
         if (s == null || !s.hermesIdle()) return;
         MainActivity a = MainActivity.current;
-        if (a != null && a.foreground) return; // not under the user's hands: a restart drops the connection for a while
+        // Not under the user's hands: a restart drops the connection for a while. Unless the plugin is too old to answer
+        // the hello (the "Update the Hermux plugin" notice is up): then there is no connection to drop.
+        if (a != null && a.foreground && !HermesService.pluginNotice) return;
         run(c, "apply", false);
     }
 
@@ -155,10 +161,20 @@ final class PluginSync {
         } else {
             argv = new String[]{"-c", script, "hm-plugin", "check", a[0], a[1]};
         }
+        // A fresh nonce per run, inside the result PendingIntent only Termux holds: below API 33 the receiver can't be
+        // registered as not exported, so a result counts only when it carries this run's nonce.
+        final String nonce = awaited.arm();
         if (!receiverOn) {
             BroadcastReceiver rx = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context c, Intent in) {
+                    String got;
+                    try {
+                        got = in.getStringExtra(NONCE_EXTRA);
+                    } catch (RuntimeException e) {
+                        return; // extras that can't be read: not ours
+                    }
+                    if (!awaited.take(got)) return; // not this run's nonce, or its result was already taken
                     done(c, in.getBundleExtra("result"));
                 }
             };
@@ -168,8 +184,11 @@ final class PluginSync {
             receiverOn = true;
         }
         try {
-            PendingIntent pend = PendingIntent.getBroadcast(app, 4714, new Intent(ACTION).setPackage(app.getPackageName()),
-                    PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            // Mutable: Termux fills in the result extras. One-shot, with a request code of its own per run
+            // (LocalAuth.nextRequestCode); CANCEL_CURRENT replaces an intent left with the same code, nonce and all.
+            PendingIntent pend = PendingIntent.getBroadcast(app, LocalAuth.nextRequestCode(0x47140000),
+                    new Intent(ACTION).setPackage(app.getPackageName()).putExtra(NONCE_EXTRA, nonce),
+                    PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_CANCEL_CURRENT);
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");
             i.setAction("com.termux.RUN_COMMAND");
@@ -190,6 +209,7 @@ final class PluginSync {
         } catch (Exception e) {
             running = false;
             token = null;
+            awaited.clear();
             HermuxApp.log(app).event("plugin", "update_failed", "error", e.getClass().getSimpleName());
             return "error: " + e.getMessage();
         }
@@ -238,6 +258,8 @@ final class PluginSync {
         if ("failed".equals(state) && "apply".equals(mode)) e.putInt("plugin_tries_" + stamp, p.getInt("plugin_tries_" + stamp, 0) + 1);
         if ("current".equals(state)) e.remove("plugin_tries_" + stamp);
         e.putString("plugin_state", state).putString("plugin_detail", detail).putString("plugin_installed", installed).apply();
+        if ("current".equals(state)) HermesService.showPluginNotice(c, false); // this APK's plugin answers the hello
+        else HermesService.refreshPluginNotice(c); // its text follows the new state while it is up
         pageUpdate();
         if ("older".equals(state) && "check".equals(mode)) maybeApply(c);
     }

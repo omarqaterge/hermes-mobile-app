@@ -239,6 +239,10 @@ public class LocalKeyTest {
         LocalKey ks = make(sok, 1);
         check(!ks.share(c2 -> { throw new Exception("refused"); }), "share when the command can't be handed over: false (the caller tries again)");
         check(ks.share(ran::add) && ran.size() == 1 && ran.get(0).equals(LocalKey.shareCommand(ks.current())), "share: true, and the command carries the saved key");
+        java.util.List<String> started = new java.util.ArrayList<>();
+        check(!ks.share(LocalKey.starting(c2 -> { started.add(c2); return null; })) && started.size() == 1,
+                "share through a start call that returns null (nothing started): false, so the caller tries again");
+        check(ks.share(LocalKey.starting(c2 -> "started")), "share through a start call that started something: true");
         String hintWhy = "";
         Mem h = new Mem();
         h.failNext = 2;

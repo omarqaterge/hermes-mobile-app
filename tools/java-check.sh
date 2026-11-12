@@ -62,6 +62,10 @@ echo "java-check: local key test $(tail -1 "$OUT/localkey.txt")"
 # The app's own listener on 9121 (EventsListener.java): the hello and signed requests, the raw key, bounds, the bind retry plan.
 ../tools/test_events_listener.sh > "$OUT/eventslistener.txt" 2>&1 || { grep -v '^PASS' "$OUT/eventslistener.txt"; echo "java-check: events listener test FAILED"; exit 1; }
 echo "java-check: events listener test $(tail -1 "$OUT/eventslistener.txt")"
+# The app as a client of local servers (LocalDashboard.java, LocalClient's token step and ticker poke): fake servers,
+# the plugin's own server halves when python3 is there, the alert decision table, the result receiver's nonce check.
+../tools/test_local_dashboard.sh > "$OUT/localdash.txt" 2>&1 || { grep -v '^PASS' "$OUT/localdash.txt"; echo "java-check: local dashboard test FAILED"; exit 1; }
+echo "java-check: local dashboard test $(tail -1 "$OUT/localdash.txt")"
 # The app's record of chats that asked to read phone data (PhoneDataChats.java) on a plain JDK.
 ../tools/test_phone_data_chats.sh > "$OUT/pdchats.txt" 2>&1 || { grep -v '^PASS' "$OUT/pdchats.txt"; echo "java-check: phone data chats test FAILED"; exit 1; }
 echo "java-check: phone data chats test $(tail -1 "$OUT/pdchats.txt")"

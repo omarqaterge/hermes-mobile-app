@@ -59,10 +59,12 @@ public class HermesService extends Service {
         final String session, pkg, label, action, token;
         final int port;
         final long since;
+        /** The plugin started the host with local authentication ({@code "auth":"mac"}): every request opens with a hello. */
+        final boolean mac;
 
-        BgApp(String session, String pkg, String label, String action, int port, String token, long since) {
+        BgApp(String session, String pkg, String label, String action, int port, String token, long since, boolean mac) {
             this.session = session; this.pkg = pkg; this.label = label; this.action = action;
-            this.port = port; this.token = token; this.since = since;
+            this.port = port; this.token = token; this.since = since; this.mac = mac;
         }
 
         /** What the page may see: no port, no token. */
@@ -163,12 +165,17 @@ public class HermesService extends Service {
         }
         int port = e.optInt("port", 0);
         String token = e.optString("token", "");
-        if (session.isEmpty() || port < 1024 || port > 65535 || token.isEmpty() || token.length() > 256) return;
+        if (session.isEmpty() || port < 1024 || port > 65535) return;
+        // "auth":"mac": the host takes only requests after a hello it answers with this token as the key (LocalClient,
+        // role bghost); otherwise an older plugin started it, and the token goes in X-HM-Token as before.
+        LocalClient.BgMode mode = LocalClient.bgMode(e.optString("auth", ""), token);
+        if (mode == LocalClient.BgMode.NONE) return;
+        boolean mac = mode == LocalClient.BgMode.MAC;
         BgApp old = bgApp;
         String pkg = e.optString("pkg", "");
         long since = old != null && old.session.equals(session) && old.pkg.equals(pkg) ? old.since : System.currentTimeMillis();
         if (old == null || !old.session.equals(session) || !old.pkg.equals(pkg)) bgThumb = null; // another app: no stale picture
-        setBgApp(new BgApp(session, pkg, e.optString("label", pkg), e.optString("action", ""), port, token, since));
+        setBgApp(new BgApp(session, pkg, e.optString("label", pkg), e.optString("action", ""), port, token, since, mac));
         // The event comes right after the action: give the app a moment to draw its result, then take the picture.
         main.removeCallbacks(bgThumbTask);
         main.postDelayed(bgThumbTask, 700);
@@ -196,6 +203,8 @@ public class HermesService extends Service {
     boolean lastReview = false;
     /** The chat whose Stop button was tapped, until Hermes reports the turn over (or the request fails). */
     String stopping = null;
+    /** The chat whose approval answer (from the notification) is being sent; its chip says "Sending your answer…". */
+    String answering = null;
     final java.util.HashMap<String, JSONObject> doneInfo = new java.util.HashMap<>();
     // A short-lived "flash" in the status chip (done ✅, memory/skill updates); reverts after FLASH_MS.
     String flashChip = null, flashTitle = null, flashBody = null;
@@ -377,18 +386,177 @@ public class HermesService extends Service {
         updateWake();
     }
 
-    /** Hermes's ticker sleeps on a clock that stops while the phone sleeps: wake it so the due job starts now. */
+    /** Hermes's ticker sleeps on a clock that stops while the phone sleeps: wake it so the due job starts now. The
+     *  ticker is verified first (LocalClient.poke: the hello line, then a signed POKE; the key never goes on the wire). */
     void pokeTicker() {
         new Thread(() -> {
-            try (Socket s = new Socket()) {
-                s.connect(new java.net.InetSocketAddress("127.0.0.1", TICKER_PORT), 1000);
-                OutputStream out = s.getOutputStream();
-                out.write((ensureKey() + "\n").getBytes(StandardCharsets.UTF_8));
-                out.flush();
+            try {
+                LocalClient.poke(TICKER_PORT, keys(this));
+            } catch (LocalClient.Unverified u) {
+                // not verified (or an older ticker that doesn't answer the hello): nothing was sent but the hello, and
+                // the job starts on the next tick (≤ 60 s). No alert.
+                noteUnverified(this, "ticker", u.why);
             } catch (Exception ignored) {
-                // an older ticker without the listener: the job starts on its next tick (≤ 60 s)
             }
         }, "hermes-poke").start();
+    }
+
+    // ── local authentication as a client: what the app does when a local server isn't verified ──
+    /** "Hermux stopped talking to Hermes": the dashboard could not be verified. */
+    static final int DASH_ALERT_ID = 13;
+    /** "Update the Hermux plugin": the installed plugin is too old to answer the hello. */
+    static final int PLUGIN_NOTICE_ID = 14;
+    /** Every try at the dashboard's token reports here (MainActivity.dashboardToken); Watch decides what follows. */
+    static final LocalDashboard.Watch dashWatch = new LocalDashboard.Watch();
+    static volatile boolean dashAlert = false, pluginNotice = false;
+    private static final Object NOTICE_LOCK = new Object();
+    private static final java.util.Map<String, Long> unverifiedNotedAt = new java.util.HashMap<>();
+    /** At most one later try at the dashboard is waiting (Watch asks for it); it runs off the main thread. */
+    private final Runnable dashRecheck = () -> new Thread(() -> MainActivity.dashboardToken(this), "hermes-dash-check").start();
+
+    /** The diagnostic event {@code local unverified port=<port> why=<why> side=app}, at most once a minute per port and reason. */
+    static void noteUnverified(Context c, String port, String why) {
+        if (!LocalClient.REASONS.contains(why)) why = "no_hello";
+        long now = android.os.SystemClock.elapsedRealtime();
+        synchronized (unverifiedNotedAt) {
+            Long last = unverifiedNotedAt.get(port + " " + why);
+            if (!EventsListener.every(last == null ? -1 : last, now, 60_000L)) return;
+            unverifiedNotedAt.put(port + " " + why, now);
+        }
+        HermuxApp.log(c).event("local", "unverified", "port", port, "why", why, "side", "app");
+    }
+
+    /** A dashboard hello verified: the alert and the plugin notice go. Any thread. */
+    static void dashboardVerified(Context c) {
+        act(c, dashWatch.verified());
+    }
+
+    /** A try at the dashboard failed with {@code why} (LocalClient.REASONS): nothing was sent but the hello. Any thread. */
+    static void dashboardFailed(Context c, String why) {
+        if (!"no_answer".equals(why)) noteUnverified(c, "dashboard", why); // nothing answering is Hermes starting
+        android.content.SharedPreferences p = c.getSharedPreferences("hermes", MODE_PRIVATE);
+        String[] apk = PluginSync.apk(c);
+        LocalDashboard.Plugin plugin = LocalDashboard.plugin(p.getString("plugin_installed", ""), apk == null ? null : apk[0]);
+        act(c, dashWatch.failed(why, android.os.SystemClock.elapsedRealtime(), plugin, PluginSync.busyRunning()));
+    }
+
+    private static void act(Context c, LocalDashboard.Watch.Step st) {
+        switch (st.act) {
+            case CLEAR:
+                showDashAlert(c, false);
+                showPluginNotice(c, false);
+                break;
+            case UPDATE_PLUGIN:
+                showPluginNotice(c, true);
+                PluginSync.maybeApply(c); // the connection is down anyway, so the update may go while the app is open
+                break;
+            case SHARE_KEY: {
+                // Through Termux's RUN_COMMAND, never to the port; the Watch asks for it once per episode. "Handed over"
+                // is this share's own result, so an alert never rests on an earlier share.
+                HermesService s = instance;
+                dashWatch.shared(s != null && s.shareKeyWithTermux());
+                break;
+            }
+            case ALERT:
+                showDashAlert(c, true);
+                break;
+            default:
+                break;
+        }
+        HermesService s = instance;
+        if (st.recheckMs >= 0 && s != null) {
+            s.main.removeCallbacks(s.dashRecheck);
+            s.main.postDelayed(s.dashRecheck, st.recheckMs);
+        }
+    }
+
+    /** The one alert the page's banner shows (LocalDashboard.alertKind), or null. */
+    static String alertKind() {
+        HermesService s = instance;
+        return LocalDashboard.alertKind(s != null && s.localAlert, dashAlert);
+    }
+
+    /** "Hermux stopped talking to Hermes" on (until a hello verifies) or off: a notification and the page's banner. */
+    static void showDashAlert(Context c, boolean on) {
+        synchronized (NOTICE_LOCK) {
+            if (on == dashAlert) return;
+            dashAlert = on;
+        }
+        try {
+            NotificationManager nm = c.getSystemService(NotificationManager.class);
+            if (on) {
+                createChannels(c);
+                Notification.Builder b = new Notification.Builder(c, CH_ALERT)
+                        .setSmallIcon(R.drawable.ic_stat_hermes)
+                        .setContentTitle(LocalDashboard.ALERT_TITLE)
+                        .setContentText(LocalDashboard.ALERT_TEXT)
+                        .setStyle(new Notification.BigTextStyle().bigText(LocalDashboard.ALERT_TEXT + "\n\n" + LocalDashboard.ALERT_MORE))
+                        .setOnlyAlertOnce(true)
+                        .setAutoCancel(true);
+                Intent open = c.getPackageManager().getLaunchIntentForPackage(c.getPackageName());
+                if (open != null)
+                    b.setContentIntent(PendingIntent.getActivity(c, DASH_ALERT_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+                nm.notify(DASH_ALERT_ID, b.build());
+            } else nm.cancel(DASH_ALERT_ID);
+        } catch (Exception ignored) {
+            // notifications not allowed: the page still shows it
+        }
+        MainActivity a = MainActivity.current;
+        if (a != null) a.pushLocalAlert();
+    }
+
+    /** The plugin notice's text as last posted (null while it is off). */
+    private static String pluginNoticeText = null;
+
+    /** PluginSync's state changed: a plugin notice that is up gets the text for the new state. */
+    static void refreshPluginNotice(Context c) {
+        if (pluginNotice) showPluginNotice(c, true);
+    }
+
+    private static long restVerifiedAt = -1;
+
+    /** A REST call's hello and answer both verified: like a verified token try, at once while an alert or the notice
+     *  is up, otherwise at most every 10 s (it only resets the counts then). */
+    static void restVerified(Context c) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        synchronized (NOTICE_LOCK) {
+            if (!dashAlert && !pluginNotice && !EventsListener.every(restVerifiedAt, now, 10_000L)) return;
+            restVerifiedAt = now;
+        }
+        dashboardVerified(c);
+    }
+
+    /** "Update the Hermux plugin" on or off; a plugin the app won't replace by itself points at Update anyway. The
+     *  text follows PluginSync's state (refreshPluginNotice); the same text is not posted twice. */
+    static void showPluginNotice(Context c, boolean on) {
+        String state = c.getSharedPreferences("hermes", MODE_PRIVATE).getString("plugin_state", "");
+        String text = on ? LocalDashboard.updateText(state, PluginSync.wanted(c)) : null;
+        String act;
+        synchronized (NOTICE_LOCK) {
+            act = LocalDashboard.noticeAction(pluginNotice, pluginNoticeText, on, text);
+            pluginNotice = on;
+            pluginNoticeText = text;
+        }
+        if (act.equals("none")) return;
+        try {
+            NotificationManager nm = c.getSystemService(NotificationManager.class);
+            if (act.equals("post")) {
+                createChannels(c);
+                Notification.Builder b = new Notification.Builder(c, CH_PHONE)
+                        .setSmallIcon(R.drawable.ic_stat_hermes)
+                        .setContentTitle(LocalDashboard.UPDATE_TITLE)
+                        .setContentText(text)
+                        .setStyle(new Notification.BigTextStyle().bigText(text))
+                        .setOnlyAlertOnce(true)
+                        .setAutoCancel(true);
+                Intent open = c.getPackageManager().getLaunchIntentForPackage(c.getPackageName());
+                if (open != null)
+                    b.setContentIntent(PendingIntent.getActivity(c, PLUGIN_NOTICE_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+                nm.notify(PLUGIN_NOTICE_ID, b.build());
+            } else nm.cancel(PLUGIN_NOTICE_ID);
+        } catch (Exception ignored) {
+            // notifications not allowed
+        }
     }
 
     synchronized void updateWake() {
@@ -453,6 +621,7 @@ public class HermesService extends Service {
         ShizukuKeeper.stop(); // also removes the 90 s check
         main.removeCallbacks(updateCheck);
         main.removeCallbacks(retryBind);
+        main.removeCallbacks(dashRecheck);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         try {
@@ -546,17 +715,6 @@ public class HermesService extends Service {
         s.shareKeyWithTermux();
     }
 
-    static boolean keyResent = false;
-
-    /** The dashboard withheld its token from us, so Termux's key isn't ours: send it again, once per process. */
-    static void keyRefused() {
-        HermesService s = instance;
-        if (s == null || keyResent) return;
-        if (s.checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
-        keyResent = true;
-        s.shareKeyWithTermux();
-    }
-
     // ── app-first setup: the installer's progress lines (SetupLines has the policy) ──
     static final SetupLines setup = new SetupLines();
     static boolean setupLoaded = false;
@@ -619,20 +777,23 @@ public class HermesService extends Service {
         return r;
     }
 
-    void shareKeyWithTermux() {
-        if (Uninstall.started(this)) return; // Settings → Uninstall Hermux: nothing more goes into Termux
-        if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
+    /** True when this call handed the key's command to Termux (a start that returned null counts as not handed over). */
+    boolean shareKeyWithTermux() {
+        if (Uninstall.started(this)) return false; // Settings → Uninstall Hermux: nothing more goes into Termux
+        if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return false;
         // Shared only once the key is saved and the command handed over (LocalKey.share); otherwise keyShared stays false
         // and the next trigger tries again. The key goes to a temporary file moved over the old one (LocalKey.shareCommand).
-        keyShared = keys(this).share(cmd -> {
+        boolean handed = keys(this).share(LocalKey.starting(cmd -> {
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");
             i.setAction("com.termux.RUN_COMMAND");
             i.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/sh");
             i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", cmd});
             i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
-            startForegroundService(i);
-        });
+            return startForegroundService(i); // null: Termux's service could not be found, so the key counts as not shared
+        }));
+        keyShared = handed;
+        return handed;
     }
 
     // ── loopback event listener ─────────────────────────────
@@ -646,7 +807,7 @@ public class HermesService extends Service {
     // Main thread only: the run of failed tries to open the port (EventsListener decides when the next one comes).
     private final EventsListener.Retry retry = new EventsListener.Retry();
     private long lastNudgeAt = -1;
-    private boolean localAlert = false;
+    private volatile boolean localAlert = false;
     // Listener thread only: the diagnostic events below are rate-limited.
     private long legacyNotedAt = -1, refusedNotedAt = -1;
     private final Runnable retryBind = this::listen;
@@ -801,7 +962,7 @@ public class HermesService extends Service {
 
     private static void pushLocalAlert(boolean on) {
         MainActivity a = MainActivity.current;
-        if (a != null) a.pushLocalAlert(on);
+        if (a != null) a.pushLocalAlert(); // the banner shows whichever alert is on (alertKind)
     }
 
     private Notification localAlertNotification() {
@@ -1422,9 +1583,9 @@ public class HermesService extends Service {
             try {
                 String body = new JSONObject().put("session", session).toString();
                 String path = "/api/plugins/hermes-mobile/stop";
-                String[] res = MainActivity.rawHttp("POST", path, dashboardToken(false), body);
+                String[] res = MainActivity.rawHttp(this, "POST", path, dashboardToken(false), body, true);
                 if ("401".equals(res[0]) || "403".equals(res[0]))
-                    res = MainActivity.rawHttp("POST", path, dashboardToken(true), body);
+                    res = MainActivity.rawHttp(this, "POST", path, dashboardToken(true), body, true);
                 if ("404".equals(res[0])) err = "it isn't running in Hermux";
                 else if (!res[0].startsWith("2")) err = "HTTP " + res[0];
             } catch (Exception ex) {
@@ -1562,8 +1723,12 @@ public class HermesService extends Service {
 
     /** Waiting approval, as a Live Update: shield chip with a live countdown; expanded, the command
      * in monospace over a draining countdown bar (gold → amber → red) and coloured answer buttons. */
+    /** The approval chip's line while its answer is being sent. */
+    static final String SENDING_ANSWER = "Sending your answer\u2026";
+
     Notification approvalNotification(String sub) {
         JSONObject a = pendingApproval;
+        boolean sending = answering != null && answering.equals(a.optString("session", ""));
         long total = Math.max(1, a.optLong("timeout", 60)) * 1000L;
         long left = Math.max(0, approvalDeadline - System.currentTimeMillis());
         int secs = (int) Math.ceil(left / 1000.0);
@@ -1591,7 +1756,7 @@ public class HermesService extends Service {
                 .setColor(barColor)
                 .setContentTitle(a.optBoolean("phone_data", false) ? "Hermux wants to read your phone" : "Hermux wants to run a command")
                 .setContentText(t)
-                .setSubText((sub != null ? sub + " · " : "") + "expires in " + secs + "s")
+                .setSubText((sub != null ? sub + " · " : "") + (sending ? SENDING_ANSWER : "expires in " + secs + "s"))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
@@ -1608,11 +1773,13 @@ public class HermesService extends Service {
         } else {
             b.setStyle(new Notification.BigTextStyle().bigText(t));
         }
-        if (!a.optBoolean("phone_data_unreadable", false))
-            b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once"))).build());
-        if (a.optBoolean("allow_session", true))
-            b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
-        b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
+        if (!sending) { // while the answer is on its way, no second one
+            if (!a.optBoolean("phone_data_unreadable", false))
+                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once"))).build());
+            if (a.optBoolean("allow_session", true))
+                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
+            b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
+        }
         hideOnLockScreen(b, a.optBoolean("phone_data", false));
         promote(b, secs + "s");
         return b.build();
@@ -1857,6 +2024,10 @@ public class HermesService extends Service {
         }
         String t = tag("approval", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
+        synchronized (this) {
+            answering = session; // the chip says "Sending your answer…" until it is sent or fails
+            postStatus();
+        }
         new Thread(() -> {
             String err = null;
             try {
@@ -1867,20 +2038,21 @@ public class HermesService extends Service {
                         .put("request_id", i.getStringExtra("request_id"))
                         .put("profile", i.getStringExtra("profile"));
                 String path = "/api/plugins/hermes-mobile/approve";
-                String[] res = MainActivity.rawHttp("POST", path, dashboardToken(false), body.toString());
+                String[] res = MainActivity.rawHttp(this, "POST", path, dashboardToken(false), body.toString(), true);
                 if ("401".equals(res[0]) || "403".equals(res[0]))
-                    res = MainActivity.rawHttp("POST", path, dashboardToken(true), body.toString());
+                    res = MainActivity.rawHttp(this, "POST", path, dashboardToken(true), body.toString(), true);
                 if (!res[0].startsWith("2")) err = "HTTP " + res[0];
             } catch (Exception ex) {
                 err = ex.getMessage();
             }
             final String failed = err;
             main.post(() -> {
+                synchronized (HermesService.this) {
+                    if (session.equals(answering)) answering = null;
+                    if (failed == null) pendingApproval = null;
+                    postStatus();
+                }
                 if (failed == null) {
-                    synchronized (HermesService.this) {
-                        pendingApproval = null;
-                        postStatus();
-                    }
                     nm.cancel(t, 2);
                     dropEmptySummary(nm, t);
                 } else {
@@ -1951,15 +2123,15 @@ public class HermesService extends Service {
         main.post(() -> a.deliverAnswer(kind, session, text, done));
     }
 
-    String dashToken = "";
     /** The approval waiting for an answer: its buttons ride on the island chip. */
     JSONObject pendingApproval;
 
-    synchronized String dashboardToken(boolean refresh) {
-        if (refresh || dashToken.isEmpty()) {
-            dashToken = MainActivity.dashboardToken(this);
-        }
-        return dashToken;
+    /** The dashboard's session token from a verified hello (MainActivity.dashboardToken), kept until refreshed or
+     *  dropped (LocalDashboard.Tokens). Every REST call with it says hello on its own connection first. */
+    final LocalDashboard.Tokens dashTokens = new LocalDashboard.Tokens();
+
+    String dashboardToken(boolean refresh) {
+        return dashTokens.get(refresh, () -> MainActivity.dashboardToken(this));
     }
 
     Notification.Builder alertBuilder(String channel, String title, String body, String session, boolean urgent) {

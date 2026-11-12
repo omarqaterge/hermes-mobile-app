@@ -37,7 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * ({@link #HELLO_DEADLINE_MS} for the hello, {@link #ANSWER_DEADLINE_MS} for the answer) so a server that sends one byte
  * at a time cannot hold the caller. Writes are bounded by the same deadlines (a watchdog closes the socket when one
  * passes), no length is allocated before it is checked against the budget, and no proxy is used. Exceptions carry only a reason code, never a key, kid, nonce or MAC. Plain Java (no
- * Android classes) so {@code tools/test_local_auth.sh} tests it with a JDK. Not used yet.
+ * Android classes) so {@code tools/test_local_auth.sh} tests it with a JDK. Also the dashboard's token step
+ * ({@link #dashboardToken}) and the cron ticker's line protocol ({@link #poke}).
  */
 final class LocalClient {
     private LocalClient() {}
@@ -93,13 +94,25 @@ final class LocalClient {
 
     /** Verify the server on {@code 127.0.0.1:port} for {@code role}; the returned session may send one request. */
     static Session open(String role, int port, KeySet keys) throws Unverified {
-        if (!LocalAuth.ROLES.contains(role) || port < 1 || port > 65535 || keys == null) throw new IllegalArgumentException("open");
-        long deadline = System.nanoTime() + HELLO_DEADLINE_MS * 1_000_000L;
+        return open(role, port, keys, HELLO_DEADLINE_MS, READ_MS);
+    }
+
+    /**
+     * As {@link #open(String, int, KeySet)}, with the whole hello allowed {@code helloMs} (each read may then wait that
+     * long too): for a caller whose server may be busy but honest (the dashboard, before a REST call).
+     */
+    static Session open(String role, int port, KeySet keys, int helloMs) throws Unverified {
+        return open(role, port, keys, helloMs, helloMs);
+    }
+
+    private static Session open(String role, int port, KeySet keys, int helloMs, int readMs) throws Unverified {
+        if (!LocalAuth.ROLES.contains(role) || port < 1 || port > 65535 || keys == null || helloMs <= 0) throw new IllegalArgumentException("open");
+        long deadline = System.nanoTime() + helloMs * 1_000_000L;
         // No proxy: the connection goes straight to the loopback address whatever a ProxySelector says.
         Socket s = new Socket(Proxy.NO_PROXY);
         boolean ok = false;
         try {
-            Session session = hello(s, role, port, keys, deadline);
+            Session session = hello(s, role, port, keys, deadline, readMs);
             ok = true;
             return session;
         } catch (Unverified u) {
@@ -112,7 +125,7 @@ final class LocalClient {
         }
     }
 
-    private static Session hello(Socket s, String role, int port, KeySet keys, long deadline) throws Unverified {
+    private static Session hello(Socket s, String role, int port, KeySet keys, long deadline, int readMs) throws Unverified {
         String addr = LocalAuth.addr(port);
         String nc = LocalAuth.nonce();
         String target;
@@ -125,7 +138,7 @@ final class LocalClient {
         try {
             s.setTcpNoDelay(true);
             s.connect(new InetSocketAddress(InetAddress.getByAddress(new byte[] {127, 0, 0, 1}), port), CONNECT_MS);
-            w = new Wire(s);
+            w = new Wire(s, readMs);
             writeBounded(s, ("GET " + target + " HTTP/1.1\r\nHost: " + addr
                     + "\r\nConnection: keep-alive\r\n\r\n").getBytes(StandardCharsets.US_ASCII), null, deadline);
         } catch (IOException e) {
@@ -240,20 +253,44 @@ final class LocalClient {
         String kid() { return kid; }
 
         /**
+         * The verified connection itself, for a caller that writes its one request in its own form (the dashboard's REST
+         * calls, whose answers carry their own proof): the session counts as used, nothing is buffered from the server
+         * (the hello answer was read exactly, with nothing after it), and the caller closes the socket.
+         */
+        synchronized Socket handOff() {
+            if (used) throw new IllegalStateException("used");
+            used = true;
+            return sock;
+        }
+
+        /**
          * Send {@code method path} with {@code body} (null for none; sent as {@code application/json} when present) and
          * read the answer. A 403 throws {@link Unverified} {@code refused}; a broken or oversized answer throws an
          * {@link IOException} with a neutral message. The session is closed afterwards, whatever happens.
          */
-        synchronized Answer request(String method, String path, byte[] body) throws IOException {
+        Answer request(String method, String path, byte[] body) throws IOException {
+            return send(method, path, body, false, MAX_ANSWER);
+        }
+
+        /** As {@link #request(String, String, byte[])}, with an answer body of at most {@code maxAnswer} bytes. */
+        Answer request(String method, String path, byte[] body, int maxAnswer) throws IOException {
+            return send(method, path, body, false, maxAnswer);
+        }
+
+        /**
+         * The request; {@code withNc} names the client nonce in the header too ({@code 1 <kid> <ns> <nc> <mac>}), as the
+         * dashboard's token step wants (its guard keeps the server nonce between two routes).
+         */
+        private synchronized Answer send(String method, String path, byte[] body, boolean withNc, int maxAnswer) throws IOException {
             if (used) throw new IllegalStateException("used");
             used = true;
             try {
-                if (!isMethod(method) || !isPath(path)) throw new IllegalArgumentException("request");
+                if (!isMethod(method) || !isPath(path) || maxAnswer < 0) throw new IllegalArgumentException("request");
                 byte[] b = body == null ? new byte[0] : body;
                 String what = method + " " + path;
                 String mac = LocalAuth.mac(key, "client", role, LocalAuth.addr(port), nc, ns, what, LocalAuth.sha256hex(b));
                 String head = what + " HTTP/1.1\r\nHost: " + LocalAuth.addr(port) + "\r\nX-Hermux-Auth: 1 " + kid + " " + ns + " "
-                        + mac + "\r\nContent-Length: " + b.length + "\r\n"
+                        + (withNc ? nc + " " : "") + mac + "\r\nContent-Length: " + b.length + "\r\n"
                         + (b.length > 0 ? "Content-Type: application/json\r\n" : "") + "Connection: close\r\n\r\n";
                 // One deadline for sending the request and reading its answer.
                 long deadline = System.nanoTime() + ANSWER_DEADLINE_MS * 1_000_000L;
@@ -268,11 +305,11 @@ final class LocalClient {
                     byte[] ab;
                     if (h.status == 204 || h.status == 304) ab = new byte[0];
                     else if (n >= 0) {
-                        if (n > MAX_ANSWER) throw new TooMuch();
+                        if (n > maxAnswer) throw new TooMuch();
                         wire.limit(deadline, n);
                         ab = readExactly(wire, n);
                     } else {
-                        wire.limit(deadline, MAX_ANSWER);
+                        wire.limit(deadline, maxAnswer);
                         ab = readToEnd(wire);
                     }
                     return new Answer(h.status, ab);
@@ -291,6 +328,192 @@ final class LocalClient {
         @Override public void close() { closeQuietly(sock); }
     }
 
+    // ---- the dashboard's token step ----
+
+    /** The dashboard guard's token route, asked on the hello's own connection. */
+    static final String TOKEN_PATH = "/hermux/token";
+    /** The longest session token taken: 1 to this many printable ASCII characters without spaces. */
+    static final int MAX_TOKEN = 512;
+
+    /**
+     * The session token of the dashboard on {@code 127.0.0.1:port}, from a verified dashboard only (the Java twin of
+     * {@code local_auth.dashboard_token} and {@code hm-local token}): the hello (role {@code dashboard}), then
+     * {@code GET /hermux/token} on the same connection with {@code X-Hermux-Auth: 1 <kid> <ns> <nc> <mac>}, then the
+     * answer's own proof ({@code answer}, what {@code token}, over both nonces and the SHA-256 of the token) before the
+     * token is returned. A failed hello, a refused request or a wrong proof throws {@link Unverified}; any answer other
+     * than a 200 with {@code hermux}, {@code token} and {@code proof} throws an {@link IOException} {@code bad answer},
+     * like a broken answer to {@link Session#request}. Nothing else escapes.
+     */
+    static String dashboardToken(int port, KeySet keys) throws IOException {
+        Session s = open("dashboard", port, keys);
+        String key = s.key, nc = s.nc, ns = s.ns;
+        Answer a;
+        try {
+            a = s.send("GET", TOKEN_PATH, null, true, MAX_ANSWER);
+        } catch (IOException e) {
+            throw e; // Unverified (refused) included
+        } catch (RuntimeException e) {
+            throw new IOException("bad answer");
+        }
+        Map<?, ?> j = a.status == 200 ? object(a.body) : null;
+        if (j == null) throw new IOException("bad answer");
+        Object ver = j.get("hermux"), tok = j.get("token"), proof = j.get("proof");
+        if (!(ver instanceof Long) || (Long) ver < MIN_VERSION || !(tok instanceof String) || !isToken((String) tok)
+                || !(proof instanceof String)) throw new IOException("bad answer");
+        String want;
+        try {
+            want = LocalAuth.mac(key, "answer", "dashboard", LocalAuth.addr(port), nc, ns, "token",
+                    LocalAuth.sha256hex(((String) tok).getBytes(StandardCharsets.US_ASCII)));
+        } catch (RuntimeException e) {
+            throw new IOException("bad answer");
+        }
+        if (!LocalAuth.isHash((String) proof) || !LocalAuth.same(want, (String) proof)) throw new Unverified("bad_proof");
+        return (String) tok;
+    }
+
+    /** A session token's shape: 1 to {@link #MAX_TOKEN} printable ASCII characters, no space. */
+    static boolean isToken(String t) {
+        if (t == null || t.isEmpty() || t.length() > MAX_TOKEN) return false;
+        for (int i = 0; i < t.length(); i++) if (t.charAt(i) < 0x21 || t.charAt(i) > 0x7e) return false;
+        return true;
+    }
+
+    /** A JSON object read as strictly as a hello answer (UTF-8, no repeated names), else null. */
+    private static Map<?, ?> object(byte[] body) {
+        try {
+            Object v = Json.parse(StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(body)).toString());
+            return v instanceof Map ? (Map<?, ?>) v : null;
+        } catch (IOException | IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** How the app talks to the background host of a {@code bgapp} event: say hello first, the old token header, or not at all. */
+    enum BgMode { MAC, TOKEN, NONE }
+
+    /**
+     * From the event's {@code auth} and {@code token} (as the event gave them; null when absent): {@code auth} exactly
+     * {@code mac} means the plugin started the host with local authentication, so every request opens with a hello whose
+     * key is the token ({@link BgMode#MAC}; a token that can't be a key gives {@link BgMode#NONE}); any other value is
+     * an older plugin's host, which takes the token in {@code X-HM-Token} ({@link BgMode#TOKEN}). No token, or one over
+     * 256 characters: {@link BgMode#NONE}.
+     */
+    static BgMode bgMode(String auth, String token) {
+        if (token == null || token.isEmpty() || token.length() > 256) return BgMode.NONE;
+        if (!"mac".equals(auth)) return BgMode.TOKEN;
+        try {
+            LocalAuth.kid(token);
+            return BgMode.MAC;
+        } catch (RuntimeException e) {
+            return BgMode.NONE;
+        }
+    }
+
+    /** A key set of one key (the background host's per-start token): its id is the hint, and only that id is known. */
+    static KeySet single(final String key) {
+        final String kid;
+        try {
+            kid = LocalAuth.kid(key);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("key");
+        }
+        return new KeySet() {
+            @Override public String byKid(String k) { return LocalAuth.same(k, kid) ? key : null; }
+            @Override public String hint() { return kid; }
+            @Override public String toString() { return "KeySet"; }
+        };
+    }
+
+    // ---- the cron ticker's line protocol ----
+
+    /** The ticker's lines, the newline included. */
+    static final int MAX_LINE = 256;
+    static final int TICKER_CONNECT_MS = 1000;
+    /** The whole ticker exchange, however slowly the bytes come. */
+    static final int LINE_DEADLINE_MS = 5000;
+
+    /** The ticker's hello line (without its newline): {@code HELLO 1 <nc>}, plus {@code  <kid>} for a hint. */
+    static String tickerHello(String nc, String kid) {
+        return "HELLO 1 " + nc + (LocalAuth.hint(kid) != null ? " " + kid : "");
+    }
+
+    /**
+     * Wakes the cron ticker on {@code 127.0.0.1:port} after verifying it (the line protocol, role {@code ticker}):
+     * {@code HELLO 1 <nc> <kid>}, then the answer {@code HERMUX 1 ticker <kid> <ns> <addr> <proof>} is checked as a hello
+     * answer is (the version, the role and a nonce-shaped {@code ns}, the address dialled, a known kid, the {@code server}
+     * proof), and only then {@code POKE 1 <mac>} (the {@code client} MAC with what {@code POKE} and no body) is sent on
+     * the same connection, which then closes. Lines of at most {@link #MAX_LINE} bytes ending in a newline, within
+     * {@link #LINE_DEADLINE_MS}. Any failure throws {@link Unverified} after sending nothing but the hello line; the key
+     * itself never goes on the wire.
+     */
+    static void poke(int port, KeySet keys) throws Unverified {
+        if (port < 1 || port > 65535 || keys == null) throw new IllegalArgumentException("poke");
+        long deadline = System.nanoTime() + LINE_DEADLINE_MS * 1_000_000L;
+        String addr = LocalAuth.addr(port), nc = LocalAuth.nonce(), hello;
+        try {
+            hello = tickerHello(nc, keys.hint());
+        } catch (RuntimeException e) {
+            throw new Unverified("no_answer"); // no usable key to name: nothing is sent, not even a connect
+        }
+        Socket s = new Socket(Proxy.NO_PROXY);
+        try {
+            Wire w;
+            try {
+                s.setTcpNoDelay(true);
+                s.connect(new InetSocketAddress(InetAddress.getByAddress(new byte[] {127, 0, 0, 1}), port), TICKER_CONNECT_MS);
+                w = new Wire(s);
+                writeBounded(s, (hello + "\n").getBytes(StandardCharsets.US_ASCII), null, deadline);
+            } catch (IOException e) {
+                throw new Unverified("no_answer");
+            }
+            String line;
+            w.limit(deadline, MAX_LINE);
+            try {
+                StringBuilder sb = new StringBuilder();
+                while (true) {
+                    int c = w.next();
+                    if (c < 0) throw w.taken() == 0 ? new Silent() : new Malformed();
+                    if (c == '\n') break;
+                    if (c < 0x20 || c > 0x7e) throw new Malformed();
+                    sb.append((char) c);
+                }
+                if (w.buffered()) throw new Malformed(); // more than the one line
+                line = sb.toString();
+            } catch (SocketTimeoutException | Silent e) {
+                throw new Unverified("no_answer");
+            } catch (IOException e) {
+                throw new Unverified(w.taken() == 0 ? "no_answer" : "no_hello");
+            }
+            String[] p = line.split(" ", -1);
+            if (p.length != 7 || !"HERMUX".equals(p[0])) throw new Unverified("no_hello");
+            if ("0".equals(p[1])) throw new Unverified("old_version");
+            if (!LocalAuth.isVersion(p[1])) throw new Unverified("no_hello");
+            if (Integer.parseInt(p[1]) < MIN_VERSION) throw new Unverified("old_version");
+            if (!"ticker".equals(p[2]) || !LocalAuth.isNonce(p[4])) throw new Unverified("bad_proof");
+            if (!addr.equals(p[5])) throw new Unverified("bad_addr");
+            String key, want, mac;
+            try {
+                key = LocalAuth.isKid(p[3]) ? keys.byKid(p[3]) : null;
+                if (key == null) throw new Unverified("unknown_kid");
+                want = LocalAuth.mac(key, "server", "ticker", addr, nc, p[4], "hello", LocalAuth.EMPTY_HASH);
+                mac = LocalAuth.mac(key, "client", "ticker", addr, nc, p[4], "POKE", LocalAuth.EMPTY_HASH);
+            } catch (RuntimeException e) {
+                throw new Unverified("unknown_kid");
+            }
+            if (!LocalAuth.isHash(p[6]) || !LocalAuth.same(want, p[6])) throw new Unverified("bad_proof");
+            try {
+                writeBounded(s, ("POKE 1 " + mac + "\n").getBytes(StandardCharsets.US_ASCII), null, deadline);
+            } catch (IOException e) {
+                throw new Unverified("no_answer");
+            }
+        } catch (RuntimeException e) {
+            throw new Unverified("no_hello");
+        } finally {
+            closeQuietly(s);
+        }
+    }
+
     // ---- HTTP reading, bounded by bytes and by a deadline ----
 
     private static class Malformed extends IOException {}
@@ -306,7 +529,11 @@ final class LocalClient {
         private int pos, lim, left, taken;
         private long deadline;
 
-        Wire(Socket s) throws IOException { sock = s; in = s.getInputStream(); }
+        private final int readMs;
+
+        Wire(Socket s) throws IOException { this(s, READ_MS); }
+        /** {@code readMs}: the longest one read may wait (within the deadline). */
+        Wire(Socket s, int readMs) throws IOException { sock = s; in = s.getInputStream(); this.readMs = readMs; }
 
         void limit(long deadlineNanos, int maxBytes) { deadline = deadlineNanos; left = maxBytes; taken = 0; }
         boolean buffered() { return pos < lim; }
@@ -325,7 +552,7 @@ final class LocalClient {
         private boolean fill() throws IOException {
             long ms = (deadline - System.nanoTime()) / 1_000_000L;
             if (ms <= 0) throw new SocketTimeoutException();
-            sock.setSoTimeout((int) Math.min(READ_MS, ms));
+            sock.setSoTimeout((int) Math.min(readMs, ms));
             int n = in.read(buf, 0, buf.length);
             if (n <= 0) return false;
             pos = 0;

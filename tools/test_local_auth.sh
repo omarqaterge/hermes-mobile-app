@@ -631,8 +631,85 @@ public class LocalAuthTest {
             }
         }
 
+        // The dashboard's token step (token_cases): the same answers, the same outcome as local_auth.dashboard_token and
+        // hm-local. The fake guard checks the token request as the real one does (both nonces, the kid, the client MAC).
+        for (Object o : (List<?>) v.get("token_cases")) {
+            final Map<?, ?> c = (Map<?, ?>) o;
+            final boolean[] headerOk = {false};
+            Behave b = (sock, fk) -> {
+                String[] r = fk.read(sock);
+                if (r == null) return;
+                String nc = ncOf(r[0]), sn = LocalAuth.nonce(), where = "127.0.0.1:" + fk.port;
+                String hello = "{\"hermux\":1,\"role\":\"dashboard\",\"kid\":\"" + KID + "\",\"ns\":\"" + sn + "\",\"addr\":\"" + where
+                        + "\",\"proof\":\"" + LocalAuth.mac(KEY, "server", "dashboard", where, nc, sn, "hello", LocalAuth.EMPTY_HASH) + "\"}";
+                OutputStream out = sock.getOutputStream();
+                out.write(answer(hello));
+                out.flush();
+                String[] r2 = fk.read(sock);
+                if (r2 == null) return;
+                Matcher m = Pattern.compile("^GET /hermux/token HTTP/1\\.1\r\n(?:.*\r\n)*?X-Hermux-Auth: 1 ([0-9a-f]{8}) ([0-9a-f]{32}) ([0-9a-f]{32}) ([0-9a-f]{64})(\r\n|$)").matcher(r2[0]);
+                headerOk[0] = m.find() && m.group(1).equals(KID) && m.group(2).equals(sn) && m.group(3).equals(nc)
+                        && LocalAuth.same(m.group(4), LocalAuth.mac(KEY, "client", "dashboard", where, nc, sn, "GET /hermux/token", LocalAuth.EMPTY_HASH));
+                if (!headerOk[0]) {
+                    out.write(answer("{\"hermux\":1,\"error\":\"refused\"}", "403 Forbidden", "", -1));
+                    out.flush();
+                    return;
+                }
+                out.write(tokenAnswer(c, where, nc, sn, fk.port));
+                out.flush();
+            };
+            try (Fake f = new Fake(b)) {
+                String got;
+                try { got = "token " + LocalClient.dashboardToken(f.port, KEYS); }
+                catch (LocalClient.Unverified e) { got = e.why; }
+                catch (IOException e) { got = "error " + e.getMessage(); }
+                f.await();
+                check(s(c, "expect").equals(got), "token case: " + s(c, "name") + ": " + s(c, "expect") + (s(c, "expect").equals(got) ? "" : " (got " + got + ")"));
+                if (!s(c, "answer").isEmpty()) check(headerOk[0], "token case: " + s(c, "name") + ": the request carried the five-field header");
+            }
+        }
+
         System.out.println(fails == 0 ? "ALL PASSED" : fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
+    }
+
+    /** The raw answer of a token case for this exchange (as tools/local_auth_cases.py token_answer builds it). */
+    static byte[] tokenAnswer(Map<?, ?> c, String where, String nc, String ns, int port) {
+        String tok = s(c, "token"), how = c.get("proof") == null ? "good" : s(c, "proof");
+        String th = LocalAuth.sha256hex(utf8(tok)), p;
+        switch (how) {
+            case "other_key": p = LocalAuth.mac(OTHER, "answer", "dashboard", where, nc, ns, "token", th); break;
+            case "other_token": p = LocalAuth.mac(KEY, "answer", "dashboard", where, nc, ns, "token", LocalAuth.sha256hex(utf8(tok + "-other"))); break;
+            case "client_dir": p = LocalAuth.mac(KEY, "client", "dashboard", where, nc, ns, "token", th); break;
+            case "swapped": p = LocalAuth.mac(KEY, "answer", "dashboard", where, ns, nc, "token", th); break;
+            case "other_addr": p = LocalAuth.mac(KEY, "answer", "dashboard", LocalAuth.addr(port < 65535 ? port + 1 : port - 1), nc, ns, "token", th); break;
+            case "other_role": p = LocalAuth.mac(KEY, "answer", "events", where, nc, ns, "token", th); break;
+            case "replay": p = LocalAuth.mac(KEY, "answer", "dashboard", where, LocalAuth.nonce(), LocalAuth.nonce(), "token", th); break;
+            default:
+                p = LocalAuth.mac(KEY, "answer", "dashboard", where, nc, ns, "token", th);
+                if (how.equals("upper")) p = p.toUpperCase();
+        }
+        java.util.LinkedHashMap<String, String> vals = new java.util.LinkedHashMap<>();
+        vals.put("hermux", "1");
+        vals.put("token", jsonString(tok));
+        vals.put("proof", jsonString(p));
+        Object set = c.get("set");
+        if (set instanceof Map) for (Map.Entry<?, ?> e : ((Map<?, ?>) set).entrySet()) vals.put((String) e.getKey(), (String) e.getValue());
+        StringBuilder body = new StringBuilder("{");
+        for (Map.Entry<String, String> e : vals.entrySet()) body.append(body.length() > 1 ? "," : "").append('"').append(e.getKey()).append("\":").append(e.getValue());
+        if (c.get("repeat") instanceof String) body.append(",\"").append(s(c, "repeat")).append("\":\"x\"");
+        body.append('}');
+        return expand(s(c, "answer"), body.toString());
+    }
+
+    static String jsonString(String t) {
+        StringBuilder b = new StringBuilder("\"");
+        for (char ch : t.toCharArray()) {
+            if (ch == '"' || ch == '\\') b.append('\\').append(ch);
+            else if (ch < 0x20) b.append(String.format("\\u%04x", (int) ch));
+            else b.append(ch);
+        }
+        return b.append('"').toString();
     }
 }
 JAVA

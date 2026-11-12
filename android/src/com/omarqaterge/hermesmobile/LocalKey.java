@@ -50,6 +50,17 @@ final class LocalKey implements LocalClient.KeySet {
     /** Runs the command that writes the key file in Termux (a {@code RUN_COMMAND}); throws when it can't be handed over. */
     interface Runner { void run(String command) throws Exception; }
 
+    /**
+     * A {@link Runner} over a call that starts something and returns null when nothing was started (as
+     * {@code Context.startForegroundService} does when the service can't be found): a null counts as not handed over, so
+     * {@link #share} reports false and the caller tries again on its next trigger.
+     */
+    static Runner starting(java.util.function.Function<String, Object> start) {
+        return command -> {
+            if (start.apply(command) == null) throw new IllegalStateException("not handed over");
+        };
+    }
+
     /** The key could not be saved: nothing may be sent with a key that the next start would not have. No key in it. */
     static final class NotSaved extends IllegalStateException {
         NotSaved() { super("key not saved"); }

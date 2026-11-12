@@ -57,7 +57,6 @@ public class MainActivity extends Activity {
     static final int REQ_CAMERA = 42;
     static final int REQ_DEVTOOLS = 43;
     static final int REQ_STT_FILES = 44; // Settings → Voice → Speech recognition → files on the phone
-    static final Pattern TOKEN = Pattern.compile("__HERMES_SESSION_TOKEN__\\s*=\\s*\"([^\"]+)\"");
 
     WebView web;
     ValueCallback<Uri[]> fileCallback;
@@ -66,7 +65,6 @@ public class MainActivity extends Activity {
     /** Read by HermesService: skip reply/approval alerts while the chat is on screen. */
     static volatile boolean visible = false;
     long lastStartRequest = 0;
-    volatile String cachedToken = "";
     String pendingSession = null;
     String pendingDraft = null;
     /** The working chip was tapped while Hermes used an app for that chat: open its live viewer too. */
@@ -522,6 +520,8 @@ public class MainActivity extends Activity {
     static final String PROBE_SCRIPT = "test -x ~/bin/hermes-services && echo services=yes; test -f ~/.hermes-mobile/installed && echo installed=yes; "
             + "curl -s -m 2 -o /dev/null -w 'dash=%{http_code}' http://127.0.0.1:9119/ 2>/dev/null; true";
     boolean probeReceiverOn = false;
+    /** The nonce the current probe's result must carry (PluginSync.NONCE_EXTRA), taken once. */
+    final LocalAuth.Awaited probeAwaited = new LocalAuth.Awaited();
     long probeSentAt = 0;
 
     void probeAnswer(String json) {
@@ -541,10 +541,20 @@ public class MainActivity extends Activity {
         long now = System.currentTimeMillis();
         if (now - probeSentAt < 10_000) return;
         probeSentAt = now;
+        // As PluginSync: below API 33 the receiver can't be registered as not exported, so a result counts only with
+        // this probe's nonce, which travels inside the PendingIntent only Termux holds.
+        final String nonce = probeAwaited.arm();
         if (!probeReceiverOn) {
             android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
                 @Override
                 public void onReceive(Context ctx, Intent in) {
+                    String got;
+                    try {
+                        got = in.getStringExtra(PluginSync.NONCE_EXTRA);
+                    } catch (RuntimeException e) {
+                        return;
+                    }
+                    if (!probeAwaited.take(got)) return; // not this probe's nonce, or already taken
                     probeSentAt = 0;
                     Bundle b = in.getBundleExtra("result");
                     String out = b == null ? "" : String.valueOf(b.getString("stdout", ""));
@@ -573,8 +583,9 @@ public class MainActivity extends Activity {
             probeReceiverOn = true;
         }
         try {
-            PendingIntent pend = PendingIntent.getBroadcast(this, 4711, new Intent(PROBE_ACTION).setPackage(getPackageName()),
-                    PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            PendingIntent pend = PendingIntent.getBroadcast(this, LocalAuth.nextRequestCode(0x47110000),
+                    new Intent(PROBE_ACTION).setPackage(getPackageName()).putExtra(PluginSync.NONCE_EXTRA, nonce),
+                    PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_CANCEL_CURRENT);
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");
             i.setAction("com.termux.RUN_COMMAND");
@@ -1386,12 +1397,18 @@ public class MainActivity extends Activity {
         if (!visible) web.dispatchWindowVisibilityChanged(View.GONE);
     };
 
+    /** The session token from a verified hello, kept until refreshed or dropped (LocalDashboard.Tokens). */
+    final LocalDashboard.Tokens tokens = new LocalDashboard.Tokens();
+
+    /** An answer from the dashboard had no valid proof: every cached token is dropped, so the next call fetches again. */
+    static void dropTokens() {
+        LocalDashboard.Tokens.dropAll();
+    }
+
     String token(boolean refresh) {
-        if (refresh || cachedToken.isEmpty()) {
-            cachedToken = dashboardToken(this);
-            if (!cachedToken.isEmpty()) setTermuxOk(this); // the dashboard answers: Termux runs Hermes
-        }
-        return cachedToken;
+        String t = tokens.get(refresh, () -> dashboardToken(this));
+        if (!t.isEmpty()) setTermuxOk(this); // the dashboard answers: Termux runs Hermes
+        return t;
     }
 
     /** The dashboard serves its page with a session token: the page can connect now. */
@@ -1400,26 +1417,31 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * The session token from the dashboard's page, "" without one. The plugin only leaves it in for a caller sending
-     * the event key, so no other app on the phone can read it (spec 2.3). A page saying it was withheld means Hermes
-     * runs but Termux's copy of the key is missing or old (a reinstall): Termux counts as working, and it gets the key.
+     * The dashboard's session token, "" without one, from a verified dashboard only (LocalClient.dashboardToken: the
+     * hello, the signed token step and the proof over the token; the key itself is never sent). Nothing goes to the
+     * port before its hello verifies. Every try reports to HermesService (dashboardVerified / dashboardFailed), which
+     * decides between "starting", the plugin update notice, sharing the key again and the alert (LocalDashboard.Watch).
+     * A token step refused after a good hello (its server nonce was dropped) is tried once more at once.
      */
     static String dashboardToken(Context c) {
-        String key;
-        try {
-            key = HermesService.keys(c).current();
-        } catch (LocalKey.NotSaved e) {
-            return ""; // no saved key: send nothing
+        LocalKey keys = HermesService.keys(c);
+        for (int attempt = 0; ; attempt++) {
+            try {
+                String t = LocalClient.dashboardToken(LocalDashboard.PORT, keys);
+                HermesService.dashboardVerified(c);
+                return t;
+            } catch (LocalClient.Unverified u) {
+                if ("refused".equals(u.why) && attempt == 0) continue;
+                HermesService.dashboardFailed(c, u.why);
+                return "";
+            } catch (java.io.IOException e) {
+                // The hello verified, but no usable token came back (Hermes has none yet while it starts): our dashboard.
+                HermesService.dashboardVerified(c);
+                return "";
+            } catch (RuntimeException e) {
+                return "";
+            }
         }
-        String html = httpGet(BASE_URL + "/", key);
-        if (html == null) return "";
-        Matcher m = TOKEN.matcher(html);
-        if (m.find()) return m.group(1);
-        if (html.contains("__HERMUX_TOKEN_WITHHELD__")) {
-            setTermuxOk(c);
-            HermesService.keyRefused();
-        }
-        return "";
     }
 
     /** HermesService saw the dashboard answer: the page reconnects now. Any thread. */
@@ -1427,9 +1449,10 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> { if (web != null) web.evaluateJavascript("window.__hmHermesReady && window.__hmHermesReady()", null); });
     }
 
-    /** HermesService's listener can't open its port (true) or opened it again (false): the page's alert. Any thread. */
-    void pushLocalAlert(boolean on) {
-        String js = "window.__hmLocalAlert && window.__hmLocalAlert(" + (on ? "'events'" : "null") + ")";
+    /** The page's alert banner: whichever alert is on (HermesService.alertKind: the listener's port first, then the
+     *  dashboard), or none. Any thread. */
+    void pushLocalAlert() {
+        String js = LocalDashboard.alertJs(HermesService.alertKind());
         runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
     }
 
@@ -1455,38 +1478,42 @@ public class MainActivity extends Activity {
         return "http".equals(sc) || "https".equals(sc) || "mailto".equals(sc) || "tel".equals(sc);
     }
 
-    static String[] rawHttp(String method, String path, String token, String body) throws Exception {
+    /**
+     * One REST call to the dashboard (LocalDashboard.call): the connection's hello verifies first, then the token and
+     * the body go on that same connection with a fresh X-Hermux-Nonce, and the answer counts only with a valid
+     * X-Hermux-Proof over that nonce, the address and its status. Without a token nothing is sent. Otherwise the caller
+     * gets the same error as a dashboard that isn't answering (unverifiedAnswer says what follows).
+     */
+    static String[] rawHttp(Context c, String method, String path, String token, String body) throws Exception {
+        return rawHttp(c, method, path, token, body, false);
+    }
+
+    /** As above; {@code waitLong} (answers from a notification: Approve, Stop) gives the hello the long wait
+     *  (LocalDashboard.helloPlan); the page's calls keep the short one. */
+    static String[] rawHttp(Context c, String method, String path, String token, String body, boolean waitLong) throws Exception {
         if (!safeRequest(method, path)) return new String[]{"400", "blocked request"};
-        try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress("127.0.0.1", 9119), 3000);
-            sock.setSoTimeout(120000);
-            byte[] payload = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
-            StringBuilder h = new StringBuilder();
-            h.append(method).append(' ').append(path).append(" HTTP/1.1\r\n")
-             .append("Host: 127.0.0.1:9119\r\nConnection: close\r\nAccept: application/json\r\n");
-            if (token != null && !token.isEmpty()) h.append("X-Hermes-Session-Token: ").append(token).append("\r\n");
-            if (body != null) h.append("Content-Type: application/json\r\nContent-Length: ").append(payload.length).append("\r\n");
-            h.append("\r\n");
-            OutputStream out = sock.getOutputStream();
-            out.write(h.toString().getBytes(StandardCharsets.UTF_8));
-            out.write(payload);
-            out.flush();
-            InputStream in = new BufferedInputStream(sock.getInputStream());
-            ByteArrayOutputStream all = new ByteArrayOutputStream();
-            byte[] buf = new byte[32768];
-            int r;
-            while ((r = in.read(buf)) > 0) all.write(buf, 0, r);
-            byte[] data = all.toByteArray();
-            int sep = -1;
-            for (int k = 0; k + 3 < data.length; k++)
-                if (data[k] == 13 && data[k + 1] == 10 && data[k + 2] == 13 && data[k + 3] == 10) { sep = k; break; }
-            if (sep < 0) return new String[]{"502", "bad response"};
-            String head = new String(data, 0, sep, StandardCharsets.ISO_8859_1);
-            String status = head.split(" ", 3).length > 1 ? head.split(" ", 3)[1] : "502";
-            byte[] rest = java.util.Arrays.copyOfRange(data, sep + 4, data.length);
-            if (head.toLowerCase().contains("transfer-encoding: chunked")) rest = dechunk(rest);
-            return new String[]{status, new String(rest, StandardCharsets.UTF_8)};
+        try {
+            String[] r = LocalDashboard.call(LocalDashboard.PORT, HermesService.keys(c), method, path, token, body, 120000, waitLong);
+            HermesService.restVerified(c); // its hello and its answer both verified
+            return r;
+        } catch (LocalDashboard.NotVerified e) {
+            unverifiedAnswer(c, e);
+            throw e;
         }
+    }
+
+    /**
+     * A REST call that wasn't verified: a hello that failed (nothing but the hello was sent) goes to HermesService like
+     * a failed token try; an answer without a valid proof is recorded and drops every cached token. No token: nothing.
+     */
+    static void unverifiedAnswer(Context c, LocalDashboard.NotVerified e) {
+        if (e.helloFailed) {
+            HermesService.dashboardFailed(c, e.why);
+            return;
+        }
+        if ("no_answer".equals(e.why)) return; // there was no token: nothing was sent
+        dropTokens();
+        HermesService.noteUnverified(c, "dashboard", e.why);
     }
 
     // ── media streaming: <img>/<video>/<audio> load https://hm-media.invalid/m?k=<key>&p=<path>; we fetch it from
@@ -1524,7 +1551,21 @@ public class MainActivity extends Activity {
                 java.util.Collections.singletonMap("Cache-Control", "no-store"), new java.io.ByteArrayInputStream(body));
     }
     /** Dashboard calls from the page: idle threads are reused (a new one only when all are busy, so a slow call never queues others). */
-    static final java.util.concurrent.ExecutorService HTTP_POOL = java.util.concurrent.Executors.newCachedThreadPool();
+    /** The page's dashboard calls and background-app frames: at most HTTP_THREADS at once, the rest wait in turn. */
+    static final int HTTP_THREADS = 12;
+    static final java.util.concurrent.ExecutorService HTTP_POOL = boundedPool(HTTP_THREADS);
+
+    static java.util.concurrent.ExecutorService boundedPool(int n) {
+        java.util.concurrent.ThreadPoolExecutor p = new java.util.concurrent.ThreadPoolExecutor(n, n, 30, java.util.concurrent.TimeUnit.SECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>());
+        p.allowCoreThreadTimeOut(true); // idle threads go: nothing is kept running while the page is quiet
+        return p;
+    }
+
+    /** Media requests setting up their connection at once (each says hello first): the rest wait, up to MEDIA_WAIT_MS. */
+    static final int MEDIA_AT_ONCE = 6;
+    static final long MEDIA_WAIT_MS = 15_000;
+    static final java.util.concurrent.Semaphore MEDIA_SLOTS = new java.util.concurrent.Semaphore(MEDIA_AT_ONCE, true);
     private volatile String mediaKey = "";
 
     WebResourceResponse media(Uri u, java.util.Map<String, String> reqHeaders) {
@@ -1552,9 +1593,15 @@ public class MainActivity extends Activity {
     /** GET a phone file through the plugin's /media (renewing the session token once on 401/403). */
     WebResourceResponse mediaGet(String path, String range) throws Exception {
         String q = "/api/plugins/hermes-mobile/media?path=" + java.net.URLEncoder.encode(path, "UTF-8").replace("+", "%20");
-        WebResourceResponse r = streamGet(q, token(false), range);
-        if (r.getStatusCode() == 401 || r.getStatusCode() == 403) r = streamGet(q, token(true), range);
-        return r;
+        // A few at a time: each holds a WebView thread while its hello (5 s at most) and its head arrive.
+        if (!MEDIA_SLOTS.tryAcquire(MEDIA_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) return plain(503, "Busy");
+        try {
+            WebResourceResponse r = streamGet(this, q, token(false), range);
+            if (r.getStatusCode() == 401 || r.getStatusCode() == 403) r = streamGet(this, q, token(true), range);
+            return r;
+        } finally {
+            MEDIA_SLOTS.release();
+        }
     }
 
     /** A whole phone file (same route and checks as media()), or null when it's missing or over maxBytes. */
@@ -1698,67 +1745,34 @@ public class MainActivity extends Activity {
         return new WebResourceResponse("text/plain", "utf-8", code, reason, h, new java.io.ByteArrayInputStream(new byte[0]));
     }
 
-    /** GET on the dashboard whose body stays a live stream (the socket closes with it). */
-    static WebResourceResponse streamGet(String path, String token, String range) throws Exception {
+    /** GET on the dashboard whose body stays a live stream (the socket closes with it). Like rawHttp: the hello on the
+     *  same connection first, then the token with a fresh X-Hermux-Nonce, and the answer's head must carry a valid
+     *  X-Hermux-Proof (the body is not covered, so it streams as before); otherwise it is dropped unread. */
+    static WebResourceResponse streamGet(Context ctx, String path, String token, String range) throws Exception {
         if (!safeRequest("GET", path)) return plain(400, "Bad Request");
-        Socket sock = new Socket();
+        LocalDashboard.Reply r;
         try {
-            sock.connect(new InetSocketAddress("127.0.0.1", 9119), 3000);
-            sock.setSoTimeout(60000);
-            StringBuilder h = new StringBuilder("GET ").append(path).append(" HTTP/1.1\r\nHost: 127.0.0.1:9119\r\nConnection: close\r\n");
-            if (token != null && !token.isEmpty()) h.append("X-Hermes-Session-Token: ").append(token).append("\r\n");
-            if (range != null) h.append("Range: ").append(range).append("\r\n");
-            h.append("\r\n");
-            OutputStream out = sock.getOutputStream();
-            out.write(h.toString().getBytes(StandardCharsets.UTF_8));
-            out.flush();
-            final InputStream in = new BufferedInputStream(sock.getInputStream(), 65536);
-            // Status line and headers, byte by byte up to the blank line.
-            ByteArrayOutputStream head = new ByteArrayOutputStream();
-            int c;
-            while ((c = in.read()) >= 0) {
-                head.write(c);
-                if (head.size() > 32768) throw new java.io.IOException("headers too large");
-                int sz = head.size();
-                byte[] b = head.toByteArray();
-                if (sz >= 4 && b[sz - 4] == 13 && b[sz - 3] == 10 && b[sz - 2] == 13 && b[sz - 1] == 10) break;
-            }
-            String[] lines = head.toString("ISO-8859-1").split("\r\n");
-            String[] st = lines[0].split(" ", 3);
-            int code = Integer.parseInt(st[1]);
-            String reason = st.length > 2 && !st[2].trim().isEmpty() ? st[2].trim() : (code == 206 ? "Partial Content" : "OK");
-            java.util.Map<String, String> hs = new java.util.HashMap<>();
-            String type = "application/octet-stream";
-            boolean chunked = false;
-            for (int i = 1; i < lines.length; i++) {
-                int colon = lines[i].indexOf(':');
-                if (colon <= 0) continue;
-                String name = lines[i].substring(0, colon).trim(), val = lines[i].substring(colon + 1).trim();
-                String ln = name.toLowerCase();
-                if (ln.equals("content-type")) type = val.split(";")[0].trim();
-                else if (ln.equals("transfer-encoding")) chunked = val.toLowerCase().contains("chunked");
-                else if (ln.equals("content-length") || ln.equals("content-range") || ln.equals("accept-ranges")) hs.put(name, val);
-            }
-            hs.put("Cache-Control", "no-store");
+            r = LocalDashboard.open(LocalDashboard.PORT, HermesService.keys(ctx), "GET", path, token, null, null, range, 60000);
+            HermesService.restVerified(ctx);
+        } catch (LocalDashboard.NotVerified e) {
+            unverifiedAnswer(ctx, e);
+            throw e;
+        }
+        try {
+            int code = r.status;
+            String reason = !r.reason.isEmpty() ? r.reason : (code == 206 ? "Partial Content" : "OK");
+            String ct = r.header("content-type");
+            String type = ct != null ? ct.split(";")[0].trim() : "application/octet-stream";
             if (code < 200 || code >= 300) {
-                sock.close();
+                r.close();
                 return plain(code, code == 404 ? "Not Found" : "Error");
             }
-            InputStream body = chunked ? new java.io.ByteArrayInputStream(dechunk(readAll(in))) : in;
-            final Socket s = sock;
-            InputStream closing = new java.io.FilterInputStream(body) {
-                @Override
-                public void close() throws java.io.IOException {
-                    try {
-                        super.close();
-                    } finally {
-                        s.close();
-                    }
-                }
-            };
-            return new WebResourceResponse(type, null, code, reason, hs, closing);
+            if (!r.chunked()) return new WebResourceResponse(type, null, code, reason, LocalDashboard.mediaHeaders(r), r.body);
+            byte[] all = LocalDashboard.dechunk(LocalDashboard.readAll(r.body));
+            r.close();
+            return new WebResourceResponse(type, null, code, reason, LocalDashboard.mediaHeaders(r), new java.io.ByteArrayInputStream(all));
         } catch (Exception e) {
-            sock.close();
+            r.close();
             throw e;
         }
     }
@@ -1813,6 +1827,7 @@ public class MainActivity extends Activity {
         }
         if (!HermesService.running) HermesService.start(this);
         HermesService.ensureListening(); // its port not open: try again now (rate-limited)
+        if (HermesService.alertKind() != null) pushLocalAlert(); // a page loaded since an alert came up gets it too
         // Pinned approval popups: the in-app sheet takes over, so none can be left stuck.
         NotificationManager nm = getSystemService(NotificationManager.class);
         for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())
@@ -1838,8 +1853,28 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> web.evaluateJavascript(js, null));
     }
 
-    /** One request to the background host on 127.0.0.1 with the token in a header (never in the URL, never logged). */
+    /** The largest answer taken from the background host (a frame of the hidden display). */
+    static final int BG_MAX_ANSWER = 4_000_000;
+
+    /**
+     * One request to the background host on 127.0.0.1. When the plugin started it with local authentication
+     * ({@code BgApp.mac}), the host is verified first (LocalClient, role bghost, its per-start token as the key) and the
+     * request goes signed on that same connection; nothing is sent to a host that doesn't prove the token. Otherwise (an
+     * older plugin started it) the token goes in X-HM-Token as before. Never in the URL, never logged.
+     */
     static byte[] bgRequest(HermesService.BgApp b, String method, String path, int[] status) throws Exception {
+        if (b.mac) {
+            byte[] body = "POST".equals(method) ? "{}".getBytes(StandardCharsets.US_ASCII) : null;
+            try (LocalClient.Session s = LocalClient.open("bghost", b.port, LocalClient.single(b.token))) {
+                LocalClient.Answer a = s.request(method, path, body, BG_MAX_ANSWER);
+                status[0] = a.status;
+                return a.body;
+            } catch (LocalClient.Unverified u) {
+                HermesService svc = HermesService.instance;
+                if (svc != null) HermesService.noteUnverified(svc, "bghost", u.why);
+                throw u;
+            }
+        }
         try (Socket sock = new Socket()) {
             sock.connect(new InetSocketAddress("127.0.0.1", b.port), 2000);
             sock.setSoTimeout(8000);
@@ -1857,7 +1892,7 @@ public class MainActivity extends Activity {
             int r;
             while ((r = in.read(buf)) > 0) {
                 all.write(buf, 0, r);
-                if (all.size() > 4_000_000) throw new Exception("response too large");
+                if (all.size() > BG_MAX_ANSWER) throw new Exception("response too large");
             }
             byte[] data = all.toByteArray();
             int sep = -1;
@@ -2075,25 +2110,6 @@ public class MainActivity extends Activity {
         super.onActivityResult(req, result, data);
     }
 
-    static String httpGet(String url, String eventKey) {
-        try {
-            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-            c.setConnectTimeout(2500);
-            c.setReadTimeout(4000);
-            if (eventKey != null && !eventKey.isEmpty()) c.setRequestProperty("X-Hermes-Mobile-Key", eventKey);
-            try (InputStream in = c.getInputStream()) {
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buf = new byte[16384];
-                int r;
-                while ((r = in.read(buf)) > 0) out.write(buf, 0, r);
-                return out.toString(StandardCharsets.UTF_8.name());
-            } finally {
-                c.disconnect();
-            }
-        } catch (Exception e) {
-            return null;
-        }
-    }
 
     final LocalStt stt = new LocalStt(this); // before voice, which uses it
     final Voice voice = new Voice(this);
@@ -2753,8 +2769,8 @@ public class MainActivity extends Activity {
             HTTP_POOL.execute(() -> {
                 String[] res;
                 try {
-                    res = rawHttp(method, path, token(false), body);
-                    if ("401".equals(res[0]) || "403".equals(res[0])) res = rawHttp(method, path, token(true), body);
+                    res = rawHttp(MainActivity.this, method, path, token(false), body);
+                    if ("401".equals(res[0]) || "403".equals(res[0])) res = rawHttp(MainActivity.this, method, path, token(true), body);
                 } catch (Exception e) {
                     res = new String[]{"0", String.valueOf(e.getMessage())};
                 }
