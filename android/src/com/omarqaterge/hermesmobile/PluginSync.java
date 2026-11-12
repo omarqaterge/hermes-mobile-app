@@ -271,8 +271,7 @@ final class PluginSync {
     /** GET /plugin-bundle/<token> on the loopback port: the APK's bundle, only to the run that was given the token. */
     static byte[] bundleFor(Context c, String got) {
         String t = token;
-        if (t == null || got == null) return null;
-        if (!java.security.MessageDigest.isEqual(t.getBytes(StandardCharsets.UTF_8), got.getBytes(StandardCharsets.UTF_8))) return null;
+        if (!EventsListener.tokenMatches(t, got)) return null;
         token = null; // one fetch per run
         return assetBytes(c, BUNDLE);
     }

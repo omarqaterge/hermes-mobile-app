@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/src/com/omarqaterge/hermesmobile"
 cp android/src/com/omarqaterge/hermesmobile/LocalAuth.java android/src/com/omarqaterge/hermesmobile/LocalClient.java \
-  "$T/src/com/omarqaterge/hermesmobile/"
+  android/src/com/omarqaterge/hermesmobile/LocalServer.java "$T/src/com/omarqaterge/hermesmobile/"
 cat > "$T/src/com/omarqaterge/hermesmobile/LocalAuthTest.java" <<'JAVA'
 package com.omarqaterge.hermesmobile;
 
@@ -44,6 +44,8 @@ public class LocalAuthTest {
         return LocalAuth.mac(s(m, "key"), s(m, "dir"), s(m, "role"), s(m, "addr"), s(m, "nc"), s(m, "ns"), s(m, "what"), s(m, "hash"));
     }
     static String s(Map<?, ?> m, String k) { return (String) m.get(k); }
+    /** A string field, or null for JSON null. */
+    static String sn(Map<?, ?> m, String k) { Object o = m.get(k); return o instanceof String ? (String) o : null; }
     static byte[] utf8(String t) { return t.getBytes(StandardCharsets.UTF_8); }
 
     // ---- a fake local server ----
@@ -51,6 +53,7 @@ public class LocalAuthTest {
     interface Behave { void run(Socket c, Fake f) throws Exception; }
 
     static final class Fake implements AutoCloseable {
+        volatile String helloLine;
         final ServerSocket ss;
         final int port;
         final ByteArrayOutputStream received = new ByteArrayOutputStream();
@@ -117,7 +120,7 @@ public class LocalAuthTest {
     }
 
     static String ncOf(String head) {
-        Matcher m = Pattern.compile("^GET /hermux/hello\\?v=1&nc=([0-9a-f]{32}) HTTP/1\\.1\r\n").matcher(head + "\r\n");
+        Matcher m = Pattern.compile("^GET /hermux/hello\\?v=1&nc=([0-9a-f]{32})(&kid=[0-9a-f]{8})? HTTP/1\\.1\r\n").matcher(head + "\r\n");
         return m.find() ? m.group(1) : null;
     }
 
@@ -200,6 +203,7 @@ public class LocalAuthTest {
             if (r == null) return;
             String nc = ncOf(r[0]);
             f.helloLineOk = nc != null && r[0].contains("\r\nHost: 127.0.0.1:" + f.port);
+            f.helloLine = r[0].split("\r\n", 2)[0];
             String json = helloJson(f, nc, o);
             String ns = (String) ((Map<?, ?>) LocalClient.Json.parse(json)).get("ns");
             OutputStream out = c.getOutputStream();
@@ -294,6 +298,34 @@ public class LocalAuthTest {
             for (int i = 1; i < F.length; i++) msg.append('\n').append(s(m, F[i]));
             check(msg.toString().equals(s(m, "msg")), "message text: " + s(m, "name"));
         }
+        // the hello's kid hint
+        Map<?, ?> hh = (Map<?, ?>) v.get("hello_hint");
+        check(LocalAuth.helloTarget(s(hh, "nc"), LocalAuth.kid(s(hh, "key"))).equals(s(hh, "target")), "hello target with the kid hint (hello_hint vector)");
+        check(LocalAuth.helloTarget(s(hh, "nc"), null).equals(s(hh, "target").split("&kid=")[0]), "hello target without a hint");
+        final String prevKey = OTHER;
+        LocalServer.Keys two = new LocalServer.Keys() {
+            @Override public String proving() { return KEY; }
+            @Override public boolean rawOk(String x) { return false; }
+            @Override public String byKid(String k) { return LocalAuth.kid(KEY).equals(k) ? KEY : LocalAuth.kid(prevKey).equals(k) ? prevKey : null; }
+        };
+        for (Object o : (List<?>) v.get("hint_cases")) {
+            Map<?, ?> m = (Map<?, ?>) o;
+            check(LocalServer.helloKey(two, sn(m, "kid")).equals(s(v, s(m, "proves"))), "hint: " + s(m, "name") + ": proves with " + s(m, "proves"));
+            check(!s(m, "proves").equals("key") || LocalAuth.helloTarget(s(hh, "nc"), sn(m, "kid")).equals(s(hh, "target").split("&kid=")[0])
+                    || LocalAuth.isKid(sn(m, "kid")), "hint: " + s(m, "name") + ": a malformed hint is not sent");
+        }
+        LocalServer.Keys one = new LocalServer.Keys() {
+            @Override public String proving() { return KEY; }
+            @Override public boolean rawOk(String x) { return false; }
+        };
+        check(LocalServer.helloKey(one, s(v, "other_kid")).equals(KEY), "hint: a server with one key ignores another key's kid");
+        for (Object o : (List<?>) v.get("hello_queries")) {
+            Map<?, ?> m = (Map<?, ?>) o;
+            Map<?, ?> e = m.get("expect") instanceof Map ? (Map<?, ?>) m.get("expect") : null;
+            String[] got = LocalAuth.helloArgs(s(m, "query"));
+            check(e == null ? got == null : got != null && got[0].equals(s(e, "nc")) && java.util.Objects.equals(got[1], sn(e, "kid")),
+                    "hello query: " + s(m, "name"));
+        }
         for (Object o : (List<?>) v.get("mismatch")) {
             Map<?, ?> m = (Map<?, ?>) o;
             check(!LocalAuth.same(macOf(m), s(m, "mac")), "mismatch: " + s(m, "name"));
@@ -334,6 +366,41 @@ public class LocalAuthTest {
         nestOk = ((List<?>) nest.get("a")).get(0).equals(1L) && ((List<?>) nest.get("a")).get(4).equals("é\n");
         check(dupRefused && trailRefused && nestOk, "JSON: a repeated name and trailing text are refused; values parse");
 
+        // the hello's kid hint, as sent
+        try (Fake f = new Fake(server(new Opt()))) {
+            LocalClient.KeySet hinting = new LocalClient.KeySet() {
+                @Override public String byKid(String k) { return k.equals(KID) ? KEY : null; }
+                @Override public String hint() { return KID; }
+            };
+            LocalClient.Answer ans = LocalClient.open("events", f.port, hinting).request("POST", "/event", utf8("{}"));
+            f.await();
+            check(ans.status == 204 && f.helloLine != null && f.helloLine.contains("&kid=" + KID + " "), "a key set with a hint names it in the hello (&kid=)");
+        }
+        try (Fake f = new Fake(server(new Opt()))) {
+            LocalClient.KeySet bad = new LocalClient.KeySet() {
+                @Override public String byKid(String k) { return k.equals(KID) ? KEY : null; }
+                @Override public String hint() { return "XYZ"; }
+            };
+            LocalClient.open("events", f.port, bad).request("POST", "/event", utf8("{}"));
+            f.await();
+            check(f.helloLine != null && !f.helloLine.contains("kid="), "a malformed hint is never sent");
+        }
+
+        try (java.net.ServerSocket quiet = new java.net.ServerSocket(0, 2, java.net.InetAddress.getByAddress(new byte[] {127, 0, 0, 1}))) {
+            LocalClient.KeySet unsaved = new LocalClient.KeySet() {
+                @Override public String byKid(String k) { return null; }
+                @Override public String hint() { throw new IllegalStateException("key not saved"); }
+            };
+            String why;
+            try { LocalClient.open("events", quiet.getLocalPort(), unsaved); why = "verified"; }
+            catch (LocalClient.Unverified e) { why = e.why; }
+            catch (RuntimeException e) { why = "escaped " + e.getClass().getSimpleName(); }
+            quiet.setSoTimeout(500);
+            boolean connected;
+            try (java.net.Socket c = quiet.accept()) { connected = true; } catch (java.net.SocketTimeoutException e) { connected = false; }
+            check("no_answer".equals(why) && !connected, "a key set whose hint can't be had (not saved): Unverified no_answer, not even a connect (" + why + ")");
+        }
+
         // the client against fake servers
         try (Fake f = new Fake(server(new Opt()))) {
             LocalClient.Session s = LocalClient.open("events", f.port, KEYS);
@@ -343,6 +410,7 @@ public class LocalAuthTest {
             check(ans.status == 204 && Boolean.TRUE.equals(f.verified), "honest: verified, one request sent, answer 204");
             check(new String(f.requestBody, StandardCharsets.UTF_8).equals("{\"kind\":\"reply\"}"), "honest: the server saw the body as sent");
             check(KID.equals(s.kid()), "honest: kid is the key's");
+            check(f.helloLine != null && !f.helloLine.contains("kid="), "a key set without a hint sends no kid argument");
             boolean once = false;
             try { s.request("POST", "/event", null); } catch (IllegalStateException e) { once = true; }
             check(once, "a session sends one request only");

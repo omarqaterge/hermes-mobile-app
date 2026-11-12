@@ -27,8 +27,10 @@ import java.util.Map;
  * <p>Bounded: {@link #READ_MS} per read and {@link #DEADLINE_MS} for everything {@code accept} reads on a connection (so
  * a trickle of bytes cannot hold the server), at most {@link #MAX_HEAD} bytes and {@link #MAX_HEADERS} header lines per
  * request head, a body cap the caller sets (larger is refused unread), CRLF line endings, one Content-Length and no
- * Transfer-Encoding. Plain Java (no Android classes) so {@code tools/test_local_server.sh} tests it with a JDK; public
- * because {@code bg/BgHost} (another package) uses it. Nothing here logs.
+ * Transfer-Encoding. A caller with more than one route can choose these bounds per request ({@link Policy}, read once the
+ * request line is in) and hold more than one key ({@link Keys}: the hello proves with the current one; the raw key may
+ * be any key still accepted). Plain Java (no Android classes) so {@code tools/test_local_server.sh} tests it with a
+ * JDK; public because {@code bg/BgHost} (another package) uses it. Nothing here logs.
  */
 public final class LocalServer {
     private LocalServer() {}
@@ -46,15 +48,55 @@ public final class LocalServer {
     /** How a request got in: a MAC after a hello, the raw key in the caller's header, or neither (the caller refuses it). */
     public enum Auth { MAC, RAW, NONE }
 
+    /** The keys a server holds: the one its hello proves with, and the raw values it still accepts in the raw header. */
+    public interface Keys {
+        /** The key the hello proves with when the client names no accepted key (the current key). */
+        String proving();
+        /** True when {@code value} is a key still accepted raw; compared in constant time. */
+        boolean rawOk(String value);
+        /** The accepted key with this key id (the hello's hint), else null; a server with one key ignores hints. */
+        default String byKid(String kid) { return null; }
+    }
+
+    /** A fixed answer: status, type and body. */
+    public static final class Answer {
+        final int code;
+        final String type;
+        final byte[] body;
+        public Answer(int code, String type, byte[] body) { this.code = code; this.type = type; this.body = body == null ? new byte[0] : body.clone(); }
+    }
+
+    /**
+     * The bounds of one request, chosen from its method and target once its request line is read: the largest body, the
+     * longest single read and the longest the rest of the request may take (both only ever shorten the defaults), and two
+     * optional answers in place of the generic ones: {@code early} for a request that got in by nothing (without a hello
+     * and without the raw key: written before its body is read; after a hello: written for a missing or wrong MAC), and
+     * {@code tooLarge} for a body over the cap (refused before it is read).
+     */
+    public static final class Limits {
+        final int maxBody, readMs;
+        final long deadlineMs;
+        final Answer early, tooLarge;
+        public Limits(int maxBody, int readMs, long deadlineMs, Answer early, Answer tooLarge) {
+            if (maxBody < 0 || readMs <= 0 || deadlineMs <= 0) throw new IllegalArgumentException("limits");
+            this.maxBody = maxBody; this.readMs = readMs; this.deadlineMs = deadlineMs; this.early = early; this.tooLarge = tooLarge;
+        }
+    }
+
+    /** Chooses the {@link Limits} of a request from its method and target (never null). */
+    public interface Policy { Limits of(String method, String target); }
+
     /** One request as read off the connection: the body is the raw bytes the MAC covered. */
     public static final class Request {
         public final String method, target, path, query;
         public final byte[] body;
         public final Auth auth;
+        /** The key id a {@link Auth#MAC} request was signed under (the current key's); null otherwise. */
+        public final String kid;
         private final Map<String, List<String>> headers;
 
-        Request(String method, String target, Map<String, List<String>> headers, byte[] body, Auth auth) {
-            this.method = method; this.target = target; this.headers = headers; this.body = body; this.auth = auth;
+        Request(String method, String target, Map<String, List<String>> headers, byte[] body, Auth auth, String kid) {
+            this.method = method; this.target = target; this.headers = headers; this.body = body; this.auth = auth; this.kid = kid;
             int q = target.indexOf('?');
             this.path = q < 0 ? target : target.substring(0, q);
             this.query = q < 0 ? "" : target.substring(q + 1);
@@ -69,7 +111,9 @@ public final class LocalServer {
 
     /**
      * The connection was refused and its error answer already written. {@code why} is a short code ({@code bad_request},
-     * {@code too_large}, {@code refused}) for the caller's diagnostics, never anything the client sent.
+     * {@code too_large}, {@code refused}: a hello or a signed request refused; {@code no_key}: a request without a hello
+     * and without the raw key, answered with its {@link Limits} {@code early} answer) for the caller's diagnostics, never
+     * anything the client sent.
      */
     public static final class Refused extends IOException {
         public final String why;
@@ -88,20 +132,44 @@ public final class LocalServer {
      * @param rawHeader lower-case name of the header that may carry the raw key itself; a request without a hello whose
      *                  header equals {@code key} gets {@link Auth#RAW}. Null when the raw key is refused.
      */
-    public static Request accept(Socket s, String role, String key, String rawHeader, int maxBody) throws IOException {
-        if (!LocalAuth.ROLES.contains(role) || key == null || maxBody < 0) throw new IllegalArgumentException("accept");
+    public static Request accept(Socket s, String role, final String key, String rawHeader, int maxBody) throws IOException {
+        if (key == null || maxBody < 0) throw new IllegalArgumentException("accept");
+        final Limits fixed = new Limits(maxBody, READ_MS, DEADLINE_MS, null, null);
+        return accept(s, role, new Keys() {
+            @Override public String proving() { return key; }
+            @Override public boolean rawOk(String value) { return LocalAuth.same(value, key); }
+        }, rawHeader, (m, t) -> fixed);
+    }
+
+    /**
+     * As above, with a key set and per-request bounds. The hello proves with the accepted key its {@code kid} hint names
+     * ({@link Keys#byKid}), else with {@link Keys#proving()} ({@link #helloKey}; chosen once per connection, so a key
+     * change mid-connection cannot mix two keys), and the one request must be signed with that same key; a request
+     * without a hello whose raw header
+     * {@link Keys#rawOk} accepts gets {@link Auth#RAW}. A second hello on one connection is refused (400).
+     */
+    public static Request accept(Socket s, String role, Keys keys, String rawHeader, Policy policy) throws IOException {
+        if (!LocalAuth.ROLES.contains(role) || keys == null || policy == null) throw new IllegalArgumentException("accept");
         In in = new In(s, System.nanoTime() + DEADLINE_MS * 1_000_000L);
-        Head h = readHead(in, s);
+        Head h = readHead(in, s, policy, true);
         if (h == null) return null;
         if (!h.path.equals(HELLO_PATH)) {
-            byte[] body = readBody(in, s, h, maxBody);
             String raw = rawHeader == null ? null : h.one(rawHeader);
-            boolean ok = raw != null && LocalAuth.same(raw, key);
-            return new Request(h.method, h.target, h.headers, body, ok ? Auth.RAW : Auth.NONE);
+            boolean ok = raw != null && keys.rawOk(raw);
+            if (!ok && h.limits.early != null) throw refuse(s, h.limits.early, "no_key"); // before the body is read
+            byte[] body = readBody(in, s, h);
+            return new Request(h.method, h.target, h.headers, body, ok ? Auth.RAW : Auth.NONE, null);
         }
-        String nc = helloNonce(h);
-        if (nc == null || h.contentLength != 0 || h.chunked) throw refuse(s, 400, "bad_request");
+        String[] args = "GET".equals(h.method) ? LocalAuth.helloArgs(h.query) : null;
+        if (args == null || h.contentLength != 0 || h.chunked) throw refuse(s, 400, "bad_request");
+        String nc = args[0];
         if (!isLoopback(s.getLocalAddress())) throw refuse(s, 403, "refused"); // a proof names 127.0.0.1 only
+        String key;
+        try {
+            key = helloKey(keys, args[1]);
+        } catch (IllegalArgumentException e) {
+            throw refuse(s, 403, "refused");
+        }
         String addr = LocalAuth.addr(s.getLocalPort());
         String ns = LocalAuth.nonce(), kid, proof;
         try {
@@ -114,11 +182,15 @@ public final class LocalServer {
                 + "\",\"proof\":\"" + proof + "\"}").getBytes(StandardCharsets.US_ASCII);
         write(s.getOutputStream(), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + json.length
                 + "\r\nCache-Control: no-store\r\nConnection: keep-alive\r\n\r\n", json);
-        Head r = readHead(in, s);
+        Head r = readHead(in, s, policy, false);
         if (r == null) return null;
-        byte[] body = readBody(in, s, r, maxBody);
-        if (!macOk(r.one(AUTH_HEADER), key, role, addr, nc, ns, kid, r.method + " " + r.target, body)) throw refuse(s, 403, "refused");
-        return new Request(r.method, r.target, r.headers, body, Auth.MAC);
+        if (r.path.equals(HELLO_PATH)) throw refuse(s, 400, "bad_request"); // one hello per connection
+        byte[] body = readBody(in, s, r);
+        if (!macOk(r.one(AUTH_HEADER), key, role, addr, nc, ns, kid, r.method + " " + r.target, body)) {
+            if (r.limits.early != null) throw refuse(s, r.limits.early, "refused");
+            throw refuse(s, 403, "refused");
+        }
+        return new Request(r.method, r.target, r.headers, body, Auth.MAC, kid);
     }
 
     /** {@code 1 <kid> <ns> <mac>}: this connection's kid and server nonce, and the client MAC over what and the body. */
@@ -139,26 +211,15 @@ public final class LocalServer {
         return ok;
     }
 
-    /** The client nonce of {@code GET /hermux/hello?v=<n>&nc=<nonce>} (exactly these two arguments), else null. */
-    private static String helloNonce(Head h) {
-        if (!"GET".equals(h.method)) return null;
-        String v = null, nc = null;
-        for (String part : h.query.split("&", -1)) {
-            int e = part.indexOf('=');
-            if (e < 0) return null;
-            String k = part.substring(0, e), val = part.substring(e + 1);
-            if (k.equals("v") && v == null) v = val;
-            else if (k.equals("nc") && nc == null) nc = val;
-            else return null;
-        }
-        if (v == null || nc == null || !isVersion(v) || !LocalAuth.isNonce(nc)) return null;
-        return nc;
-    }
-
-    private static boolean isVersion(String v) {
-        if (v.isEmpty() || v.length() > 3 || v.charAt(0) == '0') return false;
-        for (int i = 0; i < v.length(); i++) if (v.charAt(i) < '0' || v.charAt(i) > '9') return false;
-        return true;
+    /**
+     * The key a hello proves with: the accepted key whose id is the client's {@code hint} (current, or previous within its
+     * grace), else the current key (a client with an unknown key then sees {@code unknown_kid}, as without a hint).
+     */
+    static String helloKey(Keys keys, String hint) {
+        String h = LocalAuth.hint(hint);
+        String k = h == null ? null : keys.byKid(h);
+        if (k != null && LocalAuth.same(LocalAuth.kid(k), h)) return k;
+        return keys.proving();
     }
 
     static boolean isLoopback(InetAddress a) {
@@ -195,9 +256,12 @@ public final class LocalServer {
 
     private static Refused refuse(Socket s, int code, String why) {
         String msg = code == 403 ? "forbidden" : code == 413 ? "too large" : "bad request";
+        return refuse(s, new Answer(code, "application/json", ("{\"ok\":false,\"error\":\"" + msg + "\"}").getBytes(StandardCharsets.US_ASCII)), why);
+    }
+
+    private static Refused refuse(Socket s, Answer a, String why) {
         try {
-            answer(s.getOutputStream(), code, "application/json",
-                    ("{\"ok\":false,\"error\":\"" + msg + "\"}").getBytes(StandardCharsets.US_ASCII));
+            answer(s.getOutputStream(), a.code, a.type, a.body);
         } catch (IOException ignored) { }
         return new Refused(why);
     }
@@ -207,7 +271,8 @@ public final class LocalServer {
     private static final class In {
         private final Socket sock;
         private final InputStream in;
-        private final long deadline;
+        private long deadline;
+        private int readMs = READ_MS;
         private final byte[] buf = new byte[2048];
         private int pos, lim, left;
 
@@ -215,13 +280,19 @@ public final class LocalServer {
 
         void budget(int n) { left = n; }
 
+        /** Shorter bounds for the rest of this request: they only ever tighten. */
+        void tighten(Limits l) {
+            readMs = Math.min(readMs, l.readMs);
+            deadline = Math.min(deadline, System.nanoTime() + l.deadlineMs * 1_000_000L);
+        }
+
         /** The next byte; -1 at the end of the stream; -2 past the byte budget; a timeout past the deadline. */
         int next() throws IOException {
             if (left <= 0) return -2;
             if (pos == lim) {
                 long ms = (deadline - System.nanoTime()) / 1_000_000L;
                 if (ms <= 0) throw new SocketTimeoutException();
-                sock.setSoTimeout((int) Math.min(READ_MS, ms));
+                sock.setSoTimeout((int) Math.min(readMs, ms));
                 int n = in.read(buf, 0, buf.length);
                 if (n <= 0) return -1;
                 pos = 0;
@@ -237,6 +308,8 @@ public final class LocalServer {
         final Map<String, List<String>> headers = new LinkedHashMap<>();
         int contentLength;
         boolean chunked;
+        /** This request's bounds; null only for the hello that opens a connection (it has no body). */
+        Limits limits;
 
         String one(String name) {
             List<String> v = headers.get(name);
@@ -244,8 +317,11 @@ public final class LocalServer {
         }
     }
 
-    /** A request head; null when the stream ends before its first byte. Malformed or too large: {@link Refused}. */
-    private static Head readHead(In in, Socket s) throws IOException {
+    /**
+     * A request head; null when the stream ends before its first byte. Malformed or too large: {@link Refused}. Once the
+     * request line is in, the policy's bounds apply to the rest of it (not to a connection's opening hello).
+     */
+    private static Head readHead(In in, Socket s, Policy policy, boolean first) throws IOException {
         in.budget(MAX_HEAD);
         String line = line(in, s, true);
         if (line == null) return null;
@@ -260,6 +336,11 @@ public final class LocalServer {
         int q = h.target.indexOf('?');
         h.path = q < 0 ? h.target : h.target.substring(0, q);
         h.query = q < 0 ? "" : h.target.substring(q + 1);
+        if (!(first && h.path.equals(HELLO_PATH))) {
+            h.limits = policy.of(h.method, h.target);
+            if (h.limits == null) throw refuse(s, 400, "bad_request");
+            in.tighten(h.limits);
+        }
         int count = 0;
         while (true) {
             String l = line(in, s, false);
@@ -288,9 +369,10 @@ public final class LocalServer {
         return h;
     }
 
-    private static byte[] readBody(In in, Socket s, Head h, int maxBody) throws IOException {
+    private static byte[] readBody(In in, Socket s, Head h) throws IOException {
         if (h.chunked) throw refuse(s, 400, "bad_request"); // no client of ours sends one
-        if (h.contentLength > maxBody) throw refuse(s, 413, "too_large"); // refused before anything is allocated
+        if (h.contentLength > h.limits.maxBody) // refused before anything is allocated
+            throw h.limits.tooLarge != null ? refuse(s, h.limits.tooLarge, "too_large") : refuse(s, 413, "too_large");
         byte[] body = new byte[h.contentLength];
         in.budget(h.contentLength);
         for (int i = 0; i < body.length; i++) {

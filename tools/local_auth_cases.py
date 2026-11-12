@@ -79,6 +79,7 @@ class TokenServer:
     def __init__(self, la, key, other_key, case):
         self.la, self.key, self.other, self.case = la, key, other_key, case
         self.header_ok = None  # the token request's X-Hermux-Auth passed parse_auth(with_nc=True) and request_ok
+        self.hint = None  # the kid hint the client's hello named
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen(2)
@@ -104,11 +105,12 @@ class TokenServer:
         la, key = self.la, self.key
         where = la.server_addr("127.0.0.1", self.port)
         r = _read_request(c)
-        m = re.match(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32}) HTTP/1\.1\r\n", r[0] if r else b"")
-        if not m:
+        m = re.match(rb"GET /hermux/hello\?(\S+) HTTP/1\.1\r\n", r[0] if r else b"")
+        args = la.hello_args(m.group(1)) if m else None  # the guard's own parsing (the kid hint is optional)
+        if not args:
             return
-        nc = m.group(1).decode()
-        ns, j = la.hello_answer(key, "dashboard", where, nc)
+        nc, self.hint = args
+        ns, j = la.hello_answer(la.hello_key([key], self.hint), "dashboard", where, nc)
         body = json.dumps(j).encode()
         c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n" % len(body) + body)
         r = _read_request(c)

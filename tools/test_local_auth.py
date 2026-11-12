@@ -65,6 +65,24 @@ for s in V["not_nonce"]:
 for c in V["not_same"]:
     check(f"not same: {c['name']}", not la.same(c["a"], c["b"]))
 
+print("the hello's kid hint (vectors)")
+hh = V["hello_hint"]
+check("hello_target: the target a client sends, with its kid", la.hello_target(hh["nc"], la.kid(hh["key"])) == hh["target"])
+check("hello_target: no hint, no kid argument", la.hello_target(hh["nc"]) == hh["target"].split("&kid=")[0])
+check("hello_line: the ticker line parses back", la.hello_line(hh["line"]) == (hh["nc"], la.kid(hh["key"])))
+for c in V["hint_cases"]:
+    want = V[c["proves"]]
+    check(f"hint: {c['name']}: proves with {c['proves']}", la.hello_key([KEY, OTHER], c["kid"]) == want)
+check("hint: a server with one key ignores another key's kid", la.hello_key([KEY], V["other_kid"]) == KEY)
+for c in V["hello_queries"]:
+    e = c["expect"]
+    check(f"hello query: {c['name']}", la.hello_args(c["query"]) == (None if e is None else (e["nc"], e["kid"])),
+          la.hello_args(c["query"]))
+for c in V["hello_lines"]:
+    e = c["expect"]
+    check(f"hello line: {c['name']}", la.hello_line(c["line"]) == (None if e is None else (e["nc"], e["kid"])),
+          la.hello_line(c["line"]))
+
 print("same() and nonces")
 m0 = base["mac"]
 check("same: equal", la.same(m0, str(m0)))
@@ -188,7 +206,7 @@ def http_answer(body, status="200 OK", extra_headers=b"", length=None):
 
 
 def nc_of(head):
-    m = re.match(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32}) HTTP/1\.1\r\n", head)
+    m = re.match(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32})&kid=([0-9a-f]{8}) HTTP/1\.1\r\n", head)
     return m.group(1).decode() if m else None
 
 
@@ -201,6 +219,7 @@ def server(answer_status=b"204 No Content", answer=None, after=None, **hello):
             return
         nc = nc_of(r[0])
         srv.hello_line_ok = nc is not None and b"\r\nHost: 127.0.0.1:%d" % srv.port in r[0]
+        srv.hint = (re.search(rb"&kid=([0-9a-f]{8}) ", r[0]) or [None, b""])[1].decode()
         body, ns = hello_body(srv, nc, **hello)
         c.sendall(http_answer(body))
         if after:
@@ -281,6 +300,7 @@ s = la.session("events", srv.port, KEY)
 a = s.request("POST", "/event", b'{"kind":"reply"}')
 srv.done.wait(5)
 check("honest: the hello request line and Host header", getattr(srv, "hello_line_ok", False))
+check("honest: the hello names the client's key id as its hint", getattr(srv, "hint", "") == V["kid"], getattr(srv, "hint", ""))
 check("honest: verified, one request sent, answer 204", a.status == 204 and srv.verified is True, (a.status, srv.verified))
 check("honest: the server saw the body as sent", srv.request_body == b'{"kind":"reply"}')
 check("honest: kid is the key's", s.kid == V["kid"])

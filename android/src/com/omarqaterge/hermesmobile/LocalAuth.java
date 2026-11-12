@@ -126,6 +126,46 @@ final class LocalAuth {
     /** The address a client dials and a server names for a port. */
     static String addr(int port) { return "127.0.0.1:" + port; }
 
+    /**
+     * The key id a client's hello names (its {@code kid} hint), or null: a hint that isn't exactly 8 lowercase hex
+     * characters counts as absent. The hint is not secret; a server proves with the accepted key it names, else with
+     * its current key.
+     */
+    static String hint(String kid) { return isKid(kid) ? kid : null; }
+
+    /**
+     * The arguments of a hello's query {@code v=<n>&nc=<nonce>[&kid=<kid>]} (any order, each at most once, nothing
+     * else): {@code {nc, kid}} with {@code kid} null when absent or malformed ({@link #hint}); null for anything else.
+     */
+    static String[] helloArgs(String query) {
+        if (query == null) return null;
+        String v = null, nc = null, kid = null;
+        boolean sawKid = false;
+        for (String part : query.split("&", -1)) {
+            int e = part.indexOf('=');
+            if (e < 0) return null;
+            String k = part.substring(0, e), val = part.substring(e + 1);
+            if (k.equals("v") && v == null) v = val;
+            else if (k.equals("nc") && nc == null) nc = val;
+            else if (k.equals("kid") && !sawKid) { sawKid = true; kid = val; }
+            else return null;
+        }
+        if (v == null || nc == null || !isVersion(v) || !isNonce(nc)) return null;
+        return new String[] {nc, hint(kid)};
+    }
+
+    /** A hello's version argument: a positive decimal number of at most 3 digits without leading zeros. */
+    static boolean isVersion(String v) {
+        if (v == null || v.isEmpty() || v.length() > 3 || v.charAt(0) == '0') return false;
+        for (int i = 0; i < v.length(); i++) if (v.charAt(i) < '0' || v.charAt(i) > '9') return false;
+        return true;
+    }
+
+    /** The hello's request target a client sends: {@code /hermux/hello?v=1&nc=<nc>}, plus {@code &kid=<kid>} for a hint. */
+    static String helloTarget(String nc, String kid) {
+        return "/hermux/hello?v=1&nc=" + nc + (hint(kid) != null ? "&kid=" + kid : "");
+    }
+
     private static boolean isWhat(String s) {
         if (s == null || s.isEmpty() || s.length() > MAX_WHAT) return false;
         for (int i = 0; i < s.length(); i++) {

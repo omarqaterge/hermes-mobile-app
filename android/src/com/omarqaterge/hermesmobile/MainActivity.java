@@ -1405,7 +1405,13 @@ public class MainActivity extends Activity {
      * runs but Termux's copy of the key is missing or old (a reinstall): Termux counts as working, and it gets the key.
      */
     static String dashboardToken(Context c) {
-        String html = httpGet(BASE_URL + "/", c.getSharedPreferences("hermes", MODE_PRIVATE).getString("event_key", ""));
+        String key;
+        try {
+            key = HermesService.keys(c).current();
+        } catch (LocalKey.NotSaved e) {
+            return ""; // no saved key: send nothing
+        }
+        String html = httpGet(BASE_URL + "/", key);
         if (html == null) return "";
         Matcher m = TOKEN.matcher(html);
         if (m.find()) return m.group(1);
@@ -1419,6 +1425,12 @@ public class MainActivity extends Activity {
     /** HermesService saw the dashboard answer: the page reconnects now. Any thread. */
     void pushHermesReady() {
         runOnUiThread(() -> { if (web != null) web.evaluateJavascript("window.__hmHermesReady && window.__hmHermesReady()", null); });
+    }
+
+    /** HermesService's listener can't open its port (true) or opened it again (false): the page's alert. Any thread. */
+    void pushLocalAlert(boolean on) {
+        String js = "window.__hmLocalAlert && window.__hmLocalAlert(" + (on ? "'events'" : "null") + ")";
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(js, null); });
     }
 
     /** Minimal HTTP/1.1 client for the local dashboard: any method may carry a body (DELETE too). */
@@ -1800,6 +1812,7 @@ public class MainActivity extends Activity {
             HermesService.seen(shown);
         }
         if (!HermesService.running) HermesService.start(this);
+        HermesService.ensureListening(); // its port not open: try again now (rate-limited)
         // Pinned approval popups: the in-app sheet takes over, so none can be left stuck.
         NotificationManager nm = getSystemService(NotificationManager.class);
         for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())

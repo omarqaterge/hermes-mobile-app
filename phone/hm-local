@@ -117,6 +117,16 @@ def addr(port: int) -> str:
     return f"{HOST}:{port}"
 
 
+def hint(k):
+    """A hello's ``kid`` hint, or None: anything but exactly 8 lowercase hex characters counts as absent."""
+    return k if is_kid(k) else None
+
+
+def hello_target(nc: str, kid_: str | None = None) -> str:
+    """The hello's request target: ``/hermux/hello?v=1&nc=<nc>``, plus ``&kid=<kid>`` for a hint."""
+    return f"/hermux/hello?v=1&nc={nc}" + (f"&kid={kid_}" if hint(kid_) else "")
+
+
 def nonce() -> str:
     """16 random bytes as 32 lowercase hex characters."""
     return secrets.token_hex(16)
@@ -403,7 +413,7 @@ def session(role: str, port: int, key: str, timeout: float = 3) -> Session:
             conn.connect()
             conn.auto_open = 0  # a closed socket must never be replaced by a new connection behind our back
             conn.send_deadline = deadline  # the send, within the hello deadline
-            conn.request("GET", f"/hermux/hello?v=1&nc={nc}", headers={"Connection": "keep-alive"})
+            conn.request("GET", hello_target(nc, want_kid), headers={"Connection": "keep-alive"})
         except OSError:
             raise Unverified("no_answer") from None
         wire = _Wire(conn.sock, MAX_HELLO, deadline, timeout)

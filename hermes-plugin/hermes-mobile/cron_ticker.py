@@ -13,7 +13,7 @@ late), and once no job is running the ticker says so (`cron_idle`), so the app d
 lock instead of holding it for a fixed 150 s.
 
 The poke listener proves itself before it acts (local authentication, local_auth.ticker_serve_one): the
-app sends `HELLO 1 <nonce>`, the ticker answers with a proof under the shared key, and only a
+app sends `HELLO 1 <nonce>` (optionally followed by its key id, a hint), the ticker answers with a proof under the shared key, and only a
 `POKE 1 <mac>` over both nonces pokes it. A first line that is the shared key itself (the app's
 protocol before this one) still pokes it until ~/.hermes-mobile/enforced exists. When the port is
 in use the listener tries again (5 s, doubling to 5 min) for as long as the ticker runs, and notes

@@ -9,5 +9,6 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent intent) {
         HermesService.start(ctx);
+        HermesService.ensureListening(); // a service still running whose listener has no port: try again (rate-limited)
     }
 }

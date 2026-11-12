@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | `Status` | `status` | LOW | no | The pinned status notification (id 1) when it is not the idle card: the working Live Update, the approval chip, the question chip, the sticky Done chip, the short flash chip. |
 | `Idle` | `idle` | LOW | no | The slim green idle card ("Status: Ready"; also "Status: Setting up: …" during the app-first install). Separate so the user can set it to Minimised and drop its status-bar icon. |
-| `Needs you` | `needs_you` | HIGH | yes | Approval and question pop-ups with actions, their 20 s / 40 s re-alerts, "Couldn't send your answer", "Couldn't stop Hermux", and bridge `notify` (masked prompts from the page). |
+| `Needs you` | `needs_you` | HIGH | yes | Approval and question pop-ups with actions, their 20 s / 40 s re-alerts, "Couldn't send your answer", "Couldn't stop Hermux", bridge `notify` (masked prompts from the page), and "Hermux can't hear from Hermes" (id 12, below). |
 | `Replies` | `replies` | DEFAULT | yes | `reply` and `error` events: a reply that finished while the app was not on screen, or a failed turn. Has the Reply action. |
 | `Learning` | `learning2` | LOW | no | `learning` events (memory and skill updates) and the group summary notification. |
 | `Scheduled jobs` | `jobs2` | DEFAULT | no | `cron` events (a scheduled job finished or failed). |
@@ -18,7 +18,9 @@
 | `Remote debugging` | `devtools` | LOW | no | The ongoing notification from `DevTools` (id 11) while remote debugging is on: "Remote debugging is on · turns off at HH:MM" with the action Turn off (`DevTools.ACTION_OFF`, handled in `HermesService.onStartCommand`). Gone when it turns off. |
 | `Pairing` | `pairing` | HIGH | no | The Pairing notification from `AdbPairing` (tag `pair`, id 1): "Pair Termux: enter the code" with the Enter code field ("6-digit code"), then "Pairing…", "Termux is paired" or what went wrong. Only after the user tapped Start pairing; gone 10 minutes after that tap. |
 
-Notification ids: 1 = status chip (also bridge `notify`, with a tag), 2 = every tagged card (`approval:<chat>`, `ask:<chat>`, `reply:<chat>`, `learn:<id>`, `cron:<id>`, `stop:<chat>`), 3 = group summary, 7 = reading card, 9 = Shizuku notice, 10 = update notice, 11 = remote debugging. All cards except the status chip are in the group `hermes` (children alert, the summary does not). The summary is posted with every card and removed when the last card goes (`dropEmptySummary`).
+Notification ids: 1 = status chip (also bridge `notify`, with a tag), 2 = every tagged card (`approval:<chat>`, `ask:<chat>`, `reply:<chat>`, `learn:<id>`, `cron:<id>`, `stop:<chat>`), 3 = group summary, 7 = reading card, 9 = Shizuku notice, 10 = update notice, 11 = remote debugging, 12 = the listener alert (`HermesService.LOCAL_ALERT_ID`). All cards except the status chip and the listener alert are in the group `hermes` (children alert, the summary does not). The summary is posted with every card and removed when the last card goes (`dropEmptySummary`).
+
+**The listener alert (id 12).** While the service's listener can't open its port on 9121 (4.4): title "Hermux can't hear from Hermes", text "Another app on this phone is using the connection Hermux listens on. Restart the phone to fix it." (also as the expanded text), channel `Needs you`, alerting once, not in the `hermes` group; a tap opens the app. Removed when the port opens and when the service stops.
 
 All of them use the small icon `ic_stat_hermes` (the approval chip uses `ic_stat_shield`) and accent colour gold `#D9A441`, green `#3DBE7A`, red `#E5564B` or amber `#E8912D` as noted below.
 

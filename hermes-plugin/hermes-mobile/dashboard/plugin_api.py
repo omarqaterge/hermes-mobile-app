@@ -132,20 +132,9 @@ async def _read_body(receive, limit: int):
 
 
 def _hello_nonce(la, query: bytes):
-    """The client nonce of ``v=1&nc=<nonce>`` (exactly these two arguments, each once), else None."""
-    try:
-        text = query.decode("ascii")
-    except UnicodeDecodeError:
-        return None
-    seen = {}
-    for part in text.split("&"):
-        k, sep, v = part.partition("=")
-        if not sep or k not in ("v", "nc") or k in seen:
-            return None
-        seen[k] = v
-    if set(seen) != {"v", "nc"} or not la.is_version(seen["v"]) or not la.is_nonce(seen["nc"]):
-        return None
-    return seen["nc"]
+    """``(nc, kid hint)`` of ``v=1&nc=<nonce>[&kid=<kid>]`` (``local_auth.hello_args``: each once, nothing else; a
+    malformed hint counts as absent), else None."""
+    return la.hello_args(query)
 
 
 class _TokenGuard:
@@ -250,9 +239,11 @@ class _TokenGuard:
         if kid is None:  # no key to prove with, or not reached on 127.0.0.1
             return await _answer(send, 503, {"hermux": 1, "error": "unavailable"})
         if scope["path"] == _HELLO_PATH:
-            nc = _hello_nonce(la, scope.get("query_string") or b"")
-            if nc is None:
+            args = _hello_nonce(la, scope.get("query_string") or b"")
+            if args is None:
                 return await _answer(send, 400, {"hermux": 1, "error": "bad_request"})
+            nc, hint = args
+            key = la.hello_key([key], hint)  # the key file holds one key: a hint for any other is ignored
             ns, j = la.hello_answer(key, "dashboard", where, nc)
             self._pending.add(ns, nc, kid, where)
             return await _answer(send, 200, j)

@@ -199,6 +199,15 @@ for name, q in (("no nonce", "v=1"), ("no version", f"nc={la.nonce()}"), ("versi
                 ("a bare argument", f"v=1&nc={la.nonce()}&x")):
     r = lc.get(f"/hermux/hello?{q}")
     check(f"hello with {name}: 400", r.status_code == 400 and "proof" not in r.text, r.status_code)
+r = lc.get(f"/hermux/hello?v=1&nc={la.nonce()}&kid={V['kid']}&kid={V['kid']}")
+check("hello with the kid hint twice: 400", r.status_code == 400 and "proof" not in r.text, r.status_code)
+for name, h in (("its own kid", V["kid"]), ("another key's kid (one key here: ignored)", V["other_kid"]),
+                ("a malformed hint (absent)", "XYZ"), ("an empty hint (absent)", "")):
+    nc = la.nonce()
+    r = lc.get(f"/hermux/hello?v=1&nc={nc}&kid={h}")
+    j = r.json() if r.status_code == 200 else {}
+    check(f"hello with {name}: the proof under its one key", r.status_code == 200 and j.get("kid") == V["kid"]
+          and la.same(j.get("proof"), la.mac(KEY, "server", "dashboard", WHERE, nc, j.get("ns"), "hello", la.EMPTY_HASH)), r.text)
 r = lc.post(f"/hermux/hello?v=1&nc={la.nonce()}")
 check("hello: only GET", r.status_code == 405)
 server_seen["addr"] = ("::1", 9119)
@@ -227,6 +236,10 @@ check("token: the proof covers the token",
 check("token: never cached", r.headers.get("cache-control") == "no-store")
 r = lc.get("/hermux/token", headers={"X-Hermux-Auth": token_auth(nc, ns)})
 check("token: the same server nonce a second time is refused", r.status_code == 403 and r.json() == {"hermux": 1, "error": "refused"})
+nc = la.nonce()
+ns = lc.get(f"/hermux/hello?v=1&nc={nc}&kid={V['kid']}").json()["ns"]
+r = lc.get("/hermux/token", headers={"X-Hermux-Auth": token_auth(nc, ns)})
+check("token: after a hello with the kid hint, the token step works", r.status_code == 200 and r.json().get("token") == web._SESSION_TOKEN, r.text)
 del web._SESSION_TOKEN
 nc, r = say_hello()
 r = lc.get("/hermux/token", headers={"X-Hermux-Auth": token_auth(nc, r.json()["ns"])})

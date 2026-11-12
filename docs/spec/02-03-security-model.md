@@ -75,15 +75,33 @@ page; their actions can only call read-only tools through `POST /openui/call`, a
 `safeHttpUrl` (http/https only).
 
 **Event key `~/.hermes-mobile/key`.**
-- `HermesService.ensureKey` makes a 24-byte random key once and keeps it in the app's prefs (`hermes` →
-  `event_key`).
+- The key has one owner, `LocalKey`: `HermesService.ensureKey`, the listener, `pokeTicker` and
+  `MainActivity.dashboardToken` all take it from `HermesService.keys` (`LocalKey.current`), never from the prefs
+  directly. It makes a 24-byte random key once and keeps it in the app's prefs (`hermes` → `event_key`).
 - Once per service run, and only after Termux has accepted a command, `shareKeyWithTermux` writes it to Termux's
-  `~/.hermes-mobile/key` with `umask 077` (a `RUN_COMMAND` running `sh -c`). `shareKeyAgain` repeats this when
-  Termux first accepts a command (first good probe, installer DONE).
+  `~/.hermes-mobile/key` (a `RUN_COMMAND` running `sh -c` with `LocalKey.shareCommand`: `umask 077`, the folder made,
+  the key written to `key.<pid>.tmp` and moved over `key` with `mv -f`, so a reader sees the old key or the new one,
+  never an empty file; when the write or the move fails the temporary file is removed and the command fails; only a
+  lowercase hex key gets a command). A new key is used only once it is saved: `LocalKey.current` retries a failed save
+  once, then puts the old values back (Android's `commit` keeps unsaved values in memory) and throws
+  `LocalKey.NotSaved`, and the caller sends nothing; `rotate` does the same. `shareKeyWithTermux` counts the key as
+  shared (`keyShared`) only once it was saved and its command handed to Termux (`LocalKey.share`), so the next trigger
+  tries again otherwise. A hint is never percent-decoded: an encoded `kid` is malformed and counts as absent. `shareKeyAgain` repeats this when Termux first
+  accepts a command (first good probe, installer DONE), and `keyRefused` uses the same command.
+- **Rotation (API only; nothing calls it yet).** `LocalKey.rotate(why)` (`why` one of `WHYS`: `update`, `enforce`,
+  `legacy_seen`, `user`) makes a new key and keeps the previous one accepted for 24 h (`GRACE_MS`; prefs
+  `event_key_prev`, `event_key_prev_until`) so Termux processes that still hold it keep working until the new key file
+  reaches them, both with the raw key and with signed requests (their hello names the old key's id, and the listener
+  proves with it); `LocalKey.confirm(kid)`, called for every request the listener verifies under the current key's id,
+  cuts that grace to 2 minutes (`CONFIRM_MS`). `accepted()` is the current key plus the previous one while its grace
+  lasts (never more than 24 h ahead of the clock), `byKid(kid)` picks one of them by key id (the app as a client), and
+  `event_key_version` records the app version a key was made under. While `LocalKey.ENFORCE` is false the raw key
+  stays accepted (`rawAccepted`) whatever `local_enforced` says.
 - Every sender reads that file: the plugin (`_key`, re-read when its inode, modification time in ns or size changes, through `local_auth.KeyFile`; an empty file is never kept), `cron_ticker.py`,
-  `hm-shizuku`. Each `POST /event` carries it in `X-Hermes-Mobile-Key`. The listener binds to `127.0.0.1` only,
-  compares in constant time, allows at most 40 header lines of ≤ 2,048 characters and a body of ≤ 256 KiB, and
-  answers 204 or 403. The cron poke on 9122 sends the same key (or local authentication's `POKE`, below).
+  `hm-shizuku`. Each `POST /event` carries it in `X-Hermes-Mobile-Key`, or is signed after a hello (below). The
+  listener binds to `127.0.0.1` only, compares in constant time against every accepted key, reads the request through
+  `LocalServer` (a head of at most 8 KiB and 40 header lines with CRLF endings, a body of ≤ 256 KiB), and answers 204
+  or 403. The cron poke on 9122 sends the same key (or local authentication's `POKE`, below).
 - `POST /setup` uses its own one-time token instead (made when the app copies the installer command, body
   ≤ 1 KiB; `SetupLines`, 4.1).
 - `POST /phonedata` (the agent reading the phone's contacts, calendar, call log, messages, location or latest photos;
@@ -97,12 +115,13 @@ page; their actions can only call read-only tools through `POST /openui/call`, a
   from the signed APK (6.6).
 
 **Local authentication (`hermux-local-v1`).** A client checks that the local server holds the shared key before it sends that server anything private, and then signs its request instead of sending the key. The primitives are in `LocalAuth` (app) and `local_auth.py` (plugin), checked against the same vectors: a proof or MAC is HMAC-SHA256 under the key over `hermux-local-v1`, a direction (`server`, `client`, `answer`), a role (`dashboard`, `events`, `ticker`, `bghost`), the server's own listening address `127.0.0.1:<port>`, the client's nonce, the server's nonce, what is signed and the SHA-256 of the body.
-- **Roles and their servers.** `dashboard` is the plugin's `_TokenGuard` in front of Hermes on 9119; `ticker` is `cron_ticker.py` on 9122; `bghost` is `BgHost` (its per-start token is the key); `events` is the app's listener on 9121 (not changed yet).
-- **Hello.** The client sends a fresh nonce; the server answers with its key id (`kid`), a fresh server nonce, the address it listens on (taken from its own socket, never from the request) and the `server` proof over all of them. The client requires the address it dialled, a key id it knows and the proof, and sends nothing more otherwise.
-- **Request MAC.** On 9122 and for `BgHost` the one request follows on the same connection, so the peer that proved itself is the one that gets it: `X-Hermux-Auth: 1 <kid> <ns> <mac>` (`BgHost`, through `LocalServer`) or the line `POKE 1 <mac>` (the ticker), a `client` MAC over `<METHOD> <path with query>` (`POKE` for the ticker) and the raw body bytes. The server nonce lives only in that connection's handler and is used once.
+- **Roles and their servers.** `dashboard` is the plugin's `_TokenGuard` in front of Hermes on 9119; `ticker` is `cron_ticker.py` on 9122; `bghost` is `BgHost` (its per-start token is the key); `events` is the app's listener on 9121 (`EventsListener`, through `LocalServer`; it proves with the key the client's hint names when `LocalKey` still accepts it, else with `LocalKey.current`).
+- **Hello.** The client sends a fresh nonce and, as a hint, the id of the key it holds (`kid`, optional and not secret: `GET /hermux/hello?v=1&nc=<nc>&kid=<kid>`, or `HELLO 1 <nc> <kid>` to the ticker; `LocalAuth.helloArgs`, `local_auth.hello_args` and `hello_line` read it, and a hint that isn't 8 lowercase hex characters counts as absent). The server proves with the accepted key that id names (current, or the previous key within its grace: `LocalServer.helloKey`, `local_auth.hello_key`), else with its current key, so a client with an unknown key still sees `unknown_kid`; the one request must then be signed with that same key. The Termux-side servers hold one key, so they ignore a hint for any other. The server answers with its key id (`kid`), a fresh server nonce, the address it listens on (taken from its own socket, never from the request) and the `server` proof over all of them. The client requires the address it dialled, a key id it knows and the proof, and sends nothing more otherwise.
+- **Request MAC.** On 9121, on 9122 and for `BgHost` the one request follows on the same connection, so the peer that proved itself is the one that gets it: `X-Hermux-Auth: 1 <kid> <ns> <mac>` (the app's listener and `BgHost`, through `LocalServer`) or the line `POKE 1 <mac>` (the ticker), a `client` MAC over `<METHOD> <path with query>` (`POKE` for the ticker) and the raw body bytes. The server nonce lives only in that connection's handler and is used once.
 - **The dashboard.** The hello and the token step are two HTTP requests, so `_TokenGuard` keeps each server nonce with its client nonce for 10 s, single use, at most 256 (`local_auth.PendingHellos`, the oldest dropped). `GET /hermux/token` must carry `X-Hermux-Auth: 1 <kid> <ns> <nc> <mac>`; the answer holds Hermes's session token and an `answer` proof over its SHA-256. A REST request may send `X-Hermux-Nonce: <nonce>`; its answer then carries `X-Hermux-Proof: 1 <kid> <proof>`, an `answer` proof over that nonce, the address and `rest <status>` (the body is not covered, so streaming is untouched).
 - **Bounds.** HTTP heads at most 8 KiB and 40 header lines with CRLF endings, one `Content-Length`, no `Transfer-Encoding`, a body cap checked before reading, 3 s per read and 10 s for the connection (`LocalServer`); ticker lines at most 256 bytes, 2 s per read, 5 s for the exchange. Anything malformed gets an error answer or nothing, never a proof.
-- **Compatibility.** Every server still accepts the raw key as before: the event key on the `/` page (`X-Hermes-Mobile-Key`) and as the ticker's first line, and `X-HM-Token` on `BgHost` unless it was started with `HM_AUTH=mac`. `_TokenGuard` and the ticker stop accepting the raw key once `~/.hermes-mobile/enforced` exists; nothing creates that file yet, and no client sends the new messages yet.
+- **Compatibility.** Every server still accepts the raw key as before: the event key on the `/` page (`X-Hermes-Mobile-Key`) and as the ticker's first line, the event key in `X-Hermes-Mobile-Key` on the app's listener (the current key, or the previous one during its grace; only on a request without a hello, and recorded as the diagnostic event `local legacy_key port=events` at most once an hour) until `LocalKey.ENFORCE` is switched on, and `X-HM-Token` on `BgHost` unless it was started with `HM_AUTH=mac`. `_TokenGuard` and the ticker stop accepting the raw key once `~/.hermes-mobile/enforced` exists; nothing creates that file yet, and no client sends the new messages yet, apart from the app's own hello below.
+- **The listener's own port.** When 9121 can't be bound, the app sends a hello to it (`LocalClient`, role `events`; nothing else): a listener that proves our key is one of ours left open, which is closed and the port taken again at once; anything else holds the port, and the app sends it nothing, tries again with a bounded back-off and tells the user ("Hermux can't hear from Hermes", 4.3, 4.4).
 
 **Phone data gate (`PhoneDataGrants`, `PhoneDataRoute`, `web/src/phone-data-request.ts`).** The threat: the agent runs in Termux, so it can read the shared key, call local ports, post a fake `approval` event to `/event` and edit Hermes's settings. So nothing it can write lets a read through.
 - **The one-use grant.** `PhoneDataGrants.issue(description)` is called only by the page (bridge `phoneDataGrant`, per-page key, so a canvas frame can't call it) when the user taps Allow once on a phone-data approval. It parses the description strictly (`parse`: `phone_data:v1:<kind>:<12 lowercase hex>:<even-length lowercase hex of the args text>`, a real kind, at most 1,024 bytes of args, valid UTF-8 that is printable ASCII and one JSON object) and stores nonce → kind and args text for 2 minutes (`TTL_MS`), at most 16 at once (`MAX_GRANTS`, the oldest dropped). `consume(nonce, kind, args)` is true once and only for exactly that kind and args text; a failed attempt returns false the same way for every cause (constant-time comparison) and does not use the grant up, so nothing that knows a nonce can burn the user's tap, while the grant still lets through only that exact read.

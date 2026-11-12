@@ -75,7 +75,8 @@ Owned by the Java side (4); listed here because the flows above depend on them.
 
 | File → key | What it holds |
 |---|---|
-| `hermes` → `event_key` | The event key shared with Termux (2.3). |
+| `hermes` → `event_key` | The event key shared with Termux (2.3); only `LocalKey` reads or writes it. |
+| `hermes` → `event_key_prev`, `event_key_prev_until`, `event_key_version`, `local_enforced` | `LocalKey` (2.3): the previous key and the end of its grace (epoch ms) after a rotation, the app version the current key was made under, and the switch for refusing the raw key (read only while `LocalKey.ENFORCE` is true; nothing writes it yet). |
 | `hermes` → `termux_ok` | Termux has accepted one of the app's commands; gates every automatic `RUN_COMMAND`. |
 | `hermes` → `plugin_state`, `plugin_detail`, `plugin_installed`, `plugin_at`, `plugin_checked_at`, `plugin_checked_version`, `plugin_try_at`, `plugin_tries_<stamp>` | The plugin update (6.6): the last state the script reported and why, the installed stamp, when it was checked (and for which app version), the last update try, failed tries per APK version. |
 | `hermes` → `setup_token` | The installer's progress token while an install runs. |

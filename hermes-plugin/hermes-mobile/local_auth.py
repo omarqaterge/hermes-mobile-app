@@ -1,7 +1,8 @@
 """Local authentication (hermux-local-v1): verify the local server before sending it anything private, and the server
 halves that let the plugin's own servers (the dashboard guard, the cron ticker) prove themselves.
 
-A client sends ``GET /hermux/hello?v=1&nc=<nonce>``; the server answers with JSON naming its role, key id (``kid``), its own
+A client sends ``GET /hermux/hello?v=1&nc=<nonce>&kid=<its key id>`` (the ``kid`` hint is optional and not secret: a
+server in a key rotation's grace then proves with the accepted key it names, else with its current key); the server answers with JSON naming its role, key id (``kid``), its own
 nonce (``ns``), the address it listens on (``addr``) and a ``proof``: an HMAC-SHA256 under the shared key over the client's
 nonce. Only when every check passes does the client send its one request, on the same connection, with the header
 ``X-Hermux-Auth: 1 <kid> <ns> <mac>``. Any failure raises ``Unverified(why)`` with one reason from ``REASONS`` and nothing
@@ -97,6 +98,68 @@ def is_addr(s) -> bool:
 
 def addr(port: int) -> str:
     return f"{HOST}:{port}"
+
+
+def hint(k):
+    """A hello's ``kid`` hint, or None: anything but exactly 8 lowercase hex characters counts as absent."""
+    return k if is_kid(k) else None
+
+
+def hello_target(nc: str, kid_: str | None = None) -> str:
+    """The hello's request target: ``/hermux/hello?v=1&nc=<nc>``, plus ``&kid=<kid>`` for a hint."""
+    return f"/hermux/hello?v=1&nc={nc}" + (f"&kid={kid_}" if hint(kid_) else "")
+
+
+def hello_args(query):
+    """The arguments of a hello's query ``v=<n>&nc=<nonce>[&kid=<kid>]`` (any order, each at most once, nothing else):
+    ``(nc, kid)`` with ``kid`` None when absent or malformed (``hint``); None for anything else."""
+    if isinstance(query, bytes):
+        try:
+            query = query.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+    if not isinstance(query, str):
+        return None
+    seen = {}
+    for part in query.split("&"):
+        k, sep, v = part.partition("=")
+        if not sep or k not in ("v", "nc", "kid") or k in seen:
+            return None
+        seen[k] = v
+    if "v" not in seen or "nc" not in seen or not is_version(seen["v"]) or not is_nonce(seen["nc"]):
+        return None
+    return seen["nc"], hint(seen.get("kid"))
+
+
+def hello_line(line):
+    """The ticker's hello line ``HELLO <n> <nc>[ <kid>]`` (without its newline) as ``(nc, kid)``, ``kid`` None when
+    absent or malformed; None for anything else."""
+    if isinstance(line, bytes):
+        try:
+            line = line.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+    if not isinstance(line, str):
+        return None
+    parts = line.split(" ")
+    if len(parts) not in (3, 4) or parts[0] != "HELLO" or not is_version(parts[1]) or not is_nonce(parts[2]):
+        return None
+    return parts[2], hint(parts[3] if len(parts) == 4 else None)
+
+
+def hello_key(keys, hint_):
+    """The key a hello proves with: the accepted key (``keys``, the current one first) whose id the client's hint names,
+    else the current key, so a client with an unknown key sees ``unknown_kid`` as without a hint."""
+    h = hint(hint_)
+    found = None
+    if h is not None:
+        for k in keys:
+            try:
+                if same(kid(k), h) and found is None:
+                    found = k
+            except ValueError:
+                continue
+    return found if found is not None else keys[0]
 
 
 def nonce() -> str:
@@ -385,7 +448,7 @@ def session(role: str, port: int, key: str, timeout: float = 3) -> Session:
             conn.connect()
             conn.auto_open = 0  # a closed socket must never be replaced by a new connection behind our back
             conn.send_deadline = deadline  # the send, within the hello deadline
-            conn.request("GET", f"/hermux/hello?v=1&nc={nc}", headers={"Connection": "keep-alive"})
+            conn.request("GET", hello_target(nc, want_kid), headers={"Connection": "keep-alive"})
         except OSError:
             raise Unverified("no_answer") from None
         wire = _Wire(conn.sock, MAX_HELLO, deadline, timeout)
@@ -699,7 +762,7 @@ class _Lines:
 def ticker_serve_one(conn, key: str, server: str, legacy: bool = True) -> str:
     """One connection to the cron ticker's poke listener. The line protocol (each line ends in a newline):
 
-        C: HELLO 1 <nc>
+        C: HELLO 1 <nc> [<kid>]   (the kid hint: the server proves with that key if it is accepted, else its own)
         S: HERMUX 1 ticker <kid> <ns> <addr> <proof>
         C: POKE 1 <mac>          (the client MAC with what ``POKE`` and no body)
 
@@ -709,15 +772,11 @@ def ticker_serve_one(conn, key: str, server: str, legacy: bool = True) -> str:
     lines = _Lines(conn, time.monotonic() + LINE_DEADLINE_S)
     first, complete = lines.next()
     if first.startswith(b"HELLO "):
-        parts = first.split(b" ")
-        if not complete or len(parts) != 3:
+        args = hello_line(first) if complete else None
+        if args is None:
             return ""
-        try:
-            ver, nc = parts[1].decode("ascii"), parts[2].decode("ascii")
-        except UnicodeDecodeError:
-            return ""
-        if not is_version(ver) or not is_nonce(nc):
-            return ""
+        nc, hint_ = args
+        key = hello_key([key], hint_)  # one key here: a hint for any other is ignored
         try:
             ns, j = hello_answer(key, "ticker", server, nc)
         except ValueError:

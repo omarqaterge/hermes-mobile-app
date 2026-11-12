@@ -56,6 +56,12 @@ echo "java-check: local auth test $(tail -1 "$OUT/localauth.txt")"
 # The server half of local authentication (LocalServer.java, used by BgHost) on a plain JDK with loopback sockets.
 ../tools/test_local_server.sh > "$OUT/localserver.txt" 2>&1 || { grep -v '^PASS' "$OUT/localserver.txt"; echo "java-check: local server test FAILED"; exit 1; }
 echo "java-check: local server test $(tail -1 "$OUT/localserver.txt")"
+# The owner of the shared key (LocalKey.java): grace, rotation, confirm, the key file command run by sh.
+../tools/test_local_key.sh > "$OUT/localkey.txt" 2>&1 || { grep -v '^PASS' "$OUT/localkey.txt"; echo "java-check: local key test FAILED"; exit 1; }
+echo "java-check: local key test $(tail -1 "$OUT/localkey.txt")"
+# The app's own listener on 9121 (EventsListener.java): the hello and signed requests, the raw key, bounds, the bind retry plan.
+../tools/test_events_listener.sh > "$OUT/eventslistener.txt" 2>&1 || { grep -v '^PASS' "$OUT/eventslistener.txt"; echo "java-check: events listener test FAILED"; exit 1; }
+echo "java-check: events listener test $(tail -1 "$OUT/eventslistener.txt")"
 # The app's record of chats that asked to read phone data (PhoneDataChats.java) on a plain JDK.
 ../tools/test_phone_data_chats.sh > "$OUT/pdchats.txt" 2>&1 || { grep -v '^PASS' "$OUT/pdchats.txt"; echo "java-check: phone data chats test FAILED"; exit 1; }
 echo "java-check: phone data chats test $(tail -1 "$OUT/pdchats.txt")"

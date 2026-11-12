@@ -1,5 +1,5 @@
 {
-  "comment": "Shared test vectors for local authentication (hermux-local-v1). The expected kid, sha256 and MAC values were computed with a separate implementation (plain Python hmac and hashlib, written apart from local_auth.py and LocalAuth.java), so both are checked against a third source. 'rejected' entries take the first 'macs' entry, set one field and expect mac() to refuse it. Read by tools/test_local_auth.sh and tools/test_local_auth.py.",
+  "comment": "Shared test vectors for local authentication (hermux-local-v1). The expected kid, sha256 and MAC values were computed with a separate implementation (plain Python hmac and hashlib, written apart from local_auth.py and LocalAuth.java), so both are checked against a third source. 'rejected' entries take the first 'macs' entry, set one field and expect mac() to refuse it. The hello's kid hint (hint_comment) is checked the same way. Read by tools/test_local_auth.sh, tools/test_local_auth.py and tools/test_hm_local.sh.",
   "version": "hermux-local-v1",
   "empty_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
@@ -871,6 +871,199 @@
       "proof": "good",
       "answer": "",
       "expect": "error no answer"
+    }
+  ],
+  "hint_comment": "The hello's optional kid hint. hello_hint: what a client holding 'key' sends for the client nonce 'nc' (target: the HTTP request target; line: the ticker's first line, without its newline). hint_cases: a server whose accepted keys are 'key' (current) and 'other_key' (the previous key within its grace) gets the hello with this kid hint (null: none); 'proves' names the key its proof is under (a hint that is not exactly 8 lowercase hex characters counts as absent; an unknown kid gets the current key, so that client sees unknown_kid). hello_queries and hello_lines: how a server parses the hello's query and the ticker's line; expect null means refused (400 on HTTP, nothing on the ticker), else the client nonce and the hint as kept (null when absent or malformed). Nothing is percent-decoded: an encoded kid is malformed.",
+  "hello_hint": {
+    "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+    "nc": "00112233445566778899aabbccddeeff",
+    "target": "/hermux/hello?v=1&nc=00112233445566778899aabbccddeeff&kid=e35ef1e9",
+    "line": "HELLO 1 00112233445566778899aabbccddeeff e35ef1e9"
+  },
+  "hint_cases": [
+    {
+      "name": "no hint",
+      "kid": null,
+      "proves": "key"
+    },
+    {
+      "name": "the current key's kid",
+      "kid": "e35ef1e9",
+      "proves": "key"
+    },
+    {
+      "name": "the previous key's kid, within its grace",
+      "kid": "0d5a0d3d",
+      "proves": "other_key"
+    },
+    {
+      "name": "an unknown kid",
+      "kid": "00000000",
+      "proves": "key"
+    },
+    {
+      "name": "an upper-case kid (malformed: absent)",
+      "kid": "0D5A0D3D",
+      "proves": "key"
+    },
+    {
+      "name": "a kid one character short (malformed)",
+      "kid": "0d5a0d3",
+      "proves": "key"
+    },
+    {
+      "name": "a kid one character long (malformed)",
+      "kid": "0d5a0d3d0",
+      "proves": "key"
+    },
+    {
+      "name": "an empty kid (malformed)",
+      "kid": "",
+      "proves": "key"
+    },
+    {
+      "name": "a kid with a letter past f (malformed)",
+      "kid": "0d5a0d3g",
+      "proves": "key"
+    },
+    {
+      "name": "a percent-encoded kid (malformed: never decoded)",
+      "kid": "%30d5a0d3d",
+      "proves": "key"
+    },
+    {
+      "name": "a kid with its last character percent-encoded (malformed)",
+      "kid": "0d5a0d3%64",
+      "proves": "key"
+    }
+  ],
+  "hello_queries": [
+    {
+      "name": "no hint",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": null
+      }
+    },
+    {
+      "name": "a hint",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff&kid=0d5a0d3d",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": "0d5a0d3d"
+      }
+    },
+    {
+      "name": "the hint first",
+      "query": "kid=0d5a0d3d&v=1&nc=00112233445566778899aabbccddeeff",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": "0d5a0d3d"
+      }
+    },
+    {
+      "name": "a malformed hint counts as absent",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff&kid=XYZ",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": null
+      }
+    },
+    {
+      "name": "an empty hint counts as absent",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff&kid=",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": null
+      }
+    },
+    {
+      "name": "the hint twice",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff&kid=0d5a0d3d&kid=0d5a0d3d",
+      "expect": null
+    },
+    {
+      "name": "kid without =",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff&kid",
+      "expect": null
+    },
+    {
+      "name": "another argument",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff&x=1",
+      "expect": null
+    },
+    {
+      "name": "no nonce",
+      "query": "v=1&kid=0d5a0d3d",
+      "expect": null
+    },
+    {
+      "name": "version 0",
+      "query": "v=0&nc=00112233445566778899aabbccddeeff&kid=0d5a0d3d",
+      "expect": null
+    },
+    {
+      "name": "a percent-encoded hint counts as absent",
+      "query": "v=1&nc=00112233445566778899aabbccddeeff&kid=%30d5a0d3d",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": null
+      }
+    }
+  ],
+  "hello_lines": [
+    {
+      "name": "no hint",
+      "line": "HELLO 1 00112233445566778899aabbccddeeff",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": null
+      }
+    },
+    {
+      "name": "a hint",
+      "line": "HELLO 1 00112233445566778899aabbccddeeff 0d5a0d3d",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": "0d5a0d3d"
+      }
+    },
+    {
+      "name": "a malformed hint counts as absent",
+      "line": "HELLO 1 00112233445566778899aabbccddeeff x",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": null
+      }
+    },
+    {
+      "name": "two fields after the nonce",
+      "line": "HELLO 1 00112233445566778899aabbccddeeff 0d5a0d3d x",
+      "expect": null
+    },
+    {
+      "name": "version 0",
+      "line": "HELLO 0 00112233445566778899aabbccddeeff 0d5a0d3d",
+      "expect": null
+    },
+    {
+      "name": "an upper-case nonce",
+      "line": "HELLO 1 00112233445566778899AABBCCDDEEFF 0d5a0d3d",
+      "expect": null
+    },
+    {
+      "name": "two spaces",
+      "line": "HELLO 1  00112233445566778899aabbccddeeff",
+      "expect": null
+    },
+    {
+      "name": "a percent-encoded hint counts as absent",
+      "line": "HELLO 1 00112233445566778899aabbccddeeff %30d5a0d3d",
+      "expect": {
+        "nc": "00112233445566778899aabbccddeeff",
+        "kid": null
+      }
     }
   ]
 }

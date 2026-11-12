@@ -91,10 +91,11 @@ def lines_of(c):
     return buf, True
 
 
-def hello(c, nc=None, key=KEY):
-    """Say hello; returns (ns, the server's line, verified) where verified checks the proof as the app will."""
+def hello(c, nc=None, key=KEY, hint=None):
+    """Say hello (with an optional kid hint); returns (ns, the server's line, verified) where verified checks the proof
+    as the app will."""
     nc = nc or la.nonce()
-    c.sendall(f"HELLO 1 {nc}\n".encode())
+    c.sendall((f"HELLO 1 {nc}" + (f" {hint}" if hint is not None else "") + "\n").encode())
     line, complete = lines_of(c)
     parts = line.decode().rstrip("\n").split(" ")
     ok = (complete and len(parts) == 7 and parts[:3] == ["HERMUX", "1", "ticker"] and parts[3] == la.kid(key)
@@ -148,7 +149,7 @@ with socket.create_connection(("127.0.0.1", port), 2) as c:
 check("a POKE without a hello does not", not poked())
 
 for name, text in (("an upper-case nonce", f"HELLO 1 {la.nonce().upper()}\n"), ("a short nonce", "HELLO 1 0011\n"),
-                   ("version 0", f"HELLO 0 {la.nonce()}\n"), ("an extra field", f"HELLO 1 {la.nonce()} x\n"),
+                   ("version 0", f"HELLO 0 {la.nonce()}\n"), ("two fields after the nonce", f"HELLO 1 {la.nonce()} {la.kid(KEY)} x\n"),
                    ("a line far too long", "HELLO 1 " + "0" * 400 + "\n")):
     with socket.create_connection(("127.0.0.1", port), 2) as c:
         c.sendall(text.encode())
@@ -159,6 +160,14 @@ for name, text in (("an upper-case nonce", f"HELLO 1 {la.nonce().upper()}\n"), (
             got = b""
     check(f"no answer to a hello with {name}", got == b"", got)
 check("... and no poke", not poked())
+
+print("the kid hint")
+for name, h in (("its own kid", la.kid(KEY)), ("another key's kid (it has one key: ignored)", la.kid(OTHER)),
+                ("a malformed hint (absent)", "x"), ("an upper-case hint (absent)", la.kid(KEY).upper())):
+    with socket.create_connection(("127.0.0.1", port), 2) as c:
+        ns, line, ok, nc = hello(c, hint=h)
+        c.sendall(poke_line(nc, ns))
+    check(f"a hello with {name}: the proof is under its key, and the POKE works", ok and poked(), line)
 
 print("the raw key (the protocol before this one)")
 with socket.create_connection(("127.0.0.1", port), 2) as c:

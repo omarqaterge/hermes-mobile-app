@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * The client half of local authentication over HTTP ({@link LocalAuth}): verify the local server, then send it one
  * request on the same connection. {@link #open} dials {@code 127.0.0.1:<port>}, sends
- * {@code GET /hermux/hello?v=1&nc=<nonce>} and checks the answer (status 200, at most {@link #MAX_HELLO} bytes, JSON with
+ * {@code GET /hermux/hello?v=1&nc=<nonce>} (plus {@code &kid=<kid>} when the {@link KeySet} gives a hint) and checks the answer (status 200, at most {@link #MAX_HELLO} bytes, JSON with
  * {@code hermux} at least {@link #MIN_VERSION}, the expected {@code role}, {@code addr} equal to the address dialled, a
  * {@code kid} the {@link KeySet} knows, a well-formed {@code ns}, and a {@code proof} equal to the server MAC over the
  * client's nonce). Only then does {@link Session#request} send anything, on that same socket, with the header
@@ -69,7 +69,11 @@ final class LocalClient {
             "no_answer", "no_hello", "old_version", "bad_addr", "unknown_kid", "bad_proof", "refused"));
 
     /** The keys a client may use, by key id; null for an id it does not know. */
-    interface KeySet { String byKid(String kid); }
+    interface KeySet {
+        String byKid(String kid);
+        /** The key id the hello names as a hint (the current key of a set with several), or null for none. */
+        default String hint() { return null; }
+    }
 
     /** The server was not verified (or refused our request). The message is the reason code and nothing else. */
     static final class Unverified extends IOException {
@@ -111,12 +115,18 @@ final class LocalClient {
     private static Session hello(Socket s, String role, int port, KeySet keys, long deadline) throws Unverified {
         String addr = LocalAuth.addr(port);
         String nc = LocalAuth.nonce();
+        String target;
+        try {
+            target = LocalAuth.helloTarget(nc, keys.hint()); // the hint names our key, so a server in a rotation's grace can prove with it
+        } catch (RuntimeException e) {
+            throw new Unverified("no_answer"); // no usable key to name (not saved, say): nothing is sent, not even a connect
+        }
         Wire w;
         try {
             s.setTcpNoDelay(true);
             s.connect(new InetSocketAddress(InetAddress.getByAddress(new byte[] {127, 0, 0, 1}), port), CONNECT_MS);
             w = new Wire(s);
-            writeBounded(s, ("GET /hermux/hello?v=1&nc=" + nc + " HTTP/1.1\r\nHost: " + addr
+            writeBounded(s, ("GET " + target + " HTTP/1.1\r\nHost: " + addr
                     + "\r\nConnection: keep-alive\r\n\r\n").getBytes(StandardCharsets.US_ASCII), null, deadline);
         } catch (IOException e) {
             throw new Unverified("no_answer");

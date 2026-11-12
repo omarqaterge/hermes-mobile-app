@@ -21,25 +21,25 @@ import android.os.PowerManager;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 
 /**
  * Keeps Hermes's pinned status notification ("Running `ls`", "Thinking…", "Ready") and posts
  * every Hermes notification with the app's own icon. The hermes-mobile plugin inside Hermes
  * POSTs events to 127.0.0.1:9121/event with the shared key (written to Termux's
- * ~/.hermes-mobile/key). Loopback only: other devices can't reach it.
+ * ~/.hermes-mobile/key), or after verifying this listener with local authentication
+ * (EventsListener). Loopback only: other devices can't reach it.
  */
 public class HermesService extends Service {
     static final int PORT = 9121;
     static final int STATUS_ID = 1;
     static final int SHIZUKU_ID = 9;
+    /** "Hermux can't hear from Hermes": the listener could not open its port. */
+    static final int LOCAL_ALERT_ID = 12;
     static final String CH_PHONE = "phone", SHIZUKU_PKG = "moe.shizuku.privileged.api";
     static final String CH_STATUS = "status", CH_IDLE = "idle", CH_ALERT = "needs_you", CH_REPLY = "replies",
             CH_LEARN = "learning2", CH_JOBS = "jobs2"; // v2 ids: the first ones badged the icon and a channel's badge flag can't change
@@ -47,7 +47,6 @@ public class HermesService extends Service {
     static volatile boolean running = false;
     static volatile HermesService instance;
     ServerSocket server;
-    String key;
     String lastStatus = "Ready";
     String lastShort = "";
     String lastSession = null;
@@ -234,13 +233,17 @@ public class HermesService extends Service {
         HermuxApp.log(this).event("service", "app_service_start");
         DevTools.recheck(this); // a restarted process has remote debugging off: drop a notification the old one left
         loadUnseen();
-        key = ensureKey();
+        try {
+            ensureKey();
+        } catch (LocalKey.NotSaved e) {
+            // storage refused the new key: nothing uses one until a later call saves it
+        }
         // The typed call is API 29 and the special-use type API 34; older Android uses the manifest's type.
         if (Build.VERSION.SDK_INT >= 34) startForeground(STATUS_ID, statusNotification("Ready", null, false), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(STATUS_ID, statusNotification("Ready", null, false));
         running = true;
         instance = this;
-        new Thread(this::serve, "hermes-events").start();
+        listen();
         rearmWake();
         ShizukuKeeper.armCheck(this); // once, 90 s of real time: after a reboot Shizuku doesn't start by itself, so no binder arrives
         main.postDelayed(updateCheck, 120_000);
@@ -352,7 +355,7 @@ public class HermesService extends Service {
     // Upper bound only: the alarm pokes the ticker (it ticks at once) and the ticker reports cron_idle once no job
     // is running, which ends the hold early; an agent job's status beats keep the phone awake after that.
     static final long CRON_WAKE_MS = 150_000;
-    static final int TICKER_PORT = 9122; // phone/cron_ticker.py's poke listener
+    static final int TICKER_PORT = 9122; // the poke listener of cron_ticker.py (in the plugin folder)
     PowerManager.WakeLock wakeLock;
     long alarmAwakeUntil = 0, heldUntil = 0, alarmAt = 0, alarmFor = 0;
 
@@ -380,7 +383,7 @@ public class HermesService extends Service {
             try (Socket s = new Socket()) {
                 s.connect(new java.net.InetSocketAddress("127.0.0.1", TICKER_PORT), 1000);
                 OutputStream out = s.getOutputStream();
-                out.write((key + "\n").getBytes(StandardCharsets.UTF_8));
+                out.write((ensureKey() + "\n").getBytes(StandardCharsets.UTF_8));
                 out.flush();
             } catch (Exception ignored) {
                 // an older ticker without the listener: the job starts on its next tick (≤ 60 s)
@@ -449,10 +452,16 @@ public class HermesService extends Service {
         instance = null;
         ShizukuKeeper.stop(); // also removes the 90 s check
         main.removeCallbacks(updateCheck);
+        main.removeCallbacks(retryBind);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         try {
             if (server != null) server.close();
+        } catch (Exception ignored) {
+        }
+        listening = false;
+        try {
+            getSystemService(NotificationManager.class).cancel(LOCAL_ALERT_ID); // this run's state; the next run decides again
         } catch (Exception ignored) {
         }
         super.onDestroy();
@@ -494,18 +503,37 @@ public class HermesService extends Service {
     }
 
     // ── key shared with the plugin ──────────────────────────
-    String ensureKey() {
-        SharedPreferences p = getSharedPreferences("hermes", MODE_PRIVATE);
-        String k = p.getString("event_key", null);
-        if (k == null) {
-            byte[] b = new byte[24];
-            new SecureRandom().nextBytes(b);
-            StringBuilder sb = new StringBuilder();
-            for (byte x : b) sb.append(String.format("%02x", x));
-            k = sb.toString();
-            p.edit().putString("event_key", k).apply();
+    private static LocalKey keys;
+
+    /** The one owner of the shared key (LocalKey) over the "hermes" preferences, for the service and MainActivity. */
+    static synchronized LocalKey keys(Context c) {
+        if (keys == null) {
+            Context app = c.getApplicationContext() != null ? c.getApplicationContext() : c;
+            final SharedPreferences p = app.getSharedPreferences("hermes", MODE_PRIVATE);
+            keys = new LocalKey(new LocalKey.Store() {
+                @Override public String getString(String name) { return p.getString(name, null); }
+                @Override public long getLong(String name) { return p.getLong(name, 0); }
+                @Override public boolean getBoolean(String name) { return p.getBoolean(name, false); }
+                @Override public Object get(String name) { return p.getAll().get(name); }
+                @Override public boolean save(java.util.Map<String, Object> changes) {
+                    SharedPreferences.Editor e = p.edit();
+                    for (java.util.Map.Entry<String, Object> en : changes.entrySet()) {
+                        Object v = en.getValue();
+                        if (v == null) e.remove(en.getKey());
+                        else if (v instanceof Long) e.putLong(en.getKey(), (Long) v);
+                        else if (v instanceof Boolean) e.putBoolean(en.getKey(), (Boolean) v);
+                        else e.putString(en.getKey(), v.toString());
+                    }
+                    return e.commit(); // rare (a new key, a rotation, a grace cut): written before anyone is told
+                }
+            }, System::currentTimeMillis, PluginSync.versionCode(app));
         }
-        return k;
+        return keys;
+    }
+
+    /** The current key (made once, 24 random bytes as hex): LocalKey.current. */
+    String ensureKey() {
+        return keys(this).current();
     }
 
     boolean keyShared = false;
@@ -594,28 +622,108 @@ public class HermesService extends Service {
     void shareKeyWithTermux() {
         if (Uninstall.started(this)) return; // Settings → Uninstall Hermux: nothing more goes into Termux
         if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return;
-        keyShared = true;
-        try {
+        // Shared only once the key is saved and the command handed over (LocalKey.share); otherwise keyShared stays false
+        // and the next trigger tries again. The key goes to a temporary file moved over the old one (LocalKey.shareCommand).
+        keyShared = keys(this).share(cmd -> {
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");
             i.setAction("com.termux.RUN_COMMAND");
             i.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/sh");
-            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c",
-                    "mkdir -p ~/.hermes-mobile && umask 077 && printf %s " + key + " > ~/.hermes-mobile/key"});
+            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", cmd});
             i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
             startForegroundService(i);
-        } catch (Exception ignored) {
-        }
+        });
     }
 
     // ── loopback event listener ─────────────────────────────
     /** The longest one connection may hold the listener thread, whatever it sends (see serve). */
     static final long REQUEST_DEADLINE_MS = 10_000;
+    /** The listener's socket in this process, whichever service instance opened it (so a newer one can close it). */
+    static ServerSocket listener;
+    /** This instance's accept loop holds the port. */
+    volatile boolean listening = false;
+    private final java.util.concurrent.atomic.AtomicBoolean binding = new java.util.concurrent.atomic.AtomicBoolean();
+    // Main thread only: the run of failed tries to open the port (EventsListener decides when the next one comes).
+    private final EventsListener.Retry retry = new EventsListener.Retry();
+    private long lastNudgeAt = -1;
+    private boolean localAlert = false;
+    // Listener thread only: the diagnostic events below are rate-limited.
+    private long legacyNotedAt = -1, refusedNotedAt = -1;
+    private final Runnable retryBind = this::listen;
+
+    /** Opens the port on a thread of its own, unless it is open or a try is under way. */
+    void listen() {
+        if (instance != this || listening || !binding.compareAndSet(false, true)) return;
+        new Thread(this::serve, "hermes-events").start();
+    }
+
+    /** MainActivity.onResume, StartReceiver, BootReceiver: try to open the port now if it isn't open (at most every 10 s). */
+    static void ensureListening() {
+        HermesService s = instance;
+        if (s != null) s.main.post(s::nudge);
+    }
+
+    private void nudge() {
+        if (instance != this || listening) return;
+        if (localAlert) pushLocalAlert(true); // a page that loaded since then gets the alert too
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (!EventsListener.every(lastNudgeAt, now, EventsListener.NUDGE_MS)) return;
+        lastNudgeAt = now;
+        listen();
+    }
+
+    private static ServerSocket bindEvents() throws java.io.IOException {
+        return new ServerSocket(PORT, 16, InetAddress.getByName("127.0.0.1"));
+    }
+
+    /** Whether whatever holds the port proves it has our key (then it is a listener of ours left open). Sends only a hello. */
+    private boolean selfHello() {
+        try (LocalClient.Session ignored = LocalClient.open(EventsListener.ROLE, PORT, keys(this))) {
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     void serve() {
+        ServerSocket ss;
         try {
-            server = new ServerSocket(PORT, 16, InetAddress.getByName("127.0.0.1"));
+            try {
+                ss = bindEvents();
+            } catch (java.net.BindException e) {
+                if (!selfHello()) throw e;
+                // Our own listener, left open by an earlier start in this process: close it and take the port at once,
+                // but only while this instance is the live one (a destroyed one must never close the live listener).
+                ServerSocket stale;
+                synchronized (HermesService.class) {
+                    if (!current()) throw e;
+                    stale = listener;
+                    listener = null;
+                }
+                HermuxApp.log(this).event("local", "port_taken", "port", "events", "why", "self");
+                if (stale != null) try { stale.close(); } catch (Exception ignored) { }
+                ss = bindEvents();
+            }
+        } catch (Exception e) {
+            // `binding` stays set until bindFailed has run, so a nudge in between can't start a second try.
+            main.post(this::bindFailedThenFree);
+            return;
+        }
+        synchronized (HermesService.class) {
+            if (!current()) { // destroyed while binding: let the live instance have the port
+                try { ss.close(); } catch (Exception ignored) { }
+                binding.set(false);
+                return;
+            }
+            listener = ss;
+        }
+        server = ss;
+        listening = true;
+        binding.set(false);
+        main.post(this::bindOk);
+        try {
             while (running) {
-                Socket s = server.accept();
+                Socket s = ss.accept();
                 boolean handedOff = false;
                 // Each read waits at most 3 s, but a client that trickles a byte at a time (even a first line with no
                 // newline) would keep this one thread for ever: the whole request, read and answered, gets 10 s, then
@@ -633,84 +741,153 @@ public class HermesService extends Service {
                 }
             }
         } catch (Exception e) {
-            running = false;
+            // closed by onDestroy or by a newer listener of ours, or the port was lost
+        } finally {
+            try { ss.close(); } catch (Exception ignored) { }
+            synchronized (HermesService.class) { if (listener == ss) listener = null; }
+            if (server == ss) {
+                listening = false;
+                // lost while running: open it again (one try at a time)
+                if (current() && binding.compareAndSet(false, true)) main.post(this::bindFailedThenFree);
+            }
         }
+    }
+
+    /** This instance is the live service. */
+    private boolean current() {
+        return running && instance == this;
+    }
+
+    private void bindFailedThenFree() {
+        try {
+            bindFailed();
+        } finally {
+            binding.set(false);
+        }
+    }
+
+    /** The port could not be opened (main thread): the alert, and the next try as EventsListener says (no wake lock). */
+    private void bindFailed() {
+        if (instance != this || listening) return;
+        long d = retry.failed(android.os.SystemClock.elapsedRealtime()); // -1 once given up: a nudge's one try, nothing scheduled
+        if (retry.started) HermuxApp.log(this).event("local", "port_taken", "port", "events");
+        // From the second failure in a row: a port that frees itself within a second (a restart) is no reason to alert.
+        if (retry.failures >= 2) showLocalAlert(true);
+        main.removeCallbacks(retryBind);
+        if (d >= 0) main.postDelayed(retryBind, d);
+    }
+
+    /** The port is open (main thread). The run of failures is kept for its hour, so a port lost again soon backs off. */
+    private void bindOk() {
+        if (instance != this) return;
+        main.removeCallbacks(retryBind);
+        retry.opened();
+        showLocalAlert(false);
+    }
+
+    /** "Hermux can't hear from Hermes" while the port is not open: a notification and the page's banner. */
+    private void showLocalAlert(boolean on) {
+        if (on == localAlert) return;
+        localAlert = on;
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (on) nm.notify(LOCAL_ALERT_ID, localAlertNotification());
+            else nm.cancel(LOCAL_ALERT_ID);
+        } catch (Exception ignored) {
+            // notifications not allowed: the page still shows it
+        }
+        pushLocalAlert(on);
+    }
+
+    private static void pushLocalAlert(boolean on) {
+        MainActivity a = MainActivity.current;
+        if (a != null) a.pushLocalAlert(on);
+    }
+
+    private Notification localAlertNotification() {
+        String text = "Another app on this phone is using the connection Hermux listens on. Restart the phone to fix it.";
+        Notification.Builder b = new Notification.Builder(this, CH_ALERT)
+                .setSmallIcon(R.drawable.ic_stat_hermes)
+                .setContentTitle("Hermux can't hear from Hermes")
+                .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text))
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(true);
+        Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (open != null)
+            b.setContentIntent(PendingIntent.getActivity(this, LOCAL_ALERT_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        return b.build();
+    }
+
+    /** A request came in with the raw key: recorded at most once an hour. */
+    private void noteLegacyKey() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (!EventsListener.every(legacyNotedAt, now, 3_600_000L)) return;
+        legacyNotedAt = now;
+        HermuxApp.log(this).event("local", "legacy_key", "port", "events");
+    }
+
+    /** A request after a hello had a missing or wrong MAC (answered 403): recorded at most once a minute. */
+    private void noteRefused() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (!EventsListener.every(refusedNotedAt, now, 60_000L)) return;
+        refusedNotedAt = now;
+        HermuxApp.log(this).event("local", "refused", "port", "events", "side", "app");
     }
 
     /** True when the socket now belongs to another thread (a /phonedata read), which closes it. */
     boolean handle(Socket s) throws Exception {
-        BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
-        String line = in.readLine();
-        // POST /setup = the installer's progress (its own one-time token, see SetupLines); everything else is an event.
-        boolean setupReq = line != null && line.startsWith("POST /setup ");
-        // POST /phonedata = the agent's phone-data read (PhoneDataRoute): the /event key, always a JSON answer.
-        boolean phoneReq = line != null && line.startsWith("POST /phonedata ");
-        // A /phonedata request must arrive within PhoneDataRoute.READ_DEADLINE_MS in total (each read waits at most
-        // PhoneDataRoute.READ_TIMEOUT_MS), so a client that trickles bytes can't hold the thread that takes /event.
-        final long phoneDeadline = System.nanoTime() + PhoneDataRoute.READ_DEADLINE_MS * 1_000_000L;
-        if (phoneReq) s.setSoTimeout(PhoneDataRoute.READ_TIMEOUT_MS);
-        // GET /plugin-bundle/<token> = phone/plugin-update.sh fetching this APK's plugin (PluginSync, one-time token).
-        String bundleToken = line != null && line.startsWith("GET /plugin-bundle/") && line.endsWith(" HTTP/1.1")
-                ? line.substring(19, line.length() - 9) : null;
-        int len = 0;
-        String gotKey = "";
-        int headers = 0;
-        while ((line = in.readLine()) != null && !line.isEmpty()) {
-            if (++headers > 40 || line.length() > 2048) throw new java.io.IOException("bad request");
-            if (phoneReq && System.nanoTime() > phoneDeadline) throw new java.io.IOException("slow request");
-            String l = line.toLowerCase();
-            if (l.startsWith("content-length:")) len = Integer.parseInt(line.substring(15).trim());
-            if (l.startsWith("x-hermes-mobile-key:")) gotKey = line.substring(20).trim();
+        // EventsListener reads it (LocalServer, role events): the hello and one signed request, or the raw key header.
+        EventsListener.Request r;
+        try {
+            r = EventsListener.read(s, keys(this), PhoneDataRoute.fail("forbidden"), PhoneDataRoute.fail("bad_request"));
+        } catch (LocalServer.Refused e) {
+            if ("refused".equals(e.why)) noteRefused();
+            return false; // its answer is written
         }
-        if (phoneReq) {
-            boolean keyOk = java.security.MessageDigest.isEqual(key.getBytes(StandardCharsets.UTF_8), gotKey.getBytes(StandardCharsets.UTF_8));
-            if (!keyOk) return phoneDataReply(s, "HTTP/1.1 403 Forbidden", PhoneDataRoute.fail("forbidden"));
-            if (len < 0 || len > PhoneDataRoute.MAX_BODY) return phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.fail("bad_request"));
-        }
-        if (len < 0 || len > (setupReq ? 1024 : 256 * 1024)) throw new java.io.IOException("too large");
-        // Content-Length counts UTF-8 bytes, the reader gives chars: count bytes, or a non-ASCII body waits forever.
-        StringBuilder body = new StringBuilder();
-        int bytes = 0;
-        char[] buf = new char[4096];
-        while (bytes < len) {
-            if (phoneReq && System.nanoTime() > phoneDeadline) throw new java.io.IOException("slow request");
-            int r = in.read(buf, 0, Math.min(buf.length, len - bytes));
-            if (r < 0) break;
-            body.append(buf, 0, r);
-            for (int k = 0; k < r; k++) {
-                char c = buf[k];
-                bytes += c < 0x80 ? 1 : c < 0x800 ? 2 : Character.isSurrogate(c) ? 2 : 3;
+        if (r == null) return false; // nothing asked: a bare connect, or a hello whose client went away
+        if (r.auth() == LocalServer.Auth.MAC) keys(this).confirm(r.kid());
+        else if (r.auth() == LocalServer.Auth.RAW) noteLegacyKey();
+        OutputStream out = s.getOutputStream();
+        switch (EventsListener.verdict(r)) { // which routes need the key: EventsListener decides
+            case BUNDLE: {
+                // GET /plugin-bundle/<token> = phone/plugin-update.sh fetching this APK's plugin (PluginSync, one-time token).
+                byte[] b = PluginSync.bundleFor(this, r.bundleToken);
+                out.write((b != null ? "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\nContent-Length: " + b.length
+                        : "HTTP/1.1 403 Forbidden\r\nContent-Length: 0").concat("\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                if (b != null) out.write(b);
+                out.flush();
+                return false;
+            }
+            case SETUP: {
+                // POST /setup = the installer's progress (its own one-time token, see SetupLines).
+                int res = setupPost(r.text());
+                out.write((res == SetupLines.OK ? "HTTP/1.1 204 No Content\r\n" : res == SetupLines.BAD_TOKEN ? "HTTP/1.1 403 Forbidden\r\n" : "HTTP/1.1 400 Bad Request\r\n")
+                        .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                return false;
+            }
+            case PHONEDATA: {
+                // POST /phonedata = the agent's phone-data read (PhoneDataRoute), always a JSON answer. The read may take
+                // seconds (a location fix): not on this thread, which must keep taking /event.
+                final String reqBody = r.text();
+                if (PhoneDataRoute.submit(() -> phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.answer(this, reqBody)))) return true;
+                return phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.fail("failed"));
+            }
+            case NO_KEY: {
+                // Without the key (raw /phonedata without it was already answered before its body was read).
+                if (r.route == EventsListener.Route.PHONEDATA) return phoneDataReply(s, "HTTP/1.1 403 Forbidden", PhoneDataRoute.fail("forbidden"));
+                out.write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                return false;
+            }
+            default: { // EVENT, with the key
+                out.write("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                onEvent(new JSONObject(r.text()));
+                return false;
             }
         }
-        OutputStream out = s.getOutputStream();
-        if (bundleToken != null) {
-            byte[] b = PluginSync.bundleFor(this, bundleToken);
-            out.write((b != null ? "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\nContent-Length: " + b.length
-                    : "HTTP/1.1 403 Forbidden\r\nContent-Length: 0").concat("\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
-            if (b != null) out.write(b);
-            out.flush();
-            return false;
-        }
-        if (setupReq) {
-            int r = setupPost(body.toString());
-            out.write((r == SetupLines.OK ? "HTTP/1.1 204 No Content\r\n" : r == SetupLines.BAD_TOKEN ? "HTTP/1.1 403 Forbidden\r\n" : "HTTP/1.1 400 Bad Request\r\n")
-                    .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
-            out.flush();
-            return false;
-        }
-        if (phoneReq) {
-            // The read may take seconds (a location fix): not on this thread, which must keep taking /event.
-            final String reqBody = body.toString();
-            if (PhoneDataRoute.submit(() -> phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.answer(this, reqBody)))) return true;
-            return phoneDataReply(s, "HTTP/1.1 200 OK", PhoneDataRoute.fail("failed"));
-        }
-        boolean ok = java.security.MessageDigest.isEqual(
-                key.getBytes(StandardCharsets.UTF_8), gotKey.getBytes(StandardCharsets.UTF_8)); // constant time
-        out.write((ok ? "HTTP/1.1 204 No Content\r\n" : "HTTP/1.1 403 Forbidden\r\n")
-                .concat("Content-Length: 0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
-        out.flush();
-        if (ok) onEvent(new JSONObject(body.toString()));
-        return false;
     }
 
     /** Writes a /phonedata answer (JSON, nothing else) and closes the socket, on whichever thread this runs. Always
@@ -812,6 +989,12 @@ public class HermesService extends Service {
                 ShizukuKeeper.onEvent(this, e);
                 AdbPairing.onEvent(this, e); // the answer to a code typed into the Pairing notification
                 return;
+            case "local_port": { // a Termux-side server could (not) open its port: {port, state}; a diagnostic record only
+                String port = e.optString("port", ""), state = e.optString("state", "");
+                if (LocalAuth.ROLES.contains(port) && ("taken".equals(state) || "ok".equals(state)))
+                    HermuxApp.log(this).event("local", "taken".equals(state) ? "port_taken" : "port_ok", "port", port);
+                return;
+            }
             case "flash": {
                 if ((e.optBoolean("done", false) || e.optString("short", "").contains("Done")) && session != null && !session.isEmpty()) {
                     if (MainActivity.visible) return; // the app is on screen: its own unread dots show it, no sticky chip

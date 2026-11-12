@@ -48,7 +48,7 @@ hm, la = top(hm_path), top(la_path)
 # The client half: every name hm-local needs from local_auth.py. A name added to the client there must come here too.
 CLIENT = ("VERSION EMPTY_HASH DIRS ROLES NO_NONCE MIN_KEY MAX_WHAT REASONS HOST CONNECT_S HELLO_DEADLINE_S "
           "ANSWER_DEADLINE_S MAX_HELLO MAX_HEAD MAX_HEADERS MAX_ANSWER MAX_PATH MIN_VERSION _HEX _ADDR _WHAT _KEY _METHOD "
-          "_PATH _DIGITS _STATUS _HEADER Unverified _hex is_nonce is_kid is_addr addr nonce _key_text sha256hex kid mac "
+          "_PATH _DIGITS _STATUS _HEADER Unverified _hex is_nonce is_kid is_addr addr hint hello_target nonce _key_text sha256hex kid mac "
           "same _TooMuch _Malformed _Wire _Response _Connection Answer Session session TOKEN_PATH _TOKEN_TEXT "
           "_json_object dashboard_token").split()
 missing = [n for n in CLIENT if n not in hm or n not in la]
@@ -82,6 +82,11 @@ check("the token answer's proof vector, through hm-local's mac (the MAC itself, 
       len(tv) == 1 and h.mac(*(tv[0][f] for f in F)) == tv[0]["mac"] and tv[0]["what"] == "token"
       and tv[0]["hash"] == h.sha256hex(b"dashboard-session-token-0123456789"))
 check("same() on the not_same pairs", all(not h.same(p["a"], p["b"]) and h.same(p["a"], p["a"]) for p in V["not_same"]))
+hh = V["hello_hint"]
+check("the hello target names the key's kid as its hint (hello_hint vector)", h.hello_target(hh["nc"], h.kid(hh["key"])) == hh["target"])
+check("a malformed hint is left out of the target (hint_cases)",
+      all(h.hello_target(hh["nc"], c["kid"]) == hh["target"].split("&kid=")[0] for c in V["hint_cases"] if h.hint(c["kid"]) is None)
+      and all(h.hint(c["kid"]) == c["kid"] for c in V["hint_cases"] if c["kid"] in (V["kid"], V["other_kid"], "00000000")))
 sys.exit(1 if bad else 0)
 PY
 
@@ -130,8 +135,8 @@ def handle(c):
         c.sendall(b"SSH-2.0-OpenSSH_9.6\r\n")
         time.sleep(0.5)
         return
-    m = re.fullmatch(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32}) HTTP/1\.1", h1.split(b"\r\n")[0])
-    if not m:
+    m = re.fullmatch(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32})&kid=([0-9a-f]{8}) HTTP/1\.1", h1.split(b"\r\n")[0])
+    if not m or m.group(2).decode() != la.kid(KEY):  # the hello names the key file's kid as its hint
         return reply(c, "404 Not Found")
     nc, ns = m.group(1).decode(), la.nonce()
     k, kid, srole, saddr, ver = KEY, la.kid(KEY), role, ADDR, 1
@@ -300,7 +305,7 @@ def serve(play):
 def hello_play(case):
     def play(c, port):
         r = read_request(c)
-        nc = re.match(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32}) ", r[0]).group(1).decode()
+        nc = re.match(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32})&kid=[0-9a-f]{8} ", r[0]).group(1).decode()
         c.sendall(expand(case["answer"], hello_body(port, nc, case.get("set"))))
         if read_request(c) is not None:
             c.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -308,7 +313,7 @@ def hello_play(case):
 def answer_play(case):
     def play(c, port):
         r = read_request(c)
-        nc = re.match(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32}) ", r[0]).group(1).decode()
+        nc = re.match(rb"GET /hermux/hello\?v=1&nc=([0-9a-f]{32})&kid=[0-9a-f]{8} ", r[0]).group(1).decode()
         c.sendall(expand(GOOD, hello_body(port, nc)))
         if read_request(c) is not None:
             c.sendall(expand(case["answer"]))
