@@ -1,0 +1,706 @@
+{
+  "comment": "Shared test vectors for local authentication (hermux-local-v1). The expected kid, sha256 and MAC values were computed with a separate implementation (plain Python hmac and hashlib, written apart from local_auth.py and LocalAuth.java), so both are checked against a third source. 'rejected' entries take the first 'macs' entry, set one field and expect mac() to refuse it. Read by tools/test_local_auth.sh and tools/test_local_auth.py.",
+  "version": "hermux-local-v1",
+  "empty_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+  "kid": "e35ef1e9",
+  "other_key": "0b8e1c4f7a2d5e9036c1f8a4d7b2e6093c5a8f1e4d7b0a26",
+  "other_kid": "0d5a0d3d",
+  "sha256": [
+    {
+      "name": "empty",
+      "text": "",
+      "hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "event body",
+      "text": "{\"kind\":\"reply\",\"title\":\"Hermux\",\"body\":\"Done\",\"session\":\"s1\",\"profile\":\"default\"}",
+      "hex": "ea25ddf27e88971dfa2277702d324fa0040c623e7ff1115a112570c0c3b7c24b"
+    },
+    {
+      "name": "dashboard token",
+      "text": "dashboard-session-token-0123456789",
+      "hex": "474845bc4788a6d655a61112beaabb54d63569af5b8f3fbc9fd5a6877caf8e75"
+    },
+    {
+      "name": "UTF-8 body",
+      "text": "{\"body\":\"caf\u00e9 \u2713 \ud83d\ude00\"}",
+      "hex": "8e376f0757679377201c3d30e9913e806c67aa57a435a131718741da4f906e3e"
+    }
+  ],
+  "macs": [
+    {
+      "name": "hello proof, events",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "server",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nserver\nevents\n127.0.0.1:9121\n00112233445566778899aabbccddeeff\nffeeddccbbaa99887766554433221100\nhello\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8"
+    },
+    {
+      "name": "request MAC, POST /event",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "POST /event",
+      "hash": "ea25ddf27e88971dfa2277702d324fa0040c623e7ff1115a112570c0c3b7c24b",
+      "msg": "hermux-local-v1\nclient\nevents\n127.0.0.1:9121\n00112233445566778899aabbccddeeff\nffeeddccbbaa99887766554433221100\nPOST /event\nea25ddf27e88971dfa2277702d324fa0040c623e7ff1115a112570c0c3b7c24b",
+      "mac": "ea66baf17c76487a59e8ea18e14ee2ab36bcd4fff0c5e3e5e0a2a8365ec58ce6"
+    },
+    {
+      "name": "hello proof, ticker",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "server",
+      "role": "ticker",
+      "addr": "127.0.0.1:9122",
+      "nc": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "ns": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nserver\nticker\n127.0.0.1:9122\na1b2c3d4e5f60718293a4b5c6d7e8f90\n0f1e2d3c4b5a69788796a5b4c3d2e1f0\nhello\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "527d8e77478c2de52505ed9a65d7f89781513f274ba6ecddbf5c4bf28013e9bc"
+    },
+    {
+      "name": "ticker line POKE",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "ticker",
+      "addr": "127.0.0.1:9122",
+      "nc": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "ns": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "what": "POKE",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nclient\nticker\n127.0.0.1:9122\na1b2c3d4e5f60718293a4b5c6d7e8f90\n0f1e2d3c4b5a69788796a5b4c3d2e1f0\nPOKE\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "244f093c9a85ac618b517bbc6448e43d4e7a64c4067ab3ef4808e7092c188bee"
+    },
+    {
+      "name": "hello proof, dashboard",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "server",
+      "role": "dashboard",
+      "addr": "127.0.0.1:9119",
+      "nc": "5f4e3d2c1b0a99887766554433221100",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nserver\ndashboard\n127.0.0.1:9119\n5f4e3d2c1b0a99887766554433221100\nffeeddccbbaa99887766554433221100\nhello\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "580714c08cc67ae8870ebad3b88ce453557a9b5b5b2cd9e6ab705f7511b79d83"
+    },
+    {
+      "name": "request MAC, GET /hermux/token",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "dashboard",
+      "addr": "127.0.0.1:9119",
+      "nc": "5f4e3d2c1b0a99887766554433221100",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "GET /hermux/token",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nclient\ndashboard\n127.0.0.1:9119\n5f4e3d2c1b0a99887766554433221100\nffeeddccbbaa99887766554433221100\nGET /hermux/token\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "2681c7bd95111a7c5d3654fd695d6389603d2919eb9bdc8fd37b7f230850519e"
+    },
+    {
+      "name": "answer proof, dashboard token",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "answer",
+      "role": "dashboard",
+      "addr": "127.0.0.1:9119",
+      "nc": "5f4e3d2c1b0a99887766554433221100",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "token",
+      "hash": "474845bc4788a6d655a61112beaabb54d63569af5b8f3fbc9fd5a6877caf8e75",
+      "msg": "hermux-local-v1\nanswer\ndashboard\n127.0.0.1:9119\n5f4e3d2c1b0a99887766554433221100\nffeeddccbbaa99887766554433221100\ntoken\n474845bc4788a6d655a61112beaabb54d63569af5b8f3fbc9fd5a6877caf8e75",
+      "mac": "4c3111ce14d5948a2f41511ff0eb75530343d94feaaf000f04e82991bb61c508"
+    },
+    {
+      "name": "answer proof, dashboard REST (no server nonce)",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "answer",
+      "role": "dashboard",
+      "addr": "127.0.0.1:9119",
+      "nc": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "ns": "-",
+      "what": "rest 200",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nanswer\ndashboard\n127.0.0.1:9119\na1b2c3d4e5f60718293a4b5c6d7e8f90\n-\nrest 200\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "b32d85f1af9b8e4681a384ab51c3e5a24ea92ac4da8f6a4ba041f3c59401eb27"
+    },
+    {
+      "name": "request MAC, bghost with a query",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "bghost",
+      "addr": "127.0.0.1:41234",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "what": "GET /frame?w=320&h=640",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nclient\nbghost\n127.0.0.1:41234\n00112233445566778899aabbccddeeff\n0f1e2d3c4b5a69788796a5b4c3d2e1f0\nGET /frame?w=320&h=640\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "a6c8b4ec5f067673a8719681b87fd653d72f78981d44379abae66142de26e489"
+    },
+    {
+      "name": "request MAC, UTF-8 body",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "POST /phonedata",
+      "hash": "8e376f0757679377201c3d30e9913e806c67aa57a435a131718741da4f906e3e",
+      "msg": "hermux-local-v1\nclient\nevents\n127.0.0.1:9121\n00112233445566778899aabbccddeeff\nffeeddccbbaa99887766554433221100\nPOST /phonedata\n8e376f0757679377201c3d30e9913e806c67aa57a435a131718741da4f906e3e",
+      "mac": "2fd0a5348c8dcc04686168cb9f748eada7fc192724f57e7fdbc12192fcb2c925"
+    },
+    {
+      "name": "hello proof, padded key text (trimmed first)",
+      "key": "  7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3\n",
+      "dir": "server",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "msg": "hermux-local-v1\nserver\nevents\n127.0.0.1:9121\n00112233445566778899aabbccddeeff\nffeeddccbbaa99887766554433221100\nhello\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8"
+    }
+  ],
+  "mismatch": [
+    {
+      "name": "wrong role",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "server",
+      "role": "ticker",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8"
+    },
+    {
+      "name": "wrong address",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "server",
+      "role": "events",
+      "addr": "127.0.0.1:9122",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8"
+    },
+    {
+      "name": "wrong direction label (a server proof is not a client MAC)",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8"
+    },
+    {
+      "name": "wrong direction label (a client MAC is not an answer proof)",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "answer",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "POST /event",
+      "hash": "ea25ddf27e88971dfa2277702d324fa0040c623e7ff1115a112570c0c3b7c24b",
+      "mac": "ea66baf17c76487a59e8ea18e14ee2ab36bcd4fff0c5e3e5e0a2a8365ec58ce6"
+    },
+    {
+      "name": "client and server nonces swapped",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "server",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "ffeeddccbbaa99887766554433221100",
+      "ns": "00112233445566778899aabbccddeeff",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8"
+    },
+    {
+      "name": "another key",
+      "key": "0b8e1c4f7a2d5e9036c1f8a4d7b2e6093c5a8f1e4d7b0a26",
+      "dir": "server",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "hello",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mac": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8"
+    },
+    {
+      "name": "another body",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "POST /event",
+      "hash": "30bbf6e0406f1c1ee8b330675ddaa5c83f02fc198d4023e188d20ea3a2923120",
+      "mac": "ea66baf17c76487a59e8ea18e14ee2ab36bcd4fff0c5e3e5e0a2a8365ec58ce6"
+    },
+    {
+      "name": "another request line",
+      "key": "7d2f9a41c6e08b35f14a9e62d07c8b3a5e91f40d26b7c8e3",
+      "dir": "client",
+      "role": "events",
+      "addr": "127.0.0.1:9121",
+      "nc": "00112233445566778899aabbccddeeff",
+      "ns": "ffeeddccbbaa99887766554433221100",
+      "what": "POST /phonedata",
+      "hash": "ea25ddf27e88971dfa2277702d324fa0040c623e7ff1115a112570c0c3b7c24b",
+      "mac": "ea66baf17c76487a59e8ea18e14ee2ab36bcd4fff0c5e3e5e0a2a8365ec58ce6"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "newline in what",
+      "field": "what",
+      "set": "POST /event\nx"
+    },
+    {
+      "name": "newline in role",
+      "field": "role",
+      "set": "events\n"
+    },
+    {
+      "name": "newline in addr",
+      "field": "addr",
+      "set": "127.0.0.1:9121\nhello"
+    },
+    {
+      "name": "newline in ns",
+      "field": "ns",
+      "set": "ffeeddccbbaa99887766554433221100\n"
+    },
+    {
+      "name": "carriage return in what",
+      "field": "what",
+      "set": "GET /x\r"
+    },
+    {
+      "name": "tab in what",
+      "field": "what",
+      "set": "GET\t/x"
+    },
+    {
+      "name": "NUL in what",
+      "field": "what",
+      "set": "GET /x\u0000"
+    },
+    {
+      "name": "non-ASCII in what",
+      "field": "what",
+      "set": "GET /caf\u00e9"
+    },
+    {
+      "name": "empty what",
+      "field": "what",
+      "set": ""
+    },
+    {
+      "name": "unknown direction label",
+      "field": "dir",
+      "set": "reply"
+    },
+    {
+      "name": "unknown role",
+      "field": "role",
+      "set": "web"
+    },
+    {
+      "name": "address on another host",
+      "field": "addr",
+      "set": "10.0.0.1:9121"
+    },
+    {
+      "name": "address with a leading zero port",
+      "field": "addr",
+      "set": "127.0.0.1:09121"
+    },
+    {
+      "name": "address port out of range",
+      "field": "addr",
+      "set": "127.0.0.1:70000"
+    },
+    {
+      "name": "nc of the wrong shape",
+      "field": "nc",
+      "set": "00112233445566778899AABBCCDDEEFF"
+    },
+    {
+      "name": "nc set to -",
+      "field": "nc",
+      "set": "-"
+    },
+    {
+      "name": "hash in upper case",
+      "field": "hash",
+      "set": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "name": "hash too short",
+      "field": "hash",
+      "set": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85"
+    },
+    {
+      "name": "key too short",
+      "field": "key",
+      "set": "0123456789abcde"
+    },
+    {
+      "name": "key with a space inside",
+      "field": "key",
+      "set": "7d2f9a41c6e08b35f14a 9e62d07c8b3a5e91f40d26b7c8e3"
+    },
+    {
+      "name": "key with a newline inside",
+      "field": "key",
+      "set": "7d2f9a41c6e08b35f14a\n9e62d07c8b3a5e91f40d26b7c8e3"
+    }
+  ],
+  "not_nonce": [
+    "",
+    "00112233445566778899aabbccddeef",
+    "00112233445566778899aabbccddeeff0",
+    "00112233445566778899AABBCCDDEEFF",
+    "g0112233445566778899aabbccddeeff",
+    " 0112233445566778899aabbccddeeff",
+    "00112233445566778899aabbccddeef\n",
+    "-",
+    "0x112233445566778899aabbccddeeff"
+  ],
+  "not_same": [
+    {
+      "name": "MAC one character short",
+      "a": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8",
+      "b": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c"
+    },
+    {
+      "name": "MAC one character long",
+      "a": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8",
+      "b": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c80"
+    },
+    {
+      "name": "MAC in upper case",
+      "a": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8",
+      "b": "6656BC7DDE7F9130F3DE278E7FBE54594E235D215C4598134474610110B1C0C8"
+    },
+    {
+      "name": "MAC with the last character changed",
+      "a": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8",
+      "b": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c0"
+    },
+    {
+      "name": "empty",
+      "a": "6656bc7dde7f9130f3de278e7fbe54594e235d215c4598134474610110b1c0c8",
+      "b": ""
+    }
+  ],
+  "client_cases_comment": "Raw answers both clients must treat alike. hello_cases: the fake server's answer to the hello; {BODY} is a valid hello body (fields in 'set' replaced by raw JSON text), {LEN} its length; expect is a reason or 'verified'. answer_cases: the answer to the one request after a good hello, then the server closes; expect is 'ok <status> <body length>', 'error <message>' or 'refused'. {PAD:n} is n letters x.",
+  "hello_cases": [
+    {
+      "name": "baseline",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "verified"
+    },
+    {
+      "name": "status line without a reason",
+      "answer": "HTTP/1.1 200\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "verified"
+    },
+    {
+      "name": "Connection: closed is not close",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: closed\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "verified"
+    },
+    {
+      "name": "Connection: keep-alive, close",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: keep-alive, close\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Connection: CLOSE",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: CLOSE\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "close in a second Connection header",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: keep-alive\r\nConnection: close\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Content-Length with a plus sign",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: +{LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Content-Length with an underscore",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}_0\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Content-Length -1",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: -1\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Content-Length as a list",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}, {LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Content-Length twice",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Content-Length of 10 digits",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 0000000{LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "Content-Length with spaces around it",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length:  {LEN} \r\n\r\n{BODY}",
+      "expect": "verified"
+    },
+    {
+      "name": "Content-Length with a leading zero",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 0{LEN}\r\n\r\n{BODY}",
+      "expect": "verified"
+    },
+    {
+      "name": "Transfer-Encoding: gzip",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: gzip\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "expect": "no_hello"
+    },
+    {
+      "name": "hermux 1.0",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "hermux": "1.0"
+      },
+      "expect": "no_hello"
+    },
+    {
+      "name": "hermux 1e0",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "hermux": "1e0"
+      },
+      "expect": "no_hello"
+    },
+    {
+      "name": "a lone surrogate as the proof",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "proof": "\"\\ud800\""
+      },
+      "expect": "bad_proof"
+    },
+    {
+      "name": "64 lone surrogates as the proof",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "proof": "\"\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\""
+      },
+      "expect": "bad_proof"
+    },
+    {
+      "name": "fullwidth digits in the proof",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "proof": "\"\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\\uff10\""
+      },
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a lone surrogate in the role",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "role": "\"events\\ud800\""
+      },
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a lone surrogate in ns",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "ns": "\"\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\""
+      },
+      "expect": "bad_proof"
+    },
+    {
+      "name": "a lone surrogate in the address",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "addr": "\"127.0.0.1:\\ud800\""
+      },
+      "expect": "bad_addr"
+    },
+    {
+      "name": "a lone surrogate in the kid",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {LEN}\r\n\r\n{BODY}",
+      "set": {
+        "kid": "\"\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\\ud800\""
+      },
+      "expect": "unknown_kid"
+    }
+  ],
+  "answer_cases": [
+    {
+      "name": "204",
+      "answer": "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n",
+      "expect": "ok 204 0"
+    },
+    {
+      "name": "200 with a body",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+      "expect": "ok 200 5"
+    },
+    {
+      "name": "200 read to the end",
+      "answer": "HTTP/1.1 200 OK\r\n\r\nhello",
+      "expect": "ok 200 5"
+    },
+    {
+      "name": "Connection: close",
+      "answer": "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 5\r\n\r\nhello",
+      "expect": "ok 200 5"
+    },
+    {
+      "name": "a redirect is not followed",
+      "answer": "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/\r\nContent-Length: 0\r\n\r\n",
+      "expect": "ok 302 0"
+    },
+    {
+      "name": "Content-Length with spaces around it",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length:  5 \r\n\r\nhello",
+      "expect": "ok 200 5"
+    },
+    {
+      "name": "Content-Length with a leading zero",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 05\r\n\r\nhello",
+      "expect": "ok 200 5"
+    },
+    {
+      "name": "Content-Length with a plus sign",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: +5\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "Content-Length with an underscore",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 5_0\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "Content-Length as a list",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 5, 5\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "Content-Length -1",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "Content-Length twice",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "Content-Length of 10 digits",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 0000000005\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "a bad Content-Length on a 204",
+      "answer": "HTTP/1.1 204 No Content\r\nContent-Length: abc\r\n\r\n",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "Transfer-Encoding: gzip",
+      "answer": "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\nContent-Length: 5\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "Transfer-Encoding: chunked",
+      "answer": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "HTTP/1.0",
+      "answer": "HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "100 Continue first",
+      "answer": "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "ends inside the head",
+      "answer": "HTTP/1.1 200 OK\r\nX-A: 1\r\n",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "body shorter than its Content-Length",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nhello",
+      "expect": "error bad answer"
+    },
+    {
+      "name": "an empty answer",
+      "answer": "",
+      "expect": "error no answer"
+    },
+    {
+      "name": "head over 8 KiB",
+      "answer": "HTTP/1.1 200 OK\r\nX-Pad: {PAD:9000}\r\nContent-Length: 0\r\n\r\n",
+      "expect": "error answer too large"
+    },
+    {
+      "name": "Content-Length over 1 MiB",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 1048577\r\n\r\nxx",
+      "expect": "error answer too large"
+    },
+    {
+      "name": "Content-Length of 999999999",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 999999999\r\n\r\nxx",
+      "expect": "error answer too large"
+    },
+    {
+      "name": "a body of exactly 1 MiB",
+      "answer": "HTTP/1.1 200 OK\r\nContent-Length: 1048576\r\n\r\n{PAD:1048576}",
+      "expect": "ok 200 1048576"
+    },
+    {
+      "name": "a body over 1 MiB read to the end",
+      "answer": "HTTP/1.1 200 OK\r\n\r\n{PAD:1048577}",
+      "expect": "error answer too large"
+    },
+    {
+      "name": "403",
+      "answer": "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n",
+      "expect": "refused"
+    }
+  ]
+}
