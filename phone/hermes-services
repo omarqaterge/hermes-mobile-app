@@ -75,7 +75,8 @@ ms=/root/.hermes/scripts/hermes_memory_sync.py
 if [ -x "$HOME/bin/hermes-debian" ]; then has_ms() { "$HOME/bin/hermes-debian" --exists $ms; }
 else has_ms() { [ -f $PREFIX/var/lib/proot-distro/containers/debian/rootfs$ms ]; }; fi
 has_ms && run_loop memory-sync bash -c "$deb python3 $ms sync; rc=\$?; sleep 590; exit \$rc"
-run_loop cron-ticker $deb bash -lc "$PY; exec \$PY /root/.hermes/scripts/cron_ticker.py"
+# The ticker ships in the plugin folder, so a plugin update brings it along; an older install has only the installer's copy.
+run_loop cron-ticker $deb bash -lc "$PY; T=/root/.hermes/plugins/hermes-mobile/cron_ticker.py; [ -f \$T ] || T=/root/.hermes/scripts/cron_ticker.py; exec \$PY \$T"
 # The always-on bot keeper (a 4 s loop) and its messaging gateway are retired: the app is the only front
 # end. Stop a keeper left running by an older version of this script, then the keeper process and gateway.
 if [ -f ~/logs/bot-keeper.pid ]; then

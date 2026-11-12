@@ -2,6 +2,8 @@
 
 Base path: `/api/plugins/hermes-mobile`. Most routes accept a `?profile=` query that the app adds through its `api` helper (routes marked "global" are sent without it). Errors are standard `HTTPException`s. The web page reaches these through `web/src/api.ts` `api`; `HermesService` and `MainActivity` call a few from Java.
 
+Two more paths on 9119 are not plugin routes: `_TokenGuard` answers `GET /hermux/hello` and `GET /hermux/token` before Hermes sees the request (local authentication, 2.3), so they work without a session token and in every profile. Nothing calls them yet.
+
 | Method and path | What it does | Who calls it |
 |---|---|---|
 | `GET /memory` | Built-in memory: `memory` and `user` snapshots (`entries`, `used`, `limit`) read through Hermes's own `MemoryStore` for the profile (limits from `config.yaml`, default 2200 / 1375). | Memory screen (`web/src/components/Screens.tsx`) |

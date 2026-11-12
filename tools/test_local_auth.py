@@ -2,7 +2,9 @@
 tools/local-auth-vectors.json, same() and the nonce shape, and the client against fake local servers on loopback sockets:
 an honest one, one with the wrong key, the wrong address, the wrong role, an old version, garbage, too much, silence, a
 slow trickle, an early close and a replayed proof. After a failed hello the fake server must have received nothing but
-the hello. Stdlib only. Run: python3 tools/test_local_auth.py"""
+the hello. Then the server halves: the hello answer, the request MAC over the raw body, the dashboard guard's pending
+server nonces (single use, 10 s, at most 256) and the key file cache (an empty file is never kept). Stdlib only.
+Run: python3 tools/test_local_auth.py"""
 import importlib.util
 import json
 import os
@@ -562,6 +564,175 @@ for k, v in saved.items():
         os.environ.pop(k, None)
     else:
         os.environ[k] = v
+
+# ---- the server halves ----
+
+print("server halves: hello answer and request MAC")
+A9 = "127.0.0.1:9119"
+NC = "00112233445566778899aabbccddeeff"
+ns1, j = la.hello_answer(KEY, "dashboard", A9, NC)
+check("hello answer: fields", set(j) == {"hermux", "role", "kid", "ns", "addr", "proof"} and j["hermux"] == 1
+      and j["role"] == "dashboard" and j["kid"] == V["kid"] and j["ns"] == ns1 and j["addr"] == A9, j)
+check("hello answer: a fresh server nonce each time", la.is_nonce(ns1) and la.hello_answer(KEY, "dashboard", A9, NC)[0] != ns1)
+check("hello answer: the proof is the server MAC over both nonces and the address",
+      la.same(j["proof"], la.mac(KEY, "server", "dashboard", A9, NC, ns1, "hello", la.EMPTY_HASH)))
+check("hello answer: the proof does not verify for another address",
+      not la.same(j["proof"], la.mac(KEY, "server", "dashboard", "127.0.0.1:9229", NC, ns1, "hello", la.EMPTY_HASH)))
+for bad_nc in ("", NC.upper(), NC[:-1], NC + "0", None):
+    try:
+        la.hello_answer(KEY, "dashboard", A9, bad_nc)
+        check(f"hello answer: refuses the client nonce {bad_nc!r}", False)
+    except ValueError:
+        check(f"hello answer: refuses the client nonce {bad_nc!r}", True)
+for bad_key in ("", "short-key", "   ", None):
+    try:
+        la.hello_answer(bad_key, "dashboard", A9, NC)
+        check(f"hello answer: refuses the key {bad_key!r}", False)
+    except ValueError:
+        check(f"hello answer: refuses the key {bad_key!r}", True)
+try:
+    la.hello_answer(KEY, "dashboard", "[::1]:9119", NC)
+    check("hello answer: refuses an address other than 127.0.0.1", False)
+except ValueError:
+    check("hello answer: refuses an address other than 127.0.0.1", True)
+check("server_addr: loopback", la.server_addr("127.0.0.1", 9119) == A9)
+check("server_addr: anything else is None", la.server_addr("::1", 9119) is None and la.server_addr("testserver", 80) is None
+      and la.server_addr("127.0.0.1", 0) is None and la.server_addr("127.0.0.1", True) is None
+      and la.server_addr("127.0.0.1", "9119") is None)
+
+m = V["macs"][5]  # request MAC, GET /hermux/token
+hdr = f"1 {V['kid']} {m['ns']} {m['nc']} {m['mac']}"
+check("parse_auth: the dashboard form", la.parse_auth(hdr, with_nc=True) == (V["kid"], m["ns"], m["nc"], m["mac"]))
+check("parse_auth: bytes and surrounding spaces", la.parse_auth((" " + hdr + " ").encode(), with_nc=True) is not None)
+check("parse_auth: the same-connection form", la.parse_auth(f"1 {V['kid']} {m['ns']} {m['mac']}") == (V["kid"], m["ns"], None, m["mac"]))
+for name, bad in (("version 2", "2" + hdr[1:]), ("one part short", hdr.rsplit(" ", 1)[0]), ("a part too many", hdr + " x"),
+                  ("upper-case MAC", hdr.upper()), ("double space", hdr.replace(" ", "  ", 1)), ("no kid", hdr.replace(V["kid"], "")),
+                  ("short kid", hdr.replace(V["kid"], V["kid"][:7])), ("not ASCII", hdr.replace("1", "١", 1)), ("none", None),
+                  ("too long", hdr + "0" * 300)):
+    check(f"parse_auth: refuses {name}", la.parse_auth(bad, with_nc=True) is None)
+check("parse_auth: the dashboard form is not the same-connection form", la.parse_auth(hdr) is None)
+
+b = V["macs"][9]  # request MAC, UTF-8 body
+body = next(s["text"] for s in V["sha256"] if s["hex"] == b["hash"]).encode("utf-8")
+tgt = b["what"].split(" ", 1)[1]
+check("request_ok: the vector", la.request_ok(KEY, b["role"], b["addr"], b["nc"], b["ns"], "POST", tgt, body, b["mac"]))
+check("request_ok: a body changed after the MAC", not la.request_ok(KEY, b["role"], b["addr"], b["nc"], b["ns"], "POST", tgt,
+                                                                   body + b" ", b["mac"]))
+check("request_ok: the body is the raw bytes, not decoded text",
+      not la.request_ok(KEY, b["role"], b["addr"], b["nc"], b["ns"], "POST", tgt, body.decode("utf-8").encode("utf-16"), b["mac"]))
+check("request_ok: another path", not la.request_ok(KEY, b["role"], b["addr"], b["nc"], b["ns"], "POST", "/event", body, b["mac"]))
+check("request_ok: another method", not la.request_ok(KEY, b["role"], b["addr"], b["nc"], b["ns"], "PUT", tgt, body, b["mac"]))
+check("request_ok: another server nonce", not la.request_ok(KEY, b["role"], b["addr"], b["nc"], NC, "POST", tgt, body, b["mac"]))
+check("request_ok: another key", not la.request_ok(OTHER, b["role"], b["addr"], b["nc"], b["ns"], "POST", tgt, body, b["mac"]))
+check("request_ok: another address", not la.request_ok(KEY, b["role"], "127.0.0.1:9122", b["nc"], b["ns"], "POST", tgt, body, b["mac"]))
+check("request_ok: a text body is not bytes", not la.request_ok(KEY, b["role"], b["addr"], b["nc"], b["ns"], "POST", tgt,
+                                                                 body.decode("utf-8"), b["mac"]))
+check("request_ok: an unusable key is False, not an error", not la.request_ok("x", b["role"], b["addr"], b["nc"], b["ns"], "POST",
+                                                                               tgt, body, b["mac"]))
+t = V["macs"][6]  # answer proof, dashboard token
+tok = next(s["text"] for s in V["sha256"] if s["hex"] == t["hash"])
+check("answer_proof: the token vector", la.answer_proof(KEY, "dashboard", t["addr"], t["nc"], t["ns"], "token", tok.encode()) == t["mac"])
+r = V["macs"][7]  # answer proof, REST
+check("answer_proof: the REST vector", la.answer_proof(KEY, "dashboard", r["addr"], r["nc"], la.NO_NONCE, "rest 200") == r["mac"])
+
+print("server halves: pending hellos")
+now = [1000.0]
+p = la.PendingHellos(clock=lambda: now[0])
+p.add("a" * 32, NC, V["kid"], A9)
+check("pending: taken once", p.take("a" * 32) == (NC, V["kid"], A9))
+check("pending: not twice", p.take("a" * 32) is None)
+check("pending: an unknown nonce", p.take("b" * 32) is None)
+p.add("c" * 32, NC, V["kid"], A9)
+now[0] += la.HELLO_TTL_S - 0.01
+check("pending: still there just before 10 s", la.HELLO_TTL_S == 10.0 and len(p) == 1)
+p.add("d" * 32, NC, V["kid"], A9)
+now[0] += 0.02
+check("pending: gone after 10 s", p.take("c" * 32) is None)
+check("pending: a later one lives on", p.take("d" * 32) is not None)
+p = la.PendingHellos(clock=lambda: now[0])
+for i in range(300):
+    p.add(f"{i:032x}", NC, V["kid"], A9)
+check("pending: at most 256", la.MAX_PENDING == 256 and len(p) == 256, len(p))
+check("pending: a flood drops the oldest", p.take(f"{0:032x}") is None and p.take(f"{43:032x}") is None)
+check("pending: and keeps the newest", p.take(f"{44:032x}") is not None and p.take(f"{299:032x}") is not None)
+p = la.PendingHellos()
+errors = []
+
+
+def adder(base):
+    try:
+        for i in range(500):
+            p.add(f"{base + i:032x}", NC, V["kid"], A9)
+            p.take(f"{base + i - 3:032x}")
+    except Exception as e:  # noqa: BLE001
+        errors.append(e)
+
+
+ts = [threading.Thread(target=adder, args=(k * 10000,)) for k in range(8)]
+for x in ts:
+    x.start()
+for x in ts:
+    x.join()
+check("pending: many threads at once", not errors and len(p) <= 256, (errors, len(p)))
+
+print("server halves: the key file")
+import tempfile  # noqa: E402
+
+kdir = Path(tempfile.mkdtemp())
+kpath = kdir / "key"
+kf = la.KeyFile(kpath)
+check("key file: missing reads as nothing", kf.read() == "")
+kpath.write_text(KEY + "\n")
+check("key file: read and trimmed", kf.read() == KEY)
+reads = []
+real_open = la.open if hasattr(la, "open") else open
+
+
+def counting_open(*a, **k):
+    reads.append(a[0])
+    return real_open(*a, **k)
+
+
+la.open = counting_open
+kf.read()
+kf.read()
+check("key file: an unchanged file is not read again", reads == [], reads)
+tmp = kdir / "key.tmp"
+tmp.write_text(OTHER + "\n")  # the same length and, below, the same time: only the inode tells it apart
+before = kpath.stat()
+os.utime(tmp, ns=(before.st_atime_ns, before.st_mtime_ns))
+os.replace(tmp, kpath)
+check("key file: a file replaced by a rename (same size) is read again", kf.read() == OTHER)
+st = kpath.stat()
+with open(kpath, "r+") as f:  # rewritten in place, the same size, the modification time put back
+    f.write(KEY + "\n")
+os.utime(kpath, ns=(st.st_atime_ns, st.st_mtime_ns + 1))
+check("key file: a rewrite in place with a new time (ns) is read again", kf.read() == KEY)
+del la.open
+kpath.write_text("")
+same_sig = la.KeyFile(kpath)
+same_sig._sig = lambda _st: ("fixed",)  # a file system whose times and sizes never tell a change
+check("key file: empty reads as nothing", same_sig.read() == "")
+kpath.write_text(KEY)
+check("key file: an empty file is never kept", same_sig.read() == KEY)
+kpath.write_text(OTHER)
+check("key file: a key is kept while nothing changes", same_sig.read() == KEY)
+check("key file: a path function and None", la.KeyFile(lambda: None).read() == "" and la.KeyFile(lambda: kpath).read() == OTHER)
+kpath.unlink()
+check("key file: removed reads as nothing", kf.read() == "")
+
+# The plugin's own reader uses the same cache.
+os.environ.setdefault("HOME", str(kdir))
+pspec = importlib.util.spec_from_file_location("hm_plugin_for_key", PLUGIN / "__init__.py")
+plugin = importlib.util.module_from_spec(pspec)
+pspec.loader.exec_module(plugin)
+plugin.KEY_FILE = kpath
+kpath.write_text("")
+check("plugin _key: empty file", plugin._key() == "")
+plugin._key_cache["reader"]._sig = lambda _st: ("fixed",)
+kpath.write_text(KEY + "\n")
+check("plugin _key: an empty file is never kept", plugin._key() == KEY)
+check("plugin _key: the same reader (local_auth.KeyFile)", isinstance(plugin._key_cache["reader"], la.KeyFile))
 
 print("\nALL PASSED" if fails == 0 else f"\n{fails} FAILED")
 sys.exit(1 if fails else 0)

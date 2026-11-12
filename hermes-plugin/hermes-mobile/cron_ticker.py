@@ -11,12 +11,36 @@ When the alarm fires the app pokes this ticker (127.0.0.1:9122) so the job start
 ticker sleeps on a monotonic clock that stops while the phone sleeps, so it would start up to 60 s
 late), and once no job is running the ticker says so (`cron_idle`), so the app drops its cron wake
 lock instead of holding it for a fixed 150 s.
+
+The poke listener proves itself before it acts (local authentication, local_auth.ticker_serve_one): the
+app sends `HELLO 1 <nonce>`, the ticker answers with a proof under the shared key, and only a
+`POKE 1 <mac>` over both nonces pokes it. A first line that is the shared key itself (the app's
+protocol before this one) still pokes it until ~/.hermes-mobile/enforced exists. When the port is
+in use the listener tries again (5 s, doubling to 5 min) for as long as the ticker runs, and notes
+each change in ~/logs/loop-events.log for the diagnostic log.
+
+Ships inside the plugin folder; the supervisor runs this copy when it is there.
 """
+import os  # both already loaded by the interpreter itself, so no file in this folder can stand in for them
+import sys
+
+
+def _drop_own_folder(entries, script):
+    """``entries`` (sys.path) without the folder this script is in. Run from the plugin folder, Python puts that folder
+    first, where the plugin's own modules could stand in for a module of the same name from the standard library or
+    Hermes. Compared by real path on both sides (Python resolves a symlinked script), and ``''`` or ``.`` count as the
+    current folder."""
+    here = os.path.dirname(os.path.realpath(os.path.abspath(script)))
+    return [p for p in entries if os.path.realpath(p or os.curdir) != here]
+
+
+if __name__ == "__main__":
+    sys.path[:] = _drop_own_folder(sys.path, __file__)  # before any other import; local_auth.py is loaded by its path
+
 import hmac
 import json
 import logging
 import socket
-import sys
 import threading
 import time
 import urllib.request
@@ -24,11 +48,36 @@ from datetime import datetime
 from pathlib import Path
 
 APP_URL = "http://127.0.0.1:9121/event"
-KEY_FILE = Path("/data/data/com.termux/files/home/.hermes-mobile/key")
+TERMUX_HOME = Path("/data/data/com.termux/files/home")
+KEY_FILE = TERMUX_HOME / ".hermes-mobile" / "key"
+ENFORCED = TERMUX_HOME / ".hermes-mobile" / "enforced"  # once there, the raw key no longer pokes
+LOOP_EVENTS = TERMUX_HOME / "logs" / "loop-events.log"  # the supervisor's file of fixed lines (diag.py reads it)
+DIAG_OFF = TERMUX_HOME / ".hermes-mobile" / "diag-off"
 WAKE_CHECK = 60  # seconds between looks at the job stores (only while the phone is awake anyway)
 WAKE_RESEND = 1200  # re-send an unchanged wake time now and then (alarms are lost on reboot/app update)
-POKE_PORT = 9122  # the app connects here (with the shared key) when its cron alarm fires
+POKE_PORT = 9122  # the app connects here when its cron alarm fires
 JOB_CHECK = 2.0  # while a job runs, look this often whether it is done (only while a job runs)
+BIND_RETRY_FIRST = 5.0  # the poke port is in use: try again after this long, doubling each time ...
+BIND_RETRY_MAX = 300.0  # ... up to this; a sleeping thread, so no wake-ups while the phone sleeps
+ACCEPT_RETRY_S = 0.5  # a failed accept() is tried again on the same socket after this long ...
+ACCEPT_GIVE_UP = 20  # ... and the port is opened again only after this many failures in a row
+
+
+def _local_auth():
+    """The plugin's local_auth.py, next to this file; None when it isn't there (then only the raw key pokes)."""
+    mod = sys.modules.get("hm_local_auth")
+    if mod is not None:
+        return mod
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("hm_local_auth", Path(__file__).resolve().with_name("local_auth.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception:
+        return None
+    sys.modules["hm_local_auth"] = mod
+    return mod
 
 
 def _runnable(job: dict) -> bool:
@@ -70,11 +119,21 @@ def _homes():
         return [root, *sorted(p for p in (root / "profiles").glob("*") if (p / "config.yaml").exists())]
 
 
+_key_file = None
+
+
 def _key() -> str:
-    try:
-        return KEY_FILE.read_text().strip()
-    except OSError:
-        return ""
+    """The shared key, read again only when the file changes (local_auth.KeyFile); "" when there is none."""
+    global _key_file
+    la = _local_auth()
+    if la is None:
+        try:
+            return KEY_FILE.read_text().strip()
+        except OSError:
+            return ""
+    if _key_file is None:
+        _key_file = la.KeyFile(lambda: KEY_FILE)
+    return _key_file.read()
 
 
 def _post(event: dict) -> bool:
@@ -183,34 +242,122 @@ def running_jobs() -> bool:
     return bool(sched.get_running_job_ids())
 
 
-def poke_listener(ticker: Ticker, port: int = POKE_PORT, key=_key) -> None:
-    """Accepts the app's poke on loopback: one line with the shared key. Blocks in accept() (no wake-ups)."""
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        srv.bind(("127.0.0.1", port))
-    except OSError as e:
-        logging.warning("poke listener not started (port %d: %s): jobs may start up to 60 s after the alarm", port, e)
+def note_port(state: str) -> None:
+    """A change of the poke port's state as one fixed line in the supervisor's loop-events log (diag.py checks it again
+    when it reads it): `local port_taken port=ticker` or `local port_ok port=ticker`. Only appends to a file that is
+    already there (the supervisor, running as Termux's user, owns it); respects the diagnostic log's off switch."""
+    if DIAG_OFF.exists():
         return
-    srv.listen(4)
+    line = f"{int(time.time())} local {'port_taken' if state == 'taken' else 'port_ok'} port=ticker\n"
+    try:
+        fd = os.open(LOOP_EVENTS, os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return
+    try:
+        os.write(fd, line.encode())
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def _bind(port: int) -> socket.socket:
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", port))
+        srv.listen(4)
+    except OSError:
+        srv.close()
+        raise
+    return srv
+
+
+def serve_one(conn, key: str, where) -> bool:
+    """One poke connection: True when it pokes. A verified `POKE` after the hello always does; the raw key as the
+    first line does until ENFORCED exists. Without local_auth.py only the raw key is understood."""
+    la = _local_auth()
+    if la is not None and where:
+        return la.ticker_serve_one(conn, key, where, legacy=not ENFORCED.exists()) != ""
+    try:  # the protocol before local authentication
+        conn.settimeout(2)
+        got = conn.recv(256).strip()
+    except OSError:
+        return False
+    want = (key or "").encode()
+    return bool(want) and hmac.compare_digest(got, want) and not ENFORCED.exists()
+
+
+def _accept_loop(srv, ticker, key, where, state: dict) -> tuple:
+    """Serves connections on ``srv`` until the ticker stops. A failing accept() (interrupted, a connection aborted
+    before it was taken, no file descriptor left) is tried again on the same socket after ACCEPT_RETRY_S; only after
+    ACCEPT_GIVE_UP failures in a row does it return, so the caller opens the port again. Returns ``(gave_up,
+    accepted)``. Logs only a change, kept in ``state`` across sockets: failing, then accepting again."""
+    failures, accepted = 0, False
     while not ticker.is_set():
-        conn, _ = srv.accept()
+        try:
+            conn, _ = srv.accept()
+        except OSError:
+            failures += 1
+            if not state.get("failing"):
+                state["failing"] = True
+                logging.warning("poke listener: accepting a connection failed; trying again")
+            if failures >= ACCEPT_GIVE_UP:
+                return True, accepted
+            threading.Event.wait(ticker, ACCEPT_RETRY_S)  # bounded: a lasting error costs a few wake-ups, not a spin
+            continue
+        failures, accepted = 0, True
+        if state.get("failing"):
+            state["failing"] = False
+            logging.info("poke listener: accepting again")
         with conn:
             try:
-                conn.settimeout(2)
-                got = conn.recv(256).strip()
-            except OSError:
-                continue
-            want = key().encode()
-            if want and hmac.compare_digest(got, want):
-                ticker.poke()
+                if serve_one(conn, key(), where):
+                    ticker.poke()
+            except Exception:
+                pass  # one connection's bytes never stop the listener
+    return False, accepted
+
+
+def poke_listener(ticker: Ticker, port: int = POKE_PORT, key=_key, note=None) -> None:
+    """Accepts the app's poke on loopback (see serve_one). Blocks in accept() (no wake-ups). When the port is in use it
+    tries again after BIND_RETRY_FIRST, doubling up to BIND_RETRY_MAX, for as long as the ticker runs; it logs and
+    notes (`note`, default note_port) only a change: taken, then free again. A socket that keeps failing to accept is
+    opened again with the same back-off (see _accept_loop)."""
+    note = note or note_port
+    delay, taken = BIND_RETRY_FIRST, None
+    state: dict = {}
+    while not ticker.is_set():
+        try:
+            srv = _bind(port)
+        except OSError:
+            if taken is not True:
+                taken = True
+                logging.warning("poke listener: its port is in use; trying again (meanwhile a job may start up to 60 s "
+                                "after its alarm)")
+                note("taken")
+        else:
+            if taken is True:
+                logging.info("poke listener: listening again")
+                note("ok")
+            taken = False
+            with srv:
+                la = _local_auth()
+                host, bound = srv.getsockname()[:2]
+                where = la.server_addr(host, bound) if la is not None else None
+                _gave_up, accepted = _accept_loop(srv, ticker, key, where, state)
+            if accepted:  # it worked for a while: a new failure starts the back-off again
+                delay = BIND_RETRY_FIRST  # (a socket that never accepted keeps the back-off growing)
+        if threading.Event.wait(ticker, delay):  # the plain wait: Ticker.wait runs the cycle logic
+            break
+        delay = min(delay * 2, BIND_RETRY_MAX)
 
 
 if __name__ == "__main__":
     import faulthandler
 
     faulthandler.enable()  # a crash prints every thread's stack to the log
-    sys.path.insert(0, "/root/.hermes/hermes-agent")
+    sys.path.insert(0, "/root/.hermes/hermes-agent")  # this script's own folder left the path at the top
     bootstrap()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 

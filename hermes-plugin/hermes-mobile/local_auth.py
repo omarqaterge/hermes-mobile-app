@@ -1,4 +1,5 @@
-"""Local authentication (hermux-local-v1), the client half: verify the local server before sending it anything private.
+"""Local authentication (hermux-local-v1): verify the local server before sending it anything private, and the server
+halves that let the plugin's own servers (the dashboard guard, the cron ticker) prove themselves.
 
 A client sends ``GET /hermux/hello?v=1&nc=<nonce>``; the server answers with JSON naming its role, key id (``kid``), its own
 nonce (``ns``), the address it listens on (``addr``) and a ``proof``: an HMAC-SHA256 under the shared key over the client's
@@ -10,7 +11,14 @@ A MAC is lowercase hex HMAC-SHA256 over eight fields joined by newlines: ``hermu
 what, hash. ``mac`` refuses a field outside its alphabet (a newline above all), so one field can never spill into the
 next. Bounded: 2 s to connect, ``timeout`` per read, a whole-exchange deadline (sends included), 4 KiB for the hello
 answer (a larger Content-Length is refused before reading), a head as strict as the Java side's; no proxy
-(``http.client`` never reads proxy settings) and no redirect is followed. Nothing here logs. Stdlib only. Not used yet.
+(``http.client`` never reads proxy settings) and no redirect is followed. Nothing here logs. Stdlib only. The client
+half is not used yet.
+
+The server halves (see "the server halves" below): ``hello_answer`` (the proof over the client's nonce, a fresh server
+nonce, the server's own listening address and the key id), ``parse_auth`` and ``request_ok`` (a request MAC over the
+method, the path with its query and the raw body bytes), ``answer_proof``, ``PendingHellos`` (the dashboard guard's
+single-use server nonces), ``KeyFile`` (the key file, re-read only when it changes) and ``ticker_serve_one`` (the cron
+ticker's line protocol). Servers still accept the raw key alongside: nothing is refused yet that worked before.
 """
 from __future__ import annotations
 
@@ -19,10 +27,13 @@ import hashlib
 import hmac
 import http.client
 import json
+import os
 import re
 import secrets
 import socket
+import threading
 import time
+from collections import OrderedDict
 
 VERSION = "hermux-local-v1"
 EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -440,3 +451,242 @@ def session(role: str, port: int, key: str, timeout: float = 3) -> Session:
                 conn.close()
             except OSError:
                 pass
+
+
+# ---- the server halves ----
+# A server answers a hello with a proof over the client's nonce, a fresh nonce of its own, the address it listens on and
+# its key id, then checks one request MAC over that pair of nonces. The raw key is still accepted next to this by each
+# server's own code, so a client that has not learnt the hello keeps working.
+
+HELLO_TTL_S = 10.0  # how long the dashboard guard keeps a server nonce for the token step
+MAX_PENDING = 256  # ... and how many at most (the oldest is dropped first)
+MAX_LINE = 256  # the ticker's lines, the newline included
+LINE_READ_S = 2.0  # each read of a ticker line
+LINE_DEADLINE_S = 5.0  # the whole ticker exchange, however slowly the bytes come
+_VERSION_ARG = re.compile(r"[1-9][0-9]{0,2}")
+
+
+def server_addr(host, port) -> str | None:
+    """The address a server names in its proof: ``127.0.0.1:<port>`` for a socket on the loopback address, else None
+    (a server reached any other way, ``::1`` say, gives no proof: the client dialled something else)."""
+    if host != HOST or not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        return None
+    return addr(port)
+
+
+def is_version(s) -> bool:
+    """A hello's version argument: a positive decimal number without leading zeros (this server answers version 1)."""
+    return isinstance(s, str) and _VERSION_ARG.fullmatch(s) is not None
+
+
+def hello_answer(key: str, role: str, server: str, nc: str) -> tuple[str, dict]:
+    """A fresh server nonce and the hello answer (as JSON fields) for the client nonce ``nc``. ValueError for a bad
+    nonce, an unusable key, an unknown role or an address that is not ``127.0.0.1:<port>``."""
+    if not is_nonce(nc):
+        raise ValueError("nc")
+    ns = nonce()
+    proof = mac(key, "server", role, server, nc, ns, "hello", EMPTY_HASH)
+    return ns, {"hermux": 1, "role": role, "kid": kid(key), "ns": ns, "addr": server, "proof": proof}
+
+
+def parse_auth(value, with_nc: bool = False):
+    """``X-Hermux-Auth`` as ``(kid, ns, nc, mac)``, or None when it is malformed. The same-connection form is
+    ``1 <kid> <ns> <mac>`` (``nc`` comes back None: the server kept it from the hello); the dashboard's token step, which
+    runs on a connection of its own, also names the client nonce: ``1 <kid> <ns> <nc> <mac>``."""
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+    if not isinstance(value, str) or len(value) > 256:
+        return None
+    parts = value.strip(" \t").split(" ")
+    if len(parts) != (5 if with_nc else 4) or parts[0] != "1":
+        return None
+    k, ns, m = parts[1], parts[2], parts[-1]
+    nc = parts[3] if with_nc else None
+    if not is_kid(k) or not is_nonce(ns) or (with_nc and not is_nonce(nc)) or not _hex(m, 64):
+        return None
+    return k, ns, nc, m
+
+
+def request_ok(key: str, role: str, server: str, nc: str, ns: str, method: str, target: str, body: bytes,
+               given_mac: str) -> bool:
+    """True when ``given_mac`` is the client MAC over ``<method> <target>`` (the path with its query, as sent) and the
+    SHA-256 of the raw body bytes. Anything malformed, an unusable key included, is simply False."""
+    if not isinstance(body, (bytes, bytearray)):
+        return False
+    try:
+        want = mac(key, "client", role, server, nc, ns, f"{method} {target}", sha256hex(bytes(body)))
+    except (ValueError, TypeError):
+        return False
+    return same(want, given_mac)
+
+
+def answer_proof(key: str, role: str, server: str, nc: str, ns: str, what: str, data: bytes = b"") -> str:
+    """A proof over an answer: the token (``what`` ``token``, ``data`` the token) or a REST status (``rest <status>``,
+    no data). ValueError like ``mac``."""
+    return mac(key, "answer", role, server, nc, ns, what, sha256hex(data))
+
+
+class PendingHellos:
+    """The dashboard guard's server nonces between the hello and the token step, which arrive on two connections. Each
+    lives ``ttl`` seconds and is used once (``take`` removes it, whatever the request then proves); at most ``limit``
+    are kept and a new one drops the oldest, so a flood of hellos costs a bounded amount of memory and can only make an
+    honest client's token step fail (it then says hello again). Thread-safe."""
+
+    def __init__(self, ttl: float = HELLO_TTL_S, limit: int = MAX_PENDING, clock=time.monotonic):
+        self._ttl, self._limit, self._clock = ttl, limit, clock
+        self._items: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _expire(self, now: float) -> None:
+        while self._items:
+            ns, entry = next(iter(self._items.items()))
+            if entry[0] > now:
+                return
+            del self._items[ns]
+
+    def add(self, ns: str, nc: str, kid_: str, server: str) -> None:
+        with self._lock:
+            now = self._clock()
+            self._expire(now)
+            self._items.pop(ns, None)
+            while len(self._items) >= self._limit:
+                self._items.popitem(last=False)
+            self._items[ns] = (now + self._ttl, nc, kid_, server)
+
+    def take(self, ns: str):
+        """``(nc, kid, addr)`` for a live ``ns``, once; None when it is unknown, used or expired."""
+        with self._lock:
+            now = self._clock()
+            self._expire(now)
+            entry = self._items.pop(ns, None)
+        return None if entry is None else entry[1:]
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._items)
+
+
+class KeyFile:
+    """The shared key's file, read again only when it changes: by inode, modification time (ns) and size, so a file
+    replaced by a rename, or rewritten in place with another length or time, is read again. An empty or unreadable file
+    is never cached (the next call looks again) and reads as ``""``. ``path`` is a path or a function giving one (None:
+    no file)."""
+
+    def __init__(self, path):
+        self._path = path
+        self._cache = None  # (path, signature, key)
+
+    @staticmethod
+    def _sig(st) -> tuple:
+        return st.st_ino, st.st_mtime_ns, st.st_size
+
+    def read(self) -> str:
+        path = self._path() if callable(self._path) else self._path
+        if path is None:
+            return ""
+        path = str(path)
+        try:
+            sig = self._sig(os.stat(path))
+        except OSError:
+            return ""
+        cached = self._cache
+        if cached is not None and cached[0] == path and cached[1] == sig:
+            return cached[2]
+        try:
+            with open(path, "rb") as f:
+                sig = self._sig(os.fstat(f.fileno()))  # the signature of the file actually read
+                data = f.read(4096)
+        except OSError:
+            return ""
+        key = data.decode("utf-8", "replace").strip()
+        self._cache = (path, sig, key) if key else None  # one assignment: a reader on another thread sees old or new
+        return key
+
+
+class _Lines:
+    """A ticker connection's input, one line at a time: at most MAX_LINE bytes a line, LINE_READ_S a read, and one
+    deadline for the whole exchange. ``next`` gives ``(line, complete)``; an incomplete line is what came before the
+    end of the stream or the deadline (nothing at all for a line too long)."""
+
+    def __init__(self, conn, deadline: float):
+        self._conn, self.deadline, self._buf = conn, deadline, b""
+
+    def next(self) -> tuple[bytes, bool]:
+        while True:
+            i = self._buf.find(b"\n")
+            if i >= 0:
+                if i + 1 > MAX_LINE:
+                    return b"", False
+                line, self._buf = self._buf[:i], self._buf[i + 1:]
+                return line, True
+            if len(self._buf) >= MAX_LINE:
+                return b"", False
+            left = self.deadline - time.monotonic()
+            if left <= 0:
+                return self._rest(), False
+            try:
+                self._conn.settimeout(min(LINE_READ_S, left))
+                data = self._conn.recv(MAX_LINE - len(self._buf))
+            except OSError:  # socket.timeout included
+                return self._rest(), False
+            if not data:
+                return self._rest(), False
+            self._buf += data
+
+    def _rest(self) -> bytes:
+        out, self._buf = self._buf, b""
+        return out
+
+
+def ticker_serve_one(conn, key: str, server: str, legacy: bool = True) -> str:
+    """One connection to the cron ticker's poke listener. The line protocol (each line ends in a newline):
+
+        C: HELLO 1 <nc>
+        S: HERMUX 1 ticker <kid> <ns> <addr> <proof>
+        C: POKE 1 <mac>          (the client MAC with what ``POKE`` and no body)
+
+    Returns ``"poke"`` for a verified POKE, ``"legacy"`` for a first line that is the raw key itself (the protocol
+    before this one; refused when ``legacy`` is False), ``""`` for anything else. Never answers anything but the
+    HERMUX line, and only when the key is usable. The caller closes the connection."""
+    lines = _Lines(conn, time.monotonic() + LINE_DEADLINE_S)
+    first, complete = lines.next()
+    if first.startswith(b"HELLO "):
+        parts = first.split(b" ")
+        if not complete or len(parts) != 3:
+            return ""
+        try:
+            ver, nc = parts[1].decode("ascii"), parts[2].decode("ascii")
+        except UnicodeDecodeError:
+            return ""
+        if not is_version(ver) or not is_nonce(nc):
+            return ""
+        try:
+            ns, j = hello_answer(key, "ticker", server, nc)
+        except ValueError:
+            return ""  # no usable key (or no loopback address): no proof, and nothing else either
+        line = f"HERMUX 1 ticker {j['kid']} {ns} {server} {j['proof']}\n".encode("ascii")
+        try:
+            conn.settimeout(max(0.001, min(LINE_READ_S, lines.deadline - time.monotonic())))
+            conn.sendall(line)
+        except OSError:
+            return ""
+        second, complete = lines.next()
+        parts = second.split(b" ")
+        if not complete or len(parts) != 3 or parts[0] != b"POKE" or parts[1] != b"1":
+            return ""
+        try:
+            given = parts[2].decode("ascii")
+        except UnicodeDecodeError:
+            return ""
+        if not _hex(given, 64):
+            return ""
+        want = mac(key, "client", "ticker", server, nc, ns, "POKE", EMPTY_HASH)
+        return "poke" if same(want, given) else ""
+    if not legacy:
+        return ""
+    want = (key or "").strip().encode()
+    got = first.strip()
+    return "legacy" if want and hmac.compare_digest(got, want) else ""

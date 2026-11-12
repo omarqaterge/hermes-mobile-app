@@ -34,7 +34,7 @@ tmp = Path(tempfile.mkdtemp())
 
 # ── cron ticker: next wake ──
 print("cron_ticker.next_wake")
-ct = load("cron_ticker", ROOT / "phone" / "cron_ticker.py")
+ct = load("cron_ticker", ROOT / "hermes-plugin" / "hermes-mobile" / "cron_ticker.py")
 now = time.time()
 iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(t))  # noqa: E731
 a, b = tmp / "default", tmp / "profiles" / "coder"

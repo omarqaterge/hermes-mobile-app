@@ -53,6 +53,9 @@ echo "java-check: remote guard test $(tail -1 "$OUT/remoteguard.txt")"
 # Local authentication (LocalAuth.java, LocalClient.java) on a plain JDK: the shared vectors and fake local servers.
 ../tools/test_local_auth.sh > "$OUT/localauth.txt" 2>&1 || { grep -v '^PASS' "$OUT/localauth.txt"; echo "java-check: local auth test FAILED"; exit 1; }
 echo "java-check: local auth test $(tail -1 "$OUT/localauth.txt")"
+# The server half of local authentication (LocalServer.java, used by BgHost) on a plain JDK with loopback sockets.
+../tools/test_local_server.sh > "$OUT/localserver.txt" 2>&1 || { grep -v '^PASS' "$OUT/localserver.txt"; echo "java-check: local server test FAILED"; exit 1; }
+echo "java-check: local server test $(tail -1 "$OUT/localserver.txt")"
 # The app's record of chats that asked to read phone data (PhoneDataChats.java) on a plain JDK.
 ../tools/test_phone_data_chats.sh > "$OUT/pdchats.txt" 2>&1 || { grep -v '^PASS' "$OUT/pdchats.txt"; echo "java-check: phone data chats test FAILED"; exit 1; }
 echo "java-check: phone data chats test $(tail -1 "$OUT/pdchats.txt")"

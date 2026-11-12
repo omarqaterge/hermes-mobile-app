@@ -44,7 +44,7 @@ ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "acti
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
-_key_cache = {"mtime": 0.0, "key": ""}
+_key_cache: dict = {}  # _key(): its local_auth.KeyFile reader
 
 
 def _profile() -> str:
@@ -72,13 +72,19 @@ def _chat_title(session_id: str) -> str:
 
 
 def _key() -> str:
-    try:
-        st = KEY_FILE.stat()
-        if st.st_mtime != _key_cache["mtime"]:
-            _key_cache.update(mtime=st.st_mtime, key=KEY_FILE.read_text().strip())
-    except OSError:
-        return ""
-    return _key_cache["key"]
+    """The shared key, read again only when the file changes (local_auth.KeyFile: by inode, modification time in ns
+    and size, so a key replaced within the same second or by a rename is read again; an empty file is never kept)."""
+    reader = _key_cache.get("reader")
+    if reader is None:
+        try:
+            reader = _load("hm_local_auth", "local_auth.py").KeyFile(lambda: KEY_FILE)
+        except Exception:
+            try:
+                return KEY_FILE.read_text().strip()
+            except OSError:
+                return ""
+        _key_cache["reader"] = reader
+    return reader.read()
 
 
 def _dbg(msg: str) -> None:
