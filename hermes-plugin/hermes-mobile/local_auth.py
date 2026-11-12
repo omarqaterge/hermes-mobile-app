@@ -21,7 +21,9 @@ The server halves (see "the server halves" below): ``hello_answer`` (the proof o
 nonce, the server's own listening address and the key id), ``parse_auth`` and ``request_ok`` (a request MAC over the
 method, the path with its query and the raw body bytes), ``answer_proof``, ``PendingHellos`` (the dashboard guard's
 single-use server nonces), ``KeyFile`` (the key file, re-read only when it changes) and ``ticker_serve_one`` (the cron
-ticker's line protocol). Servers still accept the raw key alongside: nothing is refused yet that worked before.
+ticker's line protocol). The servers accept the raw key alongside only until ``~/.hermes-mobile/enforced`` exists (the
+app writes it with a new key when it ends the compatibility window); a raw key after that is refused, and ``Daily`` and
+``report_legacy`` let a server tell the app once a day (a signed ``local_legacy`` event), so that it replaces the key.
 """
 from __future__ import annotations
 
@@ -67,6 +69,7 @@ _KEY = re.compile(r"[\x21-\x7e]+")
 _METHOD = re.compile(r"[A-Z]{1,16}")
 _PATH = re.compile(r"/[\x21-\x7e]*")
 _DIGITS = re.compile(r"[0-9]{1,9}")
+_HEADER_NAME = re.compile(r"[A-Za-z0-9-]{1,64}")
 # The head of an answer, line by line, as strict as the Java side: CRLF endings only, no NUL, no folded header lines,
 # a token before every colon, HTTP/1.1 and no 1xx status (refused, not skipped).
 _STATUS = re.compile(rb"HTTP/1\.1 [2-9][0-9]{2}(?: [^\r\n\x00]*)?\r\n")
@@ -361,8 +364,8 @@ class _Connection(http.client.HTTPConnection):
 
 
 class Answer:
-    def __init__(self, status: int, body: bytes):
-        self.status, self.body = status, body
+    def __init__(self, status: int, body: bytes, headers=None):
+        self.status, self.body, self.headers = status, body, headers
 
 
 class Session:
@@ -374,14 +377,16 @@ class Session:
         self._used = False
 
     def request(self, method: str, path: str, body: bytes | str | None = None, *, with_nc: bool = False,
-                deadline_s: float | None = None) -> Answer:
+                deadline_s: float | None = None, extra: dict | None = None) -> Answer:
         """Send one request (a body goes as application/json). 403 raises ``Unverified("refused")``; a broken or
         oversized answer raises OSError with a neutral message. The session is closed afterwards. ``with_nc`` names the
         client nonce in the header too (``1 <kid> <ns> <nc> <mac>``), as the dashboard's token step wants. ``deadline_s``
         bounds sending the request and reading its whole answer: ``ANSWER_DEADLINE_S`` (10 s) unless given (a call the
         server takes longer to answer, such as the background host's waits), and never less than the session's
         per-read timeout; at most ``MAX_DEADLINE_S`` (120 s) in all. A deadline that is not a finite number above 0
-        raises ValueError and nothing is sent."""
+        raises ValueError and nothing is sent. ``extra``: more header lines (a name of letters, digits and dashes, a
+        printable value without spaces; never one this method sets), checked before anything is sent; the answer keeps
+        its headers (``Answer.headers``)."""
         if self._used:
             raise RuntimeError("used")
         self._used = True
@@ -411,6 +416,11 @@ class Session:
             headers = {"X-Hermux-Auth": auth, "Content-Length": str(len(b)), "Connection": "close"}
             if b:
                 headers["Content-Type"] = "application/json"
+            for k, v in (extra or {}).items():
+                if (not isinstance(k, str) or not isinstance(v, str) or not _HEADER_NAME.fullmatch(k) or not _KEY.fullmatch(v)
+                        or k.lower() in ("x-hermux-auth", "content-length", "connection", "content-type", "host")):
+                    raise ValueError("request")
+                headers[k] = v
             deadline = time.monotonic() + min(max(limit, self._timeout), MAX_DEADLINE_S)
             wire = _Wire(self._sock, MAX_HEAD, deadline, self._timeout)
             try:
@@ -428,11 +438,11 @@ class Session:
                     raise OSError("bad answer")
                 n = int(lengths[0].strip(" \t")) if lengths else None
                 if r.status in (204, 304):
-                    return Answer(r.status, b"")
+                    return Answer(r.status, b"", r.headers)
                 if n is not None and n > MAX_ANSWER:
                     raise OSError("answer too large")
                 wire.limit(MAX_ANSWER if n is None else n)
-                return Answer(r.status, r.read())
+                return Answer(r.status, r.read(), r.headers)
             except (Unverified, socket.timeout):
                 raise
             except _TooMuch:
@@ -594,6 +604,29 @@ def dashboard_token(port: int, key: str, timeout: float = 3, server: str | None 
     if not _hex(proof, 64) or not same(want, proof):
         raise Unverified("bad_proof")
     return tok
+
+
+PROOF_HEADER = "X-Hermux-Proof"
+
+
+def dashboard_get(port: int, key: str, path: str, token: str, timeout: float = 3, server: str | None = None) -> Answer:
+    """``GET path`` (a dashboard REST route) with the session token, from a verified dashboard only: the hello, then the
+    request on that same connection with ``X-Hermes-Session-Token`` and a fresh ``X-Hermux-Nonce``; the answer counts
+    only with exactly one ``X-Hermux-Proof: 1 <kid> <proof>``, the ``answer`` proof over that nonce, the address and
+    ``rest <status>`` under the hello's key, else ``Unverified("bad_proof")`` and the answer is dropped. The token goes
+    only on the verified connection; a token that isn't 1 to 512 printable characters raises ValueError and nothing is
+    sent. ``server``: as for ``session``."""
+    if not isinstance(token, str) or not _TOKEN_TEXT.fullmatch(token):
+        raise ValueError("token")
+    s = session("dashboard", port, key, timeout, server)
+    where, kid_, nc = s._where, s.kid, nonce()
+    a = s.request("GET", path, extra={"X-Hermes-Session-Token": token, "X-Hermux-Nonce": nc})
+    got = a.headers.get_all(PROOF_HEADER) if a.headers is not None else None
+    parts = got[0].strip(" \t").split(" ") if got and len(got) == 1 else []
+    want = mac(key, "answer", "dashboard", where, nc, NO_NONCE, f"rest {a.status}", EMPTY_HASH)
+    if len(parts) != 3 or parts[0] != "1" or not same(parts[1], kid_) or not _hex(parts[2], 64) or not same(parts[2], want):
+        raise Unverified("bad_proof")
+    return a
 
 
 class Backoff:
@@ -819,7 +852,8 @@ def ticker_serve_one(conn, key: str, server: str, legacy: bool = True) -> str:
         C: POKE 1 <mac>          (the client MAC with what ``POKE`` and no body)
 
     Returns ``"poke"`` for a verified POKE, ``"legacy"`` for a first line that is the raw key itself (the protocol
-    before this one; refused when ``legacy`` is False), ``""`` for anything else. Never answers anything but the
+    before this one) while ``legacy`` is True, ``"legacy_refused"`` for that line once ``legacy`` is False (it pokes
+    nothing: the caller reports it, ``report_legacy``), ``""`` for anything else. Never answers anything but the
     HERMUX line, and only when the key is usable. The caller closes the connection."""
     lines = _Lines(conn, time.monotonic() + LINE_DEADLINE_S)
     first, complete = lines.next()
@@ -851,8 +885,42 @@ def ticker_serve_one(conn, key: str, server: str, legacy: bool = True) -> str:
             return ""
         want = mac(key, "client", "ticker", server, nc, ns, "POKE", EMPTY_HASH)
         return "poke" if same(want, given) else ""
-    if not legacy:
-        return ""
     want = (key or "").strip().encode()
     got = first.strip()
-    return "legacy" if want and hmac.compare_digest(got, want) else ""
+    if not (want and hmac.compare_digest(got, want)):
+        return ""
+    return "legacy" if legacy else "legacy_refused"
+
+
+LEGACY_EVERY_S = 86400.0  # a server tells the app about a raw key at most this often
+
+
+class Daily:
+    """True from ``due()`` at most once per ``every`` seconds of wall-clock time (a clock set back counts as time
+    passed, so it can only make the next one come sooner, never stop it). Thread-safe."""
+
+    def __init__(self, every: float = LEGACY_EVERY_S, clock=time.time):
+        self.every, self.clock, self.last = every, clock, None
+        self.lock = threading.Lock()
+
+    def due(self) -> bool:
+        now = self.clock()
+        with self.lock:
+            if self.last is not None and 0 <= now - self.last < self.every:
+                return False
+            self.last = now
+            return True
+
+
+def report_legacy(port_name: str, key: str, events_port: int = 9121, timeout: float = 2) -> bool:
+    """Tells the app that this server refused a raw key after the switch: ``{"kind":"local_legacy","port":<name>}``,
+    signed, to a listener that proved itself (nothing at all otherwise). The app then replaces the key (at most once a
+    day). True on a 2xx answer; never raises."""
+    if port_name not in ROLES:
+        return False
+    try:
+        body = json.dumps({"kind": "local_legacy", "port": port_name}).encode()
+        answer = session("events", events_port, key, timeout=timeout).request("POST", "/event", body)
+        return 200 <= answer.status < 300
+    except Exception:
+        return False

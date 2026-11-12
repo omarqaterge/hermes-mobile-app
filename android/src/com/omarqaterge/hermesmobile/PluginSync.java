@@ -133,16 +133,34 @@ final class PluginSync {
 
     /** Settings → About → Update now / Replace anyway. "ok", or why not. */
     static String userUpdate(Context c, boolean force) {
+        return userUpdate(c, force, false);
+    }
+
+    /**
+     * As above; {@code confirmed}: the page asked first and the user said yes to the warning that a running answer or
+     * job may be cut off (--confirmed), the only kind of tap that may replace an old plugin whose work can't be asked.
+     */
+    static String userUpdate(Context c, boolean force, boolean confirmed) {
         if (apk(c) == null) return "error: this app build has no plugin";
         if (busyRunning()) return "busy";
         if (!canRun(c)) return "not-ready";
         HermesService s = HermesService.instance;
         if (s == null) return "not-ready"; // without the service nothing knows whether Hermes works
         if (!s.hermesIdle()) return "working";
-        return run(c, "apply", force);
+        return run(c, "apply", force, true, confirmed);
     }
 
-    static synchronized String run(Context ctx, String mode, boolean force) {
+    static String run(Context ctx, String mode, boolean force) {
+        return run(ctx, mode, force, false);
+    }
+
+    /** @param user the user tapped (--user): the only run that may replace an old plugin whose work can't be asked (BUSY unknown). */
+    static String run(Context ctx, String mode, boolean force, boolean user) {
+        return run(ctx, mode, force, user, false);
+    }
+
+    /** @param confirmed with {@code user}: the warning was answered (--confirmed). */
+    static synchronized String run(Context ctx, String mode, boolean force, boolean user, boolean confirmed) {
         final Context app = ctx.getApplicationContext();
         if (busyRunning()) return "busy";
         if (!canRun(app)) return "not-ready";
@@ -156,8 +174,11 @@ final class PluginSync {
             StringBuilder sb = new StringBuilder();
             for (byte b : t) sb.append(String.format("%02x", b));
             token = sb.toString();
-            argv = force ? new String[]{"-c", script, "hm-plugin", "apply", a[0], a[1], a[2], token, "--force"}
-                    : new String[]{"-c", script, "hm-plugin", "apply", a[0], a[1], a[2], token};
+            java.util.List<String> args = new java.util.ArrayList<>(java.util.Arrays.asList("-c", script, "hm-plugin", "apply", a[0], a[1], a[2], token));
+            if (force) args.add("--force");
+            if (user) args.add("--user");
+            if (user && confirmed) args.add("--confirmed");
+            argv = args.toArray(new String[0]);
         } else {
             argv = new String[]{"-c", script, "hm-plugin", "check", a[0], a[1]};
         }
@@ -247,8 +268,8 @@ final class PluginSync {
             installed = l.length > 1 ? l[1] : stamp;
             if (l.length > 2) detail = l[2]; // "unverified": Hermes didn't load the plugin before either
         } else if ("BUSY".equals(l[0])) {
-            state = "busy";
             detail = l.length > 1 ? l[1] : "";
+            state = LocalDashboard.busyState(detail); // "busy-unknown": only the user's tap, after a warning, goes on
         } else {
             state = "failed";
             detail = String.join(" ", java.util.Arrays.copyOfRange(l, 1, l.length));
@@ -258,6 +279,15 @@ final class PluginSync {
         if ("failed".equals(state) && "apply".equals(mode)) e.putInt("plugin_tries_" + stamp, p.getInt("plugin_tries_" + stamp, 0) + 1);
         if ("current".equals(state)) e.remove("plugin_tries_" + stamp);
         e.putString("plugin_state", state).putString("plugin_detail", detail).putString("plugin_installed", installed).apply();
+        // Termux's scripts line (HMPLUGIN SCRIPTS ok / fail …, before the last line) is one of the switch's conditions.
+        Boolean scripts = err > 0 ? null : LocalKey.scriptsLine(out);
+        if (scripts != null) {
+            try {
+                HermesService.keys(c).scriptsCopied(scripts);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        HermesService.localTick(c, true);
         if ("current".equals(state)) HermesService.showPluginNotice(c, false); // this APK's plugin answers the hello
         else HermesService.refreshPluginNotice(c); // its text follows the new state while it is up
         pageUpdate();
@@ -285,6 +315,7 @@ final class PluginSync {
             o.put("tries", a == null ? 0 : p.getInt("plugin_tries_" + a[0], 0));
             o.put("maxTries", MAX_TRIES);
             o.put("at", p.getLong("plugin_at", 0));
+            o.put("enforced", !HermesService.keys(c).rawAccepted()); // the switch is on: a tap's restart can't see the old plugin's work
         } catch (Exception ignored) {
         }
         return o.toString();

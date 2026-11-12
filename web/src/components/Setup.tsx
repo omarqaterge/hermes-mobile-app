@@ -17,7 +17,7 @@ import { ScreenShell } from './Screens'
 import { Spinner } from './Spinner'
 import { formatDuration } from '../text'
 import { ReportLink } from './Report'
-import { pluginUpdate, updateAnswer } from '../plugin-sync'
+import { runPluginUpdate } from '../plugin-sync'
 
 // Setup check (drawer → Settings, the status sheet, the offline banner) and the first-run SetupFlow. Both draw the same
 // rows from setupSteps() (setupflow.ts): the check lists every row with a ✓ or ✗ and a button that fixes it or opens
@@ -445,12 +445,26 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         alt: kind === 'installer' ? { label: 'Open Termux', run: () => setupFix('open-termux') } : undefined
       }
     }
-    case 'scripts':
+    case 'scripts': {
+      // What the button can do (the shell's phoneScriptsFix): a hand-changed plugin is replaced only by a forced update;
+      // a held or newer one is never replaced, so there is no button. Both buttons ask first, as Settings does.
+      const fixOf = n?.phoneScriptsFix
+      const run = (force: boolean) => () => void runPluginUpdate(force).then(why => { if (why) toast(why) })
+      if (fixOf === 'none') {
+        return {
+          title: 'Phone scripts are up to date',
+          help: 'Some of Hermux’s scripts in Termux are older than this app. The Hermux plugin is held for testing or newer than this app’s, so the app leaves it and its scripts alone: remove the hold or install the plugin again to bring them up to date.'
+        }
+      }
+      const force = fixOf === 'force'
       return {
         title: 'Phone scripts are up to date',
-        help: 'Some of Hermux’s scripts in Termux are older than this app. Updating the Hermux plugin brings them up to date (Hermux restarts for a moment).',
-        fix: { label: 'Update now', run: () => { const why = updateAnswer(pluginUpdate(false)); if (why) toast(why) } }
+        help: force
+          ? 'Some of Hermux’s scripts in Termux are older than this app, and the Hermux plugin was changed by hand. Replacing the plugin with this app’s copy brings them up to date; the changes made by hand go (Hermux restarts for a moment).'
+          : 'Some of Hermux’s scripts in Termux are older than this app. Updating the Hermux plugin brings them up to date (Hermux restarts for a moment).',
+        fix: { label: force ? 'Replace the plugin' : 'Update now', run: run(force) }
       }
+    }
     case 'autostart': {
       // Shown only on phones whose maker adds an Autostart switch; the shell picks the page (Autostart.java).
       const kind = n?.autostart || 'info'

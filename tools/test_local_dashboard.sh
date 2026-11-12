@@ -668,6 +668,9 @@ public class LocalDashboardTest {
 
         // which plugin is installed (the app's own knowledge only)
         check(LocalDashboard.plugin("1794062084", "1794062084") == H, "plugin: the APK's own stamp answers the hello");
+        check("busy-unknown".equals(LocalDashboard.busyState("unknown")) && "busy".equals(LocalDashboard.busyState("working"))
+                && "busy".equals(LocalDashboard.busyState("settled")) && "busy".equals(LocalDashboard.busyState("")) && "busy".equals(LocalDashboard.busyState(null)),
+                "plugin: BUSY unknown is its own state (busy-unknown), any other BUSY is busy");
         check(LocalDashboard.plugin("1794062085", "1794062084") == H, "plugin: a newer one too");
         check(LocalDashboard.plugin("1793753996", "1794062084") == (LocalDashboard.P_HELLO > 0 && 1793753996L >= LocalDashboard.P_HELLO ? H : O),
                 "plugin: an older one is too old unless at least P_HELLO");
@@ -763,13 +766,19 @@ public class LocalDashboardTest {
 
         // How the app talks to the background host of a bgapp event.
         Object[][] modes = {
-            {"mac", TOKEN, LocalClient.BgMode.MAC}, {"", TOKEN, LocalClient.BgMode.TOKEN}, {null, TOKEN, LocalClient.BgMode.TOKEN},
-            {"MAC", TOKEN, LocalClient.BgMode.TOKEN}, {"mac ", TOKEN, LocalClient.BgMode.TOKEN}, {"mac", "short", LocalClient.BgMode.NONE},
+            {"mac", TOKEN, LocalClient.BgMode.MAC}, {"", TOKEN, LocalClient.BgMode.NONE}, {null, TOKEN, LocalClient.BgMode.NONE},
+            {"MAC", TOKEN, LocalClient.BgMode.NONE}, {"mac ", TOKEN, LocalClient.BgMode.NONE}, {"mac", "short", LocalClient.BgMode.NONE},
             {"mac", "", LocalClient.BgMode.NONE}, {"", "", LocalClient.BgMode.NONE}, {"", null, LocalClient.BgMode.NONE},
             {"mac", new String(new char[257]).replace('\0', 'x'), LocalClient.BgMode.NONE},
         };
         for (Object[] m : modes)
             check(LocalClient.bgMode((String) m[0], (String) m[1]) == m[2], "bg mode: auth " + m[0] + ", token " + (m[1] == null ? "none" : ((String) m[1]).length() + " chars") + ": " + m[2]);
+        boolean neverToken = true;
+        for (Object[] m : modes) neverToken &= LocalClient.bgMode((String) m[0], (String) m[1]) != LocalClient.BgMode.TOKEN;
+        check(neverToken, "bg mode: never the token header (an older plugin's host gets nothing)");
+        check(LocalClient.bgOld("", TOKEN) && LocalClient.bgOld(null, TOKEN) && LocalClient.bgOld("MAC", TOKEN)
+                && !LocalClient.bgOld("mac", TOKEN) && !LocalClient.bgOld("", "") && !LocalClient.bgOld("", null),
+                "bg mode: an older plugin's event with a token is recognised (the app asks for the plugin's update)");
 
         // ---- the page's alert and the wording ----
         check(LocalDashboard.alertJs("dashboard").equals("window.__hmLocalAlert && window.__hmLocalAlert('dashboard')"), "alert script: dashboard");

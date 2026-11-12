@@ -50,7 +50,7 @@ CLIENT = ("VERSION EMPTY_HASH DIRS ROLES NO_NONCE MIN_KEY MAX_WHAT REASONS HOST 
           "ANSWER_DEADLINE_S MAX_HELLO MAX_HEAD MAX_HEADERS MAX_ANSWER MAX_PATH MIN_VERSION _HEX _ADDR _WHAT _KEY _METHOD "
           "_PATH _DIGITS _STATUS _HEADER Unverified _hex is_nonce is_kid is_addr addr hint hello_target nonce _key_text sha256hex kid mac "
           "same _TooMuch _Malformed _Wire _Response _Connection Answer Session session TOKEN_PATH _TOKEN_TEXT "
-          "_json_object dashboard_token").split()
+          "_json_object dashboard_token _HEADER_NAME PROOF_HEADER dashboard_get").split()
 missing = [n for n in CLIENT if n not in hm or n not in la]
 check(f"hm-local has the whole client half ({len(CLIENT)} names){': missing ' + ' '.join(missing) if missing else ''}", not missing)
 differ = [n for n in hm if n in la and hm[n] != la[n]]

@@ -77,6 +77,13 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def send(self, code, body=b"", ctype="application/json"):
         self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(body)))
+        # A new guard proves a REST answer when asked (X-Hermux-Nonce), unless the test says not to (noproof).
+        nc = self.headers.get("X-Hermux-Nonce")
+        loaded = (read("loaded") or b"").strip()
+        if nc and self.path.startswith("/api/") and loaded not in (b"", b"0") and read("noproof") is None:
+            key = open(KEYF).read().strip()
+            p = la.answer_proof(key, "dashboard", la.addr(self.server.server_port), nc, la.NO_NONCE, f"rest {code}")
+            self.send_header("X-Hermux-Proof", f"1 {la.kid(key)} {p}")
         self.end_headers(); self.wfile.write(body)
     def do_GET(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -134,7 +141,7 @@ for _ in $(seq 50); do [ -s "$t/port" ] && break; sleep 0.1; done
 port=$(cat "$t/port")
 "$t/dashproc"
 export HM_DASHBOARD="http://127.0.0.1:$port" HM_BUNDLE_URL="http://127.0.0.1:$port/plugin-bundle"
-export HM_PLUGIN_WAIT=4 HM_PLUGIN_LOAD_WAIT=3 HM_PLUGIN_BACK_WAIT=3 HM_PLUGIN_SETTLE=3 HM_PLUGIN_POLL=0.3 HM_PLUGIN_UP_WAIT=1
+export HM_PLUGIN_WAIT=4 HM_PLUGIN_LOAD_WAIT=3 HM_PLUGIN_BACK_WAIT=3 HM_PLUGIN_SETTLE=3 HM_PLUGIN_POLL=0.3 HM_PLUGIN_UP_WAIT=1 HM_DASH_MIN_AGE=0 HM_TICKER_HOME="$t/tk"
 echo aaa111 > "$t/token"
 
 # The APK's plugin (stamp 2000000000) and an old one (a file changed, no BUILD_STAMP), like the Oct 30 copy on a phone.
@@ -200,6 +207,32 @@ install_old; cp "$NEW/dashboard/plugin_api.py" "$P/dashboard/plugin_api.py"; rm 
 check "it is still replaced (unverified: its own guard isn't the fake's old one)" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 | cut -d' ' -f1-2)" "HMPLUGIN OK"
 check "…and the raw key was never sent" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
 
+echo "after the app ended the compatibility window (~/.hermes-mobile/enforced): never the raw key"
+install_old; rm -f "$t/rawkey.log" "$HOME/logs/loop-events.log"; mkdir -p "$HOME/logs"; : > "$HOME/logs/loop-events.log"
+touch "$HOME/.hermes-mobile/enforced"
+cp "$t/bundle.tgz" "$t/good0.tgz"
+BRK0="$t/brk0/hermes-mobile"; mkdir -p "$t/brk0"; cp -R "$NEW" "$BRK0"; touch "$BRK0/BROKEN"
+echo '{"items":[{"session":"s1","ts":1}]}' > "$t/activity"  # a turn runs; the old guard can't be asked about it
+check "an automatic run with an old guard that can't be asked: BUSY unknown (never a restart mid-turn)" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN BUSY unknown"
+check "…untouched" "$(same "$OLDHASH")" yes
+rm -f "$t/activity"
+check "…also --force alone (not a tap) waits" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 --force)" "HMPLUGIN BUSY unknown"
+: > "$t/restarts"
+check "the user's tap without the warning answered (--user alone): still BUSY unknown, nothing touched" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 --user) $(same "$OLDHASH")" "HMPLUGIN BUSY unknown yes"
+check "the user's confirmed tap (--user --confirmed): replaced, and verified after the restart (the new plugin speaks the hello)" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 --user --confirmed)" "HMPLUGIN OK $STAMP"
+check "…the files are the APK's, loaded" "$(same "$HASH") $(cat "$t/loaded")" "yes $STAMP"
+check "…the raw key was never sent, not even to the old guard" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
+check "…and no legacy_key line" "$(grep -c 'legacy_key' "$HOME/logs/loop-events.log")" 0
+install_old
+read -r _ KH KS <<< "$(bash "$S" pack "$BRK0" "$t/bundle.tgz" 2000000000)"
+check "the user's confirmed tap, a new plugin that doesn't load: rolled back" "$(run apply "$STAMP" "$KH" "$KS" aaa111 --user --confirmed)" "HMPLUGIN FAIL load rolled-back"
+check "…the old plugin is back and loaded" "$(same "$OLDHASH") $(cat "$t/loaded" 2>/dev/null)" "yes 0"
+check "…and still no raw key" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
+cp "$t/good0.tgz" "$t/bundle.tgz"
+check "an unknown option is refused" "$(bash -c "$(cat "$S")" hm-plugin apply "$STAMP" "$HASH" "$SHA" aaa111 --other >/dev/null 2>&1; echo $?)" 2
+rm -f "$HOME/.hermes-mobile/enforced"
+install_old
+
 echo "nothing while Hermes works"
 install_old; echo '{"items":[{"session":"s1","ts":1}]}' > "$t/activity"
 check "busy" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN BUSY working"
@@ -260,10 +293,35 @@ check "the update still runs" "$(printf %s "$o" | cut -d' ' -f1-2)" "HMPLUGIN OK
 check "…and the raw key went nowhere (whatever answered was not the old guard's Hermes)" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
 pkill -f "hermes dashboard --host 127.0.0.1 --port $port --no-open"; "$t/dashproc"; install_old  # the next part starts from an old plugin
 
+echo "an old guard on disk, no dashboard process, and a verified dashboard answering: its token never goes out plainly"
+install_old; pkill -f "hermes dashboard --host 127.0.0.1 --port $port --no-open"; sleep 0.2; echo "$STAMP" > "$t/loaded"
+: > "$t/curl-argv"; rm -f "$t/rawkey.log"
+run apply "$STAMP" "$HASH" "$SHA" aaa111 >/dev/null
+check "…no plain request carried a session token (the old-guard branch needs the dashboard's process too)" "$(grep -c 'X-Hermes-Session-Token' "$t/curl-argv")" 0
+check "…and no raw key" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
+pkill -f "hermes dashboard --host 127.0.0.1 --port $port --no-open"; "$t/dashproc"; install_old
+
+echo "an old plugin whose dashboard process has only just started: no raw key"
+install_old; rm -f "$t/rawkey.log"
+o=$(HM_DASH_MIN_AGE=3600 run apply "$STAMP" "$HASH" "$SHA" aaa111)
+check "the update still runs" "$(printf %s "$o" | cut -d' ' -f1-2)" "HMPLUGIN OK"
+check "…and the raw key went nowhere (a process younger than DASH_MIN_AGE may not hold the port yet)" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
+install_old; rm -f "$t/rawkey.log"; sleep 2
+o=$(HM_DASH_MIN_AGE=1 run apply "$STAMP" "$HASH" "$SHA" aaa111)
+check "a process older than DASH_MIN_AGE: the exception as before (its age read from ps)" "$([ -s "$t/rawkey.log" ] && echo used) $(printf %s "$o" | cut -d' ' -f1-2)" "used HMPLUGIN OK"
+age() { bash "$S" age-parts "$@"; }
+check "etime: SS, MM:SS, HH:MM:SS, D-HH:MM:SS" "$(age etime 07) $(age etime 05:03) $(age etime 01:02:03) $(age etime 2-01:02:03)" "7 303 3723 176523"
+check "etime: anything else is no age (empty, junk, too many parts, a day without the time)" "[$(age etime '')][$(age etime x)][$(age etime 1:2:3:4)][$(age etime 3-)][$(age etime :5)]" "[][][][][]"
+STAT='123 (python3) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 2500 19'
+check "/proc stat: the age from field 22 and the uptime" "$(age stat "$STAT" 100.42 100)" 75
+check "/proc stat: a process that ended in between (no stat line) is no age, not the uptime" "[$(age stat '' 100.42 100)]" "[]"
+check "/proc stat: no uptime, no tick rate, or a start after the uptime is no age" "[$(age stat "$STAT" '' 100)][$(age stat "$STAT" 100 '')][$(age stat "$STAT" 100 0)][$(age stat "$STAT" 10 100)]" "[][][][]"
+install_old
+
 echo "under chroot the dashboard's process counts only as root's"
 install_old; rm -f "$t/su-args" "$t/rawkey.log"
 HM_FAKE_WHICH=chroot run apply "$STAMP" "$HASH" "$SHA" aaa111 >/dev/null
-check "the process check asks pgrep for root's processes only" "$(grep -c "^pgrep -u 0 -f '" "$t/su-args")" "$(grep -c "pgrep" "$t/su-args")"
+check "the dashboard's process check asks pgrep for root's processes only" "$(grep -c "^pgrep -u 0 -f '.*dashboard" "$t/su-args")" "$(grep -c "pgrep.*dashboard" "$t/su-args")"
 check "…and asked at least once" "$([ "$(grep -c "^pgrep -u 0 -f '" "$t/su-args")" -ge 1 ] && echo yes)" yes
 check "…no root process here: no raw key" "$(cat "$t/rawkey.log" 2>/dev/null)" ""
 install_old
@@ -282,6 +340,17 @@ echo "Hermes was down (no plugin loaded): installed, unverified"
 install_old; rm -f "$t/loaded"
 check "unverified" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN OK $STAMP unverified"
 check "files" "$(same "$HASH")" yes
+
+echo "the plugin's routes through hm-local get: the token only on a verified connection, an answer only with its proof"
+install_old; cp "$t/good.tgz" "$t/bundle.tgz"; echo 0 > "$t/loaded"
+check "an update" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN OK $STAMP"
+: > "$t/curl-argv"
+check "a check of the current plugin (its busy check asks the new guard)" "$(run check "$STAMP" "$HASH")" "HMPLUGIN STATE current $STAMP"
+check "…the session token never went in a plain request" "$(grep -c 'X-Hermes-Session-Token' "$t/curl-argv")" 0
+install_old; echo 0 > "$t/loaded"; touch "$t/noproof"
+check "a new plugin whose answers carry no proof can't be seen serving: rolled back" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN FAIL load rolled-back"
+check "…the old plugin is back" "$(same "$OLDHASH")" yes
+rm -f "$t/noproof"; install_old
 
 echo "an interrupted run is settled by the next one"
 install_old; mkdir -p "$W"; mv "$P" "$W/old"
@@ -454,11 +523,12 @@ cp "$t/good.tgz" "$t/bundle.tgz"; install_old; echo 0 > "$t/loaded"
 o=$(runall apply "$STAMP" "$HASH" "$SHA" aaa111)
 check "a bundle without the scripts: SCRIPTS fail missing, the update still succeeds" "$(scripts_line "$o") / $(printf '%s\n' "$o" | tail -1)" "HMPLUGIN SCRIPTS fail missing / HMPLUGIN OK $STAMP"
 echo "the cron ticker restarts after an update, whichever copy runs"
-fake_ticker() { python3 -c 'import time; time.sleep(300)' "$1" >/dev/null 2>&1 & echo $!; }
+# A stand-in ticker: python3 running a file (under HM_TICKER_HOME) that only sleeps, as the real one is seen by ps.
+fake_ticker() { mkdir -p "$(dirname "$HM_TICKER_HOME/$1")"; printf 'import time\ntime.sleep(300)\n' > "$HM_TICKER_HOME/$1"; python3 "$HM_TICKER_HOME/$1" >/dev/null 2>&1 & echo $!; }
 alive() { kill -0 "$1" 2>/dev/null && echo alive || echo gone; }
-tp=$(fake_ticker /root/.hermes/plugins/hermes-mobile/cron_ticker.py)
-ts=$(fake_ticker /root/.hermes/scripts/cron_ticker.py)
-to=$(fake_ticker /root/.hermes/elsewhere/cron_ticker.py)
+tp=$(fake_ticker plugins/hermes-mobile/cron_ticker.py)
+ts=$(fake_ticker scripts/cron_ticker.py)
+to=$(fake_ticker elsewhere/cron_ticker.py)
 sleep 0.3
 cp "$t/good.tgz" "$t/bundle.tgz"; install_old; echo 0 > "$t/loaded"
 check "an update" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN OK $STAMP"
@@ -467,6 +537,69 @@ check "the plugin's own ticker is stopped (its loop starts the new code)" "$(ali
 check "an older install's ticker in scripts/ is stopped" "$(alive "$ts")" gone
 check "another process with that file name is left alone" "$(alive "$to")" alive
 kill "$tp" "$ts" "$to" 2>/dev/null; wait "$tp" "$ts" "$to" 2>/dev/null
+
+echo "an older install's ticker file in scripts/ becomes a stand-in for the plugin's copy"
+OT="$HM_PLUGIN_ROOT/scripts/cron_ticker.py" KEEP="$HM_PLUGIN_ROOT/scripts/cron_ticker.py.before"
+mkdir -p "$HM_PLUGIN_ROOT/scripts"; printf 'print("old ticker")\n' > "$OT"; rm -f "$KEEP"
+cp "$t/good.tgz" "$t/bundle.tgz"; install_old; echo 0 > "$t/loaded"
+ts=$(fake_ticker scripts/cron_ticker.py); sleep 0.3
+check "an update" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN OK $STAMP"
+check "…the old file is now the stand-in" "$(grep -c 'hermux-ticker-shim' "$OT")" 1
+check "…it runs only the plugin's copy" "$(grep -c "T = '$P/cron_ticker.py'" "$OT") $(grep -c 'os.execv' "$OT")" "1 1"
+check "…the old file is kept for a rollback" "$(cat "$KEEP")" 'print("old ticker")'
+sleep 0.3
+check "…the running old ticker is gone (its loop starts the stand-in)" "$(alive "$ts")" gone
+mv "$P/cron_ticker.py" "$t/ct.away"
+check "the stand-in fails closed without the plugin's copy (no old code, an error)" "$(python3 "$OT" >/dev/null 2>&1; echo $?)" 1
+mv "$t/ct.away" "$P/cron_ticker.py"
+cp "$OT" "$t/shim.1"
+ts=$(fake_ticker scripts/cron_ticker.py); tp=$(fake_ticker plugins/hermes-mobile/cron_ticker.py); sleep 0.3
+check "a check later" "$(run check "$STAMP" "$HASH")" "HMPLUGIN STATE current $STAMP"
+check "…changes nothing in the stand-in or the kept file (idempotent)" "$(cmp -s "$OT" "$t/shim.1" && echo same) $(cat "$KEEP")" 'same print("old ticker")'
+sleep 0.3
+check "…stops an old ticker still running the scripts/ file" "$(alive "$ts")" gone
+check "…and leaves the plugin's own ticker alone" "$(alive "$tp")" alive
+kill "$tp" 2>/dev/null; wait "$tp" "$ts" 2>/dev/null
+rm -f "$OT"; printf 'print("old ticker")\n' > "$OT"; install_old; bash "$S" stamp "$P" 2000000000 apk
+check "a check of a current plugin writes the stand-in an earlier update didn't" "$(run check "$STAMP" "$(bash "$S" hash "$P")" >/dev/null; grep -c 'hermux-ticker-shim' "$OT")" 1
+install_old; rm -f "$P/cron_ticker.py"  # an older plugin without a ticker of its own
+read -r _ KH KS <<< "$(bash "$S" pack "$BRK0" "$t/bundle.tgz" 2000000000)"
+check "a rollback to a plugin without its own ticker" "$(run apply "$STAMP" "$KH" "$KS" aaa111)" "HMPLUGIN FAIL load rolled-back"
+check "…brings the old ticker file back" "$(cat "$OT")" 'print("old ticker")'
+cp "$t/good.tgz" "$t/bundle.tgz"; rm -f "$OT" "$KEEP"; install_old
+printf 'x\n' > "$t/real"; ln -s "$t/real" "$OT"
+check "a link in scripts/ is never written through" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111 >/dev/null; [ -L "$OT" ] && cat "$t/real")" x
+rm -f "$OT"; install_old
+
+echo "the supervisor's real cron-ticker loop: only the ticker itself is stopped, never its wrappers"
+# The loop's own text from hermes-services, with this test's ticker folder and python3 for Hermes's Python.
+inner=$(sed -n 's/^run_loop cron-ticker \$deb bash -lc "\(.*\)"$/\1/p' "$here/phone/hermes-services")
+check "the loop's text names both ticker files (the case the wrappers are in)" "$(printf %s "$inner" | grep -c 'plugins/hermes-mobile/cron_ticker.py.*scripts/cron_ticker.py')" 1
+inner=${inner//\/root\/.hermes/$HM_TICKER_HOME}; inner=${inner//\\\$/\$}; inner="PY=python3${inner#\$PY}"
+fp=$(fake_ticker plugins/hermes-mobile/cron_ticker.py); kill "$fp" 2>/dev/null  # just the file
+# A stand-in for run_loop around the login wrapper: its command line holds the loop's text, as proot's or chroot's does.
+bash -c 'while :; do bash -c "$1"; sleep 0.2; done' cron-ticker-loop "$inner" >/dev/null 2>&1 & loop=$!
+sleep 0.8
+ticker_pids() {  # the python3 processes running the plugin's ticker file (not the loop's wrappers)
+  local p a
+  for p in $(pgrep -f "$HM_TICKER_HOME/plugins/hermes-mobile/[c]ron_ticker.py"); do
+    a=$(ps -o args= -p "$p")
+    [ "${a%% *}" = python3 ] && echo "$p"
+  done
+  return 0
+}
+tickers() { ticker_pids | grep -c .; }
+t1=$(ticker_pids | head -1)
+check "(one ticker runs under the loop)" "$(tickers)" 1
+cp "$t/good.tgz" "$t/bundle.tgz"; install_old; bash "$S" stamp "$P" "$STAMP" apk
+check "a check of a current plugin" "$(run check "$STAMP" "$(bash "$S" hash "$P")")" "HMPLUGIN STATE current $STAMP"
+check "…leaves the loop and its ticker alone" "$(alive "$loop") $(alive "$t1") $(tickers)" "alive alive 1"
+install_old; echo 0 > "$t/loaded"
+check "an update" "$(run apply "$STAMP" "$HASH" "$SHA" aaa111)" "HMPLUGIN OK $STAMP"
+sleep 1
+check "…stops the ticker, not the loop, and exactly one ticker runs again" "$(alive "$loop") $(alive "$t1") $(tickers)" "alive gone 1"
+kill "$loop" 2>/dev/null; pkill -f "$HM_TICKER_HOME/plugins/hermes-mobile/[c]ron_ticker.py" 2>/dev/null; wait "$loop" 2>/dev/null
+install_old
 check "the APK's copy of this script fits one argument (128 KiB): $(bash "$S" embed "$here/phone/hermes-services" "$t/size.sh"; wc -c < "$t/size.sh" | tr -d ' ') bytes" "$(( $(wc -c < "$t/size.sh") < 131072 ))" 1
 
 echo "the exception's key stays off every command line"

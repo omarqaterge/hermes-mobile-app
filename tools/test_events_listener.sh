@@ -16,7 +16,7 @@ mkdir -p "$T/src/com/omarqaterge/hermesmobile"
 cp android/src/com/omarqaterge/hermesmobile/EventsListener.java android/src/com/omarqaterge/hermesmobile/LocalKey.java \
   android/src/com/omarqaterge/hermesmobile/LocalAuth.java android/src/com/omarqaterge/hermesmobile/LocalClient.java \
   android/src/com/omarqaterge/hermesmobile/LocalServer.java android/src/com/omarqaterge/hermesmobile/SetupLines.java \
-  "$T/src/com/omarqaterge/hermesmobile/"
+  android/src/com/omarqaterge/hermesmobile/LocalDashboard.java "$T/src/com/omarqaterge/hermesmobile/"
 cat > "$T/src/com/omarqaterge/hermesmobile/EventsListenerTest.java" <<'JAVA'
 package com.omarqaterge.hermesmobile;
 
@@ -68,7 +68,11 @@ public class EventsListenerTest {
         final ServerSocket ss;
         final int port;
         final LinkedBlockingQueue<Object> seen = new LinkedBlockingQueue<>();
-        Server() throws IOException {
+        final LocalKey keys;
+        final java.util.concurrent.atomic.AtomicInteger legacy = new java.util.concurrent.atomic.AtomicInteger();
+        Server() throws IOException { this(KEYS); }
+        Server(LocalKey keys) throws IOException {
+            this.keys = keys;
             ss = new ServerSocket(0, 8, InetAddress.getByAddress(new byte[] {127, 0, 0, 1}));
             port = ss.getLocalPort();
             Thread t = new Thread(() -> {
@@ -84,10 +88,10 @@ public class EventsListenerTest {
         void serve(Socket c) {
             try (Socket so = c) {
                 so.setSoTimeout(3000);
-                EventsListener.Request r = EventsListener.read(so, KEYS, FORBID, TOO_BIG);
+                EventsListener.Request r = EventsListener.read(so, keys, FORBID, TOO_BIG, legacy::incrementAndGet);
                 seen.add(r == null ? "closed" : r);
                 if (r == null) return;
-                if (r.auth() == LocalServer.Auth.MAC) KEYS.confirm(r.kid());
+                if (r.auth() == LocalServer.Auth.MAC) keys.confirm(r.kid());
                 OutputStream out = so.getOutputStream();
                 // The real decision (EventsListener.verdict), and the real one-time token checks behind it.
                 switch (EventsListener.verdict(r)) {
@@ -216,6 +220,77 @@ public class EventsListenerTest {
         });
         t.start();
         return t;
+    }
+
+    /** The switch (LocalKey.tick, confirm) seen from the listener: the raw key before, during step 2 and after step 3. */
+    static void switchOnTheListener(byte[] body) throws Exception {
+        Mem st = new Mem();
+        LocalKey ks = new LocalKey(st, () -> now, 1);
+        String k0 = ks.current();
+        LocalKey.Facts ready = new LocalKey.Facts(true, "current", "1800000000", "1800000000", false);
+        java.util.List<String> shared = new java.util.ArrayList<>();
+        try (Server srv = new Server(ks)) {
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/event", "X-Hermes-Mobile-Key: " + k0 + "\r\n", body) == 204 && "EVENT RAW".equals(drain(srv)) && srv.legacy.get() == 0,
+                        "switch: in the window the raw key gets in, and nothing is reported");
+            }
+            ks.scriptsCopied(true);
+            ks.tickerSeen(true);
+            check(LocalClient.open("events", srv.port, ks).request("POST", "/event", body).status == 204 && "EVENT MAC".equals(drain(srv)), "switch: a signed request after the scripts line");
+            LocalKey.Result r = ks.tick(ready, shared::add);
+            String k1 = ks.current();
+            check("enforce".equals(r.rotated) && shared.size() == 1 && ks.rawAccepted(), "switch: steps 1 and 2 ran, the listener still accepts the raw key");
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/event", "X-Hermes-Mobile-Key: " + k1 + "\r\n", body) == 204 && "EVENT RAW".equals(drain(srv)) && srv.legacy.get() == 0,
+                        "switch: before Termux used the new key, the app's own helpers' raw key still gets in");
+            }
+            check(LocalClient.open("events", srv.port, holding(k0)).request("POST", "/event", body).status == 204 && "EVENT MAC".equals(drain(srv)) && ks.rawAccepted(),
+                    "switch: a client still holding the old key names it and completes a signed request; that is not step 3");
+            check(LocalClient.open("events", srv.port, holding(k1)).request("POST", "/event", body).status == 204 && "EVENT MAC".equals(drain(srv)) && !ks.rawAccepted(),
+                    "switch: the first signed request under the new key is step 3");
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/event", "X-Hermes-Mobile-Key: " + k1 + "\r\n", body) == 403 && "EVENT NONE".equals(drain(srv)) && srv.legacy.get() == 1,
+                        "switch: after it, the raw current key gets 403 and is reported once");
+            }
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/event", "X-Hermes-Mobile-Key: " + k0 + "\r\n", body) == 403 && "EVENT NONE".equals(drain(srv)) && srv.legacy.get() == 2,
+                        "switch: the raw previous key (still in its last 2 minutes for signed requests) gets 403 and is reported");
+            }
+            try (Raw c = new Raw(srv.port)) {
+                Object[] ans = c.request("POST", "/phonedata", "X-Hermes-Mobile-Key: " + k1 + "\r\n", utf8("{\"op\":\"status\"}"));
+                check((Integer) ans[0] == 403 && FORBID.equals(ans[1]) && "refused no_key".equals(drain(srv)) && srv.legacy.get() == 3,
+                        "switch: /phonedata with the raw key: 403 and its forbidden answer before the body is read, reported");
+            }
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/event", "X-Hermes-Mobile-Key: " + OTHER + "\r\n", body) == 403 && "EVENT NONE".equals(drain(srv)) && srv.legacy.get() == 3,
+                        "switch: a wrong raw key gets 403 and is not reported (it is no key of ours)");
+            }
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/event", "X-Hermes-Mobile-Key: " + k1 + "\r\nX-Hermes-Mobile-Key: " + k1 + "\r\n", body) == 403 && "EVENT NONE".equals(drain(srv)),
+                        "switch: the header twice gets 403");
+            }
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/setup", "", utf8(setupBody(SETUP_TOKEN))) == 204 && "SETUP NONE".equals(drain(srv)), "switch: /setup keeps its own one-time token (204 without a key)");
+            }
+            try (Raw c = new Raw(srv.port)) {
+                check(c.status("POST", "/setup", "", utf8(setupBody("wrong-token-0123456789"))) == 403 && "SETUP NONE".equals(drain(srv)), "switch: /setup with a wrong token: 403");
+            }
+            bundleToken = "tok777";
+            try (Raw c = new Raw(srv.port)) {
+                c.send(ascii("GET /plugin-bundle/tok777 HTTP/1.1\r\n\r\n"));
+                check((Integer) c.answer()[0] == 200 && "BUNDLE NONE".equals(drain(srv)), "switch: /plugin-bundle/<token> keeps its one-time token");
+            }
+            check(LocalClient.open("events", srv.port, ks).request("POST", "/event", body).status == 204 && "EVENT MAC".equals(drain(srv)), "switch: signed events keep working");
+            check(LocalClient.open("events", srv.port, ks).request("POST", "/phonedata", utf8("{\"op\":\"status\"}")).status == 200 && "PHONEDATA MAC".equals(drain(srv)),
+                    "switch: signed phone-data reads keep working");
+            check(LocalClient.open("events", srv.port, holding(k0)).request("POST", "/event", body).status == 204 && "EVENT MAC".equals(drain(srv)),
+                    "switch: an old-key client within its last 2 minutes still completes through the kid hint");
+            now += LocalKey.CONFIRM_MS;
+            String why;
+            try { LocalClient.open("events", srv.port, holding(k0)); why = "verified"; } catch (LocalClient.Unverified u) { why = u.why; }
+            check("unknown_kid".equals(why) && "closed".equals(drain(srv)), "switch: after it, the old key gets unknown_kid and sends nothing");
+            check(srv.legacy.get() == 3, "switch: signed requests are never reported");
+        }
     }
 
     public static void main(String[] a) throws Exception {
@@ -453,6 +528,8 @@ public class EventsListenerTest {
             String d1 = drain(slow), d2 = drain(slow);
             check("io SocketTimeoutException".equals(d1) && "io SocketTimeoutException".equals(d2), "... both as timeouts, nothing handled (" + d1 + ", " + d2 + ")");
         }
+
+        switchOnTheListener(body);
 
         // The bind retry plan.
         long[] want = {1000, 2000, 4000, 8000, 16000, 32000, 60000, 300000, 300000};

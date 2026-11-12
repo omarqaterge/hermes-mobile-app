@@ -244,7 +244,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 3. `setBgApp` pushes the state to the page (`window.__hmBg`, also on every `onResume`); at start the page reads
    `bgState()`. `bgapp.ts` shows the card only in the chat that started it.
 4. The card asks for frames with `bgFrameAsync(id, maxW)` (width clamped to 120–1080) at most every 500 ms.
-   `MainActivity.bgRequest` GETs `/frame?w=…` from `BgHost` with `X-HM-Token` and answers with a JPEG data URL
+   `MainActivity.bgRequest` GETs `/frame?w=…` from `BgHost` after a verified hello (local authentication, the per-start token as the key) and answers with a JPEG data URL
    through `window.__hmBgFrame`. While the hidden screen draws nothing new, `BgHost` sends its last JPEG of that
    width again instead of encoding the same picture.
 5. Stop and Take over call `bgAction('stop' | 'take_over')`, which POSTs `/close` or `/hand_over` to `BgHost`;

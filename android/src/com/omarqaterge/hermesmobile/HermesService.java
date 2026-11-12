@@ -167,8 +167,15 @@ public class HermesService extends Service {
         String token = e.optString("token", "");
         if (session.isEmpty() || port < 1024 || port > 65535) return;
         // "auth":"mac": the host takes only requests after a hello it answers with this token as the key (LocalClient,
-        // role bghost); otherwise an older plugin started it, and the token goes in X-HM-Token as before.
-        LocalClient.BgMode mode = LocalClient.bgMode(e.optString("auth", ""), token);
+        // role bghost). Otherwise an older plugin started it: the app sends it nothing (no live view, no taps, no typed
+        // text without a proof of who answers) and asks for the plugin's update instead; the agent's tool still works.
+        String auth = e.optString("auth", "");
+        if (LocalClient.bgOld(auth, token)) {
+            showPluginNotice(this, true);
+            main.post(() -> PluginSync.maybeApply(this));
+            return;
+        }
+        LocalClient.BgMode mode = LocalClient.bgMode(auth, token);
         if (mode == LocalClient.BgMode.NONE) return;
         boolean mac = mode == LocalClient.BgMode.MAC;
         BgApp old = bgApp;
@@ -252,6 +259,12 @@ public class HermesService extends Service {
         else startForeground(STATUS_ID, statusNotification("Ready", null, false));
         running = true;
         instance = this;
+        // Before the first share (onStartCommand): a rotation after an app update, then the switch (LocalKey.tick).
+        try {
+            report(this, keys(this).tick(facts(this), switchRunner(this)));
+        } catch (RuntimeException e) {
+            // nothing changed: the next trigger looks again
+        }
         listen();
         rearmWake();
         ShizukuKeeper.armCheck(this); // once, 90 s of real time: after a reboot Shizuku doesn't start by itself, so no binder arrives
@@ -392,6 +405,7 @@ public class HermesService extends Service {
         new Thread(() -> {
             try {
                 LocalClient.poke(TICKER_PORT, keys(this));
+                keys(this).tickerSeen(true); // a verified poke: the ticker on the port runs the new code
             } catch (LocalClient.Unverified u) {
                 // not verified (or an older ticker that doesn't answer the hello): nothing was sent but the hello, and
                 // the job starts on the next tick (≤ 60 s). No alert.
@@ -695,9 +709,18 @@ public class HermesService extends Service {
                     }
                     return e.commit(); // rare (a new key, a rotation, a grace cut): written before anyone is told
                 }
-            }, System::currentTimeMillis, PluginSync.versionCode(app));
+            }, System::currentTimeMillis, android.os.SystemClock::elapsedRealtime, () -> bootCount(app), PluginSync.versionCode(app));
         }
         return keys;
+    }
+
+    /** The phone's boot count (Settings.Global.BOOT_COUNT, API 24, no permission), or -1 when it can't be read. */
+    static int bootCount(Context c) {
+        try {
+            return android.provider.Settings.Global.getInt(c.getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1);
+        } catch (RuntimeException e) {
+            return -1;
+        }
     }
 
     /** The current key (made once, 24 random bytes as hex): LocalKey.current. */
@@ -713,6 +736,154 @@ public class HermesService extends Service {
         if (s == null) return;
         s.keyShared = false;
         s.shareKeyWithTermux();
+        localTick(s, true); // a fresh install's plugin and scripts are new: the switch may close the window now
+    }
+
+    // ── the end of local authentication's compatibility window (LocalKey.tick: rotations and the switch) ──
+    /** One thread for every look at the switch, so two never run at once (a daemon thread that waits on its queue between looks). */
+    private static final java.util.concurrent.ExecutorService KEY_THREAD = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "hermes-local-key");
+        t.setDaemon(true);
+        return t;
+    });
+    private static final Handler KEY_LATER = new Handler(Looper.getMainLooper());
+    private static final Object TICK_LOCK = new Object();
+    private static long tickedAt = -1;
+    private static Context tickContext;
+    /** The one later look a limited rotation asked for (a Handler message: no wake lock; a sleeping phone just waits). */
+    private static final Runnable TICK_LATER = () -> { Context c = tickContext; if (c != null) localTick(c, true); };
+    private static long legacyNotedDayAt = -1;
+
+    /** What the app knows for the switch: from its own state only (LocalKey.Facts). */
+    static LocalKey.Facts facts(Context c) {
+        SharedPreferences p = c.getSharedPreferences("hermes", MODE_PRIVATE);
+        String[] apk = PluginSync.apk(c);
+        return new LocalKey.Facts(MainActivity.termuxOk(c) && !Uninstall.started(c), p.getString("plugin_state", ""),
+                p.getString("plugin_installed", ""), apk == null ? null : apk[0], PluginSync.busyRunning() || setup(c).installing());
+    }
+
+    /** A look at the switch on its own thread: at once when {@code force}, else at most once a minute. Any thread. */
+    static void localTick(Context ctx, boolean force) {
+        final Context c = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
+        long now = android.os.SystemClock.elapsedRealtime();
+        synchronized (TICK_LOCK) {
+            if (!force && !EventsListener.every(tickedAt, now, 60_000L)) return;
+            tickedAt = now;
+            tickContext = c;
+        }
+        try {
+            KEY_THREAD.execute(() -> {
+                try {
+                    report(c, keys(c).tick(facts(c), switchRunner(c)));
+                } catch (RuntimeException ignored) {
+                }
+            });
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    /** A raw key reached a server after the switch (the listener, or a Termux-side server's signed report): one more rotation, within its limits. */
+    static void legacySeen(Context ctx) {
+        final Context c = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
+        try {
+            KEY_THREAD.execute(() -> {
+                try {
+                    report(c, keys(c).legacySeen(switchRunner(c)));
+                } catch (RuntimeException ignored) {
+                }
+            });
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    /** The diagnostic events of a tick ({@code local key_rotated why=…}, {@code local enforced why=cap}), the share's state, the later look. */
+    private static void report(Context c, LocalKey.Result r) {
+        if (r.rotated != null) {
+            HermuxApp.log(c).event("local", "key_rotated", "why", r.rotated, "side", "app");
+            HermesService s = instance;
+            if (s != null) s.keyShared = r.shared; // not handed over: the next trigger shares it
+        }
+        if (r.enforced != null) HermuxApp.log(c).event("local", "enforced", "why", r.enforced, "side", "app");
+        if (r.paused) HermuxApp.log(c).event("local", "legacy_paused", "side", "app");
+        lookLater(c);
+        if (r.retryMs > 0) {
+            synchronized (TICK_LOCK) {
+                tickContext = c.getApplicationContext() != null ? c.getApplicationContext() : c;
+            }
+            KEY_LATER.removeCallbacks(TICK_LATER);
+            KEY_LATER.postDelayed(TICK_LATER, Math.min(r.retryMs + 1000, LocalKey.GRACE_MS));
+        }
+    }
+
+    private static final android.app.AlarmManager.OnAlarmListener LOOK = () -> {
+        Context c = tickContext;
+        if (c != null) localTick(c, true);
+    };
+
+    /**
+     * While local authentication's window is open, one more look within LocalKey.LOOK_EVERY_MS of real time, so the
+     * window's count misses little before a shutdown: a non-waking, inexact alarm (ELAPSED_REALTIME: delivered at the
+     * phone's next wake, never waking it), one at a time, none once the window is closed (bounded by the window).
+     */
+    private static void lookLater(Context c) {
+        try {
+            android.app.AlarmManager am = c.getSystemService(android.app.AlarmManager.class);
+            if (am == null) return;
+            am.cancel(LOOK);
+            long ms = keys(c).lookAgainMs(MainActivity.termuxOk(c) && !Uninstall.started(c)); // none while not counting
+            if (ms <= 0) return;
+            synchronized (TICK_LOCK) {
+                tickContext = c.getApplicationContext() != null ? c.getApplicationContext() : c;
+            }
+            am.set(android.app.AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + ms, "hermux:local-window", LOOK, KEY_LATER);
+        } catch (RuntimeException ignored) {
+            // no alarm: the next service start, request or plugin check looks instead
+        }
+    }
+
+    /**
+     * StartReceiver (the keeper wakes the app, e.g. for a key id Termux doesn't know) and a request under the previous
+     * key: share the key again, only when the listener saw Termux use a key that isn't the current one
+     * (LocalKey.reshareWanted: the keeper's hello names its kid, which counts), at most every 10 minutes.
+     */
+    static void reshareIfDue() {
+        HermesService s = instance;
+        if (s == null || !keys(s).reshareWanted()) return; // a bare nudge with nothing seen runs no Termux command
+        try {
+            KEY_THREAD.execute(s::shareKeyWithTermux);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    /** termuxRunner, and nothing before Termux has accepted a command once (a fresh phone: Termux would show an error). */
+    static LocalKey.Runner switchRunner(Context c) {
+        LocalKey.Runner run = termuxRunner(c);
+        return cmd -> {
+            if (!MainActivity.termuxOk(c)) throw new IllegalStateException("not set up"); // shareKeyAgain shares it then
+            run.run(cmd);
+        };
+    }
+
+    /**
+     * The RUN_COMMAND that runs one key command in Termux (sh -c), refused (it throws) once Uninstall has started or
+     * without Termux's permission; a start that returns null counts as not handed over (LocalKey.starting).
+     */
+    static LocalKey.Runner termuxRunner(Context c) {
+        LocalKey.Runner start = LocalKey.starting(cmd -> {
+            Intent i = new Intent();
+            i.setClassName("com.termux", "com.termux.app.RunCommandService");
+            i.setAction("com.termux.RUN_COMMAND");
+            i.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/sh");
+            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", cmd});
+            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
+            return c.startForegroundService(i); // null: Termux's service could not be found
+        });
+        return cmd -> {
+            if (Uninstall.started(c)) throw new IllegalStateException("uninstalling"); // nothing more goes into Termux
+            if (c.checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED)
+                throw new IllegalStateException("no permission");
+            start.run(cmd);
+        };
     }
 
     // ── app-first setup: the installer's progress lines (SetupLines has the policy) ──
@@ -765,6 +936,11 @@ public class HermesService extends Service {
             MainActivity.setTermuxOk(this);
             text = "Ready";
         }
+        if (SetupLines.checksPlugin(line)) {
+            // The installer put a new plugin and new scripts in place: check them now (a one-off, no timer), so local
+            // authentication's switch can see its conditions instead of waiting for the next service start.
+            main.post(() -> PluginSync.run(this, "check", false));
+        }
         if (text != null) {
             final String t = text;
             new Handler(Looper.getMainLooper()).post(() -> {
@@ -782,16 +958,9 @@ public class HermesService extends Service {
         if (Uninstall.started(this)) return false; // Settings → Uninstall Hermux: nothing more goes into Termux
         if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) return false;
         // Shared only once the key is saved and the command handed over (LocalKey.share); otherwise keyShared stays false
-        // and the next trigger tries again. The key goes to a temporary file moved over the old one (LocalKey.shareCommand).
-        boolean handed = keys(this).share(LocalKey.starting(cmd -> {
-            Intent i = new Intent();
-            i.setClassName("com.termux", "com.termux.app.RunCommandService");
-            i.setAction("com.termux.RUN_COMMAND");
-            i.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/sh");
-            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-c", cmd});
-            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
-            return startForegroundService(i); // null: Termux's service could not be found, so the key counts as not shared
-        }));
+        // and the next trigger tries again. The key goes to a temporary file moved over the old one (LocalKey.shareCommand),
+        // with the enforced file once the switch has begun (LocalKey.shareMode).
+        boolean handed = keys(this).share(termuxRunner(this));
         keyShared = handed;
         return handed;
     }
@@ -988,6 +1157,21 @@ public class HermesService extends Service {
         HermuxApp.log(this).event("local", "legacy_key", "port", "events");
     }
 
+    /**
+     * After the switch a request came with an accepted key in the raw header (refused like one without the key):
+     * recorded at most once a day as {@code local legacy_key port=events side=app}, and one more rotation (LocalKey
+     * limits it to once a day too). Listener thread.
+     */
+    private void noteLegacyRefused() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        synchronized (TICK_LOCK) {
+            if (!EventsListener.every(legacyNotedDayAt, now, LocalKey.LEGACY_EVERY_MS)) return;
+            legacyNotedDayAt = now;
+        }
+        HermuxApp.log(this).event("local", "legacy_key", "port", "events", "side", "app");
+        legacySeen(this);
+    }
+
     /** A request after a hello had a missing or wrong MAC (answered 403): recorded at most once a minute. */
     private void noteRefused() {
         long now = android.os.SystemClock.elapsedRealtime();
@@ -1000,15 +1184,24 @@ public class HermesService extends Service {
     boolean handle(Socket s) throws Exception {
         // EventsListener reads it (LocalServer, role events): the hello and one signed request, or the raw key header.
         EventsListener.Request r;
+        // Every connection (signed, raw key, a hello alone, refused) is a chance for local authentication's window to be
+        // counted: at most once a minute (localTick), so a held old plugin's raw requests count too.
+        localTick(this, false);
         try {
-            r = EventsListener.read(s, keys(this), PhoneDataRoute.fail("forbidden"), PhoneDataRoute.fail("bad_request"));
+            r = EventsListener.read(s, keys(this), PhoneDataRoute.fail("forbidden"), PhoneDataRoute.fail("bad_request"), this::noteLegacyRefused);
         } catch (LocalServer.Refused e) {
             if ("refused".equals(e.why)) noteRefused();
             return false; // its answer is written
         }
         if (r == null) return false; // nothing asked: a bare connect, or a hello whose client went away
-        if (r.auth() == LocalServer.Auth.MAC) keys(this).confirm(r.kid());
-        else if (r.auth() == LocalServer.Auth.RAW) noteLegacyKey();
+        if (r.auth() == LocalServer.Auth.MAC) {
+            LocalKey k = keys(this);
+            boolean wasRaw = k.rawAccepted();
+            k.confirm(r.kid()); // step 3 of the switch, once a key written with the enforced file is in use
+            if (wasRaw && !k.rawAccepted()) HermuxApp.log(this).event("local", "enforced", "why", "ready", "side", "app");
+            if (k.stale(r.kid())) reshareIfDue(); // Termux still signs with the previous key: it missed the new one
+            localTick(this, false);
+        } else if (r.auth() == LocalServer.Auth.RAW) noteLegacyKey();
         OutputStream out = s.getOutputStream();
         switch (EventsListener.verdict(r)) { // which routes need the key: EventsListener decides
             case BUNDLE: {
@@ -1045,7 +1238,17 @@ public class HermesService extends Service {
             default: { // EVENT, with the key
                 out.write("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.UTF_8));
                 out.flush();
-                onEvent(new JSONObject(r.text()));
+                JSONObject ev = new JSONObject(r.text());
+                String kind = ev.optString("kind", "");
+                // Only the cron ticker sends these: signed, it runs the new code; with the raw key, an older one still runs.
+                if ("wake_at".equals(kind) || "cron_idle".equals(kind)) keys(this).tickerSeen(r.auth() == LocalServer.Auth.MAC);
+                if ("local_legacy".equals(kind)) {
+                    // A Termux-side server refused a raw key after the switch: {port}. Counted only from a signed request.
+                    String port = ev.optString("port", "");
+                    if (r.auth() == LocalServer.Auth.MAC && ("dashboard".equals(port) || "ticker".equals(port))) legacySeen(this);
+                    return false;
+                }
+                onEvent(ev);
                 return false;
             }
         }

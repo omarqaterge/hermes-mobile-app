@@ -40,6 +40,17 @@ sys.modules["hermes_cli"] = types.ModuleType("hermes_cli")
 sys.modules["hermes_cli.web_server"] = types.SimpleNamespace(app=app, _SESSION_TOKEN=TOKEN)
 
 
+seen_tokens = []
+
+
+@app.get("/api/plugins/hermes-mobile/activity")
+def activity(req: fastapi.Request):
+    seen_tokens.append(req.headers.get("x-hermes-session-token"))
+    if req.headers.get("x-hermes-session-token") != TOKEN:
+        return fastapi.responses.JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return fastapi.responses.JSONResponse({"items": []})
+
+
 @app.get("/{path:path}")
 def spa(path: str):
     return HTMLResponse(f'<script>window.__HERMES_SESSION_TOKEN__="{TOKEN}";</script>')
@@ -148,6 +159,25 @@ try:
 except h.Unverified as e:
     four = e.why
 check("the token step refuses the four-field header", four == "refused", four)
+
+# hm-local get: a REST route from a verified dashboard whose answer proves itself (plugin-update.sh's route()).
+rc, out, err = hm("get", "/api/plugins/hermes-mobile/activity", port)
+check("hm-local get: the route's body through the guard, its proof verified", (rc, out) == (0, '{"items":[]}'), f"{rc} {out!r} {err}")
+check("... the app got the session token", seen_tokens[-1:] == [TOKEN], seen_tokens)
+rc, out, err = hm("get", "/hermux/token", port)
+check("hm-local get: only /api/ routes", (rc, out) == (64, ""), f"{rc} {out!r}")
+real_proving = papi._TokenGuard._proving
+papi._TokenGuard._proving = lambda self, scope, send: send  # a dashboard whose REST answers carry no proof
+rc, out, err = hm("get", "/api/plugins/hermes-mobile/activity", port)
+check("hm-local get: an answer without its proof is dropped (bad_proof, exit 8), nothing printed", (rc, out) == (8, ""), f"{rc} {out!r} {err}")
+papi._TokenGuard._proving = real_proving
+la_ = papi._local_auth()
+try:
+    la_.dashboard_get(int(port), KEY, "/api/plugins/hermes-mobile/activity", "bad token with spaces")
+    bad = "sent"
+except ValueError:
+    bad = "refused"
+check("dashboard_get: a token that can't be one is refused before anything is sent", bad == "refused")
 
 with open(keyfile + ".tmp", "w") as f:  # the guard now proves with another key (written as the app writes it)
     f.write("0b8e1c4f7a2d5e9036c1f8a4d7b2e6093c5a8f1e4d7b0a26\n")

@@ -29,8 +29,9 @@ _log = logging.getLogger(__name__)
 # Local authentication (local_auth.py): the guard also answers GET /hermux/hello (a proof that it holds the key, over the
 # caller's nonce and the address it listens on) and GET /hermux/token (the session token, for a request signed with the
 # key over the hello's nonces, with a proof over the token), and adds X-Hermux-Proof to the answer of any /api/ request
-# that sends X-Hermux-Nonce. Both routes are answered here, before Hermes, so they need no session token. Pages still
-# keep the token for the raw key until ~/.hermes-mobile/enforced exists.
+# that sends X-Hermux-Nonce. Both routes are answered here, before Hermes, so they need no session token. Pages keep
+# the token for the raw key only until ~/.hermes-mobile/enforced exists (the app writes it when it ends the
+# compatibility window); after that the raw key gets the withheld page and is reported once a day.
 _TERMUX_HOME = "/data/data/com.termux/files/home"
 _KEY_HEADER = "X-Hermes-Mobile-Key"
 _PAGE_TOKEN = re.compile(rb"window\.__HERMES_SESSION_TOKEN__\s*=\s*[^;<]*;")
@@ -58,6 +59,37 @@ def _enforced() -> bool:
     """The app has switched the raw key off: ~/.hermes-mobile/enforced (next to the key file) exists."""
     path = _key_file()
     return path is not None and path.with_name("enforced").exists()
+
+
+_legacy_daily = None
+
+
+def _note_legacy() -> bool:
+    """The raw key reached the page after the switch (the token was withheld): at most once a day in this process, the
+    diagnostic event `local legacy_key port=dashboard side=plugin` and a signed `local_legacy` event to the app
+    (``local_auth.report_legacy``, on a thread of its own), which then replaces the key. True when it was due."""
+    global _legacy_daily
+    la = _local_auth()
+    if la is None:
+        return False
+    if _legacy_daily is None:
+        _legacy_daily = la.Daily()
+    if not _legacy_daily.due():
+        return False
+    try:
+        _diag_mod().event("local", "legacy_key", port="dashboard", side="plugin")
+    except Exception:
+        pass
+    key = _event_key()
+    if key:
+        import threading
+
+        threading.Thread(target=_report_legacy, args=(la, key), daemon=True).start()
+    return True
+
+
+def _report_legacy(la, key: str) -> None:
+    la.report_legacy("dashboard", key)
 
 
 def _local_auth():
@@ -147,12 +179,19 @@ class _TokenGuard:
         self._pending = la.PendingHellos() if la is not None else None
 
     def _allowed(self, scope) -> bool:
+        """The page may keep its token: off a phone, or for the raw key before the switch. The raw key after it is
+        refused like any other caller and reported (``_note_legacy``)."""
         path = _key_file()
         if path is None:
             return True
         key = _event_key().encode()
         given = dict(scope.get("headers") or []).get(_KEY_HEADER.lower().encode(), b"")
-        return bool(key) and hmac.compare_digest(given, key) and not _enforced()
+        if not (key and hmac.compare_digest(given, key)):
+            return False
+        if _enforced():
+            _note_legacy()
+            return False
+        return True
 
     @staticmethod
     def _addr(la, scope):

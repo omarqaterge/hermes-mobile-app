@@ -375,6 +375,52 @@ check("the page: once enforced, the raw key gets it withheld", withheld(lc.get("
 nc, r = say_hello()
 r = lc.get("/hermux/token", headers={"X-Hermux-Auth": token_auth(nc, r.json()["ns"])})
 check("once enforced, the token step still works", r.status_code == 200 and r.json().get("token"))
+# The raw key after the switch: refused like anyone else, and reported at most once a day (a diagnostic event and a
+# signed local_legacy event to the app, which then replaces the key).
+notes, reports = [], []
+real_diag, real_report = papi._diag_mod, papi._report_legacy
+papi._diag_mod = lambda: types.SimpleNamespace(event=lambda *a, **k: notes.append((a, k)))
+papi._report_legacy = lambda la_, key: reports.append(key)
+papi._legacy_daily = None
+
+
+def settle():
+    import time as _t
+    end = _t.time() + 3
+    while _t.time() < end and len(reports) < len(notes):
+        _t.sleep(0.02)
+
+
+check("once enforced, the raw key gets the withheld page", withheld(lc.get("/", headers={HEADER: KEY})))
+settle()
+check("... reported: local legacy_key port=dashboard side=plugin, and the app told with the current key",
+      notes == [(("local", "legacy_key"), {"port": "dashboard", "side": "plugin"})] and reports == [KEY], (notes, reports))
+check("... a second time that day: withheld, not reported again", withheld(lc.get("/", headers={HEADER: KEY})) and len(notes) == 1)
+papi._legacy_daily.last -= 86400
+check("... the next day: reported again", withheld(lc.get("/", headers={HEADER: KEY})) and len(notes) == 2)
+settle()
+check("... each report tells the app once", len(reports) == 2, reports)
+papi._legacy_daily.last -= 86400
+check("a wrong raw key after the switch: withheld, not reported (it is no key of ours)", withheld(lc.get("/", headers={HEADER: KEY + "x"})) and len(notes) == 2)
+check("no key after the switch: withheld, not reported", withheld(lc.get("/")) and len(notes) == 2)
+os.remove(enforced)
+check("before the switch the raw key is never reported", "s3cret" in lc.get("/", headers={HEADER: KEY}).text and len(notes) == 2)
+open(enforced, "w").close()
+calls = []
+papi._report_legacy = real_report
+la_mod = papi._local_auth()
+real_rl = la_mod.report_legacy
+la_mod.report_legacy = lambda port, key, *a, **k: calls.append((port, key)) or True
+papi._legacy_daily = None
+lc.get("/", headers={HEADER: KEY})
+import time as _time
+for _ in range(100):
+    if calls:
+        break
+    _time.sleep(0.02)
+check("the report goes through local_auth.report_legacy as port dashboard", calls == [("dashboard", KEY)], calls)
+la_mod.report_legacy = real_rl
+papi._diag_mod = real_diag
 os.remove(enforced)
 check("the page: the raw key works again without the file", "s3cret" in lc.get("/", headers={HEADER: KEY}).text)
 

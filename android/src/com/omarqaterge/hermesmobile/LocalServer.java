@@ -56,6 +56,8 @@ public final class LocalServer {
         boolean rawOk(String value);
         /** The accepted key with this key id (the hello's hint), else null; a server with one key ignores hints. */
         default String byKid(String kid) { return null; }
+        /** A hello named a well-formed key id that is no accepted key (the app's listener then shares its key again). */
+        default void foreignHint() { }
     }
 
     /** A fixed answer: status, type and body. */
@@ -219,6 +221,7 @@ public final class LocalServer {
         String h = LocalAuth.hint(hint);
         String k = h == null ? null : keys.byKid(h);
         if (k != null && LocalAuth.same(LocalAuth.kid(k), h)) return k;
+        if (h != null) keys.foreignHint();
         return keys.proving();
     }
 

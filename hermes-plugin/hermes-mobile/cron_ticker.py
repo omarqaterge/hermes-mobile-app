@@ -15,7 +15,8 @@ lock instead of holding it for a fixed 150 s.
 The poke listener proves itself before it acts (local authentication, local_auth.ticker_serve_one): the
 app sends `HELLO 1 <nonce>` (optionally followed by its key id, a hint), the ticker answers with a proof under the shared key, and only a
 `POKE 1 <mac>` over both nonces pokes it. A first line that is the shared key itself (the app's
-protocol before this one) still pokes it until ~/.hermes-mobile/enforced exists. When the port is
+protocol before this one) still pokes it until ~/.hermes-mobile/enforced exists; after that it pokes nothing and is
+reported once a day (`local legacy_key port=ticker`, and a signed `local_legacy` event to the app). When the port is
 in use the listener tries again (5 s, doubling to 5 min) for as long as the ticker runs, and notes
 each change in ~/logs/loop-events.log for the diagnostic log (and tells the app, `local_port`).
 
@@ -278,9 +279,15 @@ def note_port(state: str) -> None:
     """A change of the poke port's state as one fixed line in the supervisor's loop-events log (diag.py checks it again
     when it reads it): `local port_taken port=ticker` or `local port_ok port=ticker`. Only appends to a file that is
     already there (the supervisor, running as Termux's user, owns it); respects the diagnostic log's off switch."""
+    _loop_line(f"local {'port_taken' if state == 'taken' else 'port_ok'} port=ticker")
+
+
+def _loop_line(text: str) -> None:
+    """One fixed line (``<time> <text>``) appended to the loop-events log, only to a file already there, never through
+    a link, and not while the diagnostic log is off."""
     if DIAG_OFF.exists():
         return
-    line = f"{int(time.time())} local {'port_taken' if state == 'taken' else 'port_ok'} port=ticker\n"
+    line = f"{int(time.time())} {text}\n"
     try:
         fd = os.open(LOOP_EVENTS, os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
@@ -305,12 +312,38 @@ def _bind(port: int) -> socket.socket:
     return srv
 
 
+_legacy_daily = None
+
+
+def note_legacy(key: str) -> bool:
+    """A raw key reached the poke port after the switch (it poked nothing): at most once a day, the fixed line
+    `local legacy_key port=ticker side=ticker` in the loop-events log (like note_port) and a signed `local_legacy` event
+    to the app under ``key`` (local_auth.report_legacy, on a thread of its own), which then replaces the key. True when
+    it was due."""
+    global _legacy_daily
+    la = _local_auth()
+    if la is None:
+        return False
+    if _legacy_daily is None:
+        _legacy_daily = la.Daily()
+    if not _legacy_daily.due():
+        return False
+    _loop_line("local legacy_key port=ticker side=ticker")
+    if key:
+        threading.Thread(target=la.report_legacy, args=("ticker", key, EVENTS_PORT), daemon=True).start()
+    return True
+
+
 def serve_one(conn, key: str, where) -> bool:
     """One poke connection: True when it pokes. A verified `POKE` after the hello always does; the raw key as the
-    first line does until ENFORCED exists. Without local_auth.py only the raw key is understood."""
+    first line does until ENFORCED exists, and after that is refused and reported (note_legacy). Without local_auth.py
+    only the raw key is understood, and never once ENFORCED exists."""
     la = _local_auth()
     if la is not None and where:
-        return la.ticker_serve_one(conn, key, where, legacy=not ENFORCED.exists()) != ""
+        got = la.ticker_serve_one(conn, key, where, legacy=not ENFORCED.exists())
+        if got == "legacy_refused":
+            note_legacy(key)
+        return got in ("poke", "legacy")
     try:  # the protocol before local authentication
         conn.settimeout(2)
         got = conn.recv(256).strip()

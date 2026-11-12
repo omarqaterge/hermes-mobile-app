@@ -115,6 +115,15 @@ final class LocalDashboard {
      */
     static final long P_HELLO = 0;
 
+    /**
+     * The plugin state for a {@code HMPLUGIN BUSY <why>} answer: {@code busy-unknown} for {@code unknown} (an old plugin's
+     * guard after local authentication's switch can't say whether Hermes works: no automatic retry, and the user's tap
+     * first warns that a running answer or job may be cut off), else {@code busy} (tried again by itself).
+     */
+    static String busyState(String why) {
+        return "unknown".equals(why) ? "busy-unknown" : "busy";
+    }
+
     /** What the app knows of the installed plugin: it answers the hello, it is too old to, or it isn't known yet. */
     enum Plugin { HELLO, OLD, UNKNOWN }
 

@@ -43,12 +43,15 @@ LOCAL_PORTS = ("dashboard", "events", "ticker", "bghost")
 LOCAL_WHY = ("no_answer", "no_hello", "old_version", "bad_addr", "unknown_kid", "bad_proof", "refused")
 LOCAL_SIDES = ("app", "plugin", "ticker", "termux")
 LOCAL_ROTATED = ("update", "enforce", "legacy_seen", "user")
+LOCAL_ENFORCED = ("ready", "cap")  # the app's listener refuses the raw key: the conditions held, or the 14-day cap
 LOCAL_EVENTS = {
     "unverified": {"port": LOCAL_PORTS, "why": LOCAL_WHY, "side": LOCAL_SIDES},
     "port_taken": {"port": LOCAL_PORTS, "why": LOCAL_WHY + ("self",), "side": LOCAL_SIDES},
     "port_ok": {"port": LOCAL_PORTS, "side": LOCAL_SIDES},
     "legacy_key": {"port": LOCAL_PORTS, "side": LOCAL_SIDES},
     "key_rotated": {"why": LOCAL_ROTATED, "side": LOCAL_SIDES},
+    "enforced": {"why": LOCAL_ENFORCED, "side": LOCAL_SIDES},
+    "legacy_paused": {"side": LOCAL_SIDES},  # the app stopped legacy_seen rotations that can't help (a lasting old sender)
     "refused": {"port": LOCAL_PORTS, "side": LOCAL_SIDES},
 }
 

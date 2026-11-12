@@ -11,7 +11,9 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>{@link #read} takes either a connection that opens with the hello and then carries one request signed with
  * {@code X-Hermux-Auth} (the MAC over the raw body bytes), or, while {@link LocalKey#rawAccepted} says so, one request
- * with the raw key in {@code X-Hermes-Mobile-Key}, exactly as before local authentication. Every route keeps its
+ * with the raw key in {@code X-Hermes-Mobile-Key}, exactly as before local authentication. After the switch an accepted
+ * key in that header counts for nothing (the request is refused like one without a key) and is reported to the
+ * caller's {@code onLegacy}: some old client still sends the key. Every route keeps its
  * bounds for both kinds of caller: {@code POST /phonedata} at most {@link #PHONE_MAX_BODY} bytes, {@link #PHONE_READ_MS}
  * per read and {@link #PHONE_DEADLINE_MS} once its request line is in, its own JSON answers for a request without the
  * key (before the body is read) and for a body too large; {@code POST /setup} at most {@link #SETUP_MAX_BODY} bytes;
@@ -73,12 +75,40 @@ final class EventsListener {
      * @param phoneTooLarge  the {@code /phonedata} answer for a body over {@link #PHONE_MAX_BODY} (status 200)
      */
     static Request read(Socket s, LocalKey keys, String phoneForbidden, String phoneTooLarge) throws IOException {
+        return read(s, keys, phoneForbidden, phoneTooLarge, null);
+    }
+
+    /**
+     * As above; {@code onLegacy} (may be null) runs on this thread, at most once per connection, when the request
+     * carried an accepted key in the raw header after the switch ({@link LocalKey#rawAccepted} false). That request is
+     * then refused exactly like one without the key (before its body is read where the route says so).
+     */
+    static Request read(Socket s, LocalKey keys, String phoneForbidden, String phoneTooLarge, Runnable onLegacy) throws IOException {
         final LocalServer.Limits event = new LocalServer.Limits(EVENT_MAX_BODY, LocalServer.READ_MS, LocalServer.DEADLINE_MS, null, null);
         final LocalServer.Limits setup = new LocalServer.Limits(SETUP_MAX_BODY, LocalServer.READ_MS, LocalServer.DEADLINE_MS, null, null);
         final LocalServer.Limits phone = new LocalServer.Limits(PHONE_MAX_BODY, PHONE_READ_MS, PHONE_DEADLINE_MS,
                 new LocalServer.Answer(403, "application/json", phoneForbidden.getBytes(StandardCharsets.UTF_8)),
                 new LocalServer.Answer(200, "application/json", phoneTooLarge.getBytes(StandardCharsets.UTF_8)));
-        LocalServer.Request r = LocalServer.accept(s, ROLE, keys.serverKeys(), keys.rawAccepted() ? KEY_HEADER : null, (m, t) -> {
+        final LocalServer.Keys mine = keys.serverKeys();
+        final boolean raw = keys.rawAccepted(); // read once: one connection sees one state of the switch
+        final boolean[] noted = {false};
+        LocalServer.Keys gate = new LocalServer.Keys() {
+            @Override public String proving() { return mine.proving(); }
+            @Override public String byKid(String kid) { return mine.byKid(kid); }
+            @Override public void foreignHint() { mine.foreignHint(); }
+            @Override public boolean rawOk(String value) {
+                boolean match = mine.rawOk(value);
+                if (match && !raw) {
+                    if (!noted[0] && onLegacy != null) {
+                        noted[0] = true;
+                        try { onLegacy.run(); } catch (RuntimeException ignored) { }
+                    }
+                    return false;
+                }
+                return match;
+            }
+        };
+        LocalServer.Request r = LocalServer.accept(s, ROLE, gate, KEY_HEADER, (m, t) -> {
             switch (route(m, t)) {
                 case SETUP: return setup;
                 case PHONEDATA: return phone;

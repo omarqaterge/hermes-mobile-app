@@ -288,8 +288,10 @@ export interface NativeSetup {
   /** The shell can probe Termux (probeTermux) and run the installer's progress channel. */
   probe?: boolean
   /** Hermux's scripts in Termux (~/bin/hm-local, ~/bin/hm-shizuku) are older than this app's: the plugin update didn't
-   *  copy them. No app build sends it yet: undefined (and false) = no row. */
+   *  copy them and local authentication's switch had to end its window by the cap. undefined (and false) = no row. */
   phoneScriptsOld?: boolean
+  /** What the row's button can do for the plugin: update, force (replace a hand-changed one) or none (held or newer). */
+  phoneScriptsFix?: 'update' | 'force' | 'none'
 }
 
 export interface ShizukuAuto {

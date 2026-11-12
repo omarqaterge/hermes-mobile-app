@@ -801,5 +801,51 @@ kpath.write_text(KEY + "\n")
 check("plugin _key: an empty file is never kept", plugin._key() == KEY)
 check("plugin _key: the same reader (local_auth.KeyFile)", isinstance(plugin._key_cache["reader"], la.KeyFile))
 
+print("after the switch: the raw key refused and reported")
+
+
+def ticker_with(first: bytes, legacy: bool):
+    a, b = socket.socketpair()
+    with a, b:
+        b.sendall(first)
+        b.shutdown(socket.SHUT_WR)
+        return la.ticker_serve_one(a, KEY, "127.0.0.1:9122", legacy=legacy)
+
+
+check("ticker: the raw key while the window lasts is 'legacy' (it pokes)", ticker_with(KEY.encode() + b"\n", True) == "legacy")
+check("ticker: the raw key after the switch is 'legacy_refused' (it pokes nothing)", ticker_with(KEY.encode() + b"\n", False) == "legacy_refused")
+check("ticker: another key is nothing either way", ticker_with(b"0b8e1c4f7a2d5e9036c1f8a4d7b2e6093c5a8f1e4d7b0a26\n", False) == ""
+      and ticker_with(b"0b8e1c4f7a2d5e9036c1f8a4d7b2e6093c5a8f1e4d7b0a26\n", True) == "")
+clock = [1_000_000.0]
+d = la.Daily(clock=lambda: clock[0])
+check("Daily: the first is due", d.due())
+check("Daily: not again within a day", not d.due())
+clock[0] += la.LEGACY_EVERY_S - 1
+check("Daily: still not a second before the day ends", not d.due())
+clock[0] += 1
+check("Daily: due once the day has passed", d.due() and not d.due())
+clock[0] -= 3 * la.LEGACY_EVERY_S
+check("Daily: a clock set back counts as time passed", d.due())
+check("LEGACY_EVERY_S is a day", la.LEGACY_EVERY_S == 86400.0)
+sys.path.insert(0, str(HERE))
+from local_fake_server import FakeLocal  # noqa: E402
+
+got = {}
+srv = FakeLocal("events", KEY, handler=lambda m, t, h, body: (got.setdefault("req", (m, t, body)), (204, b""))[1])
+check("report_legacy: a signed local_legacy event to a listener that proved itself",
+      la.report_legacy("dashboard", KEY, events_port=srv.port) and got.get("req") == ("POST", "/event", b'{"kind": "local_legacy", "port": "dashboard"}')
+      and len(srv.verified) == 1, got)
+check("... the key is never on the wire", KEY.encode() not in srv.received())
+srv.close()
+srv = FakeLocal("events", KEY, mode="wrong_key")
+check("report_legacy: a listener that doesn't prove the key gets nothing", not la.report_legacy("ticker", KEY, events_port=srv.port)
+      and srv.verified == [] and b"local_legacy" not in srv.received())
+srv.close()
+check("report_legacy: only a known port name", not la.report_legacy("other", KEY, events_port=1))
+with socket.socket() as s_:
+    s_.bind(("127.0.0.1", 0))
+    closed = s_.getsockname()[1]
+check("report_legacy: nothing listening is False, never an error", la.report_legacy("ticker", KEY, events_port=closed) is False)
+
 print("\nALL PASSED" if fails == 0 else f"\n{fails} FAILED")
 sys.exit(1 if fails else 0)

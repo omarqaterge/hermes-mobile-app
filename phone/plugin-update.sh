@@ -3,11 +3,13 @@
 # (assets/phone/plugin-update.sh, android/build.sh) and run by the app (PluginSync.java) in Termux through RUN_COMMAND:
 #   plugin-update.sh check STAMP HASH            what is installed compared with the APK's plugin; changes nothing
 #                                                (except: repairs an interrupted run, stamps an identical copy)
-#   plugin-update.sh apply STAMP HASH SHA TOKEN [--force]
+#   plugin-update.sh apply STAMP HASH SHA TOKEN [--force] [--user [--confirmed]]
 #       fetches the bundle from the app's loopback port (GET /plugin-bundle/TOKEN, a one-time token), checks it against SHA (from the APK), unpacks it beside the
 #       plugin, checks HASH and that its Python compiles, swaps it in, restarts Hermes's dashboard, waits for the new
 #       plugin's GET /plugin-info to answer, and goes back to the old plugin when it doesn't. Refuses while Hermes reports
-#       work. --force also replaces a plugin that was changed by hand. Never replaces a newer plugin.
+#       work. --force also replaces a plugin that was changed by hand. Never replaces a newer plugin. --user: the user
+#       asked (a tap); only that, with --confirmed (the user was told a running answer may be cut off), may replace an
+#       old plugin whose guard can't say whether Hermes works (BUSY unknown otherwise).
 # On a developer's machine and in install.sh (no Debian involved):
 #   plugin-update.sh source-stamp REPO           the version of a source tree: its last commit's time, or now if the
 #                                                plugin folder has uncommitted changes (or it is no git checkout)
@@ -46,6 +48,26 @@ read -r -d '' IN_DEBIAN <<'EOF'
 ROOT=${HM_PLUGIN_ROOT:-/root/.hermes}; P=$ROOT/plugins/hermes-mobile; W=$ROOT/hermes-mobile-plugin
 say() { echo "HMPLUGIN $*"; }
 stamp_of() { s=$(cut -d' ' -f1 "$P/BUILD_STAMP" 2>/dev/null); case "$s" in ''|*[!0-9]*) echo 0 ;; *) echo "$s" ;; esac; }
+# An older install's cron ticker in scripts/: its supervisor loop runs that file until the phone restarts, so once the
+# plugin carries its own copy the file becomes a stand-in that runs the plugin's (and only that: with no plugin copy it
+# exits with an error, it never runs old code). The file it replaced is kept (TICKER_KEEP) for a rollback to a plugin
+# without a ticker of its own. Idempotent: a stand-in already there is left as it is.
+OLD_TICKER=$ROOT/scripts/cron_ticker.py; TICKER_KEEP=$OLD_TICKER.before
+ticker_shim() {
+  [ -f "$P/cron_ticker.py" ] && [ -f "$OLD_TICKER" ] && [ ! -L "$OLD_TICKER" ] || return 0
+  grep -q 'hermux-ticker-shim' "$OLD_TICKER" 2>/dev/null && return 0
+  cp -p "$OLD_TICKER" "$TICKER_KEEP.tmp" && mv -f "$TICKER_KEEP.tmp" "$TICKER_KEEP" || return 0
+  printf '%s\n' '# hermux-ticker-shim: the cron ticker ships in the Hermux plugin now; plugin-update.sh put this stand-in here.' \
+    'import os, sys' "T = '$P/cron_ticker.py'" 'if not os.path.isfile(T):' \
+    '    sys.exit("cron ticker: the plugin copy is missing, so nothing runs")' \
+    'os.execv(sys.executable, [sys.executable, T] + sys.argv[1:])' > "$OLD_TICKER.tmp" \
+    && mv -f "$OLD_TICKER.tmp" "$OLD_TICKER" || rm -f "$OLD_TICKER.tmp"
+}
+ticker_back() {  # after a rollback to a plugin without its own ticker: the file the stand-in replaced comes back
+  [ -f "$P/cron_ticker.py" ] && return 0
+  [ -f "$TICKER_KEEP" ] && grep -q 'hermux-ticker-shim' "$OLD_TICKER" 2>/dev/null && mv -f "$TICKER_KEEP" "$OLD_TICKER"
+  return 0
+}
 mode=$1; shift
 case "$mode" in
   inspect)  # APK_STAMP APK_HASH FORCE
@@ -98,7 +120,8 @@ case "$mode" in
       mkdir -p "${p}plugins" && rm -rf "$l" && ln -s "$P" "$l"
     done
     say SWAPPED ;;
-  commit) rm -rf "$W/old"; rm -f "$W/pending"; say COMMITTED ;;
+  commit) rm -rf "$W/old"; rm -f "$W/pending"; ticker_shim; say COMMITTED ;;
+  tickershim) ticker_shim; say TICKER ;;  # a current plugin (check): the stand-in, if an earlier update didn't write it
   scripts)  # NAME...: the SHA-256 of each Termux script the installed plugin carries
     for n in "$@"; do
       f="$P/phone-scripts/$n"
@@ -107,7 +130,7 @@ case "$mode" in
     say LISTED ;;
   rollback)
     if [ -d "$W/old" ]; then rm -rf "$W/failed"; [ -e "$P" ] && mv "$P" "$W/failed"; mv "$W/old" "$P"; rm -rf "$W/failed"; fi
-    rm -f "$W/pending"; say ROLLEDBACK ;;
+    ticker_back; rm -f "$W/pending"; say ROLLEDBACK ;;
 esac
 EOF
 
@@ -146,15 +169,56 @@ last() { grep '^HMPLUGIN ' | tail -1; }
 # anything the port says, and never again in a run that has restarted Hermes (`restarted`: a settle's rollback, or this
 # run's own restart; a rollback waits with a plain probe, no key). And only while the dashboard's own process runs
 # (`dashboard_runs`): with Hermes stopped, whatever answers on the port is not the old guard.
-legacy=no; restarted=""
+legacy=no; blind=no; restarted=""
 # token() runs in command substitutions (subshells), so what it keeps for the run lives in the run's lock folder.
 # Hermes's dashboard process for the port dialled, by its command line ("[h]": the pattern never matches this run's own
 # command line): Termux's user under proot, root under chroot.
 DASH_PROC_RE="[h]ermes dashboard --host 127[.]0[.]0[.]1 --port ${DASH_PORT}( |\$)"
+# ... and a process at least DASH_MIN_AGE seconds old: one that is still starting may not hold the port yet, while
+# something else answers on it. Its age by `ps -o etimes=`, else `ps -o etime=` ([[DD-]HH:]MM:SS, busybox and BSD too),
+# else /proc/<pid>/stat against /proc/uptime; an age it can't tell counts as too young (the exception stays off).
+DASH_MIN_AGE=${HM_DASH_MIN_AGE:-5}
+etime_seconds() {  # ps's etime ([[DD-]HH:]MM:SS, or SS): seconds, or nothing for anything else
+  local v=$1 d=0 h=0 m=0 s x
+  case "$v" in ''|*[!0-9:-]*) return 0 ;; esac
+  case "$v" in *-*) d=${v%%-*}; v=${v#*-} ;; esac
+  case "$v" in
+    *:*:*:*) return 0 ;;
+    *:*:*) h=${v%%:*}; v=${v#*:}; m=${v%%:*}; s=${v#*:} ;;
+    *:*) m=${v%%:*}; s=${v#*:} ;;
+    *) s=$v ;;
+  esac
+  for x in "$d" "$h" "$m" "$s"; do case "$x" in ''|*[!0-9]*) return 0 ;; esac; done
+  echo $(( ((10#$d * 24 + 10#$h) * 60 + 10#$m) * 60 + 10#$s ))
+}
+stat_age() {  # STAT-LINE UPTIME HZ: seconds since the process started (stat's field 22), or nothing when any value is
+  # missing or not a number (the process may have ended in between): an unknown age keeps the exception off
+  local st up=${2%%.*} hz=$3 x
+  st=$(printf '%s' "$1" | sed 's/.*) //' | cut -d' ' -f20)
+  for x in "$st" "$up" "$hz"; do case "$x" in ''|*[!0-9]*) return 0 ;; esac; done
+  [ "$hz" -gt 0 ] && [ $(( st / hz )) -le "$up" ] || return 0
+  echo $(( up - st / hz ))
+}
+age_of() {  # PID [chroot]: seconds since it started, or nothing
+  local run=sh a
+  [ "${2:-}" = chroot ] && run="su"
+  a=$($run -c "ps -o etimes= -p $1" </dev/null 2>/dev/null | tr -d ' \n')
+  case "$a" in ''|*[!0-9]*) ;; *) echo "$a"; return 0 ;; esac
+  a=$(etime_seconds "$($run -c "ps -o etime= -p $1" </dev/null 2>/dev/null | tr -d ' \n')")
+  [ -n "$a" ] && { echo "$a"; return 0; }
+  stat_age "$($run -c "cat /proc/$1/stat" </dev/null 2>/dev/null)" "$(cut -d' ' -f1 /proc/uptime 2>/dev/null)" "$(getconf CLK_TCK 2>/dev/null)"
+}
 dashboard_runs() {
+  local pids p a how=""
   if [ "$("$HOME/bin/hermes-debian" --which 2>/dev/null)" = chroot ]; then
-    su -c "pgrep -u 0 -f '$DASH_PROC_RE'" </dev/null >/dev/null 2>&1
-  else pgrep -u "$(id -u)" -f "$DASH_PROC_RE" >/dev/null 2>&1; fi
+    how=chroot; pids=$(su -c "pgrep -u 0 -f '$DASH_PROC_RE'" </dev/null 2>/dev/null)
+  else pids=$(pgrep -u "$(id -u)" -f "$DASH_PROC_RE" 2>/dev/null); fi
+  for p in $pids; do
+    case "$p" in ''|*[!0-9]*) continue ;; esac
+    a=$(age_of "$p" "$how")
+    [ -n "$a" ] && [ "$a" -ge "$DASH_MIN_AGE" ] && return 0
+  done
+  return 1
 }
 note_legacy() {  # once per run
   [ -e "$LOCK/legacy-noted" ] && return 0
@@ -162,8 +226,11 @@ note_legacy() {  # once per run
   [ -f "$TERMUX_HOME/.hermes-mobile/diag-off" ] && return 0
   mkdir -p "$TERMUX_HOME/logs" && printf '%s local legacy_key port=dashboard side=termux\n' "$(date +%s)" >> "$TERMUX_HOME/logs/loop-events.log"
 }
-local_client() {  # the hm-local to run: ~/bin's, else the installed plugin's own copy (taken once, into the lock folder)
-  if [ -f "$HOME/bin/hm-local" ] && [ ! -L "$HOME/bin/hm-local" ]; then echo "$HOME/bin/hm-local"; return 0; fi
+local_client() {  # the hm-local to run: ~/bin's when it has the verified REST call (get), else the installed plugin's
+  # own copy (taken once, into the lock folder)
+  if [ -f "$HOME/bin/hm-local" ] && [ ! -L "$HOME/bin/hm-local" ] && grep -q '^def dashboard_get' "$HOME/bin/hm-local" 2>/dev/null; then
+    echo "$HOME/bin/hm-local"; return 0
+  fi
   local f="$LOCK/hm-local"
   if [ ! -s "$f" ]; then
     rm -f "$f"
@@ -172,21 +239,36 @@ local_client() {  # the hm-local to run: ~/bin's, else the installed plugin's ow
   echo "$f"
 }
 forget_client() { rm -f "$LOCK/hm-local"; return 0; }
+exception() {  # every condition of the one exception (see above), looked at again on each use
+  [ "$legacy" = yes ] && [ -z "$restarted" ] && [ ! -e "$TERMUX_HOME/.hermes-mobile/enforced" ] && dashboard_runs
+}
+page_token() {  # under the exception only: the old guard's page token, for the raw key
+  note_legacy
+  # The header from a file descriptor: the key never goes on a command line (printf is a shell builtin).
+  curl -s -m 5 -H @<(printf 'X-Hermes-Mobile-Key: %s\n' "$(cat "$HOME/.hermes-mobile/key" 2>/dev/null)") "$DASH/" 2>/dev/null | sed -n 's/.*__HERMES_SESSION_TOKEN__ *= *"\([^"]*\)".*/\1/p' | head -1
+}
 token() {
-  if [ "$legacy" = yes ] && [ -z "$restarted" ] && dashboard_runs; then
-    note_legacy
-    # The header from a file descriptor: the key never goes on a command line (printf is a shell builtin).
-    curl -s -m 5 -H @<(printf 'X-Hermes-Mobile-Key: %s\n' "$(cat "$HOME/.hermes-mobile/key" 2>/dev/null)") "$DASH/" 2>/dev/null | sed -n 's/.*__HERMES_SESSION_TOKEN__ *= *"\([^"]*\)".*/\1/p' | head -1
-    return 0
-  fi
+  if exception; then page_token; return 0; fi
   local c; c=$(local_client) || return 0
   bash "$c" token "$DASH_PORT" </dev/null 2>/dev/null | head -1
 }
 route() {  # PATH: the body when the plugin's route answers 200, else non-zero. The token changes with every dashboard start.
-  local t out; t=$(token); [ -n "$t" ] || return 1
-  out=$(curl -s -m 5 -H "X-Hermes-Session-Token: $t" -w '\n%{http_code}' "$DASH/api/plugins/hermes-mobile/$1" 2>/dev/null) || return 1
-  [ "${out##*$'\n'}" = 200 ] || return 1
-  printf '%s\n' "${out%$'\n'*}"
+  # A dashboard that speaks the hello: `hm-local get` (the token from a verified dashboard, sent only on a new verified
+  # connection, and an answer taken only with its proof). Only under the one exception (an old guard: no hello, no
+  # proof), as before: the token from its page, then a plain request whose answer can't be checked.
+  local t out c
+  if exception; then
+    # The old guard's own page token, never one hm-local got from a verified dashboard: that one goes only on a
+    # verified connection.
+    t=$(page_token); [ -n "$t" ] || return 1
+    out=$(curl -s -m 5 -H "X-Hermes-Session-Token: $t" -w '\n%{http_code}' "$DASH/api/plugins/hermes-mobile/$1" 2>/dev/null) || return 1
+    [ "${out##*$'\n'}" = 200 ] || return 1
+    printf '%s\n' "${out%$'\n'*}"
+    return 0
+  fi
+  c=$(local_client) || return 1
+  out=$(bash "$c" get "/api/plugins/hermes-mobile/$1" "$DASH_PORT" </dev/null 2>/dev/null) || return 1
+  printf '%s\n' "$out"
 }
 plugin_up() { route activity >/dev/null; }
 # Hermes answers: a verified token (or, under the exception, the old guard's token), or an HTTP answer that is no hello at
@@ -238,14 +320,28 @@ restart() {
   fi
   return 0
 }
-# The cron ticker, whichever copy runs: the plugin's own (it ships in the plugin folder) or an older install's in scripts/.
-# "[c]" keeps the pattern from matching this run's own command line (the app runs the script as `bash -c TEXT`).
-TICKER_RE='/root/[.]hermes/(scripts|plugins/hermes-mobile)/[c]ron_ticker[.]py'
+# The cron ticker is the Python process whose first argument is a ticker file: the plugin's own copy or an older
+# install's in scripts/. Only that process is stopped, never a wrapper whose command line merely names those files
+# (the supervisor's loop: proot or chroot login, bash -lc with both paths in its text), so the loop starts exactly one
+# ticker again. The paths are built from pieces, so this run's own command line (the app runs it as `bash -c TEXT`)
+# never names them.
+TICKER_HOME=${HM_TICKER_HOME:-/root/.hermes}
+PLUGIN_TICKER="$TICKER_HOME/plugins/hermes-mobile/cron""_ticker.py" OLD_TICKER_FILE="$TICKER_HOME/scripts/cron""_ticker.py"
+# For sh -c or su -c: $want holds the files; every process whose command line names one is looked at, and only a
+# python* whose second word is one of them is stopped (ps prints the arguments as the program sees them).
+TICKER_KILL='for p in $(pgrep -f "[c]ron_ticker[.]py" 2>/dev/null); do set -- $(ps -o args= -p "$p" 2>/dev/null); case "${1##*/}" in [Pp]ython*) ;; *) continue ;; esac; for w in $want; do [ "${2:-}" = "$w" ] && kill "$p" 2>/dev/null; done; done; true'
 restart_ticker() {  # the cron ticker keeps the code it first loaded; its loop starts it again. Only between jobs.
+  kill_ticker "$PLUGIN_TICKER $OLD_TICKER_FILE"
+}
+# A ticker still running an older install's file itself (the stand-in replaces its own arguments with the plugin's
+# copy at once, so only old code runs that way). Its loop then starts the stand-in. Only between jobs; tried again on
+# every check while the plugin is current.
+stop_old_ticker() { kill_ticker "$OLD_TICKER_FILE"; }
+kill_ticker() {  # FILES
   working && return 0
   if [ "$("$HOME/bin/hermes-debian" --which 2>/dev/null)" = chroot ]; then
-    su -c "pkill -f '$TICKER_RE'" </dev/null 2>/dev/null
-  else pkill -f "$TICKER_RE" 2>/dev/null; fi
+    su -c "want='$1'; $TICKER_KILL" </dev/null >/dev/null 2>&1
+  else want=$1 sh -c "$TICKER_KILL" >/dev/null 2>&1; fi
   return 0
 }
 settle() {  # STAMP: a swap whose run was cut off: keep it when the new plugin serves, else go back
@@ -255,7 +351,7 @@ settle() {  # STAMP: a swap whose run was cut off: keep it when the new plugin s
   deb rollback | last >/dev/null; restart
 }
 
-usage() { echo "usage: plugin-update.sh check|apply|source-stamp|stamp|pack|assemble|hash|embed ..." >&2; exit 2; }
+usage() { echo "usage: plugin-update.sh check|apply|source-stamp|stamp|pack|assemble|hash|embed|age-parts ..." >&2; exit 2; }
 # DIR DEST [PHONE]: DEST (new) = the plugin folder DIR without caches and stamp; with PHONE, the Termux scripts named in
 # SCRIPTS are copied from there into DEST/phone-scripts (all of them, or it fails).
 copy_plugin() {
@@ -348,7 +444,7 @@ sync_scripts() {
   return 0
 }
 scripts_if_current() {  # the plugin's state line: a current plugin's scripts (a copy that failed before is tried again)
-  case "$1" in "HMPLUGIN STATE current "*|"HMPLUGIN STATE adopted "*) sync_scripts ;; esac
+  case "$1" in "HMPLUGIN STATE current "*|"HMPLUGIN STATE adopted "*) sync_scripts; deb tickershim >/dev/null 2>&1; stop_old_ticker ;; esac
   return 0
 }
 inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets $line and $legacy
@@ -359,17 +455,23 @@ inspect() {  # APK_STAMP APK_HASH FORCE: settles an interrupted swap first; sets
     "HMPLUGIN PENDING "*) settle "${line##* }"; out=$(deb inspect "$@"); line=$(printf '%s\n' "$out" | last) ;;
   esac
   # The one exception (see token): an older plugin by its own stamp on disk, whose guard has no hello on disk either.
-  legacy=no
+  legacy=no; blind=no
   [ -n "$restarted" ] && return 0  # a settle restarted Hermes: the exception is over for this run
   case "$line" in
-    "HMPLUGIN STATE older "*) printf '%s\n' "$out" | grep -qx 'HMPLUGIN GUARD old' && legacy=yes ;;
+    "HMPLUGIN STATE older "*) printf '%s\n' "$out" | grep -qx 'HMPLUGIN GUARD old' || return 0 ;;
+    *) return 0 ;;
   esac
+  # Once the app has ended the compatibility window (~/.hermes-mobile/enforced), never the raw key: only hm-local is
+  # used. Then this old guard can't be asked at all (`blind`): see apply for what that changes.
+  if [ -e "$TERMUX_HOME/.hermes-mobile/enforced" ]; then blind=yes; else legacy=yes; fi
   return 0
 }
 
 cmd=${1:-}; [ $# -gt 0 ] && shift
 case "$cmd" in
   hash) [ -d "${1:-}" ] || usage; tree_hash "$1" ;;
+  age-parts)  # etime VALUE | stat LINE UPTIME HZ: the age rules alone (for the tests)
+    case "${1:-}" in etime) etime_seconds "${2:-}" ;; stat) stat_age "${2:-}" "${3:-}" "${4:-}" ;; *) usage ;; esac ;;
   embed)
     [ -f "${1:-}" ] && [ -n "${2:-}" ] || usage
     b=$(base64 < "$1" | tr -d '\n')
@@ -403,7 +505,8 @@ case "$cmd" in
     echo "${line:-HMPLUGIN FAIL check no-answer}" ;;
   apply)
     [ $# -ge 4 ] || usage; valid "$1" "$2"; valid "$1" "$3"; valid "$1" "$4"
-    stamp=$1 hash=$2 want=$3 tok=$4 force=no; [ "${5:-}" = --force ] && force=force
+    stamp=$1 hash=$2 want=$3 tok=$4 force=no user=no confirmed=no
+    for a in "${@:5}"; do case "$a" in --force) force=force ;; --user) user=yes ;; --confirmed) confirmed=yes ;; *) usage ;; esac; done
     take_lock
     inspect "$stamp" "$hash" "$force"
     # This run settled an interrupted swap by rolling it back (and restarted Hermes): it can't check Hermes's work or the
@@ -417,6 +520,11 @@ case "$cmd" in
       *) echo "$line"; exit 0 ;;
     esac
     if working; then say BUSY working; exit 0; fi
+    # An old guard after the switch (`blind`) can't say whether Hermes works, and the app can't either (that plugin's
+    # beats are refused). While its dashboard answers, only a run the user asked for AND confirmed after being told that
+    # a running answer or job may be cut off (--user --confirmed, set only by the app's dialog) goes on; anything else
+    # waits ("BUSY unknown"), so a turn is never cut by a restart the user didn't knowingly ask for.
+    if [ "$blind" = yes ] && { [ "$user" != yes ] || [ "$confirmed" != yes ]; } && dash_up; then say BUSY unknown; exit 0; fi
     b="$TERMUX_HOME/.hermes-mobile/plugin-bundle.tgz"
     # Only what the APK holds: the script and this SHA both came out of it, and the bytes must match.
     curl -sf -m 30 -o "$b" "$BUNDLE_URL/$tok" || { say FAIL fetch no-bundle; exit 0; }
@@ -427,7 +535,11 @@ case "$cmd" in
     if working; then say BUSY working; exit 0; fi
     # A plugin the dashboard doesn't load now (switched off in Hermes, or Hermes stopped) can't prove anything after
     # the restart. A dashboard between two starts gets a moment first.
-    wait_up "${HM_PLUGIN_UP_WAIT:-20}" && loaded=1 || loaded=0
+    # A blind old guard never serves the plugin's routes to us, so it counts as loaded when its dashboard answers at all
+    # (dash_up: hm-local's "no hello" from a running dashboard); the new plugin speaks the hello, so after the restart
+    # it is verified (or rolled back) like any other.
+    if [ "$blind" = yes ]; then wait_up "${HM_PLUGIN_UP_WAIT:-20}" dash && loaded=1 || loaded=0
+    else wait_up "${HM_PLUGIN_UP_WAIT:-20}" && loaded=1 || loaded=0; fi
     r=$(deb swap "$stamp" | last)
     [ "$r" = "HMPLUGIN SWAPPED" ] || { echo "${r:-HMPLUGIN FAIL swap no-answer}"; exit 0; }
     # A turn that started during the swap: put the old plugin back (no restart was made) and wait for another moment.
@@ -439,6 +551,7 @@ case "$cmd" in
     restart
     if [ "$loaded" = 0 ]; then
       deb commit >/dev/null
+      restart_ticker  # the old ticker's loop now starts the stand-in, which runs the new copy
       sync_scripts
       say OK "$stamp" unverified
     elif wait_up "$WAIT" dash && wait_serves "$stamp" "$LOAD_WAIT"; then

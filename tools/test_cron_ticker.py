@@ -187,7 +187,50 @@ with socket.create_connection(("127.0.0.1", port), 2) as c:
     ns, line, ok, nc = hello(c)
     c.sendall(poke_line(nc, ns))
 check("once enforced, a verified POKE still does", ok and poked())
+# ... and the raw key is reported at most once a day: a fixed loop-events line and a signed local_legacy event.
+reports = []
+real_report = la.report_legacy
+la.report_legacy = lambda port_name, key, events_port=9121, timeout=2: reports.append((port_name, key, events_port)) or True
+ct._legacy_daily = None
+ct.LOOP_EVENTS.write_text("")
+
+
+def raw_poke(text):
+    with socket.create_connection(("127.0.0.1", port), 2) as c:
+        c.sendall(text.encode())
+    return poked()
+
+
+check("once enforced, the raw key pokes nothing", not raw_poke(KEY + "\n"))
+for _ in range(100):
+    if reports:
+        break
+    time.sleep(0.02)
+check("... reported: one loop-events line local legacy_key port=ticker side=ticker (which diag.py accepts)",
+      [l.split(" ", 1)[1] for l in ct.LOOP_EVENTS.read_text().splitlines()] == ["local legacy_key port=ticker side=ticker"]
+      and diag.local_line_ok("local legacy_key port=ticker side=ticker"), ct.LOOP_EVENTS.read_text())
+check("... and the app told once, as port ticker under the ticker's key", reports == [("ticker", KEY, ct.EVENTS_PORT)], reports)
+check("... the raw key again that day: nothing poked, nothing reported", not raw_poke(KEY + "\n") and len(reports) == 1
+      and ct.LOOP_EVENTS.read_text().count("legacy_key") == 1)
+ct._legacy_daily.last -= 86400
+check("... the next day: reported again", not raw_poke(KEY + "\n") and ct.LOOP_EVENTS.read_text().count("legacy_key") == 2)
+ct._legacy_daily.last -= 86400
+check("another key once enforced: nothing poked, not reported", not raw_poke(OTHER + "\n") and ct.LOOP_EVENTS.read_text().count("legacy_key") == 2)
+ct.DIAG_OFF.write_text("")
+ct._legacy_daily = None
+raw_poke(KEY + "\n")
+check("with the diagnostic log off: no line written (the app is still told)", ct.LOOP_EVENTS.read_text().count("legacy_key") == 2)
+ct.DIAG_OFF.unlink()
 ct.ENFORCED.unlink()
+time.sleep(0.2)
+n = len(reports)
+ct._legacy_daily = None
+with socket.create_connection(("127.0.0.1", port), 2) as c:
+    c.sendall((KEY + "\n").encode())
+check("without the enforced file the raw key pokes again, and is never reported", poked() and len(reports) == n
+      and ct.LOOP_EVENTS.read_text().count("legacy_key") == 2)
+ct.LOOP_EVENTS.unlink()
+la.report_legacy = real_report
 
 key_now[0] = "k3y"
 with socket.create_connection(("127.0.0.1", port), 2) as c:

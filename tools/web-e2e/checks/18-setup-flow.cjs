@@ -453,4 +453,67 @@ module.exports = async t => {
     check(JSON.stringify(await fg.evaluate(() => window.__plugLog || [])) === '[false]', 'phone scripts: Update now runs the plugin update (not forced)')
     await fg.close()
   }
+
+  // h. The same row for a plugin changed by hand: its button replaces the plugin (a forced update) and says so.
+  await mock({ configured: true, pluginEnabled: true })
+  {
+    const fh = await flowPage(OK)
+    await fh.goto(WEB + '/')
+    await fh.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await fh.locator('.conn-dot').click()
+    await fh.getByRole('button', { name: 'Setup check' }).click()
+    await fh.evaluate(() => {
+      window.__setup = { ...window.__setup, phoneScriptsOld: true, phoneScriptsFix: 'force' }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    const row = fh.locator('.setup-item.bad', { hasText: 'Phone scripts are up to date' })
+    await row.waitFor({ timeout: 6000 }).then(() => check(true, 'phone scripts, hand-changed plugin: the ✕ row'), () => check(false, 'phone scripts, hand-changed plugin: the ✕ row'))
+    check((await row.getByRole('button', { name: 'Update now' }).count()) === 0, 'phone scripts, hand-changed plugin: no plain Update now')
+    await row.getByRole('button', { name: 'Replace the plugin' }).click()
+    const dlg = fh.locator('.dialog', { hasText: 'Replace the plugin?' })
+    await dlg.waitFor({ timeout: 3000 }).then(() => check(true, 'phone scripts, hand-changed plugin: asks first, as Settings does'), () => check(false, 'phone scripts, hand-changed plugin: asks first, as Settings does'))
+    await dlg.locator('button', { hasText: 'Cancel' }).click()
+    await sleep(200)
+    check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '[]', 'phone scripts, hand-changed plugin: Cancel replaces nothing')
+    await row.getByRole('button', { name: 'Replace the plugin' }).click()
+    await dlg.locator('button', { hasText: 'Replace' }).click()
+    await sleep(200)
+    check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '[true]', 'phone scripts, hand-changed plugin: Replace runs the forced update')
+
+    // An old plugin whose work can't be asked: the row's Update now asks first, with the same question as Settings.
+    await fh.evaluate(() => {
+      window.__plugLog = []
+      window.__plug = { state: 'busy-unknown', detail: 'unknown', installed: '0', apk: '1793648698', running: '', tries: 0, maxTries: 3 }
+      window.__setup = { ...window.__setup, phoneScriptsOld: true, phoneScriptsFix: 'update' }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await row.getByRole('button', { name: 'Update now' }).waitFor({ timeout: 6000 })
+    await row.getByRole('button', { name: 'Update now' }).click()
+    const cut = fh.locator('.dialog', { hasText: 'Update the plugin now?' })
+    await cut.waitFor({ timeout: 3000 }).then(() => check(true, 'phone scripts, work that can’t be asked: asks first'), () => check(false, 'phone scripts, work that can’t be asked: asks first'))
+    await cut.locator('button', { hasText: 'Update now' }).click()
+    await sleep(200)
+    check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '["confirmed"]', 'phone scripts, work that can’t be asked: then updates, the warning answered')
+
+    // A switched phone with an older plugin: the row's Update now asks first too, and the update says it was confirmed.
+    await fh.evaluate(() => {
+      window.__plugLog = []
+      window.__plug = { state: 'older', detail: '', installed: '0', apk: '1793648698', running: '', tries: 0, maxTries: 3, enforced: true }
+    })
+    await row.getByRole('button', { name: 'Update now' }).click()
+    await cut.waitFor({ timeout: 3000 }).then(() => check(true, 'phone scripts, switched phone: asks first'), () => check(false, 'phone scripts, switched phone: asks first'))
+    await cut.locator('button', { hasText: 'Update now' }).click()
+    await sleep(200)
+    check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '["confirmed"]', 'phone scripts, switched phone: then the confirmed update')
+
+    // A held or newer plugin: nothing the app does clears the row, so no button and a plain line why.
+    await fh.evaluate(() => {
+      window.__setup = { ...window.__setup, phoneScriptsOld: true, phoneScriptsFix: 'none' }
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await sleep(800)
+    check((await row.locator('button').count()) === 0, 'phone scripts, held or newer plugin: no button')
+    check(/held for testing or newer/.test(await row.innerText()), 'phone scripts, held or newer plugin: says why')
+    await fh.close()
+  }
 }

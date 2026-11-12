@@ -443,6 +443,11 @@ public class MainActivity extends Activity {
             o.put("devOptions", android.provider.Settings.Global.getInt(getContentResolver(), android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) == 1);
             o.put("wirelessDebugging", android.provider.Settings.Global.getInt(getContentResolver(), "adb_wifi_enabled", 0) == 1);
             o.put("probe", true);
+            // Setup row "Phone scripts out of date": the switch had to close the window by its 14-day cap (LocalKey.scriptsOld).
+            boolean scriptsOld = HermesService.keys(this).scriptsOld();
+            o.put("phoneScriptsOld", scriptsOld);
+            // What its button can do for this plugin: update, replace a hand-changed one, or nothing (LocalKey.scriptsFix).
+            o.put("phoneScriptsFix", LocalKey.scriptsFix(getSharedPreferences("hermes", MODE_PRIVATE).getString("plugin_state", "")));
         } catch (Exception ignored) {
         }
         return o.toString();
@@ -1862,8 +1867,8 @@ public class MainActivity extends Activity {
     /**
      * One request to the background host on 127.0.0.1. When the plugin started it with local authentication
      * ({@code BgApp.mac}), the host is verified first (LocalClient, role bghost, its per-start token as the key) and the
-     * request goes signed on that same connection; nothing is sent to a host that doesn't prove the token. Otherwise (an
-     * older plugin started it) the token goes in X-HM-Token as before. Never in the URL, never logged.
+     * request goes signed on that same connection; nothing is sent to a host that doesn't prove the token. An older
+     * plugin's host (no local authentication) gets nothing at all. Never in the URL, never logged.
      */
     static byte[] bgRequest(HermesService.BgApp b, String method, String path, int[] status) throws Exception {
         if (b.mac) {
@@ -1878,37 +1883,9 @@ public class MainActivity extends Activity {
                 throw u;
             }
         }
-        try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress("127.0.0.1", b.port), 2000);
-            sock.setSoTimeout(8000);
-            StringBuilder h = new StringBuilder();
-            h.append(method).append(' ').append(path).append(" HTTP/1.1\r\nHost: 127.0.0.1:").append(b.port)
-             .append("\r\nConnection: close\r\nX-HM-Token: ").append(b.token).append("\r\n");
-            if ("POST".equals(method)) h.append("Content-Type: application/json\r\nContent-Length: 2\r\n\r\n{}");
-            else h.append("\r\n");
-            OutputStream out = sock.getOutputStream();
-            out.write(h.toString().getBytes(StandardCharsets.ISO_8859_1));
-            out.flush();
-            InputStream in = new BufferedInputStream(sock.getInputStream());
-            ByteArrayOutputStream all = new ByteArrayOutputStream();
-            byte[] buf = new byte[32768];
-            int r;
-            while ((r = in.read(buf)) > 0) {
-                all.write(buf, 0, r);
-                if (all.size() > BG_MAX_ANSWER) throw new Exception("response too large");
-            }
-            byte[] data = all.toByteArray();
-            int sep = -1;
-            for (int k = 0; k + 3 < data.length; k++)
-                if (data[k] == 13 && data[k + 1] == 10 && data[k + 2] == 13 && data[k + 3] == 10) { sep = k; break; }
-            if (sep < 0) throw new Exception("bad response");
-            String head = new String(data, 0, sep, StandardCharsets.ISO_8859_1);
-            String[] parts = head.split(" ", 3);
-            status[0] = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 502;
-            byte[] rest = java.util.Arrays.copyOfRange(data, sep + 4, data.length);
-            if (head.toLowerCase().contains("transfer-encoding: chunked")) rest = dechunk(rest);
-            return rest;
-        }
+        // An older plugin's host (no "auth":"mac") never gets here: LocalClient.bgMode gives it no BgApp, so nothing
+        // (the token, taps, typed text) goes to a host that hasn't proved the token.
+        throw new java.io.IOException("not verified");
     }
 
     /** Dark icons on light bars and the reverse, decided from the page background. */
@@ -3094,6 +3071,13 @@ public class MainActivity extends Activity {
         public String pluginUpdate(String key, boolean force) {
             if (!ok(key)) return "";
             return PluginSync.userUpdate(MainActivity.this, force);
+        }
+
+        /** As pluginUpdate, after the page's question was answered yes (a running answer or job may be cut off). */
+        @JavascriptInterface
+        public String pluginUpdateConfirmed(String key, boolean force) {
+            if (!ok(key)) return "";
+            return PluginSync.userUpdate(MainActivity.this, force, true);
         }
 
         /** Android's uninstall prompt for termux-api, termux-boot, shizuku, termux or self (nothing else). */

@@ -389,19 +389,25 @@ final class LocalClient {
         }
     }
 
-    /** How the app talks to the background host of a {@code bgapp} event: say hello first, the old token header, or not at all. */
+    /** A {@code bgapp} event with a token from an older plugin (no {@code "auth":"mac"}): its host can't be verified. */
+    static boolean bgOld(String auth, String token) {
+        return token != null && !token.isEmpty() && token.length() <= 256 && !"mac".equals(auth);
+    }
+
+    /** How the app talks to the background host of a {@code bgapp} event: say hello first, or not at all (TOKEN: unused). */
     enum BgMode { MAC, TOKEN, NONE }
 
     /**
      * From the event's {@code auth} and {@code token} (as the event gave them; null when absent): {@code auth} exactly
      * {@code mac} means the plugin started the host with local authentication, so every request opens with a hello whose
      * key is the token ({@link BgMode#MAC}; a token that can't be a key gives {@link BgMode#NONE}); any other value is
-     * an older plugin's host, which takes the token in {@code X-HM-Token} ({@link BgMode#TOKEN}). No token, or one over
-     * 256 characters: {@link BgMode#NONE}.
+     * an older plugin's host, which would take the token, taps and typed text with no proof of who answers: the app
+     * sends it nothing ({@link BgMode#NONE}; {@link #bgOld} says so, and the app asks for the plugin's update). No
+     * token, or one over 256 characters: {@link BgMode#NONE}. {@link BgMode#TOKEN} is no longer given.
      */
     static BgMode bgMode(String auth, String token) {
         if (token == null || token.isEmpty() || token.length() > 256) return BgMode.NONE;
-        if (!"mac".equals(auth)) return BgMode.TOKEN;
+        if (!"mac".equals(auth)) return BgMode.NONE;
         try {
             LocalAuth.kid(token);
             return BgMode.MAC;

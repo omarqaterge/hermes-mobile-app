@@ -58,6 +58,8 @@ public class SetupLinesTest {
         u.start("u");
         for (int i = 0; i < 60; i++) u.add("u", "TODO line " + i, "" + (1000000000L + i), 1000000000L + i);
         check(u.json().contains("\"times\":[1000000010,") && u.json().contains(",1000000059]"), "times stay parallel to the 50 kept lines");
+        check(SetupLines.checksPlugin("DONE") && !SetupLines.checksPlugin("STEP plugin x") && !SetupLines.checksPlugin("FAIL plugin x")
+                && !SetupLines.checksPlugin("DONE ") && !SetupLines.checksPlugin(null), "the installer's DONE (and only it) checks the plugin at once");
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }

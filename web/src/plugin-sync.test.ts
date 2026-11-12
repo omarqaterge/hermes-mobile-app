@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pluginRow, updateAnswer, type PluginState } from './plugin-sync'
+import { pluginRow, updateAnswer, updateDialog, type PluginState } from './plugin-sync'
 
 const base: PluginState = { state: 'current', detail: '', installed: '1793648698', apk: '1793648698', running: '', tries: 0, maxTries: 3 }
 
@@ -35,5 +35,35 @@ describe('updateAnswer', () => {
     expect(updateAnswer('ok')).toBe('')
     expect(updateAnswer('working')).toMatch(/working/)
     expect(updateAnswer('error: this app build has no plugin')).toBe('this app build has no plugin')
+  })
+})
+
+describe('an old plugin whose work can’t be asked (busy-unknown)', () => {
+  it('has a row of its own that says a tap may cut off work, and is not "waiting"', () => {
+    const r = pluginRow({ ...base, state: 'busy-unknown', detail: 'unknown' })
+    expect(r.action).toBe('update')
+    expect(r.sub).toMatch(/cut off/)
+    expect(r.sub).not.toMatch(/Waiting/)
+  })
+  it('asks before an update in that state, before replacing hand changes, and not otherwise', () => {
+    expect(updateDialog('busy-unknown', false)?.message).toMatch(/cut off/)
+    expect(updateDialog('modified', true)?.message).toMatch(/changes made by hand go/)
+    expect(updateDialog('modified', true)?.message).not.toMatch(/cut off/)
+    expect(updateDialog('busy-unknown', true)?.message).toMatch(/cut off/)
+    expect(updateDialog('older', false)).toBeNull()
+    expect(updateDialog('busy', false)).toBeNull()
+    expect(updateDialog(undefined, false)).toBeNull()
+  })
+  it('on a switched phone asks before every tap that restarts Hermes, and says so to the shell', () => {
+    for (const st of ['older', 'failed', 'busy', 'busy-unknown']) {
+      const d = updateDialog(st, false, true)
+      expect(d?.message).toMatch(/cut off/)
+      expect(d?.cut).toBe(true)
+    }
+    expect(updateDialog('modified', true, true)?.cut).toBe(true)
+    expect(updateDialog('modified', true, true)?.message).toMatch(/cut off/)
+    expect(updateDialog('modified', true, false)?.cut).toBe(false)
+    expect(updateDialog('current', false, true)).toBeNull()
+    expect(updateDialog('held', false, true)).toBeNull()
   })
 })

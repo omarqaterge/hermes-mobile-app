@@ -15,7 +15,9 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
   aren't allowed) `RTC_WAKEUP` alarm, holds the CPU up to 150 s when it fires, pokes the ticker on 9122 and releases
   early on `cron_idle`. The alarm time is saved and re-armed after the app restarts.
 - **Service timers** use `Handler.postDelayed` (no CPU wake): the update check every 12 h, the one Shizuku check at
-  90 s, the bg-app card's 130 s expiry.
+  90 s, the bg-app card's 130 s expiry. While local authentication's compatibility window is open (2.3), one inexact
+  `ELAPSED_REALTIME` alarm an hour (`HermesService.lookLater`, never waking the phone: delivered at its next wake),
+  gone once the window is closed.
 - **Waiting for Hermes.** `HermesService.watchReady` looks at the dashboard every 500 ms (`READY_POLL_MS`) on one
   plain thread that holds no wake lock, only after the page asks (`watchHermes`, once per outage) and only while the
   app is on screen. It stops when the dashboard answers, when the app leaves the screen, or after 3 minutes

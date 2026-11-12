@@ -3,7 +3,7 @@
 // lets the user update now, try again after a failure, or replace a copy changed by hand.
 import { useEffect, useState } from 'react'
 
-export type PluginStateName = 'unknown' | 'not-ready' | 'current' | 'older' | 'busy' | 'newer' | 'modified' | 'held' | 'failed'
+export type PluginStateName = 'unknown' | 'not-ready' | 'current' | 'older' | 'busy' | 'busy-unknown' | 'newer' | 'modified' | 'held' | 'failed'
 export interface PluginState {
   state: PluginStateName | string
   detail: string
@@ -15,6 +15,8 @@ export interface PluginState {
   running: string
   tries: number
   maxTries: number
+  /** Local authentication's switch is on: a tap's restart can't see an old plugin's work (it may cut off a turn). */
+  enforced?: boolean
 }
 
 export interface PluginRowView {
@@ -43,6 +45,8 @@ export function pluginRow(s: PluginState): PluginRowView {
       return { value, sub: `This app has a newer version. It installs by itself once Hermux is idle and the app is closed. ${tap}`, action: 'update', tone: 'gold' }
     case 'busy':
       return { value, sub: `Waiting until Hermux has finished its work. ${tap}`, action: 'update', tone: 'gold' }
+    case 'busy-unknown':
+      return { value, sub: 'This older plugin can’t say whether Hermes is working, so it isn’t updated by itself. Tap to update now: an answer or a scheduled job that is running would be cut off', action: 'update', tone: 'gold' }
     case 'newer':
       return { value, sub: 'Newer than this app’s copy, so it was left as it is', action: null, tone: 'green' }
     case 'modified':
@@ -61,6 +65,50 @@ export function pluginRow(s: PluginState): PluginRowView {
   }
 }
 
+export interface UpdateDialog {
+  title: string
+  message: string
+  confirmLabel: string
+}
+
+/** The plugin states whose update tap restarts Hermes: on a switched phone the app can't see their work. */
+const RESTARTS = ['older', 'failed', 'busy', 'busy-unknown', 'modified']
+
+/**
+ * The question a tap must answer first (pure, unit-tested): replacing hand changes, or a restart that may cut off work:
+ * always for `busy-unknown`, and on a switched phone (`enforced`) for every state whose tap restarts Hermes, since the
+ * app can't see an older plugin's work there. `cut` says the user was told so: then the shell is told it was confirmed.
+ */
+export function updateDialog(state: string | undefined, force: boolean, enforced = false): (UpdateDialog & { cut: boolean }) | null {
+  const cutOff = state === 'busy-unknown' || (enforced && !!state && RESTARTS.includes(state))
+  const cut = cutOff
+    ? ' This older plugin can’t say whether Hermes is working: an answer or a scheduled job that is running now would be cut off.'
+    : ''
+  if (force) {
+    return {
+      title: 'Replace the plugin?',
+      message: `The plugin in Hermux was changed by hand. Replace it with this app’s copy? The changes made by hand go, and Hermux restarts for a moment.${cut}`,
+      confirmLabel: 'Replace',
+      cut: cutOff
+    }
+  }
+  if (cutOff) return { title: 'Update the plugin now?', message: `Hermux restarts for a moment.${cut}`, confirmLabel: 'Update now', cut: true }
+  return null
+}
+
+/** A tap on an update button anywhere (Settings, the setup check): the dialog first when one is needed, then the update.
+ *  Its answer for a toast ('' = started, or the user said no). */
+export async function runPluginUpdate(force: boolean): Promise<string> {
+  const st = pluginState()
+  const d = updateDialog(st?.state, force, !!st?.enforced)
+  if (d) {
+    const { confirmDialog } = await import('./dialog') // loaded here so this file stays free of the page (unit tests)
+    if (!(await confirmDialog({ title: d.title, message: d.message, confirmLabel: d.confirmLabel }))) return ''
+  }
+  // Only a tap whose warning about cut-off work was answered may replace an old plugin whose work can't be asked.
+  return updateAnswer(d?.cut ? pluginUpdateConfirmed(force) : pluginUpdate(force))
+}
+
 /** What a tap's answer means for the user; '' = it started. */
 export function updateAnswer(r: string): string {
   if (r === 'ok') return ''
@@ -71,7 +119,7 @@ export function updateAnswer(r: string): string {
 }
 
 // ── shell calls (PluginSync through MainActivity's bridge) ──
-type Shell = { pluginState?: () => string; pluginUpdate?: (force: boolean) => string }
+type Shell = { pluginState?: () => string; pluginUpdate?: (force: boolean) => string; pluginUpdateConfirmed?: (force: boolean) => string }
 const shell = () => (window as unknown as { HermesAndroid?: Shell }).HermesAndroid
 
 export function pluginState(): PluginState | null {
@@ -86,6 +134,15 @@ export function pluginState(): PluginState | null {
 export function pluginUpdate(force: boolean): string {
   try {
     return shell()?.pluginUpdate?.(force) || 'error: not available'
+  } catch (e) {
+    return `error: ${String(e)}`
+  }
+}
+
+/** pluginUpdate after the user answered the warning that a running answer or job may be cut off (`--confirmed`). */
+export function pluginUpdateConfirmed(force: boolean): string {
+  try {
+    return shell()?.pluginUpdateConfirmed?.(force) || 'error: not available'
   } catch (e) {
     return `error: ${String(e)}`
   }
