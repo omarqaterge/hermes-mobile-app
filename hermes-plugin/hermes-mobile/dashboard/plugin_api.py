@@ -318,14 +318,31 @@ def _install_token_guard() -> None:
 _install_token_guard()
 
 
-def _own_page_token() -> str:
-    """The session token for the plugin's own calls to the gateway (/approve, /stop). Blocking: call it in a thread."""
-    import urllib.request
+def _own_port(request) -> int:
+    """The port of the dashboard that received ``request``: this very process. Its own WebSocket goes there."""
+    server = getattr(request, "scope", {}).get("server") if request is not None else None
+    if isinstance(server, (tuple, list)) and len(server) == 2 and server[0] == "127.0.0.1" \
+            and isinstance(server[1], int) and 1 <= server[1] <= 65535:
+        return server[1]
+    return 9119
 
-    req = urllib.request.Request("http://127.0.0.1:9119/", headers={_KEY_HEADER: _event_key()})
-    page = urllib.request.urlopen(req, timeout=5).read().decode()
-    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
-    return m.group(1) if m else ""
+
+def _own_page_token(port: int = 9119) -> str:
+    """The session token for the plugin's own calls to the gateway (/approve, /stop). Taken in process: this is the
+    dashboard's own process (``_session_token``). Only if Hermes keeps it nowhere this file knows, from a verified
+    dashboard on ``port`` (``local_auth.dashboard_token``: the hello, the signed token request and the proof over the
+    answer); the key itself is never sent. "" when neither works. Blocking: call it in a thread."""
+    tok = _session_token()
+    if tok:
+        return tok
+    la = _local_auth()
+    key = _event_key()
+    if la is None or not key:
+        return ""
+    try:
+        return la.dashboard_token(port, key, timeout=5)
+    except (la.Unverified, OSError, ValueError):
+        return ""
 
 
 def _home(profile: Optional[str]) -> Path:
@@ -489,13 +506,11 @@ class Approve(BaseModel):
 
 
 @router.post("/approve")
-async def approve(body: Approve):
+async def approve(body: Approve, request: Request):
     """Answer a pending approval from the app's notification buttons: the same ``approval.respond``
     the gateway offers every client, over this dashboard's own WebSocket."""
     import asyncio
     import json
-    import re
-    import urllib.request
 
     import websockets
 
@@ -504,11 +519,12 @@ async def approve(body: Approve):
     if not body.request_id:
         # Without an id Hermes answers the session's oldest waiting approval, which may not be the one shown.
         raise HTTPException(status_code=409, detail="no request id: answer in the app")
-    token = await asyncio.to_thread(_own_page_token)
+    port = _own_port(request)
+    token = await asyncio.to_thread(_own_page_token, port)
     if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
     last = None
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:{port}/api/ws?token={token}", max_size=None) as ws:
         for n, sid in enumerate(dict.fromkeys(x for x in (body.session, body.key) if x), 1):
             params = {"session_id": sid, "choice": body.choice}
             if body.request_id:
@@ -531,23 +547,22 @@ class Stop(BaseModel):
 
 
 @router.post("/stop")
-async def stop(body: Stop):
+async def stop(body: Stop, request: Request):
     """Stop a running turn from the status chip's Stop button: find the live runtime that holds this stored
     chat (``session.active_list``) and send it the same ``session.interrupt`` the app's stop button sends."""
     import asyncio
     import json
-    import re
-    import urllib.request
 
     import websockets
 
     if not body.session:
         raise HTTPException(status_code=400, detail="no session")
-    token = await asyncio.to_thread(_own_page_token)
+    port = _own_port(request)
+    token = await asyncio.to_thread(_own_page_token, port)
     if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
 
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:{port}/api/ws?token={token}", max_size=None) as ws:
         async def call(n, method, params):
             await ws.send(json.dumps({"jsonrpc": "2.0", "id": n, "method": method, "params": params}))
             while True:

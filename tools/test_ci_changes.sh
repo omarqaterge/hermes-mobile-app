@@ -31,6 +31,8 @@ t "LocalServer.java (test_hm_local.sh runs hm-local against it): patches" "web=f
 t "LocalAuth.java: patches" "web=false contract=false patches=true " android/src/com/omarqaterge/hermesmobile/LocalAuth.java
 t "LocalClient.java: patches" "web=false contract=false patches=true " android/src/com/omarqaterge/hermesmobile/LocalClient.java
 t "hm-local: patches" "web=false contract=false patches=true " phone/hm-local
+t "the fake local server (the phone-script tests use it): patches" "web=false contract=false patches=true " tools/local_fake_server.py
+t "the token cases' server (test_hm_local.sh uses it): patches" "web=false contract=false patches=true " tools/local_auth_cases.py
 t "a plugin test: no patches" "web=false contract=false patches=false " tools/test_canvas.py
 t "other vendored files: no patches" "web=true contract=true patches=false " web/vendor/hermes-shared/src/x.ts
 t "no files: nothing slow" "web=false contract=false patches=false "

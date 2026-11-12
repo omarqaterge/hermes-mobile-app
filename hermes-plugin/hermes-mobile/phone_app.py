@@ -1,8 +1,9 @@
 """phone_app: Hermes uses a phone app on a hidden screen, so the user keeps using the real one.
 
 The work is done by the app's background host (android/.../bg/BgHost.java), a small program that runs as the shell
-user through Shizuku's rish. This module starts it on demand, talks to it over 127.0.0.1 with a per-start token,
-asks the user once per app per chat (Hermes's approval gate; /yolo skips it), refuses banking/payment/password/2FA
+user through Shizuku's rish. This module starts it on demand on a port the kernel picks, with a per-start token, and
+talks to it over 127.0.0.1 with local authentication (local_auth.py, role bghost, the token as the key): every request
+first verifies the host and is then signed, and the token itself is never sent. It asks the user once per app per chat (Hermes's approval gate; /yolo skips it), refuses banking/payment/password/2FA
 apps unless the user allowed them in the app's Settings, and tells the phone app what is happening (event `bgapp`).
 
 Made for few model round trips: actions take an element's text instead of a number, several can go in one call
@@ -13,20 +14,19 @@ screen (or says nothing changed).
 from __future__ import annotations
 
 import base64
+import importlib.util
 import json
 import os
 import re
 import secrets
 import subprocess
+import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-PORT = 9131
-HOST_URL = f"http://127.0.0.1:{PORT}"
+HOST_LOG = "/data/local/tmp/hm-bghost.log"  # the host's output; only the shell user can write there
 APP_PKG = "com.omarqaterge.hermesmobile"
 HOST_CLASS = "com.omarqaterge.hermesmobile.bg.BgHost"
 RISH_BIN = Path("/data/data/com.termux/files/home/bin/rish")
@@ -48,12 +48,15 @@ SENSITIVE = re.compile(
     r"|dashlane|\bkeeper\b|proton ?pass|enpass|vault|credential|digid|\beid\b|bankid|itsme",
     re.I)
 
-# Set by the plugin's register(): notify(kind, title, body, session, **extra) and log(msg).
+# Set by the plugin's register(): notify(kind, title, body, session, **extra), log(msg) and event(area, name, **fields)
+# (one fixed-shape line in the diagnostic log).
 notify: Optional[Callable[..., None]] = None
 log: Callable[[str], None] = lambda m: None
+event: Callable[..., None] = lambda area, name, **fields: None
 
 _lock = threading.RLock()
-_token = ""
+_token = ""                          # this start's token (the key of its local authentication), "" = no host of ours
+_port = 0                            # the port the kernel gave this start, from its LISTENING line
 _state: Dict[str, Any] = {}          # {session, pkg, label, at}  (at = owner's last phone_app call)
 DEADLINE_S = 10.0                    # how long to wait for a started host to answer
 STALE_S = 130.0                      # same as the host's idle timeout: an owner silent this long has let go
@@ -157,21 +160,64 @@ def _rish(cmd: str, stdin: str = "", timeout: float = 20) -> str:
     return (p.stdout or "") + (p.stderr or "")
 
 
+def _local_auth():
+    """local_auth.py from this folder (the plugin's own; the folder isn't an importable package)."""
+    mod = sys.modules.get("hm_local_auth")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location(
+            "hm_local_auth", os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_auth.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["hm_local_auth"] = mod
+    return mod
+
+
+UNVERIFIED = "The background host didn't answer correctly; try again."
+
+
+class _HostAnswer(Exception):
+    """The verified host answered with an HTTP error status."""
+
+    def __init__(self, code: int):
+        super().__init__(code)
+        self.code = code
+
+
+def _unverified(why: str) -> None:
+    try:
+        event("local", "unverified", port="bghost", why=why, side="plugin")
+    except Exception:
+        pass
+
+
 def _request(path: str, body: Optional[dict] = None, timeout: float = 30, raw: bool = False):
+    """One request to this start's host: a hello first (the host proves it holds this start's token, for the port it
+    listens on), then the request signed with the token, on the same connection. Raises PhoneAppError (UNVERIFIED) for a
+    host that doesn't verify (nothing is sent to it), _HostAnswer for an error status, OSError for a broken answer."""
+    if not _token or not _port:
+        raise PhoneAppError("no background host is running; open the app again")
+    la = _local_auth()
     data = json.dumps(body or {}).encode() if body is not None or path not in ("/status",) else None
-    req = urllib.request.Request(HOST_URL + path, data=data, method="POST" if data is not None else "GET",
-                                 headers={"X-HM-Token": _token, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        payload = r.read()
-        return payload if raw else json.loads(payload.decode() or "{}")
+    try:
+        s = la.session("bghost", _port, _token, timeout=min(timeout, 30.0))
+        a = s.request("POST" if data is not None else "GET", path, data)
+    except la.Unverified as e:
+        _unverified(e.why)
+        raise PhoneAppError(UNVERIFIED) from None
+    if a.status >= 300:
+        raise _HostAnswer(a.status)
+    return a.body if raw else json.loads(a.body.decode() or "{}")
 
 
 def _alive() -> bool:
-    if not _token:
+    """This start's host answers the hello with this start's token on its own port. Nothing is sent but the hello."""
+    if not _token or not _port:
         return False
+    la = _local_auth()
     try:
-        return bool(_request("/status", None, timeout=2).get("ok"))
-    except Exception:
+        la.session("bghost", _port, _token, timeout=2).close()
+        return True
+    except la.Unverified:
         return False
 
 
@@ -185,9 +231,26 @@ def _apk_path() -> str:
     raise PhoneAppError("The Hermux app isn't installed (or Shizuku can't see it).")
 
 
-def ensure_host(_retry: bool = False) -> None:
-    """Start the background host if it isn't running (it exits by itself after 2 idle minutes)."""
-    global _token
+_LISTENING = re.compile(r"LISTENING ([0-9]{1,5}) ([0-9a-f]{8})")
+
+
+def listening_port(text: str, kid: str) -> int:
+    """The port of the host's ``LISTENING <port> <kid>`` line that names ``kid`` (this start's token), else 0: a line
+    left from another start names another key id and never counts."""
+    for line in (text or "").splitlines():
+        m = _LISTENING.fullmatch(line.strip())
+        if m and m.group(2) == kid and 1024 <= int(m.group(1)) <= 65535:
+            return int(m.group(1))
+    return 0
+
+
+def ensure_host() -> None:
+    """Start the background host if this start's host doesn't verify (it exits by itself after 2 idle minutes).
+
+    A host that doesn't answer the hello with our token is not ours to use: any host left from before is stopped
+    (its token is lost anyway) and a fresh one starts, with a new token, on a port the kernel picks. Its port comes
+    from its own LISTENING line, which names its token's key id, in a file only the shell user can write."""
+    global _token, _port
     with _lock:
         if _alive():
             return
@@ -195,43 +258,57 @@ def ensure_host(_retry: bool = False) -> None:
         if not ok:
             raise PhoneAppError(why)
         apk = _apk_path()
+        la = _local_auth()
         tok = secrets.token_hex(24)
-        # The token goes in on stdin, never on a command line. The host closes rish's pipes, so rish returns at once.
-        script = ("read -r T; cd /data/local/tmp; (HM_TOKEN=$T CLASSPATH=" + apk + " setsid nohup app_process / "
-                  + HOST_CLASS + f" {PORT} </dev/null >/data/local/tmp/hm-bghost.log 2>&1 &)")
+        kid = la.kid(tok)
+        _token, _port = "", 0
+        # The token and HM_AUTH=mac (only signed requests, never the raw token) go in on stdin, never on a command
+        # line. Port 0: the kernel picks a free one. The host closes rish's pipes, so rish returns at once.
+        # A host from before (its token is lost, or it didn't prove it) is stopped first, in a call of its own: this
+        # start's command line names the host's class, so the pattern would match it too.
+        _rish("pkill -f 'app_process.*[B]gHost'", timeout=10)
+        script = ("read -r T; read -r A; cd /data/local/tmp; (HM_TOKEN=$T HM_AUTH=$A "
+                  "CLASSPATH=" + apk + " setsid nohup app_process / " + HOST_CLASS + " 0 </dev/null >" + HOST_LOG
+                  + " 2>&1 &)")
         try:
-            _rish(script, stdin=tok + "\n", timeout=20)
+            _rish(script, stdin=tok + "\nmac\n", timeout=20)
         except subprocess.TimeoutExpired:
             pass
-        _token = tok
         deadline = time.time() + DEADLINE_S
+        tail = ""
         while time.time() < deadline:
-            if _alive():
-                return
+            try:
+                tail = _rish("tail -n 20 " + HOST_LOG, timeout=5)
+            except subprocess.TimeoutExpired:
+                tail = ""
+            port = listening_port(tail, kid)
+            if port:
+                _token, _port = tok, port
+                if _alive():
+                    return
+                _token, _port = "", 0
+                break  # it named our key id but didn't prove it: not ours to use
+            if "Android 14" in tail or "HM_TOKEN missing" in tail:
+                break
             time.sleep(0.4)
-        _token = ""
-        tail = _rish("tail -5 /data/local/tmp/hm-bghost.log")
-        if ("Address already in use" in tail or "BindException" in tail) and not _retry:
-            # A host from before (the plugin restarted and lost its token, or a close never reached it) still holds
-            # the port. It is ours and nobody can use it without the token: stop it and start a fresh one.
-            _rish("pkill -f 'app_process.*[B]gHost'; sleep 1")
-            return ensure_host(_retry=True)
-        if "Address already in use" in tail or "BindException" in tail:
-            raise PhoneAppError("Another background-app session is still running; wait 2 minutes and try again.")
         if "Android 14" in tail:
             raise PhoneAppError("Background apps need Android 14 or newer.")
-        raise PhoneAppError("The background host didn't start: " + " ".join(tail.split())[-300:])
+        if listening_port(tail, kid):
+            _unverified("bad_proof")
+            raise PhoneAppError(UNVERIFIED)
+        said = " ".join(l for l in tail.splitlines() if not l.startswith("LISTENING"))
+        raise PhoneAppError("The background host didn't start: " + " ".join(said.split())[-300:])
 
 
 def call(path: str, body: Optional[dict] = None) -> dict:
     try:
         r = _request(path, body)
-    except urllib.error.HTTPError as e:
+    except _HostAnswer as e:
         if e.code == 404:  # the plugin is newer than the app on the phone
             raise PhoneAppError(f"this needs a newer Hermux app ({path[1:]} is missing); ask the user to update it") from e
         raise PhoneAppError(f"the background host answered {e.code}") from e
-    except urllib.error.URLError as e:
-        raise PhoneAppError(f"lost the background host ({e.reason}); open the app again") from e
+    except OSError as e:
+        raise PhoneAppError("lost the background host; open the app again") from e
     if not r.get("ok"):
         raise PhoneAppError(str(r.get("error") or "failed"))
     return r
@@ -412,8 +489,11 @@ def _event(state: str, action: str = "") -> None:
     if notify is None or not _state:
         return
     try:
+        # The token goes only to an app whose listener proved itself (the plugin's _post); auth "mac": the host takes
+        # only signed requests, so the app must say hello to it too.
         notify("bgapp", _state.get("label", ""), action, _state.get("session", ""), state=state, pkg=_state.get("pkg", ""),
-               label=_state.get("label", ""), action=action, port=PORT, token=_token if state != "done" else "")
+               label=_state.get("label", ""), action=action, port=_port, token=_token if state != "done" else "",
+               auth="mac")
     except Exception as e:
         log(f"bgapp event failed: {e}")
 

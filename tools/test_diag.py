@@ -200,6 +200,44 @@ diag.event("back", "on")
 check("on again", diag.enabled() and any("back on" in l for l in diag.snapshot()["events"]))
 diag.clear()
 
+print("local authentication's events: a closed list")
+diag.clear()
+diag._rate.update(minute=0, count=0, dropped=0)
+diag.event("local", "unverified", port="events", why="bad_proof", side="plugin")
+diag.event("local", "unverified", port="events", why="the key is 0123456789abcdef", side="plugin")
+diag.event("local", "port_taken", port="dashboard", why="no_hello", side="termux")
+diag.event("local", "port_taken", port="events", why="self", side="app")
+diag.event("local", "legacy_key", port="dashboard", side="termux")
+diag.event("local", "key_rotated", why="enforce", side="app")
+diag.event("local", "unverified", port="9121", why="no_answer", side="plugin", kid="a1b2c3d4", nc="0" * 32)
+diag.event("local", "secret_thing", port="events")
+diag.event("local", "unverified", port="events", why="no_answer", side="someone")
+written = diag.log_path().read_text().splitlines()
+check("a fitting event is written as it is", any(l.endswith(" local unverified port=events why=bad_proof side=plugin") for l in written), written)
+check("a reason outside the list is written as ?", any(l.endswith(" local unverified port=events why=? side=plugin") for l in written), written)
+check("port_taken, legacy_key, key_rotated fit", sum(" local port_taken " in l or " local legacy_key " in l or " local key_rotated " in l for l in written) == 4, written)
+check("a field that isn't listed (kid, nonce) is left out, a port number is ?",
+      any(l.endswith(" local unverified port=? why=no_answer side=plugin") for l in written) and not any("kid=" in l or "nc=" in l for l in written), written)
+check("a name outside the list is not written", not any("secret_thing" in l for l in written), written)
+check("a side outside the list is ?", any(l.endswith(" local unverified port=events why=no_answer side=?") for l in written), written)
+check("nothing secret-shaped got in", not any("0123456789abcdef" in l or "a1b2c3d4" in l for l in written), written)
+(termux / "logs" / "loop-events.log").write_text(
+    f"{now} local port_taken port=dashboard side=termux why=no_hello\n"
+    f"{now} local legacy_key port=dashboard side=termux\n"
+    f"{now} local port_taken port=dashboard side=termux why=deadbeef\n"
+    f"{now} local unverified port=events kid=a1b2c3d4\n"
+    f"{now} local whatever port=events\n"
+    f"{now} local port_ok port=ticker\n"
+    f"{now} local port_taken port=events port=events\n")
+events = diag.snapshot()["events"]
+check("the supervisor's fitting lines are read", any("local port_taken port=dashboard side=termux why=no_hello" in l for l in events)
+      and any("local legacy_key port=dashboard side=termux" in l for l in events) and any("local port_ok port=ticker" in l for l in events), events)
+check("a supervisor line that doesn't fit is dropped whole",
+      not any("deadbeef" in l or "kid=" in l or "whatever" in l or "port=events port=events" in l for l in events), events)
+check("the read-back check is the same as the write rule", diag.local_line_ok("local unverified port=events why=? side=plugin")
+      and not diag.local_line_ok("local unverified port=events why=maybe") and diag.local_line_ok("service loop_exit name=x code=1"))
+diag.clear()
+
 print("wiring")
 init = (PLUGIN / "__init__.py").read_text()
 api_text = (PLUGIN / "dashboard" / "plugin_api.py").read_text()

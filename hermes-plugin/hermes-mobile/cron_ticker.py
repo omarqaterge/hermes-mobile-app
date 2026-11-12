@@ -17,7 +17,12 @@ app sends `HELLO 1 <nonce>` (optionally followed by its key id, a hint), the tic
 `POKE 1 <mac>` over both nonces pokes it. A first line that is the shared key itself (the app's
 protocol before this one) still pokes it until ~/.hermes-mobile/enforced exists. When the port is
 in use the listener tries again (5 s, doubling to 5 min) for as long as the ticker runs, and notes
-each change in ~/logs/loop-events.log for the diagnostic log.
+each change in ~/logs/loop-events.log for the diagnostic log (and tells the app, `local_port`).
+
+As a client of the app (`wake_at`, `cron_idle`, `local_port`) it verifies the app's listener first (local
+authentication, local_auth.session, role events): the request is signed on the connection that proved itself, the key
+is never sent, and a listener that doesn't prove it gets nothing (then it waits, 1 s doubling to 5 min). Without
+local_auth.py next to it, it sends nothing and says so once in its log.
 
 Ships inside the plugin folder; the supervisor runs this copy when it is there.
 """
@@ -43,11 +48,10 @@ import logging
 import socket
 import threading
 import time
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-APP_URL = "http://127.0.0.1:9121/event"
+EVENTS_PORT = 9121  # the app's listener
 TERMUX_HOME = Path("/data/data/com.termux/files/home")
 KEY_FILE = TERMUX_HOME / ".hermes-mobile" / "key"
 ENFORCED = TERMUX_HOME / ".hermes-mobile" / "enforced"  # once there, the raw key no longer pokes
@@ -136,14 +140,42 @@ def _key() -> str:
     return _key_file.read()
 
 
+_client: dict = {"backoff": None, "said": set()}
+
+
+def _say_once(what: str, text: str) -> None:
+    if what not in _client["said"]:
+        _client["said"].add(what)
+        logging.warning("%s", text)
+
+
 def _post(event: dict) -> bool:
+    """One event to the app, after its listener proved it holds the key (same connection, signed request). True on a
+    2xx answer. Never sends the key, and nothing at all to a listener that doesn't verify. Logs only fixed words."""
+    la = _local_auth()
+    if la is None:
+        _say_once("module", "events: local_auth.py is missing next to this file; nothing is sent to the app")
+        return False
+    key = _key()
+    if not key:
+        return False
+    if _client["backoff"] is None:
+        _client["backoff"] = la.Backoff()
+    backoff = _client["backoff"]
+    if not backoff.ready():
+        return False
     try:
-        req = urllib.request.Request(APP_URL, data=json.dumps(event).encode(), method="POST",
-                                     headers={"Content-Type": "application/json", "X-Hermes-Mobile-Key": _key()})
-        with urllib.request.urlopen(req, timeout=2) as r:
-            return r.status < 300
+        answer = la.session("events", EVENTS_PORT, key, timeout=2).request("POST", "/event", json.dumps(event).encode())
+    except la.Unverified as e:
+        if e.why != "no_answer":
+            backoff.failed()
+            _say_once("why:" + e.why, f"events: the app's listener was not verified ({e.why}); nothing was sent")
+        return False
     except Exception:
         return False
+    backoff.ok()
+    _client["said"].discard("module")
+    return 200 <= answer.status < 300
 
 
 class WakeReporter:
@@ -369,8 +401,12 @@ if __name__ == "__main__":
         wake.report(force=True)  # the next due time first: the app may let the phone sleep right after cron_idle
         _post({"kind": "cron_idle", "since": since})
 
+    def note(state: str) -> None:
+        note_port(state)
+        _post({"kind": "local_port", "port": "ticker", "state": "taken" if state == "taken" else "ok"})
+
     stop = Ticker(running=running_jobs, idle=idle)
-    threading.Thread(target=poke_listener, args=(stop,), daemon=True, name="cron-poke").start()
+    threading.Thread(target=poke_listener, args=(stop,), kwargs={"note": note}, daemon=True, name="cron-poke").start()
     threading.Thread(target=_start_desktop_cron_ticker, args=(stop,), daemon=True, name="cron-ticker").start()
     reporter_stop = threading.Event()
     threading.Thread(target=wake.loop, args=(reporter_stop,), daemon=True, name="wake-reporter").start()

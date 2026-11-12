@@ -27,6 +27,7 @@ while IFS= read -r p; do
   case "$p" in
     hermes/*|phone/*|web/vendor/hermes-shared/.hermes-commit) patches=true ;;
     hermes-plugin/hermes-mobile/local_auth.py|tools/local-auth-vectors.json|android/build.sh) patches=true ;;
+    tools/local_fake_server.py|tools/local_auth_cases.py) patches=true ;;  # the phone-script tests' fake local servers
     android/src/com/omarqaterge/hermesmobile/LocalAuth.java|android/src/com/omarqaterge/hermesmobile/LocalClient.java|android/src/com/omarqaterge/hermesmobile/LocalServer.java) patches=true ;;
     tools/*/*) ;;
     tools/*.sh|tools/*.ps1|tools/pack_image.py) patches=true ;;

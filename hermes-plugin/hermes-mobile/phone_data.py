@@ -11,16 +11,18 @@ exception. Only fixed tokens (a kind and an outcome) go to the diagnostic log.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 import secrets
+import sys
 import time
 import unicodedata
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-URL = "http://127.0.0.1:9121/phonedata"
+PORT = 9121   # the app's listener; every request first verifies it (local authentication, local_auth.py)
+PATH = "/phonedata"
 KEY_FILE = Path("/data/data/com.termux/files/home/.hermes-mobile/key")
 STATUS_TIMEOUT = 2.0
 PROMPT_TIMEOUT = 1.0
@@ -74,63 +76,81 @@ def _ev(kind: Any, outcome: str) -> None:
         pass
 
 
+def _local_auth():
+    """local_auth.py from this folder (the plugin's own; the folder isn't an importable package)."""
+    mod = sys.modules.get("hm_local_auth")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location(
+            "hm_local_auth", os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_auth.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["hm_local_auth"] = mod
+    return mod
+
+
+_key_file = None
+
+
 def _key() -> str:
-    try:
-        return KEY_FILE.read_text().strip()
-    except OSError:
-        return ""
+    """The shared key, read again only when its file changes (local_auth.KeyFile)."""
+    global _key_file
+    if _key_file is None:
+        _key_file = _local_auth().KeyFile(lambda: KEY_FILE)
+    return _key_file.read()
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """A redirect would resend the key somewhere else: none is followed (it surfaces as an HTTPError)."""
-
-    def redirect_request(self, *a, **k):
-        return None
-
-
-# Never an environment proxy (http_proxy): the key, the queries and the results stay on this phone.
-_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+_backoff = None
 
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _read_all(r, deadline: float) -> bytes:
-    """The body, at most MAX_ANSWER bytes and until the deadline: a server that drips can't hang the tool."""
-    out = b""
-    while len(out) <= MAX_ANSWER:
-        if time.monotonic() > deadline:
-            raise TimeoutError
-        chunk = getattr(r, "read1", r.read)(8192)   # read1 returns what has come, so the deadline is checked
-        if not chunk:
-            return out
-        out += chunk
-    raise ValueError
-
-
 def _post(body: dict, timeout: float) -> Optional[tuple]:
-    """(http status, parsed JSON object) or None when nothing answered. Never raises, never logs."""
-    key = _key()
+    """(http status, parsed JSON object) or None when nothing usable answered. The app's listener must prove it holds the
+    key before the request goes (on the same connection, signed with the key, which is never sent); the answer is
+    trusted only because that connection proved itself. A listener that doesn't prove it gets nothing, and for a while
+    after that nothing is tried (local_auth.Backoff). Never raises, never logs text (only the fixed diagnostic event)."""
+    global _backoff
+    try:
+        la = _local_auth()
+        key = _key()
+    except Exception:
+        return None
     if not key:
         return None
-    deadline = time.monotonic() + timeout
-    req = urllib.request.Request(URL, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", "X-Hermes-Mobile-Key": key})
-    try:
-        try:
-            with _OPENER.open(req, timeout=timeout) as r:
-                code, raw = r.status, _read_all(r, deadline)
-        except urllib.error.HTTPError as e:
-            code = e.code
-            raw = b"" if 300 <= code < 400 else _read_all(e, deadline)
-    except Exception:
+    if _backoff is None:
+        _backoff = la.Backoff()
+    if not _backoff.ready():
         return None
-    try:
-        obj = json.loads(raw.decode("utf-8"))
-    except Exception:
-        return code, {}
-    return code, obj if isinstance(obj, dict) else {}
+    data = json.dumps(body).encode()
+    for attempt in (0, 1):
+        try:
+            a = la.session("events", PORT, key, timeout=min(timeout, 10.0)).request("POST", PATH, data)
+        except la.Unverified as e:
+            if e.why in ("unknown_kid", "refused") and attempt == 0:
+                again = _key()  # a new key file: read it again and try once more
+                if again and again != key:
+                    key = again
+                    continue
+            if e.why != "no_answer":
+                _backoff.failed()
+            try:
+                event("local", "unverified", port="events", why=e.why, side="plugin")
+            except Exception:
+                pass
+            return None
+        except Exception:  # verified, but the answer broke (too large, too slow, malformed)
+            return None
+        _backoff.ok()
+        if len(a.body) > MAX_ANSWER:
+            return None
+        try:
+            obj = json.loads(a.body.decode("utf-8")) if a.body else {}
+        except Exception:
+            return a.status, {}
+        return a.status, obj if isinstance(obj, dict) else {}
+    return None
 
 
 def status_state(timeout: float = STATUS_TIMEOUT) -> tuple:

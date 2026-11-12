@@ -179,6 +179,7 @@ jobs:
       - run: python3 tools/test_hm_local_guard.py
       - run: python3 tools/test_local_auth.py
       - run: python3 tools/test_cron_ticker.py
+      - run: python3 tools/test_local_clients.py
       - run: python3 tools/test_sent_counts.py
       - run: python3 tools/test_google_workspace.py
       - run: node --test relay/report/worker.test.js

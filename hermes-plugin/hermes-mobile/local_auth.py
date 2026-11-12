@@ -13,7 +13,9 @@ what, hash. ``mac`` refuses a field outside its alphabet (a newline above all), 
 next. Bounded: 2 s to connect, ``timeout`` per read, a whole-exchange deadline (sends included), 4 KiB for the hello
 answer (a larger Content-Length is refused before reading), a head as strict as the Java side's; no proxy
 (``http.client`` never reads proxy settings) and no redirect is followed. Nothing here logs. Stdlib only. The client
-half is not used yet.
+is used by the plugin's events sender (``__init__._post``), ``phone_data``, ``phone_app`` (the background host), the
+dashboard's own fallback for its token, the cron ticker and the developer tools; ``Backoff`` is their shared wait after a
+failed verification.
 
 The server halves (see "the server halves" below): ``hello_answer`` (the proof over the client's nonce, a fresh server
 nonce, the server's own listening address and the key id), ``parse_auth`` and ``request_ok`` (a request MAC over the
@@ -364,8 +366,8 @@ class Answer:
 class Session:
     """A verified connection: ``request`` sends exactly one request on it, then it is closed."""
 
-    def __init__(self, conn: _Connection, role: str, port: int, key: str, kid_: str, nc: str, ns: str, timeout: float):
-        self._conn, self._sock, self._role, self._port = conn, conn.sock, role, port
+    def __init__(self, conn: _Connection, role: str, where: str, key: str, kid_: str, nc: str, ns: str, timeout: float):
+        self._conn, self._sock, self._role, self._where = conn, conn.sock, role, where
         self._key, self.kid, self._nc, self._ns, self._timeout = key, kid_, nc, ns, timeout
         self._used = False
 
@@ -383,7 +385,7 @@ class Session:
                 raise ValueError("request")
             b = body.encode() if isinstance(body, str) else (body or b"")
             what = f"{method} {path}"
-            m = mac(self._key, "client", self._role, addr(self._port), self._nc, self._ns, what, sha256hex(b))
+            m = mac(self._key, "client", self._role, self._where, self._nc, self._ns, what, sha256hex(b))
             # The same socket as the hello, or nothing: never a fresh connection to whatever listens now.
             if self._conn.sock is None or self._conn.sock is not self._sock:
                 raise OSError("no answer")
@@ -430,16 +432,20 @@ class Session:
             pass
 
 
-def session(role: str, port: int, key: str, timeout: float = 3) -> Session:
-    """Verify the server on 127.0.0.1:port for ``role`` with ``key``; the session may send one request."""
+def session(role: str, port: int, key: str, timeout: float = 3, server: str | None = None) -> Session:
+    """Verify the server on 127.0.0.1:port for ``role`` with ``key``; the session may send one request. ``server`` is
+    the address the proof must name when it is not the one dialled: only for a developer's computer reaching the phone
+    through ``adb forward`` to another local port (the phone's server names its own port)."""
     if role not in ROLES or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("session")
+    if server is not None and not is_addr(server):
         raise ValueError("session")
     try:
         want_kid = kid(key)
     except ValueError:
         raise Unverified("unknown_kid") from None  # an unusable key: the same reason as the Java side, and nothing is sent
     deadline = time.monotonic() + HELLO_DEADLINE_S
-    where = addr(port)
+    where = server or addr(port)
     nc = nonce()
     conn = _Connection(HOST, port, timeout=timeout)
     ok = False
@@ -505,7 +511,7 @@ def session(role: str, port: int, key: str, timeout: float = 3) -> Session:
         if not _hex(proof, 64) or not same(mac(key, "server", role, where, nc, ns, "hello", EMPTY_HASH), proof):
             raise Unverified("bad_proof")
         ok = True
-        return Session(conn, role, port, key, s_kid, nc, ns, timeout)
+        return Session(conn, role, where, key, s_kid, nc, ns, timeout)
     except Unverified:
         raise
     except Exception:
@@ -543,15 +549,16 @@ def _json_object(body: bytes):
     return j if isinstance(j, dict) else None
 
 
-def dashboard_token(port: int, key: str, timeout: float = 3) -> str:
+def dashboard_token(port: int, key: str, timeout: float = 3, server: str | None = None) -> str:
     """The session token of the dashboard on 127.0.0.1:port, from a verified dashboard only: the hello, then
     ``GET /hermux/token`` on the same connection with ``X-Hermux-Auth: 1 <kid> <ns> <nc> <mac>`` (the guard keeps the
     server nonce between its two routes, so the client names its own nonce as well), then the answer's own proof
     (``answer``, ``token``, over both nonces and the token's SHA-256) before the token is returned. A failed hello, a
     refused request or a wrong proof raises ``Unverified``; any answer other than a 200 with ``hermux``, ``token`` and
-    ``proof`` raises OSError("bad answer"), like a broken answer to ``Session.request``. Nothing else escapes."""
-    s = session("dashboard", port, key, timeout)
-    nc, ns = s._nc, s._ns
+    ``proof`` raises OSError("bad answer"), like a broken answer to ``Session.request``. Nothing else escapes.
+    ``server``: as for ``session``."""
+    s = session("dashboard", port, key, timeout, server)
+    nc, ns, where = s._nc, s._ns, s._where
     try:
         a = s.request("GET", TOKEN_PATH, with_nc=True)
     except (Unverified, OSError):
@@ -565,10 +572,37 @@ def dashboard_token(port: int, key: str, timeout: float = 3) -> str:
     if (not isinstance(ver, int) or isinstance(ver, bool) or ver < MIN_VERSION or not isinstance(tok, str)
             or not _TOKEN_TEXT.fullmatch(tok) or not isinstance(proof, str)):
         raise OSError("bad answer")
-    want = mac(key, "answer", "dashboard", addr(port), nc, ns, "token", sha256hex(tok.encode()))
+    want = mac(key, "answer", "dashboard", where, nc, ns, "token", sha256hex(tok.encode()))
     if not _hex(proof, 64) or not same(want, proof):
         raise Unverified("bad_proof")
     return tok
+
+
+class Backoff:
+    """How long a client waits after a failed verification before it tries a role's server again: 1, 2, 4 ... s, at
+    most ``BACKOFF_MAX_S`` (300), and back to nothing after a success. Meanwhile the client sends nothing to that
+    server. Thread-safe; the clock is ``time.monotonic`` (it may stop while the phone sleeps, which only stretches a
+    wait)."""
+
+    def __init__(self, first: float = 1.0, most: float = 300.0, clock=time.monotonic):
+        self._first, self._most, self._clock = first, most, clock
+        self._delay, self._until = 0.0, 0.0
+        self._lock = threading.Lock()
+
+    def ready(self) -> bool:
+        with self._lock:
+            return self._clock() >= self._until
+
+    def failed(self) -> float:
+        """Counts a failure; the wait it starts."""
+        with self._lock:
+            self._delay = self._first if self._delay <= 0 else min(self._delay * 2, self._most)
+            self._until = self._clock() + self._delay
+            return self._delay
+
+    def ok(self) -> None:
+        with self._lock:
+            self._delay, self._until = 0.0, 0.0
 
 
 # ---- the server halves ----

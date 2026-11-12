@@ -109,25 +109,43 @@ check("on a phone, with no key file yet: withheld", withheld(client.get("/")))
 os.path.isdir = real_isdir
 os.environ["HM_DASH_KEY_FILE"] = keyfile
 
-# The plugin's own calls (/approve, /stop) send the key.
+# The plugin's own calls (/approve, /stop): the token in process, else from a verified dashboard; never the key.
 import urllib.request  # noqa: E402
 
-seen = {}
+sent = []
 
 
-class Page:
-    def read(self):
-        return PAGE.encode()
+def no_page(*a, **k):
+    sent.append(a)
+    raise OSError("no loopback page here")
 
 
-def fake_open(req, timeout=None):
-    seen["key"] = req.get_header(HEADER.capitalize())
-    return Page()
+urllib.request.urlopen = no_page
+sys.modules["hermes_cli.web_server"]._SESSION_TOKEN = "in-process-token"
+check("_own_page_token takes the token in process", papi._own_page_token() == "in-process-token")
+check("...and makes no request at all", sent == [])
+sys.modules["hermes_cli.web_server"]._SESSION_TOKEN = "has a space"
+sys.path.insert(0, HERE)
+from local_auth_cases import TokenServer  # noqa: E402
 
-
-urllib.request.urlopen = fake_open
-check("_own_page_token reads the token", papi._own_page_token() == "s3cret")
-check("_own_page_token sends the key", seen.get("key") == "new-key", seen)
+_V = __import__("json").loads(open(os.path.join(HERE, "local-auth-vectors.json"), encoding="utf-8").read())
+_la = papi._local_auth()
+with open(keyfile, "w") as f:
+    f.write(_V["key"])
+for case in _V["token_cases"][:2]:
+    ts = TokenServer(_la, _V["key"], _V["other_key"], case)
+    got = papi._own_page_token(ts.port)
+    want = case["token"] if case["expect"].startswith("token ") else ""
+    check(f"no usable token in process: a verified dashboard's token only ({case['name']})", got == want and sent == [], got)
+check("nothing listening: no token, nothing sent", papi._own_page_token(1) == "" and sent == [])
+os.remove(keyfile)
+check("no key: no token", papi._own_page_token(1) == "")
+with open(keyfile, "w") as f:
+    f.write("new-key")
+del sys.modules["hermes_cli.web_server"]._SESSION_TOKEN
+check("_own_port: the port of the dashboard that got the request",
+      papi._own_port(types.SimpleNamespace(scope={"server": ("127.0.0.1", 9333)})) == 9333
+      and papi._own_port(types.SimpleNamespace(scope={"server": ("::1", 9333)})) == 9119 and papi._own_port(None) == 9119)
 
 # ── local authentication: GET /hermux/hello and GET /hermux/token, the REST proof, the enforced file ──
 import json  # noqa: E402

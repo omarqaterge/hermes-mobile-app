@@ -1,14 +1,16 @@
 #!/bin/bash
 # Tests phone/hm-shizuku (Termux: pair Termux's adb from a code the user typed, start Shizuku's server with it, tell the
-# app) with a fake adb, curl, getprop and rish on PATH. Checks: `pair PORT CODE` is only `adb pair 127.0.0.1:PORT CODE`
+# app) with a fake adb, getprop, rish and hm-local. Checks: `pair PORT CODE` is only `adb pair 127.0.0.1:PORT CODE`
 # (no rish, nothing tapped), usage errors, exit codes, start with a given port / scan fallback / not paired / no port,
-# and the shizuku-auto event JSON (+ key header). No device needed.
+# and the shizuku-auto event JSON, sent only through `hm-local post /event` (local authentication; the key never on a
+# command line or in curl). Then the real hm-local against tools/local_fake_server.py: an honest app gets the event
+# signed, one that doesn't verify gets nothing but the hello. No device needed.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 REPO=$(pwd)
 PY=$(command -v python3) || { echo "python3 needed"; exit 1; }
 T=$(mktemp -d); LISTENERS=""
-cleanup() { for p in $LISTENERS; do kill "$p" 2>/dev/null; done; rm -rf "$T"; }
+cleanup() { for p in $LISTENERS; do kill "$p" 2>/dev/null; done; [ -n "${KEEP_T:-}" ] && echo "kept $T" || rm -rf "$T"; }
 trap cleanup EXIT
 fails=0
 check() { if eval "$1"; then echo "PASS  $2"; else echo "FAIL  $2"; fails=$((fails+1)); fi; }
@@ -50,38 +52,41 @@ case "$1" in
 esac
 SH
 
-# fake curl: records the URL, the headers (also -H @file) and the body
+# fake curl: must never be used (a call is recorded)
 cat > "$T/bin/curl" <<'SH'
 #!/bin/bash
-S=$FAKE_S; n=$(ls "$S" | grep -c '^curl\.[0-9]*\.args$')
-: > "$S/curl.$n.args"
-while [ $# -gt 0 ]; do
-  case "$1" in -H) shift; case "$1" in @*) cat "${1#@}" >> "$S/curl.$n.headers" ;; *) echo "$1" >> "$S/curl.$n.headers" ;; esac ;;
-    *) echo "$1" >> "$S/curl.$n.args" ;; esac; shift
-done
-cat > "$S/curl.$n.body"
+echo "$*" >> "$FAKE_S/curl.used"; exit 1
+SH
+# fake hm-local: records its arguments and the body on stdin; exits with FAKE_LOCAL_RC (0: verified and sent)
+cat > "$T/hm-local" <<'SH'
+#!/bin/bash
+S=$FAKE_S; n=$(ls "$S" | grep -c '^post\.[0-9]*\.args$')
+printf '%s\n' "$@" > "$S/post.$n.args"
+cat > "$S/post.$n.body"
+exit "${FAKE_LOCAL_RC:-0}"
 SH
 printf '#!/bin/bash\necho "${FAKE_SDK:-35}"\n' > "$T/bin/getprop"
 # macOS has no `timeout`: a pass-through one (CI's Linux uses the real one)
 if ! command -v timeout >/dev/null; then
   printf '#!/bin/bash\nwhile :; do case "$1" in -s|-k) shift 2;; --*) shift;; *) break;; esac; done\nshift\nexec "$@"\n' > "$T/bin/timeout"
 fi
-chmod +x "$T"/bin/* "$T/rish"
+chmod +x "$T"/bin/* "$T/rish" "$T/hm-local"
 
 # fresh <name>: a new HOME with rish + key, a new fake phone state. Developer options off, Wireless debugging off.
 fresh() {
   H="$T/$1/home"; S="$T/$1/state"; rm -rf "$T/$1"; mkdir -p "$H/bin" "$H/.hermes-mobile" "$S"
-  cp "$T/rish" "$H/bin/rish"; echo "k3y-for-test" > "$H/.hermes-mobile/key"; echo 0 > "$S/set_adb_wifi_enabled"
+  cp "$T/rish" "$H/bin/rish"; cp "$T/hm-local" "$H/bin/hm-local"; echo "k3y-for-test" > "$H/.hermes-mobile/key"; echo 0 > "$S/set_adb_wifi_enabled"
 }
 hm() { # hm <args…>: run the script like Termux would; output in $OUT, exit code in $RC
-  OUT=$(env -i PATH="$T/bin:/usr/bin:/bin" HOME="$H" FAKE_S="$S" FAKE_SDK="${FAKE_SDK:-35}" \
+  OUT=$(env -i PATH="$T/bin:/usr/bin:/bin" HOME="$H" FAKE_S="$S" FAKE_SDK="${FAKE_SDK:-35}" FAKE_LOCAL_RC="${FAKE_LOCAL_RC:-0}" \
+        HM_EVENT_PORT="${EVENT_PORT:-9121}" \
         HM_SHIZUKU_NAP=0 HM_SCAN_FROM="${SCAN_FROM:-61000}" HM_SCAN_TO="${SCAN_TO:-61000}" bash "$REPO/phone/hm-shizuku" "$@" 2>&1); RC=$?
 }
-last_event() { local f; f=$(ls "$S" | grep '^curl\.[0-9]*\.body$' | sort -t. -k2 -n | tail -1); [ -n "$f" ] && cat "$S/$f"; }
+last_event() { local f; f=$(ls "$S" | grep '^post\.[0-9]*\.body$' | sort -t. -k2 -n | tail -1); [ -n "$f" ] && cat "$S/$f"; }
 ev() { # ev <python expression on the last event e>
   last_event | "$PY" -c "import json,sys; e=json.load(sys.stdin); sys.exit(0 if ($1) else 1)" 2>/dev/null
 }
-nevents() { ls "$S" | grep -c '^curl\.[0-9]*\.body$'; }
+nevents() { ls "$S" | grep -c '^post\.[0-9]*\.body$'; }
 
 [ -f phone/hm-shizuku ] || { echo "FAIL  phone/hm-shizuku exists"; echo "1 FAILED"; exit 1; }
 check "bash -n phone/hm-shizuku" "hm-shizuku parses"
@@ -101,9 +106,9 @@ check "[ ! -s '$S/rish.log' ]" "pair: no rish call at all (no screen, no setting
 check "[ ! -s '$S/taps' ]" "pair: nothing tapped"
 check "[ -s '$H/.hermes-mobile/adb-paired' ]" "pair: writes ~/.hermes-mobile/adb-paired"
 check "ev 'e==dict(kind=\"shizuku-auto\",cmd=\"pair\",paired=True,result=\"ok\",detail=e[\"detail\"])'" "pair: event {kind, cmd:pair, paired:true, result:ok, detail}"
-check "grep -qx 'http://127.0.0.1:9121/event' '$S/curl.0.args'" "pair: event goes to 127.0.0.1:9121/event"
-check "grep -qx 'X-Hermes-Mobile-Key: k3y-for-test' '$S/curl.0.headers' && grep -qx 'Content-Type: application/json' '$S/curl.0.headers'" "pair: key + JSON headers (same as the plugin)"
-check "! grep -q k3y-for-test '$S/curl.0.args'" "pair: the key is not on curl's command line"
+check "[ \"\$(tr '\n' ' ' < '$S/post.0.args')\" = 'post /event 9121 ' ]" "pair: event goes through hm-local post /event 9121"
+check "! grep -q k3y-for-test '$S/post.0.args' && ! grep -q k3y-for-test '$S/post.0.body'" "pair: the key is neither on hm-local's command line nor in the body"
+check "[ ! -e '$S/curl.used' ]" "pair: no curl at all"
 check "[ ! -f '$S/unexpected' ]" "pair: no unexpected adb calls"
 hm status
 check "echo \"\$OUT\" | grep -qx paired" "status after pair: paired"
@@ -171,11 +176,39 @@ check "[ \$RC = 0 ] && [ ! -e '$H/.hermes-mobile/hm-shizuku.lock' ]" "a stale lo
 hm start abc; check "[ \$RC = 64 ]" "start with a bad port: usage error"
 hm frobnicate; check "[ \$RC = 64 ]" "unknown command: usage error"
 
+# ── the event only through hm-local ──
+fresh nolocal; rm "$H/bin/hm-local"; hm pair 40367 182068
+check "[ \$RC = 0 ] && [ \$(nevents) = 0 ] && [ ! -e '$S/curl.used' ]" "no hm-local: pairs, sends nothing (no curl, no key anywhere)"
+check "grep -q 'the app was not told: hm-local is missing' '$H/.hermes-mobile/hm-shizuku.log'" "no hm-local: one line in the log says so"
+fresh unverified; FAKE_LOCAL_RC=8 hm pair 40367 182068
+check "[ \$RC = 0 ] && grep -q 'the app was not told (hm-local exit 8)' '$H/.hermes-mobile/hm-shizuku.log'" "a listener that doesn't verify (hm-local exit 8): the run's own result stands, the log says so"
+check "! grep -q k3y-for-test '$H/.hermes-mobile/hm-shizuku.log'" "the log never holds the key"
+# The real hm-local against a fake app on a free port: the event arrives signed, the key never on the wire.
+if [ -x "$PY" ]; then
+  ln -sf "$PY" "$T/bin/python3"
+  for mode in honest wrong_key no_hello; do
+    D="$T/srv-$mode"; mkdir -p "$D"
+    fresh "real-$mode"; printf '#!/bin/bash\nexec bash "%s" "$@"\n' "$REPO/phone/hm-local" > "$H/bin/hm-local"  # its shebang is Termux's bash
+    echo "0123456789abcdef0123456789abcdef0123456789abcdef" > "$H/.hermes-mobile/key"
+    "$PY" "$REPO/tools/local_fake_server.py" events "$mode" "$H/.hermes-mobile/key" "$D" & LISTENERS="$LISTENERS $!"
+    for _ in $(seq 1 100); do [ -s "$D/port" ] && break; sleep 0.05; done
+    EVENT_PORT=$(cat "$D/port") hm pair 40367 182068
+    for _ in $(seq 1 40); do ls "$D" | grep -q '^req\.' && break; sleep 0.05; done; sleep 0.2
+    if [ "$mode" = honest ]; then
+      check "[ -s '$D/body.0' ] && \"\$PY\" -c 'import json,sys; e=json.load(open(sys.argv[1])); sys.exit(0 if e[\"kind\"]==\"shizuku-auto\" and e[\"result\"]==\"ok\" else 1)' '$D/body.0'" "real hm-local, honest app: the event arrives, verified and signed"
+    else
+      check "[ ! -e '$D/body.0' ] && [ \"\$(ls '$D' | grep -c '^req\\.')\" = 1 ] && head -c 18 '$D/req.0' | grep -q '^GET /hermux/hello'" "real hm-local, $mode: only the hello reached it, no event"
+    fi
+    check "! cat '$D'/req.* 2>/dev/null | grep -q 0123456789abcdef0123456789abcdef" "real hm-local, $mode: the key never on the wire"
+  done
+fi
+
 # ── static rules ──
 check "! grep -n 'RISH\"* -c' phone/hm-shizuku | grep -v '</dev/null' | grep -q ." "every rish call gets </dev/null"
 check "grep -E '^A\\(\\)' phone/hm-shizuku | grep -q 'timeout' && grep -E '^A\\(\\)' phone/hm-shizuku | grep -q '</dev/null'" "the adb helper A() is bounded and gets </dev/null"
 check "! grep -nE '^[^#]*(^|[;&|(] *)adb (connect|pair|shell|-s|start-server|disconnect)' phone/hm-shizuku | grep -q ." "adb is only called through A()"
 check "! grep -qiE 'xiaomi|miui|hyperos|samsung|one ?ui|oppo|vivo|huawei|oneplus' phone/hm-shizuku" "no vendor names"
+check "! grep -nE '^[^#]*(curl|X-Hermes-Mobile-Key|\\\$HM/key\\)|cat .*key)' phone/hm-shizuku | grep -q ." "hm-shizuku never reads the key or calls curl (only hm-local does)"
 check "! grep -q 'mdns' phone/hm-shizuku || grep 'mdns' phone/hm-shizuku | grep -q '^ *#'" "no adb mdns (Termux's adb has none)"
 
 # ── the installers use it ──
