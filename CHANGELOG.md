@@ -4,6 +4,110 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+## v0.9.7 (2026-11-14)
+
+- **Hermux checks it is talking to the real Hermes, and never sends its key.**
+  Hermux, the Hermes plugin and the phone's helper scripts used to hand one internal key to whatever answered on a
+  local port. Now each side first asks the other to prove it holds the key, and sends nothing if the answer is wrong;
+  every request after that is signed, and the key itself is never sent. Another app on the phone can no longer pass
+  itself off as one of these local servers, or get the key by listening on a port. The background app host (what
+  Hermux uses to work in an app on a hidden screen) no longer sits on a fixed port: the phone picks a new one each
+  time it starts, and the host only answers signed requests.
+  What you may notice: the Hermes plugin updates itself after you install this version, as usual, and Hermux then
+  replaces its internal key once by itself (and again after later app updates). If Hermux can't verify a local server,
+  it sends nothing and shows a one-time notification, "Hermux stopped talking to Hermes"; restarting the phone fixes
+  it. If the plugin is held or was changed by hand, Settings → About → Plugin offers "Update anyway", and after two
+  weeks the setup check may show "Phone scripts out of date" until it is updated.
+  Tried on two Android 16 phones, one updated from 0.8.67 with its chats and settings kept: the old key is refused
+  everywhere, fake listeners on the old ports received nothing, chats, phone data, the background app host and a
+  restart of the phone all worked, and the logs and a problem report held no key or token. Not tried: airplane mode on
+  its own, Live mode, an interrupted update or a downgrade.
+- **The agent can read your phone data, only if you switch it on.** Settings → "Phone data for
+  the agent" has a master switch and one switch each for contacts, calendar, call log, messages (SMS), approximate
+  location and latest photos. All of them are off until you turn them on. Turning one on asks for your fingerprint or
+  screen lock every time (a phone with no screen lock can't turn them on), and then for the Android permission; turning
+  one off is instant. The agent can only read: it cannot change or send anything.
+  Every read asks first. A card in the chat says in the app's own words what will be read, with only Allow once and
+  Deny. Your fingerprint is asked on the first Allow in a chat, not on the later ones. Full access (`/yolo`) skips the
+  question, Auto access refuses to read, and a locked phone is refused.
+  Results are limited (50 rows, 16 KB, long text cut) and marked as data to read, not instructions. They go to the
+  model provider you chose and stay in the chat history. Location is approximate (about 1 km), and photos give only the
+  date, size and dimensions, never the picture.
+  After a chat has read phone data, that chat gets extra care: pictures from the web need a tap, links show their full
+  address first, HTML previews show as text, the page can't make web requests, and Hermux asks before commands and tools
+  that can send data out (not in Full or Auto access).
+  The limits, plainly: with Shizuku the agent can act as Android's shell user, which this cannot stop; in Full access
+  nothing asks; the plugin's check of commands is a speed bump, because the agent can rewrite plugin files; and a script
+  file can hide a command. See Privacy for the details. Needs Android 8.0 or newer (photos use another permission from
+  Android 13). Tested on one phone with Android 16; not yet on older Android.
+- **Watch videos right inside the chat.** A YouTube, Vimeo, Dailymotion, Streamable or Loom link in a message becomes a
+  player: tap it to play there, with fullscreen and an Open button for the site's app. Links to video files play too,
+  and Hermes can put any other https player in a reply. Nothing from the player loads until you tap, one plays at a
+  time, and leaving the app stops it. YouTube seen playing on an Android 15 emulator; the other sites not yet confirmed
+  on a phone.
+- **Search everything in Settings.** A search field at the top of Settings finds any setting, Hermux option, connector or voice option as you type. Tap a result and Settings opens the right page, scrolls to it and flashes it briefly. Checked in the browser tests.
+- **Problem reports can now say what went wrong, without your chats.** Hermux keeps a small log on your phone for 7 days:
+  crashes, why Android closed the app, failed connections and service restarts, never messages, file names or keys.
+  It's sent only if you switch it on in Report a problem, where you read it first and the app says where it goes: when
+  a report goes through GitHub's page the log is public with it, and when it goes through Hermux's own service it stays
+  out of the public issue. Settings → About has a switch and a delete button. Seen working on an Android 16 phone.
+- **A crashed page no longer closes the whole app.** When Android's web view dies, for example when the phone runs out
+  of memory, Hermux reloads the page and keeps its notifications running. Seen on an Android 16 phone.
+- **Problem reports hide phone numbers and coordinates.** Before a report leaves your phone, phone numbers in it
+  become `[number]`, coordinates become `[place]`, and long quoted text becomes `"[text]"` even when it holds a link or
+  an email address. Bare strings of digits are left alone so the log stays readable. Checked with the report's unit
+  and browser tests; not yet seen on a phone.
+- **Other apps on your phone can no longer take control of Hermux.** Hermes gave its access token to anything on the
+  phone that asked, so any installed app could have sent it commands or got past your approvals. Now only Hermux gets
+  it. Checked against the pinned Hermes in tests; not yet on a phone.
+- **Tap the question chip to type your answer.** When Hermux asks you something, tapping the expanded chip or its
+  Answer button opens a small box with the question, its choices and a text field, over whatever you are doing. Some
+  phones don't show a text field on the chip itself. Long choices also reach Hermux whole instead of being cut off.
+  Seen on an Android 16 phone; the unlock on a locked phone and choices over 80 characters were not tested there.
+- **The context ring is always there.** The small ring at the end of the model row now shows in every chat: empty
+  until the fill is known, and in a reopened chat straight away from the last known fill instead of only after the
+  next message. The "ctx 5% · 47k/1M" text under replies and in the working line is gone, since the ring shows it.
+  Checked in the browser tests; not yet seen on a phone.
+
+### Smaller changes and fixes
+
+- **Chats that are working now shimmer in the chat list.** A soft band of light sweeps across the chat's title while
+  Hermes works in it, replacing the blinking green dot. Checked in the browser tests; not yet seen on a phone.
+- **Restarting Hermes no longer shows up as a crash in problem reports.** Restarting the dashboard stopped proot but left its Python running for a moment, which filled the service log with `OSError` tracebacks that Report a problem counted as crashes. Python is now stopped first. On rooted phones the restart now also matches Hermes's Python, which the old pattern did not. Tested with one restart on an Android phone: no new tracebacks, and the dashboard came back. Rooted phones were not tried on a device.
+- **Remote debugging has its switch.** Settings → About → Remote debugging now shows an on/off switch like the other settings, instead of a plain row.
+- **Remote debugging counts down.** While it is on, the time left ticks down every second (for example `41:59 left`) in Settings and in the strip at the top.
+- **Less battery use when a second copy of Hermes was already running.** If the app's background loop found Hermes
+  already serving, it kept starting Debian about every 14 seconds until that copy stopped. Now it starts nothing and checks once a minute, and
+  starts Hermes when that copy stops. A Hermes that ran a while and died
+  still comes back after 10 seconds. Tested with stand-ins for Hermes; not yet run in full on a phone.
+- **Cards and command aliases can no longer change a chat's access.** A card button from Hermes could carry a hidden
+  `/yolo on` and turn on Full access; now a card can't run any slash command (the app says "Cards can’t run commands"),
+  and a command alias can't change access however it is written. Only a `/yolo` you type yourself, or the Auto
+  button, changes it. Checked in the browser tests and unit tests with the card and the alias spellings; not tested on a
+  phone.
+- **"By the way" uses the same text box as the chat.** The side chat's input is now the same rounded box with the
+  round send button as in a normal chat, instead of a plain field. Checked by the type check only; not yet seen on a
+  phone.
+- **Tapping the chat title or "Hermux agent" under it now shows the status.** The Backend status sheet used to open
+  only from the small dot; the chat menu stays under ⋮. Checked in the browser tests.
+- **Tool cards and thoughts open and close smoothly, without a flash.** Closing a tool card, the thought process, the
+  task list or a turn's changed files no longer flashes the body back at full size for a moment at the end, and opening
+  one now slides it in instead of showing it all at once. Checked in the browser tests frame by frame; not yet seen on
+  a phone.
+- **Changing the sensitive apps setting now asks for your fingerprint every time.** The Settings → Background apps
+  switch for banking, payment, password and 2FA apps stays off by default; switching it on or off needs the phone's
+  fingerprint, face or screen lock, even with fingerprint for approvals turned off. Checked in the browser tests.
+- **Updating the plugin also updates Hermux's background loop script.** Only a first install used to copy it, so phones
+  that were already set up never got its log trimming or restart logging. The app's plugin update now installs it too,
+  checked before it replaces the old copy, which is kept. Running loops keep the old script until they restart (the
+  dashboard's with the next plugin update, the others after a phone restart). Checked in script tests; not yet on a
+  phone.
+- **The line above unread messages now says "New Messages".** In a chat that got messages while you were away, the
+  divider used to read "New since your last visit". Checked in the browser tests.
+- **The canvas tells you when Hermux is still connecting.** On the empty new-chat screen, a swipe left or a tap on the
+  canvas button used to do nothing until the connection opened; now a short message asks you to try again in a moment.
+  Checked in the browser tests.
+
 ## v0.9.6 (2026-11-03)
 
 - **Fallback models and several keys per provider.** Settings → Model providers has a new "Fallback models" list: the models Hermux switches to, in order, when the main one is rate-limited, out of credit or refuses its key. Add one from any connected provider, move it up or down, or remove it. Each provider's sheet now lists all its keys and logins with their state (In use, Cooling down, Stopped working) and how often each was used; add another key, remove one, and choose which key Hermux uses (in order, take turns, least used or random). Checked in the browser tests against a mock with the pinned Hermux's routes; not yet seen on a phone.
