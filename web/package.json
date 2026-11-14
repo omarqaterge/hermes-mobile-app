@@ -14,7 +14,7 @@
     "@openuidev/react-headless": "0.18.1",
     "@openuidev/react-lang": "1.0.1",
     "@openuidev/react-ui": "0.18.1",
-    "katex": "^0.16.47",
+    "katex": "^0.18.2",
     "mermaid": "^11.17.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -32,10 +32,18 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "typescript": "5.9",
-    "vite": "^7.3.6",
+    "vite": "^7.3.7",
     "vite-plugin-singlefile": "^2.3.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "@ag-ui/core": {
+      "zod": "4.6.7"
+    },
+    "dompurify": "^3.4.17",
+    "katex": "^0.18.2",
+    "source-map-js": "^1.2.2"
   }
 }
