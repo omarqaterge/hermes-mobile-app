@@ -333,3 +333,20 @@ Still to do (not yet tried on a phone):
       and note the permission asked (and, on 14, "selected photos only").
 - [ ] A hostile text that the model does obey (for example, a message telling it to put the data in an image address):
       confirm the image is still not requested, so the native filter is exercised in a real WebView.
+
+## What's new after an update
+
+Needs a release-style build with a plain version name (`VERSION_NAME=0.9.7 android/build.sh`: a `+devtools` name keeps
+the sheet away by design) and Settings → About → Remote debugging to change `hm.whatsNewSeen.v1`.
+
+Seen on an Android 16 phone (build `0.9.7` at d66178c, before the scroll bar): with the stored version set to 0.9.5 the
+sheet opened about 25 ms after the chat, listed 0.9.7 and 0.9.6 from the real changelog with "Smaller changes and fixes"
+last, one changelog request; Details / Hide details, dark and light themes, Got it, ✕, Back, drag down and backdrop all
+worked and the sheet stayed away after a restart; a blocked changelog showed nothing and kept the version for the next
+start; a stored 0.9.9 or 0.9.7 showed nothing; no stored version stored 0.9.7 silently; it waited while the chat
+options sheet was open. Back, the drag and the offline case were driven from the computer (script events, blocked
+requests), not by hand or airplane mode.
+
+- [ ] The scroll bar: on a phone, a long list shows a visible bar at the right of the sheet even when not scrolling.
+- [ ] A real update from an installed older release to the next one, by hand.
+- [ ] Settings → About → What's new (before an update) still opens, once a release newer than the installed one exists.
