@@ -38,7 +38,7 @@ Inputs: `HM_DISTRO=chroot` (rooted phones; stored in `~/.hermes-mobile/distro`),
 
 Its own five numbered steps (it is also the repair script and runs after Hermes exists):
 
-1. Picks the distro (`HM_DISTRO`, the stored choice, or chroot-distro when there is no proot Debian and chroot-distro exists) and stores it. If not run from a clone it clones or updates `~/hermes-mobile` from the public repo.
+1. Picks the distro (`HM_DISTRO`, the stored choice, or chroot-distro when there is no proot Debian and chroot-distro exists) and stores it. If not run from a clone it clones or updates `~/hermes-mobile` from the public repo. When the copy can't fast-forward (its history no longer matches `main`, as on phones that cloned before the history was rewritten), it fetches `main`, keeps the old state on the branch `hm-before-update` and resets to the current code (`tools/test_install_clone.sh`).
 2. **1/5** adds `allow-external-apps = true` to `~/.termux/termux.properties` (lets the app run commands in Termux) and reloads Termux settings.
 3. **2/5** copies `hermes-services`, `hermes-debian`, `hm-shizuku` and `hm-local` into `~/bin` (and removes
    `~/.hermes-mobile/scripts.sha`, so the app's plugin update may replace these copies, 6.6). Dies with a clear message if Debian or `/root/.hermes` is missing.
