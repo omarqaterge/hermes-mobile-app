@@ -207,6 +207,7 @@ jobs:
       - run: bash tools/test_bootstrap_image.sh
       - run: bash tools/test_say_hook.sh
       - run: bash tools/test_install_routes.sh
+      - run: bash tools/test_install_clone.sh
       - run: bash tools/test_uninstall.sh
       - run: bash tools/test_plugin_update.sh
       - run: bash tools/test_hm_shizuku.sh
