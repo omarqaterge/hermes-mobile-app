@@ -141,7 +141,7 @@ Linux's 128 KiB limit for one argument; the scripts travel in the bundle, not in
 |---|---|
 | Updates from a version without this (the first Hermux release) | The new version's service starts after the update and checks within a minute; the old plugin (no `BUILD_STAMP`, so stamp 0) is replaced at the first quiet moment: right away when Hermes is idle and the app isn't open, else when the current turn ends or the app is left. |
 | Stays on a version without this | Nothing changes: the plugin is only updated by running `phone/install.sh` again. |
-| New install | `bootstrap.sh` → `install.sh` installs the plugin from the clone, stamped `install`; the app then finds it `current` (or `newer` when `main` is ahead of the release). |
+| New install | `bootstrap.sh` → `install.sh` installs the plugin from the latest release (6.1), stamped `install`; the app then finds it `current`. With `HM_REF=main` it can be `newer` than the app. |
 | No Debian yet, or setup still running | Nothing runs (`termuxOk` false, setup installing, or `not-ready`). |
 | A developer testing a plugin | `install.sh` from a newer clone stamps it newer; a hand-edited copy reads `modified`; the `hold` file stops the app entirely. |
 

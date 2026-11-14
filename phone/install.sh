@@ -20,23 +20,43 @@ fi
 [ "$HM_DISTRO" = chroot ] || HM_DISTRO=proot
 echo "$HM_DISTRO" > "$HOME/.hermes-mobile/distro"
 
-# Run from a clone, or (piped through curl) clone/update ~/hermes-mobile first.
+# Run from a clone (used as it is), or (piped through curl, or bootstrap.sh's downloaded copy) put the latest release
+# into ~/hermes-mobile first and run that release's own installer. The latest release, not main: the plugin and scripts
+# installed here must match the app the phone downloads (the latest release, 5/5). main can be ahead of it, and a
+# plugin from main once withheld the dashboard's token from the released app, which then never got online.
+# HM_REF picks another branch or tag (HM_REF=main for a developer).
+latest_release() {  # the tag of the latest release, from the address GitHub's releases/latest page redirects to
+  curl -fsIL --retry 3 -o /dev/null -w '%{url_effective}' "$REPO/releases/latest" 2>/dev/null \
+    | sed -n 's#^.*/releases/tag/\([A-Za-z0-9._-]*\)$#\1#p'
+}
 here=""
 [ -f "${BASH_SOURCE[0]:-}" ] && here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -z "$here" ] || [ ! -d "$here/hermes-plugin/hermes-mobile" ]; then
   echo "0/5 Getting Hermux into ~/hermes-mobile"
   command -v git >/dev/null || pkg install -y git
-  if [ -d "$HOME/hermes-mobile/.git" ]; then
-    # A copy left from before the repository's history was rewritten (or edited by hand) can't fast-forward: put the
-    # current code in its place and keep the old state on the branch hm-before-update, so nothing is lost.
-    git -C "$HOME/hermes-mobile" pull -q --ff-only 2>/dev/null || {
-      echo "   the copy in ~/hermes-mobile has a different history; replacing it with the current one (old one kept as hm-before-update)"
-      git -C "$HOME/hermes-mobile" fetch -q origin main \
-        && { git -C "$HOME/hermes-mobile" branch -f hm-before-update HEAD 2>/dev/null || true; } \
-        && git -C "$HOME/hermes-mobile" reset -q --hard FETCH_HEAD
-    }
-  else git clone -q --depth 1 "$REPO.git" "$HOME/hermes-mobile"; fi
-  here="$HOME/hermes-mobile"
+  ref=${HM_REF:-$(latest_release)}
+  [ -n "$ref" ] || die "Could not find Hermux's latest release on GitHub (no network?). Run this installer again."
+  c="$HOME/hermes-mobile"
+  if [ ! -d "$c/.git" ]; then
+    [ ! -e "$c" ] || [ -z "$(ls -A "$c" 2>/dev/null)" ] || die "$c exists but is not a copy of Hermux: move it away, then run this installer again."
+    git init -q "$c" && git -C "$c" remote add origin "$REPO.git" || die "Could not create $c (is there free space?)."
+  fi
+  git -C "$c" fetch -q --depth 1 origin "$ref" || die "Could not download Hermux $ref into $c (no network?). Run this installer again."
+  new=$(git -C "$c" rev-parse "FETCH_HEAD^{commit}")  # a release tag is annotated: its commit, not the tag
+  old=$(git -C "$c" rev-parse -q --verify HEAD 2>/dev/null || true)
+  if [ "$old" != "$new" ]; then
+    # Whatever was there (an older copy, one from before the history was rewritten, or one edited by hand) stays on
+    # the branch hm-before-update, and uncommitted edits in git's stash: nothing is lost.
+    if [ -n "$old" ]; then
+      [ -z "$(git -C "$c" status --porcelain 2>/dev/null)" ] || git -C "$c" -c user.name=Hermux -c user.email=hermux@localhost.invalid stash push -q -u -m "before Hermux $ref" 2>/dev/null || true
+      git -C "$c" branch -f hm-before-update HEAD 2>/dev/null || true
+    fi
+    git -C "$c" -c advice.detachedHead=false checkout -q -f --detach "$new" || die "Could not switch $c to Hermux $ref. Run this installer again."
+  fi
+  echo "   Hermux $ref"
+  # That release's own installer: it knows its own files. It finds the plugin beside it, so it doesn't come back here.
+  [ -f "$c/phone/install.sh" ] && [ -d "$c/hermes-plugin/hermes-mobile" ] || die "$c has no Hermux installer in it."
+  exec bash "$c/phone/install.sh"
 fi
 
 echo "1/5 Letting the app start Hermux (allow-external-apps)"
