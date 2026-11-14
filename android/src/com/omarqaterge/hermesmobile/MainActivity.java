@@ -2189,6 +2189,11 @@ public class MainActivity extends Activity {
         startUpdate(url);
     }
 
+    @SuppressWarnings("deprecation")
+    private static long versionCode(android.content.pm.PackageInfo p) {
+        return Build.VERSION.SDK_INT >= 28 ? p.getLongVersionCode() : p.versionCode;
+    }
+
     void startUpdate(String url) {
         Uri u = Uri.parse(url == null ? "" : url);
         if (!updateUrlOk(u)) { updateState("error", 0, "That isn't an official Hermux download."); return; }
@@ -2210,11 +2215,12 @@ public class MainActivity extends Activity {
                 java.io.File apk = new java.io.File(dir, "hermes-mobile.apk");
                 updateState("downloading", 0, "");
                 download(u, apk, MainActivity::githubHost, pct -> updateState("downloading", pct, ""));
-                // Must be this app, newer than what is installed. The installer also refuses a different signing key.
+                // Must be this app, newer than what is installed (UpdateVersion). The installer also refuses a different signing key.
                 android.content.pm.PackageInfo got = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
                 android.content.pm.PackageInfo mine = getPackageManager().getPackageInfo(getPackageName(), 0);
                 if (got == null || !getPackageName().equals(got.packageName)) throw new Exception("The download isn't a Hermux app file.");
-                if (got.versionCode <= mine.versionCode) throw new Exception("You already have this version.");
+                String no = UpdateVersion.refusal(versionCode(got), got.versionName, versionCode(mine), mine.versionName);
+                if (no != null) throw new Exception(no);
                 updateState("installing", 100, "");
                 commitInstall(apk);
             } catch (Exception e) {

@@ -289,7 +289,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 3. Without "install unknown apps" permission the shell reports `permission` and opens that system page.
 4. The download (`download`) follows at most 6 redirects, each https on `github.com` or `*.githubusercontent.com`,
    and stops above 150 MB. It writes `cache/update/hermes-mobile.apk`.
-5. The APK must have this package name and a higher `versionCode` ("You already have this version." otherwise).
+5. The APK must have this package name and a higher `versionCode`, or the same code with a newer version name (`UpdateVersion.refusal`; "You already have this version." otherwise, or a message naming a test build when the name is newer but the code lower).
 6. `commitInstall` opens a `PackageInstaller` session. Android's confirm screen is shown at once if the app is in
    front, else when it next comes to the front (`onResume` → `showUpdatePrompt`). Progress and errors reach the page
    as `window.hermesUpdate(state, pct, msg)`. Android itself refuses an APK signed with a different key. UI: 3.15.
