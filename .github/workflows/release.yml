@@ -77,13 +77,13 @@ jobs:
           HM_SKIP_WEB_BUILD=1 KEYSTORE="$RUNNER_TEMP/release.keystore" VERSION_NAME="$v" \
             VERSION_CODE=$(( a * 10000 + b * 100 + ${c:-0} )) android/build.sh
           rm -f "$RUNNER_TEMP/release.keystore"
-      # Two names, one file: hermux.apk for new downloads, hermes-mobile.apk for old scripts and links. Installed apps
-      # take any .apk of the latest release.
-      - name: Copy the APK to its second name
-        run: cp android/build/hermes-mobile.apk android/build/hermux.apk
+      # One file, one name: hermux.apk. (Releases up to v0.9.7 also carried it as hermes-mobile.apk, for old scripts and
+      # links.) Installed apps take any .apk of the latest release; the installers ask for hermux.apk first.
+      - name: Name the APK hermux.apk
+        run: mv android/build/hermes-mobile.apk android/build/hermux.apk
       - name: Release APKs must not carry the test-build flag
         run: |
-          for apk in android/build/hermes-mobile.apk android/build/hermux.apk; do
+          for apk in android/build/hermux.apk; do
             [ -s "$apk" ] || { echo "$apk is missing"; exit 1; }
             if unzip -p "$apk" resources.arsc | grep -aq hm_devtools; then
               echo "$apk has hm_devtools (WebView remote debugging)"; exit 1
@@ -96,9 +96,9 @@ jobs:
         # then this only attaches the APK files to it.
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" android/build/hermes-mobile.apk android/build/hermux.apk --clobber
+            gh release upload "$GITHUB_REF_NAME" android/build/hermux.apk --clobber
           else
-            gh release create "$GITHUB_REF_NAME" android/build/hermes-mobile.apk android/build/hermux.apk \
+            gh release create "$GITHUB_REF_NAME" android/build/hermux.apk \
               --title "Hermux $GITHUB_REF_NAME" \
-              --notes "Install: run the one-line installer from the README in Termux, or download hermux.apk below on your phone (hermes-mobile.apk is the same file under its old name). Setup steps: https://github.com/${{ github.repository }}#install"
+              --notes "Install: run the one-line installer from the README in Termux, or download hermux.apk below on your phone. Setup steps: https://github.com/${{ github.repository }}#install"
           fi

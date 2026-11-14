@@ -1,6 +1,6 @@
 # Installing Hermux: the full guide
 
-Hermux was called Hermes Mobile. Older guides still use that name. Releases carry the app as `hermux.apk` and, for those guides, as `hermes-mobile.apk`: the same file.
+Hermux was called Hermes Mobile. Older guides still use that name. Releases carry the app as `hermux.apk`. Releases up to v0.9.7 also carried it as `hermes-mobile.apk` for those guides: the same file.
 
 Hermux runs the open-source [Hermes Agent](https://github.com/NousResearch/hermes-agent) on your phone, in Debian inside Termux.
 

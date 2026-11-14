@@ -284,7 +284,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    ignore letter case (A-Z only), as GitHub does; everything else is exact. GitHub's API gives release links under the
    repository's current name, so a copy that accepts these keeps updating across a rename or move
    (`docs/status/repo-rename.md`). The page takes the first `.apk` of the release and `UpdateNotice` the last;
-   releases carry `hermes-mobile.apk` and `hermux.apk`, the same file, so either works, and the page has no address
+   releases up to v0.9.7 carry `hermes-mobile.apk` and `hermux.apk`, the same file, later ones only `hermux.apk`; either works, and the page has no address
    check of its own.
 3. Without "install unknown apps" permission the shell reports `permission` and opens that system page.
 4. The download (`download`) follows at most 6 redirects, each https on `github.com` or `*.githubusercontent.com`,
