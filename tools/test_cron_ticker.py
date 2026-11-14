@@ -60,7 +60,7 @@ tk = ct.Ticker()
 port = free_port()
 where = f"127.0.0.1:{port}"
 notes = []
-threading.Thread(target=ct.poke_listener, args=(tk, port, lambda: key_now[0], notes.append), daemon=True).start()
+threading.Thread(target=ct.poke_listener, args=(tk, port, lambda: key_now[0], notes.append), daemon=True, name="first-listener").start()
 for _ in range(50):
     try:
         socket.create_connection(("127.0.0.1", port), 0.2).close()
@@ -283,7 +283,8 @@ real_wait = threading.Event.wait
 
 
 def recording_wait(ev, timeout=None):
-    delays.append(timeout)
+    if threading.current_thread().name != "first-listener":  # the first listener may still be winding down, on its own clock
+        delays.append(timeout)
     return real_wait(ev, 0.02 if timeout is None else min(timeout, 0.02))
 
 
