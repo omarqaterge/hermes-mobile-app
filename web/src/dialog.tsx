@@ -110,3 +110,11 @@ export function DialogHost() {
   )
   return req ? <Dialog key={queue.length + req.title} req={req} /> : null
 }
+
+/** True while a confirmation or text-entry dialog is on screen (the after-update What's new sheet waits for it). */
+export function useDialogOpen(): boolean {
+  return useSyncExternalStore(
+    cb => (subs.add(cb), () => subs.delete(cb)),
+    () => queue.length > 0
+  )
+}

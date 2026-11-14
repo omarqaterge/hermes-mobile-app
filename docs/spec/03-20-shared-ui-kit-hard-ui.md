@@ -19,7 +19,7 @@
 
 **Motion.** `Collapse`, `Chevron` and the send button's face change (`face-in`: the Send, Stop, Mic, Live, Steer and Queue buttons are keyed, so a new face fades and scales in over 120 ms) are all switched off by the phone's own "Remove animations" setting, which reaches the page as `prefers-reduced-motion: reduce`; there is no motion setting inside the app.
 
-**`dialog.tsx` — in-app dialogs.** `confirmDialog({ title, message, list, icon, confirmLabel, cancelLabel, danger })` returns a promise of true / false; `promptDialog({ …, placeholder, value, match })` returns the text or `null`. When `match` is set the confirm button stays disabled until the typed text equals it (type-the-name deletes). `DialogHost` (mounted once in `App.tsx`) shows the first queued request as a bottom sheet with `role="alertdialog"`; further requests wait in a queue. Cancel, the backdrop, dragging down and Android Back all answer "no". The danger style uses a 🗑 icon and the red button, labelled Delete unless `confirmLabel` says otherwise. These replace the browser's `confirm()` and `prompt()`.
+**`dialog.tsx` — in-app dialogs.** `confirmDialog({ title, message, list, icon, confirmLabel, cancelLabel, danger })` returns a promise of true / false; `promptDialog({ …, placeholder, value, match })` returns the text or `null`. When `match` is set the confirm button stays disabled until the typed text equals it (type-the-name deletes). `DialogHost` (mounted once in `App.tsx`) shows the first queued request as a bottom sheet with `role="alertdialog"`; further requests wait in a queue. Cancel, the backdrop, dragging down and Android Back all answer "no". The danger style uses a 🗑 icon and the red button, labelled Delete unless `confirmLabel` says otherwise. These replace the browser's `confirm()` and `prompt()`. `useDialogOpen` is true while one is on screen, so other sheets (the What's new after an update) can wait for it.
 
 **`useSheetDrag.ts`.** Every bottom sheet (`Sheet`, `PickerSheet`, the session menu, dialogs) uses this hook. A touch that starts within the top 64 px of the sheet (the grip and title strip) drags it down. Releasing after more than 110 px, or faster than 0.5 px/ms with at least 30 px, slides it off and closes it after 160 ms; otherwise it springs back.
 
@@ -63,7 +63,7 @@
 | `uninstall.ts` | Pure uninstall logic and the shell calls |
 | `plugin-sync.ts` | Settings → About → Hermux plugin: `pluginRow` (the state → value, sub, tap action; unit-tested), `updateAnswer`, the shell calls `pluginState` / `pluginUpdate`, and `usePluginState`, refreshed by `window.hermesPluginState()` |
 | `update.ts` | The in-app app-update check and install request |
-| `releasenotes.ts` | Pure version comparison (`isNewer`), the What's new sections of the changelog (`notesSince`), and a section's one-line-per-change summary (`headlines`, `NotesGroup`) |
+| `releasenotes.ts` | Pure version comparison (`isNewer`), the What's new sections of the changelog (`notesSince`), a section's one-line-per-change summary (`headlines`, `NotesGroup`), and what the after-update sheet does at a start (`afterUpdatePlan`, `isReleaseVersion`) |
 | `SttSettings.tsx` | Settings → Voice → Speech recognition: the phone's recogniser, the on-device model cards and Your own model |
 | `stt.ts` | The on-device model list from the shell (`listSttModels`, `stt-models` events), its actions, `fmtSize`, `chosenSttName`, `testSummary` |
 | `settings-search.ts` | Settings search: the list of everything in Settings and `searchSettings` (3.15) |

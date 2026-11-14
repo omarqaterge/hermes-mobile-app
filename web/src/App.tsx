@@ -20,6 +20,8 @@ import { RequestSheet } from './components/RequestSheet'
 import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { bannerItems, startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
+import { WhatsNewAfterUpdate } from './components/WhatsNew'
+import { startWhatsNewAfterUpdate } from './whatsnew'
 import { BtwSheet } from './components/Btw'
 import { CanvasPanel, CanvasPull } from './components/Canvas'
 import { startCanvasSync, useCanvas } from './canvas'
@@ -806,6 +808,7 @@ export function App() {
       if (!startHealthPolling()) void checkHealth(false)
       startActivityPolling()
       startCanvasSync()
+      void startWhatsNewAfterUpdate() // one changelog read after an update, never before the chat
     })
     return () => {
       current = false
@@ -864,6 +867,7 @@ export function App() {
       <CanvasPanel />
       <CanvasPull />
       <BtwSheet />
+      <WhatsNewAfterUpdate />
       <DialogHost />
       <div className="toasts">
         {toasts.map(t => (

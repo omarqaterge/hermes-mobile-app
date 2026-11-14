@@ -97,4 +97,88 @@ module.exports = async t => {
     check((await pg.locator('button.set-row', { hasText: "What's new" }).count()) === 0, "what's new: no changelog, no row, and the update row still offers the update")
     await pg.close()
   }
+
+  // After an update: the one-time sheet over the chat (WhatsNew.tsx WhatsNewAfterUpdate, whatsnew.ts).
+  const KEY = 'hm.whatsNewSeen.v1'
+  const after = async (installed, seen, { changelog = () => true } = {}) => {
+    const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    const asked = []
+    await pg.route('https://api.github.com/**', route => {
+      const u = route.request().url()
+      asked.push(u)
+      const h = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' }
+      if (u.includes('/contents/CHANGELOG.md') && changelog()) return route.fulfill({ status: 200, contentType: 'text/plain', headers: h, body: LOG })
+      return route.fulfill({ status: 404, headers: h, body: '' })
+    })
+    await pg.addInitScript(v => { window.__appVersion = v }, installed)
+    await pg.addInitScript(([k, v]) => { if (v && !localStorage.getItem(k)) localStorage.setItem(k, v) }, [KEY, seen])
+    await pg.addInitScript(nativeShell)
+    const load = async () => {
+      await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    }
+    await pg.goto(WEB + '/')
+    await load()
+    return { pg, asked, load, sheet: pg.locator('.whats-new-after'), seenNow: () => pg.evaluate(k => localStorage.getItem(k), KEY) }
+  }
+  {
+    const { pg, asked, load, sheet, seenNow } = await after('0.8.69', '0.8.68')
+    await sheet.waitFor({ timeout: 8000 })
+    check(asked.some(u => u.includes('/contents/CHANGELOG.md?ref=v0.8.69')), "what's new after update: the installed version's changelog is read at its tag")
+    check((await sheet.innerText()).includes("You're on Hermux 0.8.69"), "what's new after update: the sub line names the installed version")
+    const heads = await sheet.locator('.whats-new-version').allInnerTexts()
+    check(heads.length === 1 && heads[0].startsWith('0.8.69') && heads[0].includes('2026-11-02'), `what's new after update: only the new version, with its date (${JSON.stringify(heads)})`)
+    check(JSON.stringify(await sheet.locator('.whats-new-list li').allInnerTexts()) === '["Middle thing"]', "what's new after update: one line per change")
+    await sheet.getByRole('button', { name: 'Got it' }).click()
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    check((await seenNow()) === '0.8.69', "what's new after update: Got it records the version as seen")
+    await pg.reload()
+    await load()
+    await pg.waitForTimeout(800)
+    check((await sheet.count()) === 0, "what's new after update: it does not come back after a reload")
+    await pg.close()
+  }
+  {
+    const { pg, sheet, seenNow } = await after('0.8.70', '0.8.68')
+    await sheet.waitFor({ timeout: 8000 })
+    const heads = await sheet.locator('.whats-new-version').allInnerTexts()
+    check(heads.length === 2 && heads[0].startsWith('0.8.70') && heads[1].startsWith('0.8.69'), `what's new after update: a jump over versions lists them all, newest first (${JSON.stringify(heads)})`)
+    check((await sheet.locator('section').first().locator('.whats-new-group').innerText()) === 'Smaller changes and fixes', "what's new after update: smaller changes and fixes under their own heading")
+    check(!(await sheet.innerText()).includes('over two lines'), "what's new after update: details hidden at first")
+    const det = sheet.locator('.sheet-actions button', { hasText: 'Details' })
+    await det.click()
+    check((await sheet.innerText()).includes('over two lines') && (await sheet.locator('strong', { hasText: 'Newest thing.' }).count()) === 1, "what's new after update: Details shows the full notes as Markdown")
+    check((await det.innerText()) === 'Hide details', "what's new after update: then reads Hide details")
+    await det.click()
+    check(!(await sheet.innerText()).includes('over two lines'), "what's new after update: Hide details hides them again")
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    check((await seenNow()) === '0.8.70', "what's new after update: the close button records the version too")
+    await pg.close()
+  }
+  {
+    const { pg, asked, sheet, seenNow } = await after('0.8.70', null)
+    await pg.waitForTimeout(1200)
+    check((await sheet.count()) === 0 && !asked.some(u => u.includes('CHANGELOG')), "what's new after update: a fresh install shows nothing and reads nothing")
+    check((await seenNow()) === '0.8.70', "what's new after update: a fresh install stores the version silently")
+    await pg.close()
+  }
+  {
+    let ok = false
+    const { pg, asked, load, sheet, seenNow } = await after('0.8.70', '0.8.69', { changelog: () => ok })
+    await pg.waitForTimeout(1200)
+    check((await sheet.count()) === 0 && asked.some(u => u.includes('CHANGELOG')), "what's new after update: an unreadable changelog shows nothing")
+    check((await seenNow()) === '0.8.69', "what's new after update: and leaves the version unseen")
+    ok = true
+    await pg.reload()
+    await load()
+    await sheet.waitFor({ timeout: 8000 })
+    check((await sheet.locator('.whats-new-version').count()) === 1, "what's new after update: the next start tries again and shows it")
+    await pg.close()
+  }
+  {
+    const { pg, asked, sheet, seenNow } = await after('0.8.68', '0.8.70')
+    await pg.waitForTimeout(1200)
+    check((await sheet.count()) === 0 && !asked.some(u => u.includes('CHANGELOG')) && (await seenNow()) === '0.8.70', "what's new after update: a downgrade shows nothing")
+    await pg.close()
+  }
 }
