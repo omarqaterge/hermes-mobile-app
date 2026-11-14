@@ -297,6 +297,10 @@ final class LocalStt {
      * before it is renamed into place. `done` counts the model's bytes for the progress bar.
      */
     private void fetch(String id, String url, File to, String sha, long size, long[] done, long total) throws Exception {
+        // The name may come from a Hugging Face file list: never write outside the model's folder.
+        String inside = to.getParentFile().getCanonicalPath() + File.separator;
+        if (!to.getCanonicalPath().startsWith(inside) || !new File(to.getPath() + ".part").getCanonicalPath().startsWith(inside))
+            throw new Exception("Download failed (a file name points outside the model's folder)");
         if (to.isFile() && (sha == null ? to.length() == size || size <= 0 : sha.equals(sha256(to)))) {
             done[0] += to.length();
             return;
