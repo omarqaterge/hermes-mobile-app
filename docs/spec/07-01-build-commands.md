@@ -3,7 +3,7 @@
 | Step | Command | What it does |
 |---|---|---|
 | Web UI | `cd web && npm run build` | Runs `tsc --noEmit`, then `vite build`. Output is one self-contained `web/dist/index.html` (`vite-plugin-singlefile`; Mermaid, OpenUI, and KaTeX with highlight.js are built as separate bundles and embedded as inert text, started on first use by `web/src/lazy.ts`; `lazyBundle` inlines the fonts a `?inline` stylesheet uses and keeps only KaTeX's woff2 fonts). |
-| APK | `cd android && VERSION_NAME=0.8.62 VERSION_CODE=862 ./build.sh` | Builds the app without Gradle (see below). Always pass both versions. |
+| APK | `cd android && VERSION_NAME=0.9.9 VERSION_CODE=$(../tools/version-code.sh 0.9.9) ./build.sh` | Builds the app without Gradle (see below). Always pass both versions; a build for a phone that will later take release updates never gets a higher code than the release it stands for (7.5). |
 | Install | `adb install -r android/build/hermes-mobile.apk`, then `adb shell am start -n com.omarqaterge.hermesmobile/.MainActivity` | `adb install` kills the app; starting the activity starts the service again. |
 
 **`web/package.json` scripts** (package `hermes-mobile-web`, `"type": "module"`):

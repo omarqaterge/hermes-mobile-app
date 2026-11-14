@@ -73,9 +73,10 @@ jobs:
         run: |
           [ -n "$KEYSTORE_B64" ] || { echo "Set the KEYSTORE_B64 secret first"; exit 1; }
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          v="${GITHUB_REF_NAME#v}"; IFS=. read -r a b c <<< "$v"
+          v="${GITHUB_REF_NAME#v}"
+          code=$(tools/version-code.sh "$v")  # a*1000000 + b*1000 + c; fails for a version it can't number
           HM_SKIP_WEB_BUILD=1 KEYSTORE="$RUNNER_TEMP/release.keystore" VERSION_NAME="$v" \
-            VERSION_CODE=$(( a * 10000 + b * 100 + ${c:-0} )) android/build.sh
+            VERSION_CODE="$code" android/build.sh
           rm -f "$RUNNER_TEMP/release.keystore"
       # One file, one name: hermux.apk. (Releases up to v0.9.7 also carried it as hermes-mobile.apk, for old scripts and
       # links.) Installed apps take any .apk of the latest release; the installers ask for hermux.apk first.

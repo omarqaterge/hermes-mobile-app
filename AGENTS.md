@@ -101,4 +101,7 @@ and `tools/api-check.sh` (Android SDK). What your machine can't run shows as SKI
 - Commit messages: a title plus a body naming everything the commit changes (user-visible changes, fixes, limits,
   tests, CI, docs). Small commits.
 - Don't create `v*` tags or releases (they publish the app); the maintainer decides.
+- Version numbers: the release's build number comes from `tools/version-code.sh` (`a*1000000 + b*1000 + c`, each part
+  up to 999). A test APK put on a phone reuses the installed release's build number, never a higher one, or the next
+  real update is refused.
 - Report plainly what you verified, how, and what you could not verify (for example: no real phone).

@@ -31,5 +31,5 @@
 - **tui_gateway**: Hermes's JSON-RPC backend (the one its TUI and Desktop use). The app speaks to it over the WebSocket `/api/ws` of the dashboard.
 - **Termux**: the Android terminal app where Hermes runs. **Termux:API** gives Hermes phone functions (battery, files); **Termux:Boot** starts it after a restart. Install all of them from F-Droid.
 - **tool card**: the chat item that shows one tool call and its output.
-- **versionCode**: the integer Android compares to decide an update; here `a*10000 + b*100 + c` of `a.b.c` (7.5).
+- **versionCode**: the integer Android compares to decide an update; here `a*1000000 + b*1000 + c` of `a.b.c` from v0.9.9 on (`a*10000 + b*100 + c` up to v0.9.8) (7.5).
 - **Wireless debugging**: Android's developer setting that Shizuku (and the Shizuku keeper) use to start without a computer.
