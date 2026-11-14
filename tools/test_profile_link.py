@@ -78,5 +78,24 @@ app.include_router(api.router, prefix="/api/plugins/hermes-mobile")
 r = TestClient(app).get("/api/plugins/hermes-mobile/plugin-info")
 check("GET /plugin-info answers", r.status_code == 200 and "stamp" in r.json(), r.text)
 
+# _home(profile): only names Hermes allows for a profile (hermes_constants.PROFILE_ID_RE) reach the file system.
+import types
+sys.modules["hermes_constants"] = types.SimpleNamespace(get_hermes_home=lambda: str(root))
+from fastapi import HTTPException
+
+
+def home_status(name):
+    try:
+        return api._home(name)
+    except HTTPException as e:
+        return e.status_code
+
+
+check("a profile's home is under profiles/", home_status("work") == root / "profiles" / "work", str(home_status("work")))
+check("the default profile is the main home", home_status("default") == root and home_status(None) == root)
+check("an unknown profile is 404", home_status("nobody") == 404)
+for bad in ("..", "../work", "work/..", ".hidden", "Work", "a b", "a\\b", "x" * 65, "work\x00"):
+    check(f"profile name {bad!r} is refused", home_status(bad) == 400, str(home_status(bad)))
+
 print("ALL PASSED" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

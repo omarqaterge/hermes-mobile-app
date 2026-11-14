@@ -384,6 +384,10 @@ def _own_page_token(port: int = 9119) -> str:
         return ""
 
 
+# Hermes's own rule for a profile's name (hermes_constants.PROFILE_ID_RE).
+_PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+
+
 def _home(profile: Optional[str]) -> Path:
     from hermes_constants import get_hermes_home
 
@@ -392,9 +396,13 @@ def _home(profile: Optional[str]) -> Path:
     root = base.parent.parent if base.parent.name == "profiles" else base
     if not profile or profile == "default":
         return root
-    if "/" in profile or profile.startswith("."):
+    if not _PROFILE_NAME.fullmatch(profile):
         raise HTTPException(status_code=400, detail="bad profile")
-    home = root / "profiles" / profile
+    profiles = os.path.normpath(root / "profiles")
+    home_path = os.path.normpath(os.path.join(profiles, profile))
+    if not home_path.startswith(profiles + os.sep):  # normpath, not realpath: a profile may be a link to elsewhere
+        raise HTTPException(status_code=400, detail="bad profile")
+    home = Path(home_path)
     if not home.is_dir():
         raise HTTPException(status_code=404, detail="profile not found")
     return home

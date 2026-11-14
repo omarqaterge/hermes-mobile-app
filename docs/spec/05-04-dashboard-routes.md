@@ -1,6 +1,6 @@
 ### 5.4 Dashboard routes (all 55)
 
-Base path: `/api/plugins/hermes-mobile`. Most routes accept a `?profile=` query that the app adds through its `api` helper (routes marked "global" are sent without it). Errors are standard `HTTPException`s. The web page reaches these through `web/src/api.ts` `api`; `HermesService` and `MainActivity` call a few from Java.
+Base path: `/api/plugins/hermes-mobile`. Most routes accept a `?profile=` query that the app adds through its `api` helper (routes marked "global" are sent without it). `_home` turns it into the profile's folder: empty or `default` is the main Hermes home; any other name must match Hermes's own profile-name rule (`_PROFILE_NAME`: lowercase letters, digits, `_`, `-`, at most 64, starting with a letter or digit) and stay under `profiles/` (400 otherwise), and a profile without a folder is 404. Errors are standard `HTTPException`s. The web page reaches these through `web/src/api.ts` `api`; `HermesService` and `MainActivity` call a few from Java.
 
 Two more paths on 9119 are not plugin routes: `_TokenGuard` answers `GET /hermux/hello` and `GET /hermux/token` before Hermes sees the request (local authentication, 2.3), so they work without a session token and in every profile. Nothing calls them yet.
 

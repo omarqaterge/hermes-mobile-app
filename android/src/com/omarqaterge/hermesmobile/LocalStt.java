@@ -92,7 +92,15 @@ final class LocalStt {
         return root;
     }
 
+    /** A model's folder name: letters, digits, `.`, `_`, `-`, never `..`. IDs reach here from the page, so this keeps them inside stt/. */
+    private static final java.util.regex.Pattern ID = java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
+
+    static boolean validId(String id) {
+        return id != null && id.length() <= 64 && !id.contains("..") && ID.matcher(id).matches();
+    }
+
     private File dir(String id) {
+        if (!validId(id)) return new File(root(), ".invalid"); // never a model's folder (an ID can't start with '.')
         return new File(root(), id);
     }
 
@@ -211,7 +219,7 @@ final class LocalStt {
     }
 
     void delete(String id) {
-        if (id == null || id.isEmpty() || id.contains("/") || id.contains("..")) return;
+        if (!validId(id)) return;
         work.execute(() -> {
             if (id.equals(engineId)) release();
             cancelled.add(id);
@@ -474,10 +482,12 @@ final class LocalStt {
                                 String n = e.getName().substring(e.getName().lastIndexOf('/') + 1); // flat: no paths out of d
                                 hint += " " + e.getName();
                                 if (e.isDirectory() || !modelFile(n)) continue;
-                                total += copy(z, new File(d, n));
+                                File out = new File(d, n);
+                                if (!out.getCanonicalPath().startsWith(d.getCanonicalPath() + File.separator)) continue; // never outside d
+                                total += copy(z, out);
                                 names.add(n);
                             }
-                        } else if (modelFile(name)) {
+                        } else if (modelFile(name) && new File(d, name).getCanonicalPath().startsWith(d.getCanonicalPath() + File.separator)) {
                             total += copy(in, new File(d, name));
                             names.add(name);
                         }
