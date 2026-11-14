@@ -50,6 +50,8 @@ Install only Hermux; the app walks you through the rest and picks up wherever yo
 
 1. Download **hermux.apk** (`hermes-mobile.apk` on older releases) from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest) on
    the phone, install it and open it (allow your browser to *install unknown apps* if Android asks).
+   If Google Play Protect says "App blocked" or "Unsafe app", tap **More details** → **Install anyway**: Hermux isn't
+   on Google Play, and Play Protect warns about new apps it hasn't seen. Updates from inside the app don't show it.
 2. **Get the helper apps:** tap **Install all**. Android first asks you to allow Hermux to *install unknown apps*: turn
    the switch on and go back. Then tap **Install** on Android's prompt for each app: Termux, Termux:API and Termux:Boot (from
    F-Droid) and Shizuku (from GitHub). Each app row links to its official page (F-Droid or Shizuku's releases) if you prefer to

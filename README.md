@@ -299,6 +299,10 @@ protect you from, because a safety claim with no limits is not one. Everything h
 - **Chat text is sanitised.** Markdown from the model passes `rehype-sanitize`.
 - **Remote debugging is off by default.** Turning it on needs Android's Developer options and your screen lock, and it
   switches itself off after an hour.
+- **Local servers prove who they are.** Hermux, the plugin and the phone's helper scripts check that the local server they
+  talk to holds the shared key before they send it anything, and sign every request; the key itself is never sent. The
+  background app host takes a new port each time it starts and answers only signed requests
+  ([security model](docs/spec/02-03-security-model.md)).
 - **Approvals follow you.** A locked phone asks you to unlock before it allows anything, and, by default, the first Allow
   in a chat asks for your fingerprint or screen lock.
 - **Updates are checked.** Release APKs are built by the public workflow in `.github/workflows/release.yml` and signed
@@ -385,7 +389,9 @@ free tier). It takes about 15 minutes, mostly waiting.
 **On the phone (Android 11+):**
 
 1. Download **hermux.apk** (`hermes-mobile.apk` on older releases) from the [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest),
-   install it and open it.
+   install it and open it. If Google Play Protect says "App blocked" or "Unsafe app", tap **More details** → **Install
+   anyway**: Hermux isn't on Google Play, and Play Protect warns about new apps it hasn't seen. Updates from inside the
+   app don't show this.
 2. Tap **Install all** to get Termux, Termux:API, Termux:Boot (from F-Droid) and Shizuku.
 3. Start Shizuku with Wireless debugging (needed: it gives Hermux the screen and apps; the app shows how). After that,
    Hermux starts Shizuku again by itself after a restart, on Wi-Fi.
