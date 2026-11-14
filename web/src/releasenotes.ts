@@ -58,3 +58,16 @@ export function headlines(text: string): NotesGroup[] {
   flush()
   return groups.filter(g => g.items.length)
 }
+
+/** True for a released version name ("0.9.7", "v1.2"): the browser and test builds ("web-dev", "test") are not. */
+export const isReleaseVersion = (v: string): boolean => /^v?\d+(\.\d+)+$/.test(v.trim())
+
+/** What the one-time "What's new after an update" sheet does at this start, from the version last shown (`seen`,
+ *  null when none is stored) and the installed one: `remember` on a fresh install (store the version silently),
+ *  `show` when the installed version is newer than the seen one, `quiet` otherwise (same version, a downgrade, or a
+ *  build without a release version). */
+export function afterUpdatePlan(seen: string | null, installed: string): 'remember' | 'show' | 'quiet' {
+  if (!isReleaseVersion(installed)) return 'quiet'
+  if (!seen || !isReleaseVersion(seen)) return 'remember'
+  return isNewer(installed, seen) ? 'show' : 'quiet'
+}
