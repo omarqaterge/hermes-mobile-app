@@ -8,6 +8,9 @@ import android.content.Intent;
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent intent) {
+        String action = intent == null ? null : intent.getAction();
+        // Only the two system broadcasts the manifest lists (the receiver isn't exported, but say so here too).
+        if (!Intent.ACTION_BOOT_COMPLETED.equals(action) && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) return;
         HermesService.start(ctx);
         HermesService.ensureListening(); // a service still running whose listener has no port: try again (rate-limited)
     }

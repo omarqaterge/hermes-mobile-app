@@ -30,7 +30,7 @@ function save(list: Stash[]): void {
 
 let seq = 0
 export function pushStash(text: string, chat: string | null): Stash {
-  const s: Stash = { id: `${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, at: Date.now(), chat }
+  const s: Stash = { id: `${Date.now().toString(36)}${(seq++).toString(36)}${crypto.getRandomValues(new Uint32Array(1))[0].toString(36).slice(0, 4)}`, text, at: Date.now(), chat }
   save([s, ...stashes()].slice(0, STASH_MAX))
   return s
 }

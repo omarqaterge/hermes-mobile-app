@@ -393,3 +393,12 @@ export function fmtDuration(s?: number | null): string {
   if (s == null) return ''
   return s < 1 ? `${Math.round(s * 1000)}ms` : s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
 }
+
+/** A table as Markdown for "Copy table": the first row is the header; `\` and `|` in a cell are escaped (in that order,
+ * so a cell ending in `\` can't swallow the column bar) and line breaks become spaces. */
+export function tableMarkdown(rows: string[][]): string {
+  const cell = (c: string) => c.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ')
+  const line = (r: string[]) => '| ' + r.map(cell).join(' | ') + ' |'
+  const sep = '| ' + rows[0].map(() => '---').join(' | ') + ' |'
+  return [line(rows[0]), sep, ...rows.slice(1).map(line)].join('\n')
+}

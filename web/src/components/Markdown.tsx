@@ -10,7 +10,7 @@ import { copyText, haptic } from '../bridge'
 import { GuardCtx, openChecked, useGuard, useTainted } from '../phone-data-taint'
 import { openSessionFromNotification } from '../gateway'
 import { FileChip, Media } from './Media'
-import { backgroundLuminance, chatLinks, mediaKind, prepare } from '../text'
+import { backgroundLuminance, chatLinks, mediaKind, prepare, tableMarkdown } from '../text'
 import { DiffView, looksLikeDiff } from './Diff'
 import { toast } from '../store'
 import { createDoc } from '../canvas'
@@ -369,9 +369,7 @@ function MdTable({ children }: { children?: ReactNode }) {
   )
   const copy = () => {
     const rows = [heads.map(h => textOf((h.props as { children?: ReactNode }).children).trim()), ...sorted.map(cellText)]
-    const line = (r: string[]) => '| ' + r.map(c => c.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ')).join(' | ') + ' |'
-    const sep = '| ' + rows[0].map(() => '---').join(' | ') + ' |'
-    void copyText([line(rows[0]), sep, ...rows.slice(1).map(line)].join('\n'))
+    void copyText(tableMarkdown(rows))
     haptic()
     setCopied(true)
     setTimeout(() => setCopied(false), 1200)
