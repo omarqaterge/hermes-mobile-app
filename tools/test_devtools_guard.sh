@@ -23,10 +23,12 @@ case "$out" in *"refusing to build"*) fail "refused without KEYSTORE" ;; *) pass
 
 grep -q 'hm_devtools' .github/workflows/release.yml \
   && pass "release.yml checks the APK for hm_devtools" || fail "release.yml has no hm_devtools check"
-grep -q 'for apk in android/build/hermes-mobile.apk android/build/hermux.apk; do' .github/workflows/release.yml \
-  && pass "release.yml checks both file names it uploads" || fail "release.yml doesn't check both file names"
-[ "$(grep -cE 'gh release (upload|create) .*android/build/hermes-mobile.apk android/build/hermux.apk' .github/workflows/release.yml)" = 2 ] \
-  && pass "release.yml attaches both file names, on the upload and the create path" || fail "release.yml doesn't attach both file names on both paths"
+grep -q 'for apk in android/build/hermux.apk; do' .github/workflows/release.yml \
+  && pass "release.yml checks the file it uploads" || fail "release.yml doesn't check the file it uploads"
+[ "$(grep -cE 'gh release (upload|create) .*android/build/hermux.apk' .github/workflows/release.yml)" = 2 ] \
+  && pass "release.yml attaches hermux.apk, on the upload and the create path" || fail "release.yml doesn't attach hermux.apk on both paths"
+[ "$(grep -c 'android/build/hermes-mobile.apk' .github/workflows/release.yml)" = 1 ] \
+  && pass "release.yml names the old file only to rename it" || fail "release.yml still uploads or checks hermes-mobile.apk"
 [ "$(grep -c 'HM_DEVTOOLS=' .github/workflows/release.yml)" = 0 ] && pass "release.yml never sets HM_DEVTOOLS" || fail "release.yml sets HM_DEVTOOLS"
 
 [ "$fails" = 0 ] && { echo "ALL PASSED"; exit 0; }

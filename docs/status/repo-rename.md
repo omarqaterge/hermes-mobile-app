@@ -11,7 +11,7 @@ runbook for that day. The package ID (`com.omarqaterge.hermesmobile`), the app's
 `phone/uninstall.sh` (there, lower case only). Every address the app and scripts fetch stays on the old name, because the
 new one answers 404 until the rename. `hermuxlab` is an empty organization the owner holds; the repository stays under
 `omarqaterge`, and accepting that address only keeps [a later move there](#a-later-move-to-hermuxlab) possible.
-Releases from the next one on carry the APK as both `hermux.apk` and `hermes-mobile.apk`. No release has shipped this yet.
+v0.9.7 carries the APK as both `hermux.apk` and `hermes-mobile.apk`; releases after it carry only `hermux.apk` (owner's decision, 2026-11-14).
 
 **Next:** release v0.9.6 (the maintainer), then steps 1 and 2 of [The order](#the-order). The rename waits for those and
 the owner's go-ahead; the Hermux release doesn't include it: see the first rule.
@@ -51,7 +51,7 @@ accepts the new name has to go out, and people have to update, before the rename
 
 **First rule: the Hermux release comes from the current name, and the repository rename isn't part of it.** The update
 that changes the app's visible name to Hermux is published from `omarqaterge/hermes-mobile-app`, with the same package ID,
-the same release signing key, a higher version and `.apk` release files (`hermux.apk`, and `hermes-mobile.apk` stays).
+the same release signing key, a higher version and `.apk` release files (`hermux.apk`; `hermes-mobile.apk` too up to v0.9.7).
 Installed versions look for any `.apk` file in the latest release and accept only old-name addresses, so everyone can
 update inside the app. Everything below happens later, only on the owner's explicit go-ahead.
 
@@ -185,7 +185,7 @@ name in the follow-up PR.
 | `phone/install.sh` `REPO` | `git clone` or `git pull --ff-only`, then APK download | Fetched from `main` | Works; existing clones keep the old remote, which depends on the redirect. Move (new clones only) |
 | `tools/setup-phone.sh`, `tools/setup-phone.ps1` `RAW`, `APK_URL` | Computer install routes (`curl -fsSL`, `irm`) | Fetched from `main` | Work. `irm` not tested, but it follows redirects by default and raw has none. Move |
 | `tools/stats.sh` default repo | Read-only stats through `gh api` | n/a | Not tested with a renamed repository (traffic needs admin rights). Move |
-| `.github/workflows/release.yml`, the installers | Release files `hermux.apk` and `hermes-mobile.apk`, the same file; installers ask for the first and fall back to the second | Any `.apk` | No change: file names don't depend on the repository's name |
+| `.github/workflows/release.yml`, the installers | Release file `hermux.apk` (and `hermes-mobile.apk`, the same file, up to v0.9.7); installers ask for the first and fall back to the second | Any `.apk` | No change: file names don't depend on the repository's name |
 | `.github/workflows/*` | `GITHUB_REPOSITORY` and `github.repository` only, and no action from this repository | n/a | Update by themselves. GitHub doesn't redirect actions in a renamed repository, but none are used |
 | `tools/test_uninstall.sh`, `tools/web-e2e/checks/22-whats-new.cjs` | Fixtures with the address | n/a | Pass as they are. Move the what's-new fixture; the uninstall test covers all names |
 | `README.md`, `AGENT_INSTALL.md`, `docs/install.md` | Install commands, links. `README.md` also has `cd hermes-mobile-app`, which becomes `cd hermux` | n/a | Work through redirects. Move |
