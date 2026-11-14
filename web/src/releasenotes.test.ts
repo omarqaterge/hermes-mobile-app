@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { headlines, notesSince } from './releasenotes'
+import { afterUpdatePlan, headlines, isReleaseVersion, notesSince } from './releasenotes'
 
 const LOG = `# What's new
 
@@ -49,5 +49,23 @@ describe('headlines', () => {
     const [g] = headlines('- ' + 'word '.repeat(40))
     expect(g.items[0].length).toBe(120)
     expect(g.items[0].endsWith('…')).toBe(true)
+  })
+})
+
+describe('afterUpdatePlan', () => {
+  it('remembers silently on a fresh install', () => {
+    expect(afterUpdatePlan(null, '0.9.7')).toBe('remember')
+    expect(afterUpdatePlan('garbage', '0.9.7')).toBe('remember')
+  })
+  it('shows after an update, stays quiet on the same version or a downgrade', () => {
+    expect(afterUpdatePlan('0.9.6', '0.9.7')).toBe('show')
+    expect(afterUpdatePlan('0.9.7', '0.9.7')).toBe('quiet')
+    expect(afterUpdatePlan('0.9.8', '0.9.7')).toBe('quiet')
+  })
+  it('stays quiet in builds without a release version', () => {
+    expect(afterUpdatePlan('0.9.6', 'web-dev')).toBe('quiet')
+    expect(afterUpdatePlan(null, 'test')).toBe('quiet')
+    expect(isReleaseVersion('v1.2.3')).toBe(true)
+    expect(isReleaseVersion('1')).toBe(false)
   })
 })

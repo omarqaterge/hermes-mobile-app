@@ -13,7 +13,7 @@ import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataAllowMo
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
-import { headlines } from '../releasenotes'
+import { WhatsNewSections } from './WhatsNew'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
@@ -24,7 +24,6 @@ import { DefaultAccessRow } from './AutoAccess'
 import { searchSettings, type SettingsEntry } from '../settings-search'
 import { findSettingsTarget, flashElement } from '../flash'
 import { approvalLockAvailable, approvalLockState, confirmAlways, setApprovalLock } from '../approval-lock'
-import { Markdown } from './Markdown'
 import { SttSettings } from './SttSettings'
 import { chosenSttName, loadSttModels, sttAvailable, useSttModels } from '../stt'
 import { UninstallSection } from './Uninstall'
@@ -1204,15 +1203,7 @@ function WhatsNewRow() {
       {open && (
         <Sheet title="What's new" onClose={() => setOpen(false)}>
           <div className="sheet-scroll whats-new">
-            {u.notes.map(r => (
-              <section key={r.version}>
-                <h3 className="whats-new-version">
-                  {r.version}
-                  {r.date && <span className="dim small"> · {r.date}</span>}
-                </h3>
-                <WhatsNewNotes text={r.text} />
-              </section>
-            ))}
+            <WhatsNewSections notes={u.notes} />
           </div>
           {canUpdate && (
             <div className="sheet-actions">
@@ -1223,30 +1214,6 @@ function WhatsNewRow() {
           )}
         </Sheet>
       )}
-    </>
-  )
-}
-
-/** One release in "What's new": a short line per change, biggest first, smaller changes and fixes last; Details shows
- *  the full notes. */
-function WhatsNewNotes({ text }: { text: string }) {
-  const [full, setFull] = useState(false)
-  const groups = useMemo(() => headlines(text), [text])
-  if (!groups.length) return <Markdown text={text} />
-  return (
-    <>
-      {groups.map((g, gi) => (
-        <div key={gi}>
-          {g.title && <h4 className="whats-new-group">{g.title}</h4>}
-          <ul className="whats-new-list">
-            {g.items.map((t, i) => <li key={i}>{t}</li>)}
-          </ul>
-        </div>
-      ))}
-      <button className="whats-new-more" aria-expanded={full} onClick={() => setFull(!full)}>
-        {full ? 'Hide details' : 'Details'}
-      </button>
-      {full && <Markdown text={text} />}
     </>
   )
 }

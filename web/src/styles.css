@@ -4016,3 +4016,7 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .local-alert-body { font-size: 0.85rem; }
 .local-alert-more { font-size: 0.78rem; color: var(--dim); }
 .local-alert-retry { flex: none; padding: 8px 12px; font-size: 0.82rem; }
+
+/* What's new after an update (WhatsNew.tsx): title, version line and a close button in one header */
+.whats-new-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.whats-new-head .icon-btn { color: var(--dim); }
