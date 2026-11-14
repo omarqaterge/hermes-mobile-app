@@ -2,7 +2,9 @@
 # Tests phone/hermes-services' log handling with a fake home: a service log stays bounded and keeps its newest part (also
 # while a program still appends to it), a program that fails is recorded for the diagnostic log with its exit code and
 # nothing else, the loops that end on purpose aren't, and the switch in the app stops the recording. Also the dashboard's
-# loop: it starts nothing while a dashboard it didn't start answers, restarts soon after a real exit, and backs off quick exits.
+# loop: it waits only while a dashboard of ours holds the port (hm-local verifies it, or it speaks no hello and runs as this
+# user), starts its own anyway when something else answers (one fixed port_taken line, the app told), restarts soon after
+# a real exit, and backs off quick exits. And the app keeper: a refused port or one that doesn't verify wakes the app.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
@@ -76,15 +78,23 @@ check "[ \$(wc -c < '$HOME/logs/old.log') -le 524288 ]" "a big log is trimmed wh
 # The dashboard's loop, as written in the script, with a stand-in for Hermes and for the pauses (written down, then 20 ms).
 for p in "$HOME"/logs/*.pid; do rm -f "$p"; done
 loopf="$T/loop.sh"
-awk '/^(trim_log|loop_exit|dash_answers|wait_other_dashboard|run_loop)\(\) \{/{f=1} /^dash_port=/{print} f{print} f&&/^}/{f=0}' phone/hermes-services > "$loopf"
+awk '/^(dash_process|wake_app)\(\) \{.*\}$/{print; next}
+  /^(trim_log|loop_exit|why_of|local_hello|local_line|local_port_event|dash_answers|dash_state|wait_other_dashboard|keep_app|run_loop)\(\) \{/{f=1}
+  /^(dash_port|app_port|keeper_hello_every|keeper_wake_every|hm_local|dash_taken|keeper_round)=/{print} /^case "\$keeper_hello_every"/{print}
+  f{print} f&&/^}/{f=0}' phone/hermes-services > "$loopf"
 # shellcheck disable=SC1090
 source "$loopf"
 set +e  # the script runs without -e, and the loops inherit it from here
 STARTS="$T/starts"; SLEEPS="$T/sleeps"; DL="$HOME/logs/dashboard.log"; E="$HOME/logs/loop-events.log"
 sleep() { echo "$1" >> "$SLEEPS"; perl -e 'select(undef,undef,undef,0.02)'; }
+# A stand-in for hm-local: records its arguments (and a posted body), answers with the exit code in $HM_RC (0: verified).
+HM_CALLS="$T/hm-calls"; HM_POSTS="$T/hm-posts"; HM_RC="$T/hm-rc"; export HM_CALLS HM_POSTS HM_RC
+printf '#!/bin/bash\necho "$*" >> "$HM_CALLS"\n[ "$1" = post ] && { cat >> "$HM_POSTS"; echo >> "$HM_POSTS"; }\nexit "$(cat "$HM_RC" 2>/dev/null || echo 0)"\n' > "$HOME/bin/hm-local"
+chmod +x "$HOME/bin/hm-local"
+hm_rc() { echo "$1" > "$HM_RC"; }
 serve() { python3 -m http.server "$HM_DASH_PORT" --bind 127.0.0.1 --directory "$T/bin" >/dev/null 2>&1 & srv=$!; for _ in $(seq 1 200); do dash_answers && return; perl -e 'select(undef,undef,undef,0.05)'; done; }
 unserve() { kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null || true; }
-fresh() { HM_DASH_PORT=$(free_port); dash_port=$HM_DASH_PORT; rm -f "$STARTS" "$SLEEPS" "$E" "$DL" "$HOME/logs/dashboard.pid"; touch "$STARTS" "$SLEEPS"; }
+fresh() { HM_DASH_PORT=$(free_port); dash_port=$HM_DASH_PORT; dash_taken=""; rm -f "$STARTS" "$SLEEPS" "$E" "$DL" "$HOME/logs/dashboard.pid" "$HM_CALLS" "$HM_POSTS"; touch "$STARTS" "$SLEEPS"; hm_rc 0; }
 stop_loop() { kill "$(cat "$HOME/logs/dashboard.pid")" 2>/dev/null; wait "$(cat "$HOME/logs/dashboard.pid")" 2>/dev/null || true; }
 upto() { for _ in $(seq 1 400); do eval "$1" && return 0; perl -e 'select(undef,undef,undef,0.02)'; done; return 1; }  # eight seconds
 lines() { wc -l < "$1" | tr -d ' '; }
@@ -95,7 +105,9 @@ fresh; serve; echo 999999 > "$HOME/logs/dashboard.pid"
 fake_quick() { echo run >> "$STARTS"; return 3; }
 run_loop dashboard fake_quick
 upto '[ "$(waits)" -ge 30 ]' || true
-check "[ \"\$(waits)\" -ge 30 ] && [ \"\$(lines '$STARTS')\" = 0 ]" "another dashboard answers: thirty waits and Debian never started"
+check "[ \"\$(waits)\" -ge 30 ] && [ \"\$(lines '$STARTS')\" = 0 ]" "another dashboard of ours answers (it verifies): thirty waits and Debian never started"
+check "grep -qx \"hello dashboard \$HM_DASH_PORT\" '$HM_CALLS'" "it asked hm-local to verify the dashboard on its port"
+check "[ \"\$(grep -c '^hello' '$HM_CALLS')\" -le 8 ]" "while waiting it asks again only every fifth minute (a plain HTTP probe in between)"
 check "[ ! -e '$E' ]" "waiting is no program exit: nothing in the events"
 check "[ \"\$(grep -c 'waiting for it to stop' '$DL')\" = 1 ] && grep -Eq '^[0-9-]{10}T[0-9:]{8}Z ' '$DL'" "one line with the time says so, not one per wait"
 # It stops: the program starts again at once, without waiting out a long pause.
@@ -128,6 +140,83 @@ run_loop dashboard fake_mix
 upto '[ "$(lines "$SLEEPS")" -ge 9 ]' || true
 stop_loop
 check "[ \"\$(head -9 '$SLEEPS' | tr '\n' ' ')\" = '10 20 40 80 160 300 10 10 20 ' ]" "quick exits wait 10, 20, 40, 80, 160, 300 s; a long run starts over"
+
+# Something answers that isn't ours: no wait, one fixed line, the app told, and the loop's own back-off.
+for rc in 4 8 127; do
+  fresh; serve; hm_rc "$rc"
+  [ "$rc" = 127 ] && mv "$HOME/bin/hm-local" "$T/hm-local.off"
+  fake_quick() { echo run >> "$STARTS"; return 3; }
+  run_loop dashboard fake_quick
+  upto '[ "$(lines "$SLEEPS")" -ge 4 ]' || true  # the 4th wait is recorded after the 4th start: stopping on the start loses it
+  stop_loop; unserve
+  [ "$rc" = 127 ] && mv "$T/hm-local.off" "$HOME/bin/hm-local"
+  why=$(why_of "$rc"); why=${why:-no_hello}
+  check "[ \"\$(lines '$STARTS')\" -ge 4 ] && [ \"\$(waits)\" = 0 ]" "not verified (hm-local exit $rc): Debian starts anyway, no waiting"
+  check "[ \"\$(head -4 '$SLEEPS' | tr '\n' ' ')\" = '10 20 40 80 ' ]" "not verified (exit $rc): the loop's back-off bounds the starts"
+  check "[ \"\$(grep -c ' local port_taken ' '$E')\" = 1 ] && grep -Eq '^[0-9]{9,11} local port_taken port=dashboard side=termux why=$why\$' '$E'" "not verified (exit $rc): one fixed line, why=$why"
+  if [ "$rc" = 127 ]; then
+    check "[ ! -s '$HM_POSTS' ]" "no hm-local: the app can't be told, nothing sent"
+  else
+    check "grep -qx \"post /event \$app_port\" '$HM_CALLS' && grep -qx '{\"kind\":\"local_port\",\"port\":\"dashboard\",\"state\":\"taken\"}' '$HM_POSTS'" "not verified (exit $rc): the app is told, through hm-local (verified)"
+  fi
+  check "[ ! -e '$DL' ] || ! grep -q 'waiting' '$DL'" "not verified (exit $rc): no 'waiting' line"
+done
+# No hello (an older plugin's guard) and a dashboard process of this user: ours, wait. A wrong proof: never, process or not.
+fresh; serve; hm_rc 4
+bash -c 'exec -a "hermes dashboard --host 127.0.0.1 --port $1 --no-open" sleep 30' x "$HM_DASH_PORT" & ours=$!
+upto 'pgrep -f "hermes dashboard --host 127.0.0.1 --port $HM_DASH_PORT" >/dev/null' || true
+run_loop dashboard fake_quick
+upto '[ "$(waits)" -ge 3 ]' || true
+check "[ \"\$(waits)\" -ge 3 ] && [ \"\$(lines '$STARTS')\" = 0 ]" "no hello, and our user's dashboard process: it waits (an older plugin)"
+stop_loop; unserve; kill "$ours" 2>/dev/null; wait "$ours" 2>/dev/null || true
+fresh; serve; hm_rc 8
+bash -c 'exec -a "hermes dashboard --host 127.0.0.1 --port $1 --no-open" sleep 30' x "$HM_DASH_PORT" & ours=$!
+upto 'pgrep -f "hermes dashboard --host 127.0.0.1 --port $HM_DASH_PORT" >/dev/null' || true
+run_loop dashboard fake_quick
+upto '[ "$(lines "$STARTS")" -ge 2 ]' || true
+check "[ \"\$(lines '$STARTS')\" -ge 2 ] && [ \"\$(waits)\" = 0 ]" "a wrong proof: never waits, even with such a process"
+stop_loop; unserve; kill "$ours" 2>/dev/null; wait "$ours" 2>/dev/null || true
+# Taken, then free again: one port_ok line and the app told.
+fresh; hm_rc 8; serve; wait_other_dashboard; r1=$?; unserve; wait_other_dashboard; r2=$?
+check "[ \$r1 = 1 ] && [ \$r2 = 1 ] && grep -q ' local port_ok port=dashboard side=termux\$' '$E' && grep -q '\"state\":\"ok\"' '$HM_POSTS'" "free again: one port_ok line, the app told"
+
+# The app keeper, one round at a time (sleep is the stand-in; am is recorded).
+AM="$T/am-calls"; am() { echo "$*" >> "$AM"; }
+kfresh() { rm -f "$AM" "$HM_CALLS" "$E"; keeper_round=0; keeper_taken=""; keeper_wait=0; keeper_hello_every=1; app_port=$(free_port); hm_rc 0; }
+kfresh; keep_app
+check "[ \"\$(cat '$AM')\" = 'broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32' ] && [ ! -e '$HM_CALLS' ]" "keeper: nothing listens: StartReceiver, no hello needed"
+kfresh; python3 -c 'import socket,sys
+s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1",int(sys.argv[1]))); s.listen(5)
+while True: s.accept()[0].close()' "$app_port" & held=$!
+upto '(exec 3<>"/dev/tcp/127.0.0.1/$app_port") 2>/dev/null' || true
+keep_app
+check "[ ! -e '$AM' ] && grep -qx \"hello events \$app_port\" '$HM_CALLS'" "keeper: the listener verifies: nothing to do"
+hm_rc 8; for _ in 1 2 3 4 5 6; do keep_app; done
+check "[ \"\$(wc -l < '$AM' | tr -d ' ')\" = 2 ]" "keeper: a listener that doesn't verify: StartReceiver at once, then at most every third round"
+check "[ \"\$(grep -c ' local port_taken ' '$E')\" = 1 ] && grep -Eq '^[0-9]{9,11} local port_taken port=events side=termux why=bad_proof\$' '$E'" "keeper: one fixed port_taken line per change"
+hm_rc 0; rm -f "$AM"; keep_app
+check "[ ! -e '$AM' ]" "keeper: verified again: nothing to do"
+rm -f "$E"; hm_rc 7; for _ in 1 2 3 4 5 6 7; do keep_app; done
+check "[ \"\$(wc -l < '$AM' | tr -d ' ')\" = 3 ]" "keeper: a listener naming another key: the broadcast too, capped (rounds 1, 4, 7)"
+check "[ \"\$(grep -c ' local ' '$E')\" = 1 ] && grep -Eq '^[0-9]{9,11} local unverified port=events side=termux why=unknown_kid\$' '$E'" "keeper: one unverified line for it, not port_taken"
+hm_rc 0; keep_app
+# A refused round starts the count again: the next round that doesn't verify broadcasts at once.
+rm -f "$AM"; hm_rc 8; keep_app; keep_app
+kill "$held" 2>/dev/null; wait "$held" 2>/dev/null || true
+keep_app
+python3 -c 'import socket,sys
+s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1",int(sys.argv[1]))); s.listen(5)
+while True: s.accept()[0].close()' "$app_port" & held=$!
+upto '(exec 3<>"/dev/tcp/127.0.0.1/$app_port") 2>/dev/null' || true
+keep_app
+check "[ \"\$(wc -l < '$AM' | tr -d ' ')\" = 3 ]" "keeper: after a refused round, an unverified one broadcasts at once (not after the cap)"
+hm_rc 0; keep_app
+rm -f "$HM_CALLS"; keeper_hello_every=3; keeper_round=0; for _ in 1 2 3 4 5 6; do keep_app; done
+check "[ \"\$(grep -c '^hello events' '$HM_CALLS')\" = 2 ]" "keeper every third round: two hellos in six rounds (a bare connect otherwise)"
+mv "$HOME/bin/hm-local" "$T/hm-local.off"; rm -f "$AM"; keeper_hello_every=1; keep_app; mv "$T/hm-local.off" "$HOME/bin/hm-local"
+check "[ ! -e '$AM' ]" "keeper without hm-local: the connect decides, as before"
+kill "$held" 2>/dev/null; wait "$held" 2>/dev/null || true
+check "[ \"\$(grep -c 'sleep 300\|^300\$' '$SLEEPS')\" -ge 1 ]" "keeper: each round ends with its 300 s sleep"
 
 # dash_answers: only an HTTP reply counts.
 fresh

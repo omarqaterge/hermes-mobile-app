@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
 
 import websockets
 
@@ -24,9 +25,9 @@ def out(ev, **kw):
 
 async def main(prompt):
     subprocess.run(["adb", "forward", "tcp:9119", "tcp:9119"], capture_output=True)
-    import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
-    page = urllib.request.urlopen(urllib.request.Request(HERMES + "/", headers={"X-Hermes-Mobile-Key": _key}), timeout=15).read().decode()
-    token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from devtoken import dashboard_token  # a verified dashboard only; HM_EVENT_KEY holds the phone's key
+    token = dashboard_token(HERMES, timeout=15)
     async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         ids = iter(range(1, 10**6))
         pending = {}

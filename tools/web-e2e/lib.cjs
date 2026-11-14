@@ -190,6 +190,11 @@ const nativeShell = () => {
         ;(window.__plugLog ||= []).push(force)
         return window.__plugAnswer || 'ok'
       },
+      pluginUpdateConfirmed: (key, force) => {
+        k(key, 'pluginUpdateConfirmed')
+        ;(window.__plugLog ||= []).push(force ? 'confirmed-force' : 'confirmed')
+        return window.__plugAnswer || 'ok'
+      },
       // Settings → Uninstall Hermux: every call goes to window.__unLog in order; the test answers through
       // window.__un (the native state) + window.hermesUninstallDone(), like Uninstall.java does.
       uninstallState: key => (k(key, 'uninstallState'), JSON.stringify(window.__un || JSON.parse(localStorage.getItem('__hmUn') || 'null') || { started: false, running: false, removed: false, result: null })),

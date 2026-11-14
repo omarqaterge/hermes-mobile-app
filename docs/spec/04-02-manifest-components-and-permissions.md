@@ -13,7 +13,7 @@
 | `.CameraProvider` | no | Authority `com.omarqaterge.hermesmobile.camera`, `grantUriPermissions="true"`. |
 | `.ShizukuProvider` | yes | Authority `com.omarqaterge.hermesmobile.shizuku`, `multiprocess="false"`, protected by the permission `INTERACT_ACROSS_USERS_FULL` so only the system or the shell (Shizuku's server) can call it. |
 | `.WakeReceiver` | no | Cron alarm. |
-| `.StartReceiver` | yes | Termux keeper restarts the service. |
+| `.StartReceiver` | yes | Termux keeper restarts the service. It stays exported because Termux's `am broadcast` runs as Termux's own user and holds no permission the receiver could require; it carries no data and only starts this app's own service and asks its listener to try its port again (at most every 10 s), so a broadcast from anything else can do no more than that. |
 | `.BootReceiver` | no | `BOOT_COMPLETED`, `MY_PACKAGE_REPLACED`. |
 
 **`<queries>`** (package visibility for Android 11+): `com.termux`, `com.termux.api`, `moe.shizuku.privileged.api`, `com.termux.boot`, the twelve phone-maker system apps that `Autostart` knows (`com.miui.securitycenter`, `com.hihonor.systemmanager`, `com.huawei.systemmanager`, `com.coloros.safecenter`, `com.oppo.safe`, `com.oneplus.security`, `com.vivo.permissionmanager`, `com.iqoo.secure`, `com.asus.mobilemanager`, `com.meizu.safe`, `com.letv.android.letvsafe`, `com.transsion.phonemaster`), the intents `TTS_SERVICE` and `RecognitionService` (to bind the system speech services), and `PROCESS_TEXT` with `text/plain` (so the text-selection menu can list other apps' Speak and Translate).

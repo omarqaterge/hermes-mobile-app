@@ -5,9 +5,9 @@ moment. Before this, only `phone/install.sh` copied the plugin, so a phone updat
 plugin of its first install.
 
 **What the APK carries.** `android/build.sh` puts three files in `assets/phone/`: `plugin-update.sh` (a copy of
-`phone/plugin-update.sh` with `~/bin/hermes-services` inside it, `plugin-update.sh embed`), `plugin.tgz` (the plugin folder without `__pycache__`, with a `BUILD_STAMP` file; about
-90 KB) and `plugin.txt` (`STAMP HASH SHA256`). STAMP orders versions: the time of the last commit
-(`plugin-update.sh source-stamp`), or the build time when the plugin folder has uncommitted changes. HASH is a hash of
+`phone/plugin-update.sh` with `~/bin/hermes-services` inside it, `plugin-update.sh embed`), `plugin.tgz` (the plugin folder without `__pycache__`, with a `BUILD_STAMP` file and the Termux scripts in
+`phone-scripts/`; about 140 KB) and `plugin.txt` (`STAMP HASH SHA256`). STAMP orders versions: the time of the last commit
+(`plugin-update.sh source-stamp`), or the build time when the plugin folder or one of the Termux scripts has uncommitted changes. HASH is a hash of
 the plugin's files (names and contents, `BUILD_STAMP` and `__pycache__` left out); SHA256 is the bundle's checksum.
 `BUILD_STAMP` (in the installed plugin) holds `STAMP HASH SOURCE`, SOURCE being `apk`, `install` (written by
 `install.sh` with the clone's commit time) or `adopted`. It is git-ignored. The plugin reports it at `GET /plugin-info`
@@ -21,7 +21,7 @@ the plugin's files (names and contents, `BUILD_STAMP` and `__pycache__` left out
 | A check finds the plugin `older` | The update runs at once if everything is quiet (below), else it waits for one of the next events. |
 | A turn ends (a `status` event goes from working to not working) | 15 s later: the update, if one is waiting and everything is quiet. |
 | The app leaves the screen (`MainActivity.onStop`) | The update, if one is waiting and everything is quiet. |
-| The user taps Settings → About → Hermux plugin | The update now, even with the app on screen (`--force` after "Replace" for a copy changed by hand). |
+| The user taps Settings → About → Hermux plugin | The update now, even with the app on screen (`--user`; `--force` after "Replace" for a copy changed by hand). |
 
 "Quiet" (`maybeApply`): `HermesService.hermesIdle()` (no working beat within `WORKING_TTL_MS`, no approval or question
 open), the app not on screen, at least 2 min (`BUSY_GAP_MS`) since the last try, fewer than 3 failed tries for this
@@ -36,7 +36,7 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
   it in place), `current`, `adopted` (the same files without a stamp; now stamped, no restart), `newer` (a bigger stamp:
   never replaced), `modified` (its files no longer match its own `BUILD_STAMP`: changed by hand, replaced only with
   `--force`), `held` (`/root/.hermes/hermes-mobile-plugin/hold` exists: a developer testing a plugin), or `older`.
-- `apply STAMP HASH SHA TOKEN [--force]`, in order: the same inspection (anything but `older` stops here); stop if
+- `apply STAMP HASH SHA TOKEN [--force] [--user]` (any other option is a usage error), in order: the same inspection (anything but `older` stops here); stop if
   Hermes's own `GET /activity` lists any work (`BUSY working`); fetch the bundle from the app's loopback port
   (`GET http://127.0.0.1:9121/plugin-bundle/<token>`, served by `HermesService` only to this run's token) and check its
   SHA256; unpack it into `/root/.hermes/hermes-mobile-plugin/new` (outside Hermes's plugins folder), check HASH and that
@@ -46,10 +46,43 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
   `/activity` a third time (a turn that started during the swap puts the old plugin back, no restart, `BUSY working`);
   restart the dashboard (`hermes-debian --restart`; the supervisor loop starts it again), wait up to 300 s for it to
   answer and then up to 60 s for the new plugin's `GET /plugin-info` to report the new stamp. Then: `OK STAMP` (old copy
-  and marker removed; the cron ticker is restarted too when no job runs, so it loads the new plugin; when a job runs it
-  keeps the old plugin until its next start), or rollback: the old plugin moved back, Hermes restarted again,
+  and marker removed; the cron ticker is restarted too when no job runs (`restart_ticker`, whichever copy runs: the plugin folder's `cron_ticker.py` or an older install's in `/root/.hermes/scripts/`; its loop starts it again). Only the ticker itself is stopped (`kill_ticker`, `TICKER_KILL`): a process whose arguments, as `ps -o args=` prints them, are a Python and then exactly one of those files (`PLUGIN_TICKER`, `OLD_TICKER_FILE`, under `TICKER_HOME`), never a wrapper whose command line merely names them, such as the supervisor loop's proot or chroot login and its `bash -lc` text, so the loop goes on and starts exactly one ticker. An older install's supervisor loop keeps running `/root/.hermes/scripts/cron_ticker.py` until the phone restarts, so `commit` first makes that file a stand-in (`ticker_shim`, marked `hermux-ticker-shim`): a few lines of Python that `exec` the plugin's copy and, when it is missing, exit with an error rather than run old code; the file it replaced is kept as `cron_ticker.py.before` (`TICKER_KEEP`) and a rollback to a plugin without its own ticker puts it back (`ticker_back`); a stand-in already there, or a link, is left alone. So the loop's restart runs the new code at once. When a job runs, the ticker keeps the old code until its next start; every later `check` of a current plugin writes a stand-in an earlier update didn't (`tickershim`) and stops a process still running the `scripts/` file itself (`stop_old_ticker`: a Python whose first argument is the `scripts/` file; the stand-in replaces its own arguments with the plugin's copy, so only old code runs that way), between jobs), or rollback: the old plugin moved back, Hermes restarted again,
   `FAIL load rolled-back`. When the plugin didn't answer within 20 s before the swap (Hermes stopped, or the plugin
   switched off), nothing can prove it loads: `OK STAMP unverified`.
+- **The plugin's routes** (`/activity` and `/plugin-info`, `route`) go through `hm-local get`: the token from a
+  verified dashboard, sent only on a new verified connection, and an answer taken only with its proof, so a dashboard
+  whose answers carry no proof counts as not serving (the update is rolled back). Only under the one exception below
+  (an old guard, which has neither; every condition of it, `exception`, the dashboard's process included, looked at on
+  each use) does `route` send the old guard's own page token (`page_token`, never a token `hm-local` got) in a plain
+  request, as before.
+  `token` runs `hm-local token <port>` (`local_client`: `~/bin/hm-local` when it has `dashboard_get`, or else the installed
+  plugin's own `phone-scripts/hm-local` read once per run through Debian into the run's lock folder), which checks the
+  guard's proof under the key; the key never leaves `hm-local`. `dash_up` also counts an HTTP answer that is no hello
+  (`hm-local hello` exit 4) as "Hermes answers without the plugin's guard", which is what a settle or a rollback needs
+  to know; only the hello is sent for it. **The one exception** (`legacy`): while the installed plugin is older than
+  local authentication, the old guard can only answer the raw key, so `token` sends the event key to `GET /` as before
+  (as a header read from a file descriptor, never on a command line). Only `apply` uses it (`check` asks for no token
+  but while settling an interrupted run, when the installed plugin is the new one), only when the Debian-side `inspect`
+  (it reads the plugin's own `BUILD_STAMP` from disk, never anything from the port) says `STATE older` and that the
+  installed guard's files have no hello (`GUARD old`, a line before the state line; `GUARD hello` otherwise), only
+  while Hermes's dashboard process runs (`dashboard_runs`: its command line for the port dialled, `DASH_PROC_RE`, under Termux's user, or root's under
+  chroot, `pgrep -u 0` through `su`; and at least `DASH_MIN_AGE` (5 s) old by `age_of`: `ps -o etimes=`, else `ps -o etime=` (`etime_seconds`: `SS`, `MM:SS`, `HH:MM:SS` or `D-HH:MM:SS`, nothing else), else `/proc/<pid>/stat` against `/proc/uptime` (`stat_age`: each value checked on its own, so a process that ended in between has no age), an age it cannot tell counting as too young; `plugin-update.sh age-parts` runs these two rules alone for the tests, since a process still starting may not hold the port yet), and only while the old plugin's dashboard still runs: through the busy checks before and right after the
+  swap, never once this run has restarted Hermes (`restarted`, set by `restart`: this run's own restart, or a settle's
+  rollback before the inspection), not even after a rollback. A rollback's wait (`back_up`) needs the dashboard's
+  process and any HTTP answer on its port (`http_up`, no key, no token); `FAIL load rolled-back` says only that, and
+  `rolled-back-not-up` that they didn't come within `BACK_WAIT`. Each run
+  that uses it adds `local legacy_key port=dashboard side=termux` once to `~/logs/loop-events.log` (`note_legacy`). A current, adopted, newer, changed, held or settling plugin never gets the
+  raw key; neither does an older stamp whose guard has the hello on disk, nor anything once `~/.hermes-mobile/enforced`
+  exists (the app has ended local authentication's compatibility window, 2.3: `inspect` and `token` both check it).
+  Then the old guard can't be asked anything (`blind`): while its dashboard answers (`dash_up`), an automatic run
+  answers `BUSY unknown` and changes nothing, so a turn is never cut (`PluginSync` keeps it as the state `busy-unknown`,
+  `LocalDashboard.busyState`, which is never tried again by itself, and the app's tap asks first, 3.15); only the user's tap that answered the app's warning that a running answer or job may be cut off
+  (`--user --confirmed`, from `PluginSync.userUpdate` through the bridge's `pluginUpdateConfirmed`; `--user` alone,
+  like an automatic run, gets `BUSY unknown`) replaces it. That run counts the old
+  plugin as loaded when its dashboard answers, so after the restart the new plugin (which speaks the hello) is verified
+  through `hm-local` and committed, or rolled back when it doesn't load. A remaining limit of this condition: a running
+  process does not prove that it holds the port (a dashboard that starts and fails to open it is visible to `pgrep`
+  for a moment).
 - The app passes the script as `bash -c TEXT`, so its text is on the process's command line. It therefore never spells
   out the dashboard's command line (`DASH_RE` is a pattern that doesn't match itself): `hermes-debian --restart` kills
   by that command line and would otherwise kill the run along with the dashboard. Every Debian login has a 240 s limit
@@ -57,6 +90,9 @@ uninstall, 6.5); only fixed words, the APK's STAMP, HASH and SHA256 and a one-ti
 - An interrupted run (Termux killed, the phone off) is settled by the next one: no plugin but `old/` → `old/` is put
   back; a `pending` marker matching the live plugin → kept if it serves its stamp within 45 s; rolled back (with a
   restart) only when the dashboard answers without it and has no work, else left for a later run (`BUSY settling`).
+  An `apply` that rolled such a swap back stops there with `BUSY settled`: after its restart it can check neither
+  Hermes's work nor whether a new plugin loads, so the next run does the update (and a plugin that didn't load is not
+  installed again blindly).
   A lock (`~/.hermes-mobile/plugin-update.lock` with the run's PID; a run removes only its own, and one older than
   20 min counts as left by a killed run) keeps runs from overlapping (`BUSY another-run`).
 - Every answer line starts with `HMPLUGIN `: `STATE <state> <installed stamp>`, `BUSY <why>`, `OK <stamp> [unverified]`,
@@ -74,6 +110,28 @@ makes the next Hermes restart (`restart_loop`) stop the `dashboard` loop too, on
 start it anew. The other loops follow when the phone restarts. Until then a run of the script still trims the logs (6.2), but only new
 loops record `loop_exit`.
 
+**The Termux scripts come along** (`SCRIPTS`: `hm-local`, `hm-shizuku`). `plugin-update.sh pack DIR OUT STAMP PHONE`
+(as `android/build.sh` calls it, PHONE = `../phone`) puts them into the bundle as `hermes-mobile/phone-scripts/<name>`;
+`plugin-update.sh assemble DIR PHONE OUT` makes the same folder unpacked, for `install.sh`, so an installed plugin and
+the APK's copy of the same commit have the same files (`current`). Both fail when a script is missing. After an `apply`
+commits (`OK` and `OK unverified`), and on `check` and `apply` whenever the plugin is `current` or `adopted`,
+`sync_scripts` asks the Debian half (`scripts`) for each listed script's SHA-256, reads it out through `hermes-debian cat`
+(`deb_cat`; under chroot only root can read Debian's files) into `~/bin/<name>.tmp`, checks the SHA-256, makes it
+executable and renames it over `~/bin/<name>`, so a running copy is never changed under it. A copy that already matches
+is left alone, so a second run changes nothing. Only the names in `SCRIPTS` are ever copied. Unlike `sync_services`,
+it creates a script that is missing from `~/bin`, because installs from before this never had `hm-local`. Like
+`sync_services`, a copy changed by hand stays: each copy's SHA-256 is recorded in `~/.hermes-mobile/scripts.sha` (`known_sha`, `note_sha`;
+`install.sh` removes the record, so its own copies may be replaced), and a `~/bin` copy that matches neither the plugin's
+nor the recorded one is left alone; so is a link at `~/bin/<name>` or `<name>.tmp`, or anything that is no plain file
+(nothing is written through a link; the temporary file is made with `set -C`). A `held` plugin stops this too. It prints
+one line before the run's last line: `HMPLUGIN SCRIPTS ok`, or `HMPLUGIN SCRIPTS fail <why>` with `no-answer` (Debian
+didn't list them), `missing` (the installed plugin doesn't carry a script), `copy` (a copy failed or had other bytes;
+the old file stays whole) or `changed` (a hand-changed copy or a link was left alone). Cost: one more Debian login per
+`check` of a current plugin (the listing), plus one per script that has to be copied. A failure never changes the run's result
+line. The cron ticker needs no copy step once it lives in the plugin folder: it is then a plugin file like any other.
+The APK's copy of `plugin-update.sh` (with the supervisor inside) is about 30 KB, one `bash -c` argument well under
+Linux's 128 KiB limit for one argument; the scripts travel in the bundle, not in it.
+
 **What the app shows.** Settings → About → Hermux plugin (3.15), from `PluginSync.state` through the bridge
 (`pluginState`, `pluginUpdate`, 4.5; `web/src/plugin-sync.ts`). The state lives in the `hermes` preferences (2.4).
 
@@ -87,4 +145,4 @@ loops record `loop_exit`.
 | No Debian yet, or setup still running | Nothing runs (`termuxOk` false, setup installing, or `not-ready`). |
 | A developer testing a plugin | `install.sh` from a newer clone stamps it newer; a hand-edited copy reads `modified`; the `hold` file stops the app entirely. |
 
-The Hermes patches, the Hermes pin and the other scripts in `~/bin` are not part of this: they still change only with `install.sh` (6.4).
+The Hermes patches, the Hermes pin and the other scripts in `~/bin` (`hermes-debian`, `rish`) are not part of this: they still change only with `install.sh` (6.4).

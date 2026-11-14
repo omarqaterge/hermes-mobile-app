@@ -233,16 +233,18 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 #### 2.2.8 Background app (Hermux uses an app on a hidden screen)
 
 1. The plugin's `phone_app` tool (5.2) starts `BgHost` if it isn't running: through `~/bin/rish` it runs
-   `app_process` as the shell user with a fresh token; `BgHost` listens on `127.0.0.1:9131` and drives a virtual
-   display.
+   `app_process` as the shell user with a fresh token and `HM_AUTH=mac`; `BgHost` listens on a port the kernel picks
+   on `127.0.0.1`, names it in its log with its token's key id, and drives a virtual display. Every request from the
+   plugin is a hello the host must answer with a proof under the token, then one signed request.
 2. On each open and action the plugin sends a `bgapp` event to the service: `{state, session, pkg, label,
-   action, port, token}`. The service keeps it as `HermesService.bgApp` (port 1024–65535, token ≤ 256 characters);
+   action, port, token, auth}` (`auth` `mac`: the host takes only signed requests), only to a listener that proved
+   itself. The service keeps it as `HermesService.bgApp` (port 1024–65535, token ≤ 256 characters);
    `pageJson()` strips the port and token before anything reaches the page. A different chat or app drops the old
    thumbnail; 0.7 s after an event the service fetches a 512 px frame for the chip's picture.
 3. `setBgApp` pushes the state to the page (`window.__hmBg`, also on every `onResume`); at start the page reads
    `bgState()`. `bgapp.ts` shows the card only in the chat that started it.
 4. The card asks for frames with `bgFrameAsync(id, maxW)` (width clamped to 120–1080) at most every 500 ms.
-   `MainActivity.bgRequest` GETs `/frame?w=…` from `BgHost` with `X-HM-Token` and answers with a JPEG data URL
+   `MainActivity.bgRequest` GETs `/frame?w=…` from `BgHost` after a verified hello (local authentication, the per-start token as the key) and answers with a JPEG data URL
    through `window.__hmBgFrame`. While the hidden screen draws nothing new, `BgHost` sends its last JPEG of that
    width again instead of encoding the same picture.
 5. Stop and Take over call `bgAction('stop' | 'take_over')`, which POSTs `/close` or `/hand_over` to `BgHost`;

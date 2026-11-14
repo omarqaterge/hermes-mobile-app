@@ -40,8 +40,9 @@ def phone(cmd, inp=None):
 
 
 def event(obj):
-    body = json.dumps(obj)
-    script = f'K=$(cat ~/.hermes-mobile/key); curl -s -o /dev/null -w "%{{http_code}}" -H "X-Hermes-Mobile-Key: $K" -H "Content-Type: application/json" -d \'{body}\' http://127.0.0.1:9121/event'
+    """POST /event from Termux through hm-local (it verifies the app's listener and signs the request; the key never
+    leaves it). Returns hm-local's exit code as text: "0" when the app took it."""
+    script = f"printf '%s' {shlex.quote(json.dumps(obj))} | ~/bin/hm-local post /event >/dev/null 2>&1; echo $?"
     return phone("bash -s", script).strip()
 
 
@@ -93,7 +94,7 @@ def python_on_phone(code):
 
 def t_listener():
     print("event listener")
-    check("good key accepted (204)", event({"kind": "status", "working": False, "body": "Ready"}) == "204")
+    check("a verified, signed event is taken (hm-local exit 0)", event({"kind": "status", "working": False, "body": "Ready"}) == "0")
     bad = phone('curl -s -o /dev/null -w "%{http_code}" -H "X-Hermes-Mobile-Key: nope" -d "{}" http://127.0.0.1:9121/event').strip()
     check("bad key rejected (403)", bad == "403", bad)
 
@@ -226,9 +227,10 @@ def t_live():
     print("live turn + WebSocket dropped mid-turn (uses a little model quota)")
     code = r'''
 import asyncio, json, re, urllib.request, websockets
-import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
-page = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:9119/", headers={"X-Hermes-Mobile-Key": _key})).read().decode()
-token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
+import importlib.util, os
+spec = importlib.util.spec_from_file_location("hm_local_auth", "/root/.hermes/plugins/hermes-mobile/local_auth.py")
+la = importlib.util.module_from_spec(spec); spec.loader.exec_module(la)
+token = la.dashboard_token(9119, open("/data/data/com.termux/files/home/.hermes-mobile/key").read().strip(), timeout=10)
 async def main():
     async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
         async def call(i, m, p):

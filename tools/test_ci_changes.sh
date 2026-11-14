@@ -24,6 +24,17 @@ t "a phone script: patches" "web=false contract=false patches=true " phone/boots
 t "a tools/ shell script: patches" "web=false contract=false patches=true " tools/device-lock.sh
 t "the image packer: patches" "web=false contract=false patches=true " tools/pack_image.py
 t "the e2e runner script: web only" "web=true contract=false patches=false " tools/web-e2e/run.sh
+t "local_auth.py (hm-local copies its client): patches" "web=false contract=false patches=true " hermes-plugin/hermes-mobile/local_auth.py
+t "the dashboard guard (test_plugin_update.sh reads it): patches" "web=false contract=false patches=true " hermes-plugin/hermes-mobile/dashboard/plugin_api.py
+t "the cron ticker (test_plugin_update.sh packs and restarts it): patches" "web=false contract=false patches=true " hermes-plugin/hermes-mobile/cron_ticker.py
+t "the local auth vectors: patches" "web=false contract=false patches=true " tools/local-auth-vectors.json
+t "the APK build (packs the plugin): patches" "web=false contract=false patches=true " android/build.sh
+t "LocalServer.java (test_hm_local.sh runs hm-local against it): patches" "web=false contract=false patches=true " android/src/com/omarqaterge/hermesmobile/LocalServer.java
+t "LocalAuth.java: patches" "web=false contract=false patches=true " android/src/com/omarqaterge/hermesmobile/LocalAuth.java
+t "LocalClient.java: patches" "web=false contract=false patches=true " android/src/com/omarqaterge/hermesmobile/LocalClient.java
+t "hm-local: patches" "web=false contract=false patches=true " phone/hm-local
+t "the fake local server (the phone-script tests use it): patches" "web=false contract=false patches=true " tools/local_fake_server.py
+t "the token cases' server (test_hm_local.sh uses it): patches" "web=false contract=false patches=true " tools/local_auth_cases.py
 t "a plugin test: no patches" "web=false contract=false patches=false " tools/test_canvas.py
 t "other vendored files: no patches" "web=true contract=true patches=false " web/vendor/hermes-shared/src/x.ts
 t "no files: nothing slow" "web=false contract=false patches=false "

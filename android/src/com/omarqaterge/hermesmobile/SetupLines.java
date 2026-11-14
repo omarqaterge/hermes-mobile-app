@@ -19,6 +19,11 @@ final class SetupLines {
     static final int MAX = 50;
     static final int OK = 204, BAD_TOKEN = 403, BAD_LINE = 400;
 
+    /** The installer's last line, {@code DONE}: the plugin is checked at once (PluginSync), so nothing waits for a later start. */
+    static boolean checksPlugin(String line) {
+        return "DONE".equals(line);
+    }
+
     private final ArrayDeque<String> lines = new ArrayDeque<>();
     /** Epoch seconds of each line (parallel to lines): the installer's own clock, else the receive time. */
     private final ArrayDeque<Long> times = new ArrayDeque<>();

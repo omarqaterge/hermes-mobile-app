@@ -36,6 +36,25 @@ _ERROR_TYPE = re.compile(r"((?:[A-Za-z_]\w*\.)*[A-Z]\w*(?:Error|Exception|Warnin
 _CODE_ROOTS = ("/site-packages/", "/hermes-agent/", "/hermes-mobile/")
 _INSTALL_ROOTS = ("/root/.hermes/", "/root/.local/", "/usr/lib/", "/usr/local/lib/")  # where those folders really are
 
+# Area `local` (local authentication) has a closed list: these names, these fields, these values. A name not here is
+# not written; a field not listed for its name is left out; a value not in its list is written as "?". A line read back
+# in that area that doesn't fit (from any file, the supervisor's included) is dropped whole.
+LOCAL_PORTS = ("dashboard", "events", "ticker", "bghost")
+LOCAL_WHY = ("no_answer", "no_hello", "old_version", "bad_addr", "unknown_kid", "bad_proof", "refused")
+LOCAL_SIDES = ("app", "plugin", "ticker", "termux")
+LOCAL_ROTATED = ("update", "enforce", "legacy_seen", "user")
+LOCAL_ENFORCED = ("ready", "cap")  # the app's listener refuses the raw key: the conditions held, or the 14-day cap
+LOCAL_EVENTS = {
+    "unverified": {"port": LOCAL_PORTS, "why": LOCAL_WHY, "side": LOCAL_SIDES},
+    "port_taken": {"port": LOCAL_PORTS, "why": LOCAL_WHY + ("self",), "side": LOCAL_SIDES},
+    "port_ok": {"port": LOCAL_PORTS, "side": LOCAL_SIDES},
+    "legacy_key": {"port": LOCAL_PORTS, "side": LOCAL_SIDES},
+    "key_rotated": {"why": LOCAL_ROTATED, "side": LOCAL_SIDES},
+    "enforced": {"why": LOCAL_ENFORCED, "side": LOCAL_SIDES},
+    "legacy_paused": {"side": LOCAL_SIDES},  # the app stopped legacy_seen rotations that can't help (a lasting old sender)
+    "refused": {"port": LOCAL_PORTS, "side": LOCAL_SIDES},
+}
+
 _salt = secrets.token_hex(8)  # chat aliases mean nothing outside this process
 _rate = {"minute": 0, "count": 0, "dropped": 0}
 _pruned_at = [0.0]
@@ -89,11 +108,45 @@ def format_line(at: int, area: str, name: str, fields: dict) -> str:
     return " ".join(parts)
 
 
+def local_fields(name, fields: dict):
+    """An event of area `local` as it may be written: None for a name not in LOCAL_EVENTS, else only its own fields,
+    each value from its list or "?"."""
+    allowed = LOCAL_EVENTS.get(name) if isinstance(name, str) else None
+    if allowed is None:
+        return None
+    out = {}
+    for k, v in fields.items():
+        if k in allowed and v is not None:
+            out[k] = v if isinstance(v, str) and v in allowed[k] else "?"
+    return out
+
+
+def local_line_ok(rest: str) -> bool:
+    """A read-back line's text after its time: True unless it is of area `local` and doesn't fit LOCAL_EVENTS."""
+    parts = rest.split(" ")
+    if len(parts) < 2 or parts[0] != "local":
+        return True
+    allowed = LOCAL_EVENTS.get(parts[1])
+    if allowed is None:
+        return False
+    seen = set()
+    for f in parts[2:]:
+        k, _, v = f.partition("=")
+        if k not in allowed or k in seen or (v != "?" and v not in allowed[k]):
+            return False
+        seen.add(k)
+    return True
+
+
 def event(area: str, name: str, **fields) -> None:
     """Adds one event. Never raises: logging must not take a turn down."""
     try:
         if not enabled():
             return
+        if area == "local":
+            fields = local_fields(name, fields)
+            if fields is None:
+                return
         now = int(time.time())
         minute = now // 60
         if minute != _rate["minute"]:
@@ -159,7 +212,7 @@ def read_lines(paths, now=None) -> list:
             continue
         for line in text.splitlines():
             m = _LINE.match(line)
-            if not m or now - int(m.group(1)) > MAX_AGE_SEC:
+            if not m or now - int(m.group(1)) > MAX_AGE_SEC or not local_line_ok(line[m.end(1) + 1:]):
                 continue
             out.append((int(m.group(1)), f"{_pretty(int(m.group(1)))} {line[m.end(1) + 1:]}"))
     out.sort(key=lambda x: x[0])

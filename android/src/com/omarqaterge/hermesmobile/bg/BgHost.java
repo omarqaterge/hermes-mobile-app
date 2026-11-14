@@ -38,12 +38,13 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction;
 import android.view.accessibility.AccessibilityWindowInfo;
 
+import com.omarqaterge.hermesmobile.LocalServer;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.lang.reflect.Constructor;
@@ -55,7 +56,6 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -71,9 +71,14 @@ import java.util.Set;
  * app. It owns one hidden virtual display, launches an app on it and lets Hermes read and drive that app while the
  * owner keeps using the real screen. Uses no app classes, resources or Context.
  *
- * Safety: listens on 127.0.0.1 only, every request needs the X-HM-Token header, a fixed command set (no shell
- * passthrough). Battery: exits after IDLE_MS without a request or MAX_MS in total, and releases the display on every
- * exit path. Requires Android 14 (VIRTUAL_DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED keeps focus on the owner's screen).
+ * Safety: listens on 127.0.0.1 only, a fixed command set (no shell passthrough), and every request is authenticated
+ * with the per-start token {@code HM_TOKEN}: local authentication ({@link LocalServer}, role {@code bghost}, the token as
+ * the key) answers {@code GET /hermux/hello} with a proof and then takes one request with {@code X-Hermux-Auth} on the
+ * same connection; the raw token in {@code X-HM-Token} is still accepted unless {@code HM_AUTH=mac} is set (in the
+ * environment or as an argument). Port {@code 0} lets the kernel pick a free port; {@code LISTENING <port> <kid>} on
+ * stdout (the start log) names it and the token's key id. Battery: exits after IDLE_MS without a request or MAX_MS in
+ * total, and releases the display on every exit path. Requires Android 14
+ * (VIRTUAL_DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED keeps focus on the owner's screen).
  */
 @android.annotation.TargetApi(34) // main() exits below Android 14, so every call here may assume it
 public final class BgHost {
@@ -98,6 +103,8 @@ public final class BgHost {
 
     static Context ctx;
     static String token;
+    static boolean macOnly; // HM_AUTH=mac: only requests after a verified hello (X-Hermux-Auth), never the raw X-HM-Token
+    static final int MAX_BODY = 1 << 20;
     static VirtualDisplay vd;
     static ImageReader reader;
     static Image last;
@@ -111,9 +118,13 @@ public final class BgHost {
     static int extraFlags = 0; // test hook: HM_BG_FLAGS env adds/removes nothing by default
 
     public static void main(String[] args) throws Exception {
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : 9131;
+        int port = args.length > 0 ? Integer.parseInt(args[0]) : 9131; // 0: the kernel picks a free port
         token = System.getenv("HM_TOKEN");
-        if (token == null || token.length() < 16) { System.out.println("HM_TOKEN missing"); System.exit(2); }
+        String kid = null;
+        try { if (token != null && token.length() >= 16) kid = LocalServer.kid(token); } catch (IllegalArgumentException ignored) { }
+        if (kid == null) { System.out.println("HM_TOKEN missing"); System.exit(2); }
+        macOnly = "mac".equals(System.getenv("HM_AUTH"));
+        for (int i = 1; i < args.length; i++) if (args[i].equals("HM_AUTH=mac")) macOnly = true;
         String ef = System.getenv("HM_BG_FLAGS");
         if (ef != null && !ef.isEmpty()) extraFlags = Integer.parseInt(ef);
         if (android.os.Build.VERSION.SDK_INT < 34) { System.out.println("needs Android 14+"); System.exit(3); }
@@ -125,7 +136,8 @@ public final class BgHost {
         ServerSocket ss = new ServerSocket(port, 4, InetAddress.getByName("127.0.0.1"));
         ss.setSoTimeout(1000);
         long start = SystemClock.elapsedRealtime(), lastReq = start;
-        System.out.println("LISTENING " + port);
+        // The port actually bound and the token's key id: whoever started this host finds it by its own kid.
+        System.out.println("LISTENING " + ss.getLocalPort() + " " + kid);
         System.out.flush();
         boolean quit = false;
         while (!quit) {
@@ -169,28 +181,24 @@ public final class BgHost {
 
     /** Returns true when the host should exit. */
     static boolean handle(Socket so) throws Exception {
-        InputStream in = so.getInputStream();
-        String reqLine = readLine(in);
-        if (reqLine == null) return false;
-        String[] rl = reqLine.split(" ");
-        System.out.println("req " + rl[0] + " " + (rl.length > 1 ? rl[1].split("\\?")[0] : ""));
-        String method = rl[0], target = rl.length > 1 ? rl[1] : "/";
-        int len = 0; String tok = "";
-        for (String h; (h = readLine(in)) != null && !h.isEmpty(); ) {
-            int c = h.indexOf(':'); if (c < 0) continue;
-            String k = h.substring(0, c).trim().toLowerCase(Locale.ROOT), v = h.substring(c + 1).trim();
-            if (k.equals("content-length")) len = Math.min(Integer.parseInt(v), 1 << 20);
-            else if (k.equals("x-hm-token")) tok = v;
+        LocalServer.Request req;
+        try {
+            // A hello first (answered there) and one request with X-Hermux-Auth, or one request with the raw token.
+            req = LocalServer.accept(so, "bghost", token, macOnly ? null : "x-hm-token", MAX_BODY);
+        } catch (LocalServer.Refused r) {
+            System.out.println("refused " + r.why);
+            return false;
         }
-        byte[] body = new byte[len];
-        for (int r = 0; r < len; ) { int n = in.read(body, r, len - r); if (n < 0) break; r += n; }
+        if (req == null) return false;
+        System.out.println("req " + req.method + " " + req.path);
         OutputStream out = so.getOutputStream();
-        if (!MessageDigest.isEqual(tok.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
+        if (req.auth == LocalServer.Auth.NONE) {
             send(out, 403, "application/json", "{\"ok\":false,\"error\":\"forbidden\"}".getBytes(StandardCharsets.UTF_8));
             return false;
         }
-        String path = target, query = "";
-        int q = target.indexOf('?'); if (q >= 0) { path = target.substring(0, q); query = target.substring(q + 1); }
+        String path = req.path, query = req.query;
+        byte[] body = req.body;
+        int len = body.length;
         if (path.equals("/frame")) {
             int w = 540;
             for (String p : query.split("&")) if (p.startsWith("w=")) try { w = Integer.parseInt(p.substring(2)); } catch (Exception ignored) {}
@@ -232,24 +240,8 @@ public final class BgHost {
         return quit;
     }
 
-    static String readLine(InputStream in) throws Exception {
-        ByteArrayOutputStream b = new ByteArrayOutputStream();
-        boolean any = false;
-        for (int c; (c = in.read()) >= 0; ) {
-            any = true;
-            if (c == '\n') break;
-            if (c != '\r') b.write(c);
-            if (b.size() > 8192) break;
-        }
-        return any ? b.toString("UTF-8") : null;
-    }
-
     static void send(OutputStream out, int code, String type, byte[] body) throws Exception {
-        String head = "HTTP/1.0 " + code + (code == 200 ? " OK" : " X") + "\r\nContent-Type: " + type
-                + "\r\nContent-Length: " + body.length + "\r\nConnection: close\r\n\r\n";
-        out.write(head.getBytes(StandardCharsets.UTF_8));
-        out.write(body);
-        out.flush();
+        LocalServer.answer(out, code, type, body); // HTTP/1.1, Connection: close (what LocalClient reads)
     }
 
     static JSONObject ok() throws Exception { return new JSONObject().put("ok", true); }

@@ -75,7 +75,9 @@ Owned by the Java side (4); listed here because the flows above depend on them.
 
 | File → key | What it holds |
 |---|---|
-| `hermes` → `event_key` | The event key shared with Termux (2.3). |
+| `hermes` → `event_key` | The event key shared with Termux (2.3); only `LocalKey` reads or writes it. |
+| `hermes` → `event_key_prev`, `event_key_prev_until`, `event_key_version`, `event_key_rotated_at`, `event_key_seen` | `LocalKey` (2.3): the previous key and the end of its grace (epoch ms) after a rotation, the app version the current key was made under, when the last rotation ran (epoch ms, for the minimum interval), and whether a request verified under the current key has come from Termux. |
+| `hermes` → `local_enforced`, `local_enforce_kid`, `local_verified`, `local_scripts_ok`, `local_cap`, `local_legacy_at`, `local_legacy_seen_at`, `local_legacy_run`, `local_legacy_paused`, `local_window_version`, `local_window_ms`, `local_window_seen`, `local_window_boot`, `local_ticker_ok` | `LocalKey`'s switch (2.3, "The compatibility window and its end"): step 3 done (the listener refuses the raw key), step 1 done (the key id the switch rotated to), a verified request under the current key since the last scripts line, that line said `ok`, the switch was forced by the cap (the Setup row), the last `legacy_seen` rotation and the last raw key reported (epoch ms), how many `legacy_seen` rotations ran in a row and whether they are paused, and the window (the app version, the real time counted in ms, and the time since boot and the boot count at the last look), and whether the cron ticker was heard running the new code since the last scripts line. |
 | `hermes` → `termux_ok` | Termux has accepted one of the app's commands; gates every automatic `RUN_COMMAND`. |
 | `hermes` → `plugin_state`, `plugin_detail`, `plugin_installed`, `plugin_at`, `plugin_checked_at`, `plugin_checked_version`, `plugin_try_at`, `plugin_tries_<stamp>` | The plugin update (6.6): the last state the script reported and why, the installed stamp, when it was checked (and for which app version), the last update try, failed tries per APK version. |
 | `hermes` → `setup_token` | The installer's progress token while an install runs. |
@@ -108,7 +110,7 @@ Paths are inside Debian; `~` is `/root`. Exact formats are in 5.5.
 | `~/.hermes/logs/mobile-status.log` | plugin | Status-chip trace (≤ 200 KB, rotated once). |
 | `~/.hermes/mobile/diag.log`, `diag.log.1` | plugin `diag.py` | The diagnostic log on Hermes's side (3.21). |
 | `~/.hermes/plugins/hermes-mobile/` | installer | The plugin itself. |
-| `/root/.hermes/scripts/cron_ticker.py`, `hermes_memory_sync.py` | installer | Run by the supervisor loops. |
+| `/root/.hermes/scripts/cron_ticker.py`, `hermes_memory_sync.py` | installer (the ticker: older installs only) | Run by the supervisor loops; the ticker now runs from the plugin folder (`/root/.hermes/plugins/hermes-mobile/cron_ticker.py`) when it is there. |
 
 `POST /api/plugins/hermes-mobile/cleanup` (sent by `deleteSession`) removes a deleted chat's photos, attached files
 and canvas, keeping whatever is still attached in an open composer.
@@ -118,6 +120,7 @@ and canvas, keeping whatever is still attached in an open composer.
 | Path (Termux home) | Written by | Used for |
 |---|---|---|
 | `~/bin/hermes-services` | installer, then the app's plugin update (6.6) | The supervisor (2.1). |
+| `~/.hermes-mobile/scripts.sha` | `plugin-update.sh` (`install.sh` removes it) | `NAME SHA256` of each Termux script last copied from a plugin (`hm-local`, `hm-shizuku`): a copy in `~/bin` that no longer matches it was changed by hand and is left alone (6.6). |
 | `~/.hermes-mobile/services.sha`, `services-new`, `hermes-services.bak` | `plugin-update.sh` | The supervisor last installed from an APK; the dashboard's loop still runs an older one; the copy before it (6.6). |
 | `~/bin/hermes-debian` | installer | Runs a command in Debian under proot-distro or chroot-distro; `--open` and `--exists` helpers. Missing on older installs, which use `proot-distro login debian --`. |
 | `~/bin/hm-shizuku` | installer | Shizuku pair/start/status (2.2.9). |
@@ -129,8 +132,9 @@ and canvas, keeping whatever is still attached in an open composer.
 | `~/.hermes-mobile/todo` | `phone/bootstrap.sh` | What the installer couldn't finish, shown at the end. |
 | `~/.hermes-mobile/unlocked` | `hermes-services` | The boot id for which an old Termux wake lock was already released. |
 | `~/.hermes-mobile/adb-paired`, `hm-shizuku.log` | `hm-shizuku` | Termux's adb is paired; its log. |
-| `~/logs/loop-events.log` | `loop_exit` in `hermes-services` | Fixed lines for the diagnostic log: a loop's name and exit code (64 KB at most; 3.21). |
+| `~/logs/loop-events.log` | `loop_exit` in `hermes-services`; `note_port` in `cron_ticker.py` | Fixed lines for the diagnostic log: a loop's name and exit code, and `local port_taken port=ticker` / `local port_ok port=ticker` when the poke port's state changes (64 KB at most; 3.21). |
 | `~/.hermes-mobile/diag-off` | plugin `diag.set_enabled` | The diagnostic log's switch is off; `loop_exit` and `diag.py` both respect it. |
+| `~/.hermes-mobile/enforced` | the app (`LocalKey.shareCommand` with `Mode.ENFORCED`, from the switch's step 1 on; a rollback build's share removes it) | When it exists, `_TokenGuard` and the cron ticker no longer accept the raw event key (they report one once a day), and `plugin-update.sh` never uses its raw-key exception; only local authentication's signed requests count (2.3). |
 | `~/logs/<loop>.pid`, `~/logs/<loop>.log` | `run_loop` | One pid and log per loop: `dashboard`, `memory-sync`, `cron-ticker`, `app-keeper`. Each log is 2 MB at most (`trim_log`). |
 
 Debian's root file system under proot is

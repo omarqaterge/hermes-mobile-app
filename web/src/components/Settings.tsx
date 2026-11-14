@@ -35,7 +35,7 @@ import { ConnectorsPage } from './Connectors'
 import { StatsRow } from './StatsCard'
 import { ReportRow } from './Report'
 import { DiagRows } from './DiagRows'
-import { pluginRow, pluginUpdate, updateAnswer, usePluginState } from '../plugin-sync'
+import { pluginRow, runPluginUpdate, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 
@@ -1184,12 +1184,7 @@ function PluginRow() {
       disabled={!row.action}
       onClick={async () => {
         if (!row.action) return
-        if (row.action === 'force' && !(await confirmDialog({
-          title: 'Replace the plugin?',
-          message: 'The plugin in Hermux was changed by hand. Replace it with this app’s copy? Hermux restarts for a moment.',
-          confirmLabel: 'Replace'
-        }))) return
-        const why = updateAnswer(pluginUpdate(row.action === 'force'))
+        const why = await runPluginUpdate(row.action === 'force') // its dialog first: hand changes, or work that may be cut off
         if (why) toast(why)
       }}
     />

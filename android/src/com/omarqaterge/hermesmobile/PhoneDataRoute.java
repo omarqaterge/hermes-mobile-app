@@ -23,10 +23,11 @@ final class PhoneDataRoute {
     private PhoneDataRoute() {}
 
     /** The largest request body (the args are tiny). */
-    static final int MAX_BODY = 4096;
-    /** One socket read waits at most this long, and the whole request (headers and body) must be in within the deadline. */
-    static final int READ_TIMEOUT_MS = 1500;
-    static final long READ_DEADLINE_MS = 4000;
+    static final int MAX_BODY = EventsListener.PHONE_MAX_BODY;
+    /** One socket read waits at most this long, and the whole request (headers and body) must be in within the deadline
+     *  (EventsListener applies both once the request line is in). */
+    static final int READ_TIMEOUT_MS = EventsListener.PHONE_READ_MS;
+    static final long READ_DEADLINE_MS = EventsListener.PHONE_DEADLINE_MS;
 
     /** Two reads at a time, four waiting; more is answered {@code failed} at once. Threads end when idle. */
     static final ThreadPoolExecutor POOL = new ThreadPoolExecutor(2, 2, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<>(4), r -> {

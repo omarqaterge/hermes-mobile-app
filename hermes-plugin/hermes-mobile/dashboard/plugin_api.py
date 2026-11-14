@@ -25,10 +25,26 @@ _log = logging.getLogger(__name__)
 # 127.0.0.1, so any installed app with internet access could read that page and then drive Hermes. Pages keep the token
 # only for a caller holding the app's event key (a file only Termux's user can read); everyone else gets a page saying
 # it was withheld. This lives in the plugin, not in a Hermes patch, because the plugin follows every app update.
+#
+# Local authentication (local_auth.py): the guard also answers GET /hermux/hello (a proof that it holds the key, over the
+# caller's nonce and the address it listens on) and GET /hermux/token (the session token, for a request signed with the
+# key over the hello's nonces, with a proof over the token), and adds X-Hermux-Proof to the answer of any /api/ request
+# that sends X-Hermux-Nonce. Both routes are answered here, before Hermes, so they need no session token. Pages keep
+# the token for the raw key only until ~/.hermes-mobile/enforced exists (the app writes it when it ends the
+# compatibility window); after that the raw key gets the withheld page and is reported once a day.
 _TERMUX_HOME = "/data/data/com.termux/files/home"
 _KEY_HEADER = "X-Hermes-Mobile-Key"
 _PAGE_TOKEN = re.compile(rb"window\.__HERMES_SESSION_TOKEN__\s*=\s*[^;<]*;")
 _WITHHELD = b"window.__HERMUX_TOKEN_WITHHELD__=1;"
+_HELLO_PATH = "/hermux/hello"
+_TOKEN_PATH = "/hermux/token"
+_AUTH_HEADER = b"x-hermux-auth"
+_NONCE_HEADER = b"x-hermux-nonce"
+_PROOF_HEADER = b"x-hermux-proof"
+_MAX_LOCAL_BODY = 4096  # a token request has no body; anything larger is refused unread
+_MAX_PAGE = 4 << 20  # the page rendered to find the token, when Hermes keeps it nowhere else
+_TOKEN_TEXT = re.compile(r"[\x21-\x7e]{1,512}")
+_PAGE_TOKEN_VALUE = re.compile(rb'__HERMES_SESSION_TOKEN__\s*=\s*"([^"\\<]{1,512})"')
 
 
 def _key_file() -> Optional[Path]:
@@ -39,30 +55,266 @@ def _key_file() -> Optional[Path]:
     return Path(_TERMUX_HOME, ".hermes-mobile", "key") if os.path.isdir(_TERMUX_HOME) else None
 
 
-def _event_key() -> str:
+def _enforced() -> bool:
+    """The app has switched the raw key off: ~/.hermes-mobile/enforced (next to the key file) exists."""
     path = _key_file()
+    return path is not None and path.with_name("enforced").exists()
+
+
+_legacy_daily = None
+
+
+def _note_legacy() -> bool:
+    """The raw key reached the page after the switch (the token was withheld): at most once a day in this process, the
+    diagnostic event `local legacy_key port=dashboard side=plugin` and a signed `local_legacy` event to the app
+    (``local_auth.report_legacy``, on a thread of its own), which then replaces the key. True when it was due."""
+    global _legacy_daily
+    la = _local_auth()
+    if la is None:
+        return False
+    if _legacy_daily is None:
+        _legacy_daily = la.Daily()
+    if not _legacy_daily.due():
+        return False
     try:
-        return path.read_text().strip() if path else ""
-    except OSError:
-        return ""
+        _diag_mod().event("local", "legacy_key", port="dashboard", side="plugin")
+    except Exception:
+        pass
+    key = _event_key()
+    if key:
+        import threading
+
+        threading.Thread(target=_report_legacy, args=(la, key), daemon=True).start()
+    return True
+
+
+def _report_legacy(la, key: str) -> None:
+    la.report_legacy("dashboard", key)
+
+
+def _local_auth():
+    """The plugin's local_auth.py (one folder up), or None when it can't be loaded: then the hello routes answer 503 and
+    everything else works as before."""
+    import importlib.util
+
+    mod = sys.modules.get("hm_local_auth")
+    if mod is None:
+        try:
+            spec = importlib.util.spec_from_file_location("hm_local_auth", Path(__file__).resolve().parent.parent / "local_auth.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception:
+            return None
+        sys.modules["hm_local_auth"] = mod
+    return mod
+
+
+_key_reader = None
+
+
+def _event_key() -> str:
+    """The event key, read again only when its file changes (local_auth.KeyFile: inode, mtime in ns and size; an empty
+    file is never kept). Every request reads it, so a new key counts at once."""
+    global _key_reader
+    la = _local_auth()
+    if la is None:
+        path = _key_file()
+        try:
+            return path.read_text().strip() if path else ""
+        except OSError:
+            return ""
+    if _key_reader is None:
+        _key_reader = la.KeyFile(_key_file)
+    return _key_reader.read()
+
+
+def _session_token() -> str:
+    """Hermes's session token, taken in process: the pinned Hermes keeps it in hermes_cli.web_server._SESSION_TOKEN
+    (read at every call: Hermes may replace it). "" when it isn't there."""
+    tok = getattr(sys.modules.get("hermes_cli.web_server"), "_SESSION_TOKEN", None)
+    return tok if isinstance(tok, str) and _TOKEN_TEXT.fullmatch(tok) else ""
+
+
+def _one_header(scope, name: bytes):
+    """A request header's value when it is there exactly once, else None (twice is ambiguous: not used)."""
+    found = [v for k, v in (scope.get("headers") or []) if k.lower() == name]
+    return found[0] if len(found) == 1 else None
+
+
+async def _answer(send, status: int, obj: dict, extra=()) -> None:
+    body = json.dumps(obj, separators=(",", ":")).encode()
+    headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()),
+               (b"cache-control", b"no-store"), *extra]
+    await send({"type": "http.response.start", "status": status, "headers": headers})
+    await send({"type": "http.response.body", "body": body})
+
+
+async def _read_body(receive, limit: int):
+    """The request body, or None when it is larger than ``limit`` or the client went away."""
+    body = b""
+    while True:
+        message = await receive()
+        if message.get("type") != "http.request":
+            return None
+        body += message.get("body", b"")
+        if len(body) > limit:
+            return None
+        if not message.get("more_body"):
+            return body
+
+
+def _hello_nonce(la, query: bytes):
+    """``(nc, kid hint)`` of ``v=1&nc=<nonce>[&kid=<kid>]`` (``local_auth.hello_args``: each once, nothing else; a
+    malformed hint counts as absent), else None."""
+    return la.hello_args(query)
 
 
 class _TokenGuard:
-    """ASGI middleware: takes the session token out of HTML pages unless the request carries the event key."""
+    """ASGI middleware: takes the session token out of HTML pages unless the request carries the event key (and the
+    raw key is not switched off yet), and answers local authentication's hello and token routes itself."""
 
     def __init__(self, app):
         self.app = app
+        la = _local_auth()
+        self._pending = la.PendingHellos() if la is not None else None
 
     def _allowed(self, scope) -> bool:
+        """The page may keep its token: off a phone, or for the raw key before the switch. The raw key after it is
+        refused like any other caller and reported (``_note_legacy``)."""
         path = _key_file()
         if path is None:
             return True
         key = _event_key().encode()
         given = dict(scope.get("headers") or []).get(_KEY_HEADER.lower().encode(), b"")
-        return bool(key) and hmac.compare_digest(given, key)
+        if not (key and hmac.compare_digest(given, key)):
+            return False
+        if _enforced():
+            _note_legacy()
+            return False
+        return True
+
+    @staticmethod
+    def _addr(la, scope):
+        """This server's own address as the proof names it (from the connection, not from anything the client sent)."""
+        server = scope.get("server")
+        if not isinstance(server, (tuple, list)) or len(server) != 2:
+            return None
+        return la.server_addr(server[0], server[1])
+
+    def _proving(self, scope, send):
+        """``send``, adding X-Hermux-Proof (``1 <kid> <proof over the nonce, this address and the status>``) to the answer
+        when the request sent a well-formed X-Hermux-Nonce. Only the start of the answer is touched: bodies stream as
+        before."""
+        nc = _one_header(scope, _NONCE_HEADER)
+        la = _local_auth() if nc is not None else None
+        where = self._addr(la, scope) if la is not None else None
+        if where is None:
+            return send
+        try:
+            nc = nc.decode("ascii").strip(" \t")
+            key = _event_key()
+            kid = la.kid(key)
+        except (UnicodeDecodeError, ValueError):
+            return send
+        if not la.is_nonce(nc):
+            return send
+
+        async def proving(message):
+            if message.get("type") == "http.response.start":
+                try:
+                    proof = la.answer_proof(key, "dashboard", where, nc, la.NO_NONCE, f"rest {int(message['status'])}")
+                except (ValueError, KeyError, TypeError):
+                    return await send(message)
+                headers = [(k, v) for k, v in message.get("headers", []) if k.lower() != _PROOF_HEADER]
+                headers.append((_PROOF_HEADER, f"1 {kid} {proof}".encode()))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        return proving
+
+    async def _page_token(self, scope) -> str:
+        """The session token from the page Hermes serves at /, rendered here without leaving the process: only when
+        Hermes keeps it in no module variable this file knows."""
+        host = _one_header(scope, b"host") or b"127.0.0.1"
+        sub = {**scope, "method": "GET", "path": "/", "raw_path": b"/", "query_string": b"", "headers": [(b"host", host)]}
+        status, chunks, size = [0], [], [0]
+        sent = [False]
+
+        async def receive():
+            if not sent[0]:
+                sent[0] = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            return {"type": "http.disconnect"}
+
+        async def collect(message):
+            if message.get("type") == "http.response.start":
+                status[0] = int(message.get("status", 0))
+            elif message.get("type") == "http.response.body" and size[0] <= _MAX_PAGE:
+                b = message.get("body", b"")
+                size[0] += len(b)
+                chunks.append(b)
+
+        try:
+            await self.app(sub, receive, collect)
+        except Exception:
+            return ""
+        if status[0] != 200 or size[0] > _MAX_PAGE:
+            return ""
+        m = _PAGE_TOKEN_VALUE.search(b"".join(chunks))
+        tok = m.group(1).decode("ascii", "replace") if m else ""
+        return tok if _TOKEN_TEXT.fullmatch(tok) else ""
+
+    async def _local(self, scope, receive, send):
+        """GET /hermux/hello and GET /hermux/token (local authentication), answered here and never passed to Hermes."""
+        if scope.get("method") != "GET":
+            return await _answer(send, 405, {"hermux": 1, "error": "method"}, [(b"allow", b"GET")])
+        la = _local_auth()
+        where = self._addr(la, scope) if la is not None else None
+        key = _event_key()
+        try:
+            kid = la.kid(key) if where is not None and self._pending is not None else None
+        except ValueError:
+            kid = None
+        if kid is None:  # no key to prove with, or not reached on 127.0.0.1
+            return await _answer(send, 503, {"hermux": 1, "error": "unavailable"})
+        if scope["path"] == _HELLO_PATH:
+            args = _hello_nonce(la, scope.get("query_string") or b"")
+            if args is None:
+                return await _answer(send, 400, {"hermux": 1, "error": "bad_request"})
+            nc, hint = args
+            key = la.hello_key([key], hint)  # the key file holds one key: a hint for any other is ignored
+            ns, j = la.hello_answer(key, "dashboard", where, nc)
+            self._pending.add(ns, nc, kid, where)
+            return await _answer(send, 200, j)
+        refused = {"hermux": 1, "error": "refused"}
+        auth = la.parse_auth(_one_header(scope, _AUTH_HEADER), with_nc=True)
+        if auth is None:
+            return await _answer(send, 403, refused)
+        a_kid, ns, nc, given = auth
+        pending = self._pending.take(ns)  # used up here, whatever the request proves
+        body = await _read_body(receive, _MAX_LOCAL_BODY)
+        if body is None:
+            return await _answer(send, 413, {"hermux": 1, "error": "too_large"})
+        if pending is None:
+            return await _answer(send, 403, refused)
+        p_nc, p_kid, p_where = pending
+        query = scope.get("query_string") or b""
+        target = (scope.get("raw_path") or scope["path"].encode()).decode("latin-1") + ("?" + query.decode("latin-1") if query else "")
+        if not (la.same(p_nc, nc) and la.same(p_kid, a_kid) and la.same(a_kid, kid) and p_where == where
+                and la.request_ok(key, "dashboard", where, nc, ns, "GET", target, body, given)):
+            return await _answer(send, 403, refused)
+        token = _session_token() or await self._page_token(scope)
+        if not token:
+            return await _answer(send, 503, {"hermux": 1, "error": "unavailable"})
+        proof = la.answer_proof(key, "dashboard", where, nc, ns, "token", token.encode())
+        return await _answer(send, 200, {"hermux": 1, "token": token, "proof": proof})
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope["path"].startswith("/api/") or self._allowed(scope):
+        if scope["type"] == "http" and scope["path"] in (_HELLO_PATH, _TOKEN_PATH):
+            return await self._local(scope, receive, send)
+        if scope["type"] == "http" and scope["path"].startswith("/api/"):
+            return await self.app(scope, receive, self._proving(scope, send))
+        if scope["type"] != "http" or self._allowed(scope):
             return await self.app(scope, receive, send)
         start = None
         body = []
@@ -105,14 +357,31 @@ def _install_token_guard() -> None:
 _install_token_guard()
 
 
-def _own_page_token() -> str:
-    """The session token for the plugin's own calls to the gateway (/approve, /stop). Blocking: call it in a thread."""
-    import urllib.request
+def _own_port(request) -> int:
+    """The port of the dashboard that received ``request``: this very process. Its own WebSocket goes there."""
+    server = getattr(request, "scope", {}).get("server") if request is not None else None
+    if isinstance(server, (tuple, list)) and len(server) == 2 and server[0] == "127.0.0.1" \
+            and isinstance(server[1], int) and 1 <= server[1] <= 65535:
+        return server[1]
+    return 9119
 
-    req = urllib.request.Request("http://127.0.0.1:9119/", headers={_KEY_HEADER: _event_key()})
-    page = urllib.request.urlopen(req, timeout=5).read().decode()
-    m = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page)
-    return m.group(1) if m else ""
+
+def _own_page_token(port: int = 9119) -> str:
+    """The session token for the plugin's own calls to the gateway (/approve, /stop). Taken in process: this is the
+    dashboard's own process (``_session_token``). Only if Hermes keeps it nowhere this file knows, from a verified
+    dashboard on ``port`` (``local_auth.dashboard_token``: the hello, the signed token request and the proof over the
+    answer); the key itself is never sent. "" when neither works. Blocking: call it in a thread."""
+    tok = _session_token()
+    if tok:
+        return tok
+    la = _local_auth()
+    key = _event_key()
+    if la is None or not key:
+        return ""
+    try:
+        return la.dashboard_token(port, key, timeout=5)
+    except (la.Unverified, OSError, ValueError):
+        return ""
 
 
 def _home(profile: Optional[str]) -> Path:
@@ -276,13 +545,11 @@ class Approve(BaseModel):
 
 
 @router.post("/approve")
-async def approve(body: Approve):
+async def approve(body: Approve, request: Request):
     """Answer a pending approval from the app's notification buttons: the same ``approval.respond``
     the gateway offers every client, over this dashboard's own WebSocket."""
     import asyncio
     import json
-    import re
-    import urllib.request
 
     import websockets
 
@@ -291,11 +558,12 @@ async def approve(body: Approve):
     if not body.request_id:
         # Without an id Hermes answers the session's oldest waiting approval, which may not be the one shown.
         raise HTTPException(status_code=409, detail="no request id: answer in the app")
-    token = await asyncio.to_thread(_own_page_token)
+    port = _own_port(request)
+    token = await asyncio.to_thread(_own_page_token, port)
     if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
     last = None
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:{port}/api/ws?token={token}", max_size=None) as ws:
         for n, sid in enumerate(dict.fromkeys(x for x in (body.session, body.key) if x), 1):
             params = {"session_id": sid, "choice": body.choice}
             if body.request_id:
@@ -318,23 +586,22 @@ class Stop(BaseModel):
 
 
 @router.post("/stop")
-async def stop(body: Stop):
+async def stop(body: Stop, request: Request):
     """Stop a running turn from the status chip's Stop button: find the live runtime that holds this stored
     chat (``session.active_list``) and send it the same ``session.interrupt`` the app's stop button sends."""
     import asyncio
     import json
-    import re
-    import urllib.request
 
     import websockets
 
     if not body.session:
         raise HTTPException(status_code=400, detail="no session")
-    token = await asyncio.to_thread(_own_page_token)
+    port = _own_port(request)
+    token = await asyncio.to_thread(_own_page_token, port)
     if not token:
         raise HTTPException(status_code=503, detail="no dashboard token")
 
-    async with websockets.connect(f"ws://127.0.0.1:9119/api/ws?token={token}", max_size=None) as ws:
+    async with websockets.connect(f"ws://127.0.0.1:{port}/api/ws?token={token}", max_size=None) as ws:
         async def call(n, method, params):
             await ws.send(json.dumps({"jsonrpc": "2.0", "id": n, "method": method, "params": params}))
             while True:

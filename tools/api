@@ -8,12 +8,14 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from devtoken import dashboard_token  # noqa: E402  (a verified dashboard only; HM_EVENT_KEY holds the phone's key)
 
 HERMES = "http://127.0.0.1:9119"
 subprocess.run(["adb", "forward", "tcp:9119", "tcp:9119"], capture_output=True)
-import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
-html = urllib.request.urlopen(urllib.request.Request(HERMES + "/", headers={"X-Hermes-Mobile-Key": _key}), timeout=10).read().decode()
-token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', html).group(1)
+token = dashboard_token(HERMES)
 method, path = sys.argv[1].upper(), sys.argv[2]
 body = sys.argv[3].encode() if len(sys.argv) > 3 else None
 req = urllib.request.Request(HERMES + path, data=body, method=method,

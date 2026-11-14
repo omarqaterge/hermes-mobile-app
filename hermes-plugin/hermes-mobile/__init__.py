@@ -9,9 +9,12 @@ icon and keeps a pinned status line ("Running `ls /sdcard`", "Thinking…", "Rea
   learning  a skill or memory was changed (incl. the background self-improvement review)
   cron      a scheduled job finished          error a turn failed
 
-Transport: HTTP POST to the app's loopback listener (127.0.0.1:9121) with the shared key the app
-writes to Termux's ~/.hermes-mobile/key. If the app isn't running, urgent events (approval, ask)
-fall back to a plain Termux:API notification so they are never missed.
+Transport: HTTP POST to the app's loopback listener (127.0.0.1:9121) after local authentication (local_auth.py): the
+listener first proves it holds the shared key the app writes to Termux's ~/.hermes-mobile/key, then the request is
+signed with it; the key itself is never sent, and a listener that doesn't prove it gets nothing. If the app isn't
+running, urgent events (approval, ask) fall back to a plain Termux:API notification so they are never missed; if
+something answers without the proof, the fallback says so in plain words (at most once an hour) and holds none of the
+event's text.
 """
 
 import json
@@ -21,10 +24,8 @@ import shutil
 import subprocess
 import threading
 import time
-import urllib.request
 from pathlib import Path
 
-APP_URL = "http://127.0.0.1:9121/event"
 KEY_FILE = Path("/data/data/com.termux/files/home/.hermes-mobile/key")
 APP_COMPONENT = "com.omarqaterge.hermesmobile/.MainActivity"
 NOTIFY_BIN = shutil.which("termux-notification") or "/data/data/com.termux/files/usr/bin/termux-notification"
@@ -44,7 +45,7 @@ ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "acti
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
-_key_cache = {"mtime": 0.0, "key": ""}
+_key_cache: dict = {}  # _key(): its local_auth.KeyFile reader
 
 
 def _profile() -> str:
@@ -72,13 +73,19 @@ def _chat_title(session_id: str) -> str:
 
 
 def _key() -> str:
-    try:
-        st = KEY_FILE.stat()
-        if st.st_mtime != _key_cache["mtime"]:
-            _key_cache.update(mtime=st.st_mtime, key=KEY_FILE.read_text().strip())
-    except OSError:
-        return ""
-    return _key_cache["key"]
+    """The shared key, read again only when the file changes (local_auth.KeyFile: by inode, modification time in ns
+    and size, so a key replaced within the same second or by a rename is read again; an empty file is never kept)."""
+    reader = _key_cache.get("reader")
+    if reader is None:
+        try:
+            reader = _load("hm_local_auth", "local_auth.py").KeyFile(lambda: KEY_FILE)
+        except Exception:
+            try:
+                return KEY_FILE.read_text().strip()
+            except OSError:
+                return ""
+        _key_cache["reader"] = reader
+    return reader.read()
 
 
 def _dbg(msg: str) -> None:
@@ -117,17 +124,85 @@ def _reason(text):
         return None
 
 
-def _post(event: dict) -> bool:
-    key = _key()
-    if not key:
-        return False
-    req = urllib.request.Request(APP_URL, data=json.dumps(event).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", "X-Hermes-Mobile-Key": key})
+def _local_auth():
+    """local_auth.py (local authentication), or None when it can't be loaded: then nothing is sent to the app."""
     try:
-        with urllib.request.urlopen(req, timeout=2) as r:
-            return r.status < 300
+        return _load("hm_local_auth", "local_auth.py")
     except Exception:
-        return False
+        return None
+
+
+# Local authentication for the events port: every POST /event first verifies the app's listener (its proof under the
+# shared key, on the same connection) and is then signed; the key itself never goes on the wire, and nothing is sent to
+# a listener that doesn't verify. `_events` holds the per-port state: the back-off after a failed verification, the
+# reason of the last failure (its fallback wording), and when the fallback notification was last shown.
+EVENTS_PORT = 9121
+FALLBACK_EVERY = 3600.0  # the "didn't answer correctly" notification, at most once an hour
+FALLBACK_UNVERIFIED = ("Hermux didn't answer correctly",
+                       "Hermes sent nothing to it. Open Hermux; if this stays, restart the phone.")
+FALLBACK_OLD_APP = ("Update the Hermux app",
+                    "This Hermes plugin needs a newer Hermux app, so Hermes sent it nothing. If Hermux is up to date, "
+                    "restart the phone.")
+_events: dict = {"backoff": None, "why": "", "fallback_at": None, "lock": threading.Lock()}
+
+
+def _unverified(port: str, why: str) -> None:
+    """The fixed-shape diagnostic event for a failed verification (never a key, key id, nonce or proof)."""
+    _event("local", "unverified", port=port, why=why, side="plugin")
+
+
+def _post_status(event: dict) -> str:
+    """Sends one event to the app after a verified hello: "ok", "refused" (the app answered, not 2xx), "none" (nothing
+    listens: the app isn't running) or "unverified" (something answered but didn't prove the key; nothing was sent)."""
+    key = _key()
+    la = _local_auth()
+    if not key or la is None:
+        return "none" if la is not None else "unverified"
+    st = _events
+    with st["lock"]:
+        if st["backoff"] is None:
+            st["backoff"] = la.Backoff()
+        backoff = st["backoff"]
+    if not backoff.ready():
+        return "unverified"  # still waiting after a failed verification: nothing is tried, nothing sent
+    body = json.dumps(event).encode()
+    for attempt in (0, 1):
+        try:
+            answer = la.session("events", EVENTS_PORT, key, timeout=2).request("POST", "/event", body)
+        except la.Unverified as e:
+            if e.why in ("unknown_kid", "refused") and attempt == 0:
+                again = _key()  # the key file may have just changed (a new key): read it again, and try once more
+                if again and again != key:
+                    key = again
+                    continue
+            if e.why == "no_answer":
+                with st["lock"]:
+                    first = st["why"] != "no_answer"
+                    st["why"] = "no_answer"
+                if first:
+                    _unverified("events", "no_answer")
+                return "none"
+            backoff.failed()
+            with st["lock"]:
+                st["why"] = e.why
+            _unverified("events", e.why)
+            return "unverified"
+        except (OSError, ValueError):
+            return "refused"  # verified, but its answer broke: the app is ours, so no back-off
+        backoff.ok()
+        with st["lock"]:
+            st["why"] = ""
+        return "ok" if 200 <= answer.status < 300 else "refused"
+    return "unverified"
+
+
+_last_post = threading.local()  # this thread's last _post_status result, for _send's choice of fallback
+
+
+def _post(event: dict) -> bool:
+    result = _post_status(event)
+    _last_post.result = result
+    return result == "ok"
 
 
 def _termux_fallback(event: dict) -> None:
@@ -142,14 +217,34 @@ def _termux_fallback(event: dict) -> None:
         pass
 
 
+def _unverified_fallback() -> None:
+    """An urgent event found the app's port answering without a valid proof: one Termux:API notification in plain
+    words, at most once an hour, with none of the event's own text (nothing about the request goes anywhere). An app
+    that doesn't speak the hello yet (no_hello) is asked to be updated."""
+    st = _events
+    now = time.monotonic()
+    with st["lock"]:
+        if st["fallback_at"] is not None and now - st["fallback_at"] < FALLBACK_EVERY:
+            return
+        st["fallback_at"] = now
+        why = st["why"]
+    title, body = FALLBACK_OLD_APP if why == "no_hello" else FALLBACK_UNVERIFIED
+    _termux_fallback({"kind": "local", "title": title, "body": body, "session": ""})
+
+
 def _send(kind: str, title: str = "Hermux", body: str = "", session: str = "", urgent: bool = False, **extra) -> None:
     """Fire-and-forget: never block a turn on notification delivery."""
     event = {"kind": kind, "title": title, "body": " ".join((body or "").split())[:500], "session": session or "",
              "profile": _profile(), **extra}
 
     def run():
-        if not _post(event) and urgent:
-            _termux_fallback(event)
+        _last_post.result = "none"
+        if _post(event) or not urgent:
+            return
+        if getattr(_last_post, "result", "none") == "unverified":
+            _unverified_fallback()  # something answered without the proof: plain words only, at most once an hour
+        else:
+            _termux_fallback(event)  # the app isn't running (or turned it down): the request as a Termux notification
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -1103,7 +1198,7 @@ def register(ctx):
         _event("plugin", "not_registered", what="find_chats", error=type(e).__name__)
     try:
         pa = _phone_app()
-        pa.notify, pa.log = _send, _dbg
+        pa.notify, pa.log, pa.event = _send, _dbg, _event
         pa.turn_running = lambda sid: sid in _active  # dropped by session_end / stale expiry
         if pa.availability()[0]:
             ctx.register_tool(name="phone_app", toolset="canvas", schema=pa.TOOL_SCHEMA, handler=pa.tool_handler,

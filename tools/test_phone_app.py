@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for the plugin's phone_app tool (phone_app.py) against a fake background host:
+"""Tests for the plugin's phone_app tool (phone_app.py) against a fake background host that speaks local
+authentication (tools/local_fake_server.py: the hello, then one signed request, with this start's token as the key):
     python3 tools/test_phone_app.py
 """
 import importlib.util
@@ -10,10 +11,11 @@ import tempfile
 import threading
 import time as _time
 import types
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from local_fake_server import FakeLocal  # noqa: E402
 spec = importlib.util.spec_from_file_location("phone_app", os.path.join(HERE, "..", "hermes-plugin", "hermes-mobile", "phone_app.py"))
 pa = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pa)
@@ -34,68 +36,60 @@ APPS = [{"pkg": "com.google.android.keep", "label": "Keep notes"}, {"pkg": "com.
         {"pkg": "com.example.cal3", "label": "Calendar Pro"}]
 
 
-class Fake(BaseHTTPRequestHandler):
-    def log_message(self, *a):
-        pass
-
-    def _reply(self, obj, code=200):
-        b = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Length", str(len(b)))
-        self.end_headers()
-        self.wfile.write(b)
-
-    def _handle(self):
-        if self.headers.get("X-HM-Token") != HOST["token"]:
-            return self._reply({"ok": False, "error": "forbidden"}, 403)
-        n = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(n) or b"{}") if n else {}
-        HOST["calls"].append((self.path, body))
-        p = self.path
-        if HOST["missing"] and p not in ("/status", "/apps", "/open", "/capture", "/close"):
-            return self._reply({"ok": False, "error": "not found"}, 404)  # an app older than the plugin
-        if p == "/status":
-            return self._reply({"ok": True})
-        if p == "/apps":
-            return self._reply({"ok": True, "apps": APPS})
-        if p == "/resolve":
-            data = body["intent"].get("data", "")
-            if "several" in data:
-                return self._reply({"ok": False, "error": "several apps can open this; say which with app: A (a), B (b)"})
-            pkg = body.get("pkg") or ("com.bunq.android" if "bunq" in data else "com.google.android.keep")
-            return self._reply({"ok": True, "pkg": pkg, "label": next(a["label"] for a in APPS if a["pkg"] == pkg)})
-        if p == "/open":
-            HOST["open"] = body["pkg"]
-            HOST["view"] = 0
-            return self._reply({"ok": True, "display": 7, "label": next(a["label"] for a in APPS if a["pkg"] == body["pkg"])})
-        if p == "/capture":
-            els = [{"n": 1, "role": "button", "text": "New note", "x": 600, "y": 1500},
-                   {"n": 2, "role": "field", "hint": "Search", "id": "search", "x": 360, "y": 120}]
-            if HOST["view"]:
-                els.append({"n": 3, "role": "text", "text": f"Note {HOST['view']}", "x": 360, "y": 400})
-            img = {"image_b64": "/9j/AA=="} if body.get("image") else {}
-            return self._reply({"ok": True, "w": 720, "h": 1600, "screen": "NotesActivity", "elements": els, **img,
-                                **({"black": True} if HOST["black"] and body.get("image") else {})})
-        if body.get("target") == "Missing":
-            return self._reply({"ok": False, "error": 'nothing on the screen says "Missing"'})
-        if p in ("/tap", "/set_text", "/type", "/key", "/long_press", "/submit", "/swipe"):
-            HOST["view"] += 1  # these change the screen; scroll, toggle and the waits don't
-            return self._reply({"ok": True, "via": "node", **({"target": "button \"" + body["target"] + "\""} if body.get("target") else {})})
-        if p == "/toggle":
-            return self._reply({"ok": True, "checked": True, "changed": not body.get("on")})
-        if p in ("/scroll", "/scroll_to", "/wait_for"):
-            return self._reply({"ok": True, "via": "node"})
-        if p in ("/close", "/hand_over"):
-            HOST["open"] = None
-            return self._reply({"ok": True})
-        return self._reply({"ok": False, "error": "not found"}, 404)
-
-    do_GET = do_POST = _handle
+def reply(obj, code=200):
+    return code, json.dumps(obj).encode()
 
 
-srv = HTTPServer(("127.0.0.1", 0), Fake)
-threading.Thread(target=srv.serve_forever, daemon=True).start()
-pa.HOST_URL = f"http://127.0.0.1:{srv.server_address[1]}"
+def host(method, path, headers, raw):
+    body = json.loads(raw or b"{}") if raw else {}
+    HOST["calls"].append((path, body))
+    p = path
+    if HOST["missing"] and p not in ("/status", "/apps", "/open", "/capture", "/close"):
+        return reply({"ok": False, "error": "not found"}, 404)  # an app older than the plugin
+    if p == "/status":
+        return reply({"ok": True})
+    if p == "/apps":
+        return reply({"ok": True, "apps": APPS})
+    if p == "/resolve":
+        data = body["intent"].get("data", "")
+        if "several" in data:
+            return reply({"ok": False, "error": "several apps can open this; say which with app: A (a), B (b)"})
+        pkg = body.get("pkg") or ("com.bunq.android" if "bunq" in data else "com.google.android.keep")
+        return reply({"ok": True, "pkg": pkg, "label": next(a["label"] for a in APPS if a["pkg"] == pkg)})
+    if p == "/open":
+        HOST["open"] = body["pkg"]
+        HOST["view"] = 0
+        return reply({"ok": True, "display": 7, "label": next(a["label"] for a in APPS if a["pkg"] == body["pkg"])})
+    if p == "/capture":
+        els = [{"n": 1, "role": "button", "text": "New note", "x": 600, "y": 1500},
+               {"n": 2, "role": "field", "hint": "Search", "id": "search", "x": 360, "y": 120}]
+        if HOST["view"]:
+            els.append({"n": 3, "role": "text", "text": f"Note {HOST['view']}", "x": 360, "y": 400})
+        img = {"image_b64": "/9j/AA=="} if body.get("image") else {}
+        return reply({"ok": True, "w": 720, "h": 1600, "screen": "NotesActivity", "elements": els, **img,
+                      **({"black": True} if HOST["black"] and body.get("image") else {})})
+    if body.get("target") == "Missing":
+        return reply({"ok": False, "error": 'nothing on the screen says "Missing"'})
+    if p in ("/tap", "/set_text", "/type", "/key", "/long_press", "/submit", "/swipe"):
+        HOST["view"] += 1  # these change the screen; scroll, toggle and the waits don't
+        return reply({"ok": True, "via": "node", **({"target": "button \"" + body["target"] + "\""} if body.get("target") else {})})
+    if p == "/toggle":
+        return reply({"ok": True, "checked": True, "changed": not body.get("on")})
+    if p in ("/scroll", "/scroll_to", "/wait_for"):
+        if p == "/wait_for" and HOST.get("slow"):
+            _time.sleep(HOST["slow"])  # the host waits for the screen before it answers anything
+        return reply({"ok": True, "via": "node"})
+    if p in ("/close", "/hand_over"):
+        HOST["open"] = None
+        return reply({"ok": True})
+    return reply({"ok": False, "error": "not found"}, 404)
+
+
+# The host proves itself with the token it was started with (HOST["token"]; "rotated" once it died and another
+# started), on the port the kernel gave it.
+srv = FakeLocal("bghost", lambda: HOST["token"] or "no-host-started-yet-0000", "honest", host)
+HOST["log"] = None  # what the host's log says; None: the LISTENING line of the current start
+
 
 tmp = Path(tempfile.mkdtemp())
 pa.PREFS = tmp / "bgapps.json"
@@ -112,8 +106,12 @@ def rish(cmd, stdin="", timeout=20):
     RISH.append((cmd, stdin))
     if cmd.startswith("pm path"):
         return "package:/data/app/x/base.apk\n"
-    if "app_process" in cmd:
-        HOST["token"] = stdin.strip()  # the host reads its token from stdin
+    if "app_process /" in cmd:
+        HOST["token"], HOST["auth"] = stdin.split("\n")[:2]  # the host reads its token and HM_AUTH from stdin
+    if cmd.startswith("tail"):
+        if HOST["log"] is not None:
+            return HOST["log"]
+        return f"LISTENING {srv.port} {pa._local_auth().kid(HOST['token'])}\n" if HOST["token"] else ""
     return ""
 
 
@@ -174,12 +172,20 @@ check("open resolves a name, starts the host and opens", r.get("ok") and HOST["o
 check("open returns the element list, one line per element with its role and name",
       r.get("elements", "").splitlines() == ['[1] button "New note"', '[2] field hint="Search"'], r.get("elements"))
 check("open says which screen of the app it is", r.get("screen") == "NotesActivity", r)
-start = [c for c in RISH if "app_process" in c[0]]
+start = [c for c in RISH if "app_process /" in c[0]]
 check("host started once, token only on stdin (never in the command)",
       len(start) == 1 and HOST["token"] and HOST["token"] not in start[0][0] and len(HOST["token"]) >= 32)
+check("the kernel picks its port (port 0), and HM_AUTH=mac comes on stdin too", start[0][0].rstrip().endswith(
+      "BgHost 0 </dev/null >/data/local/tmp/hm-bghost.log 2>&1 &)") and "HM_AUTH=$A" in start[0][0]
+      and "mac" not in start[0][0] and HOST["auth"] == "mac", start)
+check("a host from before is stopped first, in a call of its own", any(c[0] == "pkill -f 'app_process.*[B]gHost'" for c in RISH)
+      and [c[0] for c in RISH].index("pkill -f 'app_process.*[B]gHost'") < [c[0] for c in RISH].index(start[0][0]), RISH)
+check("every request was a hello and then a signed one: the token was never sent",
+      srv.hellos >= 2 and HOST["token"].encode() not in srv.received() and b"x-hm-token" not in srv.received().lower())
 check("approval asked once with the per-app rule key", ASKED == [("phone_app", "phone_app:com.google.android.keep")], ASKED)
-check("open event carries port + token for the app", EVENTS and EVENTS[-1][0] == "bgapp" and EVENTS[-1][2]["state"] == "open"
-      and EVENTS[-1][2]["token"] == HOST["token"] and EVENTS[-1][2]["label"] == "Keep notes")
+check("open event carries port + token for the app, and auth mac", EVENTS and EVENTS[-1][0] == "bgapp" and EVENTS[-1][2]["state"] == "open"
+      and EVENTS[-1][2]["token"] == HOST["token"] and EVENTS[-1][2]["label"] == "Keep notes"
+      and EVENTS[-1][2]["port"] == srv.port and EVENTS[-1][2]["auth"] == "mac", EVENTS[-1])
 check("chip text says Using <app>", pa.chip_label({"action": "tap"}) == "Using Keep notes")
 check("status line names the tapped element", pa.action_label({"action": "tap", "element": 1}) == "Keep notes: tapping \u201cNew note\u201d",
       pa.action_label({"action": "tap", "element": 1}))
@@ -288,7 +294,7 @@ r = run({"action": "steps", "steps": [{"action": "tap", "target": "New note"}, {
                                       {"action": "submit"}]})
 paths = [c[0] for c in HOST["calls"]]
 check("steps run in order and look at the screen once, at the end",
-      paths == ["/status", "/tap", "/set_text", "/submit", "/capture"] and r["ok"] and len(r["done"]) == 3 and "elements" in r, (paths, r))
+      paths == ["/tap", "/set_text", "/submit", "/capture"] and r["ok"] and len(r["done"]) == 3 and "elements" in r, (paths, r))
 HOST["calls"].clear()
 r = run({"action": "steps", "steps": [{"action": "tap", "target": "New note"}, {"action": "tap", "target": "Missing"},
                                       {"action": "key", "key": "back"}]})
@@ -379,28 +385,161 @@ check("an owner idle past the bound is replaced, the old app closed first",
       r["ok"] and HOST["open"] == "com.google.android.keep" and [c[0] for c in HOST["calls"] if c[0] == "/close"], r)
 pa.turn_running = None
 pa.end_session("chatD")
-bound = []
-def rish2(cmd, stdin="", timeout=20):  # the old host holds the port until pkill; its log says so
-    bound.append(cmd)
-    if cmd.startswith("tail"):
-        return "java.net.BindException: Address already in use\n"
-    if "app_process" in cmd and not any("pkill" in c for c in bound):
-        return ""  # the new host failed to bind: nothing answers with the new token
-    return rish(cmd, stdin, timeout)
-pa._rish = rish2
-pa._token = ""
-HOST["token"] = "old-host-token"
-pa.DEADLINE_S = 0.5
+
+print("finding and checking this start's host")
+la = pa._local_auth()
+check("a LISTENING line counts only with this start's key id", pa.listening_port(f"LISTENING 41234 {la.kid('a' * 48)}\n", la.kid("b" * 48)) == 0
+      and pa.listening_port(f"x\nLISTENING 41234 {la.kid('a' * 48)}\n", la.kid("a" * 48)) == 41234)
+check("a port below 1024 or a malformed line is no port", pa.listening_port(f"LISTENING 80 {la.kid('a' * 48)}", la.kid("a" * 48)) == 0
+      and pa.listening_port(f"LISTENING 41234 {la.kid('a' * 48)} extra", la.kid("a" * 48)) == 0)
+pa.DEADLINE_S = 1.0
+pa._token, pa._port = "", 0
+HOST["log"] = f"LISTENING {srv.port} {la.kid('c' * 48)}\n"  # a line left by an earlier start: another key id
 try:
     pa.ensure_host()
-    ok = True
-except Exception as e:
     ok = False
-check("a leftover host holding the port is stopped and a fresh one started", ok and any("pkill" in c for c in bound), bound)
+except pa.PhoneAppError as e:
+    ok = "didn't start" in str(e)
+check("a line from an earlier start doesn't mislead it: no host, nothing used", ok and pa._port == 0 and pa._token == "")
+HOST["log"] = None
+pa.ensure_host()
+check("its own LISTENING line: the host verifies, and the port is the one it named", pa._port == srv.port and pa._alive())
+before = len([c for c in RISH if "app_process /" in c[0]])
+pa.ensure_host()
+check("a verified host is reused, not started again", len([c for c in RISH if "app_process /" in c[0]]) == before)
+
+unproven = FakeLocal("bghost", lambda: HOST["token"], "wrong_key", host)
+seen_events = []
+pa.event = lambda area, name, **f: seen_events.append((area, name, f))
+pa._port = unproven.port  # something else answers on the host's port now
+check("a host that doesn't prove the token is not alive", not pa._alive())
+try:
+    pa.call("/tap", {"n": 1, "text": "secret words"})
+    msg = ""
+except pa.PhoneAppError as e:
+    msg = str(e)
+check("a request to it fails with plain words, and it got nothing but the hello", msg == pa.UNVERIFIED
+      and b"secret words" not in unproven.received() and HOST["token"].encode() not in unproven.received()
+      and all(h.startswith(b"GET /hermux/hello?") for h, _ in unproven.raw), (msg, unproven.raw))
+check("the diagnostic event has the fixed shape", seen_events and seen_events[-1] == ("local", "unverified",
+      {"port": "bghost", "why": "unknown_kid", "side": "plugin"}), seen_events)
+for mode, why in (("bad_proof", "bad_proof"), ("wrong_addr", "bad_addr"), ("wrong_role", "bad_proof"),
+                  ("garbage", "no_hello"), ("no_hello", "no_hello"), ("refuse", "refused")):
+    other = FakeLocal("bghost", lambda: HOST["token"], mode, host)
+    pa._port = other.port
+    seen_events.clear()
+    try:
+        pa.call("/type", {"text": "typed secret"})
+        failed = False
+    except pa.PhoneAppError:
+        failed = True
+    check(f"a host that answers {mode}: the request fails ({why}), typed text never reaches it as a verified request",
+          failed and not other.verified and seen_events and seen_events[-1][2]["why"] == why
+          and (mode == "refuse" or b"typed secret" not in other.received()), (seen_events, other.raw))
+    other.close()
+silent = FakeLocal("bghost", lambda: HOST["token"], "silent", host)
+pa._port = silent.port
+t0 = _time.time()
+check("a silent host is not alive, within the bounds", not pa._alive() and _time.time() - t0 < 8)
+silent.close()
+check("…and nothing private reached it", all(h.startswith(b"GET /hermux/hello?") for h, _ in silent.raw))
+pa.event = lambda area, name, **f: None
+starts = len([c for c in RISH if "app_process /" in c[0]])
+pa._port = unproven.port
+pa.ensure_host()
+check("a failed hello means not alive: a fresh host with a new token on its own port",
+      len([c for c in RISH if "app_process /" in c[0]]) == starts + 1 and pa._port == srv.port and pa._alive())
+unproven.close()
+pa._token = "x" * 48  # the token was lost (the plugin restarted with a stale copy): the hello fails
+check("a lost token: not alive", not pa._alive())
+pa.ensure_host()
+check("…and a fresh start fixes it", pa._alive() and pa._token == HOST["token"])
+HOST["log"] = f"LISTENING {srv.port} {la.kid('z' * 48)}\nAndroid 14 or newer needed\n"
+pa._token, pa._port = "", 0
+try:
+    pa.ensure_host()
+    msg = ""
+except pa.PhoneAppError as e:
+    msg = str(e)
+check("the host's own complaint still reaches the model", "Android 14" in msg, msg)
+HOST["log"] = None
+print("an older app's host (no key id in its LISTENING line)")
+pa._token, pa._port = "", 0
+HOST["log"] = "LISTENING 9131\n"
+pa.DEADLINE_S = 8.0
+t0 = _time.time()
+try:
+    pa.ensure_host()
+    msg = ""
+except pa.PhoneAppError as e:
+    msg = str(e)
+check("it asks for the app's update, in a few seconds, and stops that host", msg == pa.OLD_APP and _time.time() - t0 < 5
+      and RISH[-1][0] == "pkill -f 'app_process.*[B]gHost'", (msg, _time.time() - t0))
+reads = []
+
+
+def stale_then_own(cmd, stdin="", timeout=20):
+    if cmd.startswith("tail"):
+        reads.append(1)
+        if len(reads) < 2:
+            return "LISTENING 9131\n"  # left from an earlier start, before this start's own line
+        return f"LISTENING {srv.port} {pa._local_auth().kid(HOST['token'])}\n"
+    return rish(cmd, stdin, timeout)
+
+
+pa._rish = stale_then_own
+HOST["log"] = None
+pa._token, pa._port = "", 0
+pa.ensure_host()
+check("a line without a key id left from before doesn't stop this start's own", pa._alive() and pa._port == srv.port)
+pa._rish = rish
+pa.DEADLINE_S = 1.0
+
+print("a call the host takes long to answer")
+pa._token, pa._port = "", 0
+HOST["log"] = None
+pa.ensure_host()
+pa._state.update(session="chat-slow", pkg="com.google.android.keep", label="Keep notes", at=_time.time())
+HOST["slow"] = 12.5
+t0 = _time.time()
+r = run({"action": "wait_for", "target": "Saved", "seconds": 12, "capture_after": False}, sid="chat-slow")
+check("a wait_for of 12 s answers after about 12.5 s: still a success", r.get("ok") and _time.time() - t0 >= 12, (r, _time.time() - t0))
+saved = dict(pa.DEADLINES)
+pa.DEADLINES["/wait_for"] = 1.0
+HOST["slow"] = 2.5
+t0 = _time.time()
+r = run({"action": "wait_for", "target": "Saved", "seconds": 2, "capture_after": False}, sid="chat-slow")
+check("a call past its own deadline fails at that deadline", not r["ok"] and "lost the background host" in r["error"]
+      and _time.time() - t0 < 2.4, (r, _time.time() - t0))
+pa.DEADLINES.clear()
+pa.DEADLINES.update(saved)
+HOST["slow"] = 0
+_time.sleep(1.5)  # the slow call still running on the host
+check("the deadlines fit the host's longest calls", pa.DEADLINES["/scroll_to"] >= 16 * 1.5 + 8 and pa.DEADLINES["/wait_for"] >= 12 + 5
+      and pa.DEADLINES["/open"] >= 10 + 5)
+check("a quick call keeps the usual 10 s", pa.DEADLINE_DEFAULT == 10.0 and "/tap" not in pa.DEADLINES)
+seen_deadlines = []
+real_request = pa._local_auth().Session.request
+
+
+def record(self, method, path, body=None, **kw):
+    seen_deadlines.append((path, kw.get("deadline_s")))
+    return real_request(self, method, path, body, **kw)
+
+
+pa._local_auth().Session.request = record
+pa._state.update(session="chat-slow", pkg="com.google.android.keep", label="Keep notes", at=_time.time())
+run({"action": "tap", "element": 1, "capture_after": False}, sid="chat-slow")
+run({"action": "scroll_to", "target": "x", "capture_after": False}, sid="chat-slow")
+pa._local_auth().Session.request = real_request
+check("each call gets its own bound: a tap 10 s, scroll_to 45 s", ("/tap", 10.0) in seen_deadlines
+      and ("/scroll_to", 45.0) in seen_deadlines, seen_deadlines)
+pa._state.clear()
+
 pa._rish = rish
 pa.RISH_BIN = tmp / "missing"
 check("unavailable without rish", pa.availability() == (False, "Needs Shizuku (rish isn't set up)"))
 
-srv.shutdown()
+srv.close()
 print("ALL PASSED" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

@@ -43,6 +43,7 @@ import { GalleryScreen } from './components/Gallery'
 import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
 import { Spinner } from './components/Spinner'
 import { BgApp } from './components/BgApp'
+import { LocalAlertBanner } from './components/LocalAlertBanner'
 import { refreshBg } from './bgapp'
 import { bootMark } from './boot'
 import { UninstallResume } from './components/Uninstall'
@@ -819,6 +820,7 @@ export function App() {
     <div className="app">
       <DevtoolsStrip />
       <Header />
+      <LocalAlertBanner />
       <ConnBanner />
       <FindBar />
       <Chat onPick={t => setInjected(t)} />

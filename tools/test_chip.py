@@ -191,19 +191,19 @@ class FakeWS:
 sys.modules["websockets"] = types.SimpleNamespace(connect=lambda *a, **k: FakeWS())
 
 
-class Page:
-    def read(self):
-        return b'<script>window.__HERMES_SESSION_TOKEN__ = "tok";</script>'
-
-
-import urllib.request  # noqa: E402
-
-urllib.request.urlopen = lambda *a, **k: Page()
-out = asyncio.run(papi.stop(papi.Stop(session="s-a")))
+# The token comes from the dashboard's own process (hermes_cli.web_server._SESSION_TOKEN), never over loopback.
+sys.modules.setdefault("hermes_cli", types.ModuleType("hermes_cli"))
+sys.modules["hermes_cli.web_server"] = types.SimpleNamespace(_SESSION_TOKEN="tok")
+dialled = []
+sys.modules["websockets"] = types.SimpleNamespace(connect=lambda url, **k: dialled.append(url) or FakeWS())
+here = types.SimpleNamespace(scope={"server": ("127.0.0.1", 9119)})
+out = asyncio.run(papi.stop(papi.Stop(session="s-a"), here))
+check("its WebSocket goes to the dashboard that got the request, with the in-process token",
+      dialled and dialled[0] == "ws://127.0.0.1:9119/api/ws?token=tok", dialled)
 check("interrupts the runtime holding the chat", out == {"interrupted": "rt-2"}
       and ("session.interrupt", {"session_id": "rt-2"}) in calls and ("session.interrupt", {"session_id": "rt-1"}) not in calls, calls)
 try:
-    asyncio.run(papi.stop(papi.Stop(session="s-gone")))
+    asyncio.run(papi.stop(papi.Stop(session="s-gone"), here))
     check("a chat not running → 404", False)
 except fastapi.HTTPException as ex:
     check("a chat not running → 404", ex.status_code == 404, ex.status_code)

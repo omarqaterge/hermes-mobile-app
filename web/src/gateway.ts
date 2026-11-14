@@ -150,12 +150,13 @@ export async function connect(): Promise<void> {
   }
 }
 
-export function reconnectNow(start = true): void {
+/** Connects now; the promise settles when this try has ended (connected, or failed and the next one scheduled). */
+export function reconnectNow(start = true): Promise<void> {
   attempt = 0
   if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = null
   if (start) startHermes()
-  void connect()
+  return connect()
 }
 
 /** A notification answer woke the page from the background. The socket may be dead by now: timers are

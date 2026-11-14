@@ -13,8 +13,10 @@
 #   hm-shizuku status          Prints "paired" or "unpaired", then "adb=ok" or "adb=missing".
 #
 # After pair/start it tells the app, like the Hermes plugin does: POST {"kind":"shizuku-auto","cmd":"pair|start",
-# "paired":bool,"result":"ok|no-port|failed|not-paired","detail":"…"} to 127.0.0.1:9121/event with the key from
-# ~/.hermes-mobile/key (no key: nothing is sent). Every adb call is bounded (timeout) and gets </dev/null.
+# "paired":bool,"result":"ok|no-port|failed|not-paired","detail":"…"} to 127.0.0.1:9121/event through
+# `hm-local post /event`, which first verifies the app's listener (local authentication) and signs the request; the key
+# never leaves hm-local. No key file, no hm-local or a listener that doesn't verify: nothing is sent (a line in the log
+# says so). Every adb call is bounded (timeout) and gets </dev/null.
 # Log: ~/.hermes-mobile/hm-shizuku.log.
 # Exit: 0 ok, 2 adb missing or Android 10 and older, 6 adb pair failed, 7 no Wireless debugging port, 8 server didn't
 # start, 9 not paired, 10 busy, 64 usage.
@@ -22,7 +24,8 @@ set -u
 HM="$HOME/.hermes-mobile"
 MARK="$HM/adb-paired"
 LOGF="$HM/hm-shizuku.log"
-EVENT_URL="http://127.0.0.1:9121/event"
+LOCAL="$HOME/bin/hm-local"                      # local authentication's client (it reads the key itself)
+EVENT_PORT="${HM_EVENT_PORT:-9121}"             # the app's listener; tests set another
 NAP="${HM_SHIZUKU_NAP:-1}"                      # tests set 0 (no sleeps)
 SCAN_FROM="${HM_SCAN_FROM:-32768}"; SCAN_TO="${HM_SCAN_TO:-60999}"   # Linux's ephemeral range (adbd binds port 0)
 KEYDIR="${ANDROID_USER_HOME:-$HOME/.android}"
@@ -48,14 +51,16 @@ jstr() {   # JSON string
   s=$(printf '%s' "$s" | tr '\n\r\t' '   ' | tr -d '\000-\037')
   printf '"%s"' "$s"
 }
-emit() {   # emit <result> <detail>: tell the app (best effort, 2 s)
-  local key paired=false
-  key=$(cat "$HM/key" 2>/dev/null) || return 0
-  [ -n "$key" ] && command -v curl >/dev/null 2>&1 || return 0
+emit() {   # emit <result> <detail>: tell the app (best effort), only after its listener proved it holds the key
+  local paired=false rc
+  [ -s "$HM/key" ] || return 0
+  if [ ! -x "$LOCAL" ]; then log "the app was not told: hm-local is missing"; return 0; fi
   paired_now && paired=true
   printf '{"kind":"shizuku-auto","cmd":%s,"paired":%s,"result":%s,"detail":%s}' "$(jstr "$CMD")" "$paired" "$(jstr "$1")" "$(jstr "$2")" |
-    curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' \
-      -H @<(printf 'X-Hermes-Mobile-Key: %s\n' "$key") --data-binary @- "$EVENT_URL" 2>/dev/null || true
+    "$LOCAL" post /event "$EVENT_PORT" >/dev/null 2>&1
+  rc=$?
+  [ "$rc" = 0 ] || [ "$rc" = 3 ] || log "the app was not told (hm-local exit $rc)"
+  return 0
 }
 # finish <result> <exit code> <detail>: tell the app, exit.
 finish() {

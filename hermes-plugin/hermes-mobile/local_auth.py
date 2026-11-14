@@ -1,0 +1,926 @@
+"""Local authentication (hermux-local-v1): verify the local server before sending it anything private, and the server
+halves that let the plugin's own servers (the dashboard guard, the cron ticker) prove themselves.
+
+A client sends ``GET /hermux/hello?v=1&nc=<nonce>&kid=<its key id>`` (the ``kid`` hint is optional and not secret: a
+server in a key rotation's grace then proves with the accepted key it names, else with its current key); the server answers with JSON naming its role, key id (``kid``), its own
+nonce (``ns``), the address it listens on (``addr``) and a ``proof``: an HMAC-SHA256 under the shared key over the client's
+nonce. Only when every check passes does the client send its one request, on the same connection, with the header
+``X-Hermux-Auth: 1 <kid> <ns> <mac>``. Any failure raises ``Unverified(why)`` with one reason from ``REASONS`` and nothing
+is sent. The Java twin is ``LocalAuth``/``LocalClient`` in the app; both are checked against tools/local-auth-vectors.json.
+
+A MAC is lowercase hex HMAC-SHA256 over eight fields joined by newlines: ``hermux-local-v1``, dir, role, addr, nc, ns,
+what, hash. ``mac`` refuses a field outside its alphabet (a newline above all), so one field can never spill into the
+next. Bounded: 2 s to connect, ``timeout`` per read, a whole-exchange deadline (sends included), 4 KiB for the hello
+answer (a larger Content-Length is refused before reading), a head as strict as the Java side's; no proxy
+(``http.client`` never reads proxy settings) and no redirect is followed. Nothing here logs. Stdlib only. The client
+is used by the plugin's events sender (``__init__._post``), ``phone_data``, ``phone_app`` (the background host), the
+dashboard's own fallback for its token, the cron ticker and the developer tools; ``Backoff`` is their shared wait after a
+failed verification.
+
+The server halves (see "the server halves" below): ``hello_answer`` (the proof over the client's nonce, a fresh server
+nonce, the server's own listening address and the key id), ``parse_auth`` and ``request_ok`` (a request MAC over the
+method, the path with its query and the raw body bytes), ``answer_proof``, ``PendingHellos`` (the dashboard guard's
+single-use server nonces), ``KeyFile`` (the key file, re-read only when it changes) and ``ticker_serve_one`` (the cron
+ticker's line protocol). The servers accept the raw key alongside only until ``~/.hermes-mobile/enforced`` exists (the
+app writes it with a new key when it ends the compatibility window); a raw key after that is refused, and ``Daily`` and
+``report_legacy`` let a server tell the app once a day (a signed ``local_legacy`` event), so that it replaces the key.
+"""
+from __future__ import annotations
+
+import functools
+import hashlib
+import hmac
+import http.client
+import json
+import math
+import os
+import re
+import secrets
+import socket
+import threading
+import time
+from collections import OrderedDict
+
+VERSION = "hermux-local-v1"
+EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+DIRS = ("server", "client", "answer")
+ROLES = ("dashboard", "events", "ticker", "bghost")
+NO_NONCE = "-"
+MIN_KEY = 16
+MAX_WHAT = 2048
+REASONS = ("no_answer", "no_hello", "old_version", "bad_addr", "unknown_kid", "bad_proof", "refused")
+
+HOST = "127.0.0.1"
+CONNECT_S = 2.0
+HELLO_DEADLINE_S = 5.0
+ANSWER_DEADLINE_S = 10.0
+MAX_DEADLINE_S = 120.0  # the longest any one request may be given (Session.request's deadline_s)
+MAX_HELLO = 4096
+MAX_HEAD = 8192
+MAX_HEADERS = 64
+MAX_ANSWER = 1 << 20
+MAX_PATH = 2000
+MIN_VERSION = 1
+
+_HEX = re.compile(r"[0-9a-f]+")
+_ADDR = re.compile(r"127\.0\.0\.1:([1-9][0-9]{0,4})")
+_WHAT = re.compile(r"[\x20-\x7e]+")
+_KEY = re.compile(r"[\x21-\x7e]+")
+_METHOD = re.compile(r"[A-Z]{1,16}")
+_PATH = re.compile(r"/[\x21-\x7e]*")
+_DIGITS = re.compile(r"[0-9]{1,9}")
+_HEADER_NAME = re.compile(r"[A-Za-z0-9-]{1,64}")
+# The head of an answer, line by line, as strict as the Java side: CRLF endings only, no NUL, no folded header lines,
+# a token before every colon, HTTP/1.1 and no 1xx status (refused, not skipped).
+_STATUS = re.compile(rb"HTTP/1\.1 [2-9][0-9]{2}(?: [^\r\n\x00]*)?\r\n")
+_HEADER = re.compile(rb"[!#$%&'*+\-.^_`|~0-9A-Za-z]+:[^\r\n\x00]*\r\n")
+
+
+class Unverified(Exception):
+    """The server was not verified (or refused our request). ``why`` (also the message) is the reason code, nothing else."""
+
+    def __init__(self, why: str):
+        why = why if why in REASONS else "no_hello"
+        super().__init__(why)
+        self.why = why
+
+
+def _hex(s, n: int) -> bool:
+    return isinstance(s, str) and len(s) == n and _HEX.fullmatch(s) is not None
+
+
+def is_nonce(s) -> bool:
+    """True for exactly 32 lowercase hex characters."""
+    return _hex(s, 32)
+
+
+def is_kid(s) -> bool:
+    return _hex(s, 8)
+
+
+def is_addr(s) -> bool:
+    m = _ADDR.fullmatch(s) if isinstance(s, str) else None
+    return m is not None and 1 <= int(m.group(1)) <= 65535
+
+
+def addr(port: int) -> str:
+    return f"{HOST}:{port}"
+
+
+def hint(k):
+    """A hello's ``kid`` hint, or None: anything but exactly 8 lowercase hex characters counts as absent."""
+    return k if is_kid(k) else None
+
+
+def hello_target(nc: str, kid_: str | None = None) -> str:
+    """The hello's request target: ``/hermux/hello?v=1&nc=<nc>``, plus ``&kid=<kid>`` for a hint."""
+    return f"/hermux/hello?v=1&nc={nc}" + (f"&kid={kid_}" if hint(kid_) else "")
+
+
+def hello_args(query):
+    """The arguments of a hello's query ``v=<n>&nc=<nonce>[&kid=<kid>]`` (any order, each at most once, nothing else):
+    ``(nc, kid)`` with ``kid`` None when absent or malformed (``hint``); None for anything else."""
+    if isinstance(query, bytes):
+        try:
+            query = query.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+    if not isinstance(query, str):
+        return None
+    seen = {}
+    for part in query.split("&"):
+        k, sep, v = part.partition("=")
+        if not sep or k not in ("v", "nc", "kid") or k in seen:
+            return None
+        seen[k] = v
+    if "v" not in seen or "nc" not in seen or not is_version(seen["v"]) or not is_nonce(seen["nc"]):
+        return None
+    return seen["nc"], hint(seen.get("kid"))
+
+
+def hello_line(line):
+    """The ticker's hello line ``HELLO <n> <nc>[ <kid>]`` (without its newline) as ``(nc, kid)``, ``kid`` None when
+    absent or malformed; None for anything else."""
+    if isinstance(line, bytes):
+        try:
+            line = line.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+    if not isinstance(line, str):
+        return None
+    parts = line.split(" ")
+    if len(parts) not in (3, 4) or parts[0] != "HELLO" or not is_version(parts[1]) or not is_nonce(parts[2]):
+        return None
+    return parts[2], hint(parts[3] if len(parts) == 4 else None)
+
+
+def hello_key(keys, hint_):
+    """The key a hello proves with: the accepted key (``keys``, the current one first) whose id the client's hint names,
+    else the current key, so a client with an unknown key sees ``unknown_kid`` as without a hint."""
+    h = hint(hint_)
+    found = None
+    if h is not None:
+        for k in keys:
+            try:
+                if same(kid(k), h) and found is None:
+                    found = k
+            except ValueError:
+                continue
+    return found if found is not None else keys[0]
+
+
+def nonce() -> str:
+    """16 random bytes as 32 lowercase hex characters."""
+    return secrets.token_hex(16)
+
+
+def _key_text(key) -> str:
+    """Surrounding ASCII whitespace removed (the same set as the Java side), then at least 16 printable ASCII characters."""
+    if not isinstance(key, str):
+        raise ValueError("key")
+    k = key.strip(" \t\r\n\x0b\x0c")
+    if len(k) < MIN_KEY or _KEY.fullmatch(k) is None:
+        raise ValueError("key")
+    return k
+
+
+def sha256hex(b: bytes | None) -> str:
+    return hashlib.sha256(b or b"").hexdigest()
+
+
+def kid(key: str) -> str:
+    """First 8 hex characters of SHA-256 over ``hermux-kid-v1\\n`` and the trimmed key text."""
+    return sha256hex(("hermux-kid-v1\n" + _key_text(key)).encode())[:8]
+
+
+def mac(key: str, dir: str, role: str, addr: str, nc: str, ns: str, what: str, hash: str) -> str:
+    """The MAC of one message. ValueError (naming the field, never its value) for a field outside its alphabet."""
+    k = _key_text(key).encode()
+    if dir not in DIRS:
+        raise ValueError("dir")
+    if role not in ROLES:
+        raise ValueError("role")
+    if not is_addr(addr):
+        raise ValueError("addr")
+    if not is_nonce(nc):
+        raise ValueError("nc")
+    if ns != NO_NONCE and not is_nonce(ns):
+        raise ValueError("ns")
+    if not isinstance(what, str) or len(what) > MAX_WHAT or _WHAT.fullmatch(what) is None:
+        raise ValueError("what")
+    if not _hex(hash, 64):
+        raise ValueError("hash")
+    msg = "\n".join((VERSION, dir, role, addr, nc, ns, what, hash))
+    return hmac.new(k, msg.encode(), hashlib.sha256).hexdigest()
+
+
+def same(a, b) -> bool:
+    """Constant-time equality; False when either is not text or the lengths differ. Never raises (a lone surrogate
+    is encoded as it is, so it simply differs)."""
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+    return hmac.compare_digest(a.encode("utf-8", "surrogatepass"), b.encode("utf-8", "surrogatepass"))
+
+
+# ---- the client ----
+
+class _TooMuch(Exception):
+    pass
+
+
+class _Malformed(Exception):
+    pass
+
+
+class _Wire:
+    """A socket's input for one answer, read as the Java side reads it: at most ``limit`` bytes consumed (``limit(n)``
+    sets a new budget, for the body), each read bounded by ``per_read`` and the whole by ``deadline`` (a trickle of
+    bytes cannot hold the caller), and no read or allocation for a length beyond the budget. Stands in for the file
+    ``http.client`` reads from."""
+
+    def __init__(self, sock: socket.socket, limit: int, deadline: float, per_read: float):
+        self._sock, self._left, self._deadline, self._per_read = sock, limit, deadline, per_read
+        self._buf = b""
+        self.taken = 0
+        self.extra = False  # bytes were left over when the answer was done
+        self.closed = False
+        self._lines = 0
+        self._in_head = True
+
+    def limit(self, n: int) -> None:
+        self._left = n
+
+    def _fill(self) -> bool:
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise socket.timeout()
+        self._sock.settimeout(min(self._per_read, remaining))
+        data = self._sock.recv(4096)
+        if not data:
+            return False
+        self._buf += data
+        return True
+
+    def _take(self, n: int) -> bytes:
+        out = self._buf[:n]
+        if len(out) > self._left:
+            raise _TooMuch()
+        self._buf = self._buf[len(out):]
+        self._left -= len(out)
+        self.taken += len(out)
+        return out
+
+    def readline(self, limit: int = -1) -> bytes:
+        line = self._readline(limit)
+        if self._in_head:
+            if not line:
+                if self._lines:
+                    raise _Malformed()  # the stream ended inside the head
+                return line  # nothing at all: http.client reports it, and taken == 0 says no_answer
+            if self._lines == 0:
+                ok = _STATUS.fullmatch(line) is not None
+            elif line == b"\r\n":
+                ok, self._in_head = True, False
+            else:
+                ok = self._lines <= MAX_HEADERS and _HEADER.fullmatch(line) is not None
+            self._lines += 1
+            if not ok:
+                raise _Malformed()
+        return line
+
+    def _readline(self, limit: int) -> bytes:
+        while True:
+            i = self._buf.find(b"\n")
+            if i >= 0 and (limit < 0 or i < limit):
+                return self._take(i + 1)
+            if 0 <= limit <= len(self._buf):
+                return self._take(limit)
+            if len(self._buf) >= self._left:
+                raise _TooMuch()  # no line end within the budget
+            if not self._fill():
+                return self._take(len(self._buf))
+
+    def read(self, n: int | None = -1) -> bytes:
+        if n is None or n < 0:
+            while len(self._buf) <= self._left and self._fill():
+                pass
+            return self._take(len(self._buf))
+        if n > self._left:
+            raise _TooMuch()  # refused before reading or allocating anything for it
+        while len(self._buf) < n and self._fill():
+            pass
+        return self._take(n)
+
+    def readinto(self, b) -> int:
+        data = self.read(len(b))
+        b[:len(data)] = data
+        return len(data)
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        if self._buf:
+            self.extra = True
+        self.closed = True
+        keep, self.keep = getattr(self, "keep", None), None
+        if keep is not None:
+            keep.close()
+
+
+class _Response(http.client.HTTPResponse):
+    def __init__(self, sock, debuglevel=0, method=None, url=None, *, wire: _Wire):
+        super().__init__(sock, debuglevel, method, url)
+        # Keep the file http.client opened (unused) until the answer is done: while it is open, closing the connection
+        # (http.client does that before reading an answer that ends at the close) leaves the socket readable.
+        wire.keep = self.fp
+        self.fp = wire
+
+    def _check_close(self):
+        # Token by token, as the Java side: "Connection: keep-alive, close" closes, "Connection: closed" does not.
+        for v in self.headers.get_all("Connection") or ():
+            if any(t.strip(" \t").lower() == "close" for t in v.split(",")):
+                return True
+        return False
+
+
+class _Connection(http.client.HTTPConnection):
+    """Dials the literal loopback address within CONNECT_S; never reconnects by itself (see ``session``)."""
+
+    send_deadline = None  # time.monotonic() by which every send of the current request must be done
+
+    def connect(self):
+        self.sock = socket.create_connection((HOST, self.port), timeout=CONNECT_S)
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+    def send(self, data):
+        # http.client sends the head and the body separately: each gets only what is left of one deadline.
+        if self.send_deadline is not None and self.sock is not None:
+            remaining = self.send_deadline - time.monotonic()
+            if remaining <= 0:
+                raise socket.timeout()
+            self.sock.settimeout(remaining)
+        super().send(data)
+
+
+class Answer:
+    def __init__(self, status: int, body: bytes, headers=None):
+        self.status, self.body, self.headers = status, body, headers
+
+
+class Session:
+    """A verified connection: ``request`` sends exactly one request on it, then it is closed."""
+
+    def __init__(self, conn: _Connection, role: str, where: str, key: str, kid_: str, nc: str, ns: str, timeout: float):
+        self._conn, self._sock, self._role, self._where = conn, conn.sock, role, where
+        self._key, self.kid, self._nc, self._ns, self._timeout = key, kid_, nc, ns, timeout
+        self._used = False
+
+    def request(self, method: str, path: str, body: bytes | str | None = None, *, with_nc: bool = False,
+                deadline_s: float | None = None, extra: dict | None = None) -> Answer:
+        """Send one request (a body goes as application/json). 403 raises ``Unverified("refused")``; a broken or
+        oversized answer raises OSError with a neutral message. The session is closed afterwards. ``with_nc`` names the
+        client nonce in the header too (``1 <kid> <ns> <nc> <mac>``), as the dashboard's token step wants. ``deadline_s``
+        bounds sending the request and reading its whole answer: ``ANSWER_DEADLINE_S`` (10 s) unless given (a call the
+        server takes longer to answer, such as the background host's waits), and never less than the session's
+        per-read timeout; at most ``MAX_DEADLINE_S`` (120 s) in all. A deadline that is not a finite number above 0
+        raises ValueError and nothing is sent. ``extra``: more header lines (a name of letters, digits and dashes, a
+        printable value without spaces; never one this method sets), checked before anything is sent; the answer keeps
+        its headers (``Answer.headers``)."""
+        if self._used:
+            raise RuntimeError("used")
+        self._used = True
+        try:
+            if not isinstance(method, str) or not _METHOD.fullmatch(method):
+                raise ValueError("request")
+            if not isinstance(path, str) or len(path) > MAX_PATH or not _PATH.fullmatch(path):
+                raise ValueError("request")
+            if deadline_s is None:
+                limit = ANSWER_DEADLINE_S
+            else:
+                if isinstance(deadline_s, bool) or not isinstance(deadline_s, (int, float)):
+                    raise ValueError("deadline")
+                try:
+                    limit = float(deadline_s)
+                except OverflowError:  # an integer too large for a float: refused like any other bad value
+                    raise ValueError("deadline") from None
+                if not math.isfinite(limit) or limit <= 0:
+                    raise ValueError("deadline")
+            b = body.encode() if isinstance(body, str) else (body or b"")
+            what = f"{method} {path}"
+            m = mac(self._key, "client", self._role, self._where, self._nc, self._ns, what, sha256hex(b))
+            # The same socket as the hello, or nothing: never a fresh connection to whatever listens now.
+            if self._conn.sock is None or self._conn.sock is not self._sock:
+                raise OSError("no answer")
+            auth = f"1 {self.kid} {self._ns} {self._nc} {m}" if with_nc else f"1 {self.kid} {self._ns} {m}"
+            headers = {"X-Hermux-Auth": auth, "Content-Length": str(len(b)), "Connection": "close"}
+            if b:
+                headers["Content-Type"] = "application/json"
+            for k, v in (extra or {}).items():
+                if (not isinstance(k, str) or not isinstance(v, str) or not _HEADER_NAME.fullmatch(k) or not _KEY.fullmatch(v)
+                        or k.lower() in ("x-hermux-auth", "content-length", "connection", "content-type", "host")):
+                    raise ValueError("request")
+                headers[k] = v
+            deadline = time.monotonic() + min(max(limit, self._timeout), MAX_DEADLINE_S)
+            wire = _Wire(self._sock, MAX_HEAD, deadline, self._timeout)
+            try:
+                # One deadline for sending and for the answer; a send must not inherit a short read timeout.
+                self._conn.send_deadline = deadline
+                self._conn.request(method, path, body=b, headers=headers)
+                self._conn.response_class = functools.partial(_Response, wire=wire)
+                r = self._conn.getresponse()
+                # The same checks, in the same order, as LocalClient.Session.request.
+                if r.status == 403:
+                    raise Unverified("refused")
+                lengths = r.headers.get_all("Content-Length") or []
+                if (r.headers.get_all("Transfer-Encoding") or len(lengths) > 1
+                        or (lengths and not _DIGITS.fullmatch(lengths[0].strip(" \t")))):
+                    raise OSError("bad answer")
+                n = int(lengths[0].strip(" \t")) if lengths else None
+                if r.status in (204, 304):
+                    return Answer(r.status, b"", r.headers)
+                if n is not None and n > MAX_ANSWER:
+                    raise OSError("answer too large")
+                wire.limit(MAX_ANSWER if n is None else n)
+                return Answer(r.status, r.read(), r.headers)
+            except (Unverified, socket.timeout):
+                raise
+            except _TooMuch:
+                raise OSError("answer too large") from None
+            except (_Malformed, http.client.HTTPException, ValueError):
+                # Nothing at all is "no answer" (Java's Silent); anything else broken is "bad answer".
+                raise OSError("no answer" if wire.taken == 0 else "bad answer") from None
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except OSError:
+            pass
+
+
+def session(role: str, port: int, key: str, timeout: float = 3, server: str | None = None) -> Session:
+    """Verify the server on 127.0.0.1:port for ``role`` with ``key``; the session may send one request. ``server`` is
+    the address the proof must name when it is not the one dialled: only for a developer's computer reaching the phone
+    through ``adb forward`` to another local port (the phone's server names its own port)."""
+    if role not in ROLES or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("session")
+    if server is not None and not is_addr(server):
+        raise ValueError("session")
+    try:
+        want_kid = kid(key)
+    except ValueError:
+        raise Unverified("unknown_kid") from None  # an unusable key: the same reason as the Java side, and nothing is sent
+    deadline = time.monotonic() + HELLO_DEADLINE_S
+    where = server or addr(port)
+    nc = nonce()
+    conn = _Connection(HOST, port, timeout=timeout)
+    ok = False
+    try:
+        try:
+            conn.connect()
+            conn.auto_open = 0  # a closed socket must never be replaced by a new connection behind our back
+            conn.send_deadline = deadline  # the send, within the hello deadline
+            conn.request("GET", hello_target(nc, want_kid), headers={"Connection": "keep-alive"})
+        except OSError:
+            raise Unverified("no_answer") from None
+        wire = _Wire(conn.sock, MAX_HELLO, deadline, timeout)
+        conn.response_class = functools.partial(_Response, wire=wire)
+        try:
+            r = conn.getresponse()
+            lengths = r.headers.get_all("Content-Length") or []
+            if (r.status != 200 or r.headers.get_all("Transfer-Encoding") or r.will_close or r.version != 11
+                    or len(lengths) != 1
+                    or not _DIGITS.fullmatch(lengths[0].strip(" \t")) or r.length is None or r.length > MAX_HELLO):
+                raise Unverified("no_hello")
+            body = r.read()
+            if wire.extra or conn.sock is None:
+                raise Unverified("no_hello")
+        except Unverified:
+            raise
+        except socket.timeout:
+            raise Unverified("no_answer") from None
+        except (OSError, http.client.HTTPException, _TooMuch, _Malformed, ValueError):
+            raise Unverified("no_answer" if wire.taken == 0 else "no_hello") from None
+        try:
+            def pairs(items):
+                d = {}
+                for k, v in items:
+                    if k in d:
+                        raise ValueError("json")
+                    d[k] = v
+                return d
+
+            def no_constant(_):
+                raise ValueError("json")
+
+            j = json.loads(body.decode("utf-8"), object_pairs_hook=pairs, parse_constant=no_constant)
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            raise Unverified("no_hello") from None
+        if not isinstance(j, dict):
+            raise Unverified("no_hello")
+        ver = j.get("hermux")
+        if not isinstance(ver, int) or isinstance(ver, bool):
+            raise Unverified("no_hello")
+        if ver < MIN_VERSION:
+            raise Unverified("old_version")
+        fields = [j.get(n) for n in ("role", "kid", "ns", "addr", "proof")]
+        if not all(isinstance(f, str) for f in fields):
+            raise Unverified("no_hello")
+        s_role, s_kid, ns, s_addr, proof = fields
+        if s_role != role or not is_nonce(ns):
+            raise Unverified("bad_proof")
+        if s_addr != where:
+            raise Unverified("bad_addr")
+        if not is_kid(s_kid) or not same(s_kid, want_kid):
+            raise Unverified("unknown_kid")
+        # Over the address this client dialled, not the server's text (equal here, by the check above).
+        if not _hex(proof, 64) or not same(mac(key, "server", role, where, nc, ns, "hello", EMPTY_HASH), proof):
+            raise Unverified("bad_proof")
+        ok = True
+        return Session(conn, role, where, key, s_kid, nc, ns, timeout)
+    except Unverified:
+        raise
+    except Exception:
+        raise Unverified("no_hello") from None  # last resort: nothing outside the closed list of reasons leaves session()
+    finally:
+        if not ok:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+
+TOKEN_PATH = "/hermux/token"
+_TOKEN_TEXT = re.compile(r"[\x21-\x7e]{1,512}")  # what the dashboard guard hands out
+
+
+def _json_object(body: bytes):
+    """A JSON object read as strictly as a hello answer (no repeated names, no NaN or Infinity), else None."""
+
+    def pairs(items):
+        d = {}
+        for k, v in items:
+            if k in d:
+                raise ValueError("json")
+            d[k] = v
+        return d
+
+    def no_constant(_):
+        raise ValueError("json")
+
+    try:
+        j = json.loads(body.decode("utf-8"), object_pairs_hook=pairs, parse_constant=no_constant)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    return j if isinstance(j, dict) else None
+
+
+def dashboard_token(port: int, key: str, timeout: float = 3, server: str | None = None) -> str:
+    """The session token of the dashboard on 127.0.0.1:port, from a verified dashboard only: the hello, then
+    ``GET /hermux/token`` on the same connection with ``X-Hermux-Auth: 1 <kid> <ns> <nc> <mac>`` (the guard keeps the
+    server nonce between its two routes, so the client names its own nonce as well), then the answer's own proof
+    (``answer``, ``token``, over both nonces and the token's SHA-256) before the token is returned. A failed hello, a
+    refused request or a wrong proof raises ``Unverified``; any answer other than a 200 with ``hermux``, ``token`` and
+    ``proof`` raises OSError("bad answer"), like a broken answer to ``Session.request``. Nothing else escapes.
+    ``server``: as for ``session``."""
+    s = session("dashboard", port, key, timeout, server)
+    nc, ns, where = s._nc, s._ns, s._where
+    try:
+        a = s.request("GET", TOKEN_PATH, with_nc=True)
+    except (Unverified, OSError):
+        raise
+    except Exception:
+        raise OSError("bad answer") from None
+    j = _json_object(a.body) if a.status == 200 else None
+    if j is None:
+        raise OSError("bad answer")
+    ver, tok, proof = j.get("hermux"), j.get("token"), j.get("proof")
+    if (not isinstance(ver, int) or isinstance(ver, bool) or ver < MIN_VERSION or not isinstance(tok, str)
+            or not _TOKEN_TEXT.fullmatch(tok) or not isinstance(proof, str)):
+        raise OSError("bad answer")
+    want = mac(key, "answer", "dashboard", where, nc, ns, "token", sha256hex(tok.encode()))
+    if not _hex(proof, 64) or not same(want, proof):
+        raise Unverified("bad_proof")
+    return tok
+
+
+PROOF_HEADER = "X-Hermux-Proof"
+
+
+def dashboard_get(port: int, key: str, path: str, token: str, timeout: float = 3, server: str | None = None) -> Answer:
+    """``GET path`` (a dashboard REST route) with the session token, from a verified dashboard only: the hello, then the
+    request on that same connection with ``X-Hermes-Session-Token`` and a fresh ``X-Hermux-Nonce``; the answer counts
+    only with exactly one ``X-Hermux-Proof: 1 <kid> <proof>``, the ``answer`` proof over that nonce, the address and
+    ``rest <status>`` under the hello's key, else ``Unverified("bad_proof")`` and the answer is dropped. The token goes
+    only on the verified connection; a token that isn't 1 to 512 printable characters raises ValueError and nothing is
+    sent. ``server``: as for ``session``."""
+    if not isinstance(token, str) or not _TOKEN_TEXT.fullmatch(token):
+        raise ValueError("token")
+    s = session("dashboard", port, key, timeout, server)
+    where, kid_, nc = s._where, s.kid, nonce()
+    a = s.request("GET", path, extra={"X-Hermes-Session-Token": token, "X-Hermux-Nonce": nc})
+    got = a.headers.get_all(PROOF_HEADER) if a.headers is not None else None
+    parts = got[0].strip(" \t").split(" ") if got and len(got) == 1 else []
+    want = mac(key, "answer", "dashboard", where, nc, NO_NONCE, f"rest {a.status}", EMPTY_HASH)
+    if len(parts) != 3 or parts[0] != "1" or not same(parts[1], kid_) or not _hex(parts[2], 64) or not same(parts[2], want):
+        raise Unverified("bad_proof")
+    return a
+
+
+class Backoff:
+    """How long a client waits after a failed verification before it tries a role's server again: 1, 2, 4 ... s, at
+    most ``BACKOFF_MAX_S`` (300), and back to nothing after a success. Meanwhile the client sends nothing to that
+    server. Thread-safe; the clock is ``time.monotonic`` (it may stop while the phone sleeps, which only stretches a
+    wait)."""
+
+    def __init__(self, first: float = 1.0, most: float = 300.0, clock=time.monotonic):
+        self._first, self._most, self._clock = first, most, clock
+        self._delay, self._until = 0.0, 0.0
+        self._lock = threading.Lock()
+
+    def ready(self) -> bool:
+        with self._lock:
+            return self._clock() >= self._until
+
+    def failed(self) -> float:
+        """Counts a failure; the wait it starts."""
+        with self._lock:
+            self._delay = self._first if self._delay <= 0 else min(self._delay * 2, self._most)
+            self._until = self._clock() + self._delay
+            return self._delay
+
+    def ok(self) -> None:
+        with self._lock:
+            self._delay, self._until = 0.0, 0.0
+
+
+# ---- the server halves ----
+# A server answers a hello with a proof over the client's nonce, a fresh nonce of its own, the address it listens on and
+# its key id, then checks one request MAC over that pair of nonces. The raw key is still accepted next to this by each
+# server's own code, so a client that has not learnt the hello keeps working.
+
+HELLO_TTL_S = 10.0  # how long the dashboard guard keeps a server nonce for the token step
+MAX_PENDING = 256  # ... and how many at most (the oldest is dropped first)
+MAX_LINE = 256  # the ticker's lines, the newline included
+LINE_READ_S = 2.0  # each read of a ticker line
+LINE_DEADLINE_S = 5.0  # the whole ticker exchange, however slowly the bytes come
+_VERSION_ARG = re.compile(r"[1-9][0-9]{0,2}")
+
+
+def server_addr(host, port) -> str | None:
+    """The address a server names in its proof: ``127.0.0.1:<port>`` for a socket on the loopback address, else None
+    (a server reached any other way, ``::1`` say, gives no proof: the client dialled something else)."""
+    if host != HOST or not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        return None
+    return addr(port)
+
+
+def is_version(s) -> bool:
+    """A hello's version argument: a positive decimal number without leading zeros (this server answers version 1)."""
+    return isinstance(s, str) and _VERSION_ARG.fullmatch(s) is not None
+
+
+def hello_answer(key: str, role: str, server: str, nc: str) -> tuple[str, dict]:
+    """A fresh server nonce and the hello answer (as JSON fields) for the client nonce ``nc``. ValueError for a bad
+    nonce, an unusable key, an unknown role or an address that is not ``127.0.0.1:<port>``."""
+    if not is_nonce(nc):
+        raise ValueError("nc")
+    ns = nonce()
+    proof = mac(key, "server", role, server, nc, ns, "hello", EMPTY_HASH)
+    return ns, {"hermux": 1, "role": role, "kid": kid(key), "ns": ns, "addr": server, "proof": proof}
+
+
+def parse_auth(value, with_nc: bool = False):
+    """``X-Hermux-Auth`` as ``(kid, ns, nc, mac)``, or None when it is malformed. The same-connection form is
+    ``1 <kid> <ns> <mac>`` (``nc`` comes back None: the server kept it from the hello); the dashboard's token step, which
+    runs on a connection of its own, also names the client nonce: ``1 <kid> <ns> <nc> <mac>``."""
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+    if not isinstance(value, str) or len(value) > 256:
+        return None
+    parts = value.strip(" \t").split(" ")
+    if len(parts) != (5 if with_nc else 4) or parts[0] != "1":
+        return None
+    k, ns, m = parts[1], parts[2], parts[-1]
+    nc = parts[3] if with_nc else None
+    if not is_kid(k) or not is_nonce(ns) or (with_nc and not is_nonce(nc)) or not _hex(m, 64):
+        return None
+    return k, ns, nc, m
+
+
+def request_ok(key: str, role: str, server: str, nc: str, ns: str, method: str, target: str, body: bytes,
+               given_mac: str) -> bool:
+    """True when ``given_mac`` is the client MAC over ``<method> <target>`` (the path with its query, as sent) and the
+    SHA-256 of the raw body bytes. Anything malformed, an unusable key included, is simply False."""
+    if not isinstance(body, (bytes, bytearray)):
+        return False
+    try:
+        want = mac(key, "client", role, server, nc, ns, f"{method} {target}", sha256hex(bytes(body)))
+    except (ValueError, TypeError):
+        return False
+    return same(want, given_mac)
+
+
+def answer_proof(key: str, role: str, server: str, nc: str, ns: str, what: str, data: bytes = b"") -> str:
+    """A proof over an answer: the token (``what`` ``token``, ``data`` the token) or a REST status (``rest <status>``,
+    no data). ValueError like ``mac``."""
+    return mac(key, "answer", role, server, nc, ns, what, sha256hex(data))
+
+
+class PendingHellos:
+    """The dashboard guard's server nonces between the hello and the token step, which arrive on two connections. Each
+    lives ``ttl`` seconds and is used once (``take`` removes it, whatever the request then proves); at most ``limit``
+    are kept and a new one drops the oldest, so a flood of hellos costs a bounded amount of memory and can only make an
+    honest client's token step fail (it then says hello again). Thread-safe."""
+
+    def __init__(self, ttl: float = HELLO_TTL_S, limit: int = MAX_PENDING, clock=time.monotonic):
+        self._ttl, self._limit, self._clock = ttl, limit, clock
+        self._items: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _expire(self, now: float) -> None:
+        while self._items:
+            ns, entry = next(iter(self._items.items()))
+            if entry[0] > now:
+                return
+            del self._items[ns]
+
+    def add(self, ns: str, nc: str, kid_: str, server: str) -> None:
+        with self._lock:
+            now = self._clock()
+            self._expire(now)
+            self._items.pop(ns, None)
+            while len(self._items) >= self._limit:
+                self._items.popitem(last=False)
+            self._items[ns] = (now + self._ttl, nc, kid_, server)
+
+    def take(self, ns: str):
+        """``(nc, kid, addr)`` for a live ``ns``, once; None when it is unknown, used or expired."""
+        with self._lock:
+            now = self._clock()
+            self._expire(now)
+            entry = self._items.pop(ns, None)
+        return None if entry is None else entry[1:]
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._items)
+
+
+class KeyFile:
+    """The shared key's file, read again only when it changes: by inode, modification time (ns) and size, so a file
+    replaced by a rename, or rewritten in place with another length or time, is read again. An empty or unreadable file
+    is never cached (the next call looks again) and reads as ``""``. ``path`` is a path or a function giving one (None:
+    no file)."""
+
+    def __init__(self, path):
+        self._path = path
+        self._cache = None  # (path, signature, key)
+
+    @staticmethod
+    def _sig(st) -> tuple:
+        return st.st_ino, st.st_mtime_ns, st.st_size
+
+    def read(self) -> str:
+        path = self._path() if callable(self._path) else self._path
+        if path is None:
+            return ""
+        path = str(path)
+        try:
+            sig = self._sig(os.stat(path))
+        except OSError:
+            return ""
+        cached = self._cache
+        if cached is not None and cached[0] == path and cached[1] == sig:
+            return cached[2]
+        try:
+            with open(path, "rb") as f:
+                sig = self._sig(os.fstat(f.fileno()))  # the signature of the file actually read
+                data = f.read(4096)
+        except OSError:
+            return ""
+        key = data.decode("utf-8", "replace").strip()
+        self._cache = (path, sig, key) if key else None  # one assignment: a reader on another thread sees old or new
+        return key
+
+
+class _Lines:
+    """A ticker connection's input, one line at a time: at most MAX_LINE bytes a line, LINE_READ_S a read, and one
+    deadline for the whole exchange. ``next`` gives ``(line, complete)``; an incomplete line is what came before the
+    end of the stream or the deadline (nothing at all for a line too long)."""
+
+    def __init__(self, conn, deadline: float):
+        self._conn, self.deadline, self._buf = conn, deadline, b""
+
+    def next(self) -> tuple[bytes, bool]:
+        while True:
+            i = self._buf.find(b"\n")
+            if i >= 0:
+                if i + 1 > MAX_LINE:
+                    return b"", False
+                line, self._buf = self._buf[:i], self._buf[i + 1:]
+                return line, True
+            if len(self._buf) >= MAX_LINE:
+                return b"", False
+            left = self.deadline - time.monotonic()
+            if left <= 0:
+                return self._rest(), False
+            try:
+                self._conn.settimeout(min(LINE_READ_S, left))
+                data = self._conn.recv(MAX_LINE - len(self._buf))
+            except OSError:  # socket.timeout included
+                return self._rest(), False
+            if not data:
+                return self._rest(), False
+            self._buf += data
+
+    def _rest(self) -> bytes:
+        out, self._buf = self._buf, b""
+        return out
+
+
+def ticker_serve_one(conn, key: str, server: str, legacy: bool = True) -> str:
+    """One connection to the cron ticker's poke listener. The line protocol (each line ends in a newline):
+
+        C: HELLO 1 <nc> [<kid>]   (the kid hint: the server proves with that key if it is accepted, else its own)
+        S: HERMUX 1 ticker <kid> <ns> <addr> <proof>
+        C: POKE 1 <mac>          (the client MAC with what ``POKE`` and no body)
+
+    Returns ``"poke"`` for a verified POKE, ``"legacy"`` for a first line that is the raw key itself (the protocol
+    before this one) while ``legacy`` is True, ``"legacy_refused"`` for that line once ``legacy`` is False (it pokes
+    nothing: the caller reports it, ``report_legacy``), ``""`` for anything else. Never answers anything but the
+    HERMUX line, and only when the key is usable. The caller closes the connection."""
+    lines = _Lines(conn, time.monotonic() + LINE_DEADLINE_S)
+    first, complete = lines.next()
+    if first.startswith(b"HELLO "):
+        args = hello_line(first) if complete else None
+        if args is None:
+            return ""
+        nc, hint_ = args
+        key = hello_key([key], hint_)  # one key here: a hint for any other is ignored
+        try:
+            ns, j = hello_answer(key, "ticker", server, nc)
+        except ValueError:
+            return ""  # no usable key (or no loopback address): no proof, and nothing else either
+        line = f"HERMUX 1 ticker {j['kid']} {ns} {server} {j['proof']}\n".encode("ascii")
+        try:
+            conn.settimeout(max(0.001, min(LINE_READ_S, lines.deadline - time.monotonic())))
+            conn.sendall(line)
+        except OSError:
+            return ""
+        second, complete = lines.next()
+        parts = second.split(b" ")
+        if not complete or len(parts) != 3 or parts[0] != b"POKE" or parts[1] != b"1":
+            return ""
+        try:
+            given = parts[2].decode("ascii")
+        except UnicodeDecodeError:
+            return ""
+        if not _hex(given, 64):
+            return ""
+        want = mac(key, "client", "ticker", server, nc, ns, "POKE", EMPTY_HASH)
+        return "poke" if same(want, given) else ""
+    want = (key or "").strip().encode()
+    got = first.strip()
+    if not (want and hmac.compare_digest(got, want)):
+        return ""
+    return "legacy" if legacy else "legacy_refused"
+
+
+LEGACY_EVERY_S = 86400.0  # a server tells the app about a raw key at most this often
+
+
+class Daily:
+    """True from ``due()`` at most once per ``every`` seconds of wall-clock time (a clock set back counts as time
+    passed, so it can only make the next one come sooner, never stop it). Thread-safe."""
+
+    def __init__(self, every: float = LEGACY_EVERY_S, clock=time.time):
+        self.every, self.clock, self.last = every, clock, None
+        self.lock = threading.Lock()
+
+    def due(self) -> bool:
+        now = self.clock()
+        with self.lock:
+            if self.last is not None and 0 <= now - self.last < self.every:
+                return False
+            self.last = now
+            return True
+
+
+def report_legacy(port_name: str, key: str, events_port: int = 9121, timeout: float = 2) -> bool:
+    """Tells the app that this server refused a raw key after the switch: ``{"kind":"local_legacy","port":<name>}``,
+    signed, to a listener that proved itself (nothing at all otherwise). The app then replaces the key (at most once a
+    day). True on a 2xx answer; never raises."""
+    if port_name not in ROLES:
+        return False
+    try:
+        body = json.dumps({"kind": "local_legacy", "port": port_name}).encode()
+        answer = session("events", events_port, key, timeout=timeout).request("POST", "/event", body)
+        return 200 <= answer.status < 300
+    except Exception:
+        return False

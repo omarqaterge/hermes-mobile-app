@@ -30,6 +30,29 @@ loop_exit() {  # name, exit code: for the app's diagnostic log (plugin diag.py c
 # and each time this script runs, also for a program that never exits.
 for f in ~/logs/*.log; do [ -f "$f" ] && trim_log "$f" 2097152 524288; done
 dash_port=${HM_DASH_PORT:-9119}  # the tests' free port; on a phone always the one in the dashboard's command below
+app_port=${HM_APP_PORT:-9121}  # the app's listener (the tests' free port)
+# The keeper verifies the app's listener every round (1) or every Nth round, with a bare connect in between (battery).
+keeper_hello_every=${HM_KEEPER_HELLO_EVERY:-1}
+case "$keeper_hello_every" in ''|*[!0-9]*|0) keeper_hello_every=1 ;; esac
+hm_local="$HOME/bin/hm-local"  # local authentication's client: it verifies a local server; the key never leaves it
+why_of() {  # hm-local's exit code -> the reason's name (empty: verified, or no answer about the server at all)
+  case "$1" in 3) echo no_answer ;; 4) echo no_hello ;; 5) echo old_version ;; 6) echo bad_addr ;; 7) echo unknown_kid ;;
+    8) echo bad_proof ;; 9) echo refused ;; *) echo "" ;; esac
+}
+local_hello() {  # ROLE PORT: hm-local's exit code (0: the server proved the key), 127 without hm-local
+  [ -x "$hm_local" ] || return 127
+  "$hm_local" hello "$1" "$2" </dev/null >/dev/null 2>&1
+}
+local_line() {  # NAME PORT [WHY]: one fixed line for the diagnostic log (plugin diag.py checks it again when it reads it)
+  [ -f ~/.hermes-mobile/diag-off ] && return 0
+  trim_log ~/logs/loop-events.log 65536 32768
+  printf '%s local %s port=%s side=termux%s\n' "$(date +%s)" "$1" "$2" "${3:+ why=$3}" >> ~/logs/loop-events.log
+}
+local_port_event() {  # PORT STATE: tell the app, through hm-local (it verifies the app's listener first); best effort
+  [ -x "$hm_local" ] || return 0
+  printf '{"kind":"local_port","port":"%s","state":"%s"}' "$1" "$2" | "$hm_local" post /event "$app_port" >/dev/null 2>&1
+  return 0
+}
 dash_answers() {  # the port gives an HTTP reply: Debian's Python serves it. A bare connect isn't enough: a Python left without its
   # proot (hermes-debian --restart) keeps the port open and never replies. A refused port costs nothing and reaches no Python.
   ( exec 3<>"/dev/tcp/127.0.0.1/$dash_port" && printf 'HEAD /api/status HTTP/1.0\r\n\r\n' >&3 && IFS= read -r -t 5 line <&3 \
@@ -37,11 +60,78 @@ dash_answers() {  # the port gives an HTTP reply: Debian's Python serves it. A b
 }
 # A dashboard this loop didn't start can hold the port: its old loop was stopped (killing a loop leaves its program running),
 # `hermes update` brought it back detached, or two runs of this script both started a loop. A new `hermes dashboard` would only
-# print "already running" and exit 0, one Debian start each time: wait here instead. Never wakes the phone: `sleep` stops in deep sleep.
+# print "already running" and exit 0, one Debian start each time: wait here instead, but only for a dashboard of ours.
+# dash_state sets dash_seen: none (nothing answers HTTP), ours (hm-local verifies the listener, or it speaks no hello, as an
+# older plugin's guard, and a dashboard process runs as this user, Termux's own; under chroot root's processes are
+# hidden, so there only the hello counts) or other (something else answers: dash_why says why).
+dash_process() { pgrep -u "$(id -u)" -f "[h]ermes dashboard --host 127[.]0[.]0[.]1 --port $dash_port" >/dev/null 2>&1; }
+dash_state() {
+  dash_seen=none; dash_why=""
+  dash_answers || return 0
+  local rc why
+  local_hello dashboard "$dash_port"; rc=$?
+  if [ "$rc" = 0 ]; then dash_seen=ours; return 0; fi
+  why=$(why_of "$rc")
+  # No hello (an older plugin), or no way to ask (no hm-local, no Python, no key): the process decides.
+  if { [ -z "$why" ] || [ "$why" = no_hello ]; } && dash_process; then dash_seen=ours; return 0; fi
+  dash_seen=other; dash_why=${why:-no_hello}
+}
+dash_taken=""  # set while the port is held by something that isn't ours (a change is logged once)
+# Returns 0 when it waited for a dashboard of ours, 1 when the loop should start its own now. Something that isn't ours
+# never makes it wait: the line `local port_taken port=dashboard` goes to the loop-events log once, the app is told
+# (`local_port`), and the loop starts its dashboard anyway (that start fails while the port is held, and the loop's own
+# back-off, 10 s doubling to 300 s, bounds the cost). Never wakes the phone: `sleep` stops in deep sleep.
 wait_other_dashboard() {
-  dash_answers || return 1
+  dash_state
+  if [ "$dash_seen" = other ]; then
+    if [ -z "$dash_taken" ]; then
+      dash_taken=1; local_line port_taken dashboard "$dash_why"; local_port_event dashboard taken
+    fi
+    return 1
+  fi
+  if [ -n "$dash_taken" ]; then dash_taken=""; local_line port_ok dashboard; local_port_event dashboard ok; fi
+  [ "$dash_seen" = ours ] || return 1
   echo "$(date -u +%FT%TZ) hermes-services: a dashboard this loop did not start answers on port $dash_port; waiting for it to stop" >> ~/logs/dashboard.log
-  while dash_answers; do sleep 60; done
+  # A plain HTTP probe each minute (no Python); every fifth one also asks again whether it is still ours.
+  local n=0
+  while dash_answers; do
+    sleep 60; n=$((n + 1))
+    if [ $((n % 5)) = 0 ]; then dash_state; [ "$dash_seen" = ours ] || break; fi
+  done
+  return 0
+}
+# The app keeper: a refused connect means the app's service isn't listening, so StartReceiver starts it. A connect that
+# works is not enough: hm-local verifies the listener (every round, or every keeper_hello_every-th round with the bare
+# connect in between). A listener that names another key (unknown_kid: most likely Termux's copy of the key is out of
+# date, which the app fixes by sharing it again; the name carries no proof) gets one `local unverified port=events
+# why=unknown_kid` line per change; any other failure one `local port_taken port=events why=<reason>` line. Either gets
+# the broadcast (the service then tries its port again, shares the key or tells the user), at once and then at most once
+# every keeper_wake_every rounds. A refused connect broadcasts at once and starts that count again. Without hm-local, the
+# connect decides as before.
+wake_app() { am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32 >/dev/null 2>&1; }
+keeper_wake_every=3
+keeper_round=0; keeper_taken=""; keeper_wait=0
+keep_app() {
+  keeper_round=$((keeper_round + 1))
+  if ! (exec 3<>"/dev/tcp/127.0.0.1/$app_port") 2>/dev/null; then
+    wake_app; keeper_wait=0
+  elif [ $((keeper_round % keeper_hello_every)) = 0 ]; then
+    local rc why
+    local_hello events "$app_port"; rc=$?
+    why=$(why_of "$rc")
+    if [ -n "$why" ]; then
+      if [ "$why" = unknown_kid ]; then
+        [ "$keeper_taken" = "$why" ] || { keeper_taken=$why; local_line unverified events "$why"; }
+      else
+        [ "$keeper_taken" = "$why" ] || { keeper_taken=$why; local_line port_taken events "$why"; }
+      fi
+      if [ "$keeper_wait" -le 0 ]; then wake_app; keeper_wait=$keeper_wake_every; fi
+      keeper_wait=$((keeper_wait - 1))
+    elif [ "$rc" = 0 ]; then
+      keeper_taken=""; keeper_wait=0
+    fi
+  fi
+  sleep 300
 }
 run_loop() {  # name, command...
   local name=$1; shift
@@ -75,7 +165,8 @@ ms=/root/.hermes/scripts/hermes_memory_sync.py
 if [ -x "$HOME/bin/hermes-debian" ]; then has_ms() { "$HOME/bin/hermes-debian" --exists $ms; }
 else has_ms() { [ -f $PREFIX/var/lib/proot-distro/containers/debian/rootfs$ms ]; }; fi
 has_ms && run_loop memory-sync bash -c "$deb python3 $ms sync; rc=\$?; sleep 590; exit \$rc"
-run_loop cron-ticker $deb bash -lc "$PY; exec \$PY /root/.hermes/scripts/cron_ticker.py"
+# The ticker ships in the plugin folder, so a plugin update brings it along; an older install has only the installer's copy.
+run_loop cron-ticker $deb bash -lc "$PY; T=/root/.hermes/plugins/hermes-mobile/cron_ticker.py; [ -f \$T ] || T=/root/.hermes/scripts/cron_ticker.py; exec \$PY \$T"
 # The always-on bot keeper (a 4 s loop) and its messaging gateway are retired: the app is the only front
 # end. Stop a keeper left running by an older version of this script, then the keeper process and gateway.
 if [ -f ~/logs/bot-keeper.pid ]; then
@@ -85,7 +176,7 @@ if [ -f ~/logs/bot-keeper.pid ]; then
   $deb bash -lc "$PY; \$PY /root/.hermes/plugins/hermes-mobile/bots.py off" >> ~/logs/bot-keeper.log 2>&1
 fi
 # Hermux app service (pinned status + notifications); `am` works here, outside Debian. It is costly (a
-# Java VM per call), so only call it when the service's loopback port doesn't answer. `-f 32`
+# Java VM per call), so only call it when the service's loopback port doesn't answer or doesn't verify (keep_app). `-f 32`
 # (FLAG_INCLUDE_STOPPED_PACKAGES): stock Android drops broadcasts to a force-stopped app without it (some vendor
 # builds deliver them anyway); with it the keeper also revives the app after a force stop or a Recents clean-up.
-run_loop app-keeper bash -c "(exec 3<>/dev/tcp/127.0.0.1/9121) 2>/dev/null || am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32 >/dev/null 2>&1; sleep 300"
+run_loop app-keeper keep_app

@@ -7,7 +7,7 @@
 import type { HelperApp, NativeSetup, ShizukuAuto } from './bridge'
 
 export type StepId =
-  | 'apps' | 'termux' | 'shizuku-start' | 'run' | 'installer' | 'hermes' | 'plugin' | 'enabled' | 'model'
+  | 'apps' | 'termux' | 'shizuku-start' | 'run' | 'installer' | 'hermes' | 'plugin' | 'enabled' | 'scripts' | 'model'
   | 'notif' | 'bat-app' | 'bat-termux' | 'bat-shizuku' | 'termux-boot' | 'files' | 'termux-api' | 'shizuku' | 'shizuku-auto' | 'autostart'
 
 /** What Termux said to the shell's probe (MainActivity.probeTermux). unknown: not asked / no answer yet · denied: no
@@ -204,6 +204,8 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
     row('hermes', true, online ? 'ok' : conn === 'connecting' || conn === 'idle' ? 'wait' : 'bad'),
     row('plugin', true, !online || !r || r.plugin == null ? (online ? 'wait' : 'skip') : r.plugin ? 'ok' : 'bad'),
     row('enabled', true, !online || !r?.plugin || r.enabled == null ? 'skip' : r.enabled ? 'ok' : 'bad'),
+    // Shown only while the shell says Termux's scripts are older than the app's; no app build says so yet.
+    row('scripts', false, n?.phoneScriptsOld ? 'bad' : 'skip'),
     row('shizuku', true, n?.shizuku === false ? 'bad' : !p ? 'skip' : p.shizuku === 'ok' ? 'ok' : 'bad'),
     // Needs Android 11+ (the app says so), and is meaningful only once Shizuku itself works with Hermes: before that (or
     // before the installer ran) the row stays out of the way. Older app builds don't report it: no row.

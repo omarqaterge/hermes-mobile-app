@@ -51,7 +51,8 @@ trap 'kill $MOCK $DEV 2>/dev/null || true; rm -rf "$run_dir"' EXIT
 for try in 1 2 3; do
   : > "$run_dir/mock.out"; : > "$run_dir/dev.out"
   node mock.cjs > "$run_dir/mock.out" & MOCK=$!
-  ( cd ../../web && HM_HERMES_URL="http://127.0.0.1:$HM_E2E_MOCK_PORT" HM_DEV_PORT=$HM_E2E_WEB_PORT exec python3 devserver.py > "$run_dir/dev.out" 2>/dev/null ) & DEV=$!
+  # HM_EVENT_KEY emptied: the mock has no hello, so the page server takes its token as served (no key exists here).
+  ( cd ../../web && HM_EVENT_KEY= HM_HERMES_URL="http://127.0.0.1:$HM_E2E_MOCK_PORT" HM_DEV_PORT=$HM_E2E_WEB_PORT exec python3 devserver.py > "$run_dir/dev.out" 2>/dev/null ) & DEV=$!
   up=
   for _ in $(seq 100); do
     grep -q '^mock on ' "$run_dir/mock.out" && grep -q '^devserver on ' "$run_dir/dev.out" && { up=1; break; }

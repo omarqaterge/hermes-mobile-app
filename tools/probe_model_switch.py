@@ -6,9 +6,18 @@
 #   tools/phone "proot-distro login debian -- bash -lc 'PY=\$(ls -td /root/.hermes/installs/*/environments/*/venv/bin/python3 | head -1); exec \$PY - \"<model-a> --provider <p>\" \"<model-b> --provider <p>\"'" < tools/probe_model_switch.py
 import asyncio, json, re, sys, urllib.request
 import websockets
-import os; _k = "/data/data/com.termux/files/home/.hermes-mobile/key"; _key = os.environ.get("HM_EVENT_KEY") or (open(_k).read().strip() if os.path.exists(_k) else "")
-page = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:9119/", headers={"X-Hermes-Mobile-Key": _key})).read().decode()
-token = re.search(r'__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"', page).group(1)
+def _verified_token(port=9119):
+    """The dashboard's session token from a verified dashboard only (local authentication, through the installed
+    plugin's local_auth.py: the hello, the signed token request, the proof over the answer). The key is never sent."""
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location("hm_local_auth", "/root/.hermes/plugins/hermes-mobile/local_auth.py")
+    la = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(la)
+    k = os.environ.get("HM_EVENT_KEY") or open("/data/data/com.termux/files/home/.hermes-mobile/key").read().strip()
+    return la.dashboard_token(port, k, timeout=10, server=os.environ.get("HM_DASH_ADDR") or None)
+
+
+token = _verified_token()
 A, B = (v if "--session" in v else v + " --session" for v in sys.argv[1:3])
 
 async def main():
