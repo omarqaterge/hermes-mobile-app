@@ -4,6 +4,42 @@ User-facing changes, newest first. Each release section collects what shipped si
 
 ## Unreleased
 
+## v0.9.8 (2026-11-14)
+
+- **See what changed right after you update.** The first time Hermux opens on a new version, a sheet over the chat
+  lists what is new in it, one line per change, biggest first, and every version you skipped too. Details shows the
+  full notes; a scroll bar shows when the list is longer than the screen; Got it closes it for good. It stays away on
+  a new install, when the notes can't be read (it tries again next start), and while Setup or a dialog is open.
+  Checked in browser tests with a stand-in changelog and on an Android 16 phone with the real 0.9.6 and 0.9.7 notes
+  (the update was simulated by changing the stored version); the scroll bar is not yet seen on a phone.
+- **The installer sets up the same version as the app it downloads.** The installer in Termux (and the full setup
+  that runs it) used to put the newest development version of the Hermux plugin on the phone, while it downloaded the
+  latest released app. When the two didn't match, the app could stay offline with "Hermes is running" never turning
+  green, although Hermes worked. The installer now takes the plugin and scripts from the latest release, the one the
+  app comes from, and keeps an older copy as the branch `hm-before-update`. Checked in a script test against local
+  repositories and against the real release on GitHub (from a computer, not on a phone).
+
+### Smaller changes and fixes
+
+- **Security updates for the parts that display replies.** The app now ships DOMPurify 3.4.17 (used by diagrams),
+  KaTeX 0.18 (maths) and only zod 4.6.7, which fix published security flaws in the older versions. The test tools
+  (Vitest 4, Vite 7.3.8, happy-dom 21) were updated too. Checked with the typecheck, unit tests and browser tests; not
+  tried on a phone.
+- **Releases carry the app under one name, hermux.apk.** Until v0.9.7 every release also carried the same file as
+  hermes-mobile.apk, for guides and scripts from before the rename. The installed app is not affected (it takes any
+  .apk of the latest release) and the installers ask for hermux.apk first. What stops working: a saved script or link
+  that asks for releases/latest/download/hermes-mobile.apk. Checked in the release workflow's guard test; the first
+  release built this way is the proof.
+- **Running the installer again no longer stops on an old copy of Hermux.** The installer in Termux (the command from
+  Setup → Copy the command) updates a copy of the code in `~/hermes-mobile`. On phones that cloned it before the
+  project's history was rewritten, that update failed with "Not possible to fast-forward" and the install stopped. It
+  now replaces the copy with the latest release and keeps the old one as the branch `hm-before-update`. Checked in a
+  script test against local repositories; seen failing on a phone that had the v0.8.67 copy.
+- **Copy table keeps backslashes and columns right.** A cell ending in `\` no longer merges with the next column when a
+  table is copied. Tighter checks on names that reach the phone's files: a voice model's ID and the files a model is
+  imported from stay inside the model's folder, and a Hermes profile name must follow Hermes's own naming rule. Checked
+  with unit tests and the plugin tests; not tried on a phone.
+
 ## v0.9.7 (2026-11-14)
 
 - **Hermux checks it is talking to the real Hermes, and never sends its key.**
