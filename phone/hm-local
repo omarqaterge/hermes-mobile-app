@@ -718,7 +718,13 @@ def _say(text: str) -> None:
         sys.stderr.write(text)
         sys.stderr.flush()
     except (AttributeError, OSError, ValueError):
-        pass
+        # No usable stderr (closed with 2>&-; the shell may have left another file, read-only, on descriptor 2): keep
+        # Python's exit-time flush of the text still buffered from turning the exit code into 120.
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, 2)
+        except OSError:
+            pass
 
 
 def _write(data: bytes) -> None:

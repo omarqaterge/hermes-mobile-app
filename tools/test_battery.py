@@ -282,10 +282,15 @@ check("a short lease keeps the room poll as it is", short.poll_interval_seconds 
 print("app-keeper")
 import re
 svc = (ROOT / "phone" / "hermes-services").read_text()
-keeper = next((l for l in svc.splitlines() if l.startswith("run_loop app-keeper")), "")
+keeper_loop = next((l for l in svc.splitlines() if l.startswith("run_loop app-keeper")), "")
+keeper = re.search(r"^keep_app\(\) \{.*?^\}", svc, re.S | re.M)
+keeper = keeper.group(0) if keeper else ""
+wake = next((l for l in svc.splitlines() if l.startswith("wake_app()")), "")
 manifest = (ROOT / "android" / "AndroidManifest.xml").read_text()
 check("keeper probes the port first, then broadcasts to StartReceiver incl. stopped packages",
-      "/dev/tcp/127.0.0.1/9121" in keeper and "am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32" in keeper, keeper)
+      keeper_loop == "run_loop app-keeper keep_app" and "app_port=${HM_APP_PORT:-9121}" in svc
+      and '/dev/tcp/127.0.0.1/$app_port' in keeper and "wake_app" in keeper
+      and "am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32" in wake, keeper)
 m = re.search(r'<receiver\s+android:name="\.StartReceiver"(.*?)(/>|</receiver>)', manifest, re.S)
 check("manifest: StartReceiver is exported", bool(m) and 'android:exported="true"' in m.group(1), m.group(0) if m else "")
 
