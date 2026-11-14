@@ -150,6 +150,17 @@ module.exports = async t => {
     check((await det.innerText()) === 'Hide details', "what's new after update: then reads Hide details")
     await det.click()
     check(!(await sheet.innerText()).includes('over two lines'), "what's new after update: Hide details hides them again")
+    await pg.setViewportSize({ width: 375, height: 420 }) // short screen with the details open: the list must scroll
+    await det.click()
+    // Headless Chromium hides scroll bars (--hide-scrollbars), so check the list overflows and the styled bar applies.
+    const bar = await sheet.locator('.sheet-scroll').evaluate(el => {
+      const rules = [...document.styleSheets].flatMap(ss => { try { return [...ss.cssRules] } catch { return [] } })
+      const r = rules.find(x => x.selectorText === '.sheet-scroll.whats-new::-webkit-scrollbar')
+      return { over: el.scrollHeight > el.clientHeight, styled: el.matches('.sheet-scroll.whats-new') && !!r && parseFloat(r.style.width) >= 4 }
+    })
+    check(bar.over && bar.styled, `what's new after update: a long list scrolls with a visible, styled scroll bar (${JSON.stringify(bar)})`)
+    await det.click()
+    await pg.setViewportSize({ width: 375, height: 812 })
     await sheet.getByRole('button', { name: 'Close' }).click()
     await sheet.waitFor({ state: 'detached', timeout: 3000 })
     check((await seenNow()) === '0.8.70', "what's new after update: the close button records the version too")
