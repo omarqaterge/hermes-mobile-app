@@ -147,7 +147,7 @@ for rc in 4 8 127; do
   [ "$rc" = 127 ] && mv "$HOME/bin/hm-local" "$T/hm-local.off"
   fake_quick() { echo run >> "$STARTS"; return 3; }
   run_loop dashboard fake_quick
-  upto '[ "$(lines "$STARTS")" -ge 4 ]' || true
+  upto '[ "$(lines "$SLEEPS")" -ge 4 ]' || true  # the 4th wait is recorded after the 4th start: stopping on the start loses it
   stop_loop; unserve
   [ "$rc" = 127 ] && mv "$T/hm-local.off" "$HOME/bin/hm-local"
   why=$(why_of "$rc"); why=${why:-no_hello}
