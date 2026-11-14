@@ -26,7 +26,15 @@ here=""
 if [ -z "$here" ] || [ ! -d "$here/hermes-plugin/hermes-mobile" ]; then
   echo "0/5 Getting Hermux into ~/hermes-mobile"
   command -v git >/dev/null || pkg install -y git
-  if [ -d "$HOME/hermes-mobile/.git" ]; then git -C "$HOME/hermes-mobile" pull -q --ff-only
+  if [ -d "$HOME/hermes-mobile/.git" ]; then
+    # A copy left from before the repository's history was rewritten (or edited by hand) can't fast-forward: put the
+    # current code in its place and keep the old state on the branch hm-before-update, so nothing is lost.
+    git -C "$HOME/hermes-mobile" pull -q --ff-only 2>/dev/null || {
+      echo "   the copy in ~/hermes-mobile has a different history; replacing it with the current one (old one kept as hm-before-update)"
+      git -C "$HOME/hermes-mobile" fetch -q origin main \
+        && { git -C "$HOME/hermes-mobile" branch -f hm-before-update HEAD 2>/dev/null || true; } \
+        && git -C "$HOME/hermes-mobile" reset -q --hard FETCH_HEAD
+    }
   else git clone -q --depth 1 "$REPO.git" "$HOME/hermes-mobile"; fi
   here="$HOME/hermes-mobile"
 fi
