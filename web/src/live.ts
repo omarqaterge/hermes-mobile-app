@@ -6,6 +6,7 @@
 // compared with what Hermes is saying, and only words that aren't Hermes's own echo cut it off.
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { answerRequest, errText, sendPrompt } from './gateway'
+import { approvalKind, approvalMayStart, fireStep, hearRoute, hiddenKeepsSpeech, idleMayEnd, isOn, listenOpensMic, listeningAction, mayInterrupt, mayListenOver, muteStep, overAction, overRestartDue, replyAction, restartDue, sentTo, speechEndListens, thinkTimeoutDue, type HearKind, type LiveFlags, type LivePhase } from './livestate'
 import { phoneDataTextOf } from './phone-data-request'
 import { leaveLockView } from './lockview'
 import { getState, toast } from './store'
@@ -52,7 +53,7 @@ const IDLE_MAX_MS = 5 * 60_000 // live mode ends itself after this long without 
 
 let buffer = '' // finished phrases of the current message
 let partial = '' // the phrase being recognised right now
-let phase: 'off' | 'listening' | 'thinking' | 'speaking' = 'off'
+let phase: LivePhase = 'off'
 let pauseTimer: ReturnType<typeof setTimeout> | null = null
 let thinkTimer: ReturnType<typeof setTimeout> | null = null
 let unTts: (() => void) | null = null
@@ -83,7 +84,10 @@ export function isUserSpeech(heard: string, spokenWords: Set<string>): boolean {
 const onlyStop = (t: string): boolean => wordsOf(t).every(x => STOP_WORDS.has(x))
 
 export const liveAvailable = (): boolean => voiceInputAvailable()
-export const liveOn = (): boolean => phase !== 'off'
+export const liveOn = (): boolean => isOn(phase)
+
+/** The state the decisions in livestate.ts look at (the table there). */
+const flags = (): LiveFlags => ({ phase, muted, over, finalWait, pausePending: pauseTimer !== null })
 
 const join = (a: string, b: string) => [a, b].filter(Boolean).join(' ').trim()
 
@@ -99,51 +103,53 @@ function clearTimers() {
 function armIdle() {
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = setTimeout(() => {
-    if (phase !== 'listening') return
+    if (!idleMayEnd(phase)) return
     toast('Live mode ended: no speech for 5 minutes')
     stopLive()
   }, IDLE_MAX_MS)
 }
 
-function goto(p: typeof phase) {
+function goto(p: LivePhase) {
   phase = p
   setLivePhase(p)
 }
 
 function listen() {
-  if (phase === 'off') return
+  if (!isOn(phase)) return
   clearTimers()
   buffer = ''
   partial = ''
   goto('listening')
-  if (muted) return // stay on, but with the microphone closed until the user unmutes
+  if (!listenOpensMic(muted)) return // stay on, but with the microphone closed until the user unmutes
   armIdle()
   over = false
   startListening(hear)
 }
 
 /** What the recogniser hears, in every phase. */
-function hear(kind: 'partial' | 'final' | 'error' | 'quiet' | 'end', t: string) {
-  if (phase === 'speaking' && over) return overheard(kind, t)
-  if (phase !== 'listening' || muted) return // late words after we already sent, after stopping, or while muted
-  if (kind === 'partial') {
+function hear(kind: HearKind, t: string) {
+  const route = hearRoute(flags())
+  if (route === 'over') return overheard(kind, t)
+  if (route === 'ignore') return // late words after we already sent, after stopping, or while muted
+  const action = listeningAction(kind, flags())
+  if (action === 'note-partial') {
     partial = t
     armIdle()
     arm() // still speaking: restart the 2 s countdown
-  } else if (kind === 'final') {
+  } else if (action === 'final-send' || action === 'final-arm' || action === 'final-keep') {
     buffer = join(buffer, t)
     partial = ''
-    if (finalWait) {
+    if (action === 'final-send') {
       // the phrase we were waiting for: send now
       if (pauseTimer) clearTimeout(pauseTimer)
       fire()
-    } else if (!pauseTimer) arm() // a phrase that arrived only as a final still counts as speech
-  } else if (kind === 'error') {
+    } else if (action === 'final-arm') arm() // a phrase that arrived only as a final still counts as speech
+  } else if (action === 'fail') {
     toast(voiceErrorText(t, true), 'error', 8000)
     stopLive()
-  } else if (kind === 'end') {
+  } else if (action === 'restart') {
     // The recogniser stopped by itself (not because we sent): start it again.
-    setTimeout(() => phase === 'listening' && !muted && !pauseTimer && listen(), 400)
+    setTimeout(() => restartDue(flags()) && listen(), 400)
   }
 }
 
@@ -157,23 +163,24 @@ function speakLive(text: string) {
 
 function listenOver() {
   over = false
-  if (phase !== 'speaking' || muted || !bargeInAvailable()) return
+  if (!mayListenOver(flags(), bargeInAvailable())) return
   over = true
   startListeningOver(hear)
 }
 
 /** Heard while Hermes speaks: its own voice is ignored; yours cuts it off and becomes the start of your message. */
-function overheard(kind: 'partial' | 'final' | 'error' | 'quiet' | 'end', t: string) {
-  if (kind === 'error') {
+function overheard(kind: HearKind, t: string) {
+  const action = overAction(kind, (kind === 'partial' || kind === 'final') && isUserSpeech(t, spoken))
+  if (action === 'give-up') {
     over = false // no barge-in for this reply (the tap still works); the error shows if it happens while listening
     stopListening()
     return
   }
-  if (kind === 'end') {
-    setTimeout(() => phase === 'speaking' && over && !muted && startListeningOver(hear), 400) // stopped by itself: again
+  if (action === 'restart') {
+    setTimeout(() => overRestartDue(flags()) && startListeningOver(hear), 400) // stopped by itself: again
     return
   }
-  if ((kind !== 'partial' && kind !== 'final') || !isUserSpeech(t, spoken)) return
+  if (action === 'ignore') return
   bargeIn()
   hear(kind, onlyStop(t) ? '' : t)
 }
@@ -197,20 +204,21 @@ function arm() {
 
 function fire() {
   pauseTimer = null
-  if (partial && !finalWait && phase === 'listening') {
+  const step = fireStep(flags(), !!partial, !!join(buffer, partial))
+  if (step === 'wait-final') {
     finalWait = true
     pauseTimer = setTimeout(fire, FINAL_WAIT_MS)
     return
   }
   finalWait = false
   const text = join(buffer, partial)
-  if (!text || phase !== 'listening') return
+  if (step === 'drop') return
   goto('thinking')
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = null
   stopListening()
-  thinkTimer = setTimeout(() => phase === 'thinking' && listen(), THINK_MAX_MS)
-  if (approval) return answerByVoice(text)
+  thinkTimer = setTimeout(() => thinkTimeoutDue(phase) && listen(), THINK_MAX_MS)
+  if (sentTo(approvalKind(approval)) === 'approval') return answerByVoice(text)
   sendPrompt(text).catch(e => {
     toast(errText(e), 'error')
     listen()
@@ -219,10 +227,11 @@ function fire() {
 
 /** gateway.ts calls this when a reply finishes (empty text = failed or nothing to read). */
 function onReply(text: string) {
-  if (phase !== 'thinking') return
+  const action = replyAction(phase, text)
+  if (action === 'ignore') return
   if (thinkTimer) clearTimeout(thinkTimer)
   thinkTimer = null
-  if (!text.trim()) return listen()
+  if (action === 'listen') return listen()
   speakLive(text)
 }
 
@@ -266,7 +275,7 @@ export function voiceMayAnswer(req: ServerRequest): boolean {
 }
 
 function onApproval(req: ServerRequest) {
-  if (phase === 'off') return
+  if (!approvalMayStart(phase)) return
   if (!voiceMayAnswer(req)) {
     // Said once, then anything heard is NOT an answer (it is kept apart from the prompts below): the sheet stays.
     approval = { req, tries: 0, tapOnly: true }
@@ -313,7 +322,7 @@ function answerByVoice(said: string) {
 }
 
 export function startLive(): void {
-  if (phase !== 'off') return
+  if (isOn(phase)) return
   muted = false
   setLiveMuted(false)
   liveBridge.active = true
@@ -328,14 +337,14 @@ export function startLive(): void {
 /** Cut Hermes off while it speaks and listen at once (the Interrupt button; talking over it does the same when
  * barge-in is on). An approval question being read stays open: the answer is heard next. */
 export function interruptLive(): void {
-  if (phase !== 'speaking') return
+  if (!mayInterrupt(phase)) return
   stopSpeaking() // its late tts-done is ignored: the phase is no longer 'speaking'
   relisten()
 }
 
 /** The reading ended by itself: listen. */
 function onSpoken() {
-  if (phase === 'speaking') relisten()
+  if (speechEndListens(phase)) relisten()
 }
 
 /** Listen afresh. A recogniser left on during the reading (barge-in) is restarted, so the last bit of Hermes's own
@@ -348,7 +357,8 @@ function relisten() {
 
 /** Mic off/on without ending the conversation. Muting throws away what was said but not yet sent. */
 export function setLiveMute(on: boolean): void {
-  if (phase === 'off' || on === muted) return
+  const step = muteStep(flags(), on)
+  if (step === 'none') return
   muted = on
   setLiveMuted(on)
   if (on) {
@@ -356,16 +366,16 @@ export function setLiveMute(on: boolean): void {
     if (idleTimer) clearTimeout(idleTimer) // nothing is being heard, so nothing can be sent by accident
     pauseTimer = idleTimer = null
     buffer = partial = ''
-    if (phase === 'listening' || over) stopListening()
+    if (step === 'mute-close-mic') stopListening()
     over = false
-  } else if (phase === 'listening') listen()
-  else if (phase === 'speaking') listenOver()
+  } else if (step === 'unmute-listen') listen()
+  else if (step === 'unmute-listen-over') listenOver()
 }
 
 /** End Live mode. `keepSpeech`: let a reply that is being read play to the end (Android's TTS engine runs in its own
  * service, so it carries on with the app off screen). */
 export function stopLive(opts?: { keepSpeech?: boolean }): void {
-  if (phase === 'off') return
+  if (!isOn(phase)) return
   muted = false
   setLiveMuted(false)
   liveBridge.active = false
@@ -383,7 +393,7 @@ export function stopLive(opts?: { keepSpeech?: boolean }): void {
 /** Leaving the app ends Live mode: the microphone can't stay open off screen. A reply being read keeps playing;
  * an approval question is cut (answering it needs the microphone). */
 function onLiveHidden(): void {
-  stopLive({ keepSpeech: phase === 'speaking' && !approval })
+  stopLive({ keepSpeech: hiddenKeepsSpeech(phase, approvalKind(approval)) })
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') onLiveHidden()
