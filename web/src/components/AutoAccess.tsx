@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { accessOf, defaultAccess, errText, newSession, setAccess, setDefaultAccess, type Access } from '../gateway'
 import { getState, toast, useStore } from '../store'
+import { viewSettled } from '../chatview'
 import { confirmDialog } from '../dialog'
 import { PickerSheet, SelectRow, type Option } from './ui'
 
@@ -26,7 +27,10 @@ const DONE: Record<Access, string> = {
  *  Full access spells itself out ("⚡ Full access"), so the chip doubles as the warning that commands run unchecked. */
 export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenOff?: boolean; compact?: boolean }) {
   // On the empty screen no chat exists yet: it shows the mode the chat will start in (Settings → Auto for all chats).
-  const mode = useStore(s => (s.active ? accessOf(s.active) : s.opening ? 'off' : defaultAccess()))
+  // While a chat opens, `active` is not the chat on screen (chatview.ts): show Off and take no change, or it would
+  // land on the chat being left, or start a new chat on top of the one opening.
+  const settled = useStore(viewSettled)
+  const mode = useStore(s => (!viewSettled(s) ? 'off' : s.active ? accessOf(s.active) : defaultAccess()))
   const offline = useStore(s => s.conn !== 'open')
   const [open, setOpen] = useState(false)
 
@@ -61,7 +65,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
   const label = mode === 'auto' ? 'Auto access is on' : mode === 'full' ? 'Full access is on' : 'Auto is off'
   return (
     <>
-      <button className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermux may do without asking`} disabled={offline} onClick={() => setOpen(true)}>
+      <button className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermux may do without asking`} disabled={offline || !settled} onClick={() => setOpen(true)}>
         {compact ? (mode === 'full' ? '⚡' : '🛡') : mode === 'full' ? '⚡ Full access' : 'Auto'}
       </button>
       {open && <PickerSheet title="Auto: run without asking" options={OPTIONS} value={mode} onPick={v => void pick(v)} onClose={() => setOpen(false)} />}

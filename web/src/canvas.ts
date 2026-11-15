@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from 'react'
 import { api } from './api'
 import { getState, subscribe, toast } from './store'
+import { screenChat } from './chatview'
 import { galleryToolDone } from './gallery'
 
 export type DocType = 'markdown' | 'html' | 'code' | 'text' | 'json' | 'csv' | 'svg' | 'mermaid'
@@ -80,8 +81,7 @@ let savedTimer: ReturnType<typeof setTimeout> | null = null
 /** The chat the canvas belongs to: the one on screen, or the one still opening (its documents are stored under its
  * stored id, so they can load before Hermes has resumed it, e.g. right after a cold start). */
 function chatId(): string {
-  const s = getState()
-  return s.opening || s.active?.storedId || ''
+  return screenChat(getState())
 }
 
 /** Follow the open chat: each chat has its own canvas. */
