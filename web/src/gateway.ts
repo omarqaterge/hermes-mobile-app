@@ -14,6 +14,7 @@ import { noteLineage, noteListRow } from './lineage'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
+import { noteTurnEnd, queueGoesOn, takeTurnEnd, turnOver, turnSent, turnStarted, type TurnEnd } from './turn'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
 import { canvasCallStarted, canvasToolDone, canvasWritingDone, canvasWritingStarted } from './canvas'
 import { applyDraftRead, autoReadFor, liveBridge, setDraftRead, speak } from './voice'
@@ -765,14 +766,14 @@ export async function sendPrompt(text: string): Promise<void> {
   const refs = files.map(f => f.ref).filter(Boolean)
   const body = refs.length ? `${refs.join(' ')}\n\n${trimmed}` : trimmed
   pushItem({ kind: 'user', id: uid, text: trimmed, images: images.length ? images : undefined, imageUrls: queued.some(x => x.preview) ? queued.filter(x => x.kind === 'image').map(x => x.preview || '') : undefined, imagePaths: queued.some(x => x.path) ? queued.filter(x => x.kind === 'image').map(x => x.path || '') : undefined, files: files.length ? files.map(f => f.name) : undefined, fileRefs: files.length ? files.map(f => f.ref || '') : undefined, at: Date.now() })
-  updateActive(() => ({ running: true, status: '', attachments: [], openAssistantId: null, turnStart: Date.now() }))
+  updateActive(() => ({ ...turnSent(), attachments: [] }))
   try {
     await switching.get(a.runtimeId)?.catch(() => {}) // a model picked a moment ago must apply to this turn
     const r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: body, surface: 'mobile' })
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
     // Not sent: the attachments are still queued, so show them again.
-    updateActive(() => ({ running: false, attachments: queued, turnStart: null }))
+    endTurn(a.runtimeId, 'not-sent', { attachments: queued })
     pushItem({ kind: 'notice', id: newId('n'), text: `Send failed: ${errText(err)}`, level: 'error' })
   }
 }
@@ -1021,11 +1022,11 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
       pushItem({ kind: 'notice', id: newId('n'), text: `/${name}: ${type === 'skill' ? 'skill payload missing message' : 'empty message'}`, level: 'error' })
       return
     }
-    updateActive(() => ({ running: true, status: '', openAssistantId: null, turnStart: Date.now() }))
+    updateActive(() => turnSent())
     try {
       await rpc('prompt.submit', { session_id: a.runtimeId, text: message, display_kind: type === 'skill' ? 'skill' : null, title_preview: r?.display || `/${body}`, surface: 'mobile' })
     } catch (err) {
-      updateActive(() => ({ running: false, turnStart: null }))
+      endTurn(a.runtimeId, 'not-sent')
       pushItem({ kind: 'notice', id: newId('n'), text: `Send failed: ${errText(err)}`, level: 'error' })
     }
     return
@@ -1035,7 +1036,14 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
 }
 
 // ── queued follow-ups (queue.ts): sent one by one when the open chat's turn ends ──
-let turnFailed = false // the running turn was stopped or ended with an error: the queue pauses instead of sending
+/** Any state → idle for the chat with this live id (turn.ts). A send that fails after the user opened another chat
+ *  changes nothing: that chat's turn is not this one's. */
+function endTurn(runtimeId: string, how: TurnEnd, extra: Partial<ActiveSession> = {}): void {
+  if (getState().active?.runtimeId !== runtimeId) return
+  if (how !== 'done') noteTurnEnd(how) // before the fields change: the queue's listener below runs inside updateActive
+  updateActive(() => ({ ...turnOver(), ...extra }))
+}
+
 let seenChat: string | undefined
 let seenRunning = false
 
@@ -1050,14 +1058,12 @@ subscribe(() => {
   if (running) return
   if (chat !== wasChat) {
     // Opening a chat never sends by surprise: a queue it holds waits for Resume.
-    turnFailed = false
+    takeTurnEnd()
     if (chat && queuedFor(chat).length) setPaused(chat, true)
     return
   }
   if (!chat || !wasRunning) return
-  const failed = turnFailed
-  turnFailed = false
-  if (failed) {
+  if (!queueGoesOn(takeTurnEnd())) {
     if (queuedFor(chat).length) setPaused(chat, true)
     return
   }
@@ -1085,7 +1091,7 @@ const bare = (s: string) => s.replace(/^\/+/, '').trim()
 export async function interrupt(): Promise<void> {
   const a = getState().active
   if (!a) return
-  if (a.running) turnFailed = true // the queue pauses when this turn ends
+  if (a.running) noteTurnEnd('stopped') // the queue pauses when this turn ends
   try {
     await rpc('session.interrupt', { session_id: a.runtimeId })
   } catch (err) {
@@ -1535,7 +1541,7 @@ client.onEvent((ev: GatewayEvent) => {
   switch (type) {
     case 'message.start':
       stream = { chars: 0, ms: 0, last: 0, total: 0, start: performance.now() }
-      updateActive(a => ({ running: true, tps: null, turnStart: a.turnStart ?? Date.now() })) // more than one message.start per turn: keep the first
+      updateActive(a => turnStarted(a)) // more than one message.start per turn: the first start time is kept
       break
     case 'thinking.delta':
       updateActive(() => ({ status: String(payload.text || '') }))
@@ -1683,11 +1689,10 @@ client.onEvent((ev: GatewayEvent) => {
         const it = getState().active?.items.find(x => x.id === lastId)
         if (it && it.kind === 'assistant' && it.text) speak(lastId ?? 'auto', it.text)
       }
-      if (p.error || p.failure_reason) turnFailed = true
       const turnSecs = turnStartSecs()
       const watching = getState().active?.storedId
       if (watching && document.visibilityState === 'visible' && !isAway()) markVisit(watching) // they watched the turn end
-      updateActive(() => ({ running: false, status: '', turnStart: null, usage: p.usage ?? getState().active?.usage ?? null }))
+      endTurn(getState().active?.runtimeId ?? '', p.error || p.failure_reason ? 'failed' : 'done', { usage: p.usage ?? getState().active?.usage ?? null })
       void finishTurnStats(lastId, p.usage, turnSecs)
       break
     }
@@ -1803,9 +1808,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
   const pics = imgs.length ? { images: imgs.map(x => x.name), imagePaths: imgs.map(x => x.path), imageUrls: imgs.some(x => x.url) ? imgs.map(x => x.url || '') : undefined } : {}
   updateActive(x => ({
     items: [...x.items.slice(0, cut), { kind: 'user', id: uid, text: trimmed, at: Date.now(), ...pics, ...(fls.length ? { files: fls.map(f => f.name), fileRefs: fls.map(f => f.ref) } : {}) }],
-    running: true,
-    status: '',
-    openAssistantId: null
+    ...turnSent()
   }))
   const queued: MsgImage[] = []
   try {
@@ -1836,7 +1839,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
     rebindKeptRowIds(kept, r?.survivor_user_row_ids)
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
-    updateActive(() => ({ running: false, turnStart: null }))
+    endTurn(a.runtimeId, 'not-sent')
     // Not sent: take the photos back out of Hermes's queue, or they would ride along with the next message.
     for (const im of queued) await rpc('image.detach', { session_id: a.runtimeId, path: im.path }).catch(() => {})
     // The server may have kept the old turns: reload the truth, then say why.

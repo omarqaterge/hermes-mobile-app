@@ -139,13 +139,13 @@ Rendering rules:
 
 Events from Hermes (`client.onEvent` in `gateway.ts`) reach the chat for the open chat only:
 
-- `message.start`: the turn starts; `running` is set and `turnStart` is set if the send didn't already (Hermes may send several per turn).
+- `message.start`: the turn starts (`turnStarted` in `turn.ts`); `running` is set and `turnStart` is set if the send didn't already (Hermes may send several per turn).
 - `session.control.update`: the chat's goal changed (`control.goal`); the goal line follows it.
 - `thinking.delta` / `status.update`: the status-bar text. A `status.update` that `quietStatus` (`quietstatus.ts`) matches is dropped: Hermes's "⚠ Auxiliary title generation failed: …" warning when the provider is busy (usually the title model's HTTP 429) would replace "Working…" for the rest of the turn, while the chat keeps the title it has and Hermes asks again on a later turn (Hermes patch 0004, 6.4).
 - `reasoning.delta`, `message.delta`: appended to the open assistant item in batches (every 60 ms, every 150 ms once the reply is over 6000 characters), not per token, because every change reparses Markdown. Any other event flushes the batch first, so order never changes.
 - `tool.generating`, `tool.start`, `tool.complete`: the tool card appears when the call starts being written, becomes `running` at `tool.start`, `done` at `tool.complete`. A tool that streams under a generic name takes its real name at start. A replayed start for a card that already exists adds no second card. Starting a tool closes the open assistant segment, so text after tools is a new segment.
 - `todo.updated`, `session.usage` (also refreshes `ctx` without an RPC when the usage has `context_max` and `context_used`), `session.info`, `session.title`.
-- `message.complete`: tool cards still "generating" are dropped; errors become a notice; the final text fills a reply whose stream missed some (`fullReply`); the turn stats are computed (`finishTurnStats`, given the turn's seconds read before `turnStart` is cleared); `running` ends. Live mode and automatic read-aloud (Settings or chat menu, when the app is on screen) speak the reply here.
+- `message.complete`: tool cards still "generating" are dropped; errors become a notice; the final text fills a reply whose stream missed some (`fullReply`); the turn stats are computed (`finishTurnStats`, given the turn's seconds read before `turnStart` is cleared); the turn ends (`endTurn`: `running` off, status text, speed and `turnStart` cleared; `failed` when it carried an error, else `done`). Live mode and automatic read-aloud (Settings or chat menu, when the app is on screen) speak the reply here.
 - `review.summary`, `btw.complete`, `background.complete`: notices.
 - A silent connection is checked: every 15 s `gateway.ping`; after 45 s without any event during a turn the page asks `session.resume` whether the turn is still running and loads the stored transcript if it finished meanwhile.
 

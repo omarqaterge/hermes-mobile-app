@@ -17,11 +17,13 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 5. If the chat is running, the text steers the running turn (`session.steer`) and a "Steer: …" notice is added.
    A follow-up typed while the chat runs can also wait in the page's queue instead (`queue.ts`, 3.4): see step 8a.
 6. Otherwise the page adds the user bubble at once (with photo previews, image paths, file names and their
-   `@file:` refs), sets `running: true`, clears the attachments, waits for a model switch in flight
+   `@file:` refs), starts the turn (`turnSent` in `turn.ts`: `running: true`, the clock, no status text or speed left
+   from the turn before), clears the attachments, waits for a model switch in flight
    (`switching`), and calls `prompt.submit` with `surface: 'mobile'`. Files travel as their `@file:` references in
    front of the text; photos were already queued inside Hermes by `image.attach_bytes`. The answer's
-   `user_row_id` is stored on the bubble (needed for edit/retry/branch). On failure the attachments come back and a
-   "Send failed: …" notice is added.
+   `user_row_id` is stored on the bubble (needed for edit/retry/branch). On failure the attachments come back, a
+   "Send failed: …" notice is added and the turn ends as `not-sent` (`endTurn`); if the user opened another chat
+   meanwhile, that chat's own turn is left as it is.
 7. Hermes streams events on the WebSocket. `client.onEvent` in `gateway.ts` applies them to `active.items`:
    - `message.start` resets the speed counter; `thinking.delta` and `status.update` set the live status line.
    - `reasoning.delta` and `message.delta` are appended to the open reply in batches (`queueDelta` →
@@ -42,11 +44,12 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
      `sessions.changed` refreshes it too. `notification.show` becomes a toast; `request.cancel` closes a request
      sheet that was answered elsewhere.
 8a. The queue drains on turn end. `gateway.ts` watches the store (`subscribe`): when the open chat goes from running to
-   not running and the turn was not stopped (`interrupt()`) and did not end with an error (`message.complete` with
-   `error` or `failure_reason`), the queue is not paused, no approval or question is open (`requests`), Hermes is
+   not running and the turn ended as `done` (`takeTurnEnd` and `queueGoesOn` in `turn.ts`: it was not stopped with
+   `interrupt()`, did not end with an error, that is `message.complete` with `error` or `failure_reason`, and its
+   `prompt.submit` did not fail), the queue is not paused, no approval or question is open (`requests`), Hermes is
    connected and no attachment is waiting, `drainQueue` takes the first queued message (`takeFirst`) and sends it
-   with `sendPrompt`. Its reply ends the next turn, which sends the next one. After a Stop or an error the queue is
-   paused instead, and so is a chat just opened. `drainQueue(chat, true)` (the Resume button) ignores the pause.
+   with `sendPrompt`. Its reply ends the next turn, which sends the next one. After a Stop, an error or a send Hermes refused the queue is
+   paused instead (the messages behind a refused one stay queued), and so is a chat just opened. `drainQueue(chat, true)` (the Resume button) ignores the pause.
    If the send throws, the message goes back to the front and the queue is paused with an error toast.
 8. A missed `message.complete` can't leave the spinner on: every 15 s, if the chat is running and no event came for
    45 s, `syncRunning` asks `session.resume`; when Hermes says it is no longer running, the stored transcript

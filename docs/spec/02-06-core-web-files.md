@@ -38,6 +38,15 @@ These files carry the plumbing every screen uses. Screens are in 3.
   and rows a resume repeats), `splitAttachments` (`@file:` / `@image:` back into chips), `addsToScreen` and
   `closeScreen`. The initial state reads `hm.profile`, `hm.textScale`, `hm.lastSession`, `hm.outbox.v1` and the
   cached chat.
+- `turn.ts` — one turn of the open chat as an explicit state machine (idle → sent → streaming → idle); `gateway.ts`
+  changes `running`, `status`, `turnStart`, `tps` and `openAssistantId` only through its steps. `turnSent` (the page
+  sent a prompt: the clock starts, the last turn's status text and speed are cleared), `turnStarted` (Hermes's
+  `message.start`: keeps the send's start time) and `turnOver` (back to idle: nothing of the live readout stays)
+  return the fields to set (`TurnFields`). `TurnEnd` names how a turn ended: `done`, `failed` (`message.complete` with
+  an error), `stopped` (Stop) or `not-sent` (`prompt.submit` failed); `noteTurnEnd` records an ending that is not
+  `done`, `takeTurnEnd` reads it once when the turn ends, and `queueGoesOn` says whether the queue sends its next
+  message (only after `done`). In `gateway.ts`, `endTurn` applies `turnOver` to the chat whose turn it was and to no
+  other.
 - `approval-lock.ts` — Confirm approvals with fingerprint (3.6): `approvalLockAvailable`, `approvalLockState`, `approvalNeedsConfirm`, `confirmAllow` (bridge `confirmApproval`, answered through `window.hermesApprovalConfirm`), `confirmAlways` (bridge `confirmIdentity`, for a setting that asks on every change), `setApprovalLock`, `forgetApprovalConfirm`.
 - `chatcache.ts` — last-seen items of recent chats (`rememberChat`, `cachedChat`, `forgetChat`, `saveChatToDisk`)
   (2.2.5).
