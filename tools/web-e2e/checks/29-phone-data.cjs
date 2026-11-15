@@ -332,11 +332,11 @@ module.exports = async t => {
     const dialogText = pg => pg.locator('.dialog').innerText({ timeout: 3000 }).catch(() => null)
     const opened = pg => pg.evaluate(() => window.__opened)
 
-    // control: no phone_data call -> exactly as before
+    // control: no phone_data call -> a remote image waits for a tap here too; links and cards behave as before
     hits.length = 0
     let pg = await setup('s-pd-ctl')
     let m = await media(pg)
-    check(m.imgs === 1 && m.holds.length === 0 && hits.some(h => h.includes('/p.png')), `phone data taint: a chat with no phone_data call loads its image as before (${JSON.stringify(m)}, ${hits.length} fetches)`)
+    check(m.imgs === 0 && m.holds.length === 1 && /beacon\.test/.test(m.holds[0]) && /Tap to load/.test(m.holds[0]) && hits.length === 0, `phone data taint: a chat with no phone_data call also holds a remote image behind a tap, nothing fetched (${JSON.stringify(m)}, ${hits.length} fetches)`)
     await pg.locator('.msg.assistant a', { hasText: 'see more' }).click()
     await sleep(300)
     check((await pg.locator('.dialog').count()) === 0 && (await opened(pg)).length === 1 && (await opened(pg))[0].includes('/page?d=ROWS'), 'phone data taint: a link in a chat with no phone_data call opens at once')
@@ -344,7 +344,7 @@ module.exports = async t => {
     await sleep(300)
     check((await pg.locator('.dialog').count()) === 0 && (await opened(pg)).some(u => u.startsWith('https://beacon.test/card')), 'phone data taint: a card open_url in a chat with no phone_data call opens at once')
 
-    // taint appears while the items are already drawn: the image goes back behind a tap
+    // taint appears while the items are already drawn: the image is still held (and links and cards now ask first)
     await pg.evaluate(() => {
       const s = window.__socks.filter(x => x.readyState === 1).pop()
       const ev = (type, payload) => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: 'rt-s-pd-ctl', payload } }) }))
@@ -354,6 +354,16 @@ module.exports = async t => {
     await sleep(700)
     m = await media(pg)
     check(m.imgs === 0 && m.holds.length === 1, `phone data taint: a read that happens after the reply was drawn covers it too (${JSON.stringify(m)})`)
+    await pg.close()
+
+    // control: in a chat with no phone_data call a tap loads the image (the shell is not blocking), with no address dialog
+    hits.length = 0
+    pg = await setup('s-pd-ctl')
+    check(hits.length === 0 && (await media(pg)).holds.length === 1, 'phone data taint, control: the image of a chat with no phone_data call is not fetched before the tap')
+    await pg.locator('.msg.assistant .remote-hold').click()
+    await sleep(700)
+    m = await media(pg)
+    check(m.imgs === 1 && m.holds.length === 0 && hits.some(h => h.includes('/p.png?d=ROWS')) && (await pg.locator('.dialog').count()) === 0, `phone data taint, control: its tap loads the image at once (${JSON.stringify(m)})`)
     await pg.close()
 
     // tainted: nothing before the tap
@@ -540,7 +550,7 @@ module.exports = async t => {
     imgs = await cardImgs(pg)
     check(imgs.some(s => /card-image\.png\?d=ROWS/.test(s)) && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 0, `phone data leaks, control: a chat with no phone_data call shows its card's images (${JSON.stringify(imgs)})`)
     const mm2 = await pg.evaluate(() => [...document.querySelectorAll('.msg.assistant .codeblock-bar')].map(b => b.innerText).join('|'))
-    check(!/not drawn: it names an image/.test(mm2), `phone data leaks, control: its Mermaid diagram is never held for this reason (${mm2})`)
+    check(/mermaid \(not drawn: it names an image or an address\)/.test(mm2) && !/phone data/.test(mm2) && !hits.some(h => h.includes('/mermaid.png')), `phone data leaks, control: its Mermaid diagram that names an image is shown as code too, and fetches nothing (${mm2})`)
     rem = await remote(pg)
     check(rem.length > 0 && rem.every(r => r.block === false), `phone data leaks, control: the shell is told it is not blocked (${JSON.stringify(rem)})`)
     await ev(pg, [
@@ -552,7 +562,7 @@ module.exports = async t => {
     await sleep(600)
     await expand(pg)
     const ctl = await pg.evaluate(() => ({ holds: document.querySelectorAll('.remote-hold').length, noticeImg: document.querySelectorAll('.notice img').length }))
-    check(ctl.holds === 0 && ctl.noticeImg === 1 && hits.some(h => h.includes('/tool.png')), `phone data leaks, control: a tool card and a notice load their images as before (${JSON.stringify(ctl)})`)
+    check(ctl.holds >= 2 && ctl.noticeImg === 0 && !hits.some(h => h.includes('/tool.png') || h.includes('/notice.png')), `phone data leaks, control: a tool card's and a notice's images also wait behind a tap, nothing fetched (${JSON.stringify(ctl)})`)
     await pg.locator('.sub-goal a').click()
     await sleep(300)
     check((await pg.locator('.dialog').count()) === 0 && (await pg.evaluate(() => window.__opened)).some(u => u.includes('/goal?d=ROWS')), 'phone data leaks, control: a subagent goal link opens at once')
@@ -566,11 +576,12 @@ module.exports = async t => {
     // a subagent that never named phone_data changes nothing; one whose own tool event names it makes the chat count
     await ev(pg, [['subagent.tool', { subagent_id: 'sa1', tool_name: 'terminal', status: 'running' }]])
     await sleep(400)
-    check((await pg.locator('.remote-hold').count()) === 0, 'phone data leaks, control: a subagent tool event for another tool changes nothing')
+    const holdsBefore = await pg.locator('.remote-hold').count()
+    check(holdsBefore >= 2 && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 0, 'phone data leaks, control: a subagent tool event for another tool changes nothing (the card keeps its images)')
     await ev(pg, [['subagent.tool', { subagent_id: 'sa1', tool_name: 'phone_data', status: 'running' }]])
     await sleep(700)
     const after = await pg.evaluate(() => ({ holds: document.querySelectorAll('.remote-hold').length, imgs: document.querySelectorAll('.msg.assistant img.media, .notice img').length }))
-    check(after.holds > 0 && after.imgs === 0, `phone data leaks: a subagent whose own tool event names phone_data makes the chat count (${JSON.stringify(after)})`)
+    check(after.holds >= holdsBefore && after.imgs === 0 && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 1, `phone data leaks: a subagent whose own tool event names phone_data makes the chat count (${JSON.stringify(after)})`)
     rem = await remote(pg)
     check(rem[rem.length - 1].block === true, `phone data leaks: the shell is told at that moment, the first phone_data call (${JSON.stringify(rem)})`)
 

@@ -45,8 +45,9 @@ own logs, to the diagnostic log or to a problem report.
 - Full access (`/yolo`) skips that question. Auto access refuses to read. A locked phone is refused.
 - Results are marked as data to read, not as instructions, because a message from a stranger can contain text meant to
   steer the agent.
-- After a chat has read phone data, in that chat remote images need a tap, links show their full address before they
-  open, HTML previews show as text, web requests from the page are refused, and the plugin asks before commands and tools
+- In every chat, remote images, video and sound in a reply need a tap before anything is fetched (an address can carry
+  out what the agent has read). After a chat has read phone data, in that chat cards' pictures are held back too, links
+  show their full address before they open, HTML previews show as text, web requests from the page are refused, and the plugin asks before commands and tools
   that can send data out (not in Full or Auto access).
 
 **The limits.**

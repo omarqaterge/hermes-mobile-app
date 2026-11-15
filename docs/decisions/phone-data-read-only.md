@@ -53,7 +53,9 @@ allows one read, the page loads the image and the data leaves with no tap. A lin
 tap, and a command such as `curl` can too.
 
 **So, only in chats that have read phone data, for the rest of that chat, and only for actions that can send data out.** A
-chat has read when a `phone_data` tool call exists in it, whatever its outcome. Every other chat behaves exactly as before.
+chat has read when a `phone_data` tool call exists in it, whatever its outcome. Every other chat behaves exactly as before,
+except (2026-11-15) that remote images, video and audio, and Mermaid diagrams that name an image or address, wait for a tap
+in every chat, because a prompt injection can write such an address in any chat.
 
 - **The page, in every access mode including Full access.** Remote images, video and audio in the agent's text don't load:
   a placeholder shows the host name and "Tap to load", and nothing is requested before the tap. Video cards show no
