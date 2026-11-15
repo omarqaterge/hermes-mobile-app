@@ -8,6 +8,7 @@ import { haptic } from '../bridge'
 import { dropRemoteStrings, openChecked, useGuard } from '../phone-data-taint'
 import { sendPrompt } from '../gateway'
 import { getState, toast } from '../store'
+import { screenChat } from '../chatview'
 import { hashText } from '../tasks'
 
 /** Set by Markdown: is the message still streaming, and may its buttons send (chat replies only, not canvas/files). */
@@ -34,10 +35,7 @@ function useThemeMode() {
   return mode
 }
 
-const chatId = () => {
-  const s = getState()
-  return s.opening || s.active?.storedId || '' // while a chat opens, the screen shows IT (active is still the previous chat)
-}
+const chatId = () => screenChat(getState()) // while a chat opens, the screen shows IT (active is still the previous chat)
 
 /** A ```openui-lang block: OpenUI draws it (lazy bundle, own shadow root); `fallback` shows if it can't. */
 export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactNode }) {

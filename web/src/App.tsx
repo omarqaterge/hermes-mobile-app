@@ -25,6 +25,7 @@ import { startWhatsNewAfterUpdate } from './whatsnew'
 import { BtwSheet } from './components/Btw'
 import { CanvasPanel, CanvasPull } from './components/Canvas'
 import { startCanvasSync, useCanvas } from './canvas'
+import { shownItems, shownKey, shownTitle, viewKind, viewSettled } from './chatview'
 import { backTop } from './backstack'
 import { installSwipeToDrawer, openChatCanvas } from './swipe'
 import { installPullToBtw } from './pullbtw'
@@ -90,7 +91,8 @@ window.hermesResume = () => {
 window.hermesPause = () => noteAway(getState().active?.storedId)
 
 function Header() {
-  const title = useStore(s => (s.opening && s.preview?.storedId === s.opening ? s.preview.title : s.active?.title))
+  const title = useStore(shownTitle)
+  const settled = useStore(viewSettled) // false while another chat opens: `active` is not the chat on screen
   const profile = useStore(s => s.profile)
   const hasActive = useStore(s => Boolean(s.active))
   const dot = useStore(s => dotState(s.conn, s.health))
@@ -134,6 +136,7 @@ function Header() {
       <button
         className="icon-btn"
         aria-label="Chat options"
+        disabled={!settled}
         onClick={() => setState({ sheet: hasActive ? 'chat-menu' : 'draft-menu' })}
       >
         ⋮
@@ -411,10 +414,11 @@ function FindBar() {
 
 function Chat({ onPick }: { onPick: (t: string) => void }) {
   // While a chat opens, its last-seen items (chatcache.ts) stand in: read-only, no message actions.
-  const previewing = useStore(s => Boolean(s.opening && s.preview?.storedId === s.opening))
-  const items = useStore(s => (s.opening && s.preview?.storedId === s.opening ? s.preview.items : s.active?.items ?? null))
+  const kind = useStore(viewKind)
+  const previewing = kind === 'preview'
+  const items = useStore(shownItems)
   const running = useStore(s => s.active?.running ?? false)
-  const sessionKey = useStore(s => (s.opening && s.preview?.storedId === s.opening ? s.opening : s.active?.storedId))
+  const sessionKey = useStore(shownKey)
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [showJump, setShowJump] = useState(false)
@@ -676,7 +680,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     const el = scroller.current
     return el ? installPullToBtw(el) : undefined
   }, [hasList, opening, openingActive])
-  if (opening && !previewing && (!(items && items.length) || opening !== openingActive))
+  if (kind === 'loading')
     return (
       <div className="chat chat-skeleton" role="status" aria-label="Opening your chat">
         <div className="skeleton-label dim">
