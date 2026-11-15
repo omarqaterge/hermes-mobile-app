@@ -60,6 +60,29 @@ public class SetupLinesTest {
         check(u.json().contains("\"times\":[1000000010,") && u.json().contains(",1000000059]"), "times stay parallel to the 50 kept lines");
         check(SetupLines.checksPlugin("DONE") && !SetupLines.checksPlugin("STEP plugin x") && !SetupLines.checksPlugin("FAIL plugin x")
                 && !SetupLines.checksPlugin("DONE ") && !SetupLines.checksPlugin(null), "the installer's DONE (and only it) checks the plugin at once");
+        // Restart cases: the service restarts with only the saved prefs (token, failed step) in hand.
+        SetupLines f = new SetupLines();
+        f.start("ft");
+        f.add("ft", "STEP debian x");
+        f.add("ft", "FAIL debian (line 3)");
+        check(!f.installing() && f.state() == SetupLines.State.FAILED, "(a) after a FAIL line nothing is installing");
+        SetupLines f2 = new SetupLines();
+        f2.resume("ft", "debian");
+        check(!f2.installing() && f2.state() == SetupLines.State.FAILED && f2.json().contains("\"fail\":\"debian\"") && f2.active(),
+                "(a) after a restart the failed state comes back: not installing, fail shown, token kept");
+        check(f2.add("ft", "STEP debian again") == SetupLines.OK && f2.installing(), "(a) pasting the command again after the restart installs again");
+        SetupLines g = new SetupLines();
+        g.start("gt");
+        g.add("gt", "STEP packages x");
+        SetupLines g2 = new SetupLines();
+        g2.resume("gt", "");
+        check(g2.installing() && g2.state() == SetupLines.State.INSTALLING, "(c) an install still running after a restart reads as installing");
+        check(g2.add("gt", "STEP hermes x") == SetupLines.OK && g2.add("gt", "DONE") == SetupLines.OK && g2.state() == SetupLines.State.DONE && !g2.installing(),
+                "(c) its later lines are accepted, DONE ends it");
+        SetupLines g3 = new SetupLines();
+        g3.resume("gt", "Bad Step!");
+        check(g3.installing(), "a damaged saved failed step is ignored");
+        check(new SetupLines().state() == SetupLines.State.NONE, "no command: NONE");
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }
