@@ -76,6 +76,15 @@ These files carry the plumbing every screen uses. Screens are in 3.
   backoff), `retryBanner` the header text ("Reconnecting…" for tries 1 and 2, "Starting Hermux…" after),
   `retryHermesSteps` whether the try asks the shell to watch for Hermes (try 1) or start it (try 2 and every 6th), and
   `beatDecision` (type `BeatDecision`) what one beat does: `ping`, `fresh-window` (the page was frozen) or `dead`.
+- `agentbuild.ts` — "is this chat's agent ready?" per live chat (states unknown, building, ready, switching; the table
+  and the two past bugs are in its header). `createAgentBuilds` makes the bookkeeping (its timer can be injected for
+  tests); `gateway.ts` holds one as `agents` and keeps the RPCs. `BUILD_CAP_MS` (20 s) is how long a pick waits for
+  `session.info`, `READY_CAP` (200) how many announced runtimes are remembered. The `AgentBuilds` operations:
+  `trackBuild` starts waiting for a runtime's agent after a create or resume (not when it is already ready, which is
+  how a warm resume does not wait), `markBuilt` records that the agent was announced (the `session.info` event, or
+  the cap; safe before `trackBuild`), `whenBuilt` is what `setModel` awaits before `config.set`, `whenSwitched` is
+  what `sendPrompt` awaits so a model picked a moment ago applies (a failed switch does not block it), `runSwitch`
+  runs one switch and records it in flight until it settles, and `buildState` (type `BuildState`) names the state.
 
 #### Gateway RPCs (all calls the page makes)
 
