@@ -101,6 +101,17 @@ module.exports = async t => {
     check(sends('e') === 0, 'nothing is sent by surprise when the chat opens')
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
     await page.locator('.msg.assistant', { hasText: 'Queued e done.' }).waitFor({ timeout: 6000 }).then(() => check(true, 'Resume after a reload sends it'), () => check(false, 'Resume after a reload sends it'))
+
+    // 7: a queued message Hermes refuses pauses the queue; the ones behind it are kept, not sent after it
+    await startSlow()
+    await queueText('cannot send')
+    await queueText('after it')
+    await page.getByText('Send failed: refused by the mock').waitFor({ timeout: 8000 }).then(() => check(true, 'a refused queued message says Send failed'), () => check(false, 'a refused queued message says Send failed'))
+    await page.getByText('Queue paused').waitFor({ timeout: 3000 }).then(() => check(true, 'a failed send pauses the queue'), () => check(false, 'a failed send pauses the queue'))
+    await sleep(600)
+    check(sends('cannot send') === 1 && sends('after it') === 0 && (await page.locator('.queued-msg', { hasText: 'after it' }).count()) === 1, `the message behind a failed send stays queued (sent ${sends('after it')})`)
+    check((await page.locator('.composer .send.stop').count()) === 0 && (await page.locator('.status-line').count()) === 0, 'after a failed send nothing shows as running')
+    await page.locator('.queued-msg', { hasText: 'after it' }).getByRole('button', { name: 'Remove queued message' }).click()
   }
 
   // ── the model Hermes reports sits above the composer; tap opens the picker ──

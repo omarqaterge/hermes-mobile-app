@@ -887,6 +887,8 @@ wss.on('connection', ws => {
       case 'prompt.submit': {
         if (params.truncate_before_row_id === 999)
           return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 4018, message: 'target user message is no longer in session history' } }))
+        // A message Hermes refuses outright (no turn starts): the queue behind it must wait, not be sent after it.
+        if (params.text === 'cannot send') return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 4000, message: 'refused by the mock' } }))
         const row = 10 + seq++
         reply({ status: 'streaming', user_row_id: row, ...(params.confirm_truncate ? { survivor_user_row_ids: [] } : {}) })
         const sid = params.session_id
