@@ -31,7 +31,30 @@ so one after the other)
 | Read aloud player (`voice.ts`) | idle, speaking, paused, seeking | `playText`, `playFrom`, `reseekUntil`, `nativePausedAt`, `seg`. |
 | Tool cards (`store.ts`) | `generating`, `running`, `done`, `error` | Explicit (`ToolStatus`). A sub-agent card's `status` is still a free string. |
 | Setup (`setupflow.ts`) | one row per step | Already explicit and tested: the model to copy. |
-| Android shell (`HermesService.java`, `MainActivity.java`) | not mapped yet | Only the flag names were listed (`localAlert`, `phoneDataBusy`, `phoneDataAskedBefore`, `devtoolsPending`, `keyTaken`); the Java, the plugin and the phone scripts still need a proper read. |
+
+**Android shell, plugin and phone scripts (surveyed 2026-11-16)**
+
+A read-only pass over the Java, the plugin and the scripts. "Reported" faults were traced in the code by the survey but
+not yet re-checked or reproduced with a test; "suspected" ones were not traced. Some files only got a skim
+(`bootstrap.sh`, `hm-local`, `plugin_api.py`, `checkpoints.py`, `local_auth.py`).
+
+Worth doing, in this order:
+
+| Where | The hidden states | What is loose, and what the survey reported |
+|---|---|---|
+| Setup install gate (`SetupLines.java`, `HermesService.java`, `MainActivity.java`) | no command, installing, failed, done | Derived from `token` and `fail`. Reported: only the token is saved and it is removed only on DONE, so a failed or abandoned install followed by a process kill reads as "installing" again, which holds back starting Hermes, plugin updates and the Shizuku keeper. Has a pure class and `tools/test_setup_lines.sh`: the easiest to fix. |
+| Status chip and its pending approval or question (`HermesService.java`) | flash, approval, ask, done, working, idle | About twelve fields, precedence decided inside `statusNotification`. Reported: a "clear" event is matched by kind only, so one chat's clear drops another chat's pending approval, and a second approval overwrites the first (one slot). |
+| Helper-app install and app update install (`MainActivity.java`) | idle, requested, downloading, committed, prompt pending, prompt shown, finished | Seven `helper*` flags set in about fifteen places. Reported: the receivers are never unregistered and the flags are lost when the activity is recreated, so Retry can start a second installer session. Suspected: the update installer can stack a session the same way. No test. |
+| The plugin's "Using an app" state (`phone_app.py`) | closed, open for a chat | Reported: two paths clear `_state` without sending the "done" event, so the app's card stays for up to 130 s. |
+| The plugin's turn records (`__init__.py`) | idle, running, review, ended | Spread over `_active`, `_turn_started`, `_last_end`, `_subagents` and a timer. Reported: two of them only grow. Suspected: a background review label can replace a live turn's status. |
+
+Small things reported on the way: `Voice.java` has a field that is never assigned (`pendingSpeech`); `PluginSync.java`
+records a check before the service start that may fail; `ShizukuKeeper.java` sets `P_WD_OURS` before the write that may throw.
+
+Leave alone, or the owner decides first (security or destructive): the local key and access switch (`LocalKey.java`,
+already a tested protocol), `ApprovalLock.java`, the bridge key handshake, the phone-data switch flow (suspected: a page
+reload does not reset `phoneDataBusy`), `phone_taint.py`, `Uninstall.java`. Already explicit and tested, nothing to do:
+`KeeperPlan.java`, `EventsListener.Retry`, `plugin-update.sh`, `cron_ticker.py`.
 
 **Needs a real phone**
 
