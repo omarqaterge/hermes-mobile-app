@@ -3,6 +3,7 @@
 import { onSttModels } from './stt'
 import { useSyncExternalStore } from 'react'
 import { getState, toast } from './store'
+import { estimatePos, isStaleDone, jumpIsShared, nextPace, paceOf, parsePace, parseSeg, pausedPlace, resumeFrom, reseekDeadline, seekTarget, shellHoldsPlace } from './player'
 
 export interface TtsVoice {
   name: string
@@ -73,8 +74,7 @@ window.__hmVoice = (kind, text) => {
   switch (kind) {
     case 'tts-done':
       // 'stop' = the notification's ✕ (or a headset stop): final even while paused
-      if (text !== 'stop' && state.player?.paused) break // we stopped it ourselves to pause
-      if (text !== 'stop' && Date.now() < reseekUntil) break // the speech we just replaced (seek / speed) reporting that it ended
+      if (isStaleDone(text, !!state.player?.paused, reseekUntil, Date.now())) break // our own pause, or the speech a seek / speed just replaced
       nativePausedAt = null
       stopSegments()
       set({ speakingId: null, player: null })
@@ -82,14 +82,14 @@ window.__hmVoice = (kind, text) => {
       break
     case 'tts-seg': {
       // A new stretch of the text started playing (Android reports it as the audio reaches it).
-      const [at, len] = text.split(',').map(n => parseInt(n, 10))
-      if (Number.isFinite(at) && Number.isFinite(len)) startSegment(playFrom + at, len)
+      const s = parseSeg(text)
+      if (s) startSegment(playFrom + s.at, s.len)
       break
     }
     case 'tts-pace': {
       // Voice.java's reading pace (chars/second): the page uses the same one so the bar and the time label agree with the card
-      const v = Number(text)
-      if (Number.isFinite(v) && v >= 2 && v <= 120) cps = v
+      const v = parsePace(text)
+      if (v !== null) cps = v
       break
     }
     case 'tts-paused': {
@@ -97,7 +97,7 @@ window.__hmVoice = (kind, text) => {
       // spoken text it will read on from (the start of the chunk). The page may be frozen when it happens; this catches up.
       const at = Number(text)
       if (!state.speakingId || !Number.isFinite(at)) break
-      const pos = Math.min(playText.length, playFrom + at)
+      const pos = pausedPlace(playFrom, at, playText.length)
       nativePausedAt = pos
       stopSegments()
       const p = state.player ?? { id: state.speakingId, total: playText.length, pos, paused: true } // e.g. Live mode
@@ -111,7 +111,7 @@ window.__hmVoice = (kind, text) => {
       if (!state.player || !Number.isFinite(at)) break
       stopSegments()
       nativePausedAt = null
-      setPos(Math.min(playText.length, playFrom + at))
+      setPos(pausedPlace(playFrom, at, playText.length))
       break
     }
     case 'tts-resumed':
@@ -234,7 +234,7 @@ export function fmtClock(sec: number): string {
 
 /** Characters per second the reading runs at: what Voice.java measured (tts-pace), else a typical pace scaled by the speed. */
 export function readingPace(): number {
-  return cps > 0 ? cps : 14 * (ttsConfig().rate || 1)
+  return paceOf(cps, ttsConfig().rate)
 }
 
 /** '0:12 / ~1:40': time read so far / estimated total (the '~' marks the total as an estimate from the pace). */
@@ -251,10 +251,7 @@ function stopSegments(): void {
 
 function startSegment(at: number, len: number): void {
   const now = Date.now()
-  if (seg && now > seg.t0) {
-    const measured = (seg.len / (now - seg.t0)) * 1000
-    cps = cps ? cps * 0.5 + measured * 0.5 : measured
-  }
+  cps = nextPace(cps, seg, now)
   seg = { at, len, t0: now }
   setPos(at)
   if (!segTimer) segTimer = setInterval(tickSegment, 200)
@@ -263,12 +260,11 @@ function startSegment(at: number, len: number): void {
 function tickSegment(): void {
   if (!state.player) return stopSegments()
   if (!seg || state.player.paused) return
-  const rate = cps || 14 * (ttsConfig().rate || 1)
-  setPos(Math.min(seg.at + seg.len, seg.at + ((Date.now() - seg.t0) / 1000) * rate))
+  setPos(estimatePos(seg, Date.now(), paceOf(cps, ttsConfig().rate)))
 }
 
 function say(id: string, from: number, reseek = false): void {
-  reseekUntil = reseek ? Date.now() + 300 : 0
+  reseekUntil = reseekDeadline(reseek, Date.now())
   stopSegments()
   if (!reseek) cps = 0
   const text = playText.slice(from)
@@ -324,18 +320,18 @@ export function resumeSpeaking(): void {
   const p = state.player
   if (!p?.paused) return
   const n = native()
-  if (n?.ttsControl && nativePausedAt !== null && Math.abs(p.pos - nativePausedAt) < 1) {
+  if (n?.ttsControl && shellHoldsPlace(true, nativePausedAt, p.pos)) {
     nativePausedAt = null
     set({ player: { ...p, paused: false } })
     n.ttsControl('play')
-  } else say(p.id, Math.min(p.pos, Math.max(0, p.total - 1)), true)
+  } else say(p.id, resumeFrom(p.pos, p.total), true)
 }
 
 /** Jump to a character position. Keeps paused if it was paused. */
 export function seekSpeaking(pos: number): void {
   const p = state.player
   if (!p) return
-  const to = Math.max(0, Math.min(p.total - 1, Math.round(pos)))
+  const to = seekTarget(pos, p.total)
   if (p.paused) set({ player: { ...p, pos: to } })
   else say(p.id, to, true)
 }
@@ -347,7 +343,7 @@ export function jumpSpeaking(dir: -1 | 1): void {
   const p = state.player
   if (!p) return
   const n = native()
-  const shared = n?.ttsControl && (!p.paused || (nativePausedAt !== null && Math.abs(p.pos - nativePausedAt) < 1))
+  const shared = jumpIsShared(!!n?.ttsControl, p.paused, nativePausedAt, p.pos)
   if (shared && n?.ttsControl) n.ttsControl(dir < 0 ? 'rew' : 'ff')
   else seekSpeaking(p.pos + dir * JUMP_SECONDS * readingPace())
 }
