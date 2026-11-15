@@ -38,6 +38,9 @@ These files carry the plumbing every screen uses. Screens are in 3.
   and rows a resume repeats), `splitAttachments` (`@file:` / `@image:` back into chips), `addsToScreen` and
   `closeScreen`. The initial state reads `hm.profile`, `hm.textScale`, `hm.lastSession`, `hm.outbox.v1` and the
   cached chat.
+- `chatview.ts` — which chat the screen shows, worked out in one place from the store's `opening`, `preview` and
+  `active` (3.2, "While a chat opens"): `viewKind` (`ChatViewKind`), `viewSettled`, `screenChat`, `shownItems`,
+  `shownKey`, `shownTitle`. Pure functions of the state, used as `useStore` selectors.
 - `turn.ts` — one turn of the open chat as an explicit state machine (idle → sent → streaming → idle); `gateway.ts`
   changes `running`, `status`, `turnStart`, `tps` and `openAssistantId` only through its steps. `turnSent` (the page
   sent a prompt: the clock starts, the last turn's status text and speed are cleared), `turnStarted` (Hermes's

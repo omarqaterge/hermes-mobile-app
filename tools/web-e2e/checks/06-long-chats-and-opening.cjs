@@ -1,5 +1,5 @@
 // Long chats drawn from the end, opening chats from the cache, two chats opened in a row.
-const { calls, sleep, check } = require('../lib.cjs')
+const { calls, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -60,4 +60,21 @@ module.exports = async t => {
   await page.locator('.msg.assistant', { hasText: 'answer s-3' }).waitFor({ timeout: 5000 })
   await sleep(2200) // s-slow's resume (1500 ms) lands now and must not replace s-3
   check((await page.locator('.msg.assistant', { hasText: 'answer s-slow' }).count()) === 0 && (await page.locator('.msg.assistant', { hasText: 'answer s-3' }).count()) === 1, 'second chat opened wins over the slower first one')
+
+  // while another chat opens (no cached copy: the skeleton), the header and the Auto button are that chat's, not the
+  // one being left: its title is gone, and the chat menu and the Auto button wait until the chat is really open
+  const leftTitle = ((await page.locator('.topbar .title').textContent()) || '').trim()
+  const options = page.locator('header.topbar').getByRole('button', { name: 'Chat options' })
+  const auto = page.locator('.model-row .auto-btn')
+  check(leftTitle !== '' && (await options.isEnabled()) && (await auto.isEnabled()), `an open chat has its title, its menu and its Auto button (${leftTitle})`)
+  await mock({ holdSlowResume: true })
+  await page.evaluate(() => window.hermesOpenSession('s-slowstart'))
+  await page.locator('.chat-skeleton').waitFor({ timeout: 3000 }).then(() => check(true, 'a chat with no cached copy opens as the skeleton'), () => check(false, 'a chat with no cached copy opens as the skeleton'))
+  const midTitle = ((await page.locator('.topbar .title').textContent()) || '').trim()
+  check(midTitle !== leftTitle, `the header no longer shows the chat being left while another opens (${midTitle})`)
+  check(await options.isDisabled(), 'Chat options waits while another chat opens')
+  check((await auto.isDisabled()) && (await page.locator('.model-row .auto-btn.off').count()) === 1, 'the Auto button waits, and shows Off, while another chat opens')
+  await mock({ releaseSlowResume: true })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+  check((await options.isEnabled()) && (await auto.isEnabled()), 'once the chat is open its menu and Auto button work again')
 }
