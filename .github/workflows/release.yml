@@ -12,7 +12,8 @@ on:
   push:
     tags: ['v*']
 
-# Two jobs, so that no npm package's code ever runs where the signing key is: `web` installs the packages and builds
+# First `gate` (tools/release-gate.sh): the tagged commit must be on main with a passing CI run, or nothing is built.
+# Then two jobs, so that no npm package's code ever runs where the signing key is: `web` installs the packages and builds
 # web/dist/index.html with a read-only token and no secrets; `apk` (no Node, no npm) takes that file, signs the APK
 # and publishes it. A package's install script or build plugin can start a process that outlives its step, but not
 # one that reaches another job's runner.
@@ -20,7 +21,23 @@ permissions:
   contents: read
 
 jobs:
+  # Waits up to 20 minutes for the commit's CI run when the tag was pushed right after the merge.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/release-gate.sh
+
   web:
+    needs: gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

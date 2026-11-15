@@ -6,17 +6,23 @@ step instead of hunting for every place a flag is set.
 
 **State (2026-11-15)**
 
+- Done: which chat is on screen (`web/src/chatview.ts`, spec 3.2 "While a chat opens"). `App.tsx`, `canvas.ts`,
+  `OpenUIBlock.tsx` and `AutoAccess.tsx` read it. It fixed three gaps: while a chat without a cached copy opened, the
+  header kept the title of the chat being left; and in that window Chat options and the Auto button still acted on the
+  chat being left (or, at a cold start, the Auto button started a new chat on top of the one opening).
+  Left alone on purpose: `phone-data-taint.ts` has its own copy of the same test (security code: change it only with
+  the owner's say), `BgApp.tsx` prefers the open chat over the opening one (its chip flow is written around that), and
+  `Composer.tsx` reads `opening` directly (it means "can't send yet", which is also true during a reload).
 - Done: the chat turn (`web/src/turn.ts`, spec 2.6 and 2.2.1). It fixed four gaps the loose flags had: a queued message
   that could not be sent let the rest of the queue be sent after it, the status line showed the previous reply's speed,
   an edited or retried message had no timer until Hermes answered, and a send that failed after another chat was opened
   stopped that chat's spinner.
 
-**Next** (in the order of what users would gain; one branch each, and the first three all change `web/src/gateway.ts`,
+**Next** (in the order of what users would gain; one branch each, and the first two both change `web/src/gateway.ts`,
 so one after the other)
 
 | Where | The hidden states | What is loose today |
 |---|---|---|
-| Which chat is on screen (`gateway.ts`, `App.tsx`, `Composer.tsx`) | home, opening, opening with a preview, open | Worked out again in each component from `opening`, `preview`, `active` and `conn` (the same test four times in `App.tsx`); `openSeq`, `shownChat` and `visitedChat` live beside it. One `chatView(state)` selector would do. |
 | Connection (`gateway.ts`) | idle, connecting, open, waiting to retry, starting Hermes | `attempt`, `reconnectTimer`, `started`, `readySeen`, `aliveAt`, `lastBeat`; the banner words come from `attempt`. Covered by `gateway-reconnect.test.ts`, so it can be moved safely. |
 | A new chat's agent (`gateway.ts`) | building, ready, switching model, replacing an empty chat | `builds`, `ready`, `switching`, `pendingNew`: four collections that together say whether a send or a model pick must wait. |
 | Access mode (`gateway.ts`, plugin) | Off, Auto, Full, switching | Already named (`Access`), but stored as `info.yolo` + `autoAccess` + `beforeFull` + `accessRuns`. Security code: change only with the owner's say. |

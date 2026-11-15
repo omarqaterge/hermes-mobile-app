@@ -7,6 +7,8 @@ ships as `hermux.apk` only from the release after v0.9.7 on (v0.9.7 carries `her
 ([repo-rename.md](repo-rename.md)).
 
 **Next:** a release when the owner decides. Only the owner creates `v*` tags (they publish the app); agents propose.
+A tag only publishes when its commit is on `main` and CI passed on it (`tools/release-gate.sh`, since 2026-11-15): tag the
+merge commit, and if CI failed there, re-run its failed jobs and then the Release workflow.
 How a release is made: `docs/spec/07-05-versioning-and-releases.md` and `python3 tools/changelog.py release`.
 
 **Needs a real phone:** everything marked `web ✓` (not yet tried on a phone) in [docs/improvements.md](../improvements.md).

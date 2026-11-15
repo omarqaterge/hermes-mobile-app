@@ -81,10 +81,11 @@ jobs:
       - run: npm test
         working-directory: web
 
-  # Five shards in parallel, each with its own mock and page; each starts at a check file that needs nothing from
-  # earlier files (docs/spec/07-03-browser-e2e.md). Change the list there and here together. 12 is the longest file
-  # (about 85 s in CI), so it runs alone; 18 runs only after 17, which it needs. `19-` is 19 to the last file, so a new
-  # file at the end runs without a change here.
+  # Seven shards in parallel, each with its own mock and page; each starts at a check file that needs nothing from
+  # earlier files (docs/spec/07-03-browser-e2e.md). Change the list there and here together. 12 is a long file
+  # (about 85 s in CI), so it runs alone; 18 runs only after 17, which it needs. 29 is the longest (about 110 s) and
+  # starts the last shard: `29-` is 29 to the last file, so a new file at the end runs without a change here. When
+  # that shard becomes the slowest again, close it (`29-NN`) and start a new open one at a file that runs alone.
   web-e2e:
     name: Web build and browser e2e (${{ matrix.shard }})
     needs: changes
@@ -94,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ['01-06', '07-11', '12', '13-16,19-', '17-18']
+        shard: ['01-06', '07-11', '12', '13-16', '17-18', '19-28', '29-']
     steps:
       - uses: actions/checkout@v5
         with:
@@ -240,6 +241,7 @@ jobs:
       - run: tools/test_share_uri.sh
       - run: tools/test_update_version.sh
       - run: tools/test_version_code.sh
+      - run: tools/test_release_gate.sh
       - run: tools/test_autostart.sh
       - run: tools/test_devtools_guard.sh
 
