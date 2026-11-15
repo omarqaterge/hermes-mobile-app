@@ -82,6 +82,7 @@ Owned by the Java side (4); listed here because the flows above depend on them.
 | `hermes` → `termux_ok` | Termux has accepted one of the app's commands; gates every automatic `RUN_COMMAND`. |
 | `hermes` → `plugin_state`, `plugin_detail`, `plugin_installed`, `plugin_at`, `plugin_checked_at`, `plugin_checked_version`, `plugin_try_at`, `plugin_tries_<stamp>` | The plugin update (6.6): the last state the script reported and why, the installed stamp, when it was checked (and for which app version), the last update try, failed tries per APK version. |
 | `hermes` → `setup_token` | The installer's progress token while an install runs. |
+| `hermes` → `setup_failed` | The step named by the installer's last `FAIL` line, saved with the token and removed by the next `STEP`, a new command or `DONE`; after a service restart it restores the failed state, so a failed install does not read as installing again. |
 | `hermes` → `wake_at` | The next cron wake-up time, re-armed after the app restarts. |
 | `hermes` → `shizuku_*` | The Shizuku keeper's pairing, last result and whether it turned Wireless debugging on. |
 | `hm` → `unseen` | Chats that finished while you weren't looking (Done chip + badge). |

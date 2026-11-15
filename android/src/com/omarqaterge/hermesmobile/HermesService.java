@@ -895,7 +895,8 @@ public class HermesService extends Service {
         synchronized (setup) {
             if (!setupLoaded) {
                 setupLoaded = true;
-                setup.resume(c.getSharedPreferences("hermes", MODE_PRIVATE).getString("setup_token", ""));
+                android.content.SharedPreferences sp = c.getSharedPreferences("hermes", MODE_PRIVATE);
+                setup.resume(sp.getString("setup_token", ""), sp.getString("setup_failed", ""));
             }
         }
         return setup;
@@ -904,7 +905,7 @@ public class HermesService extends Service {
     /** A new installer command was copied: remember its token (memory + prefs, so a service restart mid-install keeps it). */
     static void startSetup(Context c, String token) {
         setup(c).start(token);
-        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).apply();
+        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).remove("setup_failed").apply();
     }
 
     /** The installer's steps in the diagnostic log: the step's name and whether it failed, never the line's words. */
@@ -928,11 +929,14 @@ public class HermesService extends Service {
         if (a != null) a.pushSetupLine(line);
         String text = null;
         if (line.startsWith("STEP ")) {
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_failed").apply();
             String[] p = line.split(" ", 3);
             text = "Setting up: " + (p.length > 2 && !p[2].trim().isEmpty() ? p[2].trim() : p[1]);
-        } else if (line.startsWith("FAIL ")) text = "Setup stopped: open Hermux";
-        else if (line.equals("DONE")) {
-            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").apply();
+        } else if (line.startsWith("FAIL ")) {
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_failed", sl.failedStep()).apply();
+            text = "Setup stopped: open Hermux";
+        } else if (line.equals("DONE")) {
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").remove("setup_failed").apply();
             MainActivity.setTermuxOk(this);
             text = "Ready";
         }

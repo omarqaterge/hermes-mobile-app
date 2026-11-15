@@ -42,9 +42,31 @@ final class SetupLines {
         step = "";
     }
 
+    /** NONE: no command copied. INSTALLING: a command is copied and no FAIL is pending. FAILED: the installer sent FAIL
+     *  (token kept, so pasting the command again reports). DONE: the installer finished. */
+    enum State { NONE, INSTALLING, FAILED, DONE }
+
     /** After a service restart: the copied command's token is still valid (no lines kept). */
     synchronized void resume(String tok) {
-        if (token.isEmpty() && tok != null) token = tok;
+        resume(tok, "");
+    }
+
+    /** As {@link #resume(String)}, and failedStep = the step of a FAIL line saved before the restart ("" if none), so a
+     *  failed install does not read as installing again. A damaged step name is ignored. */
+    synchronized void resume(String tok, String failedStep) {
+        if (!token.isEmpty() || tok == null || tok.isEmpty()) return;
+        token = tok;
+        if (failedStep != null && failedStep.matches("[a-z-]{1,20}")) fail = failedStep;
+    }
+
+    synchronized State state() {
+        if (token.isEmpty()) return done ? State.DONE : State.NONE;
+        return fail.isEmpty() ? State.INSTALLING : State.FAILED;
+    }
+
+    /** The step of the pending FAIL line, "" if none (saved with the token so a restart restores FAILED). */
+    synchronized String failedStep() {
+        return fail;
     }
 
     synchronized String token() {
@@ -57,7 +79,7 @@ final class SetupLines {
     }
 
     synchronized boolean installing() {
-        return !token.isEmpty() && fail.isEmpty();
+        return state() == State.INSTALLING;
     }
 
     synchronized String step() {
