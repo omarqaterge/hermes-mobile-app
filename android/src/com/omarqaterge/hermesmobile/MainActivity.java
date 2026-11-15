@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
         bootT0 = 0; // each launch counts from its own create
         bootLog("create");
         super.onCreate(state);
+        IntentGate.strip(this, getIntent()); // before any extra is read: only this app's own intents may carry session, draft…
         // Last theme background the page chose (OLED black or default), so launch doesn't flash.
         int bg = getSharedPreferences("hm", MODE_PRIVATE).getInt("bg", Color.parseColor("#0E1115"));
         getWindow().setStatusBarColor(bg);
@@ -1102,6 +1103,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        IntentGate.strip(this, intent);
         setIntent(intent);
         startUpdateFromIntent(intent);
         if (intent.getBooleanExtra("clearDone", false)) { intent.removeExtra("clearDone"); HermesService.clearDoneChip(); }
@@ -1248,8 +1250,8 @@ public class MainActivity extends Activity {
             }
             String label = title == null || title.trim().isEmpty() ? "Last chat" : title.trim().replaceFirst("^⎇\\s*", "");
             if (label.length() > 25) label = label.substring(0, 24) + "…";
-            Intent open = new Intent(this, MainActivity.class).setAction(Intent.ACTION_VIEW).putExtra("session", id)
-                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).setAction(Intent.ACTION_VIEW).putExtra("session", id)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
             android.content.pm.ShortcutInfo si = new android.content.pm.ShortcutInfo.Builder(this, "last_chat")
                     .setShortLabel(label)
                     .setLongLabel(title == null || title.isEmpty() ? "Last chat" : title.length() > 60 ? title.substring(0, 59) + "…" : title)
@@ -1266,6 +1268,11 @@ public class MainActivity extends Activity {
     /** ACTION_SEND / SEND_MULTIPLE: keep the text and the file URIs for the page. */
     String sharedType;
 
+    /** Only another app's content address may be read: never a file, nor one of this app's own providers (ShareUri). */
+    boolean shareable(Uri u) {
+        return ShareUri.ok(u.getScheme(), u.getAuthority(), getPackageName());
+    }
+
     boolean takeShare(Intent in) {
         if (in == null) return false;
         String act = in.getAction();
@@ -1275,10 +1282,10 @@ public class MainActivity extends Activity {
         try {
             if (Intent.ACTION_SEND_MULTIPLE.equals(act)) {
                 java.util.ArrayList<Uri> l = in.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-                if (l != null) for (Uri u : l) if (u != null && sharedUris.size() < 10) sharedUris.add(u);
+                if (l != null) for (Uri u : l) if (u != null && sharedUris.size() < 10 && shareable(u)) sharedUris.add(u);
             } else {
                 Uri u = in.getParcelableExtra(Intent.EXTRA_STREAM);
-                if (u != null) sharedUris.add(u);
+                if (u != null && shareable(u)) sharedUris.add(u);
             }
         } catch (Exception ignored) {
         }
@@ -1309,6 +1316,7 @@ public class MainActivity extends Activity {
         try {
             if (i < 0 || i >= sharedUris.size()) return o.put("error", "gone").toString();
             Uri u = sharedUris.get(i);
+            if (!shareable(u)) return o.put("name", "shared").put("error", "can't be shared").toString();
             String name = null;
             long size = -1;
             try (android.database.Cursor c = getContentResolver().query(u, null, null, null, null)) {
@@ -2858,7 +2866,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void notify(String key, String title, String body, String tag) {
             if (!ok(key)) return;
-            Intent open = new Intent(MainActivity.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            Intent open = IntentGate.mark(MainActivity.this, new Intent(MainActivity.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
             PendingIntent pi = PendingIntent.getActivity(MainActivity.this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             // "needs_you": the old "hermes" channel is deleted by HermesService, and posts to it were dropped.
             Notification n = new Notification.Builder(MainActivity.this, HermesService.CH_ALERT)

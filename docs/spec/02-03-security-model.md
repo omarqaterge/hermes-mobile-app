@@ -37,6 +37,20 @@ A test build (`devtoolsBuild()`) keeps debugging on whatever this setting does: 
   `shouldOverrideUrlLoading`) must be `http`, `https`, `mailto` or `tel`; `intent:`, `file:`, `content:`,
   `market:` and the rest are dropped. Sub-frame navigations never leave the app (`!req.isForMainFrame()` → blocked),
   and the page itself only navigates within `file:`.
+- Share to Hermux (`ShareUri`): `MainActivity` opens a shared file with its own rights, so `takeShare` keeps, and
+  `readShared` opens, only `content` addresses of other apps. A `file:` address (the app's own `hermes` preferences
+  hold the event key) or an address of one of the app's own providers (authority equal to the package name or starting
+  with it and a dot) is dropped, and `sharedItem` answers `{name, error}` ("can't be shared") for one that got in.
+  The scheme must be exactly lower case `content`, the only spelling `ContentResolver` opens.
+- Intent gate (`IntentGate`): `MainActivity` is exported, so any app could send it the extras made for the app's own
+  notifications and shortcuts. Every intent the app builds for `MainActivity` carries the per-install secret
+  `intent_nonce` in the `hm_gate` extra (`IntentGate.mark`); `onCreate` and `onNewIntent` call `IntentGate.strip`
+  first, which removes `session`, `draft`, `clearDone`, `updateUrl`, the background-viewer extra and the unlock extra
+  from an intent without the secret (compared in constant time) and always removes `hm_gate`. Known limit: the
+  `shortcut` extra, the share intents and `ACTION_ASSIST` / `VOICE_COMMAND` are not gated (static launcher shortcuts and
+  the assist gesture can't carry a secret, and sharing is for other apps), so another app can still open a new chat
+  or start Live mode; Live mode still needs the unlocked phone. Notifications and a "last chat" shortcut made by an
+  older version carry no secret and open the app without the chat until posted or made again.
 - Other input checks in the bridge: `openFile` takes only absolute paths without `..` or NUL and passes them as
   arguments, never as script text; chat ids from the page match `[A-Za-z0-9_.:-]*` and are at most 200 characters;
   `setUnseen` keeps at most 500 rows; `setReadAloud` takes valid JSON up to 200,000 characters; `shareText` up to

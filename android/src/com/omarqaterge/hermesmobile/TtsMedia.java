@@ -69,7 +69,7 @@ final class TtsMedia {
                 .build());
         session.setActive(true);
 
-        Intent open = new Intent(app, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        Intent open = IntentGate.mark(app, new Intent(app, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK));
         if (chat != null && !chat.isEmpty()) open.putExtra("session", chat);
         PendingIntent content = PendingIntent.getActivity(app, 70, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 

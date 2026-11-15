@@ -82,7 +82,7 @@ public class AnswerBox extends Activity {
         open.setAllCaps(false);
         open.setText("Open chat");
         open.setOnClickListener(v -> {
-            Intent app = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent app = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK));
             if (session != null && !session.isEmpty()) app.putExtra("session", session);
             String typed = field.getText().toString().trim();
             if (!typed.isEmpty()) app.putExtra("draft", typed);

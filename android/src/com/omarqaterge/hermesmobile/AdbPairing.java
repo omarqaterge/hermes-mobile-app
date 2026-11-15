@@ -219,7 +219,7 @@ final class AdbPairing {
 
     private static Notification.Builder base(String title, String text) {
         PendingIntent open = PendingIntent.getActivity(app, 7,
-                new Intent(app, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE);
+                IntentGate.mark(app, new Intent(app, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)), PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(app, CH_PAIR)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setContentTitle(title)

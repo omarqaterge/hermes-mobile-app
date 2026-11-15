@@ -237,6 +237,7 @@ jobs:
       - run: tools/test_setup_lines.sh
       - run: tools/test_diag_log.sh
       - run: tools/test_update_url.sh
+      - run: tools/test_share_uri.sh
       - run: tools/test_update_version.sh
       - run: tools/test_version_code.sh
       - run: tools/test_autostart.sh
