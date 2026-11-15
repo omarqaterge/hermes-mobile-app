@@ -20,7 +20,9 @@ common problems, and how to uninstall.
 **No root needed.** Hermux runs on an ordinary phone with a locked bootloader. A rooted phone works too; the
 differences are how Shizuku starts and, if you like, running Debian with chroot-distro (see [Rooted or not](#rooted-or-not)).
 
-You need an Android phone (arm64, Android 8+) with about 6 GB free, and access to a model, either of:
+You need an Android phone (arm64, Android 8+) with about 6 GB free while it installs (the app is about 20 MB; Hermes and
+its tools take about 3.5 GB once installed, and the rest is room to download and unpack them, freed at the end), and
+access to a model, either of:
 
 - **A subscription you already have:** ChatGPT Plus / Pro (or a Codex plan), Claude Pro / Max, SuperGrok / X Premium+, or a Nous
   Portal account. You sign in from the app.

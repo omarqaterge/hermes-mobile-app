@@ -1,6 +1,6 @@
 ### 6.3 Install routes
 
-All routes end with the same result: Termux, Termux:API, Termux:Boot and Shizuku installed; Debian with the pinned Hermes and the plugin; `hermes-services` running; the app installed with its permissions. Android 8 (API 26) or newer, arm64, about 6 GB free, no root needed. Every route runs the same `phone/bootstrap.sh`.
+All routes end with the same result: Termux, Termux:API, Termux:Boot and Shizuku installed; Debian with the pinned Hermes and the plugin; `hermes-services` running; the app installed with its permissions. Android 8 (API 26) or newer, arm64, about 6 GB free during the install (about 3.5 GB stays used afterwards: Debian, Hermes and its tools; the app is about 20 MB), no root needed. Every route runs the same `phone/bootstrap.sh`.
 
 #### Computer route (`tools/setup-phone.sh`, `tools/setup-phone.ps1`)
 

@@ -382,9 +382,14 @@ adb shell dumpsys package com.omarqaterge.hermesmobile | grep -E "permission|gra
 
 ## Install
 
-**No root needed.** You need an arm64 Android phone (Android 8+) with about 6 GB free, and a model: a subscription you already
+**No root needed.** You need an arm64 Android phone (Android 8+) and a model: a subscription you already
 have (ChatGPT, Claude, SuperGrok, Nous Portal) or an API key (for example [OpenRouter](https://openrouter.ai/keys), or Gemini's
 free tier). It takes about 15 minutes, mostly waiting.
+
+**How much space it takes.** The app itself is about 20 MB. Setup then adds Hermes, the agent that does the work, and the
+tools it uses on the phone (a small Linux system, a browser, Python and Node.js): about 3.5 GB once installed. While it
+installs, keep about 6 GB free: setup downloads a compressed copy (about 900 MB) and unpacks it, and the download is deleted
+as soon as it is unpacked.
 
 **On the phone (Android 11+):**
 
