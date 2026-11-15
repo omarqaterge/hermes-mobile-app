@@ -6,7 +6,7 @@
 // compared with what Hermes is saying, and only words that aren't Hermes's own echo cut it off.
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { answerRequest, errText, sendPrompt } from './gateway'
-import { approvalKind, approvalMayStart, fireStep, hearRoute, hiddenKeepsSpeech, idleMayEnd, isOn, listenOpensMic, listeningAction, mayInterrupt, mayListenOver, muteStep, overAction, overRestartDue, replyAction, restartDue, sentTo, speechEndListens, thinkTimeoutDue, type HearKind, type LiveFlags, type LivePhase } from './livestate'
+import { approvalKind, fireStep, hearRoute, hiddenKeepsSpeech, isOn, listeningAction, muteStep, overAction, overRestartDue, mayListenOver, replyAction, restartDue, type HearKind, type LiveFlags, type LivePhase } from './livestate'
 import { phoneDataTextOf } from './phone-data-request'
 import { leaveLockView } from './lockview'
 import { getState, toast } from './store'
@@ -103,7 +103,7 @@ function clearTimers() {
 function armIdle() {
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = setTimeout(() => {
-    if (!idleMayEnd(phase)) return
+    if (phase !== 'listening') return
     toast('Live mode ended: no speech for 5 minutes')
     stopLive()
   }, IDLE_MAX_MS)
@@ -120,7 +120,7 @@ function listen() {
   buffer = ''
   partial = ''
   goto('listening')
-  if (!listenOpensMic(muted)) return // stay on, but with the microphone closed until the user unmutes
+  if (muted) return // stay on, but with the microphone closed until the user unmutes
   armIdle()
   over = false
   startListening(hear)
@@ -217,8 +217,8 @@ function fire() {
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = null
   stopListening()
-  thinkTimer = setTimeout(() => thinkTimeoutDue(phase) && listen(), THINK_MAX_MS)
-  if (sentTo(approvalKind(approval)) === 'approval') return answerByVoice(text)
+  thinkTimer = setTimeout(() => phase === 'thinking' && listen(), THINK_MAX_MS)
+  if (approval) return answerByVoice(text)
   sendPrompt(text).catch(e => {
     toast(errText(e), 'error')
     listen()
@@ -275,7 +275,7 @@ export function voiceMayAnswer(req: ServerRequest): boolean {
 }
 
 function onApproval(req: ServerRequest) {
-  if (!approvalMayStart(phase)) return
+  if (phase === 'off') return
   if (!voiceMayAnswer(req)) {
     // Said once, then anything heard is NOT an answer (it is kept apart from the prompts below): the sheet stays.
     approval = { req, tries: 0, tapOnly: true }
@@ -337,14 +337,14 @@ export function startLive(): void {
 /** Cut Hermes off while it speaks and listen at once (the Interrupt button; talking over it does the same when
  * barge-in is on). An approval question being read stays open: the answer is heard next. */
 export function interruptLive(): void {
-  if (!mayInterrupt(phase)) return
+  if (phase !== 'speaking') return
   stopSpeaking() // its late tts-done is ignored: the phase is no longer 'speaking'
   relisten()
 }
 
 /** The reading ended by itself: listen. */
 function onSpoken() {
-  if (speechEndListens(phase)) relisten()
+  if (phase === 'speaking') relisten()
 }
 
 /** Listen afresh. A recogniser left on during the reading (barge-in) is restarted, so the last bit of Hermes's own

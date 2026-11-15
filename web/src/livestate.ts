@@ -93,12 +93,6 @@ export const overRestartDue = (s: LiveFlags): boolean => s.phase === 'speaking' 
 /** May the microphone listen over Hermes now? Only while it speaks, unmuted, with barge-in available. */
 export const mayListenOver = (s: LiveFlags, bargeInAvailable: boolean): boolean => s.phase === 'speaking' && !s.muted && bargeInAvailable
 
-/** May the 5-minute idle timer end Live mode? Only while listening. */
-export const idleMayEnd = (phase: LivePhase): boolean => phase === 'listening'
-
-/** Does listening open the microphone? Not while muted: the phase stays on, the microphone closed. */
-export const listenOpensMic = (muted: boolean): boolean => !muted
-
 export type FireStep = 'wait-final' | 'drop' | 'send'
 /** The send countdown ran out. A preview with no finished phrase yet waits once more (`wait-final`); nothing to say, or
  *  not listening any more, drops it; else the text is sent. */
@@ -107,26 +101,11 @@ export function fireStep(s: LiveFlags, hasPartial: boolean, hasText: boolean): F
   return !hasText || s.phase !== 'listening' ? 'drop' : 'send'
 }
 
-/** Where what was said goes: to the approval being asked by voice, or to Hermes as a prompt. */
-export const sentTo = (approval: ApprovalKind): 'approval' | 'prompt' => (approval === 'none' ? 'prompt' : 'approval')
-
-/** The 10-minute wait for a reply ran out: give up and listen again, if still thinking. */
-export const thinkTimeoutDue = (phase: LivePhase): boolean => phase === 'thinking'
-
 /** A reply arrived (empty text = failed or nothing to read): only while thinking, and then it is read or listening resumes. */
 export function replyAction(phase: LivePhase, text: string): 'ignore' | 'listen' | 'speak' {
   if (phase !== 'thinking') return 'ignore'
   return text.trim() ? 'speak' : 'listen'
 }
-
-/** May the Interrupt button cut the reading short? Only while speaking. */
-export const mayInterrupt = (phase: LivePhase): boolean => phase === 'speaking'
-
-/** The reading ended by itself: it listens again only if it is still the phase (an interrupt or barge-in got there first). */
-export const speechEndListens = (phase: LivePhase): boolean => phase === 'speaking'
-
-/** May an approval request be asked by voice? Only while Live mode runs. */
-export const approvalMayStart = (phase: LivePhase): boolean => isOn(phase)
 
 export type MuteStep = 'none' | 'mute' | 'mute-close-mic' | 'unmute-listen' | 'unmute-listen-over' | 'unmute'
 /** Mute toggled. Off, or no change: nothing. Muting closes the microphone when listening or listening over Hermes

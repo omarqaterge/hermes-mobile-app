@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
-  approvalKind, approvalMayStart, fireStep, hearRoute, hiddenKeepsSpeech, idleMayEnd, isOn, listenOpensMic, listeningAction, liveState,
-  mayInterrupt, mayListenOver, muteStep, overAction, overRestartDue, replyAction, restartDue, sentTo, speechEndListens, thinkTimeoutDue,
+  approvalKind, fireStep, hearRoute, hiddenKeepsSpeech, isOn, listeningAction, liveState,
+  mayListenOver, muteStep, overAction, overRestartDue, replyAction, restartDue,
   type LiveFlags, type LivePhase
 } from './livestate'
 
@@ -99,15 +99,6 @@ test('mayListenOver: speaking, unmuted, barge-in available', () => {
   for (const phase of ['off', 'listening', 'thinking'] as const) expect(mayListenOver(at({ phase }), true)).toBe(false)
 })
 
-test('idleMayEnd: only while listening', () => {
-  expect(phases.map(idleMayEnd)).toEqual([false, true, false, false])
-})
-
-test('listenOpensMic: not while muted', () => {
-  expect(listenOpensMic(false)).toBe(true)
-  expect(listenOpensMic(true)).toBe(false)
-})
-
 describe('fireStep', () => {
   test('a preview with no finished phrase waits once', () => {
     expect(fireStep(base, true, true)).toBe('wait-final')
@@ -129,16 +120,6 @@ describe('fireStep', () => {
   })
 })
 
-test('sentTo: an approval being asked takes what was said, otherwise Hermes gets it', () => {
-  expect(sentTo('none')).toBe('prompt')
-  expect(sentTo('voice')).toBe('approval')
-  expect(sentTo('tap-only')).toBe('approval') // the tap-only path then refuses it (live.ts)
-})
-
-test('thinkTimeoutDue: only while thinking', () => {
-  expect(phases.map(thinkTimeoutDue)).toEqual([false, false, true, false])
-})
-
 describe('replyAction', () => {
   test('only while thinking', () => {
     for (const phase of ['off', 'listening', 'speaking'] as const) expect(replyAction(phase, 'hello')).toBe('ignore')
@@ -148,15 +129,6 @@ describe('replyAction', () => {
     expect(replyAction('thinking', '')).toBe('listen')
     expect(replyAction('thinking', '  \n')).toBe('listen')
   })
-})
-
-test('mayInterrupt and speechEndListens: only while speaking', () => {
-  expect(phases.map(mayInterrupt)).toEqual([false, false, false, true])
-  expect(phases.map(speechEndListens)).toEqual([false, false, false, true])
-})
-
-test('approvalMayStart: only while Live mode runs', () => {
-  expect(phases.map(approvalMayStart)).toEqual([false, true, true, true])
 })
 
 describe('muteStep', () => {
