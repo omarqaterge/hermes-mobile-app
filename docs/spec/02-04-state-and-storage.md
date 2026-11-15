@@ -126,7 +126,7 @@ and canvas, keeping whatever is still attached in an open composer.
 | `~/.hermes-mobile/services.sha`, `services-new`, `hermes-services.bak` | `plugin-update.sh` | The supervisor last installed from an APK; the dashboard's loop still runs an older one; the copy before it (6.6). |
 | `~/bin/hermes-debian` | installer | Runs a command in Debian under proot-distro or chroot-distro; `--open` and `--exists` helpers. Missing on older installs, which use `proot-distro login debian --`. |
 | `~/bin/hm-shizuku` | installer | Shizuku pair/start/status (2.2.9). |
-| `~/bin/rish`, `~/bin/rish_shizuku.dex` | `phone/phone-access.sh` | Shizuku's shell, taken from Shizuku's own APK. |
+| `~/bin/rish`, `~/bin/rish_shizuku.dex` | `phone/phone-access.sh` | Shizuku's shell, taken from Shizuku's own APK after its SHA-256 matched. |
 | `~/.termux/boot/10-hermes` | `phone/bootstrap.sh` | Termux:Boot runs `~/bin/hermes-services` after a reboot. |
 | `~/.hermes-mobile/key` | `HermesService.shareKeyWithTermux` | The event key (mode 600). |
 | `~/.hermes-mobile/installed` | `phone/bootstrap.sh` at DONE | The app's Termux probe reads it as "the install finished". |

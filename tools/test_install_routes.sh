@@ -57,4 +57,50 @@ apk_run setup-part.sh ""
 check '[ "$rc" != 0 ]' "setup-phone.sh: no app file at all: stops"
 check "grep -q 'try { Get \\\$APK_URL \\\$apk } catch { Get \\\$APK_URL_OLD \\\$apk }' tools/setup-phone.ps1 && grep -q 'download/hermux.apk' tools/setup-phone.ps1 && grep -q 'download/hermes-mobile.apk' tools/setup-phone.ps1" "setup-phone.ps1: hermux.apk, then the old name"
 check "grep -A1 'download/hermux.apk' AGENT_INSTALL.md | grep -q 'download/hermes-mobile.apk'" "AGENT_INSTALL.md: hermux.apk, then the old name"
+# Shizuku's rish in phone-access.sh: the APK is checked against its pinned SHA-256 before unzip touches it. Only the pins
+# and the rish block are cut out and run, with a fake curl (serves $T/shizuku-served as the APK) and a fake unzip.
+check "grep -qE '^SHIZUKU_APK_SHA256=\"[0-9a-f]{64}\"\$' phone/phone-access.sh" "phone-access.sh: SHIZUKU_APK_SHA256 is a 64-character hex checksum"
+mkdir -p "$T/rb"
+cat > "$T/rb/curl" <<'SH'
+#!/bin/bash
+out=""; url=""
+while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift 2 ;; -*) shift ;; *) url=$1; shift ;; esac; done
+echo "$url" >> "$CALLS"
+[ -f "$SERVED_APK" ] || exit 22
+cp "$SERVED_APK" "$out"
+SH
+cat > "$T/rb/unzip" <<'SH'
+#!/bin/bash
+# unzip -qo APK assets/rish assets/rish_shizuku.dex -d DIR
+dir=""; while [ $# -gt 0 ]; do [ "$1" = -d ] && dir=$2; shift; done
+echo unzip >> "$CALLS"; mkdir -p "$dir/assets"
+printf '#!/bin/sh\nPKG="PKG"\n' > "$dir/assets/rish"; echo dex > "$dir/assets/rish_shizuku.dex"
+SH
+chmod +x "$T/rb/"*
+{ sed -n '/^SHIZUKU_APK=/,/^say() {/p' phone/phone-access.sh | sed '$d'
+  echo 'TODO="$HOME/todo"; : > "$TODO"; todo() { echo "$*" >> "$TODO"; }'
+  sed -n '/^# Shizuku.s rish:/,/^# rish gets/p' phone/phone-access.sh | sed '$d'
+  echo 'echo carried-on'; } > "$T/rish-part.sh"
+check "grep -q '^sha() ' '$T/rish-part.sh' && grep -q 'unzip -qo' '$T/rish-part.sh' && grep -q 'HM_SHIZUKU_APK_URL' '$T/rish-part.sh'" "the rish part of phone-access.sh was found"
+printf 'a stand-in for the Shizuku APK\n' > "$T/apk-ok"; printf 'another file, not the pinned APK\n' > "$T/apk-bad"
+apk_sum=$( (sha256sum "$T/apk-ok" 2>/dev/null || shasum -a 256 "$T/apk-ok") | cut -c1-64)
+rish_run() { # served file, then VAR=value ... -> $rc, $out, $asked, $unzipped; the home is $T/rh
+  local served=$1; shift
+  rm -rf "$T/rh" "$T/rcalls"; mkdir -p "$T/rh/bin"; : > "$T/rcalls"
+  out=$(env -i HOME="$T/rh" PATH="$T/rb:$PATH" CALLS="$T/rcalls" SERVED_APK="$served" TMPDIR="$T" "$@" bash "$T/rish-part.sh" 2>&1); rc=$?
+  asked=$(grep -c . "$T/rcalls" 2>/dev/null); unzipped=$(grep -c '^unzip$' "$T/rcalls")
+}
+rish_run "$T/apk-ok" HM_SHIZUKU_APK_URL=https://example.invalid/s.apk HM_SHIZUKU_APK_SHA256="$apk_sum"
+check '[ "$rc" = 0 ] && [ "$unzipped" = 1 ] && grep -q "com.termux" "$T/rh/bin/rish" && [ -x "$T/rh/bin/rish" ] && [ -s "$T/rh/bin/rish_shizuku.dex" ] && [ ! -s "$T/rh/todo" ]' "rish: a download that matches its checksum installs rish and the dex, no TODO"
+rish_run "$T/apk-bad" HM_SHIZUKU_APK_URL=https://example.invalid/s.apk HM_SHIZUKU_APK_SHA256="$apk_sum"
+check '[ "$rc" = 0 ] && [ "$unzipped" = 0 ] && [ ! -e "$T/rh/bin/rish" ] && [ ! -e "$T/rh/bin/rish_shizuku.dex" ] && grep -q "was not the expected one" "$T/rh/todo" && grep -q "run the installer again" "$T/rh/todo" && ! grep -q "$T" "$T/rh/todo"' "rish: a download that does not match installs nothing, unzip never runs, a TODO says so"
+check '[ "$out" = carried-on ] && ! ls -d "$T"/tmp.* 2>/dev/null | grep -q .' "rish: after a mismatch the script carries on and the download is removed"
+rish_run "$T/apk-ok"
+check '[ "$unzipped" = 0 ] && [ ! -e "$T/rh/bin/rish" ] && grep -q "was not the expected one" "$T/rh/todo" && grep -qF "releases/download/v13.6.0/" "$T/rcalls"' "rish: with no test hook the pinned URL and checksum apply (a different file is refused)"
+rish_run "$T/apk-ok" HM_SHIZUKU_APK_SHA256="$apk_sum"
+check '[ "$unzipped" = 0 ] && [ ! -e "$T/rh/bin/rish" ]' "rish: the test checksum alone (no test URL) is ignored"
+rish_run "$T/apk-ok" HM_SHIZUKU_APK_URL=https://example.invalid/s.apk
+check '[ "$unzipped" = 0 ] && [ ! -e "$T/rh/bin/rish" ]' "rish: a test URL alone is still checked against the pinned checksum"
+rish_run /nonexistent
+check '[ "$rc" = 0 ] && [ "$unzipped" = 0 ] && [ ! -s "$T/rh/todo" ] && [ "$out" = carried-on ]' "rish: a failed download behaves as before (no unzip, carries on)"
 [ "$fails" = 0 ] && echo "ALL PASSED" || { echo "$fails FAILED"; exit 1; }
