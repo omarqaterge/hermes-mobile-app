@@ -70,6 +70,13 @@ These files carry the plumbing every screen uses. Screens are in 3.
   `GET /api/status` without `profile=`), `startHealthPolling` (2.5; returns false when it was already running, so `App` asks for only a ping on a reconnect and the full status is sent once at start-up), `dotState`: `wait` while connecting, `err`
   when not open, `warn` when the status call failed, the dashboard or storage component isn't ok/unknown, or disk
   or memory pressure is critical, else `ok`. Messaging-platform health is ignored on purpose.
+- `conn.ts` — the gateway connection's decisions as pure functions (states idle, connecting, open, waiting to retry;
+  the table is in its header); `gateway.ts` keeps the timers and side effects. `BEAT_MS` (15 s liveness beat),
+  `DEADLINE_MS` (45 s of silence drops the socket), `BACKOFF_BASE_MS` (600 ms) and `BACKOFF_CAP_MS` (15 s) are the
+  constants. `retryDelayMs` gives the wait before a retry (0 when Hermes was seen answering, else the doubling
+  backoff), `retryBanner` the header text ("Reconnecting…" for tries 1 and 2, "Starting Hermux…" after),
+  `retryHermesSteps` whether the try asks the shell to watch for Hermes (try 1) or start it (try 2 and every 6th), and
+  `beatDecision` (type `BeatDecision`) what one beat does: `ping`, `fresh-window` (the page was frozen) or `dead`.
 
 #### Gateway RPCs (all calls the page makes)
 

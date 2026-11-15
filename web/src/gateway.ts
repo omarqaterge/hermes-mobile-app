@@ -37,6 +37,7 @@ import type {
   TranscriptMessage,
   Usage
 } from '@hermes/shared/gateway-contract.generated'
+import { BEAT_MS, DEADLINE_MS, beatDecision, retryBanner, retryDelayMs, retryHermesSteps } from './conn'
 import { askUnlock, lockView } from './lockview'
 import { onChatOpen, runChatOpen } from './chatopen'
 import { ctxFromStatText, stripCtxStat } from './ctxring'
@@ -99,12 +100,13 @@ client.onState(conn => {
 
 function scheduleReconnect(): void {
   if (reconnectTimer) return
-  const delay = readySeen ? 0 : Math.min(15_000, 600 * 2 ** Math.min(attempt, 5))
+  const delay = retryDelayMs(attempt, readySeen)
   readySeen = false
   attempt++
-  setState({ connDetail: attempt > 2 ? 'Starting Hermux…' : 'Reconnecting…' })
-  if (attempt === 1) watchHermes() // once per outage; these steps stay as the fallback
-  if (attempt === 2 || attempt % 6 === 0) startHermes()
+  const steps = retryHermesSteps(attempt)
+  setState({ connDetail: retryBanner(attempt) })
+  if (steps.watch) watchHermes() // once per outage; these steps stay as the fallback
+  if (steps.start) startHermes()
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     void connect()
@@ -178,8 +180,6 @@ export async function connectionAlive(): Promise<boolean> {
 // the app is hidden Chromium freezes the page (~1 min in), so on return the first late tick saw a minute of
 // "silence" and closed a healthy socket: "offline", a reconnect, and a reload of the chat mid-turn. This one gives
 // the socket a fresh window after a frozen gap, and pings as soon as the page is shown again.
-const BEAT_MS = 15_000
-const DEADLINE_MS = 45_000
 let aliveAt = Date.now()
 let lastBeat = Date.now()
 
@@ -189,11 +189,11 @@ client.onAny(() => {
 
 setInterval(() => {
   const now = Date.now()
-  const slept = now - lastBeat > BEAT_MS * 2
+  const beat = beatDecision(now, lastBeat, aliveAt)
   lastBeat = now
   if (getState().conn !== 'open') return
-  if (slept) aliveAt = now
-  else if (now - aliveAt >= DEADLINE_MS) {
+  if (beat === 'fresh-window') aliveAt = now
+  else if (beat === 'dead') {
     client.invalidate('WebSocket heartbeat timed out')
     return
   }
