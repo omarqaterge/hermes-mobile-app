@@ -443,7 +443,7 @@ module.exports = async t => {
     const pol = await cp.evaluate(() => document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || '')
     check(/script-src [^;]*'unsafe-inline'[^;]*'unsafe-eval'/.test(pol) && /object-src 'none'/.test(pol) && /base-uri 'none'/.test(pol) && !/default-src|connect-src|img-src|frame-src/.test(pol), `page CSP: the main page carries a conservative policy (${pol})`)
     check((await cp.evaluate(() => window.__csp)).length === 0, `page CSP: it blocked nothing while the app started and drew a diagram (${JSON.stringify(await cp.evaluate(() => window.__csp))})`)
-    check(await cp.evaluate(() => { const b = document.createElement('base'); b.href = 'https://attacker.example/'; document.head.append(b); const r = document.baseURI; b.remove(); return !r.startsWith('https://attacker.example') }), 'page CSP: an injected <base> does not change where addresses point')
+    check(await cp.evaluate(() => { const b = document.createElement('base'); b.href = 'https://attacker.example/'; document.head.append(b); const r = document.baseURI; b.remove(); return new URL(r).hostname !== 'attacker.example' }), 'page CSP: an injected <base> does not change where addresses point')
     await cp.close()
   }
 }
