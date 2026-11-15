@@ -365,6 +365,26 @@ EVENTS.clear()
 pa.end_session("chat9")
 check("a dead host still ends the card", [kw.get("state") for _, _, kw in EVENTS] == ["done"] and pa._state == {}, EVENTS)
 
+print("the host dies while an app is open")
+run({"action": "open", "app": "Calculator"}, sid="chat-dead")
+HOST["token"] = "rotated"
+EVENTS.clear()
+r = run({"action": "tap", "target": "5"}, sid="chat-dead")
+check("an action on a dead host says no app is open", not r["ok"] and "no app is open" in r["error"], r)
+check("and ends the card with a done event for that chat", [(k, s_, kw.get("state")) for k, s_, kw in EVENTS] == [("bgapp", "chat-dead", "done")]
+      and pa._state == {} and pa._last_view == "", EVENTS)
+HOST["token"] = pa._token = ""
+pa.ensure_host()
+run({"action": "open", "app": "Calculator"}, sid="chat-dead")
+HOST["token"] = "rotated"
+EVENTS.clear()
+r = run({"action": "close"}, sid="chat-dead")
+check("closing on a dead host says nothing was open", r.get("ok") and r.get("note") == "nothing was open", r)
+check("and ends the card with a done event", [kw.get("state") for _, _, kw in EVENTS] == ["done"] and pa._state == {} and pa._last_view == "", EVENTS)
+EVENTS.clear()
+r = run({"action": "close"}, sid="chat-dead")
+check("closing with nothing open sends no event", r.get("ok") and not EVENTS, EVENTS)
+
 print("another chat after the owner let go")
 import time as _t
 pa.turn_running = None
