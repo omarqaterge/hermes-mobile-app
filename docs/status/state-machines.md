@@ -17,8 +17,16 @@ Done in the web page (each: one module, a state table in its header, a unit test
 | Connection retries and liveness | `web/src/conn.ts` | None found. |
 | A chat's agent build and model switch | `web/src/agentbuild.ts` | None fixed. |
 
-Done in the Android shell: the setup install gate (`SetupLines.java` `State`): a failed install no longer reads as
-installing after the app restarts.
+Done in the Android shell and the plugin:
+
+- The setup install gate (`SetupLines.java` `State`): a failed install no longer reads as installing after the app
+  restarts.
+- The plugin's "Using an app" state (`_start_use` and `_end_use` in `phone_app.py`): the card ends at once when the
+  background host is lost, not after its 130 s timeout.
+- In review, waiting for the owner (2026-11-16): the status chip's pending approvals and questions (`PendingAsk.java`).
+  It keeps them per chat and request, so one chat's clear no longer drops another's and a second approval no longer
+  overwrites the first. Open question: the chip now shows the oldest pending approval first, where it used to show the
+  newest. Needs a phone: two chats each asking for an approval.
 
 Left alone on purpose in "which chat is on screen": `phone-data-taint.ts` has its own copy of the same test (security
 code: change it only with the owner's say), `BgApp.tsx` prefers the open chat over the opening one (its chip flow is
@@ -55,9 +63,7 @@ Worth doing, in this order:
 
 | Where | The hidden states | What is loose, and what the survey reported |
 |---|---|---|
-| Status chip and its pending approval or question (`HermesService.java`) | flash, approval, ask, done, working, idle | About twelve fields, precedence decided inside `statusNotification`. Reported: a "clear" event is matched by kind only, so one chat's clear drops another chat's pending approval, and a second approval overwrites the first (one slot). |
 | Helper-app install and app update install (`MainActivity.java`) | idle, requested, downloading, committed, prompt pending, prompt shown, finished | Seven `helper*` flags set in about fifteen places. Reported: the receivers are never unregistered and the flags are lost when the activity is recreated, so Retry can start a second installer session. Suspected: the update installer can stack a session the same way. No test. |
-| The plugin's "Using an app" state (`phone_app.py`) | closed, open for a chat | Reported: two paths clear `_state` without sending the "done" event, so the app's card stays for up to 130 s. |
 | The plugin's turn records (`__init__.py`) | idle, running, review, ended | Spread over `_active`, `_turn_started`, `_last_end`, `_subagents` and a timer. Reported: two of them only grow. Suspected: a background review label can replace a live turn's status. |
 
 Small things reported on the way: `Voice.java` has a field that is never assigned (`pendingSpeech`); `PluginSync.java`
