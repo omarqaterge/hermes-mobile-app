@@ -101,3 +101,29 @@ test('a Query card draws what the tool client returns', async () => {
   expect(seen).toEqual(['web_search'])
   await act(async () => h.unmount())
 })
+
+// ── web pictures held back (openui-hold.ts): every chat until "Load images", whatever builds the address ──
+const PICS = `root = Card([pic, block, joined, text, go])
+pic = Image("Logo", "https://pics.test/a.png?d=x")
+block = ImageBlock("//cdn.test/b.png", "B")
+joined = Image("Joined", "htt" + "ps://" + "join.test/c.png")
+text = TextContent("See ![m](https://md.test/m.png) here")
+go = Button("Visit", @OpenUrl("https://visit.test/page"), "primary")`
+
+const imgSrcs = (root: ShadowRoot) => [...root.querySelectorAll('img')].map(i => i.getAttribute('src') || '')
+
+test('a held card draws no web picture, joined or in Markdown, and reports their sites', async () => {
+  let sites: string[] = []
+  const seen: UiAction[] = []
+  const { h, root } = await mount(props({ code: PICS, holdImages: true, onHeld: s => (sites = s), onAction: e => seen.push(e as UiAction) }))
+  expect(imgSrcs(root).filter(s => /\.test/.test(s))).toEqual([])
+  expect(root.innerHTML).not.toMatch(/(?:src|srcset|poster)="[^"]*\.test/) // a Markdown image shows as a link: not fetched
+  expect(root.querySelector('a[href="https://md.test/m.png"]')).not.toBeNull()
+  expect(sites.sort()).toEqual(['cdn.test', 'join.test', 'md.test', 'pics.test'])
+  await act(async () => button(root, 'Visit').click())
+  expect(seen.map(e => e.params?.url)).toEqual(['https://visit.test/page']) // a link still opens (through the page's checks)
+  await act(async () => h.update(props({ code: PICS, holdImages: false })))
+  await settle()
+  expect(imgSrcs(root).filter(s => /\.test/.test(s)).length).toBeGreaterThan(0) // Load images: drawn as written
+  await act(async () => h.unmount())
+})

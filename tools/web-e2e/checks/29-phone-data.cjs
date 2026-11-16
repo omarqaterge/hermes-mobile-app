@@ -548,7 +548,12 @@ module.exports = async t => {
     hits.length = 0
     pg = await setup('s-pd-leaks-ctl')
     imgs = await cardImgs(pg)
-    check(imgs.some(s => /card-image\.png\?d=ROWS/.test(s)) && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 0, `phone data leaks, control: a chat with no phone_data call shows its card's images (${JSON.stringify(imgs)})`)
+    // every chat holds a card's web pictures until Load images (openui-hold.ts); without a read the tap is offered and loads them
+    check(!imgs.some(s => /card-image\.png/.test(s)) && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 0 && (await pg.locator('.card-held').count()) > 0, `phone data leaks, control: a chat with no phone_data call holds its card's images behind Load images (${JSON.stringify(imgs)})`)
+    await pg.locator('.card-held').first().getByRole('button', { name: 'Load images' }).click({ timeout: 5000 }).catch(() => {})
+    await sleep(500)
+    imgs = await cardImgs(pg)
+    check(imgs.some(s => /card-image\.png\?d=ROWS/.test(s)), `phone data leaks, control: Load images shows the card's images (${JSON.stringify(imgs)})`)
     const mm2 = await pg.evaluate(() => [...document.querySelectorAll('.msg.assistant .codeblock-bar')].map(b => b.innerText).join('|'))
     check(/mermaid \(not drawn: it names an image or an address\)/.test(mm2) && !/phone data/.test(mm2) && !hits.some(h => h.includes('/mermaid.png')), `phone data leaks, control: its Mermaid diagram that names an image is shown as code too, and fetches nothing (${mm2})`)
     rem = await remote(pg)
@@ -639,7 +644,7 @@ module.exports = async t => {
     hits.length = 0
     pg = await open('s-pd-leaks-ctl', [])
     st = await state(pg)
-    check(st.asked.length > 0 && st.remote.length > 0 && st.remote.every(r => r.block === false) && st.imgs.some(s => /card-image\.png\?d=ROWS/.test(s)), `phone data native record, control: a chat the app has no record of is not blocked and shows its card images (${JSON.stringify(st.remote)}, ${JSON.stringify(st.imgs)})`)
+    check(st.asked.length > 0 && st.remote.length > 0 && st.remote.every(r => r.block === false) && (await pg.locator('.card-held').count()) > 0, `phone data native record, control: a chat the app has no record of is not blocked and offers Load images for its card (${JSON.stringify(st.remote)}, ${JSON.stringify(st.imgs)})`)
     await pg.close()
   }
   {

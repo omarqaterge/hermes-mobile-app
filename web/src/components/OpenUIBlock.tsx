@@ -21,6 +21,10 @@ function getOpenUI(): Promise<OpenUIApi> {
   return import('../openui-entry').then(() => (window as unknown as { __hmOpenUI: OpenUIApi }).__hmOpenUI)
 }
 
+/** The sites of a card's held pictures, as the line under it names them: three at most, then how many more. */
+export const siteList = (sites: string[]): string =>
+  sites.length <= 3 ? sites.join(', ') : `${sites.slice(0, 3).join(', ')} and ${sites.length - 3} more`
+
 /** Parser results that mean "nothing to draw": show the code instead. */
 const FATAL = new Set(['parse-failed', 'parse-exception', 'no-root'])
 
@@ -44,7 +48,13 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   const guard = useRef(guarded)
   guard.current = guarded
   const shown = guarded ? dropRemoteStrings(code) : code // a card's image components must not fetch an address in this chat
-  const heldImages = shown !== code
+  // Web pictures wait for a tap in every chat, as in replies (Media's RemoteHold): the lazy bundle empties every web
+  // address in the card's evaluated props (openui-hold.ts) while `holdImages`, and reports the sites it left out. After a
+  // phone-data read they stay held, with no tap (the shell refuses them anyway).
+  const [loadPics, setLoadPics] = useState(false)
+  const [heldSites, setHeldSites] = useState<string[]>([])
+  const holdImages = guarded || !loadPics
+  const heldImages = shown !== code || (guarded && heldSites.length > 0)
   const mode = useThemeMode()
   const host = useRef<HTMLDivElement>(null)
   const handle = useRef<BlockHandle | null>(null)
@@ -90,6 +100,8 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
     mode,
     initialState: initial.current,
     toolProvider: tools.current,
+    holdImages,
+    onHeld: setHeldSites,
     onAction: e => onAction(e as UiAction),
     onState: s => {
       if (!key) return
@@ -127,7 +139,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   }, [])
   useEffect(() => {
     handle.current?.update(props())
-  }, [shown, streaming, mode, interactive])
+  }, [shown, streaming, mode, interactive, holdImages])
 
   return (
     <>
@@ -136,6 +148,20 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
       {/* Taps inside the card are the card's: no time toggle, no tap-to-copy, no swipe (swipe.ts SKIP). */}
       <div ref={host} className="hm-openui" hidden={failed} onClick={e => e.stopPropagation()} />
       {heldImages && !failed && <div className="warn-line">Images from the web are held back: this chat has read phone data</div>}
+      {!guarded && !loadPics && heldSites.length > 0 && !failed && (
+        <div className="card-held">
+          <span>Images from the web are held back ({siteList(heldSites)})</span>
+          <button
+            className="card-held-load"
+            onClick={() => {
+              haptic()
+              setLoadPics(true)
+            }}
+          >
+            Load images
+          </button>
+        </div>
+      )}
       {partial && !failed && <div className="warn-line">⚠ Part of this card couldn’t be shown</div>}
     </>
   )

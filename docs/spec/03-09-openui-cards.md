@@ -1,6 +1,6 @@
 ### 3.9 OpenUI cards
 
-**Files:** `OpenUIBlock.tsx` (the block in a message), `openui-entry.tsx` (lazy renderer bundle), `openui-lib.ts` (component library and the reference text), `openui-date.tsx` (the DatePicker replacement), `openui-msg.ts` (button text, link check, saved form state, day text), `openui-query.ts` (the live-data tool client).
+**Files:** `OpenUIBlock.tsx` (the block in a message), `openui-entry.tsx` (lazy renderer bundle), `openui-lib.ts` (component library and the reference text), `openui-date.tsx` (the DatePicker replacement), `openui-hold.ts` (web pictures held back), `openui-msg.ts` (button text, link check, saved form state, day text), `openui-query.ts` (the live-data tool client).
 
 Hermux may answer with interactive cards (tables, charts, buttons, forms, steps) instead of prose. The reply contains a fenced block with the language `openui-lang` (the language `openui` also works). The app draws it with OpenUI's own chat component library. This is the one place where the app does not use its own native-style controls (owner decision); the canvas stays for things the user asks to build or write.
 
@@ -22,6 +22,35 @@ Hermux may answer with interactive cards (tables, charts, buttons, forms, steps)
 | `@OpenUrl` | Opens the link outside the app, only for `http` or `https` (`safeHttpUrl`); otherwise toast "That link can’t be opened". In a chat that has read phone data (3.3, which also says: `OpenUIBlock` empties every remote address string in the card's source with `dropRemoteStrings`, so `Image`, `ImageBlock`, `ImageGallery`, `ImageText` and the other image components have nothing to fetch, and the card shows "Images from the web are held back: this chat has read phone data"; the address of a button's `@OpenUrl` stays) the dialog "Open this address?" shows the site, the full address and its query first, and it opens only on Open (`openChecked`) |
 | Any other action type | Ignored |
 
+#### Web pictures in a card
+
+A web address in a card can carry out what the agent has read (a prompt injection can write one, and a `Query` answer can
+be joined into it), so a card's web pictures wait for a tap in every chat, as pictures in replies do (2.3).
+
+- `openui-entry.tsx` wraps the renderer of every component in the library (`holding`, through
+  `library.extend({ components: { override } })`; same names and schemas, so the reference text and the parser don't
+  change). While `BlockProps.holdImages` is on, the wrapper hands the component its props through `holdProps`
+  (`web/src/openui-hold.ts`): every string that is a web address (`isWebAddress`: `http:`, `https:`, `ftp:` or `//`,
+  whitespace and control characters ignored) becomes empty, and in text that names an address every `![` becomes `\![`,
+  so a Markdown image shows as a link instead. It runs on the props the card's expressions produced, so an address
+  built with `+`, held in a `$variable` or returned by `Query` is caught, whichever component would draw it (`Image`,
+  `ImageBlock`, `ImageGallery`, an `OptionCard` picture, a source's favicon, which OpenUI builds from the source's
+  address). Child components are held by their own wrapper; a button's `action` is left alone, because `@OpenUrl` opens
+  only through the page (above).
+- The wrapper reports the sites it left out (`siteOf`) through `BlockProps.onHeld`, once per new site.
+- `OpenUIBlock` sets `holdImages` until the user taps **Load images** in the line under the card, "Images from the web are
+  held back (site, site, site and N more)" (`siteList`, `.card-held`). The tap is per card and lasts while the card is
+  on screen; reopening the chat holds them again.
+- In a chat that has read phone data the pictures stay held with no tap: `dropRemoteStrings` also empties the source's
+  address strings, the line is "Images from the web are held back: this chat has read phone data", and the shell refuses
+  the requests anyway (3.3).
+- `RULES` tells the model that web pictures in a card show only after "Load images", so a card must make sense without
+  them.
+- Checked: `openui-entry.test.tsx` (a literal, a `//` address, an address joined with `+` and a Markdown image are not
+  drawn; the sites are reported; `@OpenUrl` still opens; with `holdImages` off they are drawn) and the browser checks at
+  the end of `07-reply-rendering.cjs` (nothing is fetched before the tap, the line names both sites, Load images fetches
+  them) and the controls in `29-phone-data.cjs`.
+
 #### Form fields (two fixes around OpenUI)
 
 - **Dates.** OpenUI's own `DatePicker` keeps the picked day as a JavaScript `Date`, and its "required" check (`isEmpty` in lang-core) calls any object without own keys empty, so a Date always failed with "This field is required" while the field showed the day. `web/src/openui-date.tsx` replaces the component (`library.extend({ components: { override } })` in `openui-entry.tsx`; same name, props and description, so the reference text does not change). The calendar closes once the day (both ends of a range) is picked; OpenUI leaves it open over the buttons below. The day is kept as local text `YYYY-MM-DD` (`dayText`, `textDay` in `openui-msg.ts`; a range as `{from, to}`, counted for "required" only once both ends are picked). An older saved state holding the ISO text of a Date is still read (`textDay`). In the message a day reads `2026-10-15` and a range `2026-10-15 to 2026-10-19` (`formFields`).
@@ -41,7 +70,7 @@ What you typed or picked survives leaving and reopening the chat. State is saved
 
 #### What Hermes is taught (`web/src/openui-lib.ts`)
 
-- `library` is OpenUI's chat library unchanged; the root component is Card. `PREAMBLE`, `RULES` (OpenUI's chat rules without "generate realistic/plausible data", plus the app's own: use only real data, every block is a complete program starting with `root = Card(...)`, buttons use `@ToAssistant`, `@OpenUrl` takes https links only, phone width about 380 px with at most 4 table columns, never give Query a refresh interval, cards only read) and `EXAMPLES` (the two shortest of OpenUI's examples) feed `referenceText()`. That text, also listing the Query tools and the `$variable` bindings, is the body of the plugin's Hermes skill `hermes-plugin/hermes-mobile/skills/openui/SKILL.md` (`skillText()` adds `SKILL_FRONTMATTER`), which Hermes serves as `skill_view("hermes-mobile:openui")` (5.6). The plugin's prompt section tells app chats to load it before their first block. `npm run gen:openui` in `web/` regenerates the file; `openui-lib.ts` is imported only by the lazy bundle and its test, so the 4 MB never enters the main bundle.
+- `library` is OpenUI's chat library unchanged; the root component is Card. `PREAMBLE`, `RULES` (OpenUI's chat rules without "generate realistic/plausible data", plus the app's own: use only real data, every block is a complete program starting with `root = Card(...)`, buttons use `@ToAssistant`, `@OpenUrl` takes https links only, web pictures show only after "Load images", phone width about 380 px with at most 4 table columns, never give Query a refresh interval, cards only read) and `EXAMPLES` (the two shortest of OpenUI's examples) feed `referenceText()`. That text, also listing the Query tools and the `$variable` bindings, is the body of the plugin's Hermes skill `hermes-plugin/hermes-mobile/skills/openui/SKILL.md` (`skillText()` adds `SKILL_FRONTMATTER`), which Hermes serves as `skill_view("hermes-mobile:openui")` (5.6). The plugin's prompt section tells app chats to load it before their first block. `npm run gen:openui` in `web/` regenerates the file; `openui-lib.ts` is imported only by the lazy bundle and its test, so the 4 MB never enters the main bundle.
 - On/off: Settings → Replies, row "Dynamic UI" (`GET` and `PUT /openui`; applies to new chats only, because Hermes freezes the system prompt per chat). Cards already in chats keep showing either way.
 - Read aloud: `speakable()` in `web/src/voice.ts` replaces a card by "(card shown in the app)." (and the notification text ends "[card]").
 

@@ -95,8 +95,10 @@ diagram that would load an image (`MERMAID_IMAGE`: an `img:` shape, `<img`, `url
 style value only when it has no backslash or comment and calls nothing but colour, arithmetic and gradient functions
 (`styleCanFetch`: no `url(`, `image-set(`, `src(`, `cross-fade(`), and `rehypeSvgRefs` drops an SVG attribute that
 holds a `url(` to anything but an element of the page. Fixed hosts are left alone (a YouTube card's thumbnail comes from
-`i.ytimg.com`). Known limit: the pictures of an OpenUI card (its `Image`, `ImageBlock`, `ImageGallery`) still load
-without a tap in a chat that has not read phone data.
+`i.ytimg.com`). An OpenUI card's pictures wait for a tap too (3.9, "Web pictures in a card"): while the card is held,
+every component's evaluated props have their web addresses emptied (`holdProps` in `web/src/openui-hold.ts`), so an
+address joined from pieces, taken from a `$variable` or from a `Query` answer is caught as well as a literal one, and the
+line under the card offers "Load images".
 
 **The page's Content-Security-Policy (`web/index.html`).** A `<meta http-equiv="Content-Security-Policy">` sets
 `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; object-src 'none'; base-uri 'none'` and nothing else. It

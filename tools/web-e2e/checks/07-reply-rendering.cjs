@@ -446,4 +446,46 @@ module.exports = async t => {
     check(await cp.evaluate(() => { const b = document.createElement('base'); b.href = 'https://attacker.example/'; document.head.append(b); const r = document.baseURI; b.remove(); return new URL(r).hostname !== 'attacker.example' }), 'page CSP: an injected <base> does not change where addresses point')
     await cp.close()
   }
+
+  // ── an OpenUI card's web pictures wait for a tap in every chat (openui-hold.ts): nothing is fetched until "Load images" ──
+  {
+    const op = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    const hits = []
+    await op.route(/(pics|join)\.test/, r => {
+      hits.push(r.request().url())
+      return r.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>' })
+    })
+    await op.addInitScript(() => {
+      const orig = WebSocket.prototype.send
+      WebSocket.prototype.send = function (d) {
+        window.__ws = this
+        return orig.call(this, d)
+      }
+    })
+    await op.goto(WEB + '/')
+    await op.getByPlaceholder('Message Hermux').fill('show ui')
+    await op.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await op.locator('.msg.assistant .hm-openui').last().getByText('Pick a plan').waitFor({ timeout: 15000 })
+    await op.locator('.composer').getByRole('button', { name: 'Send' }).waitFor({ timeout: 8000 }).catch(() => {})
+    const sid = rpcs('prompt.submit').pop().params.session_id
+    const code = ['root = Card([head, pic, joined])', 'head = CardHeader("Picture card", "x")', 'pic = Image("Logo", "https://pics.test/a.png?d=secret")', 'joined = Image("Joined", "htt" + "ps://join.test/b.png")'].join('\n')
+    await op.evaluate(([sid, text]) => {
+      const send = type => window.__ws.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: sid, payload: type === 'message.complete' ? { text } : {} } }) }))
+      send('message.start')
+      send('message.complete')
+    }, [sid, 'Pictures:\n\n```openui-lang\n' + code + '\n```\n'])
+    const card = op.locator('.msg.assistant', { hasText: 'Picture card' }).last()
+    await card.locator('.hm-openui').getByText('Picture card').waitFor({ timeout: 15000 })
+    await sleep(600)
+    const srcs = () => card.locator('.hm-openui').evaluate(h => [...h.shadowRoot.querySelectorAll('img')].map(i => i.getAttribute('src') || ''))
+    check(hits.length === 0 && (await srcs()).every(s => !/\.test/.test(s)), `card pictures: nothing is fetched before the tap, a joined address neither (${JSON.stringify(hits)})`)
+    const line = card.locator('.card-held')
+    const said = await line.innerText().catch(() => '')
+    check(/held back/.test(said) && /pics\.test/.test(said) && /join\.test/.test(said), `card pictures: the line under the card names the sites (${said})`)
+    await line.getByRole('button', { name: 'Load images' }).click({ timeout: 5000 }).catch(() => {})
+    for (let i = 0; i < 30 && hits.length < 2; i++) await sleep(100)
+    check(hits.some(u => /pics\.test/.test(u)) && hits.some(u => /join\.test/.test(u)), `card pictures: Load images fetches them (${JSON.stringify(hits)})`)
+    check((await card.locator('.card-held').count()) === 0, 'card pictures: the line goes once they are loaded')
+    await op.close()
+  }
 }

@@ -2,17 +2,47 @@
 // builds this file on its own into an inert <script type="text/hm-lazy" id="hm-openui"> in index.html, and
 // components/OpenUIBlock.tsx runs it on the first ```openui-lang block (lazy.ts). Each block gets its own React root in
 // its own shadow root: the app's `.md` CSS can't leak in, and OpenUI's CSS stays out of the app.
-import { Component, type ReactNode } from 'react'
+import { Component, createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Renderer, createParser, type ActionEvent, type McpClientLike, type OpenUIError } from '@openuidev/react-lang'
+import { Renderer, createParser, type ActionEvent, type ComponentRenderer, type McpClientLike, type OpenUIError } from '@openuidev/react-lang'
 // The package root, not '@openuidev/react-ui/ThemeProvider': that deep path breaks under vitest's node ESM.
 import { ThemeProvider } from '@openuidev/react-ui'
 import css from '@openuidev/react-ui/components.css?inline'
 import { library as base } from './openui-lib'
 import { DatePicker } from './openui-date'
+import { holdProps } from './openui-hold'
 
-// OpenUI's chat library, with its DatePicker replaced by openui-date.tsx's (a picked day failed "required").
-const library = base.extend!({ components: { override: [DatePicker] } })
+/** While a card's web pictures are held back: `hold`, and where each component reports the sites it left out. */
+const HoldCtx = createContext<{ hold: boolean; held: (sites: string[]) => void }>({ hold: false, held: () => {} })
+
+/** A component's renderer that, while the card is held, gets its props with every web address emptied (openui-hold.ts).
+ *  It runs on the props the card's expressions produced, so an address joined from pieces or taken from a Query answer
+ *  is caught as well as a literal one, whichever component would draw it. */
+type Render = ComponentRenderer<Record<string, unknown>>
+function holding(Inner: Render): Render {
+  const Held: Render = p => {
+    const { hold, held } = useContext(HoldCtx)
+    const [props, sites] = useMemo(() => {
+      if (!hold) return [p.props, [] as string[]]
+      const s = new Set<string>()
+      return [holdProps(p.props, s), [...s]]
+    }, [p.props, hold])
+    const key = sites.join('\n')
+    useEffect(() => {
+      if (key) held(sites)
+    }, [key, held])
+    return <Inner {...p} props={props} />
+  }
+  Held.displayName = `Held(${Inner.displayName || Inner.name || 'Component'})`
+  return Held
+}
+
+// OpenUI's chat library, with its DatePicker replaced by openui-date.tsx's (a picked day failed "required"), and every
+// component's renderer wrapped by `holding` (same name and schema, so the prompt and the parser are unchanged).
+const dated = base.extend!({ components: { override: [DatePicker] } })
+const library = dated.extend!({
+  components: { override: Object.values(dated.components).map(c => ({ ...c, component: holding(c.component) })) }
+})
 
 // A field bound to a $variable, Select("role", items, null, rules, $role), keeps its value in the card's variables
 // ($role), not under the form's field names, so the form's values would reach Hermes without it. Before a button's
@@ -63,6 +93,10 @@ export interface BlockProps {
   onErrors: (errors: OpenUIError[]) => void
   /** Phase 2: live Query() data through the plugin. */
   toolProvider?: McpClientLike | null
+  /** Draw the card without its web pictures (every chat until the user taps Load images; always after a phone-data read). */
+  holdImages?: boolean
+  /** The sites of web pictures held back so far (each call has the whole list for this block). */
+  onHeld?: (sites: string[]) => void
 }
 export interface BlockHandle {
   update(p: BlockProps): void
@@ -102,21 +136,23 @@ class Boundary extends Component<{ onCrash: (e: unknown) => void; children: Reac
   }
 }
 
-function view(p: BlockProps, scope: string) {
+function view(p: BlockProps, scope: string, hold: { hold: boolean; held: (sites: string[]) => void }) {
   return (
     <Boundary onCrash={e => p.onErrors([{ source: 'runtime', code: 'render-error', message: String(e) }])}>
-      <ThemeProvider mode={p.mode} cssSelector={`.${scope}`}>
-        <Renderer
-          response={p.code}
-          library={library}
-          isStreaming={p.streaming}
-          initialState={p.initialState}
-          onAction={e => p.onAction(withBoundValues(e, p.code))}
-          onStateUpdate={p.onState}
-          onError={p.onErrors}
-          toolProvider={p.toolProvider ?? null}
-        />
-      </ThemeProvider>
+      <HoldCtx.Provider value={hold}>
+        <ThemeProvider mode={p.mode} cssSelector={`.${scope}`}>
+          <Renderer
+            response={p.code}
+            library={library}
+            isStreaming={p.streaming}
+            initialState={p.initialState}
+            onAction={e => p.onAction(withBoundValues(e, p.code))}
+            onStateUpdate={p.onState}
+            onError={p.onErrors}
+            toolProvider={p.toolProvider ?? null}
+          />
+        </ThemeProvider>
+      </HoldCtx.Provider>
     </Boundary>
   )
 }
@@ -132,9 +168,23 @@ const api: OpenUIApi = {
     const inner = document.createElement('div')
     shadow.appendChild(inner)
     const root = createRoot(inner)
-    root.render(view(p, scope))
+    // One list of held sites per block, reported whole; `held` keeps its identity so components don't re-run effects.
+    const sites = new Set<string>()
+    let cur = p
+    const held = (more: string[]) => {
+      const n = sites.size
+      more.forEach(s => sites.add(s))
+      if (sites.size !== n) cur.onHeld?.([...sites])
+    }
+    const holdOn = { hold: true, held }
+    const holdOff = { hold: false, held }
+    const draw = (q: BlockProps) => {
+      cur = q
+      root.render(view(q, scope, q.holdImages ? holdOn : holdOff))
+    }
+    draw(p)
     return {
-      update: q => root.render(view(q, scope)),
+      update: draw,
       unmount: () => {
         root.unmount()
         inner.remove()

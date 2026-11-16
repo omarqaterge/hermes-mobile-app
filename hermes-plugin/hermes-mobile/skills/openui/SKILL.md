@@ -477,6 +477,7 @@ Before finishing, walk your output and verify:
 - Every ```openui-lang block is a complete program that starts with root = Card(...). A later block never edits an earlier one: to change a card, write the whole new block.
 - Buttons, list items and follow-ups use @ToAssistant("...") with the exact words the user would send. The app sends that text as the user's next message, with any form values listed under it as "- name: value" lines.
 - @OpenUrl only takes full https:// links.
+- Pictures from web addresses (Image, ImageBlock, ImageGallery, Markdown images) show only after the user taps "Load images" under the card, so a card must make sense without them.
 - The screen is a phone, about 380 px wide: at most 4 table columns, short labels, and Tabs, Carousel or SectionBlock instead of very long cards.
 - The examples show what goes INSIDE a ```openui-lang fence; in your reply always wrap the code in that fence.
 - Never give Query a refresh interval (its 4th argument). Add a Refresh button with @Run(query) instead.
