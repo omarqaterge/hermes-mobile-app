@@ -526,6 +526,8 @@ public class MainActivity extends Activity {
     static final String PROBE_SCRIPT = "test -x ~/bin/hermes-services && echo services=yes; test -f ~/.hermes-mobile/installed && echo installed=yes; "
             + "curl -s -m 2 -o /dev/null -w 'dash=%{http_code}' http://127.0.0.1:9119/ 2>/dev/null; true";
     boolean probeReceiverOn = false;
+    /** This instance's probe receiver, unregistered in onDestroy (a recreated activity registers its own). */
+    android.content.BroadcastReceiver probeReceiver;
     /** The nonce the current probe's result must carry (PluginSync.NONCE_EXTRA), taken once. */
     final LocalAuth.Awaited probeAwaited = new LocalAuth.Awaited();
     long probeSentAt = 0;
@@ -586,6 +588,7 @@ public class MainActivity extends Activity {
             IntentFilter f = new IntentFilter(PROBE_ACTION);
             if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
             else registerReceiver(rx, f);
+            probeReceiver = rx;
             probeReceiverOn = true;
         }
         try {
@@ -2147,6 +2150,11 @@ public class MainActivity extends Activity {
         phoneDataKind = null;
         // This instance's install receivers go with it; a recreated activity registers its own (ensureInstallReceivers).
         // The in-flight install's facts are static, so the new instance carries on instead of starting a second session.
+        if (probeReceiver != null) {
+            try { unregisterReceiver(probeReceiver); } catch (Exception ignored) { }
+            probeReceiver = null;
+            probeReceiverOn = false;
+        }
         if (helperReceiver != null) {
             try { unregisterReceiver(helperReceiver); } catch (Exception ignored) { }
             helperReceiver = null;
