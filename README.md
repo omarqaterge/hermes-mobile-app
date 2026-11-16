@@ -30,6 +30,10 @@ Android app: it streams its work as it goes, asks before it acts, reaches you in
 talks and listens, builds pages and apps beside the chat, and opens your other apps to get things done. Hermes runs in
 Termux on the same phone, so the whole thing is yours and self-contained.
 
+An agent with this much reach has to earn trust. Privacy and security are the work we put first:
+[what we hold ourselves to, what we have done and what we are doing now](#privacy-and-security) is written down below,
+next to what Hermux cannot protect you from.
+
 <p align="center">
   <a href="https://x.com/markkeeper2/status/2106873833978540280"><img src="docs/img/demo-preview.gif" alt="Watch the 2 minute demo" width="260"></a><br>
   <a href="https://x.com/markkeeper2/status/2106873833978540280">Watch the 2 minute demo</a>
@@ -100,18 +104,55 @@ A few things to ask it:
 
 ## Privacy and security
 
-An agent with a Linux shell, your apps and, if you allow it, your messages deserves hard questions.
+Hermux gives an AI agent a Linux shell, your apps and, if you allow it, your messages. Keeping that safe is the main
+job of this project, not an extra: it gets its own review rounds, its own written decisions and a published list of
+limits.
+This section says what we hold ourselves to, what we have done, what we are doing now, and where the protection stops.
 
-| You might ask | The answer |
+### What we hold ourselves to
+
+- **Your data stays yours.** Chats, memory, files and keys live on your phone, in storage other apps can't read. There
+  is no Hermux account and no Hermux server. Only the calls to the model provider you chose leave the phone.
+- **Nothing is collected without your yes.** No analytics or crash-reporting library. One usage-stats call is off until
+  you opt in, and never carries chats, prompts, files, names or phone numbers.
+- **Off until you turn it on.** Reading contacts, calendar, call log, messages, location or photos starts off, each
+  kind has its own switch, it is read-only, and every read asks first. Banking, payment, password and 2FA apps are
+  blocked until you allow them.
+- **You decide how far it goes.** Per chat: **Off** asks before risky commands and before opening an app, **Auto
+  access** runs everything except a blocked list of dangerous commands, **Full access** asks for nothing. A card or
+  a command alias the agent writes can't switch the level.
+- **Every protection is published with its limits.** What Hermux cannot protect you from is listed below and never
+  left out to look better.
+- **A fix ships before its details do.** Security reports are welcome and taken seriously
+  ([how to report](SECURITY.md)); a fix reaches phones first, and the write-up follows.
+
+### What we have done
+
+| When | The work |
 |---|---|
-| Where is my data? | On your phone, in Termux's and the app's private storage, which other apps can't read. Android's cloud backup is off for the app. |
-| What leaves the phone? | Your messages, and whatever the agent reads in that chat, go to **the model provider you chose**. Tools you switch on talk to their own services. [Everything the phone connects to](docs/security.md#everything-the-phone-connects-to). |
-| Does it track me? | No analytics or crash-reporting library. One usage-stats call is off until you say yes, and never carries chats, prompts, files, names or phone numbers. |
-| What may it do without asking? | You choose per chat. **Off:** it asks before risky commands and before opening an app. **Auto access:** it runs everything except a blocked list of dangerous commands. **Full access:** it asks for nothing. Your fingerprint or screen lock confirms the first Allow in a chat, and banking, payment, password and 2FA apps are blocked until you allow them. |
-| Can it read my messages, contacts or location? | Not unless you switch it on. Every kind starts off, has its own switch, is read-only, and every read asks first (not in Full access). |
-| Can pages it builds reach the app? | No. Canvas pages run in a sandbox with no access to the app, its keys or your chats, offline unless you allow otherwise. Cards in replies can only call read-only tools. |
+| Foundations | Pages the agent builds run in a sandbox with no access to the app, its keys or your chats, offline unless you allow otherwise. Every call from the page into Android needs a key that changes on each page load. Chat text is sanitised before it is drawn. |
+| October 2026 | Per-chat access levels (Off, Auto access, Full access), with the most destructive commands blocked in every level. Sensitive apps blocked by default when Hermux uses your apps. |
+| v0.9.6, 3 Nov 2026 | Your fingerprint or screen lock confirms the first Allow in a chat. A locked phone can't approve anything from a notification. Usage stats are opt-in. Remote debugging needs your screen lock and switches itself off after an hour. |
+| v0.9.7, 14 Nov 2026 | **Other apps on the phone can no longer take control of Hermux:** Hermux and Hermes prove to each other that they hold a shared key before sending anything, sign every request, and never send the key itself. Phone data for the agent launched closed by design, after five review rounds. Cards and command aliases can no longer change a chat's access. Problem reports hide phone numbers and coordinates. |
+| On `main`, next release | A second security review, with its findings fixed: pictures, video and sound from the web wait for your tap in every chat, so a reply can't quietly send out what the agent has read. Other apps can no longer make Hermux read its own private files. The installer checks the Shizuku download before using it. Cards read no files. Entering a pairing code from a notification needs an unlocked phone. |
 
-**What Hermux cannot protect you from.** The most important limits, in short:
+Around the code: CodeQL scans every pull request and runs weekly, secret scanning with push protection is on, a
+release is built only from a commit on `main` whose CI passed, and the plugin that updates with the app is checked
+against a SHA-256 inside the signed APK.
+
+### What we are doing now
+
+- **Checking the newest protections on real phones,** and on Android 9 to 14, which are not yet tested.
+- **Tightening release signing:** the signing password is moving from the build script to a CI secret.
+- **Working towards an offline local model,** so that nothing has to leave the phone at all.
+- **Keeping the written [security model](docs/spec/02-03-security-model.md) current** with every change. CI fails a
+  change the spec doesn't describe.
+
+There is no independent security audit yet. We would welcome one.
+
+### What Hermux cannot protect you from
+
+The most important limits, in short:
 
 - **Your model provider sees what you send it,** including anything the agent reads in that chat. There is no offline
   model yet.
@@ -128,9 +169,9 @@ An agent with a Linux shell, your apps and, if you allow it, your messages deser
 - **It is a community project.** One maintainer, no independent security audit, and the newest features have been
   tested on one real phone.
 
-**[Privacy and security in detail](docs/security.md)** has every connection, permission and guard rail, all twelve
-limits, and how to check each claim yourself. · [Privacy](docs/privacy.md) ·
-[Reporting a vulnerability](SECURITY.md)
+**[Privacy and security in detail](docs/security.md)** has the plain-words answers (where your data is, what leaves
+the phone), every connection, permission and guard rail, all twelve limits, and how to check each claim yourself. ·
+[Privacy](docs/privacy.md) · [Reporting a vulnerability](SECURITY.md)
 
 ## Install
 
@@ -237,7 +278,7 @@ The work behind the app is measured and written down, so you can check it instea
 | **Speed** | A usable chat **0.3 s** after launch, down from 4.5 s. A 146-message chat opens as fast as a short one. | [Performance history](docs/performance-history.md) |
 | **Battery** | A chat turn uses **47% less CPU**, and the wake lock for a scheduled job is **84% shorter** (150 s to 24 s). No permanent wake lock: the phone sleeps while Hermux is idle. The measuring tools are in `tools/battery/`. | [Battery report](docs/battery-report.md) |
 | **Tests** | About **1,600 browser checks** in 30 feature files run the real interface against a mock Hermes on every pull request, next to about 670 unit tests and 69 script tests for the plugin, the phone scripts and the tools. | [Spec 7.3](docs/spec/07-03-browser-e2e.md) |
-| **Security review** | The protection around phone data went through **five review rounds**, and the findings of a second security review were fixed in November 2026. Each finding is written down with its fix. | [Security model](docs/spec/02-03-security-model.md) |
+| **Security review** | The protection around phone data went through **five review rounds**, and the findings of a second security review were fixed in November 2026. Each finding is written down with its fix. CodeQL scans every pull request. | [Privacy and security](#privacy-and-security) · [Security model](docs/spec/02-03-security-model.md) |
 | **Every Android phone** | Android lint fails any call newer than Android 8 that has no version check, and maker-specific handling always has a generic fallback. | [Android versions](docs/android-versions.md) |
 | **Given back to Hermes** | Four fixes to Hermes itself are kept as small patches and offered upstream. One cut the skill scan at start-up from 1.8 s to 0.5 s. | [hermes/README.md](hermes/README.md) |
 | **How it is run** | Every owner decision is written down with its reason. A release is built only from a commit on `main` whose CI passed. The parts with the most state (the chat turn, the connection, Live mode, the player) are explicit state machines with a test for every step. | [Decisions](docs/decisions/README.md) · [Spec 7.5](docs/spec/07-05-versioning-and-releases.md) |
