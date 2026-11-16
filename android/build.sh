@@ -22,6 +22,17 @@ VERSION_CODE="${VERSION_CODE:-1}"
 DEVTOOLS=0
 if [ "${HM_DEVTOOLS:-}" = "1" ]; then DEVTOOLS=1; VERSION_NAME="$VERSION_NAME+devtools"; fi
 KS="${KEYSTORE:-$HOME/.android/hermes-mobile.keystore}"  # CI passes the release key here
+# The keystore's password comes from KEYSTORE_PASS (CI: the repository secret of the same name), the key's from
+# KEYSTORE_KEY_PASS (default: the same). A local build with neither keeps the old default, which is public, so it only
+# suits the local test key. Both reach keytool and apksigner through the environment, never the command line.
+if [ -z "${KEYSTORE_PASS:-}" ]; then
+  if [ -n "${KEYSTORE:-}" ]; then
+    echo "::warning::KEYSTORE_PASS is not set: signing the release with the public default password. Re-protect the release keystore (docs/spec/07-05-versioning-and-releases.md) and set the KEYSTORE_PASS secret." >&2
+  fi
+  KEYSTORE_PASS=hermesmobile
+fi
+KEYSTORE_KEY_PASS="${KEYSTORE_KEY_PASS:-$KEYSTORE_PASS}"
+export KEYSTORE_PASS KEYSTORE_KEY_PASS
 
 [ -f "$ANDROID_JAR" ] || { echo "missing $ANDROID_JAR (sdkmanager \"platforms;android-$COMPILE_PLATFORM\")"; exit 1; }
 [ -x "$BT/aapt2" ] || { echo "missing build-tools 35.0.0"; exit 1; }
@@ -90,10 +101,10 @@ javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -classpath "$ANDROID
 ( cd "$SHERPA_LIBS" && zip -q -r "$OLDPWD/build/unsigned.apk" lib -x '*.done' )
 
 # 4. align + sign
-[ -f "$KS" ] || keytool -genkeypair -keystore "$KS" -storepass hermesmobile -keypass hermesmobile \
+[ -f "$KS" ] || keytool -genkeypair -keystore "$KS" -storepass:env KEYSTORE_PASS -keypass:env KEYSTORE_KEY_PASS \
   -alias hermes -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Hermes Mobile, O=omarqaterge" >/dev/null 2>&1
 "$BT/zipalign" -f -p 4 build/unsigned.apk build/aligned.apk
-"$BT/apksigner" sign --ks "$KS" --ks-pass pass:hermesmobile --key-pass pass:hermesmobile \
+"$BT/apksigner" sign --ks "$KS" --ks-pass env:KEYSTORE_PASS --key-pass env:KEYSTORE_KEY_PASS \
   --out build/hermes-mobile.apk build/aligned.apk
 "$BT/apksigner" verify build/hermes-mobile.apk
 ls -la build/hermes-mobile.apk

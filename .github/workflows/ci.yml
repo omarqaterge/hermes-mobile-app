@@ -243,6 +243,7 @@ jobs:
       - run: tools/test_update_url.sh
       - run: tools/test_share_uri.sh
       - run: tools/test_notification_unlock.sh
+      - run: tools/test_keystore_pass.sh
       - run: tools/test_update_version.sh
       - run: tools/test_version_code.sh
       - run: tools/test_release_gate.sh
