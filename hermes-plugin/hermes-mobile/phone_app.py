@@ -489,7 +489,6 @@ def end_session(sid: str) -> None:
 
     The tool only said "done" when the model called close/hand_over. A model that just stops talking left the app
     open and the card on screen until the app's own 130 s timer. Nothing is done for another chat's app."""
-    global _last_view
     with _lock:
         if not _state or (_state.get("session") and _state["session"] != sid):
             return
@@ -497,9 +496,26 @@ def end_session(sid: str) -> None:
             _request("/close", {}, timeout=5)
         except Exception as e:  # the host is gone or busy: the card must go anyway
             log(f"phone_app end_session close: {type(e).__name__}: {e}")
-        _event("done", "Finished")
-        _state.clear()
-        _last_view = ""
+        _end_use("Finished")
+
+
+def _start_use(session: str, pkg: str, label: str, action: str) -> None:
+    """An app is now open for this chat: remember it and tell the phone app to show its card. With `_end_use`, the
+    only place `_state` is set."""
+    _end_use(notify=False)
+    _state.update({"session": session, "pkg": pkg, "label": label, "at": time.time()})
+    _event("open", action)
+
+
+def _end_use(action: str = "", notify: bool = True) -> None:
+    """No app is open any more: send the "done" event first (unless `notify` is False; `_event` needs the state), so
+    the phone app's card goes at once instead of after its own timeout, then clear `_state` and `_last_view`. The
+    only place `_state` is cleared; with nothing open it sends nothing."""
+    global _last_view
+    if notify and _state:
+        _event("done", action or "Closed")
+    _state.clear()
+    _last_view = ""
 
 
 def _event(state: str, action: str = "") -> None:
@@ -641,7 +657,7 @@ def _free_if_stale(sid: str) -> None:
 
 def _need_open(sid: str) -> None:
     if not _state or not _alive():
-        _state.clear()
+        _end_use("Lost the app")
         raise PhoneAppError("no app is open; use action='open' first")
     if _state.get("session") and sid and _state["session"] != sid:
         raise PhoneAppError(f"another chat is using {_state.get('label')} right now")
@@ -714,7 +730,6 @@ def _wait_after(a: dict) -> None:
 
 
 def _open(a: dict, sid: str) -> dict:
-    global _last_view
     intent = intent_of(a)
     if intent is not None:
         # Which app the link or intent opens decides the approval and the sensitive-app check, not the words used.
@@ -737,10 +752,7 @@ def _open(a: dict, sid: str) -> dict:
         return {"ok": False, "action": "open", "error": denied}
     ensure_host()
     r = call("/open", {"pkg": pkg, **({"intent": intent} if intent is not None else {})})
-    _state.clear()
-    _state.update({"session": sid, "pkg": pkg, "label": r.get("label") or label, "at": time.time()})
-    _last_view = ""
-    _event("open", f"Opened {_state['label']}")
+    _start_use(sid, pkg, r.get("label") or label, f"Opened {r.get('label') or label}")
     out = {"ok": True, "opened": _state["label"], "package": pkg}
     notes = read_notes(pkg)
     if notes:
@@ -750,7 +762,6 @@ def _open(a: dict, sid: str) -> dict:
 
 
 def _run(act: str, a: dict, sid: str) -> dict:
-    global _last_view
     with _lock:
         _free_if_stale(sid)
         if _state and _state.get("session") == sid:
@@ -761,14 +772,12 @@ def _run(act: str, a: dict, sid: str) -> dict:
             return _open(a, sid)
         if act in ("close", "hand_over"):
             if not _state or not _alive():
-                _state.clear()
+                _end_use("Closed")
                 return {"ok": True, "note": "nothing was open"}
             _need_open(sid)
             call("/" + act, {})
             label = _state.get("label")
-            _event("done", "Closed" if act == "close" else "Handed over")
-            _state.clear()
-            _last_view = ""
+            _end_use("Closed" if act == "close" else "Handed over")
             return {"ok": True, ("closed" if act == "close" else "handed_over"): label}
         if act == "note":
             pkg = resolve_app(str(a["app"]))["pkg"] if a.get("app") else _state.get("pkg", "")

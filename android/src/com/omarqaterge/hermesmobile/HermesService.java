@@ -895,7 +895,8 @@ public class HermesService extends Service {
         synchronized (setup) {
             if (!setupLoaded) {
                 setupLoaded = true;
-                setup.resume(c.getSharedPreferences("hermes", MODE_PRIVATE).getString("setup_token", ""));
+                android.content.SharedPreferences sp = c.getSharedPreferences("hermes", MODE_PRIVATE);
+                setup.resume(sp.getString("setup_token", ""), sp.getString("setup_failed", ""));
             }
         }
         return setup;
@@ -904,7 +905,7 @@ public class HermesService extends Service {
     /** A new installer command was copied: remember its token (memory + prefs, so a service restart mid-install keeps it). */
     static void startSetup(Context c, String token) {
         setup(c).start(token);
-        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).apply();
+        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).remove("setup_failed").apply();
     }
 
     /** The installer's steps in the diagnostic log: the step's name and whether it failed, never the line's words. */
@@ -928,11 +929,14 @@ public class HermesService extends Service {
         if (a != null) a.pushSetupLine(line);
         String text = null;
         if (line.startsWith("STEP ")) {
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_failed").apply();
             String[] p = line.split(" ", 3);
             text = "Setting up: " + (p.length > 2 && !p[2].trim().isEmpty() ? p[2].trim() : p[1]);
-        } else if (line.startsWith("FAIL ")) text = "Setup stopped: open Hermux";
-        else if (line.equals("DONE")) {
-            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").apply();
+        } else if (line.startsWith("FAIL ")) {
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_failed", sl.failedStep()).apply();
+            text = "Setup stopped: open Hermux";
+        } else if (line.equals("DONE")) {
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").remove("setup_failed").apply();
             MainActivity.setTermuxOk(this);
             text = "Ready";
         }
@@ -1394,9 +1398,9 @@ public class HermesService extends Service {
                 final JSONObject ev = phoneDataEvent(e);
                 body = ev.optString("body", "");
                 boolean ticking = pendingApproval != null;
-                if (!ticking) lastReAlert = -1;
-                pendingApproval = ev;
-                approvalDeadline = System.currentTimeMillis() + Math.max(1, e.optLong("timeout", 60)) * 1000L;
+                pending.arrived(PendingAsk.APPROVAL, session, ev.optString("request_id", ""), ev,
+                        System.currentTimeMillis() + Math.max(1, e.optLong("timeout", 60)) * 1000L);
+                syncPending();
                 postStatus();
                 updateWake();
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
@@ -1413,9 +1417,9 @@ public class HermesService extends Service {
             case "ask": {
                 // HyperOS hides the popup after ~5 s: the question and its answers also ride on the island chip,
                 // armed even while the app is on screen so leaving it unanswered still leaves a way to answer.
-                pendingAsk = e;
-                main.removeCallbacks(expireAskTask);
-                main.postDelayed(expireAskTask, ASK_TTL_MS);
+                pending.arrived(PendingAsk.ASK, session, "", e, System.currentTimeMillis() + ASK_TTL_MS);
+                syncPending();
+                main.postDelayed(expireAskTask, ASK_TTL_MS + 100); // each arrival has its own expiry check
                 postStatus();
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
@@ -1452,13 +1456,13 @@ public class HermesService extends Service {
                 postGrouped(nm, tag("cron", e.optString("id", session)), alert(CH_JOBS, title, body, session, false));
                 return;
             case "clear":
-                if ("ask".equals(e.optString("what")) && pendingAsk != null) {
-                    pendingAsk = null;
-                    main.removeCallbacks(expireAskTask);
+                // The clear names its chat (not the request): only that chat's entries go; one naming no chat drops them all.
+                if ("ask".equals(e.optString("what")) && pending.cleared(PendingAsk.ASK, session)) {
+                    syncPending();
                     postStatus();
                 }
-                if ("approval".equals(e.optString("what")) && pendingApproval != null) {
-                    pendingApproval = null;
+                if ("approval".equals(e.optString("what")) && pending.cleared(PendingAsk.APPROVAL, session)) {
+                    syncPending();
                     postStatus();
                     updateWake();
                 }
@@ -1917,10 +1921,26 @@ public class HermesService extends Service {
 
     JSONObject pendingAsk;
     static final long ASK_TTL_MS = 10 * 60 * 1000L;
+    /** Every approval and question waiting, per chat and request; pendingApproval / pendingAsk / approvalDeadline are
+     *  the ones the chip shows now (the oldest of each), set by syncPending after every change to this list. */
+    final PendingAsk<JSONObject> pending = new PendingAsk<>();
+
+    synchronized void syncPending() {
+        PendingAsk.Entry<JSONObject> a = pending.shown(PendingAsk.APPROVAL);
+        if (a == null || a.payload != pendingApproval) lastReAlert = -1; // another request is shown: its re-alerts start over
+        pendingApproval = a == null ? null : a.payload;
+        if (a != null) approvalDeadline = a.deadline;
+        PendingAsk.Entry<JSONObject> q = pending.shown(PendingAsk.ASK);
+        pendingAsk = q == null ? null : q.payload;
+    }
+
     final Runnable expireAskTask = () -> {
-        if (pendingAsk != null) {
-            pendingAsk = null;
-            postStatus();
+        synchronized (HermesService.this) {
+            if (pending.expire(System.currentTimeMillis(), 0)) {
+                syncPending();
+                postStatus();
+                updateWake();
+            }
         }
     };
 
@@ -2063,9 +2083,11 @@ public class HermesService extends Service {
                 reAlertApproval();
             }
             if (System.currentTimeMillis() > approvalDeadline + 3000) {
-                pendingApproval = null; // expired; the plugin's clear normally beats this
+                pending.expire(System.currentTimeMillis(), 3000); // expired; the plugin's clear normally beats this
+                syncPending();
                 postStatus();
                 updateWake();
+                if (pendingApproval != null) main.postDelayed(this::tickApproval, 1000); // another request still waits
                 return;
             }
             postStatus();
@@ -2252,7 +2274,11 @@ public class HermesService extends Service {
             main.post(() -> {
                 synchronized (HermesService.this) {
                     if (session.equals(answering)) answering = null;
-                    if (failed == null) pendingApproval = null;
+                    if (failed == null) {
+                        pending.answered(PendingAsk.APPROVAL, session, i.getStringExtra("request_id"));
+                        syncPending();
+                        updateWake(); // the wake lock was held for this approval's deadline
+                    }
                     postStatus();
                 }
                 if (failed == null) {
@@ -2291,9 +2317,8 @@ public class HermesService extends Service {
         String t = tag("ask".equals(kind) ? "ask" : "reply", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (!text.isEmpty() && openToUnlock(session, text, "answer " + kind)) return;
-        if ("ask".equals(kind) && !text.isEmpty() && pendingAsk != null) {
-            pendingAsk = null; // answered (or it failed and says so): the chip goes back to the status
-            main.removeCallbacks(expireAskTask);
+        if ("ask".equals(kind) && !text.isEmpty() && pending.answered(PendingAsk.ASK, session, "")) {
+            syncPending(); // answered (or it failed and says so): the chip goes back to the status
             postStatus();
         }
         if (text.isEmpty()) {

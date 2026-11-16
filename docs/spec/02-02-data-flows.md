@@ -141,7 +141,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    `token(true)`, which GETs `http://127.0.0.1:9119/` (2.5 s connect, 4 s read) and reads
    `window.__HERMES_SESSION_TOKEN__` from the HTML; the answer comes back as `window.__hmToken(id, token)`. The
    page gives up after 15 s. A token is never cached across connects because Hermes mints a new one on each start.
-5. No token: `conn` becomes `error` with "Hermux is not running yet" and `scheduleReconnect` retries. The delay is
+5. No token: `conn` becomes `error` with "Hermux is not running yet" and `scheduleReconnect` retries (its decisions are in `conn.ts`: `retryDelayMs`, `retryBanner`, `retryHermesSteps`). The delay is
    `min(15 s, 600 ms × 2^min(attempt, 5))`, so 0.6, 1.2, 2.4, 4.8, 9.6, then 15 s. The header detail says
    "Reconnecting…" for the first two tries and "Starting Hermux…" after that. The 2nd try and every 6th try call
    `startHermes()` again (the 8 s throttle still applies). The first try of an outage also asks the shell to watch

@@ -1,6 +1,6 @@
 ### 3.11 Read-aloud player (and the web side of voice input and Live mode)
 
-**Files:** `TtsPlayer.tsx` (the player), `voice.ts` (read-aloud, dictation, voice settings, shell events), `live.ts` (the Live mode loop).
+**Files:** `TtsPlayer.tsx` (the player), `voice.ts` (read-aloud, dictation, voice settings, shell events), `live.ts` (the Live mode loop), `player.ts` (the player's decisions, pure functions).
 
 Android does the speaking and listening (TextToSpeech, SpeechRecognizer; see section 4.6, `Voice.java`). The web side is `web/src/voice.ts` (read-aloud, dictation, voice settings), `web/src/live.ts` (Live mode loop) and `web/src/components/TtsPlayer.tsx`. In a plain browser read-aloud falls back to the Web Speech API (`speechSynthesis`); dictation and Live mode need the phone app.
 
@@ -43,6 +43,17 @@ The player is skipped by the swipe gestures (`.tts-player` in `SKIP`).
 | `error` with `tts-…` or `voices-failed` | Read-aloud failure: toast with the reason (for `tts-unavailable`: no text-to-speech engine would start; install one and pick it on the Settings → Voice page). It is never passed to dictation. |
 
 Back/forward 5 s use the shell's own path (`ttsControl('rew' | 'ff')`) so the notification and the page share one state; in a browser the page seeks by 5 s × pace. Pause uses `ttsControl('pause')`, resume `ttsControl('play')` when the place is unchanged, otherwise it re-speaks.
+
+**The player as a state machine (`web/src/player.ts`).** `voice.ts` keeps the bridge calls, timers and store; `player.ts` holds the decisions as pure functions, with the state table in its header, tested in `player.test.ts`. `PlayerPhase` is `idle` (no player), `speaking`, `seeking` (a re-speak was just sent; the replaced speech's late `tts-done` is ignored) or `paused`; `tts-done` leads straight to idle.
+
+- `phaseOf(player, reseekUntil, now)` says which `PlayerPhase` the player is in.
+- `RESEEK_MS` (300) is how long after a re-speak a late `tts-done` is still ignored; `reseekDeadline(reseek, now)` gives when that window ends (0 for a fresh speech).
+- `isStaleDone(text, paused, reseekUntil, now)` says whether a `tts-done` is to be ignored: never for 'stop', otherwise while paused or inside the window.
+- `parseSeg(text)` reads a `tts-seg` argument into `at` and `len`; `parsePace(text)` accepts a `tts-pace` from 2 to 120.
+- `paceOf(cps, rate)` is the pace in use (measured, else 14 characters per second times the speed); `nextPace(cps, seg, now)` folds a finished stretch's measurement into it; `estimatePos(seg, now, pace)` is the position between `tts-seg` events, never past the stretch's end.
+- `pausedPlace(playFrom, at, textLength)` turns the place `tts-paused` reports into an absolute one.
+- `shellHoldsPlace(hasControl, nativePausedAt, pos)` says whether resume can be left to the shell (`ttsControl('play')`), and `jumpIsShared(hasControl, paused, nativePausedAt, pos)` whether back/forward 5 s go to the shell's own path.
+- `resumeFrom(pos, total)` is where a re-spoken resume starts and `seekTarget(pos, total)` the clamped seek position.
 
 **Data:** bridge `speak`, `stopSpeaking`, `ttsControl`, `listVoices`, `setReadAloud`; keys `hm.tts`, `hm.autoread`, `hm.autoread.chats`.
 

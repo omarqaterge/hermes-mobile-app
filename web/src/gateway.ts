@@ -37,6 +37,8 @@ import type {
   TranscriptMessage,
   Usage
 } from '@hermes/shared/gateway-contract.generated'
+import { BEAT_MS, DEADLINE_MS, beatDecision, retryBanner, retryDelayMs, retryHermesSteps } from './conn'
+import { createAgentBuilds } from './agentbuild'
 import { askUnlock, lockView } from './lockview'
 import { onChatOpen, runChatOpen } from './chatopen'
 import { ctxFromStatText, stripCtxStat } from './ctxring'
@@ -99,12 +101,13 @@ client.onState(conn => {
 
 function scheduleReconnect(): void {
   if (reconnectTimer) return
-  const delay = readySeen ? 0 : Math.min(15_000, 600 * 2 ** Math.min(attempt, 5))
+  const delay = retryDelayMs(attempt, readySeen)
   readySeen = false
   attempt++
-  setState({ connDetail: attempt > 2 ? 'Starting Hermux…' : 'Reconnecting…' })
-  if (attempt === 1) watchHermes() // once per outage; these steps stay as the fallback
-  if (attempt === 2 || attempt % 6 === 0) startHermes()
+  const steps = retryHermesSteps(attempt)
+  setState({ connDetail: retryBanner(attempt) })
+  if (steps.watch) watchHermes() // once per outage; these steps stay as the fallback
+  if (steps.start) startHermes()
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     void connect()
@@ -178,8 +181,6 @@ export async function connectionAlive(): Promise<boolean> {
 // the app is hidden Chromium freezes the page (~1 min in), so on return the first late tick saw a minute of
 // "silence" and closed a healthy socket: "offline", a reconnect, and a reload of the chat mid-turn. This one gives
 // the socket a fresh window after a frozen gap, and pings as soon as the page is shown again.
-const BEAT_MS = 15_000
-const DEADLINE_MS = 45_000
 let aliveAt = Date.now()
 let lastBeat = Date.now()
 
@@ -189,11 +190,11 @@ client.onAny(() => {
 
 setInterval(() => {
   const now = Date.now()
-  const slept = now - lastBeat > BEAT_MS * 2
+  const beat = beatDecision(now, lastBeat, aliveAt)
   lastBeat = now
   if (getState().conn !== 'open') return
-  if (slept) aliveAt = now
-  else if (now - aliveAt >= DEADLINE_MS) {
+  if (beat === 'fresh-window') aliveAt = now
+  else if (beat === 'dead') {
     client.invalidate('WebSocket heartbeat timed out')
     return
   }
@@ -562,7 +563,7 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
   const active = baseActive(r, r.stored_session_id)
   noteLineage([active.storedId, r.stored_session_id], active.runtimeId)
   if (opts.cwd) chosenCwd.set(active.runtimeId, opts.cwd)
-  trackBuild(active.runtimeId)
+  agents.trackBuild(active.runtimeId)
   keepPreview(prev)
   setState({ active, opening: null, preview: null, drawer: false })
   retire(prev)
@@ -631,7 +632,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     throw err
   }
   unwarm(storedId)
-  trackBuild(r.session_id) // a fresh resume builds its agent in the background too
+  agents.trackBuild(r.session_id) // a fresh resume builds its agent in the background too
   if (opts.auto && openSeq !== seq) return // the user went elsewhere while this was loading
   const next = baseActive(r, storedId)
   // the id asked for, the one Hermes resumed and the stored one are the same chat; its live id joins them (lineage.ts)
@@ -768,7 +769,7 @@ export async function sendPrompt(text: string): Promise<void> {
   pushItem({ kind: 'user', id: uid, text: trimmed, images: images.length ? images : undefined, imageUrls: queued.some(x => x.preview) ? queued.filter(x => x.kind === 'image').map(x => x.preview || '') : undefined, imagePaths: queued.some(x => x.path) ? queued.filter(x => x.kind === 'image').map(x => x.path || '') : undefined, files: files.length ? files.map(f => f.name) : undefined, fileRefs: files.length ? files.map(f => f.ref || '') : undefined, at: Date.now() })
   updateActive(() => ({ ...turnSent(), attachments: [] }))
   try {
-    await switching.get(a.runtimeId)?.catch(() => {}) // a model picked a moment ago must apply to this turn
+    await agents.whenSwitched(a.runtimeId) // a model picked a moment ago must apply to this turn
     const r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: body, surface: 'mobile' })
     setUserRowId(uid, r?.user_row_id)
   } catch (err) {
@@ -1205,28 +1206,7 @@ export async function clearAttachments(): Promise<void> {
  * A model switch sent before that is silently lost: the build finishes with the profile default and every turn
  * runs on it, although `config.set` answered OK and the chat row stores the pick (seen 2026-10-03: a "Sonnet"
  * chat ran entirely on Gemini). So a switch waits for the build, and a send waits for the switch. */
-const builds = new Map<string, { done: Promise<void>; resolve: () => void }>()
-// Runtimes whose agent was announced. A resume of a chat that is still live (warm) returns the same runtime id and
-// sends no session.info, so it must not wait; this also covers a session.info that beat the create/resume answer.
-const ready = new Set<string>()
-const switching = new Map<string, Promise<void>>()
-
-function trackBuild(runtimeId: string): void {
-  if (!runtimeId || ready.has(runtimeId) || builds.has(runtimeId)) return
-  let resolve!: () => void
-  const done = new Promise<void>(r => (resolve = r))
-  builds.set(runtimeId, { done, resolve })
-  setTimeout(() => markBuilt(runtimeId), 20000) // never hang a pick on a missed event
-}
-
-function markBuilt(runtimeId: string): void {
-  ready.add(runtimeId)
-  if (ready.size > 200) ready.delete(ready.values().next().value!)
-  const b = builds.get(runtimeId)
-  if (!b) return
-  builds.delete(runtimeId)
-  b.resolve()
-}
+const agents = createAgentBuilds()
 
 /** True when a model pick should make a new chat instead of switching this one: nothing sent yet. A switch on an
  * empty chat leaves Hermes's "[System: The active model … changed]" marker as the first history row, Hermes then
@@ -1275,19 +1255,15 @@ export async function setModel(provider: string, model: string, effort?: string)
   // Show the pick at once; Hermes needs a few seconds to rebuild the agent. Undone below if it fails.
   const before = { model: a.info.model, provider: a.info.provider }
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, model, provider } } : {}))
-  const run = (async () => {
-    await builds.get(a.runtimeId)?.done
-    await rpc('config.set', { session_id: a.runtimeId, key: 'model', value: `${model} --provider ${provider} --session` })
-    if (effort) await rpc('config.set', { session_id: a.runtimeId, key: 'reasoning', value: effort })
-  })()
-  switching.set(a.runtimeId, run)
   try {
-    await run
+    await agents.runSwitch(a.runtimeId, async () => {
+      await agents.whenBuilt(a.runtimeId)
+      await rpc('config.set', { session_id: a.runtimeId, key: 'model', value: `${model} --provider ${provider} --session` })
+      if (effort) await rpc('config.set', { session_id: a.runtimeId, key: 'reasoning', value: effort })
+    })
   } catch (e) {
     updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, ...before } } : {}))
     throw e
-  } finally {
-    if (switching.get(a.runtimeId) === run) switching.delete(a.runtimeId)
   }
   if (effort) updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, reasoning_effort: effort } } : {}))
   toast(`Model: ${model}`)
@@ -1530,7 +1506,7 @@ client.onEvent((ev: GatewayEvent) => {
     toast(String(payload.text || ''), lvl === 'error' ? 'error' : lvl.startsWith('warn') ? 'warn' : 'info')
     return
   }
-  if (type === 'session.info' && ev.session_id) markBuilt(ev.session_id)
+  if (type === 'session.info' && ev.session_id) agents.markBuilt(ev.session_id)
   if (!a || !ev.session_id || (ev.session_id !== a.runtimeId && ev.session_id !== a.storedId)) {
     // Another chat (one you left while it worked) renamed itself or finished: refresh the drawer's counts,
     // which is what marks it unread.

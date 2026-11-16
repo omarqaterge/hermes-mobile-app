@@ -65,10 +65,27 @@ These files carry the plumbing every screen uses. Screens are in 3.
   page's own and tells the subscribers (`subscribeRich`, `richApi`, which `Markdown` reads with
   `useSyncExternalStore`). Before that, a formula shows as its TeX in inline code and code blocks have no colours;
   every message re-renders once it is loaded.
+- `player.ts` — the read-aloud player's decisions as pure functions (phases, stale `tts-done`, pace, position, pause/resume place); `voice.ts` calls them and keeps the bridge, timers and store (see 3.11).
 - `health.ts` — the header dot and status sheet data: `checkHealth` (ping `gateway.ping` with 8 s timeout, plus
   `GET /api/status` without `profile=`), `startHealthPolling` (2.5; returns false when it was already running, so `App` asks for only a ping on a reconnect and the full status is sent once at start-up), `dotState`: `wait` while connecting, `err`
   when not open, `warn` when the status call failed, the dashboard or storage component isn't ok/unknown, or disk
   or memory pressure is critical, else `ok`. Messaging-platform health is ignored on purpose.
+- `conn.ts` — the gateway connection's decisions as pure functions (states idle, connecting, open, waiting to retry;
+  the table is in its header); `gateway.ts` keeps the timers and side effects. `BEAT_MS` (15 s liveness beat),
+  `DEADLINE_MS` (45 s of silence drops the socket), `BACKOFF_BASE_MS` (600 ms) and `BACKOFF_CAP_MS` (15 s) are the
+  constants. `retryDelayMs` gives the wait before a retry (0 when Hermes was seen answering, else the doubling
+  backoff), `retryBanner` the header text ("Reconnecting…" for tries 1 and 2, "Starting Hermux…" after),
+  `retryHermesSteps` whether the try asks the shell to watch for Hermes (try 1) or start it (try 2 and every 6th), and
+  `beatDecision` (type `BeatDecision`) what one beat does: `ping`, `fresh-window` (the page was frozen) or `dead`.
+- `agentbuild.ts` — "is this chat's agent ready?" per live chat (states unknown, building, ready, switching; the table
+  and the two past bugs are in its header). `createAgentBuilds` makes the bookkeeping (its timer can be injected for
+  tests); `gateway.ts` holds one as `agents` and keeps the RPCs. `BUILD_CAP_MS` (20 s) is how long a pick waits for
+  `session.info`, `READY_CAP` (200) how many announced runtimes are remembered. The `AgentBuilds` operations:
+  `trackBuild` starts waiting for a runtime's agent after a create or resume (not when it is already ready, which is
+  how a warm resume does not wait), `markBuilt` records that the agent was announced (the `session.info` event, or
+  the cap; safe before `trackBuild`), `whenBuilt` is what `setModel` awaits before `config.set`, `whenSwitched` is
+  what `sendPrompt` awaits so a model picked a moment ago applies (a failed switch does not block it), `runSwitch`
+  runs one switch and records it in flight until it settles, and `buildState` (type `BuildState`) names the state.
 
 #### Gateway RPCs (all calls the page makes)
 
