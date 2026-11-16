@@ -26,31 +26,35 @@ Done in the Android shell and the plugin:
 - The status chip's pending approvals and questions (`PendingAsk.java`): kept per chat and request, so one chat's
   clear no longer drops another's and a second approval no longer overwrites the first; the phone stops being held
   awake once an approval is answered. The chip shows the oldest pending approval first (owner's decision, 2026-11-16).
+- The plugin's turn records (`_note_start`, `_pop_start`, `_note_subagent`, `_note_end` in `__init__.py`): bounded, a
+  running turn keeps its start time, and a background "Learning" label can no longer replace a live status.
+- The helper-app and update installers (`InstallPhase.java`, `MainActivity.java`): one session per install, also after
+  the activity is recreated; a prompt that was lost frees the next tap after 15 s. Helper path tried on an emulator.
 
 Left alone on purpose in "which chat is on screen": `phone-data-taint.ts` has its own copy of the same test (security
 code: change it only with the owner's say), `BgApp.tsx` prefers the open chat over the opening one (its chip flow is
 written around that), and `Composer.tsx` reads `opening` directly (it means "can't send yet", also true during a reload).
 
-**Seen on the way, not changed** (none reproduced with a test yet)
+**Seen on the way** (2026-11-16)
 
-- Offline outbox (`flushOutbox` in `gateway.ts`): `sendPrompt` does not throw when `prompt.submit` fails, so the toast
-  "Sent the message you queued" shows beside a "Send failed" notice.
-- Model picks (`setModel`): two quick picks on one chat send their `config.set` calls without waiting for each other,
-  so the order Hermes sees is not guaranteed.
-- Read aloud in a plain browser only (`speechSynthesis` fallback in `voice.ts`): the old utterance's late `onend` after
-  a seek or a speed change does not check the re-seek window and may clear the player while the new one speaks.
+Fixed since: the false "Sent" toast for a message queued offline, two quick model picks reaching Hermes out of order,
+and the plain-browser read-aloud seek clearing the player (each with a test that failed first).
+
+Still open:
+
 - Setup: an installer abandoned without a FAIL line reads as installing for ever; an expiry can't be told apart from a
-  slow install without a clock. Needs a decision.
+  slow install without a clock. Needs the owner's decision on a time limit.
+- A failed or timed-out sub-agent card still shows its last tool line (hidden only for done and completed).
+- The helper download thread in `MainActivity.java` catches `Exception`, not `Error`.
 
 **Next in the web page**
 
 | Where | The hidden states | What is loose today |
 |---|---|---|
 | Access mode (`gateway.ts`, plugin) | Off, Auto, Full, switching | Already named (`Access`), but stored as `info.yolo` + `autoAccess` + `beforeFull` + `accessRuns`. Security code: change only with the owner's say. |
-| Sub-agent cards (`store.ts`) | free text | A tool card's status is explicit (`ToolStatus`); a sub-agent card's `status` is still a free string. Small. |
 
 Nothing to do: the offline outbox is one slot with one writer (`saveOutbox`); Setup (`setupflow.ts`) was already explicit
-and tested.
+and tested; a sub-agent card's `status` stays free text on purpose (Hermes may send new values and the card prints them).
 
 **Android shell, plugin and phone scripts (surveyed 2026-11-16)**
 
@@ -62,8 +66,6 @@ Worth doing, in this order:
 
 | Where | The hidden states | What is loose, and what the survey reported |
 |---|---|---|
-| Helper-app install and app update install (`MainActivity.java`) | idle, requested, downloading, committed, prompt pending, prompt shown, finished | Seven `helper*` flags set in about fifteen places. Reported: the receivers are never unregistered and the flags are lost when the activity is recreated, so Retry can start a second installer session. Suspected: the update installer can stack a session the same way. No test. |
-| The plugin's turn records (`__init__.py`) | idle, running, review, ended | Spread over `_active`, `_turn_started`, `_last_end`, `_subagents` and a timer. Reported: two of them only grow. Suspected: a background review label can replace a live turn's status. |
 
 Small things reported on the way: `Voice.java` has a field that is never assigned (`pendingSpeech`); `PluginSync.java`
 records a check before the service start that may fail; `ShizukuKeeper.java` sets `P_WD_OURS` before the write that may throw.
@@ -79,6 +81,8 @@ reload does not reset `phoneDataBusy`), `phone_taint.py`, `Uninstall.java`. Alre
 - A failed install staying failed after a restart was checked with `tools/test_setup_lines.sh` only.
 - The status chip with two chats each asking for an approval: the first one shows, answering or clearing it shows the second, and the other chat's stays. Checked with `tools/test_pending_ask.sh` only; this is the one to try first.
 - The "Using an app" card going away when the background host is lost was checked with `tools/test_phone_app.py` only.
+- The app update installer: tap Update, leave Android's prompt, tap Update again (the same prompt, no second download); not tried on any device.
+- The helper-app installer was tried on an emulator only.
 - Live mode, the read-aloud player and the reconnect rules changed no behaviour, but none was tried on a phone after the change.
 
 **Links**
