@@ -290,7 +290,8 @@ export function unqueueMessage(): string {
   return q?.text || ''
 }
 
-async function flushOutbox(): Promise<void> {
+/** Send the outbox message once connected (called after every connect; exported for tests). */
+export async function flushOutbox(): Promise<void> {
   const q = getState().queued
   if (!q || getState().conn !== 'open') return
   saveOutbox(null)
@@ -303,8 +304,9 @@ async function flushOutbox(): Promise<void> {
       const atts = await carryAttachments(q.atts, q.runtime, a.runtimeId)
       updateActive(x => (x.runtimeId === a.runtimeId ? { attachments: atts } : null))
     }
-    await sendPrompt(q.text)
-    toast('Sent the message you queued')
+    // A failed send does not throw (sendPrompt shows its own "Send failed" notice): only toast "Sent" when it went out.
+    if (await sendPrompt(q.text)) toast('Sent the message you queued')
+    else composerPrefill.set(q.text)
   } catch (err) {
     composerPrefill.set(q.text)
     toast(`Couldn't send the queued message: ${errText(err)}`, 'error', 6000)
@@ -729,9 +731,11 @@ export async function searchMessages(q: string): Promise<MessageHit[]> {
   return out
 }
 
-export async function sendPrompt(text: string): Promise<void> {
+/** Send a message (or run a slash command, or steer the running turn). Resolves `false` only when `prompt.submit` failed (the
+ *  "Send failed" notice is already shown and the turn ended as `not-sent`); `true` otherwise. Other failures still throw. */
+export async function sendPrompt(text: string): Promise<boolean> {
   const trimmed = text.trim()
-  if (!trimmed) return
+  if (!trimmed) return true
   if (getState().opening) throw new Error('Still opening your chat — wait a moment')
   rememberPrompt(trimmed)
   const a = await targetChat()
@@ -739,11 +743,11 @@ export async function sendPrompt(text: string): Promise<void> {
   const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(trimmed)
   if (btw) {
     openBtw(btw[1] || '')
-    return
+    return true
   }
   if (trimmed.startsWith('/')) {
     await runSlash(a, trimmed)
-    return
+    return true
   }
 
   // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first.
@@ -756,7 +760,7 @@ export async function sendPrompt(text: string): Promise<void> {
     // Mid-turn: steer the running turn instead of queueing a new prompt.
     await rpc('session.steer', { session_id: a.runtimeId, text: trimmed })
     pushItem({ kind: 'notice', id: newId('n'), text: `Steer: ${trimmed}`, level: 'info' })
-    return
+    return true
   }
 
   const uid = newId('u')
@@ -772,10 +776,12 @@ export async function sendPrompt(text: string): Promise<void> {
     await agents.whenSwitched(a.runtimeId) // a model picked a moment ago must apply to this turn
     const r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: body, surface: 'mobile' })
     setUserRowId(uid, r?.user_row_id)
+    return true
   } catch (err) {
     // Not sent: the attachments are still queued, so show them again.
     endTurn(a.runtimeId, 'not-sent', { attachments: queued })
     pushItem({ kind: 'notice', id: newId('n'), text: `Send failed: ${errText(err)}`, level: 'error' })
+    return false
   }
 }
 

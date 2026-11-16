@@ -41,7 +41,7 @@ One slot, six faces, decided in this order:
 
 1. Ignores blank text unless there is at least one quote chip. The text sent is `withQuotes(quotes, text)` (`web/src/quote.ts`): each quote as a Markdown blockquote (`> ` before every line), a blank line between quotes, a blank line, then the typed text. A text starting with `/` is sent as it is and keeps the quotes.
 2. If Hermes is not connected: queues that text in the outbox and clears the box and the quotes (below).
-3. Otherwise clears the box and the quotes, calls `sendPrompt`, and on failure puts the text and the quotes back and shows an error toast.
+3. Otherwise clears the box and the quotes, calls `sendPrompt` (which resolves `false` when `prompt.submit` itself failed, `true` otherwise), and on failure puts the text and the quotes back and shows an error toast.
 
 `sendPrompt` (`gateway.ts`) in order:
 
@@ -104,7 +104,7 @@ The Dictate button calls the shell's `startListening` bridge method. The compose
 #### Offline outbox
 
 - **Queueing.** Sending while Hermes is not connected keeps the text: `queueMessage` stores one message `{ chat, text, atts?, runtime? }` in the store (`queued`) and in `hm.outbox.v1`. A second message typed while one waits is joined to it with a blank line. The chip shows it. The send button is labelled "Send when back online".
-- **Sending.** After the next successful connection, `flushOutbox` clears the outbox, opens the chat it was typed in (or starts a fresh one if it was typed on the empty screen while another chat is open), restores its attachments if the page reloaded meanwhile, sends it, and toasts "Sent the message you queued". If sending fails, the text is put back in the composer and a toast says "Couldn't send the queued message: <reason>".
+- **Sending.** After the next successful connection, `flushOutbox` clears the outbox, opens the chat it was typed in (or starts a fresh one if it was typed on the empty screen while another chat is open), restores its attachments if the page reloaded meanwhile, sends it with `sendPrompt`, and toasts "Sent the message you queued" only when the send went out (`flushOutbox` is exported for tests). If `prompt.submit` fails, `sendPrompt` has already added the "Send failed" notice, so there is no "Sent" toast and the text is put back in the composer. If anything before the send throws, the text is put back in the composer and a toast says "Couldn't send the queued message: <reason>".
 - **From a notification.** A reply typed into a notification when the socket is dead takes the same path (`queueAndReconnect`: store, then reconnect).
 - **Take it back.** The chip's ✕ (Don't send) returns the text to the composer.
 
