@@ -1,0 +1,1641 @@
+checks/01-chat-basics.cjs:9	`start-up timing marks recorded (${stages.join(', ')})`
+checks/01-chat-basics.cjs:11	'app start flag set (no old-WebView note)'
+checks/01-chat-basics.cjs:17	`empty chat shows the Hermux mark as an SVG (${JSON.stringify(m)})`
+checks/01-chat-basics.cjs:18	'empty chat no longer uses the ☤ text glyph'
+checks/01-chat-basics.cjs:20	'a new chat shows an empty context ring'
+checks/01-chat-basics.cjs:34	`new chat is created with the picked model (${JSON.stringify(cr.map(c => c.params))})`
+checks/01-chat-basics.cjs:35	'no config.set model on a chat with no messages'
+checks/01-chat-basics.cjs:36	`the message goes to that chat (${JSON.stringify(sub.map(c => c.params.session_id))})`
+checks/01-chat-basics.cjs:44	'the reply stats no longer repeat the context fill'
+checks/01-chat-basics.cjs:45	'ring shows 10% after the first turn'
+checks/01-chat-basics.cjs:47	'ring sits inside the model row'
+checks/01-chat-basics.cjs:52	`context sheet shows tokens (${JSON.stringify(txt.slice(0, 120))})`
+checks/01-chat-basics.cjs:53	'context sheet shows cost, cache hits and token split'
+checks/01-chat-basics.cjs:56	'Android Back closes the context sheet'
+checks/01-chat-basics.cjs:61	'/yolo → config.set yolo=1 on this chat'
+checks/01-chat-basics.cjs:62	'/yolo never reaches slash.exec'
+checks/01-chat-basics.cjs:63	'/yolo shows a notice'
+checks/01-chat-basics.cjs:64	'the Auto button beside the model chip reads ⚡ Full access'
+checks/01-chat-basics.cjs:65	'no separate Full access chip any more'
+checks/01-chat-basics.cjs:66	'YOLO remembered for this chat (re-applied on resume)'
+checks/01-chat-basics.cjs:70	'Auto button → Off turns YOLO off'
+checks/01-chat-basics.cjs:71	'button back to plain Auto after off'
+checks/01-chat-basics.cjs:72	'YOLO forgotten for this chat after off'
+checks/01-chat-basics.cjs:92	`model row fits at ${width} px in ${state} (${JSON.stringify(fit)})`
+checks/01-chat-basics.cjs:96	'Auto button in the composer\'s model row, off'
+checks/01-chat-basics.cjs:97	'no Auto button in the header'
+checks/01-chat-basics.cjs:101	`Auto sits right after the model chip, same height (${JSON.stringify([chip, btn])})`
+checks/01-chat-basics.cjs:108	`Auto access tells the plugin this chat's id (${JSON.stringify(put && put.body)})`
+checks/01-chat-basics.cjs:109	'the plugin list is written BEFORE /yolo goes on'
+checks/01-chat-basics.cjs:110	'button shows Auto access'
+checks/01-chat-basics.cjs:111	'Auto access keeps the short label Auto'
+checks/01-chat-basics.cjs:112	'Auto access remembered for this chat'
+checks/01-chat-basics.cjs:118	'Full access shows a warning first'
+checks/01-chat-basics.cjs:121	'Cancel keeps Auto access'
+checks/01-chat-basics.cjs:127	'Allow → Full access, the plugin entry removed'
+checks/01-chat-basics.cjs:132	'Off turns /yolo off'
+checks/01-chat-basics.cjs:133	'nothing remembered after Off'
+checks/01-chat-basics.cjs:139	'/fast → config.set fast=toggle on this chat'
+checks/01-chat-basics.cjs:140	'/fast never reaches slash.exec'
+checks/01-chat-basics.cjs:141	'/fast shows a notice'
+checks/01-chat-basics.cjs:145	'/fast off turns it off'
+checks/01-chat-basics.cjs:158	'default Full access: Cancel keeps it off'
+checks/01-chat-basics.cjs:162	'default Auto access saved'
+checks/01-chat-basics.cjs:167	'the empty new-chat screen already shows the default (Auto access)'
+checks/01-chat-basics.cjs:172	`a new chat starts in Auto access (${JSON.stringify(put && put.body)})`
+checks/01-chat-basics.cjs:173	'the Auto button shows Auto access on the new chat'
+checks/01-chat-basics.cjs:174	'the default is not stored as the chat\'s own choice'
+checks/01-chat-basics.cjs:179	'Off is remembered as an explicit choice'
+checks/01-chat-basics.cjs:194	'no Favourites section before anything is starred'
+checks/01-chat-basics.cjs:195	'the picker shows the configured default reasoning level, not medium'
+checks/01-chat-basics.cjs:198	'starring keeps the picker open'
+checks/01-chat-basics.cjs:199	'starring does not pick the model'
+checks/01-chat-basics.cjs:201	`Favourites is the first section (${JSON.stringify(titles)})`
+checks/01-chat-basics.cjs:202	'the starred model is listed in Favourites with its provider'
+checks/01-chat-basics.cjs:203	'favourite saved'
+checks/01-chat-basics.cjs:206	'search hides favourites that do not match'
+checks/01-chat-basics.cjs:210	'favourite survives a reload'
+checks/01-chat-basics.cjs:213	'unstarring removes it from Favourites'
+checks/01-chat-basics.cjs:217	'tapping a favourite picks it'
+checks/01-chat-basics.cjs:232	'no typed-id rows without a search'
+checks/01-chat-basics.cjs:235	'an id the catalog lists exactly is not offered again'
+checks/01-chat-basics.cjs:238	'a typed id is offered'
+checks/01-chat-basics.cjs:241	'picking the typed id starts the chat with it'
+checks/01-chat-basics.cjs:242	'the typed id is remembered'
+checks/01-chat-basics.cjs:246	'the remembered id is a normal row under its provider'
+checks/01-chat-basics.cjs:249	'Forget removes it'
+checks/01-chat-basics.cjs:274	`empty chat: model pick creates a new chat, no switch (${cr.length} creates, ${sets.length} switches)`
+checks/01-chat-basics.cjs:275	`the empty chat is closed (${JSON.stringify(closed)})`
+checks/01-chat-basics.cjs:276	'typed text stays in the composer'
+checks/01-chat-basics.cjs:300	'/yolo from Auto access goes to Full access (not Off)'
+checks/01-chat-basics.cjs:302	'/yolo from Auto access leaves /yolo on'
+checks/01-chat-basics.cjs:306	'a second /yolo goes back to Auto access, the mode before'
+checks/01-chat-basics.cjs:307	'back to Auto access writes the plugin list again'
+checks/01-chat-basics.cjs:311	'/yolo off turns approvals back on'
+checks/01-chat-basics.cjs:316	'from Off, /yolo twice ends in Off again'
+checks/01-chat-basics.cjs:321	'the newer of two quick /yolo commands wins'
+checks/01-chat-basics.cjs:322	'the last yolo config.set is the newer request (off)'
+checks/02-attachments.cjs:11	'composer shows a real image preview'
+checks/02-attachments.cjs:12	'two photos queued with image.attach_bytes'
+checks/02-attachments.cjs:16	`✕ detaches the photo in Hermes (${JSON.stringify(det.map(d => d.params.path))})`
+checks/02-attachments.cjs:17	'removed preview is gone'
+checks/02-attachments.cjs:22	'file goes through file.attach as a data URL'
+checks/02-attachments.cjs:28	`prompt carries the file reference (${JSON.stringify(sub && sub.params.text)})`
+checks/02-attachments.cjs:30	'sent bubble shows photo thumbnail + file chip'
+checks/02-attachments.cjs:31	'composer attachments emptied after send'
+checks/02-attachments.cjs:35	'tapping a sent photo opens the lightbox'
+checks/02-attachments.cjs:35	'tapping a sent photo opens the lightbox'
+checks/02-attachments.cjs:37	'the lightbox has Save and Share'
+checks/02-attachments.cjs:38	'opening the photo does not toggle the message time'
+checks/02-attachments.cjs:41	'double-tap zooms in'
+checks/02-attachments.cjs:44	'double-tap again zooms back out'
+checks/02-attachments.cjs:48	`Save downloads the photo in a browser (${got && got.suggestedFilename()})`
+checks/02-attachments.cjs:50	'Share explains it needs the phone app'
+checks/02-attachments.cjs:50	'Share explains it needs the phone app'
+checks/02-attachments.cjs:53	'Back closes the lightbox'
+checks/02-attachments.cjs:61	'clear detaches every queued photo'
+checks/02-attachments.cjs:62	'clear empties the row'
+checks/02-attachments.cjs:66	'Camera opens a capture chooser'
+checks/02-attachments.cjs:69	'camera photo queued with image.attach_bytes'
+checks/02-attachments.cjs:83	'shared text lands in the composer'
+checks/02-attachments.cjs:84	'sharing starts a new chat'
+checks/02-attachments.cjs:86	'shared PDF attached through file.attach'
+checks/02-attachments.cjs:87	'shared photo attached through image.attach_bytes'
+checks/02-attachments.cjs:88	'nothing is sent by itself'
+checks/02-attachments.cjs:100	'editing shows the message photo'
+checks/02-attachments.cjs:107	`edit re-queues the photo with image.attach (${JSON.stringify(att.map(a => a.params.path))})`
+checks/02-attachments.cjs:108	'edited text sent in place of the old turn'
+checks/02-attachments.cjs:110	'edited bubble still shows the photo'
+checks/02-attachments.cjs:116	`retry re-queues the photo too (${rpcs('image.attach').length})`
+checks/02-attachments.cjs:117	'retried bubble still shows the photo'
+checks/02-attachments.cjs:127	'file message sent with its ref'
+checks/02-attachments.cjs:129	'editing shows the file chip'
+checks/02-attachments.cjs:135	`edit sends the file ref again (${JSON.stringify(sub && sub.params.text)})`
+checks/02-attachments.cjs:137	'edited bubble still shows the file chip'
+checks/02-attachments.cjs:143	'retry sends the file ref again'
+checks/02-attachments.cjs:151	'✕ on the file chip drops it from the edit'
+checks/02-attachments.cjs:179	'Save in the app says Saved to Pictures/Hermux'
+checks/02-attachments.cjs:179	'Save in the app says Saved to Pictures/Hermux'
+checks/02-attachments.cjs:181	`Save asks the shell to save the picture once, with the page key (${JSON.stringify(saved)})`
+checks/03-streaming-and-goal.cjs:18	`Wrap + Show all survive further streamed updates (wrap=${midWrap}, open=${midOpen})`
+checks/03-streaming-and-goal.cjs:22	'full reply rendered once, nothing lost'
+checks/03-streaming-and-goal.cjs:23	'Wrap still on after the reply finished'
+checks/03-streaming-and-goal.cjs:24	'code is highlighted'
+checks/03-streaming-and-goal.cjs:32	'reply so far is shown right away (before new deltas)'
+checks/03-streaming-and-goal.cjs:33	'the running question shows once'
+checks/03-streaming-and-goal.cjs:34	'task list restored from todo_state'
+checks/03-streaming-and-goal.cjs:35	`status line shows the turn's elapsed time (${JSON.stringify(await page.locator('.status-line').innerText())})`
+checks/03-streaming-and-goal.cjs:36	'a chat without a goal shows no goal line'
+checks/03-streaming-and-goal.cjs:40	`reply continues from the snapshot (${JSON.stringify(last.slice(0, 60))})`
+checks/03-streaming-and-goal.cjs:41	'no duplicate reply bubble'
+checks/03-streaming-and-goal.cjs:49	`goal line shows the goal and its turns (${JSON.stringify(line)})`
+checks/03-streaming-and-goal.cjs:52	'the goal sheet shows the contract outcome'
+checks/03-streaming-and-goal.cjs:53	'the goal sheet lists the subgoals'
+checks/03-streaming-and-goal.cjs:55	'after Pause the goal line says paused: by user'
+checks/03-streaming-and-goal.cjs:55	'after Pause the goal line says paused: by user'
+checks/03-streaming-and-goal.cjs:56	'Pause calls session.control with goal.pause'
+checks/03-streaming-and-goal.cjs:57	'a paused goal offers Resume'
+checks/03-streaming-and-goal.cjs:60	'tapping outside closes the goal sheet'
+checks/03-streaming-and-goal.cjs:60	'tapping outside closes the goal sheet'
+checks/03-streaming-and-goal.cjs:74	`only the truncating submit was sent, no plain append (${JSON.stringify(subs.map(c => c.params))})`
+checks/03-streaming-and-goal.cjs:75	'the user is told why'
+checks/03-streaming-and-goal.cjs:77	`chat reloaded as Hermes holds it (${JSON.stringify(users)})`
+checks/03-streaming-and-goal.cjs:87	`the status line keeps "Working…" while the title warning arrives (${JSON.stringify(shown)})`
+checks/03-streaming-and-goal.cjs:89	'the title failure is shown nowhere in the chat'
+checks/04-drawer-and-canvas.cjs:16	`older chats load (${before} → ${after}, limits ${[...new Set(lim)]})`
+checks/04-drawer-and-canvas.cjs:17	'button hides when everything is loaded'
+checks/04-drawer-and-canvas.cjs:28	`deleting a chat asks the plugin to clean up (${delRpcs.length} delete, ${cleanups.length} cleanup, row ${JSON.stringify(delId.slice(0, 30))})`
+checks/04-drawer-and-canvas.cjs:33	'working chat: its title shimmers'
+checks/04-drawer-and-canvas.cjs:33	'working chat: its title shimmers'
+checks/04-drawer-and-canvas.cjs:39	`working chat: the band moves (${s1.pos} → ${s2.pos})`
+checks/04-drawer-and-canvas.cjs:40	'working chat: no blinking dot'
+checks/04-drawer-and-canvas.cjs:41	'working chat: screen readers hear Working'
+checks/04-drawer-and-canvas.cjs:45	'working chat: the shimmer stops while the list is closed'
+checks/04-drawer-and-canvas.cjs:48	'working chat: the shimmer starts again with the list open'
+checks/04-drawer-and-canvas.cjs:50	'working chat: no shimmer with reduced motion'
+checks/04-drawer-and-canvas.cjs:53	'working chat: the shimmer ends with the turn'
+checks/04-drawer-and-canvas.cjs:53	'working chat: the shimmer ends with the turn'
+checks/04-drawer-and-canvas.cjs:71	`pending canvas edit saved to its own chat (${JSON.stringify(puts.map(p => [p.body.session, p.body.content]))}, chat ${storedBefore})`
+checks/04-drawer-and-canvas.cjs:84	'alert() shows as an app toast'
+checks/04-drawer-and-canvas.cjs:85	'alert() shows as an app toast'
+checks/04-drawer-and-canvas.cjs:88	'offline CSP includes form-action none'
+checks/04-drawer-and-canvas.cjs:100	'canvas: a tapped link opens outside, no question'
+checks/04-drawer-and-canvas.cjs:104	'canvas: a second link within 5 s asks first'
+checks/04-drawer-and-canvas.cjs:104	'canvas: a second link within 5 s asks first'
+checks/04-drawer-and-canvas.cjs:113	`canvas: a mail link and window.open open outside too; a javascript: link is not handed over (${JSON.stringify(openedCanvas)})`
+checks/04-drawer-and-canvas.cjs:114	'canvas: window.open after a tap asks nothing'
+checks/04-drawer-and-canvas.cjs:116	`frame stayed on the document (${frameUrl})`
+checks/04-drawer-and-canvas.cjs:122	'canvas: a link the page sends on its own asks to open outside'
+checks/04-drawer-and-canvas.cjs:122	'canvas: a link the page sends on its own asks to open outside'
+checks/04-drawer-and-canvas.cjs:123	'canvas: a non-web link from the page is dropped'
+checks/04-drawer-and-canvas.cjs:141	'gallery: nothing to save or file from the canvas menu'
+checks/04-drawer-and-canvas.cjs:146	'hub: gallery summary'
+checks/04-drawer-and-canvas.cjs:146	'hub: gallery summary'
+checks/04-drawer-and-canvas.cjs:148	'gallery: categories are the types, with counts'
+checks/04-drawer-and-canvas.cjs:148	'gallery: categories are the types, with counts'
+checks/04-drawer-and-canvas.cjs:149	'gallery: a Markdown category'
+checks/04-drawer-and-canvas.cjs:150	'gallery: documents from every chat, nothing saved by hand'
+checks/04-drawer-and-canvas.cjs:151	'gallery: each card names its chat'
+checks/04-drawer-and-canvas.cjs:154	'gallery: a type chip filters the list'
+checks/04-drawer-and-canvas.cjs:158	'gallery: search finds a document by its text'
+checks/04-drawer-and-canvas.cjs:158	'gallery: search finds a document by its text'
+checks/04-drawer-and-canvas.cjs:159	'gallery: the right one'
+checks/04-drawer-and-canvas.cjs:162	`gallery: Hermes is asked to search (${s.map(c => c.query).join(' ')})`
+checks/04-drawer-and-canvas.cjs:163	`gallery: typing doesn't send a search per key (${s.length})`
+checks/04-drawer-and-canvas.cjs:166	'gallery: search by title'
+checks/04-drawer-and-canvas.cjs:166	'gallery: search by title'
+checks/04-drawer-and-canvas.cjs:168	'gallery: no match says so'
+checks/04-drawer-and-canvas.cjs:168	'gallery: no match says so'
+checks/04-drawer-and-canvas.cjs:172	'gallery: the last search is not kept'
+checks/04-drawer-and-canvas.cjs:173	'gallery: back to the whole list'
+checks/04-drawer-and-canvas.cjs:173	'gallery: back to the whole list'
+checks/04-drawer-and-canvas.cjs:174	'gallery: no stale "Nothing matches"'
+checks/04-drawer-and-canvas.cjs:176	'gallery: a copy saved without a chat says Saved copy'
+checks/04-drawer-and-canvas.cjs:177	'gallery: no "Chat deleted" for it'
+checks/04-drawer-and-canvas.cjs:179	'gallery: saved copy preview'
+checks/04-drawer-and-canvas.cjs:179	'gallery: saved copy preview'
+checks/04-drawer-and-canvas.cjs:182	'gallery: a saved copy has no chat buttons'
+checks/04-drawer-and-canvas.cjs:183	'gallery: the preview says saved copy'
+checks/04-drawer-and-canvas.cjs:186	`gallery: the ⋮ sits on the label's row, not alone (${JSON.stringify({ label, dots })})`
+checks/04-drawer-and-canvas.cjs:192	'gallery: a web page runs in the preview (offline sandbox)'
+checks/04-drawer-and-canvas.cjs:192	'gallery: a web page runs in the preview (offline sandbox)'
+checks/04-drawer-and-canvas.cjs:195	'gallery: markdown preview'
+checks/04-drawer-and-canvas.cjs:195	'gallery: markdown preview'
+checks/04-drawer-and-canvas.cjs:196	'gallery: the preview says which chat it is from'
+checks/04-drawer-and-canvas.cjs:198	'gallery: no hand-made categories'
+checks/04-drawer-and-canvas.cjs:210	`gallery: Open canvas went to the document's own chat (${now}, want ${storedBefore})`
+checks/04-drawer-and-canvas.cjs:211	'gallery: the screen closes for the canvas'
+checks/04-drawer-and-canvas.cjs:212	'gallery: the canvas shows that document'
+checks/04-drawer-and-canvas.cjs:221	'gallery: Go to chat opens the chat it was made in'
+checks/04-drawer-and-canvas.cjs:221	'gallery: Go to chat opens the chat it was made in'
+checks/04-drawer-and-canvas.cjs:222	'gallery: Go to chat leaves the canvas closed'
+checks/04-drawer-and-canvas.cjs:231	'gallery: delete'
+checks/04-drawer-and-canvas.cjs:231	'gallery: delete'
+checks/04-drawer-and-canvas.cjs:234	`gallery: delete removes it from its own chat's canvas (${JSON.stringify(del.map(d => d.query))})`
+checks/04-drawer-and-canvas.cjs:239	'gallery: Back returns to the hub, then the chat'
+checks/05-questions-and-approvals.cjs:13	'notification answer taken by the page'
+checks/05-questions-and-approvals.cjs:16	`clarify answered with the typed text (${JSON.stringify(ans)})`
+checks/05-questions-and-approvals.cjs:17	'question sheet closes'
+checks/05-questions-and-approvals.cjs:18	'no open question → not taken (service offers to open the app)'
+checks/05-questions-and-approvals.cjs:19	'notification reply taken'
+checks/05-questions-and-approvals.cjs:22	`reply goes to its own chat (${JSON.stringify(rs && rs.params)})`
+checks/05-questions-and-approvals.cjs:28	'several questions: only the first is shown'
+checks/05-questions-and-approvals.cjs:31	'several questions: picking a choice moves to the next question by itself'
+checks/05-questions-and-approvals.cjs:34	'several questions: Answer waits for every question'
+checks/05-questions-and-approvals.cjs:37	'several questions: Back keeps the earlier choice'
+checks/05-questions-and-approvals.cjs:42	'several questions: Android Back steps to the previous question'
+checks/05-questions-and-approvals.cjs:47	`several questions answered together (${JSON.stringify(ans3)})`
+checks/05-questions-and-approvals.cjs:59	`long approval: "${label}" button on screen (${JSON.stringify(box)})`
+checks/05-questions-and-approvals.cjs:62	`repeated finding shown once with ×20 (${descText.slice(0, 160)})`
+checks/05-questions-and-approvals.cjs:66	`long approval answered from its button (${JSON.stringify(la)})`
+checks/05-questions-and-approvals.cjs:134	`phone data: the sheet shows the app's own wording (${shown.slice(0, 120)})`
+checks/05-questions-and-approvals.cjs:135	'phone data: the raw text is not shown'
+checks/05-questions-and-approvals.cjs:136	`phone data: only Allow once and Deny (${JSON.stringify(await buttons())})`
+checks/05-questions-and-approvals.cjs:141	`phone data: Allow asks the shell for the grant, with the exact text (${JSON.stringify(g)})`
+checks/05-questions-and-approvals.cjs:142	`phone data: the grant is made BEFORE the answer reaches Hermes (${JSON.stringify([g, a])})`
+checks/05-questions-and-approvals.cjs:150	`phone data: Deny makes no grant (${JSON.stringify(a)})`
+checks/05-questions-and-approvals.cjs:158	'phone data: if the shell makes no grant, nothing is allowed and the request stays open'
+checks/05-questions-and-approvals.cjs:161	'phone data: it can still be denied'
+checks/05-questions-and-approvals.cjs:167	'phone data: decoded text is shown as text, not markup'
+checks/05-questions-and-approvals.cjs:174	'phone data: request text sits in its own element, quotes and brackets removed'
+checks/05-questions-and-approvals.cjs:182	'phone data: a command that mentions phone_data: shows as an ordinary command'
+checks/05-questions-and-approvals.cjs:189	'phone data: a request that is not the plugin\'s own never makes a grant'
+checks/05-questions-and-approvals.cjs:195	`phone data: text that doesn't parse gets a warning and Deny only (${JSON.stringify(await buttons())})`
+checks/05-questions-and-approvals.cjs:199	'phone data: unparseable text never makes a grant'
+checks/05-questions-and-approvals.cjs:233	'card: a button whose text is "/yolo on" sends nothing and changes no access'
+checks/05-questions-and-approvals.cjs:234	'card: the refusal is shown'
+checks/06-long-chats-and-opening.cjs:10	`only the end is drawn on open (${drawn} of 300)`
+checks/06-long-chats-and-opening.cjs:12	'opens at the bottom'
+checks/06-long-chats-and-opening.cjs:21	'scrolling up draws earlier turns'
+checks/06-long-chats-and-opening.cjs:22	`the message that was first stays where it was (${Math.round(topBefore)} → ${Math.round(topAfter)})`
+checks/06-long-chats-and-opening.cjs:27	`scrolling to the very top reaches the first turn (${firstSeen.slice(0, 20)}…)`
+checks/06-long-chats-and-opening.cjs:28	'no "earlier" row once everything is drawn'
+checks/06-long-chats-and-opening.cjs:44	`reopened chat drawn from the cache before Hermes answers (${shownIn} ms, resume takes 1500)`
+checks/06-long-chats-and-opening.cjs:45	'header shows the opening chat while it loads'
+checks/06-long-chats-and-opening.cjs:46	'no message actions on the cached copy'
+checks/06-long-chats-and-opening.cjs:47	'composer waits for the real chat'
+checks/06-long-chats-and-opening.cjs:49	'real transcript replaces the cached one, no duplicates'
+checks/06-long-chats-and-opening.cjs:53	`nothing closed on the way into a chat (${seq.join(' ')})`
+checks/06-long-chats-and-opening.cjs:56	`older chats closed afterwards, the open one and the last 2 left stay live (${closed})`
+checks/06-long-chats-and-opening.cjs:62	'second chat opened wins over the slower first one'
+checks/06-long-chats-and-opening.cjs:69	`an open chat has its title, its menu and its Auto button (${leftTitle})`
+checks/06-long-chats-and-opening.cjs:72	'a chat with no cached copy opens as the skeleton'
+checks/06-long-chats-and-opening.cjs:72	'a chat with no cached copy opens as the skeleton'
+checks/06-long-chats-and-opening.cjs:74	`the header no longer shows the chat being left while another opens (${midTitle})`
+checks/06-long-chats-and-opening.cjs:75	'Chat options waits while another chat opens'
+checks/06-long-chats-and-opening.cjs:76	'the Auto button waits, and shows Off, while another chat opens'
+checks/06-long-chats-and-opening.cjs:79	'once the chat is open its menu and Auto button work again'
+checks/07-reply-rendering.cjs:8	'Mermaid not run at start'
+checks/07-reply-rendering.cjs:11	'diagram renders from the lazy Mermaid'
+checks/07-reply-rendering.cjs:11	'diagram renders from the lazy Mermaid'
+checks/07-reply-rendering.cjs:24	'quote: no bar for a selection in your own bubble'
+checks/07-reply-rendering.cjs:27	'quote: the bar shows for a selection in a reply'
+checks/07-reply-rendering.cjs:29	'quote: Quote adds a chip above the composer'
+checks/07-reply-rendering.cjs:30	'quote: the bar hides after Quote'
+checks/07-reply-rendering.cjs:32	'quote: ✕ removes the chip'
+checks/07-reply-rendering.cjs:39	`quote: the sent text is a blockquote then the message (${JSON.stringify(qs)})`
+checks/07-reply-rendering.cjs:40	'quote: the user bubble shows a .msg-quote'
+checks/07-reply-rendering.cjs:41	'quote: the chip is gone after sending'
+checks/07-reply-rendering.cjs:48	`quote: Explain sends the quote then "Explain this." (${JSON.stringify(ex)})`
+checks/07-reply-rendering.cjs:53	'OpenUI not run at start'
+checks/07-reply-rendering.cjs:60	'openui card renders'
+checks/07-reply-rendering.cjs:60	'openui card renders'
+checks/07-reply-rendering.cjs:61	'the card replaces the code'
+checks/07-reply-rendering.cjs:66	`a card button sends its words (${lastSubmit()})`
+checks/07-reply-rendering.cjs:72	`a form sends its values (${JSON.stringify(lastSubmit())})`
+checks/07-reply-rendering.cjs:77	`a follow-up sends its words, without the form's values (${JSON.stringify(lastSubmit())})`
+checks/07-reply-rendering.cjs:82	'a streamed card renders'
+checks/07-reply-rendering.cjs:82	'a streamed card renders'
+checks/07-reply-rendering.cjs:84	'no "not shown" fallback after a streamed card'
+checks/07-reply-rendering.cjs:87	'broken openui-lang falls back to the code'
+checks/07-reply-rendering.cjs:87	'broken openui-lang falls back to the code'
+checks/07-reply-rendering.cjs:94	'a Query card draws the tool answer'
+checks/07-reply-rendering.cjs:94	'a Query card draws the tool answer'
+checks/07-reply-rendering.cjs:95	`one call to /openui/call with the card's args (${JSON.stringify(qcalls().map(c => c.body))})`
+checks/07-reply-rendering.cjs:103	`${label}: the form card renders`
+checks/07-reply-rendering.cjs:103	`${label}: the form card renders`
+checks/07-reply-rendering.cjs:110	`${label}: the picker shows the pick`
+checks/07-reply-rendering.cjs:115	`${label}: only the empty date is refused (${empty.length} required notes, ${rpcs('prompt.submit').length - n} sent)`
+checks/07-reply-rendering.cjs:122	`${label}: the form sends the picked list item and day (${JSON.stringify(sent)})`
+checks/07-reply-rendering.cjs:123	`${label}: no required note left`
+checks/07-reply-rendering.cjs:142	'html preview: Preview is disabled while the reply streams'
+checks/07-reply-rendering.cjs:149	'html preview: Preview is enabled once the reply is complete'
+checks/07-reply-rendering.cjs:153	'html preview: the sandbox has no allow-same-origin or allow-top-navigation'
+checks/07-reply-rendering.cjs:155	'html preview: the page ran its script'
+checks/07-reply-rendering.cjs:155	'html preview: the page ran its script'
+checks/07-reply-rendering.cjs:163	`html preview: the frame grew to its page, capped at 60% of the window (${hh} of ${vh})`
+checks/07-reply-rendering.cjs:167	'html preview: window.HermesAndroid is undefined inside the frame'
+checks/07-reply-rendering.cjs:174	'html preview: fetch() from the inline frame is blocked (offline CSP)'
+checks/07-reply-rendering.cjs:177	'html preview: Full screen opens the viewer'
+checks/07-reply-rendering.cjs:179	'html preview: ✕ closes the viewer'
+checks/07-reply-rendering.cjs:184	'html preview: Android Back closes the viewer'
+checks/07-reply-rendering.cjs:186	'html preview: Code switches back to the source'
+checks/07-reply-rendering.cjs:194	`one folded line for the run, in plain words (${await run.textContent()})`
+checks/07-reply-rendering.cjs:196	'its cards are hidden'
+checks/07-reply-rendering.cjs:198	`tap shows all four (${await visibleCards()})`
+checks/07-reply-rendering.cjs:200	'tap again folds them'
+checks/07-reply-rendering.cjs:206	`card titles in plain words (${JSON.stringify(titles)})`
+checks/07-reply-rendering.cjs:208	'a closed thought shows its first line'
+checks/07-reply-rendering.cjs:217	'task card says 1/2 done'
+checks/07-reply-rendering.cjs:220	`task card lists the steps (${JSON.stringify(steps)})`
+checks/07-reply-rendering.cjs:221	'no JSON arguments or output for a task list'
+checks/07-reply-rendering.cjs:229	'motion: the tool body appears'
+checks/07-reply-rendering.cjs:229	'motion: the tool body appears'
+checks/07-reply-rendering.cjs:231	'motion: at rest the open body is not clipped'
+checks/07-reply-rendering.cjs:233	'motion: the body is still there right after closing'
+checks/07-reply-rendering.cjs:235	'motion: the body is gone after the close animation'
+checks/07-reply-rendering.cjs:252	`motion: opening grows from nothing (${opening.map(Math.round).join(',')})`
+checks/07-reply-rendering.cjs:254	`motion: closing never jumps back to full size (${closing.map(Math.round).join(',')})`
+checks/07-reply-rendering.cjs:261	'motion: reduced motion closes the body at once'
+checks/07-reply-rendering.cjs:265	'a turn with only terminal tools has no changes card'
+checks/07-reply-rendering.cjs:273	'real-shaped turn: the read_file call shows as a tool card'
+checks/07-reply-rendering.cjs:275	'real-shaped turn: its body opens'
+checks/07-reply-rendering.cjs:275	'real-shaped turn: its body opens'
+checks/07-reply-rendering.cjs:276	'real-shaped turn: the card shows the JSON result'
+checks/07-reply-rendering.cjs:286	`changes card totals (${await tc.textContent()})`
+checks/07-reply-rendering.cjs:287	'the card sits in the same child element as the last item'
+checks/07-reply-rendering.cjs:290	'two file rows'
+checks/07-reply-rendering.cjs:292	`row a.txt (${await rowText(0)})`
+checks/07-reply-rendering.cjs:293	`row b.txt (${await rowText(1)})`
+checks/07-reply-rendering.cjs:295	'file sheet titled with the path'
+checks/07-reply-rendering.cjs:295	'file sheet titled with the path'
+checks/07-reply-rendering.cjs:296	'file sheet shows the diff'
+checks/07-reply-rendering.cjs:301	'a web address in a diff is a link'
+checks/07-reply-rendering.cjs:303	'tapping it opens it outside'
+checks/07-reply-rendering.cjs:307	'Back closes the file sheet'
+checks/07-reply-rendering.cjs:307	'Back closes the file sheet'
+checks/07-reply-rendering.cjs:309	'Checkpoints opens the file checkpoints sheet'
+checks/07-reply-rendering.cjs:309	'Checkpoints opens the file checkpoints sheet'
+checks/07-reply-rendering.cjs:321	'search finds a reply that has a changes card'
+checks/07-reply-rendering.cjs:321	'search finds a reply that has a changes card'
+checks/07-reply-rendering.cjs:332	'a web address in my own message is a link'
+checks/07-reply-rendering.cjs:338	'a web address in a tool output is a link (trailing dot left out)'
+checks/07-reply-rendering.cjs:341	'a web address in inline code is a link'
+checks/07-reply-rendering.cjs:343	'a code block stays plain'
+checks/07-reply-rendering.cjs:346	`tapping each opens it (${JSON.stringify(opened)})`
+checks/07-reply-rendering.cjs:347	'a link tap does not toggle the message time'
+checks/07-reply-rendering.cjs:358	'math and code colours not run at start'
+checks/07-reply-rendering.cjs:362	'display math renders from the lazy KaTeX'
+checks/07-reply-rendering.cjs:362	'display math renders from the lazy KaTeX'
+checks/07-reply-rendering.cjs:363	'inline math renders, its TeX is not shown'
+checks/07-reply-rendering.cjs:364	'both display formulas render'
+checks/07-reply-rendering.cjs:365	'the code block gets colours'
+checks/07-reply-rendering.cjs:366	'the KaTeX and highlight.js CSS is added once'
+checks/07-reply-rendering.cjs:368	'KaTeX fonts are inlined'
+checks/07-reply-rendering.cjs:370	'the chat stays at the end once the formulas are drawn'
+checks/07-reply-rendering.cjs:394	`video: a reply draws at most three players (${await cards.count()})`
+checks/07-reply-rendering.cjs:396	`video: each card names its source (${JSON.stringify(labels)})`
+checks/07-reply-rendering.cjs:397	'video: no frame and no player request before a tap'
+checks/07-reply-rendering.cjs:398	'video: a link inside a sentence stays a link, with its card after it'
+checks/07-reply-rendering.cjs:399	'video: a link that is its whole paragraph becomes the card'
+checks/07-reply-rendering.cjs:400	'video: a link over the limit stays a link'
+checks/07-reply-rendering.cjs:401	'video: code and ordinary links are left alone'
+checks/07-reply-rendering.cjs:406	`video: tap loads the site's player (${src})`
+checks/07-reply-rendering.cjs:408	`video: the frame cannot replace the app's page or open another (${sb})`
+checks/07-reply-rendering.cjs:411	'video: starting a player stops the one before it'
+checks/07-reply-rendering.cjs:412	'video: attributes the model wrote on a frame are dropped'
+checks/07-reply-rendering.cjs:413	'video: a frame without https is dropped'
+checks/07-reply-rendering.cjs:415	'video: Stop goes back to the card'
+checks/07-reply-rendering.cjs:424	'video: leaving the app stops the player'
+checks/07-reply-rendering.cjs:428	'video: a link in your own message gets a player too'
+checks/07-reply-rendering.cjs:428	'video: a link in your own message gets a player too'
+checks/07-reply-rendering.cjs:442	'page CSP: the lazy Mermaid bundle still runs under it'
+checks/07-reply-rendering.cjs:442	'page CSP: the lazy Mermaid bundle still runs under it'
+checks/07-reply-rendering.cjs:444	`page CSP: the main page carries a conservative policy (${pol})`
+checks/07-reply-rendering.cjs:445	`page CSP: it blocked nothing while the app started and drew a diagram (${JSON.stringify(await cp.evaluate(() => window.__csp))})`
+checks/07-reply-rendering.cjs:446	'page CSP: an injected <base> does not change where addresses point'
+checks/07-reply-rendering.cjs:481	`card pictures: nothing is fetched before the tap, a joined address neither (${JSON.stringify(hits)})`
+checks/07-reply-rendering.cjs:484	`card pictures: the line under the card names the sites (${said})`
+checks/07-reply-rendering.cjs:487	`card pictures: Load images fetches them (${JSON.stringify(hits)})`
+checks/07-reply-rendering.cjs:488	'card pictures: the line goes once they are loaded'
+checks/08-queue-and-feed.cjs:15	`no canvas polling during a turn with the panel closed (${canvasPolls})`
+checks/08-queue-and-feed.cjs:16	`activity polled at the idle pace during the open chat's own turn (${activityPolls} in 6.5 s)`
+checks/08-queue-and-feed.cjs:20	'activity polled once right after the turn (the review starts then)'
+checks/08-queue-and-feed.cjs:41	'running with text: Queue and Steer buttons'
+checks/08-queue-and-feed.cjs:42	'running: the placeholder offers Queue or steer'
+checks/08-queue-and-feed.cjs:44	'queued message shows as a dashed bubble'
+checks/08-queue-and-feed.cjs:44	'queued message shows as a dashed bubble'
+checks/08-queue-and-feed.cjs:45	'the bubble says Queued · 1 of 1'
+checks/08-queue-and-feed.cjs:46	'queueing clears the box'
+checks/08-queue-and-feed.cjs:47	'nothing is sent while the reply runs'
+checks/08-queue-and-feed.cjs:48	'the queued message is sent by itself when the reply ends'
+checks/08-queue-and-feed.cjs:48	'the queued message is sent by itself when the reply ends'
+checks/08-queue-and-feed.cjs:49	`exactly one prompt.submit with the queued text (${sends('next one')})`
+checks/08-queue-and-feed.cjs:50	'the bubble is gone after sending'
+checks/08-queue-and-feed.cjs:51	'the slow reply finished first'
+checks/08-queue-and-feed.cjs:54	`the reply's meta carries the turn's duration (${JSON.stringify(meta)})`
+checks/08-queue-and-feed.cjs:61	'two queued bubbles: 1 of 2, 2 of 2'
+checks/08-queue-and-feed.cjs:66	'Edit and Save change the queued text'
+checks/08-queue-and-feed.cjs:67	'the edited message is sent'
+checks/08-queue-and-feed.cjs:67	'the edited message is sent'
+checks/08-queue-and-feed.cjs:68	`only the edited message was sent (c=${sends('c')} a=${sends('a')} b=${sends('b')})`
+checks/08-queue-and-feed.cjs:74	'Stop pauses the queue (Queue paused)'
+checks/08-queue-and-feed.cjs:74	'Stop pauses the queue (Queue paused)'
+checks/08-queue-and-feed.cjs:76	'a paused queue sends nothing and keeps the bubble'
+checks/08-queue-and-feed.cjs:78	'Resume sends the queued message'
+checks/08-queue-and-feed.cjs:78	'Resume sends the queued message'
+checks/08-queue-and-feed.cjs:79	'Resume: one prompt.submit, bubble gone'
+checks/08-queue-and-feed.cjs:86	'Steer calls session.steer'
+checks/08-queue-and-feed.cjs:90	'Send now steers the queued message and removes it'
+checks/08-queue-and-feed.cjs:98	'the queue survives a reload'
+checks/08-queue-and-feed.cjs:98	'the queue survives a reload'
+checks/08-queue-and-feed.cjs:99	'after a reload the queue is paused'
+checks/08-queue-and-feed.cjs:101	'nothing is sent by surprise when the chat opens'
+checks/08-queue-and-feed.cjs:103	'Resume after a reload sends it'
+checks/08-queue-and-feed.cjs:103	'Resume after a reload sends it'
+checks/08-queue-and-feed.cjs:109	'a refused queued message says Send failed'
+checks/08-queue-and-feed.cjs:109	'a refused queued message says Send failed'
+checks/08-queue-and-feed.cjs:110	'a failed send pauses the queue'
+checks/08-queue-and-feed.cjs:110	'a failed send pauses the queue'
+checks/08-queue-and-feed.cjs:112	`the message behind a failed send stays queued (sent ${sends('after it')})`
+checks/08-queue-and-feed.cjs:113	'after a failed send nothing shows as running'
+checks/08-queue-and-feed.cjs:119	`model chip shows the chat's model (${await chip.textContent()})`
+checks/08-queue-and-feed.cjs:121	'chip opens the model picker'
+checks/08-queue-and-feed.cjs:121	'chip opens the model picker'
+checks/08-queue-and-feed.cjs:126	`the chip's label names the reasoning level (${lbl})`
+checks/08-queue-and-feed.cjs:128	`the chip shows the reasoning level as text (${short})`
+checks/08-queue-and-feed.cjs:135	'a short tool call does not open the canvas'
+checks/08-queue-and-feed.cjs:136	'still writing after a moment: panel opens with the writing state'
+checks/08-queue-and-feed.cjs:136	'still writing after a moment: panel opens with the writing state'
+checks/08-queue-and-feed.cjs:137	'the header canvas button pulses'
+checks/08-queue-and-feed.cjs:138	'the text shows once the call starts'
+checks/08-queue-and-feed.cjs:138	'the text shows once the call starts'
+checks/08-queue-and-feed.cjs:139	'then the saved document replaces it'
+checks/08-queue-and-feed.cjs:139	'then the saved document replaces it'
+checks/08-queue-and-feed.cjs:140	'writing state gone'
+checks/08-queue-and-feed.cjs:143	`idle label says who wrote it (${await page.locator('.save-state').innerText()})`
+checks/08-queue-and-feed.cjs:146	'canvas edit shows Saved ✓'
+checks/08-queue-and-feed.cjs:146	'canvas edit shows Saved ✓'
+checks/08-queue-and-feed.cjs:150	`"Saved ✓" returns to "just now · You" (${s})`
+checks/08-queue-and-feed.cjs:163	`image uses the streamed URL (${src})`
+checks/08-queue-and-feed.cjs:164	'streamed image loads'
+checks/08-queue-and-feed.cjs:165	'nothing read as base64'
+checks/08-queue-and-feed.cjs:169	'nothing unread at first, nor after "Show older chats"'
+checks/08-queue-and-feed.cjs:172	'activity banner within one idle poll'
+checks/08-queue-and-feed.cjs:172	'activity banner within one idle poll'
+checks/08-queue-and-feed.cjs:175	'menu button shows an unread dot'
+checks/08-queue-and-feed.cjs:175	'menu button shows an unread dot'
+checks/08-queue-and-feed.cjs:178	'the chat with the new reply has a dot'
+checks/08-queue-and-feed.cjs:179	`row shows when it changed (${await row9.locator('.dim.small').textContent()})`
+checks/08-queue-and-feed.cjs:184	`sent counts are fetched again only for changed chats (${JSON.stringify(lastAsk)})`
+checks/08-queue-and-feed.cjs:185	'older chats show hours ago'
+checks/08-queue-and-feed.cjs:190	`a chat with new activity keeps its place (${tl.slice(0, 4)}…)`
+checks/08-queue-and-feed.cjs:191	`a new chat appears on top, the others stay (${tl.slice(0, 4)}…)`
+checks/08-queue-and-feed.cjs:194	'opening the chat clears the dot'
+checks/09-chat-tools.cjs:11	'another chat starts with an empty box'
+checks/09-chat-tools.cjs:15	`back in the first chat its draft is there (${await box.inputValue()})`
+checks/09-chat-tools.cjs:18	'and the other one keeps its own'
+checks/09-chat-tools.cjs:26	`chat exported as Markdown (${JSON.stringify(md && md.slice(0, 90))})`
+checks/09-chat-tools.cjs:31	'hint shows at 85% context'
+checks/09-chat-tools.cjs:31	'hint shows at 85% context'
+checks/09-chat-tools.cjs:33	'compress runs and leaves a notice'
+checks/09-chat-tools.cjs:33	'compress runs and leaves a notice'
+checks/09-chat-tools.cjs:34	'session.compress sent for the open chat'
+checks/09-chat-tools.cjs:36	'hint gone afterwards'
+checks/09-chat-tools.cjs:40	'ring turns amber at 85%'
+checks/09-chat-tools.cjs:40	'ring turns amber at 85%'
+checks/09-chat-tools.cjs:47	`no figures yet: an empty ring (${await label()})`
+checks/09-chat-tools.cjs:51	'ring filled from old reply stats'
+checks/09-chat-tools.cjs:51	'ring filled from old reply stats'
+checks/09-chat-tools.cjs:53	`old reply stats shown without the context part (${JSON.stringify(meta)})`
+checks/09-chat-tools.cjs:57	'ring filled from the saved fill'
+checks/09-chat-tools.cjs:57	'ring filled from the saved fill'
+checks/09-chat-tools.cjs:60	'a live figure is saved for next time'
+checks/09-chat-tools.cjs:66	'sheet Compress toasts the result'
+checks/09-chat-tools.cjs:66	'sheet Compress toasts the result'
+checks/09-chat-tools.cjs:67	'sheet Compress sends session.compress'
+checks/09-chat-tools.cjs:73	'no hint at 10%'
+checks/09-chat-tools.cjs:83	'the hit (far above the drawn window) is scrolled into view'
+checks/09-chat-tools.cjs:84	'and flashes'
+checks/09-chat-tools.cjs:85	'its words are highlighted'
+checks/09-chat-tools.cjs:93	'checkpoints grouped by folder'
+checks/09-chat-tools.cjs:93	'checkpoints grouped by folder'
+checks/09-chat-tools.cjs:94	'second folder listed (not the chat cwd)'
+checks/09-chat-tools.cjs:95	'pruned snapshots counted'
+checks/09-chat-tools.cjs:97	'checkpoint diff shown'
+checks/09-chat-tools.cjs:97	'checkpoint diff shown'
+checks/09-chat-tools.cjs:99	'diff asks for that folder + snapshot'
+checks/09-chat-tools.cjs:100	'per-file restore only for files that existed (not the new one)'
+checks/09-chat-tools.cjs:103	`confirmation lists what changes (${JSON.stringify(listed)})`
+checks/09-chat-tools.cjs:105	'restore reports the files'
+checks/09-chat-tools.cjs:105	'restore reports the files'
+checks/09-chat-tools.cjs:107	'restore sent for the folder and snapshot'
+checks/09-chat-tools.cjs:108	'no chat-history rewind (rollback.restore not used)'
+checks/09-chat-tools.cjs:112	'single-file restore'
+checks/09-chat-tools.cjs:112	'single-file restore'
+checks/09-chat-tools.cjs:113	'single-file restore sends the file'
+checks/10-hub-pages.cjs:15	'Back is handled inside Files'
+checks/10-hub-pages.cjs:17	`Back goes up one folder (${await crumbText()})`
+checks/10-hub-pages.cjs:20	`…and again (${await crumbText()})`
+checks/10-hub-pages.cjs:23	'at the root chip Back leaves Files'
+checks/10-hub-pages.cjs:24	'…back to the Hermux hub that opened it'
+checks/10-hub-pages.cjs:27	'Back again closes the hub'
+checks/10-hub-pages.cjs:40	'Files: a csv shows as a table with its cell'
+checks/10-hub-pages.cjs:40	'Files: a csv shows as a table with its cell'
+checks/10-hub-pages.cjs:43	'Files: python code is highlighted'
+checks/10-hub-pages.cjs:43	'Files: python code is highlighted'
+checks/10-hub-pages.cjs:47	'Files: an html file runs in a frame showing its content'
+checks/10-hub-pages.cjs:47	'Files: an html file runs in a frame showing its content'
+checks/10-hub-pages.cjs:49	`Files: the page frame is sandboxed without allow-same-origin (${sb})`
+checks/10-hub-pages.cjs:52	'Files: an mp3 shows a player'
+checks/10-hub-pages.cjs:52	'Files: an mp3 shows a player'
+checks/10-hub-pages.cjs:53	'Files: the mp3 was never read through /api/files/read'
+checks/10-hub-pages.cjs:56	'Files: a pdf says there is no preview'
+checks/10-hub-pages.cjs:56	'Files: a pdf says there is no preview'
+checks/10-hub-pages.cjs:57	'Files: the pdf sheet keeps Open with…'
+checks/10-hub-pages.cjs:58	'Files: the pdf was not read'
+checks/10-hub-pages.cjs:72	'project chat opens'
+checks/10-hub-pages.cjs:72	'project chat opens'
+checks/10-hub-pages.cjs:73	'Projects screen closed'
+checks/10-hub-pages.cjs:80	'edit form is filled in'
+checks/10-hub-pages.cjs:86	'tries PUT with the edited job ({updates: …}, the dashboard\'s shape)'
+checks/10-hub-pages.cjs:87	'falls back to create + delete'
+checks/10-hub-pages.cjs:90	'a run’s saved output opens'
+checks/10-hub-pages.cjs:90	'a run’s saved output opens'
+checks/10-hub-pages.cjs:93	'a run with a chat opens that chat'
+checks/10-hub-pages.cjs:93	'a run with a chat opens that chat'
+checks/10-hub-pages.cjs:97	'title tap opens the Backend status sheet'
+checks/10-hub-pages.cjs:97	'title tap opens the Backend status sheet'
+checks/10-hub-pages.cjs:98	'title tap does not open the chat menu'
+checks/10-hub-pages.cjs:101	'tapping "Hermux agent" opens the Backend status sheet'
+checks/10-hub-pages.cjs:101	'tapping "Hermux agent" opens the Backend status sheet'
+checks/10-hub-pages.cjs:107	'details sheet has no duplicate actions'
+checks/11-offline-and-start.cjs:13	'queued chip shows while offline'
+checks/11-offline-and-start.cjs:14	'nothing sent while offline'
+checks/11-offline-and-start.cjs:15	'sent after reconnect'
+checks/11-offline-and-start.cjs:15	'sent after reconnect'
+checks/11-offline-and-start.cjs:17	`sent once, to the chat it was typed in (${JSON.stringify(qs.map(q => q.params.session_id))}, ${openBefore})`
+checks/11-offline-and-start.cjs:18	'chip gone'
+checks/11-offline-and-start.cjs:31	'photo chip survives a reconnect'
+checks/11-offline-and-start.cjs:32	'same runtime: photo not queued twice'
+checks/11-offline-and-start.cjs:39	`new runtime: photo queued again (${JSON.stringify(ra.map(r => r.params))})`
+checks/11-offline-and-start.cjs:48	'queued chip counts the attachments'
+checks/11-offline-and-start.cjs:51	`queued message carries the file (${JSON.stringify(qf.map(q => q.params))})`
+checks/11-offline-and-start.cjs:52	'queued message carries the photo'
+checks/11-offline-and-start.cjs:54	'sent bubble shows the photo and the file'
+checks/11-offline-and-start.cjs:55	'composer empty after the queued send'
+checks/11-offline-and-start.cjs:63	'no times by default'
+checks/11-offline-and-start.cjs:67	`tap shows the time (${shown})`
+checks/11-offline-and-start.cjs:69	'replies too'
+checks/11-offline-and-start.cjs:71	'tap again hides it'
+checks/11-offline-and-start.cjs:89	`reopening a card chat from another chat makes no new /openui/call (${afterFirst} → ${qcalls().length})`
+checks/11-offline-and-start.cjs:118	'a short pull up at the bottom does not open the side chat'
+checks/11-offline-and-start.cjs:119	'a short pull springs back and leaves no pull classes'
+checks/11-offline-and-start.cjs:122	'a medium pull (130 px) no longer opens the side chat'
+checks/11-offline-and-start.cjs:125	'a pull of 190 px (past the old 160 px trigger) no longer opens the side chat'
+checks/11-offline-and-start.cjs:127	`a firm pull stretches the list and arms the hint (${JSON.stringify(mid)})`
+checks/11-offline-and-start.cjs:128	'a firm pull up at the bottom opens the side chat'
+checks/11-offline-and-start.cjs:128	'a firm pull up at the bottom opens the side chat'
+checks/11-offline-and-start.cjs:131	'the gesture does nothing while the side chat is open'
+checks/11-offline-and-start.cjs:134	'Clear is off while the side chat is empty'
+checks/11-offline-and-start.cjs:143	'Clear is on once the side chat has an exchange'
+checks/11-offline-and-start.cjs:148	'Cancel in the Clear dialog keeps the side chat'
+checks/11-offline-and-start.cjs:152	'Clear empties the side chat and leaves it open'
+checks/11-offline-and-start.cjs:156	`after Clear the next question carries no earlier side answers (${JSON.stringify(lastBtw && lastBtw.params.text)})`
+checks/11-offline-and-start.cjs:168	'a pull when the list is not at the bottom does not open the side chat'
+checks/11-offline-and-start.cjs:182	'a pull on the empty new-chat screen does not open the side chat'
+checks/11-offline-and-start.cjs:188	'New chat shortcut opens the new-chat screen'
+checks/11-offline-and-start.cjs:188	'New chat shortcut opens the new-chat screen'
+checks/11-offline-and-start.cjs:191	`suggestions start with recent prompts (${JSON.stringify(sugg)})`
+checks/11-offline-and-start.cjs:193	'Live shortcut explains itself without voice'
+checks/11-offline-and-start.cjs:193	'Live shortcut explains itself without voice'
+checks/11-offline-and-start.cjs:208	`gone empty chat is made again and the photo queued there (${cr.length} creates, ${JSON.stringify(ra.map(r => r.params.session_id))}, was ${draftRt})`
+checks/11-offline-and-start.cjs:209	'photo chip still in the composer'
+checks/11-offline-and-start.cjs:215	`sent to the new chat (${JSON.stringify(ps.map(p => p.params.session_id))})`
+checks/11-offline-and-start.cjs:216	'no "Send failed: session not found"'
+checks/11-offline-and-start.cjs:228	`About → Hermes version (${await hv.textContent()})`
+checks/11-offline-and-start.cjs:229	'About → Hermes has no update button'
+checks/11-offline-and-start.cjs:230	'a Hermes build equal to the tested one raises no warning'
+checks/11-offline-and-start.cjs:235	'drawer has three tiles (Hermux, Bots, Settings)'
+checks/11-offline-and-start.cjs:237	'hub: skills summary'
+checks/11-offline-and-start.cjs:237	'hub: skills summary'
+checks/11-offline-and-start.cjs:238	'hub: memory summary'
+checks/11-offline-and-start.cjs:239	'hub: cron summary'
+checks/11-offline-and-start.cjs:240	'hub: projects summary'
+checks/11-offline-and-start.cjs:241	'hub: gallery summary counts every chat\'s documents'
+checks/11-offline-and-start.cjs:245	'Back from a page returns to the hub'
+checks/11-offline-and-start.cjs:251	'setup: a profile without the plugin shows ✕'
+checks/11-offline-and-start.cjs:251	'setup: a profile without the plugin shows ✕'
+checks/11-offline-and-start.cjs:252	'setup: Hermes running ✓'
+checks/11-offline-and-start.cjs:253	'setup: plugin installed ✓'
+checks/11-offline-and-start.cjs:254	'setup: counts what is left'
+checks/11-offline-and-start.cjs:256	'Enable fixes it: All set'
+checks/11-offline-and-start.cjs:256	'Enable fixes it: All set'
+checks/11-offline-and-start.cjs:258	`keeps the other plugins (${JSON.stringify(cfgPut && cfgPut.body)})`
+checks/12-app-shell.cjs:22	`token fetched asynchronously (${[...new Set(nc)].join(',')})`
+checks/12-app-shell.cjs:23	'connected with it (session.list)'
+checks/12-app-shell.cjs:24	'page only sees the key-adding wrapper'
+checks/12-app-shell.cjs:34	'devtools: a +devtools build shows the warning strip'
+checks/12-app-shell.cjs:36	'devtools: the strip is at the top of the page'
+checks/12-app-shell.cjs:40	'devtools: the strip stays visible over a full screen'
+checks/12-app-shell.cjs:41	'devtools: one strip, nothing to dismiss'
+checks/12-app-shell.cjs:43	'devtools: a normal page has no strip'
+checks/12-app-shell.cjs:51	'remote debugging: secure-bridge.ts lists no method that enables it'
+checks/12-app-shell.cjs:52	'remote debugging: the three methods are in secure-bridge.ts'
+checks/12-app-shell.cjs:67	'remote debugging: no row while Developer options are off'
+checks/12-app-shell.cjs:68	'remote debugging: no strip while off'
+checks/12-app-shell.cjs:73	'remote debugging: the row shows when Developer options are on'
+checks/12-app-shell.cjs:74	'remote debugging: the row says Off'
+checks/12-app-shell.cjs:75	'remote debugging: no strip while off (available)'
+checks/12-app-shell.cjs:77	'remote debugging: tapping Off calls openRemoteDebugging only'
+checks/12-app-shell.cjs:83	'remote debugging: the countdown ticks (' + t1 + ' → next second)'
+checks/12-app-shell.cjs:84	'remote debugging: the strip shows while on'
+checks/12-app-shell.cjs:87	'remote debugging: tapping On calls turnOffRemoteDebugging'
+checks/12-app-shell.cjs:88	'remote debugging: the strip goes when it is turned off'
+checks/12-app-shell.cjs:92	'remote debugging: shows the countdown and the strip when already on'
+checks/12-app-shell.cjs:102	`approval asked in one short question, the command isn't read out (${spoken})`
+checks/12-app-shell.cjs:107	`answered by voice (${JSON.stringify(va)})`
+checks/12-app-shell.cjs:112	'unlocked: ending Live mode does not touch the lock screen'
+checks/12-app-shell.cjs:130	`locked: default Auto access is not applied to the Live chat (yolo on ${yoloOn() - yoloBefore}, auto PUTs ${autoPuts() - autoBefore})`
+checks/12-app-shell.cjs:131	'locked: "allow" by voice is not sent'
+checks/12-app-shell.cjs:132	`locked: "allow" by voice asks for an unlock (${await unlocks()})`
+checks/12-app-shell.cjs:135	'locked: Allow once on the sheet is not sent'
+checks/12-app-shell.cjs:136	`locked: Allow once asks for an unlock (${await unlocks()})`
+checks/12-app-shell.cjs:140	`locked: Deny goes through (${JSON.stringify(dn.slice(1))})`
+checks/12-app-shell.cjs:143	`locked: the chat list asks for an unlock instead of opening (${await unlocks()})`
+checks/12-app-shell.cjs:144	'locked: still talking in Live mode'
+checks/12-app-shell.cjs:147	'locked: ending Live mode puts the lock screen back'
+checks/12-app-shell.cjs:155	`new chat reported on screen (${JSON.stringify(seenNew)})`
+checks/12-app-shell.cjs:157	'live mode still on before switching'
+checks/12-app-shell.cjs:159	'opening another chat ends live mode'
+checks/12-app-shell.cjs:159	'opening another chat ends live mode'
+checks/12-app-shell.cjs:160	'opened chat reported on screen'
+checks/12-app-shell.cjs:174	'bg app of another chat: no card, no frame requests'
+checks/12-app-shell.cjs:176	'bg app of this chat: card shows'
+checks/12-app-shell.cjs:176	'bg app of this chat: card shows'
+checks/12-app-shell.cjs:178	`card names the app and the action (${ct})`
+checks/12-app-shell.cjs:180	'card shows the live thumbnail'
+checks/12-app-shell.cjs:180	'card shows the live thumbnail'
+checks/12-app-shell.cjs:184	`frame requests are at least 500 ms apart (${gaps.join(',')})`
+checks/12-app-shell.cjs:185	'never two frame requests in flight'
+checks/12-app-shell.cjs:186	`the thumbnail asks for a small frame (${asked.length ? asked[0].w : 'none'})`
+checks/12-app-shell.cjs:190	'tapping the card opens the viewer'
+checks/12-app-shell.cjs:190	'tapping the card opens the viewer'
+checks/12-app-shell.cjs:191	'viewer has Take over and Stop'
+checks/12-app-shell.cjs:192	'viewer shows the action caption'
+checks/12-app-shell.cjs:193	'viewer asks for a bigger frame'
+checks/12-app-shell.cjs:193	'viewer asks for a bigger frame'
+checks/12-app-shell.cjs:194	'card and viewer use no native controls'
+checks/12-app-shell.cjs:196	'Back closes the viewer'
+checks/12-app-shell.cjs:196	'Back closes the viewer'
+checks/12-app-shell.cjs:198	'after closing the viewer only the small thumbnail is requested'
+checks/12-app-shell.cjs:199	'card stays after closing the viewer'
+checks/12-app-shell.cjs:208	`no frame requests while the page is hidden (${hiddenAt})`
+checks/12-app-shell.cjs:213	'frame requests resume when the page is visible'
+checks/12-app-shell.cjs:213	'frame requests resume when the page is visible'
+checks/12-app-shell.cjs:217	'card disappears once the state is cleared'
+checks/12-app-shell.cjs:217	'card disappears once the state is cleared'
+checks/12-app-shell.cjs:218	`Take over calls bgAction once (${JSON.stringify(await np.evaluate(() => window.__bgActs))})`
+checks/12-app-shell.cjs:219	'viewer closes after Take over'
+checks/12-app-shell.cjs:223	'no frame requests once there is no bg app'
+checks/12-app-shell.cjs:229	'Stop calls bgAction("stop")'
+checks/12-app-shell.cjs:234	'opening another chat hides the card'
+checks/12-app-shell.cjs:234	'opening another chat hides the card'
+checks/12-app-shell.cjs:238	'no frame requests for a chat without the bg app'
+checks/12-app-shell.cjs:240	'no alert/confirm dialogs'
+checks/12-app-shell.cjs:245	'Settings has the Background apps row'
+checks/12-app-shell.cjs:245	'Settings has the Background apps row'
+checks/12-app-shell.cjs:246	'row explains what Off means'
+checks/12-app-shell.cjs:247	'switch starts off'
+checks/12-app-shell.cjs:252	`toggling PUTs allow_sensitive (${JSON.stringify(puts.map(c => c.body))})`
+checks/12-app-shell.cjs:253	'switch shows on'
+checks/12-app-shell.cjs:257	'Settings has the cards row'
+checks/12-app-shell.cjs:257	'Settings has the cards row'
+checks/12-app-shell.cjs:258	'cards: on by default'
+checks/12-app-shell.cjs:263	`cards toggle PUTs enabled:false (${JSON.stringify(puts.map(c => c.body))})`
+checks/12-app-shell.cjs:271	'unavailable: the reason is the row text'
+checks/12-app-shell.cjs:271	'unavailable: the reason is the row text'
+checks/12-app-shell.cjs:272	'unavailable: no switch'
+checks/12-app-shell.cjs:273	'settings row uses no native controls'
+checks/12-app-shell.cjs:284	`assistant row says Off (${await ar.textContent()})`
+checks/12-app-shell.cjs:286	'assistant row opens the system picker'
+checks/12-app-shell.cjs:292	`assistant row says On after returning (${await ar.textContent()})`
+checks/12-app-shell.cjs:295	'lock-screen row shown'
+checks/12-app-shell.cjs:295	'lock-screen row shown'
+checks/12-app-shell.cjs:296	'lock-screen row is off by default'
+checks/12-app-shell.cjs:297	'footer says the lock screen asks to unlock first'
+checks/12-app-shell.cjs:299	'lock-screen row turns on'
+checks/12-app-shell.cjs:300	`on: pushed to the shell and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`
+checks/12-app-shell.cjs:302	`off again: pushed and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`
+checks/12-app-shell.cjs:313	'native: two failing checks counted'
+checks/12-app-shell.cjs:313	'native: two failing checks counted'
+checks/12-app-shell.cjs:316	`native: the rest are ✓ (${await np.locator('.setup-item.ok').count()})`
+checks/12-app-shell.cjs:319	`fix buttons ask the shell (${JSON.stringify(await np.evaluate(() => window.__fixes))})`
+checks/12-app-shell.cjs:321	'checks again by itself: All set'
+checks/12-app-shell.cjs:321	'checks again by itself: All set'
+checks/12-app-shell.cjs:323	'phone access: Shizuku ✓ from the plugin'
+checks/12-app-shell.cjs:327	'shizuku battery: the row appears when Shizuku is limited'
+checks/12-app-shell.cjs:327	'shizuku battery: the row appears when Shizuku is limited'
+checks/12-app-shell.cjs:328	'shizuku battery: the row is not ✓ while Shizuku is limited'
+checks/12-app-shell.cjs:330	`shizuku battery: the button asks the shell for battery-shizuku (${JSON.stringify((await np.evaluate(() => window.__fixes)).slice(-1))})`
+checks/12-app-shell.cjs:332	'shizuku battery: ✓ once Shizuku is unrestricted'
+checks/12-app-shell.cjs:332	'shizuku battery: ✓ once Shizuku is unrestricted'
+checks/12-app-shell.cjs:339	'shizuku auto: no row on an older app build (no shizukuAuto)'
+checks/12-app-shell.cjs:341	'shizuku auto: ✓ when paired and allowed'
+checks/12-app-shell.cjs:341	'shizuku auto: ✓ when paired and allowed'
+checks/12-app-shell.cjs:343	'shizuku auto: ✗ when not paired'
+checks/12-app-shell.cjs:343	'shizuku auto: ✗ when not paired'
+checks/12-app-shell.cjs:344	'shizuku auto: the help says the user pairs Termux'
+checks/12-app-shell.cjs:346	`shizuku auto: Start pairing asks the shell for shizuku-pair (${JSON.stringify((await np.evaluate(() => window.__fixes)).slice(-1))})`
+checks/12-app-shell.cjs:347	'shizuku auto: no trust hint before Android asked'
+checks/12-app-shell.cjs:349	'shizuku auto: untrusted network help names the Android question'
+checks/12-app-shell.cjs:349	'shizuku auto: untrusted network help names the Android question'
+checks/12-app-shell.cjs:351	'shizuku auto: ✗ with "Run the installer again" when the app lacks the permission'
+checks/12-app-shell.cjs:351	'shizuku auto: ✗ with "Run the installer again" when the app lacks the permission'
+checks/12-app-shell.cjs:352	'shizuku auto: no Set up button when only the installer can fix it'
+checks/12-app-shell.cjs:354	'shizuku auto: hidden on Android 10 and older'
+checks/12-app-shell.cjs:354	'shizuku auto: hidden on Android 10 and older'
+checks/12-app-shell.cjs:359	'shizuku auto: no Android 10 sentence on Android 11+'
+checks/12-app-shell.cjs:359	'shizuku auto: no Android 10 sentence on Android 11+'
+checks/12-app-shell.cjs:361	'shizuku auto: Shizuku row says Android 10 and older needs a computer'
+checks/12-app-shell.cjs:361	'shizuku auto: Shizuku row says Android 10 and older needs a computer'
+checks/12-app-shell.cjs:367	'phone access: files, Termux:API and Shizuku counted'
+checks/12-app-shell.cjs:367	'phone access: files, Termux:API and Shizuku counted'
+checks/12-app-shell.cjs:372	`phone access fix buttons (${fx})`
+checks/12-app-shell.cjs:386	'uninstall: Settings has the Uninstall Hermux row'
+checks/12-app-shell.cjs:386	'uninstall: Settings has the Uninstall Hermux row'
+checks/12-app-shell.cjs:387	'uninstall: in its own Danger zone section'
+checks/12-app-shell.cjs:393	`uninstall: the list is shown whole, not squeezed into a scroll box (${squeezed}px hidden)`
+checks/12-app-shell.cjs:394	`uninstall: lists everything that goes (${listed})`
+checks/12-app-shell.cjs:396	'uninstall: the installer’s files are said in plain words, no file names'
+checks/12-app-shell.cjs:397	'uninstall: the backup switch names hermux-backup'
+checks/12-app-shell.cjs:398	'uninstall: the sheet says Hermes only for the real Pictures/Hermes folder'
+checks/12-app-shell.cjs:400	`uninstall: the note names both picture folders as kept (${keptNote})`
+checks/12-app-shell.cjs:403	'uninstall: backup offered, on by default'
+checks/12-app-shell.cjs:404	'uninstall: keys left out by default'
+checks/12-app-shell.cjs:405	'uninstall: says .env/auth.json are left out'
+checks/12-app-shell.cjs:406	'uninstall: no native controls'
+checks/12-app-shell.cjs:407	'uninstall: nothing called before confirming'
+checks/12-app-shell.cjs:412	'uninstall: confirm disabled until typed'
+checks/12-app-shell.cjs:414	'uninstall: a partial word does not confirm'
+checks/12-app-shell.cjs:417	'uninstall: progress shown while Termux works'
+checks/12-app-shell.cjs:417	'uninstall: progress shown while Termux works'
+checks/12-app-shell.cjs:420	`uninstall: cleanup started with backup, without keys (${JSON.stringify(log)})`
+checks/12-app-shell.cjs:421	'uninstall: the app settings go into the backup'
+checks/12-app-shell.cjs:427	'uninstall: failed backup says nothing was removed'
+checks/12-app-shell.cjs:427	'uninstall: failed backup says nothing was removed'
+checks/12-app-shell.cjs:428	'uninstall: no app buttons after a failed backup'
+checks/12-app-shell.cjs:431	'uninstall: Try again runs the cleanup again (with the backup)'
+checks/12-app-shell.cjs:440	'uninstall: after the cleanup the apps are next'
+checks/12-app-shell.cjs:440	'uninstall: after the cleanup the apps are next'
+checks/12-app-shell.cjs:441	'uninstall: names the backup file'
+checks/12-app-shell.cjs:442	'uninstall: each step’s outcome (Debian ✓, phone setting skipped)'
+checks/12-app-shell.cjs:446	`uninstall: ${name} is the next one`
+checks/12-app-shell.cjs:457	`uninstall: the last screen says what was removed (${await self.textContent()})`
+checks/12-app-shell.cjs:458	'uninstall: Termux after a finished cleanup needs no extra warning'
+checks/12-app-shell.cjs:461	`uninstall: apps in order, this app last (${JSON.stringify(log.slice(2))})`
+checks/12-app-shell.cjs:462	'uninstall: no alert/confirm dialogs'
+checks/12-app-shell.cjs:471	'uninstall: reopened after a cleanup, the app shows the remaining apps'
+checks/12-app-shell.cjs:471	'uninstall: reopened after a cleanup, the app shows the remaining apps'
+checks/12-app-shell.cjs:472	'uninstall: says Android closes the app when Termux goes'
+checks/12-app-shell.cjs:494	'claude: a login in the credential pool shows as Signed in'
+checks/12-app-shell.cjs:494	'claude: a login in the credential pool shows as Signed in'
+checks/12-app-shell.cjs:495	'claude: the row names the login'
+checks/12-app-shell.cjs:498	'claude: Sign out → Sign in'
+checks/12-app-shell.cjs:498	'claude: Sign out → Sign in'
+checks/12-app-shell.cjs:501	'claude: in-app sheet with Open claude.ai'
+checks/12-app-shell.cjs:501	'claude: in-app sheet with Open claude.ai'
+checks/12-app-shell.cjs:502	'claude: opens the authorize link in the browser'
+checks/12-app-shell.cjs:503	'claude: Termux is not opened'
+checks/12-app-shell.cjs:509	'claude: a wrong code shows Hermes’s reason'
+checks/12-app-shell.cjs:509	'claude: a wrong code shows Hermes’s reason'
+checks/12-app-shell.cjs:512	'claude: the sheet closes once signed in'
+checks/12-app-shell.cjs:512	'claude: the sheet closes once signed in'
+checks/12-app-shell.cjs:513	'claude: toast Signed in to Claude'
+checks/12-app-shell.cjs:513	'claude: toast Signed in to Claude'
+checks/12-app-shell.cjs:514	'claude: row shows Signed in after the in-app login'
+checks/12-app-shell.cjs:514	'claude: row shows Signed in after the in-app login'
+checks/12-app-shell.cjs:517	`claude: the code goes in the body, trimmed, for this profile (${JSON.stringify(fin.map(c => [c.query, c.body]))})`
+checks/12-app-shell.cjs:518	'claude: the live model list is fetched after the sign-in (Claude models show up)'
+checks/12-app-shell.cjs:524	`claude: Termux fallback runs auth add anthropic for this profile (${JSON.stringify(await cs.evaluate(() => window.__termuxSignins))})`
+checks/12-app-shell.cjs:526	'claude: back from Termux without a login says so'
+checks/12-app-shell.cjs:526	'claude: back from Termux without a login says so'
+checks/12-app-shell.cjs:531	'claude: back from Termux after auth add → Signed in to Claude'
+checks/12-app-shell.cjs:531	'claude: back from Termux after auth add → Signed in to Claude'
+checks/12-app-shell.cjs:532	'claude: row shows Signed in after Termux'
+checks/12-app-shell.cjs:532	'claude: row shows Signed in after Termux'
+checks/12-app-shell.cjs:539	'claude: without the plugin route the sheet offers Termux'
+checks/12-app-shell.cjs:539	'claude: without the plugin route the sheet offers Termux'
+checks/12-app-shell.cjs:540	'claude: no dead Open claude.ai button then'
+checks/12-app-shell.cjs:541	'claude: no native form controls'
+checks/12-app-shell.cjs:557	'interrupt: the reply is being read'
+checks/12-app-shell.cjs:557	'interrupt: the reply is being read'
+checks/12-app-shell.cjs:558	'interrupt: the bar says how to cut in'
+checks/12-app-shell.cjs:559	'barge-in: the microphone stays on while Hermes speaks'
+checks/12-app-shell.cjs:562	'interrupt: Live mode listens again'
+checks/12-app-shell.cjs:562	'interrupt: Live mode listens again'
+checks/12-app-shell.cjs:564	'interrupt: the reading stops and the microphone opens'
+checks/12-app-shell.cjs:565	'interrupt: the button is gone while listening'
+checks/12-app-shell.cjs:567	`interrupt: the bar fits a phone screen (${box && box.width})`
+checks/12-app-shell.cjs:575	`barge-in: Hermes's own voice doesn't cut it off ("${echo}")`
+checks/12-app-shell.cjs:578	'barge-in: talking cuts Hermes off'
+checks/12-app-shell.cjs:578	'barge-in: talking cuts Hermes off'
+checks/12-app-shell.cjs:579	'barge-in: the reading stops'
+checks/12-app-shell.cjs:582	'barge-in: what you said is sent after the pause'
+checks/12-app-shell.cjs:603	'chip tap, cold start: the chat opens with the live viewer'
+checks/12-app-shell.cjs:603	'chip tap, cold start: the chat opens with the live viewer'
+checks/12-app-shell.cjs:604	`chip tap, cold start: that chat is on screen (${await shown()})`
+checks/12-app-shell.cjs:605	'chip tap: the viewer names the app'
+checks/12-app-shell.cjs:612	'chip tap, app open on another chat: switches and opens the viewer'
+checks/12-app-shell.cjs:612	'chip tap, app open on another chat: switches and opens the viewer'
+checks/12-app-shell.cjs:613	`chip tap, app open: the chat switched (${await shown()})`
+checks/12-app-shell.cjs:618	'chip tap, that chat already open: the viewer opens'
+checks/12-app-shell.cjs:618	'chip tap, that chat already open: the viewer opens'
+checks/12-app-shell.cjs:625	'chip tap: the composer loses focus, no keyboard under the viewer'
+checks/12-app-shell.cjs:628	'app done with the viewer open: it closes'
+checks/12-app-shell.cjs:628	'app done with the viewer open: it closes'
+checks/12-app-shell.cjs:629	'app done with the viewer open: says so'
+checks/12-app-shell.cjs:629	'app done with the viewer open: says so'
+checks/12-app-shell.cjs:640	'Stop from the viewer: only its own message'
+checks/12-app-shell.cjs:648	'chip tap, app already done: the chat opens'
+checks/12-app-shell.cjs:648	'chip tap, app already done: the chat opens'
+checks/12-app-shell.cjs:649	'chip tap, app already done: says so'
+checks/12-app-shell.cjs:649	'chip tap, app already done: says so'
+checks/12-app-shell.cjs:650	'chip tap, app already done: no viewer'
+checks/12-app-shell.cjs:655	'a later app for that chat shows the card only'
+checks/12-app-shell.cjs:670	'Live bar: no Auto button while Auto is off'
+checks/12-app-shell.cjs:674	'Live bar: shows ⚡ for Full access'
+checks/12-app-shell.cjs:676	`Live bar with Auto, Interrupt, mute and End fits 360 px (${JSON.stringify(fit)})`
+checks/12-app-shell.cjs:686	'no watch for Hermes while it answers'
+checks/12-app-shell.cjs:690	'the shell is asked to watch once in an outage, not on every try'
+checks/12-app-shell.cjs:694	'Hermes answers: connected at once'
+checks/12-app-shell.cjs:694	'Hermes answers: connected at once'
+checks/12-app-shell.cjs:695	`well before the next backoff step (${Date.now() - asked} ms)`
+checks/12-app-shell.cjs:700	'with the socket open the signal does nothing'
+checks/13-player-and-voice.cjs:59	'no model chip in the header'
+checks/13-player-and-voice.cjs:61	'+ menu has the model row'
+checks/13-player-and-voice.cjs:63	'tapping the model row opens the model picker'
+checks/13-player-and-voice.cjs:70	'markdown chat link and a bare session id both become chat links (' + (await vp.locator('.msg.assistant').last().innerHTML()).slice(0, 700) + ')'
+checks/13-player-and-voice.cjs:75	'tapping a chat link opens that chat ' + JSON.stringify(rpcs('session.resume').slice(-2))
+checks/13-player-and-voice.cjs:78	'opening a chat runs its chat-open steps (goal read ' + JSON.stringify(vRt.map(c => c.params.session_id)) + ')'
+checks/13-player-and-voice.cjs:86	'reading a reply shows the player'
+checks/13-player-and-voice.cjs:92	'sending a new prompt does not stop the reading'
+checks/13-player-and-voice.cjs:96	`player follows the reading position (${seek0})`
+checks/13-player-and-voice.cjs:100	`a native 10 s jump moves the player to its position (${seekd})`
+checks/13-player-and-voice.cjs:104	`time label reads like 0:12 / ~1:40 (${await clock()})`
+checks/13-player-and-voice.cjs:109	`forward 5 s moves the bar by 5 s of pace and flashes +5 s (${j0} -> ${tf})`
+checks/13-player-and-voice.cjs:113	`back 5 s returns (${tb}) and flashes -5 s`
+checks/13-player-and-voice.cjs:117	'pause keeps the player (stop from native does not close it)'
+checks/13-player-and-voice.cjs:122	`resume reads on from the paused position (${paused})`
+checks/13-player-and-voice.cjs:126	'scrubbing re-reads from that point'
+checks/13-player-and-voice.cjs:128	'speed button raises the rate'
+checks/13-player-and-voice.cjs:131	'the replaced speech ending does not close the player'
+checks/13-player-and-voice.cjs:135	'player closes when the reading ends'
+checks/13-player-and-voice.cjs:138	'read-aloud asks for the notification card ' + JSON.stringify(lastCfg)
+checks/13-player-and-voice.cjs:153	'pause from the notification shows the player paused at that chunk (' + (await vp.locator('.tts-seek').inputValue()) + ' of ' + (await vp.locator('.tts-seek').getAttribute('max')) + ')'
+checks/13-player-and-voice.cjs:156	'play from the notification resumes the player'
+checks/13-player-and-voice.cjs:161	'in-app pause / resume go through ttsControl (one state with the notification) ' + JSON.stringify(await vp.evaluate(() => window.__ctl))
+checks/13-player-and-voice.cjs:166	'stop from the notification closes even a paused player'
+checks/13-player-and-voice.cjs:175	'dictated phrase appears: ' + (await ta.inputValue())
+checks/13-player-and-voice.cjs:182	`keyboard edit survives the next dictated phrase (${await ta.inputValue()})`
+checks/13-player-and-voice.cjs:188	`moving the cursor makes dictation insert there (${await ta.inputValue()})`
+checks/13-player-and-voice.cjs:192	'stopping dictation does not focus the box (no keyboard)'
+checks/13-player-and-voice.cjs:222	'Voice page: Speech recognition row shows the phone’s recogniser at first'
+checks/13-player-and-voice.cjs:226	'the recommended model is marked'
+checks/13-player-and-voice.cjs:227	'a streaming model says words appear while you speak'
+checks/13-player-and-voice.cjs:228	'the phone’s recogniser is in use before any model'
+checks/13-player-and-voice.cjs:230	'download shows its progress'
+checks/13-player-and-voice.cjs:230	'download shows its progress'
+checks/13-player-and-voice.cjs:231	'progress bar at 50%'
+checks/13-player-and-voice.cjs:232	'then the check on the test recording'
+checks/13-player-and-voice.cjs:232	'then the check on the test recording'
+checks/13-player-and-voice.cjs:233	'the test result says how many words were right and how fast'
+checks/13-player-and-voice.cjs:233	'the test result says how many words were right and how fast'
+checks/13-player-and-voice.cjs:234	'the first ready model is used'
+checks/13-player-and-voice.cjs:235	'the phone’s recogniser is no longer marked in use'
+checks/13-player-and-voice.cjs:239	'download, test and back to the phone’s recogniser reach the shell'
+checks/13-player-and-voice.cjs:245	'adding a model by link shows it is busy'
+checks/13-player-and-voice.cjs:245	'adding a model by link shows it is busy'
+checks/13-player-and-voice.cjs:248	'your own model says where it came from'
+checks/13-player-and-voice.cjs:249	'your own model shows its test result'
+checks/13-player-and-voice.cjs:252	'Delete (after confirming) removes your own model'
+checks/13-player-and-voice.cjs:252	'Delete (after confirming) removes your own model'
+checks/13-player-and-voice.cjs:254	'Add files from this phone opens the shell’s file picker'
+checks/13-player-and-voice.cjs:258	'Back goes to Voice, whose row names the model in use'
+checks/13-player-and-voice.cjs:261	'a model that fails to start is explained in a toast'
+checks/13-player-and-voice.cjs:261	'a model that fails to start is explained in a toast'
+checks/14-start-up.cjs:16	`profiles.list not sent while the chat opens (${early.filter(Boolean).join(',')})`
+checks/14-start-up.cjs:20	`status, commands, skills, model, config and activity not sent while the chat opens (${[...new Set(earlyHttp)].join(',')})`
+checks/14-start-up.cjs:23	'profiles.list sent once the chat is open'
+checks/14-start-up.cjs:27	`the rest of the start-up requests are sent once the chat is open (${[...new Set(afterHttp)].join(',')})`
+checks/14-start-up.cjs:28	`the full status is asked for once at start-up (${afterHttp.filter(p => p === '/api/status').length})`
+checks/14-start-up.cjs:39	'late start-up resume does not replace the new chat you started'
+checks/14-start-up.cjs:47	'slow start-up chat still loading when the canvas is tapped'
+checks/14-start-up.cjs:50	'canvas opened on a loading chat shows a loading state, not "empty"'
+checks/14-start-up.cjs:54	'canvas opened on a loading chat shows that chat\'s documents'
+checks/14-start-up.cjs:56	'the chat that was loading still opens after tapping the canvas (no new empty chat)'
+checks/14-start-up.cjs:57	'canvas stays open on the chat once it has loaded'
+checks/14-start-up.cjs:70	'Last start-up: opened while the chat is still loading, no chat-live yet'
+checks/14-start-up.cjs:74	'Last start-up: the mark that arrives appears without leaving the screen'
+checks/15-gestures.cjs:23	'a short swipe does not open the drawer'
+checks/15-gestures.cjs:26	'a mostly vertical swipe (scrolling) does not open the drawer'
+checks/15-gestures.cjs:29	'a swipe starting in the composer does not open the drawer'
+checks/15-gestures.cjs:46	`drawer: mid-swipe its edge is under the finger (${await drawerX()})`
+checks/15-gestures.cjs:49	'drawer: let go before half way (no flick) and it closes again'
+checks/15-gestures.cjs:51	'swipe right past half way opens the drawer'
+checks/15-gestures.cjs:51	'swipe right past half way opens the drawer'
+checks/15-gestures.cjs:53	'drawer: no inline position left after it settles'
+checks/15-gestures.cjs:57	`drawer: a swipe left on the backdrop moves it with the finger (${await drawerX()} of ${w})`
+checks/15-gestures.cjs:60	'drawer: a short slow swipe left lets it spring back open'
+checks/15-gestures.cjs:64	'drawer: a swipe left past half way closes it'
+checks/15-gestures.cjs:68	'drawer: a quick short flick right opens it'
+checks/15-gestures.cjs:68	'drawer: a quick short flick right opens it'
+checks/15-gestures.cjs:78	'scrubber: one tick per message you sent'
+checks/15-gestures.cjs:79	'scrubber: slider role and label'
+checks/15-gestures.cjs:80	`scrubber: at the bottom the current tick is one of the last messages (${v})`
+checks/15-gestures.cjs:87	`scrubber thumb: at the end of the chat it sits at the bottom of the rail (${t.at.toFixed(2)})`
+checks/15-gestures.cjs:88	'scrubber thumb: the list hides its own scroll bar while the rail shows'
+checks/15-gestures.cjs:97	`scrubber: the bubble shows the picked message (${bub})`
+checks/15-gestures.cjs:100	'scrubber: the bubble goes when you let go'
+checks/15-gestures.cjs:105	`scrubber: letting go scrolls to the picked message (${qb && Math.round(qb.y - cb.y)} px below the top)`
+checks/15-gestures.cjs:106	'scrubber: the first tick is current after the jump'
+checks/15-gestures.cjs:107	`scrubber thumb: with your message at the top it melts into its tick (${t.at.toFixed(3)}, ${t.w}x${t.h})`
+checks/15-gestures.cjs:121	`scrubber thumb: between two messages it is a pill between their ticks (${(t.at / gap).toFixed(2)} of the gap, ${t.h}px tall)`
+checks/15-gestures.cjs:125	'scrubber: the rail does not scroll with the content'
+checks/15-gestures.cjs:129	`scrubber: a tap on the middle jumps to a middle message (${now})`
+checks/15-gestures.cjs:133	'scrubber: ArrowDown moves to the next message'
+checks/15-gestures.cjs:146	'scrubber: a horizontal move starting on the rail does not open the drawer'
+checks/15-gestures.cjs:150	'scrubber: a short chat shows no rail'
+checks/16-canvas-panel.cjs:34	`a swipe left that starts on ${what} does not open the canvas (${on})`
+checks/16-canvas-panel.cjs:39	'a short swipe left does not open the canvas'
+checks/16-canvas-panel.cjs:41	'swipe left on a chat opens the canvas'
+checks/16-canvas-panel.cjs:41	'swipe left on a chat opens the canvas'
+checks/16-canvas-panel.cjs:44	'it is the chat\'s own canvas'
+checks/16-canvas-panel.cjs:46	`the panel slides in from the right (${look.cls}, ${look.anim})`
+checks/16-canvas-panel.cjs:49	`the panel covers the chat full width (${JSON.stringify(box)})`
+checks/16-canvas-panel.cjs:50	'no bottom-sheet grip any more'
+checks/16-canvas-panel.cjs:53	'editing keeps the side panel'
+checks/16-canvas-panel.cjs:58	'a short swipe right on the panel header leaves it open'
+checks/16-canvas-panel.cjs:59	'and it snaps back'
+checks/16-canvas-panel.cjs:61	'swipe right on the panel header closes it'
+checks/16-canvas-panel.cjs:61	'swipe right on the panel header closes it'
+checks/16-canvas-panel.cjs:67	'fill the whole screen still works'
+checks/16-canvas-panel.cjs:70	'Back from the whole screen returns to the panel'
+checks/16-canvas-panel.cjs:72	'Back closes the canvas panel'
+checks/16-canvas-panel.cjs:72	'Back closes the canvas panel'
+checks/16-canvas-panel.cjs:75	'swipe right still opens the drawer with the canvas closed'
+checks/16-canvas-panel.cjs:75	'swipe right still opens the drawer with the canvas closed'
+checks/16-canvas-panel.cjs:107	`a real finger swiping left on a ${what} opens the canvas`
+checks/16-canvas-panel.cjs:144	'a real finger swiping left on plain text opens the canvas in a chat with long unbroken words'
+checks/16-canvas-panel.cjs:148	'a real finger swiping right on plain text opens the drawer in a chat with long unbroken words'
+checks/16-canvas-panel.cjs:165	`wide screen: the canvas is a column beside the chat (${JSON.stringify(b)}, chat margin ${mr})`
+checks/16-canvas-panel.cjs:172	'wide screen: the chat list is docked by default'
+checks/16-canvas-panel.cjs:184	`wide screen: a page's sheet is on top of the docked chat list (${JSON.stringify(top)})`
+checks/16-canvas-panel.cjs:191	'wide screen: ☰ offers Hide chat list'
+checks/16-canvas-panel.cjs:191	'wide screen: ☰ offers Hide chat list'
+checks/16-canvas-panel.cjs:195	`wide screen: ☰ hides the chat list and the chat takes the width (list x ${await listX()}, margin ${ml})`
+checks/16-canvas-panel.cjs:199	'wide screen: the hidden chat list stays hidden after a restart'
+checks/16-canvas-panel.cjs:202	'wide screen: ☰ docks the chat list again'
+checks/16-canvas-panel.cjs:206	'wide screen: « hides the docked list, no backdrop left'
+checks/16-canvas-panel.cjs:223	'tablet: the pull tab shows at the right edge and the shell keeps Back off it'
+checks/16-canvas-panel.cjs:233	`tablet: the scrubber stays out of the edge strip (right ${r})`
+checks/16-canvas-panel.cjs:240	`tablet upright (800 px): tapping the pull tab opens the canvas as a column beside the chat (${JSON.stringify(b)})`
+checks/16-canvas-panel.cjs:241	'tablet: the pull tab and the edge claim go while the canvas is open'
+checks/16-canvas-panel.cjs:255	`tablet: dragging the divider resizes the canvas (${await width()})`
+checks/16-canvas-panel.cjs:257	`tablet: the width is kept as a share of the screen (${saved})`
+checks/16-canvas-panel.cjs:259	`tablet: the chat keeps at least 340 px (canvas ${await width()}, chat ${await chatW()})`
+checks/16-canvas-panel.cjs:263	`tablet: ArrowRight on the divider narrows the canvas (${await width()})`
+checks/16-canvas-panel.cjs:266	`tablet: a double-tap on the divider resets the width (${await width()})`
+checks/16-canvas-panel.cjs:273	'tablet: dragging the divider far left shows "Full screen"'
+checks/16-canvas-panel.cjs:277	'tablet: letting go past 85 % fills the screen'
+checks/16-canvas-panel.cjs:281	'tablet: letting go under 20 % closes the canvas'
+checks/16-canvas-panel.cjs:286	'tablet: no pull tab while a sheet is open'
+checks/16-canvas-panel.cjs:312	`wide screen: a slow pull from the right edge opens the canvas where the finger lets go (${await width()})`
+checks/16-canvas-panel.cjs:317	`wide screen: a flick from the right edge opens the canvas at its last width (${await width()} vs ${kept})`
+checks/16-canvas-panel.cjs:321	'wide screen: a short slow pull from the edge leaves the canvas closed'
+checks/16-canvas-panel.cjs:330	'phone: no pull tab'
+checks/16-canvas-panel.cjs:335	`phone: the canvas still covers the chat, no divider (${JSON.stringify(b)})`
+checks/16-canvas-panel.cjs:354	'swipe left on the empty new-chat screen opens a canvas'
+checks/16-canvas-panel.cjs:354	'swipe left on the empty new-chat screen opens a canvas'
+checks/16-canvas-panel.cjs:382	'still connecting: a swipe left says so'
+checks/16-canvas-panel.cjs:382	'still connecting: a swipe left says so'
+checks/16-canvas-panel.cjs:383	'still connecting: a swipe left opens no canvas'
+checks/16-canvas-panel.cjs:386	'still connecting: the canvas button says so'
+checks/16-canvas-panel.cjs:386	'still connecting: the canvas button says so'
+checks/17-first-run.cjs:14	'fresh install opens the welcome'
+checks/17-first-run.cjs:14	'fresh install opens the welcome'
+checks/17-first-run.cjs:15	'Pick a model waits for a connected provider'
+checks/17-first-run.cjs:18	'device-code sign-in shows the code'
+checks/17-first-run.cjs:18	'device-code sign-in shows the code'
+checks/17-first-run.cjs:19	'sign-in sheet closes once Hermes approves'
+checks/17-first-run.cjs:19	'sign-in sheet closes once Hermes approves'
+checks/17-first-run.cjs:20	'the provider sheet shows the new sign-in'
+checks/17-first-run.cjs:20	'the provider sheet shows the new sign-in'
+checks/17-first-run.cjs:23	'picking a model closes the welcome'
+checks/17-first-run.cjs:23	'picking a model closes the welcome'
+checks/17-first-run.cjs:26	'the welcome sets the default model'
+checks/17-first-run.cjs:27	'the model list is refreshed after a new sign-in'
+checks/17-first-run.cjs:32	'the welcome does not come back'
+checks/17-first-run.cjs:47	`providers: the big ones first, in order (${pop.join(', ')})`
+checks/17-first-run.cjs:49	`providers: every other provider of the pinned Hermes is listed (${all.length})`
+checks/17-first-run.cjs:50	'providers: the rest is A–Z'
+checks/17-first-run.cjs:51	'providers: nothing is marked connected on a fresh Hermes'
+checks/17-first-run.cjs:55	`providers: search narrows the list (${found.join(', ')})`
+checks/17-first-run.cjs:60	'providers: the model picker waits for the key'
+checks/17-first-run.cjs:63	'providers: a saved key shows as saved'
+checks/17-first-run.cjs:63	'providers: a saved key shows as saved'
+checks/17-first-run.cjs:66	'providers: PUT /api/env {DEEPSEEK_API_KEY} for this profile'
+checks/17-first-run.cjs:67	'providers: the key never appears in a URL'
+checks/17-first-run.cjs:68	'providers: the page shows only the redacted key'
+checks/17-first-run.cjs:74	`providers: the model picker shows only that provider (${groups.join(', ')})`
+checks/17-first-run.cjs:83	'providers: DeepSeek moves to Connected with its dot'
+checks/17-first-run.cjs:83	'providers: DeepSeek moves to Connected with its dot'
+checks/17-first-run.cjs:86	`providers: only DeepSeek is connected, with one dot (${on.join(', ')})`
+checks/17-first-run.cjs:91	'providers: Anthropic offers Paste API key'
+checks/17-first-run.cjs:92	'providers: a login that needs another CLI is offered as a command'
+checks/17-first-run.cjs:94	'providers: Claude Pro / Max opens the in-app sign-in'
+checks/17-first-run.cjs:94	'providers: Claude Pro / Max opens the in-app sign-in'
+checks/17-first-run.cjs:95	'providers: Claude Pro / Max does not open Termux'
+checks/17-first-run.cjs:101	'providers: Mistral comes with its address'
+checks/17-first-run.cjs:104	'providers: the endpoint is asked for its models'
+checks/17-first-run.cjs:104	'providers: the endpoint is asked for its models'
+checks/17-first-run.cjs:106	'providers: the saved endpoint is connected'
+checks/17-first-run.cjs:106	'providers: the saved endpoint is connected'
+checks/17-first-run.cjs:109	'providers: POST /api/providers/custom-endpoints with name, URL, model, key'
+checks/17-first-run.cjs:110	'providers: the endpoint key never appears in a URL'
+checks/17-first-run.cjs:111	'providers: the Mistral preset is not listed twice'
+checks/18-setup-flow.cjs:24	'flow: everything set up → straight to chat, no setup flow'
+checks/18-setup-flow.cjs:25	'flow: nothing missing is remembered (not checked again)'
+checks/18-setup-flow.cjs:34	'flow: no model → opens at the model step'
+checks/18-setup-flow.cjs:34	'flow: no model → opens at the model step'
+checks/18-setup-flow.cjs:35	`flow: progress counts only the missing required steps (${await fb.locator('.flow-progress-label').textContent()})`
+checks/18-setup-flow.cjs:41	'flow: after the model, the recommended items are shown once (Almost done)'
+checks/18-setup-flow.cjs:41	'flow: after the model, the recommended items are shown once (Almost done)'
+checks/18-setup-flow.cjs:42	'flow: only the missing recommended item is listed'
+checks/18-setup-flow.cjs:43	'flow: the finished step is collapsed with ✓'
+checks/18-setup-flow.cjs:45	'flow: Allow asks the shell for the battery exemption'
+checks/18-setup-flow.cjs:50	'flow: coming back to the app re-checks: All set'
+checks/18-setup-flow.cjs:50	'flow: coming back to the app re-checks: All set'
+checks/18-setup-flow.cjs:52	'flow: Done goes to the chat'
+checks/18-setup-flow.cjs:52	'flow: Done goes to the chat'
+checks/18-setup-flow.cjs:56	'flow: not shown again after Done'
+checks/18-setup-flow.cjs:57	'flow: hm.setupFlowDone is set'
+checks/18-setup-flow.cjs:70	'flow nav: Shizuku not paired → the flow opens at "Shizuku starts by itself"'
+checks/18-setup-flow.cjs:70	'flow nav: Shizuku not paired → the flow opens at "Shizuku starts by itself"'
+checks/18-setup-flow.cjs:72	`flow nav: the pairing step is step 1 of 2, before the model (${await label()})`
+checks/18-setup-flow.cjs:73	'flow nav: no Back on the first page'
+checks/18-setup-flow.cjs:74	'flow nav: no Next on the current page'
+checks/18-setup-flow.cjs:75	'flow nav: the pairing page tells the user to pair Termux'
+checks/18-setup-flow.cjs:77	'flow nav: Start pairing asks the shell for shizuku-pair'
+checks/18-setup-flow.cjs:82	'flow nav: once paired, the next page is the model step'
+checks/18-setup-flow.cjs:82	'flow nav: once paired, the next page is the model step'
+checks/18-setup-flow.cjs:83	`flow nav: model is step 2 of 2 (${await label()})`
+checks/18-setup-flow.cjs:85	'flow nav: Back shows the finished pairing page'
+checks/18-setup-flow.cjs:85	'flow nav: Back shows the finished pairing page'
+checks/18-setup-flow.cjs:86	'flow nav: a finished page is marked Done'
+checks/18-setup-flow.cjs:87	`flow nav: the counter follows the page shown (${await label()})`
+checks/18-setup-flow.cjs:88	'flow nav: on page 1 Next is on and Back is off'
+checks/18-setup-flow.cjs:90	'flow nav: Next walks forward to the model step'
+checks/18-setup-flow.cjs:90	'flow nav: Next walks forward to the model step'
+checks/18-setup-flow.cjs:91	'flow nav: Next stops at the current step'
+checks/18-setup-flow.cjs:93	'flow nav: Android Back goes to the previous page'
+checks/18-setup-flow.cjs:93	'flow nav: Android Back goes to the previous page'
+checks/18-setup-flow.cjs:94	'flow nav: Android Back did not leave the flow'
+checks/18-setup-flow.cjs:98	'flow nav: the header arrow goes to the previous page'
+checks/18-setup-flow.cjs:98	'flow nav: the header arrow goes to the previous page'
+checks/18-setup-flow.cjs:100	'flow nav: the header arrow on the first page leaves the flow'
+checks/18-setup-flow.cjs:100	'flow nav: the header arrow on the first page leaves the flow'
+checks/18-setup-flow.cjs:116	`takeover (${vp.width}px): a fresh install opens the setup flow at once (${Date.now() - t0} ms)`
+checks/18-setup-flow.cjs:119	`takeover (${vp.width}px): the flow covers the whole window (${JSON.stringify(b)})`
+checks/18-setup-flow.cjs:121	`takeover (${vp.width}px): nothing (chat list, composer) is drawn over it (${top})`
+checks/18-setup-flow.cjs:123	`takeover (${vp.width}px): once Hermes doesn't answer, it moves from Checking… to the first missing step (${step})`
+checks/18-setup-flow.cjs:132	'flow: Hermes not running → opens at Start Hermes'
+checks/18-setup-flow.cjs:132	'flow: Hermes not running → opens at Start Hermes'
+checks/18-setup-flow.cjs:134	'flow: Start Hermes asks the shell to start it'
+checks/18-setup-flow.cjs:135	'flow: moves on by itself once Hermes is back (All set)'
+checks/18-setup-flow.cjs:135	'flow: moves on by itself once Hermes is back (All set)'
+checks/18-setup-flow.cjs:136	'flow: Hermes is running is ticked off'
+checks/18-setup-flow.cjs:148	'flow: the Autostart tip alone does not open the flow'
+checks/18-setup-flow.cjs:152	'setup: a phone with an Autostart page shows the Autostart tip'
+checks/18-setup-flow.cjs:152	'setup: a phone with an Autostart page shows the Autostart tip'
+checks/18-setup-flow.cjs:153	'setup: the Autostart tip is neither ✓ nor ✗'
+checks/18-setup-flow.cjs:155	`setup: the tip names the page that opens (${help.slice(0, 90)}…)`
+checks/18-setup-flow.cjs:158	`setup: the Autostart button opens the phone's Autostart page (${JSON.stringify(fx)})`
+checks/18-setup-flow.cjs:160	'setup: Done ticks the Autostart row'
+checks/18-setup-flow.cjs:160	'setup: Done ticks the Autostart row'
+checks/18-setup-flow.cjs:161	'setup: Done on Autostart is remembered'
+checks/18-setup-flow.cjs:172	`setup: App info fallback says where else to look (${helpI.slice(0, 90)}…)`
+checks/18-setup-flow.cjs:176	`setup: per-app Autostart buttons ask for each app (${JSON.stringify(fxI)})`
+checks/18-setup-flow.cjs:185	'setup: AOSP (no Autostart page) has no Autostart row'
+checks/18-setup-flow.cjs:202	'install-all: the 2nd app waits on Android’s prompt'
+checks/18-setup-flow.cjs:202	'install-all: the 2nd app waits on Android’s prompt'
+checks/18-setup-flow.cjs:208	'install-all: a prompt left unanswered gets a Retry button'
+checks/18-setup-flow.cjs:208	'install-all: a prompt left unanswered gets a Retry button'
+checks/18-setup-flow.cjs:209	'install-all: the row says the prompt was closed'
+checks/18-setup-flow.cjs:215	'install-all: back in the app, an app that got installed is ticked and the next one starts'
+checks/18-setup-flow.cjs:215	'install-all: back in the app, an app that got installed is ticked and the next one starts'
+checks/18-setup-flow.cjs:223	'install-all: an app whose install stopped gets a Retry button'
+checks/18-setup-flow.cjs:223	'install-all: an app whose install stopped gets a Retry button'
+checks/18-setup-flow.cjs:224	'install-all: the list says which app comes next'
+checks/18-setup-flow.cjs:227	'install-all: Retry installs it and the rest of the queue follows'
+checks/18-setup-flow.cjs:227	'install-all: Retry installs it and the rest of the queue follows'
+checks/18-setup-flow.cjs:229	`install-all: installs in order, each once more only on Retry (${JSON.stringify(got)})`
+checks/18-setup-flow.cjs:239	'other Termux: Install all is offered (was “Install Shizuku”, then no button)'
+checks/18-setup-flow.cjs:244	'other Termux: Cancel opens nothing'
+checks/18-setup-flow.cjs:247	'other Termux: confirming opens Android’s uninstall prompt for Termux'
+checks/18-setup-flow.cjs:248	'other Termux: nothing is installed while the other Termux is still there'
+checks/18-setup-flow.cjs:254	'other Termux: once it is gone, all four install one by one and the flow moves on'
+checks/18-setup-flow.cjs:254	'other Termux: once it is gone, all four install one by one and the flow moves on'
+checks/18-setup-flow.cjs:255	`other Termux: installs in order, Termux first (${JSON.stringify(await fr.evaluate(() => window.__installs))})`
+checks/18-setup-flow.cjs:256	'other Termux: the replace mark is cleared'
+checks/18-setup-flow.cjs:265	'other Termux: after the app was killed, the next launch installs the set'
+checks/18-setup-flow.cjs:265	'other Termux: after the app was killed, the next launch installs the set'
+checks/18-setup-flow.cjs:273	'one missing app: the button is Install all'
+checks/18-setup-flow.cjs:273	'one missing app: the button is Install all'
+checks/18-setup-flow.cjs:275	'one missing app: Install all installs just that one'
+checks/18-setup-flow.cjs:288	'shizuku sdk<30: the step explains Shizuku is started from a computer'
+checks/18-setup-flow.cjs:289	'shizuku sdk<30: no Developer options / Wireless debugging sub-items'
+checks/18-setup-flow.cjs:290	'shizuku sdk<30: no Skip button'
+checks/18-setup-flow.cjs:293	'shizuku sdk<30: the guide button opens Shizuku’s setup guide'
+checks/18-setup-flow.cjs:296	'shizuku fallback: “Shizuku is running: continue” moves on to the installer'
+checks/18-setup-flow.cjs:296	'shizuku fallback: “Shizuku is running: continue” moves on to the installer'
+checks/18-setup-flow.cjs:309	'shizuku sdk>=30: Wireless debugging item stays, no computer note'
+checks/18-setup-flow.cjs:314	'app-first: no Termux → the flow opens at once at the helper apps'
+checks/18-setup-flow.cjs:314	'app-first: no Termux → the flow opens at once at the helper apps'
+checks/18-setup-flow.cjs:315	'app-first: four install rows (Termux, Termux:API, Termux:Boot, Shizuku)'
+checks/18-setup-flow.cjs:316	'app-first: no Termux command is sent while Termux is missing'
+checks/18-setup-flow.cjs:321	'helper apps: every missing app has an "install it yourself" link'
+checks/18-setup-flow.cjs:324	`helper apps: links go to the F-Droid pages and Shizuku's releases (${JSON.stringify(opened)})`
+checks/18-setup-flow.cjs:325	'helper apps: note that Termux apps must share one source'
+checks/18-setup-flow.cjs:328	'app-first: once all four are installed the flow moves on to Start Shizuku'
+checks/18-setup-flow.cjs:328	'app-first: once all four are installed the flow moves on to Start Shizuku'
+checks/18-setup-flow.cjs:329	`app-first: Install all installs them one after another, Termux first (${JSON.stringify(await fe.evaluate(() => window.__installs))})`
+checks/18-setup-flow.cjs:331	'app-first: Open Shizuku opens it'
+checks/18-setup-flow.cjs:332	'Wireless debugging step explains why it is needed'
+checks/18-setup-flow.cjs:335	'shizuku required: no Skip button on Start Shizuku'
+checks/18-setup-flow.cjs:336	'shizuku required: the step says Hermes needs Shizuku, never recommended/optional'
+checks/18-setup-flow.cjs:337	'shizuku-check: no green row before it runs'
+checks/18-setup-flow.cjs:338	'shizuku-check: the fallback button is “Shizuku is running: continue”'
+checks/18-setup-flow.cjs:339	'shizuku required: rooted phones get their one line'
+checks/18-setup-flow.cjs:341	'shizuku-check: detected → green “Shizuku is running” row (no tap)'
+checks/18-setup-flow.cjs:341	'shizuku-check: detected → green “Shizuku is running” row (no tap)'
+checks/18-setup-flow.cjs:342	'app-first: after Shizuku, the Termux permission comes before the installer'
+checks/18-setup-flow.cjs:342	'app-first: after Shizuku, the Termux permission comes before the installer'
+checks/18-setup-flow.cjs:349	'app-first: Termux refuses commands → Run the installer'
+checks/18-setup-flow.cjs:349	'app-first: Termux refuses commands → Run the installer'
+checks/18-setup-flow.cjs:350	'app-first: the flow probed Termux once it was allowed to'
+checks/18-setup-flow.cjs:352	'app-first: no forced Termux probe without a tap'
+checks/18-setup-flow.cjs:354	'app-first: Check sends the one forced probe'
+checks/18-setup-flow.cjs:355	'app-first: Check, Termux still refuses → says to run the installer'
+checks/18-setup-flow.cjs:355	'app-first: Check, Termux still refuses → says to run the installer'
+checks/18-setup-flow.cjs:356	'app-first: Check without Hermes keeps the installer step'
+checks/18-setup-flow.cjs:358	'app-first: Copy the command asks the shell for the command (the page never builds it)'
+checks/18-setup-flow.cjs:359	'app-first: after copying it waits for the installer'
+checks/18-setup-flow.cjs:359	'app-first: after copying it waits for the installer'
+checks/18-setup-flow.cjs:373	'step times: a finished step shows how long it took (1:42)'
+checks/18-setup-flow.cjs:377	`step times: the running step counts up live (${t0} → ${t1})`
+checks/18-setup-flow.cjs:378	'step times: a running total is shown'
+checks/18-setup-flow.cjs:379	'step times: steps still to come show no time'
+checks/18-setup-flow.cjs:380	'app-first: progress lines show the running step'
+checks/18-setup-flow.cjs:380	'app-first: progress lines show the running step'
+checks/18-setup-flow.cjs:381	'app-first: finished installer steps are ticked'
+checks/18-setup-flow.cjs:382	'app-first: the latest “phone:” hint is shown'
+checks/18-setup-flow.cjs:383	'app-first: Start Hermes is never asked for while the installer runs'
+checks/18-setup-flow.cjs:385	'app-first: FAIL says where it stopped, with Copy again'
+checks/18-setup-flow.cjs:385	'app-first: FAIL says where it stopped, with Copy again'
+checks/18-setup-flow.cjs:386	'app-first: FAIL offers the command again'
+checks/18-setup-flow.cjs:390	'app-first: a lost installer reads as stopped, saying why it may have stopped'
+checks/18-setup-flow.cjs:390	'app-first: a lost installer reads as stopped, saying why it may have stopped'
+checks/18-setup-flow.cjs:391	'app-first: lost marks the step it was on'
+checks/18-setup-flow.cjs:395	`app-first: a stopped installer's clock stands still (${lt0} → ${lt1})`
+checks/18-setup-flow.cjs:396	'app-first: lost offers the command again'
+checks/18-setup-flow.cjs:403	'step times: after DONE the total stops (or the view has moved on)'
+checks/18-setup-flow.cjs:404	'app-first: DONE → connects → the model step'
+checks/18-setup-flow.cjs:404	'app-first: DONE → connects → the model step'
+checks/18-setup-flow.cjs:414	'app-first: a set-up phone goes straight to chat'
+checks/18-setup-flow.cjs:417	'app-first: Setup check is All set with the new rows'
+checks/18-setup-flow.cjs:417	'app-first: Setup check is All set with the new rows'
+checks/18-setup-flow.cjs:418	'app-first: no Start Shizuku row on a set-up phone'
+checks/18-setup-flow.cjs:419	'app-first: the apps and installer rows are ✓ on a set-up phone'
+checks/18-setup-flow.cjs:420	'app-first: Termux is not probed while Hermes answers'
+checks/18-setup-flow.cjs:432	'flow: Shizuku not reachable → opens at the Shizuku step'
+checks/18-setup-flow.cjs:432	'flow: Shizuku not reachable → opens at the Shizuku step'
+checks/18-setup-flow.cjs:434	`flow: the app sees Shizuku running → says Termux can't use it yet, not "isn't running" (${t.slice(0, 120)})`
+checks/18-setup-flow.cjs:436	'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'
+checks/18-setup-flow.cjs:436	'flow: moves on by itself once Hermes reaches Shizuku (re-checks while on screen)'
+checks/18-setup-flow.cjs:450	'phone scripts: no row while the shell says nothing about them'
+checks/18-setup-flow.cjs:456	'phone scripts: no row when they are current'
+checks/18-setup-flow.cjs:462	'phone scripts: old scripts show a ✕ row'
+checks/18-setup-flow.cjs:462	'phone scripts: old scripts show a ✕ row'
+checks/18-setup-flow.cjs:464	'phone scripts: Update now runs the plugin update (not forced)'
+checks/18-setup-flow.cjs:481	'phone scripts, hand-changed plugin: the ✕ row'
+checks/18-setup-flow.cjs:481	'phone scripts, hand-changed plugin: the ✕ row'
+checks/18-setup-flow.cjs:482	'phone scripts, hand-changed plugin: no plain Update now'
+checks/18-setup-flow.cjs:485	'phone scripts, hand-changed plugin: asks first, as Settings does'
+checks/18-setup-flow.cjs:485	'phone scripts, hand-changed plugin: asks first, as Settings does'
+checks/18-setup-flow.cjs:488	'phone scripts, hand-changed plugin: Cancel replaces nothing'
+checks/18-setup-flow.cjs:492	'phone scripts, hand-changed plugin: Replace runs the forced update'
+checks/18-setup-flow.cjs:504	'phone scripts, work that can’t be asked: asks first'
+checks/18-setup-flow.cjs:504	'phone scripts, work that can’t be asked: asks first'
+checks/18-setup-flow.cjs:507	'phone scripts, work that can’t be asked: then updates, the warning answered'
+checks/18-setup-flow.cjs:515	'phone scripts, switched phone: asks first'
+checks/18-setup-flow.cjs:515	'phone scripts, switched phone: asks first'
+checks/18-setup-flow.cjs:518	'phone scripts, switched phone: then the confirmed update'
+checks/18-setup-flow.cjs:526	'phone scripts, held or newer plugin: no button'
+checks/18-setup-flow.cjs:527	'phone scripts, held or newer plugin: says why'
+checks/19-backend-status.cjs:24	'status: Shizuku row says Running'
+checks/19-backend-status.cjs:25	'status: no restart line on an older app build'
+checks/19-backend-status.cjs:27	'status: Shizuku row says Restarts by itself when paired'
+checks/19-backend-status.cjs:29	'status: Shizuku row says to start it by hand when not paired'
+checks/19-backend-status.cjs:32	`status: Shizuku not running (${t})`
+checks/19-backend-status.cjs:35	'status: Shizuku denied for Termux'
+checks/19-backend-status.cjs:38	`status: Shizuku not installed (${t})`
+checks/19-backend-status.cjs:52	'local alert: no banner before the shell says so'
+checks/19-backend-status.cjs:56	'local alert: the dashboard banner shows, as an alert'
+checks/19-backend-status.cjs:57	'local alert: dashboard title is the fixed text'
+checks/19-backend-status.cjs:58	'local alert: dashboard body is the fixed text'
+checks/19-backend-status.cjs:59	'local alert: dashboard extra line is the fixed text'
+checks/19-backend-status.cjs:61	'local alert: the dashboard banner has Try again'
+checks/19-backend-status.cjs:67	'local alert: Try again asks the shell for a fresh token (which checks the dashboard again)'
+checks/19-backend-status.cjs:68	'local alert: the banner stays until the shell clears it'
+checks/19-backend-status.cjs:79	`local alert: repeated taps run one try (${(await asks()) - before3})`
+checks/19-backend-status.cjs:80	'local alert: Try again works again once the try has ended'
+checks/19-backend-status.cjs:83	'local alert: the banner goes when the shell clears it'
+checks/19-backend-status.cjs:87	'local alert: events title is the fixed text'
+checks/19-backend-status.cjs:88	'local alert: events body is the fixed text'
+checks/19-backend-status.cjs:89	'local alert: the events banner has no Try again'
+checks/19-backend-status.cjs:99	'local alert: the dashboard banner shows while offline'
+checks/19-backend-status.cjs:104	'local alert: Try again while offline reconnects'
+checks/19-backend-status.cjs:105	'local alert: the dashboard banner stays when the connection opens'
+checks/19-backend-status.cjs:109	'local alert: then goes when the shell clears it'
+checks/19-backend-status.cjs:113	'local alert: an unknown kind shows nothing'
+checks/19-backend-status.cjs:114	'local alert: the argument is never shown'
+checks/20-visit-divider.cjs:18	'visit: the divider shows in a chat with newer messages'
+checks/20-visit-divider.cjs:19	'visit: the divider has the separator role'
+checks/20-visit-divider.cjs:20	'visit: the divider sits in the wrapper of the first unseen message, one child of the chat'
+checks/20-visit-divider.cjs:21	'visit: the chat still has one element per message'
+checks/20-visit-divider.cjs:24	'visit: a chat never opened before has no divider'
+checks/20-visit-divider.cjs:27	'visit: reopening a chat after leaving it shows no divider'
+checks/20-visit-divider.cjs:28	'visit: leaving a chat stores the visit time'
+checks/20-visit-divider.cjs:36	`visit: the chat opens with the divider near the top (${db && cb && Math.round(db.y - cb.y)} px below it)`
+checks/20-visit-divider.cjs:37	'visit: the divider is right before the first unseen question'
+checks/20-visit-divider.cjs:46	'visit: a reply watched on screen gets no divider'
+checks/20-visit-divider.cjs:51	'visit: no divider while the app is away'
+checks/20-visit-divider.cjs:54	'visit: back in the app with the chat still open, the divider is before the reply that came meanwhile'
+checks/21-stash.cjs:15	'stash: an empty box and no stashes shows neither option'
+checks/21-stash.cjs:22	'stash: Stash draft empties the box and stores the text'
+checks/21-stash.cjs:25	'stash: the Add sheet counts the stashes'
+checks/21-stash.cjs:29	'stash: picking a stash with text in the box swaps them'
+checks/21-stash.cjs:37	'stash: Clear all stashed drafts removes them'
+checks/22-whats-new.cjs:58	`what's new: the row counts the versions since the installed one (${await row.innerText()})`
+checks/22-whats-new.cjs:59	"what's new: the changelog is read at the release's tag"
+checks/22-whats-new.cjs:64	`what's new: newest first, with dates, only newer versions (${JSON.stringify(heads)})`
+checks/22-whats-new.cjs:66	"what's new: the sections' text, without the installed version or Unreleased"
+checks/22-whats-new.cjs:68	`what's new: one short line per change, the headline only (${JSON.stringify(first)})`
+checks/22-whats-new.cjs:69	"what's new: smaller changes and fixes under their own heading"
+checks/22-whats-new.cjs:70	"what's new: the details stay hidden at first"
+checks/22-whats-new.cjs:73	"what's new: Details shows the full notes as Markdown"
+checks/22-whats-new.cjs:74	"what's new: the button then reads Hide details"
+checks/22-whats-new.cjs:77	"what's new: Update in the sheet starts the download"
+checks/22-whats-new.cjs:84	"what's new: one version says which"
+checks/22-whats-new.cjs:90	"what's new: no row when the app is up to date"
+checks/22-whats-new.cjs:97	"what's new: no changelog, no row, and the update row still offers the update"
+checks/22-whats-new.cjs:126	"what's new after update: the installed version's changelog is read at its tag"
+checks/22-whats-new.cjs:127	"what's new after update: the sub line names the installed version"
+checks/22-whats-new.cjs:129	`what's new after update: only the new version, with its date (${JSON.stringify(heads)})`
+checks/22-whats-new.cjs:130	"what's new after update: one line per change"
+checks/22-whats-new.cjs:133	"what's new after update: Got it records the version as seen"
+checks/22-whats-new.cjs:137	"what's new after update: it does not come back after a reload"
+checks/22-whats-new.cjs:144	`what's new after update: a jump over versions lists them all, newest first (${JSON.stringify(heads)})`
+checks/22-whats-new.cjs:145	"what's new after update: smaller changes and fixes under their own heading"
+checks/22-whats-new.cjs:146	"what's new after update: details hidden at first"
+checks/22-whats-new.cjs:149	"what's new after update: Details shows the full notes as Markdown"
+checks/22-whats-new.cjs:150	"what's new after update: then reads Hide details"
+checks/22-whats-new.cjs:152	"what's new after update: Hide details hides them again"
+checks/22-whats-new.cjs:161	`what's new after update: a long list scrolls with a visible, styled scroll bar (${JSON.stringify(bar)})`
+checks/22-whats-new.cjs:166	"what's new after update: the close button records the version too"
+checks/22-whats-new.cjs:172	"what's new after update: a fresh install shows nothing and reads nothing"
+checks/22-whats-new.cjs:173	"what's new after update: a fresh install stores the version silently"
+checks/22-whats-new.cjs:180	"what's new after update: an unreadable changelog shows nothing"
+checks/22-whats-new.cjs:181	"what's new after update: and leaves the version unseen"
+checks/22-whats-new.cjs:186	"what's new after update: the next start tries again and shows it"
+checks/22-whats-new.cjs:192	"what's new after update: a downgrade shows nothing"
+checks/23-provider-rotation.cjs:21	'rotation: the fallback list shows the saved chain'
+checks/23-provider-rotation.cjs:21	'rotation: the fallback list shows the saved chain'
+checks/23-provider-rotation.cjs:23	`rotation: the main model comes first (${JSON.stringify(rows[0])})`
+checks/23-provider-rotation.cjs:24	`rotation: a fallback whose keys are all cooling down says so (${JSON.stringify(rows[1])})`
+checks/23-provider-rotation.cjs:30	'rotation: the fallback picker has no reasoning pills'
+checks/23-provider-rotation.cjs:36	`rotation: adding writes the whole chain, keeping routing keys (${JSON.stringify(fb)})`
+checks/23-provider-rotation.cjs:43	`rotation: ↑ moves a fallback up (${fb.map(x => x.model)})`
+checks/23-provider-rotation.cjs:44	'rotation: the first fallback cannot move up'
+checks/23-provider-rotation.cjs:50	`rotation: ✕ removes a fallback (${JSON.stringify(fb)})`
+checks/23-provider-rotation.cjs:51	'rotation: the removed fallback leaves the list'
+checks/23-provider-rotation.cjs:57	'rotation: the provider sheet lists its keys'
+checks/23-provider-rotation.cjs:57	'rotation: the provider sheet lists its keys'
+checks/23-provider-rotation.cjs:59	'rotation: an exhausted key shows Cooling down'
+checks/23-provider-rotation.cjs:60	'rotation: no strategy choice with a single key'
+checks/23-provider-rotation.cjs:66	'rotation: a new key goes to the pool in the body, never the URL'
+checks/23-provider-rotation.cjs:67	'rotation: with the first key cooling down, the new one is in use'
+checks/23-provider-rotation.cjs:75	'rotation: picking a strategy saves it for the provider'
+checks/23-provider-rotation.cjs:76	'rotation: under Take turns the key is marked Next'
+checks/23-provider-rotation.cjs:81	'rotation: a removed key leaves the pool'
+checks/23-provider-rotation.cjs:81	'rotation: a removed key leaves the pool'
+checks/23-provider-rotation.cjs:82	'rotation: removal uses the 1-based index Hermes listed'
+checks/23-provider-rotation.cjs:102	name
+checks/23-provider-rotation.cjs:102	name
+checks/23-provider-rotation.cjs:106	'rotation: an empty fallback list shows no “Loading…”'
+checks/23-provider-rotation.cjs:107	'rotation: an empty fallback list keeps “Add a fallback model”'
+checks/23-provider-rotation.cjs:111	'rotation: a failed load leaves no “Loading…”'
+checks/23-provider-rotation.cjs:120	`rotation: entries are numbered after the main model (${JSON.stringify(rows)})`
+checks/23-provider-rotation.cjs:121	'rotation: a list with entries has no empty-state line'
+checks/23-provider-rotation.cjs:130	'rotation: a failed re-read leaves no old list to edit'
+checks/24-hermes-settings.cjs:15	`hermes settings: grouped by section (${groups.join(' | ')})`
+checks/24-hermes-settings.cjs:20	'hermes settings: a number shows Hermes’s default'
+checks/24-hermes-settings.cjs:25	'hermes settings: an out-of-range number is refused with its range'
+checks/24-hermes-settings.cjs:25	'hermes settings: an out-of-range number is refused with its range'
+checks/24-hermes-settings.cjs:32	`hermes settings: saving writes the nested value for the bot (${JSON.stringify(put?.body)})`
+checks/24-hermes-settings.cjs:33	'hermes settings: a changed option is marked'
+checks/24-hermes-settings.cjs:33	'hermes settings: a changed option is marked'
+checks/24-hermes-settings.cjs:38	'hermes settings: Use default fills in Hermes’s default'
+checks/24-hermes-settings.cjs:41	'hermes settings: the default is saved back'
+checks/24-hermes-settings.cjs:43	'hermes settings: back at the default, the mark goes'
+checks/24-hermes-settings.cjs:48	'hermes settings: a ratio is edited as a percentage'
+checks/24-hermes-settings.cjs:52	'hermes settings: 80 % is saved as 0.8'
+checks/24-hermes-settings.cjs:55	'hermes settings: no limit by default'
+checks/24-hermes-settings.cjs:60	'hermes settings: a limit can be set'
+checks/24-hermes-settings.cjs:65	'hermes settings: back to No limit writes null'
+checks/24-hermes-settings.cjs:70	'hermes settings: a switch saves at once'
+checks/24-hermes-settings.cjs:76	'hermes settings: a choice saves its Hermes value'
+checks/24-hermes-settings.cjs:83	'hermes settings: a list is one item per line'
+checks/24-hermes-settings.cjs:84	'hermes settings: the list row counts its items'
+checks/24-hermes-settings.cjs:90	'hermes settings: an unknown time zone is refused'
+checks/24-hermes-settings.cjs:90	'hermes settings: an unknown time zone is refused'
+checks/24-hermes-settings.cjs:101	'settings search: results show while typing'
+checks/24-hermes-settings.cjs:101	'settings search: results show while typing'
+checks/24-hermes-settings.cjs:103	'settings search: the chosen setting is flashed on its page'
+checks/24-hermes-settings.cjs:103	'settings search: the chosen setting is flashed on its page'
+checks/24-hermes-settings.cjs:104	'settings search: the flashed row is the chosen one'
+checks/25-approval-lock.cjs:90	`approval lock: the first Allow asks the shell, with the per-page key and the command (${JSON.stringify(c)})`
+checks/25-approval-lock.cjs:91	'approval lock: a cancelled confirmation answers nothing'
+checks/25-approval-lock.cjs:92	'approval lock: the sheet stays open after a cancel'
+checks/25-approval-lock.cjs:97	`approval lock: confirmed, the Allow goes through (${JSON.stringify(a)})`
+checks/25-approval-lock.cjs:104	`approval lock: later approvals in the chat don't ask again (${c.length} prompts)`
+checks/25-approval-lock.cjs:111	'approval lock: the Settings switch is on by default'
+checks/25-approval-lock.cjs:115	'approval lock: turning it off without confirming keeps it on'
+checks/25-approval-lock.cjs:120	'approval lock: turning it off after confirming saves it in the shell'
+checks/25-approval-lock.cjs:121	'approval lock: turning it off asks for the screen lock (no chat)'
+checks/25-approval-lock.cjs:134	'sensitive apps: off by default'
+checks/25-approval-lock.cjs:138	`sensitive apps: turning on asks for the fingerprint (${JSON.stringify(c)})`
+checks/25-approval-lock.cjs:139	'sensitive apps: a cancelled confirmation keeps it off and saves nothing'
+checks/25-approval-lock.cjs:143	'sensitive apps: confirmed, it turns on'
+checks/25-approval-lock.cjs:148	`sensitive apps: turning off asks too (${c.length} prompts)`
+checks/25-approval-lock.cjs:149	'sensitive apps: a cancelled confirmation keeps it on'
+checks/25-approval-lock.cjs:153	'sensitive apps: confirmed, it turns off'
+checks/25-approval-lock.cjs:156	'sensitive apps: turning it on again asks again'
+checks/25-approval-lock.cjs:168	'approval lock: Deny goes through without asking'
+checks/25-approval-lock.cjs:178	'approval lock: with no screen lock the Allow goes through'
+checks/25-approval-lock.cjs:179	'approval lock: no screen lock shows a hint'
+checks/25-approval-lock.cjs:180	'approval lock: the hint is shown once'
+checks/25-approval-lock.cjs:202	`phone data: the fingerprint prompt says what will be read, in the app's words (${JSON.stringify(c)})`
+checks/25-approval-lock.cjs:203	'phone data: a cancelled fingerprint makes no grant and answers nothing'
+checks/25-approval-lock.cjs:208	`phone data: confirmed, the grant is made, then the answer goes (${JSON.stringify(g)})`
+checks/25-approval-lock.cjs:217	'phone data: over the lock screen an Allow makes no grant and answers nothing'
+checks/25-approval-lock.cjs:220	'phone data: over the lock screen a Deny still goes, with no grant'
+checks/25-approval-lock.cjs:230	'phone data: a page load starts with no chat in Full access'
+checks/25-approval-lock.cjs:236	`phone data: Full access (the chat's default) gives the chat the pass (${JSON.stringify(f)})`
+checks/25-approval-lock.cjs:237	`phone data: going back to Off takes the pass away (${JSON.stringify(f.slice(-2))})`
+checks/25-approval-lock.cjs:242	`phone data: /yolo on gives it back (${JSON.stringify(f.slice(-2))})`
+checks/25-approval-lock.cjs:260	`phone data: Full access has the pass before the failing switch (${JSON.stringify(f.slice(-2))})`
+checks/25-approval-lock.cjs:277	'phone data: the Off switch really hit a failing config.set'
+checks/25-approval-lock.cjs:278	`phone data: a failed switch to Off still takes the pass away (${JSON.stringify(f.slice(-2))})`
+checks/25-approval-lock.cjs:300	`phone data: closing the chat takes the pass away (${JSON.stringify(f)})`
+checks/25-approval-lock.cjs:316	`alias: six spellings of an alias to /yolo on change no access and give no pass (${yoloSets() - before} yolo sets, ${JSON.stringify(f)})`
+checks/25-approval-lock.cjs:317	'alias: the refusal is shown'
+checks/25-approval-lock.cjs:328	`phone data: Auto access gives no pass (${JSON.stringify(full)})`
+checks/25-connectors.cjs:4	name
+checks/25-connectors.cjs:4	name
+checks/25-connectors.cjs:22	'connectors: toolsets that only work on the phone are not connectors'
+checks/25-connectors.cjs:32	`connectors: the switch turns the server off for the bot (${JSON.stringify(put?.body)})`
+checks/25-connectors.cjs:44	'connectors: a server name keeps only the characters Hermes accepts'
+checks/25-connectors.cjs:54	`connectors: the add request (${JSON.stringify(post?.body)})`
+checks/25-connectors.cjs:58	'connectors: the sign-in page opens in the browser'
+checks/25-connectors.cjs:63	'connectors: Remove deletes the server'
+checks/25-connectors.cjs:71	'connectors: a catalog entry waits for its required key'
+checks/25-connectors.cjs:77	`connectors: the catalog install request (${JSON.stringify(post?.body)})`
+checks/25-connectors.cjs:88	'connectors: an address is shown, a token is hidden'
+checks/25-connectors.cjs:93	`connectors: keys go to the toolset's env route (${JSON.stringify(put?.body)})`
+checks/25-connectors.cjs:94	'connectors: the switch turns the tool on'
+checks/25-connectors.cjs:106	'connectors: the provider route picks the service'
+checks/25-connectors.cjs:110	'connectors: the key is deleted from the bot’s .env'
+checks/25-connectors.cjs:119	'connectors: a skill key is saved to the .env'
+checks/25-connectors.cjs:133	'connectors: Google: the client file is sent as text'
+checks/25-connectors.cjs:136	'connectors: Google: the consent page opens in the browser'
+checks/25-connectors.cjs:147	'connectors: Google: sign out calls the plugin'
+checks/26-stats.cjs:52	'stats: no key: the card is not offered'
+checks/26-stats.cjs:54	'stats: no key: Settings has no switch'
+checks/26-stats.cjs:57	'stats: no key: nothing is sent'
+checks/26-stats.cjs:68	'stats: Yes stays on a short screen'
+checks/26-stats.cjs:70	'stats: the card closes when the phone locks'
+checks/26-stats.cjs:70	'stats: the card closes when the phone locks'
+checks/26-stats.cjs:71	'stats: locking leaves stats off'
+checks/26-stats.cjs:78	'stats: the card shows once setup is done'
+checks/26-stats.cjs:78	'stats: the card shows once setup is done'
+checks/26-stats.cjs:81	'stats: the card says what is sent'
+checks/26-stats.cjs:82	'stats: the card says what is never sent'
+checks/26-stats.cjs:83	'stats: the card names the service and what it keeps'
+checks/26-stats.cjs:84	'stats: nothing is sent before the answer'
+checks/26-stats.cjs:87	'stats: No thanks does not ask where they heard of it'
+checks/26-stats.cjs:92	'stats: the card is shown only once'
+checks/26-stats.cjs:94	'stats: the switch is off after No thanks'
+checks/26-stats.cjs:97	'stats: nothing is sent after No thanks'
+checks/26-stats.cjs:98	'stats: No thanks makes no install ID'
+checks/26-stats.cjs:99	'stats: no page errors (No thanks)'
+checks/26-stats.cjs:112	'stats: fixed choices, and a skip'
+checks/26-stats.cjs:113	'stats: no free text'
+checks/26-stats.cjs:116	'stats: the switch is on after Yes'
+checks/26-stats.cjs:120	'stats: sends to the host of the key\'s region'
+checks/26-stats.cjs:121	'stats: app start, the source and the screen'
+checks/26-stats.cjs:122	'stats: the source is the chosen one'
+checks/26-stats.cjs:123	'stats: the screen is its fixed name'
+checks/26-stats.cjs:125	'stats: every event has the random install ID'
+checks/26-stats.cjs:126	'stats: only the listed system fields (no locale, no model)'
+checks/26-stats.cjs:129	'stats: off forgets the install ID'
+checks/26-stats.cjs:133	'stats: off stops sending'
+checks/26-stats.cjs:134	'stats: no page errors (Yes)'
+checks/26-stats.cjs:143	'stats: turning it on later asks the question'
+checks/26-stats.cjs:143	'stats: turning it on later asks the question'
+checks/26-stats.cjs:148	'stats: the question is only asked once'
+checks/26-stats.cjs:158	'stats: a failed send was tried'
+checks/26-stats.cjs:159	'stats: a failed send is silent'
+checks/26-stats.cjs:175	'stats: inside the app, the development key does nothing'
+checks/27-plugin-update.cjs:35	'plugin: About shows the plugin up to date'
+checks/27-plugin-update.cjs:36	'plugin: the installed version shows as a date'
+checks/27-plugin-update.cjs:37	'plugin: nothing to tap when up to date'
+checks/27-plugin-update.cjs:40	'plugin: an old copy: says it updates by itself'
+checks/27-plugin-update.cjs:42	'plugin: tap updates now (no force)'
+checks/27-plugin-update.cjs:45	'plugin: while updating: no tap'
+checks/27-plugin-update.cjs:49	'plugin: a failure is shown, with the old plugin still working'
+checks/27-plugin-update.cjs:52	'plugin: retry while Hermes works says so'
+checks/27-plugin-update.cjs:52	'plugin: retry while Hermes works says so'
+checks/27-plugin-update.cjs:61	'plugin: a hand-changed copy: Cancel replaces nothing'
+checks/27-plugin-update.cjs:65	'plugin: Replace forces the update'
+checks/27-plugin-update.cjs:68	'plugin: a newer plugin is left alone, nothing to tap'
+checks/27-plugin-update.cjs:74	'plugin: work that can’t be asked: says a tap may cut it off, not "waiting"'
+checks/27-plugin-update.cjs:77	'plugin: work that can’t be asked: a tap asks first'
+checks/27-plugin-update.cjs:77	'plugin: work that can’t be asked: a tap asks first'
+checks/27-plugin-update.cjs:78	'plugin: the question says a running answer or job may be cut off'
+checks/27-plugin-update.cjs:81	'plugin: Cancel updates nothing'
+checks/27-plugin-update.cjs:85	'plugin: Update now then updates, telling the shell the warning was answered'
+checks/27-plugin-update.cjs:93	`plugin: switched phone, ${st}: a tap asks first`
+checks/27-plugin-update.cjs:93	`plugin: switched phone, ${st}: a tap asks first`
+checks/27-plugin-update.cjs:94	`plugin: switched phone, ${st}: nothing runs before the answer`
+checks/27-plugin-update.cjs:97	`plugin: switched phone, ${st}: then the confirmed update`
+checks/27-plugin-update.cjs:104	'plugin: switched phone, hand-changed: the replace question also says work may be cut off'
+checks/27-plugin-update.cjs:107	'plugin: switched phone, hand-changed: then the confirmed forced update'
+checks/27-plugin-update.cjs:112	'plugin: before the switch an older plugin updates at once (its work can be asked)'
+checks/27-plugin-update.cjs:113	errors.join('; ')
+checks/27-plugin-update.cjs:121	'old plugin: no cards switch (its route is missing)'
+checks/27-plugin-update.cjs:124	'old plugin: Connectors lists MCP servers'
+checks/27-plugin-update.cjs:124	'old plugin: Connectors lists MCP servers'
+checks/27-plugin-update.cjs:125	'old plugin: no Google row (its route is missing)'
+checks/27-plugin-update.cjs:126	errors.join('; ')
+checks/28-report.cjs:72	'report: Settings → About has the row and it opens the sheet'
+checks/28-report.cjs:75	'report: the sheet warns that reports are public'
+checks/28-report.cjs:76	'report: the sheet lists what is sent with it'
+checks/28-report.cjs:78	'report: no relay: the button reads Continue on GitHub'
+checks/28-report.cjs:79	'report: no relay: no Add a screenshot row'
+checks/28-report.cjs:80	'report: Submit is disabled when empty'
+checks/28-report.cjs:82	'report: Submit is disabled with only a title'
+checks/28-report.cjs:84	'report: Submit is enabled with title and text'
+checks/28-report.cjs:88	'report: no relay: nothing is sent to a relay'
+checks/28-report.cjs:91	'report: no relay: opens the GitHub new-issue page'
+checks/28-report.cjs:92	'report: the GitHub link carries the title'
+checks/28-report.cjs:94	'report: the GitHub link carries the text and the details'
+checks/28-report.cjs:95	'report: no relay: the sheet says why it goes through GitHub'
+checks/28-report.cjs:98	'report: Back returns to the form with the text kept'
+checks/28-report.cjs:99	'report: no page errors (no relay)'
+checks/28-report.cjs:107	'report: with a relay the button reads Submit'
+checks/28-report.cjs:112	'report: posts once with a 32-hex install ID'
+checks/28-report.cjs:113	'report: posts the title and text'
+checks/28-report.cjs:114	'report: posts details app, android and hermes'
+checks/28-report.cjs:115	'report: no log and no screenshot unless chosen'
+checks/28-report.cjs:118	'report: Open the report opens the issue'
+checks/28-report.cjs:122	'report: the draft is cleared after sending'
+checks/28-report.cjs:123	'report: no page errors (relay)'
+checks/28-report.cjs:136	'report: the log is hidden while the switch is off'
+checks/28-report.cjs:142	'report: the log box shows [removed], [ip] and [email]'
+checks/28-report.cjs:143	'report: the log box shows no console words, IP or email'
+checks/28-report.cjs:144	'report: the log holds the agent side (crash shape, service state, loop exit)'
+checks/28-report.cjs:145	'report: a key in the agent side is scrubbed too'
+checks/28-report.cjs:147	'report: a planted phone number, coordinates and message text are absent from the log'
+checks/28-report.cjs:148	'report: they became [number] and [place], and a duration, port and version stay'
+checks/28-report.cjs:149	'report: free text from the console is no part of it'
+checks/28-report.cjs:150	'report: the log box is tall enough to read in, not squeezed to a line'
+checks/28-report.cjs:152	'report: Submit works once the log is ready'
+checks/28-report.cjs:156	'report: the posted log is the scrubbed text shown'
+checks/28-report.cjs:172	'report: the GitHub link keeps the words and leaves the private log out'
+checks/28-report.cjs:187	'report: without a relay the log goes in the link, as the sheet said'
+checks/28-report.cjs:200	'settings: the delete row shows while the log is on'
+checks/28-report.cjs:205	'settings: delete reached Hermes\'s side (nothing left to tell it)'
+checks/28-report.cjs:208	'settings: no delete row while the log is off'
+checks/28-report.cjs:210	'settings: off is saved and Hermes\'s side was told'
+checks/28-report.cjs:215	'settings: on again is saved and Hermes\'s side was told'
+checks/28-report.cjs:226	`report: ${name}: the relay was tried`
+checks/28-report.cjs:227	`report: ${name}: the sheet says why`
+checks/28-report.cjs:229	`report: ${name}: GitHub opens with the report`
+checks/28-report.cjs:238	'report: with a relay there is an Add a screenshot row'
+checks/28-report.cjs:241	'report: the screenshot shows with a public note'
+checks/28-report.cjs:246	'report: Submit posts the screenshot as a base64 JPEG'
+checks/28-report.cjs:247	'report: Report sent mentions the screenshot'
+checks/28-report.cjs:266	'report: Cancel is off while sending'
+checks/28-report.cjs:267	'report: a tap outside does not close the sheet while sending'
+checks/28-report.cjs:269	'report: one tap sends once'
+checks/28-report.cjs:278	'report: the sheet renders in the light theme without page errors'
+checks/29-phone-data.cjs:82	'phone data: hidden when the app says it is not ready'
+checks/29-phone-data.cjs:85	'phone data: hidden without the native methods'
+checks/29-phone-data.cjs:91	'phone data: the master switch starts off'
+checks/29-phone-data.cjs:92	'phone data: the footer explains where results go'
+checks/29-phone-data.cjs:93	`phone data: ${k} is hidden while the master is off`
+checks/29-phone-data.cjs:99	`phone data: turning the master on calls phoneDataSet with the key (${JSON.stringify(c)})`
+checks/29-phone-data.cjs:100	'phone data: the master flips on after ok'
+checks/29-phone-data.cjs:102	`phone data: ${k} row shows`
+checks/29-phone-data.cjs:102	`phone data: ${k} row shows`
+checks/29-phone-data.cjs:103	`phone data: ${k} starts off`
+checks/29-phone-data.cjs:105	'phone data: photos say details only'
+checks/29-phone-data.cjs:110	'phone data: a kind flips on after ok'
+checks/29-phone-data.cjs:116	'phone data: turning a kind off is immediate'
+checks/29-phone-data.cjs:117	'phone data: turning off shows no prompt'
+checks/29-phone-data.cjs:123	`phone data: ${result} shows "${msg}"`
+checks/29-phone-data.cjs:123	`phone data: ${result} shows "${msg}"`
+checks/29-phone-data.cjs:124	`phone data: ${result} leaves the master off`
+checks/29-phone-data.cjs:131	'phone data: blocked shows the Android settings row'
+checks/29-phone-data.cjs:131	'phone data: blocked shows the Android settings row'
+checks/29-phone-data.cjs:132	'phone data: blocked leaves the kind off'
+checks/29-phone-data.cjs:135	'phone data: the row opens Android settings'
+checks/29-phone-data.cjs:141	'phone data: no overflow rows while the record has room'
+checks/29-phone-data.cjs:144	'phone data: overflow shows Allow more chats'
+checks/29-phone-data.cjs:144	'phone data: overflow shows Allow more chats'
+checks/29-phone-data.cjs:145	'phone data: overflow shows Forget'
+checks/29-phone-data.cjs:146	'phone data: Allow more says it keeps every chat'
+checks/29-phone-data.cjs:151	'phone data: the Forget confirmation says chats lose their protection (' + msg.slice(0, 80).replace(/\n/g, ' ') + ')'
+checks/29-phone-data.cjs:154	'phone data: Cancel on the Forget confirmation calls nothing'
+checks/29-phone-data.cjs:159	'phone data: Allow more calls phoneDataAllowMore with the key and forgets nothing'
+checks/29-phone-data.cjs:160	'phone data: the overflow rows are gone once the flag clears'
+checks/29-phone-data.cjs:168	'phone data: confirmed Forget calls phoneDataForget and the rows go'
+checks/29-phone-data.cjs:173	'phone data: a cancelled lock on Allow more shows Not changed'
+checks/29-phone-data.cjs:173	'phone data: a cancelled lock on Allow more shows Not changed'
+checks/29-phone-data.cjs:174	'phone data: and the rows stay'
+checks/29-phone-data.cjs:179	'phone data: Allow more at the maximum toasts that the limit is reached'
+checks/29-phone-data.cjs:179	'phone data: Allow more at the maximum toasts that the limit is reached'
+checks/29-phone-data.cjs:183	'phone data: lost ids show the notice'
+checks/29-phone-data.cjs:183	'phone data: lost ids show the notice'
+checks/29-phone-data.cjs:184	'phone data: the notice says everything stays protected, and Allow more is hidden'
+checks/29-phone-data.cjs:189	'phone data: Forget clears the lost notice'
+checks/29-phone-data.cjs:197	'phone data: a kind whose permission is gone shows off'
+checks/29-phone-data.cjs:198	'phone data: it says Android removed the permission'
+checks/29-phone-data.cjs:202	'phone data: turning it on again goes through phoneDataSet'
+checks/29-phone-data.cjs:209	'phone data: foreground re-read starts with the master off'
+checks/29-phone-data.cjs:215	'phone data: coming back to the foreground re-reads the switches'
+checks/29-phone-data.cjs:215	'phone data: coming back to the foreground re-reads the switches'
+checks/29-phone-data.cjs:216	'phone data: the master shows the re-read state'
+checks/29-phone-data.cjs:217	'phone data: a removed permission shows after the re-read'
+checks/29-phone-data.cjs:224	'phone data: Settings search finds it'
+checks/29-phone-data.cjs:224	'phone data: Settings search finds it'
+checks/29-phone-data.cjs:291	'phone data card: the result text is shown as it is'
+checks/29-phone-data.cjs:292	`phone data card: no media preview and no link (${JSON.stringify(pdc && { imgs: pdc.imgs, links: pdc.links })})`
+checks/29-phone-data.cjs:293	`phone data card: opening it fetches nothing (${JSON.stringify(hits)})`
+checks/29-phone-data.cjs:299	`phone data card: another tool's card in this chat holds its media behind a tap, keeps its links, fetches nothing (${JSON.stringify(oth && { imgs: oth.imgs, holds: oth.holds, links: oth.links })}, ${hits.length} fetches)`
+checks/29-phone-data.cjs:339	`phone data taint: a chat with no phone_data call also holds a remote image behind a tap, nothing fetched (${JSON.stringify(m)}, ${hits.length} fetches)`
+checks/29-phone-data.cjs:342	'phone data taint: a link in a chat with no phone_data call opens at once'
+checks/29-phone-data.cjs:345	'phone data taint: a card open_url in a chat with no phone_data call opens at once'
+checks/29-phone-data.cjs:356	`phone data taint: a read that happens after the reply was drawn covers it too (${JSON.stringify(m)})`
+checks/29-phone-data.cjs:362	'phone data taint, control: the image of a chat with no phone_data call is not fetched before the tap'
+checks/29-phone-data.cjs:366	`phone data taint, control: its tap loads the image at once (${JSON.stringify(m)})`
+checks/29-phone-data.cjs:373	`phone data taint: the image waits behind its host name and "Tap to load" (${JSON.stringify(m)})`
+checks/29-phone-data.cjs:374	`phone data taint: no network request before the tap (${JSON.stringify(hits)})`
+checks/29-phone-data.cjs:378	`phone data taint: it loads after the tap (${JSON.stringify(m)})`
+checks/29-phone-data.cjs:383	`phone data taint: a link shows the full address, host and query first (${d1})`
+checks/29-phone-data.cjs:384	'phone data taint: and has opened nothing yet'
+checks/29-phone-data.cjs:387	'phone data taint: Cancel opens nothing'
+checks/29-phone-data.cjs:391	'phone data taint: Open on the dialog opens it'
+checks/29-phone-data.cjs:394	`phone data taint: a card open_url shows the address first and opens nothing yet (${d2})`
+checks/29-phone-data.cjs:404	`phone data taint: survives a page reload (${JSON.stringify(m)}, ${hits.length} fetches)`
+checks/29-phone-data.cjs:411	`phone data taint: Full access still holds the image (${JSON.stringify(m)}, ${hits.length} fetches)`
+checks/29-phone-data.cjs:495	`phone data leaks: a card's image components fetch nothing in this chat (${JSON.stringify(imgs)}, ${JSON.stringify(hits)})`
+checks/29-phone-data.cjs:496	'phone data leaks: the card says its images are held back'
+checks/29-phone-data.cjs:498	`phone data leaks: a Mermaid diagram with an image shape is shown as code (${mm})`
+checks/29-phone-data.cjs:500	`phone data leaks: no picture, source or srcset is left in the reply (${pic}, ${JSON.stringify(hits)})`
+checks/29-phone-data.cjs:502	`phone data leaks: the page told the shell this chat has read phone data (${JSON.stringify(rem)})`
+checks/29-phone-data.cjs:510	`phone data leaks: after a reload the shell is told again, nothing is fetched (${JSON.stringify(rem)}, ${hits.length} fetches)`
+checks/29-phone-data.cjs:525	`phone data leaks: a tool card's media waits behind a tap (${JSON.stringify(spots.tool)}, ${JSON.stringify(hits)})`
+checks/29-phone-data.cjs:526	`phone data leaks: a notice's image waits behind a tap (${JSON.stringify(spots.notice)})`
+checks/29-phone-data.cjs:529	`phone data leaks: a link in a subagent's goal shows its address first (${dlg})`
+checks/29-phone-data.cjs:535	`phone data leaks: the placeholder shows the host and that the address carries data (${holdText})`
+checks/29-phone-data.cjs:539	`phone data leaks: its tap passes exactly that address to the shell, then loads (${JSON.stringify(rem.filter(r => r.allow))})`
+checks/29-phone-data.cjs:544	`phone data leaks: a canvas page in this chat renders no frame, shows its source as text (${JSON.stringify(held)})`
+checks/29-phone-data.cjs:552	`phone data leaks, control: a chat with no phone_data call holds its card's images behind Load images (${JSON.stringify(imgs)})`
+checks/29-phone-data.cjs:556	`phone data leaks, control: Load images shows the card's images (${JSON.stringify(imgs)})`
+checks/29-phone-data.cjs:558	`phone data leaks, control: its Mermaid diagram that names an image is shown as code too, and fetches nothing (${mm2})`
+checks/29-phone-data.cjs:560	`phone data leaks, control: the shell is told it is not blocked (${JSON.stringify(rem)})`
+checks/29-phone-data.cjs:570	`phone data leaks, control: a tool card's and a notice's images also wait behind a tap, nothing fetched (${JSON.stringify(ctl)})`
+checks/29-phone-data.cjs:573	'phone data leaks, control: a subagent goal link opens at once'
+checks/29-phone-data.cjs:577	`phone data leaks, control: a canvas page in a chat with no phone_data call still runs in its frame (${JSON.stringify(frames)})`
+checks/29-phone-data.cjs:585	'phone data leaks, control: a subagent tool event for another tool changes nothing (the card keeps its images)'
+checks/29-phone-data.cjs:589	`phone data leaks: a subagent whose own tool event names phone_data makes the chat count (${JSON.stringify(after)})`
+checks/29-phone-data.cjs:591	`phone data leaks: the shell is told at that moment, the first phone_data call (${JSON.stringify(rem)})`
+checks/29-phone-data.cjs:600	`phone data leaks: switching chats tells the shell each time (${JSON.stringify([toTainted, toCtl])})`
+checks/29-phone-data.cjs:633	`phone data native record: a chat the app knows is blocked though its items show no phone_data call (${JSON.stringify(st.remote)})`
+checks/29-phone-data.cjs:634	`phone data native record: and its card images fetch nothing (${JSON.stringify(st.imgs)}, ${JSON.stringify(hits)})`
+checks/29-phone-data.cjs:641	`phone data native record: after a reload (the cached preview path) it is never reported as not blocked (${JSON.stringify(st.remote)}, ${hits.length} fetches)`
+checks/29-phone-data.cjs:647	`phone data native record, control: a chat the app has no record of is not blocked and offers Load images for its card (${JSON.stringify(st.remote)}, ${JSON.stringify(st.imgs)})`
+checks/29-phone-data.cjs:717	`phone data lineage: an earlier segment of the chat that read makes the chat blocked (asked ${JSON.stringify(asked)}, ${JSON.stringify(r)})`
+checks/29-phone-data.cjs:718	'phone data lineage: and its card images are held back'
+checks/29-phone-data.cjs:724	`phone data lineage: after a reload (the preview path) it is never reported as not blocked (${JSON.stringify(r)})`
+checks/29-phone-data.cjs:729	`phone data lineage, control: nothing recorded -> not blocked (${JSON.stringify(r)})`
+checks/29-phone-data.cjs:733	`phone data lineage, limit: a link the page never saw can't be asked about (${JSON.stringify(r)})`
+checks/29-phone-data.cjs:741	`phone data lineage: a session.info with another stored id links it to the chat (${JSON.stringify(r.slice(-2))})`
+checks/29-phone-data.cjs:748	`phone data fail closed: a throwing phoneDataTainted blocks the chat (${JSON.stringify(r)})`
+checks/29-phone-data.cjs:752	`phone data fail closed, control: a shell without the method leaves a chat with no phone_data item alone (${JSON.stringify(r)})`
+checks/29-phone-data.cjs:766	`phone data mailto: the full link is shown and nothing opened yet (${d})`
+checks/29-phone-data.cjs:768	'phone data mailto: Cancel opens nothing'
+checks/29-phone-data.cjs:774	'phone data mailto, control: an untainted chat opens it at once'
+checks/29-phone-data.cjs:796	`phone data gallery: an HTML page from a chat that read is not run, though the chat on screen did not read (${JSON.stringify(v)}, ${JSON.stringify(r.slice(-2))})`
+checks/29-phone-data.cjs:800	`phone data gallery: closing it lets the shell's filter off again (${JSON.stringify(r.slice(-2))})`
+checks/29-phone-data.cjs:804	`phone data gallery: a Markdown document's remote image waits behind a tap (${JSON.stringify(v)}, ${JSON.stringify(docHits())})`
+checks/29-phone-data.cjs:807	`phone data gallery: a link in it shows its address first (${dd})`
+checks/29-phone-data.cjs:816	`phone data gallery, control: a page from an untainted chat still runs (${JSON.stringify(v)})`
+checks/29-phone-data.cjs:824	`phone data gallery: a document whose chat was compressed from a chat that read is held (${JSON.stringify(v)})`
+checks/29-phone-data.cjs:832	`phone data gallery: a document of an unknown chat is held once the app has recorded any read (${JSON.stringify(r.slice(-2))})`
+checks/29-phone-data.cjs:839	`phone data gallery, control: ... and not before any read (${JSON.stringify(r.slice(-2))})`
+checks/29-phone-data.cjs:852	`phone data files${want ? '' : ', control'}: an HTML file ${want ? 'is held once a read was recorded' : 'still runs when no read was ever recorded'} (${JSON.stringify(v)}, ${JSON.stringify(r.slice(-2))})`
+checks/29-phone-data.cjs:902	`phone data card query${tainted ? '' : ', control'}: a card ${tainted ? "can't search the web after a phone-data read, and still searches chats" : 'searches the web and chats as before'} (${JSON.stringify(asked)})`
