@@ -57,6 +57,18 @@ final class InstallPhase {
         }
     }
 
+    /** Android sends its prompt within a second or so of the commit. Committed this long with no prompt and no answer: lost. */
+    static final long LOST_PROMPT_MS = 15000;
+
+    /**
+     * The prompt was lost (the receiver was gone when it arrived): COMMITTED, with no prompt and no answer, for longer
+     * than LOST_PROMPT_MS. A prompt that is waiting or shown is never lost: the user may simply not have answered yet.
+     */
+    static boolean promptLost(Phase p, long msSinceCommit) { return p == Phase.COMMITTED && msSinceCommit > LOST_PROMPT_MS; }
+
+    /** retry(p), except that a lost prompt means start fresh (the caller abandons the old session first). */
+    static Retry retry(Phase p, long msSinceCommit) { return promptLost(p, msSinceCommit) ? Retry.START : retry(p); }
+
     /** May a new install start now? Only when nothing is in flight. */
     static boolean canStart(Phase p) { return p == Phase.IDLE; }
 

@@ -45,6 +45,12 @@ public class InstallPhaseTest {
         check(run(Phase.IDLE, Event.PROMPT_ARRIVED) == Phase.IDLE, "a prompt nobody asked for (stale broadcast) starts nothing");
         check(run(Phase.IDLE, Event.PROMPT_OPENED, Event.COMMIT_RETURNED) == Phase.IDLE, "stray events leave idle alone");
         check(!InstallPhase.hasSession(Phase.IDLE) && !InstallPhase.hasSession(Phase.DOWNLOADING), "no session held while idle or downloading");
+        // A lost prompt (the receiver was gone when it arrived): committed, no prompt, no answer.
+        check(InstallPhase.retry(Phase.COMMITTED, 1000) == Retry.WAIT && !InstallPhase.promptLost(Phase.COMMITTED, 1000), "committed for 1 s: wait");
+        check(InstallPhase.retry(Phase.COMMITTED, 20000) == Retry.START && InstallPhase.promptLost(Phase.COMMITTED, 20000), "committed for 20 s with no prompt: start fresh");
+        check(!InstallPhase.promptLost(Phase.COMMITTED, InstallPhase.LOST_PROMPT_MS), "exactly the wait is not yet lost");
+        check(InstallPhase.retry(Phase.PROMPT_WAITING, 10000000L) == Retry.SHOW_PROMPT && InstallPhase.retry(Phase.PROMPT_SHOWN, 10000000L) == Retry.SHOW_PROMPT, "prompt waiting or shown for any time: show the prompt, never stale");
+        check(InstallPhase.retry(Phase.DOWNLOADING, 10000000L) == Retry.WAIT && InstallPhase.retry(Phase.IDLE, 0) == Retry.START, "downloading never goes stale by this clock; idle starts");
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }

@@ -723,6 +723,11 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(helperPromptCheck);
         finishIfInstalled();
         if (helperWhich == null) return;
+        String lost = helperWhich;
+        if (dropLostHelper()) {
+            if (!installed(helperPackage(lost))) helperState(lost, "error", 0, "Android didn't finish the install.");
+            return;
+        }
         if (helperSession >= 0 && helperConfirm == null && !helperDownloading) {
             // committed but no answer at all: if Android dropped the session, nothing is in flight any more
             android.content.pm.PackageInstaller.SessionInfo si = null;
@@ -743,6 +748,18 @@ public class MainActivity extends Activity {
     }
 
     static volatile boolean helperDownloading;
+    /** When the helper's session commit returned (SystemClock.elapsedRealtime); with InstallPhase.promptLost. */
+    static volatile long helperCommittedAt;
+
+    /** Committed, but Android's prompt never reached a receiver and no answer came: abandon it and clear the install so
+     *  the next tap starts fresh. True when it did. Main thread. */
+    boolean dropLostHelper() {
+        if (helperWhich == null || helperDownloading || helperSession < 0 || helperConfirm != null) return false;
+        if (!InstallPhase.promptLost(InstallPhase.Phase.COMMITTED, android.os.SystemClock.elapsedRealtime() - helperCommittedAt)) return false;
+        abandonHelperSession();
+        helperFinished();
+        return true;
+    }
     /** Asked for by the page but not yet started on the main thread: a re-check in between must not call it stopped. */
     static volatile String helperRequested;
 
@@ -821,6 +838,7 @@ public class MainActivity extends Activity {
             return;
         }
         finishIfInstalled();
+        dropLostHelper(); // a lost prompt must not block this tap for ever: fall through to a fresh install
         if (helperWhich != null) {
             // One at a time. The same app again (the page's Retry): open its prompt again instead of a new download.
             if (helperWhich.equals(which) && helperConfirm != null) showHelperPrompt();
@@ -848,6 +866,7 @@ public class MainActivity extends Activity {
                 if (!(shizuku ? SHIZUKU_SIGNER : FDROID_SIGNER).equals(sha)) throw new Exception("The download isn't signed by its maker.");
                 helperState(which, "installing", 100, "");
                 commitHelper(which, pkg, apk);
+                helperCommittedAt = android.os.SystemClock.elapsedRealtime();
                 helperDownloading = false;
             } catch (Exception e) {
                 final String msg = e.getMessage() == null ? "Install failed." : e.getMessage();
@@ -865,7 +884,21 @@ public class MainActivity extends Activity {
         }, "hm-helper").start();
     }
 
+    /** The instance whose receiver should be registered: this one, or the live one when this one is destroyed (the
+     *  download thread of an old instance commits after a recreate; a receiver on a destroyed instance is never
+     *  unregistered again). Null = none alive: the prompt may be lost, which the lost-prompt wait then frees. */
+    MainActivity liveInstance() {
+        if (!isDestroyed()) return this;
+        MainActivity c = current;
+        return c != null && !c.isDestroyed() ? c : null;
+    }
+
     void registerHelperReceiver() {
+        MainActivity t = liveInstance();
+        if (t != null) t.registerHelperReceiverHere();
+    }
+
+    void registerHelperReceiverHere() {
         if (!helperReceiverOn) {
             android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
                 @Override
@@ -2180,6 +2213,8 @@ public class MainActivity extends Activity {
     /** The update's phase, process-wide, until Android answers (not until the commit returns). */
     static InstallPhase.Phase updatePhase = InstallPhase.Phase.IDLE;
     static volatile int updateSession = -1;
+    /** When the update's session commit returned (SystemClock.elapsedRealtime); with InstallPhase.promptLost. */
+    static volatile long updateCommittedAt;
     boolean updateReceiverOn;
 
     static synchronized InstallPhase.Phase updatePhase() { return updatePhase; }
@@ -2229,6 +2264,14 @@ public class MainActivity extends Activity {
     /** onResume: a committed update whose session Android dropped without an answer is over; let the next tap start. */
     void resumeUpdateInstall() {
         if (!InstallPhase.hasSession(updatePhase()) || updateSession < 0) return;
+        if (InstallPhase.promptLost(updatePhase(), android.os.SystemClock.elapsedRealtime() - updateCommittedAt)) {
+            abandonUpdateSession();
+            updateConfirm = null;
+            updateConfirmKept = null;
+            updateEvent(InstallPhase.Event.SESSION_GONE);
+            updateState("error", 0, "Install failed.");
+            return;
+        }
         android.content.pm.PackageInstaller.SessionInfo si = null;
         try {
             si = getPackageManager().getPackageInstaller().getSessionInfo(updateSession);
@@ -2278,7 +2321,14 @@ public class MainActivity extends Activity {
             return;
         }
         synchronized (MainActivity.class) {
-            InstallPhase.Retry r = InstallPhase.retry(updatePhase);
+            InstallPhase.Retry r = InstallPhase.retry(updatePhase, android.os.SystemClock.elapsedRealtime() - updateCommittedAt);
+            if (r == InstallPhase.Retry.START && updatePhase != InstallPhase.Phase.IDLE) {
+                // Committed, but Android's prompt never reached a receiver: abandon that session and start fresh.
+                abandonUpdateSession();
+                updateConfirm = null;
+                updateConfirmKept = null;
+                updateEvent(InstallPhase.Event.SESSION_GONE);
+            }
             if (r == InstallPhase.Retry.SHOW_PROMPT) {
                 // Android's prompt is already waiting or was shown: open it again, never a second session.
                 updateConfirm = updateConfirmKept;
@@ -2303,8 +2353,9 @@ public class MainActivity extends Activity {
                 if (no != null) throw new Exception(no);
                 updateState("installing", 100, "");
                 commitInstall(apk);
+                updateCommittedAt = android.os.SystemClock.elapsedRealtime();
                 updateEvent(InstallPhase.Event.COMMIT_RETURNED);
-            } catch (Exception e) {
+            } catch (Throwable e) { // an Error too: the phase must not stay set
                 abandonUpdateSession();
                 updateEvent(InstallPhase.Event.FAILED);
                 updateState("error", 0, e.getMessage() == null ? "Update failed." : e.getMessage());
@@ -2357,6 +2408,11 @@ public class MainActivity extends Activity {
     }
 
     void registerUpdateReceiver() {
+        MainActivity t = liveInstance();
+        if (t != null) t.registerUpdateReceiverHere();
+    }
+
+    void registerUpdateReceiverHere() {
         if (!updateReceiverOn) {
             android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
                 @Override
