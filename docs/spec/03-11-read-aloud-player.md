@@ -49,6 +49,7 @@ Back/forward 5 s use the shell's own path (`ttsControl('rew' | 'ff')`) so the no
 - `phaseOf(player, reseekUntil, now)` says which `PlayerPhase` the player is in.
 - `RESEEK_MS` (300) is how long after a re-speak a late `tts-done` is still ignored; `reseekDeadline(reseek, now)` gives when that window ends (0 for a fresh speech).
 - `isStaleDone(text, paused, reseekUntil, now)` says whether a `tts-done` is to be ignored: never for 'stop', otherwise while paused or inside the window.
+- Without the Android shell (a plain browser) `say` speaks with `speechSynthesis`; `browserUtterance` in `voice.ts` is the utterance being read now, and the `onend`/`onerror` of any other one (the speech that a seek, a speed change or a stop cancelled reports its end later) is ignored, so it cannot clear the new player. The native path does not use it.
 - `parseSeg(text)` reads a `tts-seg` argument into `at` and `len`; `parsePace(text)` accepts a `tts-pace` from 2 to 120.
 - `paceOf(cps, rate)` is the pace in use (measured, else 14 characters per second times the speed); `nextPace(cps, seg, now)` folds a finished stretch's measurement into it; `estimatePos(seg, now, pace)` is the position between `tts-seg` events, never past the stretch's end.
 - `pausedPlace(playFrom, at, textLength)` turns the place `tts-paused` reports into an absolute one.
