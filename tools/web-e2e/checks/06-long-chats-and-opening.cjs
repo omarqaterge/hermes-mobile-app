@@ -77,4 +77,28 @@ module.exports = async t => {
   await mock({ releaseSlowResume: true })
   await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
   check((await options.isEnabled()) && (await auto.isEnabled()), 'once the chat is open its menu and Auto button work again')
+
+  // ── Scroll to the newest message: shows once the chat is scrolled up, and brings the end back ──
+  {
+    const { WEB } = require('../lib.cjs')
+    const jp = await t.browser.newPage({ viewport: { width: 375, height: 812 } })
+    await jp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-scrub', profile: 'default' })))
+    await jp.goto(WEB + '/')
+    await jp.getByText('answer 30', { exact: true }).waitFor({ timeout: 8000 })
+    await jp.waitForTimeout(500)
+    await jp.mouse.move(187, 400)
+    for (let i = 0; i < 12; i++) await jp.mouse.wheel(0, -1500)
+    const jump = jp.getByRole('button', { name: 'Scroll to the newest message' })
+    const shown = await jump.waitFor({ timeout: 3000 }).then(() => true, () => false)
+    if (shown) await jump.click()
+    const atEnd = await jp.waitForFunction(() => {
+      // the scrolling box that holds the replies, found from a reply, not by a class name
+      let el = [...document.querySelectorAll('p')].find(e => e.textContent === 'answer 30')
+      while (el && !/(auto|scroll)/.test(getComputedStyle(el).overflowY)) el = el.parentElement
+      return !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    }, null, { timeout: 4000 }).then(() => true, () => false)
+    await jump.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    check(shown && atEnd && (await jump.count()) === 0, `chat: Scroll to the newest message shows when scrolled up and brings the end back (${shown}, ${atEnd})`)
+    await jp.close()
+  }
 }

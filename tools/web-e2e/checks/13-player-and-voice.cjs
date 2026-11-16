@@ -261,4 +261,52 @@ module.exports = async t => {
     await sp.getByText(/The on-device speech model couldn’t start/).waitFor({ timeout: 2000 }).then(() => check(true, 'a model that fails to start is explained in a toast'), () => check(false, 'a model that fails to start is explained in a toast'))
     await sp.close()
   }
+
+  // ── the composer's voice buttons and the read-aloud player's own controls, by role and name ──
+  {
+    const { WEB, nativeShell } = require('../lib.cjs')
+    const vq = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await vq.addInitScript(nativeShell)
+    await vq.addInitScript(() => {
+      window.__ttsHold = true // the fake voice keeps speaking until the test ends it
+      localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-11', profile: 'default' }))
+    })
+    await vq.goto(WEB + '/')
+    await vq.getByText('answer s-11', { exact: true }).waitFor({ timeout: 8000 })
+    const native = n => vq.evaluate(x => window.__nativeCalls.filter(c => c === x).length, n)
+    // Dictate, then Stop dictation: the shell is asked to listen and to stop; a dictated phrase lands in the box.
+    await vq.getByRole('button', { name: 'Dictate' }).click()
+    await vq.evaluate(() => window.__hmVoice('ready', '')) // the shell says the recogniser listens, as Voice.java does
+    const stopBtn = vq.getByRole('button', { name: 'Stop dictation' })
+    const listening = await stopBtn.waitFor({ timeout: 3000 }).then(() => true, () => false)
+    await vq.evaluate(() => window.__hmVoice('final', 'dictated words'))
+    const box = vq.getByPlaceholder('Message Hermux')
+    await vq.waitForFunction(el => /dictated words/.test(el.value), await box.elementHandle(), { timeout: 2000 }).catch(() => {})
+    const typed = await box.inputValue()
+    if (listening) await stopBtn.click()
+    check(listening && (await native('startListening')) === 1 && (await native('stopListening')) === 1 && /dictated words/.test(typed), `voice: Dictate listens, the phrase goes in the box and Stop dictation stops (${listening}, ${await native('startListening')}, ${await native('stopListening')}, ${typed})`)
+    await vq.evaluate(() => window.__hmVoice('end', ''))
+    await vq.getByPlaceholder('Message Hermux').fill('')
+    // Live conversation: listening starts and the Live bar shows; End stops it.
+    await vq.getByRole('button', { name: 'Live conversation' }).click()
+    const liveOn = await vq.getByText(/Live · Listening…/).waitFor({ timeout: 3000 }).then(() => true, () => false)
+    check(liveOn && (await native('startListening')) === 2, 'voice: Live conversation starts listening and shows the Live bar')
+    await vq.getByRole('button', { name: 'End', exact: true }).click()
+    await vq.getByText(/Live · /).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    check((await vq.getByText(/Live · /).count()) === 0 && (await vq.getByRole('button', { name: 'Live conversation' }).count()) === 1, 'voice: End leaves Live mode')
+    // The player: Read aloud opens it; Reading position seeks (speaking again from there); Close player stops it.
+    await vq.getByRole('button', { name: 'Read aloud' }).last().click()
+    const player = vq.getByRole('region', { name: 'Reading aloud' })
+    await player.waitFor({ timeout: 3000 })
+    const pos = player.getByRole('slider', { name: 'Reading position' })
+    const max = Number(await pos.getAttribute('max'))
+    const spoke = await native('speak')
+    await pos.fill(String(Math.max(1, Math.floor(max / 2))))
+    await vq.waitForTimeout(200)
+    check(max > 1 && Number(await pos.inputValue()) === Math.max(1, Math.floor(max / 2)) && (await native('speak')) > spoke, `player: Reading position moves the reading and speaks from there (${await pos.inputValue()} of ${max})`)
+    await player.getByRole('button', { name: 'Close player' }).click()
+    await player.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    check((await native('stopSpeaking')) >= 1 && (await vq.getByRole('region', { name: 'Reading aloud' }).count()) === 0, 'player: Close player stops the reading and closes the player')
+    await vq.close()
+  }
 }

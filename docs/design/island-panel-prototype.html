@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Island panel: motion prototype</title>
+<!--
+  Motion reference for docs/design/island-panel.md. Open it in any browser. Every number here (springs, durations,
+  curves, sizes, colours) is the one the design file names; when the two disagree, the design file wins.
+  All text in it is made up: no real chats, commands or names.
+-->
+<style>
+.ip-wrap {
+  --ip-ink: #0b0d10; --ip-ink2: #151a21; --ip-hair: rgba(255, 255, 255, 0.09);
+  --ip-text: #f2efe8; --ip-dim: #9aa1ab; --ip-faint: #5e6570;
+  --ip-gold: #d9a441; --ip-goldink: #1a1307; --ip-green: #3dbe7a; --ip-red: #e5564b; --ip-amber: #e8912d;
+  --ip-fill: rgba(255, 255, 255, 0.07); --ip-fill2: rgba(255, 255, 255, 0.13); --ip-code: #07090c;
+  --ip-slow: 1;
+  display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; align-items: flex-start;
+  font-family: system-ui, -apple-system, Roboto, 'Segoe UI', sans-serif;
+  color: var(--foreground, #1b1b1b);
+}
+.ip-wrap * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+.ip-wrap button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+
+/* ── the phone ── */
+.ip-phone {
+  position: relative; width: 360px; max-width: 100%; height: 680px; flex: none;
+  border-radius: 38px; overflow: hidden; background: #1a2230; color: var(--ip-text);
+  box-shadow: 0 0 0 2px #2a2f38, 0 0 0 9px #0c0e11, 0 18px 50px rgba(0, 0, 0, 0.35);
+  user-select: none; touch-action: none;
+}
+.ip-wall { position: absolute; inset: 0; padding: 74px 14px 0; background: linear-gradient(180deg, #223047, #131a26 60%); }
+.ip-wall .bar { height: 44px; border-radius: 14px; background: rgba(255, 255, 255, 0.1); margin-bottom: 14px; }
+.ip-wall .rowx { display: flex; gap: 12px; align-items: center; padding: 10px 4px; }
+.ip-wall .av { width: 42px; height: 42px; border-radius: 50%; flex: none; }
+.ip-wall .ln { height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.22); margin-bottom: 8px; }
+.ip-wall .ln.s { width: 55%; background: rgba(255, 255, 255, 0.11); margin: 0; }
+.ip-scrim { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+.ip-sbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; display: flex; justify-content: space-between; align-items: center; padding: 0 26px; font-size: 14px; font-weight: 600; pointer-events: none; }
+.ip-sbar i { display: inline-block; width: 16px; height: 10px; border-radius: 3px; background: currentColor; opacity: 0.9; margin-left: 5px; }
+.ip-chip {
+  position: absolute; top: 7px; left: 50%; transform: translateX(-50%); height: 34px; min-width: 96px; padding: 0 14px 0 10px;
+  border-radius: 17px; background: #000 !important; color: var(--ip-text) !important; display: flex; align-items: center; justify-content: center; gap: 7px;
+  font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; transition: opacity 80ms linear;
+}
+.ip-chip svg { width: 17px; height: 17px; fill: var(--ip-gold); }
+.ip-chip.gone { opacity: 0; pointer-events: none; }
+.ip-hint { position: absolute; top: 48px; left: 0; right: 0; text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.7); transition: opacity 0.2s; pointer-events: none; }
+
+/* ── the panel ── */
+.ip-card {
+  position: absolute; left: 50%; display: none; overflow: hidden; transform: translateX(-50%);
+  background: linear-gradient(180deg, var(--ip-ink2), var(--ip-ink) 120px); border: 1px solid var(--ip-hair);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4); will-change: width, height, top;
+}
+.ip-inner { position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 16px 16px 9px; }
+.ip-hd { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.ip-orb { position: relative; width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; background: rgba(217, 164, 65, 0.14); }
+.ip-orb svg.g { width: 21px; height: 21px; fill: var(--ip-gold); }
+.ip-orb.ok { background: rgba(61, 190, 122, 0.16); }
+.ip-orb.ok svg.s { width: 22px; height: 22px; fill: none; stroke: var(--ip-green); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.ip-orb .comet { position: absolute; inset: -1px; border-radius: 50%; background: conic-gradient(from 0deg, rgba(217, 164, 65, 0) 0 22%, var(--ip-gold) 100%); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.4px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.4px)); animation: ip-spin calc(1.4s * var(--ip-slow)) linear infinite; }
+.ip-orb .pulse { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--ip-gold); opacity: 0; animation: ip-pulse calc(1.6s * var(--ip-slow)) cubic-bezier(0.2, 0.7, 0.2, 1) 3; }
+.ip-orb .flash { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--ip-green); opacity: 0; }
+@keyframes ip-spin { to { transform: rotate(360deg); } }
+@keyframes ip-pulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
+.ip-ttl { flex: 1; min-width: 0; }
+.ip-eye { font-size: 12.5px; line-height: 16px; color: var(--ip-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-title { font-size: 17px; line-height: 23px; font-weight: 600; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-title code, .ip-what code { font-family: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 0.9em; color: var(--ip-gold); font-weight: 500; }
+.ip-ring { position: relative; width: 44px; height: 44px; flex: none; display: grid; place-items: center; }
+.ip-ring svg { position: absolute; inset: 0; }
+.ip-ring circle { fill: none; stroke-width: 3; }
+.ip-ring .trk { stroke: rgba(255, 255, 255, 0.1); }
+.ip-ring .arc { stroke: var(--ip-gold); stroke-linecap: round; }
+.ip-num { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ip-chrono { font-size: 14px; color: var(--ip-dim); font-variant-numeric: tabular-nums; flex: none; }
+.ip-dw { position: relative; display: inline-block; }
+.ip-dw .gh { position: absolute; left: 0; top: 0; }
+
+.ip-bd { margin-top: 14px; }
+.ip-what { font-size: 15px; line-height: 21px; }
+.ip-cmd { margin-top: 10px; padding: 11px 13px; border-radius: 14px; background: var(--ip-code); border: 1px solid rgba(255, 255, 255, 0.05); font-family: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 18px; color: #d7d3ca; word-break: break-word; }
+.ip-cmd .ps { color: var(--ip-gold); }
+.ip-q { font-size: 17px; line-height: 24px; font-weight: 500; }
+.ip-choices { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ip-choice { position: relative; min-height: 50px; padding: 13px 44px 13px 15px; border-radius: 16px; background: var(--ip-fill) !important; text-align: left; font-size: 15px; line-height: 21px; color: var(--ip-text) !important; transition: transform 260ms cubic-bezier(0.3, 1.5, 0.5, 1), background-color 160ms linear, color 160ms linear, opacity 160ms linear; }
+.ip-choice:active { transform: scale(0.975); background: var(--ip-fill2) !important; transition-duration: 80ms; }
+.ip-choice.chosen { background: var(--ip-gold) !important; color: var(--ip-goldink) !important; font-weight: 600; }
+.ip-choice .mk { position: absolute; right: 13px; top: 50%; width: 22px; height: 22px; margin-top: -11px; }
+.ip-choice .mk svg { width: 22px; height: 22px; fill: none; stroke: var(--ip-goldink); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.ip-field { margin-top: 10px; display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 5px 0 16px; border-radius: 25px; background: var(--ip-fill); border: 1px solid transparent; transition: border-color 160ms, opacity 160ms; }
+.ip-field:focus-within { border-color: rgba(217, 164, 65, 0.55); }
+.ip-field input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; font: inherit; font-size: 15px; color: var(--ip-text); }
+.ip-field input::placeholder { color: var(--ip-faint); }
+.ip-send { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--ip-fill2) !important; transition: background-color 160ms, transform 260ms cubic-bezier(0.3, 1.5, 0.5, 1); }
+.ip-send svg { width: 20px; height: 20px; fill: none; stroke: var(--ip-faint); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; transition: stroke 160ms; }
+.ip-send.on { background: var(--ip-gold) !important; }
+.ip-send.on svg { stroke: var(--ip-goldink); }
+.ip-send:active { transform: scale(0.92); transition-duration: 80ms; }
+.ip-dimmed { opacity: 0.32 !important; pointer-events: none; }
+
+.ip-segs { display: flex; gap: 4px; height: 6px; }
+.ip-seg { position: relative; flex: 1; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.ip-seg.x { background: rgba(255, 255, 255, 0.05); }
+.ip-seg .f { position: absolute; inset: 0; border-radius: 3px; transform-origin: left center; }
+.ip-seg.d .f { background: var(--ip-green); }
+.ip-seg.a .f { background: var(--ip-gold); }
+.ip-seg.a::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent); transform: translateX(-100%); animation: ip-shim calc(1.6s * var(--ip-slow)) ease-in-out infinite; }
+@keyframes ip-shim { 60%, 100% { transform: translateX(100%); } }
+.ip-ind { position: relative; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.ip-ind::after { content: ''; position: absolute; top: 0; bottom: 0; width: 42%; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--ip-gold), transparent); animation: ip-sweep calc(1.25s * var(--ip-slow)) cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+@keyframes ip-sweep { from { left: -42%; } to { left: 100%; } }
+.ip-task { margin-top: 11px; display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 20px; }
+.ip-task .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ip-gold); flex: none; transform: translateY(-2px); }
+.ip-task .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-task .ct { color: var(--ip-dim); font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
+.ip-other { margin-top: 8px; font-size: 13px; line-height: 18px; color: var(--ip-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-reply { font-size: 15px; line-height: 22px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ip-stats { margin-top: 8px; font-size: 13px; color: var(--ip-dim); }
+
+.ip-ac { margin-top: 16px; }
+.ip-arow { position: relative; height: 50px; }
+.ip-btn { position: absolute; top: 0; height: 50px; border-radius: 17px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; transition: transform 260ms cubic-bezier(0.3, 1.5, 0.5, 1), filter 120ms linear, background-color 200ms linear, color 200ms linear; }
+.ip-btn:active { transform: scale(0.97); filter: brightness(1.12); transition-duration: 80ms; }
+.ip-btn.primary { background: var(--ip-gold) !important; color: var(--ip-goldink) !important; }
+.ip-btn.tonal { background: var(--ip-fill) !important; color: var(--ip-text) !important; }
+.ip-btn.danger { background: rgba(229, 86, 75, 0.15) !important; color: #ff8177 !important; }
+.ip-btn.good { background: rgba(61, 190, 122, 0.17) !important; color: #6fdca0 !important; }
+.ip-btn.busy { background: var(--ip-fill) !important; color: var(--ip-dim) !important; pointer-events: none; }
+.ip-btn svg.i { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.ip-btn svg.sq { width: 12px; height: 12px; fill: currentColor; }
+.ip-btn svg.r { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.ip-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.18); border-top-color: currentColor; animation: ip-spin calc(0.7s * var(--ip-slow)) linear infinite; }
+.ip-tbtn { display: block; width: 100%; height: 40px; margin-top: 4px; font-size: 14px; font-weight: 500; color: var(--ip-dim) !important; border-radius: 12px; transition: opacity 120ms linear, background-color 120ms; }
+.ip-tbtn:active { background: var(--ip-fill) !important; }
+.ip-more { text-align: center; font-size: 12.5px; color: var(--ip-faint); margin-top: 6px; }
+.ip-grab { width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.16); margin: 10px auto 0; }
+
+/* the phone's own fingerprint sheet (drawn by Android in the real app; here only to show the order of events) */
+.ip-bio { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 22px 20px 26px; border-radius: 28px; background: #1d222a; text-align: center; transform: translateY(120%); }
+.ip-bio b { display: block; font-size: 16px; margin-bottom: 4px; }
+.ip-bio span { font-size: 13px; color: var(--ip-dim); }
+.ip-bio svg { display: block; width: 46px; height: 46px; margin: 16px auto 0; fill: none; stroke: var(--ip-gold); stroke-width: 1.6; stroke-linecap: round; }
+
+/* ── the controls beside the phone ── */
+.ip-ctl { flex: 1 1 250px; max-width: 330px; font-size: 13.5px; line-height: 1.45; }
+.ip-ctl h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground, #6b7280); }
+.ip-ctl .grp { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.ip-ctl button { padding: 8px 13px; border-radius: 999px; border: 1px solid var(--border, #d0d3d8); background: var(--card, transparent); font-size: 13px; font-weight: 500; }
+.ip-ctl button[aria-pressed='true'] { background: var(--foreground, #1b1b1b); color: var(--background, #fff); border-color: transparent; }
+.ip-ctl button:disabled { opacity: 0.4; cursor: default; }
+.ip-ctl p { margin: 0 0 10px; color: var(--muted-foreground, #6b7280); }
+</style>
+</head>
+<body>
+<div class="ip-wrap" id="ipWrap">
+  <div class="ip-phone" id="ipPhone">
+    <div class="ip-wall" id="ipWall"></div>
+    <div class="ip-scrim" id="ipScrim"></div>
+    <div class="ip-sbar"><span>9:41</span><span><i></i><i></i><i></i></span></div>
+    <div class="ip-hint" id="ipHint">Tap the island</div>
+    <button class="ip-chip" id="ipChip" aria-label="Open the panel"></button>
+    <div class="ip-card" id="ipCard" role="dialog" aria-label="Hermux"></div>
+    <div class="ip-bio" id="ipBio"><b>Allow Hermux to run this?</b><span>Confirm it is you</span>
+      <svg viewBox="0 0 24 24"><path d="M7 11a5 5 0 0 1 10 0v2"/><path d="M9.6 20c.8-2 1-4 1-7a1.4 1.4 0 0 1 2.8 0c0 3-.3 5.5-1.2 8"/><path d="M4.8 15c.5-1.5.6-3 .6-4a6.6 6.6 0 0 1 11.2-4.7"/><path d="M18.6 12c0 3-.3 5-1 7"/></svg>
+    </div>
+  </div>
+  <div class="ip-ctl">
+    <h4>What Hermux is doing</h4>
+    <div class="grp" id="ipScen">
+      <button data-s="approval">Permission</button>
+      <button data-s="ask">Question</button>
+      <button data-s="working">Progress</button>
+      <button data-s="working2">Progress, no task list</button>
+    </div>
+    <h4>Things that happen while it is open</h4>
+    <div class="grp">
+      <button id="ipEvTask">A task finishes</button>
+      <button id="ipEvDone">The turn finishes</button>
+      <button id="ipEvAppr">A permission request arrives</button>
+    </div>
+    <h4>View</h4>
+    <div class="grp">
+      <button id="ipSlow" aria-pressed="false">Slow motion</button>
+      <button id="ipReduce" aria-pressed="false">Reduced motion</button>
+      <button id="ipBioT" aria-pressed="true">Fingerprint on Allow</button>
+    </div>
+    <p>Tap the island to open the panel. Close it by tapping outside it, or by dragging it up.</p>
+    <p>The permission timer runs 20 seconds here so the colour change is quick to see; in the app it is the request's own time, usually 60.</p>
+  </div>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id)
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e }
+  const lerp = (a, b, p) => a + (b - a) * p
+  const clamp = (x, a, b) => Math.min(b, Math.max(a, x))
+
+  // ── icons (the two status icons are the app's own drawables) ──
+  const CADUCEUS = 'M14.62 7.17Q14.35 7.7 15.29 7.33Q15.14 7.03 14.62 7.17ZM17.02 8.71Q16.85 7.87 16.13 8.04Q14.67 8.56 13.53 8.32L14.94 7.97L13.28 7.59Q13.93 6.45 15.14 6.66Q18.29 6.71 18.49 8.64Q18.46 9.6 16.28 10.1Q15.21 9.83 12.78 9.7Q17.08 9.4 17.02 8.71ZM11.22 21.99Q9.75 22.51 9.28 23.45H9.04Q9.03 22.33 10.35 21.79ZM8.74 7.4Q9.76 7.8 9.45 7.23Q8.91 7.1 8.74 7.4ZM12.59 22.18V23.05Q12.43 23.45 12.03 23.45Q11.51 23.45 11.46 22.58V21.94Q8.76 21.49 8.78 20.64Q8.84 19.9 9.83 19.53Q10.53 19.73 11.22 19.81Q10.28 20.15 10.27 20.43Q10.23 21.09 12.64 21.51Q15.06 21.93 15.02 23.5H14.79Q14.39 22.65 12.59 22.18ZM12.59 19.98V21.36L11.46 21.15V19.75Q7.15 19.08 7.08 17.97Q7.12 16.92 9.09 16.43Q9.88 16.73 11.22 16.87Q8.59 17.25 8.54 17.84Q8.46 18.49 11.82 18.97Q15.19 19.45 15.27 20.57Q15.34 21.32 13.55 21.54L12.8 21.36Q14.04 21.05 13.83 20.5Q13.85 20.15 12.59 19.98ZM12.59 13.83V16L11.46 15.79V13.68Q5.83 13.1 5.79 11.59Q5.86 10.77 7.6 10.43Q8.79 10.75 10.42 10.85Q7.03 11.1 7.25 11.59Q7.1 12.39 11.96 12.91Q16.82 13.43 16.83 14.74Q16.77 15.79 14.45 16.3L12.85 15.88Q15.36 15.27 15.36 14.89Q15.39 14.27 12.59 13.83ZM11.46 16.8Q7.32 16.3 7.23 14.81Q7.25 13.93 8.98 13.47Q10.08 13.65 11.22 13.77Q8.71 14.27 8.71 14.96Q8.71 15.58 12.81 16.16Q16.92 16.75 16.97 18.06Q16.9 19.11 14.22 19.43Q13.72 19.21 12.81 19.04Q15.59 18.56 15.51 17.89Q15.48 17.42 12.59 16.97V19.03L11.46 18.84ZM12.59 10.89V12.85L11.46 12.71V10.79Q5.54 10.47 5.56 8.71Q5.76 6.78 8.91 6.71Q9.93 6.66 10.79 7.67L9.11 8.04L10.52 8.39Q9.38 8.62 7.92 8.09Q7.18 7.92 7.03 8.78Q6.98 9.45 12.57 9.76Q18.16 10.08 18.26 11.66Q18.16 13.06 15.48 13.37Q14.5 13.11 12.78 12.88Q16.83 12.46 16.82 11.66Q17 11.17 12.59 10.89ZM10.92 1.71Q10.92 1.99 11.06 2.23Q11.2 2.48 11.46 2.61Q11.71 2.74 11.99 2.74Q11.52 1.74 11.99 0.7Q11.72 0.7 11.46 0.83Q11.2 0.95 11.06 1.2Q10.92 1.45 10.92 1.71ZM17.74 2.38Q19.51 3.36 20.2 4.1L20.62 3.52Q19.13 2.64 17.74 2.38ZM16.82 2.31Q18.58 3.83 19.16 4.81L19.81 4.29Q18.36 2.96 16.82 2.31ZM16.41 2.29Q17.64 4.27 17.9 5.36L18.66 5.07Q17.7 3.36 16.41 2.29ZM15.71 2.18Q16.53 4.44 16.51 5.59L17.45 5.48Q16.85 3.53 15.71 2.18ZM15.27 2.04Q15.31 4.44 14.92 5.54L15.86 5.71Q15.89 3.67 15.27 2.04ZM14.91 2.09Q14.14 4.2 13.35 5.07L14.27 5.46Q15.02 3.68 14.91 2.09ZM3.38 3.52 3.8 4.1Q4.49 3.36 6.26 2.38Q4.87 2.64 3.38 3.52ZM4.19 4.29 4.84 4.81Q5.42 3.83 7.18 2.31Q5.64 2.96 4.19 4.29ZM5.34 5.07 6.1 5.36Q6.36 4.27 7.59 2.29Q6.3 3.36 5.34 5.07ZM6.55 5.48 7.5 5.59Q7.47 4.44 8.29 2.18Q7.15 3.53 6.55 5.48ZM8.14 5.71 9.08 5.54Q8.69 4.44 8.73 2.04Q8.11 3.67 8.14 5.71ZM9.73 5.46 10.65 5.07Q9.86 4.2 9.09 2.09Q8.98 3.68 9.73 5.46ZM12.59 6.53V9.71L11.46 9.61V6.63Q10.43 5.42 8.47 6.01Q4.35 6.01 2.98 3.47Q4.29 2.06 9.68 1.96Q10.05 2.79 11.42 3.25Q11.44 3.26 11.46 3.26V2.9Q11.42 2.88 11.39 2.86Q11.07 2.69 10.89 2.39Q10.72 2.09 10.72 1.76Q10.72 1.44 10.89 1.14Q11.07 0.84 11.39 0.67Q11.71 0.5 12.03 0.5Q12.36 0.5 12.67 0.67Q12.98 0.84 13.16 1.14Q13.35 1.44 13.35 1.76Q13.35 2.09 13.17 2.39Q13 2.69 12.7 2.86Q12.64 2.88 12.59 2.9H12.61Q12.61 2.91 12.59 2.91V3.25Q13.95 2.79 14.32 1.96Q19.71 2.06 21.02 3.47Q19.65 6.01 15.53 6.01Q13.63 5.44 12.59 6.53Z'
+  const SHIELD = 'M12,1.5 L20.5,5 L20.5,11 C20.5,16.4 16.9,20.9 12,22.5 C7.1,20.9 3.5,16.4 3.5,11 L3.5,5 Z M10.6,15.6 L16.9,9.3 L15.5,7.9 L10.6,12.8 L8.4,10.6 L7,12 Z'
+  const glyph = d => `<svg class="g" viewBox="0 0 24 24"><path fill-rule="evenodd" d="${d}"/></svg>`
+  const CHECK = cls => `<svg class="${cls}" viewBox="0 0 24 24"><path class="draw" d="M5 12.6l4.6 4.6L19 7.6"/></svg>`
+  const CROSS = cls => `<svg class="${cls}" viewBox="0 0 24 24"><path class="draw" d="M7 7l10 10M17 7L7 17"/></svg>`
+  const FINGER = '<svg class="i" viewBox="0 0 24 24"><path d="M7 11a5 5 0 0 1 10 0v2"/><path d="M9.6 20c.8-2 1-4 1-7a1.4 1.4 0 0 1 2.8 0c0 3-.3 5.5-1.2 8"/><path d="M4.8 15c.5-1.5.6-3 .6-4a6.6 6.6 0 0 1 11.2-4.7"/><path d="M18.6 12c0 3-.3 5-1 7"/></svg>'
+  const ARROW = '<svg viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>'
+  const SQUARE = '<svg class="sq" viewBox="0 0 12 12"><rect width="12" height="12" rx="2.5"/></svg>'
+
+  // ── motion tokens (the same names as in island-panel.md) ──
+  const EASE = { out: 'cubic-bezier(0.2, 0.8, 0.2, 1)', in: 'cubic-bezier(0.4, 0, 1, 1)', std: 'cubic-bezier(0.4, 0, 0.2, 1)', back: 'cubic-bezier(0.3, 1.5, 0.5, 1)' }
+  const SPRING = { openW: { k: 520, z: 0.82 }, openH: { k: 360, z: 0.8 }, resize: { k: 420, z: 0.86 }, snap: { k: 600, z: 0.9 } }
+  const ORIGIN = { w: 132, h: 34, top: 7, r: 17 }
+  const CARD_TOP = 56, CARD_R = 28, GUTTER = 12
+
+  let SPEED = 1, REDUCED = false, BIO = true
+  const timers = new Set()
+  const later = (ms, fn) => { const t = setTimeout(() => { timers.delete(t); fn() }, ms / SPEED); timers.add(t); return t }
+  function anim(node, frames, o) {
+    o = Object.assign({ fill: 'both', easing: EASE.out, duration: 200, delay: 0 }, o)
+    if (REDUCED) { o.duration = Math.min(o.duration, 120); o.delay = 0; frames = frames.map(f => { const g = Object.assign({}, f); delete g.transform; return g }) }
+    o.duration /= SPEED; o.delay /= SPEED
+    return node.animate(frames, o)
+  }
+  /** A damped spring from `from` to `to` (mass 1): k = stiffness, z = damping ratio. The same closed form the Java side uses. */
+  function spring({ from = 0, to = 1, k, z, on, done }) {
+    if (REDUCED) { on(to); if (done) done(); return { stop() {} } }
+    const w0 = Math.sqrt(k), x0 = from - to, wd = w0 * Math.sqrt(Math.max(1e-6, 1 - z * z))
+    let t0 = null, raf = 0, dead = false
+    const at = t => z < 1
+      ? to + Math.exp(-z * w0 * t) * (x0 * Math.cos(wd * t) + ((z * w0 * x0) / wd) * Math.sin(wd * t))
+      : to + Math.exp(-w0 * t) * (x0 + w0 * x0 * t)
+    const frame = now => {
+      if (dead) return
+      if (t0 == null) t0 = now
+      const t = ((now - t0) / 1000) * SPEED
+      if (Math.exp(-z * w0 * t) < 0.002) { on(to); if (done) done(); return }
+      on(at(t)); raf = requestAnimationFrame(frame)
+    }
+    raf = requestAnimationFrame(frame)
+    return { stop() { dead = true; cancelAnimationFrame(raf) } }
+  }
+  function tween(ms, ease, on, done) {
+    if (REDUCED) ms = Math.min(ms, 120)
+    let t0 = null, raf = 0
+    const frame = now => { if (t0 == null) t0 = now; const p = clamp((((now - t0) * SPEED) / ms), 0, 1); on(ease(p)); if (p < 1) raf = requestAnimationFrame(frame); else if (done) done() }
+    raf = requestAnimationFrame(frame)
+    return { stop() { cancelAnimationFrame(raf) } }
+  }
+  /** Changed characters roll: the new one comes in from one side while the old one leaves the other way. */
+  function roll(node, text, dir) {
+    const old = node.dataset.v
+    if (old === text) return
+    node.dataset.v = text
+    node.textContent = ''
+    for (let i = 0; i < text.length; i++) {
+      const w = el('span', 'ip-dw'), s = el('span'); s.textContent = text[i]; w.append(s); node.append(w)
+      const oc = old != null && old.length === text.length ? old[i] : null
+      if (old == null || oc === text[i] || REDUCED) continue
+      anim(s, [{ transform: `translateY(${60 * dir}%)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 240 })
+      if (oc != null) { const g = el('span', 'gh'); g.textContent = oc; w.append(g); anim(g, [{ transform: 'none', opacity: 1 }, { transform: `translateY(${-60 * dir}%)`, opacity: 0 }], { duration: 180, easing: EASE.in }).onfinish = () => g.remove() }
+    }
+  }
+  function swapText(node, html) {
+    anim(node, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-6px)' }], { duration: 110, easing: EASE.in }).onfinish = () => {
+      node.innerHTML = html
+      anim(node, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 200 })
+    }
+  }
+  function draw(svg, ms = 260, delay = 0) {
+    const p = svg.querySelector('.draw'), len = p.getTotalLength()
+    p.style.strokeDasharray = len
+    anim(p, [{ strokeDashoffset: len }, { strokeDashoffset: 0 }], { duration: ms, delay, easing: EASE.std })
+  }
+  const mix = (a, b, p) => a.map((v, i) => Math.round(lerp(v, b[i], clamp(p, 0, 1))))
+  const GOLD = [217, 164, 65], AMBER = [232, 145, 45], RED = [229, 86, 75]
+  /** Gold above half, amber to a fifth, red below, blended over ±5 % around each line. */
+  function timerColour(frac) {
+    const c = frac > 0.55 ? GOLD : frac > 0.45 ? mix(AMBER, GOLD, (frac - 0.45) / 0.1) : frac > 0.25 ? AMBER : frac > 0.15 ? mix(RED, AMBER, (frac - 0.15) / 0.1) : RED
+    return `rgb(${c[0]},${c[1]},${c[2]})`
+  }
+
+  // ── the stage ──
+  const phone = $('ipPhone'), wall = $('ipWall'), scrim = $('ipScrim'), chip = $('ipChip'), card = $('ipCard'), hint = $('ipHint'), bio = $('ipBio')
+  const hues = ['#7aa2ff', '#f29d6b', '#62c7a5', '#c58af9', '#e7c65a', '#8fb7c9', '#f0879a']
+  wall.innerHTML = '<div class="bar"></div>' + hues.map((h, i) => `<div class="rowx"><div class="av" style="background:${h}"></div><div style="flex:1"><div class="ln" style="width:${[62, 78, 48, 70, 56, 82, 64][i]}%"></div><div class="ln s"></div></div></div>`).join('')
+
+  const geo = { w: 0, h: 0, top: 0, r: 0, dy: 0 }
+  const applyGeo = () => { card.style.width = geo.w + 'px'; card.style.height = Math.max(0, geo.h) + 'px'; card.style.top = geo.top + geo.dy + 'px'; card.style.borderRadius = geo.r + 'px' }
+  const cardW = () => Math.min(phone.clientWidth - 2 * GUTTER, 420)
+
+  let scene = 'approval'   // what Hermux is doing: approval | ask | working | working2 | done
+  let open = false, closing = false, inner = null, hSpring = null, live = null   // live: this state's running parts
+  const model = { tasks: ['Find flights', 'Compare hotels', 'Draft the itinerary', 'Check the weather', 'Write the summary'], states: 'ddapp', started: Date.now() - 84000, steps: 7 }
+
+  function setChip() {
+    const txt = { approval: '20s', ask: 'Answer?', working: 'Web', working2: 'Shell', done: 'Done' }[scene]
+    chip.innerHTML = `<svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="${scene === 'approval' ? SHIELD : CADUCEUS}"/></svg><span>${txt}</span>`
+    for (const b of $('ipScen').children) b.setAttribute('aria-pressed', String(b.dataset.s === scene))
+    $('ipEvTask').disabled = scene !== 'working'
+    $('ipEvDone').disabled = scene !== 'working' && scene !== 'working2'
+    $('ipEvAppr').disabled = scene !== 'working' && scene !== 'working2'
+  }
+
+  function stopLive() { if (live && live.stop) live.stop(); live = null }
+  function relayout() {
+    if (!inner) return
+    if (hSpring) hSpring.stop()
+    hSpring = spring({ from: geo.h, to: inner.offsetHeight, ...SPRING.resize, on: h => { geo.h = h; applyGeo() } })
+  }
+
+  /** Puts a state's content in the card: the first time with the staggered entrance, later as a morph. */
+  function show(build, first) {
+    stopLive()
+    const next = el('div', 'ip-inner')
+    next.style.width = cardW() + 'px'
+    card.append(next)
+    const old = inner
+    inner = next
+    live = build(next) || null
+    if (first) {
+      next.querySelectorAll('[data-in]').forEach((n, i) => anim(n, [{ opacity: 0, transform: 'translateY(-8px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: 220, delay: 120 + i * 40 }))
+    } else {
+      if (old) { old.style.pointerEvents = 'none'; anim(old, [{ opacity: 1, transform: 'translateX(-50%) scale(1)' }, { opacity: 0, transform: 'translateX(-50%) scale(0.98)' }], { duration: 100, easing: 'linear' }).onfinish = () => old.remove() }
+      anim(next, [{ opacity: 0, transform: 'translateX(-50%) translateY(6px)' }, { opacity: 1, transform: 'translateX(-50%) translateY(0)' }], { duration: 180, delay: 80 })
+      relayout()
+    }
+  }
+  const builders = { approval: buildApproval, ask: buildAsk, working: n => buildWorking(n, true), working2: n => buildWorking(n, false), done: buildDone }
+
+  function openPanel() {
+    if (open || closing) return
+    open = true
+    hint.style.opacity = 0
+    chip.classList.add('gone')
+    card.style.display = 'block'
+    card.style.opacity = 1
+    show(builders[scene], true)
+    const F = { w: cardW(), h: inner.offsetHeight }
+    Object.assign(geo, ORIGIN, { dy: 0 }); applyGeo()
+    spring({ ...SPRING.openW, on: p => { geo.w = lerp(ORIGIN.w, F.w, p); geo.top = lerp(ORIGIN.top, CARD_TOP, p); geo.r = lerp(ORIGIN.r, CARD_R, clamp(p, 0, 1)); applyGeo() } })
+    hSpring = spring({ ...SPRING.openH, on: p => { geo.h = lerp(ORIGIN.h, F.h, p); applyGeo() } })
+    anim(scrim, [{ opacity: 0 }, { opacity: 0.4 }], { duration: 240, easing: EASE.std })
+    anim(wall, [{ filter: 'blur(0px)' }, { filter: 'blur(7px)' }], { duration: 240, easing: EASE.std })
+    scrim.style.pointerEvents = 'auto'
+  }
+
+  function closePanel() {
+    if (!open || closing) return
+    closing = true
+    stopLive()
+    if (hSpring) hSpring.stop()
+    if (inner) anim(inner, [{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'linear' })
+    const S = Object.assign({}, geo); S.top += S.dy; geo.dy = 0
+    anim(scrim, [{ opacity: 0.4 }, { opacity: 0 }], { duration: 200, easing: 'linear' })
+    anim(wall, [{ filter: 'blur(7px)' }, { filter: 'blur(0px)' }], { duration: 200, easing: 'linear' })
+    scrim.style.pointerEvents = 'none'
+    tween(230, p => p * p * (0.4 + 0.6 * p), p => {
+      geo.w = lerp(S.w, ORIGIN.w, p); geo.h = lerp(S.h, ORIGIN.h, p); geo.top = lerp(S.top, ORIGIN.top, p); geo.r = lerp(S.r, ORIGIN.r, p); applyGeo()
+      if (p > 0.8) chip.classList.remove('gone')
+    }, () => {
+      card.style.display = 'none'; card.textContent = ''; inner = null; open = false; closing = false
+      chip.classList.remove('gone'); setChip()
+    })
+  }
+
+  /** The chosen button takes the whole row and tells the story: Sending… then the result. */
+  function resolveRow(row, chosen, others, { label, result, good, ms = 750, then }) {
+    for (const o of others) { o.style.pointerEvents = 'none'; anim(o, [{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'linear' }) }
+    // a control under the row (Allow this session) gives its room back once it has faded
+    later(120, () => { let gone = false; for (const o of others) if (o.parentNode !== row) { o.style.display = 'none'; gone = true } if (gone) relayout() })
+    const pw = row.clientWidth, l0 = chosen.offsetLeft, w0 = chosen.offsetWidth
+    chosen.classList.add('busy')
+    anim(chosen, [{ left: l0 + 'px', width: w0 + 'px' }, { left: '0px', width: pw + 'px' }], { duration: 320, easing: EASE.back })
+    chosen.innerHTML = `<span class="ip-spin"></span><span>${label}</span>`
+    later(ms, () => {
+      chosen.classList.remove('busy', 'primary', 'tonal', 'danger')
+      chosen.classList.add(good ? 'good' : 'danger')
+      chosen.innerHTML = `${good ? CHECK('r') : CROSS('r')}<span>${result}</span>`
+      draw(chosen.querySelector('svg'))
+      anim(chosen.lastChild, [{ opacity: 0, transform: 'translateX(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 200 })
+      if (then) then()
+    })
+  }
+
+  // ── Permission ──
+  function buildApproval(root) {
+    const total = 20000, deadline = Date.now() + total
+    root.innerHTML = `
+      <div class="ip-hd" data-in>
+        <div class="ip-orb">${glyph(SHIELD)}</div>
+        <div class="ip-ttl"><div class="ip-eye">Tidy the downloads folder</div><div class="ip-title" data-t>Run a command?</div></div>
+        <div class="ip-ring" data-ring><svg viewBox="0 0 44 44"><circle class="trk" cx="22" cy="22" r="19"/><circle class="arc" cx="22" cy="22" r="19" transform="rotate(-90 22 22)"/></svg><span class="ip-num" data-num></span></div>
+      </div>
+      <div class="ip-bd" data-in data-bd>
+        <div class="ip-what">Delete temporary files older than 30 days</div>
+        <div class="ip-cmd"><span class="ps">$</span> find ~/Downloads -name "*.tmp" -mtime +30 -delete</div>
+      </div>
+      <div class="ip-ac" data-in>
+        <div class="ip-arow" data-row>
+          <button class="ip-btn danger" data-deny style="left:0;width:calc(36% - 4px)">Deny</button>
+          <button class="ip-btn primary" data-allow style="left:calc(36% + 4px);width:calc(64% - 4px)">${BIO ? FINGER : ''}<span>Allow once</span></button>
+        </div>
+        <button class="ip-tbtn" data-session>Allow this session</button>
+      </div>
+      <div class="ip-grab"></div>`
+    const q = s => root.querySelector(s)
+    const arc = q('.arc'), num = q('[data-num]'), ring = q('[data-ring]'), row = q('[data-row]')
+    const C = 2 * Math.PI * 19
+    arc.style.strokeDasharray = C
+    let raf = 0, over = false, wentRed = false
+    const tick = () => {
+      const left = Math.max(0, deadline - Date.now()), frac = left / total
+      arc.style.strokeDashoffset = C * (1 - frac)
+      const col = timerColour(frac)
+      arc.style.stroke = col
+      const secs = String(Math.ceil(left / 1000))
+      if (num.dataset.v !== secs) {
+        roll(num, secs, -1)
+        if (!open || scene !== 'approval') chip.lastChild.textContent = secs + 's'
+        if (left < 10000 && left > 0) anim(ring, [{ transform: 'scale(1)' }, { transform: 'scale(1.09)' }, { transform: 'scale(1)' }], { duration: 260, easing: EASE.std })
+      }
+      num.style.color = frac <= 0.2 ? col : ''
+      if (!wentRed && frac <= 0.2) { wentRed = true; if (navigator.vibrate) navigator.vibrate(8) }
+      if (left <= 0) return expire()
+      raf = requestAnimationFrame(tick)
+    }
+    const stop = () => { over = true; cancelAnimationFrame(raf) }
+    function expire() {
+      if (over) return
+      stop()
+      swapText(q('[data-t]'), 'This request expired')
+      q('[data-bd]').classList.add('ip-dimmed')
+      q('[data-session]').remove()
+      row.innerHTML = '<button class="ip-btn tonal" style="left:0;width:100%">Open chat</button>'
+      anim(row, [{ opacity: 0 }, { opacity: 1 }], { duration: 200 })
+      anim(ring, [{ opacity: 1 }, { opacity: 0.35 }], { duration: 200 })
+      relayout()
+      later(2600, () => { scene = 'working'; closePanel() })
+    }
+    function answer(which) {
+      if (over) return
+      const allow = which !== 'deny'
+      const go = () => {
+        stop()
+        anim(ring, [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.8)' }], { duration: 160, easing: EASE.in })
+        const chosen = q(allow ? '[data-allow]' : '[data-deny]')
+        const sess = q('[data-session]')
+        resolveRow(row, chosen, [q(allow ? '[data-deny]' : '[data-allow]'), sess], {
+          label: 'Sending…', good: allow, result: which === 'deny' ? 'Denied' : which === 'session' ? 'Allowed for this session' : 'Allowed',
+          then: () => later(900, () => { scene = 'working'; closePanel() })
+        })
+      }
+      if (allow && BIO) fingerprint(go); else go()
+    }
+    q('[data-allow]').onclick = () => answer('once')
+    q('[data-deny]').onclick = () => answer('deny')
+    q('[data-session]').onclick = () => answer('session')
+    raf = requestAnimationFrame(tick)
+    return { stop }
+  }
+  function fingerprint(ok) {
+    anim(bio, [{ transform: 'translateY(120%)' }, { transform: 'translateY(0)' }], { duration: 260 })
+    later(1000, () => { anim(bio, [{ transform: 'translateY(0)' }, { transform: 'translateY(120%)' }], { duration: 200, easing: EASE.in }); later(160, ok) })
+  }
+
+  // ── Question ──
+  function buildAsk(root) {
+    const choices = ['Pictures / Trips', 'Pictures / 2026', 'Ask me each time']
+    root.innerHTML = `
+      <div class="ip-hd" data-in>
+        <div class="ip-orb">${glyph(CADUCEUS)}<span class="pulse"></span></div>
+        <div class="ip-ttl"><div class="ip-eye">Sort the camera photos</div><div class="ip-title">Hermux asks</div></div>
+      </div>
+      <div class="ip-bd" data-in><div class="ip-q">Which folder should the photos go to?</div></div>
+      <div class="ip-choices">${choices.map(c => `<button class="ip-choice" data-in data-c>${c}<span class="mk"></span></button>`).join('')}</div>
+      <div class="ip-field" data-in data-f><input type="text" placeholder="Type your answer" aria-label="Your answer"><button class="ip-send" aria-label="Send">${ARROW}</button></div>
+      <button class="ip-tbtn" data-in>Open chat</button>
+      <div class="ip-grab"></div>`
+    const field = root.querySelector('[data-f]'), input = field.querySelector('input'), send = field.querySelector('.ip-send')
+    let sent = false
+    const finish = () => later(850, () => { scene = 'working'; closePanel() })
+    root.querySelectorAll('[data-c]').forEach(b => {
+      b.onclick = () => {
+        if (sent) return
+        sent = true
+        b.classList.add('chosen')
+        root.querySelectorAll('[data-c]').forEach(o => { if (o !== b) o.classList.add('ip-dimmed') })
+        field.classList.add('ip-dimmed')
+        const mk = b.querySelector('.mk')
+        mk.innerHTML = '<span class="ip-spin" style="display:block;margin:3px;border-color:rgba(26,19,7,.25);border-top-color:#1a1307"></span>'
+        later(650, () => { mk.innerHTML = CHECK(''); draw(mk.firstChild); finish() })
+      }
+    })
+    input.oninput = () => send.classList.toggle('on', input.value.trim().length > 0)
+    const sendTyped = () => {
+      if (sent || !input.value.trim()) return
+      sent = true
+      root.querySelectorAll('[data-c]').forEach(o => o.classList.add('ip-dimmed'))
+      input.blur(); input.disabled = true
+      send.innerHTML = '<span class="ip-spin" style="border-color:rgba(26,19,7,.25);border-top-color:#1a1307"></span>'
+      later(650, () => { send.innerHTML = CHECK(''); const s = send.firstChild; s.style.stroke = '#1a1307'; draw(s); finish() })
+    }
+    send.onclick = sendTyped
+    input.onkeydown = e => { if (e.key === 'Enter') sendTyped() }
+    return null
+  }
+
+  // ── Progress ──
+  function buildWorking(root, withTasks) {
+    const steps = ['Searching the web', 'Reading <code>itinerary.md</code>', 'Running <code>python plan.py</code>', 'Thinking…']
+    const done = () => (model.states.match(/d/g) || []).length
+    const cur = () => model.tasks[model.states.indexOf('a')] || ''
+    root.innerHTML = `
+      <div class="ip-hd" data-in>
+        <div class="ip-orb">${glyph(CADUCEUS)}<span class="comet"></span></div>
+        <div class="ip-ttl"><div class="ip-eye">Plan the weekend trip</div><div class="ip-title" data-t>${steps[0]}</div></div>
+        <div class="ip-chrono" data-ch></div>
+      </div>
+      <div class="ip-bd" data-in>
+        ${withTasks
+          ? `<div class="ip-segs">${[...model.states].map(c => `<div class="ip-seg ${c}"><div class="f"></div></div>`).join('')}</div>
+             <div class="ip-task"><span class="dot"></span><span class="nm" data-nm>${cur()}</span><span class="ct"><span data-ct></span> of ${model.tasks.length} tasks</span></div>`
+          : `<div class="ip-ind"></div><div class="ip-task"><span class="nm" style="color:var(--ip-dim)">${model.steps} steps so far</span></div>`}
+        <div class="ip-other">Tidy the downloads folder: Reading files</div>
+      </div>
+      <div class="ip-ac" data-in>
+        <div class="ip-arow" data-row>
+          <button class="ip-btn danger" data-stop style="left:0;width:calc(36% - 4px)">${SQUARE}<span>Stop</span></button>
+          <button class="ip-btn tonal" data-open style="left:calc(36% + 4px);width:calc(64% - 4px)">Open chat</button>
+        </div>
+      </div>
+      <div class="ip-grab"></div>`
+    const q = s => root.querySelector(s)
+    const ch = q('[data-ch]'), ct = q('[data-ct]')
+    if (ct) roll(ct, String(done()), 1)
+    if (REDUCED) root.querySelectorAll('.comet').forEach(c => { c.style.animation = 'none' })
+    const clock = () => { const s = Math.floor((Date.now() - model.started) / 1000); roll(ch, Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'), 1) }
+    clock()
+    let k = 0, alive = true
+    const iv = setInterval(clock, 250)
+    const cycle = () => { if (!alive) return; k = (k + 1) % steps.length; swapText(q('[data-t]'), steps[k]); later(2600, cycle) }
+    later(2600, cycle)
+    q('[data-stop]').onclick = () => {
+      alive = false
+      swapText(q('[data-t]'), 'Stopping…')
+      resolveRow(q('[data-row]'), q('[data-stop]'), [q('[data-open]')], { label: 'Stopping…', result: 'Stopped', good: false, ms: 900, then: () => later(900, () => { scene = 'working'; closePanel() }) })
+    }
+    q('[data-open]').onclick = closePanel
+    return {
+      stop() { alive = false; clearInterval(iv) },
+      taskDone() {
+        const i = model.states.indexOf('a')
+        if (i < 0 || !withTasks) return
+        const seg = root.querySelectorAll('.ip-seg')[i]
+        seg.className = 'ip-seg d'
+        anim(seg.firstChild, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 300, easing: EASE.std })
+        anim(seg, [{ transform: 'scaleY(1)' }, { transform: 'scaleY(1.7)' }, { transform: 'scaleY(1)' }], { duration: 420, delay: 220, easing: EASE.back })
+        const s = [...model.states]; s[i] = 'd'; if (i + 1 < s.length) s[i + 1] = 'a'; model.states = s.join('')
+        if (i + 1 < s.length) later(240, () => { const n = root.querySelectorAll('.ip-seg')[i + 1]; n.className = 'ip-seg a'; anim(n.firstChild, [{ opacity: 0 }, { opacity: 1 }], { duration: 200 }) })
+        roll(ct, String(done()), 1)
+        if (cur()) swapText(q('[data-nm]'), cur())
+      }
+    }
+  }
+
+  // ── Done (the turn finished while the panel was open) ──
+  function buildDone(root) {
+    root.innerHTML = `
+      <div class="ip-hd" data-in>
+        <div class="ip-orb ok">${CHECK('s')}<span class="flash"></span></div>
+        <div class="ip-ttl"><div class="ip-eye">Plan the weekend trip</div><div class="ip-title">Done</div></div>
+      </div>
+      <div class="ip-bd" data-in>
+        <div class="ip-reply">Your weekend is planned: the morning train on Saturday, two nights by the lake, and a table booked for Saturday evening. The full plan is in the chat.</div>
+        <div class="ip-stats">9 steps · 1m 31s</div>
+      </div>
+      <div class="ip-ac" data-in><div class="ip-arow"><button class="ip-btn primary" data-open style="left:0;width:100%">Open chat</button></div></div>
+      <div class="ip-grab"></div>`
+    draw(root.querySelector('.ip-orb svg'), 300, 160)
+    anim(root.querySelector('.flash'), [{ opacity: 0.9, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(1.6)' }], { duration: 520, delay: 160 })
+    anim(root.querySelector('.ip-orb'), [{ transform: 'scale(0.6)' }, { transform: 'scale(1)' }], { duration: 380, delay: 80, easing: EASE.back })
+    root.querySelector('[data-open]').onclick = () => { scene = 'working'; model.states = 'ddapp'; model.started = Date.now() - 84000; closePanel() }
+    return null
+  }
+
+  // ── gestures: drag up to close, a short rubber band downwards ──
+  let drag = null
+  card.addEventListener('pointerdown', e => { if (e.target.closest('button, input') || closing) return; drag = { y: e.clientY, t: performance.now(), dy: 0 }; card.setPointerCapture(e.pointerId) })
+  card.addEventListener('pointermove', e => { if (!drag) return; const d = e.clientY - drag.y; drag.dy = d; geo.dy = d < 0 ? d : Math.min(26, d * 0.22); applyGeo() })
+  const drop = () => {
+    if (!drag) return
+    const v = (drag.dy / Math.max(1, performance.now() - drag.t)) * 1000
+    const d = drag.dy; drag = null
+    if (d < -56 || v < -800) return closePanel()
+    spring({ from: geo.dy, to: 0, ...SPRING.snap, on: y => { geo.dy = y; applyGeo() } })
+  }
+  card.addEventListener('pointerup', drop)
+  card.addEventListener('pointercancel', drop)
+  scrim.addEventListener('click', closePanel)
+  chip.addEventListener('click', openPanel)
+
+  // ── controls ──
+  function go(s) {
+    if (closing) return
+    if ((s === 'working' || s === 'working2') && scene === 'done') { model.states = 'ddapp'; model.started = Date.now() - 84000 }
+    scene = s; setChip()
+    if (open) show(builders[s], false); else openPanel()
+  }
+  for (const b of $('ipScen').children) b.onclick = () => go(b.dataset.s)
+  $('ipEvTask').onclick = () => { if (!open) return openPanel(); if (live && live.taskDone) live.taskDone() }
+  $('ipEvDone').onclick = () => go('done')
+  $('ipEvAppr').onclick = () => go('approval')
+  const toggle = (id, fn) => { $(id).onclick = () => { const on = $(id).getAttribute('aria-pressed') !== 'true'; $(id).setAttribute('aria-pressed', String(on)); fn(on) } }
+  toggle('ipSlow', on => { SPEED = on ? 0.25 : 1; $('ipWrap').style.setProperty('--ip-slow', String(1 / SPEED)) })
+  toggle('ipReduce', on => { REDUCED = on })
+  toggle('ipBioT', on => { BIO = on })
+
+  setChip()
+  setTimeout(openPanel, 500)
+})()
+</script>
+</body>
+</html>

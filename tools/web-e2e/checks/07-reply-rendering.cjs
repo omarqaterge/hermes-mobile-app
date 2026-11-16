@@ -488,4 +488,30 @@ module.exports = async t => {
     check((await card.locator('.card-held').count()) === 0, 'card pictures: the line goes once they are loaded')
     await op.close()
   }
+
+  // ── a reply's actions, by role and name: Copy (choose plain text) and Branch ──
+  {
+    const { WEB } = require('../lib.cjs')
+    const ra = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await ra.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-42', profile: 'default' })))
+    await ra.goto(WEB + '/')
+    const reply = ra.getByText('answer s-42', { exact: true })
+    await reply.waitFor({ timeout: 8000 })
+    await ra.evaluate(() => { window.__copied = null; navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve() } })
+    // The reply's own Copy is the last Copy button (the question above it has one too).
+    await ra.getByRole('button', { name: 'Copy', exact: true }).last().click()
+    const choose = ra.getByRole('dialog').filter({ hasText: 'Copy reply' })
+    const asked = await choose.waitFor({ timeout: 3000 }).then(() => true, () => false)
+    if (asked) await choose.getByRole('button', { name: /Text only/ }).click()
+    await ra.waitForFunction(() => window.__copied !== null, null, { timeout: 2000 }).catch(() => {})
+    const copied = await ra.evaluate(() => window.__copied)
+    check(asked && copied === 'answer s-42', `reply actions: Copy on a reply asks how, and Text only copies the reply (${JSON.stringify(copied)})`)
+    // Branch: Hermes is asked to branch this chat (the last turn: the whole chat, no count).
+    const since = Date.now()
+    await ra.getByRole('button', { name: 'Branch' }).last().click()
+    await ra.waitForTimeout(500)
+    const br = rpcs('session.branch').filter(c => c.t >= since)
+    check(br.length === 1 && br[0].params.session_id === 'rt-s-42' && br[0].params.count === undefined, `reply actions: Branch asks Hermes to branch the chat (${JSON.stringify(br.map(c => c.params))})`)
+    await ra.close()
+  }
 }

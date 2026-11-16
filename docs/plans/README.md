@@ -19,6 +19,7 @@ make, which files and functions to touch, what to test, and what "done" means.
 | 12 | [More file previews in Files](12-file-previews.md) | M | 04 (shares `HtmlFrame`) |
 | 13 | [Test builds with WebView remote debugging](13-devtools-test-build.md) | S | none |
 | 14 | ["Remote debugging" developer setting with safeguards](14-devtools-setting.md) | M | 13; needs a real-phone check |
+| 15 | [The island panel: what opens from the status chip](15-island-panel.md) | L (three parts) | none; Android Java, needs a real-phone check |
 
 Build them one at a time, one plan per branch or commit series. Don't mix two plans in one commit.
 

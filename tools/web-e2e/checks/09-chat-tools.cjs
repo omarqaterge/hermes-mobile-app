@@ -112,4 +112,70 @@ module.exports = async t => {
   await page.locator('.toast', { hasText: 'Restored app.py' }).waitFor({ timeout: 5000 }).then(() => check(true, 'single-file restore'), () => check(false, 'single-file restore'))
   check(calls().filter(c => c.path === '/api/plugins/hermes-mobile/checkpoints/restore').pop()?.body.file === 'app.py', 'single-file restore sends the file')
   await page.evaluate(() => window.hermesBack())
+
+  // ── the chat menu and find in chat, by role and name (each control used, its effect checked) ──
+  {
+    const { WEB } = require('../lib.cjs')
+    const mp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await mp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-scrub', profile: 'default' })))
+    await mp.goto(WEB + '/')
+    await mp.getByText('answer 30', { exact: true }).waitFor({ timeout: 8000 })
+    const header = mp.getByRole('banner')
+    const menu = async () => {
+      await header.getByRole('button', { name: 'Chat options' }).click()
+      await mp.getByRole('dialog').waitFor({ timeout: 3000 })
+    }
+    const since = Date.now()
+    const after = list => list.filter(c => c.t >= since)
+    // Find in chat: "question 2" is in questions 2 and 20 to 29 (11 matches); the arrows step through them.
+    await menu()
+    await mp.getByRole('dialog').getByRole('button', { name: 'Search in chat' }).click()
+    const find = mp.getByRole('search')
+    await find.getByRole('textbox').fill('question 2')
+    const count = () => find.getByText(/^\d+ \/ \d+$/).textContent().catch(() => '')
+    const first = await count()
+    await find.getByRole('button', { name: 'Previous match' }).click()
+    const prev = await count()
+    await find.getByRole('button', { name: 'Next match' }).click()
+    const back = await count()
+    check(first === '11 / 11' && prev === '10 / 11' && back === '11 / 11', `chat menu: Search in chat counts the matches and Previous / Next match step through them (${first}, ${prev}, ${back})`)
+    await find.getByRole('button', { name: 'Close search' }).click()
+    check((await mp.getByRole('search').count()) === 0, 'chat menu: Close search closes the search bar')
+    // Rename: the dashboard is asked to store the new title.
+    await menu()
+    await mp.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+    await mp.getByRole('dialog').getByPlaceholder('Chat title').fill('Scrub renamed')
+    await mp.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+    await mp.getByText('Renamed', { exact: true }).waitFor({ timeout: 3000 }).catch(() => {})
+    const ren = after(calls()).filter(c => c.http === 'PATCH' && c.path === '/api/sessions/s-scrub')
+    check(ren.length === 1 && ren[0].body.title === 'Scrub renamed', `chat menu: Rename stores the new title (${JSON.stringify(ren.map(c => c.body))})`)
+    // Read every reply aloud: on for this chat only, then off again.
+    await menu()
+    await mp.getByRole('dialog').getByRole('button', { name: /Read every reply aloud/ }).click()
+    const chats = () => mp.evaluate(() => JSON.parse(localStorage.getItem('hm.autoread.chats') || 'null'))
+    await mp.waitForTimeout(200)
+    await menu()
+    const on = await mp.getByRole('dialog').getByRole('button', { name: /Read every reply aloud/ }).textContent()
+    check(/On · this chat only/.test(on || ''), `chat menu: Read every reply aloud turns on for this chat (${on})`)
+    await mp.getByRole('dialog').getByRole('button', { name: /Read every reply aloud/ }).click()
+    await mp.waitForTimeout(200)
+    await menu()
+    const off = await mp.getByRole('dialog').getByRole('button', { name: /Read every reply aloud/ }).textContent()
+    check(/Off/.test(off || '') && !/this chat only/.test(off || ''), `chat menu: tapping it again turns it off (${off}, ${JSON.stringify(await chats())})`)
+    // Undo last turn: Hermes is asked to undo, and the chat is loaded again.
+    await mp.getByRole('dialog').getByRole('button', { name: 'Undo last turn' }).click()
+    await mp.getByText('Last turn undone').waitFor({ timeout: 5000 }).catch(() => {})
+    const undo = after(rpcs('session.undo'))
+    check(undo.length === 1 && undo[0].params.session_id === 'rt-s-scrub' && after(rpcs('session.resume')).some(c => c.params.session_id === 's-scrub'), `chat menu: Undo last turn asks Hermes to undo and reloads the chat (${JSON.stringify(undo.map(c => c.params))})`)
+    // Delete asks first; Cancel keeps the chat (deleting is checked in 04).
+    await menu()
+    await mp.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+    const ask = mp.getByRole('alertdialog')
+    const asked = await ask.waitFor({ timeout: 3000 }).then(() => true, () => false)
+    if (asked) await ask.getByRole('button', { name: 'Cancel' }).click()
+    await mp.waitForTimeout(300)
+    check(asked && after(rpcs('session.delete')).length === 0 && (await mp.getByText('answer 30', { exact: true }).count()) === 1, 'chat menu: Delete asks first, and Cancel keeps the chat')
+    // Share chat, File checkpoints and Chat details are checked by name above; Canvas from the menu in 16.
+    await mp.close()
+  }
 }

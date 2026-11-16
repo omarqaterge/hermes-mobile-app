@@ -321,6 +321,29 @@ module.exports = async t => {
     check((await page.locator('.model-row .auto-btn.off').count()) === 1, 'the newer of two quick /yolo commands wins')
     check(rpcs('config.set').filter(c => c.params.key === 'yolo').pop()?.params.value === '0', 'the last yolo config.set is the newer request (off)')
   }
+  // ── the composer's Commands button and the reasoning level of an open chat, by role and name ──
+  {
+    const cp = await t.browser.newPage({ viewport: { width: 375, height: 812 } })
+    await cp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-45', profile: 'default' })))
+    await cp.goto(WEB + '/')
+    await cp.getByText('answer s-45', { exact: true }).waitFor({ timeout: 8000 })
+    const box = cp.getByPlaceholder('Message Hermux')
+    // Commands types / at the cursor, which opens the command list (the mock's catalog is empty, so it lists nothing).
+    await box.fill('see')
+    await cp.getByRole('button', { name: 'Commands' }).click()
+    const typed = await box.inputValue()
+    check(typed === 'see /', `composer: Commands types / after the text, ready for a command (${JSON.stringify(typed)})`)
+    await box.fill('')
+    // Reasoning level: the model chip opens the picker; a level is set for this chat only and the chip says so.
+    const since = Date.now()
+    await cp.getByRole('button', { name: /^Model: .*Change model$/ }).click()
+    await cp.getByPlaceholder('Search models…').waitFor({ timeout: 3000 })
+    await cp.getByRole('button', { name: 'high', exact: true }).click()
+    await cp.waitForTimeout(400)
+    const set = rpcs('config.set').filter(c => c.t >= since && c.params.key === 'reasoning')
+    check(set.length === 1 && set[0].params.session_id === 'rt-s-45' && set[0].params.value === 'high', `composer: a reasoning level in the model picker is set for the open chat (${JSON.stringify(set.map(c => c.params))})`)
+    await cp.close()
+  }
   await page.evaluate(() => localStorage.clear())
   await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })

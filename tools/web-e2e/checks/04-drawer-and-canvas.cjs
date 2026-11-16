@@ -239,4 +239,54 @@ module.exports = async t => {
   check((await page.locator('.screen').count()) === 0, 'gallery: Back returns to the hub, then the chat')
   await page.getByRole('button', { name: 'Canvas' }).first().click()
   await page.locator('.canvas-panel').waitFor({ timeout: 5000 })
+
+  // ── the chat list, by role and name: search, and a row's menu (rename, pin and unpin, archive) ──
+  {
+    const { WEB } = require('../lib.cjs')
+    const dl = await t.browser.newPage({ viewport: { width: 375, height: 812 } })
+    await dl.goto(WEB + '/')
+    await dl.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await dl.getByRole('button', { name: /^Sessions/ }).click()
+    const search = dl.getByPlaceholder('Search sessions…')
+    await search.waitFor({ timeout: 3000 })
+    await search.fill('Chat 43')
+    const title = dl.getByText('Chat 43', { exact: true })
+    await title.waitFor({ timeout: 3000 })
+    check((await dl.getByText('Chat 44', { exact: true }).count()) === 0, 'chat list: searching shows the matching chat and hides the others')
+    // The row's own menu button: the search leaves this one chat in the list.
+    const rowMenu = async () => {
+      await dl.getByRole('complementary').getByRole('button', { name: 'Chat options' }).click()
+      await dl.getByRole('dialog').filter({ hasText: 'Archive' }).waitFor({ timeout: 3000 })
+      return dl.getByRole('dialog').filter({ hasText: 'Archive' })
+    }
+    const since = Date.now()
+    const later = list => list.filter(c => c.t >= since)
+    // Rename from the list.
+    await (await rowMenu()).getByRole('button', { name: 'Rename' }).click()
+    await dl.getByRole('dialog').getByPlaceholder('Chat title').fill('Chat 43 renamed')
+    await dl.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+    await dl.waitForTimeout(300)
+    const ren = later(calls()).filter(c => c.http === 'PATCH' && c.path === '/api/sessions/s-43')
+    check(ren.length === 1 && ren[0].body.title === 'Chat 43 renamed', `chat list: Rename in a row's menu stores the title (${JSON.stringify(ren.map(c => c.body.title))})`)
+    await title.waitFor({ timeout: 5000 }).catch(() => {}) // the mock's list still has the old title
+    // Pin to top, then Unpin: kept on the phone at once and sent to the plugin (a second later, newest wins).
+    const prefs = () => later(calls()).filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/prefs').map(c => c.body.pinned)
+    const stored = () => dl.evaluate(() => JSON.parse(localStorage.getItem('hm.order.v1.default') || 'null')?.pinned || [])
+    const sent = async n => { for (let i = 0; i < 30 && prefs().length < n; i++) await dl.waitForTimeout(100); return prefs() }
+    await (await rowMenu()).getByRole('button', { name: 'Pin to top' }).click()
+    const pinnedGroup = await dl.getByText(/Pinned/).first().waitFor({ timeout: 3000 }).then(() => true, () => false)
+    const pinStored = await stored()
+    const pinSent = await sent(1)
+    check(pinnedGroup && pinStored[0] === 's-43' && pinSent.length === 1 && pinSent[0][0] === 's-43', `chat list: Pin to top pins the chat (${JSON.stringify(pinStored)}, sent ${JSON.stringify(pinSent)})`)
+    await (await rowMenu()).getByRole('button', { name: 'Unpin' }).click()
+    const unpinStored = await stored()
+    const unpinSent = await sent(2)
+    check(!unpinStored.includes('s-43') && unpinSent.length === 2 && !unpinSent[1].includes('s-43'), `chat list: Unpin takes it out again (${JSON.stringify(unpinStored)}, sent ${JSON.stringify(unpinSent)})`)
+    // Archive: Hermes is asked to hide the chat.
+    await (await rowMenu()).getByRole('button', { name: 'Archive' }).click()
+    await dl.waitForTimeout(300)
+    const hid = later(rpcs('session.set_hidden'))
+    check(hid.length === 1 && hid[0].params.session_id === 's-43' && hid[0].params.hidden === true, `chat list: Archive hides the chat (${JSON.stringify(hid.map(c => c.params))})`)
+    await dl.close()
+  }
 }

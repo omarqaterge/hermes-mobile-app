@@ -386,4 +386,66 @@ module.exports = async t => {
     await said().waitFor({ timeout: 3000 }).then(() => check(true, 'still connecting: the canvas button says so'), () => check(false, 'still connecting: the canvas button says so'))
     await pc.close()
   }
+
+  // ── the canvas panel's bar and its document menu, by role and name (each control used, its effect checked) ──
+  {
+    const { WEB, MOCK, calls } = require('../lib.cjs')
+    const addDoc = (session, title) => fetch(MOCK + '/api/plugins/hermes-mobile/canvas/doc', { method: 'POST', body: JSON.stringify({ session, title, type: 'markdown', content: `# ${title}\n\nfirst words` }) })
+    await addDoc('s-40', 'Plan')
+    const cb = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await cb.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-40', profile: 'default' })))
+    await cb.goto(WEB + '/')
+    await cb.getByText('answer s-40', { exact: true }).waitFor({ timeout: 8000 })
+    await cb.getByRole('banner').getByRole('button', { name: 'Canvas' }).click()
+    const panel = cb.getByRole('dialog', { name: 'Canvas' })
+    await panel.getByText('Plan', { exact: true }).waitFor({ timeout: 5000 })
+    const since = Date.now()
+    const more = async () => {
+      await panel.getByRole('button', { name: 'More' }).click()
+      await cb.getByRole('dialog').filter({ hasText: 'Version history' }).waitFor({ timeout: 3000 })
+      return cb.getByRole('dialog').filter({ hasText: 'Version history' })
+    }
+    // Rename: asks for the title and stores it.
+    await (await more()).getByRole('button', { name: 'Rename' }).click()
+    const ask = cb.getByRole('alertdialog')
+    await ask.getByRole('textbox').fill('Plan B')
+    await ask.getByRole('button', { name: 'Rename' }).click()
+    await panel.getByText('Plan B', { exact: true }).waitFor({ timeout: 3000 }).catch(() => {})
+    const ren = calls().filter(c => c.t >= since && c.path === '/api/plugins/hermes-mobile/canvas/rename')
+    check(ren.length === 1 && ren[0].body.title === 'Plan B' && (await panel.getByText('Plan B', { exact: true }).count()) === 1, `canvas menu: Rename stores the new title and the tab shows it (${JSON.stringify(ren.map(c => c.body.title))})`)
+    // Version history lists the versions, the current one marked.
+    await (await more()).getByRole('button', { name: /Version history/ }).click()
+    const hist = cb.getByRole('dialog').filter({ hasText: 'Version history' })
+    const listed = await hist.getByRole('button', { name: /Version 1 · current/ }).waitFor({ timeout: 3000 }).then(() => true, () => false)
+    check(listed, 'canvas menu: Version history lists the document\'s versions, the current one marked')
+    await cb.evaluate(() => window.hermesBack())
+    await hist.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    // Close this document asks first, then removes it from the canvas.
+    await (await more()).getByRole('button', { name: 'Close this document' }).click()
+    await cb.getByRole('alertdialog').getByRole('button', { name: 'Close', exact: true }).click()
+    await panel.getByText('Plan B', { exact: true }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    const del = calls().filter(c => c.t >= since && c.http === 'DELETE' && c.path === '/api/plugins/hermes-mobile/canvas/doc')
+    check(del.length === 1 && /session=s-40/.test(del[0].query) && (await panel.getByText('Plan B', { exact: true }).count()) === 0, `canvas menu: Close this document asks, then removes it (${JSON.stringify(del.map(c => c.query))})`)
+    await cb.close()
+    // Wide screens: Open the canvas (the tab at the right edge) brings it in; Resize the canvas moves with the arrow keys.
+    await addDoc('s-41', 'Wide plan')
+    const cw = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await cw.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-41', profile: 'default' })))
+    await cw.goto(WEB + '/')
+    await cw.getByText('answer s-41', { exact: true }).waitFor({ timeout: 8000 })
+    const pull = cw.getByRole('button', { name: 'Open the canvas' })
+    const pulled = await pull.waitFor({ timeout: 3000 }).then(() => true, () => false)
+    if (pulled) await pull.click()
+    const wide = cw.getByRole('dialog', { name: 'Canvas' })
+    const opened = await wide.getByText('Wide plan', { exact: true }).waitFor({ timeout: 3000 }).then(() => true, () => false)
+    check(pulled && opened, 'canvas: on a wide screen Open the canvas brings the chat\'s canvas in')
+    const split = cw.getByRole('separator', { name: 'Resize the canvas' })
+    const before = await split.getAttribute('aria-valuenow').catch(() => null)
+    await split.focus().catch(() => {})
+    await cw.keyboard.press('ArrowLeft')
+    await cw.waitForTimeout(150)
+    const after = await split.getAttribute('aria-valuenow').catch(() => null)
+    check(after !== null && after !== before, `canvas: Resize the canvas moves the divider with the arrow keys (${before} → ${after})`)
+    await cw.close()
+  }
 }
