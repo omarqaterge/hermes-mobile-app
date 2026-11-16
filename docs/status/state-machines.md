@@ -23,10 +23,9 @@ Done in the Android shell and the plugin:
   restarts.
 - The plugin's "Using an app" state (`_start_use` and `_end_use` in `phone_app.py`): the card ends at once when the
   background host is lost, not after its 130 s timeout.
-- In review, waiting for the owner (2026-11-16): the status chip's pending approvals and questions (`PendingAsk.java`).
-  It keeps them per chat and request, so one chat's clear no longer drops another's and a second approval no longer
-  overwrites the first. Open question: the chip now shows the oldest pending approval first, where it used to show the
-  newest. Needs a phone: two chats each asking for an approval.
+- The status chip's pending approvals and questions (`PendingAsk.java`): kept per chat and request, so one chat's
+  clear no longer drops another's and a second approval no longer overwrites the first; the phone stops being held
+  awake once an approval is answered. The chip shows the oldest pending approval first (owner's decision, 2026-11-16).
 
 Left alone on purpose in "which chat is on screen": `phone-data-taint.ts` has its own copy of the same test (security
 code: change it only with the owner's say), `BgApp.tsx` prefers the open chat over the opening one (its chip flow is
@@ -78,6 +77,8 @@ reload does not reset `phoneDataBusy`), `phone_taint.py`, `Uninstall.java`. Alre
 
 - The queue pausing after a refused send was checked against the mock only.
 - A failed install staying failed after a restart was checked with `tools/test_setup_lines.sh` only.
+- The status chip with two chats each asking for an approval: the first one shows, answering or clearing it shows the second, and the other chat's stays. Checked with `tools/test_pending_ask.sh` only; this is the one to try first.
+- The "Using an app" card going away when the background host is lost was checked with `tools/test_phone_app.py` only.
 - Live mode, the read-aloud player and the reconnect rules changed no behaviour, but none was tried on a phone after the change.
 
 **Links**
