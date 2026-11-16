@@ -229,3 +229,8 @@ because Hermes offers no way to switch that choice off; it is harmless but usele
   `git submodule status`, plain `git difftool`, `less +F`, `man -P cat`, `tar -I zstd`, `vim -c wq`.
 - **A damaged state file fails closed in the module too** (every chat counts as having read, as the fallback already did), and the
   fallback follows a chat whose stored id changed through the same state file.
+
+**Update 2026-11-16 (card queries).** A card's `Query("web_search", ...)` in a chat that has read phone data went out with
+no ask: its call reaches the plugin with no chat, and the shell's filter lets `localhost` through. Under the rule above
+("only for actions that can send data out"), the page now refuses a card's tools that send their arguments out
+(everything but `find_chats`) in such a chat (`guardedCall` in `web/src/openui-query.ts`).

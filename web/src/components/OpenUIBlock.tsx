@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { BlockHandle, BlockProps, OpenUIApi } from '../openui-entry' // types only: erased, OpenUI stays lazy
 import { runLazy } from '../lazy'
 import { actionMessage, isCommandText, loadUiState, safeHttpUrl, saveUiState, type UiAction } from '../openui-msg'
-import { makeToolClient } from '../openui-query'
+import { guardedCall, makeToolClient } from '../openui-query'
 import { api } from '../api'
 import { haptic } from '../bridge'
 import { dropRemoteStrings, openChecked, useGuard } from '../phone-data-taint'
@@ -70,7 +70,8 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
   // state for 15 min and one card makes at most 30 calls (openui-query.ts), so a refresh interval can't poll forever.
   const tools = useRef<ReturnType<typeof makeToolClient> | null>(null)
   tools.current ||= makeToolClient(
-    (name, args) => api('POST', '/api/plugins/hermes-mobile/openui/call', { name, args }, { profile: false }),
+    // After a phone-data read a card can't send its arguments out (web_search): its call carries no chat for the plugin's ask.
+    guardedCall((name, args) => api('POST', '/api/plugins/hermes-mobile/openui/call', { name, args }, { profile: false }), () => guard.current),
     chatId, // read at call time: a chat created by this very reply has no stored id when the card first mounts
     { load: loadUiState, save: (k, v, at) => saveUiState(k, v, at) }
   )

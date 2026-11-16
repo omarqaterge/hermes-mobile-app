@@ -15,6 +15,17 @@ export const QUERY_TOO_OFTEN = 'This card asked for data too often. Ask Hermux t
 
 const err = (text: string): McpResult => ({ isError: true, content: [{ type: 'text', text }] })
 
+/** Card tools whose call stays on the phone (the plugin's own chat search). Every other one (web_search) sends its
+ *  arguments out, and a card writes them, so in a chat that has read phone data it is refused (`guardedCall`). */
+export const CARD_LOCAL_TOOLS: ReadonlySet<string> = new Set(['find_chats'])
+export const QUERY_GUARDED = 'Cards can’t search the web in a chat that has read phone data. Ask Hermux instead.'
+
+/** `call`, refusing a tool that sends data out while `guarded()` (read at call time) says the chat has read phone data.
+ *  The plugin's own ask can't cover it: a card's call carries no chat, and the shell's filter lets localhost through. */
+export function guardedCall(call: ToolCall, guarded: () => boolean): ToolCall {
+  return (name, args) => (guarded() && !CARD_LOCAL_TOOLS.has(name) ? Promise.reject(new Error(QUERY_GUARDED)) : call(name, args))
+}
+
 export function makeToolClient(call: ToolCall, cacheKey: string | (() => string), store: ToolStore, now: () => number = Date.now) {
   let calls = 0
   const served = new Set<string>() // keys whose saved answer this card already got: a repeat is a refresh

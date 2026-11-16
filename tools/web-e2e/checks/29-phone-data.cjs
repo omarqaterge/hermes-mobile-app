@@ -853,4 +853,54 @@ module.exports = async t => {
       await pg.close()
     }
   }
+
+  // ── a card's Query can't send its arguments out after a phone-data read: web_search is refused in the page (its call
+  // carries no chat for the plugin's ask, and the shell lets localhost through); chat search still works; control ──
+  {
+    const card = ['root = Card([head, t, c])', 'head = CardHeader("Query card", "x")', 'r = Query("web_search", {query: "ROWS-123"}, {data: {web: []}})', 'c2 = Query("find_chats", {text: "zebra"}, {chats: []})', 't = TextContent("Results: " + @Count(r.data.web))', 'c = TextContent("Chats: " + @Count(c2.chats))'].join('\n')
+    for (const [sid, tainted] of [['s-pd-leaks', true], ['s-pd-leaks-ctl', false]]) {
+      const pg = await t.browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(nativeShell)
+      await pg.addInitScript(sid => {
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+        window.__sid = 'rt-' + sid
+        window.__socks = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+            this.addEventListener('message', e => {
+              try {
+                const m = JSON.parse(e.data)
+                if (m.params && m.params.session_id) window.__sid = m.params.session_id
+              } catch {
+                /* not JSON */
+              }
+            })
+          }
+        }
+      }, sid)
+      const asked = []
+      await pg.route('**/api/plugins/hermes-mobile/openui/call', r => {
+        asked.push(JSON.parse(r.request().postData() || '{}').name)
+        return r.continue()
+      })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await sleep(1200)
+      await pg.evaluate(text => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        const send = (type, payload) => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: window.__sid, payload } }) }))
+        send('message.start', {})
+        send('message.complete', { text })
+      }, 'Live:\n\n```openui-lang\n' + card + '\n```\n')
+      await pg.locator('.hm-openui', { hasText: 'Query card' }).last().waitFor({ timeout: 15000 }).catch(() => {})
+      await sleep(1500)
+      const web = asked.filter(n => n === 'web_search').length
+      const chats = asked.filter(n => n === 'find_chats').length
+      check(tainted ? web === 0 && chats > 0 : web > 0 && chats > 0, `phone data card query${tainted ? '' : ', control'}: a card ${tainted ? "can't search the web after a phone-data read, and still searches chats" : 'searches the web and chats as before'} (${JSON.stringify(asked)})`)
+      await pg.close()
+    }
+  }
 }

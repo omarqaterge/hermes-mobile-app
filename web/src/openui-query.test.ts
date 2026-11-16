@@ -1,6 +1,6 @@
 // A card's Query() client: saved answers for 15 min, at most 30 network calls per client, errors as MCP isError results.
 import { expect, test } from 'vitest'
-import { makeToolClient, type ToolStore } from './openui-query'
+import { guardedCall, makeToolClient, QUERY_GUARDED, type ToolStore } from './openui-query'
 
 const MIN = 60_000
 
@@ -137,4 +137,18 @@ test('a cache key given as a function is read at call time (a new chat learns it
   await c.callTool({ name: 'web_search', arguments: { query: 'x' } })
   await makeToolClient(s.call, 'chat1', s.store, s.clock.now).callTool({ name: 'web_search', arguments: { query: 'x' } })
   expect(s.seen.length).toBe(1)
+})
+
+test('after a phone-data read a card can still search chats but not the web (read at call time)', async () => {
+  const sent: string[] = []
+  let tainted = false
+  const call = guardedCall(async name => {
+    sent.push(name)
+    return { ok: true }
+  }, () => tainted)
+  await call('web_search', { query: 'a' })
+  tainted = true
+  await expect(call('web_search', { query: 'rows' })).rejects.toThrow(QUERY_GUARDED)
+  await expect(call('find_chats', { text: 'x' })).resolves.toEqual({ ok: true })
+  expect(sent).toEqual(['web_search', 'find_chats'])
 })
