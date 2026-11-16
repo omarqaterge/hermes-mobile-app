@@ -189,7 +189,8 @@ public class MainActivity extends Activity {
                 // Canvas pages and video players run in sandboxed frames: their navigations never leave the app.
                 if (!req.isForMainFrame()) return true;
                 Uri u = req.getUrl();
-                if ("file".equals(u.getScheme())) return false;
+                // The app's own page only: any other file would load as a main frame of its own, with a new bridge key.
+                if ("file".equals(u.getScheme())) return !ownPage(u);
                 // A chat that has read phone data: a bare link the page didn't wrap must not leave the app (the address dialog's confirmed path is openExternal).
                 // The same for mailto:, tel:, sms:, geo:, market: and intent: (mailto:x?body=<rows> opens a filled-in email): only the address dialog's confirmed open may.
                 if (RemoteGuard.isBlocked() && RemoteGuard.refusesNavigation(u.toString())) return true;
@@ -250,7 +251,7 @@ public class MainActivity extends Activity {
         requestRuntimePermissions();
         startHermes(); // no-op if already running; the supervisor script is idempotent
         bootLog("load-url");
-        web.loadUrl("file:///android_asset/www/index.html");
+        web.loadUrl(PAGE);
     }
 
     private static long bootT0 = 0;
@@ -680,6 +681,9 @@ public class MainActivity extends Activity {
      *  at a time: a second session while the first prompt is open would stack two installers. */
     static volatile String helperWhich;
     static volatile int helperSession = -1;
+    /** The nonce the current helper install's results must carry (PluginSync.NONCE_EXTRA, inside the session's
+     *  PendingIntent): below API 33 the receiver can't be registered as not exported. Static like the session. */
+    static final LocalAuth.Awaited helperAwaited = new LocalAuth.Awaited();
     /** Android's "Install" prompt for helperWhich, kept until the final answer, and whether it was put on screen. Android
      *  10+ refuses to open an activity from an app that isn't on screen ("Background activity launch blocked"): when
      *  the prompt arrives while the user is elsewhere (a full-screen installer still showing the previous app, Home), it
@@ -688,6 +692,7 @@ public class MainActivity extends Activity {
     static boolean helperPromptShown;
 
     void helperFinished() {
+        helperAwaited.clear();
         helperWhich = null;
         helperSession = -1;
         helperConfirm = null;
@@ -899,6 +904,16 @@ public class MainActivity extends Activity {
         return c != null && !c.isDestroyed() ? c : null;
     }
 
+    /** True when an install result carries the nonce of the session that is awaited (its PendingIntent holds it, and
+     *  only Android's installer holds that). Extras that can't be read count as no nonce. */
+    static boolean installResult(LocalAuth.Awaited awaited, Intent in) {
+        try {
+            return in != null && awaited.matches(in.getStringExtra(PluginSync.NONCE_EXTRA));
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     void registerHelperReceiver() {
         MainActivity t = liveInstance();
         if (t != null) t.registerHelperReceiverHere();
@@ -909,6 +924,7 @@ public class MainActivity extends Activity {
             android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
                 @Override
                 public void onReceive(Context ctx, Intent in) {
+                    if (!installResult(helperAwaited, in)) return; // not this install's session
                     String w = in.getStringExtra("which");
                     if (helperPackage(w) == null) return;
                     int st = in.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -1);
@@ -951,7 +967,8 @@ public class MainActivity extends Activity {
                 while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
                 ses.fsync(o);
             }
-            PendingIntent pend = PendingIntent.getBroadcast(this, 5000 + id % 1000, new Intent(HELPER_ACTION).setPackage(getPackageName()).putExtra("which", which),
+            PendingIntent pend = PendingIntent.getBroadcast(this, 5000 + id % 1000, new Intent(HELPER_ACTION).setPackage(getPackageName()).putExtra("which", which)
+                            .putExtra(PluginSync.NONCE_EXTRA, helperAwaited.arm()),
                     PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             ses.commit(pend.getIntentSender());
         }
@@ -1316,7 +1333,28 @@ public class MainActivity extends Activity {
 
     /** Only another app's content address may be read: never a file, nor one of this app's own providers (ShareUri). */
     boolean shareable(Uri u) {
-        return ShareUri.ok(u.getScheme(), u.getAuthority(), getPackageName());
+        return ShareUri.ok(u.getScheme(), u.getAuthority(), getPackageName()) && shareGranted(u);
+    }
+
+    /**
+     * The sender must be able to read what it shares. From API 35 Android checks that itself before the activity starts
+     * (the manifest's requireContentUriPermissionFromCaller). Before it, an address this app could read with a
+     * permission of its own (contacts, messages, photos, once their phone-data switch is on) passes only when the
+     * sender handed over its own access to it (a URI grant); ShareUri.needsGrant says when that is asked for.
+     */
+    boolean shareGranted(Uri u) {
+        if (Build.VERSION.SDK_INT >= 35) return true;
+        try {
+            String auth = u.getAuthority();
+            android.content.pm.ProviderInfo p = getPackageManager().resolveContentProvider(auth.substring(auth.lastIndexOf('@') + 1), 0);
+            String perm = p == null ? null : p.readPermission;
+            boolean held = perm != null && checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED;
+            if (!ShareUri.needsGrant(p != null, perm, held)) return true;
+            return checkUriPermission(u, android.os.Process.myPid(), android.os.Process.myUid(), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    == PackageManager.PERMISSION_GRANTED;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     boolean takeShare(Intent in) {
@@ -1532,6 +1570,17 @@ public class MainActivity extends Activity {
             if (c <= ' ' || c == 127) return false;
         }
         return true;
+    }
+
+    static final String PAGE = "file:///android_asset/www/index.html";
+
+    /** True for the app's own page (any query or fragment), the only file the main frame may load. */
+    static boolean ownPage(Uri u) {
+        if (u == null) return false;
+        String s = u.toString();
+        int cut = s.length();
+        for (int i = 0; i < s.length(); i++) if (s.charAt(i) == '?' || s.charAt(i) == '#') { cut = i; break; }
+        return PAGE.equals(s.substring(0, cut));
     }
 
     /** Links we hand to other apps: web pages, mail and phone numbers only (no intent:, file:, content:, market:…). */
@@ -2229,6 +2278,8 @@ public class MainActivity extends Activity {
     /** The update's phase, process-wide, until Android answers (not until the commit returns). */
     static InstallPhase.Phase updatePhase = InstallPhase.Phase.IDLE;
     static volatile int updateSession = -1;
+    /** The nonce the current update's results must carry, as helperAwaited. */
+    static final LocalAuth.Awaited updateAwaited = new LocalAuth.Awaited();
     /** When the update's session commit returned (SystemClock.elapsedRealtime); with InstallPhase.promptLost. */
     static volatile long updateCommittedAt;
     boolean updateReceiverOn;
@@ -2433,6 +2484,7 @@ public class MainActivity extends Activity {
             android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
                 @Override
                 public void onReceive(Context ctx, Intent in) {
+                    if (!installResult(updateAwaited, in)) return; // not this update's session
                     int st = in.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -1);
                     if (st == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
                         Intent confirm = in.getParcelableExtra(Intent.EXTRA_INTENT);
@@ -2445,6 +2497,7 @@ public class MainActivity extends Activity {
                             if (foreground) showUpdatePrompt();
                         }
                     } else {
+                        updateAwaited.clear(); // the final answer: nothing more is awaited for this session
                         updateConfirm = null;
                         updateConfirmKept = null;
                         updateEvent(InstallPhase.Event.ANSWERED);
@@ -2474,7 +2527,8 @@ public class MainActivity extends Activity {
                 while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
                 ses.fsync(o);
             }
-            PendingIntent pend = PendingIntent.getBroadcast(this, id, new Intent(UPDATE_ACTION).setPackage(getPackageName()),
+            PendingIntent pend = PendingIntent.getBroadcast(this, id, new Intent(UPDATE_ACTION).setPackage(getPackageName())
+                            .putExtra(PluginSync.NONCE_EXTRA, updateAwaited.arm()),
                     PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             ses.commit(pend.getIntentSender());
         }
