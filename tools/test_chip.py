@@ -151,6 +151,56 @@ check("…cached for a while", plugin._title_for("s-new") == "")
 plugin._titles["s-new"] = ("", time.time() - 30)
 check("…then read again", plugin._title_for("s-new") == "Named later")
 
+print("per-chat turn records stay bounded and keep running turns")
+plugin._on_pre_llm_call(session_id="keep-1", turn_id="t-keep", user_message="hello")
+plugin._set_status("keep-1", "Thinking…", "Thinking")
+for i in range(300):
+    plugin._on_pre_llm_call(session_id=f"flood-{i}", turn_id=f"t-{i}", user_message="hi")
+check("a turn in progress keeps its start time while many other chats start", "keep-1" in plugin._turn_started,
+      len(plugin._turn_started))
+check("turn start records are bounded", len(plugin._turn_started) <= 300, len(plugin._turn_started))
+for i in range(2000):
+    plugin._on_subagent_start(child_session_id=f"child-{i}", parent_session_id=None)
+    plugin._on_session_end(session_id=f"ended-{i}", turn_id=None)
+check("sub-agent ids are bounded", len(plugin._subagents) <= 1024, len(plugin._subagents))
+check("last-end records are bounded", len(plugin._last_end) <= 256, len(plugin._last_end))
+check("the most recent sub-agent is still known", "child-1999" in plugin._subagents)
+plugin._on_session_end(session_id="keep-1", turn_id=None)
+check("ending a turn forgets its start", "keep-1" not in plugin._turn_started)
+
+print("a background label never replaces a live turn, even when the turn starts between check and act")
+plugin._clear_status("race-1")
+real_lock = plugin._lock
+
+
+class HookLock:
+    """Runs a real turn's status change right after the first release of the lock (the gap the old check had)."""
+    def __init__(self):
+        self.armed = True
+
+    def __enter__(self):
+        real_lock.acquire()
+
+    def __exit__(self, *a):
+        real_lock.release()
+        if self.armed:
+            self.armed = False
+            plugin._lock = real_lock
+            plugin._set_status("race-1", "Using terminal", "Terminal", tool=True)
+
+
+plugin._lock = HookLock()
+plugin._bg_status("race-1", "t-x")
+plugin._lock = real_lock
+cur = plugin._active.get("race-1") or {}
+check("a review label does not replace the live turn's status", not cur.get("review") and cur.get("short") == "Terminal", cur)
+plugin._lock = HookLock()
+plugin._bg_clear("race-1")
+plugin._lock = real_lock
+check("a review clear does not drop a live turn", "race-1" in plugin._active)
+plugin._clear_status("race-1")
+
+
 # ── /stop: finds the live runtime of the stored chat and interrupts it ──
 print("/stop")
 try:
