@@ -80,7 +80,7 @@ reload does not reset `phoneDataBusy`), `phone_taint.py`, `Uninstall.java`. Alre
 - The "Using an app" card going away when the background host is lost was checked with `tools/test_phone_app.py` only.
 - The app update installer: tap Update, leave Android's prompt, tap Update again (the same prompt, no second download); not tried on any device.
 - The helper-app installer was tried on an emulator only.
-- The installer's beat (`ALIVE` every 30 s) and the lost state: checked with `tools/test_setup_lines.sh`, `tools/test_say_hook.sh` and the browser test only. On a phone: start the installer, swipe Termux away mid-install, and the setup screen should say it stopped within about two minutes; also leave the screen off for a while during a normal install and check it never reads as stopped.
+- The installer's beat (`ALIVE` every 30 s) and the lost state: passed on an emulator (Android 15, 2026-11-16; see `docs/manual-tests.md`). A copied, never-pasted command kept waiting; Termux force-stopped mid-install read as stopped 124 s later, with the notification "Setup stopped: open Hermux"; pasted again, it ran to DONE with the screen off for most of the run and never read as stopped. Two faults it found are fixed: the stopped card's clock kept counting, and a stale git lock from the kill stopped the next run at the Hermes step. Still to try on a real phone (vendor background limits, a restart mid-install), and the step after DONE reaching the model card (the emulator stopped at Shizuku, which it can't authorise).
 - Live mode, the read-aloud player and the reconnect rules changed no behaviour, but none was tried on a phone after the change.
 
 **Links**

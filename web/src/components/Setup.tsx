@@ -1117,7 +1117,7 @@ const MARK_STEP = { ok: '✓', bad: '✕', run: '', todo: '·' } as const
 function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCopied: () => void }) {
   const lines = progress?.lines ?? []
   const now = useInstallClock(Boolean(progress?.times) && !progress?.done && !progress?.fail && !progress?.lost && lines.some(l => l.startsWith('STEP ')))
-  const v = progressView(lines, progress?.times, now, Boolean(progress?.lost))
+  const v = progressView(lines, progress?.times, now, Boolean(progress?.lost), progress?.heardAt)
   const started = lines.some(l => l.startsWith('STEP '))
   // "Already installed? Check": the one probe sent to Termux before it has accepted a command (e.g. the app was
   // reinstalled on a phone that has Hermes). Found → the flow moves on by itself (the hook gets the same answer).

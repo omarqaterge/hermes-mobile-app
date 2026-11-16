@@ -229,6 +229,10 @@ deb 'find /root/.local/bin -maxdepth 1 -name "hermes*" -type f -size 0 -delete 2
 # (no .git). Hermes's installer then stops at once: "exists and is not a Hermes git checkout. Move it aside". Do that
 # here, like the installer itself does for a clone with no commits: moved aside, never deleted.
 deb 'd=/root/.hermes/hermes-agent; if [ -d "$d" ] && [ ! -L "$d" ] && [ ! -e "$d/.git" ] && [ ! -f "$d/install-stamp.json" ] && [ -n "$(ls -A "$d")" ]; then mv "$d" "$d.broken-$(date -u +%Y%m%d-%H%M%S)"; fi; true'
+# A git command killed part-way (Termux closed during the update) leaves its lock file behind, and every later run stops
+# at "could not write index". Remove git's locks in the checkout, only ones over 2 minutes old (a running git holds its
+# lock for seconds; the app calls an installer stopped only after 2 minutes of silence), and say which.
+deb 'd=${HM_AGENT_DIR:-/root/.hermes/hermes-agent}; [ -d "$d/.git" ] && [ ! -L "$d" ] && find "$d/.git" -name "*.lock" -type f -mmin +2 -print -delete 2>/dev/null | sed "s|^|removed a stale git lock: |"; true'
 if deb "hermes --version 2>/dev/null | grep -q Hermes && test -f /root/.hermes/hermes-agent/install-stamp.json"; then
   say "Hermux agent already installed, skipping"
 else

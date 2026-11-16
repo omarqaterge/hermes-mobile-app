@@ -56,7 +56,7 @@ interface AndroidBridge {
   diagEvent?(area: string, event: string, fields: string): void // fields: JSON ["name", "value", …]; DiagLog.java checks every part
   diagClear?(): void
   setDiagEnabled?(on: boolean): void // off also deletes what was kept
-  setupProgress?(): string // {active, lines, times?, done, fail, lost?}; new lines also come through window.hermesSetupLine(line)
+  setupProgress?(): string // {active, lines, times?, done, fail, lost?, heardAt?}; new lines also come through window.hermesSetupLine(line)
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermux; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
@@ -391,7 +391,7 @@ export function copySetupCommand(): boolean {
   }
 }
 
-export function setupProgress(): { active: boolean; lines: string[]; done: boolean; fail: string; times?: number[]; lost?: boolean } | null {
+export function setupProgress(): { active: boolean; lines: string[]; done: boolean; fail: string; times?: number[]; lost?: boolean; heardAt?: number } | null {
   try {
     const raw = native?.setupProgress?.()
     return raw ? JSON.parse(raw) : null

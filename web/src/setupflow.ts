@@ -29,6 +29,8 @@ export interface Progress {
   /** The installer sent its beats and then went quiet: it was stopped before it could send FAIL (SetupLines LOST).
    *  It reads as stopped at its last step. Absent from an older app build. */
   lost?: boolean
+  /** With lost: epoch seconds the installer was last heard (its beats included). The install's clock stops there. */
+  heardAt?: number
 }
 
 /** The pre-Hermes facts. probe null = this app build can't probe (older shell): those rows are skipped. */
@@ -88,8 +90,15 @@ export interface ProgressView {
 }
 
 /** Turns the progress lines into the view: finished steps, the one running, the latest hint, TODO lines, FAIL/DONE.
- *  lost (Progress.lost): the running step reads as failed, as if the installer had sent FAIL for it. */
-export function progressView(lines: string[], times?: number[], nowSec: number = Math.floor(Date.now() / 1000), lost = false): ProgressView {
+ *  lost (Progress.lost): the running step reads as failed, as if the installer had sent FAIL for it, and its time stops at
+ *  heardAt (Progress.heardAt; the last line's time without one) instead of running on with nowSec. */
+export function progressView(
+  lines: string[],
+  times?: number[],
+  nowSec: number = Math.floor(Date.now() / 1000),
+  lost = false,
+  heardAt?: number,
+): ProgressView {
   let cur = ''
   let fail = ''
   let hint = ''
@@ -132,7 +141,11 @@ export function progressView(lines: string[], times?: number[], nowSec: number =
     else if (l.startsWith('TODO ')) todo.push(l.slice(5))
   }
   const lostNow = lost && !fail && !done && cur !== ''
-  if (lostNow) fail = cur
+  if (lostNow) {
+    fail = cur
+    const lastLine = timed && times && times.length ? times[times.length - 1] : nowSec
+    nowSec = Math.max(lastLine, Math.min(nowSec, heardAt ?? lastLine))
+  }
   const known = INSTALL_STEPS.map(s => s.id)
   const ids = [...known, ...seen.filter(id => !known.includes(id))]
   const at = ids.indexOf(cur)
