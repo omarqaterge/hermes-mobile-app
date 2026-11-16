@@ -156,3 +156,71 @@ describe('voice.ts with a native shell', () => {
     expect(v.voiceState().player).toBeNull()
   })
 })
+
+describe('voice.ts with the browser speech engine', () => {
+  type V = typeof import('./voice')
+  type Utt = { text: string; onend?: () => void; onerror?: () => void; onboundary?: (e: { charIndex: number }) => void; rate: number }
+  let v: V
+  let utts: Utt[]
+  beforeEach(async () => {
+    vi.resetModules()
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    utts = []
+    let current: Utt | null = null
+    class FakeUtterance {
+      rate = 1
+      constructor(public text: string) {}
+    }
+    // Like a browser: cancel() ends the utterance being spoken, and it reports that a moment later.
+    const fake = {
+      speak: (u: Utt) => ((current = u), utts.push(u)),
+      cancel: () => {
+        const old = current
+        current = null
+        if (old) setTimeout(() => old.onend?.(), 0)
+      },
+    }
+    ;(window as unknown as Record<string, unknown>).SpeechSynthesisUtterance = FakeUtterance
+    ;(window as unknown as Record<string, unknown>).speechSynthesis = fake
+    ;(globalThis as unknown as Record<string, unknown>).SpeechSynthesisUtterance = FakeUtterance
+    ;(globalThis as unknown as Record<string, unknown>).speechSynthesis = fake
+    v = await import('./voice')
+    v.speak('a', 'x'.repeat(200))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    for (const o of [window, globalThis] as unknown as Record<string, unknown>[]) {
+      delete o.speechSynthesis
+      delete o.SpeechSynthesisUtterance
+    }
+  })
+
+  test('the replaced utterance ending after a seek does not clear the player', () => {
+    v.seekSpeaking(100)
+    expect(utts).toHaveLength(2)
+    vi.advanceTimersByTime(1) // the old utterance reports its end now
+    expect(v.voiceState().player).not.toBeNull()
+    expect(v.voiceState().speakingId).toBe('a')
+  })
+
+  test('the replaced utterance ending after a speed change does not clear the player', () => {
+    v.setReadingSpeed(1.5)
+    vi.advanceTimersByTime(1)
+    expect(v.voiceState().player).not.toBeNull()
+  })
+
+  test('the utterance that is current ending clears the player', () => {
+    v.seekSpeaking(100)
+    vi.advanceTimersByTime(1)
+    utts[1].onend!()
+    expect(v.voiceState().player).toBeNull()
+  })
+
+  test('an old utterance ending late, after stop and a new speech, does not clear the new player', () => {
+    v.stopSpeaking()
+    v.speak('b', 'y'.repeat(100))
+    vi.advanceTimersByTime(1)
+    expect(v.voiceState().player).not.toBeNull()
+  })
+})

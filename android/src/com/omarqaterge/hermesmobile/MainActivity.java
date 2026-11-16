@@ -527,6 +527,8 @@ public class MainActivity extends Activity {
     static final String PROBE_SCRIPT = "test -x ~/bin/hermes-services && echo services=yes; test -f ~/.hermes-mobile/installed && echo installed=yes; "
             + "curl -s -m 2 -o /dev/null -w 'dash=%{http_code}' http://127.0.0.1:9119/ 2>/dev/null; true";
     boolean probeReceiverOn = false;
+    /** This instance's probe receiver, unregistered in onDestroy (a recreated activity registers its own). */
+    android.content.BroadcastReceiver probeReceiver;
     /** The nonce the current probe's result must carry (PluginSync.NONCE_EXTRA), taken once. */
     final LocalAuth.Awaited probeAwaited = new LocalAuth.Awaited();
     long probeSentAt = 0;
@@ -587,6 +589,7 @@ public class MainActivity extends Activity {
             IntentFilter f = new IntentFilter(PROBE_ACTION);
             if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
             else registerReceiver(rx, f);
+            probeReceiver = rx;
             probeReceiverOn = true;
         }
         try {
@@ -667,17 +670,20 @@ public class MainActivity extends Activity {
     /** Same file as phone/phone-access.sh and tools/setup-phone.sh. */
     static final String SHIZUKU_APK = "https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk";
     static final String HELPER_ACTION = "com.omarqaterge.hermesmobile.HELPER_RESULT";
+    /** This instance's receivers (unregistered in onDestroy). The in-flight facts below are static: a recreated activity
+     *  (renderer crash, system) must still know an install is pending instead of starting a second session. */
     boolean helperReceiverOn;
+    android.content.BroadcastReceiver helperReceiver, updateReceiver;
     /** The helper app being installed, from its download until Android's final answer (null = none). Main thread. One
      *  at a time: a second session while the first prompt is open would stack two installers. */
-    volatile String helperWhich;
-    volatile int helperSession = -1;
+    static volatile String helperWhich;
+    static volatile int helperSession = -1;
     /** Android's "Install" prompt for helperWhich, kept until the final answer, and whether it was put on screen. Android
      *  10+ refuses to open an activity from an app that isn't on screen ("Background activity launch blocked"): when
      *  the prompt arrives while the user is elsewhere (a full-screen installer still showing the previous app, Home), it
      *  waits here and opens when Hermux comes back (onResume). */
-    Intent helperConfirm;
-    boolean helperPromptShown;
+    static Intent helperConfirm;
+    static boolean helperPromptShown;
 
     void helperFinished() {
         helperWhich = null;
@@ -721,6 +727,11 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(helperPromptCheck);
         finishIfInstalled();
         if (helperWhich == null) return;
+        String lost = helperWhich;
+        if (dropLostHelper()) {
+            if (!installed(helperPackage(lost))) helperState(lost, "error", 0, "Android didn't finish the install.");
+            return;
+        }
         if (helperSession >= 0 && helperConfirm == null && !helperDownloading) {
             // committed but no answer at all: if Android dropped the session, nothing is in flight any more
             android.content.pm.PackageInstaller.SessionInfo si = null;
@@ -740,9 +751,21 @@ public class MainActivity extends Activity {
         else handler.postDelayed(helperPromptCheck, 4000);
     }
 
-    volatile boolean helperDownloading;
+    static volatile boolean helperDownloading;
+    /** When the helper's session commit returned (SystemClock.elapsedRealtime); with InstallPhase.promptLost. */
+    static volatile long helperCommittedAt;
+
+    /** Committed, but Android's prompt never reached a receiver and no answer came: abandon it and clear the install so
+     *  the next tap starts fresh. True when it did. Main thread. */
+    boolean dropLostHelper() {
+        if (helperWhich == null || helperDownloading || helperSession < 0 || helperConfirm != null) return false;
+        if (!InstallPhase.promptLost(InstallPhase.Phase.COMMITTED, android.os.SystemClock.elapsedRealtime() - helperCommittedAt)) return false;
+        abandonHelperSession();
+        helperFinished();
+        return true;
+    }
     /** Asked for by the page but not yet started on the main thread: a re-check in between must not call it stopped. */
-    volatile String helperRequested;
+    static volatile String helperRequested;
 
     /** The helper app still in flight for the page ('' = none). Its package already installed means Android's answer is
      *  only late (it can arrive after onResume when the app was in the background): that one counts as finished. */
@@ -819,6 +842,7 @@ public class MainActivity extends Activity {
             return;
         }
         finishIfInstalled();
+        dropLostHelper(); // a lost prompt must not block this tap for ever: fall through to a fresh install
         if (helperWhich != null) {
             // One at a time. The same app again (the page's Retry): open its prompt again instead of a new download.
             if (helperWhich.equals(which) && helperConfirm != null) showHelperPrompt();
@@ -846,6 +870,7 @@ public class MainActivity extends Activity {
                 if (!(shizuku ? SHIZUKU_SIGNER : FDROID_SIGNER).equals(sha)) throw new Exception("The download isn't signed by its maker.");
                 helperState(which, "installing", 100, "");
                 commitHelper(which, pkg, apk);
+                helperCommittedAt = android.os.SystemClock.elapsedRealtime();
                 helperDownloading = false;
             } catch (Exception e) {
                 final String msg = e.getMessage() == null ? "Install failed." : e.getMessage();
@@ -863,7 +888,21 @@ public class MainActivity extends Activity {
         }, "hm-helper").start();
     }
 
-    void commitHelper(String which, String pkg, java.io.File apk) throws Exception {
+    /** The instance whose receiver should be registered: this one, or the live one when this one is destroyed (the
+     *  download thread of an old instance commits after a recreate; a receiver on a destroyed instance is never
+     *  unregistered again). Null = none alive: the prompt may be lost, which the lost-prompt wait then frees. */
+    MainActivity liveInstance() {
+        if (!isDestroyed()) return this;
+        MainActivity c = current;
+        return c != null && !c.isDestroyed() ? c : null;
+    }
+
+    void registerHelperReceiver() {
+        MainActivity t = liveInstance();
+        if (t != null) t.registerHelperReceiverHere();
+    }
+
+    void registerHelperReceiverHere() {
         if (!helperReceiverOn) {
             android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
                 @Override
@@ -888,11 +927,16 @@ public class MainActivity extends Activity {
                     }
                 }
             };
+            helperReceiver = rx;
             IntentFilter f = new IntentFilter(HELPER_ACTION);
             if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
             else registerReceiver(rx, f);
             helperReceiverOn = true;
         }
+    }
+
+    void commitHelper(String which, String pkg, java.io.File apk) throws Exception {
+        registerHelperReceiver();
         android.content.pm.PackageInstaller pi = getPackageManager().getPackageInstaller();
         android.content.pm.PackageInstaller.SessionParams params = new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
         params.setAppPackageName(pkg);
@@ -1850,7 +1894,9 @@ public class MainActivity extends Activity {
             if (n.getId() == 2 && n.getTag() != null && n.getTag().startsWith("approval:")) nm.cancel(n.getTag(), 2);
         web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
         deliverShortcut(); // the assist gesture's Live mode, held back while the phone was locked
+        ensureInstallReceivers();
         resumeHelperInstall();
+        resumeUpdateInstall();
         showUpdatePrompt();
         setupChanged();
         pushBg();
@@ -2110,6 +2156,23 @@ public class MainActivity extends Activity {
         phoneDataGen++;
         phoneDataBusy = false; // a change waiting on Android's permission dialog is dropped: nothing is stored
         phoneDataKind = null;
+        // This instance's install receivers go with it; a recreated activity registers its own (ensureInstallReceivers).
+        // The in-flight install's facts are static, so the new instance carries on instead of starting a second session.
+        if (probeReceiver != null) {
+            try { unregisterReceiver(probeReceiver); } catch (Exception ignored) { }
+            probeReceiver = null;
+            probeReceiverOn = false;
+        }
+        if (helperReceiver != null) {
+            try { unregisterReceiver(helperReceiver); } catch (Exception ignored) { }
+            helperReceiver = null;
+            helperReceiverOn = false;
+        }
+        if (updateReceiver != null) {
+            try { unregisterReceiver(updateReceiver); } catch (Exception ignored) { }
+            updateReceiver = null;
+            updateReceiverOn = false;
+        }
         voice.destroy();
         stt.destroy();
         super.onDestroy();
@@ -2163,10 +2226,33 @@ public class MainActivity extends Activity {
 
     // ---- In-app update: download the release APK from this project's GitHub releases, check it, hand it to the system installer ----
     static final String UPDATE_ACTION = "com.omarqaterge.hermesmobile.UPDATE_RESULT";
-    final java.util.concurrent.atomic.AtomicBoolean updating = new java.util.concurrent.atomic.AtomicBoolean();
+    /** The update's phase, process-wide, until Android answers (not until the commit returns). */
+    static InstallPhase.Phase updatePhase = InstallPhase.Phase.IDLE;
+    static volatile int updateSession = -1;
+    /** When the update's session commit returned (SystemClock.elapsedRealtime); with InstallPhase.promptLost. */
+    static volatile long updateCommittedAt;
     boolean updateReceiverOn;
+
+    static synchronized InstallPhase.Phase updatePhase() { return updatePhase; }
+
+    static synchronized InstallPhase.Phase updateEvent(InstallPhase.Event e) {
+        updatePhase = InstallPhase.next(updatePhase, e);
+        if (updatePhase == InstallPhase.Phase.IDLE) updateSession = -1;
+        return updatePhase;
+    }
     /** The update's "Install" prompt, waiting for the app to be on screen (main thread). */
-    Intent updateConfirm;
+    static Intent updateConfirm;
+    /** The prompt kept until Android's final answer, so a second tap can open it again. */
+    static Intent updateConfirmKept;
+
+    void abandonUpdateSession() {
+        int id = updateSession;
+        if (id < 0) return;
+        try {
+            getPackageManager().getPackageInstaller().abandonSession(id);
+        } catch (Exception ignored) { // already finished or gone
+        }
+    }
 
     void showUpdatePrompt() {
         Intent i = updateConfirm;
@@ -2174,8 +2260,43 @@ public class MainActivity extends Activity {
         if (i == null) return;
         try {
             startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            updateEvent(InstallPhase.Event.PROMPT_OPENED);
         } catch (Exception e) {
+            abandonUpdateSession();
+            updateEvent(InstallPhase.Event.FAILED);
             updateState("error", 0, "Couldn't open the installer.");
+        }
+    }
+
+    /** A recreated activity has no receivers: register them again when an install is still in flight. */
+    void ensureInstallReceivers() {
+        try {
+            if (helperWhich != null && !helperReceiverOn) registerHelperReceiver();
+            if (InstallPhase.hasSession(updatePhase()) && !updateReceiverOn) registerUpdateReceiver();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** onResume: a committed update whose session Android dropped without an answer is over; let the next tap start. */
+    void resumeUpdateInstall() {
+        if (!InstallPhase.hasSession(updatePhase()) || updateSession < 0) return;
+        if (InstallPhase.promptLost(updatePhase(), android.os.SystemClock.elapsedRealtime() - updateCommittedAt)) {
+            abandonUpdateSession();
+            updateConfirm = null;
+            updateConfirmKept = null;
+            updateEvent(InstallPhase.Event.SESSION_GONE);
+            updateState("error", 0, "Install failed.");
+            return;
+        }
+        android.content.pm.PackageInstaller.SessionInfo si = null;
+        try {
+            si = getPackageManager().getPackageInstaller().getSessionInfo(updateSession);
+        } catch (Exception ignored) {
+        }
+        if (si == null) {
+            updateConfirm = null;
+            updateConfirmKept = null;
+            updateEvent(InstallPhase.Event.SESSION_GONE);
         }
     }
 
@@ -2215,7 +2336,24 @@ public class MainActivity extends Activity {
             });
             return;
         }
-        if (!updating.compareAndSet(false, true)) return;
+        synchronized (MainActivity.class) {
+            InstallPhase.Retry r = InstallPhase.retry(updatePhase, android.os.SystemClock.elapsedRealtime() - updateCommittedAt);
+            if (r == InstallPhase.Retry.START && updatePhase != InstallPhase.Phase.IDLE) {
+                // Committed, but Android's prompt never reached a receiver: abandon that session and start fresh.
+                abandonUpdateSession();
+                updateConfirm = null;
+                updateConfirmKept = null;
+                updateEvent(InstallPhase.Event.SESSION_GONE);
+            }
+            if (r == InstallPhase.Retry.SHOW_PROMPT) {
+                // Android's prompt is already waiting or was shown: open it again, never a second session.
+                updateConfirm = updateConfirmKept;
+                runOnUiThread(this::showUpdatePrompt);
+                return;
+            }
+            if (r == InstallPhase.Retry.WAIT) return; // downloading or committed: one at a time
+            updateEvent(InstallPhase.Event.REQUEST);
+        }
         new Thread(() -> {
             try {
                 java.io.File dir = new java.io.File(getCacheDir(), "update");
@@ -2231,10 +2369,12 @@ public class MainActivity extends Activity {
                 if (no != null) throw new Exception(no);
                 updateState("installing", 100, "");
                 commitInstall(apk);
-            } catch (Exception e) {
+                updateCommittedAt = android.os.SystemClock.elapsedRealtime();
+                updateEvent(InstallPhase.Event.COMMIT_RETURNED);
+            } catch (Throwable e) { // an Error too: the phase must not stay set
+                abandonUpdateSession();
+                updateEvent(InstallPhase.Event.FAILED);
                 updateState("error", 0, e.getMessage() == null ? "Update failed." : e.getMessage());
-            } finally {
-                updating.set(false);
             }
         }, "hm-update").start();
     }
@@ -2283,7 +2423,12 @@ public class MainActivity extends Activity {
         throw new Exception("Download failed (too many redirects).");
     }
 
-    void commitInstall(java.io.File apk) throws Exception {
+    void registerUpdateReceiver() {
+        MainActivity t = liveInstance();
+        if (t != null) t.registerUpdateReceiverHere();
+    }
+
+    void registerUpdateReceiverHere() {
         if (!updateReceiverOn) {
             android.content.BroadcastReceiver rx = new android.content.BroadcastReceiver() {
                 @Override
@@ -2295,22 +2440,33 @@ public class MainActivity extends Activity {
                             // Android blocks opening it from the background: the user left during the download, so it
                             // opens when the app is back on screen (onResume).
                             updateConfirm = confirm;
+                            updateConfirmKept = confirm;
+                            updateEvent(InstallPhase.Event.PROMPT_ARRIVED);
                             if (foreground) showUpdatePrompt();
                         }
-                    } else if (st != android.content.pm.PackageInstaller.STATUS_SUCCESS) {
+                    } else {
                         updateConfirm = null;
+                        updateConfirmKept = null;
+                        updateEvent(InstallPhase.Event.ANSWERED);
+                        if (st == android.content.pm.PackageInstaller.STATUS_SUCCESS) return;
                         String m = in.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE);
                         updateState("error", 0, st == android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED ? "Update cancelled." : (m == null ? "Install failed." : m));
                     }
                 }
             };
+            updateReceiver = rx;
             IntentFilter f = new IntentFilter(UPDATE_ACTION);
             if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
             else registerReceiver(rx, f);
             updateReceiverOn = true;
         }
+    }
+
+    void commitInstall(java.io.File apk) throws Exception {
+        registerUpdateReceiver();
         android.content.pm.PackageInstaller pi = getPackageManager().getPackageInstaller();
         int id = pi.createSession(new android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL));
+        updateSession = id;
         try (android.content.pm.PackageInstaller.Session ses = pi.openSession(id)) {
             try (InputStream in = new java.io.FileInputStream(apk); OutputStream o = ses.openWrite("hermes-mobile.apk", 0, apk.length())) {
                 byte[] buf = new byte[64 * 1024];

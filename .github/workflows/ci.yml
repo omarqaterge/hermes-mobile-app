@@ -237,6 +237,7 @@ jobs:
       - run: tools/api-check.sh
       - run: tools/test_setup_lines.sh
       - run: tools/test_pending_ask.sh
+      - run: tools/test_install_phase.sh
       - run: tools/test_diag_log.sh
       - run: tools/test_update_url.sh
       - run: tools/test_share_uri.sh

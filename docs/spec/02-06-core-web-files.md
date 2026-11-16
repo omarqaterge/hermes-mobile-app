@@ -85,7 +85,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
   how a warm resume does not wait), `markBuilt` records that the agent was announced (the `session.info` event, or
   the cap; safe before `trackBuild`), `whenBuilt` is what `setModel` awaits before `config.set`, `whenSwitched` is
   what `sendPrompt` awaits so a model picked a moment ago applies (a failed switch does not block it), `runSwitch`
-  runs one switch and records it in flight until it settles, and `buildState` (type `BuildState`) names the state.
+  runs one switch after any earlier switch of the same chat has settled (failed or not), so picks reach Hermes in order, and records it in flight until it settles, and `buildState` (type `BuildState`) names the state.
 
 #### Gateway RPCs (all calls the page makes)
 
