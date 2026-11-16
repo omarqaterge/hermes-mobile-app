@@ -90,7 +90,7 @@ page; their actions can only call read-only tools through `POST /openui/call`, a
 Nothing the model writes is fetched from the web without a tap, in every chat (not only one that has read phone data;
 a prompt injection can write an address that carries out whatever the agent has read): `Media` shows a remote
 (`http`, `https` or `//`) image, video or audio as the `RemoteHold` placeholder until the user taps it, a Mermaid
-diagram whose source names an image or an address (`MERMAID_REMOTE`) is shown as code, and `rehypeSafeStyle` keeps a
+diagram that would load an image (`MERMAID_IMAGE`: an `img:` shape, `<img`, `url(`) is shown as code (one with only links or addresses in its text is drawn; in a chat that has read phone data the wider `MERMAID_REMOTE` applies), and `rehypeSafeStyle` keeps a
 style value only when it has no backslash or comment and calls nothing but colour, arithmetic and gradient functions
 (`styleCanFetch`: no `url(`, `image-set(`, `src(`, `cross-fade(`), and `rehypeSvgRefs` drops an SVG attribute that
 holds a `url(` to anything but an element of the page. Fixed hosts are left alone (a YouTube card's thumbnail comes from

@@ -51,11 +51,15 @@ function getMermaid() {
 }
 
 // A Mermaid diagram can draw an image from an address (`img:` shapes, <img> in a label) and fetches it while it draws, with
-// no tap. In every chat a diagram whose source names an image or any address is shown as code instead.
+// no tap. So a diagram that would load an image (an `img:` shape, an <img>, a `url(`) is shown as code in every chat; one with
+// only links or addresses in its text fetches nothing and is drawn. In a chat that has read phone data the wider rule holds:
+// any image or address in the source shows it as code.
 const MERMAID_REMOTE = /\bimg\b|<\s*img|(https?:)?\/\/|\burl\s*\(|\bhref\b/i
+const MERMAID_IMAGE = /\bimg\s*:|<\s*img|\burl\s*\(/i
 
 function Mermaid({ code }: { code: string }) {
-  const held = MERMAID_REMOTE.test(code)
+  const guarded = useGuard()
+  const held = (guarded ? MERMAID_REMOTE : MERMAID_IMAGE).test(code)
   const id = `mmd-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   const [svg, setSvg] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
