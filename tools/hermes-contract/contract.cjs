@@ -261,9 +261,11 @@ function pluginWriteCases() {
     // Settings switches the app writes (Settings.tsx), set to what they already are.
     call('/bgapps', 'PUT', '/bgapps', { allow_sensitive: false }),
     call('/openui', 'PUT', '/openui', { enabled: true }),
-    // A card's Query(): one allowed read, one refused tool (403 on both sides).
-    call('/openui/call (allowed read)', 'POST', '/openui/call', { name: 'read_file', args: { path: NOTE } }),
+    // A card's Query(): one allowed read (find_chats runs in the plugin: no search provider needed), and refused tools
+    // (403 on both sides): a command, and a file read (cards read no files).
+    call('/openui/call (allowed read)', 'POST', '/openui/call', { name: 'find_chats', args: { text: 'zzcontractnomatch' } }),
     call('/openui/call (refused tool)', 'POST', '/openui/call', { name: 'terminal', args: { command: 'true' } }, { expectError: 403 }),
+    call('/openui/call (refused file read)', 'POST', '/openui/call', { name: 'read_file', args: { path: NOTE } }, { expectError: 403 }),
     call('/refresh-logins', 'POST', '/refresh-logins', {}),
     call('/claude-login/cancel', 'POST', '/claude-login/cancel', { session_id: 'contract-none' }),
     call('/profiles/link', 'POST', '/profiles/link', {}),

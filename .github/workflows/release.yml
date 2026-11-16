@@ -2,7 +2,8 @@ name: Release
 
 # Push a tag like v0.8.0 and this builds the APK and attaches it to a GitHub release,
 # which phone/install.sh downloads. Needs the repo secret KEYSTORE_B64 (base64 of the signing keystore):
-# every release must be signed with the same key, or phones can't update.
+# every release must be signed with the same key, or phones can't update. KEYSTORE_PASS holds its password (until it
+# is set, android/build.sh warns and uses the old public default).
 # OpenUI's install script sends telemetry unless one of these is set.
 env:
   OPENUI_TELEMETRY_DISABLED: '1'
@@ -87,6 +88,8 @@ jobs:
       - name: Build the APK
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }} # empty until set: build.sh warns and uses the old default
+          KEYSTORE_KEY_PASS: ${{ secrets.KEYSTORE_KEY_PASS }} # empty: the same as KEYSTORE_PASS
         run: |
           [ -n "$KEYSTORE_B64" ] || { echo "Set the KEYSTORE_B64 secret first"; exit 1; }
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"

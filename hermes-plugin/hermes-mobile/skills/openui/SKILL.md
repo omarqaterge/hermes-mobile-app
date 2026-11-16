@@ -348,18 +348,12 @@ Use these with Query() for read operations or Mutation() for write operations. T
   Search the web. Returns {success, data: {web: [{url, title, description}]}}; on failure {error}.
 - find_chats(text?: string, kind?: "image" | "video" | "audio" | "file" | "media", who?: "user" | "agent" | "any", profile?: string, limit?: number) → {ok?: boolean, text?: string, kind?: any, who?: string, profiles?: string[], chats_found?: number, chats?: {id?: string, profile?: string, title?: string, last_active?: number, link?: string, title_match?: boolean, text_hits?: number, snippets?: {msg_id?: number, who?: string, snippet?: string}[], from_user?: number, from_agent?: number, items?: {who?: string, how?: string, kind?: string, path?: string, exists?: boolean, canvas?: string, canvas_type?: string}[], more_items?: number}[], more_chats?: number, unreferenced_uploads?: string[], note?: string, error?: string}
   Find the user's chats by words and/or by the images, videos, audio or files in them, newest first. Returns {ok, chats_found, chats: [{id, title, profile, last_active, link, snippets: [{who, snippet}], items: [{kind, path}]}]}.
-- read_file(path: string, offset?: number, limit?: number) → {content?: string, total_lines?: number, file_size?: number, truncated?: boolean, next_offset?: number, hint?: string, is_binary?: boolean, is_image?: boolean, not_found?: boolean, similar_files?: string[], error?: string}
-  Read a text file (Hermes's read denylist applies). Returns {content: '1|first line\n2|...', total_lines, file_size, truncated, next_offset}; on failure {error}.
-- search_files(pattern: string, target?: "content" | "files", path?: string, file_glob?: string, limit?: number, offset?: number, order?: "discovery" | "modified", output_mode?: "content" | "files_only" | "count", context?: number) → {total_count?: number, files?: string[], matches?: {path?: string, line?: number, content?: string}[], matches_format?: string, matches_text?: string, counts?: object, truncated?: boolean, total_count_is_lower_bound?: boolean, limit_reason?: string, warning?: string, error?: string}
-  Find files by name (target 'files': returns {total_count, files: [path]}) or search inside them (target 'content': returns {total_count, matches: [{path, line, content}]}, or matches_text when there are 5 or more); on failure {error}.
 
 ### Default values for Query results
 
 Use these shapes as minimal Query defaults:
 - web_search: `{"success":false,"data":{"web":[]},"error":""}`
 - find_chats: `{"ok":false,"text":"","kind":null,"who":"","profiles":[],"chats_found":0,"chats":[],"more_chats":0,"unreferenced_uploads":[],"note":"","error":""}`
-- read_file: `{"content":"","total_lines":0,"file_size":0,"truncated":false,"next_offset":0,"hint":"","is_binary":false,"is_image":false,"not_found":false,"similar_files":[],"error":""}`
-- search_files: `{"total_count":0,"files":[],"matches":[],"matches_format":"","matches_text":"","counts":{},"truncated":false,"total_count_is_lower_bound":false,"limit_reason":"","warning":"","error":""}`
 
 CRITICAL: Use ONLY the tools listed above in Query() and Mutation() calls. Do NOT invent or guess tool names. If the user asks for functionality that doesn't match any available tool, use realistic mock data instead of fabricating a tool call.
 
@@ -477,6 +471,7 @@ Before finishing, walk your output and verify:
 - Every ```openui-lang block is a complete program that starts with root = Card(...). A later block never edits an earlier one: to change a card, write the whole new block.
 - Buttons, list items and follow-ups use @ToAssistant("...") with the exact words the user would send. The app sends that text as the user's next message, with any form values listed under it as "- name: value" lines.
 - @OpenUrl only takes full https:// links.
+- Pictures from web addresses (Image, ImageBlock, ImageGallery, Markdown images) show only after the user taps "Load images" under the card, so a card must make sense without them.
 - The screen is a phone, about 380 px wide: at most 4 table columns, short labels, and Tabs, Carousel or SectionBlock instead of very long cards.
 - The examples show what goes INSIDE a ```openui-lang fence; in your reply always wrap the code in that fence.
 - Never give Query a refresh interval (its 4th argument). Add a Refresh button with @Run(query) instead.

@@ -323,7 +323,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/openui/call') {
       // A card's Query() (plugin openui_query.py): read-only tools only.
       const b = JSON.parse(body || '{}')
-      if (b.name === 'read_file') return send({ content: '1|mock file', total_lines: 1, file_size: 10, truncated: false, is_binary: false, is_image: false, not_found: false })
+      if (b.name === 'find_chats') return send({ ok: true, text: String(b.args?.text || ''), kind: null, who: 'any', profiles: ['default'], chats_found: 0, chats: [] })
       if (b.name !== 'web_search') return send({ detail: `${b.name} is not available to cards` }, 403)
       return send({ success: true, data: { web: [{ title: 'Mock result one', url: 'https://example.com/1', description: 'd' }] } })
     }

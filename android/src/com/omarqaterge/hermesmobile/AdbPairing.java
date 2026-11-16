@@ -129,6 +129,12 @@ final class AdbPairing {
     /** The user typed into the notification's Enter code field (HermesService.onStartCommand, main thread). */
     static void onReply(Context c, Intent i) {
         if (app == null) app = c.getApplicationContext();
+        // Android 11 (wireless debugging's first version) has no setAuthenticationRequired: refuse while locked.
+        if (MainActivity.keyguardLocked(c)) {
+            Log.i(TAG, "locked: code not used");
+            ask("Unlock the phone first", "Then type the 6-digit code here again.", true);
+            return;
+        }
         Bundle res = RemoteInput.getResultsFromIntent(i);
         CharSequence cs = res == null ? null : res.getCharSequence(REMOTE);
         final KeeperPlan.PairReply r = KeeperPlan.parsePairReply(cs == null ? null : cs.toString());
@@ -239,9 +245,11 @@ final class AdbPairing {
             PendingIntent pi = PendingIntent.getService(app, NTAG.hashCode(),
                     new Intent(app, HermesService.class).setAction(ACTION_CODE),
                     PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            b.addAction(new Notification.Action.Builder(null, "Enter code", pi)
+            // Typing a code from the lock screen would pair Termux with adb on a phone someone else holds: Android 12+
+            // asks for the unlock first (HermesService.unlockFirst); onReply refuses a locked phone on Android 11.
+            b.addAction(HermesService.unlockFirst(new Notification.Action.Builder(null, "Enter code", pi)
                     .addRemoteInput(new RemoteInput.Builder(REMOTE).setLabel("6-digit code").build())
-                    .setAllowGeneratedReplies(false).build());
+                    .setAllowGeneratedReplies(false)).build());
         }
         notify(b.build());
     }

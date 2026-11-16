@@ -256,8 +256,8 @@ protect you from, because a safety claim with no limits is not one. Everything h
   speech models if you choose offline dictation (from Hugging Face).
 - **What replies point to:** an image, video or sound from the web that a reply links to is not fetched until you tap
   it, in every chat (a web address can carry out what the agent has read, and a web page the agent reads could tell it
-  to write one). YouTube thumbnails load before you tap play. Pictures drawn by cards still load without a tap, except
-  in a chat that has read phone data.
+  to write one). YouTube thumbnails load before you tap play. Pictures drawn by cards wait for a tap on "Load images"
+  under the card, and in a chat that has read phone data they don't load at all.
 - **Dictation** can use Android's own speech recogniser, which may be cloud-based, if you don't use the offline models.
 - **Usage stats,** only if you opt in, to Aptabase. **A problem report,** only when you send one; reports are public GitHub
   issues.

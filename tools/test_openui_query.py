@@ -27,33 +27,20 @@ def check(name, cond, detail=""):
     fails += 0 if cond else 1
 
 
-# ── fake Hermes: model_tools.handle_function_call + tools.file_tools.clear_file_ops_cache ──
-CALLS, CLEARED = [], []
-AUTH = os.path.expanduser("~/.hermes/auth.json")
+# ── fake Hermes: model_tools.handle_function_call ──
+CALLS = []
 
 
 def handle_function_call(name, args, task_id=None, session_id=None, enabled_tools=None, **kw):
     CALLS.append({"name": name, "args": args, "task_id": task_id, "session_id": session_id, "enabled_tools": enabled_tools})
     if name == "web_search":
         return json.dumps({"success": True, "data": {"web": [{"url": "https://e.test/1", "title": "One", "description": "d"}]}})
-    if name == "read_file":
-        if os.path.expanduser(args.get("path", "")) == AUTH:
-            return json.dumps({"error": "Access denied: auth.json is Hermes's credential store."})
-        return json.dumps({"content": "1|secret-free", "total_lines": 1})
-    if name == "search_files":
-        return "plain text, not JSON"
     return json.dumps({"error": f"unknown tool {name}"})
 
 
 mt = types.ModuleType("model_tools")
 mt.handle_function_call = handle_function_call
 sys.modules["model_tools"] = mt
-tools_pkg = types.ModuleType("tools")
-ft = types.ModuleType("tools.file_tools")
-ft.clear_file_ops_cache = lambda task_id=None: CLEARED.append(task_id)
-tools_pkg.file_tools = ft
-sys.modules["tools"] = tools_pkg
-sys.modules["tools.file_tools"] = ft
 
 # a fake ~/.hermes with one chat for the real find_chats
 H = os.path.join(root, ".hermes")
@@ -73,8 +60,8 @@ spec.loader.exec_module(oq)
 # ── the allow-list ──
 raw = json.loads(Path(PLUGIN, "openui_tools.json").read_text())
 names = [t["name"] for t in raw]
-check("openui_tools.json lists exactly the four read-only tools",
-      sorted(names) == ["find_chats", "read_file", "search_files", "web_search"], names)
+check("openui_tools.json lists exactly the two read-only tools (cards read no files)",
+      sorted(names) == ["find_chats", "web_search"], names)
 check("every entry: readOnlyHint, description, inputSchema, outputSchema",
       all(t.get("annotations", {}).get("readOnlyHint") is True and t.get("description") and t.get("inputSchema", {}).get("type") == "object"
           and t.get("outputSchema", {}).get("type") == "object" for t in raw))
@@ -87,6 +74,8 @@ real_tools, oq.TOOLS = oq.TOOLS, tmp
 check("entries without readOnlyHint are left out", list(oq.query_tools()) == ["web_search"], list(oq.query_tools()))
 tmp.write_text("not json")
 check("a broken file allows nothing", oq.query_tools() == {})
+tmp.write_text(json.dumps([{"name": n, "annotations": {"readOnlyHint": True}} for n in ("read_file", "search_files", "terminal", "web_search")]))
+check("file and command tools are never served, even marked read-only", list(oq.query_tools()) == ["web_search"], list(oq.query_tools()))
 oq.TOOLS = real_tools
 
 cs_spec = importlib.util.spec_from_file_location("cs_check", os.path.join(PLUGIN, "chat_search.py"))
@@ -102,14 +91,14 @@ if pin.exists() and (hermes / ".git").exists():
     commit = pin.read_text().strip()
     ns = {}
     try:
-        for f in ("tools/file_tools.py", "tools/web_tools.py"):
+        for f in ("tools/web_tools.py",):
             src = subprocess.run(["git", "-C", str(hermes), "show", f"{commit}:{f}"], capture_output=True, text=True, check=True).stdout
-            for var in ("READ_FILE_SCHEMA", "SEARCH_FILES_SCHEMA", "WEB_SEARCH_SCHEMA"):
+            for var in ("WEB_SEARCH_SCHEMA",):
                 start = src.find(f"\n{var} = {{")
                 if start >= 0:
                     end = src.find("\n}\n", start) + 2
                     exec(src[start:end], {"DEFAULT_READ_LIMIT": 2000}, ns)
-        for var, tool in (("READ_FILE_SCHEMA", "read_file"), ("SEARCH_FILES_SCHEMA", "search_files"), ("WEB_SEARCH_SCHEMA", "web_search")):
+        for var, tool in (("WEB_SEARCH_SCHEMA", "web_search"),):
             check(f"{tool} inputSchema = pinned Hermes {var} parameters", ns.get(var, {}).get("parameters") == by[tool]["inputSchema"])
     except Exception as e:
         check("pinned Hermes schemas readable", False, f"{type(e).__name__}: {e}")
@@ -124,20 +113,15 @@ check("web_search: session_id=None (no chat bookkeeping)", last["session_id"] is
 check("web_search: args passed as given", last["args"] == {"query": "openui", "limit": 2}, last["args"])
 check("web_search: JSON parsed", r == {"success": True, "data": {"web": [{"url": "https://e.test/1", "title": "One", "description": "d"}]}}, r)
 
-n = len(CLEARED)
-oq.call_tool("read_file", {"path": "/x/notes.md"})
-oq.call_tool("read_file", {"path": "/x/notes.md"})
-check("read_file runs under the cards' own task id", CALLS[-1]["task_id"] == oq.TASK_ID and oq.TASK_ID != "default", CALLS[-1]["task_id"])
-check("its read tracker is cleared after every call (no 'unchanged' stub on a second read)",
-      CLEARED[n:] == [oq.TASK_ID, oq.TASK_ID], CLEARED[n:])
+check("web_search runs under the cards' own task id", last["task_id"] == oq.TASK_ID and oq.TASK_ID != "default", last["task_id"])
 
-r = oq.call_tool("read_file", {"path": "~/.hermes/auth.json"})
-check("read_file of auth.json returns Hermes's block error, not the file", "error" in r and "content" not in r and "Access denied" in r["error"], r)
-
-check("non-JSON output -> {'text': ...}", oq.call_tool("search_files", {"pattern": "*.md"}) == {"text": "plain text, not JSON"})
+real_hfc = mt.handle_function_call
+mt.handle_function_call = lambda *a, **kw: "plain text, not JSON"
+check("non-JSON output -> {'text': ...}", oq.call_tool("web_search", {"query": "x"}) == {"text": "plain text, not JSON"})
+mt.handle_function_call = real_hfc
 check("no args -> {}", oq.call_tool("web_search") is not None and CALLS[-1]["args"] == {}, CALLS[-1]["args"])
 
-for bad in ("terminal", "chat_history_lookup", "write_file", "session_search", ""):
+for bad in ("read_file", "search_files", "terminal", "chat_history_lookup", "write_file", "session_search", ""):
     k = len(CALLS)
     try:
         oq.call_tool(bad, {"command": "chmod 777 /tmp/x"})

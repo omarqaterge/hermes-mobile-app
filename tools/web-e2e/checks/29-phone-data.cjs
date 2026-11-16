@@ -548,7 +548,12 @@ module.exports = async t => {
     hits.length = 0
     pg = await setup('s-pd-leaks-ctl')
     imgs = await cardImgs(pg)
-    check(imgs.some(s => /card-image\.png\?d=ROWS/.test(s)) && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 0, `phone data leaks, control: a chat with no phone_data call shows its card's images (${JSON.stringify(imgs)})`)
+    // every chat holds a card's web pictures until Load images (openui-hold.ts); without a read the tap is offered and loads them
+    check(!imgs.some(s => /card-image\.png/.test(s)) && (await pg.locator('.warn-line', { hasText: 'held back' }).count()) === 0 && (await pg.locator('.card-held').count()) > 0, `phone data leaks, control: a chat with no phone_data call holds its card's images behind Load images (${JSON.stringify(imgs)})`)
+    await pg.locator('.card-held').first().getByRole('button', { name: 'Load images' }).click({ timeout: 5000 }).catch(() => {})
+    await sleep(500)
+    imgs = await cardImgs(pg)
+    check(imgs.some(s => /card-image\.png\?d=ROWS/.test(s)), `phone data leaks, control: Load images shows the card's images (${JSON.stringify(imgs)})`)
     const mm2 = await pg.evaluate(() => [...document.querySelectorAll('.msg.assistant .codeblock-bar')].map(b => b.innerText).join('|'))
     check(/mermaid \(not drawn: it names an image or an address\)/.test(mm2) && !/phone data/.test(mm2) && !hits.some(h => h.includes('/mermaid.png')), `phone data leaks, control: its Mermaid diagram that names an image is shown as code too, and fetches nothing (${mm2})`)
     rem = await remote(pg)
@@ -639,7 +644,7 @@ module.exports = async t => {
     hits.length = 0
     pg = await open('s-pd-leaks-ctl', [])
     st = await state(pg)
-    check(st.asked.length > 0 && st.remote.length > 0 && st.remote.every(r => r.block === false) && st.imgs.some(s => /card-image\.png\?d=ROWS/.test(s)), `phone data native record, control: a chat the app has no record of is not blocked and shows its card images (${JSON.stringify(st.remote)}, ${JSON.stringify(st.imgs)})`)
+    check(st.asked.length > 0 && st.remote.length > 0 && st.remote.every(r => r.block === false) && (await pg.locator('.card-held').count()) > 0, `phone data native record, control: a chat the app has no record of is not blocked and offers Load images for its card (${JSON.stringify(st.remote)}, ${JSON.stringify(st.imgs)})`)
     await pg.close()
   }
   {
@@ -845,6 +850,56 @@ module.exports = async t => {
       v = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe.html-frame').length, held: document.querySelectorAll('.html-held').length }))
       r = await rem(pg)
       check(want ? v.frames === 0 && v.held === 1 && r[r.length - 1].block === true : v.frames === 1 && v.held === 0 && r.every(x => x.block === false), `phone data files${want ? '' : ', control'}: an HTML file ${want ? 'is held once a read was recorded' : 'still runs when no read was ever recorded'} (${JSON.stringify(v)}, ${JSON.stringify(r.slice(-2))})`)
+      await pg.close()
+    }
+  }
+
+  // ── a card's Query can't send its arguments out after a phone-data read: web_search is refused in the page (its call
+  // carries no chat for the plugin's ask, and the shell lets localhost through); chat search still works; control ──
+  {
+    const card = ['root = Card([head, t, c])', 'head = CardHeader("Query card", "x")', 'r = Query("web_search", {query: "ROWS-123"}, {data: {web: []}})', 'c2 = Query("find_chats", {text: "zebra"}, {chats: []})', 't = TextContent("Results: " + @Count(r.data.web))', 'c = TextContent("Chats: " + @Count(c2.chats))'].join('\n')
+    for (const [sid, tainted] of [['s-pd-leaks', true], ['s-pd-leaks-ctl', false]]) {
+      const pg = await t.browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(nativeShell)
+      await pg.addInitScript(sid => {
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+        window.__sid = 'rt-' + sid
+        window.__socks = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+            this.addEventListener('message', e => {
+              try {
+                const m = JSON.parse(e.data)
+                if (m.params && m.params.session_id) window.__sid = m.params.session_id
+              } catch {
+                /* not JSON */
+              }
+            })
+          }
+        }
+      }, sid)
+      const asked = []
+      await pg.route('**/api/plugins/hermes-mobile/openui/call', r => {
+        asked.push(JSON.parse(r.request().postData() || '{}').name)
+        return r.continue()
+      })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await sleep(1200)
+      await pg.evaluate(text => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        const send = (type, payload) => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: window.__sid, payload } }) }))
+        send('message.start', {})
+        send('message.complete', { text })
+      }, 'Live:\n\n```openui-lang\n' + card + '\n```\n')
+      await pg.locator('.hm-openui', { hasText: 'Query card' }).last().waitFor({ timeout: 15000 }).catch(() => {})
+      await sleep(1500)
+      const web = asked.filter(n => n === 'web_search').length
+      const chats = asked.filter(n => n === 'find_chats').length
+      check(tainted ? web === 0 && chats > 0 : web > 0 && chats > 0, `phone data card query${tainted ? '' : ', control'}: a card ${tainted ? "can't search the web after a phone-data read, and still searches chats" : 'searches the web and chats as before'} (${JSON.stringify(asked)})`)
       await pg.close()
     }
   }
