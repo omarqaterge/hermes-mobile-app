@@ -62,10 +62,7 @@ A read-only pass over the Java, the plugin and the scripts. "Reported" faults we
 not yet re-checked or reproduced with a test; "suspected" ones were not traced. Some files only got a skim
 (`bootstrap.sh`, `hm-local`, `plugin_api.py`, `checkpoints.py`, `local_auth.py`).
 
-Worth doing, in this order:
-
-| Where | The hidden states | What is loose, and what the survey reported |
-|---|---|---|
+Every item the survey listed as worth doing is done (see the lists above).
 
 Small things reported on the way: `Voice.java` has a field that is never assigned (`pendingSpeech`); `PluginSync.java`
 records a check before the service start that may fail; `ShizukuKeeper.java` sets `P_WD_OURS` before the write that may throw.
