@@ -175,7 +175,7 @@ flowchart LR
 | `MainActivity` (Java shell) | app uid, main process | the launcher, a notification tap, a share, a shortcut (`singleTask`) | nothing; intercepts `https://hm-media.invalid/m` requests inside the WebView | the page through the bridge | 4.1, 4.5 |
 | `HermesService` (foreground service, type `specialUse`) | app uid, main process | `MainActivity.onCreate`/`onResume`, `BootReceiver` (boot / app update), `StartReceiver` (Termux app-keeper) | `127.0.0.1:9121`: `POST /event` (key) and `POST /setup` (installer token) | the plugin, `cron_ticker.py`, `hm-shizuku`, `phone/bootstrap.sh` | 4.1, 4.3, 4.4 |
 | Termux supervisor `~/bin/hermes-services` (`phone/hermes-services`) | Termux uid | `MainActivity.startHermesNow` (Termux `RUN_COMMAND`), Termux:Boot (`~/.termux/boot/10-hermes`), by hand | nothing | — | 6.1, 6.2 |
-| Hermes dashboard (`hermes dashboard --host 127.0.0.1 --port 9119 --no-open`) | Termux uid inside proot Debian | the `dashboard` restart loop (10 s pause between restarts) | `127.0.0.1:9119`: HTML page with the session token, REST `/api/*`, WebSocket `/api/ws` | the page (WebSocket), `MainActivity` and `HermesService` (REST), the plugin's own `/approve` and `/stop` (WebSocket) | 6.2 |
+| Hermes dashboard (`hermes dashboard --host 127.0.0.1 --port 9119 --no-open`) | Termux uid inside proot Debian | the `dashboard` restart loop (10 s pause between restarts) | `127.0.0.1:9119`: HTML page (with the session token only when Hermes lacks patch 0004, see 2.3), REST `/api/*`, WebSocket `/api/ws` | the page (WebSocket), `MainActivity` and `HermesService` (REST), the plugin's own `/approve` and `/stop` (WebSocket) | 6.2 |
 | `tui_gateway` WebSocket `/api/ws` | inside the dashboard process | the dashboard | `ws://127.0.0.1:9119/api/ws?token=<session token>` | the page's `JsonRpcGatewayClient` (`gateway.ts`) | 2.2 (flows), table "Gateway RPCs" below |
 | Hermes Mobile plugin (`hermes-plugin/hermes-mobile`) | inside every Hermes process (dashboard, agent runtimes) | Hermes's plugin loader | its REST routes are mounted at `/api/plugins/hermes-mobile/*` on 9119 | Hermes (hooks/tools), the app (REST) | 5 |
 | Cron ticker (`phone/cron_ticker.py`) | Termux uid inside proot Debian | the `cron-ticker` restart loop | `127.0.0.1:9122` (poke: the event key plus a newline) | `HermesService.pokeTicker` | 6.1 |
@@ -267,7 +267,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
 3. The service checks the key, stores the approval as `pendingApproval` with its deadline, puts the buttons on the
    status chip, and holds the CPU awake until the deadline + 5 s (`updateWake`). If the app is on screen
    (`MainActivity.visible`) it stops there: the in-app sheet is the way to answer. Otherwise it also posts a popup
-   on the `needs_you` channel with Allow once, Allow session (when allowed) and Deny.
+   on the `needs_you` channel with Allow once, Allow session (when allowed) and Deny. On Android 12+ Allow once, Allow session, the question answers, the reply field and the pairing code field each ask for the phone to be unlocked first (`HermesService.unlockFirst`, `setAuthenticationRequired`); Deny, Stop, Clear and the read-aloud buttons do not.
 4. A button tap starts the service with `ACTION_APPROVE`. `answerApproval` scrapes the dashboard token
    (`dashboardToken`) and POSTs `{session, key, choice, request_id, profile}` to
    `/api/plugins/hermes-mobile/approve` (retrying once with a fresh token on 401/403).
@@ -522,12 +522,30 @@ page; their actions can only call read-only tools through `POST /openui/call`, a
 - `POST /setup` uses its own one-time token instead (made when the app copies the installer command, body
   ≤ 1 KiB; `SetupLines`, 4.1).
 
-**Dashboard token scrape.**
-- Hermes's dashboard puts its session token into its HTML page as `window.__HERMES_SESSION_TOKEN__ = "…"` and
-  mints a new one on every start. Everything that talks to the dashboard scrapes it from `http://127.0.0.1:9119/`
-  with the same pattern: `MainActivity.token` (cached; refreshed on a new connect and after a 401/403),
-  `HermesService.dashboardToken` (for notification answers and Stop), the plugin's `/approve` and `/stop` routes
-  (their own WebSocket), and `web/devserver.py` (desktop development).
+**Page policy (Content-Security-Policy).** `web/index.html` carries a CSP meta tag: `img-src` and `media-src` allow only
+  `'self'`, `data:`, `blob:` and `https://hm-media.invalid`, and `object-src 'none'`. Nothing a reply writes can make the
+  page fetch a web image by itself. Canvas frames inherit it. A web image in a reply is loaded only by a tap (see 3.3
+  "Media").
+
+**Dashboard token.**
+- Any app on the phone can open `127.0.0.1:9119`, so the dashboard's session token must not be in its page for anyone
+  who asks. With patch `0004-fix-dashboard-keep-a-minted-session-token-out-of-the.patch` (6.4) and
+  `HERMES_DASHBOARD_TOKEN_IN_PAGE=0`, the page carries no token, and the API still accepts the one the launcher minted.
+- `phone/hermes-services` mints the token once (24 random bytes as hex) into `~/.hermes-mobile/dash-token` (mode 600)
+  and starts the dashboard with `HERMES_DASHBOARD_SESSION_TOKEN` set from that file, read inside Debian so it never
+  appears on a command line. A dashboard loop an older copy of the script started (no `~/logs/dashboard.loop` marker) is
+  stopped and restarted once.
+- Without the patch, Hermes still puts the token into its page as `window.__HERMES_SESSION_TOKEN__ = "…"`, and the
+  readers below fall back to that. Hermes mints a new token on every start unless the launcher supplies one.
+- `DashToken.get` (`DashToken.java`) is the app's reader: the page's token when present, else the value kept in the
+  `hermes` preferences as `dash_token`, else `cat ~/.hermes-mobile/dash-token` through Termux (`RUN_COMMAND`, the answer
+  comes back through a PendingIntent carrying a per-ask nonce, so a forged broadcast can't plant a token). It asks only
+  while Hermes answers, at most once every 5 s, and checks the stored token again on a refresh. `HermesService.dashboardToken`
+  calls it (notification answers and Stop), as do `MainActivity.token` and the bridge's `getToken`.
+- The plugin's `/approve` and `/stop` routes take the token from the dashboard process (`dashboard_token` in
+  `plugin_api.py`) and read the page only as a last resort.
+- `web/devserver.py` and the computer-side dev tools read the page, then `HM_DASH_TOKEN`, then the Termux file over
+  `tools/phone` (see 7.2).
 - REST calls carry it in `X-Hermes-Session-Token` (added by the shell). The WebSocket URL carries it as `?token=`,
   which is how Hermes's gateway accepts a WebSocket; the URL is built fresh for each connect and never stored.
 - The background host's token stays in Java (`X-HM-Token` header, never in a URL, never sent to the page).
@@ -593,6 +611,7 @@ Owned by the Java side (4); listed here because the flows above depend on them.
 | File → key | What it holds |
 |---|---|
 | `hermes` → `event_key` | The event key shared with Termux (2.3). |
+| `hermes` → `dash_token` | The dashboard's session token as last read (`DashToken`, 2.3). |
 | `hermes` → `termux_ok` | Termux has accepted one of the app's commands; gates every automatic `RUN_COMMAND`. |
 | `hermes` → `setup_token` | The installer's progress token while an install runs. |
 | `hermes` → `wake_at` | The next cron wake-up time, re-armed after the app restarts. |
@@ -636,6 +655,8 @@ and canvas, keeping whatever is still attached in an open composer.
 | `~/bin/rish`, `~/bin/rish_shizuku.dex` | `phone/phone-access.sh` | Shizuku's shell, taken from Shizuku's own APK. |
 | `~/.termux/boot/10-hermes` | `phone/bootstrap.sh` | Termux:Boot runs `~/bin/hermes-services` after a reboot. |
 | `~/.hermes-mobile/key` | `HermesService.shareKeyWithTermux` | The event key (mode 600). |
+| `~/.hermes-mobile/dash-token` | `phone/hermes-services` (once) | The dashboard's session token, mode 600 (2.3). |
+| `~/logs/dashboard.loop` | `phone/hermes-services` | Marker: the dashboard loop was started with the token. |
 | `~/.hermes-mobile/installed` | `phone/bootstrap.sh` at DONE | The app's Termux probe reads it as "the install finished". |
 | `~/.hermes-mobile/distro` | `phone/install.sh` / `bootstrap.sh` | `proot` or `chroot`. |
 | `~/.hermes-mobile/todo` | `phone/bootstrap.sh` | What the installer couldn't finish, shown at the end. |
@@ -1118,7 +1139,8 @@ Rendering rules:
 
 `web/src/components/Media.tsx`. `Media` draws what a path or URL points to, by extension (`mediaKind` in `text.ts`: image, video, audio, or file).
 
-- **Where the bytes come from.** `http(s)`, `data:` and `blob:` URLs are used as they are. A path on the phone is streamed in the phone app from the plugin's `GET /media` through the shell, with byte ranges so video can seek (`mediaBase` bridge call). Outside the app (desktop test browser) it is read through `GET /api/files/read` as a `data:` URL, up to 25 MB ("too large to show inline" beyond that). `~/` paths map to `/root/`.
+- **Web media (tap to load).** `http(s)` media never loads by itself (the CSP in 2.3 forbids it). An image is a button "Image from <site>: tap to load" ("Loading…" while fetched; "Couldn’t load it. Open <site>" after a failure, which opens it in the browser). The tap calls `remoteImageAsync` in the phone app (`remoteImage` in `bridge.ts`; in a browser a CORS fetch as a `blob:`), and the picture then shows like any image, with the Lightbox. Video and audio from the web become a file chip "<name> · <site>" that opens in the browser.
+- **Where the bytes come from.** `data:` and `blob:` URLs are used as they are. A path on the phone is streamed in the phone app from the plugin's `GET /media` through the shell, with byte ranges so video can seek (`mediaBase` bridge call). Outside the app (desktop test browser) it is read through `GET /api/files/read` as a `data:` URL, up to 25 MB ("too large to show inline" beyond that). `~/` paths map to `/root/`.
 - **Image:** lazy-loaded; tap opens the Lightbox. The Lightbox is full screen: pinch to zoom (1× to 6×), drag to pan when zoomed, double-tap to jump between 1× and 2.5×, buttons Save (to Pictures/Hermes; toast "Saved to Pictures/Hermes" or "Couldn't save the image"), Share, Open with…, and Close (✕). Tapping the dark area closes it at 1×. Back closes it. Outside the phone app, Save downloads the file and Share says "Sharing works in the phone app".
 - **Video:** the browser's own controls.
 - **Audio:** the app's own player: play/pause, a seek slider (aria-label Seek), elapsed and total time, and a speed button (aria-label Playback speed) that cycles 1×, 1.5×, 2×.
@@ -1248,7 +1270,7 @@ The Dictate button calls the shell's `startListening` bridge method. The compose
 
 #### Share to Hermes
 
-`web/src/share.ts`. When the user shares text or files to the app from another Android app, the shell calls `window.hermesShared(count, text)`. The page closes screens and sheets, starts a new chat, puts the text in the composer (not sent), waits up to 60 s for the connection ("Hermes is offline: share the files again once it runs" if it never comes), then fetches the shared files one at a time (`sharedItem` bridge call, so a large PDF does not block the rest) and attaches each. A file that cannot be read gets a toast "<name>: <reason>". Nothing is ever sent by itself.
+`web/src/share.ts`. When the user shares text or files to the app from another Android app, the shell calls `window.hermesShared(count, text)`. The page closes screens and sheets, starts a new chat, puts the text in the composer (not sent), waits up to 60 s for the connection ("Hermes is offline: share the files again once it runs" if it never comes), then fetches the shared files one at a time (`sharedItem` bridge call, so a large PDF does not block the rest) and attaches each. A file that cannot be read gets a toast "<name>: <reason>", and so does a file the app won't open from its own storage ("can't be shared from there": `file://` or this app's own providers, `ShareSource`). Nothing is ever sent by itself.
 
 Launcher shortcuts call `window.hermesShortcut(kind)`: New chat, or `live` which also starts Live mode (toast "Live mode needs the phone app’s voice features" when voice is missing, "Hermes is offline" after 30 s).
 
@@ -2405,6 +2427,8 @@ All sources are under `android/src/com/omarqaterge/hermesmobile` (package `com.o
 | `Uninstall` | Native half of Settings → Danger zone → Uninstall Hermes: runs `phone/uninstall.sh` in Termux and starts Android's uninstall prompt for the helper apps. | `run`, `done`, `state`, `uninstallApp`, `started`, `args` | Bridge `uninstallStart`, `uninstallState`, `uninstallApp`; `HermesService`, `MainActivity`, `ShizukuKeeper` call `started()` to stop acting after an uninstall |
 | `UpdateNotice` | Tells the user once per release that a newer version is on GitHub. | `check`, `isNewer`, `parts` | `HermesService` (120 s after start, then every 12 h) |
 | `SetupLines` | Policy for the installer's progress lines (`POST /setup` on port 9121): one-time token, accepted line shapes, last 50 lines. Plain Java. | `start`, `resume`, `add`, `json`, `parse`, `installing`, `active` | `HermesService.setupPost`; bridge `setupProgress` through `HermesService.setup(...)` |
+| `DashToken` | Reads the dashboard's session token: from the page when Hermes still puts it there, else from the `hermes` preferences, else from Termux's `~/.hermes-mobile/dash-token` (asked through `RUN_COMMAND`; the answer comes back through a PendingIntent with a per-ask nonce on a private thread). Asks at most every 5 s and only while Hermes answers. | `get`, `stored`, `works`, `askTermux`, `listen` | `MainActivity.token`, `HermesService.dashboardToken`, the bridge's `getToken` |
+| `ShareSource` | Which URIs "Share to Hermes" may open: `content://` of other apps only. Refuses `file://`, this app's own providers (also with a `0@` user prefix) and the app's package as authority. Plain Java, tested by `tools/test_share_source.sh`. | `ok` | `MainActivity.readShared` |
 | `CameraProvider` | A non-exported `ContentProvider` that hands the camera app one file to write and share targets a copy of an image. | `openFile`, `query`, `getType`, `dir`, `shareDir`, `uriFor` | `MainActivity.takePhoto`, `shareImageNow`; the camera app and the share target through a one-off URI grant |
 | `BootReceiver` | Starts `HermesService` after a reboot or an app update. | `onReceive` | Android (`BOOT_COMPLETED`, `MY_PACKAGE_REPLACED`) |
 | `StartReceiver` | Lets Termux's app keeper restart the service when it died (the service is not exported). Carries no data. | `onReceive` | Termux-side keeper script (exported receiver) |
@@ -2485,7 +2509,7 @@ Other-package permissions:
 | `Reading aloud` | `playback` | LOW | no | The `TtsMedia` card (id 7). |
 | `Phone access` | `phone` | DEFAULT | no | The Shizuku notice (id 9) from `ShizukuKeeper`. |
 | `App updates` | `update` | DEFAULT | no | "Hermes Mobile X is available" from `UpdateNotice` (id 10). |
-| `Pairing` | `pairing` | HIGH | no | The Pairing notification from `AdbPairing` (tag `pair`, id 1): "Pair Termux: enter the code" with the Enter code field ("6-digit code"), then "Pairing…", "Termux is paired" or what went wrong. Only after the user tapped Start pairing; gone 10 minutes after that tap. |
+| `Pairing` | `pairing` | HIGH | no | The Pairing notification from `AdbPairing` (tag `pair`, id 1): "Pair Termux: enter the code" with the Enter code field ("6-digit code", which asks for an unlocked phone like an approval), then "Pairing…", "Termux is paired" or what went wrong. Only after the user tapped Start pairing; gone 10 minutes after that tap. |
 
 Notification ids: 1 = status chip (also bridge `notify`, with a tag), 2 = every tagged card (`approval:<chat>`, `ask:<chat>`, `reply:<chat>`, `learn:<id>`, `cron:<id>`, `stop:<chat>`), 3 = group summary, 7 = reading card, 9 = Shizuku notice, 10 = update notice. All cards except the status chip are in the group `hermes` (children alert, the summary does not). The summary is posted with every card and removed when the last card goes (`dropEmptySummary`).
 
@@ -2591,7 +2615,7 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `ttsControl` | `cmd` (`play`, `pause`, `toggle`, `rew`, `ff`, `stop`; anything else is ignored) | nothing | `Voice.control(cmd)`: the in-app player acts on the same reader as the `Reading aloud` card. |
 | `startListening` | none | nothing | `Voice.startListening` (dictation). Asks for `RECORD_AUDIO` first if needed. |
 | `stopListening` | none | nothing | `Voice.stopListening`. |
-| `getToken` | none | token string, `""` on failure | Blocking: fetches `http://127.0.0.1:9119/` and reads `__HERMES_SESSION_TOKEN__` from it. |
+| `getToken` | none | token string, `""` on failure | Blocking: `DashToken.get` (the page's token when present, else the stored or Termux-read token, 2.3). |
 | `getTokenAsync` | `id` | nothing (async) | Same, on a thread, always fetching a fresh one; answers `window.__hmToken(id, token)`. A good token also marks Termux as accepting commands (`setTermuxOk`). |
 | `httpAsync` | `id`, `method`, `path`, `body` | nothing (async) | Runs a dashboard REST call on a thread pool (`rawHttp` to `127.0.0.1:9119`, with the session token header). `safeRequest` allows only GET/POST/PUT/DELETE/PATCH on a path that starts with `/api/`, has no spaces or control characters and is at most 4,096 long. On 401/403 it takes a new token and retries once. Answers `window.__hmHttp(id, status, body)`; status `0` and the message for a connection error. |
 | `openFile` | `path` | nothing | Absolute path without `..` or NUL. Runs a fixed script in Termux: `hermes-debian --open` (maps a path inside Debian) or `termux-open`; the path travels as an argument, never as code. `hostPath` maps `/root/...` and `/sdcard...` to what Termux can open. |
@@ -2618,6 +2642,7 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `installUpdate` | `url` | nothing | `startUpdate(url)`: only an `https://github.com/omarqaterge/hermes-mobile-app/releases/download/….apk` URL is accepted. Needs the "install unknown apps" permission (else it opens that page). Downloads to the cache (redirects only to GitHub hosts, at most 150 MB), checks the file is this package with a higher `versionCode`, then commits a `PackageInstaller` session; the system asks the user to confirm. Progress goes to `window.hermesUpdate(state, pct, msg)`. If the confirm prompt arrives while the app is hidden it waits for `onResume`. |
 | `saveImage` | `id`, `name`, `path`, `b64` | nothing (async) | Saves an image (from a phone file or base64, at most 30 MB; format sniffed as jpg/png/webp/gif) to Pictures/Hermes through `MediaStore` (Android 10+; answers false below). Answers `window.__hmImage(id, ok)`. |
 | `shareImage` | `id`, `name`, `path`, `b64` | nothing (async) | Writes a copy to `cache/share` (older copies than 1 h are deleted), serves it through `CameraProvider` and opens a share sheet with a one-off URI grant. Answers `window.__hmImage(id, ok)`. |
+| `remoteImageAsync` | `id`, `url` | nothing (async) | Fetches a web image the user tapped (3.3 "Media"): https only, redirects followed only to https, at most 15 MB, png/jpg/gif/webp by its bytes, answered as a `data:` URL through `window.__hmRemoteImg(id, url)` (empty string on any failure). Runs on the HTTP pool, never on the page thread. |
 | `chatSeen` | `id` | nothing | The page opened this chat: sets `HermesService.openChat` and `lastShownChat`, removes its reply card and Done entry. Empty `id` (new-chat screen) means no chat is on screen. |
 | `setUnseen` | `profile`, `json` (`[{id, title}]`, up to 500) | nothing | `HermesService.replaceUnseen`: the page's unread list for one profile; only removes or retitles Done-chip entries. |
 | `installHelperApp` | `which` (`termux`, `termux-api`, `termux-boot`, `shizuku`; anything else is ignored) | nothing (async) | Downloads the app from its fixed source (F-Droid's suggested version, or Shizuku's pinned GitHub release), checks the package name and the signing certificate (fixed SHA-256 for F-Droid builds and for Shizuku), then installs through `PackageInstaller`. One at a time. If the "install unknown apps" permission is missing it reports `permission` and opens that page. Progress: `window.hermesSetupInstall(which, state, pct, msg)` with state `downloading`, `installing`, `prompt`, `done`, `error`, `permission`. The Android confirm prompt is held until the app is on screen. |
@@ -3083,7 +3108,7 @@ Two-way, conflict-free sync of `USER.md` and `MEMORY.md` between devices through
 | Loop (pid file) | Command | Purpose |
 |---|---|---|
 | `sshd` (no loop) | `sshd` if installed and not running | Optional remote shell. |
-| `dashboard` | `hermes dashboard --host 127.0.0.1 --port 9119 --no-open` in Debian | Hermes's web server and WebSocket gateway; the app talks to it. Restarted 10 s after it dies (also how `hermes-debian --restart` works). |
+| `dashboard` | `hermes dashboard --host 127.0.0.1 --port 9119 --no-open` in Debian, with `HERMES_DASHBOARD_SESSION_TOKEN` read from `~/.hermes-mobile/dash-token` and `HERMES_DASHBOARD_TOKEN_IN_PAGE=0` (2.3) | Hermes's web server and WebSocket gateway; the app talks to it. Restarted 10 s after it dies (also how `hermes-debian --restart` works). |
 | `memory-sync` | `hermes_memory_sync.py sync`, then `sleep 590` | Only if `/root/.hermes/scripts/hermes_memory_sync.py` exists in Debian. |
 | `cron-ticker` | `cron_ticker.py` with Hermes's own venv Python | Cron jobs and wake reporting (6.1). |
 | `app-keeper` | If `127.0.0.1:9121` does not accept a connection, `am broadcast -n com.omarqaterge.hermesmobile/.StartReceiver -f 32`; then `sleep 300` | Revives the app's service after a force stop or a Recents clean-up. Flag 32 is `FLAG_INCLUDE_STOPPED_PACKAGES`; stock Android drops the broadcast without it. Costly (a Java VM per call), so only when the port does not answer. |
@@ -3136,7 +3161,7 @@ Set `HM_DISTRO=chroot` in front of the install command (`bootstrap.sh`, or the c
 
 **The pin.** The Hermes that gets installed is one exact commit: `HERMES_COMMIT` (40 characters) at the top of `phone/bootstrap.sh`. It must equal the build the app is written against: `web/vendor/hermes-shared/.hermes-commit` (short SHA) and `.hermes-version`. `tools/test_bootstrap_pin.sh` (run by CI) fails when they differ or when the Hermes installer is not called with `--commit $HERMES_COMMIT`. `bootstrap.sh` also uses the pinned commit's own `scripts/install.sh`, not the hosted one, so installs are reproducible.
 
-**The patches.** `hermes/patches/*.patch` are plain `git format-patch` files applied on top of the pinned build. They are offered upstream, so the list should shrink as Hermes merges them. `phone/hermes-patches.sh status|apply|revert [dir]` (run in Debian, in the checkout `$HERMES_AGENT_DIR`, default `~/.hermes/hermes-agent`) classifies each patch as `upstream` (the commit in its `From <sha>` line is already in Hermes), `applied` (reverse-applies cleanly), `pending` (applies) or `conflict`. `apply` is all or nothing: a conflict undoes what this run applied and exits 2. `revert` removes applied patches in reverse order. The edits are ordinary uncommitted changes in the checkout, so `git diff` shows them. `hermes update` stashes them and puts them back.
+**The patches.** `hermes/patches/*.patch` are plain `git format-patch` files applied on top of the pinned build. `0004-fix-dashboard-keep-a-minted-session-token-out-of-the.patch` keeps a minted dashboard token out of the page (2.3); it adds no behaviour without `HERMES_DASHBOARD_TOKEN_IN_PAGE=0`, and it conflicts with upstream `main` (re-make it at the next Hermes update). They are offered upstream, so the list should shrink as Hermes merges them. `phone/hermes-patches.sh status|apply|revert [dir]` (run in Debian, in the checkout `$HERMES_AGENT_DIR`, default `~/.hermes/hermes-agent`) classifies each patch as `upstream` (the commit in its `From <sha>` line is already in Hermes), `applied` (reverse-applies cleanly), `pending` (applies) or `conflict`. `apply` is all or nothing: a conflict undoes what this run applied and exits 2. `revert` removes applied patches in reverse order. The edits are ordinary uncommitted changes in the checkout, so `git diff` shows them. `hermes update` stashes them and puts them back.
 
 | Patch | What it fixes | Upstream |
 |---|---|---|
@@ -3217,7 +3242,7 @@ Emulator-only switch: when `HM_TEST_BOOTSTRAP_URL` is set, a string resource `hm
 | `phone` | Shell script: `ssh` into Termux on the phone (key-only sshd on port 8022, reached through `adb forward`). `tools/phone '<cmd>'` runs a Termux command; wrap in `proot-distro login debian -- bash -lc '…'` for Debian. |
 | `api` | `tools/api GET /api/profiles` calls the phone's Hermes dashboard REST API (same as the app's `httpAsync`): forwards port 9119 over `adb`, scrapes the session token from the dashboard page, sends it in `X-Hermes-Session-Token`. Writes change the real Hermes setup. |
 | `gw` | `tools/gw <method> ['<json>']` makes one `tui_gateway` JSON-RPC call on the phone: pipes `gw_rpc.py` into Debian through `phone`. |
-| `gw_rpc.py` | The part of `gw` that runs inside Debian: reads the dashboard token, opens `ws://127.0.0.1:9119/api/ws`, sends one request, prints the result or error. |
+| `gw_rpc.py` | The part of `gw` that runs inside Debian: reads the dashboard token (the page, else `~/.hermes-mobile/dash-token`), opens `ws://127.0.0.1:9119/api/ws`, sends one request, prints the result or error. |
 | `e2e.py` | End-to-end checks on the real phone through `adb`, the app's loopback event service (`127.0.0.1:9121/event`) and the plugin API. Groups: event listener (good key 204, bad key 403), status chip (appears when working, clears on Ready, expires in ≤65 s unless `--quick`), review feed + replay, canvas, approval, and with `--live` one real tiny Hermes turn that drops the WebSocket mid-turn (creates one "e2e" chat and deletes it). Sends the app to the background for the run and brings it back. |
 | `e2e_review_replay.py` | Runs on the phone (fed over stdin by `e2e.py`): loads the installed plugin and replays real background-work event sequences (memory/skills review after a reply, `/btw` side questions) with turn ids as Hermes logs them, each hook under the write origin Hermes binds for that turn kind. |
 | `probe_model_switch.py` | Live check of `hermes/patches/0002` on a phone: throwaway chat, model picked before the first message, two switches, an edit, then asks the model for each code word. Spends a little model quota; deletes the chat. |
@@ -3274,6 +3299,8 @@ Emulator-only switch: when `HM_TEST_BOOTSTRAP_URL` is set, a string resource `hm
 | `java-check.sh` | Compiles all of `android/src` with `javac` against Robolectric's `android-all-16.jar` (downloaded from Maven Central and cached in `~/.cache/hermes-mobile`) and a stub `R.java` generated from `res/`. Proves it compiles; builds no APK. Needs JDK 21+. Then runs `test_shizuku_keeper.sh`. CI job `android`. |
 | `api-check.sh` | Runs Android lint's `NewApi`/`InlinedApi` checks on `android/src` (a copy with `<uses-sdk>` set to the minimum from `android/build.sh`, since the build passes it to `aapt2` instead of the manifest). Fails when a call above that minimum has no `Build.VERSION.SDK_INT` check. Needs the Android SDK's command-line tools (`ANDROID_HOME` or the Homebrew path). |
 | `test_shizuku_keeper.sh` | `KeeperPlan.java` decisions: when the app may restart Shizuku, the notice text when it cannot, the bounded attempt schedule, the NsdManager port choice, the Termux command. |
+| `test_share_source.sh` | `ShareSource.java` with a plain JDK: other apps' `content://` URIs are opened; `file://`, this app's own providers (also `0@`-prefixed and in capitals), `android.resource://` and missing schemes are refused. CI job `android`. |
+| `test_dash_token.sh` | `phone/hermes-services` in a sandbox HOME with stub Termux and Debian commands: the token is minted once (48 hex, mode 600), the dashboard gets it with `HERMES_DASHBOARD_TOKEN_IN_PAGE=0`, it is kept across runs, and an old dashboard loop is replaced once. CI job `hermes-patches`. |
 | `test_setup_lines.sh` | `SetupLines.java`: token check, line filter, 50-line buffer, FAIL/DONE handling and the JSON that `say()` posts. CI job `android`. |
 | `test_autostart.sh` | `Autostart.java`: which makers get the step, every maker has a page list, every package the table opens is in the manifest `<queries>` (Android 11+ hides other packages otherwise). CI job `android`. |
 
@@ -3293,7 +3320,7 @@ Headless Chromium drives the built web UI against a mock Hermes, with no phone. 
 | `package.json`, `package-lock.json` | Dev dependencies `playwright` and `ws`. |
 | `fixtures/hermes-providers.json` | Real provider answers from the pinned Hermes, made by `tools/hermes-provider-fixture.py`. Do not edit by hand. |
 
-**`web/devserver.py`** (used by `run.sh`): serves `web/dist/index.html` on `127.0.0.1:5180`, injects the Hermes session token into `sessionStorage` (the job the Android shell's bridge does) and proxies `/__api/<path>` to the dashboard with the token. Loopback only; the token never appears in a URL. For a manual run against the phone: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open `http://127.0.0.1:5180` at 375×812.
+**`web/devserver.py`** (used by `run.sh`): serves `web/dist/index.html` on `127.0.0.1:5180`, injects the Hermes session token into `sessionStorage` (the job the Android shell's bridge does) and proxies `/__api/<path>` to the dashboard with the token. Loopback only; the token never appears in a URL. For a manual run against the phone: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open `http://127.0.0.1:5180` at 375×812. The token comes from the page if it has one, else from `$HM_DASH_TOKEN`, else from Termux's `~/.hermes-mobile/dash-token` read over `tools/phone` (ssh); the page no longer carries it with patch 0004.
 
 Other test layers: `cd web && npm test` (vitest, 22 files); the Python and shell tests in 7.2; `python3 tools/e2e.py --quick` on a phone after touching the plugin, the service or the event flow.
 
@@ -3307,8 +3334,8 @@ Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NO
 |---|---|---|
 | `web` | Web (typecheck, unit tests, build, browser e2e) | Node 22 with npm cache; `npm ci`, `npm test`, `npm run build` in `web/`; then in `tools/web-e2e`: `npm ci`, `npx playwright install --with-deps chromium`, `./run.sh`. |
 | `plugin` | Plugin (canvas + media) | Python 3.12; `pip install fastapi httpx`; runs `test_canvas.py`, `test_library.py`, `test_gallery.py`, `test_media.py`, `test_chat_search.py`, `test_checkpoints.py`, `test_battery.py`, `test_approval.py`, `test_chip.py`, `test_phone_app.py`, `test_auto_mode.py`, `test_openui.py`, `test_openui_query.py`, `test_claude_login.py`, `test_phone_access.py`, `test_profile_link.py`, then `python3 tools/test_check_spec.py` and `python3 tools/check_spec.py` (the second one fails the build when the code has a name `docs/SPEC.md` lacks). |
-| `hermes-patches` | Hermes patches apply to the pinned Hermes | `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`. |
-| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`. |
+| `hermes-patches` | Hermes patches apply to the pinned Hermes | `tools/test_hermes_patches.sh`, then `test_hermes_debian.sh`, `test_bootstrap_pin.sh`, `test_bootstrap_image.sh`, `test_say_hook.sh`, `test_install_routes.sh`, `test_uninstall.sh`, `test_hm_shizuku.sh`, `test_dash_token.sh`. |
+| `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_autostart.sh`, `tools/test_share_source.sh`. |
 
 Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`.
 
