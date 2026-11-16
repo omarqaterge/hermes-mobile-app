@@ -2181,16 +2181,15 @@ public class MainActivity extends Activity {
     // The bridge object is injected into EVERY frame of the WebView, including sandboxed iframes that show
     // untrusted HTML (the canvas). So every call needs a per-page-load secret that only the app's own page
     // receives, once, through handshake(). Frames that merely see the object can't use it.
-    private volatile String bridgeKey = "";
-    private volatile boolean keyTaken = true;
+    // Making the next key (UI thread) and handing one out (JavaBridge thread) share BridgeKey's lock.
+    private final BridgeKey pageKey = new BridgeKey();
 
     void newBridgeKey() {
         byte[] b = new byte[24];
         new java.security.SecureRandom().nextBytes(b);
         StringBuilder sb = new StringBuilder();
         for (byte x : b) sb.append(String.format("%02x", x));
-        bridgeKey = sb.toString();
-        keyTaken = false;
+        pageKey.next(sb.toString());
         new java.security.SecureRandom().nextBytes(b);
         StringBuilder mk = new StringBuilder();
         for (byte x : b) mk.append(String.format("%02x", x));
@@ -2220,8 +2219,7 @@ public class MainActivity extends Activity {
     }
 
     boolean ok(String key) {
-        return key != null && !bridgeKey.isEmpty() && java.security.MessageDigest.isEqual(
-                bridgeKey.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
+        return pageKey.matches(key);
     }
 
     // ---- In-app update: download the release APK from this project's GitHub releases, check it, hand it to the system installer ----
@@ -2483,10 +2481,8 @@ public class MainActivity extends Activity {
     final class Bridge {
         /** First caller after a page load gets the key (the app's own script runs first); later callers get nothing. */
         @JavascriptInterface
-        public synchronized String handshake() {
-            if (keyTaken) return "";
-            keyTaken = true;
-            return bridgeKey;
+        public String handshake() {
+            return pageKey.take();
         }
 
         @JavascriptInterface

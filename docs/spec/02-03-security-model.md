@@ -8,9 +8,10 @@ below keep that power with the app's own page and away from content it shows.
   that show untrusted HTML (canvas pages). So every `@JavascriptInterface` method in `MainActivity.Bridge` takes a
   secret key as its first argument and starts with `if (!ok(key)) return …`.
 - On every page load `onPageStarted` calls `newBridgeKey()`: 24 random bytes (hex) for the bridge key and another
-  24 for the media key; `keyTaken` is reset.
-- `handshake()` (synchronized) hands the key to the first caller after a page load, and an empty string to every
-  later caller.
+  24 for the media key, given to `BridgeKey.next`, which marks the key as not yet handed out.
+- `handshake()` calls `BridgeKey.take`: the key to the first caller after a page load, and an empty string to every
+  later caller. Making a key and handing one out run under `BridgeKey`'s lock, so a key made while a handout runs is
+  never also returned to that caller. `ok(key)` is `BridgeKey.matches` (constant-time, false before the first key).
 - `secure-bridge.ts` is the first import of `main.tsx`, so the app's own script is that first caller. It calls
   `handshake()`, then replaces `window.HermesAndroid` with a wrapper that has exactly the names in its `METHODS`
   list (52 names; full table in 4.5), each adding the key. A frame that only sees the raw object can't make a
