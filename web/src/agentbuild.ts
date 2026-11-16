@@ -19,7 +19,8 @@
 // with the profile default and every turn ran on it, although `config.set` answered OK), so a pick waits for the
 // build; and a send right after a pick could run on the old model, so a send waits for the switch, and a failed
 // switch never blocks it. A second pick while one is in flight replaces the first in `switching` (a send then waits
-// for the newest only); a finished switch removes only its own entry.
+// for the newest only, which itself starts after the earlier ones settled, so Hermes gets the picks in order); a
+// finished switch removes only its own entry.
 
 /** How long a pick waits for `session.info` before going on anyway (never hang a pick on a missed event). */
 export const BUILD_CAP_MS = 20_000
@@ -37,7 +38,7 @@ export interface AgentBuilds {
   whenBuilt(runtimeId: string): Promise<void>
   /** Resolves when a send may go: at once unless a model switch is in flight; a failed switch counts as finished. */
   whenSwitched(runtimeId: string): Promise<void>
-  /** Run a model switch for this runtime and record it as in flight until it settles; its result or error is the caller's. */
+  /** Run a model switch for this runtime and record it as in flight until it settles; its result or error is the caller's. It starts after any earlier switch of the same runtime has settled (failed or not), so the newest pick lands last. */
   runSwitch(runtimeId: string, work: () => Promise<void>): Promise<void>
   /** The state of one runtime, for readers and tests. A switch in flight shows as `switching` whatever the build says. */
   buildState(runtimeId: string): BuildState
@@ -75,7 +76,10 @@ export function createAgentBuilds(after: (fn: () => void, ms: number) => void = 
   }
 
   async function runSwitch(runtimeId: string, work: () => Promise<void>): Promise<void> {
-    const run = work()
+    // One after the other: Hermes must receive the picks in the order they were made, so the newest lands last. An
+    // earlier switch that failed does not stop this one (its error is its own caller's).
+    const earlier = switching.get(runtimeId)
+    const run = earlier ? earlier.catch(() => {}).then(work) : work()
     switching.set(runtimeId, run)
     try {
       await run

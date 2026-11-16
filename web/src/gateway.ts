@@ -1227,6 +1227,9 @@ async function targetChat(): Promise<ActiveSession> {
   return getState().active ?? (await newSession())
 }
 
+/** The model each live chat last had applied by Hermes (a failed pick goes back to it), seen by `setModel`. */
+const appliedModel = new Map<string, { model?: string; provider?: string }>()
+
 function replaceableForModel(a: ActiveSession | null): boolean {
   return !!a && !a.running && a.attachments.length === 0 && !a.items.some(i => i.kind === 'user')
 }
@@ -1259,16 +1262,19 @@ export async function setModel(provider: string, model: string, effort?: string)
   }
   const a = cur
   // Show the pick at once; Hermes needs a few seconds to rebuild the agent. Undone below if it fails.
-  const before = { model: a.info.model, provider: a.info.provider }
+  if (!appliedModel.has(a.runtimeId)) appliedModel.set(a.runtimeId, { model: a.info.model, provider: a.info.provider })
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, model, provider } } : {}))
   try {
     await agents.runSwitch(a.runtimeId, async () => {
       await agents.whenBuilt(a.runtimeId)
       await rpc('config.set', { session_id: a.runtimeId, key: 'model', value: `${model} --provider ${provider} --session` })
+      appliedModel.set(a.runtimeId, { model, provider })
       if (effort) await rpc('config.set', { session_id: a.runtimeId, key: 'reasoning', value: effort })
     })
   } catch (e) {
-    updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, ...before } } : {}))
+    // Back to what the chat really runs on, but only if the screen still shows this pick: a newer pick made meanwhile owns it.
+    const ran = appliedModel.get(a.runtimeId)
+    updateActive(x => (x.runtimeId === a.runtimeId && x.info.model === model && x.info.provider === provider ? { info: { ...x.info, ...ran } } : {}))
     throw e
   }
   if (effort) updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, reasoning_effort: effort } } : {}))
@@ -1306,6 +1312,7 @@ onChatOpen('approval-lock', ({ chat }) => {
   chatOfRuntime.set(chat.runtimeId, chat.storedId)
 })
 function chatClosed(runtimeId: string): void {
+  appliedModel.delete(runtimeId)
   setPhoneDataFullAccess(runtimeId, false) // the live session is gone: the Full access pass for phone data goes with it
   const storedId = chatOfRuntime.get(runtimeId)
   if (storedId === undefined) return
