@@ -1,6 +1,6 @@
 ## 8. Feature index
 
-One line per user-visible feature, with the section that describes it. Sources: README "Highlights" and every `CHANGELOG.md` entry, each checked against the code.
+One line per user-visible feature, with the section that describes it. Sources: the feature list in `docs/features.md` and every `CHANGELOG.md` entry, each checked against the code.
 
 **Chat and rendering**
 

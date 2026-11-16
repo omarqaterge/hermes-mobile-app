@@ -45,7 +45,7 @@ developer tools, `docs/` spec, status, decisions and plans.
   vendor-specific handling behind a generic fallback; don't hard-code one maker's wording.
 - Every framework call newer than API 26 needs a `Build.VERSION.SDK_INT` check: `tools/api-check.sh` (Android lint,
   run in CI) fails otherwise. `javac` and `tools/java-check.sh` can't see API levels.
-- New features that need a newer Android: say so in the README's "Android versions" table and in the spec (4.2).
+- New features that need a newer Android: say so in the "Android versions" table ([docs/android-versions.md](docs/android-versions.md)) and in the spec (4.2).
 
 ## Working in parallel
 

@@ -16,7 +16,7 @@
 - **gallery**: the Hermux-hub list of every canvas document of every chat and profile (it replaced the Library).
 - **Hermux**: the app's name, the one people see, everywhere on screen (earlier name: Hermes Mobile). Hermes Agent is the open-source upstream program that runs inside it; in this spec "Hermes" on its own means that program. The old name stays on purpose wherever installs and updates depend on it: the package ID `com.omarqaterge.hermesmobile`, the repository `hermes-mobile-app`, the release file `hermes-mobile.apk` (kept next to `hermux.apk`, the same file, for old scripts and links), the build output `android/build/hermes-mobile.apk`, the phone folder `~/hermes-mobile` and the plugin `hermes-mobile`.
 - **Hermes pin**: the exact Hermes commit the app is tested against (`web/vendor/hermes-shared/.hermes-commit`, mirrored in `phone/bootstrap.sh`).
-- **island**: the status chip as shown in a phone's pill/island area; the README calls answering from it "Answer from the island".
+- **island**: the status chip as shown in a phone's pill/island area; `docs/features.md` calls answering from it "Answer from the island".
 - **Live Update**: Android 16's promoted ongoing notification; the app uses it for the status chip.
 - **Live mode**: hands-free voice conversation (listen, send, read the reply, listen again).
 - **plugin**: the `hermes-mobile` Hermes plugin (`hermes-plugin/hermes-mobile`): hooks that send events to the app, tools (`canvas`, `find_chats`, `phone_app`, …) and dashboard routes. See section 5.

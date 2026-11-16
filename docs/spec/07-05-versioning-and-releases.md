@@ -25,4 +25,4 @@ comment next to `LocalKey.ENFORCE`, and `LocalDashboard.P_HELLO` has its own not
    and the upgrade path in `docs/manual-tests.md`.
 6. The owner's open decisions (`docs/decisions/local-authentication.md`): a scheduled key replacement and a "Reset" row
    in Settings, a line in Settings while the window lasts, how often the keeper says hello.
-7. After the release has reached most phones: update the README's privacy and security list.
+7. After the release has reached most phones: update the privacy and security lists (`docs/security.md`, and the summary in the README).

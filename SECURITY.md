@@ -23,7 +23,7 @@ notes, say so.
 
 ## What counts
 
-Hermux's promises are written down in [Privacy and security](README.md#privacy-and-security),
+Hermux's promises are written down in [Privacy and security](docs/security.md),
 [docs/privacy.md](docs/privacy.md) and the [security model](docs/spec/02-03-security-model.md). A way around one of them
 is a vulnerability. Examples:
 
@@ -38,7 +38,7 @@ is a vulnerability. Examples:
 
 ## What is known and documented
 
-The limits listed under [What Hermux cannot protect you from](README.md#what-hermux-cannot-protect-you-from) are known,
+The limits listed under [What Hermux cannot protect you from](docs/security.md#what-hermux-cannot-protect-you-from) are known,
 so reporting them as such is not necessary. In short: the model provider sees what you send it; the agent runs as the
 Termux user, so it can read its own keys and edit Hermes's and the plugin's files and settings (including its approval
 mode), and it can do what Shizuku's shell can do; in Full access nothing asks; text the agent reads can try to steer it;
