@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/omarqaterge/hermes-mobile-app/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/omarqaterge/hermes-mobile-app?color=D9A441&label=release"></a>
+  <a href="https://github.com/omarqaterge/hermes-mobile-app/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/omarqaterge/hermes-mobile-app/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <img alt="Android 8 and newer" src="https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-D9A441">
   <img alt="Unofficial community project" src="https://img.shields.io/badge/unofficial-community%20project-555">
@@ -19,6 +20,7 @@
   <a href="#what-it-does"><b>What it does</b></a> ·
   <a href="#privacy-and-security"><b>Privacy and security</b></a> ·
   <a href="#how-it-works"><b>How it works</b></a> ·
+  <a href="#engineering"><b>Engineering</b></a> ·
   <a href="CHANGELOG.md"><b>What's new</b></a>
 </p>
 
@@ -47,7 +49,9 @@ Termux on the same phone, so the whole thing is yours and self-contained.
 </table>
 
 - **Uses your apps without taking your screen.** It opens an app on a hidden screen, reads it, taps and types while you
-  keep using your phone. You can watch a live thumbnail or take over. Needs Android 14+.
+  keep using your phone. It reads the screen as a list of elements, not as a picture, so screens that block
+  screenshots still work, and it refuses to tap something that has moved or changed since it last looked. You can watch a
+  live thumbnail or take over. Needs Android 14+.
 - **Reaches you with the app closed.** Approvals, questions, replies and scheduled results arrive as notifications and
   on the status chip, and you answer right there.
 - **Builds beside the chat.** Pages, charts, games and 3D scenes appear in a canvas you both edit. Every change is a
@@ -58,8 +62,18 @@ Termux on the same phone, so the whole thing is yours and self-contained.
   long-press of the power button opens it.
 - **Knows your phone.** It runs code in a full Linux system and can tell you about battery, storage, files and
   settings, because it lives on the phone it talks about.
-- **Connects and remembers.** Sign in with ChatGPT, Claude, Grok or Nous Portal, or use any provider Hermes supports,
-  with fallback models. Add MCP servers and tools. Search every chat and see exactly what it remembers.
+- **Connects to what you use.** Sign in with ChatGPT, Claude, Grok or Nous Portal, or use any provider Hermes
+  supports, with fallback models. Connect a Google account, MCP servers and tools.
+
+### It evolves with you
+
+Hermux gets better the longer you use it, and shows you what it learned:
+
+- **Memory you can read.** It remembers what you tell it. Every memory write appears in the chat as a diff, and a
+  Memory screen lets you see, edit and delete what it knows.
+- **Notes about your apps.** It keeps its own notes on each app it uses, so it gets better at the apps you use most.
+- **Skills.** Hermes reviews its own work in the background and keeps what worked as skills, which you can browse and
+  call from the `/` menu.
 
 A few things to ask it:
 
@@ -212,9 +226,33 @@ service, so the status chip and notifications work even when the app is closed.
 | `phone/` | The installer and the scripts that keep Hermes running |
 | `hermes/patches` | A few fixes to Hermes itself, applied by the installer and offered upstream ([hermes/README.md](hermes/README.md)) |
 
-Over a thousand browser checks across 29 feature files run the real interface against a mock Hermes on every pull
-request, next to unit tests for the interface, the plugin and the phone scripts. Android lint fails any call newer than
-Android 8 that has no version check. Architecture, every feature and every screen: [docs/SPEC.md](docs/SPEC.md).
+Architecture, every feature and every screen: [docs/SPEC.md](docs/SPEC.md).
+
+## Engineering
+
+The work behind the app is measured and written down, so you can check it instead of taking it on trust.
+
+| | What was done | Where to look |
+|---|---|---|
+| **Speed** | A usable chat **0.3 s** after launch, down from 4.5 s. A 146-message chat opens as fast as a short one. | [Performance history](docs/performance-history.md) |
+| **Battery** | A chat turn uses **47% less CPU**, and the wake lock for a scheduled job is **84% shorter** (150 s to 24 s). No permanent wake lock: the phone sleeps while Hermux is idle. The measuring tools are in `tools/battery/`. | [Battery report](docs/battery-report.md) |
+| **Tests** | About **1,600 browser checks** in 30 feature files run the real interface against a mock Hermes on every pull request, next to about 670 unit tests and 69 script tests for the plugin, the phone scripts and the tools. | [Spec 7.3](docs/spec/07-03-browser-e2e.md) |
+| **Security review** | The protection around phone data went through **five review rounds**, and the findings of a second security review were fixed in November 2026. Each finding is written down with its fix. | [Security model](docs/spec/02-03-security-model.md) |
+| **Every Android phone** | Android lint fails any call newer than Android 8 that has no version check, and maker-specific handling always has a generic fallback. | [Android versions](docs/android-versions.md) |
+| **Given back to Hermes** | Four fixes to Hermes itself are kept as small patches and offered upstream. One cut the skill scan at start-up from 1.8 s to 0.5 s. | [hermes/README.md](hermes/README.md) |
+| **How it is run** | Every owner decision is written down with its reason. A release is built only from a commit on `main` whose CI passed. The parts with the most state (the chat turn, the connection, Live mode, the player) are explicit state machines with a test for every step. | [Decisions](docs/decisions/README.md) · [Spec 7.5](docs/spec/07-05-versioning-and-releases.md) |
+
+Speed and battery were measured on the maintainer's phone. The linked pages say how, so the numbers can be repeated.
+
+## What's next
+
+- A home-screen widget and a Quick Settings tile
+- Opt-in notification summaries
+- A wake word
+- An offline local model
+
+Hermux does not do encrypted multi-device sync or multiplayer sessions: your data stays on one phone on purpose. Work
+in progress is listed, one file per workstream, in [docs/status](docs/status/README.md).
 
 ## Build from source
 

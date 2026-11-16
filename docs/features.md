@@ -49,6 +49,17 @@ with. A few ideas, from one-liners to whole projects.
 Hermux remembers what you tell it, learns notes about each app it uses, and can connect to any MCP server, so the list
 grows with you.
 
+## Evolves with you
+
+Hermux gets better the longer you use it, and shows you what it learned:
+
+- **Memory you can read.** It remembers what you tell it. Every memory write appears in the chat as a diff, and the
+  Memory screen lets you see, add, edit and delete what it knows.
+- **Notes about your apps.** After using an app it keeps its own notes about it (where things are, what worked), and
+  reads them the next time it opens that app.
+- **Skills.** Hermes reviews its own work in the background and keeps what worked as skills. The Skills screen lists
+  them, and `/` in the message box calls any of them.
+
 ## Uses your apps without taking your screen
 
 Ask Hermux to do something in an app and it opens that app on a hidden screen, reads it, taps, scrolls and types,
@@ -56,6 +67,11 @@ while you keep using your phone. The status chip says **Using <app>**, a card in
 **Take over** brings the app to your screen. It asks once per app per chat; banking, payment, password and 2FA apps stay
 off unless you allow them. It keeps its own notes about each app, so it gets better at the apps you use most. Needs
 Android 14+ and Shizuku.
+
+How it works: Hermux reads the app's screen as a list of elements (buttons, fields, switches, text), not as a picture.
+That is why screens that block screenshots still work, and why it can say exactly what it is about to tap. It can run
+up to 20 actions in one call, stopping at the first that fails, and it refuses to act on an element that has left the
+screen or changed since it last looked.
 
 ## Answer from the island
 
@@ -101,13 +117,14 @@ has its own switch, and every read asks first. [Privacy](privacy.md) says what t
 
 Add MCP servers by address or command, or pick them from Hermes's catalog, test them and sign in to their accounts in
 the browser. Switch on tools that need a key (web search, Home Assistant, image generation and more) and paste the key
-once. Sign in with ChatGPT, Claude, Grok or Nous Portal, or use any provider Hermes supports; set fallback models and
+once. Connect Gmail, Google Calendar and Drive with your Google
+account. Sign in with ChatGPT, Claude, Grok or Nous Portal, or use any provider Hermes supports; set fallback models and
 several keys per provider, so a rate limit doesn't stop the chat.
 
 ## Your chats, your memory, your look
 
 Search inside every message, pin, archive, link chats to chats, or ask Hermux to find "the chat where I sent the receipt photo". Every memory write is shown as a diff, and there is a screen to see
-what Hermux remembers. Dark, OLED black or light.
+what Hermux remembers. A search hit opens the chat and scrolls to the match. Dark, OLED black or light, and five text sizes.
 
 <p align="center"><img src="img/more.png" alt="Drawer, memory screen and light theme" width="100%"></p>
 
@@ -138,9 +155,10 @@ More, including what Hermux cannot protect you from, in [Privacy and security](s
 | **Long chats** | A rail on the right edge to jump between your messages; a "New Messages" line where unread messages start; several questions asked one at a time |
 | **Voice** | Read replies aloud with a player (pause, seek, speed, any installed speech engine), dictation and hands-free Live mode, optionally over the lock screen. Dictation can run on the phone, offline: built-in English models (Moonshine, NeMo, Zipformer) or your own sherpa-onnx model |
 | **Notifications** | Reply, answer questions and allow commands right from the notification (a locked phone asks you to unlock first); a Done chip and app-icon badge for chats that finished while you were away; cron results; a "failed" note when a model call fails |
+| **Media** | Videos play inside the chat (YouTube and other video sites, and video files; tap to load, one at a time); a photo viewer with pinch and double-tap zoom, save, share and open with another app |
 | **Share** | "Share to Hermux" from any app; attach photos, camera shots and files; share a chat as Markdown |
 | **Offline-friendly** | Messages typed offline send on reconnect; the last chat list is cached |
-| **Shortcuts & big screens** | Launcher shortcuts (New chat, Live mode, last chat); a two-column layout on tablets and foldables |
+| **Shortcuts & big screens** | Launcher shortcuts (New chat, Live mode, last chat); a two-column layout on tablets and foldables, with the canvas beside the chat and a divider you can drag |
 
 ## For power users
 
@@ -150,7 +168,8 @@ More, including what Hermux cannot protect you from, in [Privacy and security](s
 | **Commands** | `/` autocomplete for every skill and command; `/yolo` and `/fast` switch the chat at once |
 | **Models & bots** | Switch model and reasoning level per chat, star favourites; bots (Hermes profiles) with their own default model, keys and SOUL.md |
 | **Cards in replies** | Interactive cards drawn by OpenUI, with live, read-only data (off switch: Settings → Replies → Dynamic UI). HTML and SVG code blocks get a Preview button |
-| **Screens** | Skills, memory, cron jobs, projects, a canvas gallery, every Hermux setting in plain words, and files with previews (tables for CSV, code, JSON, Mermaid, HTML, audio and video) |
+| **Scheduled jobs** | Create and edit jobs; each job's past runs open as chats |
+| **Screens** | Skills, memory, cron jobs, projects, a search field over every setting, a canvas gallery, every Hermux setting in plain words, and files with previews (tables for CSV, code, JSON, Mermaid, HTML, audio and video) |
 | **Setup check** | One screen that checks Termux, permissions, the plugin and battery settings, with a fix button for each |
 | **Battery** | No permanent wake lock: the phone sleeps while Hermux is idle |
-| **Updates** | A notification when a new release is out; one tap in Settings → About installs it |
+| **Updates** | A notification when a new release is out; one tap in Settings → About installs it. "What's new" shows the changes before you update, and once more as a sheet after it |
