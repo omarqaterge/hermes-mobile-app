@@ -384,6 +384,13 @@ module.exports = async t => {
     await push(['FAIL debian (line 120)'])
     await fe.getByText('The installer stopped', { exact: true }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: FAIL says where it stopped, with Copy again'), () => check(false, 'app-first: FAIL says where it stopped, with Copy again'))
     check((await fe.getByRole('button', { name: 'Copy the command' }).count()) === 1, 'app-first: FAIL offers the command again')
+    // Pasted again, then the installer went quiet (killed before a FAIL line): the shell says lost, the page shows stopped.
+    await push(['STEP debian Debian'])
+    await fe.evaluate(() => { window.__progress = { ...window.__progress, lost: true }; window.hermesSetupChanged() })
+    await fe.getByText('stopped without saying why', { exact: false }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: a lost installer reads as stopped, saying why it may have stopped'), () => check(false, 'app-first: a lost installer reads as stopped, saying why it may have stopped'))
+    check((await fe.locator('.install-step.bad', { hasText: 'Debian' }).count()) === 1, 'app-first: lost marks the step it was on')
+    check((await fe.getByRole('button', { name: 'Copy the command' }).count()) === 1, 'app-first: lost offers the command again')
+    await fe.evaluate(() => (window.__progress = { ...window.__progress, lost: false }))
     await push(['STEP debian Debian', 'STEP hermes Hermes', 'STEP plugin Plugin', 'STEP start Start'])
     await mock({ up: true })
     await push(['DONE'], { done: true, active: false })

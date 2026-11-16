@@ -83,6 +83,51 @@ public class SetupLinesTest {
         g3.resume("gt", "Bad Step!");
         check(g3.installing(), "a damaged saved failed step is ignored");
         check(new SetupLines().state() == SetupLines.State.NONE, "no command: NONE");
+        // Checked, not timed: a command never pasted blocks nothing; a beating installer that goes quiet is LOST.
+        long L = SetupLines.LOST_MS;
+        SetupLines w = new SetupLines();
+        w.start("wt", 0);
+        check(w.state(10 * L) == SetupLines.State.WAITING && !w.installing() && w.active() && w.seen() == SetupLines.SEEN_NONE,
+                "copied, nothing came: WAITING (blocks nothing, still active), however long");
+        check(w.lostCheckIn(0) == -1, "WAITING arms no check");
+        check(w.add("wt", "ALIVE", null, 1000000000L, 1000) == SetupLines.OK && w.state(1000) == SetupLines.State.INSTALLING && w.seen() == SetupLines.SEEN_BEAT,
+                "the first ALIVE: INSTALLING, a beating bootstrap");
+        check(!w.json(1000).contains("ALIVE") && w.json(1000).contains("\"lines\":[]") && w.json(1000).contains("\"lost\":false"), "ALIVE is not kept as a line; lost=false");
+        w.add("wt", "STEP debian x", null, 1000000000L, 2000);
+        check(w.state(2000 + L) == SetupLines.State.INSTALLING, "quiet for exactly LOST_MS: still installing");
+        check(w.state(2001 + L) == SetupLines.State.LOST && !w.installing() && w.active() && w.json(2001 + L).contains("\"lost\":true"),
+                "quiet for longer: LOST (blocks nothing, token kept, lost=true)");
+        check(w.lostCheckIn(2000) == L + 1000 && w.lostCheckIn(2000 + L / 2) == L / 2 + 1000 && w.lostCheckIn(3000 + L) == -1,
+                "the delayed look is due just after LOST_MS; none once LOST");
+        check(w.add("wt", "ALIVE", null, 1000000000L, 5 * L) == SetupLines.OK && w.state(5 * L) == SetupLines.State.INSTALLING, "a beat after LOST: installing again");
+        SetupLines nb = new SetupLines();
+        nb.start("nb", 0);
+        nb.add("nb", "STEP packages x", null, 1000000000L, 0);
+        check(nb.state(100 * L) == SetupLines.State.INSTALLING && nb.seen() == SetupLines.SEEN_LINE && nb.lostCheckIn(0) == -1,
+                "an older bootstrap (lines, no ALIVE) is never read as lost");
+        check(!nb.finishedByProbe() && nb.active(), "without a beat the probe's marker may be an earlier install's: nothing changes");
+        SetupLines fx = new SetupLines();
+        fx.start("fx", 0);
+        fx.add("fx", "ALIVE", null, 1000000000L, 0);
+        fx.add("fx", "FAIL debian x", null, 1000000000L, 0);
+        check(fx.state(10 * L) == SetupLines.State.FAILED, "a FAIL stays FAILED, not LOST");
+        SetupLines pr = new SetupLines();
+        pr.start("pr", 0);
+        pr.add("pr", "ALIVE", null, 1000000000L, 0);
+        check(pr.finishedByProbe() && pr.state(0) == SetupLines.State.DONE && !pr.active() && pr.add("pr", "ALIVE") == SetupLines.BAD_TOKEN,
+                "a beating run and the probe's marker: DONE, token ended");
+        check(!pr.finishedByProbe(), "the probe ends it only once");
+        SetupLines rs = new SetupLines();
+        rs.resume("rs", "", SetupLines.SEEN_BEAT, 50 * L);
+        check(rs.state(50 * L + L) == SetupLines.State.INSTALLING && rs.state(50 * L + L + 1) == SetupLines.State.LOST,
+                "after a restart a beating installer gets LOST_MS from the restart");
+        SetupLines rn = new SetupLines();
+        rn.resume("rn", "", SetupLines.SEEN_NONE, 0);
+        check(rn.state(0) == SetupLines.State.WAITING && !rn.installing(), "a token saved without setup_seen (older build): WAITING");
+        SetupLines rj = new SetupLines();
+        rj.resume("rj", "", 7, 0);
+        check(rj.state(0) == SetupLines.State.WAITING, "a damaged setup_seen reads as nothing heard");
+        check(SetupLines.LINE.matcher("ALIVE").matches() && !SetupLines.LINE.matcher("ALIVE x").matches(), "ALIVE is a line shape; nothing after it");
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }
