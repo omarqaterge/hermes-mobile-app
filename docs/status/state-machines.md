@@ -37,13 +37,13 @@ written around that), and `Composer.tsx` reads `opening` directly (it means "can
 
 **Seen on the way** (2026-11-16)
 
-Fixed since: the false "Sent" toast for a message queued offline, two quick model picks reaching Hermes out of order,
+Fixed since: an installer killed without a FAIL line no longer reads as installing for ever (owner, 2026-11-16: check,
+don't time it; the installer beats and the app reads it as `LOST` after 120 s of silence, a copied command never pasted
+blocks nothing, and the probe's marker ends a run whose `DONE` was missed: `SetupLines`, spec 4.7); the false "Sent" toast for a message queued offline, two quick model picks reaching Hermes out of order,
 and the plain-browser read-aloud seek clearing the player (each with a test that failed first).
 
 Still open:
 
-- Setup: an installer abandoned without a FAIL line reads as installing for ever; an expiry can't be told apart from a
-  slow install without a clock. Needs the owner's decision on a time limit.
 - A failed or timed-out sub-agent card still shows its last tool line (hidden only for done and completed).
 - The helper download thread in `MainActivity.java` catches `Exception`, not `Error`.
 
@@ -80,6 +80,7 @@ reload does not reset `phoneDataBusy`), `phone_taint.py`, `Uninstall.java`. Alre
 - The "Using an app" card going away when the background host is lost was checked with `tools/test_phone_app.py` only.
 - The app update installer: tap Update, leave Android's prompt, tap Update again (the same prompt, no second download); not tried on any device.
 - The helper-app installer was tried on an emulator only.
+- The installer's beat (`ALIVE` every 30 s) and the lost state: checked with `tools/test_setup_lines.sh`, `tools/test_say_hook.sh` and the browser test only. On a phone: start the installer, swipe Termux away mid-install, and the setup screen should say it stopped within about two minutes; also leave the screen off for a while during a normal install and check it never reads as stopped.
 - Live mode, the read-aloud player and the reconnect rules changed no behaviour, but none was tried on a phone after the change.
 
 **Links**

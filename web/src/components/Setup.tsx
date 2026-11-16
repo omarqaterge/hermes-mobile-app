@@ -576,7 +576,7 @@ export function useSetupState(opts: { poll?: boolean; model?: boolean } = {}) {
     if (down) probedDown.current = true
   }, [conn, profile, refresh])
   useEffect(() => refresh(true), [refresh])
-  const installing = Boolean(progress?.active && !progress.done && !progress.fail)
+  const installing = Boolean(progress?.active && !progress.done && !progress.fail && !progress.lost)
   const pre: PreHermes = { probe: n?.probe ? probeState(probeRaw, installing) : null, progress, shizukuDone: shDone, autostartDone: autoDone }
   const steps = setupSteps(n, conn, r, wantModel ? hasModel : true, pre)
   // A step before Hermes exists is known without Hermes: never "Checking…" while the connection retries.
@@ -1116,8 +1116,8 @@ const MARK_STEP = { ok: '✓', bad: '✕', run: '', todo: '·' } as const
 /** Step 3: copy the installer command, run it in Termux, then its progress line by line. */
 function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCopied: () => void }) {
   const lines = progress?.lines ?? []
-  const now = useInstallClock(Boolean(progress?.times) && !progress?.done && !progress?.fail && lines.some(l => l.startsWith('STEP ')))
-  const v = progressView(lines, progress?.times, now)
+  const now = useInstallClock(Boolean(progress?.times) && !progress?.done && !progress?.fail && !progress?.lost && lines.some(l => l.startsWith('STEP ')))
+  const v = progressView(lines, progress?.times, now, Boolean(progress?.lost))
   const started = lines.some(l => l.startsWith('STEP '))
   // "Already installed? Check": the one probe sent to Termux before it has accepted a command (e.g. the app was
   // reinstalled on a phone that has Hermes). Found → the flow moves on by itself (the hook gets the same answer).
@@ -1160,7 +1160,9 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
         </ol>
         {actions}
         <div className="dim small flow-card-note">
-          {progress?.active ? 'Waiting for the installer to start… its progress shows here.' : 'It takes about 15 minutes, mostly waiting. Its progress shows here.'}
+          {progress?.lost
+            ? 'The installer stopped before its first step (Termux was closed, or the phone restarted). Paste the command again.'
+            : progress?.active ? 'Waiting for the installer to start… its progress shows here.' : 'It takes about 15 minutes, mostly waiting. Its progress shows here.'}
         </div>
         {!progress?.active && canProbeNow() && (
           <button className="btn flow-check" onClick={check}>Hermux already installed? Check</button>
@@ -1190,7 +1192,8 @@ function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCo
       {v.fail ? (
         <>
           <div className="setup-help">
-            The installer stopped at <b>{v.steps.find(s => s.id === v.fail)?.label ?? v.fail}</b>. Open Termux to see why, then paste the same
+            The installer stopped at <b>{v.steps.find(s => s.id === v.fail)?.label ?? v.fail}</b>.{' '}
+            {v.lost ? 'It stopped without saying why: Termux was closed, Android stopped it, or the phone restarted. Paste the same' : 'Open Termux to see why, then paste the same'}{' '}
             command again: finished steps are skipped. Still stuck? <ReportLink />
           </div>
           {actions}

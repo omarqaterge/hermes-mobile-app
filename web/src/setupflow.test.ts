@@ -189,6 +189,9 @@ describe('app-first steps', () => {
   test('the installer failed → installer is bad again', () => {
     expect(st(setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', progress: { ...active, fail: 'debian' } })), 'installer')).toBe('bad')
   })
+  test('the installer went quiet (lost) → installer is bad, not waiting', () => {
+    expect(st(setupSteps(allApps, 'closed', null, null, pre({ probe: 'no-services', progress: { ...active, lost: true } })), 'installer')).toBe('bad')
+  })
   test('DONE → installer ok; once Hermes answers the model step is next', () => {
     const done = pre({ probe: 'no-services', progress: { active: false, lines: ['DONE'], done: true, fail: '' } })
     expect(st(setupSteps(allApps, 'connecting', null, null, done), 'installer')).toBe('ok')
@@ -247,6 +250,16 @@ describe('progressView', () => {
     const d = progressView(['STEP packages x', 'STEP start y', 'DONE'])
     expect(d.done).toBe(true)
     expect(d.steps.every(s => s.state === 'ok')).toBe(true)
+  })
+  test('lost: the running step reads as stopped there, without a FAIL line', () => {
+    const v = progressView(['STEP packages x', 'STEP debian y'], undefined, 0, true)
+    expect([v.fail, v.lost]).toEqual(['debian', true])
+    expect(v.steps.find(s => s.id === 'debian')?.state).toBe('bad')
+    expect(v.steps.find(s => s.id === 'packages')?.state).toBe('ok')
+    const f = progressView(['STEP debian y', 'FAIL debian x'], undefined, 0, true)
+    expect([f.fail, f.lost]).toEqual(['debian', false])
+    expect(progressView(['STEP start y', 'DONE'], undefined, 0, true).lost).toBe(false)
+    expect(progressView([], undefined, 0, true)).toMatchObject({ fail: '', lost: false })
   })
 })
 

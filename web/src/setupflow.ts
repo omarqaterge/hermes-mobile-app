@@ -15,7 +15,8 @@ export type StepId =
  *  our commands but the install never finished · stopped: installed, dashboard down · running: dashboard answers. */
 export type Probe = 'unknown' | 'denied' | 'not-allowed' | 'no-services' | 'stopped' | 'running'
 
-/** The installer's progress lines (HermesService /setup): active = a command was copied and DONE hasn't come yet. */
+/** The installer's progress lines (HermesService /setup): active = a command was copied and DONE hasn't come yet
+ *  (also while nothing came from it yet: no STEP line then). */
 export interface Progress {
   active: boolean
   lines: string[]
@@ -25,6 +26,9 @@ export interface Progress {
   /** Epoch seconds of each line, same length as `lines` (the installer's own clock; app receive time if it sent none).
    *  Absent from an older app build: no durations are shown then. */
   times?: number[]
+  /** The installer sent its beats and then went quiet: it was stopped before it could send FAIL (SetupLines LOST).
+   *  It reads as stopped at its last step. Absent from an older app build. */
+  lost?: boolean
 }
 
 /** The pre-Hermes facts. probe null = this app build can't probe (older shell): those rows are skipped. */
@@ -79,10 +83,13 @@ export interface ProgressView {
   android: string
   /** Seconds from the first STEP to now (running) or to DONE/FAIL; null when the lines carry no times. */
   total: number | null
+  /** fail comes from the installer going quiet (Progress.lost), not from a FAIL line. */
+  lost: boolean
 }
 
-/** Turns the progress lines into the view: finished steps, the one running, the latest hint, TODO lines, FAIL/DONE. */
-export function progressView(lines: string[], times?: number[], nowSec: number = Math.floor(Date.now() / 1000)): ProgressView {
+/** Turns the progress lines into the view: finished steps, the one running, the latest hint, TODO lines, FAIL/DONE.
+ *  lost (Progress.lost): the running step reads as failed, as if the installer had sent FAIL for it. */
+export function progressView(lines: string[], times?: number[], nowSec: number = Math.floor(Date.now() / 1000), lost = false): ProgressView {
   let cur = ''
   let fail = ''
   let hint = ''
@@ -124,6 +131,8 @@ export function progressView(lines: string[], times?: number[], nowSec: number =
     else if (l.startsWith('android: ')) android = l.slice(9)
     else if (l.startsWith('TODO ')) todo.push(l.slice(5))
   }
+  const lostNow = lost && !fail && !done && cur !== ''
+  if (lostNow) fail = cur
   const known = INSTALL_STEPS.map(s => s.id)
   const ids = [...known, ...seen.filter(id => !known.includes(id))]
   const at = ids.indexOf(cur)
@@ -141,7 +150,7 @@ export function progressView(lines: string[], times?: number[], nowSec: number =
       const state: 'ok' | 'run' | 'bad' | 'todo' = done ? 'ok' : s.id === fail ? 'bad' : i < at ? 'ok' : i === at ? (fail ? 'bad' : 'run') : 'todo'
       return { ...s, state, secs: secsOf(s.id) }
     })
-  return { steps, hint, todo, fail, done, android, total }
+  return { steps, hint, todo, fail, done, android, total, lost: lostNow }
 }
 
 /** ok: in place · bad: missing · wait: answer not here yet · skip: can't be known here (browser, Hermes offline) ·
@@ -178,13 +187,13 @@ export function setupSteps(n: NativeSetup | null, conn: string, r: Remote | null
   const prog = pre?.progress ?? null
   const probe = pre?.probe ?? null
   const installed = online || Boolean(prog?.done) || probe === 'stopped' || probe === 'running'
-  const installing = Boolean(prog?.active && !prog.done && !prog.fail)
+  const installing = Boolean(prog?.active && !prog.done && !prog.fail && !prog.lost)
   const installerState: StepState =
     !appFirst || probe == null ? 'skip'
       : installed ? 'ok'
         : !n?.termux ? 'bad'
           : installing ? 'wait'
-            : prog?.fail ? 'bad'
+            : prog?.fail || prog?.lost ? 'bad'
               : probe === 'unknown' ? 'wait'
                 : 'bad'
   const shizukuState: StepState = !appFirst || probe == null || installed || installing ? 'skip' : pre?.shizukuDone ? 'ok' : 'bad'

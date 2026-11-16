@@ -577,6 +577,8 @@ public class MainActivity extends Activity {
                             o.put("result", "ran");
                             o.put("services", out.contains("services=yes"));
                             o.put("installed", out.contains("installed=yes"));
+                            // This run's DONE wrote the marker but its line never arrived (the app was closed then).
+                            if (out.contains("installed=yes")) HermesService.setupFinishedByProbe(MainActivity.this);
                             Matcher m = Pattern.compile("dash=(\\d{3})").matcher(out);
                             o.put("dash", m.find() ? Integer.parseInt(m.group(1)) : 0);
                             setTermuxOk(MainActivity.this);

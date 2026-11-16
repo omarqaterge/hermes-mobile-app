@@ -41,6 +41,20 @@ say() {
   fi
 }
 step() { STEP=$1; shift; say "STEP $STEP $*"; }
+# The app's liveness signal (HM_APP_TOKEN only): "ALIVE" to the same /setup at once and every HM_BEAT_SECS (30) while
+# this script runs, never on the screen or in the log. An installer killed before its FAIL line (Termux closed, Android
+# stopping it, the phone restarted) stops sending it, so the app can tell a dead installer from a slow one
+# (SetupLines.LOST_MS). The loop checks this script's PID before each beat, so it ends with the script.
+beat() {
+  [ -n "${HM_APP_TOKEN:-}" ] || return 0
+  local me=$$
+  ( set +eE; trap - ERR
+    while kill -0 "$me" 2>/dev/null; do
+      printf '{"token":"%s","line":"ALIVE"}' "$HM_APP_TOKEN" | curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' \
+        --data-binary @- http://127.0.0.1:9121/setup 2>/dev/null
+      sleep "${HM_BEAT_SECS:-30}"
+    done ) </dev/null >/dev/null 2>&1 &
+}
 if [ "$HM_DISTRO" = chroot ]; then
   # chroot-distro 3.2 answers 0 for a failed command when stdin is a terminal: pass the exit code back in a file instead.
   deb() {
@@ -76,6 +90,10 @@ if [ "${1:-}" = model ]; then
   exit 0
 fi
 
+# The finished marker means "this run reached DONE": a run over an earlier install removes the old one first, so the
+# app's probe never reads a run that stopped half-way as finished.
+rm -f "$HOME/.hermes-mobile/installed"
+beat
 # Bounded: held only while this script runs, released on success and on failure.
 termux-wake-lock 2>/dev/null || true
 

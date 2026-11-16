@@ -45,6 +45,34 @@ env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" CURL_LOG="$T/log" bash -c "set
 check "[ ! -e '$T/home/.hermes-mobile/installed' ]" "bootstrap: no installed marker before DONE"
 env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" CURL_LOG="$T/log" bash -c "set -eE; source '$T/say-bootstrap.sh'; say DONE" >/dev/null
 check "[ -e '$T/home/.hermes-mobile/installed' ]" "bootstrap: DONE writes ~/.hermes-mobile/installed (also without a token)"
+# The liveness beat: ALIVE with the token at once and every HM_BEAT_SECS, nothing without a token, gone with its script.
+awk '/^beat\(\) \{/{f=1} f{print} f&&/^}/{exit}' phone/bootstrap.sh > "$T/beat.sh"
+check "[ -s '$T/beat.sh' ]" "bootstrap: has beat()"
+rm -rf "$T/log"; mkdir -p "$T/log"
+env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" CURL_LOG="$T/log" HM_APP_TOKEN='' bash -c "set -eE; source '$T/beat.sh'; beat; sleep 1"
+check "[ -z \"\$(ls '$T/log')\" ]" "beat: no token → nothing is sent"
+rm -rf "$T/log"; mkdir -p "$T/log"
+out=$(env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" CURL_LOG="$T/log" HM_APP_TOKEN=bt1 HM_BEAT_SECS=1 \
+  bash -c "set -eE; trap 'echo TRAPPED' ERR; source '$T/beat.sh'; beat; sleep 2.5; echo AFTER")
+n_end=$(ls "$T/log"/*.body 2>/dev/null | wc -l | tr -d ' ')
+check "[ \"$n_end\" -ge 2 ]" "beat: sends at once and again while the script runs ($n_end beats)"
+check "python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])) == {\"token\": \"bt1\", \"line\": \"ALIVE\"} else 1)' '$T/log/0.body'" "beat: the body is {token, line: ALIVE}"
+check "grep -qx 'http://127.0.0.1:9121/setup' '$T/log/0.args' && grep -qx -- '-m' '$T/log/0.args'" "beat: posts to /setup with a timeout"
+check "[[ '$out' == AFTER ]]" "beat: prints nothing, never trips the ERR trap"
+sleep 2.5
+n_later=$(ls "$T/log"/*.body 2>/dev/null | wc -l | tr -d ' ')
+check "[ \"$n_later\" -le \$((n_end + 1)) ]" "beat: stops once its script has ended ($n_end then $n_later)"
+rm -rf "$T/log"; mkdir -p "$T/log"
+out=$(env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" CURL_LOG="$T/log" FAKE_CURL_RC=7 HM_APP_TOKEN=bt2 HM_BEAT_SECS=1 \
+  bash -c "set -eE -o pipefail; trap 'echo TRAPPED' ERR; source '$T/beat.sh'; beat; sleep 1.5; echo AFTER")
+check "[[ '$out' == AFTER ]]" "beat: a failing curl (app not running) changes nothing"
+# Order in the script: the old marker goes before the first beat, so a beat seen means this run's DONE writes the marker.
+rm_line=$(grep -n '^rm -f "\$HOME/.hermes-mobile/installed"$' phone/bootstrap.sh | cut -d: -f1)
+beat_line=$(grep -n '^beat$' phone/bootstrap.sh | cut -d: -f1)
+pkg_line=$(grep -n '^step packages ' phone/bootstrap.sh | cut -d: -f1)
+check "[ -n '$rm_line' ] && [ -n '$beat_line' ] && [ '$rm_line' -lt '$beat_line' ] && [ '$beat_line' -lt '$pkg_line' ]" "bootstrap: removes the old marker, then beats, before the first step"
+model_end=$(awk '/^if \[ "\$\{1:-\}" = model \]; then/{f=1} f&&/^fi$/{print NR; exit}' phone/bootstrap.sh)
+check "[ -n '$model_end' ] && [ '$model_end' -lt '$rm_line' ]" "bootstrap: 'model' (setting a model later) leaves the marker alone"
 # On the app route the app is already installed: bootstrap must not download and offer it again.
 check "grep -q 'if \\[ -z \"\\\${HM_NO_APK:-}\\\${HM_APP_TOKEN:-}\" \\]' phone/bootstrap.sh" "bootstrap: no APK prompt on the app route (HM_APP_TOKEN)"
 echo

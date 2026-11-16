@@ -266,6 +266,7 @@ public class HermesService extends Service {
             // nothing changed: the next trigger looks again
         }
         listen();
+        armLostCheck(); // a beating installer from before this start gets LOST_MS to be heard again
         rearmWake();
         ShizukuKeeper.armCheck(this); // once, 90 s of real time: after a reboot Shizuku doesn't start by itself, so no binder arrives
         main.postDelayed(updateCheck, 120_000);
@@ -896,7 +897,8 @@ public class HermesService extends Service {
             if (!setupLoaded) {
                 setupLoaded = true;
                 android.content.SharedPreferences sp = c.getSharedPreferences("hermes", MODE_PRIVATE);
-                setup.resume(sp.getString("setup_token", ""), sp.getString("setup_failed", ""));
+                // No setup_seen (a token saved by an older build): read as nothing heard yet, so it blocks nothing.
+                setup.resume(sp.getString("setup_token", ""), sp.getString("setup_failed", ""), sp.getInt("setup_seen", SetupLines.SEEN_NONE));
             }
         }
         return setup;
@@ -905,7 +907,53 @@ public class HermesService extends Service {
     /** A new installer command was copied: remember its token (memory + prefs, so a service restart mid-install keeps it). */
     static void startSetup(Context c, String token) {
         setup(c).start(token);
-        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).remove("setup_failed").apply();
+        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_token", token).remove("setup_failed").remove("setup_seen").apply();
+        HermesService s = instance;
+        if (s != null) s.main.post(s::armLostCheck);
+    }
+
+    /** The one delayed look at a beating installer (SetupLines.lostCheckIn): re-armed by each line, none once it is
+     *  lost, done or failed. Main looper only; no wake lock (its clock stops in deep sleep, like the installer). */
+    private final Runnable lostCheck = this::lostCheckNow;
+
+    void armLostCheck() {
+        main.removeCallbacks(lostCheck);
+        long in = setup(this).lostCheckIn(SetupLines.nowMs());
+        if (in >= 0) main.postDelayed(lostCheck, in);
+    }
+
+    private void lostCheckNow() {
+        if (setup(this).state() != SetupLines.State.LOST) {
+            armLostCheck();
+            return;
+        }
+        HermuxApp.log(this).event("setup", "lost", "step", setup(this).step());
+        MainActivity a = MainActivity.current;
+        if (a != null) a.setupChanged();
+        setupNotice("Setup stopped: open Hermux");
+    }
+
+    private void setupNotice(String text) {
+        main.post(() -> {
+            try {
+                getSystemService(NotificationManager.class).notify(STATUS_ID, statusNotification(text, null, false));
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    /** The probe found the finished marker (MainActivity.probeTermux): a run whose DONE never arrived ends as DONE. */
+    static void setupFinishedByProbe(Context c) {
+        if (!setup(c).finishedByProbe()) return;
+        c.getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").remove("setup_failed").remove("setup_seen").apply();
+        HermuxApp.log(c).event("setup", "done", "by", "probe");
+        MainActivity.setTermuxOk(c);
+        HermesService s = instance;
+        if (s != null) {
+            s.main.removeCallbacks(s.lostCheck);
+            s.setupNotice("Ready");
+            s.main.post(() -> PluginSync.run(s, "check", false));
+        }
     }
 
     /** The installer's steps in the diagnostic log: the step's name and whether it failed, never the line's words. */
@@ -921,9 +969,20 @@ public class HermesService extends Service {
         String[] tl = SetupLines.parse(body);
         if (tl == null) return SetupLines.BAD_LINE;
         SetupLines sl = setup(this);
+        boolean wasLost = sl.state() == SetupLines.State.LOST;
+        int seenBefore = sl.seen();
         int r = sl.add(tl[0], tl[1], tl[2], System.currentTimeMillis() / 1000);
         if (r != SetupLines.OK) return r;
         String line = tl[1];
+        if (sl.seen() != seenBefore && sl.active())
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().putInt("setup_seen", sl.seen()).apply(); // at most twice per command
+        main.post(this::armLostCheck);
+        if (line.equals("ALIVE")) {
+            // The beat: nothing to show, log or push, unless it brings back an installer that read as stopped.
+            MainActivity a = MainActivity.current;
+            if (wasLost && a != null) a.runOnUiThread(a::setupChanged);
+            return r;
+        }
         logSetupLine(line);
         MainActivity a = MainActivity.current;
         if (a != null) a.pushSetupLine(line);
@@ -936,7 +995,7 @@ public class HermesService extends Service {
             getSharedPreferences("hermes", MODE_PRIVATE).edit().putString("setup_failed", sl.failedStep()).apply();
             text = "Setup stopped: open Hermux";
         } else if (line.equals("DONE")) {
-            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").remove("setup_failed").apply();
+            getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("setup_token").remove("setup_failed").remove("setup_seen").apply();
             MainActivity.setTermuxOk(this);
             text = "Ready";
         }
