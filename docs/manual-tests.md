@@ -395,3 +395,27 @@ Emulator (AOSP Android 15, arm64), build from `main` at the #185 merge. The comm
 Found and fixed after this pass: the stopped card's "So far" kept counting (it now stops where the installer was last
 heard), and the kill left `.git/index.lock` in the Hermes checkout, so the next run stopped with "could not write index"
 (the installer now removes git locks over 2 minutes old there).
+
+## Trying the redesign build
+
+The `redesign` branch reaches `main` only after the owner has tried it on a phone. How to build it and how to go back to
+the release are in `docs/status/ui-revamp.md`. The browser checks cover what a page can show; these lines are what only a
+phone shows, in the order a person meets them. Try each on the redesign build, then again after going back to the release.
+
+- [ ] Start-up: the app opens on the last chat from its cache, then goes live; Settings → About shows the redesign version name.
+- [ ] The keyboard: tap the text box; the composer sits right above the keyboard, the last message stays readable, nothing jumps when it closes.
+- [ ] A quick request typed one-handed, then the same by Dictate (the phone's or the on-device recogniser); Stop dictation ends it.
+- [ ] Live mode from the composer: talk, pause, hear the reply; Interrupt and talking over it cut in; Mute microphone; End.
+- [ ] Live mode from the launcher shortcut and from long-press power (Hermux as the Digital assistant), also over the lock screen.
+- [ ] Read aloud a long reply: pause, the seek bar, 5 seconds back and forward, speed, close; the card in the notification shade follows it, with the screen locked too.
+- [ ] Share into the app: a photo and a text from another app, and a camera shot from the + sheet; they land in the composer and send.
+- [ ] Share a chat as Markdown and save a photo from the viewer (Pictures/Hermux); open a link from a reply in the default app.
+- [ ] An approval: the first Allow in a chat asks for the fingerprint or screen lock; later ones in that chat don't; Deny never asks.
+- [ ] Leave the app during a reply: the status chip (a Live Update on Android 16, a notification on older Android) shows the progress; Stop from it.
+- [ ] Answer a question and an approval from the chip or the notification (Allow once, choices, a typed reply), with the app closed.
+- [ ] Replies, cron results and a failed turn notify while the app is closed; the Done chip lists them, one tap clears it; the app-icon badge counts unseen chats.
+- [ ] The background-app viewer: Hermux uses an app on a hidden screen (`phone_app`); the card, the live thumbnail, Take over and Stop.
+- [ ] The setup check and the Backend status sheet (Shizuku row) after a phone restart; Shizuku restarts by itself.
+- [ ] A tablet or a foldable opened: two columns, the canvas beside the chat, the divider dragged.
+- [ ] Ten minutes of ordinary use, then the battery drop compared with the release over the same ten minutes; the phone sleeps while Hermux is idle.
+- [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.

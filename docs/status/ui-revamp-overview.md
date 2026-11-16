@@ -1,5 +1,8 @@
 # UI and user experience: where it stands
 
+**Update (2026-11-16):** the redesign has started on the branch `redesign`; what is done and what is next is in
+[ui-revamp.md](ui-revamp.md). The map below is as it was on 2026-11-03.
+
 **State** (2026-11-03): this is a map, not a plan in progress. Of the research's nine ranked changes, none is fully
 built: four are partly built, four are not built and one was settled by the rename to Hermux. Most of the "keep"
 items are in place, and the work since 2026-11-02 (PRs #60 to #105) moved several of them on: Auto beside the model
