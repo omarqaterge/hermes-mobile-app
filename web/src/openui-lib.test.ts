@@ -38,7 +38,8 @@ describe('openui reference', () => {
   test('teaches live data from the read-only tools, and no writes', () => {
     const t = referenceText()
     expect(t).toContain('Query(')
-    for (const name of ['web_search', 'find_chats', 'read_file', 'search_files']) expect(t).toContain(name)
+    for (const name of ['web_search', 'find_chats']) expect(t).toContain(name)
+    for (const name of ['read_file', 'search_files']) expect(t).not.toContain(`- ${name}(`) // cards read no files
     expect(RULES.some(r => /Never use Mutation/.test(r))).toBe(true)
     expect(RULES.some(r => /refresh interval/.test(r))).toBe(true)
   })
