@@ -62,7 +62,7 @@ case "${1:-}" in
     printf '%s\n' "$ci" | grep -qx 'web=true' && groups+=(web)
     want '^(hermes-plugin/|relay/|android/src/com/omarqaterge/hermesmobile/(Local(Auth|Client|Dashboard|Key|Server)|EventsListener)\.java$|tools/test_[a-z_]+\.py$|tools/[a-z_]+\.py$|tools/local-auth-vectors\.json$|phone/hm-local$)' && groups+=(plugin)
     printf '%s\n' "$ci" | grep -qx 'patches=true' && groups+=(patches)
-    want '^(android/|tools/(java-check|api-check|test_setup_lines|test_diag_log|test_update_url|test_update_version|test_version_code|version-code|test_autostart|test_devtools_guard|test_local_auth|test_local_server|test_local_key|test_events_listener|test_local_dashboard)\.sh$|tools/local-auth-vectors\.json$)' && groups+=(android)
+    want '^(android/|tools/(java-check|api-check|test_setup_lines|test_pending_ask|test_diag_log|test_update_url|test_update_version|test_version_code|version-code|test_autostart|test_devtools_guard|test_local_auth|test_local_server|test_local_key|test_events_listener|test_local_dashboard)\.sh$|tools/local-auth-vectors\.json$)' && groups+=(android)
     ;;
   *) groups=("$@") ;;
 esac
