@@ -10,9 +10,7 @@ function clock() {
 const settled = async (p: Promise<unknown>) => {
   let done = false
   void p.then(() => (done = true), () => (done = true))
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
+  await new Promise(r => setTimeout(r, 0)) // every promise step of a chained switch has run by now
   return done
 }
 
@@ -162,10 +160,50 @@ describe('switching', () => {
     expect(b.buildState('r1')).toBe('switching')
     const w = b.whenSwitched('r1')
     expect(await settled(w)).toBe(false)
+    await new Promise(r => setTimeout(r, 0))
     second()
     await r2
     expect(await settled(w)).toBe(true)
     expect(b.buildState('r1')).toBe('unknown')
+  })
+
+  test('a second pick starts only after the first finished, so the newest is applied last', async () => {
+    const b = createAgentBuilds(clock().after)
+    const order: string[] = []
+    let first!: () => void
+    const r1 = b.runSwitch('r1', () => new Promise<void>(r => { order.push('start 1'); first = () => { order.push('end 1'); r() } }))
+    const r2 = b.runSwitch('r1', async () => { order.push('start 2'); order.push('end 2') })
+    await settled(r2)
+    expect(order).toEqual(['start 1'])
+    first()
+    await Promise.all([r1, r2])
+    expect(order).toEqual(['start 1', 'end 1', 'start 2', 'end 2'])
+  })
+
+  test('a failed first switch does not stop or fail the second', async () => {
+    const b = createAgentBuilds(clock().after)
+    let fail!: (e: Error) => void
+    const r1 = b.runSwitch('r1', () => new Promise<void>((_, rej) => (fail = rej)))
+    let ran = false
+    const r2 = b.runSwitch('r1', async () => { ran = true })
+    fail(new Error('no'))
+    await expect(r1).rejects.toThrow('no')
+    await expect(r2).resolves.toBeUndefined()
+    expect(ran).toBe(true)
+  })
+
+  test('a send waits for the newest of several queued switches', async () => {
+    const b = createAgentBuilds(clock().after)
+    let first!: () => void
+    let second!: () => void
+    void b.runSwitch('r1', () => new Promise<void>(r => (first = r)))
+    void b.runSwitch('r1', () => new Promise<void>(r => (second = r)))
+    const w = b.whenSwitched('r1')
+    first()
+    expect(await settled(w)).toBe(false)
+    await new Promise(r => setTimeout(r, 0))
+    second()
+    expect(await settled(w)).toBe(true)
   })
 
   test('switches on different runtimes do not wait for each other', async () => {

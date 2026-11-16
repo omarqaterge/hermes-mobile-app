@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // turn.ts: the steps of one turn, and what gateway.ts does with them (the status line's fields, the queue of follow-ups).
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { client, resendFrom, sendPrompt } from './gateway'
+import { client, flushOutbox, resendFrom, sendPrompt } from './gateway'
 import { clearQueue, enqueue, isPaused, queuedFor, setPaused } from './queue'
 import { getState, setState, type ActiveSession } from './store'
 import { noteTurnEnd, queueGoesOn, takeTurnEnd, turnOver, turnSent, turnStarted } from './turn'
@@ -99,6 +99,21 @@ describe('in the gateway', () => {
     expect(queuedFor(STORED).map(q => q.text)).toEqual(['two', 'three'])
     expect(isPaused(STORED)).toBe(true)
     expect(getState().active).toMatchObject({ running: false, status: '', tps: null, turnStart: null })
+  })
+
+  test('a queued message whose send failed gets no "Sent" toast', async () => {
+    failSubmit = true
+    setState({ queued: { chat: STORED, text: 'offline one' }, toasts: [] })
+    await flushOutbox()
+    expect(submits).toEqual(['offline one'])
+    expect(getState().active!.items.some(i => i.kind === 'notice' && /Send failed/.test(i.text))).toBe(true)
+    expect(getState().toasts.map(t => t.text)).not.toContain('Sent the message you queued')
+  })
+
+  test('a queued message that went out still toasts "Sent"', async () => {
+    setState({ queued: { chat: STORED, text: 'offline two' }, toasts: [] })
+    await flushOutbox()
+    expect(getState().toasts.map(t => t.text)).toContain('Sent the message you queued')
   })
 
   test('a send shows no speed from the turn before', async () => {

@@ -207,6 +207,8 @@ export function speakable(md: string): string {
 let playText = ''
 let playFrom = 0
 let reseekUntil = 0
+// The utterance the browser speech engine is reading now (the fallback without the native shell); events of any other one are stale.
+let browserUtterance: SpeechSynthesisUtterance | null = null
 // Where Voice.java holds its paused place (absolute position), so a resume can just say 'play'; null = it has none
 // (not paused natively, or the page moved the place / changed the speed since).
 let nativePausedAt: number | null = null
@@ -282,8 +284,10 @@ function say(id: string, from: number, reseek = false): void {
     const u = new SpeechSynthesisUtterance(text)
     u.rate = ttsConfig().rate
     u.onboundary = e => state.player && !state.player.paused && setPos(Math.min(playText.length, from + e.charIndex))
+    browserUtterance = u
     u.onend = u.onerror = () => {
-      if (state.player?.paused) return
+      // An utterance that cancel() replaced (seek, speed, stop) reports its end later: only the current one counts.
+      if (u !== browserUtterance || state.player?.paused) return
       set({ speakingId: null, player: null })
     }
     speechSynthesis.speak(u)
@@ -300,7 +304,10 @@ export function speak(id: string, markdown: string): void {
 export function stopSpeaking(): void {
   const n = native()
   if (n?.stopSpeaking) n.stopSpeaking()
-  else if ('speechSynthesis' in window) speechSynthesis.cancel()
+  else if ('speechSynthesis' in window) {
+    browserUtterance = null
+    speechSynthesis.cancel()
+  }
   set({ speakingId: null, player: null })
 }
 

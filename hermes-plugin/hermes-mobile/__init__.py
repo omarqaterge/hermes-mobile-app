@@ -37,9 +37,13 @@ FAIL_GRACE = 6.0  # seconds after a final API error before "failed" is notified 
 
 _lock = threading.Lock()
 _last_text: dict = {}  # session_id -> latest final_text
-_subagents: set = set()
+_subagents: dict = {}  # sub-agent session ids (insertion order), newest last; bounded by _note_subagent
 _active: dict = {}  # session_id -> {"text", "ts", "profile"}
-_last_end: dict = {}  # session_id -> when its last real turn ended (session_end)
+_last_end: dict = {}  # session_id -> when its last real turn ended (session_end); bounded by _note_end
+_turn_started: dict = {}  # session id -> when its turn began (diagnostic log); bounded by _note_start
+MAX_SUBAGENTS = 1024  # sub-agent ids remembered; a sub-agent finishes long before this many newer ones start
+MAX_LAST_END = 256  # chats whose last turn end is remembered (only the next FAIL_GRACE seconds matter)
+MAX_TURN_STARTS = 256  # turns whose start is remembered; a chat with a status entry is never dropped to make room
 _review_turns: set = set()  # turn ids of Hermes's background self-review (memory / skills), not user turns
 ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "activity.json")
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
@@ -278,8 +282,49 @@ def _publish_activity() -> None:
         pass
 
 
+def _note_subagent(session_id) -> None:
+    """Remember a sub-agent's session id (its hooks are ignored), keeping only the newest MAX_SUBAGENTS."""
+    with _lock:
+        _subagents.pop(session_id, None)
+        _subagents[session_id] = True
+        while len(_subagents) > MAX_SUBAGENTS:
+            _subagents.pop(next(iter(_subagents)))
+
+
+def _note_end(session_id) -> None:
+    """Record that a chat's real turn just ended, keeping only the newest MAX_LAST_END chats."""
+    with _lock:
+        _last_end.pop(session_id, None)
+        _last_end[session_id] = time.time()
+        while len(_last_end) > MAX_LAST_END:
+            _last_end.pop(next(iter(_last_end)))
+
+
+def _note_start(session_id) -> bool:
+    """Record a turn's start unless the chat already has one. Over MAX_TURN_STARTS the oldest records go, but
+    never one whose chat still has a status entry (a running turn). True when a start was recorded."""
+    with _lock:
+        if session_id in _turn_started:
+            return False
+        _turn_started[session_id] = time.time()
+        if len(_turn_started) > MAX_TURN_STARTS:
+            for sid in [s for s in _turn_started if s not in _active and s != session_id]:
+                if len(_turn_started) <= MAX_TURN_STARTS:
+                    break
+                del _turn_started[sid]
+        return True
+
+
+def _pop_start(session_id):
+    """Forget and return a chat's turn start time (None when unknown)."""
+    with _lock:
+        return _turn_started.pop(session_id, None)
+
+
 def _set_status(session_id: str, text: str, short: str = "Working", review: bool = False, tool: bool = False,
-                step: bool = False) -> None:
+                step: bool = False, unless_live: bool = False) -> None:
+    """unless_live: do nothing when a real (non-review) turn of this chat has a status; the check and the change
+    happen under one hold of the lock, so a real turn that starts meanwhile is never replaced."""
     if not session_id or session_id in _subagents:
         return
     if not review and short not in ("Approve?", "Asking"):
@@ -287,6 +332,8 @@ def _set_status(session_id: str, text: str, short: str = "Working", review: bool
     now = time.time()
     with _lock:
         prev = _active.get(session_id)
+        if unless_live and prev and not prev.get("review"):
+            return
         # Per-turn progress (start time, steps taken, task list) survives each status change of the same turn;
         # a turn starts when the session isn't active (session_end / stale expiry dropped it) or a review takes over.
         turn = prev["turn"] if prev and bool(prev.get("review")) == review else {"since": now, "steps": 0, "todo": None}
@@ -308,9 +355,13 @@ def _phone_app_short(session_id: str) -> str:
     return ""
 
 
-def _clear_status(session_id: str) -> None:
+def _clear_status(session_id: str, only_review: bool = False) -> None:
+    """only_review: clear only a background-work label; a real turn's status stays (checked under the lock)."""
     _dbg(f"clear {session_id}")
     with _lock:
+        cur = _active.get(session_id)
+        if only_review and not (cur and cur.get("review")):
+            return
         _active.pop(session_id, None)
     _status_dirty.set()
     _publish_activity()
@@ -536,24 +587,17 @@ def _is_review(turn_id, session_id=None) -> bool:
 def _bg_status(session_id, turn_id, tool_label: str = "") -> None:
     """Show background work (review or /btw) for a chat, unless a real turn of that chat is running: a /btw
     asked mid-turn must not replace or later clear the main turn's status."""
-    with _lock:
-        cur = _active.get(session_id)
-    if cur and not cur.get("review"):
-        return
     if turn_id in _btw_turns:
         text, short = "Answering a side question (/btw)", "Side question"
     else:
         text, short = "Learning from this chat (memory & skills)", "Learning"
     if tool_label:
         text = f"{short} · {tool_label}"
-    _set_status(session_id, text, short, review=True)
+    _set_status(session_id, text, short, review=True, unless_live=True)
 
 
 def _bg_clear(session_id) -> None:
-    with _lock:
-        cur = _active.get(session_id)
-    if cur and cur.get("review"):
-        _clear_status(session_id)
+    _clear_status(session_id, only_review=True)
 
 
 def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
@@ -564,10 +608,7 @@ def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
         _dbg(f"review-start {session_id} {turn_id}")
         _bg_status(session_id, turn_id)
         return None
-    if session_id and session_id not in _subagents and session_id not in _turn_started:
-        if len(_turn_started) > 64:  # a turn that never ended must not grow this for ever
-            _turn_started.clear()
-        _turn_started[session_id] = time.time()
+    if session_id and session_id not in _subagents and _note_start(session_id):
         _event("turn", "start", chat=_alias(session_id))
     return None
 
@@ -694,8 +735,7 @@ def _on_subagent_start(child_session_id=None, parent_session_id=None, child_goal
     except Exception:
         pass
     if child_session_id:
-        with _lock:
-            _subagents.add(child_session_id)
+        _note_subagent(child_session_id)
     if parent_session_id:
         _set_status(parent_session_id, f"Sub-agent: {_short(child_goal, 60)}", "Agents")
 
@@ -766,7 +806,7 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
            retries=retry_count, reason=_reason(reason), provider=provider, model=str(model or "").rsplit("/", 1)[-1] or None,
            error=type(error).__name__ if isinstance(error, BaseException) else None)
     if final:
-        _turn_started.pop(session_id, None)  # no session_end follows this: the next turn is a new start
+        _pop_start(session_id)  # no session_end follows this: the next turn is a new start
     if not final or not session_id or session_id in _subagents:
         return
     if _is_review(turn_id, session_id):  # background work failed: drop its label, never the chat's own turn
@@ -784,7 +824,9 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
     def notify():
         with _lock:
             again = session_id in _active  # a fallback provider / new attempt took over
-        if again or _last_end.get(session_id, 0) >= failed_at:  # or a session_end already reported it
+        with _lock:
+            ended = _last_end.get(session_id, 0)
+        if again or ended >= failed_at:  # or a session_end already reported it
             return
         name = _profile()
         title = _chat_title(session_id) or ("Hermux" if name == "default" else name)
@@ -810,20 +852,17 @@ def _end_phone_app(session_id):
 _bgapp_enders: list = []
 
 
-_turn_started: dict = {}  # session id → when its turn began, for the diagnostic log
-
-
 def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, interrupted=None,
                     turn_exit_reason=None, platform=None, **_):
     _dbg(f"session_end {session_id} turn={turn_id} completed={completed} interrupted={interrupted}")
     _taint_sync(session_id)
-    t0 = _turn_started.pop(session_id, None)
+    t0 = _pop_start(session_id)
     if t0 is not None:
         _event("turn", "end", chat=_alias(session_id), secs=int(time.time() - t0), completed=completed,
                failed=failed, interrupted=interrupted, reason=_reason(turn_exit_reason))
     if not session_id or session_id in _subagents:
         return
-    _last_end[session_id] = time.time()
+    _note_end(session_id)
     _end_phone_app(session_id)
     with _lock:
         turn = (_active.get(session_id) or {}).get("turn") or {}
