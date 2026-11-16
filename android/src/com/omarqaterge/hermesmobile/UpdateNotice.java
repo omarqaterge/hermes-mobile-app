@@ -103,7 +103,7 @@ final class UpdateNotice {
     private static boolean notify(Context ctx, String latest, String apkUrl) {
         try {
             HermesService.createChannels(ctx);
-            Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent open = IntentGate.mark(ctx, new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK));
             open.putExtra("updateUrl", apkUrl); // MainActivity checks it is an official release URL
             Notification.Builder b = new Notification.Builder(ctx, CH_UPDATE)
                     .setSmallIcon(R.drawable.ic_stat_hermes)

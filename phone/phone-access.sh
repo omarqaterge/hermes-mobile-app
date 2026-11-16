@@ -6,6 +6,16 @@
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 ROOTFS="$PREFIX/var/lib/proot-distro/containers/debian/rootfs"
 SHIZUKU_APK="https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk"
+# The download is checked against this SHA-256 before anything is taken out of it (rish becomes the agent's adb-level
+# shell). The URL above, MainActivity.java's SHIZUKU_APK (the app's own installer of the same APK) and this checksum move
+# together: change one, change all three.
+SHIZUKU_APK_SHA256="6e273ab0e991c4e79bc8b1bbb9b9dd739ccac1a8712a541a214078886b7b790f"
+# Test hook (tools/test_install_routes.sh): HM_SHIZUKU_APK_URL downloads another file, and only together with it
+# HM_SHIZUKU_APK_SHA256 sets the checksum that file must have. A checksum alone is ignored, and a URL alone is still
+# checked against the pinned checksum, so neither weakens a real install.
+if [ -n "${HM_SHIZUKU_APK_URL:-}" ]; then
+  SHIZUKU_APK="$HM_SHIZUKU_APK_URL"; SHIZUKU_APK_SHA256="${HM_SHIZUKU_APK_SHA256:-$SHIZUKU_APK_SHA256}"
+fi
 # The "phone:" hints also go to the app's setup flow when the app's installer command set HM_APP_TOKEN (same as
 # bootstrap.sh's say(); 2 s timeout, never fails).
 say() {
@@ -51,13 +61,21 @@ timeout 20 termux-battery-status 2>/dev/null | grep -q percentage \
   || todo "Termux:API: install the Termux:API app from F-Droid (https://f-droid.org/packages/com.termux.api/)"
 
 # Shizuku's rish: an adb-level shell for Hermes without root. Both files come from Shizuku's own release APK; "PKG" is the
-# placeholder Shizuku fills in when you export them from its app.
+# placeholder Shizuku fills in when you export them from its app. The APK must match SHIZUKU_APK_SHA256 before unzip
+# touches it; if it doesn't, nothing is installed and a TODO line says so (the script carries on as after a failed download).
+sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 if [ ! -s "$HOME/bin/rish_shizuku.dex" ] || ! grep -q '"com.termux"' "$HOME/bin/rish" 2>/dev/null; then
   tmp=$(mktemp -d)
-  if curl -fsSL -o "$tmp/shizuku.apk" "$SHIZUKU_APK" && unzip -qo "$tmp/shizuku.apk" assets/rish assets/rish_shizuku.dex -d "$tmp"; then
-    sed 's/"PKG"/"com.termux"/' "$tmp/assets/rish" > "$HOME/bin/rish" && chmod 700 "$HOME/bin/rish"
-    # Android 14+ refuses a writable dex.
-    rm -f "$HOME/bin/rish_shizuku.dex" && cp "$tmp/assets/rish_shizuku.dex" "$HOME/bin/" && chmod 400 "$HOME/bin/rish_shizuku.dex"
+  if curl -fsSL -o "$tmp/shizuku.apk" "$SHIZUKU_APK"; then
+    got=$(sha "$tmp/shizuku.apk" 2>/dev/null | cut -c1-64 || true)
+    if [ "$got" != "$SHIZUKU_APK_SHA256" ]; then
+      rm -f "$tmp/shizuku.apk"
+      todo "Shizuku: its shell could not be set up because the file downloaded for it was not the expected one, so nothing from it was used; run the installer again"
+    elif unzip -qo "$tmp/shizuku.apk" assets/rish assets/rish_shizuku.dex -d "$tmp"; then
+      sed 's/"PKG"/"com.termux"/' "$tmp/assets/rish" > "$HOME/bin/rish" && chmod 700 "$HOME/bin/rish"
+      # Android 14+ refuses a writable dex.
+      rm -f "$HOME/bin/rish_shizuku.dex" && cp "$tmp/assets/rish_shizuku.dex" "$HOME/bin/" && chmod 400 "$HOME/bin/rish_shizuku.dex"
+    fi
   fi
   rm -rf "$tmp"
 fi

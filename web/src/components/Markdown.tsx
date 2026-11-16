@@ -51,12 +51,15 @@ function getMermaid() {
 }
 
 // A Mermaid diagram can draw an image from an address (`img:` shapes, <img> in a label) and fetches it while it draws, with
-// no tap. In a chat that has read phone data a diagram whose source names an image or any address is shown as code instead.
+// no tap. So a diagram that would load an image (an `img:` shape, an <img>, a `url(`) is shown as code in every chat; one with
+// only links or addresses in its text fetches nothing and is drawn. In a chat that has read phone data the wider rule holds:
+// any image or address in the source shows it as code.
 const MERMAID_REMOTE = /\bimg\b|<\s*img|(https?:)?\/\/|\burl\s*\(|\bhref\b/i
+const MERMAID_IMAGE = /\bimg\s*:|<\s*img|\burl\s*\(/i
 
 function Mermaid({ code }: { code: string }) {
   const guarded = useGuard()
-  const held = guarded && MERMAID_REMOTE.test(code)
+  const held = (guarded ? MERMAID_REMOTE : MERMAID_IMAGE).test(code)
   const id = `mmd-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   const [svg, setSvg] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
@@ -91,7 +94,7 @@ function Mermaid({ code }: { code: string }) {
     return (
       <div className="codeblock">
         <div className="codeblock-bar">
-          <span>mermaid (not drawn: it names an image or an address, and this chat has read phone data)</span>
+          <span>mermaid (not drawn: it names an image or an address)</span>
         </div>
         <pre>{code}</pre>
       </div>
@@ -413,6 +416,11 @@ const schema = {
 // Inline styles are limited to looks (colour, spacing, borders, type); nothing that can position,
 // overlay, hide, resize to the screen, or load a URL.
 const STYLE_OK = /^(color|background(-color)?|padding(-(top|right|bottom|left))?|margin(-(top|right|bottom|left))?|border(-(top|right|bottom|left))?(-(width|style|color|radius))?|border-radius|font-(weight|style|size|family|variant)|text-(decoration|align|transform|shadow)|letter-spacing|line-height|white-space|vertical-align|opacity|display)$/
+// CSS can fetch too: url(), image-set("…"), src(), cross-fade() and escaped spellings of them (`u\72l(`). A value is kept only when it has no
+// backslash or comment and calls nothing but colour, arithmetic and gradient functions.
+const STYLE_FUNCS = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|calc|min|max|clamp|var|(?:repeating-)?(?:linear|radial|conic)-gradient)$/
+export const styleCanFetch = (val: string): boolean =>
+  /\\|\/\*|expression|javascript:|@import/.test(val) || [...val.matchAll(/([a-z-]*)\s*\(/g)].some(m => !STYLE_FUNCS.test(m[1]))
 function rehypeSafeStyle() {
   return (tree: Root) => {
     visit(tree, 'element', (node: Element) => {
@@ -425,7 +433,7 @@ function rehypeSafeStyle() {
           const [prop, ...rest] = d.split(':')
           const val = rest.join(':').toLowerCase()
           if (!prop || !val.trim() || !STYLE_OK.test(prop.trim().toLowerCase())) return false
-          if (/url\(|expression|javascript:|@import/.test(val)) return false
+          if (styleCanFetch(val)) return false
           return prop.trim().toLowerCase() !== 'display' || /^\s*(inline|inline-block|block|none)\s*$/.test(val)
         })
       // A card with its own background but no text colour would inherit the theme's (white on a pastel card).
@@ -519,13 +527,18 @@ function rehypeCallouts() {
   }
 }
 
-// The sanitizer prefixes ids (user-content-…) but not the url(#id) references to them (gradients, filters).
+// The sanitizer prefixes ids (user-content-…) but not the url(#id) references to them (gradients, filters). Any other url() is dropped.
 function rehypeSvgRefs() {
   const fix = (v: string) => v.replace(/url\(#(?!user-content-)([^)\s]+)\)/g, 'url(#user-content-$1)')
   return (tree: Root) => {
     visit(tree, 'element', (node: Element) => {
       if (!SVG_TAGS.includes(node.tagName)) return
-      for (const [k, v] of Object.entries(node.properties || {})) if (typeof v === 'string' && v.includes('url(#')) node.properties[k] = fix(v)
+      for (const [k, v] of Object.entries(node.properties || {})) {
+        if (typeof v !== 'string') continue
+        // A reference to anything but an element of this page (`fill="url(https://…)"`), or one written with CSS escapes, goes.
+        if (/url\(\s*[^\s#]/i.test(v) || (v.includes('\\') && v.includes('('))) delete node.properties[k]
+        else if (v.includes('url(#')) node.properties[k] = fix(v)
+      }
     })
   }
 }

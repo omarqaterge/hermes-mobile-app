@@ -39,6 +39,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 PATH = Path.home() / ".hermes" / "mobile" / "phone-read.json"
 MAX_CHATS = 2000
+MAX_LINKS = 20000  # subagent links kept in memory; past that the oldest goes, and its parent is marked (fail closed)
 MAX_SHOWN = 300   # characters of a command shown in the ask (the start and the end when it is longer)
 MAX_SCAN = 20000  # characters of a command or script looked at
 MAX_DEPTH = 4     # nested `bash -c '...'` levels looked into
@@ -218,15 +219,21 @@ def adopt(ids: Any) -> List[str]:
 
 def link_subagent(parent_id: Any, child_id: Any) -> None:
     """Hermes's `subagent_start` hook: remember who spawned whom. A child of a chat that has read is marked at once; a
-    child that reads later marks its parent (`mark` follows the links). Never raises."""
+    child that reads later marks its parent (`mark` follows the links). At most MAX_LINKS links: the oldest goes first,
+    and its parent is marked as having read, since a read by that child could no longer reach it. Never raises."""
     try:
         parent, child = str(parent_id or "").strip()[:200], str(child_id or "").strip()[:200]
         if not parent or not child or parent == child:
             return
+        dropped: List[str] = []
         with _lock:
-            if len(_parents) > MAX_CHATS:
-                _parents.clear()
+            _parents.pop(child, None)
             _parents[child] = parent
+            while len(_parents) > MAX_LINKS:
+                dropped.append(_parents.pop(next(iter(_parents))))
+        for p in dict.fromkeys(dropped):
+            if not has_read(p):
+                mark(p)   # its child could no longer mark it after a later read: count it as having read
         if has_read(parent):
             mark(child)
     except Exception:

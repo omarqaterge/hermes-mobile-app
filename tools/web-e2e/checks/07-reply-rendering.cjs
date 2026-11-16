@@ -428,4 +428,22 @@ module.exports = async t => {
     await mine.locator('.video-embed').waitFor({ timeout: 5000 }).then(() => check(true, 'video: a link in your own message gets a player too'), () => check(false, 'video: a link in your own message gets a player too'))
     await vp.close()
   }
+
+  // ── the page's own Content-Security-Policy: no object, no <base>, scripts from any source (the lazy bundles run with new Function) and nothing else it does is blocked ──
+  {
+    const cp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await cp.addInitScript(() => {
+      window.__csp = []
+      document.addEventListener('securitypolicyviolation', e => window.__csp.push(`${e.effectiveDirective} ${e.blockedURI}`))
+    })
+    await cp.goto(WEB + '/')
+    await cp.getByPlaceholder('Message Hermux').fill('show diagram')
+    await cp.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await cp.locator('.msg.assistant svg', { hasText: 'Start' }).first().waitFor({ timeout: 15000 }).then(() => check(true, 'page CSP: the lazy Mermaid bundle still runs under it'), () => check(false, 'page CSP: the lazy Mermaid bundle still runs under it'))
+    const pol = await cp.evaluate(() => document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || '')
+    check(/script-src [^;]*'unsafe-inline'[^;]*'unsafe-eval'/.test(pol) && /object-src 'none'/.test(pol) && /base-uri 'none'/.test(pol) && !/default-src|connect-src|img-src|frame-src/.test(pol), `page CSP: the main page carries a conservative policy (${pol})`)
+    check((await cp.evaluate(() => window.__csp)).length === 0, `page CSP: it blocked nothing while the app started and drew a diagram (${JSON.stringify(await cp.evaluate(() => window.__csp))})`)
+    check(await cp.evaluate(() => { const b = document.createElement('base'); b.href = 'https://attacker.example/'; document.head.append(b); const r = document.baseURI; b.remove(); return new URL(r).hostname !== 'attacker.example' }), 'page CSP: an injected <base> does not change where addresses point')
+    await cp.close()
+  }
 }

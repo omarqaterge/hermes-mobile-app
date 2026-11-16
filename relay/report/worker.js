@@ -5,6 +5,7 @@
 //   GET  /s/<id>  a screenshot a report uploaded (stored in the KV namespace REPORTS, linked from the issue)
 //   GET  /l/<id>  a report's diagnostic log, only with the secret LOG_READ_KEY (Authorization: Bearer …). The log is the
 //                 one thing a report holds that is NOT public: the issue only names it, and it is deleted after LOG_DAYS.
+//                 (A screenshot is public, but is deleted after SHOT_DAYS.)
 // Limits, all kept in REPORTS: MAX_PER_INSTALL reports a day for each random per-install ID the app makes (never a
 // phone identifier), MAX_PER_IP a day for each sender address (stored only as a salted hash), MAX_PER_DAY in all, and
 // size caps on every field. KV isn't atomic, so a burst of requests at the same moment can pass a little over a limit.
@@ -23,6 +24,7 @@ export const LIMITS = {
 const SHOT_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 const DAY_SECONDS = 86_400
 export const LOG_DAYS = 30
+export const SHOT_DAYS = 90 // a screenshot is public while it lasts, so it doesn't stay forever
 const CORS = {
   'access-control-allow-origin': '*', // the app's page is a file:// page: its origin is "null"
   'access-control-allow-methods': 'POST, GET, OPTIONS',
@@ -65,7 +67,7 @@ const fenced = s => s.replace(/^(\s*)(`{3,}|~{3,})/gm, '$1​$2')
 export function issueBody(r, shotUrl, logId) {
   const lines = [fenced(quiet(r.text)), '', '---', '', '**Details**', '']
   lines.push(`- App: ${r.details.app || 'unknown'}`, `- Android: ${r.details.android || 'unknown'}`, `- Hermux agent: ${r.details.hermes || 'unknown'}`)
-  if (shotUrl) lines.push('', `![Screenshot](${shotUrl})`)
+  if (shotUrl) lines.push('', `![Screenshot](${shotUrl})`, '', `The screenshot is removed after ${SHOT_DAYS} days.`)
   if (logId) lines.push('', `Diagnostic log: kept privately as \`${logId}\`, deleted after ${LOG_DAYS} days.`)
   lines.push('', '_Sent from the app\'s "Report a problem"._')
   return lines.join('\n')
@@ -159,7 +161,7 @@ async function report(request, env) {
   if (r.shot && bytes) {
     const id = `${crypto.randomUUID().replace(/-/g, '')}.${SHOT_TYPES[r.shot.type]}`
     shotKey = `shot:${id}`
-    await env.REPORTS.put(shotKey, bytes, { metadata: { type: r.shot.type } })
+    await env.REPORTS.put(shotKey, bytes, { metadata: { type: r.shot.type }, expirationTtl: SHOT_DAYS * DAY_SECONDS })
     shotUrl = `${new URL(request.url).origin}/s/${id}`
   }
   // Only the log: not the install ID or the address, so a kept log can't be tied back to who sent it.
@@ -202,7 +204,7 @@ async function screenshot(id, env) {
   const { value, metadata } = await env.REPORTS.getWithMetadata(`shot:${id}`, { type: 'arrayBuffer' })
   if (!value) return new Response('Not found', { status: 404 })
   return new Response(value, {
-    headers: { 'content-type': metadata?.type || 'application/octet-stream', 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' }
+    headers: { 'content-type': metadata?.type || 'application/octet-stream', 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff' }
   })
 }
 

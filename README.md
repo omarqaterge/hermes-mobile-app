@@ -254,8 +254,10 @@ protect you from, because a safety claim with no limits is not one. Everything h
   IP address.
 - **Setup downloads:** the helper apps from F-Droid and GitHub, the Debian system, Python and npm packages, and the
   speech models if you choose offline dictation (from Hugging Face).
-- **What replies point to:** an image or video a reply links to is fetched from wherever the reply says; YouTube
-  thumbnails load before you tap play. In a chat that has read phone data, web images need a tap first.
+- **What replies point to:** an image, video or sound from the web that a reply links to is not fetched until you tap
+  it, in every chat (a web address can carry out what the agent has read, and a web page the agent reads could tell it
+  to write one). YouTube thumbnails load before you tap play. Pictures drawn by cards still load without a tap, except
+  in a chat that has read phone data.
 - **Dictation** can use Android's own speech recogniser, which may be cloud-based, if you don't use the offline models.
 - **Usage stats,** only if you opt in, to Aptabase. **A problem report,** only when you send one; reports are public GitHub
   issues.
@@ -282,8 +284,8 @@ protect you from, because a safety claim with no limits is not one. Everything h
   agent can't write that wording. The first Allow in a chat asks for your fingerprint or screen lock (a setting that is
   on by default). A locked phone is refused. **Full access skips the question by design,** and Auto access refuses to read.
 - **Capped and labelled.** At most 50 rows and 16 KB per read; the result is marked as data, not instructions.
-- **Extra care after a read.** In a chat that has read your data, web images need a tap, links show their full address
-  first, and the agent's commands and tools that could send data out ask first (not in Full or Auto access, where
+- **Extra care after a read.** Web images need a tap in every chat; in a chat that has read your data, cards' pictures
+  are held back too, links show their full address first, and the agent's commands and tools that could send data out ask first (not in Full or Auto access, where
   Hermes's own gate approves without asking).
 - **Where it goes.** What the agent reads becomes part of the chat: it goes to your model provider, and stays in the
   chat history and in Hermes's own session files on the phone. Hermux never writes names, numbers, message text or

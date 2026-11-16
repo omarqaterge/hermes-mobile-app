@@ -1,7 +1,7 @@
 // Tests for the report relay with a stand-in KV and a mocked GitHub API: `node --test` in relay/report.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import worker, { LIMITS, LOG_DAYS, issueBody, readReport } from './worker.js'
+import worker, { LIMITS, LOG_DAYS, SHOT_DAYS, issueBody, readReport } from './worker.js'
 
 const ID = 'a'.repeat(32)
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString('base64')
@@ -109,7 +109,20 @@ test('stores a screenshot, links it from the issue and serves it', async () => {
   assert.equal(img.status, 200)
   assert.equal(img.headers.get('content-type'), 'image/png')
   assert.deepEqual(Buffer.from(await img.arrayBuffer()), Buffer.from(PNG, 'base64'))
+  assert.equal(img.headers.get('cache-control'), 'public, max-age=86400', 'a day at most, it expires')
   assert.equal((await worker.fetch(new Request('https://relay.example/s/../secret'), env)).status, 404)
+})
+
+test('a screenshot expires after SHOT_DAYS and the issue says so', async () => {
+  assert.equal(SHOT_DAYS, 90)
+  await post(report({ screenshot: { type: 'image/png', data: PNG } }))
+  const [key] = [...env.REPORTS.m.keys()].filter(k => k.startsWith('shot:'))
+  assert.ok(key, 'stored')
+  assert.equal(env.REPORTS.m.get(key).ttl, SHOT_DAYS * 86400, 'it expires')
+  assert.deepEqual(env.REPORTS.m.get(key).metadata, { type: 'image/png' }, 'the type is still kept')
+  assert.match(calls[0].body.body, /!\[Screenshot\]\(https:\/\/relay\.example\/s\/[0-9a-f]{32}\.png\)\n\nThe screenshot is removed after 90 days\./)
+  const none = issueBody(readReport(report()), '')
+  assert.ok(!none.includes('screenshot is removed'), 'no screenshot, no such line')
 })
 
 test('a GitHub failure or a missing setup is an error the app can fall back from', async () => {

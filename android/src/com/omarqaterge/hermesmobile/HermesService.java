@@ -1657,7 +1657,7 @@ public class HermesService extends Service {
     /** clearDone: tapping the card also clears the sticky Done chip (all of it), even when the chat it names is gone.
      *  bgView: the chat opens with the live viewer of the app Hermes uses for it (MainActivity.EXTRA_BG_VIEW). */
     PendingIntent openApp(String session, boolean clearDone, boolean bgView) {
-        Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK));
         if (session != null && !session.isEmpty()) open.putExtra("session", session);
         if (clearDone) open.putExtra("clearDone", true);
         if (bgView) open.putExtra(MainActivity.EXTRA_BG_VIEW, true);
@@ -2168,8 +2168,8 @@ public class HermesService extends Service {
     boolean openToUnlock(String session, String draft, String what) {
         if (!MainActivity.keyguardLocked(this)) return false;
         android.util.Log.i("HermesLock", "locked: not sending " + what + ", opening the app to unlock");
-        Intent open = new Intent(this, MainActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP))
                 .putExtra(MainActivity.EXTRA_UNLOCK, true);
         if (session != null && !session.isEmpty()) open.putExtra("session", session); // opens that chat (its sheet)
         if (draft != null) open.putExtra("draft", draft.length() > 20000 ? draft.substring(0, 20000) : draft);
@@ -2183,7 +2183,7 @@ public class HermesService extends Service {
 
     /** Opens the app on that chat, whose approval sheet asks for the fingerprint or screen lock on Allow. */
     void openToConfirm(String session) {
-        Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
         if (session != null && !session.isEmpty()) open.putExtra("session", session);
         try {
             startActivity(open);
@@ -2207,7 +2207,7 @@ public class HermesService extends Service {
         // opens the app on that chat, where the sheet asks.
         boolean phoneData = e.optBoolean("phone_data", false);
         if (phoneData && !"deny".equals(choice)) {
-            Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
             if (!session.isEmpty()) open.putExtra("session", session);
             return PendingIntent.getActivity(this, ("phonedata" + session + choice).hashCode(), open,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
@@ -2215,7 +2215,7 @@ public class HermesService extends Service {
         if (Build.VERSION.SDK_INT >= 31 && !"deny".equals(choice) && ApprovalLock.needed(this, session)) {
             // Android 12+ refuses to open an activity from a service a notification started (trampoline): the
             // chat's first Allow opens the app on that chat directly, where the sheet asks for the fingerprint.
-            Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
             if (!session.isEmpty()) open.putExtra("session", session);
             return PendingIntent.getActivity(this, ("confirm" + session + choice).hashCode(), open,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
@@ -2333,7 +2333,7 @@ public class HermesService extends Service {
                 dropEmptySummary(nm, t);
                 return;
             }
-            Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK)
+            Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK))
                     .putExtra("draft", text.length() > 20000 ? text.substring(0, 20000) : text);
             if (session != null && !session.isEmpty()) open.putExtra("session", session);
             PendingIntent pi = PendingIntent.getActivity(this, ("draft:" + session).hashCode(), open,

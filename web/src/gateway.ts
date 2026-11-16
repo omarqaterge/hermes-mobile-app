@@ -846,7 +846,11 @@ onChatOpen('access', ({ chat, kind }) => {
   const want = rememberedAccess(chat.storedId)
   if (want === 'auto') updateActive(x => (x.runtimeId === chat.runtimeId ? { autoAccess: true } : {}))
   if (want !== 'off' && !chat.info.yolo) void setAccess(chat, want, yoloChats()[chat.storedId] !== undefined).catch(() => {})
-  else if (want === 'auto') void setPluginAuto(chat.storedId, true).catch(() => {})
+  else if (want === 'auto')
+    // Hermes still has /yolo on: without the plugin's entry the chat would be in Full access while the screen says Auto.
+    void setPluginAuto(chat.storedId, true).catch(() =>
+      setAccess(chat, 'off', false).then(() => accessNotice(chat, 'Auto access couldn’t be set again, so this chat is in Off: Hermux asks before risky commands. Tap Auto to try again.'), () => {})
+    )
 })
 
 const DEFAULT_ACCESS_KEY = 'hm.defaultAccess.v1'
@@ -926,10 +930,16 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean, s
       if (was !== 'auto') await setPluginAuto(a.storedId, false).catch(() => {})
       return SUPERSEDED
     }
-    on = await yoloRpc(a, true)
+    on = await yoloRpc(a, true).catch(async e => {
+      await settleAccess(a)
+      throw e
+    })
     if (!on) await setPluginAuto(a.storedId, false).catch(() => {})
   } else {
-    on = await yoloRpc(a, mode === 'full') // once /yolo changed, finish (one cheap step) so the screen matches Hermes
+    on = await yoloRpc(a, mode === 'full').catch(async e => {
+      await settleAccess(a)
+      throw e
+    }) // once /yolo changed, finish (one cheap step) so the screen matches Hermes
     await setPluginAuto(a.storedId, false).catch(() => {}) // an older plugin has no /auto: nothing to remove
   }
   const got: Access = !on ? 'off' : mode === 'auto' ? 'auto' : 'full'
@@ -939,6 +949,39 @@ async function setAccessNow(a: ActiveSession, mode: Access, remember: boolean, s
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: on }, autoAccess: got === 'auto' } : {}))
   if (remember) rememberYolo(a.storedId, got) // the default from Settings isn't the chat's own choice: it follows the default
   return got
+}
+
+/** A /yolo switch whose outcome is unknown (config.set failed, timed out, or the connection dropped mid-switch): Hermes
+ *  may or may not have applied it, and it has no call to read the flag back. End where the screen is never safer than
+ *  the chat: turn /yolo off and remove the Auto entry (Off); when Hermes doesn't confirm Off, write the Auto entry back so
+ *  the chat is in Auto access at most and show that, or Full access when even that write fails. Never gives the
+ *  phone-data pass, keeps the remembered mode for the next resume, and tells the user. */
+async function settleAccess(a: ActiveSession): Promise<Access> {
+  setPhoneDataFullAccess(a.runtimeId, false)
+  beforeFull.delete(a.storedId)
+  let got: Access
+  try {
+    if (await yoloRpc(a, false)) throw new Error('/yolo still on')
+    await setPluginAuto(a.storedId, false).catch(() => {}) // with /yolo off the entry changes nothing: Hermes asks
+    got = 'off'
+  } catch {
+    got = await setPluginAuto(a.storedId, true).then(
+      () => 'auto' as const,
+      () => 'full' as const
+    )
+  }
+  updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: got !== 'off' }, autoAccess: got === 'auto' } : {}))
+  accessNotice(a, ACCESS_UNSURE[got])
+  return got
+}
+const ACCESS_UNSURE: Record<Access, string> = {
+  off: 'Couldn’t change this chat’s access, so it is back to Off: Hermux asks before risky commands.',
+  auto: 'Couldn’t confirm this chat’s access, so it is in Auto access: dangerous commands are blocked. Tap Auto to set it again.',
+  full: 'Couldn’t confirm this chat’s access: it may be in Full access. Tap Auto to set it again.'
+}
+/** An error notice in the chat, if it is still the one on screen. */
+function accessNotice(a: ActiveSession, text: string): void {
+  updateActive(x => (x.runtimeId === a.runtimeId ? { items: [...x.items, { kind: 'notice', id: newId('n'), text, level: 'error' }] } : {}))
 }
 
 /** YOLO for one chat, Hermes Desktop's way (config.set, in-process, instant). Through slash.exec it ran in the

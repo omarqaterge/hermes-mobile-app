@@ -205,6 +205,16 @@ describe('math inside raw HTML', () => {
   })
 })
 
+describe('inline styles in a reply', () => {
+  test('a value that can fetch is refused, colours, arithmetic and gradients stay', async () => {
+    const { styleCanFetch } = await import('./components/Markdown')
+    for (const v of ['url(https://a.example/x.png)', ' url( "//a.example/x" ) ', 'image-set("https://a.example/x.png" 1x)', '-webkit-image-set(url(x) 1x)', 'src("x")', 'cross-fade(url(x), red)', 'u\\72l(https://a.example/x)', 'red /* x */', 'linear-gradient(url(x), red)'])
+      expect(styleCanFetch(v.toLowerCase()), v).toBe(true)
+    for (const v of ['#fff', 'rgba(0, 0, 0, .5)', 'calc(1px + 2px)', 'linear-gradient(90deg, #fff, rgb(1 2 3))', '12px', '"open sans", sans-serif'])
+      expect(styleCanFetch(v), v).toBe(false)
+  })
+})
+
 describe('voice input errors', () => {
   test('codes become plain advice', () => {
     expect(voiceErrorText('stt-5')).toContain('isn’t working on this phone (stt-5)')

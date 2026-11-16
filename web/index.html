@@ -2,6 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Conservative on purpose: only what cannot break the app. The page runs inline script and, for the lazy bundles
+         (src/lazy.ts), new Function; an Online canvas page is an srcdoc frame that inherits this policy and may load
+         scripts from the web, hence https:. No default-src, connect-src, img-src, frame-src or style-src: the page talks
+         to the Hermes socket, the media proxy, video sites and the stats and report hosts. No form-action: an Online
+         canvas page may submit a form. -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; object-src 'none'; base-uri 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0f1216" />
     <title>Hermux</title>

@@ -300,19 +300,20 @@ function AudioPlayer({ url, name, onError }: { url: string; name: string; onErro
   )
 }
 
-/** In a chat that has read phone data, a remote image, video or audio is not fetched until a tap (the address can carry the
- *  data out; the shell refuses it too until then: RemoteGuard.java). Local files and attachments load as always. */
+/** A remote image, video or audio in a reply is not fetched until a tap, in every chat: its address can carry out what the agent
+ *  has read (a prompt injection can write it), and the shell refuses it too in a chat that has read phone data (RemoteGuard.java).
+ *  Local files and attachments load as always. */
 export function Media({ src, alt }: { src: string; alt?: string }) {
-  const guarded = useGuard()
   const [allowed, setAllowed] = useState(false)
-  if (guarded && !allowed && isRemoteUrl(src) && mediaKind(src) !== 'file') return <RemoteHold src={src} onLoad={() => setAllowed(true)} />
+  if (!allowed && isRemoteUrl(src) && mediaKind(src) !== 'file') return <RemoteHold src={src} onLoad={() => setAllowed(true)} />
   return <MediaView src={src} alt={alt} />
 }
 
 /** The placeholder for a remote image, video or audio held back: the host, and a line when the address carries a query.
  *  An image's tap lets the shell pass that one address once, then loads it. Video and audio make several requests, so their
- *  tap shows the address in full and opens it in the browser instead. */
+ *  tap opens it in the browser instead (after the address is shown in full, in a chat that has read phone data). */
 function RemoteHold({ src, onLoad }: { src: string; onLoad: () => void }) {
+  const guarded = useGuard() // a chat that has read phone data also shows the address in full before the browser opens it
   const a = addressOf(src)
   const kind = mediaKind(src)
   const inline = kind === 'image'
@@ -324,7 +325,7 @@ function RemoteHold({ src, onLoad }: { src: string; onLoad: () => void }) {
         if (inline) {
           allowRemoteOnce(src)
           onLoad()
-        } else void openChecked(src, true)
+        } else void openChecked(src, guarded)
       }}
       aria-label={`${inline ? 'Load' : 'Open'} ${kind} from ${a.host}`}
     >

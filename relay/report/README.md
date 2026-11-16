@@ -15,7 +15,7 @@ What it does (`worker.js`, details in [spec 3.21](../../docs/spec/03-21-report-a
   200 a day from everyone. Past that it answers 429, and the app sends the user to GitHub's page instead. KV isn't
   atomic, so many requests at the same moment can pass a little over a limit.
 - A screenshot the user picked (at most 3 MB) is stored in the same KV namespace and served at `/s/<random>.jpg`, so the
-  issue can show it.
+  issue can show it. It is public while it lasts and goes by itself after 90 days (`SHOT_DAYS`); the issue says so.
 - A diagnostic log the user included is the one part of a report that is **not public**: it's stored in the same namespace
   for 30 days and the issue only names it. Reading it takes the secret `LOG_READ_KEY` (see "Read a diagnostic log"). The
   stored log doesn't say which install or address sent it.
@@ -124,5 +124,6 @@ To delete one early (someone asks, or it holds something it shouldn't): `npx wra
 - **Change the limits:** `LIMITS` at the top of `worker.js`, then `npx wrangler deploy`.
 - **Stop it:** `npx wrangler delete`. Builds that have its address then fall back to GitHub's page.
 - **Remove a screenshot** someone shouldn't have sent: delete the issue's image link, then
-  `npx wrangler kv key delete --binding REPORTS "shot:<the file name from the link>"`.
+  `npx wrangler kv key delete --binding REPORTS --remote "shot:<the file name from the link>"`. Screenshots go by
+  themselves after 90 days; this removes one earlier.
 - **Logs:** `npx wrangler tail` while testing.
