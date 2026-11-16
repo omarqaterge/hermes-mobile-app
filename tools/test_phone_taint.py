@@ -563,6 +563,26 @@ reset()
 hook_ids("phone_data", {"kind": "sms"}, "rt-5", "child-5")   # a subagent's context holds its parent's runtime id
 check("a subagent sharing the runtime id taints the parent through it", hook_asks("rt-5", "parent-5"))
 check("link_subagent never raises", pt.link_subagent(None, None) is None and pt.link_subagent("a", "a") is None)
+reset()
+pt._parents.clear()
+_max_links = getattr(pt, "MAX_LINKS", None)
+pt.MAX_LINKS = pt.MAX_CHATS - 10   # a few links over the bound below
+init._on_subagent_start(child_session_id="old-child", parent_session_id="old-parent", child_goal="g")
+for k in range(pt.MAX_CHATS + 5):   # many later sub-agent starts in the same process
+    pt.link_subagent(f"many-parent-{k}", f"many-child-{k}")
+hook_ids("phone_data", {"kind": "sms"}, "", "old-child")
+check("a child linked before many later sub-agent starts still marks its parent", hook_asks("", "old-parent"))
+check("the links stay bounded", len(pt._parents) <= pt.MAX_LINKS, str(len(pt._parents)))
+check("a recent link still works without a conservative mark", not pt.has_read("many-parent-2004"))
+pt.MAX_LINKS = _max_links if _max_links is not None else pt.MAX_LINKS
+pt._parents.clear()
+reset()
+init._on_subagent_start(child_session_id="child-6", parent_session_id="parent-6", child_goal="g")
+hook_ids("phone_data", {"kind": "sms"}, "rt-6", "child-6")
+pt._parents.clear()   # this process's links gone (a restart)
+check("a subagent's read marks the parent through the shared runtime id while the parent keeps it",
+      hook_asks("rt-6", "parent-6"))
+check("and the parent's stored id is then remembered, so a later new runtime id still asks", hook_asks("rt-7", "parent-6"))
 
 print("a lock keeps two processes from losing an entry")
 import subprocess
