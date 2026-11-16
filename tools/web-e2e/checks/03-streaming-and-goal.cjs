@@ -101,7 +101,7 @@ module.exports = async t => {
     const goal = await sa.getByText('Count to three', { exact: true }).first().waitFor({ timeout: 5000 }).then(() => true, () => false)
     const done = await sa.getByText('The helper counted.').waitFor({ timeout: 8000 }).then(() => true, () => false)
     const result = await sa.getByText('One, two, three.').first().waitFor({ timeout: 8000 }).then(() => true, () => false)
-    const head = sa.getByText('⇶ Sub-agent')
+    const head = sa.getByText(/^\W*Sub-agent$/) // the card's heading, whatever icon stands before it
     const card = (await head.count()) === 1 ? await head.evaluate(el => el.parentElement.parentElement.textContent || '') : ''
     check(goal && /Count to three/.test(card) && /completed/.test(card), `sub-agents: a sub-agent's card shows its goal and that it finished (${card})`)
     check(done && result, 'sub-agents: the reply goes on, and the sub-agent\'s result comes back into the chat')

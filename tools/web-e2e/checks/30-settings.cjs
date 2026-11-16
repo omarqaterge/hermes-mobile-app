@@ -36,10 +36,11 @@ module.exports = async t => {
     await sp.getByRole('button', { name: /^Default/ }).click()
     const dark = await sp.evaluate(() => ({ theme: document.documentElement.dataset.theme, oled: document.documentElement.hasAttribute('data-oled'), kept: localStorage.getItem('hm.theme') }))
     check(dark.theme === 'default' && !dark.oled && dark.kept === 'default', `appearance: Default goes back to the dark theme (${JSON.stringify(dark)})`)
-    const fontBefore = await sp.evaluate(() => getComputedStyle(document.querySelector('.size-preview')).fontSize)
+    const sample = sp.getByText('The quick brown fox jumps over the lazy dog.') // the size preview
+    const fontBefore = await sample.evaluate(el => getComputedStyle(el).fontSize)
     await sp.getByRole('button', { name: '120%', exact: true }).click()
     await sp.waitForTimeout(200)
-    const big = await sp.evaluate(() => ({ kept: localStorage.getItem('hm.textScale'), font: getComputedStyle(document.querySelector('.size-preview')).fontSize }))
+    const big = { kept: await sp.evaluate(() => localStorage.getItem('hm.textScale')), font: await sample.evaluate(el => getComputedStyle(el).fontSize) }
     check(big.kept === '1.2' && parseFloat(big.font) > parseFloat(fontBefore), `appearance: a text size is kept and makes the text bigger (${fontBefore} → ${JSON.stringify(big)})`)
     await sp.getByRole('button', { name: '100%', exact: true }).click()
     check((await sp.evaluate(() => localStorage.getItem('hm.textScale'))) === '1', 'appearance: 100% goes back to the normal size')

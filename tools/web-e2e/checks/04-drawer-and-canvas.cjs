@@ -253,9 +253,9 @@ module.exports = async t => {
     const title = dl.getByText('Chat 43', { exact: true })
     await title.waitFor({ timeout: 3000 })
     check((await dl.getByText('Chat 44', { exact: true }).count()) === 0, 'chat list: searching shows the matching chat and hides the others')
-    // The row's own ⋮ (the row holding the title; a pinned one has a pin before it).
+    // The row's own menu button: the search leaves this one chat in the list.
     const rowMenu = async () => {
-      await dl.locator('.session-row', { hasText: 'Chat 43' }).getByRole('button', { name: 'Chat options' }).click()
+      await dl.getByRole('complementary').getByRole('button', { name: 'Chat options' }).click()
       await dl.getByRole('dialog').filter({ hasText: 'Archive' }).waitFor({ timeout: 3000 })
       return dl.getByRole('dialog').filter({ hasText: 'Archive' })
     }

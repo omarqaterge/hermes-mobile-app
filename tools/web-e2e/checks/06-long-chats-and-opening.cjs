@@ -92,7 +92,9 @@ module.exports = async t => {
     const shown = await jump.waitFor({ timeout: 3000 }).then(() => true, () => false)
     if (shown) await jump.click()
     const atEnd = await jp.waitForFunction(() => {
-      const el = document.querySelector('.chat')
+      // the scrolling box that holds the replies, found from a reply, not by a class name
+      let el = [...document.querySelectorAll('p')].find(e => e.textContent === 'answer 30')
+      while (el && !/(auto|scroll)/.test(getComputedStyle(el).overflowY)) el = el.parentElement
       return !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 80
     }, null, { timeout: 4000 }).then(() => true, () => false)
     await jump.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
