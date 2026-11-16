@@ -1262,7 +1262,9 @@ export async function setModel(provider: string, model: string, effort?: string)
   }
   const a = cur
   // Show the pick at once; Hermes needs a few seconds to rebuild the agent. Undone below if it fails.
-  if (!appliedModel.has(a.runtimeId)) appliedModel.set(a.runtimeId, { model: a.info.model, provider: a.info.provider })
+  // With no switch in flight the screen shows what the chat runs on (it may have changed since the last pick: a slash
+  // command, a fallback): take it afresh. While one is in flight the screen shows a pick, so keep what was confirmed.
+  if (agents.buildState(a.runtimeId) !== 'switching' || !appliedModel.has(a.runtimeId)) appliedModel.set(a.runtimeId, { model: a.info.model, provider: a.info.provider })
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, model, provider } } : {}))
   try {
     await agents.runSwitch(a.runtimeId, async () => {

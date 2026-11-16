@@ -75,4 +75,18 @@ describe('two quick model picks on one chat', () => {
     await expect(a).rejects.toThrow()
     expect(shown()).toBe('m0')
   })
+
+  test('a failed pick goes back to the model the chat has now, also when it changed since the last pick', async () => {
+    const a = setModel('p', 'm1')
+    await flush()
+    sets[0].ok()
+    await a
+    // Hermes moved the chat to another model meanwhile (a slash command, a fallback): the screen follows it.
+    setState({ active: { ...getState().active!, info: { ...getState().active!.info, model: 'm9' } } })
+    const b = setModel('p', 'm2')
+    await flush()
+    sets[1].fail()
+    await expect(b).rejects.toThrow('refused')
+    expect(shown()).toBe('m9')
+  })
 })
