@@ -7,6 +7,44 @@ them in plain words first and then in detail for people who want to check. It al
 protect you from, because a safety claim with no limits is not one. Everything here comes from the code and the
 [spec](SPEC.md); CI fails when the code has a name the spec doesn't mention.
 
+## What we hold ourselves to
+
+Keeping an agent with this much reach safe is the main job of this project, not an extra. These are the rules the
+work follows:
+
+- **Your data stays yours.** No Hermux account, no Hermux server, nothing collected without your yes.
+- **Off until you turn it on.** Anything that reads your personal data starts off, has its own switch and asks before
+  every read.
+- **You decide how far it goes.** Each chat has its own access level (Off, Auto access, Full access), and a card or a
+  command alias the agent writes can't switch it.
+- **Every protection is published with its limits.** [What Hermux cannot protect you from](#what-hermux-cannot-protect-you-from)
+  is part of this page and is updated with the code.
+- **Every security decision is written down** with its reason, in [docs/decisions](decisions/README.md), and every
+  permission, port, bridge call and route is in the [spec](SPEC.md).
+- **A fix ships before its details do.** A fix reaches phones first; the write-up follows once the release has reached
+  most of them. [SECURITY.md](../SECURITY.md) says how to report.
+
+## The work so far
+
+| When | The work |
+|---|---|
+| Foundations | Canvas pages in a sandboxed frame with no access to the app, offline by default. A per-page-load key on every call from the page into Android. `rehype-sanitize` in front of rendered Markdown. |
+| October 2026 | Per-chat access levels (Off, Auto access, Full access); Hermes's catastrophic command list stays blocked in every level. Banking, payment, password and 2FA apps refused by default when Hermux uses your apps. |
+| v0.9.6, 3 Nov 2026 | Fingerprint or screen lock on the first Allow in a chat. A locked phone can't approve commands, answer questions or reply from a notification. Usage stats opt-in, off by default. Remote debugging behind Developer options and the screen lock, off again after 60 minutes. |
+| v0.9.7, 14 Nov 2026 | Local authentication: Hermux, the plugin and the phone's helper scripts check that a local server holds the shared key before sending it anything, and sign every request; the key itself is never sent. The dashboard's token goes only to a caller holding the key. Phone data for the agent, off by default and read-only, with a one-use grant per read, reviewed in five rounds. Cards and command aliases can't change a chat's access. Changing the sensitive-apps setting asks for your fingerprint every time. Problem reports hide phone numbers and coordinates. |
+| On `main`, next release | The fixes from a second security review: web pictures, video and sound in replies wait for a tap in every chat, and pictures in cards too; a page security policy; share and intent checks, so another app can't make Hermux read its own private files; the installer checks the Shizuku download; cards read no files and can't search the web in a chat that has read phone data; the pairing code field needs an unlocked phone; Auto access keeps blocking dangerous commands after a chat is compressed. |
+
+Around the code: CodeQL scans every pull request and runs weekly (Java, TypeScript, Python and the workflows), secret
+scanning with push protection is on, and a release is built only from a commit on `main` whose CI passed.
+
+## In progress
+
+- Checking the newest protections on real phones, and on Android 9 to 14 (see [Android versions](android-versions.md)).
+- Release signing: the signing password comes from a CI secret instead of the build script (the code is merged; the
+  first release built that way is still to come).
+- An offline local model, so that nothing has to leave the phone.
+- No independent security audit has been done. We would welcome one.
+
 ## The short version
 
 | You might ask | The answer |
