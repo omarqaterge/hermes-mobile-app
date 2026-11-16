@@ -261,6 +261,16 @@ describe('progressView', () => {
     expect(progressView(['STEP start y', 'DONE'], undefined, 0, true).lost).toBe(false)
     expect(progressView([], undefined, 0, true)).toMatchObject({ fail: '', lost: false })
   })
+  test('lost: the clock stops when the installer was last heard, not at now', () => {
+    const lines = ['STEP packages x', 'STEP hermes y']
+    const times = [1000, 1100]
+    const v = progressView(lines, times, 5000, true, 1400)
+    expect(v.total).toBe(400)
+    expect(v.steps.find(s => s.id === 'hermes')?.secs).toBe(300)
+    expect(progressView(lines, times, 5000, true).total).toBe(100) // no heardAt: the last line's time
+    expect(progressView(lines, times, 1200, true, 1400).total).toBe(200) // never past now
+    expect(progressView(lines, times, 5000, false, 1400).total).toBe(4000) // still running: the clock runs
+  })
 })
 
 describe('progressView step times', () => {

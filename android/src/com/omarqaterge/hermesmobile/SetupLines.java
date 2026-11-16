@@ -49,6 +49,8 @@ final class SetupLines {
     private int seen = SEEN_NONE;
     /** nowMs() of the last line (ALIVE included), or of start/resume: a restarted process gives the installer LOST_MS. */
     private long lastMs = nowMs();
+    /** Epoch seconds of the same moment: when LOST, the page ends the install's clock here ("heardAt"). */
+    private long lastSec = System.currentTimeMillis() / 1000;
 
     /** A new command was copied: a new token, a clean list. */
     synchronized void start(String tok) {
@@ -64,6 +66,7 @@ final class SetupLines {
         step = "";
         seen = SEEN_NONE;
         lastMs = nowMs;
+        lastSec = System.currentTimeMillis() / 1000;
     }
 
     /** NONE: no command copied. WAITING: a command is copied and nothing came from it yet (blocks nothing). INSTALLING:
@@ -93,6 +96,7 @@ final class SetupLines {
         if (failedStep != null && failedStep.matches("[a-z-]{1,20}")) fail = failedStep;
         seen = seenBefore == SEEN_BEAT || seenBefore == SEEN_LINE ? seenBefore : SEEN_NONE;
         lastMs = nowMs;
+        lastSec = System.currentTimeMillis() / 1000;
     }
 
     synchronized State state() {
@@ -172,6 +176,7 @@ final class SetupLines {
             return BAD_TOKEN;
         if (line == null || !LINE.matcher(line).matches()) return BAD_LINE;
         lastMs = nowMs;
+        lastSec = nowSec;
         if (line.equals("ALIVE")) {
             seen = SEEN_BEAT;
             return OK;
@@ -201,7 +206,8 @@ final class SetupLines {
         return Math.abs(t - nowSec) > 86400 ? nowSec : t;
     }
 
-    /** {"active":…, "lines":[…], "times":[…], "done":…, "fail":"…", "lost":…} for the page. */
+    /** {"active":…, "lines":[…], "times":[…], "done":…, "fail":"…", "lost":…} for the page; when lost, also "heardAt"
+     *  (epoch seconds the installer was last heard, its beats included), where the page stops the install's clock. */
     synchronized String json() {
         return json(nowMs());
     }
@@ -223,7 +229,10 @@ final class SetupLines {
         }
         b.append("],\"done\":").append(done).append(",\"fail\":");
         quote(b, fail);
-        return b.append(",\"lost\":").append(state(nowMs) == State.LOST).append('}').toString();
+        boolean lost = state(nowMs) == State.LOST;
+        b.append(",\"lost\":").append(lost);
+        if (lost) b.append(",\"heardAt\":").append(lastSec);
+        return b.append('}').toString();
     }
 
     static void quote(StringBuilder b, String s) {

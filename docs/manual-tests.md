@@ -378,3 +378,20 @@ that were not finished, not faults.
   and check it restores them, plus its error cases. Not tried; the agent left a copy `~/bin/rish.pr163bak` on the
   phone, which can be deleted.
 - [ ] A fresh approval answered from the notification (only an expired one was tried).
+
+## Installer liveness (the beat and the lost state): emulator pass 2026-11-16
+
+Emulator (AOSP Android 15, arm64), build from `main` at the #185 merge. The command was typed with `adb shell input text`
+(Termux's paste menu didn't open on the emulator), same command and one-time token.
+
+- [x] Copied and not pasted: after more than 3 minutes the card still read "Waiting for the installer to start", never stopped.
+- [x] Termux force-stopped on the Hermes step: the card read "The installer stopped at Hermux agent … It stopped without saying
+      why" 124 s later, and the notification changed to "Setup stopped: open Hermux".
+- [x] Pasted again: "Installing Hermux" with steps ticking within a minute.
+- [x] Screen off for about 10 minutes of the run: DONE arrived with the screen off, never read as stopped.
+- [ ] After DONE, the model card: not reached; the flow moved on and stopped at the Shizuku row, which the emulator can't authorise.
+- [ ] On a real phone: vendor background limits, a phone restart mid-install.
+
+Found and fixed after this pass: the stopped card's "So far" kept counting (it now stops where the installer was last
+heard), and the kill left `.git/index.lock` in the Hermes checkout, so the next run stopped with "could not write index"
+(the installer now removes git locks over 2 minutes old there).

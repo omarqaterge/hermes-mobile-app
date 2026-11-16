@@ -97,6 +97,8 @@ public class SetupLinesTest {
         check(w.state(2000 + L) == SetupLines.State.INSTALLING, "quiet for exactly LOST_MS: still installing");
         check(w.state(2001 + L) == SetupLines.State.LOST && !w.installing() && w.active() && w.json(2001 + L).contains("\"lost\":true"),
                 "quiet for longer: LOST (blocks nothing, token kept, lost=true)");
+        check(w.json(2001 + L).contains("\"heardAt\":1000000000}") && !w.json(2000).contains("heardAt"),
+                "LOST says when the installer was last heard (heardAt); not while installing");
         check(w.lostCheckIn(2000) == L + 1000 && w.lostCheckIn(2000 + L / 2) == L / 2 + 1000 && w.lostCheckIn(3000 + L) == -1,
                 "the delayed look is due just after LOST_MS; none once LOST");
         check(w.add("wt", "ALIVE", null, 1000000000L, 5 * L) == SetupLines.OK && w.state(5 * L) == SetupLines.State.INSTALLING, "a beat after LOST: installing again");
