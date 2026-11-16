@@ -350,3 +350,31 @@ requests), not by hand or airplane mode.
 - [ ] The scroll bar: on a phone, a long list shows a visible bar at the right of the sheet even when not scrolling.
 - [ ] A real update from an installed older release to the next one, by hand.
 - [ ] Settings → About → What's new (before an update) still opens, once a release newer than the installed one exists.
+
+## Security fixes (the `security-fixes` PR): phone pass 2026-11-16
+
+Driven over adb by a local agent on a Xiaomi phone, Android 16 (HyperOS). Nothing failed; the open items are checks
+that were not finished, not faults.
+
+- [x] **Web pictures in replies wait for a tap.** Remote pictures in a reply, a tool card and a `/btw` answer stayed
+  held until tapped (no request before the tap, one after); a local camera picture showed at once.
+- [x] **Diagrams.** Safe Mermaid diagrams drew; one carrying a picture or an address showed as code and fetched nothing.
+- [x] **Page policy.** KaTeX, OpenUI cards, Canvas offline and online, a Canvas form post and YouTube playback worked;
+  an outside script was blocked by the policy and nothing was refused at start-up. The YouTube preview picture loads
+  before Play, as the spec says (3.3).
+- [x] **Untrusted intent extras.** `session` and `draft` opened no chat and wrote no draft; `updateUrl` started no
+  update; `unlock=true` left the app behind the lock screen; `clearDone=true` cleared nothing.
+- [x] **Shares of the app's own files.** A `file://` address of the app's preferences and a `content://` address of
+  the app's camera provider added nothing to the composer; a plain-text share filled a new draft.
+- [x] **Done chip and approval notification.** The Done chip opened its chat; the approval notification opened the
+  confirmation sheet and asked for the fingerprint. The approval had expired, so nothing ran, and the notification said
+  "Couldn't send your answer" / "Open Hermux to answer (HTTP 409)".
+- [ ] The remaining notification actions and launcher shortcuts (New chat worked; the last-chat shortcut was seen but
+  not tapped; Live mode asked for the microphone and then said "Allow the microphone to use live mode", so the grant
+  itself is unchecked).
+- [ ] Sharing a picture, a PDF and several files from Gallery or a file manager (adb shares carry no read grant, so
+  they read as unreadable).
+- [ ] The Shizuku helper recovery: back up and remove `~/bin/rish` and `rish_shizuku.dex`, run the setup script again,
+  and check it restores them, plus its error cases. Not tried; the agent left a copy `~/bin/rish.pr163bak` on the
+  phone, which can be deleted.
+- [ ] A fresh approval answered from the notification (only an expired one was tried).
