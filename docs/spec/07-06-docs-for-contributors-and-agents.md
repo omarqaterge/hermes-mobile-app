@@ -2,12 +2,16 @@
 
 | File | For whom | What it holds |
 |---|---|---|
-| `README.md` | users | What Hermux is and why ("Why Hermux", a terminal-vs-Hermux table), "What you can do" (example requests from quick to big projects), the highlights (including "Built to be safe"), install routes, the "Android versions" table (what needs which Android, up-to-date WebView), uninstall, how it works with "Under the hood", how to build. |
+| `README.md` | users | The front door, kept short: what Hermux is, "What it does" (four pictures, seven capabilities, example requests), "Principles", a "Privacy and security" summary with the most important limits, the install steps on the phone (the computer and coding-agent routes fold open), how it works, "Build from source". Detail lives in the `docs/` pages below; a new feature goes in `docs/features.md`, not here. |
+| `docs/features.md` | users | Every feature: the terminal-vs-Hermux table, example requests from quick to big projects, the highlights (including "Built to be safe") and the "Everyday use" and "For power users" tables. |
+| `docs/comparison.md` | users | How Hermux compares with other kinds of open-source phone agents, one table, and what others do that Hermux doesn't. |
+| `docs/security.md` | users, security researchers | Privacy and security in detail: everything the phone connects to, what the agent can do, phone data, the guard rails, the permissions table, "What Hermux cannot protect you from" and how to check it yourself. `SECURITY.md` (how to report a vulnerability) points here. |
+| `docs/android-versions.md` | users | The "Android versions" table (what needs which Android), the up-to-date WebView requirement and what was tested on which Android. |
 | `docs/privacy.md` | users | What leaves the phone (model calls, tools the user turns on, opt-in usage stats, problem reports) and exactly what the opt-in usage stats send (2.3). |
 | `AGENTS.md` | every coding agent | Start here: `tools/setup.sh`, `docs/status/` and `docs/decisions/`, the spec's contents list then the area files, `tools/check.sh`, and a map of the folders; working in parallel (one file per shared item, open the PR with auto-merge on, keep the status file current); then the rules: update the area's file in the same commit as each change and run `tools/check_spec.py`; every-Android-phone rules and `tools/api-check.sh`; working in parallel (plan streams by file, short branches, add rather than edit the middle, `tools/device-lock.sh` per device); checks before committing; UI, public-repo, attribution and commit rules; no `v*` tags. |
 | `CLAUDE.md` | Claude Code | Imports `AGENTS.md` (`@AGENTS.md`). |
 | `GEMINI.md` | Gemini CLI | Points to `AGENTS.md` (Gemini CLI reads `GEMINI.md`; Codex, Cursor, Copilot and Hermes read `AGENTS.md`). |
-| `CONTRIBUTING.md` | people sending PRs | The checks (`tools/setup.sh`, then `tools/check.sh`; it lists no test commands itself, it points at spec 7.2 and 7.3), the spec and CHANGELOG rule, what to do after a Hermes update, project rules. |
+| `CONTRIBUTING.md` | people sending PRs | The checks (`tools/setup.sh`, then `tools/check.sh`; it lists no test commands itself, it points at spec 7.2 and 7.3), the spec and CHANGELOG rule, test builds (`HM_DEVTOOLS=1`) and the interface in a desktop browser, what to do after a Hermes update, project rules. |
 | `AGENT_INSTALL.md` | a user's own coding agent | How to set up a phone (6.3). |
 | `changes/` | everyone changing user-visible behaviour | One file per unreleased change (7.5), folded into `CHANGELOG.md` at release. |
 | `CHANGELOG.md` | users, release notes | What's new per release (7.5). |

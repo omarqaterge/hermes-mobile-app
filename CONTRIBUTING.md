@@ -12,7 +12,16 @@ Pull requests and issues are welcome.
    real phone; run it after touching the plugin, the service or the event flow.
 4. Open a pull request and fill in the template. Add a screenshot for UI changes.
 
-To build the app and work on the interface, see [Build the app yourself](README.md#build-the-app-yourself) in the README.
+## Building and test builds
+
+[Build from source](README.md#build-from-source) in the README has the build command.
+
+For testing only, `HM_DEVTOOLS=1 android/build.sh` makes a build whose page can be inspected and driven from a computer over `adb`
+(Chrome DevTools, Playwright). It shows a "Test build: remote debugging is on" strip, and the script refuses to combine it with
+`KEYSTORE`, so a release can't carry it. Anything that can reach `adb` on the phone can read your chats in such a build: don't use it day to day. On a normal build,
+**Settings → About → Remote debugging** (shown with Developer options on) does the same for 60 minutes after your screen lock.
+
+To work on the interface in a desktop browser: `adb forward tcp:9119 tcp:9119`, `python3 web/devserver.py`, open http://127.0.0.1:5180.
 
 ## After a Hermes update
 
