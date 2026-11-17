@@ -1,0 +1,255 @@
+/* The motion system (docs/decisions/glass-and-motion.md). Everything that moves uses these springs and timings, so
+   the app moves as one piece. Rules for every animation here and in later work:
+   - it changes only position, scale or opacity (the individual `translate`, `scale` and `opacity` properties, so it
+     never fights a finger's inline `transform`); never a blur radius, shadow, gradient, width or height in a loop;
+   - no per-frame JavaScript and no timer while nothing happens; a repeating animation exists only while the state it
+     shows is true and stops when the app is away or the element is off screen (motion.ts `pauseWhenHidden`);
+   - <html data-motion> picks the level (motion.ts): full = springs with weight; reduced = movement becomes a short fade
+     and repeating animations stand still; off = every change is instant. The state is always also shown in words or a
+     still icon. A touch always wins: nothing here delays or blocks a tap, a swipe or a drag. */
+
+:root {
+  /* Springs. Fallback curves for WebViews without linear(); the real springs are below. */
+  --spring-settle: cubic-bezier(0.2, 0.85, 0.25, 1.02); /* arrives with weight, a hair past and back: sheets, pages */
+  --spring-bounce: cubic-bezier(0.2, 0.9, 0.25, 1.12); /* a visible bounce: switches, presses released, toasts */
+  --spring-gentle: cubic-bezier(0.3, 0.7, 0.2, 1); /* no overshoot: things that grow or move a long way */
+  --ease-fade: cubic-bezier(0.4, 0, 0.2, 1); /* fades */
+  /* Durations: every one-off movement is under half a second. */
+  --motion-quick: 140ms; /* a press, a fade */
+  --motion-base: 240ms; /* small things: a row, a toast, a value */
+  --motion-settle: 400ms; /* sheets, pages, the screen stepping back */
+  --motion-bounce: 480ms; /* the bounce spring's full length */
+  --motion-stagger: 28ms; /* between rows arriving in a list */
+  /* How far things travel (1 = all the way); Reduced sets no travel, so what remains of an arrival is its fade. */
+  --motion-move: 1;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    /* Damped springs sampled into linear(): settle (damping 0.86, 0.5 % past), bounce (0.62, 8 % past), gentle (critical). */
+    --spring-settle: linear(0, 0.0641, 0.2037, 0.3652, 0.5191, 0.6515, 0.7579, 0.8391, 0.8982, 0.9396, 0.9673, 0.9849, 0.9955, 1.0013, 1.004, 1.005, 1.0049, 1.0042, 1.0035, 1.0027, 1);
+    --spring-bounce: linear(0, 0.0882, 0.2846, 0.5101, 0.7158, 0.8772, 0.9877, 1.0519, 1.0796, 1.0824, 1.0707, 1.0527, 1.0341, 1.0182, 1.0063, 0.9986, 0.9945, 0.9931, 0.9934, 0.9946, 0.9962, 0.9977, 0.9989, 0.9998, 1);
+    --spring-gentle: linear(0, 0.0882, 0.2594, 0.4355, 0.5868, 0.7059, 0.7949, 0.8592, 0.9045, 0.9359, 0.9573, 0.9718, 0.9814, 0.9879, 1);
+  }
+}
+html[data-motion='reduced'] {
+  --spring-settle: var(--ease-fade);
+  --spring-bounce: var(--ease-fade);
+  --spring-gentle: var(--ease-fade);
+  --motion-quick: 100ms;
+  --motion-base: 140ms;
+  --motion-settle: 160ms;
+  --motion-bounce: 160ms;
+  --motion-stagger: 0ms;
+  --motion-move: 0;
+}
+
+/* Off: every change is instant, the app's older animations included. */
+html[data-motion='off'] *,
+html[data-motion='off'] *::before,
+html[data-motion='off'] *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+/* Reduced: the repeating animations stand still (their state shows in words or a still mark). */
+html[data-motion='reduced'] :is(.session-title.working, .caret, .live-dot, .send.mic.on, .working-dot, .canvas-dot, .skeleton-msg span, .canvas-skeleton span) {
+  animation: none !important;
+}
+html[data-motion='reduced'] .session-title.working {
+  -webkit-mask-position: 50% 0;
+  mask-position: 50% 0;
+}
+/* A repeating animation pauses while the app is away or its element is off screen (motion.ts pauseWhenHidden). */
+[data-motion-paused],
+[data-motion-paused] * {
+  animation-play-state: paused !important;
+}
+
+/* ── sheets, menus and dialogs spring up; the scrim fades in ── */
+.sheet {
+  animation: motion-rise var(--motion-settle) var(--spring-settle) backwards;
+}
+.sheet.dialog {
+  animation: motion-pop var(--motion-bounce) var(--spring-bounce) backwards;
+}
+.sheet.dialog.leaving {
+  animation: motion-sink var(--motion-base) var(--ease-fade) forwards;
+}
+/* Glass surfaces move but never fade: an element fading in cuts the blur off from what lies behind it until the fade
+   ends. Under Reduced they do not move either, and the scrim's fade is the whole transition. Fills are `backwards`
+   (never `both`) for the same reason: a finished animation that kept filling would cut the blur off for good. */
+@keyframes motion-rise {
+  from {
+    translate: 0 calc(var(--motion-move) * 100%);
+  }
+}
+@keyframes motion-pop {
+  from {
+    translate: 0 calc(var(--motion-move) * 56px);
+    scale: calc(1 - var(--motion-move) * 0.06);
+  }
+}
+@keyframes motion-sink {
+  to {
+    translate: 0 calc(var(--motion-move) * 100%);
+  }
+}
+.sheet-backdrop::before {
+  animation: motion-fade var(--motion-base) var(--ease-fade) backwards;
+}
+.sheet-backdrop.leaving::before {
+  animation: motion-fade-out var(--motion-base) var(--ease-fade) forwards;
+}
+@keyframes motion-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes motion-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+.slash-menu {
+  animation: motion-lift var(--motion-base) var(--spring-settle) backwards;
+  transform-origin: 50% 100%;
+}
+@keyframes motion-lift {
+  from {
+    translate: 0 calc(var(--motion-move) * 10px);
+    scale: calc(1 - var(--motion-move) * 0.03);
+    opacity: 0;
+  }
+}
+
+/* ── the screen behind steps back while a sheet over it is open, or the chat list on a phone (Full only: Reduced and
+   Off leave it where it is, the scrim alone dims it) ── */
+html[data-motion='full'] .stage {
+  transition: scale var(--motion-settle) var(--spring-settle), translate var(--motion-settle) var(--spring-settle);
+  transform-origin: 50% 40%;
+}
+html[data-motion='full'] .app:has(> .sheet-backdrop) > .stage {
+  scale: 0.965;
+}
+@media (max-width: 839px) {
+  html[data-motion='full'] .app:has(> .drawer.open) > .stage {
+    scale: 0.98;
+    translate: 8px 0;
+  }
+}
+html[data-motion='full'][data-side='hidden'] .app:has(> .drawer.open) > .stage {
+  scale: 0.98;
+  translate: 8px 0;
+}
+
+/* ── the side panel and full-screen pages slide with a little depth ── */
+.drawer {
+  transition: transform var(--motion-settle) var(--spring-settle);
+}
+.drawer-backdrop {
+  transition: opacity var(--motion-base) var(--ease-fade);
+}
+.screen {
+  animation: motion-page var(--motion-settle) var(--spring-settle) backwards;
+}
+@keyframes motion-page {
+  from {
+    translate: calc(var(--motion-move) * 9%) 0;
+    scale: calc(1 - var(--motion-move) * 0.02);
+    opacity: 0;
+  }
+}
+
+/* ── list rows arrive in a quick stagger the first time a list shows (never again while it scrolls: the rows that
+   mount later are past the tenth) ── */
+.motion-stagger > *,
+.drawer.open .drawer-list .swipe-row:nth-child(-n + 12) {
+  animation: motion-row var(--motion-base) var(--spring-settle) backwards;
+}
+.motion-stagger > :nth-child(n + 11) {
+  animation: none;
+}
+.motion-stagger > :nth-child(2), .drawer.open .drawer-list .swipe-row:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 1); }
+.motion-stagger > :nth-child(3), .drawer.open .drawer-list .swipe-row:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 2); }
+.motion-stagger > :nth-child(4), .drawer.open .drawer-list .swipe-row:nth-child(4) { animation-delay: calc(var(--motion-stagger) * 3); }
+.motion-stagger > :nth-child(5), .drawer.open .drawer-list .swipe-row:nth-child(5) { animation-delay: calc(var(--motion-stagger) * 4); }
+.motion-stagger > :nth-child(6), .drawer.open .drawer-list .swipe-row:nth-child(6) { animation-delay: calc(var(--motion-stagger) * 5); }
+.motion-stagger > :nth-child(7), .drawer.open .drawer-list .swipe-row:nth-child(7) { animation-delay: calc(var(--motion-stagger) * 6); }
+.motion-stagger > :nth-child(8), .drawer.open .drawer-list .swipe-row:nth-child(8) { animation-delay: calc(var(--motion-stagger) * 7); }
+.motion-stagger > :nth-child(9), .drawer.open .drawer-list .swipe-row:nth-child(9) { animation-delay: calc(var(--motion-stagger) * 8); }
+.motion-stagger > :nth-child(10), .drawer.open .drawer-list .swipe-row:nth-child(n + 10) { animation-delay: calc(var(--motion-stagger) * 9); }
+@keyframes motion-row {
+  from {
+    translate: 0 calc(var(--motion-move) * 10px);
+    opacity: 0;
+  }
+}
+
+/* ── buttons and rows press in under the finger and spring back ── */
+html[data-motion='full'] :is(.icon-btn, .btn, .send, .set-row, .picker-opt, .menu-item, .suggestion, .theme-card, .tts-btn, .bg-card, .title-btn, .seg button, .compress-go, .goal-line, .todos-head) {
+  transition: scale var(--motion-bounce) var(--spring-bounce);
+}
+html[data-motion='full'] :is(.icon-btn, .btn, .send, .tts-btn, .seg button, .compress-go):active:not(:disabled) {
+  scale: 0.92;
+  transition: scale var(--motion-quick) var(--ease-fade);
+}
+html[data-motion='full'] :is(.set-row, .picker-opt, .menu-item, .suggestion, .theme-card, .bg-card, .title-btn, .goal-line, .todos-head):active:not(:disabled) {
+  scale: 0.98;
+  transition: scale var(--motion-quick) var(--ease-fade);
+}
+
+/* ── switches and segmented controls move with weight ── */
+.switch {
+  transition: background var(--motion-base) var(--ease-fade), border-color var(--motion-base) var(--ease-fade);
+}
+.switch span {
+  transition: transform var(--motion-bounce) var(--spring-bounce), background var(--motion-base) var(--ease-fade);
+}
+.seg button {
+  transition: background var(--motion-base) var(--ease-fade), color var(--motion-base) var(--ease-fade), scale var(--motion-bounce) var(--spring-bounce);
+}
+.seg button.on {
+  animation: motion-choose var(--motion-bounce) var(--spring-bounce);
+}
+@keyframes motion-choose {
+  from {
+    scale: calc(1 - var(--motion-move) * 0.08);
+  }
+}
+.picker-opt.on .picker-check svg {
+  animation: motion-choose var(--motion-bounce) var(--spring-bounce);
+}
+
+/* ── toasts arrive and leave softly ── */
+.toast {
+  animation: motion-toast var(--motion-bounce) var(--spring-bounce) backwards;
+}
+.toast.leaving {
+  animation: motion-toast-out var(--motion-base) var(--ease-fade) forwards;
+}
+@keyframes motion-toast {
+  from {
+    translate: 0 calc(var(--motion-move) * -14px);
+    scale: calc(1 - var(--motion-move) * 0.06);
+    opacity: 0;
+  }
+}
+@keyframes motion-toast-out {
+  to {
+    translate: 0 calc(var(--motion-move) * -8px);
+    scale: calc(1 - var(--motion-move) * 0.04);
+    opacity: 0;
+  }
+}
+
+/* ── banners in the bars arrive softly ── */
+.conn-banner,
+.local-alert,
+.activity-banner,
+.findbar,
+.tts-player,
+.compress-hint {
+  animation: motion-fade var(--motion-base) var(--ease-fade) backwards;
+}

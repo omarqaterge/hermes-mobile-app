@@ -5,6 +5,7 @@ import { haptic } from '../bridge'
 import { useBackHandler } from '../backstack'
 import { useSheetDrag } from './useSheetDrag'
 import { Icon, iconOf } from './icons'
+import { lessMotion } from '../motion'
 
 // ── grouped settings lists ──────────────────────────────────
 
@@ -224,13 +225,8 @@ export function Segmented<T extends string | number>({ options, value, onChange 
 const COLLAPSE_MS = 180
 const COLLAPSE_EASE = 'cubic-bezier(.2,.8,.2,1)'
 
-function reducedMotion(): boolean {
-  try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  } catch {
-    return false
-  }
-}
+// No sliding when the motion level is Reduced or Off (Appearance), or the phone asks for reduced motion.
+const reducedMotion = lessMotion
 
 /** Slides its children open and closed (height and opacity, Web Animations API). Under reduced motion it mounts and unmounts at once.
  *  A finished close holds height 0 inline until the unmount, so the body never shows at full size for a frame in between. */

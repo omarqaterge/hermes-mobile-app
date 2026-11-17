@@ -4,6 +4,9 @@ import { App } from './App'
 import './share'
 import './notif-answer'
 import './styles.css'
+import './glass.css' // the glass material, after the base styles it covers
+import './motion.css' // the motion system's springs and timings
+import { applyLook } from './motion'
 import { applyTheme, savedTheme } from './theme'
 import { bootMark } from './boot'
 import { openFirstRun } from './components/Setup'
@@ -16,6 +19,7 @@ startAppLog()
 startRemoteBlock() // tell the shell whether the chat on screen has read phone data (it starts every page load blocked)
 
 applyTheme(savedTheme())
+applyLook() // glass and motion level: the person's choice, else what the phone can carry (decided once, here)
 openFirstRun() // a fresh install starts in the setup flow, not in a chat waiting for a Hermes that isn't installed
 
 createRoot(document.getElementById('root')!).render(<App />)
