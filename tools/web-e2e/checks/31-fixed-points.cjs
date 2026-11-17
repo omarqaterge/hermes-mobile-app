@@ -6,10 +6,13 @@
 //     appear beside them; the released app must keep reading what a newer build left behind);
 //   - the accessible names of the chat screen's controls (idle, with text typed, while a reply runs): none may go away.
 // HM_E2E_RECORD=1 prints today's values in the shape of the RECORDED_* constants, to update them on purpose.
-const { WEB, nativeShell, check } = require('../lib.cjs')
+const { WEB, nativeShell, check, trayTucked } = require('../lib.cjs')
 
-// Recorded on 2026-11-17 from the redesign branch as it started (the same app as main that day).
-const RECORDED_HEIGHTS = { closed: { header: 57, composer: 102, messages: 581 }, open: { header: 57, composer: 102, messages: 281 } }
+// Heights: recorded on 2026-11-17 from the redesign branch as it started (the same app as main that day: header 57,
+// composer area 102, messages 581, and 281 with the keyboard open), then on 2026-11-17 again once the model row and the
+// status line moved into the composer's tray, measured as a person sees a chat opened from the list: Model bar at its
+// default (Tucked away), the tray closed (34-model-bar-tray.cjs checks the open tray against the first numbers).
+const RECORDED_HEIGHTS = { closed: { header: 57, composer: 69, messages: 614 }, open: { header: 57, composer: 69, messages: 314 } }
 const RECORDED_STORAGE = {
   'hm.autoread': 'number',
   'hm.autoread.chats': 'map<boolean>',
@@ -102,9 +105,10 @@ async function controlNames(p, title) {
 
 module.exports = async t => {
   const { browser } = t
-  const shell = async (size, chat) => {
+  const shell = async (size, chat, tucked) => {
     const p = await browser.newPage({ viewport: size })
     await p.addInitScript(nativeShell)
+    if (tucked) await p.addInitScript(trayTucked)
     if (chat) await p.addInitScript(id => { if (!sessionStorage.getItem('opened')) { sessionStorage.setItem('opened', '1'); localStorage.setItem('hm.lastSession', JSON.stringify({ id, profile: 'default' })) } }, chat)
     await p.goto(WEB + '/')
     await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
@@ -113,7 +117,7 @@ module.exports = async t => {
 
   // ── heights of the chat screen at 360 x 740, keyboard closed and open ──
   {
-    const p = await shell({ width: 360, height: 740 }, 's-48')
+    const p = await shell({ width: 360, height: 740 }, 's-48', true)
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
     await p.waitForTimeout(600)
     // Found without class names: the header is the banner; the messages are the scrolling box holding a reply; the

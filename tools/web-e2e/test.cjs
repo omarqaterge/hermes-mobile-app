@@ -5,7 +5,7 @@
 const { chromium } = require('playwright')
 const fs = require('fs')
 const path = require('path')
-const { MOCK, WEB, LOG, sleep, fail, failures, motionOff } = require('./lib.cjs')
+const { MOCK, WEB, LOG, sleep, fail, failures, motionOff, trayOpen } = require('./lib.cjs')
 
 // The check files to run: all of them in name order, or `--only 05,07-09,19-` (numbers or ranges, from argv or
 // HM_E2E_ONLY), which CI's shards and a quick local run use. `19-` is 19 and every later file, so a new file at the
@@ -39,11 +39,13 @@ async function main() {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined })
   // Every page and context learns this run's mock: the fake shell's getBaseUrl has no other way to know it.
   // Animations off unless a check is about motion (lib.cjs `motionOff`, `setMotion`): the checks stay fast and steady.
+  // Model bar "Always open" unless a check is about the tray (lib.cjs `trayOpen`, `trayTucked`).
   const newContext = browser.newContext.bind(browser)
   browser.newContext = async opts => {
     const c = await newContext(opts)
     await c.addInitScript(b => { window.__hmMockBase = b }, MOCK)
     await c.addInitScript(motionOff)
+    await c.addInitScript(trayOpen)
     return c
   }
   const newPage = browser.newPage.bind(browser)
@@ -51,6 +53,7 @@ async function main() {
     const p = await newPage(opts)
     await p.addInitScript(b => { window.__hmMockBase = b }, MOCK) // the fake shell's getBaseUrl
     await p.addInitScript(motionOff)
+    await p.addInitScript(trayOpen)
     if (t.established) await p.addInitScript(() => { try { if (!localStorage.getItem('hm.connectedOnce')) localStorage.setItem('hm.connectedOnce', '1') } catch { /* */ } })
     return p
   }

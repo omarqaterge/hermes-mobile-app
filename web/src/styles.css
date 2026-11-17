@@ -9,6 +9,7 @@
   --accent: #d9a441;
   --accent-2: #cd7f32;
   --accent-ink: #1a1307;
+  --shine: rgba(255, 255, 255, 0.75); /* the glint that runs over a gold mark (the tray handle while working) */
   --ok: #57c28a;
   --warn: #e0b341;
   --err: #ec6a5e;
@@ -2683,6 +2684,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   --accent: #b57a10;
   --accent-2: #9a5f0b;
   --accent-ink: #ffffff;
+  --shine: rgba(255, 255, 255, 0.6);
   --ok: #1d8a56;
   --warn: #9a6b00;
   --err: #c9372c;
@@ -2954,6 +2956,111 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 
 .md svg:not(.katex svg) { max-width: 100%; }
 
+/* The composer's tray (Tray.tsx, tray.ts): the live status line and the model row above the text box, closed by the
+   handle on the bar's top edge. Closed, the composer is the input row plus a 10 px band the handle's bar sits in. */
+.composer-wrap.tray-closed {
+  padding-top: 10px;
+}
+.tray {
+  position: relative;
+}
+/* Only while it moves: the layer is cut off at the text box, so it rises from behind it. */
+.tray.tray-moving {
+  overflow: hidden;
+}
+.tray-status {
+  padding: 0 8px 6px;
+  font-size: 0.8rem;
+}
+.tray-speed {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  align-self: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tray-speed + .ctx-ring {
+  margin-left: 2px;
+}
+/* The handle: a 44 px high, 96 px wide target centred on the bar's top edge, reaching 36 px up over the chat (a tap
+   there on one of a message's buttons goes to that button, Tray.tsx `buttonUnder`), with a short rounded bar drawn 2 px
+   below the edge. */
+.tray-handle {
+  position: absolute;
+  z-index: 2;
+  top: -36px;
+  left: 50%;
+  width: 96px;
+  height: 44px;
+  margin-left: -48px;
+  padding: 38px 0 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: transparent;
+  border: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tray-pill {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--dim);
+  opacity: 0.45;
+}
+.tray-handle:focus-visible {
+  outline: none;
+}
+.tray-handle:focus-visible .tray-pill {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.tray-handle.warn .tray-pill {
+  background: var(--warn);
+  opacity: 1;
+}
+.tray-handle.full .tray-pill {
+  background: var(--err);
+  opacity: 1;
+}
+.tray-handle.working .tray-pill {
+  background: var(--accent);
+  opacity: 1;
+}
+.tray-handle.waiting .tray-pill {
+  background: var(--warn);
+  opacity: 1;
+}
+/* The working shimmer: a light strip that crosses the bar (motion.css moves it). */
+.tray-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, var(--shine) 50%, transparent 100%);
+  translate: -100% 0;
+}
+.tray-hint {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  max-width: calc(100vw - 32px);
+  translate: -50% 0;
+  padding: 6px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
 /* The chat's model and Auto button, above the composer (Composer.tsx). */
 .model-row {
   display: flex;

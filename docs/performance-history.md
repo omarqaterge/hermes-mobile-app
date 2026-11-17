@@ -69,6 +69,18 @@ chat list, opening a chat and the first words inside the page, which reads lower
 | | First words of a reply | 397 / 397 ms | 394 / 394 ms | none |
 | | Scrolling a long chat | work 242 / 245 ms | work 243 / 245 ms | none |
 | | Opening the chat list | 219 / 229 ms | 7 / 8 ms (no slide) | instant |
+| 2026-11-17 (the composer's tray, effects on; four rounds) | Start-up | 496 / 517 / 515 / 520 ms, work 472 / 495 / 488 / 497 ms | 500 / 514 / 508 / 510 ms, work 475 / 486 / 485 / 486 ms | none |
+| | Opening a chat | 23 ms, work 31–33 ms | 23 ms, work 31–33 ms | none |
+| | First words of a reply | 395–397 ms | 395–397 ms | none |
+| | Scrolling a long chat | work 257–269 ms, no frame over 25 ms | work 254–267 ms, no frame over 25 ms | none |
+| | Opening the chat list | 221–230 ms | 221–230 ms | none |
+| | A streamed 4000-character reply | 1.71 / 1.72 s | 1.66 / 1.64 s | −4% |
+| | Cold start (message box visible) | 404 ms | 399 ms | none |
+| 2026-11-17 (the composer's tray, effects off; two rounds) | Start-up | 510 / 507 ms | 507 / 507 ms | none |
+| | Opening a chat | 26 / 26 ms | 25 / 22 ms | none |
+| | First words of a reply | 396 / 394 ms | 398 / 394 ms | none |
+| | Scrolling a long chat | work 252 / 259 ms | work 254 / 250 ms | none |
+| | Opening the chat list | 8 ms | 7 ms | none |
 
 The chat list's row stagger and the chat stepping back behind it, measured on their own (opening the list, 4x CPU,
 median of 7, two rounds; time until the list is in place with its rows, main-thread work over the 900 ms after the
@@ -83,6 +95,13 @@ properties (a bar changing height restyled every message), and `:has()` rules th
 app (re-checked at each streamed word). The chat list's row stagger and the chat stepping back behind it were left out
 (they added about half to the list's work). Not measured here: heat and battery on a phone (`docs/manual-tests.md`,
 "Trying the redesign build").
+
+The composer's tray (task 02b): the first build of it rendered the tray open for the new-chat screen at start and then
+closed it as the app reopened the last chat, which cost start-up 2–3.5% and opening a chat about 2%; the tray now starts
+closed when the app reopens a chat and takes a change that comes with another chat without moving, and the rows above
+are measured after that. A closed tray renders nothing; the handle's shimmer runs only while a turn runs (compositor
+only, `steps(48)`, off under Reduced and Off). The page file gzipped (`gzip -9`): 2714.5 → 2717.4 kB. Not measured
+here: heat and battery on a phone (`docs/manual-tests.md`).
 
 ## Adding a measurement
 

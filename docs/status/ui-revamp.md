@@ -47,6 +47,26 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   Needs a phone: how glass looks and scrolls on a real phone and on other makers' WebViews, and the ten-minute battery
   session with the effects on and off (manual-tests).
 
+- **The composer's tray (task 02b, PR against `redesign`).** The model row (model chip, Auto, last speed, context ring)
+  and the live status line move into a tray above the text box with a handle on the bottom bar's top edge
+  (`web/src/tray.ts`, `web/src/components/Tray.tsx`): open on a new chat, closed by its first message, closed for a chat
+  from the list, kept as the person leaves it; a one-time hint (`hm.trayHint.v1`); Settings → Appearance → Chat screen →
+  Model bar (`hm.modelBar`, Tucked away or Always open). Closed at 360 x 740: composer 69 px, messages 614 px idle and
+  working, 314 px with the keyboard; open: 101 px idle, 122 px working. Legacy browser checks run with Always open
+  (`lib.cjs` `trayOpen`); `34-model-bar-tray.cjs` checks the tucked mode; `31-fixed-points.cjs` was re-recorded with the
+  tray closed (`trayTucked`). Costs at 4x CPU unchanged (docs/performance-history.md). Needs a phone: the drag against
+  the keyboard and the gesture bar, the hint, the handle's colours, battery while a turn runs (manual-tests).
+  - `tools/web-e2e/list-checks.sh --missing` names one check that was reworded on `redesign` before this task
+    (`24-hermes-settings.cjs`, "hermes settings: the list row counts its items", commit 0931f45), not by it.
+  - `web/src/remote-hold.test.tsx` failed once in a full `tools/check.sh --all` (all its tests passed; vitest counted an
+    unhandled `ReferenceError: window is not defined` from React's scheduler) and passed in six full vitest runs after:
+    the test mounts React roots and never unmounts them, so scheduled work can run after happy-dom has torn the window
+    down when the machine is busy. Neither the test nor what it imports is changed by this task; unmounting its roots
+    belongs in its own PR.
+  - `tools/test_hermes_patches.sh` leaves its clone of Hermes (about 186 MB) in the temp folder after every run: its
+    `trap` removes the two worktrees and `$work`, not `$src` (line 15). On a full disk the next run fails with "No space
+    left on device". Fixing the script belongs in its own PR.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

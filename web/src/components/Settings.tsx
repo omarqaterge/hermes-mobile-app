@@ -23,6 +23,7 @@ import { Collapse, Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, typ
 import { DefaultAccessRow } from './AutoAccess'
 import { searchSettings, type SettingsEntry } from '../settings-search'
 import { setGlass, setMotionLevel, useGlass, useMotionLevel, type MotionLevel } from '../motion'
+import { setModelBarMode, useTray, type ModelBarMode } from '../tray'
 import { findSettingsTarget, flashElement } from '../flash'
 import { approvalLockAvailable, approvalLockState, confirmAlways, setApprovalLock } from '../approval-lock'
 import { SttSettings } from './SttSettings'
@@ -826,12 +827,22 @@ const MOTION_SUB: Record<MotionLevel, string> = {
   reduced: 'Short fades, nothing repeats',
   off: 'Every change is instant'
 }
+const MODEL_BAR_OPTIONS: Array<{ value: ModelBarMode; label: string }> = [
+  { value: 'tucked', label: 'Tucked away' },
+  { value: 'open', label: 'Always open' }
+]
+const MODEL_BAR_SUB: Record<ModelBarMode, string> = {
+  tucked: 'Tap or drag the handle above the text box to see it',
+  open: 'Always shown above the text box'
+}
+const MODEL_BAR_FOOT = 'The model, Auto, the context ring and the live status. Tucked away, a new chat shows them until its first message.'
 const EFFECTS_FOOT = "Until you choose, Animations follows your phone: Off when it is set to remove animations, otherwise Full."
 
 function AppearancePage() {
   const scale = useStore(s => s.textScale)
   const glass = useGlass()
   const motion = useMotionLevel()
+  const modelBar = useTray().mode
   const [theme, setThemeState] = useState<Theme>(savedTheme)
   return (
     <>
@@ -885,6 +896,15 @@ function AppearancePage() {
           </span>
         </div>
         <Segmented options={MOTION_OPTIONS} value={motion} onChange={setMotionLevel} />
+      </Section>
+      <Section title="Chat screen" footer={MODEL_BAR_FOOT}>
+        <div className="set-row static">
+          <span className="set-text">
+            <span className="set-title">Model bar</span>
+            <span className="set-sub">{MODEL_BAR_SUB[modelBar]}</span>
+          </span>
+        </div>
+        <Segmented options={MODEL_BAR_OPTIONS} value={modelBar} onChange={setModelBarMode} />
       </Section>
     </>
   )
