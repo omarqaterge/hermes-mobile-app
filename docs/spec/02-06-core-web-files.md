@@ -23,6 +23,10 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `barinsets.ts` — the heights of the chat screen's two bars: `watchBars` measures them with a `ResizeObserver` and
   writes `--bar-top` / `--bar-bottom` on `.stage`; `barInsets()` gives them to the scroll code and `onBarInsets` tells
   a listener when they change (3.2, Bars). The `Insets` type is `{ top, bottom }`.
+- `library.ts` — which part of the Library page shows (`LibraryPart`: `canvases`, `files`, `projects`), remembered in `hm.libraryPart` (`savedPart`, `savePart`), and `openLibrary(part?)`, which opens the page (3.14).
+- `panelvalues.ts` — the short values on the side panel's rows (3.13): `refreshPanelValues` reads the jobs and skills lists when the panel opens (docked: at start and when the app returns), at most once a minute per bot (`PANEL_VALUES_TTL_MS`), with no timer; `usePanelValues` gives them to the panel; `scheduledValue` and `nextLabel` turn the jobs list into "next 07:00", "next Mon 09:00", "None yet" or "Paused". Tests in `panelvalues.test.ts`.
+- `Library.tsx` (in `components/`) — the Library page (3.14).
+- `panel.css` — the side panel's look (3.13): the glass sheet over the chat, its inside, the docked column on wide screens and the chat stepping back behind it.
 - `tray.ts` — the composer's tray (3.4 Tray): `useTray` / `trayState` (`TrayState`: `mode`, `open`, `hint`), `trayForChat`, `trayFirstSend`, `takeTrayJump` (true once after a change that came with another chat, so the tray takes it without moving), `setTrayOpen`, `dismissTrayHint`, `modelBarMode` / `setModelBarMode` (`ModelBarMode`, `hm.modelBar`), `HINT_MS`, the one-time hint key `hm.trayHint.v1`, and `resetTrayForTests`. Tests in `tray.test.ts`.
 - `Tray.tsx` (in `components/`) — the tray's pieces: `TrayBody` (the body above the text box and its movement), `TrayHandle` (the handle and the hint, in the bottom bar), `StatusLine` (the live status line, with `useElapsed`) and `LastSpeed` (the last reply's speed beside the ring) (3.4 Tray).
 - `videoembed.ts` — which addresses play inside the chat and each one's player address; `VideoEmbed.tsx` (in `components/`) draws the card and the player (3.3, Video player).
@@ -128,10 +132,10 @@ All go through `rpc` in `gateway.ts`, which adds `profile`. "Used by" = file and
 | `image.attach_bytes` | `gateway.ts` `attachFile` | Queues a new photo (base64, ≤ 20 MB) for the next message. |
 | `image.detach` | `gateway.ts` `detachAttachment`, `resendFrom` | Takes a queued photo back out of Hermes's queue. |
 | `model.options` | `components/Sheets.tsx` `ModelSheet`; `components/SignIn.tsx` `afterSignIn` | Model list per provider; first the cached list, then `refresh: true` after `refreshLogins`. |
-| `profiles.list` | `gateway.ts` `loadProfiles` | Profiles for the drawer's switcher; sent last after connect (slow). |
+| `profiles.list` | `gateway.ts` `loadProfiles` | Bots for the side panel's bot sheet and bar; sent last after connect (slow). |
 | `projects.create` | `components/Screens.tsx` `ProjectsScreen` | New project with one folder, made active. |
 | `projects.delete` | `components/Screens.tsx` `ProjectsScreen` | Delete a project. |
-| `projects.list` | `components/Screens.tsx` `ProjectsScreen`, hub summary | List projects (and the count on the hub). |
+| `projects.list` | `components/Screens.tsx` `ProjectsScreen` | List projects (the Library's Projects part). |
 | `projects.project_sessions` | `components/Screens.tsx` `ProjectsScreen` | Chats of one project. |
 | `projects.set_active` | `components/Screens.tsx` `ProjectsScreen` | Make a project active before starting a chat in it. |
 | `prompt.btw` | `btw.ts` | A side question on a snapshot of the chat; the answer comes as `btw.complete` (180 s limit). |

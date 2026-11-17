@@ -35,7 +35,7 @@ module.exports = async t => {
     const box = await strip.boundingBox()
     check(box && box.y < 40 && box.height > 0, 'devtools: the strip is at the top of the page')
     await dv.getByRole('button', { name: /^Sessions/ }).click()
-    await dv.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await dv.getByRole('button', { name: 'Settings', exact: true }).click()
     await dv.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
     check(await strip.isVisible(), 'devtools: the strip stays visible over a full screen')
     check((await dv.getByText('Test build: remote debugging is on').count()) === 1 && (await dv.locator('.devtools-strip button, .devtools-strip a').count()) === 0, 'devtools: one strip, nothing to dismiss')
@@ -57,7 +57,7 @@ module.exports = async t => {
       await pg.goto(WEB + '/')
       await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
       await pg.getByRole('button', { name: /^Sessions/ }).click()
-      await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+      await pg.getByRole('button', { name: 'Settings', exact: true }).click()
       await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
       return pg
     }
@@ -240,7 +240,7 @@ module.exports = async t => {
     check((await np.evaluate(() => window.__dialogs || [])).length === 0, 'no alert/confirm dialogs')
     // Settings → Background apps
     await np.getByRole('button', { name: /^Sessions/ }).click()
-    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await np.getByRole('button', { name: 'Settings', exact: true }).click()
     const bgRow = np.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
     await bgRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the Background apps row'), () => check(false, 'Settings has the Background apps row'))
     check(/Off: Hermux won't open them in the background/.test((await bgRow.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'row explains what Off means')
@@ -266,7 +266,7 @@ module.exports = async t => {
     await np.evaluate(() => window.hermesBack())
     await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { allow_sensitive: false, available: false, reason: 'Needs Shizuku running' } }) })
     await np.getByRole('button', { name: /^Sessions/ }).click()
-    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await np.getByRole('button', { name: 'Settings', exact: true }).click()
     const noRow = np.locator('.set-row', { hasText: 'Needs Shizuku running' })
     await noRow.waitFor({ timeout: 5000 }).then(() => check(true, 'unavailable: the reason is the row text'), () => check(false, 'unavailable: the reason is the row text'))
     check((await noRow.getByRole('switch').count()) === 0, 'unavailable: no switch')
@@ -277,7 +277,7 @@ module.exports = async t => {
 
   // ── Phone assistant: Settings → Voice opens the system picker and shows the role once Hermes holds it ──
   await np.getByRole('button', { name: /^Sessions/ }).click()
-  await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+  await np.getByRole('button', { name: 'Settings', exact: true }).click()
   await np.locator('.set-row', { hasText: 'Voice' }).first().click()
   const ar = np.locator('.set-row', { hasText: 'Use Hermux as phone assistant' })
   await ar.waitFor({ timeout: 5000 })
@@ -381,7 +381,7 @@ module.exports = async t => {
       window.hermesBack && window.hermesBack()
     })
     await np.getByRole('button', { name: /^Sessions/ }).click()
-    await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await np.getByRole('button', { name: 'Settings', exact: true }).click()
     const unRow = np.locator('.set-row', { hasText: 'Uninstall Hermux' })
     await unRow.waitFor({ timeout: 5000 }).then(() => check(true, 'uninstall: Settings has the Uninstall Hermux row'), () => check(false, 'uninstall: Settings has the Uninstall Hermux row'))
     check((await np.locator('.set-heading', { hasText: 'Danger zone' }).count()) === 1, 'uninstall: in its own Danger zone section')
@@ -485,7 +485,7 @@ module.exports = async t => {
     await cs.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     const openAccounts = async () => {
       await cs.getByRole('button', { name: /^Sessions/ }).click()
-      await cs.locator('.nav-tile', { hasText: 'Settings' }).click()
+      await cs.getByRole('button', { name: 'Settings', exact: true }).click()
       await cs.locator('.set-row', { hasText: 'Model providers' }).click()
       await cs.locator('.providers .set-row', { hasText: 'Anthropic (Claude)' }).click()
     }

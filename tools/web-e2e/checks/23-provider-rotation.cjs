@@ -15,7 +15,7 @@ module.exports = async t => {
   await pg.goto(WEB + '/')
   await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await pg.getByRole('button', { name: /^Sessions/ }).click()
-  await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+  await pg.getByRole('button', { name: 'Settings', exact: true }).click()
   await pg.locator('.set-row', { hasText: 'Model providers' }).click()
   const chain = pg.locator('.set-section', { hasText: 'Fallback models' })
   await chain.locator('.set-row', { hasText: 'deepseek-chat' }).waitFor({ timeout: 5000 }).then(() => check(true, 'rotation: the fallback list shows the saved chain'), () => check(false, 'rotation: the fallback list shows the saved chain'))
@@ -96,7 +96,7 @@ module.exports = async t => {
       await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
       if (before) await before()
       await pg.getByRole('button', { name: /^Sessions/ }).click()
-      await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+      await pg.getByRole('button', { name: 'Settings', exact: true }).click()
       await pg.locator('.set-row', { hasText: 'Model providers' }).click()
     }
     const ok = (loc, name) => loc.waitFor({ timeout: 5000 }).then(() => check(true, name), () => check(false, name))

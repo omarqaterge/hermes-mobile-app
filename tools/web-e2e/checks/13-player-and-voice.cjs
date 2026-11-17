@@ -215,7 +215,7 @@ module.exports = async t => {
     await sp.goto(WEB + '/')
     await sp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await sp.getByRole('button', { name: /^Sessions/ }).click()
-    await sp.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await sp.getByRole('button', { name: 'Settings', exact: true }).click()
     await sp.locator('.set-row', { hasText: 'Voice' }).first().click()
     const row = sp.locator('.set-row', { hasText: 'Speech recognition' })
     await row.waitFor({ timeout: 5000 })

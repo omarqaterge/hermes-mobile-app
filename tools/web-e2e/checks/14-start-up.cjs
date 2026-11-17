@@ -64,7 +64,7 @@ module.exports = async t => {
   await sbt.goto(WEB + '/')
   await sleep(600) // connected, the held resume is in flight (its start closes the drawer)
   await sbt.getByRole('button', { name: 'Sessions' }).click()
-  await sbt.locator('.nav-tile', { hasText: 'Settings' }).click()
+  await sbt.getByRole('button', { name: 'Settings', exact: true }).click()
   const bootRow = sbt.locator('.screen', { hasText: 'Last start-up' }).getByText(/^script /)
   await bootRow.waitFor({ timeout: 5000 })
   check(!/chat-live/.test(await bootRow.innerText()), 'Last start-up: opened while the chat is still loading, no chat-live yet')

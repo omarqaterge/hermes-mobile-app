@@ -1,0 +1,293 @@
+/* The side panel (components/Drawer.tsx): a glass sheet that lies over the chat, 8 px in from the left, top and bottom
+   edges and min(80vw, 330px) wide, so a strip of the chat shows on the right on every phone and the chat shows round
+   the other edges too. It is the one glass surface while it is open: the search field and the bottom bar inside it are
+   faint solid tints with a hairline (never a second blur), and the rows are plain. It is laid out once and moves by
+   transform; its blur never changes size. The chat behind dims (the scrim) and steps back (motion.css-style spring,
+   transform only). Without glass (Appearance, or a WebView without backdrop blur) it is solid `--surface` in the same
+   place and size. On a wide screen the same element is the docked column (not floating) unless the person hid it
+   (web/src/sidepanel.ts); a hidden column opens as this same sheet. Spec 3.13. */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-base) var(--ease-fade);
+  z-index: 20;
+}
+.drawer-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer {
+  /* what the inside reads: glass or solid */
+  --p-dim: var(--glass-dim);
+  --p-edge: var(--glass-edge);
+  --p-group: var(--glass-group);
+  --p-field: var(--glass-field);
+  position: fixed;
+  z-index: 21;
+  left: 8px;
+  top: calc(8px + env(safe-area-inset-top));
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  width: min(80vw, 330px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--glass-edge);
+  border-radius: 24px;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: inset 0 1px 0 var(--glass-edge-hi), var(--glass-shadow);
+  transform: translateX(calc(-100% - 44px)); /* closed: off the screen, shadow and all */
+  transition: transform var(--motion-base) var(--spring-gentle);
+}
+.drawer.open {
+  transform: none;
+}
+/* The glass: a layer under the content, so the sheet's own box stays the frame of what opens inside it. */
+.drawer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--glass-highlight), var(--glass-sheen), var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+html[data-glass='off'] .drawer {
+  --p-dim: var(--dim);
+  --p-edge: var(--border);
+  --p-group: var(--surface-2);
+  --p-field: var(--bg);
+  border-color: var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+html[data-glass='off'] .drawer::before {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .drawer {
+    --p-dim: var(--dim);
+    --p-edge: var(--border);
+    --p-group: var(--surface-2);
+    --p-field: var(--bg);
+  }
+  .drawer::before {
+    background: var(--surface);
+  }
+}
+
+/* The chat behind it stays in view, dims (the scrim) and steps back a little (Full motion only; transform only, the
+   chat is laid out once). While the panel is open the bars behind it stop blurring, so it is the one blurred surface
+   being drawn fresh. */
+html[data-motion='full'] .app:has(> .drawer.open) > .stage {
+  scale: 0.965;
+  will-change: transform;
+}
+.app:has(> .drawer.open) > .stage .glass::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--glass-sheen), var(--surface);
+}
+
+.drawer-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 12px 8px;
+}
+.drawer .drawer-top .search {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  background: var(--p-field);
+  border: 1px solid var(--p-edge);
+}
+.drawer .search::placeholder {
+  color: var(--p-dim);
+  opacity: 1;
+}
+/* « hides the docked chat list: wide screens only (below). */
+.side-hide {
+  display: none;
+  color: var(--p-dim, var(--dim));
+}
+.drawer-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+.drawer .dim {
+  color: var(--p-dim);
+}
+
+/* The three rows at the top of the scrolling area. */
+.panel-rows {
+  display: grid;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--p-edge);
+}
+.panel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 12px;
+  text-align: left;
+}
+.panel-row:active {
+  background: var(--p-group);
+}
+.panel-row-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  font-size: 1.15rem;
+  color: var(--p-dim);
+}
+.panel-row-name {
+  flex: none;
+  font-weight: 600;
+}
+.panel-row-value {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 0.85rem;
+  color: var(--p-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Rows are plain on the glass; a row that moves under a swipe is solid so the strip behind it stays covered. */
+.drawer .session-row {
+  background: transparent;
+}
+.drawer .session-row.on {
+  background: var(--p-group);
+}
+.drawer .session-row.moving {
+  background: var(--surface);
+}
+
+/* The bottom bar: the bot, Settings and New chat. A faint solid tint with a hairline. */
+.drawer-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--p-group);
+  border-top: 1px solid var(--p-edge);
+}
+.drawer-bar .icon-btn {
+  width: 44px;
+  height: 44px;
+}
+.bot-btn {
+  flex: 1 1 0;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  border-radius: 14px;
+  text-align: left;
+  overflow: hidden;
+}
+.bot-btn:active {
+  background: var(--p-group);
+}
+.bot-btn-name {
+  min-width: 0;
+  flex: 1;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.new-chat {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+/* On a very narrow phone (the sheet is then under 240 px) New chat is the plus icon alone, with the same name. */
+@media (max-width: 299px) {
+  .new-chat-label {
+    display: none;
+  }
+  .new-chat {
+    width: 44px;
+    padding: 0;
+  }
+}
+
+/* The bot sheet's list. */
+.bot-list {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+/* The Library page's switch and its part's buttons. */
+.lib-switch .seg {
+  margin: 0 0 4px;
+}
+.lib-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ── wide screens: the docked column, not floating (unless hidden, then it is the sheet above) ── */
+@media (min-width: 840px) {
+  html:not([data-side='hidden']) .drawer {
+    --p-dim: var(--dim);
+    --p-edge: var(--border);
+    --p-group: var(--surface-2);
+    --p-field: var(--bg);
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--side);
+    border: 0;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
+    transform: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  html:not([data-side='hidden']) .drawer::before {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html:not([data-side='hidden']) .drawer .session-title.working {
+    animation-play-state: running; /* the docked list is on screen whether or not it counts as open */
+  }
+  html:not([data-side='hidden']) .drawer-backdrop {
+    display: none;
+  }
+  html:not([data-side='hidden']) .side-hide {
+    display: grid;
+  }
+}

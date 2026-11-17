@@ -103,6 +103,33 @@ are measured after that. A closed tray renders nothing; the handle's shimmer run
 only, `steps(48)`, off under Reduced and Off). The page file gzipped (`gzip -9`): 2714.5 → 2717.4 kB. Not measured
 here: heat and battery on a phone (`docs/manual-tests.md`).
 
+The side panel (task 03), two rounds each, `uicost.cjs --runs 7` at 4x CPU against the build before it (`redesign` at the
+start of the task), run in turn on one machine. With effects on (Glass effects on, Animations Full) the sheet opens
+with the chat stepping back behind it:
+
+| Date (change) | Moment | Before | After | Change |
+|---|---|---|---|---|
+| 2026-11-17 (the side panel, effects on) | Start-up | 507 / 511 ms, work 482 / 489 ms | 511 / 519 ms, work 488 / 486 ms | +1% |
+| | Opening a chat | 23 / 23 ms, work 34 / 32 ms | 24 / 24 ms, work 34 / 35 ms | +4% time, work within 1 to 3 ms |
+| | First words of a reply | 395 / 396 ms, work 34 / 34 ms | 397 / 396 ms, work 34 / 35 ms | none |
+| | Scrolling a long chat | work 264 / 263 ms, no frame over 25 ms, p95 16.7 / 16.8 ms | work 261 / 258 ms, no frame over 25 ms, p95 16.7 / 16.7 ms | none |
+| | Opening the chat list | 221 / 222 ms, work 18 / 18 ms | 196 / 191 ms, work 20 / 20 ms | −12% time, +2 ms work |
+| 2026-11-17 (the side panel, effects off: Glass effects off, Animations Off) | Start-up | 509 / 517 ms | 512 / 512 ms | none |
+| | Opening a chat | 26 / 27 ms, work 32 / 34 ms | 25 / 25 ms, work 32 / 31 ms | none |
+| | Scrolling a long chat | work 254 / 254 ms | work 250 / 251 ms | none |
+| | Opening the chat list | 8 / 8 ms, work 16 / 16 ms | 10 / 11 ms, work 19 / 18 ms | +2 to 3 ms of 8 (three more rows and the bar) |
+
+How the panel got there. The first build of it measured 41 to 47 ms of work opening the list (before: 18), and the chat
+stepping back was not the reason (taking it out changed nothing, nor did taking out the bars' loss of blur). Three
+things were: the two values the rows show arrived during the slide and re-rendered the whole chat list beside them
+(they are read once the slide has ended, and by a component of their own: −18 ms); hiding the closed panel with
+`visibility: hidden` made the main thread paint all its rows when it became visible (−5 ms without it); and `inert`
+on the closed panel restyled them on every open and close (+5 ms). The panel is therefore off the screen when closed,
+as the drawer was. The chat's step back (`scale` on the stage, transform only) costs no measurable work when opening
+the list, which the first glass round had found it did (+30%) when it was done differently. Opening a chat from the list
+moves the panel away and the chat back to full size meanwhile: 23 → 24 ms. Not measured here: heat and battery on a
+phone (`docs/manual-tests.md`).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

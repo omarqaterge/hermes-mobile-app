@@ -9,7 +9,7 @@ import { getState, subscribe, type Screen } from './store'
 /** Everything that is ever sent, besides the install ID, the app version and the Android version on every event. */
 export const STATS_EVENTS = {
   app_start: null,
-  screen_open: { screen: ['skills', 'memory', 'cron', 'files', 'projects', 'settings', 'bots', 'setup', 'hub', 'welcome', 'gallery'] },
+  screen_open: { screen: ['skills', 'memory', 'cron', 'files', 'projects', 'library', 'settings', 'bots', 'setup', 'hub', 'welcome', 'gallery'] },
   heard_from: { source: ['GitHub', 'Reddit', 'X', 'YouTube', 'A friend', 'Search', 'Other'] }
 } as const
 

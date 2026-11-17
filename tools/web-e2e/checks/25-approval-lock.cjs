@@ -105,7 +105,7 @@ module.exports = async t => {
 
     // Settings → Permissions: the switch, and turning it off asks first
     await pg.getByRole('button', { name: /^Sessions/ }).click()
-    await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     const row = pg.locator('.set-row', { hasText: 'Confirm approvals with fingerprint' })
     await row.waitFor({ timeout: 5000 })
     check((await row.getByRole('switch').getAttribute('aria-checked')) === 'true', 'approval lock: the Settings switch is on by default')
@@ -126,7 +126,7 @@ module.exports = async t => {
     await mock({ bgapps: { allow_sensitive: false, available: true } })
     const pg = await open({ on: false, secure: true, result: 'cancel' })
     await pg.getByRole('button', { name: /^Sessions/ }).click()
-    await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     const row = pg.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
     await row.waitFor({ timeout: 5000 })
     const puts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/bgapps')

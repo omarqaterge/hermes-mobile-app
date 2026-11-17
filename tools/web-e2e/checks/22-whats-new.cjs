@@ -46,7 +46,7 @@ module.exports = async t => {
     await pg.goto(WEB + '/')
     await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await pg.getByRole('button', { name: /^Sessions/ }).click()
-    await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
     return { pg, asked }
   }

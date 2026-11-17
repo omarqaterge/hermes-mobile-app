@@ -1168,86 +1168,6 @@ textarea {
   padding: 3px 6px;
 }
 
-/* drawer */
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-  z-index: 20;
-}
-.drawer-backdrop.show {
-  opacity: 1;
-  pointer-events: auto;
-}
-.drawer {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: min(86vw, 360px);
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  transform: translateX(-102%);
-  transition: transform 0.22s ease;
-  z-index: 21;
-  display: flex;
-  flex-direction: column;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-.drawer.open {
-  transform: none;
-}
-.drawer-top {
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-  border-bottom: 1px solid var(--border);
-}
-.drawer-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-.drawer-head .profile-switch {
-  flex: 1;
-  min-width: 0;
-}
-/* « hides the docked chat list: wide screens only (below). */
-.side-hide {
-  display: none;
-  color: var(--dim);
-}
-.drawer-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 8px 16px;
-}
-.profile-switch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-  padding: 6px;
-  border-radius: 12px;
-}
-.profile-name {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  font-weight: 600;
-}
-.profile-list {
-  display: grid;
-  gap: 2px;
-  background: var(--bg);
-  border-radius: 12px;
-  padding: 4px;
-}
 .avatar {
   width: 34px;
   height: 34px;
@@ -1769,27 +1689,6 @@ textarea {
 }
 .screen-tools .search {
   flex: 1;
-}
-.nav-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-.nav-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 8px 2px;
-  border-radius: 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  font-size: 0.68rem;
-  color: var(--dim);
-}
-.nav-tile span {
-  font-size: 1.15rem;
-  color: var(--text);
 }
 .list-row {
   display: flex;
@@ -3286,62 +3185,6 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   margin-top: 10px;
 }
 
-/* Hermux hub (Screens.tsx HubScreen) */
-.hub {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-}
-.hub-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px;
-  min-height: 68px;
-  border-radius: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  text-align: left;
-}
-.hub-card:active {
-  background: var(--press);
-}
-.hub-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.hub-title {
-  font-weight: 600;
-}
-.hub-sub {
-  color: var(--dim);
-  font-size: 0.85rem;
-}
-.hub-meter {
-  display: block;
-  height: 4px;
-  margin-top: 6px;
-  border-radius: 2px;
-  background: var(--press);
-  overflow: hidden;
-}
-.hub-meter span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-}
-.hub-meter span.full {
-  background: var(--err);
-}
-.hub-card .chev {
-  color: var(--dim);
-  font-size: 1.4rem;
-}
-
 /* Canvas: Hermes writing a document (canvas.ts `writing`) */
 .canvas-writing {
   flex: 1;
@@ -3560,20 +3403,6 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
      Hidden = the phone layout: a swipe right opens it over the chat. */
   html:not([data-side='hidden']) {
     --side-w: var(--side);
-  }
-  html:not([data-side='hidden']) .drawer {
-    width: var(--side);
-    transform: none;
-    padding-top: env(safe-area-inset-top);
-  }
-  html:not([data-side='hidden']) .drawer .session-title.working {
-    animation-play-state: running; /* the docked list is on screen whether or not it counts as open */
-  }
-  html:not([data-side='hidden']) .drawer-backdrop {
-    display: none;
-  }
-  html:not([data-side='hidden']) .side-hide {
-    display: grid;
   }
   html:not([data-side='hidden']) .app {
     margin-left: var(--side);
@@ -4152,4 +3981,4 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .ico { flex: none; vertical-align: -0.14em; }
 .ico.filled { fill: currentColor; }
 .set-chev, .bg-card-chev { display: inline-flex; align-items: center; font-size: 1.1rem; }
-.nav-tile span, .file-icon, .gallery-icon, .swipe-icon, .picker-check { display: inline-flex; align-items: center; justify-content: center; }
+.file-icon, .gallery-icon, .swipe-icon, .picker-check { display: inline-flex; align-items: center; justify-content: center; }

@@ -8,8 +8,9 @@ where the text describes what the agent does, so people meet one name there.
 **So:**
 - Every notification says Hermux: titles, text, fallback titles, the reply field, channel descriptions and the
   read-aloud player.
-- Settings' section and the "Uninstall Hermux" row, sheet and prompt say Hermux, and so do the drawer tile and the page
-  it opens.
+- Settings' section and the "Uninstall Hermux" row, sheet and prompt say Hermux. (The drawer tile and the page it
+  opened are gone since 2026-11-17, [side-panel-layout.md](side-panel-layout.md); the Hermux mark on the empty new-chat
+  screen stays.)
 - ~~Other text about the agent still says Hermes for now ("Hermes is thinking", "Hermes settings", "Message Hermes").~~
   Replaced on 2026-11-02, see below.
 

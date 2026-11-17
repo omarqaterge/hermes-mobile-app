@@ -112,11 +112,11 @@ test('opening a screen counts once; the chat is not a screen', async () => {
   const store = await import('./store')
   s.setStatsChoice(true)
   s.startStats()
-  store.setState({ screen: 'gallery' })
+  store.setState({ screen: 'library' })
   store.setState({ drawer: true })
   store.setState({ screen: null })
   await vi.advanceTimersByTimeAsync(30_000)
-  expect(sent().filter(e => e.eventName === 'screen_open').map(e => e.props)).toEqual([{ screen: 'gallery' }])
+  expect(sent().filter(e => e.eventName === 'screen_open').map(e => e.props)).toEqual([{ screen: 'library' }])
   store.setState({ drawer: false })
 })
 

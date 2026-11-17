@@ -222,7 +222,7 @@ module.exports = async t => {
   // ── #30 About shows the Hermes version with no chat open (health check) ──
   await page.evaluate(() => window.hermesShortcut('new'))
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const hv = page.locator('.set-row', { hasText: /Hermux.*v0\.21\.5/ }).last()
   await hv.waitFor({ timeout: 5000 })
   check(((await hv.textContent()) || '').includes('v0.21.5'), `About → Hermes version (${await hv.textContent()})`)
@@ -230,20 +230,13 @@ module.exports = async t => {
   check(!((await hv.textContent()) || '').includes('Different from what the app was made for'), 'a Hermes build equal to the tested one raises no warning')
   await page.evaluate(() => window.hermesBack())
 
-  // ── Hermux hub: one screen with a summary per page ──
+  // ── The side panel's rows: Scheduled, Skills and Library, each opening its page; Back returns to the chat ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  check((await page.locator('.nav-tile').count()) === 3, 'drawer has three tiles (Hermux, Bots, Settings)')
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: '2 enabled of 3' }).waitFor({ timeout: 5000 }).then(() => check(true, 'hub: skills summary'), () => check(false, 'hub: skills summary'))
-  check((await page.locator('.hub-card', { hasText: '2 notes · 50% full · 1 about you' }).count()) === 1, 'hub: memory summary')
-  check((await page.locator('.hub-card', { hasText: '1 active' }).count()) === 1, 'hub: cron summary')
-  check((await page.locator('.hub-card', { hasText: '1 project' }).count()) === 1, 'hub: projects summary')
-  check((await page.locator('.hub-card', { hasText: 'Canvas gallery' }).filter({ hasText: /\d+ documents? · \d+ categor/ }).count()) === 1, 'hub: gallery summary counts every chat\'s documents')
-  await page.locator('.hub-card', { hasText: 'Memory' }).click()
-  await page.locator('.screen .title', { hasText: 'Memory' }).waitFor({ timeout: 3000 })
+  await page.getByRole('button', { name: /^Skills/ }).filter({ hasText: '2 on' }).waitFor({ timeout: 5000 }).then(() => check(true, 'panel: the Skills row says how many are on'), () => check(false, 'panel: the Skills row says how many are on'))
+  await page.getByRole('button', { name: /^Skills/ }).click()
+  await page.locator('.screen .title', { hasText: 'Skills' }).waitFor({ timeout: 3000 })
   await page.getByRole('button', { name: 'Back' }).last().click()
-  check((await page.locator('.hub-card').count()) === 6, 'Back from a page returns to the hub')
-  await page.evaluate(() => window.hermesBack())
+  check((await page.locator('.screen').count()) === 0, 'Back from a page returns to the chat')
 
   // ── setup check (browser: only the Hermes checks) ──
   await page.locator('.conn-dot').click()

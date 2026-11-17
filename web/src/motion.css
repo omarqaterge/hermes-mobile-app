@@ -176,8 +176,8 @@ html[data-app-away] *::after,
 }
 
 /* ── the screen behind steps back while a sheet over it is open (Full only: Reduced and Off leave it where it is, the
-   scrim alone dims it). Not behind the chat list: stepping back repaints the whole chat as it starts and as it ends,
-   which added about half to the list's main-thread work at 4x CPU, and the list opens many times a day. ── */
+   scrim alone dims it). Behind the side panel it steps back too (panel.css, same scale): it is a transform of the
+   chat's layer, laid out once, and measured within 5% of the build without it (docs/performance-history.md). ── */
 html[data-motion='full'] .stage {
   transition: scale var(--motion-settle) var(--spring-settle);
   transform-origin: 50% 40%;
@@ -187,12 +187,6 @@ html[data-motion='full'] .app:has(> .sheet-backdrop) > .stage {
 }
 
 /* ── the side panel and full-screen pages slide with a little depth ── */
-.drawer {
-  transition: transform var(--motion-base) var(--spring-gentle); /* no slower than before (0.22s): the list is opened often */
-}
-.drawer-backdrop {
-  transition: opacity var(--motion-base) var(--ease-fade);
-}
 .screen {
   animation: motion-page var(--motion-settle) var(--spring-settle) backwards;
 }

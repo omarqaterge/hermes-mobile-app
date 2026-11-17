@@ -37,6 +37,7 @@ import { useSheetDrag } from './useSheetDrag'
 import { Spinner } from './Spinner'
 import { DOCK, claimEdge, dividerStart, dragCancel, dragEnd, dragTo, dragging, nudgeSplit, resetSplit, useDock, useSplitPercent } from '../splitview'
 import { openChatCanvas } from '../swipe'
+import { openLibrary } from '../library'
 import { Icon, type IconName } from './icons'
 
 export const TYPE_ICON: Record<DocType, IconName> = { markdown: 'note', html: 'globe', code: 'code', text: 'file', json: 'json', csv: 'table', svg: 'image', mermaid: 'branch' }
@@ -287,7 +288,7 @@ function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; on
         {doc.path && <Row icon="save" tone="gold" title="Save to the original file" sub={doc.path} onClick={run(() => void saveToFile(doc.id))} />}
       </Section>
       <Section>
-        <Row icon="folderOpen" tone="blue" title="Open a file from the phone…" sub="Pick a text file in Files, then “Open in canvas”" chevron onClick={run(() => { closeCanvas(); setState({ screen: 'files' }) })} />
+        <Row icon="folderOpen" tone="blue" title="Open a file from the phone…" sub="Pick a text file in Files, then “Open in canvas”" chevron onClick={run(() => { closeCanvas(); openLibrary('files') })} />
         <Row icon="trash" danger title="Close this document" onClick={run(() => void confirmDialog({ title: `Close “${doc.title}”?`, message: 'It is removed from the canvas, with its history. A saved file on the phone is not touched.', confirmLabel: 'Close', danger: true }).then(ok => ok && void closeDoc(doc.id)))} />
       </Section>
     </Sheetish>

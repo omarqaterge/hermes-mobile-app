@@ -80,6 +80,7 @@ let codexPolls = 0
 // Claude sign-in, like the pinned Hermes: `hermes auth add anthropic` (Termux) and the plugin's in-app login only add an
 // entry to the profile's credential pool; /api/providers/oauth keeps saying logged_in: false for the Anthropic card
 // (its status reads ~/.hermes/.anthropic_oauth.json and env vars only), /api/credentials/pool lists the entry.
+let extraBots = false
 let claudePool = []
 let claudeLoginMissing = false // true = an older plugin without /claude-login (404)
 const claudeEntry = () => ({ index: claudePool.length + 1, id: 'c0ffee', label: 'anthropic-oauth-1', auth_type: 'oauth', source: 'manual:hermes_pkce', priority: 0, last_status: null, request_count: 0, token_preview: 'sk-a...abcd', has_refresh: true })
@@ -197,6 +198,7 @@ const server = http.createServer((req, res) => {
       if (b.bgapps) bgapps = { ...bgapps, ...b.bgapps }
       if (b.openui) openui = { ...openui, ...b.openui }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
+      if (b.bots !== undefined) extraBots = b.bots // a second bot in the profile list (the side panel's bot sheet)
       if (b.bump) {
         // Like Hermes: session.list is sorted by last activity, so a chat that got a message moves to the front of the list.
         const i = allSessions.findIndex(x => x.id === b.bump)
@@ -743,7 +745,7 @@ wss.on('connection', ws => {
       case 'session.list':
         return reply({ sessions: allSessions.slice(0, params.limit || 50) })
       case 'profiles.list':
-        return reply({ profiles: [{ name: 'default', model: 'mock-model' }] })
+        return reply({ profiles: [{ name: 'default', model: 'mock-model' }, ...(extraBots ? [{ name: 'work', display_name: 'Work', model: 'other-model' }] : [])] })
       case 'session.create': {
         // Like Hermes: the agent is built in the background and announced by session.info. A model in the
         // params is the chat's own model from the start (a per-session override).

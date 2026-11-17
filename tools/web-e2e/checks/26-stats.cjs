@@ -35,7 +35,7 @@ const toBackground = pg => pg.evaluate(() => {
 })
 const openSettings = async pg => {
   await pg.getByRole('button', { name: /^Sessions/ }).click()
-  await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+  await pg.getByRole('button', { name: 'Settings', exact: true }).click()
   await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
 }
 const row = pg => pg.locator('.set-row', { hasText: 'Share anonymous usage stats' })

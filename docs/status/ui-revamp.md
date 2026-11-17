@@ -67,6 +67,23 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     `trap` removes the two worktrees and `$work`, not `$src` (line 15). On a full disk the next run fails with "No space
     left on device". Fixing the script belongs in its own PR.
 
+- **The side panel (task 03, PR against `redesign`).** The chat list is a glass sheet that lies over the chat
+  (`web/src/panel.css`, `components/Drawer.tsx`): 8 px from the left, top and bottom edges, `min(80vw, 330px)` wide,
+  corners 24 px; the chat dims and (Full animations) steps back behind it; solid without glass; on a wide screen the
+  docked column as before (the same sheet when hidden). Inside: the search field ("Search chats"), three rows that scroll
+  with the list (Scheduled with the next run, Skills with "N on", Library; values from `panelvalues.ts`, read when the
+  panel opens, at most once a minute, no timer), the unchanged chat list, and a pinned bar with the bot (opens the bot
+  sheet: switch bot, "What <bot> remembers", "Manage bots"), a Settings gear and a gold New chat. Gone: the three tiles,
+  the Hermux hub page (`hub`), the top bot switcher and `screenBack` (Back from every page goes to the chat). Files,
+  Projects and the canvas gallery are the three parts of the new Library page (`library`, `Library.tsx`; the part is
+  remembered in `hm.libraryPart`; the screen values `files`, `projects` and `gallery` are gone from the store, kept only
+  in the usage stats' list of names). Checks: `35-side-panel.cjs`; the hub and panel checks in `04`, `10`, `11` and the
+  gesture check in `15` were rewritten for the new places (listed in the PR). Decisions: `side-panel-layout.md`,
+  `glass-and-motion.md` (the panel now steps the chat back). Costs at 4x CPU: `docs/performance-history.md`. Needs a
+  phone: the edge swipe against Android's back gesture, the glass over a real photo, the keyboard, battery
+  (manual-tests). Not done: nested rows under a chat (task 09 leaves room: a row can be indented), and a closed panel's
+  list still receives store updates (it is not drawn or animated while closed, but React still renders it).
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

@@ -46,7 +46,7 @@ async function open(browser, { relay, theme, warn, plant } = {}) {
 }
 const openSheet = async pg => {
   await pg.getByRole('button', { name: /^Sessions/ }).click()
-  await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+  await pg.getByRole('button', { name: 'Settings', exact: true }).click()
   await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
   const row = pg.locator('.set-row', { hasText: 'Report a problem' })
   await row.scrollIntoViewIfNeeded()
@@ -192,7 +192,7 @@ module.exports = async t => {
   {
     const { ctx, pg } = await open(browser, {})
     await pg.getByRole('button', { name: /^Sessions/ }).click()
-    await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
     const toggle = pg.locator('.set-row', { hasText: 'Keep a diagnostic log' })
     await toggle.scrollIntoViewIfNeeded()
