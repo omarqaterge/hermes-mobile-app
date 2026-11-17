@@ -4,9 +4,8 @@ The page is one React tree (`web/src/App.tsx` `App`). There are no URLs or route
 
 - `screen` (type `Screen`): a full-screen page drawn over the chat. `null` means the chat itself.
 - `sheet` (type `Sheet`): one bottom sheet owned by the chat area.
-- `drawer`: the sessions drawer is open.
+- `drawer`: the side panel (the chat list, drawn as a sheet over the chat) is open.
 - `requests`: the queue of questions Hermes asks the user (approval, clarify, password). The first one is drawn as a sheet that cannot be dismissed.
-- `screenBack`: where Back from `screen` goes. `null` = the chat. Only the Hermux hub sets it (to `hub`).
 - `screenProfile`: the bot (profile) a Settings page is scoped to. `null` = the current profile.
 
 The chat is never unmounted. Screens, the drawer and sheets are drawn on top of it, so the draft text, the scroll position and a running reply survive a trip to Settings.
@@ -15,13 +14,10 @@ The chat is never unmounted. Screens, the drawer and sheets are drawn on top of 
 flowchart TD
   Chat["Chat (screen = null)<br/>Header, banners, messages, Composer"]
   Drawer["Sessions drawer"]
-  Hub["hub: Hermux hub"]
   Skills["skills"]
   Memory["memory"]
   Cron["cron: Scheduled jobs"]
-  Files["files"]
-  Projects["projects"]
-  Gallery["gallery: Canvas gallery"]
+  Library["library: Canvases, Files, Projects"]
   Bots["bots"]
   Settings["settings"]
   Setup["setup: Setup check"]
@@ -32,17 +28,14 @@ flowchart TD
 
   Chat -->|"menu button, swipe right"| Drawer
   Drawer -->|"New chat, a session"| Chat
-  Drawer -->|"Hermux tile"| Hub
-  Drawer -->|"Bots tile, New bot"| Bots
-  Drawer -->|"Settings tile"| Settings
-  Hub -->|"hub card, screenBack = hub"| Skills
-  Hub --> Memory
-  Hub --> Cron
-  Hub --> Files
-  Hub --> Projects
-  Hub --> Gallery
+  Drawer -->|"Scheduled row"| Cron
+  Drawer -->|"Skills row"| Skills
+  Drawer -->|"Library row"| Library
+  Drawer -->|"gear in the bar"| Settings
+  Drawer -->|"bot sheet"| Memory
+  Drawer -->|"bot sheet, Manage bots"| Bots
+  Library -->|"Files: Use in chat"| Chat
   Skills -->|"Use in chat"| Chat
-  Files -->|"Use in chat"| Chat
   Bots -->|"a bot's settings"| Settings
   Chat -->|"banner Check setup"| Setup
   Settings -->|"Setup check row"| Setup
@@ -76,19 +69,16 @@ flowchart TD
 | Value | What it is | Opened from | Closes with | Described in |
 |---|---|---|---|---|
 | `null` | The chat (no page on top). | Start-up; Back from any screen. | Not closable. | 3.2 to 3.6 |
-| `hub` | The Hermux hub: one card per area below, each with a one-line summary. | Drawer tile Hermux (`Drawer.tsx`). | Back, Android Back: goes to the chat. | 3.14 |
-| `skills` | Skills list and viewer. | Hub card Skills. | Back: goes to the hub (`screenBack`). The button "Use in chat" fills the composer with `/<skill> ` and returns to the chat. | 3.14 |
-| `memory` | Hermux's memory notes. | Hub card Memory. | Back: hub. | 3.14 |
-| `cron` | Scheduled jobs. | Hub card Scheduled jobs. | Back: hub. | 3.14 |
-| `files` | File browser on the phone. | Hub card Files; Canvas panel row "Open a file from the phone…" (closes the canvas first). | Back: hub (or the chat when opened from the canvas). The preview button "Use in chat" fills the composer with "Look at the file <path> and " and returns to the chat. | 3.14 |
-| `projects` | Projects (chat folders). | Hub card Projects. | Back: hub. | 3.14 |
-| `gallery` | Canvas gallery of saved documents. | Hub card Canvas gallery. | Back: hub. | 3.8 |
-| `bots` | Bots (profiles) list and editor. | Drawer tile Bots; the drawer's profile list entry "New bot / manage bots…". | Back: chat. | 3.16 |
-| `settings` | Settings. Keyed by `screenProfile`, so opening it for another bot rebuilds it. | Drawer tile Settings; a bot's page in Bots (sets `screenProfile`). | Back: chat. | 3.15 |
+| `skills` | Skills list and viewer. | Side panel row Skills. | Back: chat. The button "Use in chat" fills the composer with `/<skill> ` and returns to the chat. | 3.14 |
+| `memory` | Hermux's memory notes. | The bot sheet's row "What <bot> remembers" (side panel, bot at the bottom). | Back: chat. | 3.14 |
+| `cron` | Scheduled jobs. | Side panel row Scheduled. | Back: chat. | 3.14 |
+| `library` | The Library: Canvases (the gallery, 3.8), Files (the phone's file browser) and Projects (chat folders), behind a switch; the last part is remembered in `hm.libraryPart`. | Side panel row Library; Canvas panel row "Open a file from the phone…" (closes the canvas first; opens on Files) (`openLibrary` in `web/src/library.ts`). | Back: chat. In Files, Android Back first goes up one folder. The preview button "Use in chat" fills the composer with "Look at the file <path> and " and returns to the chat. | 3.14, 3.8 |
+| `bots` | Bots (profiles) list and editor. | The bot sheet's row "Manage bots" (side panel). | Back: chat. | 3.16 |
+| `settings` | Settings. Keyed by `screenProfile`, so opening it for another bot rebuilds it. | The gear in the side panel's bottom bar; a bot's page in Bots (sets `screenProfile`). | Back: chat. | 3.15 |
 | `setup` | Setup check: permissions, background running, the plugin, Shizuku. | Connection banner button Check setup (shown after 10 s offline); Backend status sheet (button Setup check, and the Shizuku row when it says to set up); Settings row Setup check. | Back: chat. | 3.18 |
 | `welcome` | The setup flow (first-run wizard). | `main.tsx` calls `openFirstRun` before the first paint on a fresh install; `watchFirstRun` opens it when Hermes stays unreachable on a first run (after 15 s, at once when Termux is missing or the installer is running); `checkSetupFlow` resumes it after connecting when something is missing. | Finishing or leaving the flow. | 3.18 |
 
-`closeScreen` (`store.ts`) is the one way Back leaves a screen. It sets `screen` to `screenBack` when that differs from the current screen, else to `null`, and clears `screenBack`. An effect in `App` forgets a stale `screenBack` as soon as the chat is showing again.
+`closeScreen` (`store.ts`) is the one way Back leaves a screen: it sets `screen` to `null`, so every page goes back to the chat (there is no way back to another page).
 
 #### Sheets, panels and overlays
 
@@ -103,7 +93,8 @@ flowchart TD
 | `rollback` | `Sheet` value, `RollbackSheet` ("File checkpoints") | Chat menu row File checkpoints. | Same. Inside it, Back first steps from a snapshot to the list. | 3.5 |
 | `commands` | `Sheet` value, `CommandsSheet` | No control sets it in the current code. The composer's "/" button opens the inline autocomplete instead (3.4). The sheet is still mounted by `App` if `sheet` is ever `commands`. | Same. | 3.5 |
 | Request sheet | `RequestSheet`, driven by `requests[0]` | Hermux asks (approval, question, password, code). | Only by answering (or Skip/Cancel). Not dismissible by tap or drag. | 3.6 |
-| Drawer | `Drawer`, `drawer` flag | Header menu button; swipe right on the chat (it follows the finger). | Tap the backdrop, swipe left on the drawer or the backdrop, Android Back, picking a session or New chat. | 3.13 |
+| Side panel | `Drawer`, `drawer` flag; a glass sheet over the chat (a docked column on wide screens) | Header menu button; swipe right on the chat (it follows the finger). | Tap the dimmed chat beside it, swipe left on the panel or beside it, Android Back, picking a chat or New chat. | 3.13 |
+| Bot sheet | `BotSheet` in `Drawer.tsx`, over the chat after the panel has closed | The bot at the bottom of the side panel. | Same as sheets; a tap on a bot switches to it. | 3.13 |
 | Canvas panel | `CanvasPanel` | Header canvas button; swipe left on the chat or the empty new-chat screen; chat menu row Canvas; code-block button Canvas. | Close canvas (✕), swipe right on its top bar (phones), Android Back (from full size Back first returns to the side size). Not by a tap outside. | 3.7 |
 | By the way | `BtwSheet` | Pull up past the end of the chat; the `/btw` command. | Drag down on the top strip, tap outside, Android Back (it has no close button). | 3.12 |
 | Read-aloud player | `TtsPlayer` | Starts when something is read aloud. | Close player. | 3.11 |
@@ -129,7 +120,7 @@ The Android shell calls `window.hermesBack` (`App.tsx`). It returns `true` when 
 
 `web/src/swipe.ts` `installSwipeToDrawer` listens on the whole document (started once by `App`):
 
-- Swipe right: pulls the drawer in under the finger. As soon as the finger has moved more than 10 px to the right, and more than 1.5 times as far across as down, `web/src/drawerdrag.ts` takes over (`drawerDragStart`, `drawerDragTo`, `drawerDragEnd`): the drawer's right edge follows the finger, measured from where the touch began, and the backdrop darkens with it. While the finger is down the drawer and backdrop are moved by inline styles, with no React render per frame. On release the drawer never stays half open: a flick faster than 0.3 px/ms (over the last 100 ms) goes the way it was flicking, and a slower release goes to whichever side is nearer (past half the drawer's width opens). The drawer then animates the rest of the way with its usual transition, the `drawer` flag is set to match, and the inline styles are dropped once it has settled. A second finger or a cancelled touch (`touchcancel`) returns it to where it started. `drawerSlides` is false while the chat list is docked (wide screens, 840 px and up, column not hidden): then a swipe right past 70 px, more than twice as far across as down, only sets the `drawer` flag, as before.
+- Swipe right: pulls the drawer in under the finger. As soon as the finger has moved more than 10 px to the right, and more than 1.5 times as far across as down, `web/src/drawerdrag.ts` takes over (`drawerDragStart`, `drawerDragTo`, `drawerDragEnd`): the panel's right edge follows the finger, measured from where the touch began, and the backdrop darkens with it. The panel is a sheet 8 px from the left edge (`.drawer`, `web/src/panel.css`), so "closed" is its width plus 8 px to the left; with Full animations the chat behind (`.stage`) steps back by the same share (`scale` from 1 to 0.965), nothing but transform and opacity moves. While the finger is down the drawer and backdrop are moved by inline styles, with no React render per frame. On release the drawer never stays half open: a flick faster than 0.3 px/ms (over the last 100 ms) goes the way it was flicking, and a slower release goes to whichever side is nearer (past half the drawer's width opens). The drawer then animates the rest of the way with its usual transition, the `drawer` flag is set to match, and the inline styles are dropped once it has settled. A second finger or a cancelled touch (`touchcancel`) returns it to where it started. `drawerSlides` is false while the chat list is docked (wide screens, 840 px and up, column not hidden): then a swipe right past 70 px, more than twice as far across as down, only sets the `drawer` flag, as before.
 - Swipe left on the open drawer or on its backdrop: pushes the drawer back the same way (`drawerDragging` tells the listener a drag is under way), with the same rules on release. It does not start on the chat rows (they have their own swipes: archive and delete, 3.13), text fields, dialogs or sliders, and a mostly vertical move there scrolls the chat list instead. A tap on the backdrop still closes the drawer.
 - Swipe left (finger moves more than 70 px, and more than twice as far across as down): opens the chat's canvas when it is closed, through `openChatCanvas` like the header canvas button: on the empty new-chat screen that starts the chat first, so a swipe left there opens a canvas for notes or a draft.
 - A move that goes more than 40 px down or up before it qualifies counts as scrolling and cancels the gesture.
@@ -140,7 +131,7 @@ Pulling the chat up past its end opens the By the way sheet (`web/src/pullbtw.ts
 
 #### Wide screens (tablets, unfolded foldables, landscape)
 
-Two CSS blocks in `web/src/styles.css` turn the layout into columns. From `@media (min-width: 700px)` (upright tablets, unfolded foldables) an open canvas is a column beside the chat with a draggable divider, and a pull tab and swipe at the right edge bring it in (3.7, `web/src/splitview.ts`); the chat list stays a slide-over there. From `@media (min-width: 840px)` the chat list docks too. The drawer becomes a docked 320 px column on the left (`--side`) and full-screen pages (`screen`) open to the right of that column, above it (z-index 22 over the drawer's 21), so a sheet or dialog a page opens (they sit inside the page's stacking context, e.g. Settings → Uninstall Hermux) covers the whole width instead of being cut off by the column. The user can hide the column: the menu button `☰` (`aria-label` "Hide chat list" / "Show chat list" on wide screens) toggles it, and a `«` button at the top of the docked column (`aria-label` "Hide the chat list", class `side-hide`, shown only while docked) hides it from any page. `web/src/sidepanel.ts` (`setSideHidden`, `toggleSide`, `useSidePanel`) keeps the choice in localStorage `hm.sideHidden.v1` and sets `html[data-side="hidden"]` at start-up, before the first paint; every docked rule is scoped to `html:not([data-side='hidden'])`, so a hidden column means the phone layout (swipe right opens the drawer over the chat, its backdrop closes it). The setup flow ("Set up Hermux", class `takeover`) still covers the whole width. While docked, `--side-w` is the column's width (0 otherwise); the canvas width is computed from the room beside it. The chat's text column is kept at about 820 px, with at least 52 px on the right so the scrubber stays out of the 24 px edge strip. An open canvas at its side size becomes a right-hand column (`--canvas-w`, 3.7 "Divider and width on wide screens"); full size still covers everything.
+Two CSS blocks in `web/src/styles.css` turn the layout into columns. From `@media (min-width: 700px)` (upright tablets, unfolded foldables) an open canvas is a column beside the chat with a draggable divider, and a pull tab and swipe at the right edge bring it in (3.7, `web/src/splitview.ts`); the chat list stays a slide-over there. From `@media (min-width: 840px)` the chat list docks too. The panel becomes a docked 320 px column on the left (`--side`), full height and not a sheet (no rounded corners, blur, backdrop or step back) and full-screen pages (`screen`) open to the right of that column, above it (z-index 22 over the drawer's 21), so a sheet or dialog a page opens (they sit inside the page's stacking context, e.g. Settings → Uninstall Hermux) covers the whole width instead of being cut off by the column. The user can hide the column: the menu button `☰` (`aria-label` "Hide chat list" / "Show chat list" on wide screens) toggles it, and a `«` button at the top of the docked column (`aria-label` "Hide the chat list", class `side-hide`, shown only while docked) hides it from any page. `web/src/sidepanel.ts` (`setSideHidden`, `toggleSide`, `useSidePanel`) keeps the choice in localStorage `hm.sideHidden.v1` and sets `html[data-side="hidden"]` at start-up, before the first paint; every docked rule is scoped to `html:not([data-side='hidden'])`, so a hidden column means the phone layout (swipe right opens the panel over the chat as the same floating sheet as on a phone, the dimmed chat beside it closes it). The setup flow ("Set up Hermux", class `takeover`) still covers the whole width. While docked, `--side-w` is the column's width (0 otherwise); the canvas width is computed from the room beside it. The chat's text column is kept at about 820 px, with at least 52 px on the right so the scrubber stays out of the 24 px edge strip. An open canvas at its side size becomes a right-hand column (`--canvas-w`, 3.7 "Divider and width on wide screens"); full size still covers everything.
 
 #### Entry points from outside the page
 

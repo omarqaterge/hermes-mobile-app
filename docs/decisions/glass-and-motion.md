@@ -31,12 +31,14 @@ back, a pressed button gives under the finger, a choice settles into place. It m
   shown in words or a still mark, so Off loses no information.
 - **Left out for now:** a refracting edge on glass (bending what is behind it at the rim): it could not be measured on
   a mid-range phone here, so it waits until it can be.
-- **The chat list opens without a row stagger and without the chat stepping back behind it.** Sheets and menus keep
-  both the step back and the dim. Measured on 2026-11-17, opening the list at 4x CPU in a desktop browser (median of 7,
-  two rounds, time until the list is in place and its rows show, main-thread work over the 900 ms after the tap):
-  no animation 218–222 ms and 22–24 ms of work; row stagger 231–236 ms (+6–7%) and 52 ms (more than double); the
-  stagger without CSS variables 227–230 ms and 47–52 ms; fading only, no travel, 228–230 ms and 37–39 ms (+60%);
-  the chat stepping back 223–234 ms (+2.5–6%) and 30 ms (+30%); both 230–233 ms and 54–59 ms. No version dropped a
-  frame (none over 25 ms, 95th percentile 16.8 ms), but each costs more than 5%, and the list opens many times a day,
-  so both stay out ([redesign-costs-no-speed-or-battery.md](redesign-costs-no-speed-or-battery.md), rule 1). A list
-  that shows once can still stagger its rows (`.motion-in` with `stagger()`).
+- **The chat list opens without a row stagger. The side panel steps the chat back (changed 2026-11-17, by the owner,
+  in the side panel task).** Sheets and menus keep both the step back and the dim, and so does the side panel, now a
+  sheet over the chat ([side-panel-layout.md](side-panel-layout.md)): the chat dims (the scrim) and steps back (`scale`
+  0.965 on `.stage`, transform only, laid out once; it follows the finger when the panel is dragged in). The first
+  glass round left it out because the step back, done another way, added about half to the list's main-thread work at
+  4x CPU (measured 2026-11-17: no animation 218–222 ms and 22–24 ms of work; row stagger 231–236 ms (+6–7%) and 52 ms;
+  fading only 228–230 ms and 37–39 ms; the chat stepping back 223–234 ms (+2.5–6%) and 30 ms; both 230–233 ms and
+  54–59 ms). Measured again with the panel built as a sheet, the step back adds no measurable work and the panel opens
+  12% faster than the full-height drawer did (221 → 196 ms, work 18 → 20 ms; `docs/performance-history.md`). The row
+  stagger stays out: a list that shows once can still stagger its rows (`.motion-in` with `stagger()`), the chat list
+  opens many times a day.

@@ -6,7 +6,7 @@ Every canvas document of every chat and every profile in one list. Nothing is co
 
 #### Canvas gallery (screen block)
 
-**Opens from:** Hermux hub → the row Canvas gallery (`HUB` in `web/src/components/Screens.tsx`; `Screen` value `gallery`). **Closes with:** Back in the top bar (`ScreenShell`). **Source:** `web/src/components/Gallery.tsx` `GalleryScreen`, state in `web/src/gallery.ts` (`useGallery`).
+**Opens from:** the Library page's Canvases part (side panel → Library; `Screen` value `library`, 3.14), which draws it without a title bar of its own. **Closes with:** Back in the Library's top bar (to the chat). **Source:** `web/src/components/Gallery.tsx` `GalleryScreen`, state in `web/src/gallery.ts` (`useGallery`).
 
 **Layout, top to bottom:**
 

@@ -83,11 +83,12 @@ stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while
 **File index for sections 3.13 to 3.20** (bare file names; all under `web/src/`, the screens and sheets in `components/`):
 | File | Role |
 |---|---|
-| `Drawer.tsx` | The drawer panel: profile switcher, New chat, tiles, search, hosts the session list |
+| `Drawer.tsx` | The side panel: search, the Scheduled, Skills and Library rows, the chat list, and the bottom bar (bot, Settings, New chat); the bot sheet |
+| `Library.tsx` | The Library page: Canvases, Files and Projects behind a switch |
 | `SessionList.tsx` | The chat list: groups, swipe rows, long-press-drag reorder, item menu, search hits, archive |
 | `chatorder.ts` | Pure ordering of the Chats list (`orderChats`, `recentIds`) |
 | `order.ts` | Pins and custom order per profile, in `localStorage` and mirrored to the plugin |
-| `Screens.tsx` | The hub and the Skills, Memory, Cron, Files and Projects screens, plus `ScreenShell`, `Sheet`, `useLoader`, `Status` |
+| `Screens.tsx` | The Skills, Memory, Cron, Files and Projects screens, plus `ScreenShell`, `EmbeddedShell`, `Sheet`, `useLoader`, `Status` |
 | `Settings.tsx` | The Settings screen and its pages, the model picker, key and option sheets |
 | `Bots.tsx` | The Bots screen and its sheets (create, bot, SOUL.md, rename) |
 | `Providers.tsx` | The provider list, provider sheet and own-endpoint sheet |

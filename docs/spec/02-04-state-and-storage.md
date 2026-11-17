@@ -12,6 +12,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.autostartDone` | `components/Setup.tsx` | `'1'` once the user confirmed the Autostart step. | No |
 | `hm.boot.v1` | `boot.ts` | The latest start-up's stage marks: `{at, marks: [[stage, ms]…]}` (stages `script`, `token-asked`, `token`, `socket`, `painted`, `resume-start`, `sessions`, `chat-live`; each recorded once per page load). Shown in Settings → About. | No |
 | `hm.glass` | `motion.ts` | Glass effects (Settings → Appearance → Effects): `'1'` on, `'0'` solid surfaces. Absent: on. | No |
+| `hm.libraryPart` | `library.ts` | The Library page's last part: `canvases`, `files` or `projects`. Absent or anything else: Canvases. Written when the part changes and when the canvas panel's "Open a file from the phone…" opens Files. | No |
 | `hm.motion` | `motion.ts` | Animations: `full`, `reduced` or `off`. Absent (or anything else): Off when the phone asks for no animations, else Full. The browser checks store `off` unless a check is about motion (7.3). | No |
 | `hm.modelBar` | `tray.ts` | Settings → Appearance → Model bar: `tucked` (the model row and the live status in the composer's tray, with a handle) or `open` (always shown, no handle). Absent (or anything else): tucked. The browser checks store `open` unless a check is about the tray (7.3). | No |
 | `hm.trayHint.v1` | `tray.ts` | `'1'` once the hint "Model and context are here" was shown (the first time the composer's tray closed by itself). | No |

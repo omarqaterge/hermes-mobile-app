@@ -4,7 +4,7 @@
 - **app keeper**: a loop (`app-keeper`) in `phone/hermes-services` that checks every 300 s whether the app's event listener answers on `127.0.0.1:9121` and proves the shared key (`hm-local hello events`); if not it broadcasts `StartReceiver` (with `FLAG_INCLUDE_STOPPED_PACKAGES`) to restart the app's service, also after a force stop or a Recents clean-up. See 6.2.
 - **Approval**: a request from Hermux to run a dangerous command. It reaches the app as a sheet, or as buttons on the chip/notification when the app is closed. Each answer applies to exactly the request it shows. See 3.6.
 - **Auto access / Full access / yolo**: the three levels of how much a chat may do without asking. Off asks before risky commands. Auto access runs everything except commands on Hermes's dangerous-command list. Full access (`/yolo`) asks nothing. The Auto button beside the composer's model chip sets it per chat. `/yolo` is the Hermes slash command behind Full access.
-- **bot**: the Settings/Hermux-hub name for a Hermes profile (Bots screen).
+- **bot**: the name for a Hermes profile (Bots screen, the bot sheet in the side panel).
 - **BgHost**: the Java process (`bg/BgHost`) that runs a virtual hidden display so Hermux can use an app without taking the screen. See 4.7.
 - **/btw**: "by the way", a side question about the current chat that does not interrupt a running reply.
 - **canvas**: the document panel beside the chat where Hermux and the user edit HTML, Markdown or code together; each change is a version.
@@ -13,7 +13,7 @@
 - **dashboard**: Hermes's own web server (`hermes dashboard`, `127.0.0.1:9119`). The app talks to it for REST calls and for the `tui_gateway` WebSocket; the plugin adds routes to it.
 - **Debian**: the Debian 13 userland that runs Hermes inside Termux (through proot-distro, or chroot-distro on rooted phones).
 - **Done chip**: the sticky green notification listing chats that finished while the app was closed.
-- **gallery**: the Hermux-hub list of every canvas document of every chat and profile (it replaced the Library).
+- **gallery**: the Canvases part of the Library page: every canvas document of every chat and profile.
 - **Hermux**: the app's name, the one people see, everywhere on screen (earlier name: Hermes Mobile). Hermes Agent is the open-source upstream program that runs inside it; in this spec "Hermes" on its own means that program. The old name stays on purpose wherever installs and updates depend on it: the package ID `com.omarqaterge.hermesmobile`, the repository `hermes-mobile-app`, the release file `hermes-mobile.apk` (kept next to `hermux.apk`, the same file, for old scripts and links), the build output `android/build/hermes-mobile.apk`, the phone folder `~/hermes-mobile` and the plugin `hermes-mobile`.
 - **Hermes pin**: the exact Hermes commit the app is tested against (`web/vendor/hermes-shared/.hermes-commit`, mirrored in `phone/bootstrap.sh`).
 - **island**: the status chip as shown in a phone's pill/island area; `docs/features.md` calls answering from it "Answer from the island".

@@ -33,7 +33,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 |---|---|
 | Canvas shared with Hermux: sandboxed HTML, versions with diff and restore | 3.7 |
 | Canvas opens as a panel from the right (tap button or swipe left; swipe right on its top bar, ✕ or Back closes); wide screens keep it beside the chat | 3.7 |
-| Canvas gallery of every document from every chat and profile, type chips, search, rename/copy/share/delete; old Library items shown as "Saved copy" | 3.8 |
+| Canvas gallery (the Library's Canvases part) of every document from every chat and profile, type chips, search, rename/copy/share/delete; old Library items shown as "Saved copy" | 3.8 |
 | Hermux uses an app on a hidden screen (`phone_app`), with a card, live thumbnail, Take over and Stop; sensitive apps refused unless allowed in Settings → Background apps | 3.10, 2.2.8, 3.15, 4.7, 5.2 |
 
 **Voice**
@@ -50,9 +50,9 @@ One line per user-visible feature, with the section that describes it. Sources: 
 
 | Feature | Section |
 |---|---|
-| Drawer: search inside every message, pin, archive, delete, stable order by creation time, Sort by recent | 3.13 |
+| Side panel: a glass sheet over the chat with search inside every message, Scheduled / Skills / Library rows, the bot sheet, Settings and New chat in a bar; pin, archive, delete, stable order by creation time, Sort by recent | 3.13 |
 | Links from one chat to another (`hermes-chat:` links in replies, bare chat ids become links) | 3.3, 5.3 |
-| Skills, memory screen, cron jobs, files, projects | 3.14 |
+| Skills, memory screen, cron jobs, and the Library (Canvases, Files, Projects) | 3.14, 3.8 |
 | Settings: Dark / OLED black / Light theme, every Hermux setting | 3.15 |
 | Last start-up timings (Settings) and faster start-up (the last chat drawn from its cache before Hermes answers) | 3.15, 2.2.5 |
 | Bots (profiles) with their own default model, keys and SOUL.md; the plugin is linked into every profile | 3.16, 6.1 |

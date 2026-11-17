@@ -1,24 +1,14 @@
-### 3.14 Hermux hub + Skills, Memory, Cron, Files, Projects
+### 3.14 Skills, Memory, Cron, Files, Projects (and the Library page)
 
-**Source files:** `web/src/components/Screens.tsx` holds `HubScreen`, `SkillsScreen`, `MemoryScreen`, `CronScreen`, `FilesScreen`, `ProjectsScreen` and the shared pieces `ScreenShell`, `Sheet`, `Status`, `useLoader` (see 3.20). `App.tsx` mounts the screen that matches the store's `screen` value (`hub`, `skills`, `memory`, `cron`, `files`, `projects`, `gallery`).
+**Source files:** `web/src/components/Screens.tsx` holds `SkillsScreen`, `MemoryScreen`, `CronScreen`, `FilesScreen`, `ProjectsScreen` and the shared pieces `ScreenShell`, `EmbeddedShell`, `Sheet`, `Status`, `useLoader` (see 3.20). `web/src/components/Library.tsx` holds `LibraryScreen`. `App.tsx` mounts the screen that matches the store's `screen` value (`skills`, `memory`, `cron`, `library`). The Hermux hub page that once listed these (one card each, with a summary) is gone: the side panel's rows (3.13) open Scheduled and Skills, the Library row opens the Library, and the bot sheet opens Memory (decision: [side-panel-layout.md](../decisions/side-panel-layout.md)).
 
-#### Hermux hub
-**Opens from:** the ☤ Hermux tile in the drawer. **Closes with:** the Back arrow (`aria-label` "Back") or Android Back. **Source:** `Screens.tsx` `HubScreen`.
+#### Library
+**Opens from:** the side panel's Library row; the Canvas panel's "Open a file from the phone…" (3.7; opens it on Files). **Closes with:** the Back arrow or Android Back (to the chat; in Files Android Back first goes up one folder). **Source:** `Library.tsx` `LibraryScreen`, `web/src/library.ts` (`openLibrary`, `savedPart`, `savePart`).
 
-**Layout, top to bottom:** title "Hermux", then six cards in this order. Each card has a coloured icon chip, a title, a one-line summary and a › arrow.
-| Card | Summary line | Tap | States |
-|---|---|---|---|
-| ✦ Skills | "N enabled" or "N enabled of M" (from `GET /api/skills`) | Opens Skills | |
-| 🧠 Memory | "N notes · P% full · M about you", plus a thin meter bar that turns red at 90 % or more (from `GET /memory`) | Opens Memory | |
-| ⏱ Scheduled jobs | "N active", then ", M paused" and " · next <time>" when known; "None yet" with no jobs (from `GET /api/cron/jobs`) | Opens the screen titled "Cron jobs" | |
-| 📁 Files | Fixed text "Browse, open and upload on the phone" | Opens Files | |
-| 🗂 Projects | "N project(s)" or "None yet" (from the `projects.list` RPC) | Opens Projects | |
-| 🖼 Canvas gallery | "N document(s) · M categor(y/ies)" or "Every canvas shows up here" (from `GET /gallery`) | Opens the gallery (3.8) | |
-
-Every card loads on its own, so a slow one does not hold the others: its summary says "Loading…" until it answers, or "Couldn’t load" if its call failed. The cards reload when the profile changes. A tap sets `screen` to the card and `screenBack` to `hub`, so Back from a page returns to the hub (`closeScreen` in the store).
+**Layout, top to bottom:** title "Library"; a three-way switch (`Segmented`, each button `aria-pressed`): **Canvases**, **Files**, **Projects**; the chosen part's content. A part is the page it was before shown without its own title bar (`ScreenShell` inside `EmbeddedShell` draws only its children): its top-bar buttons move into the Library's bar (`.lib-actions`): Files has Upload and New folder, Projects has New project, Canvases has none. The last part is remembered in `localStorage` `hm.libraryPart` (`canvases`, `files` or `projects`; written when the part changes or the canvas panel opens Files; unknown or absent = Canvases). Canvases is the gallery (3.8), Files is the file browser and Projects the project list, both below.
 
 #### Skills
-**Opens from:** the hub's Skills card. **Closes with:** Back (returns to the hub). **Source:** `Screens.tsx` `SkillsScreen`.
+**Opens from:** the side panel's Skills row (value "N on"). **Closes with:** Back (to the chat). **Source:** `Screens.tsx` `SkillsScreen`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |
@@ -34,7 +24,7 @@ Skill sheet (title = skill name): a dim line "<category> · <provenance, default
 **Data:** `GET /api/skills`, `PUT /api/skills/toggle`, `GET /api/skills/content` (Hermes dashboard, scoped to the profile).
 
 #### Memory
-**Opens from:** the hub's Memory card. **Closes with:** Back. **Source:** `Screens.tsx` `MemoryScreen`.
+**Opens from:** the bot sheet's row "What <bot> remembers" (3.13). **Closes with:** Back (to the chat). **Source:** `Screens.tsx` `MemoryScreen`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |
@@ -49,7 +39,7 @@ Sheet ("New memory" / "Edit memory"): a text area, a live character count, and b
 **Data:** `GET /memory` and `POST /memory` (plugin routes under `/api/plugins/hermes-mobile`).
 
 #### Cron jobs
-**Opens from:** the hub's Scheduled jobs card. **Closes with:** Back. **Source:** `Screens.tsx` `CronScreen`.
+**Opens from:** the side panel's Scheduled row (value: the next run). **Closes with:** Back (to the chat). **Source:** `Screens.tsx` `CronScreen`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |
@@ -67,7 +57,7 @@ Create / edit sheet ("New scheduled job" / "Edit job"): fields Name, Schedule, a
 Runs sheet ("Runs · <name>", `GET /api/cron/jobs/<id>/runs?limit=20`): one card per run with title / status, start time and a preview or "N msgs · reason". "No runs yet" when empty. Tap a run: if it has a chat (the dashboard lists runs as chats with source `cron`) the screen closes and that chat opens; otherwise a sheet shows its saved output (inline text, else the file read through `GET /api/files/read`, else the preview or "This run saved no output.").
 
 #### Files
-**Opens from:** the hub's Files card. **Closes with:** Back. Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`, `web/src/filekind.ts`. A file's preview goes through `DocView` (or `HeldScope` for plain text) with an unknown chat: once the app has recorded any phone-data read (`phoneDataAnyRead`), an HTML file is not run (its source shows as text), remote images wait behind a tap and links ask first, and the shell's request filter is on while the preview is open (2.3).
+**Opens from:** the Library's Files part. **Closes with:** Back (leaves the Library). Android Back first goes up one folder; at a root chip or `/` it leaves the screen (when a preview or the new-folder field is open it closes that first). **Source:** `Screens.tsx` `FilesScreen`, `web/src/filekind.ts`. A file's preview goes through `DocView` (or `HeldScope` for plain text) with an unknown chat: once the app has recorded any phone-data read (`phoneDataAnyRead`), an HTML file is not run (its source shows as text), remote images wait behind a tap and links ask first, and the shell's request filter is on while the preview is open (2.3).
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |
@@ -98,7 +88,7 @@ Files read into the page (everything except players) over 3 MB say "Too large to
 **Data:** `GET /api/files`, `GET /api/files/read`, `POST /api/files/upload`, `POST /api/files/mkdir`, `DELETE /api/files` (all sent without the profile scope).
 
 #### Projects
-**Opens from:** the hub's Projects card. **Closes with:** Back. **Source:** `Screens.tsx` `ProjectsScreen`.
+**Opens from:** the Library's Projects part. **Closes with:** Back (leaves the Library). **Source:** `Screens.tsx` `ProjectsScreen`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |
