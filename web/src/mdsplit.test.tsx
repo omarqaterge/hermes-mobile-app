@@ -56,7 +56,7 @@ test('the parts read one by one give the same blocks as the whole text, at every
       expect(s.parts.flatMap(blocks)).toEqual(blocks(sofar))
     })
   }
-})
+}, 60_000) // about 1 s on a laptop, but past the default 5 s on a 2-core CI runner beside the other files
 
 // Blocks of every kind in a random order, joined with or without a blank line: the places a hand-written text misses.
 const PIECES = [
