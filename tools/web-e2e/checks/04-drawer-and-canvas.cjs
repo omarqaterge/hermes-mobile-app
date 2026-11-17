@@ -264,19 +264,23 @@ module.exports = async t => {
     const ren = later(calls()).filter(c => c.http === 'PATCH' && c.path === '/api/sessions/s-43')
     check(ren.length === 1 && ren[0].body.title === 'Chat 43 renamed', `chat list: Rename in a row's menu stores the title (${JSON.stringify(ren.map(c => c.body.title))})`)
     await title.waitFor({ timeout: 5000 }).catch(() => {}) // the mock's list still has the old title
-    // Pin to top, then Unpin: kept on the phone at once and sent to the plugin (a second later, newest wins).
-    const prefs = () => later(calls()).filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/prefs').map(c => c.body.pinned)
+    // Pin to top, then Unpin: kept on the phone at once and sent to the plugin (a second later, newest wins). The mock is
+    // shared by every page of the run, so only writes of a change made since this check began count (`at`, the change's
+    // time, not the time it reached the mock): another page's older write arriving late is not this page's pin.
+    const writes = () => later(calls()).filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/prefs')
+    const prefs = () => writes().filter(c => (c.body.at || 0) >= since).map(c => c.body.pinned)
+    const seen = () => JSON.stringify(writes().map(c => [c.body.pinned, (c.body.at || 0) - since]))
     const stored = () => dl.evaluate(() => JSON.parse(localStorage.getItem('hm.order.v1.default') || 'null')?.pinned || [])
     const sent = async n => { for (let i = 0; i < 30 && prefs().length < n; i++) await dl.waitForTimeout(100); return prefs() }
     await (await rowMenu()).getByRole('button', { name: 'Pin to top' }).click()
     const pinnedGroup = await dl.getByText(/Pinned/).first().waitFor({ timeout: 3000 }).then(() => true, () => false)
     const pinStored = await stored()
     const pinSent = await sent(1)
-    check(pinnedGroup && pinStored[0] === 's-43' && pinSent.length === 1 && pinSent[0][0] === 's-43', `chat list: Pin to top pins the chat (${JSON.stringify(pinStored)}, sent ${JSON.stringify(pinSent)})`)
+    check(pinnedGroup && pinStored[0] === 's-43' && pinSent.length === 1 && pinSent[0][0] === 's-43', `chat list: Pin to top pins the chat (${JSON.stringify(pinStored)}, sent ${JSON.stringify(pinSent)}, every write with its time ${seen()})`)
     await (await rowMenu()).getByRole('button', { name: 'Unpin' }).click()
     const unpinStored = await stored()
     const unpinSent = await sent(2)
-    check(!unpinStored.includes('s-43') && unpinSent.length === 2 && !unpinSent[1].includes('s-43'), `chat list: Unpin takes it out again (${JSON.stringify(unpinStored)}, sent ${JSON.stringify(unpinSent)})`)
+    check(!unpinStored.includes('s-43') && unpinSent.length === 2 && !unpinSent[1].includes('s-43'), `chat list: Unpin takes it out again (${JSON.stringify(unpinStored)}, sent ${JSON.stringify(unpinSent)}, every write with its time ${seen()})`)
     // Archive: Hermes is asked to hide the chat.
     await (await rowMenu()).getByRole('button', { name: 'Archive' }).click()
     await dl.waitForTimeout(300)

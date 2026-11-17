@@ -121,7 +121,11 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   app (the options most likely reached `uicost.cjs` as one word, so it ran with Full and glass on; it now stops on that):
   with `--motion off --glass off` both builds open the list in 11 ms. The menus under Off: the row menu 10 → 12 ms and the
   chat menu 10 → 11 ms at 4x CPU (traced: the chat menu draws its four tiles and three groups, about 2 ms of work; the
-  row menu does the same work as before); everything else unchanged.
+  row menu does the same work as before); everything else unchanged. Review round 1: CI's `04` "Pin to top pins the
+  chat" failed once. Cause: `order.ts` `syncOrder` compared the phone's copy with the local copy read when it asked, so
+  an answer that arrived after a pin put the older order back (reproduced by holding the GET's answer about 1.8 s).
+  It now compares at answer time and uploads through the same debounce (`web/src/order.test.ts`); the check counts only
+  writes made since it began. The race was on `redesign` already, the same code.
 
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
