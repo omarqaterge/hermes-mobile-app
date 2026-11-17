@@ -10,6 +10,7 @@ import { sendPrompt } from '../gateway'
 import { getState, toast } from '../store'
 import { screenChat } from '../chatview'
 import { hashText } from '../tasks'
+import { Icon } from './icons'
 
 /** Set by Markdown: is the message still streaming, and may its buttons send (chat replies only, not canvas/files). */
 export const OpenUICtx = createContext({ streaming: false, interactive: false })
@@ -163,7 +164,7 @@ export function OpenUIBlock({ code, fallback }: { code: string; fallback: ReactN
           </button>
         </div>
       )}
-      {partial && !failed && <div className="warn-line">⚠ Part of this card couldn’t be shown</div>}
+      {partial && !failed && <div className="warn-line"><Icon n="warning" /> Part of this card couldn’t be shown</div>}
     </>
   )
 }

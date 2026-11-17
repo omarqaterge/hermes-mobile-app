@@ -1,5 +1,5 @@
 // The canvas panel: documents beside the chat that Hermes writes and you read, edit, run and keep.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { copyText, haptic, openExternal, shareText as nativeShare } from '../bridge'
 import { sendPrompt, errText } from '../gateway'
 import { toast } from '../store'
@@ -37,8 +37,9 @@ import { useSheetDrag } from './useSheetDrag'
 import { Spinner } from './Spinner'
 import { DOCK, claimEdge, dividerStart, dragCancel, dragEnd, dragTo, dragging, nudgeSplit, resetSplit, useDock, useSplitPercent } from '../splitview'
 import { openChatCanvas } from '../swipe'
+import { Icon, type IconName } from './icons'
 
-export const TYPE_ICON: Record<DocType, string> = { markdown: '📝', html: '🌐', code: '💻', text: '📄', json: '{ }', csv: '▦', svg: '🖼', mermaid: '⛓' }
+export const TYPE_ICON: Record<DocType, IconName> = { markdown: 'note', html: 'globe', code: 'code', text: 'file', json: 'json', csv: 'table', svg: 'image', mermaid: 'branch' }
 const EXT: Record<DocType, string> = { markdown: 'md', html: 'html', code: 'txt', text: 'txt', json: 'json', csv: 'csv', svg: 'svg', mermaid: 'mmd' }
 const CODE_EXT: Record<string, string> = { python: 'py', javascript: 'js', typescript: 'ts', bash: 'sh', rust: 'rs', go: 'go', java: 'java', kotlin: 'kt', c: 'c', cpp: 'cpp', css: 'css', sql: 'sql', yaml: 'yml' }
 
@@ -52,15 +53,15 @@ const ago = (t: number) => {
 // ── editor ───────────────────────────────────────────────────
 
 type Wrap = { pre: string; post?: string; block?: boolean; ph?: string }
-const SHORTCUTS: Array<{ label: string; title: string; w: Wrap }> = [
+const SHORTCUTS: Array<{ label: ReactNode; title: string; w: Wrap }> = [
   { label: 'B', title: 'Bold', w: { pre: '**', post: '**', ph: 'bold' } },
   { label: 'I', title: 'Italic', w: { pre: '_', post: '_', ph: 'italic' } },
   { label: 'H', title: 'Heading', w: { pre: '## ', block: true, ph: 'Heading' } },
-  { label: '•', title: 'Bullet list', w: { pre: '- ', block: true, ph: 'item' } },
-  { label: '☑', title: 'Checklist', w: { pre: '- [ ] ', block: true, ph: 'task' } },
+  { label: <Icon n="list" />, title: 'Bullet list', w: { pre: '- ', block: true, ph: 'item' } },
+  { label: <Icon n="checklist" />, title: 'Checklist', w: { pre: '- [ ] ', block: true, ph: 'task' } },
   { label: '“', title: 'Quote', w: { pre: '> ', block: true, ph: 'quote' } },
   { label: '</>', title: 'Code', w: { pre: '`', post: '`', ph: 'code' } },
-  { label: '🔗', title: 'Link', w: { pre: '[', post: '](https://)', ph: 'text' } }
+  { label: <Icon n="link" />, title: 'Link', w: { pre: '[', post: '](https://)', ph: 'text' } }
 ]
 
 function Editor({ doc, onChange, onSelect }: { doc: Doc; onChange: (t: string) => void; onSelect: (s: string) => void }) {
@@ -124,10 +125,10 @@ function Editor({ doc, onChange, onSelect }: { doc: Doc; onChange: (t: string) =
     <div className="editor">
       <div className="editor-bar">
         <button onClick={() => step(-1)} aria-label="Undo" disabled={hist.current.i === 0}>
-          ↶
+          <Icon n="undo" />
         </button>
         <button onClick={() => step(1)} aria-label="Redo" disabled={hist.current.i >= hist.current.stack.length - 1}>
-          ↷
+          <Icon n="redo" />
         </button>
         {md && <span className="editor-sep" />}
         {md && SHORTCUTS.map(s => (
@@ -192,7 +193,7 @@ function HistorySheet({ doc, onClose }: { doc: Doc; onClose: () => void }) {
                     {v.note ? ` · ${v.note}` : ''}
                   </span>
                 </span>
-                <span className="set-chev">{open === v.rev ? '⌄' : '›'}</span>
+                <span className="set-chev"><Icon n={open === v.rev ? 'down' : 'right'} /></span>
               </button>
               {open === v.rev && (
                 <div className="ver-body">
@@ -276,18 +277,18 @@ function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; on
   return (
     <Sheetish title={doc.title} onClose={onClose}>
       <Section>
-        <Row icon="✏️" tone="gold" title="Rename" onClick={run(() => void promptDialog({ title: 'Rename document', value: doc.title, placeholder: 'Title', confirmLabel: 'Rename' }).then(t => t && void renameDoc(doc.id, t)))} />
-        <Row icon="🕘" tone="blue" title="Version history" sub={`${doc.rev} version${doc.rev === 1 ? '' : 's'}`} chevron onClick={run(onHistory)} />
+        <Row icon="pencil" tone="gold" title="Rename" onClick={run(() => void promptDialog({ title: 'Rename document', value: doc.title, placeholder: 'Title', confirmLabel: 'Rename' }).then(t => t && void renameDoc(doc.id, t)))} />
+        <Row icon="clock" tone="blue" title="Version history" sub={`${doc.rev} version${doc.rev === 1 ? '' : 's'}`} chevron onClick={run(onHistory)} />
       </Section>
       <Section title="Share and save">
-        <Row icon="⧉" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
-        <Row icon="↗" tone="green" title="Share…" onClick={run(() => shareText(doc.title, text))} />
-        <Row icon="⬇" tone="purple" title={`Save a copy to Downloads`} sub={`${doc.title}.${ext(doc)}`} onClick={run(() => void exportCopy(doc, text))} />
-        {doc.path && <Row icon="💾" tone="gold" title="Save to the original file" sub={doc.path} onClick={run(() => void saveToFile(doc.id))} />}
+        <Row icon="copy" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
+        <Row icon="external" tone="green" title="Share…" onClick={run(() => shareText(doc.title, text))} />
+        <Row icon="download" tone="purple" title={`Save a copy to Downloads`} sub={`${doc.title}.${ext(doc)}`} onClick={run(() => void exportCopy(doc, text))} />
+        {doc.path && <Row icon="save" tone="gold" title="Save to the original file" sub={doc.path} onClick={run(() => void saveToFile(doc.id))} />}
       </Section>
       <Section>
-        <Row icon="📂" tone="blue" title="Open a file from the phone…" sub="Pick a text file in Files, then “Open in canvas”" chevron onClick={run(() => { closeCanvas(); setState({ screen: 'files' }) })} />
-        <Row icon="🗑" danger title="Close this document" onClick={run(() => void confirmDialog({ title: `Close “${doc.title}”?`, message: 'It is removed from the canvas, with its history. A saved file on the phone is not touched.', confirmLabel: 'Close', danger: true }).then(ok => ok && void closeDoc(doc.id)))} />
+        <Row icon="folderOpen" tone="blue" title="Open a file from the phone…" sub="Pick a text file in Files, then “Open in canvas”" chevron onClick={run(() => { closeCanvas(); setState({ screen: 'files' }) })} />
+        <Row icon="trash" danger title="Close this document" onClick={run(() => void confirmDialog({ title: `Close “${doc.title}”?`, message: 'It is removed from the canvas, with its history. A saved file on the phone is not touched.', confirmLabel: 'Close', danger: true }).then(ok => ok && void closeDoc(doc.id)))} />
       </Section>
     </Sheetish>
   )
@@ -568,16 +569,16 @@ export function CanvasPanel() {
           <div className="canvas-tabs">
             {docs.map(d => (
               <button key={d.id} className={`canvas-tab${d.id === activeId ? ' on' : ''}`} onClick={() => selectDoc(d.id)}>
-                <span aria-hidden="true">{TYPE_ICON[d.type]}</span>
+                <span aria-hidden="true"><Icon n={TYPE_ICON[d.type]} /></span>
                 <span className="canvas-tab-title">{d.title}</span>
               </button>
             ))}
             <button className="canvas-tab add" aria-label="New document" onClick={() => setMenu('new')}>
-              ＋
+              <Icon n="plus" />
             </button>
           </div>
           <button className="canvas-x" aria-label="Close canvas" onClick={() => closeCanvas()}>
-            ✕
+            <Icon n="close" />
           </button>
         </div>
 
@@ -590,7 +591,7 @@ export function CanvasPanel() {
           </div>
         ) : !meta ? (
           <div className="canvas-empty">
-            <div className="canvas-empty-icon">🗒</div>
+            <div className="canvas-empty-icon"><Icon n="note" size={36} /></div>
             <div className="canvas-empty-title">Your canvas is empty</div>
             <div className="dim">Ask Hermux to write something here, or start your own.</div>
             <button className="btn primary" onClick={() => setMenu('new')}>
@@ -614,17 +615,17 @@ export function CanvasPanel() {
                   Edit
                 </button>
               </div>
-              <span className={`save-state s-${save}`}>{save === 'saving' ? 'Saving…' : save === 'dirty' ? 'Unsaved' : save === 'saved' ? 'Saved ✓' : save === 'conflict' ? 'Conflict' : save === 'error' ? 'Not saved' : doc ? `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermux' : doc.by === 'user' ? ' · You' : ''}` : ''}</span>
+              <span className={`save-state s-${save}`}>{save === 'saving' ? 'Saving…' : save === 'dirty' ? 'Unsaved' : save === 'saved' ? 'Saved' : save === 'conflict' ? 'Conflict' : save === 'error' ? 'Not saved' : doc ? `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermux' : doc.by === 'user' ? ' · You' : ''}` : ''}</span>
               {meta.type === 'html' && mode === 'view' && (
                 <button className={`canvas-tool${net[meta.id] ? ' on' : ''}`} title="Allow the page to use the network" onClick={() => setNet(n => ({ ...n, [meta.id]: !n[meta.id] }))}>
-                  {net[meta.id] ? '🌐 Online' : '🚫 Offline'}
+                  {net[meta.id] ? <><Icon n="globe" /> Online</> : <><Icon n="off" /> Offline</>}
                 </button>
               )}
               <button className="canvas-tool" aria-label="Fill the whole screen" onClick={() => setCanvasSize('max')}>
-                ⛶
+                <Icon n="expand" />
               </button>
               <button className="canvas-tool" aria-label="More" onClick={() => setMenu('doc')}>
-                ⋮
+                <Icon n="dots" />
               </button>
             </div>
 
@@ -679,7 +680,7 @@ export function CanvasPanel() {
             >
               <input value={ask} onChange={e => setAsk(e.target.value)} placeholder={`Ask Hermux to change “${meta.title}”…`} enterKeyHint="send" />
               <button type="submit" className="canvas-send" aria-label="Send" disabled={!ask.trim()}>
-                ➤
+                <Icon n="send" size={20} />
               </button>
             </form>
             )}
@@ -688,7 +689,7 @@ export function CanvasPanel() {
       </div>
       {size === 'max' && (
         <button className="canvas-exit" aria-label="Exit full screen" onClick={() => setCanvasSize('side')}>
-          ⤓
+          <Icon n="shrink" />
         </button>
       )}
       {menu === 'doc' && doc && <DocMenu doc={doc} text={text} onClose={() => setMenu(null)} onHistory={() => setMenu('history')} />}

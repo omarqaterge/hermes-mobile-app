@@ -178,7 +178,7 @@ export async function openChecked(url: string, guarded: boolean): Promise<void> 
     title: 'Open this address?',
     message: 'This chat has read data from your phone. An address can carry that data out. Open it only if you expect this site.',
     list,
-    icon: '🔗',
+    icon: 'link',
     confirmLabel: 'Open',
     cancelLabel: 'Cancel'
   })
@@ -195,7 +195,7 @@ export async function confirmAddress(url: string, guarded: boolean, title = 'Loa
     title,
     message: 'This chat has read data from your phone. An address can carry that data out.',
     list,
-    icon: '🔗',
+    icon: 'link',
     confirmLabel: 'Load',
     cancelLabel: 'Cancel'
   })

@@ -125,7 +125,7 @@ test('chatMarkdown', () => {
     new Date(0)
   )
   expect(md.startsWith('# Trip\n\n_Exported from Hermux on ')).toBe(true)
-  expect(md).toContain('**You:**\n\nPlan it\n\n_Attached: a.png_\n\n_🔧 web_search: flights_\n\n**Hermux:**\n\nDone.\n')
+  expect(md).toContain('**You:**\n\nPlan it\n\n_Attached: a.png_\n\n_Tool: web_search: flights_\n\n**Hermux:**\n\nDone.\n')
 })
 
 describe('voiceChoice (live mode approvals)', async () => {

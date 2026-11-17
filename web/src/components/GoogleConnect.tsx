@@ -39,7 +39,7 @@ export function GoogleSection({ profile }: { profile: string }) {
     <>
       <Section title="Google" footer="Hermux reads and writes your mail, calendar and files through its Google Workspace skill. Ask it in any chat.">
         <Row
-          icon="📧"
+          icon="mail"
           tone="red"
           title="Gmail, Calendar, Drive"
           sub="Also Docs, Sheets and Contacts, with your Google account"
@@ -166,7 +166,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
               <div className="notice notice-warn">{`The sign-in is saved, but Google couldn’t be reached to check it right now (${s.detail}). No need to sign in again unless this stays.`}</div>
             )}
             <Section footer="To use another Google account or sign-in app, sign out first.">
-              <Row icon="↩" tone="red" title="Sign out" danger onClick={busy ? undefined : signOut} />
+              <Row icon="signOut" tone="red" title="Sign out" danger onClick={busy ? undefined : signOut} />
             </Section>
           </>
         )}
@@ -178,7 +178,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
               Sheets and People APIs; on the OAuth consent screen choose External and add yourself as a test user; then Credentials → Create credentials
               → OAuth client ID → Desktop app, and download its JSON file. Open that file and paste all of it here.
             </div>
-            <Row icon="↗" tone="blue" title="Open Google Cloud" sub="console.cloud.google.com" onClick={() => openExternal(CONSOLE)} />
+            <Row icon="external" tone="blue" title="Open Google Cloud" sub="console.cloud.google.com" onClick={() => openExternal(CONSOLE)} />
             <label className="field">
               <span>The client file (JSON)</span>
               <textarea className="mono" rows={4} value={client} onChange={e => setClient(e.target.value)} placeholder='{"installed": {"client_id": …}}' autoCapitalize="none" />
@@ -197,7 +197,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
         )}
         {s.client_secret && !connected && !replace && (
           <Section title="2. Sign in with Google">
-            <Row icon="🔑" tone="gold" title={started ? 'Open the sign-in page again' : 'Sign in'} sub="Opens Google in the browser" onClick={busy ? undefined : start} />
+            <Row icon="key" tone="gold" title={started ? 'Open the sign-in page again' : 'Sign in'} sub="Opens Google in the browser" onClick={busy ? undefined : start} />
             {started && (
               <>
                 <div className="dim small pad">
@@ -222,7 +222,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
         {s.install_error && <div className="notice notice-error">{s.install_error}</div>}
         {(needsLibs || s.installing || s.install_error) && (
           <Section footer="Hermux needs Google’s Python libraries for this. Installing them can take a few minutes; you can leave this page meanwhile.">
-            <Row icon="⬇" tone="blue" title={s.installing ? 'Installing…' : 'Install Google’s libraries'} onClick={busy || s.installing ? undefined : install} />
+            <Row icon="download" tone="blue" title={s.installing ? 'Installing…' : 'Install Google’s libraries'} onClick={busy || s.installing ? undefined : install} />
           </Section>
         )}
       </div>

@@ -37,6 +37,7 @@ import { DiagRows } from './DiagRows'
 import { pluginRow, runPluginUpdate, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
+import { Icon } from './icons'
 
 // ── shared ───────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ function ApprovalLockRow() {
     : 'The first Allow in each chat asks for your fingerprint or screen lock, until the app restarts or the chat closes'
   return (
     <ToggleRow
-      icon="🔐"
+      icon="lock"
       tone="green"
       title="Confirm approvals with fingerprint"
       sub={sub}
@@ -164,13 +165,14 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only, n
                 <button
                   key={m}
                   className={`picker-opt${on ? ' on' : ''}`}
+                  aria-pressed={on}
                   disabled={busy}
                   onClick={() => pick(p.slug, m)}
                 >
                   <span className="set-text">
                     <span className="set-title">{m}</span>
                   </span>
-                  <span className="picker-check">{on ? '✓' : ''}</span>
+                  <span className="picker-check">{on ? <Icon n="check" /> : null}</span>
                 </button>
               )
             })}
@@ -241,7 +243,7 @@ function ModelsTab() {
   return (
     <>
       <Section footer="The model each bot starts new chats with. Change the model of a single chat from the chip in its header.">
-        <Row icon="✨" tone="gold" title="Set one model for all bots" chevron onClick={() => setPick('*')} />
+        <Row icon="sparkles" tone="gold" title="Set one model for all bots" chevron onClick={() => setPick('*')} />
       </Section>
       <Section title="Bots">
         {profiles.map(p => (
@@ -322,12 +324,12 @@ function KeysTab({ scope, setScope }: { scope: string; setScope: (s: string) => 
     <>
       <ProfileChips value={scope} onChange={setScope} label="Keys for" />
       <label className="set-search">
-        <span aria-hidden="true">🔍</span>
+        <span aria-hidden="true"><Icon n="search" /></span>
         <input placeholder="Search keys (e.g. openai, tavily)" value={q} onChange={e => setQ(e.target.value)} />
       </label>
       <Section>
-        <ToggleRow icon="●" tone="green" title="Only keys that are set" sub="Turn off to see every key Hermux supports" on={onlySet} onChange={setOnlySet} />
-        <Row icon="＋" tone="gold" title="Add a custom key" chevron onClick={() => setEdit({ key: '' })} />
+        <ToggleRow icon="active" tone="green" title="Only keys that are set" sub="Turn off to see every key Hermux supports" on={onlySet} onChange={setOnlySet} />
+        <Row icon="plus" tone="gold" title="Add a custom key" chevron onClick={() => setEdit({ key: '' })} />
       </Section>
       <Status loading={loading} error={error} empty={!groups.length} emptyText={onlySet ? 'No keys set. Turn off “Only keys that are set” to see every key Hermux supports.' : 'No matches'} onRetry={reload} />
       {groups.map(([cat, rows]) => (
@@ -386,7 +388,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
         {row?.description && <div className="dim small">{row.description}</div>}
         {row?.url && (
           <a className="small" href={row.url} onClick={e => { e.preventDefault(); haptic(); openExternal(row.url!) }}>
-            Get a key ↗
+            Get a key <Icon n="external" />
           </a>
         )}
         {!keyName && (
@@ -556,7 +558,7 @@ function ConfigTab({ scope, setScope }: { scope: string; setScope: (s: string) =
     <>
       <ProfileChips value={scope} onChange={setScope} label="Settings for" />
       <label className="set-search">
-        <span aria-hidden="true">🔍</span>
+        <span aria-hidden="true"><Icon n="search" /></span>
         <input placeholder={`Search ${data ? Object.entries(data.schema.fields).filter(([k, f]) => !isMessagingField(k, f.category)).length : ''} settings`} value={q} onChange={e => setQ(e.target.value)} />
       </label>
       <Status loading={loading} error={error} empty={!data} emptyText="" onRetry={reload} />
@@ -565,7 +567,7 @@ function ConfigTab({ scope, setScope }: { scope: string; setScope: (s: string) =
       ) : (
         cats.map(([c, fields]) => (
           <Section key={c}>
-            <Row title={titleCase(c)} value={<span className="set-count">{fields.length}</span>} trailing={<span className="set-chev">{open === c ? '⌄' : '›'}</span>} onClick={() => setOpen(open === c ? null : c)} />
+            <Row title={titleCase(c)} value={<span className="set-count">{fields.length}</span>} trailing={<span className="set-chev"><Icon n={open === c ? 'down' : 'right'} /></span>} onClick={() => setOpen(open === c ? null : c)} />
             {open === c && fields.map(row)}
           </Section>
         ))
@@ -624,11 +626,11 @@ function ConfigSheet({ k, field, value, scope, onClose, onSave }: { k: string; f
         {field.type === 'select' ? (
           <div className="picker-list inline">
             {(field.options || []).map(o => (
-              <button key={o} className={`picker-opt${o === text ? ' on' : ''}`} onClick={() => setText(o)}>
+              <button key={o} className={`picker-opt${o === text ? ' on' : ''}`} aria-pressed={o === text} onClick={() => setText(o)}>
                 <span className="set-text">
                   <span className="set-title">{o || '(default)'}</span>
                 </span>
-                <span className="picker-check">{o === text ? '✓' : ''}</span>
+                <span className="picker-check">{o === text ? <Icon n="check" /> : null}</span>
               </button>
             ))}
           </div>
@@ -729,7 +731,7 @@ function VoiceSettings({ openStt }: { openStt: () => void }) {
   return (
     <>
       <Section title="Read aloud">
-        <ToggleRow icon="🔊" tone="gold" title="Read every reply aloud" sub="In all chats. Turn it on for a single chat from its ⋮ menu." on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
+        <ToggleRow icon="speaker" tone="gold" title="Read every reply aloud" sub="In all chats. Turn it on for a single chat from its options menu." on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
       </Section>
       <Section
         title="Voice"
@@ -741,27 +743,27 @@ function VoiceSettings({ openStt }: { openStt: () => void }) {
             : undefined
         }
       >
-        <SelectRow icon="🗣" tone="teal" title="Speech engine" options={engineOptions} value={engine} placeholder="Phone default" onChange={v => update({ engine: v, voice: '' }, true)} />
-        <SelectRow icon="🎙" tone="purple" title="Voice" options={voiceOptions} value={cfg.voice} placeholder="Default for my language" onChange={v => update({ voice: v })} />
-        {engine && engine !== 'com.google.android.tts' && opener && <Row icon="↗" tone="blue" title={`Open ${engineLabel} to change its voice`} chevron onClick={() => opener(engine)} />}
+        <SelectRow icon="chat" tone="teal" title="Speech engine" options={engineOptions} value={engine} placeholder="Phone default" onChange={v => update({ engine: v, voice: '' }, true)} />
+        <SelectRow icon="mic" tone="purple" title="Voice" options={voiceOptions} value={cfg.voice} placeholder="Default for my language" onChange={v => update({ voice: v })} />
+        {engine && engine !== 'com.google.android.tts' && opener && <Row icon="external" tone="blue" title={`Open ${engineLabel} to change its voice`} chevron onClick={() => opener(engine)} />}
       </Section>
       <Section title="Sound">
-        <SliderRow icon="⏩" tone="blue" title="Speed" value={cfg.rate} min={0.5} max={2} step={0.05} format={v => `${v.toFixed(2)}×`} onChange={v => update({ rate: v })} />
-        <SliderRow icon="🎚" tone="green" title="Pitch" value={cfg.pitch} min={0.5} max={2} step={0.05} format={v => v.toFixed(2)} onChange={v => update({ pitch: v })} />
+        <SliderRow icon="fast" tone="blue" title="Speed" value={cfg.rate} min={0.5} max={2} step={0.05} format={v => `${v.toFixed(2)}×`} onChange={v => update({ rate: v })} />
+        <SliderRow icon="sliders" tone="green" title="Pitch" value={cfg.pitch} min={0.5} max={2} step={0.05} format={v => v.toFixed(2)} onChange={v => update({ pitch: v })} />
       </Section>
       {sttAvailable() && (
         <Section title="Dictation" footer="Speech-to-text for the microphone button and Live mode: the phone’s own, or a model that runs on this phone, offline.">
-          <Row icon="🎤" tone="teal" title="Speech recognition" value={chosenSttName(stt)} chevron onClick={openStt} />
+          <Row icon="mic" tone="teal" title="Speech recognition" value={chosenSttName(stt)} chevron onClick={openStt} />
         </Section>
       )}
       <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said. Interrupt by talking keeps the microphone on while Hermux speaks and stops it when you say something; turn it off if your surroundings cut Hermux off by mistake.">
-        <SliderRow icon="⏱" tone="purple" title="Pause before sending" value={livePause} min={0.5} max={6} step={0.5} format={v => `${v.toFixed(1)} s`} onChange={v => { setLivePauseState(v); setLivePause(v) }} />
-        <ToggleRow icon="✋" tone="blue" title="Interrupt by talking" sub="Talk over Hermux to cut it off" on={bargeIn} onChange={v => { setBargeInState(v); setLiveBargeIn(v) }} />
+        <SliderRow icon="clock" tone="purple" title="Pause before sending" value={livePause} min={0.5} max={6} step={0.5} format={v => `${v.toFixed(1)} s`} onChange={v => { setLivePauseState(v); setLivePause(v) }} />
+        <ToggleRow icon="hand" tone="blue" title="Interrupt by talking" sub="Talk over Hermux to cut it off" on={bargeIn} onChange={v => { setBargeInState(v); setLiveBargeIn(v) }} />
       </Section>
       <AssistantSection />
       <Section>
-        <Row icon="▶" tone="gold" title="Test voice" sub="Plays a sample sentence with these settings" onClick={() => testVoice()} />
-        <Row icon="↺" tone="gray" title="Reset voice settings" onClick={() => update({ engine: '', voice: '', rate: 1, pitch: 1 }, true)} />
+        <Row icon="play" tone="gold" title="Test voice" sub="Plays a sample sentence with these settings" onClick={() => testVoice()} />
+        <Row icon="reset" tone="gray" title="Reset voice settings" onClick={() => update({ engine: '', voice: '', rate: 1, pitch: 1 }, true)} />
       </Section>
     </>
   )
@@ -796,9 +798,9 @@ function AssistantSection() {
           : '')
       }
     >
-      <Row icon="✦" tone="gold" title="Use Hermux as phone assistant" value={on ? 'On' : 'Off'} chevron onClick={() => bridge.openAssistantSettings?.()} />
+      <Row icon="sparkles" tone="gold" title="Use Hermux as phone assistant" value={on ? 'On' : 'Off'} chevron onClick={() => bridge.openAssistantSettings?.()} />
       {lockAssistAvailable() && (
-        <ToggleRow icon="🔒" tone="purple" title="Talk to Hermux on the lock screen" on={onLock} onChange={v => { setOnLock(v); setLockAssist(v) }} />
+        <ToggleRow icon="lock" tone="purple" title="Talk to Hermux on the lock screen" on={onLock} onChange={v => { setOnLock(v); setLockAssist(v) }} />
       )}
     </Section>
   )
@@ -824,6 +826,7 @@ function AppearancePage() {
             <button
               key={t.id}
               className={`theme-card${theme === t.id ? ' on' : ''}`}
+              aria-pressed={theme === t.id}
               onClick={() => {
                 haptic()
                 setThemeState(t.id)
@@ -837,7 +840,7 @@ function AppearancePage() {
               </div>
               <div className="theme-name">
                 {t.label}
-                {theme === t.id && <span className="tick">✓</span>}
+                {theme === t.id && <span className="tick"><Icon n="check" /></span>}
               </div>
             </button>
           ))}
@@ -879,9 +882,9 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
   const connLabel = conn === 'open' ? 'Connected' : conn === 'connecting' ? 'Connecting…' : 'Offline'
   const search = (
     <label className="set-search">
-      <span aria-hidden="true">🔍</span>
+      <span aria-hidden="true"><Icon n="search" /></span>
       <input placeholder="Search settings" aria-label="Search settings" value={q} autoCapitalize="off" autoCorrect="off" onChange={e => setQ(e.target.value)} />
-      {q && <button className="set-search-clear" aria-label="Clear search" onClick={() => setQ('')}>✕</button>}
+      {q && <button className="set-search-clear" aria-label="Clear search" onClick={() => setQ('')}><Icon n="close" /></button>}
     </label>
   )
   if (q.trim()) {
@@ -898,19 +901,19 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
     <>
       {search}
       <Section title="Appearance">
-        <Row icon="🎨" tone="purple" title="Appearance" sub="Theme and text size" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
+        <Row icon="palette" tone="purple" title="Appearance" sub="Theme and text size" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
       </Section>
       <Section title="Voice">
-        <ToggleRow icon="🔊" tone="gold" title="Read every reply aloud" sub="In all chats" on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
-        <Row icon="🗣" tone="teal" title="Voice" sub="Engine, voice, speed and pitch" chevron onClick={() => go('voice')} />
+        <ToggleRow icon="speaker" tone="gold" title="Read every reply aloud" sub="In all chats" on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
+        <Row icon="chat" tone="teal" title="Voice" sub="Engine, voice, speed and pitch" chevron onClick={() => go('voice')} />
       </Section>
       <Section title="Hermux">
-        <Row icon="✨" tone="gold" title="Default models" sub="Which model each bot starts with" chevron onClick={() => go('models')} />
-        <Row icon="👤" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
-        <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
-        <Row icon="🔌" tone="teal" title="Connectors" sub="MCP servers, web search, Home Assistant and other services" chevron onClick={() => go('connectors')} />
-        <Row icon="🎛️" tone="purple" title="Hermux settings" sub="Limits, memory, long chats, sub-agents, safety" chevron onClick={() => go('hermes')} />
-        <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermux option, by its config name" chevron onClick={() => go('config')} />
+        <Row icon="sparkles" tone="gold" title="Default models" sub="Which model each bot starts with" chevron onClick={() => go('models')} />
+        <Row icon="user" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
+        <Row icon="key" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
+        <Row icon="plug" tone="teal" title="Connectors" sub="MCP servers, web search, Home Assistant and other services" chevron onClick={() => go('connectors')} />
+        <Row icon="sliders" tone="purple" title="Hermux settings" sub="Limits, memory, long chats, sub-agents, safety" chevron onClick={() => go('hermes')} />
+        <Row icon="settings" tone="gray" title="Advanced settings" sub="Every Hermux option, by its config name" chevron onClick={() => go('config')} />
       </Section>
       <Section title="Permissions" footer="What new and existing chats start in. A chat you set with its own Auto button keeps that choice.">
         <DefaultAccessRow />
@@ -920,9 +923,9 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
       <PhoneDataSection />
       <BgAppsSection />
       <Section title="Connection">
-        <Row icon="📶" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
-        <Row icon="↻" tone="blue" title="Reconnect / start Hermux" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
-        <Row icon="✓" tone="teal" title="Setup check" sub="Permissions, background running, the plugin" chevron onClick={() => setState({ screen: 'setup' })} />
+        <Row icon="signal" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
+        <Row icon="refresh" tone="blue" title="Reconnect / start Hermux" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
+        <Row icon="check" tone="teal" title="Setup check" sub="Permissions, background running, the plugin" chevron onClick={() => setState({ screen: 'setup' })} />
       </Section>
       <Section title="About">
         <Row title="App" value={appVersion()} />
@@ -982,7 +985,7 @@ function OpenUISection() {
   }
   return (
     <Section title="Replies">
-      <ToggleRow icon="🧩" tone="green" title="Dynamic UI" sub="Tables, charts and forms you can tap. Applies to new chats" on={on} onChange={set} />
+      <ToggleRow icon="puzzle" tone="green" title="Dynamic UI" sub="Tables, charts and forms you can tap. Applies to new chats" on={on} onChange={set} />
     </Section>
   )
 }
@@ -991,12 +994,12 @@ function OpenUISection() {
  *  decided in the shell (screen lock, then Android's permission); this only asks and shows the answer. Hidden outside the
  *  app, in an older shell, and until the feature is switched on in the build. */
 const PHONE_KINDS: { kind: string; icon: string; tone: 'blue' | 'green' | 'gold' | 'teal' | 'purple' | 'gray'; title: string; sub: string }[] = [
-  { kind: 'contacts', icon: '👥', tone: 'blue', title: 'Contacts', sub: 'Names, phone numbers and email addresses' },
-  { kind: 'calendar', icon: '📅', tone: 'green', title: 'Calendar', sub: 'Event titles, times, places and short notes' },
-  { kind: 'calls', icon: '📞', tone: 'teal', title: 'Call log', sub: 'Who called, when, for how long, and whether you answered' },
-  { kind: 'sms', icon: '💬', tone: 'purple', title: 'Messages (SMS)', sub: 'Text messages: who, when and what they say' },
-  { kind: 'location', icon: '📍', tone: 'gold', title: 'Location (approximate)', sub: 'Roughly where the phone is (a city block or so)' },
-  { kind: 'photos', icon: '🖼️', tone: 'gray', title: 'Latest photos', sub: 'Date, size and dimensions only. Never the pictures' }
+  { kind: 'contacts', icon: 'users', tone: 'blue', title: 'Contacts', sub: 'Names, phone numbers and email addresses' },
+  { kind: 'calendar', icon: 'calendar', tone: 'green', title: 'Calendar', sub: 'Event titles, times, places and short notes' },
+  { kind: 'calls', icon: 'phoneCall', tone: 'teal', title: 'Call log', sub: 'Who called, when, for how long, and whether you answered' },
+  { kind: 'sms', icon: 'chat', tone: 'purple', title: 'Messages (SMS)', sub: 'Text messages: who, when and what they say' },
+  { kind: 'location', icon: 'mapPin', tone: 'gold', title: 'Location (approximate)', sub: 'Roughly where the phone is (a city block or so)' },
+  { kind: 'photos', icon: 'image', tone: 'gray', title: 'Latest photos', sub: 'Date, size and dimensions only. Never the pictures' }
 ]
 function PhoneDataSection() {
   const [st, setSt] = useState<PhoneDataState | null>(phoneDataState)
@@ -1035,7 +1038,7 @@ function PhoneDataSection() {
       title="Phone data for the agent"
       footer="Results go to your chosen model provider. Hermux only reads: it can’t change or send anything. Each read asks you first, except in Full access, where reads happen without asking. Messages and events can contain text from strangers. Applies to new chats."
     >
-      <ToggleRow icon="🔒" tone="purple" title="Let the agent read phone data" sub="Off: the agent can’t see any of it" on={master} onChange={v => void set('master', v)} />
+      <ToggleRow icon="lock" tone="purple" title="Let the agent read phone data" sub="Off: the agent can’t see any of it" on={master} onChange={v => void set('master', v)} />
       <Collapse open={master}>
         {PHONE_KINDS.map(k => {
           const stored = st.switches[k.kind] === true
@@ -1053,15 +1056,15 @@ function PhoneDataSection() {
           )
         })}
         {blocked && (
-          <Row icon="⚙️" tone="gray" title="Allow it in Android settings" sub="Android won’t show the question. Open app info and allow it under Permissions. For Call log and Messages, if the phone offers “Allow restricted settings” there, allow that first" chevron onClick={() => phoneDataOpenSettings()} />
+          <Row icon="settings" tone="gray" title="Allow it in Android settings" sub="Android won’t show the question. Open app info and allow it under Permissions. For Call log and Messages, if the phone offers “Allow restricted settings” there, allow that first" chevron onClick={() => phoneDataOpenSettings()} />
         )}
       </Collapse>
       {(overflowed || lost) && (
         <>
-          {lost && <Row icon="⚠️" tone="gold" title="Some chats may not be remembered" sub="Everything stays protected until you Forget." />}
+          {lost && <Row icon="warning" tone="gold" title="Some chats may not be remembered" sub="Everything stays protected until you Forget." />}
           {!lost && (
           <Row
-            icon="⚠️"
+            icon="warning"
             tone="gold"
             title="Allow more chats"
             sub="The record of chats that read phone data is full, so Hermux treats every chat as having read it: images wait for a tap and links ask first. This makes room for 2000 more, keeps every chat it knows and turns that off"
@@ -1074,7 +1077,7 @@ function PhoneDataSection() {
           />
           )}
           <Row
-            icon="🗑️"
+            icon="trash"
             tone="gray"
             title="Forget which chats have read phone data"
             sub="Clears the whole record. Chats that read phone data lose their protection"
@@ -1125,9 +1128,9 @@ function BgAppsSection() {
   return (
     <Section title="Background apps">
       {cfg.available ? (
-        <ToggleRow icon="📱" tone="teal" title="Allow banking, payment, password and 2FA apps" sub="Off: Hermux won't open them in the background" on={cfg.allow_sensitive} onChange={v => void set(v)} />
+        <ToggleRow icon="phone" tone="teal" title="Allow banking, payment, password and 2FA apps" sub="Off: Hermux won't open them in the background" on={cfg.allow_sensitive} onChange={v => void set(v)} />
       ) : (
-        <Row icon="📱" tone="gray" title="Allow banking, payment, password and 2FA apps" sub={cfg.reason || 'Hermux can’t use apps in the background on this phone'} />
+        <Row icon="phone" tone="gray" title="Allow banking, payment, password and 2FA apps" sub={cfg.reason || 'Hermux can’t use apps in the background on this phone'} />
       )}
     </Section>
   )
@@ -1154,7 +1157,7 @@ function UpdateRow() {
     : undefined
   return (
     <Row
-      icon="⬆️"
+      icon="upload"
       tone={u.phase === 'available' ? 'gold' : 'blue'}
       title={title}
       sub={sub}
@@ -1175,7 +1178,7 @@ function PluginRow() {
   const row = pluginRow(st)
   return (
     <Row
-      icon="🧩"
+      icon="puzzle"
       tone={row.tone}
       title="Hermux plugin"
       value={row.value}
@@ -1199,7 +1202,7 @@ function WhatsNewRow() {
   const canUpdate = u.phase === 'available' || u.phase === 'permission'
   return (
     <>
-      <Row icon="📝" tone="purple" title="What's new" sub={n === 1 ? `In ${u.latest}` : `${n} versions since yours (${appVersion()})`} chevron onClick={() => setOpen(true)} />
+      <Row icon="note" tone="purple" title="What's new" sub={n === 1 ? `In ${u.latest}` : `${n} versions since yours (${appVersion()})`} chevron onClick={() => setOpen(true)} />
       {open && (
         <Sheet title="What's new" onClose={() => setOpen(false)}>
           <div className="sheet-scroll whats-new">
@@ -1227,7 +1230,7 @@ function HermesRow({ version }: { version: string }) {
   }, [])
   const mismatch = ['newer', 'older'].includes(compat(h.current))
   const sub = !mismatch ? undefined : app.phase === 'available' ? `Different from what this app was made for. Update the app (${app.latest}).` : 'Different from what this app was made for. If something breaks, update the app.'
-  return <Row icon="⚕️" tone={mismatch ? 'gold' : 'teal'} title="Hermux agent" value={version} sub={sub} />
+  return <Row icon="health" tone={mismatch ? 'gold' : 'teal'} title="Hermux agent" value={version} sub={sub} />
 }
 
 export function SettingsScreen() {

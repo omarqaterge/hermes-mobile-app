@@ -23,6 +23,7 @@ import { useBackHandler } from '../backstack'
 import { Spinner } from './Spinner'
 import { fmtCost } from '../ctxring'
 import { openReport } from './Report'
+import { Icon } from './icons'
 
 function Shell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
   const close = onClose ?? (() => setState({ sheet: null }))
@@ -100,9 +101,9 @@ export function ModelSheet() {
     const starred = isFav(favs, p.slug, m)
     return (
       <div key={`${p.slug}/${m}`} className={`row model-row${on ? ' on' : ''}`}>
-        <button className="model-pick" onClick={() => pick(p.slug, m)}>
+        <button className="model-pick" aria-pressed={on} onClick={() => pick(p.slug, m)}>
           <span className="model-name">
-            {on ? '● ' : ''}
+            {on ? <Icon n="active" /> : null}{on ? ' ' : ''}
             {m}
           </span>
           {sub && <span className="dim model-sub">{sub}</span>}
@@ -116,7 +117,7 @@ export function ModelSheet() {
               removeCustom(p.slug, m)
             }}
           >
-            ✕
+            <Icon n="close" />
           </button>
         )}
         <button
@@ -128,7 +129,7 @@ export function ModelSheet() {
             toggleFav(p.slug, m)
           }}
         >
-          {starred ? '★' : '☆'}
+          <Icon n="star" className={starred ? 'filled' : undefined} />
         </button>
       </div>
     )
@@ -277,11 +278,11 @@ export function ChatMenuSheet() {
         ) : (
           <div className="menu-list">
             <button className="menu-item" onClick={act(() => setState({ find: { q: '', i: 0 } }))}>
-              <span className="mi-icon">🔍</span>
+              <span className="mi-icon"><Icon n="search" /></span>
               Search in chat
             </button>
             <button className="menu-item" onClick={() => setEditing(true)}>
-              <span className="mi-icon">✏️</span>
+              <span className="mi-icon"><Icon n="pencil" /></span>
               Rename
             </button>
             <button
@@ -291,7 +292,7 @@ export function ChatMenuSheet() {
                 toast(!reading ? 'Reading every reply aloud in this chat' : 'Read-aloud off for this chat')
               })}
             >
-              <span className="mi-icon gold">🔊</span>
+              <span className="mi-icon gold"><Icon n="speaker" /></span>
               <span className="mi-text">
                 Read every reply aloud
                 <span className="mi-sub">
@@ -301,7 +302,7 @@ export function ChatMenuSheet() {
               </span>
             </button>
             <button className="menu-item" onClick={act(() => openCanvas())}>
-              <span className="mi-icon gold">🗒</span>
+              <span className="mi-icon gold"><Icon n="note" /></span>
               <span className="mi-text">
                 Canvas
                 <span className="mi-sub">{canvasCount ? `${canvasCount} document${canvasCount === 1 ? '' : 's'}` : 'Documents, notes and pages beside the chat'}</span>
@@ -313,25 +314,25 @@ export function ChatMenuSheet() {
                 if (!shareText(plainTitle(active.title) || 'Chat', chatMarkdown(active))) toast('Copied as Markdown (sharing works in the phone app)')
               })}
             >
-              <span className="mi-icon">📤</span>
+              <span className="mi-icon"><Icon n="share" /></span>
               <span className="mi-text">
                 Share chat
                 <span className="mi-sub">As Markdown, to any app</span>
               </span>
             </button>
             <button className="menu-item" onClick={() => setState({ sheet: 'rollback' })}>
-              <span className="mi-icon">⏪</span>
+              <span className="mi-icon"><Icon n="rewind" /></span>
               <span className="mi-text">
                 File checkpoints
                 <span className="mi-sub">See and undo Hermux's file changes</span>
               </span>
             </button>
             <button className="menu-item" disabled={running} onClick={act(() => void undoLast())}>
-              <span className="mi-icon">↶</span>
+              <span className="mi-icon"><Icon n="undo" /></span>
               Undo last turn
             </button>
             <button className="menu-item" onClick={() => setState({ sheet: 'session-actions' })}>
-              <span className="mi-icon">ℹ️</span>
+              <span className="mi-icon"><Icon n="info" /></span>
               Chat details
             </button>
             <button
@@ -345,7 +346,7 @@ export function ChatMenuSheet() {
                 })
               })}
             >
-              <span className="mi-icon red">🗑</span>
+              <span className="mi-icon red"><Icon n="trash" /></span>
               Delete
             </button>
           </div>
@@ -375,14 +376,14 @@ export function DraftMenuSheet() {
               toast(!reading ? 'This chat will read every reply aloud' : 'Read-aloud off for this chat')
             }}
           >
-            <span className="mi-icon gold">🔊</span>
+            <span className="mi-icon gold"><Icon n="speaker" /></span>
             <span className="mi-text">
               Read every reply aloud
               <span className="mi-sub">{reading ? 'On' : 'Off'} · applies once the chat starts</span>
             </span>
           </button>
           <button className="menu-item" onClick={() => setState({ sheet: 'model' })}>
-            <span className="mi-icon">🤖</span>
+            <span className="mi-icon"><Icon n="bot" /></span>
             Change model
           </button>
         </div>
@@ -605,7 +606,7 @@ export function RollbackSheet() {
         ? `It goes back to how it was at ${when(open.snap.date)}.`
         : `${folderLabel(open.workdir)} goes back to ${when(open.snap.date)}. Files you changed yourself are kept; the chat itself stays as it is.`,
       list: lines,
-      icon: '↺',
+      icon: 'reset',
       confirmLabel: lines.length === 1 ? 'Restore 1 file' : `Restore ${lines.length} files`,
       danger: true
     })
@@ -636,7 +637,7 @@ export function RollbackSheet() {
         ) : open && snap ? (
           <>
             <button className="menu-item" onClick={() => setOpen(null)}>
-              <span className="mi-icon">‹</span>
+              <span className="mi-icon"><Icon n="left" /></span>
               All checkpoints
             </button>
             <div className="dim small pad">
@@ -690,7 +691,7 @@ export function RollbackSheet() {
               </div>
               {f.snapshots.map((c, i) => (
                 <button key={c.id} className="menu-item" onClick={() => setOpen({ workdir: f.workdir, snap: c })}>
-                  <span className="mi-icon">⏺</span>
+                  <span className="mi-icon"><Icon n="active" /></span>
                   <span className="mi-text">
                     <span>
                       {when(c.date)}

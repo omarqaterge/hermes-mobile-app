@@ -105,7 +105,7 @@ export function StatsRow() {
   return (
     <>
       <ToggleRow
-        icon="📊"
+        icon="chart"
         tone="blue"
         title="Share anonymous usage stats"
         sub="A random ID, the app and Android versions, app starts and screen opens. Never chats or files"

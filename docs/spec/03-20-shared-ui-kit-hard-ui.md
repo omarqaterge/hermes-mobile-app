@@ -2,15 +2,17 @@
 
 **Source files:** `web/src/components/ui.tsx`, `web/src/dialog.tsx`, `web/src/components/useSheetDrag.ts`, the primitives in `web/src/components/Screens.tsx`, `web/src/components/Linked.tsx`, `web/src/theme.ts`, `web/src/backstack.ts` (the Android Back stack the sheets register with, 3.1).
 
+**`icons.tsx` — the one place icons come from.** `Icon` draws an icon by name (`n`): 24 x 24, stroke only, `currentColor`, 1em unless `size` is given, hidden from screen readers unless it has a `label` (then `role="img"`). `IconName` is the list of names; `iconOf(x)` draws a string that is an icon name and passes anything else through, so rows, chips, options and dialogs take `icon="trash"`. The shapes are lucide-react 0.575.0 (ISC, `THIRD_PARTY.md`), imported only in this file. `tools/check-no-emoji.py` keeps emoji and icon glyphs out of the rest of `web/src`. Where a tick or cross showed a state, the icon carries a label (a task step is "done", "in progress", "cancelled" or "to do"; `stepWord` in `toolsay.ts`).
+
 **`ui.tsx` — the app's own form controls.** Nothing here uses the browser or Android defaults.
 | Component | What it is | Behaviour |
 |---|---|---|
 | `Section` | A grouped card with an optional heading and footer text | Class `set-section`; the title is the heading |
-| `Row` | One row of a section: optional icon chip, title, sub line, value, trailing control, › | With `onClick` it is a button (haptic on tap, can be `disabled`, `danger` makes the icon and title red); without it a static row |
-| `IconChip`, `Tone` | The small coloured square with an emoji; tones gold, blue, green, purple, red, gray, teal | Colour comes from CSS variables |
+| `Row` | One row of a section: optional icon chip, title, sub line, value, trailing control, a chevron icon | With `onClick` it is a button (haptic on tap, can be `disabled`, `danger` makes the icon and title red); without it a static row |
+| `IconChip`, `Tone` | The small coloured square with a drawn icon (an icon name string or an element; `iconOf` turns a name into the icon); tones gold, blue, green, purple, red, gray, teal | Colour comes from CSS variables |
 | `Toggle` | A switch (`role="switch"`, `aria-checked`) | Haptic; its `aria-label` is the label |
 | `ToggleRow` | A row whose whole width flips a `Toggle` | The switch's `aria-label` is the title when it is text, else "Toggle" |
-| `PickerSheet`, `Option` | A bottom sheet listing choices with a ✓ on the current one; options may have a group heading, sub text and icon | Picking an option calls `onPick` and closes; registers with Android Back; draggable by its grip |
+| `PickerSheet`, `Option` | A bottom sheet listing choices with a tick icon on the current one; options may have a group heading, sub text and icon | Picking an option calls `onPick` and closes; registers with Android Back; draggable by its grip |
 | `SelectRow` | A row that shows the current choice as its sub line and opens a `PickerSheet` | The replacement for `<select>` |
 | `SliderRow` | A title, the formatted value and a styled range slider | The one place a range input is used; it is drawn with the app's CSS (the `--pct` fill) |
 | `Collapse` | Wraps a body that opens and closes: mounts the children, then animates the wrapper's height and opacity (180 ms, Web Animations API); a body it has just mounted starts from height 0, so opening slides in; on close animates to 0, holds height 0 and opacity 0 inline once the animation ends (so it is never painted at full size before it goes), then unmounts (a timer of 280 ms unmounts it if the animation never reports finishing). `overflow: hidden` only while animating. Flipping `open` mid-animation continues from the current height | Used by `ToolCard`, `Reasoning` (the thought text), the todo list in `StatusBar` and the file list of `TurnChangesCard`. Not used for folded runs of tool calls, which stay instant (the chat keeps one child per item). Under `prefers-reduced-motion: reduce` it mounts and unmounts at once |

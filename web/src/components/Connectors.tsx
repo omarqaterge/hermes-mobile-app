@@ -30,6 +30,7 @@ import { Sheet, Status, useLoader } from './Screens'
 import { GoogleSection } from './GoogleConnect'
 import { ProfileChips } from './Settings'
 import { Row, Section, Segmented, ToggleRow } from './ui'
+import { Icon } from './icons'
 
 interface EnvRow {
   is_set: boolean
@@ -78,7 +79,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
         {(servers.data || []).map(s => (
           <Row
             key={s.name}
-            icon="🔌"
+            icon="plug"
             tone={s.enabled ? 'green' : 'gray'}
             title={s.name}
             sub={<span className="mono small">{serverWhere(s)}</span>}
@@ -88,12 +89,12 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
           />
         ))}
         <Status loading={servers.loading} error={servers.error} empty={!servers.data?.length} emptyText="No servers yet" onRetry={servers.reload} />
-        <Row icon="＋" tone="gold" title="Add from the catalog" sub="Services Hermux knows how to connect" chevron onClick={() => setCatalog(true)} />
-        <Row icon="＋" tone="blue" title="Add a server" sub="By its address, or a command that starts it" chevron onClick={() => setAdding(true)} />
+        <Row icon="plus" tone="gold" title="Add from the catalog" sub="Services Hermux knows how to connect" chevron onClick={() => setCatalog(true)} />
+        <Row icon="plus" tone="blue" title="Add a server" sub="By its address, or a command that starts it" chevron onClick={() => setAdding(true)} />
       </Section>
       <Section title="Tools with a key or an account" footer="Tap one to turn it on, pick the service it uses and paste its key.">
         {(tools.data || []).map(t => {
-          const w = TOOLSET_WORDS[t.name] || { title: t.label, icon: '🧰', sub: t.description || '' }
+          const w = TOOLSET_WORDS[t.name] || { title: t.label, icon: 'tool', sub: t.description || '' }
           return <Row key={t.name} icon={w.icon} tone="teal" title={w.title} sub={w.sub} value={<State s={toolsetState(t)} />} chevron onClick={() => setToolset(t)} />
         })}
         <Status loading={tools.loading} error={tools.error} empty={!tools.data?.length} emptyText="None to set up in this Hermux" onRetry={tools.reload} />
@@ -255,14 +256,14 @@ function ServerSheet({ server: s, profile, onClose, onChanged }: { server: McpSe
         )}
         {s.auth === 'oauth' && !fromPlugin && (
           <Section footer="Opens the service’s sign-in page in the browser. When it says you can close the tab, come back here.">
-            <Row icon="🔑" tone="gold" title={waiting ? 'Waiting for the sign-in…' : 'Sign in'} onClick={waiting || busy ? undefined : signIn} />
+            <Row icon="key" tone="gold" title={waiting ? 'Waiting for the sign-in…' : 'Sign in'} onClick={waiting || busy ? undefined : signIn} />
             {waiting && flow?.authorization_url && <Row title="Open the sign-in page again" onClick={() => openExternal(flow.authorization_url!)} />}
             {flow?.status === 'approved' && <div className="notice">Signed in.</div>}
             {flow?.status === 'error' && <div className="notice notice-error">{flow.error || 'Sign-in failed'}</div>}
           </Section>
         )}
         <Section>
-          <Row icon="⚡" tone="blue" title="Test" sub="Connect and list its tools" onClick={busy ? undefined : runTest} />
+          <Row icon="zap" tone="blue" title="Test" sub="Connect and list its tools" onClick={busy ? undefined : runTest} />
           {test && !test.ok && <div className="notice notice-error">{test.error || 'It didn’t answer'}</div>}
           {test?.ok && <div className="notice">{`Works: ${test.tools.length} tool${test.tools.length === 1 ? '' : 's'}`}</div>}
           {test?.ok && test.tools.slice(0, 40).map(t => <Row key={t.name} title={<span className="mono small">{t.name}</span>} sub={t.description} />)}
@@ -401,7 +402,7 @@ function CatalogSheet({ profile, onClose, onAdded }: { profile: string; onClose:
   return (
     <Sheet title="Add from the catalog" onClose={onClose}>
       <label className="set-search">
-        <span aria-hidden="true">🔍</span>
+        <span aria-hidden="true"><Icon n="search" /></span>
         <input placeholder="Search (e.g. notion, linear)" value={q} onChange={e => setQ(e.target.value)} />
       </label>
       <div className="sheet-scroll">
@@ -433,7 +434,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
   const [open, setOpen] = useState<string | null>(null)
   const [vals, setVals] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
-  const w = TOOLSET_WORDS[t.name] || { title: t.label, icon: '🧰', sub: t.description || '' }
+  const w = TOOLSET_WORDS[t.name] || { title: t.label, icon: 'tool', sub: t.description || '' }
   const changed = () => {
     cfg.reload()
     onChanged()
@@ -555,7 +556,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
                           />
                           {v.url && (
                             <a className="small" href={v.url} onClick={e => { e.preventDefault(); haptic(); openExternal(v.url!) }}>
-                              Get a key ↗
+                              Get a key <Icon n="external" />
                             </a>
                           )}
                         </label>
@@ -621,7 +622,7 @@ function SkillKeySheet({ name, row, profile, onClose, onChanged }: { name: strin
         {row.description && <div className="dim small">{row.description}</div>}
         {row.url && (
           <a className="small" href={row.url} onClick={e => { e.preventDefault(); haptic(); openExternal(row.url!) }}>
-            Get a key ↗
+            Get a key <Icon n="external" />
           </a>
         )}
         <label className="field">

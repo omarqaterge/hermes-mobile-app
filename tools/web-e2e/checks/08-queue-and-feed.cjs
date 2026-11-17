@@ -143,7 +143,7 @@ module.exports = async t => {
   check(/just now · Hermux/.test(await page.locator('.save-state').innerText()), `idle label says who wrote it (${await page.locator('.save-state').innerText()})`)
   await page.locator('.canvas-toolbar .seg button', { hasText: 'Edit' }).click()
   await page.locator('textarea.editor-text').fill('# Plan\n\nStep one x')
-  await page.locator('.save-state', { hasText: 'Saved ✓' }).waitFor({ timeout: 3000 }).then(() => check(true, 'canvas edit shows Saved ✓'), () => check(false, 'canvas edit shows Saved ✓'))
+  await page.locator('.save-state', { hasText: /^Saved$/ }).waitFor({ timeout: 3000 }).then(() => check(true, 'canvas edit shows Saved ✓'), () => check(false, 'canvas edit shows Saved ✓'))
   await sleep(2600)
   {
     const s = await page.locator('.save-state').innerText()

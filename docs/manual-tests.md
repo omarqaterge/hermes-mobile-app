@@ -416,6 +416,7 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] Replies, cron results and a failed turn notify while the app is closed; the Done chip lists them, one tap clears it; the app-icon badge counts unseen chats.
 - [ ] The background-app viewer: Hermux uses an app on a hidden screen (`phone_app`); the card, the live thumbnail, Take over and Stop.
 - [ ] The setup check and the Backend status sheet (Shizuku row) after a phone restart; Shizuku restarts by itself.
+- [ ] The drawn icons at real size on a phone: Settings rows, the chat menu, tool lines, the chat list's swipe strips and the composer's attachment chips look right in the Dark, OLED black and Light themes, and none is cut off or too big.
 - [ ] A tablet or a foldable opened: two columns, the canvas beside the chat, the divider dragged.
 - [ ] Ten minutes of ordinary use, then the battery drop compared with the release over the same ten minutes; the phone sleeps while Hermux is idle.
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.

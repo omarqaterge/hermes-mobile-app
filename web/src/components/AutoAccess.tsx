@@ -4,17 +4,18 @@ import { getState, toast, useStore } from '../store'
 import { viewSettled } from '../chatview'
 import { confirmDialog } from '../dialog'
 import { PickerSheet, SelectRow, type Option } from './ui'
+import { Icon } from './icons'
 
 const OPTIONS: Option[] = [
-  { value: 'off', label: 'Off', sub: 'Hermux asks before risky commands', icon: '✋', tone: 'gray' },
+  { value: 'off', label: 'Off', sub: 'Hermux asks before risky commands', icon: 'hand', tone: 'gray' },
   {
     value: 'auto',
     label: 'Auto access',
     sub: 'Runs everything without asking, except the commands on Hermux’s dangerous list (recursive deletes, overwriting system or config files, force-killing processes, piping downloads into a shell…): those are blocked',
-    icon: '🛡',
+    icon: 'shield',
     tone: 'teal'
   },
-  { value: 'full', label: 'Full access', sub: 'Runs every command without asking. Only Hermux’s catastrophic list (wipe the disk, shut down…) stays blocked', icon: '⚡', tone: 'red' }
+  { value: 'full', label: 'Full access', sub: 'Runs every command without asking. Only Hermux’s catastrophic list (wipe the disk, shut down…) stays blocked', icon: 'zap', tone: 'red' }
 ]
 
 const DONE: Record<Access, string> = {
@@ -43,7 +44,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
         message:
           'Hermux will run every command in this chat without asking you first: deleting or overwriting files, killing apps and processes, installing software, changing settings, sending data over the network. A wrong step can lose your data, and nothing is checked before it runs. Only Hermux’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. Use it only for a task you trust, and turn it off afterwards.',
         confirmLabel: 'Allow full access',
-        icon: '⚠️',
+        icon: 'warning',
         danger: true
       })
       if (!ok) return
@@ -66,7 +67,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
   return (
     <>
       <button className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermux may do without asking`} disabled={offline || !settled} onClick={() => setOpen(true)}>
-        {compact ? (mode === 'full' ? '⚡' : '🛡') : mode === 'full' ? '⚡ Full access' : 'Auto'}
+        {compact ? <Icon n={mode === 'full' ? 'zap' : 'shield'} /> : mode === 'full' ? <><Icon n="zap" /> Full access</> : 'Auto'}
       </button>
       {open && <PickerSheet title="Auto: run without asking" options={OPTIONS} value={mode} onPick={v => void pick(v)} onClose={() => setOpen(false)} />}
     </>
@@ -83,7 +84,7 @@ export function DefaultAccessRow() {
         title: 'Full access in every chat?',
         message: 'Hermux will run every command in every chat without asking you first: deleting or overwriting files, killing apps, installing software, sending data over the network. Nothing is checked before it runs. Only Hermux’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. You can still turn it off for a single chat from its Auto button.',
         confirmLabel: 'Allow in all chats',
-        icon: '⚠️',
+        icon: 'warning',
         danger: true
       })
       if (!ok) return
@@ -91,5 +92,5 @@ export function DefaultAccessRow() {
     setDefaultAccess(want)
     setMode(want)
   }
-  return <SelectRow icon="⚡" tone="teal" title="Auto for all chats" options={OPTIONS} value={mode} onChange={v => void pick(v)} />
+  return <SelectRow icon="zap" tone="teal" title="Auto for all chats" options={OPTIONS} value={mode} onChange={v => void pick(v)} />
 }

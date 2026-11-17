@@ -12,6 +12,7 @@ import { ScreenShell, Sheet, Status } from './Screens'
 import { Row, Section, Segmented } from './ui'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
+import { Icon } from './icons'
 
 function shareText(title: string, text: string): void {
   if (!nativeShare(title, text)) void copyText(text).then(() => toast('Copied (sharing works in the phone app)'))
@@ -30,17 +31,17 @@ function ItemMenu({ item, text, onClose, onGone }: { item: GalleryItem; text: st
   return (
     <Sheetish title={item.title} onClose={onClose}>
       <Section>
-        <Row icon="✏️" tone="gold" title="Rename" onClick={run(() => void promptDialog({ title: 'Rename', value: item.title, placeholder: 'Title', confirmLabel: 'Rename' }).then(t => t && void renameItem(item, t)))} />
+        <Row icon="pencil" tone="gold" title="Rename" onClick={run(() => void promptDialog({ title: 'Rename', value: item.title, placeholder: 'Title', confirmLabel: 'Rename' }).then(t => t && void renameItem(item, t)))} />
       </Section>
       {text != null && (
         <Section title="Share">
-          <Row icon="⧉" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
-          <Row icon="↗" tone="green" title="Share…" onClick={run(() => shareText(item.title, text))} />
+          <Row icon="copy" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
+          <Row icon="external" tone="green" title="Share…" onClick={run(() => shareText(item.title, text))} />
         </Section>
       )}
       <Section>
         <Row
-          icon="🗑"
+          icon="trash"
           danger
           title="Delete"
           onClick={run(() =>
@@ -91,7 +92,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
         {/* No chat buttons (old saved copies, deleted chats): the ⋮ shares the label's row instead of sitting alone. */}
         <div className={`lib-viewer-bar${item.chat ? '' : ' solo'}`}>
           <span className="dim small">
-            {TYPE_ICON[item.type] ?? '📄'} {item.category} · {noChat(item) ? 'saved copy' : `from ${chatLabel(item)}`} · {ago(item.updated * 1000)}
+            <Icon n={TYPE_ICON[item.type] ?? 'file'} /> {item.category} · {noChat(item) ? 'saved copy' : `from ${chatLabel(item)}`} · {ago(item.updated * 1000)}
           </span>
           {canOpen && (
             <button className="btn primary" onClick={go(true)}>
@@ -104,7 +105,7 @@ function Viewer({ itemKey, onClose }: { itemKey: string; onClose: () => void }) 
             </button>
           )}
           <button className="icon-btn" aria-label="Item options" onClick={() => setMenu('item')}>
-            ⋮
+            <Icon n="dots" />
           </button>
         </div>
         <div className="lib-viewer-body">
@@ -163,13 +164,13 @@ export function GalleryScreen() {
           {shown.map(i => (
             <button key={i.key} className="gallery-card" onClick={() => { haptic(); setOpen(i.key) }}>
               <span className="gallery-card-top">
-                <span className="gallery-icon" aria-hidden="true">{TYPE_ICON[i.type] ?? '📄'}</span>
+                <span className="gallery-icon" aria-hidden="true"><Icon n={TYPE_ICON[i.type] ?? 'file'} /></span>
                 <span className="gallery-cat">{i.category}</span>
               </span>
               <span className="gallery-title">{i.title}</span>
               {i.snippet && <span className="gallery-snippet">{i.snippet}</span>}
               <span className="gallery-from">
-                {i.chat ? `💬 ${i.chat.title || 'Untitled chat'}` : noChat(i) ? 'Saved copy' : 'Chat deleted'} · {ago(i.updated * 1000)}
+                {i.chat ? <><Icon n="chat" /> {i.chat.title || 'Untitled chat'}</> : noChat(i) ? 'Saved copy' : 'Chat deleted'} · {ago(i.updated * 1000)}
               </span>
             </button>
           ))}

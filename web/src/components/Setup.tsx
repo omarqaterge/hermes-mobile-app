@@ -18,6 +18,7 @@ import { Spinner } from './Spinner'
 import { formatDuration } from '../text'
 import { ReportLink } from './Report'
 import { runPluginUpdate } from '../plugin-sync'
+import { Icon } from './icons'
 
 // Setup check (drawer → Settings, the status sheet, the offline banner) and the first-run SetupFlow. Both draw the same
 // rows from setupSteps() (setupflow.ts): the check lists every row with a ✓ or ✗ and a button that fixes it or opens
@@ -206,7 +207,7 @@ async function replaceTermux() {
     message:
       'Your Termux didn’t come from F-Droid, so Termux:API and Termux:Boot can’t work with it. Android will ask you to uninstall it: everything inside Termux is deleted, including Hermux if it is installed there. Then Hermux installs Termux and the other missing apps from their makers, one after another.',
     confirmLabel: 'Uninstall Termux',
-    icon: '⚠️',
+    icon: 'warning',
     danger: true
   })
   if (!ok) return
@@ -402,7 +403,7 @@ function describe(id: StepId, { n, conn, r, enable, autostartDone }: Ctx): Pick<
         ) : (
           <>
             Shizuku isn’t running. Open it and start it. No root: <i>Start via Wireless debugging</i> (pair once).
-            Rooted: <i>Start</i>. Once “Shizuku starts by itself” below is ✓, Hermux starts it again after a
+            Rooted: <i>Start</i>. Once “Shizuku starts by itself” below is done, Hermux starts it again after a
             restart, on Wi-Fi.
             {(n?.shizukuAuto?.sdk === false || (n?.sdk != null && n.sdk < 30)) && ' On Android 10 and older Shizuku has to be started from a computer after each restart.'}
           </>
@@ -642,7 +643,7 @@ function CheckActions({ c }: { c: Check }) {
   )
 }
 
-const MARK: Record<StepState, string> = { ok: '✓', bad: '✕', info: 'i', wait: '', skip: '' }
+const MARK: Record<StepState, ReactNode> = { ok: <Icon n="check" />, bad: <Icon n="close" />, info: 'i', wait: '', skip: '' }
 const MARK_LABEL: Record<StepState, string> = { ok: 'Done', bad: 'Needs fixing', info: 'Tip', wait: 'Checking', skip: '' }
 
 export function SetupScreen() {
@@ -654,7 +655,7 @@ export function SetupScreen() {
   return (
     <ScreenShell title="Setup check">
       <div className={`setup-hero ${bad ? 'bad' : waiting ? 'wait' : 'ok'}`}>
-        <span className="setup-hero-mark" aria-hidden="true">{bad ? '!' : waiting ? '…' : '✓'}</span>
+        <span className="setup-hero-mark" aria-hidden="true">{bad ? '!' : waiting ? '…' : <Icon n="check" size="1.1em" />}</span>
         <div>
           <div className="setup-hero-title">{bad ? `${bad} thing${bad > 1 ? 's' : ''} to fix` : waiting ? 'Checking…' : 'All set'}</div>
           <div className="dim small">
@@ -802,7 +803,7 @@ export function SetupFlow() {
     const past = !nav.atCurrent && (s?.state === 'ok' || s?.state === 'skip')
     const doneMark = past && (
       <div className="flow-page-done">
-        <span aria-hidden="true">✓</span> Done
+        <span aria-hidden="true"><Icon n="check" /></span> Done
       </div>
     )
     if (id === 'model') {
@@ -845,7 +846,7 @@ export function SetupFlow() {
     body = (
       <>
         <div className={`setup-hero ${gaps.length ? 'wait' : 'ok'}`}>
-          <span className="setup-hero-mark" aria-hidden="true">{gaps.length ? '…' : '✓'}</span>
+          <span className="setup-hero-mark" aria-hidden="true">{gaps.length ? '…' : <Icon n="check" size="1.1em" />}</span>
           <div>
             <div className="setup-hero-title">{gaps.length ? 'Almost done' : 'All set'}</div>
             <div className="dim small">
@@ -901,15 +902,15 @@ export function SetupFlow() {
       )}
       {!loading && (nav.prev || nav.next) && (
         <div className="flow-nav">
-          <button className="btn" aria-label="Previous step" disabled={!nav.prev} onClick={goPrev}>‹ Back</button>
-          <button className="btn" aria-label="Next step" disabled={!nav.next} onClick={goNext}>Next ›</button>
+          <button className="btn" aria-label="Previous step" disabled={!nav.prev} onClick={goPrev}><Icon n="left" /> Back</button>
+          <button className="btn" aria-label="Next step" disabled={!nav.next} onClick={goNext}>Next <Icon n="right" /></button>
         </div>
       )}
       {!loading && doneRows.length > 0 && (
         <ul className="flow-done">
           {doneRows.map(id => (
             <li key={id}>
-              <span className="flow-done-mark" aria-hidden="true">✓</span> {describe(id, ctx).title}
+              <span className="flow-done-mark" aria-hidden="true"><Icon n="check" /></span> {describe(id, ctx).title}
             </li>
           ))}
         </ul>
@@ -952,7 +953,7 @@ function AppsStep({ n }: { n: NativeSetup }) {
           return (
             <li key={h.id} className={`setup-item ${has ? 'ok' : 'bad'}`}>
               <span className={`setup-mark ${has ? 'ok' : 'bad'}`} aria-label={has ? 'Done' : 'Missing'}>
-                {has ? '✓' : a.state === 'downloading' || a.state === 'installing' ? <Spinner small /> : '✕'}
+                {has ? <Icon n="check" /> : a.state === 'downloading' || a.state === 'installing' ? <Spinner small /> : <Icon n="close" />}
               </span>
               <div className="setup-body">
                 <div className="setup-title">{h.name}</div>
@@ -1043,7 +1044,7 @@ function ShizukuStep({ n, onDone, onCheck }: { n: NativeSetup; onDone: () => voi
   }, [running])
   const sub = (ok: boolean | undefined, text: ReactNode) => (
     <li className={`setup-item ${ok ? 'ok' : 'bad'}`}>
-      <span className={`setup-mark ${ok ? 'ok' : 'bad'}`} aria-label={ok ? 'Done' : 'Not yet'}>{ok ? '✓' : '·'}</span>
+      <span className={`setup-mark ${ok ? 'ok' : 'bad'}`} aria-label={ok ? 'Done' : 'Not yet'}>{ok ? <Icon n="check" /> : '·'}</span>
       <div className="setup-body">{text}</div>
     </li>
   )
@@ -1111,7 +1112,7 @@ function useInstallClock(on: boolean): number {
   return now
 }
 
-const MARK_STEP = { ok: '✓', bad: '✕', run: '', todo: '·' } as const
+const MARK_STEP = { ok: <Icon n="check" />, bad: <Icon n="close" />, run: '', todo: '·' } as const
 
 /** Step 3: copy the installer command, run it in Termux, then its progress line by line. */
 function InstallerStep({ progress, onCopied }: { progress: Progress | null; onCopied: () => void }) {

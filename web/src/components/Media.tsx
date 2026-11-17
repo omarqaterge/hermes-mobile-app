@@ -8,6 +8,7 @@ import { addressOf, allowRemoteOnce, isRemoteUrl, openChecked, useGuard } from '
 
 export { mediaKind, type MediaKind } from '../text'
 import { mediaKind } from '../text'
+import { Icon } from './icons'
 
 const isRemote = (s: string) => /^(https?:|data:|blob:)/i.test(s)
 
@@ -195,7 +196,7 @@ export function Lightbox({ src, url, alt, onClose }: { src: string; url: string;
         />
       </div>
       <button className="lightbox-close" aria-label="Close" onClick={onClose}>
-        ✕
+        <Icon n="close" />
       </button>
       <div className="lightbox-bar">
         {/* A remote image in a chat that has read phone data was loaded by a tap; saving or sharing would fetch it again, which the shell refuses. */}
@@ -213,7 +214,7 @@ export function FileChip({ src, label }: { src: string; label?: string }) {
   const name = label || localPath(src).split('/').pop() || src
   return (
     <button className="file-chip" onClick={() => openWith(src, guarded)}>
-      📎 <span>{name}</span>
+      <Icon n="clip" /> <span>{name}</span>
     </button>
   )
 }

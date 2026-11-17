@@ -14,6 +14,7 @@ import { previewKind, type PreviewKind } from '../filekind'
 import { Linked } from './Linked'
 import { ReportLink } from './Report'
 import { LOAD_LIMIT_MS, timeLimit, TimeLimitError } from '../timelimit'
+import { Icon, iconOf, type IconName } from './icons'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -280,7 +281,7 @@ export function MemoryScreen() {
       title="Memory"
       actions={
         <button className="icon-btn" aria-label="Add" onClick={() => setEdit({ old: null, text: '' })}>
-          ＋
+          <Icon n="plus" />
         </button>
       }
     >
@@ -465,11 +466,11 @@ export function CronScreen() {
       title="Cron jobs"
       actions={
         <button className="icon-btn" aria-label="New job" onClick={() => setCreating(true)}>
-          ＋
+          <Icon n="plus" />
         </button>
       }
     >
-      <Status loading={loading} error={error} empty={!data?.length} emptyText="No scheduled jobs on this phone yet. Tap ＋ to create one." />
+      <Status loading={loading} error={error} empty={!data?.length} emptyText="No scheduled jobs on this phone yet. Tap the plus button to create one." />
       {(data || []).map(j => (
         <div key={jobId(j)} className={`card${jobPaused(j) ? ' muted' : ''}`}>
           <div className="card-head">
@@ -483,7 +484,7 @@ export function CronScreen() {
           </div>
           {j.prompt ? <div className="card-text"><Linked text={String(j.prompt).slice(0, 240)} /></div> : null}
           <div className="card-actions">
-            <button onClick={() => void act(j, 'trigger')}>▶ Run now</button>
+            <button onClick={() => void act(j, 'trigger')}><Icon n="play" /> Run now</button>
             <button onClick={() => void act(j, jobPaused(j) ? 'resume' : 'pause')}>{jobPaused(j) ? 'Resume' : 'Pause'}</button>
             <button onClick={() => void showRuns(j)}>Runs</button>
             <button onClick={() => edit(j)}>Edit</button>
@@ -586,9 +587,9 @@ const ROOTS: [string, string][] = [
 const PREVIEW_MAX = 3 * 1024 * 1024
 const NO_PREVIEW = 'No preview here. Use Open with… to view it in another app.'
 
-function fileIcon(name: string, mime?: string | null): string {
+function fileIcon(name: string, mime?: string | null): IconName {
   const k = previewKind(name, mime).kind
-  return k === 'image' ? '🖼' : k === 'doc' ? '📄' : k === 'media' ? '🎞' : '📦'
+  return k === 'image' ? 'image' : k === 'doc' ? 'file' : k === 'media' ? 'film' : 'package'
 }
 
 function decodeDataUrl(url: string): string {
@@ -676,10 +677,10 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
       actions={
         <>
           <button className="icon-btn" aria-label="Upload" onClick={() => upload.current?.click()}>
-            ⤒
+            <Icon n="upload" />
           </button>
           <button className="icon-btn" aria-label="New folder" onClick={() => setNewDir('')}>
-            ＋
+            <Icon n="plus" />
           </button>
         </>
       }
@@ -707,20 +708,20 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
             Create
           </button>
           <button className="btn" aria-label="Cancel" onClick={() => setNewDir(null)}>
-            ✕
+            <Icon n="close" />
           </button>
         </div>
       )}
       <Status loading={loading} error={error} empty={!data?.entries.length} emptyText="Empty folder" />
       {data?.parent && (
         <button className="file-row" onClick={() => setPath(data.parent!)}>
-          <span className="file-icon">↰</span>
+          <span className="file-icon"><Icon n="back" /></span>
           <span className="list-title">..</span>
         </button>
       )}
       {data?.entries.map(e => (
         <button key={e.path} className="file-row" onClick={() => void open(e)}>
-          <span className="file-icon">{e.is_directory ? '📁' : fileIcon(e.name, e.mime_type)}</span>
+          <span className="file-icon"><Icon n={e.is_directory ? 'folder' : fileIcon(e.name, e.mime_type)} /></span>
           <span className="list-main static">
             <span className="list-title">{e.name}</span>
             <span className="list-sub">
@@ -869,15 +870,15 @@ export function ProjectsScreen() {
       title="Projects"
       actions={
         <button className="icon-btn" aria-label="New project" onClick={() => setCreating(true)}>
-          ＋
+          <Icon n="plus" />
         </button>
       }
     >
-      <Status loading={loading} error={error} empty={!data?.projects?.length} emptyText="No projects yet. A project groups chats around a folder — tap ＋ to create one." />
+      <Status loading={loading} error={error} empty={!data?.projects?.length} emptyText="No projects yet. A project groups chats around a folder — tap the plus button to create one." />
       {data?.projects?.map(p => (
         <button key={p.id} className={`card as-button${data.active_id === p.id ? ' active' : ''}`} onClick={() => void show(p)}>
           <div className="card-head">
-            <span className="list-title">📁 {p.name}</span>
+            <span className="list-title"><Icon n="folder" /> {p.name}</span>
             {data.active_id === p.id && <span className="tag">active</span>}
           </div>
           {p.description && <div className="card-text">{p.description}</div>}
@@ -931,7 +932,7 @@ export function ProjectsScreen() {
                 }}
               >
                 <span className="list-title">{s.title || s.label || s.id}</span>
-                <span className="chev dim">›</span>
+                <span className="chev dim"><Icon n="right" /></span>
               </button>
             ))}
           </div>
@@ -953,12 +954,12 @@ export function ProjectsScreen() {
 // One screen for what Hermes knows and does on its own, each with a one-line summary; Back from a page returns here.
 
 const HUB: { key: Exclude<Screen, null>; icon: string; title: string; tone: string }[] = [
-  { key: 'skills', icon: '✦', title: 'Skills', tone: 'gold' },
-  { key: 'memory', icon: '🧠', title: 'Memory', tone: 'purple' },
-  { key: 'cron', icon: '⏱', title: 'Scheduled jobs', tone: 'blue' },
-  { key: 'files', icon: '📁', title: 'Files', tone: 'teal' },
-  { key: 'projects', icon: '🗂', title: 'Projects', tone: 'green' },
-  { key: 'gallery', icon: '🖼', title: 'Canvas gallery', tone: 'gold' }
+  { key: 'skills', icon: 'sparkles', title: 'Skills', tone: 'gold' },
+  { key: 'memory', icon: 'brain', title: 'Memory', tone: 'purple' },
+  { key: 'cron', icon: 'clock', title: 'Scheduled jobs', tone: 'blue' },
+  { key: 'files', icon: 'folder', title: 'Files', tone: 'teal' },
+  { key: 'projects', icon: 'layers', title: 'Projects', tone: 'green' },
+  { key: 'gallery', icon: 'image', title: 'Canvas gallery', tone: 'gold' }
 ]
 
 interface HubData {
@@ -1044,7 +1045,7 @@ export function HubScreen() {
               setState({ screen: h.key, screenBack: 'hub' })
             }}
           >
-            <span className={`set-icon tone-${h.tone}`} aria-hidden="true">{h.icon}</span>
+            <span className={`set-icon tone-${h.tone}`} aria-hidden="true">{iconOf(h.icon)}</span>
             <span className="hub-text">
               <span className="hub-title">{h.title}</span>
               <span className="hub-sub">{sub(h.key)}</span>
@@ -1054,7 +1055,7 @@ export function HubScreen() {
                 </span>
               )}
             </span>
-            <span className="chev" aria-hidden="true">›</span>
+            <span className="chev" aria-hidden="true"><Icon n="right" /></span>
           </button>
         ))}
       </div>

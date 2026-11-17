@@ -9,6 +9,7 @@ import { haptic } from '../bridge'
 import { promptDialog } from '../dialog'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, profileLabel, setProfileModel } from './Settings'
+import { Icon } from './icons'
 
 interface Profile {
   name: string
@@ -43,7 +44,7 @@ export function BotsScreen() {
       title="Bots"
       actions={
         <button className="icon-btn" aria-label="New bot" onClick={() => setCreating(true)}>
-          ＋
+          <Icon n="plus" />
         </button>
       }
     >
@@ -214,13 +215,13 @@ function BotSheet({ p, onClose, onChanged }: { p: Profile; onClose: () => void; 
         </div>
         <div className="menu-list">
           <button className="menu-item" onClick={() => void chat()}>
-            💬 Chat with {label}
+            <Icon n="chat" /> Chat with {label}
           </button>
           <button className="menu-item" onClick={() => setView('model')}>
-            🧩 Default model
+            <Icon n="puzzle" /> Default model
           </button>
           <button className="menu-item" onClick={() => setView('soul')}>
-            ✎ Personality (SOUL.md)
+            <Icon n="pencil" /> Personality (SOUL.md)
           </button>
           <button
             className="menu-item"
@@ -228,14 +229,14 @@ function BotSheet({ p, onClose, onChanged }: { p: Profile; onClose: () => void; 
               setState({ screen: 'settings', screenProfile: p.name })
             }}
           >
-            🔑 API keys & settings
+            <Icon n="key" /> API keys &amp; settings
           </button>
           <button className="menu-item" onClick={() => setView('rename')}>
             Aa Rename
           </button>
           {!p.is_default && (
             <button className="menu-item danger" onClick={() => void del()}>
-              🗑 Delete bot
+              <Icon n="trash" /> Delete bot
             </button>
           )}
         </div>

@@ -4,6 +4,7 @@ import { toast } from '../store'
 import { confirmDialog } from '../dialog'
 import { frameDoc, frameHeight, frameLink } from '../htmlframe'
 import { openChecked, useGuard } from '../phone-data-taint'
+import { Icon } from './icons'
 
 /**
  * HTML runs in a sandboxed frame: scripts yes, but no access to the app (no `allow-same-origin`), and no network
@@ -56,7 +57,7 @@ export function HtmlFrame({ html, network, autoHeight, className }: { html: stri
     )
   return (
     <div className={`html-wrap${auto ? ' auto' : ''}`}>
-      {err && <div className="html-err">⚠ {err}</div>}
+      {err && <div className="html-err"><Icon n="warning" /> {err}</div>}
       <iframe
         ref={frame}
         className={`html-frame${className ? ` ${className}` : ''}`}

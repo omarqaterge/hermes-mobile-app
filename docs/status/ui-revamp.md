@@ -24,7 +24,12 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   - The phone checklist for trying a build: `docs/manual-tests.md`, "Trying the redesign build".
   - The island panel's design, prototype and plan (`docs/design/island-panel.md`, `docs/plans/15-island-panel.md`).
 
-**Next:** a drawn icon set in place of every emoji and icon glyph of the web interface, then the same for
+- **Drawn icons (task 01, PR against `redesign`).** `web/src/components/icons.tsx` (lucide-react 0.575.0 shapes) replaces
+  every emoji and icon glyph in `web/src`; `tools/check-no-emoji.py` keeps it so (in `check.sh` and CI); the browser
+  check `32-no-emoji.cjs` reads the rendered interface. Five checks found elements by an emoji and now use role and
+  words (`01`, `07`, `08`, `10`, `12`); none was weakened. Needs a phone: how the icons look at real size (manual-tests).
+
+**Next:** the same for
 notifications, the plugin's messages and the phone scripts, then the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

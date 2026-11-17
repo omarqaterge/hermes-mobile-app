@@ -19,6 +19,7 @@ import { ClaudeSignInSheet, afterSignIn, loadPool, withPoolStatus } from './Sign
 import { Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
 import { Row, Section, SelectRow } from './ui'
+import { Icon } from './icons'
 
 const loadCatalog = async (profile: string) => {
   const p = qs({ profile })
@@ -98,7 +99,7 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
   return (
     <div className="providers">
       <label className="set-search">
-        <span aria-hidden="true">🔍</span>
+        <span aria-hidden="true"><Icon n="search" /></span>
         <input placeholder="Search providers (e.g. deepseek, groq)" value={q} onChange={e => setQ(e.target.value)} />
       </label>
       <Status loading={loading} error={error} empty={!loading && !error && !shown.length} emptyText="No provider matches. Try your own server below." onRetry={reload} />
@@ -107,7 +108,7 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
       {rest.length > 0 && <Section title={q.trim() ? 'More' : `All providers · ${rest.length}`}>{rest.map(row)}</Section>}
       {data && (
         <Section title="Your own server" footer="Any OpenAI-compatible API: vLLM, llama.cpp, LocalAI, a company gateway…">
-          <Row icon="＋" tone="gold" title="Add an OpenAI-compatible endpoint" sub="Its address, and a key if it needs one" chevron onClick={() => setCustom(OWN)} />
+          <Row icon="plus" tone="gold" title="Add an OpenAI-compatible endpoint" sub="Its address, and a key if it needs one" chevron onClick={() => setCustom(OWN)} />
         </Section>
       )}
       {open && (
@@ -267,7 +268,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
                 Save
               </button>
             </div>
-            {e.url && <Row title="Get a key ↗" sub={hostOf(e.url)} onClick={() => openExternal(e.url)} />}
+            {e.url && <Row title="Get a key" trailing={<Icon n="external" />} sub={hostOf(e.url)} onClick={() => openExternal(e.url)} />}
           </Section>
         )}
         <KeyPoolSection entry={e} profile={profile} onChanged={onChanged} />
@@ -292,7 +293,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
             ))}
           </Section>
         )}
-        {!e.key && !e.signIns.length && !e.endpoint && e.url && <Row title="Sign-up / docs ↗" sub={hostOf(e.url)} onClick={() => openExternal(e.url)} />}
+        {!e.key && !e.signIns.length && !e.endpoint && e.url && <Row title="Sign-up / docs" trailing={<Icon n="external" />} sub={hostOf(e.url)} onClick={() => openExternal(e.url)} />}
       </div>
       <div className="sheet-actions">
         <button className="btn primary block" disabled={!e.connected} onClick={() => { haptic(); setPicking(true) }}>
@@ -409,7 +410,7 @@ function EndpointSheet({ preset, profile, onClose, onSaved }: { preset: Preset; 
         </label>
         {preset.key_url && (
           <button className="btn" onClick={() => openExternal(preset.key_url!)}>
-            Get a key ↗
+            Get a key <Icon n="external" />
           </button>
         )}
         <button className="btn block" disabled={busy || !/^https?:\/\/\S+$/.test(url.trim())} onClick={find}>

@@ -61,7 +61,7 @@ module.exports = async t => {
   check(rpcs('config.set').some(c => c.params.key === 'yolo' && c.params.value === '1' && c.params.session_id === 'rt-new-m1'), '/yolo → config.set yolo=1 on this chat')
   check(!rpcs('slash.exec').some(c => /^yolo\b/.test(c.params.command || '')), '/yolo never reaches slash.exec')
   check((await page.getByText('Full access on').count()) > 0, '/yolo shows a notice')
-  check((await page.locator('.model-row .auto-btn.full', { hasText: '⚡ Full access' }).count()) === 1, 'the Auto button beside the model chip reads ⚡ Full access')
+  check((await page.locator('.model-row').getByRole('button', { name: /Full access is on/ }).filter({ hasText: 'Full access' }).filter({ has: page.locator('svg') }).count()) === 1, 'the Auto button beside the model chip reads ⚡ Full access')
   check((await page.locator('.yolo-chip').count()) === 0, 'no separate Full access chip any more')
   check(await page.evaluate(() => JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['s-new-m1'] === true), 'YOLO remembered for this chat (re-applied on resume)')
   await page.locator('.auto-btn').click()

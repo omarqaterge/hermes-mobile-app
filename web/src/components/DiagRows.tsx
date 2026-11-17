@@ -22,7 +22,7 @@ export function DiagRows() {
       />
       {on && (
         <Row
-          icon="🧹"
+          icon="broom"
           tone="red"
           title="Delete the diagnostic log"
           sub="Also empties the agent's service logs on this phone"

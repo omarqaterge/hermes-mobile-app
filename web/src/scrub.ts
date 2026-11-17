@@ -23,9 +23,9 @@ export function userMarks(items: ChatItem[]): Mark[] {
     if (!text) {
       const file = it.files?.[0]
       const img = it.imagePaths?.[0]
-      if (file) text = `📎 ${baseName(file)}`
-      else if (img) text = `🖼 ${baseName(img)}`
-      else if (it.images?.length || it.imageUrls?.length) text = '🖼 photo'
+      if (file) text = baseName(file)
+      else if (img) text = baseName(img)
+      else if (it.images?.length || it.imageUrls?.length) text = 'Photo'
     }
     if (text.length > MAX_TEXT) text = text.slice(0, MAX_TEXT - 1).trimEnd() + '…'
     out.push({ idx, text })

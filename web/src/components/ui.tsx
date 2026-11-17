@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { haptic } from '../bridge'
 import { useBackHandler } from '../backstack'
 import { useSheetDrag } from './useSheetDrag'
+import { Icon, iconOf } from './icons'
 
 // ── grouped settings lists ──────────────────────────────────
 
@@ -22,7 +23,7 @@ export type Tone = 'gold' | 'blue' | 'green' | 'purple' | 'red' | 'gray' | 'teal
 export function IconChip({ children, tone = 'gray' }: { children: ReactNode; tone?: Tone }) {
   return (
     <span className={`set-icon tone-${tone}`} aria-hidden="true">
-      {children}
+      {iconOf(children)}
     </span>
   )
 }
@@ -60,7 +61,7 @@ export function Row({
       </span>
       {value != null && <span className="set-value">{value}</span>}
       {trailing}
-      {chevron && <span className="set-chev">›</span>}
+      {chevron && <span className="set-chev"><Icon n="right" /></span>}
     </>
   )
   return onClick ? (
@@ -142,6 +143,7 @@ export function PickerSheet({ title, options, value, onPick, onClose }: { title:
                 <button
                   key={o.value}
                   className={`picker-opt${o.value === value ? ' on' : ''}`}
+                  aria-pressed={o.value === value}
                   onClick={() => {
                     haptic()
                     onPick(o.value)
@@ -153,7 +155,7 @@ export function PickerSheet({ title, options, value, onPick, onClose }: { title:
                     <span className="set-title">{o.label}</span>
                     {o.sub && <span className="set-sub">{o.sub}</span>}
                   </span>
-                  <span className="picker-check">{o.value === value ? '✓' : ''}</span>
+                  <span className="picker-check">{o.value === value ? <Icon n="check" /> : null}</span>
                 </button>
               ))}
             </div>
