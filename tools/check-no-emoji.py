@@ -6,8 +6,7 @@ Fails when a non-test source file under web/src has an emoji, or one of the glyp
 not looked at. Icons come from web/src/components/icons.tsx; words stay words; ordinary punctuation (arrows in
 "Settings → Voice", the middle dot, the ellipsis, quotes, the multiplication sign) is fine.
 
-A character that is DATA, not interface (a marker the app stores in a chat title, a legacy prefix it strips from old
-messages), is written as a \\u escape in the source, which this check does not see.
+A character that is DATA, not interface (the marker the app stores in a chat title), is written as a \\u escape in the source, which this check does not see.
 
 Usage: tools/check-no-emoji.py [--list] [DIR ...]   (default DIR: web/src; --list prints every hit instead of failing)
 """

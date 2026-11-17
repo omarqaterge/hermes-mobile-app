@@ -143,6 +143,7 @@ export function PickerSheet({ title, options, value, onPick, onClose }: { title:
                 <button
                   key={o.value}
                   className={`picker-opt${o.value === value ? ' on' : ''}`}
+                  aria-pressed={o.value === value}
                   onClick={() => {
                     haptic()
                     onPick(o.value)

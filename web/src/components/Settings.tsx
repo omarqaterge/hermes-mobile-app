@@ -165,6 +165,7 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only, n
                 <button
                   key={m}
                   className={`picker-opt${on ? ' on' : ''}`}
+                  aria-pressed={on}
                   disabled={busy}
                   onClick={() => pick(p.slug, m)}
                 >
@@ -625,7 +626,7 @@ function ConfigSheet({ k, field, value, scope, onClose, onSave }: { k: string; f
         {field.type === 'select' ? (
           <div className="picker-list inline">
             {(field.options || []).map(o => (
-              <button key={o} className={`picker-opt${o === text ? ' on' : ''}`} onClick={() => setText(o)}>
+              <button key={o} className={`picker-opt${o === text ? ' on' : ''}`} aria-pressed={o === text} onClick={() => setText(o)}>
                 <span className="set-text">
                   <span className="set-title">{o || '(default)'}</span>
                 </span>
@@ -825,6 +826,7 @@ function AppearancePage() {
             <button
               key={t.id}
               className={`theme-card${theme === t.id ? ' on' : ''}`}
+              aria-pressed={theme === t.id}
               onClick={() => {
                 haptic()
                 setThemeState(t.id)
@@ -838,7 +840,7 @@ function AppearancePage() {
               </div>
               <div className="theme-name">
                 {t.label}
-                {theme === t.id && <span className="tick"><Icon n="check" label="Selected" /></span>}
+                {theme === t.id && <span className="tick"><Icon n="check" /></span>}
               </div>
             </button>
           ))}

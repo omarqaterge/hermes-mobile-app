@@ -22,7 +22,7 @@ const ICONS = {
   failed: CircleX, clock: Clock, quote: Quote, getModel: CloudDownload, code: Code, compass: Compass, back: CornerLeftUp,
   download: Download, eye: Eye, fast: FastForward, file: FileText, film: Film, folder: Folder, folderOpen: FolderOpen,
   branch: GitBranch, layers: Layers, gauge: Gauge, globe: Globe, hand: Hand, hash: Hash, home: House, image: Image, info: Info,
-  key: KeyRound, link: Link, checklist: ListChecks, lock: Lock, signOut: LogOut, mail: Mail, mapPin: MapPin, expand: Maximize2, shrink: Minimize2, Minimize2,
+  key: KeyRound, link: Link, checklist: ListChecks, lock: Lock, signOut: LogOut, mail: Mail, mapPin: MapPin, expand: Maximize2, shrink: Minimize2,
   menu: Menu, chat: MessageSquare, mic: Mic, music: Music, subagent: Network, package: Package, palette: Palette,
   clip: Paperclip, pencil: Pencil, phoneCall: Phone, pin: Pin, play: Play, plug: Plug, puzzle: Puzzle, redo: Redo2,
   reset: RotateCcw, refresh: RefreshCw, rewind: Rewind, save: Save, search: Search, send: SendHorizontal, settings: Settings,

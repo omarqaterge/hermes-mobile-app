@@ -138,7 +138,7 @@ function SettingSheet({ s, value, def, zones, scope, onClose, onSave }: { s: HSe
         {s.kind === 'choice' && (
           <div className="picker-list inline">
             {s.options.map(o => (
-              <button key={JSON.stringify(o.value)} className={`picker-opt${sameValue(o.value, choice) ? ' on' : ''}`} onClick={() => { haptic(); setChoice(o.value) }}>
+              <button key={JSON.stringify(o.value)} className={`picker-opt${sameValue(o.value, choice) ? ' on' : ''}`} aria-pressed={sameValue(o.value, choice)} onClick={() => { haptic(); setChoice(o.value) }}>
                 <span className="set-text">
                   <span className="set-title">{o.label}</span>
                 </span>

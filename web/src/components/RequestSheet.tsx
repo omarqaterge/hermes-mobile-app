@@ -122,6 +122,7 @@ function OneQuestion({
               <button
                 key={c}
                 className={`choice${on ? ' on' : ''}`}
+                aria-pressed={on}
                 onClick={() => {
                   haptic()
                   if (q.multi_select) onChange((on ? selected.filter(x => x !== c) : [...selected, c]).join('\n'))

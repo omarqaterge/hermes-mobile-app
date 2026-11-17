@@ -101,7 +101,7 @@ export function ModelSheet() {
     const starred = isFav(favs, p.slug, m)
     return (
       <div key={`${p.slug}/${m}`} className={`row model-row${on ? ' on' : ''}`}>
-        <button className="model-pick" onClick={() => pick(p.slug, m)}>
+        <button className="model-pick" aria-pressed={on} onClick={() => pick(p.slug, m)}>
           <span className="model-name">
             {on ? <Icon n="active" /> : null}{on ? ' ' : ''}
             {m}
