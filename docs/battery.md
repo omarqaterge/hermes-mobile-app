@@ -22,7 +22,7 @@ about polling less.
 | 2 | **Dashboard idle polling** (Hermes Desktop's watcher threads, running even with the app closed) | `hermes dashboard`, `tui_gateway` threads | **274 ticks/min before, 126 after** round 2; with the app open 1.13 → 0.74 CPU-s/min in round 3 | **Reduced** by `slow_desktop_watchers` + `slow_background_polls` in `dashboard/plugin_api.py`, and the app's `/api/status` poll (264 ms each) moved from 1 min to 10 min |
 | 3 | **Memory sync loop** | `phone/hermes-services` → `hermes_memory_sync.py` every 10 min | ~5.5 s wall per run (starts a whole proot Debian + a network sync), ~6 runs/hour while awake | Open: run it less often, or only after a turn changed memory |
 | 4 | **The app's WebView** while open | `web/src`: socket ping 15 s, `/activity` 9 s (3 s while the banner shows something), `/api/status` 10 min (ping 1 min), canvas 6 s while its panel is open | App process 10 ticks/min open and idle, 3 in the background. WebView renderer 3.7 min / 17 h | Fine. Each poll also wakes the dashboard (see 2) |
-| 5 | **Screen time in the app** (dark UI, streaming text redraws) | WebView compositing | Part of the phone's screen + display-pipeline cost | Fine. The UI is dark; nothing animates while idle |
+| 5 | **Screen time in the app** (dark UI, streaming text redraws) | WebView compositing, `web/src/mdsplit.ts` | Part of the phone's screen + display-pipeline cost. A streamed 8,000-character reply: 4.97 s of page work in a desktop browser | **Reduced** to 2.89 s in round 4 (below): only the newest part of a streaming reply is read again. The UI is dark; nothing animates while idle |
 | 6 | **Cron ticker** | `cron_ticker.py` in the plugin folder (+ its proot) | 10–14 ticks/min while awake; sleeps with the phone | Fine. Could tick less often (60 s → 120 s) with a small delay to job starts |
 | 7 | **HermesService** (status island, notifications, wake alarms) | `android/.../HermesService.java` | 8 alarm wakeups and 19 notification posts in 17 h | Fine. The wake lock is bounded (Battery #35 rules) |
 | 8 | **app-keeper loop** | `phone/hermes-services` | One bash `/dev/tcp` probe every 5 min; `am` (a Java VM) only when the service is down | Fine |
@@ -82,10 +82,43 @@ Hermes itself (an event instead of a sleep loop).
 - **Never import Hermes's `hermes_bootstrap` from a thread** in our own long-running Hermes processes: it may
   re-exec the process, which kills it under proot (the cron ticker bootstraps in its main thread now).
 
+## Round 4 (2026-11-17): a reply while it streams
+
+No phone was used in this round: the numbers are a desktop browser's (`tools/web-e2e/streamcost.cjs`, Chromium, the
+mock streaming 12 characters every 40 ms, about a model's pace), so they compare before with after and say nothing
+about milliamps. The phone measurement is still to do (`bench.py chat --via ui` with a prompt that asks for a long
+answer; `docs/status/battery-perf-round4.md`).
+
+| Reply | Page work before | After | Change |
+|---|---|---|---|
+| 2,000 characters (7.7 s turn) | 1.12 s (script 0.76) | 0.83 s (script 0.47) | −26 % |
+| 8,000 characters (29.4 s turn) | 4.97 s (script 3.87) | 2.89 s (script 1.43) | −42 % |
+| 16,000 characters (55.7 s turn) | 9.61 s (script 7.95) | 4.96 s (script 2.34) | −48 % |
+
+Where it went (CPU profile of the 8,000-character turn, 5.2 s busy): 3.4 s in `react-markdown` for the streaming
+reply: reading the whole reply again on each batch (1.8 s), the HTML steps after it (1.1 s), and 0.45 s of
+`rehype-highlight` building its 37 language definitions for every drawing.
+
+1. **Parts** (`web/src/mdsplit.ts`, spec 3.3). The reply is cut at the start of top-level blocks; a finished part is
+   drawn once and only the last part is read again. The parser decides and checks every cut.
+2. **Code colours set up once** (`highlightOnce` in `web/src/rich-entry.ts`). Also saves about 1.5 ms (desktop) for
+   every message drawn when a chat opens, once code or math has been seen.
+
+What is left of the 2.89 s: the last part's own Markdown (about 1.1 s), the browser's layout and painting of the new
+text (about 1.2 s), React's commit and the store (about 0.5 s). The one lever left is how often text is put on screen
+(`flushDeltas`: every 60 ms, 150 ms past 6,000 characters): every 100 ms would save roughly a third more at a
+choppier look, which is the owner's call.
+
+Checked in the same round and found fine (no change): the page while idle (0.004 s of work per 5 s, no animation
+running) and while a turn waits on a command (0.05 s per 5 s); the plugin's hooks (per model call and tool call, none
+per token); `HermesService` timers and the wake lock (bounded as 2.5 says; the approval countdown posts its
+notification once a second, for the minute or so an approval lasts); the dashboard's idle polling (what is left needs
+a change in Hermes, see above).
+
 ## How to measure
 
 Repeatable benchmark (chat via the app or the gateway, cron via a temporary job, idle): `tools/battery/bench.py`,
-method in `docs/battery-report.md`.
+method in `docs/battery-report.md`. The page alone, without a phone: `tools/web-e2e/streamcost.cjs` (spec 7.3).
 
 
 ```bash

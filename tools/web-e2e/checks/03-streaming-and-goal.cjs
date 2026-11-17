@@ -88,4 +88,29 @@ module.exports = async t => {
     await page.locator('.msg.assistant', { hasText: 'Busy done.' }).waitFor({ timeout: 5000 })
     check((await page.getByText('Auxiliary title generation failed').count()) === 0, 'the title failure is shown nowhere in the chat')
   }
+
+  // ── a long streamed reply is drawn in parts (mdsplit.ts): nothing lost, doubled or out of order ──
+  {
+    await page.getByPlaceholder('Message Hermux').fill('bench stream 3000 6')
+    await page.getByRole('button', { name: 'Send' }).click()
+    const reply = page.locator('.msg.assistant').last()
+    await reply.locator('h2').nth(3).waitFor({ timeout: 15000 })
+    // A code block opened while later text still arrives keeps its state (its part is finished and left alone).
+    await reply.locator('.codeblock-bar button', { hasText: 'Wrap' }).first().click()
+    await reply.locator('.msg-actions').waitFor({ timeout: 30000 })
+    const r = await reply.evaluate(el => ({
+      heads: [...el.querySelectorAll('h2')].map(h => h.textContent),
+      boxes: el.querySelectorAll('.md').length,
+      pres: el.querySelectorAll('pre').length,
+      tables: el.querySelectorAll('table').length,
+      lists: el.querySelectorAll('.md > ul').length,
+      wrapped: el.querySelectorAll('.codeblock.wrap').length,
+      closing: (el.textContent.match(/A closing sentence for this part/g) || []).length
+    }))
+    const n = r.heads.length
+    check(n >= 6 && r.heads.every((h, i) => h === `Step ${i + 1}: checking the result`), `every heading once, in order (${n})`)
+    check(r.boxes === 1 && r.lists === n && r.closing === n, `one Markdown box holding every part's list and last sentence (${JSON.stringify(r)})`)
+    check(r.pres === Math.ceil(n / 2) && r.tables === Math.ceil(n / 3), `every code block and table drawn once (${r.pres} code, ${r.tables} tables)`)
+    check(r.wrapped === 1, 'Wrap set on a code block mid-stream is still set when the reply is complete')
+  }
 }

@@ -28,7 +28,8 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
    - `message.start` resets the speed counter; `thinking.delta` and `status.update` set the live status line.
    - `reasoning.delta` and `message.delta` are appended to the open reply in batches (`queueDelta` →
      `flushDeltas`, every 60 ms, every 150 ms once the reply is over 6,000 characters). Any other event flushes
-     first, so order never changes.
+     first, so order never changes. The reply's Markdown is drawn in parts, so a batch reads only the last part
+     again (`splitStream`, 3.3).
    - `tool.generating` closes the open reply and adds a generating tool card; `tool.start` turns it into a
      running card (or adds one; a replayed start for a card already shown adds nothing); `tool.complete` fills in
      args, duration, summary, result text and inline diff; `tool.output_risk` flags a card. Canvas tool events
