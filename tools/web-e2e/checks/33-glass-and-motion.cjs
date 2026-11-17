@@ -113,7 +113,12 @@ module.exports = async t => {
     while (list && !/(auto|scroll)/.test(getComputedStyle(list).overflowY)) list = list.parentElement
     let bar = box
     while (bar.parentElement && !bar.parentElement.contains(list) && bar.parentElement !== document.body) bar = bar.parentElement
-    return [...bar.children].map(c => `${(c.innerText || c.getAttribute('aria-label') || c.tagName).replace(/\s+/g, ' ').trim().slice(0, 40)}=${Math.round(c.getBoundingClientRect().height)}`).join(' | ')
+    const say = c => `${(c.innerText || c.getAttribute('aria-label') || c.getAttribute('placeholder') || c.tagName).replace(/\s+/g, ' ').trim().slice(0, 40)}=${Math.round(c.getBoundingClientRect().height)}`
+    // The rows of the block below the messages, then the rows of the composer itself and its text box, so a row that
+    // grows names itself.
+    let comp = box
+    while (comp.parentElement && comp.parentElement !== bar) comp = comp.parentElement
+    return [...bar.children].map(say).join(' | ') + ` [composer: ${[...comp.children].map(say).join(' | ')}; text box=${box.clientHeight}]`
   })
   const heights = async glass => {
     const states = {}
