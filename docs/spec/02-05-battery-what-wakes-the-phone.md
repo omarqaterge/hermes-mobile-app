@@ -31,10 +31,10 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
   wake. One-off movements are under half a second and change only position, scale or opacity; a second after the last
   change no animation runs. Every CSS animation stands still while the app is away (`setAppAway` from
   `window.hermesPause` and `visibilitychange`, `<html data-app-away>`), and one given to `pauseWhenHidden` also while
-  its element is off screen. At most three surfaces blur at once. A phone that reports 2 GB of memory or less, or 4
-  cores or fewer, starts with solid surfaces and Reduced animations; the shell cannot tell the page that battery saver
-  is on. With Glass effects off and Animations Off, scrolling and a streamed reply cost what they did before glass and
-  motion, and the chat list opens at once (numbers in `docs/performance-history.md`).
+  its element is off screen. At most three surfaces blur at once. Glass starts on and Animations follow only the
+  phone's "Remove animations" (the phone's memory and cores play no part; the shell cannot tell the page that battery
+  saver is on). With Glass effects off and Animations Off, scrolling and a streamed reply cost what they did before
+  glass and motion, and the chat list opens at once (numbers in `docs/performance-history.md`).
 - **Termux loops:** the app-keeper probes 9121 every 300 s, verifies it with a `hm-local hello` (one Python start;
   `HM_KEEPER_HELLO_EVERY` makes it every Nth round), and only starts a Java VM (`am`) when the service is down or
   doesn't verify; memory sync runs only if its script exists.

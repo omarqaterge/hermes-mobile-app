@@ -30,10 +30,12 @@ these rules; a task that cannot meet one stops and says so.
    in their tasks (a sub-agent's live output while its sheet is open, at most every 3 s).
 9. **Hidden things cost nothing:** a closed tray, folded steps, closed nested rows and closed sheets are not updated
    and, where it is simple, not rendered. Streaming must not re-render earlier messages.
-10. **The phone decides the default.** On a phone that reports little memory or few cores (or with battery saver on,
-    where the shell can tell; today it cannot), glass starts as solid surfaces and animations as Reduced; the person
-    can turn them up in Settings → Appearance → Effects. Glass off and Animations Off make the app at least as light as
-    it was.
+10. **The person decides the look; the phone only asks for no animations.** Glass effects starts on and Animations
+    follows the phone's "Remove animations" (Off when set, else Full); both are in Settings → Appearance → Effects.
+    Glass off and Animations Off make the app at least as light as it was. Changed 2026-11-17, in the review of the
+    first glass and motion PR: the brief first said a phone reporting little memory or few cores (or battery saver,
+    where the shell can tell) starts with solid surfaces and Reduced; the owner dropped that, so the defaults do not
+    depend on the machine.
 11. **What cannot be measured in a browser** (heat and battery on a real phone) goes to `docs/manual-tests.md` as a
     ten-minute working session with glass and animations on and then off, comparing the battery drop.
 

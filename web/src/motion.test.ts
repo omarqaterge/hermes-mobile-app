@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The look's two settings and the motion helpers (motion.ts) and the bars' heights (barinsets.ts).
 import { afterEach, expect, test, vi } from 'vitest'
-import { applyLook, defaultGlass, defaultMotion, glassChoice, isLightDevice, motionChoice, motionLevel, pauseWhenHidden, setAppAway, setGlass, setMotionLevel, stagger } from './motion'
+import { applyLook, defaultGlass, defaultMotion, glassChoice, motionChoice, motionLevel, pauseWhenHidden, setAppAway, setGlass, setMotionLevel, stagger } from './motion'
 import { barInsets, onBarInsets, watchBars } from './barinsets'
 
 afterEach(() => {
@@ -12,20 +12,18 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-test('a light phone: 2 GB or less, or 4 cores or fewer', () => {
-  expect(isLightDevice({ deviceMemory: 2, hardwareConcurrency: 8 })).toBe(true)
-  expect(isLightDevice({ deviceMemory: 4, hardwareConcurrency: 4 })).toBe(true)
-  expect(isLightDevice({ deviceMemory: 4, hardwareConcurrency: 8 })).toBe(false)
-  expect(isLightDevice({})).toBe(false) // nothing reported: not assumed light
+test('defaults: Animations follows the phone asking for no animations, glass is on', () => {
+  expect(defaultMotion(true)).toBe('off')
+  expect(defaultMotion(false)).toBe('full')
+  expect(defaultGlass()).toBe(true)
 })
 
-test('defaults: the phone asking for no animations wins, then a light phone gets Reduced and solid surfaces', () => {
-  expect(defaultMotion(false, true)).toBe('off')
-  expect(defaultMotion(true, true)).toBe('off')
-  expect(defaultMotion(true, false)).toBe('reduced')
-  expect(defaultMotion(false, false)).toBe('full')
-  expect(defaultGlass(true)).toBe(false)
-  expect(defaultGlass(false)).toBe(true)
+test('the defaults do not depend on the phone\'s memory or cores', () => {
+  vi.stubGlobal('navigator', { ...navigator, hardwareConcurrency: 2, deviceMemory: 1 })
+  vi.stubGlobal('matchMedia', () => ({ matches: false }))
+  applyLook()
+  expect(document.documentElement.dataset.motion).toBe('full')
+  expect(document.documentElement.dataset.glass).toBe('on')
 })
 
 test('a choice is kept, written on <html> and wins over the default', () => {

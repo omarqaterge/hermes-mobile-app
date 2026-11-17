@@ -15,7 +15,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `motion.css` — the motion system: springs (`--spring-settle`, `--spring-bounce`, `--spring-gentle`), the fade curve
   (`--ease-fade`), lengths (`--motion-quick`, `--motion-base`, `--motion-settle`, `--motion-bounce`,
   `--motion-stagger`), how far things travel (`--motion-move`), the three levels and what moves (3.20, Motion).
-- `motion.ts` — the look's two settings and the motion helpers: `MotionLevel`, `isLightDevice`, `defaultMotion`,
+- `motion.ts` — the look's two settings and the motion helpers: `MotionLevel`, `defaultMotion`,
   `motionChoice`, `defaultGlass`, `glassChoice`, `motionLevel`, `glassOn`, `applyLook`, `setMotionLevel`, `setGlass`,
   the hooks `useMotionLevel` and `useGlass`, `lessMotion` (true when movement should be left out), `stagger` (a row's
   arrival delay), and `setAppAway` / `pauseWhenHidden`, which stop CSS animations while the app is away or an element

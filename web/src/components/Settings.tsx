@@ -826,7 +826,7 @@ const MOTION_SUB: Record<MotionLevel, string> = {
   reduced: 'Short fades, nothing repeats',
   off: 'Every change is instant'
 }
-const EFFECTS_FOOT = "Until you choose, these follow your phone: animations are off when it is set to remove them, and a phone with little memory starts with solid bars and reduced animations."
+const EFFECTS_FOOT = "Until you choose, Animations follows your phone: Off when it is set to remove animations, otherwise Full."
 
 function AppearancePage() {
   const scale = useStore(s => s.textScale)

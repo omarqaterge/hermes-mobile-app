@@ -1,11 +1,9 @@
 // The look's two switches and the motion system's helpers (docs/decisions/glass-and-motion.md).
 //
 // - Glass effects: the floating bars, sheets, dialogs and toasts are a translucent, blurred material (glass.css), or solid
-//   surfaces when off. Stored in localStorage `hm.glass` ('1' | '0'); absent = the phone decides (on, unless it reports
-//   little memory or few cores).
+//   surfaces when off. Stored in localStorage `hm.glass` ('1' | '0'); absent = on.
 // - Animations: 'full' | 'reduced' | 'off', stored in `hm.motion`; absent = the phone decides: Off when it asks for no
-//   animations (Android's "Remove animations", seen as prefers-reduced-motion), Reduced on a phone with little memory or
-//   few cores, else Full.
+//   animations (Android's "Remove animations", seen as prefers-reduced-motion), else Full.
 // Both are decided once at start-up from what the browser reports (no timer, no bridge call) and written on <html> as
 // data-glass="on|off" and data-motion="full|reduced|off", which glass.css and motion.css read. The shell cannot say
 // whether battery saver is on (no bridge method tells the page), so it plays no part.
@@ -36,13 +34,6 @@ function write(key: string, v: string): void {
   }
 }
 
-/** A phone that reports little memory (2 GB or less) or few cores (4 or fewer) starts with solid surfaces and Reduced. */
-export function isLightDevice(nav: { deviceMemory?: number; hardwareConcurrency?: number } = navigator as Navigator & { deviceMemory?: number }): boolean {
-  const mem = nav.deviceMemory
-  const cores = nav.hardwareConcurrency
-  return (typeof mem === 'number' && mem > 0 && mem <= 2) || (typeof cores === 'number' && cores > 0 && cores <= 4)
-}
-
 function phoneAsksNoMotion(): boolean {
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -51,9 +42,9 @@ function phoneAsksNoMotion(): boolean {
   }
 }
 
-/** The level when the person has not chosen one. */
-export function defaultMotion(light = isLightDevice(), noMotion = phoneAsksNoMotion()): MotionLevel {
-  return noMotion ? 'off' : light ? 'reduced' : 'full'
+/** The level when the person has not chosen one: Off when the phone asks for no animations, else Full. */
+export function defaultMotion(noMotion = phoneAsksNoMotion()): MotionLevel {
+  return noMotion ? 'off' : 'full'
 }
 
 /** The stored choice, or null when the phone decides. */
@@ -62,8 +53,8 @@ export function motionChoice(): MotionLevel | null {
   return LEVELS.includes(v as MotionLevel) ? (v as MotionLevel) : null
 }
 
-/** Glass when the person has not chosen: on unless the phone is a light one. */
-export const defaultGlass = (light = isLightDevice()): boolean => !light
+/** Glass when the person has not chosen: on. */
+export const defaultGlass = (): boolean => true
 
 /** The stored glass choice, or null when the phone decides. */
 export function glassChoice(): boolean | null {
