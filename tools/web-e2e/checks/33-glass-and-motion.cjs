@@ -30,6 +30,15 @@ const contrast = (a, b) => {
   return (x + 0.05) / (y + 0.05)
 }
 
+// Two animation frames: what the page does after a change (a ResizeObserver, a scroll that follows) has happened.
+const frames = p => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
+// The page stands still: two frames on, no one-off animation runs (repeating ones are left out). Bounded: 3 s, then the
+// check that follows reports what it finds.
+const settled = async p => {
+  await frames(p)
+  await p.waitForFunction(() => !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity), null, { timeout: 3000 }).catch(() => {})
+}
+
 module.exports = async t => {
   const { browser } = t
   // A page of the fake shell on chat `chat`, with stored settings `store` (null removes a key) before the app starts.
@@ -97,29 +106,29 @@ module.exports = async t => {
     const states = {}
     const p = await open({ width: 360, height: 740 }, 's-48')
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(600)
+    await settled(p)
     states.idle = await measure(p, 'answer s-48')
     await p.getByPlaceholder('Message Hermux').focus()
     await p.setViewportSize({ width: 360, height: 440 }) // the shell shrinks the page by the keyboard (31-fixed-points)
-    await sleep(400)
+    await settled(p)
     states.keyboard = await measure(p, 'answer s-48')
     const kb = states.keyboard
     check(kb.box <= kb.vh && kb.compBottom === kb.vh, `keyboard: the composer stays above the keyboard (text box bottom ${kb.box}, composer bottom ${kb.compBottom}, window ${kb.vh})`)
     await p.setViewportSize({ width: 360, height: 740 })
-    await sleep(300)
+    await settled(p)
     // With an attachment chip in the composer.
     await p.getByRole('button', { name: 'Add', exact: true }).click()
     const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.getByRole('dialog').getByRole('button', { name: /^File/ }).first().click()])
     await chooser.setFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') })
     await p.getByText('notes.txt').first().waitFor({ timeout: 5000 })
-    await sleep(300)
+    await settled(p)
     states.attachment = await measure(p, 'answer s-48')
     await p.getByRole('button', { name: /^Remove/ }).first().click().catch(() => {})
     // While a reply runs: the status bar shows under the messages.
     await p.getByPlaceholder('Message Hermux').fill('slow reply')
     await p.getByRole('button', { name: 'Send', exact: true }).click()
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 3000 })
-    await sleep(150)
+    await settled(p)
     states.working = await measure(p, 'answer s-48')
     await p.getByText('Slow done.').waitFor({ timeout: 5000 })
     if (record) console.log('RECORDED_STATES', JSON.stringify(states))
@@ -128,7 +137,7 @@ module.exports = async t => {
     // Glass off: the same heights (the layout does not change between the two).
     const q = await open({ width: 360, height: 740 }, 's-48', { 'hm.glass': '0' })
     await q.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(500)
+    await settled(q)
     const off = await measure(q, 'answer s-48')
     check(off.header === states.idle.header && off.bottom === states.idle.bottom && off.messages === states.idle.messages, `glass off: the same heights as with glass (${JSON.stringify([off.header, off.bottom, off.messages])} vs ${JSON.stringify([states.idle.header, states.idle.bottom, states.idle.messages])})`)
     const g = await barGlass(q, 'top')
@@ -140,7 +149,7 @@ module.exports = async t => {
   {
     const p = await open({ width: 360, height: 740 }, 's-visit')
     await p.getByText('visit question 1', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(500)
+    await settled(p)
     const r = await p.evaluate(() => {
       const first = [...document.querySelectorAll('*')].find(e => !e.children.length && e.textContent === 'visit question 1')
       let sc = first
@@ -155,7 +164,7 @@ module.exports = async t => {
       out.compTop2 = comp.getBoundingClientRect().top
       return out
     })
-    await sleep(200)
+    await frames(p)
     const last = await p.getByRole('button', { name: 'Copy', exact: true }).last().boundingBox()
     r.lastBottom = last ? last.y + last.height : Infinity
     check(r.scTop < r.headBottom - 10 && r.scBottom > r.compTop + 10, `under the bars: the list reaches under the header and the composer (list ${Math.round(r.scTop)}–${Math.round(r.scBottom)}, header bottom ${Math.round(r.headBottom)}, composer top ${Math.round(r.compTop)})`)
@@ -167,7 +176,7 @@ module.exports = async t => {
     check((await blurred(p)) <= 3, `glass: at most three blurred surfaces on the chat screen (${await blurred(p)})`)
     await p.getByRole('banner').getByRole('button', { name: 'Chat options' }).click()
     await p.getByRole('dialog').waitFor()
-    await sleep(300)
+    await settled(p)
     const withSheet = await blurred(p)
     check(withSheet <= 3, `glass: at most three blurred surfaces with a sheet open (${withSheet})`)
     await p.keyboard.press('Escape').catch(() => {})
@@ -178,7 +187,7 @@ module.exports = async t => {
   for (const theme of ['default', 'oled', 'light']) {
     const p = await open({ width: 360, height: 740 }, 's-48', { 'hm.theme': theme })
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(500)
+    await settled(p)
     for (const picture of ['#ffffff', '#000000']) {
       // A picture under both bars (inside the list, at the top and the bottom of what it shows), the bars' own content
       // hidden, then the colour of the bare glass is read from a screenshot.
@@ -203,7 +212,7 @@ module.exports = async t => {
         const v = n => css.getPropertyValue(n).trim()
         return { head: { x: 120, y: Math.round(h.top + h.height / 2) }, comp: { x: 180, y: Math.round(c.top + 12) }, colours: { text: v('--text'), dim: v('--glass-dim'), gold: v('--glass-accent'), red: v('--glass-err') } }
       }, picture)
-      await sleep(250)
+      await frames(p)
       const shot = (await p.screenshot()).toString('base64')
       const px = await p.evaluate(async ([src, pts]) => {
         const img = new Image()
@@ -233,7 +242,7 @@ module.exports = async t => {
   {
     const p = await open({ width: 375, height: 812 }, 's-48', { 'hm.motion': 'full' })
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(500)
+    await settled(p)
     await expectIdle(p, 'motion full, the chat open')
     const sheetY = () => p.getByRole('dialog').evaluate(d => d.getBoundingClientRect().top)
     const headerW = () => p.getByRole('banner').evaluate(h => h.getBoundingClientRect().width)
@@ -242,14 +251,14 @@ module.exports = async t => {
     await p.getByRole('dialog').waitFor()
     const moving = await p.getByRole('dialog').evaluate(d => d.getAnimations().filter(a => a.playState === 'running').length)
     const y0 = await sheetY()
-    await sleep(700)
+    await p.getByRole('dialog').evaluate(d => Promise.all(d.getAnimations().map(a => a.finished)))
     const y1 = await sheetY()
     check(moving > 0 && y0 > y1 + 4, `motion full: the sheet springs up (${moving} running, ${Math.round(y0)} → ${Math.round(y1)})`)
     check((await headerW()) < w0 - 4, `motion full: the chat behind steps back while the sheet is open (header ${w0} → ${Math.round(await headerW())} px wide)`)
     await expectIdle(p, 'motion full, a sheet open')
     await p.mouse.click(180, 40)
     await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 })
-    await sleep(600)
+    await settled(p)
     check(Math.abs((await headerW()) - w0) < 1, 'motion full: the chat comes back to full size when the sheet closes')
     await expectIdle(p, 'motion full, the sheet closed')
     // A hidden app pauses what repeats: the streaming caret blinks while a reply runs, stands still while away.
@@ -259,10 +268,10 @@ module.exports = async t => {
     const runningNow = () => p.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').length)
     const before = await runningNow()
     await p.evaluate(() => window.hermesPause())
-    await sleep(100)
+    await frames(p)
     const away = await runningNow()
     await p.evaluate(() => window.hermesResume())
-    await sleep(100)
+    await frames(p)
     const back = await runningNow()
     check(before > 0 && away === 0 && back > 0, `motion: repeating animations stop while the app is away and start again (${before} → ${away} → ${back})`)
     await p.getByRole('button', { name: 'Stop', exact: true }).click().catch(() => {})
@@ -271,12 +280,12 @@ module.exports = async t => {
   {
     const p = await open({ width: 375, height: 812 }, 's-48', { 'hm.motion': 'reduced' })
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(500)
+    await settled(p)
     const w0 = await p.getByRole('banner').evaluate(h => h.getBoundingClientRect().width)
     await p.getByRole('banner').getByRole('button', { name: 'Chat options' }).click()
     await p.getByRole('dialog').waitFor()
     const y0 = await p.getByRole('dialog').evaluate(d => d.getBoundingClientRect().top)
-    await sleep(500)
+    await sleep(500) // a fixed wait on purpose: under Reduced nothing may move during it
     const y1 = await p.getByRole('dialog').evaluate(d => d.getBoundingClientRect().top)
     const w1 = await p.getByRole('banner').evaluate(h => h.getBoundingClientRect().width)
     check(Math.abs(y0 - y1) < 1 && Math.abs(w0 - w1) < 1, `motion reduced: the sheet appears where it ends and nothing behind moves (${Math.round(y0)} → ${Math.round(y1)}, header ${w0} → ${w1})`)
@@ -286,7 +295,7 @@ module.exports = async t => {
   {
     const p = await open({ width: 375, height: 812 }, 's-48', { 'hm.motion': 'off' })
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(300)
+    await settled(p)
     const mid = async () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => r(document.getAnimations().filter(a => a.playState === 'running').length))))
     await p.getByRole('banner').getByRole('button', { name: 'Chat options' }).click()
     await p.getByRole('dialog').waitFor()
@@ -301,7 +310,7 @@ module.exports = async t => {
   {
     const p = await open({ width: 360, height: 740 }, 's-48')
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(400)
+    await settled(p)
     await p.getByPlaceholder('Message Hermux').fill('bench stream 3000 25')
     await p.getByRole('button', { name: 'Send', exact: true }).click()
     await p.getByText('Step 3: checking the result').waitFor({ timeout: 15000 })
@@ -311,7 +320,7 @@ module.exports = async t => {
       while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
       return { left: Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight), top: sc.scrollTop }
     })
-    await sleep(300)
+    await frames(p)
     const g1 = await gap()
     check(g1.left < 4, `follows: at the end, the list follows the streamed text (${g1.left} px left below)`)
     await p.evaluate(() => {
@@ -321,9 +330,15 @@ module.exports = async t => {
       sc.scrollTop = Math.max(0, sc.scrollTop - 400)
       sc.dispatchEvent(new Event('scroll'))
     })
-    await sleep(100)
+    await frames(p)
     const g2 = await gap()
-    await sleep(600)
+    await p.evaluate(() => { // more of the reply arrives (bounded: 5 s)
+      const h = [...document.querySelectorAll('h2')].find(e => /^Step 1:/.test(e.textContent))
+      let sc = h
+      while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+      const h0 = sc.scrollHeight
+      return new Promise(r => { const t0 = performance.now(); const f = () => (sc.scrollHeight > h0 + 40 || performance.now() - t0 > 5000 ? r() : requestAnimationFrame(f)); f() })
+    })
     const g3 = await gap()
     check(g3.top === g2.top, `follows: scrolled up, the list stays where the reader is (${g2.top} → ${g3.top})`)
     await p.getByRole('button', { name: 'Stop', exact: true }).click().catch(() => {})
@@ -392,7 +407,7 @@ module.exports = async t => {
     await p.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2, { steps: 4 })
     const during = await scrubbing()
     await p.mouse.up()
-    await sleep(300)
+    await p.waitForFunction(() => !document.documentElement.hasAttribute('data-scrubbing'), null, { timeout: 2000 }).catch(() => {})
     const after = await scrubbing()
     check(!before && during && !after, `scrubbing: the page marks the time a finger is on the rail, and only then (${[before, during, after]})`)
     await p.close()
