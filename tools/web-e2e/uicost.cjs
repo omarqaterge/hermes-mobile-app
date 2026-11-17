@@ -2,6 +2,8 @@
 // scrolling a long chat and opening the chat list, in a desktop browser with the CPU slowed down (4× by default).
 // Needs the page and the mock running (`run.sh --serve` in another shell, with the same HM_E2E_* ports if it chose others).
 //   node uicost.cjs [--runs 5] [--throttle 4] [--motion off|reduced|full] [--glass on|off]
+// Opening the chat list, opening a chat from it and the first words of a reply are tapped and timed inside the page,
+// frame by frame (start-up from the navigation until the reply shows).
 // Prints, per moment, the median over the runs of: the time until the result shows (ms) and the main thread's work
 // meanwhile (ms of tasks); for scrolling, frames slower than 25 ms and the 95th percentile frame. Compare a change with
 // the build before it, on the same machine, with the same options (docs/performance-history.md).
@@ -47,6 +49,22 @@ async function timed(work, act, done) {
   return { ms: Date.now() - t0, work: (await work()) - w0 }
 }
 
+// Taps `selector` (or the innermost element whose text is `text`) inside the page and counts frames until `shown()`
+// holds; returns that time and the main thread's work meanwhile.
+async function inPage(page, work, selector, text, shown) {
+  const w0 = await work()
+  const ms = await page.evaluate(([selector, text, shown]) => new Promise((res, rej) => {
+    const ok = new Function('return (' + shown + ')()')
+    const el = selector ? document.querySelector(selector) : [...document.querySelectorAll('body *')].reverse().find(e => e.textContent === text)
+    if (!el) return rej(new Error('nothing to tap: ' + (selector || text)))
+    const t0 = performance.now()
+    el.click()
+    const tick = () => (ok() ? res(performance.now() - t0) : performance.now() - t0 > 10000 ? rej(new Error('never shown')) : requestAnimationFrame(tick))
+    requestAnimationFrame(tick)
+  }), [selector, text, shown.toString()])
+  return { ms: Math.round(ms), work: (await work()) - w0 }
+}
+
 async function one(browser) {
   const out = {}
   // Start-up: the page loads with the last chat, until its reply is on screen.
@@ -54,22 +72,20 @@ async function one(browser) {
     const { page, work } = await open(browser, 's-48')
     out.startup = await timed(work, () => page.goto(WEB + '/'), () => page.getByText('answer s-48', { exact: true }).waitFor({ timeout: 30000 }))
     await sleep(1500)
-    // Opening the chat list: the Sessions button until the list has slid in and its rows show.
-    out.list = await timed(work, () => page.getByRole('button', { name: /^Sessions/ }).click(), async () => {
-      await page.getByText('Chat 46', { exact: true }).waitFor({ timeout: 10000 })
-      await page.waitForFunction(() => {
-        const d = document.querySelector('[role="complementary"]') || document.querySelector('aside')
-        return d && Math.abs(d.getBoundingClientRect().left) < 1
-      }, null, { timeout: 10000 })
+    // Opening the chat list: the Sessions button until the list has slid in and its rows show; then opening a chat
+    // from it, until its reply shows. Both are tapped and timed inside the page (frame by frame): Playwright's own click
+    // first waits for the target to stand still and its waits poll in steps, which would count as the page's time.
+    out.list = await inPage(page, work, `button[aria-label^="Sessions"]`, null, () => {
+      const d = document.querySelector('[role="complementary"]') || document.querySelector('aside')
+      return !!d && Math.abs(d.getBoundingClientRect().left) < 1 && d.textContent.includes('Chat 46')
     })
-    // Opening a chat from the list, until its reply shows. First the list's rows finish arriving (untimed): a click on a
-    // row that is still moving waits for it to stand still, which would count the arrival as the chat's cost.
+    // The list's rows finish arriving first (untimed).
     await page.waitForFunction(() => !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity), null, { timeout: 3000 }).catch(() => {})
-    out.chat = await timed(work, () => page.getByText('Chat 46', { exact: true }).click(), () => page.getByText('answer s-46', { exact: true }).waitFor({ timeout: 10000 }))
+    out.chat = await inPage(page, work, null, 'Chat 46', () => [...document.querySelectorAll('.msg.assistant')].some(e => e.textContent.includes('answer s-46')))
     await sleep(800)
     // The first words of a streamed reply, from Send.
     await page.getByPlaceholder('Message Hermux').fill('bench stream 1500 40')
-    out.stream = await timed(work, () => page.getByRole('button', { name: 'Send', exact: true }).click(), () => page.getByText('Step 1: checking the result').waitFor({ timeout: 15000 }))
+    out.stream = await inPage(page, work, 'button.send[aria-label="Send"]', null, () => [...document.querySelectorAll('.msg.assistant')].some(e => e.textContent.includes('Step 1: checking the result')))
     await page.close()
   }
   // Scrolling a long chat: 90 frames of 40 px upwards, frame times from requestAnimationFrame.
