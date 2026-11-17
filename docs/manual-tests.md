@@ -425,4 +425,9 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] On a phone of another maker, or with an older Android System WebView: glass shows or falls back to solid bars cleanly, with no unreadable text and nothing missing.
 - [ ] Ten minutes of the same working session twice, Glass effects and Animations Full first, then Glass effects off and Animations Off: compare the battery drop and how warm the phone gets.
 - [ ] Ten minutes of ordinary use, then the battery drop compared with the release over the same ten minutes; the phone sleeps while Hermux is idle.
+- [ ] The composer's tray: a new chat shows the model row open; sending the first message tucks it away and, the first time ever, "Model and context are here" shows for a few seconds (a touch takes it away). A chat from the list starts tucked away.
+- [ ] The tray's handle on a real phone: a tap opens and closes it; a drag follows the finger and a short flick is enough; it never fights the keyboard, the gesture bar, the drawer swipe or the pull-up for /btw; a button just above the bar is still tappable.
+- [ ] The handle's colours: dim at rest, gold with a shimmer while a turn runs, amber and still while Hermux waits for an approval or an answer, the ring's colour when the context is nearly full; in Default, OLED black and Light; with Animations Reduced and Off the shimmer stops.
+- [ ] Settings → Appearance → Model bar → Always open: the model row stays above the text box with no handle; back to Tucked away. TalkBack reads the handle as "Model and status, closed. Open" / "Model and status, open. Close".
+- [ ] Ten minutes with a long turn running and the tray closed: the battery drop is no worse than with Always open.
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.
