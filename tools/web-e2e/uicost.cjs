@@ -15,6 +15,13 @@ const opt = (name, dflt) => {
   const i = process.argv.indexOf('--' + name)
   return i > 0 ? process.argv[i + 1] : dflt
 }
+// Options are separate words (`--motion off`); one quoted word ("--motion off --glass off") would be ignored and the page
+// would run with the app's own defaults, so it stops instead.
+const glued = process.argv.slice(2).find(a => /^--\S+\s/.test(a))
+if (glued) {
+  console.error(`uicost: "${glued}" is one word; give the options as separate words (--motion off --glass off)`)
+  process.exit(2)
+}
 const runs = Number(opt('runs', 5))
 const throttle = Number(opt('throttle', 4))
 const motion = opt('motion', '') // empty: whatever the app chooses by itself

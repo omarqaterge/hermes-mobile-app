@@ -118,7 +118,10 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   docs/performance-history.md. Needs a phone: the menus with TalkBack, Share's share sheet, the switch reading the next
   reply aloud (manual-tests). Not checked in the browser: Unarchive from an archived row (the mock lists no archived
   chats). Animations Off and the chat list: the ~190 ms in task 04's "effects off" rows was the measurement, not the
-  app: on `redesign` before this task, `uicost.cjs --motion off --glass off` opens the list in 11 ms.
+  app (the options most likely reached `uicost.cjs` as one word, so it ran with Full and glass on; it now stops on that):
+  with `--motion off --glass off` both builds open the list in 11 ms. The menus under Off: the row menu 10 → 12 ms and the
+  chat menu 10 → 11 ms at 4x CPU (traced: the chat menu draws its four tiles and three groups, about 2 ms of work; the
+  row menu does the same work as before); everything else unchanged.
 
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
