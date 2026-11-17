@@ -58,6 +58,11 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   the keyboard and the gesture bar, the hint, the handle's colours, battery while a turn runs (manual-tests).
   - `tools/web-e2e/list-checks.sh --missing` names one check that was reworded on `redesign` before this task
     (`24-hermes-settings.cjs`, "hermes settings: the list row counts its items", commit 0931f45), not by it.
+  - `web/src/remote-hold.test.tsx` failed once in a full `tools/check.sh --all` (all its tests passed; vitest counted an
+    unhandled `ReferenceError: window is not defined` from React's scheduler) and passed in six full vitest runs after:
+    the test mounts React roots and never unmounts them, so scheduled work can run after happy-dom has torn the window
+    down when the machine is busy. Neither the test nor what it imports is changed by this task; unmounting its roots
+    belongs in its own PR.
 
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
