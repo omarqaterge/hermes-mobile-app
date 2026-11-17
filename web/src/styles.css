@@ -1209,6 +1209,19 @@ textarea {
 .pin-dot {
   font-size: 0.8em;
 }
+/* The line under a chat's title: time, state word, source. One line whatever the font: a long source is cut. */
+.session-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-state {
+  color: var(--text);
+}
+.session-run svg {
+  vertical-align: -0.125em;
+  margin-right: 3px;
+}
 
 /* swipe actions: right = pin (gold) → archive (blue) further; left = delete (red) */
 .swipe-row {

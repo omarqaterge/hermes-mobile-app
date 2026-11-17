@@ -1,7 +1,8 @@
 // The two short values on the side panel's rows ("Scheduled: next 07:00", "Skills: 12 on"). They ride on the calls the
 // old hub page made (`GET /api/cron/jobs`, `GET /api/skills`), read when the panel opens (and, while it is docked on a
 // wide screen, when the app returns to the foreground), at most once a minute per bot, with no timer. A value that has
-// not loaded or failed is left out and the row still works.
+// not loaded or failed is left out and the row still works. The same jobs list gives the chat list the job names of
+// scheduled runs (`useJobName`).
 import { useSyncExternalStore } from 'react'
 import { api } from './api'
 import { getState } from './store'
@@ -16,6 +17,8 @@ export interface PanelValues {
 export const PANEL_VALUES_TTL_MS = 60_000
 
 interface Job {
+  id?: unknown
+  name?: unknown
   paused?: unknown
   enabled?: unknown
   state?: unknown
@@ -24,6 +27,7 @@ interface Job {
 }
 
 let values: PanelValues = {}
+let jobNames: Record<string, string> = {}
 let loadedAt = 0
 let loadedFor = ''
 let token = 0
@@ -66,6 +70,7 @@ export function refreshPanelValues(force = false): void {
   if (!force && profile === loadedFor && Date.now() - loadedAt < PANEL_VALUES_TTL_MS) return
   if (profile !== loadedFor) {
     values = {}
+    jobNames = {}
     emit()
   }
   loadedFor = profile
@@ -76,8 +81,38 @@ export function refreshPanelValues(force = false): void {
     values = { ...values, ...v }
     emit()
   }
-  api<Job[] | { jobs?: Job[] }>('GET', '/api/cron/jobs').then(r => put({ scheduled: scheduledValue(r) }), () => {})
+  api<Job[] | { jobs?: Job[] }>('GET', '/api/cron/jobs').then(r => {
+    if (mine === token) jobNames = namesOf(r)
+    put({ scheduled: scheduledValue(r) })
+  }, () => {})
   api<Array<{ enabled?: boolean }>>('GET', '/api/skills').then(r => put({ skills: `${r.filter(s => s.enabled !== false).length} on` }), () => {})
+}
+
+/** Job id → name, from the jobs list. */
+export function namesOf(raw: Job[] | { jobs?: Job[] }): Record<string, string> {
+  const list = Array.isArray(raw) ? raw : raw.jobs ?? []
+  const out: Record<string, string> = {}
+  for (const j of list) {
+    const name = typeof j.name === 'string' ? j.name.trim() : ''
+    if (j.id != null && name) out[String(j.id)] = name
+  }
+  return out
+}
+
+/** The job a scheduled run's chat id names: Hermes calls a run's chat `cron_<job id>_<YYYYmmdd>_<HHMMSS>`; null for
+ *  any other id (a newer Hermes's `local-…` ids name no job). */
+export function cronJobId(id: string): string | null {
+  const m = /^cron_(.+)_\d{8}_\d{6}$/.exec(id)
+  return m ? m[1] : null
+}
+
+/** The name a scheduled run's row shows: its job's name from the jobs list when the run's id names the job, else the
+ *  start of the run's title (Hermes titles a run "<job name> · Nov 17 09:00"), else "Scheduled". */
+export function runName(run: { title?: string }, jobName?: string): string {
+  if (jobName) return jobName
+  const t = (run.title || '').trim()
+  const cut = t.lastIndexOf(' · ')
+  return cut > 0 ? t.slice(0, cut).trim() : 'Scheduled'
 }
 
 function subscribe(f: () => void) {
@@ -89,4 +124,9 @@ function subscribe(f: () => void) {
 
 export function usePanelValues(): PanelValues {
   return useSyncExternalStore(subscribe, () => values)
+}
+
+/** The name of a scheduled job, once the jobs list has been read (the panel reads it when it opens). */
+export function useJobName(jobId: string | null): string | undefined {
+  return useSyncExternalStore(subscribe, () => (jobId ? jobNames[jobId] : undefined))
 }

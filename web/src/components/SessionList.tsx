@@ -10,20 +10,21 @@ import { haptic } from '../bridge'
 import { Title, keepBranch, plainTitle } from './Title'
 import { confirmDialog } from '../dialog'
 import { ago, lastActive } from '../unread'
-import { orderChats, recentIds } from '../chatorder'
+import { dayLabel, frozenActivity, orderChats, recentIds } from '../chatorder'
+import { chatListChanged, holdChatSnapshot, useChatSnapshot } from '../chatsnapshot'
+import { cronJobId, runName, useJobName } from '../panelvalues'
 import { Chevron } from './ui'
 import { Icon } from './icons'
 
-function dayLabel(ms?: number): string {
-  if (!ms) return 'Older'
-  const d = new Date(ms)
-  const now = new Date()
-  const days = Math.floor((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000)
-  if (days <= 0) return 'Today'
-  if (days === 1) return 'Yesterday'
-  if (days < 7) return 'This week'
-  if (days < 31) return 'This month'
-  return 'Older'
+/** A scheduled job's run (source "cron"): a clock and the job's name. */
+function RunSource({ s }: { s: SessionListRow }) {
+  const name = runName(s, useJobName(cronJobId(s.id)))
+  return (
+    <span className="session-run">
+      <Icon n="clock" label="Scheduled" />
+      {name}
+    </span>
+  )
 }
 
 // ── one swipeable row ────────────────────────────────────────
@@ -50,7 +51,6 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
     st => (st.active?.storedId === s.id && !!st.active?.running) || st.activity.some(a => a.session === s.id && !a.review)
   )
   const unread = useStore(st => !active && st.unread.includes(s.id)) && !working
-  const sent = useStore(st => st.sentCounts[s.id])
   const ref = useRef<HTMLDivElement>(null)
   const g = useRef({ x0: 0, y0: 0, mode: '' as '' | 'swipe' | 'scroll' | 'drag', moved: false, y: 0, id: 0, timer: 0 as unknown as ReturnType<typeof setTimeout>, zone: '' })
   const [dx, setDx] = useState(0)
@@ -157,15 +157,11 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
         <span className="session-main">
           {working && <span className="visually-hidden">Working</span>}
           <span className={`session-title${working ? ' working' : ''}`}>
-            {unread && <span className="unread-dot" aria-label="Finished, not opened yet" />}
+            {unread && <span className="unread-dot" role="img" aria-label="Finished, not opened yet" />}
             {pinned && <span className="pin-dot"><Icon n="pin" /> </span>}
             {s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}
           </span>
-          <span className="dim small">
-            {[ago(lastActive(s)), sent !== undefined && `${sent} msgs`, s.source !== 'mobile' && s.source]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
+          <RowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} />
         </span>
         <button
             className="row-menu-btn"
@@ -181,6 +177,25 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
           </button>
       </div>
     </div>
+  )
+}
+
+/** The line under a row's title: the time since its last activity, the state word ("Working" while it runs, "Finished"
+ *  while it is unread), then where it came from when not from this app (a scheduled run: the job's name with a clock).
+ *  The state word is text, so it does not rest on the dot's colour; screen readers already hear the state before the
+ *  title (the dot's label, the hidden "Working"), so the word is hidden from them and they hear it once. One line: it
+ *  never wraps, a long source is cut with an ellipsis. */
+function RowLine({ s, state }: { s: SessionListRow; state: '' | 'Working' | 'Finished' }) {
+  const parts: React.ReactNode[] = []
+  const when = ago(lastActive(s))
+  if (when) parts.push(when)
+  if (state) parts.push(<span key="state" className="session-state" aria-hidden="true">{state}</span>)
+  if (s.source === 'cron') parts.push(<RunSource key="run" s={s} />)
+  else if (s.source && s.source !== 'mobile') parts.push(s.source)
+  return (
+    <span className="session-sub dim small">
+      {parts.flatMap((p, i) => (i ? [' · ', p] : [p]))}
+    </span>
   )
 }
 
@@ -224,6 +239,7 @@ function useDrag(commit: (list: ListName, ids: string[]) => void, gap: { list: L
     active.current?.()
     const from = ids.indexOf(id)
     if (from < 0) return
+    holdChatSnapshot(true) // the list's order is not read again until the row is dropped (chatsnapshot.ts)
     const grab = pointerY - rowTop
     let d: { tops: number[]; hs: number[]; scroll0: number; scroller: HTMLElement } | null = null
     let lastY = pointerY
@@ -306,6 +322,7 @@ function useDrag(commit: (list: ListName, ids: string[]) => void, gap: { list: L
       window.removeEventListener('touchmove', onTouch)
       window.removeEventListener('touchend', finish)
       active.current = null
+      holdChatSnapshot(false)
     }
     function finish() {
       if (done) return
@@ -436,6 +453,10 @@ export function SessionList({ query }: { query: string }) {
   const profile = useStore(s => s.profile)
   const activeId = useStore(s => s.active?.storedId)
   const [order, setOrder] = useOrder(profile)
+  // Last activity as of the latest snapshot (chatsnapshot.ts): a reply that lands does not move a row; a chat listed
+  // after the snapshot uses its time now. The date headings are worked out as of the snapshot too.
+  const snap = useChatSnapshot()
+  const activity = useMemo(() => frozenActivity<SessionListRow>(snap.profile === profile ? snap.times : new Map(), lastActive), [snap, profile])
   const [archivedOpen, setArchivedOpen] = useState(false)
   const [archived, setArchivedRows] = useState<SessionListRow[] | null>(null)
   const [menu, setMenu] = useState<{ s: SessionListRow; archived: boolean } | null>(null)
@@ -475,9 +496,9 @@ export function SessionList({ query }: { query: string }) {
 
   const chats = useMemo(() => {
     const others = sessions.filter(s => !order.pinned.includes(s.id) && match(s))
-    // Creation order (or the saved custom one): a message sent or received never moves a chat.
-    return orderChats(others, order.manual)
-  }, [sessions, order.pinned, order.manual, needle]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Last activity from the snapshot (or the saved custom order).
+    return orderChats(others, order.manual, activity)
+  }, [sessions, order.pinned, order.manual, needle, activity]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const drag = useDrag((list, ids) => {
     if (list === 'pinned') setOrder(o => ({ ...o, pinned: [...ids, ...o.pinned.filter(x => !ids.includes(x))] }))
@@ -509,6 +530,7 @@ export function SessionList({ query }: { query: string }) {
     setArchived(id, on)
       .then(() => {
         if (on) setOrder(o => ({ ...o, pinned: o.pinned.filter(x => x !== id) }))
+        chatListChanged(!on) // the order is read again (chatsnapshot.ts); a restored chat with the list that brings it back
         toast(on ? 'Archived' : 'Restored')
         if (archivedOpen || !on) refreshArchived()
       })
@@ -525,6 +547,7 @@ export function SessionList({ query }: { query: string }) {
       .then(() => {
         setOrder(o => ({ ...o, pinned: o.pinned.filter(x => x !== s.id), manual: o.manual && o.manual.filter(x => x !== s.id) }))
         setArchivedRows(a => a && a.filter(x => x.id !== s.id))
+        chatListChanged()
         toast('Deleted')
       })
       .catch(e => toast(errText(e), 'error'))
@@ -625,12 +648,13 @@ export function SessionList({ query }: { query: string }) {
   const grouped = !order.manual
   const chatChildren: React.ReactNode[] = []
   let lastLabel = ''
+  const asOf = snap.at || Date.now()
   chats.forEach((s, i) => {
     if (grouped) {
-      const label = dayLabel((s.started_at || 0) * 1000) // creation day: activity must not move a chat between groups
+      const label = dayLabel(activity(s), asOf) // the day of the snapshot's last activity
       if (label !== lastLabel) {
         chatChildren.push(
-          <div key={`h:${label}`} className="group-title">
+          <div key={`h:${label}`} className="group-title" role="heading" aria-level={2}>
             {label}
           </div>
         )

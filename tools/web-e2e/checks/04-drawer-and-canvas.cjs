@@ -284,4 +284,131 @@ module.exports = async t => {
     check(hid.length === 1 && hid[0].params.session_id === 's-43' && hid[0].params.hidden === true, `chat list: Archive hides the chat (${JSON.stringify(hid.map(c => c.params))})`)
     await dl.close()
   }
+
+  // ── the chat list's order: last activity, read from a snapshot when the panel opens; the state words (spec 3.13) ──
+  // Every mock change below is undone at the end (unbump, dropChats, prefsOrder), and `complete` reaches only the newest page,
+  // so the checks after this file see the mock and the run's main page as before.
+  {
+    const { WEB, MOCK } = require('../lib.cjs')
+    const page0 = async (store = {}) => {
+      const p = await t.browser.newPage({ viewport: { width: 375, height: 812 } })
+      await p.addInitScript(s => {
+        try {
+          if (!sessionStorage.getItem('opened')) {
+            sessionStorage.setItem('opened', '1')
+            for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v)
+          }
+        } catch { /* */ }
+      }, { 'hm.glass': '1', 'hm.motion': 'off', ...store })
+      await p.goto(WEB + '/')
+      await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      return p
+    }
+    const tools = p => {
+      const panel = p.getByRole('complementary', { name: 'Chats' })
+      const shown = async () => ((await panel.boundingBox())?.x ?? -1) >= 0
+      const until = async (fn, ms = 4000) => { for (let i = 0; i < ms / 50; i++) { if (await fn()) return true; await p.waitForTimeout(50) } return false }
+      const title = name => panel.getByText(name, { exact: true })
+      // The row: the innermost box holding both the title and a "Chat options" button.
+      const row = name => panel.locator('div').filter({ has: p.getByText(name, { exact: true }) }).filter({ has: p.getByRole('button', { name: 'Chat options' }) }).last()
+      const y = async name => (await title(name).boundingBox())?.y ?? NaN
+      const group = async name => {
+        const ry = await y(name)
+        let label = ''
+        for (const h of await panel.getByRole('heading').all()) {
+          const b = await h.boundingBox()
+          if (b && b.y < ry) label = (await h.textContent()).trim()
+        }
+        return label
+      }
+      const line = name => row(name).evaluate(el => el.innerText.split('\n').map(x => x.trim()).filter(Boolean).pop())
+      const spoken = name => row(name).ariaSnapshot()
+      return {
+        panel, shown, until, title, row, y, group, line, spoken,
+        open: async () => { await p.getByRole('button', { name: /^Sessions/ }).click(); await until(shown) },
+        close: async () => { await p.mouse.click(360, 400); await until(async () => !(await shown())) }
+      }
+    }
+    const savedPrefs = await fetch(MOCK + '/api/plugins/hermes-mobile/prefs').then(r => r.json()).then(r => r.order ?? null, () => null)
+    const cl = await page0()
+    const c = tools(cl)
+    await c.open()
+
+    // "Working" while a chat runs: the visible word, heard once (the hidden "Working" before the title is what is read).
+    await mock({ activity: [{ session: 's-71', text: 'Thinking…', short: 'Thinking', profile: 'default', review: false, ts: Date.now() / 1000 }] })
+    const working = await c.until(async () => /Working/.test((await c.line('Chat 71')) || ''), 12000)
+    const wLine = await c.line('Chat 71')
+    const wSpoken = await c.spoken('Chat 71')
+    check(working && /^\d+ (h|d) · Working$/.test(wLine), `state words: a running chat says Working after the time (${JSON.stringify(wLine)})`)
+    check((wSpoken.match(/Working/g) || []).length === 1, `state words: screen readers hear Working once (${JSON.stringify(wSpoken)})`)
+    await mock({ activity: [] })
+    await c.until(async () => !/Working/.test((await c.line('Chat 71')) || ''), 12000)
+    const plain = await c.line('Chat 72')
+    check(/^\d+ (h|d)$/.test(plain), `state words: a chat that is neither running nor unread shows only its time (${JSON.stringify(plain)})`)
+
+    // A chat created 70 h ago gets a message: it stays where it is while the panel is open, and is first, under Today,
+    // after the panel opens again.
+    check((await c.group('Chat 70')) === 'This week' && (await c.y('Chat 69')) < (await c.y('Chat 70')), `chat order: before its message, Chat 70 sits by its age (${await c.group('Chat 70')})`)
+    await mock({ bump: 's-70', complete: 's-70' })
+    const arrived = await c.until(async () => /Finished/.test((await c.line('Chat 70')) || ''), 6000)
+    const [y69, y70, y71] = [await c.y('Chat 69'), await c.y('Chat 70'), await c.y('Chat 71')]
+    check(arrived && y69 < y70 && y70 < y71 && (await c.group('Chat 70')) === 'This week', `chat order: a new message moves no row while the panel stays open (${arrived}, ${y69} < ${y70} < ${y71}, ${await c.group('Chat 70')})`)
+    const fLine = await c.line('Chat 70')
+    const fSpoken = await c.spoken('Chat 70')
+    check(/^(now|\d+ min) · Finished$/.test(fLine), `state words: an unread chat says Finished after the time, no message count (${JSON.stringify(fLine)})`)
+    check((fSpoken.match(/Finished/g) || []).length === 1 && fSpoken.includes('Finished, not opened yet'), `state words: screen readers hear Finished once, from the dot (${JSON.stringify(fSpoken)})`)
+    await c.close()
+    await c.open()
+    const firstY = Math.min(...(await Promise.all(['Chat 0', 'Running chat', 'Card chat', 'Stale edit chat', 'Chat 69'].map(c.y))))
+    check((await c.y('Chat 70')) < firstY && (await c.group('Chat 70')) === 'Today', `chat order: after the panel opens again the chat with the new message is first, under Today (${await c.group('Chat 70')})`)
+
+    // A snapshot asked for while a finger (here the mouse button) is down on the panel waits until it lifts.
+    const field = await c.panel.getByPlaceholder('Search chats').boundingBox()
+    await cl.mouse.move(field.x + 20, field.y + field.height / 2)
+    await cl.mouse.down()
+    await mock({ bump: 's-60', newChat: 's-held', complete: 's-60' })
+    const listed = await c.until(async () => (await c.title('Brand new chat').count()) === 1, 6000)
+    const held = [await c.y('Chat 59'), await c.y('Chat 60'), await c.y('Chat 61')]
+    check(listed && held[0] < held[1] && held[1] < held[2], `chat order: while a finger is on the panel a new chat does not re-sort the rows (${listed}, ${held})`)
+    await cl.mouse.up()
+    const after = await c.until(async () => (await c.y('Chat 60')) < (await c.y('Chat 70')), 2000)
+    check(after && (await c.y('Brand new chat')) < (await c.y('Chat 60')), 'chat order: the snapshot follows when the finger lifts (the new chat first, then the chat with the new message)')
+
+    // A scheduled job's run: the job's name with a clock, not the source word.
+    await mock({ cronRuns: true, complete: 's-0' })
+    const runs = await c.until(async () => (await c.title('Old brief name · Nov 17 09:00').count()) === 1, 6000)
+    const rLine = await c.line('Old brief name · Nov 17 09:00')
+    const rSpoken = await c.spoken('Old brief name · Nov 17 09:00')
+    const clock = await c.row('Old brief name · Nov 17 09:00').evaluate(el => [...el.querySelectorAll('svg')].some(s => s.parentElement && /Morning brief/.test(s.parentElement.textContent)))
+    check(runs && /· Morning brief$/.test(rLine) && !/cron/.test(rLine) && clock, `scheduled run: its row names the job (from the jobs list) with a clock, not "cron" (${JSON.stringify(rLine)}, clock ${clock})`)
+    check(/img "Scheduled"[\s\S]*Morning brief/.test(rSpoken), `scheduled run: screen readers hear the clock as "Scheduled", then the job (${JSON.stringify(rSpoken)})`)
+    const lLine = await c.line('Weekly report · Nov 16 08:00')
+    check(/· Weekly report$/.test(lLine) && !/cron/.test(lLine), `scheduled run: a run whose id names no job takes the name from its title (${JSON.stringify(lLine)})`)
+    // The line stays one line under a much wider font (CI's fonts are wider than a Mac's).
+    const rowH = () => c.row('Old brief name · Nov 17 09:00').evaluate(el => el.getBoundingClientRect().height)
+    const h0 = await rowH()
+    await cl.evaluate(() => { document.querySelector('[aria-label="Chats"]').style.letterSpacing = '0.3em' })
+    const h1 = await rowH()
+    await cl.evaluate(() => { document.querySelector('[aria-label="Chats"]').style.letterSpacing = '' })
+    check(Math.abs(h1 - h0) < 0.5, `chat row: the line under the title never wraps, even with wide letter-spacing (${h0} → ${h1} px)`)
+    // The sent counts are not asked for any more (the plugin keeps the route for older apps).
+    check(!calls().some(x => x.path === '/api/plugins/hermes-mobile/sent-counts'), 'chat list: the app no longer asks for sent counts (POST /sent-counts)')
+    await cl.close()
+
+    // A custom order (after a drag, here stored before start) keeps its places when a message arrives, and after reopening.
+    const co = await page0({ 'hm.order.v1.default': JSON.stringify({ pinned: [], manual: ['s-3', 's-1', 's-2'], at: Date.now() + 60000 }) })
+    const d = tools(co)
+    await d.open()
+    const sortBtn = await d.panel.getByRole('button', { name: 'Sort by recent' }).count()
+    const order0 = [await d.y('Chat 3'), await d.y('Chat 1'), await d.y('Chat 2')]
+    check(sortBtn === 1 && order0[0] < order0[1] && order0[1] < order0[2], `custom order: shown as saved, with Sort by recent (${order0})`)
+    await mock({ bump: 's-1', complete: 's-1' })
+    const got = await d.until(async () => /Finished/.test((await d.line('Chat 1')) || ''), 6000)
+    await d.close()
+    await d.open()
+    const order1 = [await d.y('Chat 3'), await d.y('Chat 1'), await d.y('Chat 2')]
+    check(got && order1[0] < order1[1] && order1[1] < order1[2] && (await d.panel.getByRole('heading', { name: 'Today' }).count()) === 0, `custom order: a new message and reopening the panel leave it as it is (${got}, ${order1})`)
+    await co.close()
+    await mock({ unbump: true, dropChats: ['s-held', 'cron_j1_20261117_090000', 'local-0a1b2c'], prefsOrder: savedPrefs })
+  }
 }

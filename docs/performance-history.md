@@ -130,6 +130,33 @@ the list, which the first glass round had found it did (+30%) when it was done d
 moves the panel away and the chat back to full size meanwhile: 23 → 24 ms. Not measured here: heat and battery on a
 phone (`docs/manual-tests.md`).
 
+The chat list's order (task 04): `uicost.cjs --runs 7` at 4x CPU, two rounds each, run in turn against the build before
+it (`redesign` at the start of the task) on one machine. `uicost.cjs` gained a moment for this: scrolling the chat list
+once it is open (60 frames of 40 px). Both builds were measured with the new script.
+
+| Date (change) | Moment | Before | After | Change |
+|---|---|---|---|---|
+| 2026-11-17 (chat list order, effects on: Glass on, Animations Full) | Start-up | 491 / 499 ms, work 465 / 476 ms | 493 / 499 ms, work 469 / 477 ms | none |
+| | Opening a chat | 30 / 30 ms, work 38 / 37 ms | 29 / 29 ms, work 37 / 38 ms | none |
+| | First words of a reply | 394 / 393 ms, work 34 / 32 ms | 394 / 393 ms, work 36 / 36 ms | none (work within 4 ms) |
+| | Scrolling a long chat | work 252 / 260 ms, no frame over 25 ms, p95 16.7 ms | work 251 / 251 ms, no frame over 25 ms, p95 16.8 / 16.7 ms | none |
+| | Opening the chat list | 189 / 192 ms, work 20 / 20 ms | 193 / 190 ms, work 20 / 21 ms | within 2% |
+| | Scrolling the chat list | work 10 / 9 ms, no frame over 25 ms, p95 16.7 / 16.8 ms | work 10 / 9 ms, no frame over 25 ms, p95 16.7 ms | none |
+| 2026-11-17 (chat list order, effects off: Glass off, Animations Off) | Start-up | 510 / 506 ms | 510 / 509 ms | none |
+| | Opening a chat | 30 / 30 ms, work 37 / 38 ms | 30 / 30 ms, work 37 / 38 ms | none |
+| | Scrolling a long chat | work 256 / 262 ms | work 257 / 260 ms | none |
+| | Opening the chat list | 194 / 191 ms, work 19 / 20 ms | 192 / 192 ms, work 21 / 21 ms | time none, +1 to 2 ms work |
+| | Scrolling the chat list | work 9 / 10 ms | work 11 / 9 ms | none |
+
+Opening the list with nothing changed renders nothing new: the snapshot finds the same times and stops. When a message
+has moved a chat since the last look, the open renders the list once in its new order, in the same frame as the open
+(so the rows are in place before they show): measured on the new build alone (a scratch script, the same in-page timing,
+7 runs each, effects on), 222 ms / 21 ms of work with nothing moved and 230 ms / 28 ms after a message moved one chat
+(+3.6% time, +7 ms work, only on those opens). The build before had no such open: it never re-sorted. On this run's
+machine, Animations Off still measured about 190 ms to open the list on both builds (the side panel's own row above
+measured 8 to 11 ms); the two builds agree, so the difference is in the machine or the moment's timing, not this change.
+Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

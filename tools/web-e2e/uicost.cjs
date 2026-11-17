@@ -1,5 +1,5 @@
 // What the interface costs at the moments a person feels: start-up, opening a chat, the first words of a streamed reply,
-// scrolling a long chat and opening the chat list, in a desktop browser with the CPU slowed down (4× by default).
+// scrolling a long chat, opening the chat list and scrolling it, in a desktop browser with the CPU slowed down (4× by default).
 // Needs the page and the mock running (`run.sh --serve` in another shell, with the same HM_E2E_* ports if it chose others).
 //   node uicost.cjs [--runs 5] [--throttle 4] [--motion off|reduced|full] [--glass on|off]
 // Opening the chat list, opening a chat from it and the first words of a reply are tapped and timed inside the page,
@@ -65,6 +65,26 @@ async function inPage(page, work, selector, text, shown) {
   return { ms: Math.round(ms), work: (await work()) - w0 }
 }
 
+// Scrolls the box `find()` returns by `by` px a frame for `n` frames; frame times from requestAnimationFrame.
+async function frameScroll(page, work, find, n, by) {
+  const w0 = await work()
+  const frames = await page.evaluate(([find, n, by]) => new Promise((res, rej) => {
+    const sc = new Function('return (' + find + ')()')()
+    if (!sc) return rej(new Error('nothing to scroll'))
+    const ts = []
+    let i = 0
+    const step = t => {
+      ts.push(t)
+      sc.scrollTop += by
+      if (++i < n) requestAnimationFrame(step)
+      else res(ts.slice(1).map((x, j) => x - ts[j]))
+    }
+    requestAnimationFrame(step)
+  }), [find.toString(), n, by])
+  const sorted = [...frames].sort((a, b) => a - b)
+  return { ms: Math.round(frames.reduce((a, b) => a + b, 0)), work: (await work()) - w0, slow: frames.filter(f => f > 25).length, p95: sorted[Math.floor(sorted.length * 0.95)] }
+}
+
 async function one(browser) {
   const out = {}
   // Start-up: the page loads with the last chat, until its reply is on screen.
@@ -82,6 +102,13 @@ async function one(browser) {
     })
     // The list's rows finish arriving first (untimed).
     await page.waitForFunction(() => !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity), null, { timeout: 3000 }).catch(() => {})
+    // Scrolling the chat list: 60 frames of 40 px down its scrolling area, then back to the top (untimed).
+    out.listScroll = await frameScroll(page, work, () => {
+      const d = document.querySelector('[role="complementary"]') || document.querySelector('aside')
+      return d && [...d.querySelectorAll('*')].find(e => /(auto|scroll)/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight)
+    }, 60, 40)
+    await page.evaluate(() => { const d = document.querySelector('[role="complementary"]') || document.querySelector('aside'); for (const e of d.querySelectorAll('*')) e.scrollTop = 0 })
+    await sleep(300)
     out.chat = await inPage(page, work, null, 'Chat 46', () => [...document.querySelectorAll('.msg.assistant')].some(e => e.textContent.includes('answer s-46')))
     await sleep(800)
     // The first words of a streamed reply, from Send.
@@ -95,23 +122,11 @@ async function one(browser) {
     await page.goto(WEB + '/')
     await page.getByText('answer 149', { exact: true }).waitFor({ timeout: 30000 })
     await sleep(1500)
-    const w0 = await work()
-    const frames = await page.evaluate(() => new Promise(res => {
-      const p = [...document.querySelectorAll('strong')].find(e => e.textContent === 'answer 149')
-      let sc = p
+    out.scroll = await frameScroll(page, work, () => {
+      let sc = [...document.querySelectorAll('strong')].find(e => e.textContent === 'answer 149')
       while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
-      const ts = []
-      let n = 0
-      const step = t => {
-        ts.push(t)
-        sc.scrollTop -= 40
-        if (++n < 90) requestAnimationFrame(step)
-        else res(ts.slice(1).map((x, i) => x - ts[i]))
-      }
-      requestAnimationFrame(step)
-    }))
-    const sorted = [...frames].sort((a, b) => a - b)
-    out.scroll = { ms: Math.round(frames.reduce((a, b) => a + b, 0)), work: (await work()) - w0, slow: frames.filter(f => f > 25).length, p95: sorted[Math.floor(sorted.length * 0.95)] }
+      return sc
+    }, 90, -40)
     await page.close()
   }
   return out
@@ -133,7 +148,7 @@ async function one(browser) {
   await browser.close()
   const med = (k, f) => all.map(r => r[k][f]).sort((a, b) => a - b)[Math.floor(all.length / 2)]
   console.log(`median of ${runs}, CPU ×${throttle}${motion ? `, motion ${motion}` : ''}${glass ? `, glass ${glass}` : ''}:`)
-  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list']]) {
-    console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${k === 'scroll' ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
+  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list']]) {
+    console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${k === 'scroll' || k === 'listScroll' ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
   }
 })()

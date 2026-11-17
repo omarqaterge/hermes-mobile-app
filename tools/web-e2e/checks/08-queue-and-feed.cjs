@@ -176,19 +176,14 @@ module.exports = async t => {
   await page.getByRole('button', { name: /^Sessions/ }).click()
   const row9 = page.locator('.session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 9$/ }) })
   check((await row9.locator('.unread-dot').count()) === 1, 'the chat with the new reply has a dot')
-  check(/^now · 2 msgs/.test((await row9.locator('.dim.small').textContent()) || ''), `row shows when it changed (${await row9.locator('.dim.small').textContent()})`)
-  // "N msgs" is what the user sent (plugin /sent-counts), not message_count (4 here: two messages, two replies),
-  // and a new list asks again only for the chats whose message_count moved.
-  const sc = calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/sent-counts').map(c => c.body?.ids || [])
-  const lastAsk = sc[sc.length - 1] || []
-  check(sc.length >= 2 && lastAsk.includes('s-9') && lastAsk.includes('s-fresh') && lastAsk.length <= 3, `sent counts are fetched again only for changed chats (${JSON.stringify(lastAsk)})`)
-  check(/^\d+ h · /.test((await page.locator('.session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 12$/ }) }).locator('.dim.small').textContent()) || ''), 'older chats show hours ago')
-  // A chat that got a reply (or a message) keeps its place: Hermes lists it first, the drawer must not.
+  // The line under the title: when it changed, then the state word (the message count it showed before is gone).
+  check(/^now · Finished$/.test((await row9.locator('.dim.small').textContent()) || ''), `row shows when it changed (${await row9.locator('.dim.small').textContent()})`)
+  check(/^\d+ h$/.test((await page.locator('.session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 12$/ }) }).locator('.dim.small').textContent()) || ''), 'older chats show hours ago')
+  // The panel opened after the reply and the new chat: the new chat is on top, then the chat that got the reply (the
+  // order is last activity, read when the panel opens; 04 checks that nothing moves while it stays open).
   const titles = async () => page.locator('.drawer .session-row .session-title').allInnerTexts()
   let tl = await titles()
-  const i9 = tl.indexOf('Chat 9')
-  check(i9 > 0 && tl[i9 - 1] === 'Chat 8' && tl[i9 + 1] === 'Chat 10', `a chat with new activity keeps its place (${tl.slice(0, 4)}…)`)
-  check(tl[0] === 'Brand new chat' && tl.indexOf('Chat 9') === tl.indexOf('Chat 8') + 1, `a new chat appears on top, the others stay (${tl.slice(0, 4)}…)`)
+  check(tl[0] === 'Brand new chat' && tl[1] === 'Chat 9' && tl.indexOf('Chat 10') === tl.indexOf('Chat 8') + 1, `a new chat appears on top, then the chat with new activity; the others keep their order (${tl.slice(0, 4)}…)`)
   await row9.click()
   await page.locator('.msg.assistant', { hasText: 'answer s-9' }).waitFor({ timeout: 5000 })
   check((await page.locator('.unread-dot').count()) === 0, 'opening the chat clears the dot')

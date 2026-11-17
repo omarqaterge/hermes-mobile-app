@@ -84,6 +84,19 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   (manual-tests). Not done: nested rows under a chat (task 09 leaves room: a row can be indented), and a closed panel's
   list still receives store updates (it is not drawn or animated while closed, but React still renders it).
 
+- **The chat list's order and state words (task 04, PR against `redesign`).** The Chats list and its date groups follow
+  each chat's last activity, newest first, from a snapshot (`web/src/chatsnapshot.ts`) taken when the panel starts to
+  open (button or swipe), at the first list from Hermes, when the bot changes, when a chat is created, deleted,
+  archived or restored, and, docked on a wide screen, when another chat opens or the app returns; never under a finger
+  or during a drag, and never because a message arrived (an old chat that a message brings into the page of 80 waits at
+  its creation time until the next snapshot). A custom order, Sort by recent and pins are unchanged. The line under a
+  title: time, then "Working" or "Finished", then the source; a scheduled run shows a clock and its job's name (from the
+  jobs list the panel already reads). "N msgs" is gone with the app's `POST /sent-counts` call (the plugin keeps the
+  route). Decision: `chats-ordered-by-last-activity.md`. Checks: the end of `04` (the mock is put back afterwards), two
+  rewritten and one removed in `08` (listed in the PR); `uicost.cjs` gained "scrolling the chat list". Costs:
+  docs/performance-history.md. Needs a phone: the order and the lines with TalkBack (manual-tests). Left for task 09:
+  nested rows go inside their chat's row container, so they move with it.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
