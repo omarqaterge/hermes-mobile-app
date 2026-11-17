@@ -40,7 +40,7 @@ they sit in a tray above the text box that can be closed (owner, 2026-11-16;
   composer's chat is the new-chat screen or a chat with no messages yet), as the message leaves the composer. A chat
   opened from the list starts closed (`trayForChat('listed')` when the composer's chat changes; `'new'` for the new-chat
   screen; `'carry'` when the new-chat screen becomes a real chat by its first message, an attachment or a model pick,
-  so the tray stays as it is). After that the person decides: opened or closed by hand (`setTrayOpen`), it stays so for
+  so the tray stays as it is). The app reopening the last chat at start starts with it closed (`tray.ts` reads the store's `opening`), and a change that comes with another chat is taken at once, without movement (`takeTrayJump`). After that the person decides: opened or closed by hand (`setTrayOpen`), it stays so for
   as long as that chat is on screen, and later sends do not change it. A tray opened by hand on a new chat stays open
   across its first message.
 - **The hint.** The first time ever that the tray closes by itself, "Model and context are here" shows above the handle

@@ -9,6 +9,7 @@
 // - Settings → Appearance → Model bar: "Tucked away" (the default) or "Always open" (localStorage `hm.modelBar`,
 //   'tucked' | 'open'; absent = tucked): always open has no handle and is the layout from before the tray.
 import { useSyncExternalStore } from 'react'
+import { getState } from './store'
 
 export type ModelBarMode = 'tucked' | 'open'
 
@@ -41,13 +42,18 @@ export interface TrayState {
   hint: boolean
 }
 
+/** The app starts on the new-chat screen (open), or reopening the last chat (closed: it is a chat from the list). */
+const startsNew = (): boolean => !getState().opening && !getState().active
+
 let mode: ModelBarMode = read(MODE_KEY) === 'open' ? 'open' : 'tucked'
-let open = true
+let open = startsNew()
 /** Opened by itself for a new chat, and not touched since: the first message closes it. */
-let auto = true
+let auto = open
 let hint = false
 let hintTimer: ReturnType<typeof setTimeout> | undefined
-let snap: TrayState = { mode, open: true, hint }
+/** The last change came with another chat: the tray takes its new state at once, without moving. */
+let jump = false
+let snap: TrayState = { mode, open: mode === 'open' || open, hint }
 
 const subs = new Set<() => void>()
 const subscribe = (f: () => void) => (subs.add(f), () => subs.delete(f))
@@ -76,6 +82,7 @@ export function setModelBarMode(m: ModelBarMode): void {
 
 /** Opened or closed by hand (the handle): it stays so while this chat is on screen, a send does not change it. */
 export function setTrayOpen(v: boolean): void {
+  jump = false
   auto = false
   open = v
   dismissTrayHint()
@@ -86,9 +93,17 @@ export function setTrayOpen(v: boolean): void {
  *  `carry` keeps the state: the new-chat screen became a real chat (its first message, an attachment, a model pick). */
 export function trayForChat(kind: 'new' | 'listed' | 'carry'): void {
   if (kind === 'carry') return
+  jump = open !== (kind === 'new')
   open = kind === 'new'
   auto = kind === 'new'
   emit()
+}
+
+/** True once after a change that came with another chat on screen (Tray.tsx skips the movement). */
+export function takeTrayJump(): boolean {
+  const j = jump
+  jump = false
+  return j
 }
 
 /** The first message of a new chat was sent: a tray that opened by itself closes, and the first time ever that
@@ -98,6 +113,7 @@ export function trayFirstSend(): void {
   auto = false
   if (!open) return
   open = false
+  jump = false
   if (mode === 'tucked' && read(HINT_KEY) !== '1') {
     write(HINT_KEY, '1')
     hint = true
@@ -122,6 +138,7 @@ export function resetTrayForTests(): void {
   open = true
   auto = true
   hint = false
+  jump = false
   clearTimeout(hintTimer)
   emit()
 }

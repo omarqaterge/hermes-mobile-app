@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The composer's tray (tray.ts): when it is open, the first-send close, the one-time hint and the Model bar setting.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { HINT_MS, dismissTrayHint, modelBarMode, resetTrayForTests, setModelBarMode, setTrayOpen, trayFirstSend, trayForChat, trayState } from './tray'
+import { HINT_MS, dismissTrayHint, modelBarMode, resetTrayForTests, setModelBarMode, setTrayOpen, takeTrayJump, trayFirstSend, trayForChat, trayState } from './tray'
 
 beforeEach(() => {
   localStorage.clear()
@@ -81,4 +81,17 @@ test('Model bar: Tucked away by default; Always open keeps the tray open, with n
   localStorage.setItem('hm.modelBar', 'open')
   resetTrayForTests()
   expect(modelBarMode()).toBe('open')
+})
+
+test('a change that comes with another chat is taken at once (no movement); one by hand moves', () => {
+  trayForChat('new')
+  takeTrayJump()
+  trayForChat('listed')
+  expect(takeTrayJump()).toBe(true)
+  expect(takeTrayJump()).toBe(false)
+  trayForChat('listed') // nothing changes: nothing to jump
+  expect(takeTrayJump()).toBe(false)
+  trayForChat('new')
+  setTrayOpen(false)
+  expect(takeTrayJump()).toBe(false)
 })

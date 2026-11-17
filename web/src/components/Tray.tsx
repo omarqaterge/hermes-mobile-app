@@ -11,7 +11,7 @@ import { useStore } from '../store'
 import { useVoice, fmtClock } from '../voice'
 import { ctxLevel } from '../ctxring'
 import { motionLevel, pauseWhenHidden } from '../motion'
-import { dismissTrayHint, setTrayOpen, trayState, useTray } from '../tray'
+import { dismissTrayHint, setTrayOpen, takeTrayJump, trayState, useTray } from '../tray'
 import { Spinner } from './Spinner'
 
 /** Finger travel (px) under which a press on the handle is a tap. */
@@ -97,6 +97,7 @@ export function TrayBody({ open, children }: { open: boolean; children: ReactNod
     }
     els.body = el
     els.h = el.offsetHeight || els.h
+    const jump = takeTrayJump() // another chat came on screen: no movement
     if (open) {
       // Arrives: laid out at once at its final height, the layer moves up into it.
       if (dragOpening) {
@@ -111,7 +112,7 @@ export function TrayBody({ open, children }: { open: boolean; children: ReactNod
         settle(0, rest) // opened again while it was leaving: back up from where it is
         return
       }
-      if (initial || !settleMs()) return // already there: the page opened with it
+      if (initial || jump || !settleMs()) return // already there: the page opened with it, or another chat did
       el.parentElement?.classList.add('tray-moving')
       place(els.h)
       void el.offsetHeight // the start position is drawn before the movement starts
@@ -119,6 +120,11 @@ export function TrayBody({ open, children }: { open: boolean; children: ReactNod
       return
     }
     // Leaves: the layer moves back behind the text box, then the body is removed (the composer shrinks once, at the end).
+    if (jump) {
+      rest()
+      setShown(false)
+      return
+    }
     settle(els.h, () => setShown(false))
   }, [shown, open])
 
