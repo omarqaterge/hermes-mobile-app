@@ -219,6 +219,25 @@ const motionOff = () => {
     if (localStorage.getItem('hm.motion') === null) localStorage.setItem('hm.motion', 'off')
   } catch { /* */ }
 }
+// Every page the run opens also starts with Settings → Appearance → Model bar at "Always open" (`hm.modelBar`), unless the
+// page already has a choice: the checks written before the composer's tray find the model row, the Auto button, the
+// context ring and the live status line where they always were. 34-model-bar-tray.cjs checks the tray itself, with
+// Model bar at its default, "Tucked away" (`trayTucked`).
+const trayOpen = () => {
+  try {
+    if (localStorage.getItem('hm.modelBar') === null) localStorage.setItem('hm.modelBar', 'open')
+  } catch { /* */ }
+}
+// For a page's own init script, added after the run's: the page starts with Model bar at the default, "Tucked away", on
+// its first load only (a choice made in Settings during the check survives a reload).
+const trayTucked = () => {
+  try {
+    if (!sessionStorage.getItem('hm.trayTucked')) {
+      sessionStorage.setItem('hm.trayTucked', '1')
+      localStorage.setItem('hm.modelBar', 'tucked')
+    }
+  } catch { /* */ }
+}
 // Sets the motion level on an open page at once ('full' | 'reduced' | 'off'), as Appearance does.
 const setMotion = (page, level) => page.evaluate(l => {
   localStorage.setItem('hm.motion', l)
@@ -245,4 +264,4 @@ const addFiles = async (page, option, files) => {
   await chooser.setFiles(files)
 }
 
-module.exports = { addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, setMotion, expectIdle }
+module.exports = { addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle }

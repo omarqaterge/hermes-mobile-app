@@ -995,6 +995,17 @@ wss.on('connection', ws => {
           slowTurns.set(sid, turn)
           return
         }
+        if (/^long slow reply$/.test(params.text)) {
+          // A reply that runs about 4 s with status changes and words arriving every 300 ms (the composer's tray checks
+          // that a closed tray draws none of it).
+          const turn = { row, text: '', timers: [] }
+          turn.timers = [later(100, live(() => event('message.start', sid, {})))]
+          for (const [at, text] of [[400, 'Reading the notes'], [1600, 'Thinking it over'], [2800, 'Writing']]) turn.timers.push(later(at, live(() => event('status.update', sid, { kind: 'process', text }))))
+          for (let at = 600; at <= 3600; at += 300) turn.timers.push(later(at, live(() => ((turn.text += 'word '), event('message.delta', sid, { text: 'word ' })))))
+          turn.timers.push(later(4000, live(() => (slowTurns.delete(sid), event('message.complete', sid, { text: turn.text.trim() || 'Long done.', usage: usageN(1) })))))
+          slowTurns.set(sid, turn)
+          return
+        }
         if (/^(next one|c|d|e)$/.test(params.text)) {
           // The follow-ups the queue tests send: answered at once.
           later(100, () => ws.readyState === 1 && event('message.complete', sid, { text: `Queued ${params.text} done.` }))
