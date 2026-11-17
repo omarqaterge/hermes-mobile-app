@@ -73,7 +73,7 @@ echo "Groups: spec ${groups[*]:-}"
 run "check_spec.py" python3 tools/check_spec.py
 run "changelog.py check" python3 tools/changelog.py check
 run "no AI credit in commits" tools/check-attribution.sh
-run "no emoji in the interface" python3 tools/check-no-emoji.py
+run "no emoji in the interface, notifications, plugin and phone scripts" python3 tools/check-no-emoji.py
 run "review checklist items" python3 tools/review_checklist.py --check
 
 for g in ${groups[@]+"${groups[@]}"}; do

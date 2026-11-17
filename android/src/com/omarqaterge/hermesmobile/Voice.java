@@ -447,7 +447,7 @@ final class Voice {
         stopSpeaking(false);
     }
 
-    /** byUser = the notification's ✕ / a media stop: tells the page to drop even a paused player ("stop"). */
+    /** byUser = the notification's Stop button / a media stop: tells the page to drop even a paused player ("stop"). */
     void stopSpeaking(boolean byUser) {
         pendingSpeech = null;
         speaking = false;

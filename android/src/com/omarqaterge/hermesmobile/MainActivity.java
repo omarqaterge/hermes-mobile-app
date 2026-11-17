@@ -1294,7 +1294,7 @@ public class MainActivity extends Activity {
                 sm.removeDynamicShortcuts(java.util.Collections.singletonList("last_chat"));
                 return;
             }
-            String label = title == null || title.trim().isEmpty() ? "Last chat" : title.trim().replaceFirst("^⎇\\s*", "");
+            String label = title == null || title.trim().isEmpty() ? "Last chat" : title.trim().replaceFirst("^\\u2387\\s*", "");
             if (label.length() > 25) label = label.substring(0, 24) + "…";
             Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).setAction(Intent.ACTION_VIEW).putExtra("session", id)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));

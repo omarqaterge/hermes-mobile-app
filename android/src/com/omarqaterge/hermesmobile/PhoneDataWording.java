@@ -31,7 +31,7 @@ final class PhoneDataWording {
     /** Request text made safe to show: control, invisible and format characters (C1 included), every quote mark and
      *  bracket removed, spaces collapsed, cut to {@link #SHOWN_MAX} characters. */
     static String clean(String s) {
-        String t = Caps.text(s, 400).replace("‍", "");
+        String t = Caps.text(s, 400).replace("\u200d", "");
         StringBuilder b = new StringBuilder();
         for (int i = 0; i < t.length(); ) {
             int cp = t.codePointAt(i);

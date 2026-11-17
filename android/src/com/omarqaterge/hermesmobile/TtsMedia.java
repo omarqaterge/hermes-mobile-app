@@ -13,7 +13,7 @@ import android.os.SystemClock;
 
 /**
  * The "Reading aloud" media card for Voice: a framework MediaSession (so headset buttons, the lock screen and the
- * control centre's player reach it) plus a Notification.MediaStyle notification with ⏪5 ⏯ ⏩5 ✕. No androidx: this APK is
+ * control centre's player reach it) plus a Notification.MediaStyle notification with back 5 s, play/pause, forward 5 s and stop. No androidx: this APK is
  * built without Gradle. Buttons go to HermesService (ACTION_TTS, extra "cmd") and session callbacks straight to
  * Voice.control(), which acts on the instance reading now. Native on purpose: the page is frozen ~1 min after the app
  * leaves the screen, so controls that went through it would stop working.
@@ -30,7 +30,7 @@ final class TtsMedia {
 
     private TtsMedia() { }
 
-    /** Shows or updates the card. playing = false shows ▶ (paused). */
+    /** Shows or updates the card. playing = false shows the play button (paused). */
     static void show(Context ctx, String title, String chat, boolean playing, long positionMs, long durationMs) {
         app = ctx.getApplicationContext();
         if (session == null) {

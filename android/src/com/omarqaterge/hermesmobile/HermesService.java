@@ -213,7 +213,7 @@ public class HermesService extends Service {
     /** The chat whose approval answer (from the notification) is being sent; its chip says "Sending your answer…". */
     String answering = null;
     final java.util.HashMap<String, JSONObject> doneInfo = new java.util.HashMap<>();
-    // A short-lived "flash" in the status chip (done ✅, memory/skill updates); reverts after FLASH_MS.
+    // A short-lived "flash" in the status chip (done, memory/skill updates); reverts after FLASH_MS.
     String flashChip = null, flashTitle = null, flashBody = null;
     int flashColor = 0;
     long flashUntil = 0;
@@ -1436,8 +1436,8 @@ public class HermesService extends Service {
                     postStatus();
                     return;
                 }
-                // Momentary chip: done ✅ (green) or a memory/skill update.
-                flashChip = e.optString("short", "✅ Done");
+                // Momentary chip: done (green) or a memory/skill update.
+                flashChip = e.optString("short", "Done");
                 flashTitle = title;
                 flashBody = body;
                 flashColor = Color.parseColor(e.optString("color", "#2E9E5B"));
@@ -1502,7 +1502,7 @@ public class HermesService extends Service {
                 if ("reply".equals(kind)) readAloud(e, session);
                 return;
             case "learning":
-                flashChip = title.startsWith("Skill") ? "🧩 Skill" : "🧠 Memory";
+                flashChip = title.startsWith("Skill") ? "Skill" : "Memory";
                 flashTitle = title;
                 flashBody = body;
                 flashColor = Color.parseColor("#7B61D9");
@@ -2057,10 +2057,10 @@ public class HermesService extends Service {
         }
         if (!sending) { // while the answer is on its way, no second one
             if (!a.optBoolean("phone_data_unreadable", false))
-                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("✓ Allow once", GREEN), approveIntent(a, "once"))).build());
+                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow once", GREEN), approveIntent(a, "once"))).build());
             if (a.optBoolean("allow_session", true))
                 b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
-            b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
+            b.addAction(new Notification.Action.Builder(null, colored("Deny", RED), approveIntent(a, "deny")).build());
         }
         hideOnLockScreen(b, a.optBoolean("phone_data", false));
         promote(b, secs + "s");
@@ -2189,7 +2189,7 @@ public class HermesService extends Service {
                 .setContentIntent(openApp(latestId, true))
                 .addAction(new Notification.Action.Builder(null, "Clear",
                         PendingIntent.getService(this, 7, clear, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
-        promote(b, n == 1 ? "✅ Done" : "✅ " + n + " done");
+        promote(b, n == 1 ? "Done" : n + " done");
         return b.build();
     }
 
