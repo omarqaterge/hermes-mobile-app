@@ -14,16 +14,18 @@
 
 :root {
   --glass-blur: 20px;
-  --glass-filter: blur(var(--glass-blur)) saturate(170%) brightness(0.62);
-  --glass-tint: rgba(20, 24, 30, 0.6); /* the floor that keeps text readable over a white picture */
-  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015));
+  --glass-filter: blur(var(--glass-blur)) saturate(170%) brightness(0.52);
+  --glass-tint: rgba(20, 24, 30, 0.66); /* the floor that keeps text readable over a white picture */
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
   --glass-highlight: radial-gradient(120% 90% at 10% -20%, rgba(255, 255, 255, 0.1), transparent 50%);
   --glass-edge: rgba(255, 255, 255, 0.1); /* the border */
   --glass-edge-hi: rgba(255, 255, 255, 0.14); /* the bright top edge */
   --glass-edge-lo: rgba(0, 0, 0, 0.32); /* the darker bottom edge */
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.36);
   --glass-bar-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  --glass-dim: #a7aeb8; /* dim text on glass */
+  --glass-dim: #b0b7c0; /* dim text on glass */
+  --glass-accent: #e6b553; /* gold text on glass (the gold of a button stays --accent) */
+  --glass-err: #ff9d93; /* red text on glass */
   --glass-group: rgba(255, 255, 255, 0.05); /* a group inside a glass surface */
   --glass-field: rgba(0, 0, 0, 0.24); /* a text box on glass */
   --scrim: rgba(0, 0, 0, 0.55); /* behind a sheet or dialog */
@@ -40,6 +42,8 @@
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
   --glass-bar-shadow: none;
   --glass-dim: #9ea5af;
+  --glass-accent: #e6b553;
+  --glass-err: #ff9d93;
   --glass-group: rgba(255, 255, 255, 0.04);
   --glass-field: rgba(255, 255, 255, 0.04);
   --scrim: rgba(0, 0, 0, 0.62);
@@ -55,6 +59,8 @@
   --glass-shadow: 0 10px 30px rgba(60, 50, 20, 0.16);
   --glass-bar-shadow: 0 6px 18px rgba(60, 50, 20, 0.08);
   --glass-dim: #50545b;
+  --glass-accent: #75500a;
+  --glass-err: #9a2018;
   --glass-group: rgba(255, 255, 255, 0.55);
   --glass-field: rgba(255, 255, 255, 0.7);
   --scrim: rgba(20, 18, 12, 0.35);
@@ -97,9 +103,17 @@
   border-color: var(--glass-edge);
   box-shadow: inset 0 1px 0 var(--glass-edge-hi), inset 0 -1px 0 var(--glass-edge-lo), var(--glass-shadow);
 }
-/* Text that is dim elsewhere is a little stronger on glass, so it reads over anything. */
+/* Text that is dim, gold or red elsewhere is a little stronger on glass, so it reads over anything. */
 :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) :is(.dim, .subtitle, .set-sub, .sheet-desc, .dialog-msg, .find-count, .status-line, .tts-time, .mi-sub, .bg-card-action) {
   color: var(--glass-dim);
+}
+.glass :is(.goal-line, .todos-head, .todo-in_progress, .mini, .tts-speed, .bg-card-title),
+.sheet :is(.picker-opt.on .set-title, .mini) {
+  color: var(--glass-accent);
+}
+:is(.sheet, .toast) :is(.menu-item.danger, .set-title.danger),
+.toast.toast-error {
+  color: var(--glass-err);
 }
 :is(.glass, .sheet) textarea::placeholder,
 :is(.glass, .sheet) input::placeholder {
@@ -128,6 +142,14 @@ html[data-glass='off'] :is(.toast, .slash-menu, .scrub-bubble) {
 }
 html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) :is(.dim, .subtitle, .set-sub, .sheet-desc, .dialog-msg, .find-count, .status-line, .tts-time, .mi-sub, .bg-card-action) {
   color: var(--dim);
+}
+html[data-glass='off'] .glass :is(.goal-line, .todos-head, .todo-in_progress, .mini, .tts-speed, .bg-card-title),
+html[data-glass='off'] .sheet :is(.picker-opt.on .set-title, .mini) {
+  color: var(--accent);
+}
+html[data-glass='off'] :is(.sheet, .toast) :is(.menu-item.danger, .set-title.danger),
+html[data-glass='off'] .toast.toast-error {
+  color: var(--err);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :is(.glass, .sheet)::before {
@@ -174,13 +196,7 @@ html[data-glass='off'] .bar-top .topbar {
   background: transparent;
   border-bottom-color: var(--glass-edge);
 }
-.bar-top .conn-banner {
-  background: color-mix(in srgb, var(--warn) 13%, transparent);
-}
-.bar-top .local-alert {
-  background: color-mix(in srgb, var(--warn) 11%, transparent);
-  border-bottom-color: color-mix(in srgb, var(--warn) 30%, transparent);
-}
+/* Warnings keep their solid tint inside a bar (a group inside glass is solid), so their words read as they always did. */
 .bar-bottom .activity-banner {
   border-bottom-color: var(--glass-edge);
 }
@@ -208,9 +224,6 @@ html[data-glass='off'] .bar-bottom :is(.statusbar, .composer-wrap) {
   background: var(--glass-group);
   border-color: var(--glass-edge);
 }
-.bar-bottom :is(.compress-hint, .queued-chip) {
-  background: color-mix(in srgb, var(--warn) 13%, transparent);
-}
 html[data-glass='off'] .bar-bottom .composer {
   background: var(--surface-2);
   border-color: var(--border);
@@ -218,10 +231,6 @@ html[data-glass='off'] .bar-bottom .composer {
 html[data-glass='off'] .bar-bottom :is(.tts-player, .bg-card, .quote-bar) {
   background: var(--surface-2);
   border-color: var(--border);
-}
-html[data-glass='off'] .bar-top :is(.conn-banner, .local-alert),
-html[data-glass='off'] .bar-bottom :is(.compress-hint, .queued-chip) {
-  background: var(--warn-bg);
 }
 
 /* The list extends under both bars; its padding keeps the first and the last message clear of them. */

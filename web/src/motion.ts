@@ -132,11 +132,13 @@ function paint(el: HTMLElement, onScreen: boolean): void {
   el.toggleAttribute('data-motion-paused', away || !onScreen)
 }
 
-/** Called by App on the shell's hermesPause / hermesResume (and the page's own visibilitychange): every element given
- *  to `pauseWhenHidden` stops while the app is away and starts again when it is back. */
+/** Called by App on the shell's hermesPause / hermesResume (and the page's own visibilitychange): every CSS animation
+ *  stands still while the app is away (<html data-app-away>) and runs on when it is back; elements given to
+ *  `pauseWhenHidden` also wait for being on screen. */
 export function setAppAway(isAway: boolean): void {
   if (away === isAway) return
   away = isAway
+  document.documentElement.toggleAttribute('data-app-away', away) // motion.css pauses every CSS animation meanwhile
   paused.forEach(el => paint(el, el.dataset.motionVisible !== '0'))
 }
 

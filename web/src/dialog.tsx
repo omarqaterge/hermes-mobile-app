@@ -5,6 +5,7 @@ import { haptic } from './bridge'
 import { useBackHandler } from './backstack'
 import { useSheetDrag } from './components/useSheetDrag'
 import { iconOf, type IconName } from './components/icons'
+import { motionLevel } from './motion'
 
 interface Base {
   title: string
@@ -47,14 +48,22 @@ export const confirmDialog = (o: Base): Promise<boolean> => new Promise(resolve 
 export const promptDialog = (o: Base & { placeholder?: string; value?: string; match?: string }): Promise<string | null> =>
   new Promise(resolve => push({ kind: 'prompt', ...o, resolve }))
 
+const LEAVE_MS = 240 // motion.css: --motion-base, the length of motion-sink
+
 function Dialog({ req }: { req: Req }) {
   const [text, setText] = useState(req.kind === 'prompt' ? req.value || '' : '')
+  const [leaving, setLeaving] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const done = (v: boolean) => {
+    if (leaving) return
     haptic()
     if (req.kind === 'confirm') req.resolve(v)
     else req.resolve(v ? text.trim() : null)
-    pop()
+    // The answer counts at once; with Full motion the dialog then sinks away before it leaves the queue (taps pass
+    // through it meanwhile).
+    if (motionLevel() !== 'full') return pop()
+    setLeaving(true)
+    window.setTimeout(pop, LEAVE_MS)
   }
   const drag = useSheetDrag(() => done(false))
   useBackHandler(() => done(false))
@@ -63,8 +72,8 @@ function Dialog({ req }: { req: Req }) {
   }, [req])
   const ready = req.kind !== 'prompt' || (req.match !== undefined ? text.trim() === req.match : true)
   return (
-    <div className="sheet-backdrop dialog-backdrop" onClick={() => done(false)}>
-      <div className="sheet dialog" role="alertdialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
+    <div className={`sheet-backdrop dialog-backdrop${leaving ? ' leaving' : ''}`} aria-hidden={leaving || undefined} onClick={() => done(false)}>
+      <div className={`sheet dialog${leaving ? ' leaving' : ''}`} role="alertdialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className={`dialog-icon${req.danger ? ' danger' : ''}`} aria-hidden="true">
           {iconOf(req.icon ?? (req.danger ? 'trash' : req.kind === 'prompt' ? 'pencil' : 'help'))}

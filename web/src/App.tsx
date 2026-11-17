@@ -3,7 +3,7 @@ import { appVersion, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow } from './gateway'
-import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
+import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Toast, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { stepMark, stepWord } from './toolsay'
 import { foldMap } from './fold'
@@ -53,7 +53,7 @@ import { UninstallResume } from './components/Uninstall'
 import { toggleSide, useSidePanel } from './sidepanel'
 import { Icon } from './components/icons'
 import { barInsets, onBarInsets, watchBars } from './barinsets'
-import { lessMotion, setAppAway } from './motion'
+import { lessMotion, motionLevel, setAppAway } from './motion'
 
 declare global {
   interface Window {
@@ -905,13 +905,44 @@ export function App() {
       <BtwSheet />
       <WhatsNewAfterUpdate />
       <DialogHost />
-      <div className="toasts">
-        {toasts.map(t => (
-          <div key={t.id} className={`toast toast-${t.level}`}>
-            {t.text}
-          </div>
-        ))}
-      </div>
+      <Toasts toasts={toasts} />
+    </div>
+  )
+}
+
+const TOAST_LEAVE_MS = 240 // motion.css: --motion-base, the length of motion-toast-out
+
+/** The toasts, each leaving softly (Full motion): a toast gone from the store stays a moment, in its place, with
+ *  `leaving`. Only this list's own copy is kept; the store is not touched. */
+function Toasts({ toasts }: { toasts: Toast[] }) {
+  const [shown, setShown] = useState<Array<Toast & { leaving?: boolean }>>(toasts)
+  const timers = useRef(new Set<number>())
+  useEffect(() => () => timers.current.forEach(id => window.clearTimeout(id)), [])
+  useEffect(() => {
+    const soft = motionLevel() === 'full'
+    setShown(cur => {
+      const next = cur.flatMap(t => {
+        const now = toasts.find(n => n.id === t.id)
+        if (now) return [now]
+        return soft ? [{ ...t, leaving: true }] : []
+      })
+      for (const t of toasts) if (!next.some(n => n.id === t.id)) next.push(t)
+      return next
+    })
+    if (!soft) return
+    const id = window.setTimeout(() => {
+      timers.current.delete(id)
+      setShown(cur => cur.filter(t => !t.leaving || toasts.some(n => n.id === t.id)))
+    }, TOAST_LEAVE_MS)
+    timers.current.add(id)
+  }, [toasts])
+  return (
+    <div className="toasts">
+      {shown.map(t => (
+        <div key={t.id} className={`toast toast-${t.level}${t.leaving ? ' leaving' : ''}`} aria-hidden={t.leaving || undefined}>
+          {t.text}
+        </div>
+      ))}
     </div>
   )
 }

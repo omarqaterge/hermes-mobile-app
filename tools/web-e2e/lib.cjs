@@ -211,6 +211,30 @@ const nativeShell = () => {
       }
     }
 }
+// Every page the run opens starts with the app's Animations setting at Off (stored as Appearance stores it, `hm.motion`),
+// unless the page already has a level: the checks stay fast and steady. A check about motion sets the level it is about
+// with setMotion, or removes the key (an init script of its own) to see the app's default.
+const motionOff = () => {
+  try {
+    if (localStorage.getItem('hm.motion') === null) localStorage.setItem('hm.motion', 'off')
+  } catch { /* */ }
+}
+// Sets the motion level on an open page at once ('full' | 'reduced' | 'off'), as Appearance does.
+const setMotion = (page, level) => page.evaluate(l => {
+  localStorage.setItem('hm.motion', l)
+  document.documentElement.dataset.motion = l
+}, level)
+// The idle rule (docs/decisions/redesign-costs-no-speed-or-battery.md): one second after the last change, no animation
+// is running. Waits a second, then checks document.getAnimations() and names what still runs.
+const expectIdle = async (page, what) => {
+  await sleep(1000)
+  const running = await page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').map(a => {
+    const t = a.effect && a.effect.target
+    return `${a.animationName || a.transitionProperty || a.constructor.name} on ${t ? (t.className || t.tagName) : '?'}`
+  }))
+  check(running.length === 0, `${what}: a second after the last change no animation is running (${JSON.stringify(running)})`)
+}
+
 // Changes the mock's state (POST /__mock).
 const mock = b => fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify(b) })
 
@@ -221,4 +245,4 @@ const addFiles = async (page, option, files) => {
   await chooser.setFiles(files)
 }
 
-module.exports = { addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell }
+module.exports = { addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, setMotion, expectIdle }

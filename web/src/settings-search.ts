@@ -54,6 +54,8 @@ const STATIC: SettingsEntry[] = [
   // Appearance
   e('appearance', 'Theme', 'Appearance', 'Default, OLED black, Light or System', 'dark light oled black system colors'),
   e('appearance', 'Text size', 'Appearance', undefined, 'font bigger larger smaller zoom'),
+  e('appearance', 'Glass effects', 'Appearance → Effects', 'Bars and sheets let the chat show through', 'blur translucent transparent glass solid look battery'),
+  e('appearance', 'Animations', 'Appearance → Effects', 'Full, Reduced or Off', 'motion animation reduce remove movement springs battery'),
   // Voice
   e('voice', 'Speech engine', 'Voice', undefined, 'tts text to speech'),
   e('voice', 'Speed', 'Voice → Sound', undefined, 'rate faster slower'),

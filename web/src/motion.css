@@ -61,7 +61,11 @@ html[data-motion='reduced'] .session-title.working {
   -webkit-mask-position: 50% 0;
   mask-position: 50% 0;
 }
-/* A repeating animation pauses while the app is away or its element is off screen (motion.ts pauseWhenHidden). */
+/* Every animation stands still while the app is away (motion.ts setAppAway, from the shell's hermesPause), and a
+   repeating one also while its element is off screen (motion.ts pauseWhenHidden). */
+html[data-app-away] *,
+html[data-app-away] *::before,
+html[data-app-away] *::after,
 [data-motion-paused],
 [data-motion-paused] * {
   animation-play-state: paused !important;
@@ -252,4 +256,9 @@ html[data-motion='full'] :is(.set-row, .picker-opt, .menu-item, .suggestion, .th
 .tts-player,
 .compress-hint {
   animation: motion-fade var(--motion-base) var(--ease-fade) backwards;
+}
+/* Something on its way out never takes a touch. */
+.sheet-backdrop.leaving,
+.toast.leaving {
+  pointer-events: none;
 }

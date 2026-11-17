@@ -211,7 +211,7 @@ export function Segmented<T extends string | number>({ options, value, onChange 
   return (
     <div className="seg">
       {options.map(o => (
-        <button key={String(o.value)} className={o.value === value ? 'on' : ''} onClick={() => { haptic(); onChange(o.value) }}>
+        <button key={String(o.value)} className={o.value === value ? 'on' : ''} aria-pressed={o.value === value} onClick={() => { haptic(); onChange(o.value) }}>
           {o.label}
         </button>
       ))}

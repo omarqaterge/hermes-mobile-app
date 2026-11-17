@@ -32,7 +32,10 @@ module.exports = async t => {
     await sleep(400)
     {
       const db = await vp.locator('.visit-divider').boundingBox()
-      const cb = await vp.locator('.chat').boundingBox()
+      // The list reaches under the glass header (glass.css): the top of the chat on screen is the lower of the two.
+      const hb = await vp.getByRole('banner').boundingBox()
+      const lb = await vp.locator('.chat').boundingBox()
+      const cb = lb && hb && { y: Math.max(lb.y, hb.y + hb.height) }
       check(db && cb && db.y >= cb.y && db.y - cb.y < 40, `visit: the chat opens with the divider near the top (${db && cb && Math.round(db.y - cb.y)} px below it)`)
       check(await vp.evaluate(() => document.querySelector('.visit-divider').parentElement.querySelector('.msg.user')?.textContent === 'visit question 2'), 'visit: the divider is right before the first unseen question')
     }
