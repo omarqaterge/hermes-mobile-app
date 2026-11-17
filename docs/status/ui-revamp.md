@@ -29,8 +29,12 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   check `32-no-emoji.cjs` reads the rendered interface. Five checks found elements by an emoji and now use role and
   words (`01`, `07`, `08`, `10`, `12`); none was weakened. Needs a phone: how the icons look at real size (manual-tests).
 
-**Next:** the same for
-notifications, the plugin's messages and the phone scripts, then the new look of the chat screen, the side panel, the
+- **No emoji outside the web interface (task 02, PR against `redesign`).** The Done, Skill and Memory chips, the approval
+  buttons, the plugin's `flash` text and its tool registrations carry no emoji; `tools/check-no-emoji.py` now also reads
+  `android/`, `hermes-plugin/` and `phone/` (tests excluded) and has its own test. Needs a phone: how the notifications
+  read (manual-tests).
+
+**Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
 covered), `31-fixed-points.cjs` green.

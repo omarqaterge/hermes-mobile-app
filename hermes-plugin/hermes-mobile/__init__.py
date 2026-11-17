@@ -70,8 +70,8 @@ def _chat_title(session_id: str) -> str:
             row = db.execute("SELECT title FROM sessions WHERE id = ?", (session_id,)).fetchone()
         finally:
             db.close()
-        # A branched chat is titled "⎇ name"; notifications show the plain name.
-        return _short(((row[0] if row else "") or "").lstrip("⎇ ").strip(), 60)
+        # A branched chat is titled with a leading branch mark (U+2387) then the name; notifications show the plain name.
+        return _short(((row[0] if row else "") or "").lstrip("\u2387 ").strip(), 60)
     except Exception:
         return ""
 
@@ -891,7 +891,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     elif completed or text:
         # speak_text: the full reply for read-aloud mode in the app's service (notification bodies are trimmed)
         _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])
-        _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="✅ Done", color="#2E9E5B", done=True,
+        _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="Done", color="#2E9E5B", done=True,
               reply=_short(text or "", 300), steps=turn.get("steps", 0),
               secs=round(time.time() - turn["since"]) if turn.get("since") else 0)
 
@@ -1224,14 +1224,14 @@ def register(ctx):
     try:
         c = _canvas()
         ctx.register_tool(name="canvas", toolset="canvas", schema=c.TOOL_SCHEMA, handler=c.tool_handler,
-                          description="Show documents, code and pages on the user's canvas in the phone app", emoji="🗒")
+                          description="Show documents, code and pages on the user's canvas in the phone app")
     except Exception as e:  # the rest of the plugin must load even if the canvas can't
         _dbg(f"canvas tool not registered: {type(e).__name__}: {e}")
         _event("plugin", "not_registered", what="canvas_tool", error=type(e).__name__)
     try:
         m = _chat_search()
         ctx.register_tool(name="find_chats", toolset="canvas", schema=m.TOOL_SCHEMA, handler=m.tool_handler,
-                          description="Find the user's chats by text, or by the images, files, audio or video in them", emoji="🔎")
+                          description="Find the user's chats by text, or by the images, files, audio or video in them")
     except Exception as e:
         _dbg(f"find_chats not registered: {type(e).__name__}: {e}")
         _event("plugin", "not_registered", what="find_chats", error=type(e).__name__)
@@ -1241,7 +1241,7 @@ def register(ctx):
         pa.turn_running = lambda sid: sid in _active  # dropped by session_end / stale expiry
         if pa.availability()[0]:
             ctx.register_tool(name="phone_app", toolset="canvas", schema=pa.TOOL_SCHEMA, handler=pa.tool_handler,
-                              description="Use a phone app on a hidden screen without taking the user's screen", emoji="📱")
+                              description="Use a phone app on a hidden screen without taking the user's screen")
     except Exception as e:
         _dbg(f"phone_app not registered: {type(e).__name__}: {e}")
         _event("plugin", "not_registered", what="phone_app", error=type(e).__name__)
@@ -1249,7 +1249,7 @@ def register(ctx):
         pd = _phone_data()
         pd.event = _event
         ctx.register_tool(name="phone_data", toolset="canvas", schema=pd.TOOL_SCHEMA, handler=pd.tool_handler,
-                          description="Read the user's contacts, calendar, call log, messages, location or latest photos (read-only, asks the user)", emoji="📇")
+                          description="Read the user's contacts, calendar, call log, messages, location or latest photos (read-only, asks the user)")
         ctx.register_system_prompt_section("hermes-mobile.phone_data", pd.prompt_section, position="after_memory", max_chars=1000)
     except Exception as e:
         _dbg(f"phone_data not registered: {type(e).__name__}: {e}")
@@ -1262,7 +1262,7 @@ def register(ctx):
             _dbg(f"openui skill not registered: {type(e).__name__}: {e}")
             _event("plugin", "not_registered", what="openui_skill", error=type(e).__name__)
         ctx.register_tool(name="openui_reference", toolset="canvas", schema=ou.TOOL_SCHEMA, handler=ou.tool_handler,
-                          description="The openui-lang reference for cards, tables, charts and forms in a reply", emoji="🧩")
+                          description="The openui-lang reference for cards, tables, charts and forms in a reply")
         ctx.register_system_prompt_section("hermes-mobile.openui", ou.prompt_section, position="after_memory", max_chars=900)
     except Exception as e:
         _dbg(f"openui not registered: {type(e).__name__}: {e}")

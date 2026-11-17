@@ -408,6 +408,7 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] Live mode from the composer: talk, pause, hear the reply; Interrupt and talking over it cut in; Mute microphone; End.
 - [ ] Live mode from the launcher shortcut and from long-press power (Hermux as the Digital assistant), also over the lock screen.
 - [ ] Read aloud a long reply: pause, the seek bar, 5 seconds back and forward, speed, close; the card in the notification shade follows it, with the screen locked too.
+- [ ] Notifications without emoji: the working chip, the Done chip (one chat, then several), a memory and a skill chip, an approval (Allow once, Allow session, Deny) and a question notification, the read-aloud player and a scheduled job's result read as plain words, with no emoji or symbol in a title, button or channel name (Settings, Apps, Notifications).
 - [ ] Share into the app: a photo and a text from another app, and a camera shot from the + sheet; they land in the composer and send.
 - [ ] Share a chat as Markdown and save a photo from the viewer (Pictures/Hermux); open a link from a reply in the default app.
 - [ ] An approval: the first Allow in a chat asks for the fingerprint or screen lock; later ones in that chat don't; Deny never asks.

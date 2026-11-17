@@ -448,7 +448,7 @@ def _capture(mode: str, after: str = "") -> dict:
     want_tree = mode in ("ax", "som")
     r = call("/capture", {"tree": want_tree, "image": want_img, "marks": mode == "som", "max_w": 720})
     out: Dict[str, Any] = {"app": _state.get("label")}
-    where = " › ".join(x for x in (r.get("screen"), r.get("title")) if x and x != _state.get("label"))
+    where = " > ".join(x for x in (r.get("screen"), r.get("title")) if x and x != _state.get("label"))
     if where:
         out["screen"] = where
     if r.get("popup"):
