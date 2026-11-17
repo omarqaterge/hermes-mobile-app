@@ -161,6 +161,8 @@ jobs:
       - run: python3 tools/check_spec.py
       - run: python3 tools/test_changelog.py
       - run: python3 tools/changelog.py check
+      - run: python3 tools/test_review_checklist.py
+      - run: python3 tools/review_checklist.py --check
       - run: python3 tools/test_canvas.py
       - run: python3 tools/test_library.py
       - run: python3 tools/test_gallery.py
@@ -217,6 +219,7 @@ jobs:
       - run: bash tools/test_service_logs.sh
       - run: bash tools/test_device_lock.sh
       - run: bash tools/test_ci_changes.sh
+      - run: bash tools/test_check_verified.sh
 
   android:
     name: Android Java compiles
