@@ -20,7 +20,7 @@ export function openChatCanvas(): void {
 // swipe that starts at the right edge pulls the canvas in under the finger instead (EDGE, splitview.ts).
 // Ignored when the finger starts on something that scrolls or drags sideways itself (tables, code blocks,
 // diagrams, the canvas, sliders, text fields, the drawer) or while a sheet, dialog or screen is open.
-const SKIP = '.scrubber,.html-viewer,.inline-frame,input,textarea,select,[contenteditable],[role=dialog],.sheet-backdrop,.canvas-panel,.drawer,.drawer-backdrop,.lightbox,.slider,.tts-player,.find-bar,pre,table,.katex-display,.mermaid,.diagram,.hm-openui'
+const SKIP = '.scrubber,.tray-handle,.html-viewer,.inline-frame,input,textarea,select,[contenteditable],[role=dialog],.sheet-backdrop,.canvas-panel,.drawer,.drawer-backdrop,.lightbox,.slider,.tts-player,.find-bar,pre,table,.katex-display,.mermaid,.diagram,.hm-openui'
 
 // Wide screens: a touch that starts in this strip at the right edge pulls the canvas in (splitview.ts). The strip
 // belongs to the canvas, so code blocks, tables or the scrubber under it don't stop the pull; text fields and

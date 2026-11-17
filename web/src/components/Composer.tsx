@@ -18,6 +18,8 @@ import { ago } from '../unread'
 import { QUEUE_MAX, enqueue, useQueue } from '../queue'
 import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
 import { Icon } from './icons'
+import { LastSpeed, StatusLine, TrayBody } from './Tray'
+import { trayFirstSend, trayForChat, useTray } from '../tray'
 
 const EMPTY: Attachment[] = []
 
@@ -51,19 +53,27 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const keyRef = useRef(draftKey)
   const freshRef = useRef(fresh)
   const [text, setText] = useState(() => getDraft(draftKey))
+  // The tray (tray.ts): open on a new chat, closed on a chat from the list. `firstSent` is set when the first message
+  // of a new chat leaves the composer, so the chat it becomes keeps the tray as it is.
+  const tray = useTray()
+  const firstSent = useRef(false)
   useLayoutEffect(() => {
     const prev = keyRef.current
     const wasFresh = freshRef.current
     freshRef.current = fresh
     if (prev === draftKey) return
     keyRef.current = draftKey
+    const carried = firstSent.current
+    firstSent.current = false
     // The new-chat screen just became a real chat (first attachment, share…), or an empty chat was replaced by
     // one with the picked model: the text stays with it.
     if ((prev.startsWith('new:') || wasFresh) && fresh) {
       setDraft(prev, '')
       setDraft(draftKey, text)
+      trayForChat('carry')
       return
     }
+    trayForChat(carried && (prev.startsWith('new:') || wasFresh) ? 'carry' : draftKey.startsWith('new:') ? 'new' : 'listed')
     setText(getDraft(draftKey))
   }, [draftKey, fresh]) // eslint-disable-line react-hooks/exhaustive-deps
   const listening = useVoice(v => v.listening)
@@ -222,6 +232,11 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
     if ((!t.trim() && !qs.length) || busy) return
     haptic()
     const full = withQuotes(qs, t)
+    if (mode === 'send' && (keyRef.current.startsWith('new:') || freshRef.current)) {
+      // The first message of a new chat: a tray that opened by itself closes as the message leaves the composer.
+      firstSent.current = true
+      trayFirstSend()
+    }
     if (mode === 'queue') {
       // Waits for the end of the running reply (queue.ts); the quotes go with it, as in a normal send.
       if (!chatId || slash || attachments.length) return
@@ -286,7 +301,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   }
 
   return (
-    <div className="composer-wrap">
+    <div className={`composer-wrap${tray.mode === 'tucked' && !tray.open && live === 'off' ? ' tray-closed' : ''}`}>
       {queued && (
         <div className="queued-chip">
           <span className="queued-text"><Icon n="hourglass" /> Sends when Hermux is back: {queued.text.length > 80 ? queued.text.slice(0, 78) + '…' : queued.text}{queued.atts?.length ? ` (${queued.atts.length} attached)` : ''}</span>
@@ -364,6 +379,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           )}
         </div>
       )}
+      {live !== 'off' && <StatusLine />}
       {live !== 'off' && (
         <div className={`live-bar live-${live}`}>
           <span className="live-dot" />
@@ -408,19 +424,27 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           </button>
         </div>
       )}
-      {live === 'off' && !showMenu && (
-        // The model Hermes reports for this chat (session.info), or the profile default before a chat exists; beside it the Auto button.
-        <div className="model-row">
-          <button className="model-chip" aria-label={`Model: ${model || 'none'}${effort && model ? `, reasoning ${effort === 'none' ? 'off' : effort}` : ''}. Change model`} onClick={() => { haptic(); setState({ sheet: 'model' }) }} disabled={offline}>
-            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z" />
-            </svg>
-            <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
-            {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
-          </button>
-          <AutoButton />
-          <ContextRing />
-        </div>
+      {live === 'off' && (
+        // The tray (Tray.tsx): the live status line and, under it, the model Hermes reports for this chat
+        // (session.info), or the profile default before a chat exists, with the Auto button, the last reply's speed and
+        // the context ring. Closed, nothing in it is rendered.
+        <TrayBody open={tray.open}>
+          <StatusLine />
+          {!showMenu && (
+            <div className="model-row">
+              <button className="model-chip" aria-label={`Model: ${model || 'none'}${effort && model ? `, reasoning ${effort === 'none' ? 'off' : effort}` : ''}. Change model`} onClick={() => { haptic(); setState({ sheet: 'model' }) }} disabled={offline}>
+                <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z" />
+                </svg>
+                <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
+                {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
+              </button>
+              <AutoButton />
+              <LastSpeed />
+              <ContextRing />
+            </div>
+          )}
+        </TrayBody>
       )}
       <div className={`composer${live !== 'off' ? ' composer-hidden' : ''}`}>
         <button className="icon-btn" aria-label="Add" onClick={() => { haptic(); setAttachMenu(true) }} disabled={offline}>

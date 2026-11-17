@@ -3,7 +3,7 @@
 All the sheets below share the `Shell` frame in `web/src/components/Sheets.tsx` (except the two menus, which use a smaller frame): a bottom sheet with a grip, a title, and content that scrolls. Dismiss with a tap outside, Android Back, or by dragging down on the top 64 px (`useSheetDrag`: closes after a 110 px drag, or a quick flick over 30 px).
 
 #### Model sheet
-**Opens from:** the composer's model chip; the Add picker's model row; the draft menu's "Change model". **Closes with:** picking a model, tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ModelSheet`.
+**Opens from:** the composer's model chip (in the tray above the text box, 3.4 Tray); the Add picker's model row; the draft menu's "Change model". **Closes with:** picking a model, tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ModelSheet`.
 
 **Layout, top to bottom:**
 
@@ -85,7 +85,7 @@ How picking works (`setModel` in `gateway.ts`):
 Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat's `cwd`), then when usage is known Tokens ("N in · M out"), Context ("N% used") and Cost (`$0.0000`), and Session id. Tapping the session id copies it (toast "Copied"). Missing values show "—". **Data:** `active.info` and `active.usage`.
 
 #### Context window sheet
-**Opens from:** the context ring in the composer's model row (`setState({ sheet: 'context' })`). **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ContextSheet`, `useCompress`.
+**Opens from:** the context ring in the composer's model row, in the tray (`setState({ sheet: 'context' })`). **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ContextSheet`, `useCompress`.
 
 **Layout, top to bottom:** title "Context window"; a bar (`.ctx-bar`) filled to the percent (amber from 80 %, red from 90 %) and "N% used"; "12,345 of 128,000 tokens" (`toLocaleString()`), and "estimated by Hermux" when `usage.context_estimated`; when `usage` has them: "This chat so far: input N · output N", "Cost: $0.0123" (`cost_usd`, 4 decimals under $1 via `fmtCost`) and "Cache hits: 63%" (`cache_hit_pct`); the button "Compress older turns" (`session.compress` through `compressChat`, spinner while it runs, then a toast with the result). The button is disabled while a reply runs, with the note "Wait for the reply to finish". `useCompress` is the small hook (`{ busy, run }`) that `CompressHint` shares with this sheet.
 

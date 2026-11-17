@@ -23,6 +23,8 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `barinsets.ts` — the heights of the chat screen's two bars: `watchBars` measures them with a `ResizeObserver` and
   writes `--bar-top` / `--bar-bottom` on `.stage`; `barInsets()` gives them to the scroll code and `onBarInsets` tells
   a listener when they change (3.2, Bars). The `Insets` type is `{ top, bottom }`.
+- `tray.ts` — the composer's tray (3.4 Tray): `useTray` / `trayState` (`TrayState`: `mode`, `open`, `hint`), `trayForChat`, `trayFirstSend`, `setTrayOpen`, `dismissTrayHint`, `modelBarMode` / `setModelBarMode` (`ModelBarMode`, `hm.modelBar`), `HINT_MS`, the one-time hint key `hm.trayHint.v1`, and `resetTrayForTests`. Tests in `tray.test.ts`.
+- `Tray.tsx` (in `components/`) — the tray's pieces: `TrayBody` (the body above the text box and its movement), `TrayHandle` (the handle and the hint, in the bottom bar), `StatusLine` (the live status line, with `useElapsed`) and `LastSpeed` (the last reply's speed beside the ring) (3.4 Tray).
 - `videoembed.ts` — which addresses play inside the chat and each one's player address; `VideoEmbed.tsx` (in `components/`) draws the card and the player (3.3, Video player).
 - `stats.ts` — opt-in usage stats (spec 2.3): `startStats` runs once from `main.tsx`, after the first render; with no app key it does nothing.
 - `report.ts` — Report a problem (spec 3.21): what a report holds (`reportDetails`), the log scrubber (`scrubLog`), the filled-in GitHub new-issue link (`fallbackUrl`) and sending through the relay (`sendReport`).

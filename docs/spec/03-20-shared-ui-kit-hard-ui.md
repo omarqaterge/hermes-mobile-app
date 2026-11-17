@@ -46,10 +46,14 @@ behind a sheet is a plain dim (`--scrim`), never a full-screen blur.
 - toasts drop in with a bounce and leave softly (`motion-toast`, `motion-toast-out`; `Toasts` in `App.tsx` keeps a
   leaving toast for `TOAST_LEAVE_MS`, 240 ms, hidden from screen readers); banners in the bars fade in;
 - a list that shows once can let its rows arrive in a stagger (`.motion-in` with `stagger(i)`, `motion-row`); the chat
-  list does not (it opens many times a day, and a stagger doubled its work).
+  list does not (it opens many times a day, and a stagger doubled its work);
+- the composer's tray rises from behind the text box and sinks back (`.tray-settle`: `translate` on the settle spring,
+  `opacity` on the fade curve), following the finger during a drag on its handle; the handle's working shimmer
+  (`tray-shine`, a strip moved by `translate`, 48 steps in 2 s) runs only while a reply runs; the tray's hint lifts in
+  (`motion-lift`) (3.4 Tray).
 
-Reduced: no travel, short fades only, and the repeating animations (the working shimmer, the caret, pulsing dots, the
-skeleton shimmer) stand still; the state still shows in words or a still mark. Off: every change is instant, the older
+Reduced: no travel, short fades only, and the repeating animations (the working shimmer, the tray handle's shimmer, the caret, pulsing
+dots, the skeleton shimmer) stand still; the state still shows in words or a still mark. Off: every change is instant, the older
 animations of `styles.css` and the inline transitions of drags included; they are named one by one in `motion.css`
 (a rule matching every element would slow every restyle), and `motion.test.ts` fails when `styles.css` gains an
 animation the list does not name. `Collapse`, `Chevron`, the send button's face change (`face-in`) and smooth scrolls
