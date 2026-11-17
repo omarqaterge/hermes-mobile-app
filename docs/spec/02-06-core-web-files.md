@@ -58,13 +58,18 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `lazy.ts` — `runLazy(id, global)`: big optional bundles (Mermaid as `hm-mermaid`, OpenUI as `hm-openui`, KaTeX and
   highlight.js as `hm-rich`) ship in `index.html` as inert `<script type="text/hm-lazy">` text (`vite.config.ts`
   `lazyBundle`) and are run once, on first use; a failed load can be retried.
+- `mdsplit.ts` — `splitStream`: cuts a streaming reply's Markdown into parts at the start of top-level blocks, so only
+  the last part is read again on each update (3.3, "A reply that arrives in pieces"). `REMARK` is the list of Markdown
+  extensions the splitter and `Markdown` share; `MIN_PART` the shortest finished part.
 - `rich.ts` — math and code colours on demand. `rich-entry.ts` (built as `hm-rich`, about 0.8 MB: `rehype-katex`,
   `rehype-highlight`, highlight.js's `github-dark` palette and KaTeX's CSS with its woff2 fonts inlined) sets
   `window.__hmRich`. `needsRich(text)` says whether a message has math or a code block (`$`, `\(`, `\[`, a fence, an
   indented block, `<pre>`); `loadRich` runs the bundle once, adds its CSS as `<style id="hm-rich-css">` after the
   page's own and tells the subscribers (`subscribeRich`, `richApi`, which `Markdown` reads with
   `useSyncExternalStore`). Before that, a formula shows as its TeX in inline code and code blocks have no colours;
-  every message re-renders once it is loaded.
+  every message re-renders once it is loaded. The bundle hands out `rehype-highlight` through `highlightOnce`, which
+  builds its 37 language definitions once per setting: the plugin itself builds them each time it joins a processor,
+  and `react-markdown` makes a processor for every drawing of every message.
 - `player.ts` — the read-aloud player's decisions as pure functions (phases, stale `tts-done`, pace, position, pause/resume place); `voice.ts` calls them and keeps the bridge, timers and store (see 3.11).
 - `health.ts` — the header dot and status sheet data: `checkHealth` (ping `gateway.ping` with 8 s timeout, plus
   `GET /api/status` without `profile=`), `startHealthPolling` (2.5; returns false when it was already running, so `App` asks for only a ping on a reconnect and the full status is sent once at start-up), `dotState`: `wait` while connecting, `err`

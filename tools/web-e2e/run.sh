@@ -1,6 +1,8 @@
 #!/bin/bash
 # Browser tests of the built web UI against a mock Hermes (mock.cjs) — no phone needed.
 # Builds web/, starts the mock on 127.0.0.1:9119 and web/devserver.py on :5180, runs test.cjs, stops both.
+#   run.sh                 every check file          run.sh --only 07-11   some of them
+#   run.sh --serve         no tests: leaves the page and the mock running, to try a change by hand
 # When 9119 or 5180 is taken (another agent's run, an `adb forward tcp:9119` to the phone), it picks free ports and
 # says so; HM_E2E_MOCK_PORT / HM_E2E_WEB_PORT choose them. Each run has its own call log, so runs never mix.
 # Browser: Playwright's own, or set CHROMIUM=/path/to/chrome (cloud sessions: /opt/pw-browsers/chromium-*/chrome-linux/chrome;
@@ -65,4 +67,12 @@ for try in 1 2 3; do
   export HM_E2E_MOCK_PORT=$(port 0) HM_E2E_WEB_PORT=$(port 0)
   echo "run.sh: a port was taken meanwhile; trying mock $HM_E2E_MOCK_PORT, page $HM_E2E_WEB_PORT"
 done
+# --serve: no tests; the page and the mock stay up to be used by hand or by an agent's browser, until Ctrl-C or a
+# kill of this script (the EXIT trap above stops both servers).
+if [ "${1:-}" = --serve ]; then
+  echo "run.sh: page http://127.0.0.1:$HM_E2E_WEB_PORT (mock Hermes on $HM_E2E_MOCK_PORT); Ctrl-C or kill stops both"
+  trap 'exit 130' INT TERM
+  wait $DEV
+  exit 0
+fi
 node test.cjs "$@"

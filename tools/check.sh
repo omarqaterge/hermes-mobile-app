@@ -3,11 +3,13 @@
 #   tools/check.sh            the groups your branch's changes need (vs origin/main, including uncommitted files)
 #   tools/check.sh --all      every group
 #   tools/check.sh web plugin only these groups
-# Groups: spec (always: check_spec.py, changelog.py check), web (typecheck, unit tests, browser e2e), plugin,
+# Groups: spec (always: check_spec.py, changelog.py check, check-attribution.sh, review_checklist.py --check), web (typecheck, unit tests, browser e2e), plugin,
 # patches (Hermes patches and phone scripts) and android. The plugin, patches and android commands are read from the
 # matching jobs in .github/workflows/ci.yml, so a test added there runs here too. Something the machine lacks (JDK,
 # Android SDK, network for the pinned Hermes) is reported as SKIP, not FAIL; CI still runs it. The Hermes contract
-# check (tools/hermes-contract/run.sh) is CI-only.
+# check (tools/hermes-contract/run.sh) is CI-only. Before the summary it prints, as notes that fail nothing, the
+# review checklist items the change sets off (tools/review_checklist.py) and the commits that don't say how they
+# were verified (tools/check-verified.sh).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 results=()
@@ -72,6 +74,7 @@ run "check_spec.py" python3 tools/check_spec.py
 run "changelog.py check" python3 tools/changelog.py check
 run "no AI credit in commits" tools/check-attribution.sh
 run "no emoji in the interface" python3 tools/check-no-emoji.py
+run "review checklist items" python3 tools/review_checklist.py --check
 
 for g in ${groups[@]+"${groups[@]}"}; do
   case "$g" in
@@ -86,7 +89,7 @@ for g in ${groups[@]+"${groups[@]}"}; do
       while IFS= read -r cmd; do
         if [[ "$cmd" == *test_battery.py* ]] && [ ! -d /proc ]; then skip "$cmd (needs Linux /proc; CI runs it)"; continue; fi
         run "$cmd" bash -c "$cmd"
-      done < <(ci_runs plugin | grep -v -E 'check_spec\.py$|changelog\.py check$')
+      done < <(ci_runs plugin | grep -v -E 'check_spec\.py$|changelog\.py check$|review_checklist\.py --check$')
       ;;
     patches)
       while IFS= read -r cmd; do run "$cmd" bash -c "$cmd"; done < <(ci_runs hermes-patches)
@@ -104,6 +107,13 @@ for g in ${groups[@]+"${groups[@]}"}; do
     *) echo "unknown group: $g (web, plugin, patches, android)"; failed=$((failed + 1)) ;;
   esac
 done
+
+# Not checks, nothing here fails: what to read before the pull request. The checklist items this change sets off
+# (docs/review-checklist/), and the commits that don't say how they were verified.
+echo
+python3 tools/review_checklist.py || true
+echo
+tools/check-verified.sh || true
 
 echo
 printf '%s\n' "${results[@]}"
