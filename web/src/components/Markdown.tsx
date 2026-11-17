@@ -1,7 +1,5 @@
 import { Children, cloneElement, createContext, isValidElement, memo, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type Options } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { visit } from 'unist-util-visit'
@@ -20,6 +18,7 @@ import { runLazy } from '../lazy'
 import { loadRich, needsRich, richApi, subscribeRich, type RichApi } from '../rich'
 import { OpenUIBlock, OpenUICtx } from './OpenUIBlock'
 import { HtmlFrame } from './HtmlFrame'
+import { REMARK, splitStream, type Split } from '../mdsplit'
 import { VideoEmbedTag } from './VideoEmbed'
 import { MAX_VIDEOS, embedOf, frameEmbed } from '../videoembed'
 
@@ -620,7 +619,6 @@ const isLocal = (href: string) => /^(\/|~\/|file:)/.test(href)
 // Links to another chat: [title](hermes-chat:<session id>). A bare session id in a reply becomes one too.
 const CHAT_HREF = /^hermes-chat:([\w-]{1,80})$/
 
-const REMARK = [remarkGfm, [remarkMath, { singleDollarTextMath: true }]] as const
 // Guessing the language of an unlabelled code block is costly: while a reply streams it would run on every
 // update, so it waits until the reply is complete. KaTeX and highlight.js join once their lazy bundle is loaded
 // (rich.ts); until then a formula shows as its TeX and code without colours.
@@ -701,7 +699,6 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
   const seed = useRef('')
   seed.current = useMemo(() => hashText(text), [text])
   const nextBox = useRef(0)
-  nextBox.current = 0 // task boxes are numbered in document order, per render
   // Built once per message: new component functions on every render would make React rebuild every code
   // block, table and diagram on each streamed update (losing "Show all", Wrap, a drawn diagram…).
   const components = useMemo<Components>(() => mdComponents(seed, nextBox), [])
@@ -709,6 +706,13 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
   useEffect(() => {
     if (!rich && needsRich(text)) void loadRich()
   }, [rich, text])
+  const prepared = useMemo(() => prepare(chatLinks(text)), [text])
+  // A reply that arrives in pieces is drawn in parts, so only its last part is read again on each update (mdsplit.ts).
+  // It stays in parts once complete: one drawing of the whole would build every code block, picture and frame anew.
+  const split = useRef<Split | null>(null)
+  if (streaming || split.current) split.current = splitStream(split.current, prepared)
+  const parts = split.current ? split.current.parts : [prepared]
+  const plugins = rehypePlugins(streaming, rich, guarded)
   return (
     <OpenUICtx.Provider value={ui}>
     <StreamingCtx.Provider value={streaming}>
@@ -735,20 +739,31 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
         }
       }}
     >
-      <ReactMarkdown
-        remarkPlugins={REMARK as unknown as Options['remarkPlugins']}
-        rehypePlugins={rehypePlugins(streaming, rich, guarded) as unknown as Options['rehypePlugins']}
-        // Sanitize adds the user-content- prefix to ids itself; don't let remark-rehype add it too.
-        remarkRehypeOptions={REMARK_REHYPE}
-        urlTransform={urlTransform}
-        components={components}
-      >
-        {prepare(chatLinks(text))}
-      </ReactMarkdown>
+      {parts.map((part, i) => (
+        <MdPart key={i} text={part} plugins={plugins} components={components} nextBox={nextBox} seed={streaming ? '' : seed.current} />
+      ))}
     </div>
     </GuardCtx.Provider>
     </StreamingCtx.Provider>
     </OpenUICtx.Provider>
+  )
+})
+
+// One part of a reply's text (all of it, unless it arrived in pieces). A part whose text and plugins are unchanged is not
+// read again. `seed` is only here to draw the task boxes again when the reply they are keyed by has changed.
+const MdPart = memo(function MdPart({ text, plugins, components, nextBox }: { text: string; plugins: ReturnType<typeof rehypePlugins>; components: Components; nextBox: { current: number }; seed: string }) {
+  nextBox.current = 0 // task boxes are numbered in document order, per drawing; mdsplit keeps them all in one part
+  return (
+    <ReactMarkdown
+      remarkPlugins={REMARK as unknown as Options['remarkPlugins']}
+      rehypePlugins={plugins as unknown as Options['rehypePlugins']}
+      // Sanitize adds the user-content- prefix to ids itself; don't let remark-rehype add it too.
+      remarkRehypeOptions={REMARK_REHYPE}
+      urlTransform={urlTransform}
+      components={components}
+    >
+      {text}
+    </ReactMarkdown>
   )
 })
 

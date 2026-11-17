@@ -58,6 +58,9 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `lazy.ts` — `runLazy(id, global)`: big optional bundles (Mermaid as `hm-mermaid`, OpenUI as `hm-openui`, KaTeX and
   highlight.js as `hm-rich`) ship in `index.html` as inert `<script type="text/hm-lazy">` text (`vite.config.ts`
   `lazyBundle`) and are run once, on first use; a failed load can be retried.
+- `mdsplit.ts` — `splitStream`: cuts a streaming reply's Markdown into parts at the start of top-level blocks, so only
+  the last part is read again on each update (3.3, "A reply that arrives in pieces"). `REMARK` is the list of Markdown
+  extensions the splitter and `Markdown` share; `MIN_PART` the shortest finished part.
 - `rich.ts` — math and code colours on demand. `rich-entry.ts` (built as `hm-rich`, about 0.8 MB: `rehype-katex`,
   `rehype-highlight`, highlight.js's `github-dark` palette and KaTeX's CSS with its woff2 fonts inlined) sets
   `window.__hmRich`. `needsRich(text)` says whether a message has math or a code block (`$`, `\(`, `\[`, a fence, an
