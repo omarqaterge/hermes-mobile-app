@@ -159,6 +159,7 @@ jobs:
       - run: pip install fastapi httpx
       - run: python3 tools/test_check_spec.py
       - run: python3 tools/check_spec.py
+      - run: python3 tools/check-no-emoji.py
       - run: python3 tools/test_changelog.py
       - run: python3 tools/changelog.py check
       - run: python3 tools/test_canvas.py
