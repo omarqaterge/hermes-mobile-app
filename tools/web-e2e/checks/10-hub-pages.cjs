@@ -1,12 +1,10 @@
 // Files and its previews, Projects, Cron, the title menu and Chat details.
-const { calls, sleep, check } = require('../lib.cjs')
+const { calls, sleep, check, openLibraryPart } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
   // ── #21 Files: Back goes up one folder, then leaves ──
-  await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: 'Files' }).click()
+  await openLibraryPart(page, 'Files')
   const crumbText = () => page.locator('.crumbs').textContent()
   await page.getByRole('button', { name: /^a( |$)/ }).click()
   await page.locator('.crumbs', { hasText: 'sdcard/a/' }).waitFor({ timeout: 5000 })
@@ -21,15 +19,10 @@ module.exports = async t => {
   await page.evaluate(() => window.hermesBack())
   await sleep(300)
   check((await page.locator('.crumbs').count()) === 0, 'at the root chip Back leaves Files')
-  check((await page.locator('.hub-card').count()) === 6, '…back to the Hermux hub that opened it')
-  await page.evaluate(() => window.hermesBack())
-  await sleep(200)
-  check((await page.locator('.hub-card').count()) === 0, 'Back again closes the hub')
+  check((await page.locator('.screen').count()) === 0, '…back to the chat (Back from Files leaves the Library)')
 
   // ── Files previews: table, code, page, player, and the note for files with no preview ──
-  await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: 'Files' }).click()
+  await openLibraryPart(page, 'Files')
   // Android Back closes the open preview sheet; wait until it is gone before the next tap.
   const closeSheet = async () => {
     await page.evaluate(() => window.hermesBack())
@@ -57,16 +50,12 @@ module.exports = async t => {
   check((await page.locator('.sheet button', { hasText: 'Open with…' }).count()) === 1, 'Files: the pdf sheet keeps Open with…')
   check(fileReads('doc.pdf') === 0, 'Files: the pdf was not read')
   await closeSheet()
-  // Back out of Files (at its root chip) and then out of the hub, waiting for each to close.
+  // Back out of Files (at its root chip) leaves the Library for the chat.
   await page.evaluate(() => window.hermesBack())
   await page.locator('.crumbs').waitFor({ state: 'detached', timeout: 5000 })
-  await page.evaluate(() => window.hermesBack())
-  await page.locator('.hub-card').first().waitFor({ state: 'detached', timeout: 5000 })
 
   // ── #22 Projects: tap a chat to open it ──
-  await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: 'Projects' }).click()
+  await openLibraryPart(page, 'Projects')
   await page.locator('.card', { hasText: 'Thesis' }).click()
   await page.locator('.project-chat', { hasText: 'Chat 4' }).click({ timeout: 5000 })
   await page.locator('.msg.assistant', { hasText: 'answer s-4' }).waitFor({ timeout: 5000 }).then(() => check(true, 'project chat opens'), () => check(false, 'project chat opens'))
@@ -74,8 +63,7 @@ module.exports = async t => {
 
   // ── #23 Cron: edit a job (falls back to replace when PUT isn't there), open a run's output ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: 'Scheduled jobs' }).click()
+  await page.getByRole('button', { name: /^Scheduled/ }).click()
   await page.locator('.card', { hasText: 'Morning brief' }).getByRole('button', { name: 'Edit' }).click()
   check((await page.locator('.field textarea').inputValue()) === 'Brief me', 'edit form is filled in')
   await page.locator('.field textarea').fill('Brief me, shorter')

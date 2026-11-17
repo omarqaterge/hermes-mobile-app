@@ -77,7 +77,8 @@ async function one(browser) {
     // first waits for the target to stand still and its waits poll in steps, which would count as the page's time.
     out.list = await inPage(page, work, `button[aria-label^="Sessions"]`, null, () => {
       const d = document.querySelector('[role="complementary"]') || document.querySelector('aside')
-      return !!d && Math.abs(d.getBoundingClientRect().left) < 1 && d.textContent.includes('Chat 46')
+      const l = d && d.getBoundingClientRect().left // in place: at the edge (docked, or the full-height drawer before the side panel) or the sheet's 8 px in
+      return !!d && (Math.abs(l) < 1 || Math.abs(l - 8) < 1) && d.textContent.includes('Chat 46')
     })
     // The list's rows finish arriving first (untimed).
     await page.waitForFunction(() => !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity), null, { timeout: 3000 }).catch(() => {})

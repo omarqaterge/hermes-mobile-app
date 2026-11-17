@@ -147,7 +147,7 @@ module.exports = async t => {
   {
     const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto')
     await page.getByRole('button', { name: /^Sessions/ }).click()
-    await page.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const row = page.locator('.set-row', { hasText: 'Auto for all chats' })
     await row.waitFor({ timeout: 5000 })
     await row.click()

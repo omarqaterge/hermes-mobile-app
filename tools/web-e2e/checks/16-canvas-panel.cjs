@@ -170,7 +170,7 @@ module.exports = async t => {
   {
     const listX = async () => (await cvw.locator('.drawer').boundingBox())?.x ?? -9999
     check((await listX()) >= 0, 'wide screen: the chat list is docked by default')
-    await cvw.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await cvw.getByRole('button', { name: 'Settings', exact: true }).click()
     await cvw.locator('.set-row', { hasText: 'Uninstall Hermux' }).click()
     const sh = cvw.locator('.sheet', { hasText: 'Uninstall Hermux' }).last()
     await sh.waitFor({ timeout: 3000 })

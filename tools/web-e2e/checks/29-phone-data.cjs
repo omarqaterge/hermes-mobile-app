@@ -3,7 +3,7 @@
 // Not covered here, because it is Java: the biometric itself, Android's permission dialog, the generation counter that
 // lets an off win over an on in flight, the switch cleared when a permission is seen missing, and blocked detection.
 // Those were only compiled; they need a real phone (docs/status/phone-data.md).
-const { WEB, MOCK, check, sleep, nativeShell, png } = require('../lib.cjs')
+const { WEB, MOCK, check, sleep, nativeShell, png, openLibraryPart } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -64,7 +64,7 @@ module.exports = async t => {
     await pg.goto(WEB + '/')
     await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await pg.getByRole('button', { name: /^Sessions/ }).click()
-    await pg.locator('.nav-tile', { hasText: 'Settings' }).click()
+    await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
     return pg
   }
@@ -781,9 +781,7 @@ module.exports = async t => {
     await post('/api/plugins/hermes-mobile/canvas/doc', { session: 's-pd-docchat', title: 'Rows notes', type: 'markdown', content: '![x](http://beacon.test/md.png?d=ROWS)\n\nsee [here](http://beacon.test/p?d=ROWS)' })
     await post('/api/plugins/hermes-mobile/canvas/doc', { session: 's-pd-cleanchat', title: 'Clean page', type: 'html', content: '<p>clean</p>' })
     const gallery = async pg2 => {
-      await pg2.getByRole('button', { name: /^Sessions/ }).click()
-      await pg2.locator('.nav-tile', { hasText: 'Hermux' }).click()
-      await pg2.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+      await openLibraryPart(pg2, 'Canvases')
       await pg2.locator('.gallery-card').first().waitFor({ timeout: 8000 })
     }
     hits.length = 0
@@ -842,9 +840,7 @@ module.exports = async t => {
     // Files: a file has no chat, so it is judged by whether the app has ever recorded a read
     for (const [anyRead, want] of [[true, true], [false, false]]) {
       pg = await open(CHAT, { ids: [], anyRead })
-      await pg.getByRole('button', { name: /^Sessions/ }).click()
-      await pg.locator('.nav-tile', { hasText: 'Hermux' }).click()
-      await pg.locator('.hub-card', { hasText: 'Files' }).click()
+      await openLibraryPart(pg, 'Files')
       await pg.locator('.file-row', { hasText: 'page.html' }).click()
       await sleep(1200)
       v = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe.html-frame').length, held: document.querySelectorAll('.html-held').length }))

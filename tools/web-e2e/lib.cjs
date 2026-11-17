@@ -264,4 +264,11 @@ const addFiles = async (page, option, files) => {
   await chooser.setFiles(files)
 }
 
-module.exports = { addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle }
+// The Library page on one of its parts: the chat list's Library row, then the part's button (Canvases, Files, Projects).
+const openLibraryPart = async (page, part) => {
+  await page.getByRole('button', { name: /^Sessions/ }).click()
+  await page.getByRole('button', { name: 'Library', exact: true }).click()
+  await page.getByRole('button', { name: part, exact: true }).click()
+}
+
+module.exports = { openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle }

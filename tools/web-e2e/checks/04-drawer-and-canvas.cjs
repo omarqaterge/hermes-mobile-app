@@ -1,6 +1,6 @@
 // Older chats, deleting a chat, the working shimmer, canvas saving, canvas HTML, the canvas gallery.
 const path = require('path')
-const { SHOTS, calls, rpcs, sleep, check, mock, setMotion } = require('../lib.cjs')
+const { SHOTS, calls, rpcs, sleep, check, mock, setMotion, openLibraryPart } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -143,10 +143,7 @@ module.exports = async t => {
   check((await page.locator('.set-row', { hasText: /Save to library|Gallery category/ }).count()) === 0, 'gallery: nothing to save or file from the canvas menu')
   await page.evaluate(() => window.hermesBack())
   await page.getByRole('button', { name: 'Close canvas' }).click()
-  await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).filter({ hasText: /\d+ documents/ }).waitFor({ timeout: 5000 }).then(() => check(true, 'hub: gallery summary'), () => check(false, 'hub: gallery summary'))
-  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  await openLibraryPart(page, 'Canvases')
   await page.locator('.lib-cats button', { hasText: 'HTML 1' }).waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: categories are the types, with counts'), () => check(false, 'gallery: categories are the types, with counts'))
   check((await page.locator('.lib-cats button', { hasText: /^Markdown \d/ }).count()) === 1, 'gallery: a Markdown category')
   check((await page.locator('.gallery-card', { hasText: 'Plan' }).count()) === 1 && (await page.locator('.gallery-card', { hasText: 'Page' }).count()) === 1, 'gallery: documents from every chat, nothing saved by hand')
@@ -170,7 +167,7 @@ module.exports = async t => {
   await page.getByText('Nothing matches “zzz-nothing”').waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: no match says so'), () => check(false, 'gallery: no match says so'))
   // Leaving and coming back starts with an empty search box and the whole gallery.
   await page.evaluate(() => window.hermesBack())
-  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  await openLibraryPart(page, 'Canvases')
   check((await page.getByPlaceholder('Search titles and text…').inputValue()) === '', 'gallery: the last search is not kept')
   await page.waitForFunction(() => document.querySelectorAll('.gallery-card').length >= 3, null, { timeout: 5000 }).then(() => check(true, 'gallery: back to the whole list'), () => check(false, 'gallery: back to the whole list'))
   check((await page.getByText(/Nothing matches/).count()) === 0, 'gallery: no stale "Nothing matches"')
@@ -215,17 +212,13 @@ module.exports = async t => {
   }
   await page.getByRole('button', { name: 'Close canvas' }).click()
   // Go to chat: back to Chat 5 without the canvas.
-  await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  await openLibraryPart(page, 'Canvases')
   await page.locator('.gallery-card', { hasText: 'Soup' }).click()
   await page.getByRole('button', { name: 'Go to chat' }).click()
   await page.locator('.msg.assistant', { hasText: 'answer s-5' }).waitFor({ timeout: 5000 }).then(() => check(true, 'gallery: Go to chat opens the chat it was made in'), () => check(false, 'gallery: Go to chat opens the chat it was made in'))
   check((await page.locator('.canvas-panel').count()) === 0 && (await page.locator('.screen').count()) === 0, 'gallery: Go to chat leaves the canvas closed')
   // Delete removes it from its chat's canvas.
-  await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Hermux' }).click()
-  await page.locator('.hub-card', { hasText: 'Canvas gallery' }).click()
+  await openLibraryPart(page, 'Canvases')
   await page.locator('.gallery-card', { hasText: 'Plan' }).click()
   await page.getByRole('button', { name: 'Item options' }).click()
   await page.locator('.set-row', { hasText: 'Delete' }).click()
@@ -249,7 +242,7 @@ module.exports = async t => {
     await dl.goto(WEB + '/')
     await dl.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
     await dl.getByRole('button', { name: /^Sessions/ }).click()
-    const search = dl.getByPlaceholder('Search sessions…')
+    const search = dl.getByPlaceholder('Search chats')
     await search.waitFor({ timeout: 3000 })
     await search.fill('Chat 43')
     const title = dl.getByText('Chat 43', { exact: true })

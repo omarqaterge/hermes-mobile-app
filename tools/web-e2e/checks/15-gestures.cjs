@@ -53,7 +53,7 @@ module.exports = async t => {
   check((await swp.evaluate(() => document.querySelector('.drawer').style.transform)) === '', 'drawer: no inline position left after it settles')
   // swipe left on the backdrop pushes it back, following the finger
   await hold('.drawer-backdrop', [-30, -80], 0)
-  const w = await swp.evaluate(() => document.querySelector('.drawer').offsetWidth)
+  const w = await swp.evaluate(() => document.querySelector('.drawer').offsetWidth + 8) // the side panel is a sheet 8 px in from the edge: open, its right edge is its width plus 8
   check(Math.abs((await drawerX()) - (w - 80)) <= 2, `drawer: a swipe left on the backdrop moves it with the finger (${await drawerX()} of ${w})`)
   await release()
   await sleep(400)

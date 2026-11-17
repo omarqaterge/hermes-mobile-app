@@ -74,7 +74,7 @@ module.exports = async t => {
 
   // ── #18 message search opens the chat at the hit ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.getByPlaceholder('Search sessions…').fill('question 17')
+  await page.getByPlaceholder('Search chats').fill('question 17')
   await page.locator('.hit-row', { hasText: 'Long chat' }).click({ timeout: 5000 })
   const hitMsg = page.locator('.msg.user').filter({ has: page.locator('.bubble', { hasText: /^question 17$/ }) })
   await hitMsg.waitFor({ timeout: 5000 }).catch(() => {})
@@ -84,7 +84,7 @@ module.exports = async t => {
   check(await hitMsg.evaluate(el => el.classList.contains('hit-flash')).catch(() => false), 'and flashes')
   check(await page.evaluate(() => CSS.highlights && CSS.highlights.has('hm-hit')), 'its words are highlighted')
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.getByPlaceholder('Search sessions…').fill('')
+  await page.getByPlaceholder('Search chats').fill('')
   await page.evaluate(() => window.hermesBack())
 
   // ── #20 file checkpoints: every folder the chat edited, diff, restore (folder or one file) ──
