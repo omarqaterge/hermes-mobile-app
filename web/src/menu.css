@@ -224,13 +224,17 @@ html[data-motion='full'] .menu-row:active:not(:disabled) {
   transition: scale var(--motion-quick) var(--ease-fade);
 }
 
-/* ── solid: glass off, a WebView without backdrop blur, or a menu over the glass side panel ── */
-html[data-glass='off'] :is(.menu-action, .picker-card),
-.menu-solid :is(.menu-action, .picker-card, .set-card) {
+/* ── solid: glass off, a WebView without backdrop blur, or a menu over the glass side panel. Plain selector lists, never
+   one ending in `:is()`: such a rule is tested against every element at every restyle (docs/performance-history.md). ── */
+html[data-glass='off'] .menu-action,
+html[data-glass='off'] .picker-card,
+.menu-solid .menu-action,
+.menu-solid .set-card {
   background: var(--surface-2);
   border-color: var(--border);
 }
-html[data-glass='off'] :is(.menu-row + .menu-row, .picker-card .picker-opt + .picker-opt),
+html[data-glass='off'] .menu-row + .menu-row,
+html[data-glass='off'] .picker-card .picker-opt + .picker-opt,
 .menu-solid .menu-row + .menu-row {
   border-top-color: var(--border);
 }
