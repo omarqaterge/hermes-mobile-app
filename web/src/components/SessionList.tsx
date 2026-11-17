@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSheetDrag } from './useSheetDrag'
 import { createPortal, flushSync } from 'react-dom'
 import type { SessionListRow } from '@hermes/shared/gateway-contract.generated'
-import { deleteSession, errText, loadArchived, loadMoreSessions, moreSessionsMayExist, renameStored, resumeSession, searchMessages, setArchived, type MessageHit } from '../gateway'
+import { errText, loadArchived, loadMoreSessions, moreSessionsMayExist, resumeSession, searchMessages, type MessageHit } from '../gateway'
 import { useOrder } from '../order'
 import { setState, toast, useStore } from '../store'
 import { parseSnippet } from '../jump'
 import { haptic } from '../bridge'
-import { Title, keepBranch, plainTitle } from './Title'
-import { confirmDialog } from '../dialog'
+import { Title, plainTitle } from './Title'
 import { ago, lastActive } from '../unread'
 import { dayLabel, frozenActivity, orderChats, recentIds } from '../chatorder'
-import { chatListChanged, holdChatSnapshot, useChatSnapshot } from '../chatsnapshot'
+import { holdChatSnapshot, useChatSnapshot } from '../chatsnapshot'
+import { archiveChat, deleteChat, pinChat } from '../chatactions'
 import { cronJobId, runName, useJobName } from '../panelvalues'
-import { Chevron } from './ui'
+import { Chevron, MenuGroup, MenuRow, MenuSheet } from './ui'
+import { ChatMenuHeader } from './ChatMenu'
 import { Icon } from './icons'
 
 /** A scheduled job's run (source "cron"): a clock and the job's name. */
@@ -373,6 +373,9 @@ function useDrag(commit: (list: ListName, ids: string[]) => void, gap: { list: L
 }
 
 // ── ⋮ menu ──────────────────────────────────────────
+/** A row's menu: the chat's title with Rename, then Pin / Unpin (not for archived chats), Archive / Unarchive and
+ *  Delete. Nothing that needs the chat to be open (the owner's decision, session-list-gestures.md). It opens over the
+ *  side panel, which is glass, so it is a solid surface (glass never lies on glass) and the list stays where it was. */
 function SessionMenu({
   s,
   archived,
@@ -380,8 +383,7 @@ function SessionMenu({
   close,
   onPin,
   onArchive,
-  onDelete,
-  onRename
+  onDelete
 }: {
   s: SessionListRow
   archived: boolean
@@ -390,59 +392,20 @@ function SessionMenu({
   onPin: (on: boolean) => void
   onArchive: (on: boolean) => void
   onDelete: () => void
-  onRename: (title: string) => void
 }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(plainTitle(s.title))
   const act = (fn: () => void) => () => {
-    haptic()
     close()
     fn()
   }
-  const drag = useSheetDrag(close)
   return (
-    <div className="sheet-backdrop" onClick={close}>
-      <div className="sheet session-menu" role="dialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
-        <div className="sheet-grip" />
-        <div className="sheet-title session-menu-title">{s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}</div>
-        {editing ? (
-          <form
-            className="rename-row"
-            onSubmit={e => {
-              e.preventDefault()
-              close()
-              onRename(draft.trim())
-            }}
-          >
-            <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} placeholder="Chat title" />
-            <button className="btn" type="submit">
-              Save
-            </button>
-          </form>
-        ) : (
-        <div className="menu-list">
-          <button className="menu-item" onClick={() => setEditing(true)}>
-            <span className="mi-icon"><Icon n="pencil" /></span>
-            Rename
-          </button>
-          {!archived && (
-            <button className="menu-item" onClick={act(() => onPin(!pinned))}>
-              <span className="mi-icon gold"><Icon n="pin" /></span>
-              {pinned ? 'Unpin' : 'Pin to top'}
-            </button>
-          )}
-          <button className="menu-item" onClick={act(() => onArchive(!archived))}>
-            <span className="mi-icon blue"><Icon n="archive" /></span>
-            {archived ? 'Unarchive' : 'Archive'}
-          </button>
-          <button className="menu-item danger" onClick={act(onDelete)}>
-            <span className="mi-icon red"><Icon n="trash" /></span>
-            Delete
-          </button>
-        </div>
-        )}
-      </div>
-    </div>
+    <MenuSheet label="Chat options" onClose={close} solid>
+      <ChatMenuHeader id={s.id} title={s.title} fallback={s.preview || 'Untitled'} onDone={close} />
+      <MenuGroup>
+        {!archived && <MenuRow icon="pin" title={pinned ? 'Unpin' : 'Pin to top'} onClick={act(() => onPin(!pinned))} />}
+        <MenuRow icon="archive" title={archived ? 'Unarchive' : 'Archive'} onClick={act(() => onArchive(!archived))} />
+        <MenuRow icon="trash" title="Delete" danger onClick={act(onDelete)} />
+      </MenuGroup>
+    </MenuSheet>
   )
 }
 
@@ -522,35 +485,14 @@ export function SessionList({ query }: { query: string }) {
     if (archivedOpen) refreshArchived()
   }, [archivedOpen, profile, refreshArchived])
 
-  const pin = (id: string, on: boolean) => {
-    setOrder(o => ({ ...o, pinned: on ? [id, ...o.pinned.filter(x => x !== id)] : o.pinned.filter(x => x !== id) }))
-    toast(on ? 'Pinned' : 'Unpinned')
-  }
+  const pin = (id: string, on: boolean) => pinChat(profile, id, on)
   const archive = (id: string, on: boolean) => {
-    setArchived(id, on)
-      .then(() => {
-        if (on) setOrder(o => ({ ...o, pinned: o.pinned.filter(x => x !== id) }))
-        chatListChanged(!on) // the order is read again (chatsnapshot.ts); a restored chat with the list that brings it back
-        toast(on ? 'Archived' : 'Restored')
-        if (archivedOpen || !on) refreshArchived()
-      })
-      .catch(e => toast(errText(e), 'error'))
+    void archiveChat(profile, id, on).then(ok => {
+      if (ok && (archivedOpen || !on)) refreshArchived()
+    })
   }
   const remove = async (s: SessionListRow) => {
-    const ok = await confirmDialog({
-      title: `Delete “${plainTitle(s.title) || s.preview || 'this chat'}”?`,
-      message: 'The whole conversation is removed. This cannot be undone.',
-      danger: true
-    })
-    if (!ok) return
-    deleteSession(s.id)
-      .then(() => {
-        setOrder(o => ({ ...o, pinned: o.pinned.filter(x => x !== s.id), manual: o.manual && o.manual.filter(x => x !== s.id) }))
-        setArchivedRows(a => a && a.filter(x => x.id !== s.id))
-        chatListChanged()
-        toast('Deleted')
-      })
-      .catch(e => toast(errText(e), 'error'))
+    if (await deleteChat(profile, s.id, plainTitle(s.title) || s.preview || '')) setArchivedRows(a => a && a.filter(x => x.id !== s.id))
   }
 
   /** Where (0-based) a row dropped at height y would land among the rows of a list, ignoring the dragged one. */
@@ -745,11 +687,6 @@ export function SessionList({ query }: { query: string }) {
             onPin={on => pin(menu.s.id, on)}
             onArchive={on => archive(menu.s.id, on)}
             onDelete={() => remove(menu.s)}
-            onRename={t =>
-              renameStored(menu.s.id, keepBranch(menu.s.title, t))
-                .then(() => toast('Renamed'))
-                .catch(e => toast(errText(e), 'error'))
-            }
           />,
           document.body
         )}

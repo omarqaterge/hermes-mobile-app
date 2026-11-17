@@ -86,7 +86,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `Composer.tsx` | The composer. |
 | `QuoteBar.tsx` | `QuoteBar`: the Quote / Explain bar over the composer while a reply's text is selected. |
 | `quote.ts` | Quote helpers and state: `withQuotes`, `splitQuote`, `useQuotes`, `addQuote`, `removeQuote`, `clearQuotes`, `setQuotes`, `QUOTE_MAX`, `QUOTES_MAX`. |
-| `Sheets.tsx` | Model, Commands, Chat menu, Draft menu, Chat details, Backend status, File checkpoints sheets. |
+| `Sheets.tsx` | Model, Commands, Chat details, Backend status, File checkpoints sheets. |
+| `ChatMenu.tsx` | The chat menu and the new-chat menu (3.5). |
 | `RequestSheet.tsx` | Approval, question and password sheets. |
 | `Spinner.tsx` | `Spinner`. Every spinner turns on one shared 8 Hz timer instead of a CSS animation, which would redraw the WebView every frame while Hermes works. The timer runs only while a spinner is mounted. |
 | `text.ts` | Pure text helpers: `mediaKind`, `prepare`, `formatOutput`, `memoryDiff`, `plainText`, `parseCsv`, `chatLinks`, `tidyApprovalText`, `linkParts`, `phoneAppLabel`, `formatDuration`, `backgroundLuminance`. |

@@ -1,0 +1,280 @@
+/* The menus (components/ui.tsx MenuSheet, MenuHeader, MenuActions, MenuAction, MenuGroup, MenuRow, MenuNote; the chat's
+   menu in components/ChatMenu.tsx and a chat row's menu in SessionList.tsx), and the rows of PickerSheet, which share
+   their look. A menu is a glass sheet (glass.css `.sheet`); everything inside it is a solid tint, never a second blur.
+   A menu that opens over the glass side panel is solid (`.menu-solid`). One line for every label and sub-line: a long
+   one is cut with an ellipsis, so a wider font never wraps a row or grows the sheet. Spec 3.20. */
+
+.menu-sheet {
+  gap: 12px;
+}
+.menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px 2px;
+}
+
+/* ── the header: title (two lines at most), a dim line, an icon button ── */
+.menu-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 2px 0 0 2px;
+  touch-action: none; /* the top strip drags the sheet down (useSheetDrag) */
+}
+.menu-head-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-head-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.menu-head-sub {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-head-btn {
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+.menu-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+}
+.menu-rename .sheet-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── quick actions: up to four equal tiles, icon above a short label ── */
+.menu-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.menu-action {
+  min-width: 0;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 4px;
+  border-radius: 14px;
+  background: var(--glass-group);
+  border: 1px solid var(--glass-edge);
+  color: var(--text);
+}
+.menu-action:active {
+  background: var(--press);
+}
+.menu-action-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.menu-action-count {
+  position: absolute;
+  top: -7px;
+  left: calc(100% - 6px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 650;
+  text-align: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.menu-action-label {
+  max-width: 100%;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── groups of rows (the card is `.set-card`: on glass a faint tint, glass.css) ── */
+.menu-group {
+  flex: none;
+}
+.menu-row {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+}
+.menu-row + .menu-row {
+  border-top: 1px solid var(--glass-edge);
+}
+.menu-row:active:not(:disabled) {
+  background: var(--press);
+}
+.menu-row:disabled {
+  opacity: 0.55;
+}
+.menu-row-icon {
+  flex: none;
+  width: 24px;
+  display: grid;
+  place-items: center;
+}
+.menu-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.menu-row-title,
+.menu-row-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-row-title {
+  font-size: 1rem;
+  font-weight: 500;
+}
+.menu-row-sub {
+  font-size: 0.8rem;
+  color: var(--glass-dim);
+}
+.menu-row.danger {
+  color: var(--glass-err);
+}
+.menu-row .switch {
+  display: inline-block;
+  flex: none;
+}
+.menu-row .set-chev {
+  flex: none;
+  margin-left: 0;
+  color: var(--glass-dim);
+}
+.menu-note {
+  padding: 0 6px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+/* ── the rows of a PickerSheet (Add, Auto, Copy reply): the same rows, on the same card ── */
+.picker-card {
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--glass-group);
+  border: 1px solid var(--glass-edge);
+}
+.picker-card .picker-opt {
+  min-height: 52px;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: 0;
+}
+.picker-card .picker-opt + .picker-opt {
+  border-top: 1px solid var(--glass-edge);
+}
+.picker-card .picker-opt .set-title {
+  font-size: 1rem;
+}
+
+/* ── presses, as every row and button (motion.css) ── */
+html[data-motion='full'] .menu-action,
+html[data-motion='full'] .menu-row {
+  transition: scale var(--motion-bounce) var(--spring-bounce);
+}
+html[data-motion='full'] .menu-action:active {
+  scale: 0.94;
+  transition: scale var(--motion-quick) var(--ease-fade);
+}
+html[data-motion='full'] .menu-row:active:not(:disabled) {
+  scale: 0.98;
+  transition: scale var(--motion-quick) var(--ease-fade);
+}
+
+/* ── solid: glass off, a WebView without backdrop blur, or a menu over the glass side panel ── */
+html[data-glass='off'] :is(.menu-action, .picker-card),
+.menu-solid :is(.menu-action, .picker-card, .set-card) {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+html[data-glass='off'] :is(.menu-row + .menu-row, .picker-card .picker-opt + .picker-opt),
+.menu-solid .menu-row + .menu-row {
+  border-top-color: var(--border);
+}
+html[data-glass='off'] :is(.menu-row-sub, .menu-row .set-chev),
+.menu-solid :is(.menu-row-sub, .menu-row .set-chev, .dim) {
+  color: var(--dim);
+}
+html[data-glass='off'] .menu-row.danger,
+.menu-solid .menu-row.danger {
+  color: var(--err);
+}
+.sheet.menu-solid {
+  border-color: var(--border);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25);
+}
+.sheet.menu-solid::before {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.menu-solid .sheet-input {
+  background-color: var(--bg);
+  border-color: var(--border);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .menu-action,
+  .picker-card {
+    background: var(--surface-2);
+    border-color: var(--border);
+  }
+  .menu-row-sub,
+  .menu-row .set-chev {
+    color: var(--dim);
+  }
+  .menu-row.danger {
+    color: var(--err);
+  }
+}
+
+/* ── Chat details: the rows' values may be long (a model id, a folder) ── */
+.details .set-value {
+  max-width: 62%;
+}
+.details .set-sub.mono,
+.details .set-sub .mono {
+  overflow-wrap: anywhere;
+}

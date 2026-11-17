@@ -84,9 +84,9 @@ flowchart TD
 
 | Name | Kind | Opened from | Closes with | Section |
 |---|---|---|---|---|
-| `model` | `Sheet` value, `ModelSheet` | Model chip in the composer; the "Add" picker's first row; draft menu "Change model". | Drag down on the top strip, tap outside, Android Back. Picking a model closes it. | 3.5 |
-| `chat-menu` | `Sheet` value, `ChatMenuSheet` | Header Chat options button. | Same. | 3.5 |
-| `draft-menu` | `Sheet` value, `DraftMenuSheet` | Chat options on the empty new-chat screen. | Same. | 3.5 |
+| `model` | `Sheet` value, `ModelSheet` | Model chip in the composer; the "Add" picker's first row. | Drag down on the top strip, tap outside, Android Back. Picking a model closes it. | 3.5 |
+| `chat-menu` | `Sheet` value, `ChatMenuSheet` (`ChatMenu.tsx`) | Header Chat options button. | Same. | 3.5 |
+| `draft-menu` | `Sheet` value, `DraftMenuSheet` (`ChatMenu.tsx`) | Chat options on the empty new-chat screen. | Same. | 3.5 |
 | `session-actions` | `Sheet` value, `SessionActionsSheet` ("Chat details") | Chat menu row Chat details. | Same. | 3.5 |
 | `status` | `Sheet` value, `StatusSheet` ("Backend status") | The header title, the line under it and its status dot; Settings row Status. | Same. | 3.5 |
 | `context` | `Sheet` value, `ContextSheet` ("Context window") | The context ring in the composer's model row. | Same. | 3.5 |

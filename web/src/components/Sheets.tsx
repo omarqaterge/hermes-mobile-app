@@ -2,19 +2,16 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CommandsCatalogResult, GoalSnapshot, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
 import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, reasonLabel, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
-import { deleteSession, compressChat, errText, goalAction, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
-import { openCanvas, useCanvas } from '../canvas'
+import { compressChat, errText, goalAction, reconnectNow, rpc, setModel, setReasoning } from '../gateway'
 import { confirmDialog } from '../dialog'
-import { Title, keepBranch, plainTitle } from './Title'
-import { autoReadFor, hasChatOverride, setAutoReadFor, setDraftRead, useAutoRead, useDraftAutoRead } from '../voice'
+import { plainTitle } from './Title'
 import { checkHealth, dotState, type Health } from '../health'
 import { setState, toast, useStore } from '../store'
-import { copyText, haptic, setupFix, setupState, shareText } from '../bridge'
+import { copyText, haptic, setupFix, setupState } from '../bridge'
 import { api } from '../api'
 import { shizukuRow } from '../statusrows'
 import type { PhoneAccess } from '../setupflow'
 import { refreshLogins } from '../api'
-import { chatMarkdown } from '../export'
 import { isFav, toggleFav, useFavs } from '../favs'
 import { addCustom, customCandidate, isCustom, removeCustom, useCustoms, withCustoms } from '../custommodels'
 import { useSheetDrag } from './useSheetDrag'
@@ -24,6 +21,7 @@ import { Spinner } from './Spinner'
 import { fmtCost } from '../ctxring'
 import { openReport } from './Report'
 import { Icon } from './icons'
+import { Row as SetRow, Section } from './ui'
 
 function Shell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
   const close = onClose ?? (() => setState({ sheet: null }))
@@ -235,208 +233,53 @@ export function CommandsSheet({ onPick }: { onPick: (cmd: string) => void }) {
   )
 }
 
-/** The header ⋮: things you can do to this chat (rename, pin, archive, undo, details, delete). */
-export function ChatMenuSheet() {
-  const active = useStore(s => s.active)
-  const running = useStore(s => s.active?.running ?? false)
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(plainTitle(active?.title))
-  const drag = useSheetDrag(() => setState({ sheet: null }))
-  const reading = useAutoRead(active?.storedId)
-  const canvasCount = useCanvas(c => c.docs.length)
-  if (!active) return null
-  const id = active.storedId
-  const close = () => setState({ sheet: null })
-  const act = (fn: () => void) => () => {
-    haptic()
-    close()
-    fn()
-  }
-  return (
-    <div className="sheet-backdrop" onClick={close}>
-      <div className="sheet session-menu" role="dialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
-        <div className="sheet-grip" />
-        <div className="sheet-title session-menu-title">
-          <Title text={active.title} fallback="New chat" />
-        </div>
-        {editing ? (
-          <form
-            className="rename-row"
-            onSubmit={e => {
-              e.preventDefault()
-              close()
-              renameStored(id, keepBranch(active.title, draft.trim()))
-                .then(() => toast('Renamed'))
-                .catch(err => toast(errText(err), 'error'))
-            }}
-          >
-            <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} placeholder="Chat title" />
-            <button className="btn" type="submit">
-              Save
-            </button>
-          </form>
-        ) : (
-          <div className="menu-list">
-            <button className="menu-item" onClick={act(() => setState({ find: { q: '', i: 0 } }))}>
-              <span className="mi-icon"><Icon n="search" /></span>
-              Search in chat
-            </button>
-            <button className="menu-item" onClick={() => setEditing(true)}>
-              <span className="mi-icon"><Icon n="pencil" /></span>
-              Rename
-            </button>
-            <button
-              className="menu-item"
-              onClick={act(() => {
-                setAutoReadFor(id, !reading)
-                toast(!reading ? 'Reading every reply aloud in this chat' : 'Read-aloud off for this chat')
-              })}
-            >
-              <span className="mi-icon gold"><Icon n="speaker" /></span>
-              <span className="mi-text">
-                Read every reply aloud
-                <span className="mi-sub">
-                  {reading ? 'On' : 'Off'}
-                  {hasChatOverride(id) ? ' · this chat only' : autoReadFor(id) ? ' · all chats' : ''}
-                </span>
-              </span>
-            </button>
-            <button className="menu-item" onClick={act(() => openCanvas())}>
-              <span className="mi-icon gold"><Icon n="note" /></span>
-              <span className="mi-text">
-                Canvas
-                <span className="mi-sub">{canvasCount ? `${canvasCount} document${canvasCount === 1 ? '' : 's'}` : 'Documents, notes and pages beside the chat'}</span>
-              </span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={act(() => {
-                if (!shareText(plainTitle(active.title) || 'Chat', chatMarkdown(active))) toast('Copied as Markdown (sharing works in the phone app)')
-              })}
-            >
-              <span className="mi-icon"><Icon n="share" /></span>
-              <span className="mi-text">
-                Share chat
-                <span className="mi-sub">As Markdown, to any app</span>
-              </span>
-            </button>
-            <button className="menu-item" onClick={() => setState({ sheet: 'rollback' })}>
-              <span className="mi-icon"><Icon n="rewind" /></span>
-              <span className="mi-text">
-                File checkpoints
-                <span className="mi-sub">See and undo Hermux's file changes</span>
-              </span>
-            </button>
-            <button className="menu-item" disabled={running} onClick={act(() => void undoLast())}>
-              <span className="mi-icon"><Icon n="undo" /></span>
-              Undo last turn
-            </button>
-            <button className="menu-item" onClick={() => setState({ sheet: 'session-actions' })}>
-              <span className="mi-icon"><Icon n="info" /></span>
-              Chat details
-            </button>
-            <button
-              className="menu-item danger"
-              onClick={act(() => {
-                void confirmDialog({ title: `Delete “${plainTitle(active.title) || 'this chat'}”?`, message: 'The whole conversation is removed. This cannot be undone.', danger: true }).then(ok => {
-                  if (ok)
-                    deleteSession(id)
-                      .then(() => toast('Deleted'))
-                      .catch(err => toast(errText(err), 'error'))
-                })
-              })}
-            >
-              <span className="mi-icon red"><Icon n="trash" /></span>
-              Delete
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** The header ⋮ on the empty new-chat screen: only what makes sense before the first message. */
-export function DraftMenuSheet() {
-  const reading = useDraftAutoRead()
-  const drag = useSheetDrag(() => setState({ sheet: null }))
-  const close = () => setState({ sheet: null })
-  return (
-    <div className="sheet-backdrop" onClick={close}>
-      <div className="sheet session-menu" role="dialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
-        <div className="sheet-grip" />
-        <div className="sheet-title session-menu-title">New chat</div>
-        <div className="menu-list">
-          <button
-            className="menu-item"
-            onClick={() => {
-              haptic()
-              close()
-              setDraftRead(!reading)
-              toast(!reading ? 'This chat will read every reply aloud' : 'Read-aloud off for this chat')
-            }}
-          >
-            <span className="mi-icon gold"><Icon n="speaker" /></span>
-            <span className="mi-text">
-              Read every reply aloud
-              <span className="mi-sub">{reading ? 'On' : 'Off'} · applies once the chat starts</span>
-            </span>
-          </button>
-          <button className="menu-item" onClick={() => setState({ sheet: 'model' })}>
-            <span className="mi-icon"><Icon n="bot" /></span>
-            Change model
-          </button>
-        </div>
-        <div className="dim pad small">Rename, pin, archive and delete are available once you have sent a message.</div>
-      </div>
-    </div>
-  )
-}
-
-/** Chat details (from the ⋮ menu): read-only facts. Rename / undo / delete live in the ⋮ menu itself. */
+/** Chat details (from the chat menu): read-only facts, in groups and plain words. Rename, undo and delete live in the
+ *  menu itself. */
 export function SessionActionsSheet() {
   const active = useStore(s => s.active)
+  const profiles = useStore(s => s.profiles)
   if (!active) return null
   const u = active.usage
+  const bot = profiles.find(p => p.name === active.profile)
+  const tokens = u != null && (u.input != null || u.output != null)
+  const usage = u != null && (tokens || u.context_percent != null || u.cost_usd != null)
   return (
     <Shell title="Chat details">
-      <div className="sheet-scroll">
-        <div className="kv">
-          <div>Title</div>
-          <div>{plainTitle(active.title) || '—'}</div>
-          <div>Model</div>
-          <div>{active.info.model || '—'}</div>
-          <div>Provider</div>
-          <div>{active.info.provider || '—'}</div>
-          <div>Profile</div>
-          <div>{active.profile}</div>
-          <div>Working dir</div>
-          <div className="mono small">{active.info.cwd || '—'}</div>
-          {u && (
-            <>
-              <div>Tokens</div>
-              <div>
-                {(u.input ?? 0).toLocaleString()} in · {(u.output ?? 0).toLocaleString()} out
-              </div>
-              {u.context_percent != null && (
-                <>
-                  <div>Context</div>
-                  <div>{Math.round(u.context_percent)}% used</div>
-                </>
-              )}
-              {u.cost_usd != null && (
-                <>
-                  <div>Cost</div>
-                  <div>${u.cost_usd.toFixed(4)}</div>
-                </>
-              )}
-            </>
-          )}
-          <div>Session id</div>
-          <button className="mono small link-like" onClick={() => void copyText(active.storedId).then(() => toast('Copied'))}>
-            {active.storedId}
-          </button>
-        </div>
+      <div className="sheet-scroll details">
+        <Section title="Chat">
+          <SetRow title="Title" value={plainTitle(active.title) || '—'} />
+          <SetRow title="Bot" value={bot?.display_name || active.profile || '—'} />
+          <SetRow title="Working folder" sub={<span className="mono">{active.info.cwd || '—'}</span>} />
+        </Section>
+        <Section title="Model">
+          <SetRow title="Model" value={active.info.model || '—'} />
+          <SetRow title="Provider" value={active.info.provider || '—'} />
+        </Section>
+        {usage && u && (
+          <Section title="Usage">
+            {tokens && <SetRow title="Tokens" value={`${(u.input ?? 0).toLocaleString()} in · ${(u.output ?? 0).toLocaleString()} out`} />}
+            {u.context_percent != null && <SetRow title="Context" value={`${Math.round(u.context_percent)}% used`} />}
+            {u.cost_usd != null && <SetRow title="Cost" value={`$${u.cost_usd.toFixed(4)}`} />}
+          </Section>
+        )}
+        <Section>
+          <SetRow
+            title="Chat ID"
+            sub={<span className="mono">{active.storedId}</span>}
+            trailing={
+              <button
+                className="icon-btn"
+                aria-label="Copy chat ID"
+                onClick={() => {
+                  haptic()
+                  void copyText(active.storedId).then(() => toast('Copied'))
+                }}
+              >
+                <Icon n="copy" />
+              </button>
+            }
+          />
+        </Section>
       </div>
     </Shell>
   )

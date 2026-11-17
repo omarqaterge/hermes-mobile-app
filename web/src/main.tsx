@@ -7,6 +7,7 @@ import './styles.css'
 import './glass.css' // the glass material, after the base styles it covers
 import './motion.css' // the motion system's springs and timings
 import './panel.css' // the side panel: a glass sheet over the chat, or the docked column
+import './menu.css' // the menus' shared look (ui.tsx Menu*), and the picker rows
 import { applyLook } from './motion'
 import { applyTheme, savedTheme } from './theme'
 import { bootMark } from './boot'
