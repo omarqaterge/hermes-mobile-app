@@ -20,7 +20,7 @@ module.exports = async t => {
   const lastRow = page.locator('.drawer .session-row').last()
   const delId = await lastRow.evaluate(el => el.textContent)
   await lastRow.getByRole('button', { name: 'Chat options' }).click()
-  await page.locator('.menu-item.danger').click()
+  await page.getByRole('dialog', { name: 'Chat options' }).getByRole('button', { name: 'Delete', exact: true }).click()
   await page.locator('.dialog').getByRole('button', { name: 'Delete', exact: true }).click()
   await sleep(600)
   const delRpcs = rpcs("session.delete")
@@ -410,5 +410,62 @@ module.exports = async t => {
     check(got && order1[0] < order1[1] && order1[1] < order1[2] && (await d.panel.getByRole('heading', { name: 'Today' }).count()) === 0, `custom order: a new message and reopening the panel leave it as it is (${got}, ${order1})`)
     await co.close()
     await mock({ unbump: true, dropChats: ['s-held', 'cron_j1_20261117_090000', 'local-0a1b2c'], prefsOrder: savedPrefs })
+  }
+
+  // ── a row's menu (spec 3.13): the chat menu's header and look, one group, a solid sheet over the glass panel, closed by
+  // Back with the panel left open; at 320 px in Default, Light and OLED, glass on and off ──
+  {
+    const { WEB, menuFits, contrast } = require('../lib.cjs')
+    const at = async (store = {}, w = 375, h = 812) => {
+      const p = await t.browser.newPage({ viewport: { width: w, height: h } })
+      await p.addInitScript(s => {
+        try {
+          if (sessionStorage.getItem('opened')) return
+          sessionStorage.setItem('opened', '1')
+          for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v)
+        } catch { /* */ }
+      }, store)
+      await p.goto(WEB + '/')
+      await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      await p.getByRole('button', { name: /^Sessions/ }).click()
+      return p
+    }
+    const rowMenu = async p => {
+      const panel = p.getByRole('complementary', { name: 'Chats' })
+      const row = panel.locator('div').filter({ has: p.getByText('Chat 3', { exact: true }) }).filter({ has: p.getByRole('button', { name: 'Chat options' }) }).last()
+      await row.getByRole('button', { name: 'Chat options' }).click()
+      const d = p.getByRole('dialog', { name: 'Chat options' })
+      await d.waitFor({ timeout: 3000 })
+      return d
+    }
+    const rp = await at({ 'hm.glass': '1' })
+    const d = await rowMenu(rp)
+    const names = await d.evaluate(el => [...el.querySelectorAll('button')].map(b => b.getAttribute('aria-label') || b.textContent.trim()))
+    const head = (await d.innerText()).split('\n')[0].trim()
+    check(head === 'Chat 3' && JSON.stringify(names) === JSON.stringify(['Rename', 'Pin to top', 'Archive', 'Delete']), `row menu: the chat's title with Rename, then Pin to top, Archive and Delete, nothing that needs the chat open (${head}, ${JSON.stringify(names)})`)
+    // Glass never lies on glass: the panel stays glass and open behind, the menu is solid.
+    const blurOf = loc => loc.evaluate(el => {
+      const f = pseudo => getComputedStyle(el, pseudo).backdropFilter || getComputedStyle(el, pseudo).webkitBackdropFilter || 'none'
+      return { self: f(), layer: f('::before'), x: el.getBoundingClientRect().left }
+    })
+    const m = await blurOf(d)
+    const pn = await blurOf(rp.getByRole('complementary', { name: 'Chats' }))
+    const looks = { menu: m.layer, menuSelf: m.self, panel: pn.layer, panelX: pn.x }
+    check(!/blur/.test(looks.menu) && !/blur/.test(looks.menuSelf) && /blur/.test(looks.panel) && looks.panelX >= 0, `row menu: a solid sheet over the open glass panel, never glass on glass (menu ${looks.menu}, panel ${looks.panel}, panel at ${looks.panelX})`)
+    // Back closes the menu and leaves the panel open where it was.
+    await rp.evaluate(() => window.hermesBack())
+    const gone = await d.waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false)
+    const panelStill = await rp.getByRole('complementary', { name: 'Chats' }).evaluate(el => el.getBoundingClientRect().left >= 0)
+    check(gone && panelStill, `row menu: Back closes it and the chat list stays open (closed ${gone}, panel open ${panelStill})`)
+    await rp.close()
+    for (const [theme, glass] of [['default', '1'], ['light', '1'], ['light', '0'], ['oled', '0']]) {
+      const lp = await at({ 'hm.theme': theme, 'hm.glass': glass }, 320, 640)
+      const md = await rowMenu(lp)
+      const fit = await menuFits(lp, md, true) // the row menu is solid in every form, so its words are measured always
+      const short = fit.names.map((n, i) => [n, fit.hs[i]]).filter(([n, h]) => n !== 'Rename' && h < 52)
+      const low = fit.colours.map(([n, fg, bg]) => [n, contrast(fg, bg)]).filter(([, c]) => c < 4.5)
+      check(!fit.over && fit.grew.length === 0 && short.length === 0 && low.length === 0, `row menu at 320 px (${theme}, glass ${glass === '1' ? 'on' : 'off'}): no label wraps under a wider font, nothing overflows, rows 52 px or more, words 4.5:1 (grew ${JSON.stringify(fit.grew)}, short ${JSON.stringify(short)}, low ${JSON.stringify(low.map(([n, c]) => `${n} ${c.toFixed(2)}`))}, over ${fit.over})`)
+      await lp.close()
+    }
   }
 }

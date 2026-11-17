@@ -333,7 +333,7 @@ module.exports = async t => {
     await p.getByRole('banner').getByRole('button', { name: 'Chat options' }).click()
     await p.getByRole('dialog').waitFor()
     const a = await mid()
-    await p.getByRole('dialog').getByRole('button', { name: /Read every reply aloud/ }).click()
+    await p.getByRole('dialog').getByRole('switch', { name: 'Read replies aloud' }).click()
     const b = await mid()
     check(a === 0 && b === 0, `motion off: no element is mid-animation right after an action (opening a sheet ${a}, a tap in it ${b})`)
     await p.close()

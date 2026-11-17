@@ -314,7 +314,7 @@ module.exports = async t => {
   // Search still lands on the message that carries the card (scroll away first).
   await page.evaluate(() => { document.querySelector('.chat').scrollTop = 0 })
   await page.locator('header.topbar').getByRole('button', { name: 'Chat options' }).click()
-  await page.locator('.menu-item', { hasText: 'Search in chat' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Search in chat' }).click()
   await page.locator('.findbar input').fill('Edited.')
   await page.waitForFunction(() => {
     const el = document.querySelector('.chat'), m = [...document.querySelectorAll('.chat .msg.assistant')].find(x => x.textContent.includes('Edited.'))
