@@ -8,6 +8,7 @@ import { useStore } from '../store'
 import { dismissWhatsNewAfterUpdate, useWhatsNewAfterUpdate } from '../whatsnew'
 import { Markdown } from './Markdown'
 import { useSheetDrag } from './useSheetDrag'
+import { Icon } from './icons'
 
 /** Each version as a heading with its date and its short lines. `full` (when given) shows every version's details
  *  and hides the per-version Details buttons; without it each version has its own. */
@@ -81,7 +82,7 @@ function AfterUpdateSheet({ notes }: { notes: ReleaseNotes[] }) {
             <div className="sheet-title">What's new</div>
             <div className="sheet-desc">You're on Hermux {appVersion().replace(/^v/i, '')}</div>
           </div>
-          <button className="icon-btn" aria-label="Close" onPointerDown={e => e.stopPropagation()} onClick={close}>✕</button>
+          <button className="icon-btn" aria-label="Close" onPointerDown={e => e.stopPropagation()} onClick={close}><Icon n="close" /></button>
         </div>
         <div className="sheet-scroll whats-new">
           <WhatsNewSections notes={notes} full={full} />

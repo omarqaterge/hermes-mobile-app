@@ -29,7 +29,7 @@ export function prepare(text: string): string {
       const media = (path: string) => {
         const name = path.split('/').pop() || path
         const target = `<${path}>`
-        return mediaKind(path) === 'file' ? ` [📎 ${name}](${target})` : `\n\n![${name}](${target})\n\n`
+        return mediaKind(path) === 'file' ? ` [${name}](${target})` : `\n\n![${name}](${target})\n\n`
       }
       return joinHtmlBlocks(part)
         // A MEDIA: line on its own owns the whole line, so paths with spaces survive.
@@ -41,7 +41,7 @@ export function prepare(text: string): string {
         // so the formula never ended and swallowed the rest of the message (as red KaTeX errors).
         .replace(/^([ \t>]*\$\$)[ \t]+\^[\w-]+[ \t]*$/gm, '$1')
         // [[Note|shown]] / [[Note#Heading]] → plain text, ==highlight== → <mark>
-        .replace(/\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g, (_m, target: string, alias?: string) => alias ?? target.replace('#', ' › '))
+        .replace(/\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g, (_m, target: string, alias?: string) => alias ?? target.replace('#', ' \u203A '))
         .replace(/==(?![\s=])([^=\n]+?)(?<![\s=])==/g, '<mark>$1</mark>')
     })
     .map((part, i) => (i % 2 === 1 ? part : fixColorbox(splitMathFences(part))))

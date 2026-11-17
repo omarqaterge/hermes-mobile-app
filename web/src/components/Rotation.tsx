@@ -20,6 +20,7 @@ import { ModelPicker } from './Settings'
 import { loadPool, type PoolEntry } from './SignIn'
 import { LoadError, Status, useLoader } from './Screens'
 import { Row, Section, SelectRow } from './ui'
+import { Icon } from './icons'
 
 /** Hermes's SUPPORTED_POOL_STRATEGIES (agent/credential_pool.py); a missing or unknown value means fill_first. */
 export const STRATEGIES = [
@@ -206,13 +207,13 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
               trailing={
                 <span className="chain-ctl">
                   <button className="icon-btn" aria-label={`Move ${c.model} up`} disabled={busy || i === 0} onClick={() => move(i, -1)}>
-                    ↑
+                    <Icon n="arrowUp" />
                   </button>
                   <button className="icon-btn" aria-label={`Move ${c.model} down`} disabled={busy || i === chain.length - 1} onClick={() => move(i, 1)}>
-                    ↓
+                    <Icon n="arrowDown" />
                   </button>
                   <button className="icon-btn" aria-label={`Remove ${c.model}`} disabled={busy} onClick={() => remove(i)}>
-                    ✕
+                    <Icon n="close" />
                   </button>
                 </span>
               }
@@ -222,7 +223,7 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
           {legacy.map(c => (
             <Row key={`legacy-${c.provider}/${c.model}`} title={c.model} sub={`${c.provider} · tried last, from the older fallback_model setting (Advanced settings)`} />
           ))}
-          <Row icon="＋" tone="gold" title="Add a fallback model" sub={chain.length ? 'Tried after the ones above' : 'Any model of a connected provider'} chevron disabled={busy} onClick={() => setAdding(true)} />
+          <Row icon="plus" tone="gold" title="Add a fallback model" sub={chain.length ? 'Tried after the ones above' : 'Any model of a connected provider'} chevron disabled={busy} onClick={() => setAdding(true)} />
         </>
       )}
       {adding && (

@@ -6,6 +6,7 @@ import { DiffView } from './Diff'
 import { compactCount } from '../toolsay'
 import { Sheet } from './Screens'
 import { Chevron, Collapse } from './ui'
+import { Icon } from './icons'
 
 function Stat({ added, removed }: { added: number; removed: number }) {
   return (
@@ -23,7 +24,7 @@ export function TurnChangesCard({ changes }: { changes: TurnChanges }) {
   return (
     <div className="turn-changes">
       <button className="turn-changes-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-        <span>✎</span>
+        <span><Icon n="pencil" /></span>
         <span className="turn-changes-title">
           {n} file{n === 1 ? '' : 's'} changed
         </span>

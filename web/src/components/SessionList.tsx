@@ -12,6 +12,7 @@ import { confirmDialog } from '../dialog'
 import { ago, lastActive } from '../unread'
 import { orderChats, recentIds } from '../chatorder'
 import { Chevron } from './ui'
+import { Icon } from './icons'
 
 function dayLabel(ms?: number): string {
   if (!ms) return 'Older'
@@ -127,14 +128,14 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
   const del = dx < -width() * DELETE_AT
   const bg = dx > 0 ? 'blue' : dx < 0 ? 'red' : ''
   const label = dx > 0 ? (archived ? 'Unarchive' : 'Archive') : 'Delete'
-  const icon = dx > 0 ? '🗄' : '🗑'
+  const icon = dx > 0 ? 'archive' : 'trash'
   const armed = dx > 0 ? Boolean(r) : del
 
   return (
     <div className="swipe-row" ref={ref}>
       {dx !== 0 && (
         <div className={`swipe-bg ${bg}${dx > 0 ? ' left' : ' right'}${armed ? ' armed' : ''}`}>
-          <span className="swipe-icon">{icon}</span>
+          <span className="swipe-icon"><Icon n={icon} /></span>
           <span>{label}</span>
         </div>
       )}
@@ -157,7 +158,7 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
           {working && <span className="visually-hidden">Working</span>}
           <span className={`session-title${working ? ' working' : ''}`}>
             {unread && <span className="unread-dot" aria-label="Finished, not opened yet" />}
-            {pinned && <span className="pin-dot">📌 </span>}
+            {pinned && <span className="pin-dot"><Icon n="pin" /> </span>}
             {s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}
           </span>
           <span className="dim small">
@@ -176,7 +177,7 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
               onMenu()
             }}
           >
-            ⋮
+            <Icon n="dots" />
           </button>
       </div>
     </div>
@@ -404,21 +405,21 @@ function SessionMenu({
         ) : (
         <div className="menu-list">
           <button className="menu-item" onClick={() => setEditing(true)}>
-            <span className="mi-icon">✏️</span>
+            <span className="mi-icon"><Icon n="pencil" /></span>
             Rename
           </button>
           {!archived && (
             <button className="menu-item" onClick={act(() => onPin(!pinned))}>
-              <span className="mi-icon gold">📌</span>
+              <span className="mi-icon gold"><Icon n="pin" /></span>
               {pinned ? 'Unpin' : 'Pin to top'}
             </button>
           )}
           <button className="menu-item" onClick={act(() => onArchive(!archived))}>
-            <span className="mi-icon blue">🗄</span>
+            <span className="mi-icon blue"><Icon n="archive" /></span>
             {archived ? 'Unarchive' : 'Archive'}
           </button>
           <button className="menu-item danger" onClick={act(onDelete)}>
-            <span className="mi-icon red">🗑</span>
+            <span className="mi-icon red"><Icon n="trash" /></span>
             Delete
           </button>
         </div>
@@ -646,7 +647,7 @@ export function SessionList({ query }: { query: string }) {
       {(pinnedRows.length > 0 || pinZone) && (
         <>
           <div className="group-title">
-            📌 Pinned{hover === 'unpin' && <span className="pin-hint"> · release to unpin</span>}
+            <Icon n="pin" /> Pinned{hover === 'unpin' && <span className="pin-hint"> · release to unpin</span>}
           </div>
           <div ref={pinnedRef} className={hover === 'pin' ? 'pin-list drop-hot' : 'pin-list'}>
             {pinnedRows.map((s, i) => row(s, 'pinned', i))}
@@ -708,7 +709,7 @@ export function SessionList({ query }: { query: string }) {
         </button>
       )}
       <button className="archived-toggle" onClick={() => setArchivedOpen(v => !v)}>
-        🗄 Archived {archived ? `(${archived.length})` : ''} <span className="chev"><Chevron open={archivedOpen} /></span>
+        <Icon n="archive" /> Archived {archived ? `(${archived.length})` : ''} <span className="chev"><Chevron open={archivedOpen} /></span>
       </button>
       {menu &&
         createPortal(

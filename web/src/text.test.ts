@@ -6,7 +6,7 @@ describe('prepare', () => {
     expect(prepare('Here:\nMEDIA:/root/my pic.png')).toContain('![my pic.png](</root/my pic.png>)')
   })
   test('inline MEDIA file becomes a chip link, trailing punctuation kept out', () => {
-    expect(prepare('see MEDIA:/root/a.pdf.')).toBe('see [📎 a.pdf](</root/a.pdf>).')
+    expect(prepare('see MEDIA:/root/a.pdf.')).toBe('see [a.pdf](</root/a.pdf>).')
   })
   test('\\( \\) and \\[ \\] become $ and $$', () => {
     expect(prepare('a \\(x^2\\) b')).toBe('a $x^2$ b')

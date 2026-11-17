@@ -8,6 +8,7 @@ import { phoneDataTextOf, phoneDataView, splitUntrusted } from '../phone-data-re
 import { tidyApprovalText } from '../text'
 import { useBackHandler } from '../backstack'
 import { ADVANCE_MS, nextStep } from '../clarify'
+import { Icon } from './icons'
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
   once: 'Allow once',
@@ -23,7 +24,7 @@ function PhoneDataApproval({ req, text }: { req: ServerRequest; text: string }) 
   const v = phoneDataView(text)
   return (
     <>
-      <div className="sheet-title">{v.ok ? '⚠ Let Hermux read your phone?' : '⚠ Unreadable phone data request'}</div>
+      <div className="sheet-title"><Icon n="warning" /> {v.ok ? 'Let Hermux read your phone?' : 'Unreadable phone data request'}</div>
       <div className="sheet-scroll">
         <div className="sheet-desc">
           {splitUntrusted(v.text).map((p, i) =>
@@ -74,7 +75,7 @@ function Approval({ req }: { req: ServerRequest }) {
     : (['once', p.allow_session !== false ? 'session' : null, p.allow_permanent ? 'always' : null, 'deny'].filter(Boolean) as ApprovalChoice[]))
   return (
     <>
-      <div className="sheet-title">⚠ Approve {String(p.tool_name || 'command')}?</div>
+      <div className="sheet-title"><Icon n="warning" /> Approve {String(p.tool_name || 'command')}?</div>
       {/* A long warning or command scrolls; the answer buttons always stay on screen. */}
       <div className="sheet-scroll">
         {p.description ? <div className="sheet-desc"><Linked text={tidyApprovalText(String(p.description))} /></div> : null}
@@ -130,7 +131,7 @@ function OneQuestion({
                   }
                 }}
               >
-                {q.multi_select ? (on ? '☑ ' : '☐ ') : on ? '● ' : '○ '}
+                <Icon n={q.multi_select ? (on ? 'squareCheck' : 'square') : on ? 'active' : 'circle'} />{' '}
                 {c}
               </button>
             )
@@ -184,7 +185,7 @@ function Clarify({ req }: { req: ServerRequest }) {
   const last = step >= n - 1
   return (
     <>
-      <div className="sheet-title">❓ Hermux asks</div>
+      <div className="sheet-title"><Icon n="help" /> Hermux asks</div>
       {multi ? (
         <div className="clarify-steps">
           <span>
@@ -251,7 +252,7 @@ function MaskedValue({ req }: { req: ServerRequest }) {
   const p = req.params as Record<string, unknown>
   const [value, setValue] = useState('')
   const title =
-    req.method === 'sudo' ? '🔐 Password needed' : req.method === 'secret' ? `🔑 ${String(p.env_var || 'Secret')}` : '🔢 Code needed'
+    req.method === 'sudo' ? <><Icon n="lock" /> Password needed</> : req.method === 'secret' ? <><Icon n="key" /> {String(p.env_var || 'Secret')}</> : <><Icon n="hash" /> Code needed</>
   return (
     <>
       <div className="sheet-title">{title}</div>

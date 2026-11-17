@@ -12,6 +12,7 @@ import {
   APPS, appInstalled, backupName, canUninstall, cleanupOk, nextApp, onCleanupDone, parseCleanup, phaseOf, settingsSnapshot,
   resumeOnStart, startCleanup, uninstallApp, uninstallState, type AppId, type UninstallNative
 } from '../uninstall'
+import { Icon } from './icons'
 
 export function UninstallSection() {
   const [open, setOpen] = useState(false)
@@ -19,7 +20,7 @@ export function UninstallSection() {
   return (
     <>
       <Section title="Danger zone" footer="Removes Hermux, all chats and every helper app from this phone. You can save a backup first.">
-        <Row icon="🗑" danger title="Uninstall Hermux" sub="Hermux, Debian, chats, Termux and the helper apps" chevron onClick={() => setOpen(true)} />
+        <Row icon="trash" danger title="Uninstall Hermux" sub="Hermux, Debian, chats, Termux and the helper apps" chevron onClick={() => setOpen(true)} />
       </Section>
       {open && <UninstallSheet onClose={() => setOpen(false)} />}
     </>
@@ -80,7 +81,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
       placeholder: 'uninstall',
       match: 'uninstall',
       danger: true,
-      icon: '⚠',
+      icon: 'warning',
       confirmLabel: 'Uninstall'
     })
     if (typed !== 'uninstall') return
@@ -109,7 +110,7 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
                 ...APPS.map(a => [`App: ${a.name}${appInstalled(n, a.id) ? '' : ' (not installed)'}`, a.what])
               ].map(([t, h]) => (
                 <li key={t} className="setup-item bad">
-                  <span className="setup-mark bad" aria-hidden="true">✕</span>
+                  <span className="setup-mark bad" aria-hidden="true"><Icon n="close" /></span>
                   <div className="setup-body">
                     <div className="setup-title">{t}</div>
                     <div className="setup-help">{h}</div>
@@ -123,10 +124,10 @@ function UninstallSheet({ onClose }: { onClose: () => void }) {
             </div>
             {termuxThere ? (
               <Section title="Backup">
-                <ToggleRow icon="💾" tone="blue" title="Save a backup to Downloads" sub="Chats, memory, skills, Hermux settings and this app’s settings, as hermux-backup-<date>.tar.gz" on={backup} onChange={setBackup} />
+                <ToggleRow icon="save" tone="blue" title="Save a backup to Downloads" sub="Chats, memory, skills, Hermux settings and this app’s settings, as hermux-backup-<date>.tar.gz" on={backup} onChange={setBackup} />
                 {backup && (
                   <ToggleRow
-                    icon="🔑"
+                    icon="key"
                     tone="gold"
                     title="Include API keys and sign-ins"
                     sub={keys ? 'On: .env and auth.json are in the file. Any app that can read your Downloads can read them.' : 'Off: .env and auth.json are left out (other apps can read Downloads). You sign in again after a restore.'}
@@ -206,7 +207,7 @@ function whyText(why: string): string {
 }
 
 function Steps({ report }: { report: ReturnType<typeof parseCleanup> }) {
-  const mark = { ok: '✓', skip: '–', fail: '✕', pending: '·' } as const
+  const mark = { ok: <Icon n="check" />, skip: '–', fail: <Icon n="close" />, pending: '·' } as const
   return (
     <>
       <ul className="setup-list">
@@ -254,7 +255,7 @@ function Apps({ n, s }: { n: NativeSetup | null; s: UninstallNative | null }) {
           const there = appInstalled(n, a.id)
           return (
             <li key={a.id} className={`setup-item ${there ? 'bad' : 'ok'}`} data-app={a.id}>
-              <span className={`setup-mark ${there ? 'bad' : 'ok'}`} aria-label={there ? 'Installed' : 'Removed'}>{there ? '·' : '✓'}</span>
+              <span className={`setup-mark ${there ? 'bad' : 'ok'}`} aria-label={there ? 'Installed' : 'Removed'}>{there ? '·' : <Icon n="check" />}</span>
               <div className="setup-body">
                 <div className="setup-title">{a.name}</div>
                 <div className="setup-help">{there ? a.what : 'Removed'}</div>

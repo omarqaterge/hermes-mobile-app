@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
-import { stepMark } from './toolsay'
+import { stepMark, stepWord } from './toolsay'
 import { foldMap } from './fold'
 import { turnChanges } from './changes'
 import { TurnChangesCard } from './components/Changes'
@@ -51,6 +51,7 @@ import { refreshBg } from './bgapp'
 import { bootMark } from './boot'
 import { UninstallResume } from './components/Uninstall'
 import { toggleSide, useSidePanel } from './sidepanel'
+import { Icon } from './components/icons'
 
 declare global {
   interface Window {
@@ -108,7 +109,7 @@ function Header() {
   return (
     <header className="topbar">
       <button className="icon-btn menu-btn" aria-label={menuLabel} onClick={() => (wide ? toggleSide() : setState({ drawer: true }))}>
-        ☰{unread && <span className="unread-dot on-menu" />}
+        <Icon n="menu" size={22} />{unread && <span className="unread-dot on-menu" />}
       </button>
       <button className="title-btn" onClick={() => setState({ sheet: 'status' })}>
         <span className="title">
@@ -116,7 +117,7 @@ function Header() {
         </span>
         <span className="subtitle">
           <span className={`conn-dot ${dot}`} aria-label="Backend status" />
-          {reading ? <span className="reading-badge" title="Reading replies aloud">🔊</span> : null}
+          {reading ? <span className="reading-badge" title="Reading replies aloud"><Icon n="speaker" label="Reading aloud" /></span> : null}
           {profile !== 'default' ? profile : 'Hermux agent'}
         </span>
       </button>
@@ -139,7 +140,7 @@ function Header() {
         disabled={!settled}
         onClick={() => setState({ sheet: hasActive ? 'chat-menu' : 'draft-menu' })}
       >
-        ⋮
+        <Icon n="dots" size={22} />
       </button>
     </header>
   )
@@ -242,7 +243,7 @@ function CompressHint() {
             bump(n => n + 1)
           }}
         >
-          ✕
+          <Icon n="close" />
         </button>
       )}
     </div>
@@ -303,20 +304,20 @@ function StatusBar() {
       )}
       {showGoal && goal && (
         <button className="goal-line" onClick={() => setOpenGoal(true)}>
-          🎯 {goal.title} · turn {goal.turns_used} of {goal.max_turns} · {goal.paused_reason ? `paused: ${goal.paused_reason}` : goal.status}
+          <Icon n="target" /> {goal.title} · turn {goal.turns_used} of {goal.max_turns} · {goal.paused_reason ? `paused: ${goal.paused_reason}` : goal.status}
         </button>
       )}
       {openGoal && showGoal && goal && <GoalSheet goal={goal} onClose={() => setOpenGoal(false)} />}
       {todos.length > 0 && (
         <div className="todos">
           <button className="todos-head" onClick={() => setOpenTodos(v => !v)}>
-            ☑ Tasks {done}/{todos.length} <span className="chev"><Chevron open={openTodos} /></span>
+            <Icon n="checklist" /> Tasks {done}/{todos.length} <span className="chev"><Chevron open={openTodos} /></span>
           </button>
           <Collapse open={openTodos}>
             <ul>
               {todos.map((t, i) => (
                 <li key={t.id || i} className={`todo-${t.status}`}>
-                  {stepMark(t.status || '')} {t.content}
+                  <Icon n={stepMark(t.status || '')} label={stepWord(t.status || '')} /> {t.content}
                 </li>
               ))}
             </ul>
@@ -400,13 +401,13 @@ function FindBar() {
       />
       <span className="find-count dim">{find.q.trim() ? (n ? `${n - i} / ${n}` : 'none') : ''}</span>
       <button className="icon-btn" aria-label="Previous match" disabled={!n} onClick={() => go(1)}>
-        ↑
+        <Icon n="arrowUp" />
       </button>
       <button className="icon-btn" aria-label="Next match" disabled={!n} onClick={() => go(-1)}>
-        ↓
+        <Icon n="arrowDown" />
       </button>
       <button className="icon-btn" aria-label="Close search" onClick={close}>
-        ✕
+        <Icon n="close" />
       </button>
     </div>
   )
@@ -748,7 +749,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
             if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
           }}
         >
-          ↓
+          <Icon n="arrowDown" size={18} />
         </button>
       )}
       <div className="pull-hint" aria-hidden="true">

@@ -19,7 +19,7 @@ test('userMarks uses the first non-empty line and shortens to 80 characters', ()
 
 test('userMarks names attachment-only messages', () => {
   const m = userMarks([u('1', '', { imagePaths: ['/x/y/photo.jpg'] }), u('2', '', { files: ['notes.txt'] }), u('3', '', { images: ['data:'] })])
-  expect(m.map(x => x.text)).toEqual(['🖼 photo.jpg', '📎 notes.txt', '🖼 photo'])
+  expect(m.map(x => x.text)).toEqual(['photo.jpg', 'notes.txt', 'Photo'])
 })
 
 test('nearestMark clamps and rounds', () => {

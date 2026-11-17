@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { haptic } from '../bridge'
 import { jumpSpeaking, pauseSpeaking, readingClock, resumeSpeaking, seekSpeaking, setReadingSpeed, stopSpeaking, ttsConfig, useVoice } from '../voice'
+import { Icon } from './icons'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2]
 const fmt = (r: number) => `${Number(r.toFixed(2))}×`
@@ -56,7 +57,7 @@ export function TtsPlayer() {
         {fmt(rate)}
       </button>
       <button className="tts-btn" aria-label="Close player" onClick={() => { haptic(); stopSpeaking() }}>
-        ✕
+        <Icon n="close" />
       </button>
     </div>
   )

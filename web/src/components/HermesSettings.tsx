@@ -11,6 +11,7 @@ import { toast } from '../store'
 import { Sheet, Status, useLoader } from './Screens'
 import { ProfileChips, forProfiles } from './Settings'
 import { Row, Section, Toggle, ToggleRow } from './ui'
+import { Icon } from './icons'
 
 let defaultsCache: Record<string, unknown> | null = null
 let zonesCache: string[] | null = null
@@ -141,7 +142,7 @@ function SettingSheet({ s, value, def, zones, scope, onClose, onSave }: { s: HSe
                 <span className="set-text">
                   <span className="set-title">{o.label}</span>
                 </span>
-                <span className="picker-check">{sameValue(o.value, choice) ? '✓' : ''}</span>
+                <span className="picker-check">{sameValue(o.value, choice) ? <Icon n="check" /> : null}</span>
               </button>
             ))}
           </div>

@@ -163,7 +163,7 @@ function ReportSheet({ onClose }: { onClose: () => void }) {
               <button className="btn" onClick={() => setShot(null)}>Remove screenshot</button>
             </div>
           ) : (
-            <Row icon="🖼" tone="blue" title="Add a screenshot" sub="Optional. It will be public" onClick={() => pick.current?.click()} />
+            <Row icon="image" tone="blue" title="Add a screenshot" sub="Optional. It will be public" onClick={() => pick.current?.click()} />
           )
         ) : (
           <div className="sheet-desc">To add a screenshot, attach it on the GitHub page that opens.</div>
@@ -205,7 +205,7 @@ export function ReportHost() {
 
 /** Settings → About. */
 export function ReportRow() {
-  return <Row icon="🐞" tone="red" title="Report a problem" sub="Becomes a public issue on GitHub" chevron onClick={openReport} />
+  return <Row icon="bug" tone="red" title="Report a problem" sub="Becomes a public issue on GitHub" chevron onClick={openReport} />
 }
 
 /** A small "Report a problem" link under an error message. */

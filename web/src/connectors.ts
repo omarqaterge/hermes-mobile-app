@@ -61,14 +61,14 @@ export const CONNECTOR_TOOLSETS = ['web', 'browser', 'image_gen', 'video_gen', '
 
 /** Plain words for each connector toolset (Hermes's labels are written for a terminal). */
 export const TOOLSET_WORDS: Record<string, { title: string; icon: string; sub: string }> = {
-  web: { title: 'Web search', icon: '🔍', sub: 'Search the web and read pages (Tavily, Exa, Firecrawl, Brave…)' },
-  browser: { title: 'Browser', icon: '🌐', sub: 'Open and use websites in a cloud browser' },
-  image_gen: { title: 'Image generation', icon: '🎨', sub: 'Make pictures (FAL, OpenAI, xAI…)' },
-  video_gen: { title: 'Video generation', icon: '🎬', sub: 'Make short videos' },
-  tts: { title: 'Hermux’s own voice', icon: '🔊', sub: 'Audio files Hermux makes (not the app’s read-aloud)' },
-  x_search: { title: 'X (Twitter) search', icon: '🐦', sub: 'Search posts on X with an xAI key or sign-in' },
-  homeassistant: { title: 'Home Assistant', icon: '🏠', sub: 'Lights, switches and sensors in your smart home' },
-  spotify: { title: 'Spotify', icon: '🎵', sub: 'Playback, search and playlists' }
+  web: { title: 'Web search', icon: 'search', sub: 'Search the web and read pages (Tavily, Exa, Firecrawl, Brave…)' },
+  browser: { title: 'Browser', icon: 'globe', sub: 'Open and use websites in a cloud browser' },
+  image_gen: { title: 'Image generation', icon: 'palette', sub: 'Make pictures (FAL, OpenAI, xAI…)' },
+  video_gen: { title: 'Video generation', icon: 'film', sub: 'Make short videos' },
+  tts: { title: 'Hermux’s own voice', icon: 'speaker', sub: 'Audio files Hermux makes (not the app’s read-aloud)' },
+  x_search: { title: 'X (Twitter) search', icon: 'bird', sub: 'Search posts on X with an xAI key or sign-in' },
+  homeassistant: { title: 'Home Assistant', icon: 'home', sub: 'Lights, switches and sensors in your smart home' },
+  spotify: { title: 'Spotify', icon: 'music', sub: 'Playback, search and playlists' }
 }
 
 export type ConnState = 'connected' | 'setup' | 'off'

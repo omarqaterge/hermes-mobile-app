@@ -216,8 +216,9 @@ module.exports = async t => {
     const card = page.locator('.tool', { has: page.locator('.tool-name', { hasText: 'Updated tasks' }) }).last()
     check(((await card.locator('.tool-label').textContent().catch(() => '')) || '') === '1/2 done', 'task card says 1/2 done')
     await card.locator('.tool-head').click()
-    const steps = await card.locator('.tool-steps li').allInnerTexts()
-    check(steps.length === 2 && steps[0].includes('✓') && steps[0].includes('Read') && steps[1].includes('◐'), `task card lists the steps (${JSON.stringify(steps)})`)
+    const items = card.locator('.tool-steps li')
+    const steps = await items.allInnerTexts()
+    check(steps.length === 2 && (await items.nth(0).getByRole('img', { name: 'done' }).count()) === 1 && steps[0].includes('Read') && (await items.nth(1).getByRole('img', { name: 'in progress' }).count()) === 1, `task card lists the steps (${JSON.stringify(steps)})`)
     check((await card.locator('.tool-section', { hasText: 'Arguments' }).count()) === 0 && (await card.locator('.tool-section', { hasText: 'Output' }).count()) === 0, 'no JSON arguments or output for a task list')
     await card.locator('.tool-head').click()
   }

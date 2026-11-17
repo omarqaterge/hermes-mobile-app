@@ -4029,3 +4029,9 @@ img.inline-frame { display: block; max-width: 100%; max-height: 60vh; margin: 0 
 .sheet-scroll.whats-new::-webkit-scrollbar { width: 5px; }
 .sheet-scroll.whats-new::-webkit-scrollbar-track { background: var(--border); border-radius: 3px; }
 .sheet-scroll.whats-new::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; min-height: 32px; }
+
+/* Drawn icons (components/icons.tsx): sized by the text around them, drawn in the text colour. */
+.ico { flex: none; vertical-align: -0.14em; }
+.ico.filled { fill: currentColor; }
+.set-chev, .bg-card-chev { display: inline-flex; align-items: center; font-size: 1.1rem; }
+.nav-tile span, .file-icon, .gallery-icon, .swipe-icon, .picker-check { display: inline-flex; align-items: center; justify-content: center; }

@@ -153,9 +153,14 @@ export function todoSteps(t: Pick<Tool, 'name' | 'args' | 'resultText'>): TaskSt
   return pick(t.args?.todos)
 }
 
-/** ✓ done, ◐ in progress, ✕ cancelled, ○ to do. */
-export function stepMark(status: string): string {
-  return status === 'completed' || status === 'done' ? '✓' : status === 'in_progress' ? '◐' : status === 'cancelled' ? '✕' : '○'
+/** The icon of a task step: a ticked circle (done), a dotted one (in progress), a crossed one (cancelled), an empty one (to do). */
+export function stepMark(status: string): 'done' | 'active' | 'failed' | 'circle' {
+  return status === 'completed' || status === 'done' ? 'done' : status === 'in_progress' ? 'active' : status === 'cancelled' ? 'failed' : 'circle'
+}
+
+/** The same four states in words, for the icon's label. */
+export function stepWord(status: string): string {
+  return status === 'completed' || status === 'done' ? 'done' : status === 'in_progress' ? 'in progress' : status === 'cancelled' ? 'cancelled' : 'to do'
 }
 
 /** 950 → "950", 1234 → "1.2k", 25000 → "25k": diff counts that stay short on a phone. */

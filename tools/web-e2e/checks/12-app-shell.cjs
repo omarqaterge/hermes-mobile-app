@@ -671,7 +671,7 @@ module.exports = async t => {
     else {
       await ap.evaluate(() => window.__hmVoice('final', 'hello there'))
       await bar.getByText('Hermux is speaking…').waitFor({ timeout: 10000 }).catch(() => {})
-      check((await bar.locator('.auto-btn.full', { hasText: '⚡' }).count()) === 1, 'Live bar: shows ⚡ for Full access')
+      check((await bar.getByRole('button', { name: /Full access is on/ }).count()) === 1, 'Live bar: shows ⚡ for Full access')
       const fit = await bar.evaluate(b => ({ over: b.scrollWidth > b.clientWidth + 1, right: Math.max(...[...b.children].map(c => c.getBoundingClientRect().right)) <= b.getBoundingClientRect().right + 1 }))
       check(!fit.over && fit.right, `Live bar with Auto, Interrupt, mute and End fits 360 px (${JSON.stringify(fit)})`)
     }

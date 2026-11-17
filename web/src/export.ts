@@ -16,16 +16,16 @@ function itemMd(it: ChatItem): string {
     case 'assistant':
       return it.text.trim() ? `**Hermux:**\n\n${it.text.trim()}` : ''
     case 'tool':
-      return `_🔧 ${it.name}${it.context ? `: ${it.context}` : ''}${it.status === 'error' ? ' (failed)' : ''}_`
+      return `_Tool: ${it.name}${it.context ? `: ${it.context}` : ''}${it.status === 'error' ? ' (failed)' : ''}_`
     case 'subagent':
-      return `_🤖 Sub-agent: ${it.goal}_`
+      return `_Sub-agent: ${it.goal}_`
     case 'notice':
-      return it.level === 'error' ? quote(`⚠ ${it.text}`) : ''
+      return it.level === 'error' ? quote(`Warning: ${it.text}`) : ''
   }
 }
 
 export function chatMarkdown(a: Pick<ActiveSession, 'title' | 'items'>, when = new Date()): string {
-  const title = (a.title || 'Chat with Hermux').replace(/^⎇\s*/, '')
+  const title = (a.title || 'Chat with Hermux').replace(/^\u2387\s*/, '')
   const parts = [`# ${title}`, `_Exported from Hermux on ${when.toLocaleString()}_`]
   for (const it of a.items) {
     const md = itemMd(it)

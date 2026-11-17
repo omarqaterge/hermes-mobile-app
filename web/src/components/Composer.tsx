@@ -17,6 +17,7 @@ import { AutoButton } from './AutoAccess'
 import { ago } from '../unread'
 import { QUEUE_MAX, enqueue, useQueue } from '../queue'
 import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../quote'
+import { Icon } from './icons'
 
 const EMPTY: Attachment[] = []
 
@@ -288,7 +289,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
     <div className="composer-wrap">
       {queued && (
         <div className="queued-chip">
-          <span className="queued-text">⏳ Sends when Hermux is back: {queued.text.length > 80 ? queued.text.slice(0, 78) + '…' : queued.text}{queued.atts?.length ? ` (📎 ${queued.atts.length} attached)` : ''}</span>
+          <span className="queued-text"><Icon n="hourglass" /> Sends when Hermux is back: {queued.text.length > 80 ? queued.text.slice(0, 78) + '…' : queued.text}{queued.atts?.length ? ` (${queued.atts.length} attached)` : ''}</span>
           <button
             className="icon-btn"
             aria-label="Don't send"
@@ -297,7 +298,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
               setText(text ? `${t}\n\n${text}` : t)
             }}
           >
-            ✕
+            <Icon n="close" />
           </button>
         </div>
       )}
@@ -320,9 +321,9 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
         <div className="attach-row quote-row">
           {quotes.map((q, i) => (
             <span key={`${i}-${q.slice(0, 20)}`} className="chip quote-chip">
-              <span className="quote-chip-text">❝ {q.replace(/\s+/g, ' ').slice(0, 60)}{q.length > 60 ? '…' : ''}</span>
+              <span className="quote-chip-text"><Icon n="quote" /> {q.replace(/\s+/g, ' ').slice(0, 60)}{q.length > 60 ? '…' : ''}</span>
               <button className="attach-x" aria-label="Remove quote" onClick={() => { haptic(); removeQuote(i) }}>
-                ✕
+                <Icon n="close" />
               </button>
             </span>
           ))}
@@ -334,13 +335,13 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             a.preview ? (
               <span key={`${a.path || a.name}-${i}`} className="attach-thumb">
                 <img src={a.preview} alt={a.name} />
-                <button className="attach-x" aria-label={`Remove ${a.name}`} onClick={() => detach(a)}>✕</button>
+                <button className="attach-x" aria-label={`Remove ${a.name}`} onClick={() => detach(a)}><Icon n="close" /></button>
               </span>
             ) : (
             <span key={`${a.path || a.name}-${i}`} className="chip attach-chip">
-              {a.kind === 'image' ? '🖼' : '📎'} <span className="attach-name">{a.name}</span>
+              <Icon n={a.kind === 'image' ? 'image' : 'clip'} /> <span className="attach-name">{a.name}</span>
               <button className="attach-x" aria-label={`Remove ${a.name}`} onClick={() => detach(a)}>
-                ✕
+                <Icon n="close" />
               </button>
             </span>
             )

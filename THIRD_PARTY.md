@@ -9,6 +9,9 @@
   date-fns, d3 (scale, selection, shape), lodash-es, react-markdown with remark/rehype plugins and KaTeX,
   react-syntax-highlighter with refractor/Prism and lowlight, zod, zustand, its own copy of React and `@ag-ui/core` (all
   MIT), lucide-react icons (ISC), highlight.js (BSD-3-Clause), tslib (0BSD) and highlightjs-vue (CC0-1.0).
+- The app's own drawn icons (`web/src/components/icons.tsx`) use shapes from lucide-react 0.575.0 (ISC licence, Copyright (c)
+  Lucide Contributors; parts Copyright (c) Cole Bemis 2013-2022, MIT). Source: https://github.com/lucide-icons/lucide. Only the
+  icons used are built in (the rest is dropped at build time), and only `icons.tsx` imports the package.
 - npm dependencies (React, KaTeX, Mermaid, highlight.js, rehype/remark plugins, Vite, vitest) keep their own licenses, see `web/package.json` and `web/package-lock.json`.
 - sherpa-onnx (`tools/sherpa-onnx.sh` fetches the pinned release; its Java API is compiled into the APK and its native
   library `libsherpa-onnx-jni.so`, with ONNX Runtime linked in, ships in it), the on-device speech-to-text engine:

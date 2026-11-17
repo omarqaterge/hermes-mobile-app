@@ -8,6 +8,7 @@ import { useBackHandler } from '../backstack'
 import { lockView } from '../lockview'
 import { getState, toast, useStore } from '../store'
 import { useSheetDrag } from './useSheetDrag'
+import { Icon } from './icons'
 
 const THUMB_W = 200
 const VIEW_W = 540
@@ -44,12 +45,12 @@ export function BgApp() {
   return (
     <>
       <button className="bg-card" onClick={() => setOpen(true)} aria-label={`Using ${bg.label}. Open live view`}>
-        <span className="bg-thumb">{frame ? <img src={frame} alt="" draggable={false} /> : <span className="bg-thumb-empty">📱</span>}</span>
+        <span className="bg-thumb">{frame ? <img src={frame} alt="" draggable={false} /> : <span className="bg-thumb-empty"><Icon n="phone" /></span>}</span>
         <span className="bg-card-text">
           <span className="bg-card-title">Using {bg.label}</span>
           <span className="bg-card-action">{bg.action || 'Working in the background…'}</span>
         </span>
-        <span className="bg-card-chev">›</span>
+        <span className="bg-card-chev"><Icon n="right" /></span>
       </button>
       {open && <BgViewer label={bg.label} action={bg.action} onClose={() => setOpen(false)} />}
     </>

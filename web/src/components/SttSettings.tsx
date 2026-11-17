@@ -19,6 +19,7 @@ import {
   type SttModel
 } from '../stt'
 import { Row, Section } from './ui'
+import { Icon } from './icons'
 
 export function SttSettings() {
   const list = useSttModels()
@@ -30,7 +31,7 @@ export function SttSettings() {
   return (
     <>
       <Section footer="Used for dictation and Live mode. The phone’s own recogniser may send your voice to its maker’s servers and needs internet unless it has an offline language pack.">
-        <Row icon="📱" tone="blue" title="Phone’s speech recognition" sub="Android’s recogniser (usually Google’s)" value={phone ? '✓ In use' : undefined} onClick={phone ? undefined : () => chooseSttModel('')} />
+        <Row icon="phone" tone="blue" title="Phone’s speech recognition" sub="Android’s recogniser (usually Google’s)" value={phone ? <><Icon n="check" /> In use</> : undefined} onClick={phone ? undefined : () => chooseSttModel('')} />
       </Section>
       <Section
         title="On-device models"
@@ -55,8 +56,8 @@ export function SttSettings() {
         )}
         {list.importing && <div className="notice">Adding the model{list.importing === 'files' ? ' from your files' : ` from huggingface.co/${list.importing}`}…</div>}
         {list.importError && <div className="notice notice-error">{list.importError}</div>}
-        <Row icon="🤗" tone="gold" title="Add from Hugging Face" sub="Paste the model’s link" chevron disabled={Boolean(list.importing)} onClick={() => void addLink()} />
-        <Row icon="📁" tone="teal" title="Add files from this phone" sub="The model’s .onnx files and tokens.txt, or a .zip" chevron disabled={Boolean(list.importing)} onClick={pickSttModelFiles} />
+        <Row icon="getModel" tone="gold" title="Add from Hugging Face" sub="Paste the model’s link" chevron disabled={Boolean(list.importing)} onClick={() => void addLink()} />
+        <Row icon="folder" tone="teal" title="Add files from this phone" sub="The model’s .onnx files and tokens.txt, or a .zip" chevron disabled={Boolean(list.importing)} onClick={pickSttModelFiles} />
       </Section>
     </>
   )
@@ -93,8 +94,8 @@ function ModelCard({ m, list }: { m: SttModel; list: SttList }) {
         <span className={`tag${m.punctuation ? '' : ' off'}`}>{m.punctuation ? 'Punctuation' : 'No punctuation'}</span>
         {m.custom && m.kind && <span className="tag off">{m.kind}</span>}
       </div>
-      {m.good && <div className="card-text">👍 {m.good}</div>}
-      {m.weak && <div className="card-text">👎 {m.weak}</div>}
+      {m.good && <div className="card-text"><Icon n="thumbUp" /> {m.good}</div>}
+      {m.weak && <div className="card-text"><Icon n="thumbDown" /> {m.weak}</div>}
       {m.custom && m.source && <div className="card-text">From {m.source}</div>}
       {m.state === 'downloading' && (
         <div className="usage">

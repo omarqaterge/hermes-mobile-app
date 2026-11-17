@@ -12,10 +12,11 @@ import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
 import { fmtDuration, formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
-import { commandLabel, stepMark, thoughtLine, todoSteps, toolTitle } from '../toolsay'
+import { commandLabel, stepMark, stepWord, thoughtLine, todoSteps, toolTitle } from '../toolsay'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
 import { VideoEmbeds } from './VideoEmbed'
+import { Icon, type IconName } from './icons'
 
 // Stored outputs fetched for cards restored from history (resumed transcripts omit them).
 const outputCache = new Map<string, string>()
@@ -24,26 +25,26 @@ const LOCAL_ID = /^[a-z]-[0-9a-z]+-\d+$/
 
 const DIFF_DUP_ARGS = new Set(['content', 'old_string', 'new_string', 'patch', 'diff', 'old_text', 'new_text', 'operations'])
 
-const TOOL_ICONS: Record<string, string> = {
-  terminal: '⌘',
-  execute_code: '▶',
-  read_file: '📄',
-  write_file: '✎',
-  patch: '✎',
-  search_files: '🔍',
-  web_search: '🌐',
-  web_extract: '🌐',
-  browser_navigate: '🧭',
-  skill_view: '✦',
-  skills_list: '✦',
-  memory: '🧠',
-  todo: '☑',
-  delegate_task: '⇶',
-  clarify: '?',
-  vision_analyze: '👁',
-  image_generate: '🎨',
-  send_message: '✉',
-  phone_app: '📱'
+const TOOL_ICONS: Record<string, IconName> = {
+  terminal: 'terminal',
+  execute_code: 'play',
+  read_file: 'file',
+  write_file: 'pencil',
+  patch: 'pencil',
+  search_files: 'search',
+  web_search: 'globe',
+  web_extract: 'globe',
+  browser_navigate: 'compass',
+  skill_view: 'sparkles',
+  skills_list: 'sparkles',
+  memory: 'brain',
+  todo: 'checklist',
+  delegate_task: 'subagent',
+  clarify: 'help',
+  vision_analyze: 'eye',
+  image_generate: 'palette',
+  send_message: 'mail',
+  phone_app: 'phone'
 }
 
 function argsPreview(args?: Record<string, unknown> | null): string {
@@ -85,27 +86,27 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
   // With a diff on screen, the file body / replaced strings in the args are just a noisier copy.
   const hasDiff = Boolean(item.inlineDiff || out?.diff || memDiff)
   const args = steps ? null : item.args && hasDiff ? Object.fromEntries(Object.entries(item.args).filter(([k]) => !DIFF_DUP_ARGS.has(k))) : item.args
-  const icon = TOOL_ICONS[item.name] || '🔧'
+  const icon = TOOL_ICONS[item.name] || 'tool'
   return (
     <div className={`tool tool-${item.status}${item.risk ? ' tool-risk' : ''}`}>
       <button className="tool-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span className="tool-icon">{icon}</span>
+        <span className="tool-icon"><Icon n={icon} /></span>
         <span className="tool-name" title={item.name}>{title}</span>
         <span className="tool-label">{steps?.length ? `${stepsDone}/${steps.length} done` : label}</span>
         <span className="tool-state">
           {item.status === 'generating' || item.status === 'running' ? <Spinner /> : null}
-          {item.status === 'done' ? fmtDuration(item.duration) || '✓' : null}
-          {item.status === 'error' ? <span role="img" aria-label="failed">✕</span> : null}
+          {item.status === 'done' ? fmtDuration(item.duration) || <Icon n="check" label="done" /> : null}
+          {item.status === 'error' ? <Icon n="close" label="failed" /> : null}
         </span>
       </button>
       <Collapse open={open}>
         <div className="tool-body">
-          {item.risk && <div className="tool-risk-note">⚠ {item.risk}</div>}
+          {item.risk && <div className="tool-risk-note"><Icon n="warning" /> {item.risk}</div>}
           {steps && steps.length > 0 && (
             <ul className="tool-steps">
               {steps.map((t, i) => (
                 <li key={i} className={`todo-${t.status}`}>
-                  <span className="step-mark" aria-hidden="true">{stepMark(t.status)}</span> {t.content}
+                  <span className="step-mark"><Icon n={stepMark(t.status)} label={stepWord(t.status)} /></span> {t.content}
                 </li>
               ))}
             </ul>
@@ -170,7 +171,7 @@ export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }
     <button className={`tool-run${run.running ? ' running' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
       <span className="tool-run-icons" aria-hidden="true">
         {run.names.slice(0, 4).map(n => (
-          <span key={n} className="tool-icon">{TOOL_ICONS[n] || '🔧'}</span>
+          <span key={n} className="tool-icon"><Icon n={TOOL_ICONS[n] || 'tool'} /></span>
         ))}
       </span>
       <span className="tool-run-label">
@@ -184,25 +185,13 @@ export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }
   )
 })
 
-/** Line brain (Lucide "brain", ISC licence), in the accent colour. */
-function BrainIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-      <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-      <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
-      <path d="M17.599 6.5a3 3 0 0 0 .399-1.375M6.003 5.125A3 3 0 0 0 6.401 6.5M3.477 10.896a4 4 0 0 1 .585-.396M19.938 10.5a4 4 0 0 1 .585.396M6 18a4 4 0 0 1-1.967-.516M19.967 17.484A4 4 0 0 1 18 18" />
-    </svg>
-  )
-}
-
 function Reasoning({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false)
   if (!text.trim()) return null
   return (
     <div className={`reasoning${open ? ' open' : ''}`}>
       <button className="reasoning-head" onClick={() => setOpen(o => !o)}>
-        <span className="reasoning-dot">{live ? <Spinner small /> : <BrainIcon />}</span>
+        <span className="reasoning-dot">{live ? <Spinner small /> : <Icon n="brain" size={16} />}</span>
         {live ? 'Thinking…' : 'Thought process'}
         <span className="chev"><Chevron open={open} /></span>
       </button>
@@ -310,9 +299,9 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
           <div className="attach-row edit-files">
             {keepFiles.map((f, i) => (
               <span key={`${f.ref}-${i}`} className="chip attach-chip">
-                📎 {f.name}
+                <Icon n="clip" /> {f.name}
                 <button className="attach-x" aria-label={`Remove ${f.name}`} onClick={() => setKeepFiles(k => k.filter((_, j) => j !== i))}>
-                  ✕
+                  <Icon n="close" />
                 </button>
               </span>
             ))}
@@ -324,7 +313,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
               <div key={im.path} className="attach-thumb">
                 {im.url ? <img src={im.url} alt={im.name} /> : <Media src={im.path} alt={im.name} />}
                 <button className="attach-x" aria-label={`Remove ${im.name}`} onClick={() => setKeep(k => k.filter(x => x.path !== im.path))}>
-                  ✕
+                  <Icon n="close" />
                 </button>
               </div>
             ))}
@@ -372,10 +361,10 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
                   <Media src={item.imagePaths[i]} alt={n} />
                 </div>
               ) : (
-                <span key={`i-${n}-${i}`} className="chip">🖼 {n}</span>
+                <span key={`i-${n}-${i}`} className="chip"><Icon n="image" /> {n}</span>
               )
             )}
-            {item.files?.map(n => <span key={`f-${n}`} className="chip">📎 {n}</span>)}
+            {item.files?.map(n => <span key={`f-${n}`} className="chip"><Icon n="clip" /> {n}</span>)}
           </div>
         ) : null}
         {quoted.quotes.map((q, i) => (
@@ -473,7 +462,7 @@ function AssistantMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind:
           <Reasoning text={item.reasoning} live={item.streaming && !item.text} />
           {item.text && <Markdown text={item.text} streaming={item.streaming} interactive guard={tainted} />}
           {item.streaming && item.text && <span className="caret" />}
-          {item.warning && <div className="warn-line">⚠ {item.warning}</div>}
+          {item.warning && <div className="warn-line"><Icon n="warning" /> {item.warning}</div>}
           {!item.streaming && item.text && actions && (
             <div className="msg-actions">
               <CopyBtn text={item.text} choose />
@@ -500,7 +489,7 @@ function SubagentView({ item }: { item: Extract<ChatItem, { kind: 'subagent' }> 
   return (
         <div className={`subagent sub-${item.status}`}>
           <div className="sub-head">
-            <span>⇶ Sub-agent</span>
+            <span><Icon n="subagent" /> Sub-agent</span>
             <span className="sub-status">{item.status}</span>
           </div>
           <div className="sub-goal"><Linked text={item.goal} /></div>

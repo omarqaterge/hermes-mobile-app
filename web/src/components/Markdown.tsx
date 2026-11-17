@@ -22,6 +22,7 @@ import { OpenUIBlock, OpenUICtx } from './OpenUIBlock'
 import { HtmlFrame } from './HtmlFrame'
 import { VideoEmbedTag } from './VideoEmbed'
 import { MAX_VIDEOS, embedOf, frameEmbed } from '../videoembed'
+import { Icon } from './icons'
 
 /** True while the reply being rendered is still arriving (a context, so code blocks aren't rebuilt per stream batch). */
 const StreamingCtx = createContext(false)
@@ -129,12 +130,12 @@ function DiagramViewer({ svg, source, onClose }: { svg: string; source: string; 
   return (
     <div className="diagram-view" onClick={onClose}>
       <div className="diagram-bar" onClick={e => e.stopPropagation()}>
-        <button onClick={() => setZoom(z => Math.max(0.5, z / 1.35))} aria-label="Zoom out">−</button>
+        <button onClick={() => setZoom(z => Math.max(0.5, z / 1.35))} aria-label="Zoom out"><Icon n="minus" /></button>
         <span>{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(z => Math.min(6, z * 1.35))} aria-label="Zoom in">＋</button>
+        <button onClick={() => setZoom(z => Math.min(6, z * 1.35))} aria-label="Zoom in"><Icon n="plus" /></button>
         <button onClick={() => setZoom(1)}>Fit</button>
         <button onClick={() => { void copyText(source); toast('Diagram source copied') }}>Copy</button>
-        <button className="close" onClick={onClose} aria-label="Close">✕</button>
+        <button className="close" onClick={onClose} aria-label="Close"><Icon n="close" /></button>
       </div>
       <div
         className="diagram-scroll"
@@ -165,7 +166,7 @@ function HtmlViewer({ html, onClose }: { html: string; onClose: () => void }) {
   useBackHandler(onClose, true)
   return (
     <div className="html-viewer" role="dialog" aria-modal="true" aria-label="HTML preview">
-      <button className="close" onClick={onClose} aria-label="Close preview">✕</button>
+      <button className="close" onClick={onClose} aria-label="Close preview"><Icon n="close" /></button>
       <HtmlFrame html={html} network={false} />
     </div>
   )
@@ -363,7 +364,7 @@ function MdTable({ children }: { children?: ReactNode }) {
           children: (
             <>
               {(th.props as { children?: ReactNode }).children}
-              <span className="sort-ind">{sort?.col === i ? (sort.dir === 1 ? '▲' : '▼') : '⇅'}</span>
+              <span className="sort-ind"><Icon n={sort?.col === i ? (sort.dir === 1 ? 'up' : 'down') : 'sort'} size="0.9em" /></span>
             </>
           )
         })
@@ -847,7 +848,7 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
         )
       }
       if (href && isLocal(href)) {
-        return mediaKind(href) === 'file' ? <FileChip src={href} label={textOf(children).replace(/^📎\s*/, '')} /> : <Media src={href} alt={textOf(children)} />
+        return mediaKind(href) === 'file' ? <FileChip src={href} label={textOf(children)} /> : <Media src={href} alt={textOf(children)} />
       }
       return <ExtLink href={href}>{children}</ExtLink>
     },

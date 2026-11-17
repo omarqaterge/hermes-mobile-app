@@ -4,14 +4,15 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { haptic } from './bridge'
 import { useBackHandler } from './backstack'
 import { useSheetDrag } from './components/useSheetDrag'
+import { iconOf, type IconName } from './components/icons'
 
 interface Base {
   title: string
   message?: string
   /** Lines shown under the message, left-aligned (e.g. the files a restore changes). */
   list?: string[]
-  /** Replaces the default icon (🗑 for danger). */
-  icon?: string
+  /** Replaces the default icon (the bin for danger). */
+  icon?: IconName
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
@@ -66,7 +67,7 @@ function Dialog({ req }: { req: Req }) {
       <div className="sheet dialog" role="alertdialog" ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className={`dialog-icon${req.danger ? ' danger' : ''}`} aria-hidden="true">
-          {req.icon ?? (req.danger ? '🗑' : req.kind === 'prompt' ? '✎' : '?')}
+          {iconOf(req.icon ?? (req.danger ? 'trash' : req.kind === 'prompt' ? 'pencil' : 'help'))}
         </div>
         <div className="dialog-title">{req.title}</div>
         {req.message && <div className="dialog-msg">{req.message}</div>}

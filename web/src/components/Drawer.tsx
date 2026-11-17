@@ -4,12 +4,13 @@ import { setState, useStore, type Screen } from '../store'
 import { SessionList } from './SessionList'
 import { haptic } from '../bridge'
 import { setSideHidden } from '../sidepanel'
+import { Icon, type IconName } from './icons'
 
 // Skills, memory, cron, files and projects live on the Hermux hub (one tile, more room for chats).
-const NAV: [Exclude<Screen, null>, string, string][] = [
-  ['hub', '☤', 'Hermux'],
-  ['bots', '🤖', 'Bots'],
-  ['settings', '⚙', 'Settings']
+const NAV: [Exclude<Screen, null>, IconName, string][] = [
+  ['hub', 'sparkles', 'Hermux'],
+  ['bots', 'bot', 'Bots'],
+  ['settings', 'settings', 'Settings']
 ]
 
 export function Drawer() {
@@ -33,11 +34,11 @@ export function Drawer() {
                 {current?.display_name || profile}
                 <span className="dim small">{current?.description || (profile === 'default' ? 'Main profile' : '')}</span>
               </span>
-              <span className="chev">{showProfiles ? '▴' : '▾'}</span>
+              <span className="chev"><Icon n={showProfiles ? 'up' : 'down'} /></span>
             </button>
             {/* Only shown while the list is docked on a wide screen (styles.css): hides it, also from Settings and other pages. */}
             <button className="icon-btn side-hide" aria-label="Hide the chat list" onClick={() => { haptic(); setSideHidden(true) }}>
-              «
+              <Icon n="panelClose" />
             </button>
           </div>
           {showProfiles && (
@@ -60,17 +61,17 @@ export function Drawer() {
                 </button>
               ))}
               <button className="row dim" onClick={() => { setShowProfiles(false); setState({ screen: 'bots', drawer: false }) }}>
-                ＋ New bot / manage bots…
+                <Icon n="plus" /> New bot / manage bots…
               </button>
             </div>
           )}
           <button className="btn primary block" onClick={() => startDraft()}>
-            ＋ New chat
+            <Icon n="plus" /> New chat
           </button>
           <div className="nav-grid">
             {NAV.map(([key, icon, label]) => (
               <button key={key} className="nav-tile" onClick={() => { haptic(); setState({ screen: key, screenProfile: null, screenBack: null, drawer: false }) }}>
-                <span>{icon}</span>
+                <span><Icon n={icon} /></span>
                 {label}
               </button>
             ))}

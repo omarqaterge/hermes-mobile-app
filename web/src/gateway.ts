@@ -999,7 +999,7 @@ export async function setYolo(a: ActiveSession, want: boolean | null): Promise<A
 }
 /** The notice after /yolo: names the mode the chat is in now. */
 const YOLO_NOTICE: Record<Access, string> = {
-  full: '⚡ Full access on for this chat (/yolo): Hermux runs commands without asking',
+  full: 'Full access on for this chat (/yolo): Hermux runs commands without asking',
   auto: 'Back to Auto access: dangerous commands are blocked, everything else runs',
   off: 'Auto off: Hermux asks before risky commands again'
 }
@@ -1911,15 +1911,15 @@ export async function branchAt(itemId: string): Promise<void> {
     ...(count < total ? { count } : {})
   })
   // The branch keeps the original name, with a branch icon in front (stored as a leading "⎇").
-  const base = (a.title || r.title || 'New chat').replace(/^⎇\s*/, '')
-  let named = `⎇ ${base}`
+  const base = (a.title || r.title || 'New chat').replace(/^\u2387\s*/, '')
+  let named = `\u2387 ${base}`
   for (let n = 1; n <= 9; n++) {
     try {
       await renameStored(r.stored_session_id, named)
       break
     } catch {
       // Hermes wants unique titles: a second branch of the same chat becomes "⎇ name 2", and so on.
-      named = `⎇ ${base} ${n + 1}`
+      named = `\u2387 ${base} ${n + 1}`
     }
   }
   await resumeSession(r.stored_session_id)
