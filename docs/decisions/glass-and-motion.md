@@ -24,10 +24,19 @@ back, a pressed button gives under the finger, a choice settles into place. It m
   step. A new animation uses them instead of its own curve.
 - **Three levels of motion,** chosen in Settings → Appearance → Effects → Animations: **Full** (springs with weight),
   **Reduced** (no travel, short fades, nothing repeats), **Off** (every change is instant). Until the person chooses,
-  the phone decides: Off when it asks for no animations, Reduced on a phone with little memory or few cores, else
-  Full. Glass effects is a switch beside it, on by default except on such a phone.
+  Animations follows the phone's "Remove animations": Off when it is set, else Full. Glass effects is a switch beside
+  it, on until the person turns it off. The phone's memory and cores play no part (changed 2026-11-17, in the review
+  of the first glass and motion PR: a first version started small phones with solid surfaces and Reduced).
 - **Motion never stands in the way:** nothing delays or blocks a tap, a swipe or a drag, and every state is also
   shown in words or a still mark, so Off loses no information.
 - **Left out for now:** a refracting edge on glass (bending what is behind it at the rim): it could not be measured on
-  a mid-range phone here, so it waits until it can be. The chat list neither staggers its rows nor steps the chat
-  back when it opens: both added about half to its work, and the list opens many times a day.
+  a mid-range phone here, so it waits until it can be.
+- **The chat list opens without a row stagger and without the chat stepping back behind it.** Sheets and menus keep
+  both the step back and the dim. Measured on 2026-11-17, opening the list at 4x CPU in a desktop browser (median of 7,
+  two rounds, time until the list is in place and its rows show, main-thread work over the 900 ms after the tap):
+  no animation 218–222 ms and 22–24 ms of work; row stagger 231–236 ms (+6–7%) and 52 ms (more than double); the
+  stagger without CSS variables 227–230 ms and 47–52 ms; fading only, no travel, 228–230 ms and 37–39 ms (+60%);
+  the chat stepping back 223–234 ms (+2.5–6%) and 30 ms (+30%); both 230–233 ms and 54–59 ms. No version dropped a
+  frame (none over 25 ms, 95th percentile 16.8 ms), but each costs more than 5%, and the list opens many times a day,
+  so both stay out ([redesign-costs-no-speed-or-battery.md](redesign-costs-no-speed-or-battery.md), rule 1). A list
+  that shows once can still stagger its rows (`.motion-in` with `stagger()`).

@@ -70,6 +70,12 @@ chat list, opening a chat and the first words inside the page, which reads lower
 | | Scrolling a long chat | work 242 / 245 ms | work 243 / 245 ms | none |
 | | Opening the chat list | 219 / 229 ms | 7 / 8 ms (no slide) | instant |
 
+The chat list's row stagger and the chat stepping back behind it, measured on their own (opening the list, 4x CPU,
+median of 7, two rounds; time until the list is in place with its rows, main-thread work over the 900 ms after the
+tap): none 218–222 ms / 22–24 ms; stagger 231–236 ms / 52 ms; stagger without CSS variables 227–230 ms / 47–52 ms;
+fade only 228–230 ms / 37–39 ms; step back 223–234 ms / 30 ms; both 230–233 ms / 54–59 ms. No frame over 25 ms in
+any of them; each costs more than 5%, so neither is on the chat list (`docs/decisions/glass-and-motion.md`).
+
 The page file gzipped: 2720.6 → 2724.9 kB (`glass.css`, `motion.css`, `motion.ts`, `barinsets.ts`). On the way there,
 four things cost style work and were changed (the commit "Glass and motion cost no more style work"): rules ending in
 an `:is()` list, a rule for Animations Off that matched every element, the bars' heights as inherited custom

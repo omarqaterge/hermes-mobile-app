@@ -42,7 +42,9 @@ const settled = async p => {
 module.exports = async t => {
   const { browser } = t
   // A page of the fake shell on chat `chat`, with stored settings `store` (null removes a key) before the app starts.
+  // Glass effects is on unless `store` says otherwise: never left to the machine.
   const open = async (size, chat, store = {}, ctx = {}) => {
+    store = { 'hm.glass': '1', ...store }
     const context = await browser.newContext({ viewport: size, ...ctx })
     const p = await context.newPage()
     await p.addInitScript(nativeShell)
@@ -101,10 +103,22 @@ module.exports = async t => {
     return n
   })
 
-  // ── heights: idle, with the keyboard open, while a reply runs, with an attachment; glass on and off ──
-  {
+  // ── heights: idle, with the keyboard open, while a reply runs, with an attachment; with glass on and with glass off ──
+  // Each look on its own page, Glass effects set explicitly (never the machine's default). Every state is checked
+  // against the build before glass, and the two looks against each other: solid surfaces keep the glass heights.
+  // What sits below the messages, row by row (words and height), so a failure says which row grew.
+  const rowsBelow = p => p.evaluate(() => {
+    const box = document.querySelector('textarea[placeholder="Message Hermux"], textarea[placeholder="Queue or steer a follow-up…"]')
+    let list = [...document.querySelectorAll('p, strong')].find(e => e.textContent === 'answer s-48')
+    while (list && !/(auto|scroll)/.test(getComputedStyle(list).overflowY)) list = list.parentElement
+    let bar = box
+    while (bar.parentElement && !bar.parentElement.contains(list) && bar.parentElement !== document.body) bar = bar.parentElement
+    return [...bar.children].map(c => `${(c.innerText || c.getAttribute('aria-label') || c.tagName).replace(/\s+/g, ' ').trim().slice(0, 40)}=${Math.round(c.getBoundingClientRect().height)}`).join(' | ')
+  })
+  const heights = async glass => {
     const states = {}
-    const p = await open({ width: 360, height: 740 }, 's-48')
+    const rows = {}
+    const p = await open({ width: 360, height: 740 }, 's-48', { 'hm.glass': glass ? '1' : '0' })
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
     await settled(p)
     states.idle = await measure(p, 'answer s-48')
@@ -113,7 +127,7 @@ module.exports = async t => {
     await settled(p)
     states.keyboard = await measure(p, 'answer s-48')
     const kb = states.keyboard
-    check(kb.box <= kb.vh && kb.compBottom === kb.vh, `keyboard: the composer stays above the keyboard (text box bottom ${kb.box}, composer bottom ${kb.compBottom}, window ${kb.vh})`)
+    check(kb.box <= kb.vh && kb.compBottom === kb.vh, `keyboard, glass ${glass ? 'on' : 'off'}: the composer stays above the keyboard (text box bottom ${kb.box}, composer bottom ${kb.compBottom}, window ${kb.vh})`)
     await p.setViewportSize({ width: 360, height: 740 })
     await settled(p)
     // With an attachment chip in the composer.
@@ -123,23 +137,37 @@ module.exports = async t => {
     await p.getByText('notes.txt').first().waitFor({ timeout: 5000 })
     await settled(p)
     states.attachment = await measure(p, 'answer s-48')
-    await p.getByRole('button', { name: /^Remove/ }).first().click().catch(() => {})
+    rows.attachment = await rowsBelow(p)
+    await p.getByRole('button', { name: /^Remove/ }).first().click()
+    await p.getByText('notes.txt').first().waitFor({ state: 'detached', timeout: 5000 })
     // While a reply runs: the status bar shows under the messages.
     await p.getByPlaceholder('Message Hermux').fill('slow reply')
     await p.getByRole('button', { name: 'Send', exact: true }).click()
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 3000 })
     await settled(p)
     states.working = await measure(p, 'answer s-48')
+    rows.working = await rowsBelow(p)
     await p.getByText('Slow done.').waitFor({ timeout: 5000 })
-    if (record) console.log('RECORDED_STATES', JSON.stringify(states))
-    for (const k of Object.keys(RECORDED_STATES)) check(states[k] && fits(states[k], RECORDED_STATES[k]), `glass heights, ${say(k, states[k] || {}, RECORDED_STATES[k])}`)
     await p.close()
-    // Glass off: the same heights (the layout does not change between the two).
+    return { states, rows }
+  }
+  {
+    const on = await heights(true)
+    const off = await heights(false)
+    if (record) console.log('RECORDED_STATES', JSON.stringify(on.states))
+    for (const [look, got] of [['on', on], ['off', off]]) {
+      for (const k of Object.keys(RECORDED_STATES)) {
+        const now = got.states[k] || {}
+        check(got.states[k] && fits(now, RECORDED_STATES[k]), `glass ${look}, heights, ${say(k, now, RECORDED_STATES[k])}${got.rows[k] ? ` [below: ${got.rows[k]}]` : ''}`)
+      }
+    }
+    for (const k of Object.keys(RECORDED_STATES)) {
+      const a = on.states[k] || {}
+      const b = off.states[k] || {}
+      check(Math.abs(a.header - b.header) <= 2 && Math.abs(a.bottom - b.bottom) <= 2 && Math.abs(a.messages - b.messages) <= 2, `glass off keeps the glass heights, ${k}: header ${b.header} / ${a.header}, below the messages ${b.bottom} / ${a.bottom}, messages ${b.messages} / ${a.messages} (off / on)`)
+    }
     const q = await open({ width: 360, height: 740 }, 's-48', { 'hm.glass': '0' })
     await q.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await settled(q)
-    const off = await measure(q, 'answer s-48')
-    check(off.header === states.idle.header && off.bottom === states.idle.bottom && off.messages === states.idle.messages, `glass off: the same heights as with glass (${JSON.stringify([off.header, off.bottom, off.messages])} vs ${JSON.stringify([states.idle.header, states.idle.bottom, states.idle.messages])})`)
     const g = await barGlass(q, 'top')
     check(g.filter === 'none', `glass off: the header's bar is solid, no blur (${g.filter})`)
     await q.close()
@@ -362,27 +390,22 @@ module.exports = async t => {
     const g = await p.evaluate(() => [localStorage.getItem('hm.glass'), document.documentElement.dataset.glass])
     check(on && g[0] === '0' && g[1] === 'off' && (await sw.getAttribute('aria-checked')) === 'false', `appearance: Glass effects starts on and turns off (${JSON.stringify(g)})`)
     await p.close()
-    // A phone that reports little memory starts with solid surfaces and Reduced.
-    const q = await open({ width: 375, height: 812 }, null, { 'hm.motion': null, 'hm.glass': null })
-    await q.close()
-    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } })
-    const r = await ctx.newPage()
-    await r.addInitScript(nativeShell)
-    await r.addInitScript(() => {
+    // With nothing chosen and no phone setting, glass is on and Animations Full, whatever memory and cores the phone
+    // reports (2 GB and 4 cores here, like a small phone or the CI machine).
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, reducedMotion: 'no-preference' })
+    const s = await ctx.newPage()
+    await s.addInitScript(nativeShell)
+    await s.addInitScript(() => {
       localStorage.setItem('hm.connectedOnce', '1')
       localStorage.removeItem('hm.motion')
       localStorage.removeItem('hm.glass')
       Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 2, configurable: true })
+      Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => 4, configurable: true })
     })
-    await r.goto(WEB + '/')
-    await r.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-    const d = await r.evaluate(() => [document.documentElement.dataset.motion, document.documentElement.dataset.glass])
-    check(d[0] === 'reduced' && d[1] === 'off', `defaults: a phone with 2 GB starts with Reduced and solid surfaces (${JSON.stringify(d)})`)
-    await r.evaluate(() => Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 8, configurable: true }))
-    await ctx.close()
-    const s = await open({ width: 375, height: 812 }, null, { 'hm.motion': null, 'hm.glass': null }, { reducedMotion: 'no-preference' })
-    const e = await s.evaluate(() => [document.documentElement.dataset.motion, navigator.hardwareConcurrency, navigator.deviceMemory])
-    check(e[0] === ((e[1] && e[1] <= 4) || (e[2] && e[2] <= 2) ? 'reduced' : 'full'), `defaults: with no phone setting, Animations follows what the phone can carry (${JSON.stringify(e)})`)
+    await s.goto(WEB + '/')
+    await s.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    const d = await s.evaluate(() => [document.documentElement.dataset.motion, document.documentElement.dataset.glass, navigator.hardwareConcurrency, navigator.deviceMemory])
+    check(d[0] === 'full' && d[1] === 'on', `defaults: with no choice and no phone setting, glass is on and Animations Full, on a phone of 2 GB and 4 cores too (${JSON.stringify(d)})`)
     await s.getByRole('button', { name: /^Sessions/ }).click()
     await s.getByRole('button', { name: 'Settings' }).click()
     const search = s.getByPlaceholder(/Search settings/i)
@@ -390,7 +413,7 @@ module.exports = async t => {
     check((await s.getByText('Glass effects').count()) > 0, 'settings search: "glass" finds Glass effects')
     await search.fill('animations')
     check((await s.getByText('Animations', { exact: true }).count()) > 0, 'settings search: "animations" finds Animations')
-    await s.close()
+    await ctx.close()
   }
 
   // While a finger is on the chat's rail its label is glass, so a toast goes solid: the page says so on <html>, and only
