@@ -271,4 +271,43 @@ const openLibraryPart = async (page, part) => {
   await page.getByRole('button', { name: part, exact: true }).click()
 }
 
-module.exports = { openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle }
+// A menu (ui.tsx MenuSheet) and a wider font: measures each control in `dialog` (buttons and switches, found by element
+// and role, named by aria-label or text), adds wide letter-spacing to the open dialogs, as a font wider than this
+// machine's would be (CI's Linux), measures again and takes the spacing away. `grew` names the controls whose height
+// changed (a label that wrapped); `over` is true when anything is wider than the sheet or the screen. With `colours`,
+// also each control's text colour and its description's, with the first solid background behind it.
+const menuFits = async (page, dialog, colours = false) => {
+  const measure = () => dialog.evaluate((d, colours) => {
+    const els = [...d.querySelectorAll('button, [role="switch"]')]
+    const rgb = c => (c.match(/[\d.]+/g) || []).map(Number)
+    const solidBg = e => {
+      for (let n = e; n; n = n.parentElement) {
+        const c = rgb(getComputedStyle(n).backgroundColor)
+        if (c.length === 3 || (c.length === 4 && c[3] === 1)) return c.slice(0, 3)
+      }
+      return rgb(getComputedStyle(document.body).backgroundColor).slice(0, 3)
+    }
+    const desc = e => document.getElementById(e.getAttribute('aria-describedby') || '')
+    return {
+      names: els.map(e => e.getAttribute('aria-label') || e.textContent.trim()),
+      hs: els.map(e => Math.round(e.getBoundingClientRect().height)),
+      over: d.scrollWidth > d.clientWidth + 1 || document.documentElement.scrollWidth > window.innerWidth + 1 || d.getBoundingClientRect().right > window.innerWidth + 1,
+      colours: colours
+        ? els.flatMap(e => [[e.getAttribute('aria-label') || e.textContent.trim(), rgb(getComputedStyle(e).color).slice(0, 3), solidBg(e)], ...(desc(e) ? [[`${desc(e).textContent} (line)`, rgb(getComputedStyle(desc(e)).color).slice(0, 3), solidBg(e)]] : [])])
+        : []
+    }
+  }, colours)
+  const before = await measure()
+  const tag = await page.addStyleTag({ content: '[role="dialog"] * { letter-spacing: 2px !important }' })
+  const after = await measure()
+  await tag.evaluate(t => t.remove())
+  return { ...before, grew: before.names.filter((n, i) => after.hs[i] !== before.hs[i]), over: before.over || after.over }
+}
+// WCAG contrast of two [r, g, b] colours (0-255).
+const contrast = (a, b) => {
+  const lum = ([r, g, bl]) => [r, g, bl].map(c => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((s, c, i) => s + c * [0.2126, 0.7152, 0.0722][i], 0)
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p)
+  return (x + 0.05) / (y + 0.05)
+}
+
+module.exports = { openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }

@@ -161,7 +161,8 @@ module.exports = async t => {
     await p.getByText('answer s-46', { exact: true }).waitFor({ timeout: 8000 })
     await box.fill('a draft')
     await p.getByRole('banner').getByRole('button', { name: 'Chat options' }).click()
-    await p.getByRole('dialog').getByRole('button', { name: /Read every reply aloud/ }).click()
+    await p.getByRole('dialog').getByRole('switch', { name: 'Read replies aloud' }).click()
+    await p.evaluate(() => window.hermesBack()) // the switch flips in place and leaves the menu open
     await p.getByRole('button', { name: /^Sessions/ }).click()
     await p.getByRole('button', { name: 'Settings' }).click()
     await p.getByRole('button', { name: /^Appearance/ }).click()

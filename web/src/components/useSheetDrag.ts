@@ -14,6 +14,9 @@ export function useSheetDrag(onClose: () => void) {
     onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
       const n = el.current
       if (!n || e.clientY - n.getBoundingClientRect().top > 64) return
+      // A control in the top strip (a menu header's Rename button, its title field) takes its own tap: capturing the
+      // pointer here would send the tap to the sheet instead.
+      if ((e.target as Element).closest?.('button, input, textarea, a, [role="switch"]')) return
       st.current = { y0: e.clientY, t0: Date.now(), dy: 0, id: e.pointerId }
       n.setPointerCapture(e.pointerId)
     },

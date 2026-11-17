@@ -1,10 +1,10 @@
 // The app's own form controls. Nothing here uses the browser/Android defaults (no <select>, no native
 // range or checkbox): every picker, slider and switch is drawn in the app's visual language.
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { haptic } from '../bridge'
 import { useBackHandler } from '../backstack'
 import { useSheetDrag } from './useSheetDrag'
-import { Icon, iconOf } from './icons'
+import { Icon, iconOf, type IconName } from './icons'
 import { lessMotion } from '../motion'
 
 // ── grouped settings lists ──────────────────────────────────
@@ -140,6 +140,7 @@ export function PickerSheet({ title, options, value, onPick, onClose }: { title:
           {groups.map(([g, list]) => (
             <div key={g || '_'}>
               {g && <div className="picker-group">{g}</div>}
+              <div className="picker-card">
               {list.map(o => (
                 <button
                   key={o.value}
@@ -159,12 +160,125 @@ export function PickerSheet({ title, options, value, onPick, onClose }: { title:
                   <span className="picker-check">{o.value === value ? <Icon n="check" /> : null}</span>
                 </button>
               ))}
+              </div>
             </div>
           ))}
         </div>
       </div>
     </div>
   )
+}
+
+// ── menus (menu.css) ─────────────────────────────────────────
+// One look for every menu of a thing (a chat's menu from the header, a chat row's menu in the list, the new-chat menu):
+// a bottom sheet with the grip, a header, an optional strip of quick actions, then groups of rows. Spec 3.20.
+
+/** A bottom sheet for a menu: the grip, then its parts. Dismissed like every sheet (tap outside, Back, drag down by the
+ *  top strip). `solid`: a plain surface instead of glass, for a menu that opens over another glass surface (the side
+ *  panel), so glass never lies on glass. */
+export function MenuSheet({ label, onClose, solid, children }: { label: string; onClose: () => void; solid?: boolean; children: ReactNode }) {
+  const drag = useSheetDrag(onClose)
+  useBackHandler(onClose)
+  return (
+    <div className="sheet-backdrop menu-backdrop" onClick={onClose}>
+      <div className={`sheet menu-sheet${solid ? ' menu-solid' : ''}`} role="dialog" aria-label={label} ref={drag.ref} {...drag.bind} onClick={e => e.stopPropagation()}>
+        <div className="sheet-grip" />
+        <div className="menu-body">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+/** The menu's title (two lines at most), an optional dim line under it, an optional icon button on the right. */
+export function MenuHeader({ title, sub, action }: { title: ReactNode; sub?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="menu-head">
+      <div className="menu-head-text">
+        <div className="menu-head-title">{title}</div>
+        {sub != null && sub !== '' && <div className="menu-head-sub dim">{sub}</div>}
+      </div>
+      {action}
+    </div>
+  )
+}
+
+/** A strip of up to four equal buttons, icon above a short label. */
+export function MenuActions({ children }: { children: ReactNode }) {
+  return <div className="menu-actions">{children}</div>
+}
+
+/** One quick action: `label` is what shows under the icon, `name` the accessible name when it says more (it starts with
+ *  the label). `count` shows as a small number on the icon. */
+export function MenuAction({ icon, label, name, count, onClick }: { icon: IconName; label: string; name?: string; count?: number; onClick: () => void }) {
+  return (
+    <button className="menu-action" aria-label={name} onClick={() => { haptic(); onClick() }}>
+      <span className="menu-action-icon">
+        <Icon n={icon} size={22} />
+        {count ? <span className="menu-action-count" aria-hidden="true">{count}</span> : null}
+      </span>
+      <span className="menu-action-label">{label}</span>
+    </button>
+  )
+}
+
+/** A group of rows on one card. */
+export function MenuGroup({ children }: { children: ReactNode }) {
+  return <div className="set-card menu-group">{children}</div>
+}
+
+/** One row of a menu: icon, title, an optional line under it, and on the right a chevron (`chevron`: it opens another
+ *  sheet), a switch (`on` with `onSwitch`: the whole row is the switch, it flips in place) or nothing. `danger`: red;
+ *  `disabled`: dimmed, with the reason as the line under it. The line is the row's description for screen readers, so
+ *  its accessible name is the title alone. */
+export function MenuRow({
+  icon,
+  title,
+  sub,
+  onClick,
+  chevron,
+  danger,
+  disabled,
+  on,
+  onSwitch
+}: {
+  icon: IconName
+  title: string
+  sub?: ReactNode
+  onClick?: () => void
+  chevron?: boolean
+  danger?: boolean
+  disabled?: boolean
+  on?: boolean
+  onSwitch?: (v: boolean) => void
+}) {
+  const subId = useId()
+  const isSwitch = onSwitch != null
+  return (
+    <button
+      className={`menu-row${danger ? ' danger' : ''}`}
+      disabled={disabled}
+      {...(isSwitch ? { role: 'switch', 'aria-checked': Boolean(on) } : {})}
+      aria-describedby={sub != null ? subId : undefined}
+      onClick={() => {
+        haptic()
+        if (isSwitch) onSwitch(!on)
+        else onClick?.()
+      }}
+    >
+      <span className="menu-row-icon" aria-hidden="true"><Icon n={icon} size={20} /></span>
+      <span className="menu-row-text">
+        <span className="menu-row-title">{title}</span>
+        {sub != null && <span className="menu-row-sub" id={subId}>{sub}</span>}
+      </span>
+      {isSwitch && <span className={`switch${on ? ' on' : ''}`} aria-hidden="true"><span /></span>}
+      {chevron && <span className="set-chev" aria-hidden="true"><Icon n="right" /></span>}
+    </button>
+  )
+}
+
+/** A note at the end of a menu. */
+export function MenuNote({ children }: { children: ReactNode }) {
+  return <div className="menu-note dim">{children}</div>
 }
 
 /** A Row that shows the current choice and opens a PickerSheet. */

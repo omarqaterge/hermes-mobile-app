@@ -1,5 +1,6 @@
 // What the interface costs at the moments a person feels: start-up, opening a chat, the first words of a streamed reply,
-// scrolling a long chat, opening the chat list and scrolling it, in a desktop browser with the CPU slowed down (4× by default).
+// scrolling a long chat, opening the chat list and scrolling it, opening a row's menu and the chat's menu, in a desktop
+// browser with the CPU slowed down (4× by default).
 // Needs the page and the mock running (`run.sh --serve` in another shell, with the same HM_E2E_* ports if it chose others).
 //   node uicost.cjs [--runs 5] [--throttle 4] [--motion off|reduced|full] [--glass on|off]
 // Opening the chat list, opening a chat from it and the first words of a reply are tapped and timed inside the page,
@@ -13,6 +14,13 @@ const { MOCK, WEB, sleep } = require('./lib.cjs')
 const opt = (name, dflt) => {
   const i = process.argv.indexOf('--' + name)
   return i > 0 ? process.argv[i + 1] : dflt
+}
+// Options are separate words (`--motion off`); one quoted word ("--motion off --glass off") would be ignored and the page
+// would run with the app's own defaults, so it stops instead.
+const glued = process.argv.slice(2).find(a => /^--\S+\s/.test(a))
+if (glued) {
+  console.error(`uicost: "${glued}" is one word; give the options as separate words (--motion off --glass off)`)
+  process.exit(2)
 }
 const runs = Number(opt('runs', 5))
 const throttle = Number(opt('throttle', 4))
@@ -85,6 +93,12 @@ async function frameScroll(page, work, find, n, by) {
   return { ms: Math.round(frames.reduce((a, b) => a + b, 0)), work: (await work()) - w0, slow: frames.filter(f => f > 25).length, p95: sorted[Math.floor(sorted.length * 0.95)] }
 }
 
+// A menu is shown: its sheet is on the page and no animation of it still runs.
+const menuShown = () => {
+  const d = document.querySelector('[role="dialog"]')
+  return !!d && d.getBoundingClientRect().height > 0 && !d.getAnimations().some(a => a.playState === 'running')
+}
+
 async function one(browser) {
   const out = {}
   // Start-up: the page loads with the last chat, until its reply is on screen.
@@ -109,8 +123,16 @@ async function one(browser) {
     }, 60, 40)
     await page.evaluate(() => { const d = document.querySelector('[role="complementary"]') || document.querySelector('aside'); for (const e of d.querySelectorAll('*')) e.scrollTop = 0 })
     await sleep(300)
+    // Opening a row's menu (its Chat options button), until the sheet is up and still; then it is closed (untimed).
+    out.rowMenu = await inPage(page, work, 'aside [aria-label="Chat options"]', null, menuShown)
+    await page.evaluate(() => document.querySelector('.sheet-backdrop').click())
+    await sleep(500)
     out.chat = await inPage(page, work, null, 'Chat 46', () => [...document.querySelectorAll('.msg.assistant')].some(e => e.textContent.includes('answer s-46')))
     await sleep(800)
+    // Opening the chat's menu from the header, until the sheet is up and still; then it is closed (untimed).
+    out.chatMenu = await inPage(page, work, 'header [aria-label="Chat options"]', null, menuShown)
+    await page.evaluate(() => document.querySelector('.sheet-backdrop').click())
+    await sleep(500)
     // The first words of a streamed reply, from Send.
     await page.getByPlaceholder('Message Hermux').fill('bench stream 1500 40')
     out.stream = await inPage(page, work, 'button.send[aria-label="Send"]', null, () => [...document.querySelectorAll('.msg.assistant')].some(e => e.textContent.includes('Step 1: checking the result')))
@@ -148,7 +170,7 @@ async function one(browser) {
   await browser.close()
   const med = (k, f) => all.map(r => r[k][f]).sort((a, b) => a - b)[Math.floor(all.length / 2)]
   console.log(`median of ${runs}, CPU ×${throttle}${motion ? `, motion ${motion}` : ''}${glass ? `, glass ${glass}` : ''}:`)
-  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list']]) {
+  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"]]) {
     console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${k === 'scroll' || k === 'listScroll' ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
   }
 })()

@@ -20,7 +20,7 @@ module.exports = async t => {
   const lastRow = page.locator('.drawer .session-row').last()
   const delId = await lastRow.evaluate(el => el.textContent)
   await lastRow.getByRole('button', { name: 'Chat options' }).click()
-  await page.locator('.menu-item.danger').click()
+  await page.getByRole('dialog', { name: 'Chat options' }).getByRole('button', { name: 'Delete', exact: true }).click()
   await page.locator('.dialog').getByRole('button', { name: 'Delete', exact: true }).click()
   await sleep(600)
   const delRpcs = rpcs("session.delete")
@@ -264,19 +264,23 @@ module.exports = async t => {
     const ren = later(calls()).filter(c => c.http === 'PATCH' && c.path === '/api/sessions/s-43')
     check(ren.length === 1 && ren[0].body.title === 'Chat 43 renamed', `chat list: Rename in a row's menu stores the title (${JSON.stringify(ren.map(c => c.body.title))})`)
     await title.waitFor({ timeout: 5000 }).catch(() => {}) // the mock's list still has the old title
-    // Pin to top, then Unpin: kept on the phone at once and sent to the plugin (a second later, newest wins).
-    const prefs = () => later(calls()).filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/prefs').map(c => c.body.pinned)
+    // Pin to top, then Unpin: kept on the phone at once and sent to the plugin (a second later, newest wins). The mock is
+    // shared by every page of the run, so only writes of a change made since this check began count (`at`, the change's
+    // time, not the time it reached the mock): another page's older write arriving late is not this page's pin.
+    const writes = () => later(calls()).filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/prefs')
+    const prefs = () => writes().filter(c => (c.body.at || 0) >= since).map(c => c.body.pinned)
+    const seen = () => JSON.stringify(writes().map(c => [c.body.pinned, (c.body.at || 0) - since]))
     const stored = () => dl.evaluate(() => JSON.parse(localStorage.getItem('hm.order.v1.default') || 'null')?.pinned || [])
     const sent = async n => { for (let i = 0; i < 30 && prefs().length < n; i++) await dl.waitForTimeout(100); return prefs() }
     await (await rowMenu()).getByRole('button', { name: 'Pin to top' }).click()
     const pinnedGroup = await dl.getByText(/Pinned/).first().waitFor({ timeout: 3000 }).then(() => true, () => false)
     const pinStored = await stored()
     const pinSent = await sent(1)
-    check(pinnedGroup && pinStored[0] === 's-43' && pinSent.length === 1 && pinSent[0][0] === 's-43', `chat list: Pin to top pins the chat (${JSON.stringify(pinStored)}, sent ${JSON.stringify(pinSent)})`)
+    check(pinnedGroup && pinStored[0] === 's-43' && pinSent.length === 1 && pinSent[0][0] === 's-43', `chat list: Pin to top pins the chat (${JSON.stringify(pinStored)}, sent ${JSON.stringify(pinSent)}, every write with its time ${seen()})`)
     await (await rowMenu()).getByRole('button', { name: 'Unpin' }).click()
     const unpinStored = await stored()
     const unpinSent = await sent(2)
-    check(!unpinStored.includes('s-43') && unpinSent.length === 2 && !unpinSent[1].includes('s-43'), `chat list: Unpin takes it out again (${JSON.stringify(unpinStored)}, sent ${JSON.stringify(unpinSent)})`)
+    check(!unpinStored.includes('s-43') && unpinSent.length === 2 && !unpinSent[1].includes('s-43'), `chat list: Unpin takes it out again (${JSON.stringify(unpinStored)}, sent ${JSON.stringify(unpinSent)}, every write with its time ${seen()})`)
     // Archive: Hermes is asked to hide the chat.
     await (await rowMenu()).getByRole('button', { name: 'Archive' }).click()
     await dl.waitForTimeout(300)
@@ -410,5 +414,62 @@ module.exports = async t => {
     check(got && order1[0] < order1[1] && order1[1] < order1[2] && (await d.panel.getByRole('heading', { name: 'Today' }).count()) === 0, `custom order: a new message and reopening the panel leave it as it is (${got}, ${order1})`)
     await co.close()
     await mock({ unbump: true, dropChats: ['s-held', 'cron_j1_20261117_090000', 'local-0a1b2c'], prefsOrder: savedPrefs })
+  }
+
+  // ── a row's menu (spec 3.13): the chat menu's header and look, one group, a solid sheet over the glass panel, closed by
+  // Back with the panel left open; at 320 px in Default, Light and OLED, glass on and off ──
+  {
+    const { WEB, menuFits, contrast } = require('../lib.cjs')
+    const at = async (store = {}, w = 375, h = 812) => {
+      const p = await t.browser.newPage({ viewport: { width: w, height: h } })
+      await p.addInitScript(s => {
+        try {
+          if (sessionStorage.getItem('opened')) return
+          sessionStorage.setItem('opened', '1')
+          for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v)
+        } catch { /* */ }
+      }, store)
+      await p.goto(WEB + '/')
+      await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      await p.getByRole('button', { name: /^Sessions/ }).click()
+      return p
+    }
+    const rowMenu = async p => {
+      const panel = p.getByRole('complementary', { name: 'Chats' })
+      const row = panel.locator('div').filter({ has: p.getByText('Chat 3', { exact: true }) }).filter({ has: p.getByRole('button', { name: 'Chat options' }) }).last()
+      await row.getByRole('button', { name: 'Chat options' }).click()
+      const d = p.getByRole('dialog', { name: 'Chat options' })
+      await d.waitFor({ timeout: 3000 })
+      return d
+    }
+    const rp = await at({ 'hm.glass': '1' })
+    const d = await rowMenu(rp)
+    const names = await d.evaluate(el => [...el.querySelectorAll('button')].map(b => b.getAttribute('aria-label') || b.textContent.trim()))
+    const head = (await d.innerText()).split('\n')[0].trim()
+    check(head === 'Chat 3' && JSON.stringify(names) === JSON.stringify(['Rename', 'Pin to top', 'Archive', 'Delete']), `row menu: the chat's title with Rename, then Pin to top, Archive and Delete, nothing that needs the chat open (${head}, ${JSON.stringify(names)})`)
+    // Glass never lies on glass: the panel stays glass and open behind, the menu is solid.
+    const blurOf = loc => loc.evaluate(el => {
+      const f = pseudo => getComputedStyle(el, pseudo).backdropFilter || getComputedStyle(el, pseudo).webkitBackdropFilter || 'none'
+      return { self: f(), layer: f('::before'), x: el.getBoundingClientRect().left }
+    })
+    const m = await blurOf(d)
+    const pn = await blurOf(rp.getByRole('complementary', { name: 'Chats' }))
+    const looks = { menu: m.layer, menuSelf: m.self, panel: pn.layer, panelX: pn.x }
+    check(!/blur/.test(looks.menu) && !/blur/.test(looks.menuSelf) && /blur/.test(looks.panel) && looks.panelX >= 0, `row menu: a solid sheet over the open glass panel, never glass on glass (menu ${looks.menu}, panel ${looks.panel}, panel at ${looks.panelX})`)
+    // Back closes the menu and leaves the panel open where it was.
+    await rp.evaluate(() => window.hermesBack())
+    const gone = await d.waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false)
+    const panelStill = await rp.getByRole('complementary', { name: 'Chats' }).evaluate(el => el.getBoundingClientRect().left >= 0)
+    check(gone && panelStill, `row menu: Back closes it and the chat list stays open (closed ${gone}, panel open ${panelStill})`)
+    await rp.close()
+    for (const [theme, glass] of [['default', '1'], ['light', '1'], ['light', '0'], ['oled', '0']]) {
+      const lp = await at({ 'hm.theme': theme, 'hm.glass': glass }, 320, 640)
+      const md = await rowMenu(lp)
+      const fit = await menuFits(lp, md, true) // the row menu is solid in every form, so its words are measured always
+      const short = fit.names.map((n, i) => [n, fit.hs[i]]).filter(([n, h]) => n !== 'Rename' && h < 52)
+      const low = fit.colours.map(([n, fg, bg]) => [n, contrast(fg, bg)]).filter(([, c]) => c < 4.5)
+      check(!fit.over && fit.grew.length === 0 && short.length === 0 && low.length === 0, `row menu at 320 px (${theme}, glass ${glass === '1' ? 'on' : 'off'}): no label wraps under a wider font, nothing overflows, rows 52 px or more, words 4.5:1 (grew ${JSON.stringify(fit.grew)}, short ${JSON.stringify(short)}, low ${JSON.stringify(low.map(([n, c]) => `${n} ${c.toFixed(2)}`))}, over ${fit.over})`)
+      await lp.close()
+    }
   }
 }

@@ -60,13 +60,15 @@ export function updateOrder(profile: string, fn: (o: Order) => Order): void {
 }
 
 const synced = new Set<string>()
-/** Pull the phone's copy once per profile per run; adopt it if newer, else upload ours. */
-function syncOrder(profile: string): void {
+/** Pull the phone's copy once per profile per run; adopt it if newer, else upload ours (debounced like any change). The
+ *  local copy is compared as it is when the answer arrives, not when it was asked for: a pin or a reorder made while the
+ *  answer was on its way is newer than the phone's copy and must not be overwritten by it. */
+export function syncOrder(profile: string): void {
   if (synced.has(profile)) return
   synced.add(profile)
-  const local = getOrder(profile)
   api<{ order: Order | null }>('GET', PREFS)
     .then(r => {
+      const local = getOrder(profile)
       const remote = r.order
       if (remote && Array.isArray(remote.pinned) && (remote.at || 0) > (local.at || 0)) {
         const next: Order = { pinned: remote.pinned, manual: Array.isArray(remote.manual) ? remote.manual : null, at: remote.at }
@@ -77,7 +79,7 @@ function syncOrder(profile: string): void {
         const o = { ...local, at: local.at || Date.now() }
         cache.set(profile, o)
         saveLocal(profile, o)
-        api('PUT', PREFS, { pinned: o.pinned, manual: o.manual, at: o.at }).catch(() => {})
+        push(o) // the same debounced upload as a change: one PUT, the newest copy, when a change is already on its way
       }
     })
     .catch(() => synced.delete(profile)) // retry on the next mount

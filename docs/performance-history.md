@@ -157,6 +157,47 @@ machine, Animations Off still measured about 190 ms to open the list on both bui
 measured 8 to 11 ms); the two builds agree, so the difference is in the machine or the moment's timing, not this change.
 Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
 
+The chat menu (task 05): `uicost.cjs --runs 9` at 4x CPU, two rounds each, run in turn against the build before it
+(`redesign` at the start of the task) on one machine, with the options as separate words (`--motion off --glass off`).
+`uicost.cjs` gained two moments for this: opening a row's menu in the open chat list and opening the chat's menu from the
+header, each until the sheet is on the page and none of its animations still runs. Both builds were measured with the
+new script.
+
+| Date (change) | Moment | Before | After | Change |
+|---|---|---|---|---|
+| 2026-11-17 (chat menu, effects on: Glass on, Animations Full) | Start-up | 511 / 518 ms, work 487 / 493 ms | 513 / 517 ms, work 490 / 494 ms | none |
+| | Opening a chat | 32 / 32 ms, work 40 / 40 ms | 31 / 32 ms, work 41 / 41 ms | none |
+| | First words of a reply | 394 / 394 ms | 394 / 396 ms | none |
+| | Scrolling a long chat | work 274 / 274 ms, no frame over 25 ms | work 270 / 273 ms, no frame over 25 ms | none |
+| | Opening the chat list | 197 / 197 ms, work 22 / 22 ms | 194 / 196 ms, work 23 / 21 ms | none |
+| | Scrolling the chat list | work 10 / 12 ms | work 10 / 11 ms | none |
+| | Opening a row's menu | 411 / 425 ms, work 24 / 23 ms | 426 / 411 ms, work 24 / 26 ms | time none (both builds land on 411 or 426 ms: the spring's last frame), work +0 to 3 ms |
+| | Opening the chat's menu | 424 / 425 ms, work 27 / 26 ms | 426 / 412 ms, work 30 / 28 ms | time none, work +2 to 3 ms |
+| 2026-11-17 (chat menu, effects off: Glass off, Animations Off) | Start-up | 509 / 507 ms | 503 / 509 ms | none |
+| | Opening a chat | 28 / 29 ms | 28 / 28 ms | none |
+| | Scrolling a long chat | work 262 / 264 ms | work 255 / 259 ms | none |
+| | Opening the chat list | 11 / 11 ms, work 20 / 19 ms | 11 / 11 ms, work 19 / 19 ms | none |
+| | Opening a row's menu | 10 / 10 ms, work 13 / 13 ms | 12 / 12 ms, work 15 / 15 ms | +2 ms |
+| | Opening the chat's menu | 10 / 10 ms, work 12 / 13 ms | 11 / 11 ms, work 14 / 14 ms | +1 ms |
+
+Where the menus' extra milliseconds go, from a trace of 15 opens each (Animations Off, glass off, 4x CPU; the main
+thread's tasks from the tap to two frames later): a row's menu 11.9 ms before, 12.2 ms after (the same within the
+trace's noise: it holds the same rows as before plus the header's Rename button); the chat's menu 12.0 ms before,
+14.2 ms after (script +0.9 ms, style +0.3 ms, layout and paint about +0.6 ms), which is the content the menu gained:
+four quick-action tiles and three groups instead of one list of nine rows. The menu shows within the same frame on both
+builds; at 4x CPU the difference is 1 to 2 ms out of 10, on a phone well under one frame. The first build of the menus'
+CSS had four rules ending in an `:is()` list (tested against every element at every restyle); they are plain selector
+lists now.
+
+**Animations Off and the chat list.** Task 04's "effects off" rows (about 190 ms to open the list, where tasks 02a and
+03 had 7 to 11 ms) did not measure Animations Off: on `redesign` before this task, the same script with `--motion off
+--glass off` opens the list in 11 ms (above), and the panel's slide is instant under Off (`panel.css` takes its length
+from `--motion-base`, 0 ms under Off, and `motion.css` names `.drawer` and `.drawer-backdrop` in its Off list). The
+190 ms is the list's slide under Animations Full: `uicost.cjs` reads `--motion` and `--glass` as separate words, and when
+they reach it as one word (a quoted `"--motion off --glass off"`, as happened in this task's first try) it applies
+neither and prints no "motion off, glass off" in its median line, so the page runs with the app's own defaults (Full,
+glass on). Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

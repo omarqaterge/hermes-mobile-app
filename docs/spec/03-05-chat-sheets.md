@@ -1,9 +1,9 @@
 ### 3.5 Chat sheets
 
-All the sheets below share the `Shell` frame in `web/src/components/Sheets.tsx` (except the two menus, which use a smaller frame): a bottom sheet with a grip, a title, and content that scrolls. Dismiss with a tap outside, Android Back, or by dragging down on the top 64 px (`useSheetDrag`: closes after a 110 px drag, or a quick flick over 30 px).
+All the sheets below share the `Shell` frame in `web/src/components/Sheets.tsx` (except the two menus, which are `MenuSheet`s, 3.20): a bottom sheet with a grip, a title, and content that scrolls. Dismiss with a tap outside, Android Back, or by dragging down on the top 64 px (`useSheetDrag`: closes after a 110 px drag, or a quick flick over 30 px).
 
 #### Model sheet
-**Opens from:** the composer's model chip (in the tray above the text box, 3.4 Tray); the Add picker's model row; the draft menu's "Change model". **Closes with:** picking a model, tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ModelSheet`.
+**Opens from:** the composer's model chip (in the tray above the text box, 3.4 Tray); the Add picker's model row. **Closes with:** picking a model, tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ModelSheet`.
 
 **Layout, top to bottom:**
 
@@ -45,44 +45,43 @@ How picking works (`setModel` in `gateway.ts`):
 **Rules:** unlike the inline slash menu it does not hide commands the app already covers.
 
 #### Chat menu sheet
-**Opens from:** the header title; the header Chat options button. **Closes with:** any item (except Rename, File checkpoints and Chat details which keep the sheet open or swap it), tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ChatMenuSheet`.
+**Opens from:** the header Chat options button (the header title opens the Backend status sheet, 3.2). **Closes with:** most items (Rename's Save, a quick action, Undo last turn, Archive, Delete), tap outside, drag down, Back. Read replies aloud flips in place and keeps the menu open; File checkpoints and Chat details swap it for their sheet. **Source:** `web/src/components/ChatMenu.tsx` `ChatMenuSheet`, built from the menu parts of 3.20 (`MenuSheet`, `MenuHeader`, `MenuActions`, `MenuGroup`, `MenuRow`); Pin, Archive and Delete through `web/src/chatactions.ts`, the same code the chat list's row menu uses (3.13).
+
+One menu for one chat: the header's menu and a row's menu in the chat list share the header and the look; this one adds what needs the chat to be open. It is a glass sheet (`aria-label` "Chat options") over the chat, which dims and (Full animations) steps back.
 
 **Layout, top to bottom:**
 
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
 |---|---|---|---|---|
-| Title | The chat title (branch icon for a branch). | | Drag down closes. | "New chat" if untitled. |
-| Search in chat | 🔍 | Closes the sheet and opens the find bar (3.2). | none | |
-| Rename | ✏️ | The list becomes a form: field "Chat title" and Save. Save renames through the dashboard (`PATCH /api/sessions/<id>`), keeps the branch mark of a branch, and toasts "Renamed". | none | Errors toast. |
-| Read every reply aloud | 🔊 with sub-line "On" / "Off", plus " · this chat only" when the chat overrides the global setting or " · all chats" when the global setting is on. | Toggles read-aloud for this chat only (`setAutoReadFor`), toast "Reading every reply aloud in this chat" / "Read-aloud off for this chat". | none | |
-| Canvas | 🗒 with sub-line "N document(s)" or "Documents, notes and pages beside the chat". | Opens the canvas (3.7). | none | |
-| Share chat | 📤 "As Markdown, to any app" | Shares the whole chat as Markdown through the Android share sheet (`shareText` bridge call, up to 400,000 characters). Outside the app it copies instead and toasts "Copied as Markdown (sharing works in the phone app)". | none | |
-| File checkpoints | ⏪ "See and undo Hermux's file changes" | Swaps to the Rollback sheet. | none | |
-| Undo last turn | ↶ | Closes the sheet and runs `session.undo`, reloads the chat, toast "Last turn undone". | none | Disabled while a reply runs. |
-| Chat details | ℹ️ | Swaps to the Chat details sheet. | none | |
-| Delete | 🗑 (red) | Asks "Delete “<title>”?" ("The whole conversation is removed. This cannot be undone."). On confirm: `deleteSession` and toast "Deleted". | none | |
+| Header (`ChatMenuHeader`) | The chat title (two lines at most; the branch icon for a branch), a dim line under it with the model and, when there are several bots, the bot ("mock-model · Work"), and a pencil button on the right (`aria-label` "Rename"). | Rename swaps the header for the field "Chat title" and Save. Save closes the menu and renames through the dashboard (`PATCH /api/sessions/<id>`), keeps the branch mark of a branch, and toasts "Renamed". | Drag down on the header strip closes. | "New chat" if untitled. Errors toast. |
+| Quick actions (`MenuActions`) | Four equal tiles, an icon above a short label: Search, Canvas, Share, Pin (Unpin when pinned). | **Search** (`aria-label` "Search in chat"): closes the menu and opens the find bar (3.2). **Canvas** (`aria-label` "Canvas", or "Canvas (N documents)"): opens the canvas (3.7); a small count on its icon when the chat has documents. **Share** (`aria-label` "Share chat"): shares the whole chat as Markdown through the Android share sheet (`shareText` bridge call, up to 400,000 characters); outside the app it copies instead and toasts "Copied as Markdown (sharing works in the phone app)". **Pin** (`aria-label` "Pin to top") / **Unpin**: pins the chat first in Pinned or unpins it (`pinChat`), toast "Pinned" / "Unpinned", as the chat list does. Each closes the menu. | none | |
+| Read replies aloud | A row with a speaker icon and a real switch (`role="switch"`, `aria-checked`); the line under it says "Only this chat" when this chat overrides the setting for all chats, else "Follows the setting for all chats". | Flips read-aloud for this chat (`setAutoReadFor`) in place: the menu stays open, the switch and the line change, and the toast says "Reading every reply aloud in this chat" / "Read-aloud off for this chat". | none | |
+| Undo last turn | A row. | Closes the menu and runs `session.undo`, reloads the chat, toast "Last turn undone". | none | Disabled while a reply runs, with "Wait for the reply to finish" under it. |
+| File checkpoints | A row with a chevron. | Swaps to the File checkpoints sheet. | none | |
+| Chat details | A row with a chevron. | Swaps to the Chat details sheet. | none | |
+| Archive | A row. | Closes the menu and archives the chat (`archiveChat`: `session.set_hidden` with `hidden: true`, the chat leaves Pinned, toast "Archived"); the open chat gives way to a new draft, as archiving it from the chat list does. | none | Errors toast. |
+| Delete | A red row, last. | Closes the menu and asks "Delete “<title>”?" ("The whole conversation is removed. This cannot be undone."). On confirm: `deleteChat` (the chat's live sessions are closed first, `session.delete`, it leaves Pinned and the custom order) and toast "Deleted". | none | |
 
-**Data:** `PATCH /api/sessions/<id>`, `session.undo`, `session.delete`, `session.close`, plugin `POST /cleanup` (removes the deleted chat's photos, files and canvas from the phone, keeping what is still attached in the composer), plugin `DELETE /checkpoints`.
-**Rules:** deleting a chat first closes its live sessions, because Hermes refuses to delete a chat that still has one. The share text format is `chatMarkdown` (`web/src/export.ts`): `# <title>`, `_Exported from Hermux on <date>_`, then `**You:**` and `**Hermux:**` blocks, attachments as `_Attached: …_`, tool calls as one italic line `_🔧 name: context (failed)_`, sub-agents as `_🤖 Sub-agent: goal_`, error notices as `> ⚠ …` quotes; info notices are left out. Pin and archive are not in this menu; they live on the drawer's session rows (3.13).
+**Data:** `PATCH /api/sessions/<id>`, `session.undo`, `session.set_hidden`, `session.delete`, `session.close`, plugin `POST /cleanup` (removes the deleted chat's photos, files and canvas from the phone, keeping what is still attached in the composer), plugin `DELETE /checkpoints`, the pins in `hm.order.v1.<profile>` (mirrored to the plugin's `/prefs`, `web/src/order.ts`).
+**Rules:** deleting a chat first closes its live sessions, because Hermes refuses to delete a chat that still has one. Pin, Archive and Delete tell the chat list's snapshot exactly as the list's own menu does (`chatListChanged` after Archive and Delete, nothing after Pin; 3.13), because both call the same functions in `chatactions.ts`. The share text format is `chatMarkdown` (`web/src/export.ts`): `# <title>`, `_Exported from Hermux on <date>_`, then `**You:**` and `**Hermux:**` blocks, attachments as `_Attached: …_`, tool calls as one italic line `_🔧 name: context (failed)_`, sub-agents as `_🤖 Sub-agent: goal_`, error notices as `> ⚠ …` quotes; info notices are left out.
 
 #### Draft menu sheet
-**Opens from:** Chat options on the empty new-chat screen. **Closes with:** an item, tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `DraftMenuSheet`.
+**Opens from:** Chat options on the empty new-chat screen. **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/ChatMenu.tsx` `DraftMenuSheet`.
 
 **Layout, top to bottom:**
 
 | Element | Looks like | Tap | Long-press / swipe | States (empty, loading, error, disabled) |
 |---|---|---|---|---|
-| Title | "New chat" | | | |
-| Read every reply aloud | 🔊 with "On"/"Off · applies once the chat starts" | Sets the choice for the chat that will be created (`setDraftRead`); toast "This chat will read every reply aloud" / "Read-aloud off for this chat". | none | |
-| Change model | 🤖 | Opens the Model sheet. | none | |
+| Header | "New chat" | | | |
+| Read replies aloud | A row with a switch (`role="switch"`), "Applies once the chat starts" under it. | Flips the choice for the chat that will be created (`setDraftRead`) in place, the menu stays open; toast "This chat will read every reply aloud" / "Read-aloud off for this chat". | none | |
 | Note | "Rename, pin, archive and delete are available once you have sent a message." | | | |
 
-**Data:** `setDraftRead` in `voice.ts`, applied by `applyDraftRead` when the chat gets its id.
+There is no model row: the model chip is on the same screen (3.4). **Data:** `setDraftRead` in `voice.ts`, applied by `applyDraftRead` when the chat gets its id.
 
 #### Chat details sheet
 **Opens from:** Chat menu → Chat details. **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `SessionActionsSheet`.
 
-Read-only key/value list: Title, Model, Provider, Profile, Working dir (the chat's `cwd`), then when usage is known Tokens ("N in · M out"), Context ("N% used") and Cost (`$0.0000`), and Session id. Tapping the session id copies it (toast "Copied"). Missing values show "—". **Data:** `active.info` and `active.usage`.
+Read-only facts in groups (`Section` and `Row`, 3.20), in plain words: **Chat** (Title; Bot, the bot's display name or its name; Working folder, the chat's `cwd`), **Model** (Model, Provider), **Usage** only when something is known (Tokens "N in · M out", Context "N% used", Cost `$0.0000`, each only when known), then **Chat ID** (the stored chat id) with a copy button (`aria-label` "Copy chat ID") that copies it and toasts "Copied". Missing values show "—". **Data:** `active.info`, `active.usage` and the bots list (`profiles`).
 
 #### Context window sheet
 **Opens from:** the context ring in the composer's model row, in the tray (`setState({ sheet: 'context' })`). **Closes with:** tap outside, drag down, Back. **Source:** `web/src/components/Sheets.tsx` `ContextSheet`, `useCompress`.
@@ -141,6 +140,6 @@ Hermes snapshots a folder before it edits a file there (once per turn). The plug
 - **Copy reply** (assistant message): see 3.3.
 - **Auto: run without asking** (composer's Auto button): see 3.2.
 
-These are `PickerSheet` instances from `web/src/components/ui.tsx` (3.20): a list with an optional icon, a title, a sub-line, and a check on the current choice. Picking closes the picker.
+These are `PickerSheet` instances from `web/src/components/ui.tsx` (3.20): rows on a card, with the menus' row look (an optional icon, a title, a sub-line, and a check on the current choice). Picking closes the picker.
 
 ---
