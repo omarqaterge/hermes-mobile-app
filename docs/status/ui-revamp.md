@@ -63,6 +63,9 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     the test mounts React roots and never unmounts them, so scheduled work can run after happy-dom has torn the window
     down when the machine is busy. Neither the test nor what it imports is changed by this task; unmounting its roots
     belongs in its own PR.
+  - `tools/test_hermes_patches.sh` leaves its clone of Hermes (about 186 MB) in the temp folder after every run: its
+    `trap` removes the two worktrees and `$work`, not `$src` (line 15). On a full disk the next run fails with "No space
+    left on device". Fixing the script belongs in its own PR.
 
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
