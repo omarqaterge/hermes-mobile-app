@@ -1083,6 +1083,17 @@ textarea {
   line-height: 1.4;
   max-height: 180px;
 }
+/* An empty box is one line whatever the placeholder's length and the phone's font: the placeholder ends in "…"
+   instead of wrapping, so the box (measured from scrollHeight) and the bar below the chat don't grow. */
+.composer textarea:placeholder-shown {
+  white-space: nowrap;
+  overflow: hidden;
+}
+.composer textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .composer .icon-btn {
   width: 38px;
   height: 38px;

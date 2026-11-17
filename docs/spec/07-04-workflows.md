@@ -15,7 +15,7 @@ Three files. Two environment variables, `OPENUI_TELEMETRY_DISABLED=1` and `DO_NO
 | `android` | Android Java compiles | Temurin JDK 21; caches `~/.cache/hermes-mobile` (key `android-all-16`); `tools/java-check.sh` (which checks the jar's SHA-256 and also runs `test_shizuku_keeper.sh`), `tools/api-check.sh`, `tools/test_setup_lines.sh`, `tools/test_pending_ask.sh`, `tools/test_install_phase.sh`, `tools/test_bridge_key.sh`, `tools/test_update_url.sh`, `tools/test_share_uri.sh`, `tools/test_notification_unlock.sh`, `tools/test_keystore_pass.sh`, `tools/test_update_version.sh`, `tools/test_version_code.sh`, `tools/test_release_gate.sh`, `tools/test_autostart.sh`, `tools/test_devtools_guard.sh`. |
 | `hermes-contract` | Mock Hermes matches the pinned Hermes | Only when `contract` is true. Node 22 with npm cache, `astral-sh/setup-uv` with its cache keyed on the Hermes pin; `npm ci` in `tools/web-e2e` (no browser download), then `tools/hermes-contract/run.sh "$RUNNER_TEMP/hermes-contract"` (it also uses the runner's `python3` for the fake model). 15-minute limit; a run takes about 3 minutes (127 cases). |
 
-Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`, `tools/web-e2e/streamcost.cjs`.
+Not in CI: `e2e.py` and the other phone tools, `test_bghost.sh`, `tools/web-e2e/coldstart.cjs`, `tools/web-e2e/streamcost.cjs`, `tools/web-e2e/uicost.cjs`.
 
 **`release.yml`, workflow "Release"**, runs on a pushed tag matching `v*`. First the job `gate`, then two build jobs, so that no npm package's code runs where the signing key is (a package's install script or build plugin can leave a process running for the rest of its job, but cannot reach another job's runner); the workflow's token is read-only except in `apk`:
 

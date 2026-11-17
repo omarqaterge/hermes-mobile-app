@@ -3,7 +3,7 @@ import { appVersion, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow } from './gateway'
-import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
+import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Toast, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { stepMark, stepWord } from './toolsay'
 import { foldMap } from './fold'
@@ -52,6 +52,8 @@ import { bootMark } from './boot'
 import { UninstallResume } from './components/Uninstall'
 import { toggleSide, useSidePanel } from './sidepanel'
 import { Icon } from './components/icons'
+import { barInsets, onBarInsets, watchBars } from './barinsets'
+import { lessMotion, motionLevel, setAppAway } from './motion'
 
 declare global {
   interface Window {
@@ -83,13 +85,18 @@ window.hermesBack = () => {
 window.hermesOpenSession = (id: string, draft?: string) => openSessionFromNotification(id, draft)
 // Called by the shell when the app returns to the foreground.
 window.hermesResume = () => {
+  setAppAway(false)
   noteBack()
   if (getState().conn !== 'open') reconnectNow()
   refreshBg()
 }
 // Called by the shell when the app leaves the foreground (Home, another app, screen off): the open chat was seen until
 // now (visit.ts). The page's own visibilitychange may come later or not at all in a WebView.
-window.hermesPause = () => noteAway(getState().active?.storedId)
+window.hermesPause = () => {
+  setAppAway(true) // repeating animations stand still while the app is away (motion.ts)
+  noteAway(getState().active?.storedId)
+}
+document.addEventListener('visibilitychange', () => setAppAway(document.visibilityState === 'hidden'))
 
 function Header() {
   const title = useStore(shownTitle)
@@ -563,7 +570,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       const r = firstRange(node, term)
       const box = (r ? r.getBoundingClientRect() : node.getBoundingClientRect())
       const view = el.getBoundingClientRect()
-      el.scrollTop += box.top - view.top - view.height / 2 + box.height / 2
+      const bars = barInsets() // the list reaches under the glass bars: centre in the part between them
+      el.scrollTop += box.top - (view.top + bars.top) - (view.height - bars.top - bars.bottom) / 2 + box.height / 2
     }
     return () => {
       unmarkAll()
@@ -582,6 +590,16 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   useLayoutEffect(() => {
     stick.current = true
   }, [sessionKey])
+
+  // A bar grew or shrank (the status bar appeared, a banner left): a reader at the end stays at the end.
+  useEffect(
+    () =>
+      onBarInsets(() => {
+        const el = scroller.current
+        if (el && stick.current) el.scrollTop = el.scrollHeight
+      }),
+    []
+  )
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -613,7 +631,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     const top = mark.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
     if (top >= el.scrollHeight - el.clientHeight) return // already within the last screenful: stay at the end
     stick.current = false
-    el.scrollTop = top - 8
+    el.scrollTop = top - 8 - barInsets().top
     setShowJump(true)
   }, [items, dividerIdx, start, sessionKey, previewing]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -635,7 +653,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     topRaf.current = 0
     const el = scroller.current
     if (!el) return
-    setTall(el.scrollHeight > 3 * el.clientHeight)
+    const bars = barInsets() // what scrolls between the glass bars
+    setTall(el.scrollHeight - bars.top - bars.bottom > 3 * (el.clientHeight - bars.top - bars.bottom))
     const ms = marksRef.current
     if (ms.length < SCRUB_MIN) return
     // Each mark's top in the list's content (`.chat` is the children's offsetParent); marks above the drawn window
@@ -645,7 +664,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       const node = m.idx >= startRef.current ? (el.children[first + m.idx - startRef.current] as HTMLElement | undefined) : undefined
       return node ? node.offsetTop : 0
     })
-    const pos = railPosition(tops, readLine(el.scrollTop, el.clientHeight, el.scrollHeight))
+    const pos = railPosition(tops, readLine(el.scrollTop + bars.top, el.clientHeight - bars.top - bars.bottom, el.scrollHeight - bars.bottom))
     railPos.current = pos
     paintRail(rail.current, pos, ms.length)
     setCurMark(Math.floor(pos + 1e-6))
@@ -666,7 +685,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     const node = el.children[(start > 0 ? 1 : 0) + scrubTo - start]
     if (!node) return
     stick.current = false
-    el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - 8
+    el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - barInsets().top - 8
     node.classList.add('hit-flash')
     setTimeout(() => node.classList.remove('hit-flash'), 2500)
   }, [scrubTo, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -746,7 +765,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
           aria-label="Scroll to the newest message"
           onClick={() => {
             const el = scroller.current
-            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+            if (el) el.scrollTo({ top: el.scrollHeight, behavior: lessMotion() ? 'auto' : 'smooth' })
           }}
         >
           <Icon n="arrowDown" size={18} />
@@ -787,6 +806,10 @@ export function App() {
   const scale = useStore(s => s.textScale)
   const [injected, setInjected] = useState<string | null>(null)
   const clearInjected = useCallback(() => setInjected(null), [])
+  const stage = useRef<HTMLDivElement>(null)
+  const barTop = useRef<HTMLDivElement>(null)
+  const barBottom = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => (stage.current && barTop.current && barBottom.current ? watchBars(stage.current, barTop.current, barBottom.current) : undefined), [])
 
   useEffect(() => {
     bootMark('painted')
@@ -827,17 +850,25 @@ export function App() {
   return (
     <div className="app">
       <DevtoolsStrip />
-      <Header />
-      <LocalAlertBanner />
-      <ConnBanner />
-      <FindBar />
-      <Chat onPick={t => setInjected(t)} />
-      <ActivityBanner />
-      <StatusBar />
-      <CompressHint />
-      <TtsPlayer />
-      <BgApp />
-      <Composer injected={injected} onInjected={clearInjected} />
+      {/* The chat screen: two glass bars with the message list reaching under both (glass.css, barinsets.ts). The
+          stage steps back while a sheet is open over it (motion.css). */}
+      <div className="stage" ref={stage}>
+        <div className="bar-top glass" ref={barTop}>
+          <Header />
+          <LocalAlertBanner />
+          <ConnBanner />
+          <FindBar />
+        </div>
+        <Chat onPick={t => setInjected(t)} />
+        <div className="bar-bottom glass" ref={barBottom}>
+          <ActivityBanner />
+          <StatusBar />
+          <CompressHint />
+          <TtsPlayer />
+          <BgApp />
+          <Composer injected={injected} onInjected={clearInjected} />
+        </div>
+      </div>
       {screen === 'skills' && <SkillsScreen onUse={t => setInjected(t)} />}
       {screen === 'memory' && <MemoryScreen />}
       {screen === 'cron' && <CronScreen />}
@@ -874,13 +905,44 @@ export function App() {
       <BtwSheet />
       <WhatsNewAfterUpdate />
       <DialogHost />
-      <div className="toasts">
-        {toasts.map(t => (
-          <div key={t.id} className={`toast toast-${t.level}`}>
-            {t.text}
-          </div>
-        ))}
-      </div>
+      <Toasts toasts={toasts} />
+    </div>
+  )
+}
+
+const TOAST_LEAVE_MS = 240 // motion.css: --motion-base, the length of motion-toast-out
+
+/** The toasts, each leaving softly (Full motion): a toast gone from the store stays a moment, in its place, with
+ *  `leaving`. Only this list's own copy is kept; the store is not touched. */
+function Toasts({ toasts }: { toasts: Toast[] }) {
+  const [shown, setShown] = useState<Array<Toast & { leaving?: boolean }>>(toasts)
+  const timers = useRef(new Set<number>())
+  useEffect(() => () => timers.current.forEach(id => window.clearTimeout(id)), [])
+  useEffect(() => {
+    const soft = motionLevel() === 'full'
+    setShown(cur => {
+      const next = cur.flatMap(t => {
+        const now = toasts.find(n => n.id === t.id)
+        if (now) return [now]
+        return soft ? [{ ...t, leaving: true }] : []
+      })
+      for (const t of toasts) if (!next.some(n => n.id === t.id)) next.push(t)
+      return next
+    })
+    if (!soft) return
+    const id = window.setTimeout(() => {
+      timers.current.delete(id)
+      setShown(cur => cur.filter(t => !t.leaving || toasts.some(n => n.id === t.id)))
+    }, TOAST_LEAVE_MS)
+    timers.current.add(id)
+  }, [toasts])
+  return (
+    <div className="toasts">
+      {shown.map(t => (
+        <div key={t.id} className={`toast toast-${t.level}${t.leaving ? ' leaving' : ''}`} aria-hidden={t.leaving || undefined}>
+          {t.text}
+        </div>
+      ))}
     </div>
   )
 }

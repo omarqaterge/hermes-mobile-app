@@ -34,6 +34,19 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   `android/`, `hermes-plugin/` and `phone/` (tests excluded) and has its own test. Needs a phone: how the notifications
   read (manual-tests).
 
+- **Glass and motion (task 02a, PR against `redesign`).** The material and the motion every later screen uses, with no
+  screen redesigned: `web/src/glass.css` (glass tokens for Default, OLED black and Light, the `.glass` class, solid
+  fallbacks), `web/src/motion.css` and `web/src/motion.ts` (springs, lengths, the Full / Reduced / Off levels, the
+  stagger helper, pausing while away or off screen), `web/src/barinsets.ts` (the chat scrolls under its two glass bars,
+  same heights). Settings → Appearance → Effects: Glass effects (`hm.glass`) and Animations (`hm.motion`), defaulting
+  from the phone. Browser checks run with Animations Off unless about motion (`lib.cjs` `motionOff`); the new
+  `33-glass-and-motion.cjs` checks heights, glass, contrast, the blur budget, each level, idle and the settings. Decisions:
+  `glass-and-motion.md`, `redesign-costs-no-speed-or-battery.md`, `chat-height-belongs-to-content.md`. Costs at 4x CPU
+  are within 5% of the build before (docs/performance-history.md). Not done: edge refraction (not measurable on a
+  mid-range phone here); the chat list does not stagger its rows or step the chat back (each cost the list's work).
+  Needs a phone: how glass looks and scrolls on a real phone and on other makers' WebViews, and the ten-minute battery
+  session with the effects on and off (manual-tests).
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

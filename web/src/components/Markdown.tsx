@@ -22,6 +22,7 @@ import { REMARK, splitStream, type Split } from '../mdsplit'
 import { VideoEmbedTag } from './VideoEmbed'
 import { MAX_VIDEOS, embedOf, frameEmbed } from '../videoembed'
 import { Icon } from './icons'
+import { lessMotion } from '../motion'
 
 /** True while the reply being rendered is still arriving (a context, so code blocks aren't rebuilt per stream batch). */
 const StreamingCtx = createContext(false)
@@ -836,7 +837,7 @@ function mdComponents(seed: { current: string }, nextBox: { current: number }): 
               e.preventDefault()
               const box = (e.currentTarget as HTMLElement).closest('.md')
               const el = box?.querySelector(`[id="user-content-${CSS.escape(id)}"], [id="${CSS.escape(id)}"]`)
-              el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              el?.scrollIntoView({ behavior: lessMotion() ? 'auto' : 'smooth', block: 'center' })
             }}
           >
             {children}

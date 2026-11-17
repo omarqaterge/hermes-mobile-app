@@ -22,6 +22,7 @@ import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Collapse, Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
 import { searchSettings, type SettingsEntry } from '../settings-search'
+import { setGlass, setMotionLevel, useGlass, useMotionLevel, type MotionLevel } from '../motion'
 import { findSettingsTarget, flashElement } from '../flash'
 import { approvalLockAvailable, approvalLockState, confirmAlways, setApprovalLock } from '../approval-lock'
 import { SttSettings } from './SttSettings'
@@ -815,8 +816,22 @@ const THEMES: Array<{ id: Theme; label: string; bg: string; bar: string; user: s
 ]
 const THEME_NAME: Record<Theme, string> = { default: 'Default', oled: 'OLED black', light: 'Light', system: 'System' }
 
+const MOTION_OPTIONS: Array<{ value: MotionLevel; label: string }> = [
+  { value: 'full', label: 'Full' },
+  { value: 'reduced', label: 'Reduced' },
+  { value: 'off', label: 'Off' }
+]
+const MOTION_SUB: Record<MotionLevel, string> = {
+  full: 'Things move with springs',
+  reduced: 'Short fades, nothing repeats',
+  off: 'Every change is instant'
+}
+const EFFECTS_FOOT = "Until you choose, Animations follows your phone: Off when it is set to remove animations, otherwise Full."
+
 function AppearancePage() {
   const scale = useStore(s => s.textScale)
+  const glass = useGlass()
+  const motion = useMotionLevel()
   const [theme, setThemeState] = useState<Theme>(savedTheme)
   return (
     <>
@@ -861,6 +876,16 @@ function AppearancePage() {
           }}
         />
       </Section>
+      <Section title="Effects" footer={EFFECTS_FOOT}>
+        <ToggleRow icon="sparkles" tone="purple" title="Glass effects" sub="Bars and sheets let the chat show through" on={glass} onChange={setGlass} />
+        <div className="set-row static">
+          <span className="set-text">
+            <span className="set-title">Animations</span>
+            <span className="set-sub">{MOTION_SUB[motion]}</span>
+          </span>
+        </div>
+        <Segmented options={MOTION_OPTIONS} value={motion} onChange={setMotionLevel} />
+      </Section>
     </>
   )
 }
@@ -901,7 +926,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
     <>
       {search}
       <Section title="Appearance">
-        <Row icon="palette" tone="purple" title="Appearance" sub="Theme and text size" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
+        <Row icon="palette" tone="purple" title="Appearance" sub="Theme, text size and effects" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
       </Section>
       <Section title="Voice">
         <ToggleRow icon="speaker" tone="gold" title="Read every reply aloud" sub="In all chats" on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />

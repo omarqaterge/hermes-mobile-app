@@ -11,7 +11,7 @@ The screen has one main page and nine sub-pages. The top-bar title is the page n
 **Main page, top to bottom (every Section and row):**
 | Section | Row (title) | Shows | Tap changes |
 |---|---|---|---|
-| Appearance | Appearance | Sub "Theme and text size", value = current theme name | Opens the Appearance page |
+| Appearance | Appearance | Sub "Theme, text size and effects", value = current theme name | Opens the Appearance page |
 | Voice | Read every reply aloud | Switch, sub "In all chats" | `setAutoRead` writes `hm.autoread` (`"1"` / `"0"`) and tells the Android side so replies are read with the screen off. A per-chat choice (chat ⋮ menu, `hm.autoread.chats`) wins over this one |
 | Voice | Voice | Sub "Engine, voice, speed and pitch" | Opens the Voice page |
 | Hermux | Default models | Sub "Which model each bot starts with" | Opens the Default models page |
@@ -62,13 +62,17 @@ The sections are drawn by `WhatsNewSections` in `web/src/components/WhatsNew.tsx
 **Hermux agent row and the version check** (`Settings.tsx` `HermesRow`, `web/src/hermes-update.ts`): the app talks to a Hermes build it was written against (`__HERMES_TESTED__`, injected at build time). `checkHermes` reads `current_version` from `GET /api/hermes/update/check` (the update fields in that answer are ignored). `compat` compares the git short hash in both version strings: `same`, `newer`, `older` or `unknown`. On `newer` or `older` the row turns gold and says "Different from what this app was made for. Update the app (x)." (or "…If something breaks, update the app."), and a toast is shown once per differing build (the build string is remembered in `hm.hermesSeen`). There is no "update Hermes" button on purpose: Hermes updates ship with an app release, after the app has been adapted to them.
 
 #### Appearance
-**Opens from:** Settings main page, row Appearance. **Closes with:** Back to the main page. **Source:** `Settings.tsx` `AppearancePage`, `web/src/theme.ts`.
+**Opens from:** Settings main page, row Appearance. **Closes with:** Back to the main page. **Source:** `Settings.tsx` `AppearancePage`, `web/src/theme.ts`, `web/src/motion.ts`.
 
 **Layout, top to bottom:**
 | Section | Element | Looks like | Tap | States |
 |---|---|---|---|---|
 | Theme (footer: "System follows your phone: OLED black when it is in dark mode, Light when it is not.") | Four swatch cards: Default, OLED black, Light, System | A mini preview with bars and a gold bubble, the name and a ✓ on the chosen one | Haptic, `setTheme(id)` saves the choice in `hm.theme` (`default`, `oled`, `light` or `system`), sets `data-theme` on `<html>` (and `data-oled` for the OLED rules) and tells Android the background colour (`#0E1115`, `#000000`, `#FFFFFF`) through the `setBackground` bridge call so the status and navigation bars match | The older key `hm.oled` = `1` is read as OLED black when `hm.theme` is not set |
 | Text size | A sample sentence, then five buttons 90 %, 100 %, 110 %, 120 %, 135 % | Segmented control | Sets the store's `textScale` and `hm.textScale`; the whole app rescales | Default 100 % |
+| Effects (footer `EFFECTS_FOOT`: "Until you choose, Animations follows your phone: Off when it is set to remove animations, otherwise Full.") | Glass effects | Switch, sub "Bars and sheets let the chat show through" | `setGlass(on)` saves `hm.glass` (`1` / `0`) and sets `data-glass="on|off"` on `<html>`: on, the chat's bars, sheets, dialogs and toasts are the translucent blurred material of `web/src/glass.css`; off, the same surfaces are solid (`--surface`), same layout | Until chosen: on |
+| Effects | Animations | A row (sub: what the level does, `MOTION_SUB`: "Things move with springs", "Short fades, nothing repeats", "Every change is instant"), then a segmented control Full / Reduced / Off (`MOTION_OPTIONS`) | `setMotionLevel(level)` saves `hm.motion` (`full`, `reduced`, `off`) and sets `data-motion` on `<html>`, read by `web/src/motion.css` (3.20, Motion) | Until chosen (`defaultMotion`): Off when the phone asks for no animations (Android's "Remove animations", seen as `prefers-reduced-motion: reduce`), else Full. The phone's memory and cores play no part |
+
+Both effects are decided at start-up by `applyLook()` (called from `main.tsx` after the theme), from what the browser reports: no timer and no bridge call. The shell has no way to tell the page that battery saver is on, so it plays no part in the defaults. `useGlass()` and `useMotionLevel()` re-render the page when either changes.
 
 System theme: `resolveTheme` asks `isSystemDark` (bridge) or the browser's `prefers-color-scheme`; dark gives OLED black, light gives Light. Android calls `window.__hmSystemTheme()` when the phone switches, and the theme is re-applied if System is chosen.
 

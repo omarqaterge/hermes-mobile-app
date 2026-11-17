@@ -1,0 +1,400 @@
+/* The glass material (docs/decisions/glass-and-motion.md): a translucent surface that blurs and deepens what scrolls
+   behind it, with a bright top edge, a darker bottom edge, a soft light from the top left and a shadow under it.
+   Only on what floats above the content: the chat's top bar (header, banners, find bar) and bottom bar (activity
+   banner, status bar, player, composer), sheets and menus, dialogs, toasts and the scrubber's label. Never on content
+   (messages, tool lines, cards, list and settings rows), and never glass on glass: a group inside a glass surface is a
+   faint solid tint (`--glass-group`, `--glass-field`).
+   Text on glass reaches 4.5:1 whatever scrolls behind (checked over a white and a black picture in each theme,
+   tools/web-e2e/checks/33-glass-and-motion.cjs): the backdrop is darkened (dark themes) or lightened (Light) by the
+   filter and covered by a tint with a floor, and dim text on glass uses `--glass-dim`.
+   Cost: at most three blurred surfaces on screen at once, each a bar or a sheet. The bars lose their blur while a sheet
+   or dialog covers them (the scrim hides them anyway), so the two bars and up to two stacked sheets never blur together.
+   With glass off (<html data-glass="off">, Appearance) or where the WebView has no backdrop blur, the same surfaces are
+   solid `--surface` with their border, and the layout is the same. */
+
+:root {
+  --glass-blur: 20px;
+  --glass-filter: blur(var(--glass-blur)) saturate(170%) brightness(0.52);
+  --glass-tint: rgba(20, 24, 30, 0.66); /* the floor that keeps text readable over a white picture */
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+  --glass-highlight: radial-gradient(120% 90% at 10% -20%, rgba(255, 255, 255, 0.1), transparent 50%);
+  --glass-edge: rgba(255, 255, 255, 0.1); /* the border */
+  --glass-edge-hi: rgba(255, 255, 255, 0.14); /* the bright top edge */
+  --glass-edge-lo: rgba(0, 0, 0, 0.32); /* the darker bottom edge */
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.36);
+  --glass-bar-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  --glass-dim: #b0b7c0; /* dim text on glass */
+  --glass-accent: #e6b553; /* gold text on glass (the gold of a button stays --accent) */
+  --glass-err: #ff9d93; /* red text on glass */
+  --glass-group: rgba(255, 255, 255, 0.05); /* a group inside a glass surface */
+  --glass-field: rgba(0, 0, 0, 0.24); /* a text box on glass */
+  --scrim: rgba(0, 0, 0, 0.55); /* behind a sheet or dialog */
+}
+:root[data-oled] {
+  /* Darker and quieter: no coloured light, no sheen, the black page stays black. */
+  --glass-filter: blur(var(--glass-blur)) saturate(120%) brightness(0.5);
+  --glass-tint: rgba(0, 0, 0, 0.68);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0));
+  --glass-highlight: linear-gradient(transparent, transparent);
+  --glass-edge: rgba(255, 255, 255, 0.08);
+  --glass-edge-hi: rgba(255, 255, 255, 0.08);
+  --glass-edge-lo: rgba(0, 0, 0, 0.6);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  --glass-bar-shadow: none;
+  --glass-dim: #9ea5af;
+  --glass-accent: #e6b553;
+  --glass-err: #ff9d93;
+  --glass-group: rgba(255, 255, 255, 0.04);
+  --glass-field: rgba(255, 255, 255, 0.04);
+  --scrim: rgba(0, 0, 0, 0.62);
+}
+:root[data-theme='light'] {
+  --glass-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.08);
+  --glass-tint: rgba(255, 255, 255, 0.74);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.15));
+  --glass-highlight: radial-gradient(120% 90% at 10% -20%, rgba(255, 255, 255, 0.6), transparent 50%);
+  --glass-edge: rgba(0, 0, 0, 0.08);
+  --glass-edge-hi: rgba(255, 255, 255, 0.95);
+  --glass-edge-lo: rgba(0, 0, 0, 0.07);
+  --glass-shadow: 0 10px 30px rgba(60, 50, 20, 0.16);
+  --glass-bar-shadow: 0 6px 18px rgba(60, 50, 20, 0.08);
+  --glass-dim: #50545b;
+  --glass-accent: #75500a;
+  --glass-err: #9a2018;
+  --glass-group: rgba(255, 255, 255, 0.55);
+  --glass-field: rgba(255, 255, 255, 0.7);
+  --scrim: rgba(20, 18, 12, 0.35);
+}
+
+/* ── the material ──
+   Two forms with the same look. Bars and sheets carry the blur on a layer under their content (`::before`), so the
+   element itself does not become the frame of the fixed sheets and pickers that open from inside it. Toasts, the
+   slash-command menu and the scrubber's label hold nothing like that and carry it themselves. */
+.glass,
+.sheet {
+  /* A layer of its own for the ::before under the content: z-index, not `isolation`, which would cut the blur off from
+     what lies behind. */
+  position: relative;
+  z-index: 0;
+  background: transparent;
+  border-color: var(--glass-edge);
+}
+.glass::before,
+.sheet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--glass-highlight), var(--glass-sheen), var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+.sheet {
+  box-shadow: inset 0 1px 0 var(--glass-edge-hi), var(--glass-shadow);
+}
+.toast,
+.slash-menu,
+.scrub-bubble {
+  background: var(--glass-highlight), var(--glass-sheen), var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border-color: var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-edge-hi), inset 0 -1px 0 var(--glass-edge-lo), var(--glass-shadow);
+}
+/* Text that is dim, gold or red elsewhere is a little stronger on glass, so it reads over anything. */
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dim,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .subtitle,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .set-sub,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .sheet-desc,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dialog-msg,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .find-count,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .status-line,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .tts-time,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .mi-sub,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .bg-card-action {
+  color: var(--glass-dim);
+}
+.glass .goal-line,
+.glass .todos-head,
+.glass .todo-in_progress,
+.glass .mini,
+.glass .tts-speed,
+.glass .bg-card-title,
+.sheet .picker-opt.on .set-title,
+.sheet .mini {
+  color: var(--glass-accent);
+}
+:is(.sheet, .toast) .menu-item.danger,
+:is(.sheet, .toast) .set-title.danger,
+.toast.toast-error {
+  color: var(--glass-err);
+}
+:is(.glass, .sheet) textarea::placeholder,
+:is(.glass, .sheet) input::placeholder {
+  color: var(--glass-dim);
+  opacity: 1;
+}
+
+/* Solid instead: glass turned off in Appearance, or a WebView without backdrop blur. Same layout either way. */
+html[data-glass='off'] .glass::before,
+html[data-glass='off'] .sheet::before {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-glass='off'] .glass,
+html[data-glass='off'] .sheet {
+  border-color: var(--border);
+}
+html[data-glass='off'] .sheet {
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25);
+}
+html[data-glass='off'] .toast,
+html[data-glass='off'] .slash-menu,
+html[data-glass='off'] .scrub-bubble {
+  background: var(--surface-2);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dim,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .subtitle,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .set-sub,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .sheet-desc,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dialog-msg,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .find-count,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .status-line,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .tts-time,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .mi-sub,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .bg-card-action {
+  color: var(--dim);
+}
+html[data-glass='off'] .glass .goal-line,
+html[data-glass='off'] .glass .todos-head,
+html[data-glass='off'] .glass .todo-in_progress,
+html[data-glass='off'] .glass .mini,
+html[data-glass='off'] .glass .tts-speed,
+html[data-glass='off'] .glass .bg-card-title,
+html[data-glass='off'] .sheet .picker-opt.on .set-title,
+html[data-glass='off'] .sheet .mini {
+  color: var(--accent);
+}
+html[data-glass='off'] :is(.sheet, .toast) .menu-item.danger,
+html[data-glass='off'] :is(.sheet, .toast) .set-title.danger,
+html[data-glass='off'] .toast.toast-error {
+  color: var(--err);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass::before,
+  .sheet::before {
+    background: var(--surface);
+  }
+  .toast,
+  .slash-menu,
+  .scrub-bubble {
+    background: var(--surface-2);
+  }
+}
+
+/* ── the chat's bars: the chat scrolls underneath them (App.tsx: .stage, .bar-top, .bar-bottom; barinsets.ts) ── */
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.bar-top,
+.bar-bottom {
+  flex: none;
+  position: relative;
+  z-index: 3;
+}
+.bar-top {
+  box-shadow: inset 0 1px 0 var(--glass-edge-hi), inset 0 -1px 0 var(--glass-edge-lo), var(--glass-bar-shadow);
+}
+.bar-bottom {
+  border-radius: 20px 20px 0 0;
+  box-shadow: inset 0 1px 0 var(--glass-edge-hi), var(--glass-bar-shadow);
+}
+html[data-glass='off'] .bar-top,
+html[data-glass='off'] .bar-bottom {
+  box-shadow: none;
+}
+.bar-top .topbar {
+  background: transparent;
+  border-bottom-color: var(--glass-edge);
+}
+html[data-glass='off'] .bar-top .topbar {
+  border-bottom-color: var(--border);
+}
+.bar-top .findbar {
+  background: transparent;
+  border-bottom-color: var(--glass-edge);
+}
+/* Warnings keep their solid tint inside a bar (a group inside glass is solid), so their words read as they always did. */
+.bar-bottom .activity-banner {
+  border-bottom-color: var(--glass-edge);
+}
+.bar-bottom .statusbar,
+.bar-bottom .composer-wrap {
+  background: transparent;
+}
+.bar-bottom > :first-child {
+  border-top: 0;
+}
+.bar-bottom .statusbar {
+  border-top-color: var(--glass-edge);
+}
+.bar-bottom .composer-wrap {
+  border-top-color: var(--glass-edge);
+}
+html[data-glass='off'] .bar-bottom .statusbar,
+html[data-glass='off'] .bar-bottom .composer-wrap {
+  border-top-color: var(--border);
+}
+.bar-bottom .composer {
+  background: var(--glass-field);
+  border-color: var(--glass-edge);
+}
+.bar-bottom .tts-player,
+.bar-bottom .bg-card,
+.bar-bottom .quote-bar {
+  background: var(--glass-group);
+  border-color: var(--glass-edge);
+}
+html[data-glass='off'] .bar-bottom .composer {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+html[data-glass='off'] .bar-bottom .tts-player,
+html[data-glass='off'] .bar-bottom .bg-card,
+html[data-glass='off'] .bar-bottom .quote-bar {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+/* The list extends under both bars; its padding keeps the first and the last message clear of them. The bars' heights
+   (barinsets.ts, set on .stage) are registered as not inherited and handed down only to the elements that read them:
+   an inherited custom property that changes (the status bar appearing as a turn starts) restyles every message. */
+@property --bar-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --bar-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.stage > .chat-wrap,
+.chat-wrap > .chat,
+.chat-wrap > .chat > .jump,
+.chat-wrap > .chat > .pull-hint {
+  --bar-top: inherit;
+  --bar-bottom: inherit;
+}
+.chat-wrap > .chat {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(-1 * var(--bar-top, 0px));
+  bottom: calc(-1 * var(--bar-bottom, 0px));
+  padding-top: calc(14px + var(--bar-top, 0px));
+  padding-bottom: calc(4px + var(--bar-bottom, 0px));
+  scroll-padding-top: var(--bar-top, 0px);
+  scroll-padding-bottom: var(--bar-bottom, 0px);
+}
+.chat-wrap > .chat > .jump {
+  bottom: calc(8px + var(--bar-bottom, 0px));
+}
+.chat-wrap > .chat > .pull-hint {
+  bottom: var(--bar-bottom, 0px);
+}
+.chat-wrap .scrubber {
+  z-index: 4;
+}
+
+/* ── sheets, dialogs, menus ── */
+.sheet {
+  border-top: 1px solid var(--glass-edge);
+  background: transparent;
+}
+.sheet-backdrop {
+  background: none;
+}
+.sheet-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* under the sheet, inside the backdrop's own layer */
+  background: var(--scrim);
+  pointer-events: none;
+}
+:root[data-theme='light'] .sheet-backdrop {
+  background: none;
+}
+/* A full-screen blur behind a dialog was the costliest surface of all; the scrim does the job. */
+.dialog-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* Groups inside a glass surface: a faint solid tint, never a second blur. */
+:is(.sheet, .slash-menu) .set-card,
+:is(.sheet, .slash-menu) .mi-icon,
+:is(.sheet, .slash-menu) .sheet-input,
+:is(.sheet, .slash-menu) .search,
+:is(.sheet, .slash-menu) .sheet-code,
+:is(.sheet, .slash-menu) .dialog-list,
+:is(.sheet, .slash-menu) .hit-row {
+  background-color: var(--glass-group);
+  border-color: var(--glass-edge);
+}
+:is(.sheet, .slash-menu) .sheet-input,
+:is(.sheet, .slash-menu) .search {
+  background-color: var(--glass-field);
+}
+html[data-glass='off'] :is(.sheet, .slash-menu) .set-card,
+html[data-glass='off'] :is(.sheet, .slash-menu) .mi-icon,
+html[data-glass='off'] :is(.sheet, .slash-menu) .sheet-code,
+html[data-glass='off'] :is(.sheet, .slash-menu) .dialog-list,
+html[data-glass='off'] :is(.sheet, .slash-menu) .hit-row {
+  background-color: var(--surface-2);
+  border-color: var(--border);
+}
+html[data-glass='off'] :is(.sheet, .slash-menu) .sheet-input,
+html[data-glass='off'] :is(.sheet, .slash-menu) .search {
+  background-color: var(--bg);
+  border-color: var(--border);
+}
+.toast {
+  border-color: var(--glass-edge);
+}
+.toast-error {
+  border-color: var(--err-border);
+}
+.toast-warn {
+  border-color: var(--warn-border);
+}
+.slash-menu {
+  border-color: var(--glass-edge);
+}
+
+/* While a sheet or dialog covers the chat, its bars stop blurring (the scrim hides them): never more than three
+   blurred surfaces. While the scrubber's label shows (components/Scrubber.tsx sets <html data-scrubbing>), a toast is
+   solid for the same reason. Only `:has(> …)` on the app: a `:has()` that looks at every descendant is re-checked at
+   each word a streamed reply adds, which doubled the restyles while a reply arrived. A sheet opened inside a bar or
+   the chat leaves the bars blurring: three surfaces, still within the budget. */
+.app:has(> .sheet-backdrop) > .stage .glass::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--glass-sheen), var(--surface);
+}
+html[data-scrubbing] .toast {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--surface-2);
+}

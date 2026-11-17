@@ -1,6 +1,6 @@
 // Mermaid, quoting, OpenUI cards, HTML preview, tool calls, motion, turn file changes, web addresses.
 const path = require('path')
-const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, setMotion } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -224,6 +224,7 @@ module.exports = async t => {
   }
 
   // ── motion: tool card bodies slide open and closed; the phone's reduced-motion setting skips it ──
+  await setMotion(page, 'full') // about motion: the run's pages start with animations off (lib.cjs)
   await run.click()
   const card0 = page.locator('.tool:visible', { hasText: /step 0/ }).first()
   await card0.locator('.tool-head').click()
@@ -261,6 +262,7 @@ module.exports = async t => {
   await sleep(50)
   check((await card0.locator('.tool-body').count()) === 0, 'motion: reduced motion closes the body at once')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await setMotion(page, 'off')
   await run.click()
 
   check((await page.locator('.turn-changes').count()) === 0, 'a turn with only terminal tools has no changes card')

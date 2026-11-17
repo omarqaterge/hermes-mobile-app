@@ -1,6 +1,6 @@
 // Older chats, deleting a chat, the working shimmer, canvas saving, canvas HTML, the canvas gallery.
 const path = require('path')
-const { SHOTS, calls, rpcs, sleep, check, mock } = require('../lib.cjs')
+const { SHOTS, calls, rpcs, sleep, check, mock, setMotion } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -27,6 +27,7 @@ module.exports = async t => {
   const cleanups = calls().filter(c => c.http === 'POST' && c.path === '/api/plugins/hermes-mobile/cleanup')
   check(delRpcs.length === 1 && cleanups.length === 1 && Array.isArray(cleanups[0].body?.keep), `deleting a chat asks the plugin to clean up (${delRpcs.length} delete, ${cleanups.length} cleanup, row ${JSON.stringify(delId.slice(0, 30))})`)
   // ── a working chat's title shimmers in the list (no dot), and only while the list can be seen ──
+  await setMotion(page, 'full') // about motion: the run's pages start with animations off (lib.cjs)
   await mock({ activity: [{ session: 's-9', text: 'Thinking…', short: 'Thinking', profile: 'default', review: false, ts: Date.now() / 1000 }] })
   const workingRow = page.locator('.drawer .session-row').filter({ has: page.locator('.session-title', { hasText: /^Chat 9$/ }) })
   const shimmer = workingRow.locator('.session-title.working')
@@ -51,6 +52,7 @@ module.exports = async t => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await mock({ activity: [] })
   await shimmer.waitFor({ state: 'detached', timeout: 8000 }).then(() => check(true, 'working chat: the shimmer ends with the turn'), () => check(false, 'working chat: the shimmer ends with the turn'))
+  await setMotion(page, 'off')
   await page.mouse.click(360, 400) // close drawer (backdrop)
   await sleep(400)
 

@@ -81,7 +81,11 @@ module.exports = async t => {
   await ls.getByRole('button', { name: 'Save', exact: true }).click()
   await ls.waitFor({ state: 'detached', timeout: 5000 })
   check(JSON.stringify(puts().pop().body.config.approvals.deny) === '["rm -rf /*","shutdown *"]', 'hermes settings: a list is one item per line')
-  check((await pg.locator('.set-row', { hasText: 'Always blocked commands' }).innerText()).includes('2 items'), 'hermes settings: the list row counts its items')
+  // The row shows the list Hermes has after the save: the page reloads it after the PUT, so wait for that reload
+  // (the sheet closes when the PUT returns, before it).
+  const listRow = pg.getByRole('button', { name: /Always blocked commands/ })
+  const counted = await listRow.filter({ hasText: '2 items' }).waitFor({ timeout: 5000 }).then(() => true, () => false)
+  check(counted, `hermes settings: the list row counts its items (${JSON.stringify(await listRow.innerText())})`)
   // Time zone: only zones Hermes knows.
   await pg.locator('.set-row', { hasText: 'Time zone' }).click()
   const tz = pg.locator('.sheet', { hasText: 'Time zone' })

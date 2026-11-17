@@ -25,7 +25,7 @@ const e = (page: SettingsPageId, title: string, where: string, sub?: string, wor
 
 const STATIC: SettingsEntry[] = [
   // Hub
-  e('appearance', 'Appearance', 'Settings', 'Theme and text size', 'theme dark light oled font look', null),
+  e('appearance', 'Appearance', 'Settings', 'Theme, text size and effects', 'theme dark light oled font look glass animations', null),
   e('hub', 'Read every reply aloud', 'Settings → Voice', 'In all chats', 'tts speak speech auto read'),
   e('voice', 'Voice', 'Settings', 'Engine, voice, speed and pitch', 'tts speech speak', null),
   e('models', 'Default models', 'Settings → Hermux', 'Which model each bot starts with', 'model bot profile', null),
@@ -54,6 +54,8 @@ const STATIC: SettingsEntry[] = [
   // Appearance
   e('appearance', 'Theme', 'Appearance', 'Default, OLED black, Light or System', 'dark light oled black system colors'),
   e('appearance', 'Text size', 'Appearance', undefined, 'font bigger larger smaller zoom'),
+  e('appearance', 'Glass effects', 'Appearance → Effects', 'Bars and sheets let the chat show through', 'blur translucent transparent glass solid look battery'),
+  e('appearance', 'Animations', 'Appearance → Effects', 'Full, Reduced or Off', 'motion animation reduce remove movement springs battery'),
   // Voice
   e('voice', 'Speech engine', 'Voice', undefined, 'tts text to speech'),
   e('voice', 'Speed', 'Voice → Sound', undefined, 'rate faster slower'),

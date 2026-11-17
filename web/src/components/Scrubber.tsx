@@ -39,6 +39,15 @@ export function Scrubber({
     el.addEventListener('touchmove', stop, { passive: false })
     return () => el.removeEventListener('touchmove', stop)
   }, [rail])
+  // While a finger is on the rail, <html data-scrubbing> tells glass.css to make a toast solid (the label above the rail
+  // is glass too). An attribute on <html>, not `.app:has(.scrubber.active)`: a :has() over the whole app is re-checked
+  // as each streamed word arrives.
+  const scrubbing = picked !== null
+  useEffect(() => {
+    if (!scrubbing) return
+    document.documentElement.setAttribute('data-scrubbing', '')
+    return () => document.documentElement.removeAttribute('data-scrubbing')
+  }, [scrubbing])
   // While a finger is on the rail the thumb sits on the picked tick; otherwise it follows the scroll.
   useLayoutEffect(() => paintRail(rail.current, picked ?? pos.current ?? 0, marks.length, true))
 

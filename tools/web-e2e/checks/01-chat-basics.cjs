@@ -344,6 +344,39 @@ module.exports = async t => {
     check(set.length === 1 && set[0].params.session_id === 'rt-s-45' && set[0].params.value === 'high', `composer: a reasoning level in the model picker is set for the open chat (${JSON.stringify(set.map(c => c.params))})`)
     await cp.close()
   }
+  // ── an empty box stays one line whatever the font: a placeholder wider than the box ends in "…" and does not
+  // grow the box (the box fits its scrollHeight). Wide letter spacing stands in for a phone's wider font. ──
+  {
+    const cp = await t.browser.newPage({ viewport: { width: 360, height: 740 } })
+    await cp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-48', profile: 'default' })))
+    await cp.goto(WEB + '/')
+    await cp.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
+    const box = cp.getByPlaceholder('Message Hermux')
+    const oneLine = await box.evaluate(e => e.clientHeight)
+    await cp.addStyleTag({ content: 'textarea { letter-spacing: 6px }' })
+    // The placeholder's width on one line, in the box's font and spacing, against the room inside the box.
+    const fit = e => {
+      const s = document.createElement('span')
+      const cs = getComputedStyle(e)
+      s.style.cssText = `position:absolute;white-space:nowrap;visibility:hidden;font:${cs.font};letter-spacing:${cs.letterSpacing}`
+      s.textContent = e.placeholder
+      document.body.append(s)
+      const w = s.getBoundingClientRect().width
+      s.remove()
+      return [e.clientHeight, Math.round(w), e.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)]
+    }
+    await box.fill('slow reply')
+    await cp.getByRole('button', { name: 'Send', exact: true }).click()
+    const steer = cp.getByPlaceholder('Queue or steer a follow-up…')
+    await steer.waitFor({ timeout: 3000 })
+    const [working, wide, room] = await steer.evaluate(fit)
+    check(wide > room && working === oneLine, `composer: while a reply runs, the empty box stays one line though its placeholder is wider than the box (${working} px, one line ${oneLine} px; placeholder ${wide} px, room ${room} px)`)
+    await steer.fill('a message long enough to need more than one line in the box, so the box grows to fit it')
+    const typed = await steer.evaluate(e => e.clientHeight)
+    check(typed > oneLine * 1.5, `composer: typed text still wraps and grows the box (${typed} px, one line ${oneLine} px)`)
+    await cp.getByText('Slow done.').waitFor({ timeout: 5000 })
+    await cp.close()
+  }
   await page.evaluate(() => localStorage.clear())
   await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })

@@ -1,4 +1,5 @@
 // Scroll a Settings row or section into view and flash it briefly (the `.hit-flash` ring also used for chat search hits).
+import { lessMotion } from './motion'
 
 const norm = (s: string | null) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase()
 
@@ -15,12 +16,7 @@ export function findSettingsTarget(root: ParentNode, text: string): HTMLElement 
 
 /** Centre `el` and flash it for 2.5 s. */
 export function flashElement(el: HTMLElement): void {
-  let reduced = false
-  try {
-    reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  } catch {
-    /* ignore */
-  }
+  const reduced = lessMotion() // Reduced or Off in Appearance, or the phone asks for reduced motion
   el.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
   el.classList.remove('hit-flash')
   void el.offsetWidth // restart the animation when it is flashed twice in a row

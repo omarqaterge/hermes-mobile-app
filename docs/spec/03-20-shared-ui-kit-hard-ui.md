@@ -15,13 +15,50 @@
 | `PickerSheet`, `Option` | A bottom sheet listing choices with a tick icon on the current one; options may have a group heading, sub text and icon | Picking an option calls `onPick` and closes; registers with Android Back; draggable by its grip |
 | `SelectRow` | A row that shows the current choice as its sub line and opens a `PickerSheet` | The replacement for `<select>` |
 | `SliderRow` | A title, the formatted value and a styled range slider | The one place a range input is used; it is drawn with the app's CSS (the `--pct` fill) |
-| `Collapse` | Wraps a body that opens and closes: mounts the children, then animates the wrapper's height and opacity (180 ms, Web Animations API); a body it has just mounted starts from height 0, so opening slides in; on close animates to 0, holds height 0 and opacity 0 inline once the animation ends (so it is never painted at full size before it goes), then unmounts (a timer of 280 ms unmounts it if the animation never reports finishing). `overflow: hidden` only while animating. Flipping `open` mid-animation continues from the current height | Used by `ToolCard`, `Reasoning` (the thought text), the todo list in `StatusBar` and the file list of `TurnChangesCard`. Not used for folded runs of tool calls, which stay instant (the chat keeps one child per item). Under `prefers-reduced-motion: reduce` it mounts and unmounts at once |
+| `Collapse` | Wraps a body that opens and closes: mounts the children, then animates the wrapper's height and opacity (180 ms, Web Animations API); a body it has just mounted starts from height 0, so opening slides in; on close animates to 0, holds height 0 and opacity 0 inline once the animation ends (so it is never painted at full size before it goes), then unmounts (a timer of 280 ms unmounts it if the animation never reports finishing). `overflow: hidden` only while animating. Flipping `open` mid-animation continues from the current height | Used by `ToolCard`, `Reasoning` (the thought text), the todo list in `StatusBar` and the file list of `TurnChangesCard`. Not used for folded runs of tool calls, which stay instant (the chat keeps one child per item). When animations are not Full (`lessMotion`: the level is Reduced or Off, or the phone asks for reduced motion) it mounts and unmounts at once |
 | `Chevron` | A right-pointing SVG chevron (`.chevron`) that turns 90 degrees when `open`, with a `transition: transform .18s` | Replaces the text chevrons (`▾`/`▸`) in `.chev` spans: tool run heads, `Reasoning`, the todo list, the changed-files card and the Archived row. The profile switch in the drawer keeps its text `▴`/`▾` |
-| `Segmented` | A row of buttons, one selected | Used for the text-size choice in Appearance (the Memory screen's two tabs are plain styled buttons) |
+| `Segmented` | A row of buttons, one selected; each says whether it is the chosen one (`aria-pressed`), and the chosen one settles in with a small bounce (`motion-choose`) | Used for the text-size choice and the Animations level in Appearance (the Memory screen's two tabs are plain styled buttons) |
 
-**Motion.** `Collapse`, `Chevron` and the send button's face change (`face-in`: the Send, Stop, Mic, Live, Steer and Queue buttons are keyed, so a new face fades and scales in over 120 ms) are all switched off by the phone's own "Remove animations" setting, which reaches the page as `prefers-reduced-motion: reduce`; there is no motion setting inside the app.
+**Glass** (`web/src/glass.css`, `docs/decisions/glass-and-motion.md`). Things that float over the chat are a
+translucent material that blurs what lies behind it: the chat screen's two bars (`.bar-top`, `.bar-bottom`, which have
+the `.glass` class; 3.2 Bars), every `.sheet` (sheets, menus, pickers, dialogs), toasts, the slash-command menu and the
+scrubber's label. Content never is: messages, cards, the chat list, full screens and anything inside a glass surface
+stay as they were (a group inside a sheet gets a faint solid tint, `--glass-group`, never a second blur). The material
+is painted on the surface's `::before` (blur, tint, sheen and a faint highlight from the tokens of 2.6), with a hairline
+edge and a soft shadow; text keeps at least 4.5:1 contrast over a white or a black picture behind it in all three
+themes, which is why dim, gold and red text is a little stronger on glass (`--glass-dim`, `--glass-accent`,
+`--glass-err`). OLED black is darker and quieter (no highlight); Light is a frosted white. Warnings keep their solid
+colour. At most three surfaces blur at once: the two bars, and while a sheet covers the chat its bars stop blurring
+(`.app:has(> .sheet-backdrop)`); while a finger is on the scrubber (`<html data-scrubbing>`) a toast is solid. A glass
+surface moves but never fades (a fading element cuts its blur off). With Glass effects off (`html[data-glass='off']`)
+or in a WebView without `backdrop-filter`, the same surfaces are solid `--surface` with the same layout. The scrim
+behind a sheet is a plain dim (`--scrim`), never a full-screen blur.
 
-**`dialog.tsx` — in-app dialogs.** `confirmDialog({ title, message, list, icon, confirmLabel, cancelLabel, danger })` returns a promise of true / false; `promptDialog({ …, placeholder, value, match })` returns the text or `null`. When `match` is set the confirm button stays disabled until the typed text equals it (type-the-name deletes). `DialogHost` (mounted once in `App.tsx`) shows the first queued request as a bottom sheet with `role="alertdialog"`; further requests wait in a queue. Cancel, the backdrop, dragging down and Android Back all answer "no". The danger style uses a 🗑 icon and the red button, labelled Delete unless `confirmLabel` says otherwise. These replace the browser's `confirm()` and `prompt()`. `useDialogOpen` is true while one is on screen, so other sheets (the What's new after an update) can wait for it.
+**Motion** (`web/src/motion.css`, `web/src/motion.ts`). Everything that moves uses the same springs and lengths
+(2.6). What moves, in Full:
+- sheets and menus spring up from the bottom (`motion-rise`), dialogs rise with a small bounce (`motion-pop`) and sink
+  away when answered (`motion-sink`, `LEAVE_MS` 240 ms in `dialog.tsx`); the scrim fades in and out (`motion-fade`,
+  `motion-fade-out`); the slash menu lifts (`motion-lift`);
+- the chat screen steps back a little (`scale` 0.965) while a sheet is over it;
+- the chat list slides in on the gentle spring (220 ms); full-screen pages slide in with a little depth (`motion-page`);
+- buttons and rows press in under the finger (`scale` 0.92 for buttons, 0.98 for rows) and spring back;
+- switches move with a bounce; the chosen segment and a picker's check settle in (`motion-choose`);
+- toasts drop in with a bounce and leave softly (`motion-toast`, `motion-toast-out`; `Toasts` in `App.tsx` keeps a
+  leaving toast for `TOAST_LEAVE_MS`, 240 ms, hidden from screen readers); banners in the bars fade in;
+- a list that shows once can let its rows arrive in a stagger (`.motion-in` with `stagger(i)`, `motion-row`); the chat
+  list does not (it opens many times a day, and a stagger doubled its work).
+
+Reduced: no travel, short fades only, and the repeating animations (the working shimmer, the caret, pulsing dots, the
+skeleton shimmer) stand still; the state still shows in words or a still mark. Off: every change is instant, the older
+animations of `styles.css` and the inline transitions of drags included; they are named one by one in `motion.css`
+(a rule matching every element would slow every restyle), and `motion.test.ts` fails when `styles.css` gains an
+animation the list does not name. `Collapse`, `Chevron`, the send button's face change (`face-in`) and smooth scrolls
+(the scroll button, a footnote link, a message being edited) follow the level through `lessMotion`. Every animation
+changes only position, scale or opacity, is under half a second, and never delays or blocks a tap; a repeating one
+stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while its element is off screen
+(`pauseWhenHidden` sets `data-motion-paused`).
+
+**`dialog.tsx` — in-app dialogs.** `confirmDialog({ title, message, list, icon, confirmLabel, cancelLabel, danger })` returns a promise of true / false; `promptDialog({ …, placeholder, value, match })` returns the text or `null`. When `match` is set the confirm button stays disabled until the typed text equals it (type-the-name deletes). `DialogHost` (mounted once in `App.tsx`) shows the first queued request as a bottom sheet with `role="alertdialog"`; further requests wait in a queue. Cancel, the backdrop, dragging down and Android Back all answer "no". The danger style uses a 🗑 icon and the red button, labelled Delete unless `confirmLabel` says otherwise. These replace the browser's `confirm()` and `prompt()`. An answered dialog's promise resolves at once; under Full its sheet then sinks away for `LEAVE_MS` (240 ms, the `leaving` class, backdrop hidden from screen readers and taps) before it is removed, otherwise it goes at once. `useDialogOpen` is true while one is on screen, so other sheets (the What's new after an update) can wait for it.
 
 **`useSheetDrag.ts`.** Every bottom sheet (`Sheet`, `PickerSheet`, the session menu, dialogs) uses this hook. A touch that starts within the top 64 px of the sheet (the grip and title strip) drags it down. Releasing after more than 110 px, or faster than 0.5 px/ms with at least 30 px, slides it off and closes it after 160 ms; otherwise it springs back.
 
