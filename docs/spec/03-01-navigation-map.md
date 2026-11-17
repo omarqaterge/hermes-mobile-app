@@ -111,7 +111,7 @@ flowchart TD
 | Dialogs | `DialogHost` (`dialog.tsx`) | `confirmDialog` / `promptDialog` calls. | Cancel, tap outside, Android Back. | 3.20 |
 | Picker sheets | `PickerSheet` (`ui.tsx`) | Auto button, Add, Copy reply. | Same as sheets. | 3.20 |
 | Lightbox, diagram viewer | `Lightbox` (`Media.tsx`), `DiagramViewer` (`Markdown.tsx`) | Tap an image / a drawn diagram. | Close button, tap the dark area, Android Back. | 3.3 |
-| Toasts | `toast()` in `store.ts` | Any code. | Time out after 3.5 s (default). At most three are shown; a toast with the same text as one on screen is dropped. | 3.20 |
+| Toasts | `toast()` in `store.ts`, drawn by `Toasts` in `App.tsx` | Any code. | Time out after 3.5 s (default). At most three are shown; a toast with the same text as one on screen is dropped. Under Full a toast that times out leaves softly (240 ms). | 3.20 |
 
 #### The Android Back button
 

@@ -2,8 +2,27 @@
 
 These files carry the plumbing every screen uses. Screens are in 3.
 
-- `main.tsx` — entry point; imports `secure-bridge.ts` first, then applies the theme, opens the first-run flow on a
-  fresh install and renders `App` (3.1).
+- `main.tsx` — entry point; imports `secure-bridge.ts` first, then the styles (`styles.css`, then `glass.css` and
+  `motion.css`), applies the theme and the look (`applyLook`), opens the first-run flow on a fresh install and renders
+  `App` (3.1).
+- `glass.css` — the glass material (`docs/decisions/glass-and-motion.md`): its tokens per theme (`--glass-filter`,
+  `--glass-tint`, `--glass-sheen`, `--glass-highlight`, `--glass-edge`, `--glass-edge-hi`, `--glass-edge-lo`,
+  `--glass-shadow`, `--glass-bar-shadow`, `--glass-dim`, `--glass-accent`, `--glass-err`, `--glass-group`,
+  `--glass-field`, `--scrim`, with `--glass-blur` the blur radius), the `.glass` class and the surfaces that carry it
+  (bars, sheets, dialogs, toasts, the slash menu, the scrubber's label), the solid fallback (`html[data-glass='off']`
+  and WebViews without `backdrop-filter`), and the chat screen's layout under its bars (3.2, Bars). Details in 3.20,
+  Glass.
+- `motion.css` — the motion system: springs (`--spring-settle`, `--spring-bounce`, `--spring-gentle`), the fade curve
+  (`--ease-fade`), lengths (`--motion-quick`, `--motion-base`, `--motion-settle`, `--motion-bounce`,
+  `--motion-stagger`), how far things travel (`--motion-move`), the three levels and what moves (3.20, Motion).
+- `motion.ts` — the look's two settings and the motion helpers: `MotionLevel`, `isLightDevice`, `defaultMotion`,
+  `motionChoice`, `defaultGlass`, `glassChoice`, `motionLevel`, `glassOn`, `applyLook`, `setMotionLevel`, `setGlass`,
+  the hooks `useMotionLevel` and `useGlass`, `lessMotion` (true when movement should be left out), `stagger` (a row's
+  arrival delay), and `setAppAway` / `pauseWhenHidden`, which stop CSS animations while the app is away or an element
+  is off screen (2.5). Tests in `motion.test.ts`.
+- `barinsets.ts` — the heights of the chat screen's two bars: `watchBars` measures them with a `ResizeObserver` and
+  writes `--bar-top` / `--bar-bottom` on `.stage`; `barInsets()` gives them to the scroll code and `onBarInsets` tells
+  a listener when they change (3.2, Bars). The `Insets` type is `{ top, bottom }`.
 - `videoembed.ts` — which addresses play inside the chat and each one's player address; `VideoEmbed.tsx` (in `components/`) draws the card and the player (3.3, Video player).
 - `stats.ts` — opt-in usage stats (spec 2.3): `startStats` runs once from `main.tsx`, after the first render; with no app key it does nothing.
 - `report.ts` — Report a problem (spec 3.21): what a report holds (`reportDetails`), the log scrubber (`scrubLog`), the filled-in GitHub new-issue link (`fallbackUrl`) and sending through the relay (`sendReport`).

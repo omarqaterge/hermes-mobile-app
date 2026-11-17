@@ -419,5 +419,10 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] The setup check and the Backend status sheet (Shizuku row) after a phone restart; Shizuku restarts by itself.
 - [ ] The drawn icons at real size on a phone: Settings rows, the chat menu, tool lines, the chat list's swipe strips and the composer's attachment chips look right in the Dark, OLED black and Light themes, and none is cut off or too big.
 - [ ] A tablet or a foldable opened: two columns, the canvas beside the chat, the divider dragged.
+- [ ] Glass: the chat scrolls under the header and the composer; a photo or a code block passing behind them blurs, and the title, the status line and the composer's text stay easy to read over it in Default, OLED black and Light. A menu, a dialog and a toast are glass too; with a sheet open the bars behind it are not blurred.
+- [ ] Motion on a real phone (Settings → Appearance → Effects, Animations Full): sheets spring up and the chat steps back, a dialog sinks away, the chat list slides in, buttons press in; scrolling a long chat and a streamed reply stay smooth (no stutter) on a mid-range phone. Then Reduced (short fades, nothing repeats) and Off (every change instant).
+- [ ] The phone's own "Remove animations" (Settings → Accessibility, or Developer options' animation scales at 0): with no choice made in the app, Animations shows Off.
+- [ ] On a phone of another maker, or with an older Android System WebView: glass shows or falls back to solid bars cleanly, with no unreadable text and nothing missing.
+- [ ] Ten minutes of the same working session twice, Glass effects and Animations Full first, then Glass effects off and Animations Off: compare the battery drop and how warm the phone gets.
 - [ ] Ten minutes of ordinary use, then the battery drop compared with the release over the same ten minutes; the phone sleeps while Hermux is idle.
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.

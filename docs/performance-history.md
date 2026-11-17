@@ -45,6 +45,39 @@ only since mid-October. From 2026-11-01 on, use the method below so new rows com
 Earlier rows' sources: [improvements.md](improvements.md) (rows 3, 11, 19, 25, 36), `CHANGELOG.md`, and
 [status/review-2026-11-01.md](status/review-2026-11-01.md) (items 5 and 11).
 
+## What the interface costs, in a desktop browser at 4x CPU
+
+The redesign may not make five moments slower by more than 5% (`docs/decisions/redesign-costs-no-speed-or-battery.md`).
+They are measured with `tools/web-e2e/uicost.cjs --runs 7` (median of 7, CPU slowed 4x, against the mock), the build
+before a change and the build after it run in turn on one machine, twice; the table gives both rounds. Time is until
+the result shows; work is the main thread's (all tasks) meanwhile. Streaming is `streamcost.cjs 4000 --runs 3` (the
+page's main-thread seconds during a 4000-character reply), cold start `coldstart.cjs` (message box visible). Numbers
+from `uicost.cjs` compare only with numbers from the same version of it: since glass and motion it taps and times the
+chat list, opening a chat and the first words inside the page, which reads lower for every build.
+
+| Date (change) | Moment | Before | After | Change |
+|---|---|---|---|---|
+| 2026-11-17 (glass and motion, effects on: Glass effects on, Animations Full) | Start-up | 494 / 496 ms, work 472 / 470 ms | 511 / 511 ms, work 487 / 487 ms | +3.2% time, +3.4% work |
+| | Opening a chat | 23 / 24 ms, work 32 / 33 ms | 23 / 23 ms, work 31 / 32 ms | none |
+| | First words of a reply | 397 / 396 ms, work 34 / 33 ms | 396 / 396 ms, work 35 / 34 ms | none |
+| | Scrolling a long chat (90 frames) | work 246 / 242 ms, no frame over 25 ms, p95 16.8 / 16.7 ms | work 256 / 254 ms, no frame over 25 ms, p95 16.8 / 16.7 ms | +4.5% work, same frames |
+| | Opening the chat list | 225 / 230 ms, work 19 / 19 ms | 221 / 222 ms, work 18 / 17 ms | −3% |
+| | A streamed 4000-character reply | 1.22 / 1.27 s (style 0.04 s) | 1.24 / 1.29 s (style 0.06–0.07 s) | +1.6% |
+| | Cold start (message box visible) | 424 ms | 416 ms | none |
+| 2026-11-17 (glass and motion, effects off: Glass effects off, Animations Off) | Start-up | 491 / 497 ms, work 467 / 470 ms | 500 / 513 ms, work 476 / 480 ms | +2% |
+| | Opening a chat | 23 / 23 ms | 22 / 26 ms | none |
+| | First words of a reply | 397 / 397 ms | 394 / 394 ms | none |
+| | Scrolling a long chat | work 242 / 245 ms | work 243 / 245 ms | none |
+| | Opening the chat list | 219 / 229 ms | 7 / 8 ms (no slide) | instant |
+
+The page file gzipped: 2720.6 → 2724.9 kB (`glass.css`, `motion.css`, `motion.ts`, `barinsets.ts`). On the way there,
+four things cost style work and were changed (the commit "Glass and motion cost no more style work"): rules ending in
+an `:is()` list, a rule for Animations Off that matched every element, the bars' heights as inherited custom
+properties (a bar changing height restyled every message), and `:has()` rules that looked at every descendant of the
+app (re-checked at each streamed word). The chat list's row stagger and the chat stepping back behind it were left out
+(they added about half to the list's work). Not measured here: heat and battery on a phone (`docs/manual-tests.md`,
+"Trying the redesign build").
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

@@ -926,7 +926,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
     <>
       {search}
       <Section title="Appearance">
-        <Row icon="palette" tone="purple" title="Appearance" sub="Theme and text size" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
+        <Row icon="palette" tone="purple" title="Appearance" sub="Theme, text size and effects" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
       </Section>
       <Section title="Voice">
         <ToggleRow icon="speaker" tone="gold" title="Read every reply aloud" sub="In all chats" on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
