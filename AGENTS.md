@@ -85,6 +85,24 @@ tests and browser e2e (`tools/web-e2e/run.sh`; add a check for each web change, 
 `tools/web-e2e/checks/`), the plugin and phone-script tests, and for Android changes `tools/java-check.sh` (JDK 21+)
 and `tools/api-check.sh` (Android SDK). What your machine can't run shows as SKIP; CI runs it on every PR.
 
+## Verify, and say how
+
+The checks are what let many agents work at once without the owner reading every line: treat them as part of the
+product. [docs/verification.md](docs/verification.md) has the full text; the rules:
+
+- **Run the change, not only its tests.** A web change: `tools/web-e2e/run.sh --serve`, open the page it prints and
+  use the feature. Phone-side work: on a device (lock it first), or say "not tried on a phone".
+- **Every commit says how it was verified:** a `Verified:` line in the message naming what you ran and looked at and
+  what you could not, or `Verified: none` with the reason. `tools/check-verified.sh` lists the commits without one.
+- **Read your checklist items.** `tools/check.sh` prints the items of
+  [docs/review-checklist/](docs/review-checklist/README.md) your diff sets off; answer each in the pull request.
+- **Three rounds, then the owner.** A check still failing after three attempts at a fix is reported with what you
+  tried, not worked around.
+- **Never rerun, wait, skip or loosen a test to get past it.** Find the cause; if it can't be found, delete the test
+  and say why. A change to a check, to CI or to the checklist goes in its own pull request.
+- **A miss becomes a check.** What the owner caught and the checks didn't gets a test in the fix's pull request, or a
+  checklist item when no test can hold it.
+
 ## Rules
 
 - UI: no native form controls (`<select>`, range/checkbox/radio/date inputs) and no `confirm()`/`prompt()`/`alert()`:
