@@ -255,7 +255,7 @@ module.exports = async t => {
     const canvasOpen = await hp.getByRole('dialog', { name: 'Canvas' }).waitFor({ timeout: 3000 }).then(() => true, () => false)
     check(canvasOpen && (await hp.getByRole('dialog', { name: 'Chat options' }).count()) === 0, 'chat menu: Canvas closes the menu and opens the canvas')
     await hp.evaluate(() => window.hermesBack())
-    await hp.waitForTimeout(200)
+    await hp.getByRole('dialog', { name: 'Canvas' }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
 
     // Chat details: grouped, in plain words, and its copy button copies the chat's id.
     await hp.evaluate(() => { window.__copied = null; navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve() } })
@@ -270,7 +270,7 @@ module.exports = async t => {
     const copied = await hp.evaluate(() => window.__copied)
     check(plain && copiedToast && copied === 's-46', `chat details: Bot, Working folder and Chat ID in plain words, and Copy chat ID copies the id (${copied}, toast ${copiedToast}, words ok ${plain})`)
     await hp.evaluate(() => window.hermesBack())
-    await hp.waitForTimeout(200)
+    await details.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
 
     // Archive from the header: Hermes hides the chat, and a new draft takes its place, as from the list.
     d = await menuOf(hp)
@@ -288,7 +288,7 @@ module.exports = async t => {
     const note = (await d.getByText('Rename, pin, archive and delete are available once you have sent a message.').count()) === 1
     const noModel = (await d.getByRole('button', { name: 'Change model' }).count()) === 0
     await dsw.click()
-    await hp.waitForTimeout(150)
+    await d.getByRole('switch', { name: 'Read replies aloud', checked: true }).waitFor({ timeout: 3000 }).catch(() => {})
     const flipped = (await dsw.getAttribute('aria-checked')) === 'true' && (await hp.getByRole('dialog', { name: 'Chat options' }).count()) === 1
     const draftHead = (await d.innerText()).split('\n')[0].trim()
     check(draftHead === 'New chat' && line === 'Applies once the chat starts' && note && noModel && flipped, `draft menu: "New chat", Read replies aloud as a switch that flips in place ("${line}"), the note, and no Change model (head ${draftHead}, note ${note}, no model ${noModel}, flipped ${flipped})`)
@@ -333,7 +333,8 @@ module.exports = async t => {
           await lp.evaluate(() => window.hermesBack())
           await lp.getByRole('button', { name: /^Sessions/ }).click()
           await lp.getByRole('button', { name: 'New chat' }).click()
-          await lp.waitForTimeout(200)
+          await lp.locator('.drawer.open').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+          await lp.getByRole('banner').getByText('Hermux', { exact: true }).waitFor({ timeout: 3000 }).catch(() => {})
         }
         const md = await menuOf(lp)
         const fit = await menuFits(lp, md, glass === '0')
