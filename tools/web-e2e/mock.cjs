@@ -52,6 +52,7 @@ const memory = { memory: { target: 'memory', entries: ['x', 'y'], used: 1100, li
 let botKeep = []
 let diagOn = true // the diagnostic log's switch on Hermes's side (plugin PUT /diag)
 let prefsOrder = null // PUT /prefs (the chat list's pinned / manual order)
+const bumped = [] // chats `bump` moved, with where they were (`unbump` puts them back)
 // Canvas versions (the plugin keeps one per save): `${session}/${doc}` -> [{ rev, at, by, note, content }], started when first asked.
 const canvasHist = new Map()
 const histOf = (s, d) => {
@@ -202,11 +203,36 @@ const server = http.createServer((req, res) => {
       if (b.bump) {
         // Like Hermes: session.list is sorted by last activity, so a chat that got a message moves to the front of the list.
         const i = allSessions.findIndex(x => x.id === b.bump)
+        bumped.push({ id: b.bump, i, n: allSessions[i].message_count })
         allSessions[i].message_count += 2
         allSessions.unshift(...allSessions.splice(i, 1))
       }
+      // `unbump`: every bumped chat back in its place with its count, so the checks after this one see the list as before.
+      if (b.unbump) for (const u of bumped.splice(0).reverse()) {
+        const [row] = allSessions.splice(allSessions.findIndex(x => x.id === u.id), 1)
+        row.message_count = u.n
+        allSessions.splice(u.i, 0, row)
+      }
+      // `dropChats`: those chats leave the list (the chats a check added).
+      if (b.dropChats) for (const id of b.dropChats) {
+        const i = allSessions.findIndex(x => x.id === id)
+        if (i >= 0) allSessions.splice(i, 1)
+      }
+      if (b.prefsOrder !== undefined) prefsOrder = b.prefsOrder
       // A brand-new chat made elsewhere (started now; session.list only has started_at, no separate last-active field).
       if (b.newChat) allSessions.unshift({ id: b.newChat, title: 'Brand new chat', preview: 'x', message_count: 0, started_at: Math.floor(Date.now() / 1000) + 5, source: 'mobile' })
+      // Two scheduled runs, as Hermes lists them (source "cron"): the pinned build's id names the job (j1 is "Morning
+      // brief" in /api/cron/jobs; the run's title still has the job's old name), a newer one's `local-…` id names none.
+      if (b.cronRuns) {
+        const now = Math.floor(Date.now() / 1000)
+        allSessions.unshift(
+          { id: 'cron_j1_20261117_090000', title: 'Old brief name · Nov 17 09:00', preview: 'Brief me', message_count: 2, started_at: now - 120, source: 'cron' },
+          { id: 'local-0a1b2c', title: 'Weekly report · Nov 16 08:00', preview: 'Report', message_count: 2, started_at: now - 180, source: 'cron' }
+        )
+      }
+      // `complete`: tell the page that connected last that a reply finished in that chat (Hermes sends `message.complete`
+      // for a chat the page is not showing), so it lists the chats again; the run's other pages are left alone.
+      if (b.complete) for (const c of [...wss.clients].slice(-1)) c.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'message.complete', session_id: b.complete, payload: { text: '', status: 'complete' } } }))
       // newRuntime: the next resumes mint a new runtime id (Hermes reaped the parked one); gen 0 = the usual rt-<id>.
       if (b.newRuntime) runtimeGen++
       if (b.gen !== undefined) runtimeGen = b.gen

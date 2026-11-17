@@ -152,8 +152,6 @@ export interface AppState {
   defaultEffort: string
   /** Chats with messages you haven't opened yet (unread.ts). */
   unread: string[]
-  /** Messages the user sent in each chat, for the drawer's "N msgs" (sent-counts.ts). */
-  sentCounts: Record<string, number>
   /** A message-search hit to scroll to once its chat is open (jump.ts). */
   jump: import('./jump').Jump | null
   /** In-chat search (header ⋮ → Search): the text typed and which match (0 = newest) is current; null = off. */
@@ -202,7 +200,6 @@ let state: AppState = {
   preview: lastOpen ? cachedChat(savedProfile, lastOpen) : null,
   requests: [],
   unread: [],
-  sentCounts: {},
   jump: null,
   find: null,
   bg: null,

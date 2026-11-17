@@ -46,6 +46,7 @@ import { BotsScreen } from './components/Bots'
 import { CronScreen, MemoryScreen, SkillsScreen } from './components/Screens'
 import { LibraryScreen } from './components/Library'
 import { refreshPanelValues } from './panelvalues'
+import { onAppResume } from './chatsnapshot'
 import { sideHidden } from './sidepanel'
 import { Spinner } from './components/Spinner'
 import { BgApp } from './components/BgApp'
@@ -90,6 +91,7 @@ window.hermesOpenSession = (id: string, draft?: string) => openSessionFromNotifi
 window.hermesResume = () => {
   setAppAway(false)
   if (window.matchMedia('(min-width: 840px)').matches && !sideHidden()) refreshPanelValues() // the docked list's rows (at most once a minute)
+  onAppResume() // the docked list's order (chatsnapshot.ts)
   noteBack()
   if (getState().conn !== 'open') reconnectNow()
   refreshBg()

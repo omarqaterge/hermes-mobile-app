@@ -86,7 +86,8 @@ stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while
 | `Drawer.tsx` | The side panel: search, the Scheduled, Skills and Library rows, the chat list, and the bottom bar (bot, Settings, New chat); the bot sheet |
 | `Library.tsx` | The Library page: Canvases, Files and Projects behind a switch |
 | `SessionList.tsx` | The chat list: groups, swipe rows, long-press-drag reorder, item menu, search hits, archive |
-| `chatorder.ts` | Pure ordering of the Chats list (`orderChats`, `recentIds`) |
+| `chatorder.ts` | Pure ordering of the Chats list (`orderChats`, `recentIds`, `dayLabel`) and the snapshot helpers (`activityTimes`, `sameTimes`, `frozenActivity`, `mergeListed`, `createdMs`) |
+| `chatsnapshot.ts` | When the Chats list's order is read: the snapshot of each chat's last activity, taken when the panel opens, the bot changes or a chat is created, deleted, archived or restored, never under a finger (`takeChatSnapshot`, `useChatSnapshot`, `chatListChanged`, `holdChatSnapshot`, `panelOpenGestureStarted`, `panelOpenGestureEnded`, `onAppResume`; 3.13) |
 | `order.ts` | Pins and custom order per profile, in `localStorage` and mirrored to the plugin |
 | `Screens.tsx` | The Skills, Memory, Cron, Files and Projects screens, plus `ScreenShell`, `EmbeddedShell`, `Sheet`, `useLoader`, `Status` |
 | `Settings.tsx` | The Settings screen and its pages, the model picker, key and option sheets |

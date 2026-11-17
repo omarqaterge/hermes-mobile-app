@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { nextLabel, scheduledValue } from './panelvalues'
+import { cronJobId, namesOf, nextLabel, runName, scheduledValue } from './panelvalues'
 
 const at = (y: number, m: number, d: number, h: number, min: number) => new Date(y, m - 1, d, h, min).getTime()
 const NOW = at(2026, 11, 16, 6, 0) // a Monday
@@ -25,5 +25,26 @@ describe('the side panel row values', () => {
   it('leaves the value out when an active job has no next time', () => {
     expect(scheduledValue([{ next_run_at: null }], NOW)).toBeUndefined()
     expect(scheduledValue([{ next_run_at: at(2026, 11, 15, 7, 0) }], NOW)).toBeUndefined()
+  })
+})
+
+describe('scheduled runs in the chat list', () => {
+  it('reads the job a run chat names', () => {
+    expect(cronJobId('cron_3f9a2b1c4d5e_20261117_090000')).toBe('3f9a2b1c4d5e')
+    expect(cronJobId('cron_my_job_20261117_090000')).toBe('my_job')
+    expect(cronJobId('local-1a2b')).toBeNull()
+    expect(cronJobId('s-9')).toBeNull()
+  })
+  it('takes the job names from the jobs list', () => {
+    expect(namesOf([{ id: 'j1', name: ' Morning brief ' }, { id: 'j2' }, { name: 'no id' }])).toEqual({ j1: 'Morning brief' })
+    expect(namesOf({ jobs: [{ id: 7, name: 'Weekly' }] })).toEqual({ '7': 'Weekly' })
+  })
+  it('shows the job name, else the start of the run title, else Scheduled', () => {
+    expect(runName({ title: 'Morning brief · Nov 17 09:00' }, 'Morning brief (renamed)')).toBe('Morning brief (renamed)')
+    expect(runName({ title: 'Morning brief · Nov 17 09:00' })).toBe('Morning brief')
+    expect(runName({ title: 'A · B · Nov 17 09:00' })).toBe('A · B')
+    expect(runName({ title: '' })).toBe('Scheduled')
+    expect(runName({})).toBe('Scheduled')
+    expect(runName({ title: 'No date here' })).toBe('Scheduled')
   })
 })

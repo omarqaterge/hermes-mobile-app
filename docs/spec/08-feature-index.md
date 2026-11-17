@@ -50,7 +50,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 
 | Feature | Section |
 |---|---|
-| Side panel: a glass sheet over the chat with search inside every message, Scheduled / Skills / Library rows, the bot sheet, Settings and New chat in a bar; pin, archive, delete, stable order by creation time, Sort by recent | 3.13 |
+| Side panel: a glass sheet over the chat with search inside every message, Scheduled / Skills / Library rows, the bot sheet, Settings and New chat in a bar; pin, archive, delete, ordered by last activity (read when the panel opens, so rows never move while you look), "Working" and "Finished" on the rows, scheduled runs named after their job, Sort by recent | 3.13 |
 | Links from one chat to another (`hermes-chat:` links in replies, bare chat ids become links) | 3.3, 5.3 |
 | Skills, memory screen, cron jobs, and the Library (Canvases, Files, Projects) | 3.14, 3.8 |
 | Settings: Dark / OLED black / Light theme, every Hermux setting | 3.15 |

@@ -1,5 +1,6 @@
 import { setState } from './store'
 import { motionLevel } from './motion'
+import { panelOpenGestureEnded, panelOpenGestureStarted } from './chatsnapshot'
 
 // The side panel (the sheet over the chat) follows the finger (swipe.ts): a swipe right on the chat pulls it in from
 // the left edge, a swipe left on the open panel or its backdrop pushes it back. While the finger is down the panel,
@@ -48,6 +49,7 @@ export function drawerDragStart(x: number, open: boolean): void {
   if (!e) return
   clearTimeout(clearTimer)
   const w = (e.drawer.offsetWidth || 1) + GAP
+  if (!open) panelOpenGestureStarted() // the chats are put in order before the panel comes into view (chatsnapshot.ts)
   e.drawer.style.transition = 'none'
   e.backdrop.style.transition = 'none'
   if (e.stage) {
@@ -95,4 +97,5 @@ export function drawerDragEnd(cancelled = false): void {
     }, SNAP_MS)
   }
   setState({ drawer: open })
+  panelOpenGestureEnded()
 }
