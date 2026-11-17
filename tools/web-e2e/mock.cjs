@@ -1203,6 +1203,26 @@ wss.on('connection', ws => {
           later(200, () => event('message.complete', sid, { text: 'Here it is:\n\nMEDIA:/root/pics/my pic.png' }))
           return
         }
+        const bench = /^bench stream (\d+)(?: (\d+))?$/.exec(params.text)
+        if (bench) {
+          // streamcost.cjs: a reply of about N characters of everyday Markdown (prose, lists, a table, code), streamed at
+          // a model's pace: 12 characters every 40 ms unless a second number gives the gap in ms.
+          const part = i =>
+            `## Step ${i + 1}: checking the result\n\nThe run **finished** and wrote \`out/report_${i}.json\`; here is what it says about [the plan](https://example.com/plan/${i}) and why it matters for the next step of the work.\n\n` +
+            `- first point about item ${i}, with a little more detail than a title\n- second point, *emphasised*, and a number: ${i * 37}\n- third point\n\n` +
+            (i % 3 === 0 ? `| Name | Value | Note |\n|---|---|---|\n| alpha | ${i} | ok |\n| beta | ${i * 2} | slow |\n\n` : '') +
+            (i % 2 === 0 ? '```python\ndef step_' + i + '(x):\n    total = sum(v * 2 for v in x)\n    return total + ' + i + '\n```\n\n' : '') +
+            `A closing sentence for this part, so the paragraph after the block is ordinary prose again.\n\n`
+          let full = ''
+          for (let i = 0; full.length < Number(bench[1]); i++) full += part(i)
+          const chunks = full.match(/[\s\S]{1,12}/g)
+          const gap = Number(bench[2] || 40)
+          let t = 200
+          event('message.start', sid, {})
+          for (const c of chunks) later((t += gap), live(() => event('message.delta', sid, { text: c })))
+          later(t + 400, live(() => event('message.complete', sid, { text: full })))
+          return
+        }
         if (/long code/.test(params.text)) {
           // A long streamed reply with a code block, many small deltas.
           const code = Array.from({ length: 40 }, (_, i) => `line_${i} = compute(${i})`).join('\n')
