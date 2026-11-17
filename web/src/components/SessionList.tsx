@@ -140,7 +140,7 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
         </div>
       )}
       <div
-        className={`session-row${active ? ' on' : ''}`}
+        className={`session-row${active ? ' on' : ''}${dx ? ' moving' : ''}`}
         style={{ transform: dx ? `translateX(${dx}px)` : undefined, transition: anim ? 'transform 0.2s ease' : undefined }}
         onPointerDown={onDown}
         onContextMenu={e => e.preventDefault()}
@@ -642,8 +642,8 @@ export function SessionList({ query }: { query: string }) {
 
   return (
     <>
-      {loading && sessions.length === 0 && <div className="dim pad">Loading sessions…</div>}
-      {!loading && sessions.length === 0 && <div className="dim pad">No sessions yet</div>}
+      {loading && sessions.length === 0 && <div className="dim pad">Loading chats…</div>}
+      {!loading && sessions.length === 0 && <div className="dim pad">No chats yet</div>}
       {(pinnedRows.length > 0 || pinZone) && (
         <>
           <div className="group-title">

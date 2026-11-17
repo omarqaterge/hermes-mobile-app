@@ -43,8 +43,10 @@ import { SetupFlow, SetupScreen, checkSetupFlow, watchFirstRun } from './compone
 import { StatsCard } from './components/StatsCard'
 import { ReportHost } from './components/Report'
 import { BotsScreen } from './components/Bots'
-import { GalleryScreen } from './components/Gallery'
-import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
+import { CronScreen, MemoryScreen, SkillsScreen } from './components/Screens'
+import { LibraryScreen } from './components/Library'
+import { refreshPanelValues } from './panelvalues'
+import { sideHidden } from './sidepanel'
 import { Spinner } from './components/Spinner'
 import { BgApp } from './components/BgApp'
 import { LocalAlertBanner } from './components/LocalAlertBanner'
@@ -87,6 +89,7 @@ window.hermesOpenSession = (id: string, draft?: string) => openSessionFromNotifi
 // Called by the shell when the app returns to the foreground.
 window.hermesResume = () => {
   setAppAway(false)
+  if (window.matchMedia('(min-width: 840px)').matches && !sideHidden()) refreshPanelValues() // the docked list's rows (at most once a minute)
   noteBack()
   if (getState().conn !== 'open') reconnectNow()
   refreshBg()
@@ -781,10 +784,6 @@ export function App() {
   useEffect(() => installSwipeToDrawer(), [])
 
   const conn = useStore(s => s.conn)
-  useEffect(() => {
-    // Leaving the screens for the chat (a skill used, a chat opened…) forgets the way back to the hub.
-    if (!screen && getState().screenBack) setState({ screenBack: null })
-  }, [screen])
   useEffect(() => watchFirstRun(conn, () => setState({ screen: 'welcome' })), [conn])
   useEffect(() => {
     // Health poll starts once connected; each reconnect re-checks so the dot is current. All of it waits until the
@@ -836,14 +835,11 @@ export function App() {
       {screen === 'skills' && <SkillsScreen onUse={t => setInjected(t)} />}
       {screen === 'memory' && <MemoryScreen />}
       {screen === 'cron' && <CronScreen />}
-      {screen === 'files' && <FilesScreen onUse={t => setInjected(t)} />}
-      {screen === 'projects' && <ProjectsScreen />}
-      {screen === 'gallery' && <GalleryScreen />}
+      {screen === 'library' && <LibraryScreen onUse={t => setInjected(t)} />}
       {screen === 'bots' && <BotsScreen />}
       {screen === 'settings' && <SettingsScreen key={screenKey} />}
       {screen === 'setup' && <SetupScreen />}
       {screen === 'welcome' && <SetupFlow />}
-      {screen === 'hub' && <HubScreen />}
       <Drawer />
       {sheet === 'model' && <ModelSheet />}
       {sheet === 'commands' && (

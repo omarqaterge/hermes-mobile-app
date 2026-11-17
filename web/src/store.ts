@@ -115,7 +115,7 @@ export interface Ctx {
 
 export type Sheet = null | 'model' | 'commands' | 'session-actions' | 'chat-menu' | 'draft-menu' | 'status' | 'rollback' | 'context'
 
-export type Screen = null | 'skills' | 'memory' | 'cron' | 'files' | 'projects' | 'settings' | 'bots' | 'setup' | 'hub' | 'welcome' | 'gallery'
+export type Screen = null | 'skills' | 'memory' | 'cron' | 'library' | 'settings' | 'bots' | 'setup' | 'welcome'
 
 export interface Toast {
   id: number
@@ -141,8 +141,6 @@ export interface AppState {
   screen: Screen
   /** Profile a Settings screen opens scoped to (from a bot's page); null = the current one. */
   screenProfile: string | null
-  /** Where Back from `screen` goes (the Hermux hub opened it); null = the chat. */
-  screenBack: Screen
   toasts: Toast[]
   textScale: number
   health: import('./health').Health | null
@@ -219,7 +217,6 @@ let state: AppState = {
   sheet: null,
   screen: null,
   screenProfile: null,
-  screenBack: null,
   toasts: [],
   textScale: savedScale,
   health: null,
@@ -375,8 +372,7 @@ export function addsToScreen(fresh: ChatItem[], shown: ChatItem[]): boolean {
   return text(fresh) > text(shown)
 }
 
-/** Close the open full screen: back to the hub when it opened it, else to the chat. */
+/** Close the open full screen: every page goes back to the chat. */
 export function closeScreen(): void {
-  const s = getState()
-  setState({ screen: s.screen !== s.screenBack ? s.screenBack : null, screenBack: null })
+  setState({ screen: null })
 }

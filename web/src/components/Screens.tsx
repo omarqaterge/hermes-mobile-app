@@ -2,10 +2,11 @@ import { useBackHandler } from '../backstack'
 import { confirmDialog } from '../dialog'
 import { openFileInCanvas } from '../canvas'
 import { useSheetDrag } from './useSheetDrag'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { api, ApiError, qs } from '../api'
 import { errText, newSession, resumeSession, rpc } from '../gateway'
-import { closeScreen, setState, toast, useStore, type Screen } from '../store'
+import { closeScreen, setState, toast, useStore } from '../store'
 import { haptic, openFile } from '../bridge'
 import { Markdown } from './Markdown'
 import { DocView, HeldScope } from './DocView'
@@ -18,7 +19,13 @@ import { Icon, iconOf, type IconName } from './icons'
 
 // ── shared building blocks ──────────────────────────────────
 
+/** Inside the Library page a part (Canvases, Files, Projects) is a ScreenShell without its own bar: its buttons go into
+ *  the Library's top bar (`slot`) and its body is shown as it is. */
+export const EmbeddedShell = createContext<{ slot: HTMLElement | null } | null>(null)
+
 export function ScreenShell({ title, actions, children, onBack, className }: { title: string; actions?: ReactNode; children: ReactNode; onBack?: () => void; className?: string }) {
+  const embedded = useContext(EmbeddedShell)
+  if (embedded) return <>{embedded.slot && actions ? createPortal(actions, embedded.slot) : null}{children}</>
   return (
     <div className={className ? `screen ${className}` : 'screen'}>
       <header className="topbar">
@@ -946,119 +953,6 @@ export function ProjectsScreen() {
           </div>
         </Sheet>
       )}
-    </ScreenShell>
-  )
-}
-
-// ── Hermux hub ───────────────────────────────────────────────
-// One screen for what Hermes knows and does on its own, each with a one-line summary; Back from a page returns here.
-
-const HUB: { key: Exclude<Screen, null>; icon: string; title: string; tone: string }[] = [
-  { key: 'skills', icon: 'sparkles', title: 'Skills', tone: 'gold' },
-  { key: 'memory', icon: 'brain', title: 'Memory', tone: 'purple' },
-  { key: 'cron', icon: 'clock', title: 'Scheduled jobs', tone: 'blue' },
-  { key: 'files', icon: 'folder', title: 'Files', tone: 'teal' },
-  { key: 'projects', icon: 'layers', title: 'Projects', tone: 'green' },
-  { key: 'gallery', icon: 'image', title: 'Canvas gallery', tone: 'gold' }
-]
-
-interface HubData {
-  skills?: string
-  memory?: string
-  memPct?: number
-  cron?: string
-  projects?: string
-  gallery?: string
-}
-
-/** One loader per card, so a slow one (Hermes busy) doesn't hold the others back. */
-const HUB_LOADERS: (() => Promise<Partial<HubData>>)[] = [
-  async () => {
-    const skills = await api<SkillRow[]>('GET', '/api/skills')
-    const on = skills.filter(s => s.enabled !== false).length
-    return { skills: `${on} enabled${on < skills.length ? ` of ${skills.length}` : ''}` }
-  },
-  async () => {
-    const mem = await api<MemData>('GET', '/api/plugins/hermes-mobile/memory')
-    const pct = mem.memory.limit ? Math.round((mem.memory.used / mem.memory.limit) * 100) : 0
-    return { memPct: pct, memory: `${mem.memory.entries.length} notes · ${pct}% full · ${mem.user.entries.length} about you` }
-  },
-  async () => {
-    const jobs = await api<Job[] | { jobs?: Job[] }>('GET', '/api/cron/jobs')
-    const list = Array.isArray(jobs) ? jobs : jobs.jobs ?? []
-    const active = list.filter(j => !jobPaused(j))
-    const next = active
-      .map(j => j.next_run_at ?? j.next_run)
-      .map(v => (typeof v === 'number' ? (v > 1e12 ? v : v * 1000) : Date.parse(String(v ?? ''))))
-      .filter(n => Number.isFinite(n) && n > Date.now())
-      .sort((a, b) => a - b)[0]
-    return {
-      cron: list.length
-        ? `${active.length} active${list.length > active.length ? `, ${list.length - active.length} paused` : ''}${next ? ` · next ${fmtTime(next)}` : ''}`
-        : 'None yet'
-    }
-  },
-  async () => {
-    const r = await rpc<{ projects: Project[] }>('projects.list')
-    const n = r.projects.length
-    return { projects: n ? `${n} project${n > 1 ? 's' : ''}` : 'None yet' }
-  },
-  async () => {
-    const r = await api<{ items: unknown[]; categories: Record<string, number> }>('GET', '/api/plugins/hermes-mobile/gallery', undefined, { profile: false })
-    const n = r.items.length, c = Object.keys(r.categories).length
-    return { gallery: n ? `${n} document${n > 1 ? 's' : ''} · ${c} categor${c > 1 ? 'ies' : 'y'}` : 'Every canvas shows up here' }
-  }
-]
-
-export function HubScreen() {
-  const profile = useStore(s => s.profile)
-  const [data, setData] = useState<HubData>({})
-  const [failed, setFailed] = useState<Set<number>>(() => new Set())
-  useEffect(() => {
-    let live = true
-    setData({})
-    setFailed(new Set())
-    HUB_LOADERS.forEach((load, i) =>
-      load().then(
-        d => live && setData(x => ({ ...x, ...d })),
-        () => live && setFailed(f => new Set(f).add(i))
-      )
-    )
-    return () => {
-      live = false
-    }
-  }, [profile])
-  const sub = (k: string): string => {
-    if (k === 'files') return 'Browse, open and upload on the phone'
-    const v = data[k as keyof HubData]
-    return typeof v === 'string' ? v : failed.has(['skills', 'memory', 'cron', 'projects', 'gallery'].indexOf(k)) ? 'Couldn’t load' : 'Loading…'
-  }
-  return (
-    <ScreenShell title="Hermux">
-      <div className="hub">
-        {HUB.map(h => (
-          <button
-            key={h.key}
-            className="hub-card"
-            onClick={() => {
-              haptic()
-              setState({ screen: h.key, screenBack: 'hub' })
-            }}
-          >
-            <span className={`set-icon tone-${h.tone}`} aria-hidden="true">{iconOf(h.icon)}</span>
-            <span className="hub-text">
-              <span className="hub-title">{h.title}</span>
-              <span className="hub-sub">{sub(h.key)}</span>
-              {h.key === 'memory' && data.memPct != null && (
-                <span className="hub-meter" aria-hidden="true">
-                  <span style={{ width: `${Math.min(100, data.memPct)}%` }} className={data.memPct >= 90 ? 'full' : ''} />
-                </span>
-              )}
-            </span>
-            <span className="chev" aria-hidden="true"><Icon n="right" /></span>
-          </button>
-        ))}
-      </div>
     </ScreenShell>
   )
 }
