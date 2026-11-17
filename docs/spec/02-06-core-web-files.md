@@ -67,7 +67,9 @@ These files carry the plumbing every screen uses. Screens are in 3.
   indented block, `<pre>`); `loadRich` runs the bundle once, adds its CSS as `<style id="hm-rich-css">` after the
   page's own and tells the subscribers (`subscribeRich`, `richApi`, which `Markdown` reads with
   `useSyncExternalStore`). Before that, a formula shows as its TeX in inline code and code blocks have no colours;
-  every message re-renders once it is loaded.
+  every message re-renders once it is loaded. The bundle hands out `rehype-highlight` through `highlightOnce`, which
+  builds its 37 language definitions once per setting: the plugin itself builds them each time it joins a processor,
+  and `react-markdown` makes a processor for every drawing of every message.
 - `player.ts` — the read-aloud player's decisions as pure functions (phases, stale `tts-done`, pace, position, pause/resume place); `voice.ts` calls them and keeps the bridge, timers and store (see 3.11).
 - `health.ts` — the header dot and status sheet data: `checkHealth` (ping `gateway.ping` with 8 s timeout, plus
   `GET /api/status` without `profile=`), `startHealthPolling` (2.5; returns false when it was already running, so `App` asks for only a ping on a reconnect and the full status is sent once at start-up), `dotState`: `wait` while connecting, `err`
