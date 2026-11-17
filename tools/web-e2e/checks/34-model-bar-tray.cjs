@@ -106,6 +106,19 @@ module.exports = async t => {
     await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
     await p.waitForFunction(() => !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity), null, { timeout: 3000 }).catch(() => {})
   }
+  // The settle's end (Tray.tsx removes tray-settle and tray-moving when its timer ends, also when nothing had to move).
+  const atRest = async p => {
+    await settled(p)
+    await p.waitForFunction(() => !document.querySelector('.tray-settle, .tray-moving'), null, { timeout: 3000 }).catch(() => {})
+  }
+  // The handle has (or no longer has) one of its state classes: working, waiting.
+  const handleIs = (p, cls, on = true) =>
+    p.waitForFunction(([c, v]) => {
+      const h = document.querySelector('.tray-handle')
+      return !!h && h.classList.contains(c) === v
+    }, [cls, on], { timeout: 3000 }).catch(() => {})
+  const trayIs = (p, v) =>
+    p.waitForFunction(v => document.querySelector('.tray-handle')?.getAttribute('aria-expanded') === v, v, { timeout: 3000 }).catch(() => {})
 
   // ── a new chat shows the tray open; its first message closes it; the hint shows once, and never again ──
   {
@@ -130,7 +143,7 @@ module.exports = async t => {
     check((await expanded(p)) === 'true', `tray: another new chat starts open again (${await expanded(p)})`)
     await send(p, 'hello again')
     await p.getByText('OK', { exact: true }).last().waitFor({ timeout: 8000 })
-    await sleep(200)
+    await trayIs(p, 'false')
     check((await expanded(p)) === 'false' && (await hint.count()) === 0, 'tray: its first message closes it, and the hint never shows again')
     // After a restart too.
     await p.reload()
@@ -181,14 +194,12 @@ module.exports = async t => {
     check((await scroller()) === before, 'tray: a drag on the handle does not scroll the chat')
     await setMotion(p, 'full')
     await drag(-80)
-    await settled(p)
-    await sleep(500) // the settle's end (motion.css --motion-settle, 400 ms), also when the finger left it in place
+    await atRest(p)
     check((await expanded(p)) === 'true' && (await modelChip(p).isVisible()), 'tray: a drag up opens it (animations Full, it follows the finger)')
     const placed = await p.evaluate(() => [...document.querySelectorAll('[style]')].filter(e => /translate/.test(e.getAttribute('style'))).length)
     check(placed === 0, `tray: once settled, nothing keeps a translate (${placed})`)
     await drag(80)
-    await settled(p)
-    await sleep(500)
+    await atRest(p)
     check((await expanded(p)) === 'false' && (await modelChip(p).count()) === 0, 'tray: a drag down closes it (animations Full)')
     // A short flick is enough.
     {
@@ -204,12 +215,10 @@ module.exports = async t => {
     }
     // A drag the wrong way does nothing; a drag that turns back settles where it was.
     await drag(40)
-    await settled(p)
-    await sleep(500)
+    await atRest(p)
     check((await expanded(p)) === 'false', 'tray: (closed by a drag down for the next step)')
     await drag(40)
-    await settled(p)
-    await sleep(500)
+    await atRest(p)
     check((await expanded(p)) === 'false', 'tray: a drag down on a closed tray leaves it closed')
     await expectIdle(p, 'tray closed, animations Full')
     await handle(p).click()
@@ -272,7 +281,7 @@ module.exports = async t => {
     check(rest && rest.colour === rest.dim && rest.opacity < 1 && !rest.moving, `tray handle: dim and still at rest (${JSON.stringify(rest)})`)
     await send(p, 'long slow reply')
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 3000 })
-    await sleep(150)
+    await handleIs(p, 'working')
     const work = await look(p)
     check(work && work.colour === work.accent && work.opacity === 1 && work.moving, `tray handle: gold with a running shimmer while a reply runs (${JSON.stringify(work)})`)
     check((await box(p).getAttribute('placeholder')) === 'Queue or steer a follow-up…' && (await p.getByRole('button', { name: 'Stop', exact: true }).count()) === 1, 'tray handle: the placeholder and the Stop button still say a reply runs')
@@ -282,13 +291,13 @@ module.exports = async t => {
     check(away && !away.moving, `tray handle: the shimmer stands still while the app is away (${JSON.stringify(away)})`)
     await p.evaluate(() => window.hermesResume && window.hermesResume())
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 8000 })
-    await sleep(150)
+    await handleIs(p, 'working', false)
     const after = await look(p)
     check(after && after.colour === after.dim && !after.moving, `tray handle: the shimmer ends with the reply (${JSON.stringify(after)})`)
     // Waiting for you: a question from Hermux.
     await send(p, 'ask me three')
     await p.getByRole('dialog').first().waitFor({ timeout: 5000 })
-    await sleep(150)
+    await handleIs(p, 'waiting')
     const wait = await look(p)
     check(wait && wait.colour === wait.warn && wait.opacity === 1 && !wait.moving, `tray handle: amber and still while Hermux waits for you (${JSON.stringify(wait)})`)
     await p.close()
@@ -421,7 +430,7 @@ module.exports = async t => {
       const b = await reply.getByRole('button', { name: n, exact: true }).first().boundingBox()
       await p.evaluate(() => (window.__hits = []))
       await p.mouse.click(b.x + b.width / 2, b.y + b.height / 2)
-      await sleep(100)
+      await p.waitForFunction(() => window.__hits.length > 0, null, { timeout: 1000 }).catch(() => {})
       const hits = await p.evaluate(() => window.__hits)
       if (!hits.includes(n)) missed.push(`${n}: ${JSON.stringify(hits)}`)
     }
@@ -440,7 +449,7 @@ module.exports = async t => {
     if (overlap) {
       await p.evaluate(() => (window.__hits = []))
       await p.mouse.click(overlap.x, overlap.y)
-      await sleep(100)
+      await p.waitForFunction(() => window.__hits.length > 0, null, { timeout: 1000 }).catch(() => {})
       const hits = await p.evaluate(() => window.__hits)
       if (!hits.includes(overlap.name)) missed.push(`under the target, ${overlap.name}: ${JSON.stringify(hits)}`)
     }
@@ -526,10 +535,10 @@ module.exports = async t => {
     }, [dy, fromHandle])
     const sideChat = () => p.getByRole('dialog').count()
     await pull(200, false)
-    await sleep(400)
+    await sleep(400) // nothing must happen: give a side chat that should not open the time it would take to show
     check((await sideChat()) === 0, 'tray: with the handle there, a pull of 200 px still does not open the side chat')
     await pull(270, true)
-    await sleep(400)
+    await sleep(400) // nothing must happen, as above
     check((await sideChat()) === 0, 'tray: a long drag that starts on the handle never opens the side chat')
     await pull(270, false)
     const opened = await p.getByRole('dialog').first().waitFor({ timeout: 3000 }).then(() => true, () => false)
@@ -575,18 +584,18 @@ module.exports = async t => {
     })
     await send(p, 'long slow reply')
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 3000 })
-    await sleep(300)
+    await sleep(300) // the send's own redraw (the text box clearing) ends before the count starts
     await watch()
-    await sleep(2400) // status changes, words arrive, the elapsed time passes 0:03
+    await sleep(2400) // the time counted: status changes, words arrive, the elapsed time passes 0:03
     const closedMuts = await p.evaluate(() => window.__muts)
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 8000 })
     // The same with the tray open (the check can see changes): the status line redraws.
     await handle(p).click()
     await send(p, 'long slow reply')
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 3000 })
-    await sleep(300)
+    await sleep(300) // as above
     await watch()
-    await sleep(2400)
+    await sleep(2400) // as above
     const openMuts = await p.evaluate(() => window.__muts)
     check(closedMuts === 0 && openMuts > 0, `tray: while closed and a reply runs nothing in it is drawn (${closedMuts} changes below the chat; open: ${openMuts})`)
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 8000 })

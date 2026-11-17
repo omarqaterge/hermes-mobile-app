@@ -65,7 +65,7 @@ they sit in a tray above the text box that can be closed (owner, 2026-11-16;
   or closes (`onBarInsets`, 3.2); scrolled up, the text does not move.
 - **Cost.** Closed, nothing in the tray is rendered, so nothing in it updates: no elapsed-time ticks (`useElapsed`
   runs only while the status line is on screen), no speed updates, no ring redraws; opening shows the current values at
-  once. The handle's shimmer exists only while a reply runs, moves a strip by `translate` at the chat list shimmer's frame
+  once. The handle's shimmer exists only while a reply runs, moves a strip of the theme's `--shine` (a white glint, softer in Light) by `translate` at the chat list shimmer's frame
   limit (48 steps in 2 s), stands still under Reduced and Off, while the app is away and while the handle is off screen
   (`pauseWhenHidden`).
 

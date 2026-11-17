@@ -9,6 +9,7 @@
   --accent: #d9a441;
   --accent-2: #cd7f32;
   --accent-ink: #1a1307;
+  --shine: rgba(255, 255, 255, 0.75); /* the glint that runs over a gold mark (the tray handle while working) */
   --ok: #57c28a;
   --warn: #e0b341;
   --err: #ec6a5e;
@@ -2683,6 +2684,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   --accent: #b57a10;
   --accent-2: #9a5f0b;
   --accent-ink: #ffffff;
+  --shine: rgba(255, 255, 255, 0.6);
   --ok: #1d8a56;
   --warn: #9a6b00;
   --err: #c9372c;
@@ -3038,7 +3040,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .tray-shine {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.75) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, var(--shine) 50%, transparent 100%);
   translate: -100% 0;
 }
 .tray-hint {
