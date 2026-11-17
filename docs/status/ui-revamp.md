@@ -97,6 +97,29 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   docs/performance-history.md. Needs a phone: the order and the lines with TalkBack (manual-tests). Left for task 09:
   nested rows go inside their chat's row container, so they move with it.
 
+- **The chat menu (task 05, PR against `redesign`).** One look for every menu of a chat, from new parts in `ui.tsx`
+  (`MenuSheet`, `MenuHeader`, `MenuActions` / `MenuAction`, `MenuGroup`, `MenuRow`, `MenuNote`; the look in
+  `web/src/menu.css`), and `PickerSheet`'s rows restyled to match. The header's menu (`components/ChatMenu.tsx`
+  `ChatMenuSheet`): the title with the model (and the bot, with several) and a Rename pencil; Search, Canvas (with a
+  count), Share and Pin / Unpin as four quick actions; Read replies aloud as a real switch that flips in place ("Only
+  this chat" / "Follows the setting for all chats"); Undo last turn (disabled while a reply runs, with the reason), File
+  checkpoints, Chat details; Archive (a new draft follows) and Delete, red and last. A row's menu in the chat list has
+  the same header and one group (Pin to top / Unpin, Archive / Unarchive, Delete); it opens over the panel as a solid
+  sheet (no glass on glass; the panel and the place in the list stay) and Back now closes it. The new-chat menu: the
+  switch and the note; Change model is gone. Chat details: groups Chat, Model, Usage, then Chat ID with a copy button;
+  Bot, Working folder, Chat ID instead of Profile, Working dir, Session id. Pin, Archive and Delete from both menus go
+  through `web/src/chatactions.ts`, so `chatListChanged` is called exactly as the list did (deleting from the header
+  now also drops the chat from the pins and the custom order). A touch on a control in a sheet's top strip keeps its
+  own tap (`useSheetDrag`). Checks: the end of `09` (header, every quick action, Undo while running, Archive, Delete,
+  the draft menu, Chat details' copy, 320 px with a wider font in Default, Light and OLED, glass on and off, contrast
+  with glass off) and of `04` (the row menu, solid over the panel, Back, the same layout checks); selectors that found
+  the old menu by class were moved to role and name in `04`, `07`, `09`, `10`, `31`, `33` (listed in the PR).
+  `uicost.cjs` gained two moments: opening a row's menu and opening the chat's menu. Costs:
+  docs/performance-history.md. Needs a phone: the menus with TalkBack, Share's share sheet, the switch reading the next
+  reply aloud (manual-tests). Not checked in the browser: Unarchive from an archived row (the mock lists no archived
+  chats). Animations Off and the chat list: the ~190 ms in task 04's "effects off" rows was the measurement, not the
+  app: on `redesign` before this task, `uicost.cjs --motion off --glass off` opens the list in 11 ms.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
