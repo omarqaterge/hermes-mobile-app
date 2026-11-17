@@ -62,7 +62,9 @@ async function one(browser) {
         return d && Math.abs(d.getBoundingClientRect().left) < 1
       }, null, { timeout: 10000 })
     })
-    // Opening a chat from the list, until its reply shows.
+    // Opening a chat from the list, until its reply shows. First the list's rows finish arriving (untimed): a click on a
+    // row that is still moving waits for it to stand still, which would count the arrival as the chat's cost.
+    await page.waitForFunction(() => !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity), null, { timeout: 3000 }).catch(() => {})
     out.chat = await timed(work, () => page.getByText('Chat 46', { exact: true }).click(), () => page.getByText('answer s-46', { exact: true }).waitFor({ timeout: 10000 }))
     await sleep(800)
     // The first words of a streamed reply, from Send.

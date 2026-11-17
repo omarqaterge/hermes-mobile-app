@@ -17,6 +17,7 @@ import { Spinner } from './Spinner'
 import { Linked } from './Linked'
 import { VideoEmbeds } from './VideoEmbed'
 import { Icon, type IconName } from './icons'
+import { lessMotion } from '../motion'
 
 // Stored outputs fetched for cards restored from history (resumed transcripts omit them).
 const outputCache = new Map<string, string>()
@@ -328,7 +329,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
           // Keep Cancel/Send visible once the keyboard has resized the view.
           onFocus={e => {
             const el = e.currentTarget.parentElement
-            setTimeout(() => el?.scrollIntoView({ block: 'end', behavior: 'smooth' }), 350)
+            setTimeout(() => el?.scrollIntoView({ block: 'end', behavior: lessMotion() ? 'auto' : 'smooth' }), 350)
           }}
         />
         <div className="edit-bar">

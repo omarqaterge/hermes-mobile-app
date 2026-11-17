@@ -6,7 +6,7 @@ import { setState } from './store'
 // it goes the way the finger was flicking, or, without a clear flick, to whichever side is nearer.
 
 const FLICK = 0.3 // px/ms: faster than this decides the direction on its own
-const SNAP_MS = 260 // a little longer than the CSS transition (.drawer 0.22s) before the inline styles are dropped
+const SNAP_MS = 260 // a little longer than the CSS transition (.drawer, motion.css --motion-base 220ms) before the inline styles are dropped
 
 let drag: { x0: number; p0: number; w: number; p: number; samples: { x: number; t: number }[] } | null = null
 let clearTimer = 0

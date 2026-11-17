@@ -377,4 +377,24 @@ module.exports = async t => {
     check((await s.getByText('Animations', { exact: true }).count()) > 0, 'settings search: "animations" finds Animations')
     await s.close()
   }
+
+  // While a finger is on the chat's rail its label is glass, so a toast goes solid: the page says so on <html>, and only
+  // for as long as the finger stays.
+  {
+    const p = await open({ width: 375, height: 812 }, 's-scrub')
+    await p.getByText('answer 30', { exact: true }).waitFor({ timeout: 5000 })
+    const rail = p.getByRole('slider', { name: 'Jump to a message' })
+    const rb = await rail.boundingBox()
+    const scrubbing = () => p.evaluate(() => document.documentElement.hasAttribute('data-scrubbing'))
+    const before = await scrubbing()
+    await p.mouse.move(rb.x + rb.width / 2, rb.y + rb.height - 1)
+    await p.mouse.down()
+    await p.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2, { steps: 4 })
+    const during = await scrubbing()
+    await p.mouse.up()
+    await sleep(300)
+    const after = await scrubbing()
+    check(!before && during && !after, `scrubbing: the page marks the time a finger is on the rail, and only then (${[before, during, after]})`)
+    await p.close()
+  }
 }

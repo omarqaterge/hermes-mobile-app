@@ -104,14 +104,30 @@
   box-shadow: inset 0 1px 0 var(--glass-edge-hi), inset 0 -1px 0 var(--glass-edge-lo), var(--glass-shadow);
 }
 /* Text that is dim, gold or red elsewhere is a little stronger on glass, so it reads over anything. */
-:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) :is(.dim, .subtitle, .set-sub, .sheet-desc, .dialog-msg, .find-count, .status-line, .tts-time, .mi-sub, .bg-card-action) {
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dim,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .subtitle,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .set-sub,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .sheet-desc,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dialog-msg,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .find-count,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .status-line,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .tts-time,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .mi-sub,
+:is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .bg-card-action {
   color: var(--glass-dim);
 }
-.glass :is(.goal-line, .todos-head, .todo-in_progress, .mini, .tts-speed, .bg-card-title),
-.sheet :is(.picker-opt.on .set-title, .mini) {
+.glass .goal-line,
+.glass .todos-head,
+.glass .todo-in_progress,
+.glass .mini,
+.glass .tts-speed,
+.glass .bg-card-title,
+.sheet .picker-opt.on .set-title,
+.sheet .mini {
   color: var(--glass-accent);
 }
-:is(.sheet, .toast) :is(.menu-item.danger, .set-title.danger),
+:is(.sheet, .toast) .menu-item.danger,
+:is(.sheet, .toast) .set-title.danger,
 .toast.toast-error {
   color: var(--glass-err);
 }
@@ -122,40 +138,63 @@
 }
 
 /* Solid instead: glass turned off in Appearance, or a WebView without backdrop blur. Same layout either way. */
-html[data-glass='off'] :is(.glass, .sheet)::before {
+html[data-glass='off'] .glass::before,
+html[data-glass='off'] .sheet::before {
   background: var(--surface);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-html[data-glass='off'] :is(.glass, .sheet) {
+html[data-glass='off'] .glass,
+html[data-glass='off'] .sheet {
   border-color: var(--border);
 }
 html[data-glass='off'] .sheet {
   box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25);
 }
-html[data-glass='off'] :is(.toast, .slash-menu, .scrub-bubble) {
+html[data-glass='off'] .toast,
+html[data-glass='off'] .slash-menu,
+html[data-glass='off'] .scrub-bubble {
   background: var(--surface-2);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   border-color: var(--border);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
-html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) :is(.dim, .subtitle, .set-sub, .sheet-desc, .dialog-msg, .find-count, .status-line, .tts-time, .mi-sub, .bg-card-action) {
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dim,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .subtitle,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .set-sub,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .sheet-desc,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .dialog-msg,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .find-count,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .status-line,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .tts-time,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .mi-sub,
+html[data-glass='off'] :is(.glass, .sheet, .toast, .slash-menu, .scrub-bubble) .bg-card-action {
   color: var(--dim);
 }
-html[data-glass='off'] .glass :is(.goal-line, .todos-head, .todo-in_progress, .mini, .tts-speed, .bg-card-title),
-html[data-glass='off'] .sheet :is(.picker-opt.on .set-title, .mini) {
+html[data-glass='off'] .glass .goal-line,
+html[data-glass='off'] .glass .todos-head,
+html[data-glass='off'] .glass .todo-in_progress,
+html[data-glass='off'] .glass .mini,
+html[data-glass='off'] .glass .tts-speed,
+html[data-glass='off'] .glass .bg-card-title,
+html[data-glass='off'] .sheet .picker-opt.on .set-title,
+html[data-glass='off'] .sheet .mini {
   color: var(--accent);
 }
-html[data-glass='off'] :is(.sheet, .toast) :is(.menu-item.danger, .set-title.danger),
+html[data-glass='off'] :is(.sheet, .toast) .menu-item.danger,
+html[data-glass='off'] :is(.sheet, .toast) .set-title.danger,
 html[data-glass='off'] .toast.toast-error {
   color: var(--err);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :is(.glass, .sheet)::before {
+  .glass::before,
+  .sheet::before {
     background: var(--surface);
   }
-  :is(.toast, .slash-menu, .scrub-bubble) {
+  .toast,
+  .slash-menu,
+  .scrub-bubble {
     background: var(--surface-2);
   }
 }
@@ -213,14 +252,17 @@ html[data-glass='off'] .bar-top .topbar {
 .bar-bottom .composer-wrap {
   border-top-color: var(--glass-edge);
 }
-html[data-glass='off'] .bar-bottom :is(.statusbar, .composer-wrap) {
+html[data-glass='off'] .bar-bottom .statusbar,
+html[data-glass='off'] .bar-bottom .composer-wrap {
   border-top-color: var(--border);
 }
 .bar-bottom .composer {
   background: var(--glass-field);
   border-color: var(--glass-edge);
 }
-.bar-bottom :is(.tts-player, .bg-card, .quote-bar) {
+.bar-bottom .tts-player,
+.bar-bottom .bg-card,
+.bar-bottom .quote-bar {
   background: var(--glass-group);
   border-color: var(--glass-edge);
 }
@@ -228,12 +270,33 @@ html[data-glass='off'] .bar-bottom .composer {
   background: var(--surface-2);
   border-color: var(--border);
 }
-html[data-glass='off'] .bar-bottom :is(.tts-player, .bg-card, .quote-bar) {
+html[data-glass='off'] .bar-bottom .tts-player,
+html[data-glass='off'] .bar-bottom .bg-card,
+html[data-glass='off'] .bar-bottom .quote-bar {
   background: var(--surface-2);
   border-color: var(--border);
 }
 
-/* The list extends under both bars; its padding keeps the first and the last message clear of them. */
+/* The list extends under both bars; its padding keeps the first and the last message clear of them. The bars' heights
+   (barinsets.ts, set on .stage) are registered as not inherited and handed down only to the elements that read them:
+   an inherited custom property that changes (the status bar appearing as a turn starts) restyles every message. */
+@property --bar-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --bar-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.stage > .chat-wrap,
+.chat-wrap > .chat,
+.chat-wrap > .chat > .jump,
+.chat-wrap > .chat > .pull-hint {
+  --bar-top: inherit;
+  --bar-bottom: inherit;
+}
 .chat-wrap > .chat {
   position: absolute;
   left: 0;
@@ -280,18 +343,30 @@ html[data-glass='off'] .bar-bottom :is(.tts-player, .bg-card, .quote-bar) {
   backdrop-filter: none;
 }
 /* Groups inside a glass surface: a faint solid tint, never a second blur. */
-:is(.sheet, .slash-menu) :is(.set-card, .mi-icon, .sheet-input, .search, .sheet-code, .dialog-list, .hit-row) {
+:is(.sheet, .slash-menu) .set-card,
+:is(.sheet, .slash-menu) .mi-icon,
+:is(.sheet, .slash-menu) .sheet-input,
+:is(.sheet, .slash-menu) .search,
+:is(.sheet, .slash-menu) .sheet-code,
+:is(.sheet, .slash-menu) .dialog-list,
+:is(.sheet, .slash-menu) .hit-row {
   background-color: var(--glass-group);
   border-color: var(--glass-edge);
 }
-:is(.sheet, .slash-menu) :is(.sheet-input, .search) {
+:is(.sheet, .slash-menu) .sheet-input,
+:is(.sheet, .slash-menu) .search {
   background-color: var(--glass-field);
 }
-html[data-glass='off'] :is(.sheet, .slash-menu) :is(.set-card, .mi-icon, .sheet-code, .dialog-list, .hit-row) {
+html[data-glass='off'] :is(.sheet, .slash-menu) .set-card,
+html[data-glass='off'] :is(.sheet, .slash-menu) .mi-icon,
+html[data-glass='off'] :is(.sheet, .slash-menu) .sheet-code,
+html[data-glass='off'] :is(.sheet, .slash-menu) .dialog-list,
+html[data-glass='off'] :is(.sheet, .slash-menu) .hit-row {
   background-color: var(--surface-2);
   border-color: var(--border);
 }
-html[data-glass='off'] :is(.sheet, .slash-menu) :is(.sheet-input, .search) {
+html[data-glass='off'] :is(.sheet, .slash-menu) .sheet-input,
+html[data-glass='off'] :is(.sheet, .slash-menu) .search {
   background-color: var(--bg);
   border-color: var(--border);
 }
@@ -309,13 +384,16 @@ html[data-glass='off'] :is(.sheet, .slash-menu) :is(.sheet-input, .search) {
 }
 
 /* While a sheet or dialog covers the chat, its bars stop blurring (the scrim hides them): never more than three
-   blurred surfaces. While the scrubber's label shows, a toast is solid for the same reason. */
-.app:has(.sheet-backdrop) .stage .glass::before {
+   blurred surfaces. While the scrubber's label shows (components/Scrubber.tsx sets <html data-scrubbing>), a toast is
+   solid for the same reason. Only `:has(> …)` on the app: a `:has()` that looks at every descendant is re-checked at
+   each word a streamed reply adds, which doubled the restyles while a reply arrived. A sheet opened inside a bar or
+   the chat leaves the bars blurring: three surfaces, still within the budget. */
+.app:has(> .sheet-backdrop) > .stage .glass::before {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background: var(--glass-sheen), var(--surface);
 }
-.app:has(.scrubber.active) .toast {
+html[data-scrubbing] .toast {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background: var(--surface-2);

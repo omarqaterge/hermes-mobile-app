@@ -117,7 +117,7 @@ export function lessMotion(): boolean {
   return motionLevel() !== 'full' || phoneAsksNoMotion()
 }
 
-/** Inline style that delays a row's arrival by its place in a list (motion.css `.motion-stagger`): the first `max`
+/** Inline style that delays a row's arrival by its place in a list (the row has motion.css `.motion-in`): the first `max`
  *  rows arrive `step` ms apart, the rest with the last of them. */
 export function stagger(i: number, step = 28, max = 10): React.CSSProperties {
   return { animationDelay: `${Math.min(Math.max(0, i), max) * step}ms` }
