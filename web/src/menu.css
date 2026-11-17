@@ -234,13 +234,10 @@ html[data-glass='off'] :is(.menu-row + .menu-row, .picker-card .picker-opt + .pi
 .menu-solid .menu-row + .menu-row {
   border-top-color: var(--border);
 }
-html[data-glass='off'] :is(.menu-row-sub, .menu-row .set-chev),
-.menu-solid :is(.menu-row-sub, .menu-row .set-chev, .dim) {
-  color: var(--dim);
-}
-html[data-glass='off'] .menu-row.danger,
-.menu-solid .menu-row.danger {
-  color: var(--err);
+/* The words keep the glass colours (`--glass-dim`, `--glass-err`) in every form: they are a little stronger than `--dim`
+   and `--err`, which fall under 4.5:1 on the Light theme's solid card. */
+.menu-solid .dim {
+  color: var(--glass-dim);
 }
 .sheet.menu-solid {
   border-color: var(--border);
@@ -260,13 +257,6 @@ html[data-glass='off'] .menu-row.danger,
   .picker-card {
     background: var(--surface-2);
     border-color: var(--border);
-  }
-  .menu-row-sub,
-  .menu-row .set-chev {
-    color: var(--dim);
-  }
-  .menu-row.danger {
-    color: var(--err);
   }
 }
 
