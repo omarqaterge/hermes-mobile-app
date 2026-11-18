@@ -391,6 +391,42 @@ module.exports = async t => {
     await pin('Chat 6', 'Unpin')
     await sleep(200)
 
+    // Reordering Pinned while one of its chats is in the group: that chat comes back to its own place.
+    for (const name of ['Chat 16', 'Chat 15', 'Chat 14']) {
+      await pin(name, 'Pin to top')
+      await title(name, pinned).waitFor({ timeout: 3000 })
+    }
+    // The pinned chats from top to bottom, by where their titles are.
+    const pinOrder = async () => {
+      const at = []
+      for (const name of ['Chat 14', 'Chat 15', 'Chat 16']) {
+        const box = (await title(name, pinned).count()) ? await title(name, pinned).boundingBox() : null
+        if (box) at.push([box.y, name])
+      }
+      return at.sort((x, y) => x[0] - y[0]).map(x => x[1])
+    }
+    const [first, middle, last] = await pinOrder()
+    await setWaiting([asks('s-' + middle.split(' ')[1], 'approval')])
+    await group.waitFor({ timeout: 4000 })
+    await title(first, pinned).evaluate(el => el.scrollIntoView({ block: 'center' })) // pinning scrolled down to those rows
+    await sleep(100)
+    const from = await title(last, pinned).boundingBox()
+    const to = await title(first, pinned).boundingBox()
+    await page.mouse.move(from.x + 10, from.y + from.height / 2)
+    await page.mouse.down()
+    await sleep(600) // the long press that lifts the row
+    await page.mouse.move(from.x + 10, to.y - 6, { steps: 8 })
+    await sleep(250)
+    await page.mouse.up()
+    await sleep(200)
+    check(JSON.stringify(await pinOrder()) === JSON.stringify([last, first]), `needs you: Pinned can be reordered around a chat that is away (${await pinOrder()})`)
+    await setWaiting([])
+    await title(middle, pinned).waitFor({ timeout: 4000 })
+    const back = await pinOrder()
+    check(JSON.stringify(back) === JSON.stringify([last, middle, first]), `needs you: the chat returns to its place in Pinned, not to the end (${back})`)
+    for (const name of back) await pin(name, 'Unpin')
+    await sleep(200)
+
     // Rows do not move under a finger: what arrives meanwhile waits until it lifts.
     const box = await panel.getByRole('heading', { name: 'Today' }).boundingBox()
     const before = (await title('Chat 7').boundingBox()).y

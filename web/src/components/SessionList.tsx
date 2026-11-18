@@ -8,7 +8,7 @@ import { parseSnippet } from '../jump'
 import { haptic } from '../bridge'
 import { Title, plainTitle } from './Title'
 import { ago, lastActive } from '../unread'
-import { dayLabel, frozenActivity, orderChats, recentIds } from '../chatorder'
+import { dayLabel, frozenActivity, orderChats, recentIds, restoreAside } from '../chatorder'
 import { holdChatSnapshot, useChatSnapshot } from '../chatsnapshot'
 import { aimAtNeed, needWords, useListedNeeds, type Need } from '../needsyou'
 import { archiveChat, deleteChat, pinChat } from '../chatactions'
@@ -490,16 +490,10 @@ export function SessionList({ query }: { query: string }) {
   }, [sessions, order.pinned, order.manual, needle, activity]) // eslint-disable-line react-hooks/exhaustive-deps
   const chats = useMemo(() => ordered.filter(s => !needIds.has(s.id)), [ordered, needIds])
   /** A custom order made from the rows on show, with the chats now in the group back in their places: they return there. */
-  const withWaiting = (ids: string[]) => {
-    const out = [...ids]
-    ordered.forEach((s, i) => {
-      if (needIds.has(s.id)) out.splice(Math.min(i, out.length), 0, s.id)
-    })
-    return out
-  }
+  const withWaiting = (ids: string[]) => restoreAside(ids, ordered.map(s => s.id), needIds)
 
   const drag = useDrag((list, ids) => {
-    if (list === 'pinned') setOrder(o => ({ ...o, pinned: [...ids, ...o.pinned.filter(x => !ids.includes(x))] }))
+    if (list === 'pinned') setOrder(o => ({ ...o, pinned: restoreAside([...ids, ...o.pinned.filter(x => !ids.includes(x))], o.pinned, needIds) }))
     else setOrder(o => ({ ...o, manual: withWaiting(ids) }))
   }, gap)
 
@@ -592,9 +586,9 @@ export function SessionList({ query }: { query: string }) {
                     onDrop: y => {
                       const at = dropIndex(pinnedRef.current, y, s.id)
                       setOrder(o => {
-                        const rest = o.pinned.filter(x => x !== s.id)
+                        const rest = o.pinned.filter(x => x !== s.id && !needIds.has(x)) // `at` counts the rows on show
                         rest.splice(Math.min(at, rest.length), 0, s.id)
-                        return { ...o, pinned: rest, manual: wasManual }
+                        return { ...o, pinned: restoreAside(rest, o.pinned, needIds), manual: wasManual }
                       })
                       toast('Pinned')
                     }
