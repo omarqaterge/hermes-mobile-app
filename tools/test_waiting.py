@@ -159,6 +159,91 @@ for i in range(plugin.MAX_WAITING + 10):
 plugin._wait_begin("last", "approval", 60)
 check("the oldest go", len(plugin._waiting) <= plugin.MAX_WAITING and ("last", "approval", "") in plugin._waiting, len(plugin._waiting))
 
+print("writing the shared file")
+import fcntl  # noqa: E402
+
+
+def entries():
+    with open(plugin.ACTIVITY_FILE) as f:
+        return json.load(f)
+
+
+other = {"at": time.time(), "items": [], "waiting": [{"session": "their-chat", "kind": "approval", "who": "", "profile": "p",
+                                                     "since": time.time(), "until": time.time() + 300}]}
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({"4242": other}, f)
+names = []
+real_replace = os.replace
+os.replace = lambda a, b: (names.append(a), real_replace(a, b))[1]
+plugin._publish_activity()
+plugin._publish_activity()
+os.replace = real_replace
+check("each write has its own temporary file", len(set(names)) == 2, names)
+check("no temporary file is left", sorted(os.listdir(os.path.dirname(plugin.ACTIVITY_FILE))) == ["activity.json", "activity.json.lock"],
+      os.listdir(os.path.dirname(plugin.ACTIVITY_FILE)))
+
+holder = os.open(plugin.ACTIVITY_FILE + ".lock", os.O_CREAT | os.O_RDWR)
+fcntl.flock(holder, fcntl.LOCK_EX)
+slept = []
+
+
+def other_writer_finishes(_):
+    # The process holding the lock adds its entry and lets go while we wait: what we write must include it.
+    slept.append(1)
+    data = entries()
+    data["5151"] = other
+    with open(plugin.ACTIVITY_FILE, "w") as f:
+        json.dump(data, f)
+    fcntl.flock(holder, fcntl.LOCK_UN)
+
+
+real_sleep = plugin.time.sleep
+plugin.time.sleep = other_writer_finishes
+plugin._wait_begin("my-chat", "approval", 300)
+plugin.time.sleep = real_sleep
+check("a held lock is waited for", len(slept) == 1, slept)
+check("the file is read after the lock is ours: the other writer's entry stays", "5151" in entries(), list(entries()))
+fcntl.flock(holder, fcntl.LOCK_EX)
+slept.clear()
+plugin.time.sleep = lambda s: slept.append(s)
+plugin._waiting.clear()
+plugin._wait_begin("still-written", "approval", 300)
+plugin.time.sleep = real_sleep
+fcntl.flock(holder, fcntl.LOCK_UN)
+os.close(holder)
+check("a lock that stays held costs a few short tries", len(slept) == plugin.ACTIVITY_LOCK_TRIES - 1 and sum(slept) < 0.2, slept)
+check("and the write goes on without it", any(w["session"] == "still-written" for w in entries()[str(os.getpid())]["waiting"]), entries())
+real_flock = fcntl.flock
+
+
+def no_locks(*_):
+    raise OSError(38, "not implemented")
+
+
+fcntl.flock = no_locks
+plugin._waiting.clear()
+plugin._wait_begin("no-locks-here", "approval", 300)
+fcntl.flock = real_flock
+check("a system without file locks writes as before", any(w["session"] == "no-locks-here" for w in entries()[str(os.getpid())]["waiting"]), entries())
+saved = sys.modules.get("fcntl")
+sys.modules["fcntl"] = None
+plugin._waiting.clear()
+plugin._wait_begin("no-fcntl", "approval", 300)
+sys.modules["fcntl"] = saved
+check("nor does a missing lock module stop it", any(w["session"] == "no-fcntl" for w in entries()[str(os.getpid())]["waiting"]), entries())
+
+for name, broken in (("damaged", "{not json"), ("not an object", "[1, 2]")):
+    plugin._publish_activity()
+    with open(plugin.ACTIVITY_FILE, "w") as f:
+        f.write(broken)
+    plugin._publish_activity()
+    check(f"a {name} file does not wipe another process's open request", "4242" in entries(), list(entries()))
+os.remove(plugin.ACTIVITY_FILE)
+plugin._waiting.clear()
+plugin._active.clear()
+plugin._publish_activity()
+check("a removed file starts empty", entries() == {}, entries())
+
 print("nothing here can answer")
 src = (ROOT / "hermes-plugin" / "hermes-mobile" / "dashboard" / "plugin_api.py").read_text()
 route = src[src.index('@router.get("/activity")'):src.index("# ── what of the phone Hermes can reach")]

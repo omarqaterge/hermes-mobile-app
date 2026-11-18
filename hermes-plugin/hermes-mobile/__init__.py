@@ -17,11 +17,13 @@ something answers without the proof, the fallback says so in plain words (at mos
 event's text.
 """
 
+import contextlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -50,6 +52,9 @@ MAX_LAST_END = 256  # chats whose last turn end is remembered (only the next FAI
 MAX_TURN_STARTS = 256  # turns whose start is remembered; a chat with a status entry is never dropped to make room
 _review_turns: set = set()  # turn ids of Hermes's background self-review (memory / skills), not user turns
 ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "activity.json")
+ACTIVITY_LOCK_TRIES = 5  # tries for the file's lock before writing without it
+ACTIVITY_LOCK_WAIT = 0.02  # seconds between them: a hook waits 0.08 s at most
+_activity_seen: dict = {}  # the file's entries as last read, for when it can't be read
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
@@ -259,39 +264,86 @@ def _send(kind: str, title: str = "Hermux", body: str = "", session: str = "", u
 
 # ── pinned status line ──────────────────────────────────────
 
+@contextlib.contextmanager
+def _activity_lock():
+    """Holds the activity file's lock, so one process's read, change and replace can't lose another's. It never hangs a
+    hook: a few short tries, then on without it, as also when this system has no working file locks."""
+    fd = None
+    try:
+        import fcntl
+
+        fd = os.open(ACTIVITY_FILE + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+        for attempt in range(ACTIVITY_LOCK_TRIES):
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if attempt + 1 < ACTIVITY_LOCK_TRIES:
+                    time.sleep(ACTIVITY_LOCK_WAIT)
+    except (ImportError, OSError):
+        pass
+    try:
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)  # closing lets go of the lock
+
+
+def _read_activity() -> dict:
+    """The file's entries. No file means none. A file that can't be read gives the last entries read here, so a damaged
+    or briefly unreadable file does not wipe what other processes are waiting on."""
+    global _activity_seen
+    try:
+        with open(ACTIVITY_FILE) as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return dict(_activity_seen)
+    _activity_seen = data
+    return data
+
+
 def _publish_activity() -> None:
     """Write what this process is doing to a shared file so the app's banner (GET /activity) can show it.
     One entry per Hermes process (pid); readers drop entries that stopped updating."""
+    tmp = None
     try:
-        now = time.time()
-        with _lock:
-            mine = [{"session": sid, "text": v["text"], "short": v.get("short", ""), "profile": v["profile"],
-                     "review": bool(v.get("review")), "ts": v["ts"]} for sid, v in _active.items()]
-            for key in [k for k, v in _waiting.items() if v["until"] <= now]:
-                del _waiting[key]
-            waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until")} for v in _waiting.values()]
-        try:
-            with open(ACTIVITY_FILE) as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-
-        def keep(v: dict) -> bool:
-            # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
-            return bool(v.get("items") and now - v.get("at", 0) < 300) or any(w.get("until", 0) > now for w in v.get("waiting", []))
-
-        data = {k: v for k, v in data.items() if keep(v)}
-        if mine or waits:
-            data[str(os.getpid())] = {"at": now, "items": mine, **({"waiting": waits} if waits else {})}
-        else:
-            data.pop(str(os.getpid()), None)
         os.makedirs(os.path.dirname(ACTIVITY_FILE), exist_ok=True)
-        tmp = ACTIVITY_FILE + f".{os.getpid()}"
-        with open(tmp, "w") as f:
-            json.dump(data, f)
-        os.replace(tmp, ACTIVITY_FILE)
+        with _activity_lock():
+            now = time.time()
+            with _lock:
+                mine = [{"session": sid, "text": v["text"], "short": v.get("short", ""), "profile": v["profile"],
+                         "review": bool(v.get("review")), "ts": v["ts"]} for sid, v in _active.items()]
+                for key in [k for k, v in _waiting.items() if v["until"] <= now]:
+                    del _waiting[key]
+                waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until")} for v in _waiting.values()]
+            data = _read_activity()
+
+            def keep(v: dict) -> bool:
+                # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
+                return bool(v.get("items") and now - v.get("at", 0) < 300) or any(w.get("until", 0) > now for w in v.get("waiting", []))
+
+            data = {k: v for k, v in data.items() if keep(v)}
+            if mine or waits:
+                data[str(os.getpid())] = {"at": now, "items": mine, **({"waiting": waits} if waits else {})}
+            else:
+                data.pop(str(os.getpid()), None)
+            fd, tmp = tempfile.mkstemp(prefix=".activity-", dir=os.path.dirname(ACTIVITY_FILE))  # never shared between writers
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp, ACTIVITY_FILE)
+            tmp = None
     except Exception:
         pass
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 def _asker(session_id: str) -> tuple:
