@@ -4,7 +4,6 @@ it follows the hooks, outlives the limits on working entries, says nothing of th
 request does.
     python3 tools/test_waiting.py
 """
-import asyncio
 import importlib.util
 import json
 import os
@@ -48,8 +47,12 @@ papi._slow_all = lambda: None
 _Path = papi.Path
 
 
+proc_lookups = []
+
+
 def _path(*parts):  # /proc as on the phone, also on a computer without one: only this process is alive
     if parts and parts[0] == "/proc":
+        proc_lookups.append(parts[1])
         return types.SimpleNamespace(exists=lambda: parts[1] == str(os.getpid()))
     return _Path(*parts)
 
@@ -63,7 +66,7 @@ plugin.ACTIVITY_FILE = os.path.join(home, ".hermes", "mobile", "activity.json")
 
 
 def answer():
-    return asyncio.run(papi.get_activity())
+    return papi.get_activity()
 
 
 def waiting():
@@ -478,6 +481,30 @@ plugin._active.clear()
 plugin._publish_activity()
 kept = entries().get("4343", {})
 check("the writer doesn't keep such entries", [w["session"] for w in kept.get("waiting", [])] == ["real"] and [i["session"] for i in kept.get("items", [])] == ["fine"], kept)
+os.remove(plugin.ACTIVITY_FILE)
+
+print("a file with very many process entries")
+import inspect  # noqa: E402
+
+check("the route is a plain function, so it runs off the event loop", not inspect.iscoroutinefunction(papi.get_activity))
+now = time.time()
+alive = str(os.getpid())
+many = {alive: {"at": now, "items": [], "waiting": [dict(good, since=now, until=now + 60)]}}
+many.update({str(100000 + i): {} for i in range(80000)})
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump(many, f, separators=(",", ":"))  # under the size limit
+proc_lookups.clear()
+result = answer()
+check("the route looks at a bounded number of them", len(proc_lookups) <= papi.ACTIVITY_MAX_PROCESSES, len(proc_lookups))
+check("and still serves the real one", [w["session"] for w in result["waiting"]] == ["real"], result["waiting"])
+plugin._active.clear()
+plugin._waiting.clear()
+many = {str(100000 + i): {"at": now, "waiting": [dict(good, since=now, until=now + 60)]} for i in range(plugin.ACTIVITY_MAX_PROCESSES + 50)}
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump(many, f)
+plugin._publish_activity()
+check("the writer keeps a bounded number", len(entries()) <= plugin.ACTIVITY_MAX_PROCESSES, len(entries()))
+check("the limits agree", papi.ACTIVITY_MAX_PROCESSES == plugin.ACTIVITY_MAX_PROCESSES)
 os.remove(plugin.ACTIVITY_FILE)
 
 print("nothing here can answer")

@@ -6,6 +6,7 @@ sync script sees ordinary, canonical files.
 """
 
 import hmac
+import itertools
 import json
 import logging
 import math
@@ -879,6 +880,7 @@ async def delete_diag():
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
 ACTIVITY_MAX_BYTES = 1 << 20  # the same limit as the hooks' in __init__.py
+ACTIVITY_MAX_PROCESSES = 64  # process entries looked at: a real phone has a handful, and each costs a /proc lookup
 
 
 def _read_activity_file(path) -> dict:
@@ -974,7 +976,7 @@ def _activity_item(it, now: float):
 
 
 @router.get("/activity")
-async def get_activity():
+def get_activity():  # a plain def: FastAPI runs it in its thread pool, so the file and /proc never hold up the event loop
     """Live work reported by the plugin hooks in every Hermes process, including background self-review. `waiting`:
     the requests (approval, phone data, question) that are open right now: which chat, what kind, who asks, since and
     until when. It carries none of a request's text and nothing here can answer one. A malformed entry is skipped."""
@@ -986,7 +988,7 @@ async def get_activity():
     now = time.time()
     items = []
     waiting = []
-    for pid, entry in data.items():
+    for pid, entry in itertools.islice(data.items(), ACTIVITY_MAX_PROCESSES):
         try:  # one entry, whatever it holds, can't break the others
             if not isinstance(entry, dict):
                 continue

@@ -19,6 +19,7 @@ event's text.
 
 import contextlib
 import errno
+import itertools
 import json
 import math
 import os
@@ -60,6 +61,7 @@ ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "acti
 ACTIVITY_LOCK_TRIES = 5  # tries for the file's lock before writing without it
 ACTIVITY_LOCK_WAIT = 0.02  # seconds between them: a hook waits 0.08 s at most
 ACTIVITY_MAX_BYTES = 1 << 20  # far more than the plugin writes; a bigger file is not read
+ACTIVITY_MAX_PROCESSES = 64  # process entries kept from the file: a real phone has a handful
 ACTIVITY_REPLACE_ERRORS = (errno.ELOOP, errno.ENXIO, errno.EACCES, errno.EPERM)  # retrying won't help: replace the file
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
@@ -400,7 +402,7 @@ def _publish_activity() -> None:
             current = _read_activity()
             if current is None:
                 return  # the next write (the status loop's beat, the next hook) tries again
-            kept = {k: _kept_entry(k, v, now) for k, v in current.items()}
+            kept = {k: _kept_entry(k, v, now) for k, v in itertools.islice(current.items(), ACTIVITY_MAX_PROCESSES)}
             data = {k: v for k, v in kept.items() if v is not None}
             if mine or waits:
                 data[str(os.getpid())] = {"at": now, "items": mine, **({"waiting": waits} if waits else {})}
