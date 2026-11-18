@@ -2,7 +2,7 @@
 // models (one model for all bots); then the main page of task 06: its seven rows in two sections, the attention cards, each
 // moved row on its new page, search landing there, Back from every page, and the rows and cards at 320 px and in Light.
 // Each control is found by its role and name, used, and its effect checked.
-const { WEB, calls, check, sleep, mock, nativeShell, settingsPage, contrast, expectIdle } = require('../lib.cjs')
+const { WEB, calls, check, mock, nativeShell, settingsPage, contrast, expectIdle } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -105,6 +105,7 @@ module.exports = async t => {
   // ── the main page: seven rows in two sections, no switch, no card while all is well; Back from each page ──
   {
     const p = await page()
+    const opened = Date.now()
     await openMain(p)
     const heads = (await p.locator('.screen .set-heading').allInnerTexts()).map(h => h.toLowerCase())
     const rows = await p.locator('.screen .set-row .set-title').allInnerTexts()
@@ -115,7 +116,11 @@ module.exports = async t => {
     check(vals.models.length > 0 && vals.models !== 'None yet' && vals.access === 'Auto off' && vals.look === 'Default' && vals.about === 'web-dev', `settings main page: the values say the model, the Auto mode, the theme and the app version (${JSON.stringify(vals)})`)
     const subs = { connectors: await p.getByRole('button', { name: /^Connectors/ }).innerText(), behaviour: await p.getByRole('button', { name: /^Behaviour/ }).innerText(), voice: await p.getByRole('button', { name: /^Voice/ }).innerText() }
     check(subs.connectors.includes('Mail, web search, apps and services') && subs.behaviour.includes('Memory, long chats, limits, sub-agents') && subs.voice.includes('Read aloud, dictation, Live mode'), `settings main page: each other row says what it holds (${JSON.stringify(subs)})`)
-    await sleep(1500)
+    // No card is an absence: wait until the page has asked whether a model is connected (the one question that could
+    // bring a card here; the update check finds no release in this page), then two frames for its answer to draw.
+    const asked = Date.now() + 5000
+    while (!calls().some(c => c.rpc === 'setup.runtime_check' && c.t >= opened) && Date.now() < asked) await new Promise(r => setTimeout(r, 50))
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
     check((await p.locator('.attn-card').count()) === 0, 'settings main page: no attention card while Hermux is online, has a model and the app is up to date')
     await expectIdle(p, 'settings main page')
     for (const name of SEVEN) {
@@ -242,7 +247,7 @@ module.exports = async t => {
     await mock({ configured: true })
     await back(p)
     await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 3000 })
-    await sleep(1200)
+    await cm.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
     check((await cm.count()) === 0, 'attention: with a provider connected, the Connect a model card goes')
     await p.close()
   }
@@ -254,7 +259,7 @@ module.exports = async t => {
     const shown = await up.waitFor({ timeout: 6000 }).then(() => true, () => false)
     check(shown && (await up.getByRole('button', { name: /^Update to 9\.9\.9/ }).count()) === 1, 'attention: a newer release shows the Update to <version> card')
     await up.getByRole('button', { name: /^Update to 9\.9\.9/ }).click()
-    await sleep(300)
+    await p.waitForFunction(() => (window.__installed || []).length > 0, null, { timeout: 5000 }).catch(() => {})
     check(JSON.stringify(await p.evaluate(() => window.__installed)) === '["https://github.com/omarqaterge/hermes-mobile-app/releases/download/v9.9.9/hermes-mobile.apk"]', 'attention: the update card starts the update, as the update row does')
     await p.close()
     const q = await page({ native: true, tag: 'v0.8.68', init: () => { window.__appVersion = '0.8.68' } })
