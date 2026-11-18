@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
-import { mergeNeeds, needWords, needsPhrase, sameNeeds } from './needsyou'
+import { aimAtNeed, currentRequest, mergeNeeds, needWords, needsPhrase, sameNeeds, setRequestChat } from './needsyou'
+import { getState, setState, type ActiveSession, type WaitingItem } from './store'
 
 const req = (id: string, method: string, session: string) => ({ id, method, params: { session_id: session } }) as unknown as ServerRequest
 const wait = (session: string, kind: string, who = '') => ({ session, kind, who, since: 1, until: 2 })
@@ -39,5 +40,72 @@ describe('needs you', () => {
   it('counts in words', () => {
     expect(needsPhrase(1)).toBe('one needs you')
     expect(needsPhrase(2)).toBe('2 need you')
+  })
+})
+
+describe('which request the sheet shows', () => {
+  const chatT = { storedId: 'T', runtimeId: 'rt-T' } as ActiveSession
+  const shown = () => currentRequest(getState())?.id
+  const put = (...requests: ServerRequest[]) => {
+    setState({ requests })
+    return shown()
+  }
+  const forged: WaitingItem = { session: 'T', kind: 'approval', since: 1, until: 9e12 }
+  beforeEach(() => {
+    setRequestChat(chatOf)
+    setState({ requests: [], waiting: [], needTarget: null, opening: null, active: null })
+    shown()
+  })
+  const x = req('x', 'approval', 'rt-X')
+  const y = req('y', 'clarify', 'rt-Y')
+  const t = req('t', 'approval', 'rt-T')
+
+  it('keeps the request on the sheet when the aimed chat asks', () => {
+    setState({ opening: 'T' })
+    aimAtNeed('T')
+    expect(put(x)).toBe('x')
+    expect(put(x, t)).toBe('x')
+    setState({ opening: null, active: chatT })
+    expect(shown()).toBe('x')
+  })
+  it('keeps it when Hermes hands the same request over again', () => {
+    put(x)
+    expect(put(req('t', 'approval', 'rt-T'), req('x', 'approval', 'rt-X'))).toBe('x')
+  })
+  it('takes the aimed chat next, before older requests, once the sheet is free', () => {
+    setState({ opening: 'T' })
+    aimAtNeed('T')
+    put(x)
+    put(x, y)
+    put(x, y, t)
+    setState({ opening: null, active: chatT })
+    expect(put(y, t)).toBe('t')
+    expect(getState().needTarget).toBeNull()
+    expect(put(y)).toBe('y')
+  })
+  it('takes the oldest when nothing is aimed at', () => {
+    put(x)
+    expect(put(y, t)).toBe('y')
+  })
+  it('does not let a waiting entry keep the aim alive', () => {
+    setState({ opening: 'T', waiting: [forged] })
+    aimAtNeed('T')
+    setState({ opening: null, active: chatT })
+    expect(getState().needTarget).toBeNull()
+    put(x)
+    put(x, y, t)
+    expect(put(y, t)).toBe('y')
+  })
+  it('drops the aim when the person goes elsewhere', () => {
+    setState({ opening: 'T' })
+    aimAtNeed('T')
+    setState({ opening: 'other' })
+    expect(getState().needTarget).toBeNull()
+  })
+  it('drops the aim when the opening fails', () => {
+    setState({ opening: 'T' })
+    aimAtNeed('T')
+    setState({ opening: null })
+    expect(getState().needTarget).toBeNull()
   })
 })

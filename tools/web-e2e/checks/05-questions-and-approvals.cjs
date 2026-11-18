@@ -465,21 +465,27 @@ module.exports = async t => {
     await header(/^Sessions/).waitFor({ timeout: 3000 })
     check(true, 'needs you: a request withdrawn by Hermes leaves at once')
 
-    // The row names one chat, so the sheet that opens is that chat's, even if another chat's request came first.
+    // A sheet on screen stays until it is answered or withdrawn: another request never takes its place under a finger.
+    // Once it is free, the chat opened from the group goes next, before older requests.
     await setWaiting([asks('s-12', 'approval', approval('srv-needs-mine'), { delay: 900 })])
     await openList('Chats (one needs you)')
     await title('Chat 12', group).click()
     await frame({ id: 'srv-needs-other', method: 'clarify', params: { session_id: live, question: 'Asked by another chat?' } })
     await sheet.getByText('Asked by another chat?').waitFor({ timeout: 3000 })
     check((await sheet.getByText('From Chat 9', { exact: true }).count()) === 1, "needs you: a sheet for a chat that isn't on screen names that chat")
-    await sheet.getByRole('button', { name: 'Deny' }).waitFor({ timeout: 5000 })
-    check((await sheet.getByText('Asked by another chat?').count()) === 0, 'needs you: the chat opened from the group has its request shown first')
+    await frame({ id: 'srv-needs-third', method: 'clarify', params: { session_id: live, question: 'A third question?' } })
+    await page.getByText('hello s-12', { exact: true }).first().waitFor({ timeout: 5000 }) // the opened chat and its request are in
+    await sleep(200)
+    check((await sheet.getByText('Asked by another chat?').count()) === 1 && (await sheet.getByRole('button', { name: 'Deny' }).count()) === 0, 'needs you: the request on the sheet stays when the opened chat asks')
+    await withdraw('srv-needs-other', 'clarify')
+    await sheet.getByRole('button', { name: 'Deny' }).waitFor({ timeout: 3000 })
+    check((await sheet.getByText('A third question?').count()) === 0, 'needs you: once the sheet is free, the chat opened from the group goes first')
     check((await sheet.getByText(/^From /).count()) === 0, 'needs you: the open chat\'s own request names no chat')
     await sheet.getByRole('button', { name: 'Deny' }).click()
-    await sheet.getByText('Asked by another chat?').waitFor({ timeout: 3000 })
+    await sheet.getByText('A third question?').waitFor({ timeout: 3000 })
     check((await sheet.getByText('From Chat 9', { exact: true }).count()) === 1, 'needs you: the other request follows, still naming its chat')
-    check(calls().filter(c => c.answer === 'srv-needs-mine').length === 1 && calls().filter(c => c.answer === 'srv-needs-other').length === 0, 'needs you: the answer went to the request on the sheet')
-    await withdraw('srv-needs-other', 'clarify')
+    check(calls().filter(c => c.answer === 'srv-needs-mine').length === 1 && calls().filter(c => c.answer === 'srv-needs-other' || c.answer === 'srv-needs-third').length === 0, 'needs you: the answer went to the request on the sheet')
+    await withdraw('srv-needs-third', 'clarify')
     await sheet.waitFor({ state: 'detached', timeout: 3000 })
 
     // Over the lock screen nothing says which chat waits for what.

@@ -89,24 +89,38 @@ export function openNeeds(s: AppState): Need[] {
   return out
 }
 
-/** Call right after starting to open a chat from Needs you: while that goes on, its request is the one the sheet shows. */
+/** Call right after starting to open a chat from Needs you: its request is the next one the sheet takes up. */
 export function aimAtNeed(chat: string): void {
   setState({ needTarget: chat })
 }
 
-/** The request the sheet shows: the chat opened from Needs you first, so the row and the sheet agree; else the oldest. */
+let onSheet: ServerRequest['id'] | null = null
+
+/** The request the sheet shows. One on the sheet stays until it is answered or withdrawn, so what a finger is about to
+ *  tap never changes under it. Only when the sheet is free is the next one chosen: the chat opened from Needs you first,
+ *  so the row and the sheet agree, else the oldest. */
 export function currentRequest(s: Pick<AppState, 'requests' | 'needTarget'>): ServerRequest | undefined {
-  const aimed = s.needTarget ? s.requests.find(r => chatOf(r) === s.needTarget) : undefined
-  return aimed ?? s.requests[0]
+  const kept = onSheet === null ? undefined : s.requests.find(r => r.id === onSheet)
+  if (kept) return kept
+  const next = (s.needTarget ? s.requests.find(r => chatOf(r) === s.needTarget) : undefined) ?? s.requests[0]
+  onSheet = next?.id ?? null
+  return next
 }
 
-// The aim ends when the person went elsewhere, the chat failed to open, or it is open and waits for nothing more.
+// The aim lasts only while it has a real request to bring forward: it ends when the person goes elsewhere or the chat
+// fails to open, when the chat is open with no request here (Hermes hands them over with the opening), and when its
+// request reaches the sheet. The `waiting` feed plays no part, so an entry in it can't keep the aim alive.
 function settleAim(): void {
   const s = getState()
   const t = s.needTarget
   if (!t) return
-  const elsewhere = s.opening ? s.opening !== t : s.active?.storedId !== t
-  if (elsewhere || (!s.opening && !needsOf(s).some(n => n.session === t))) setState({ needTarget: null })
+  if (s.opening) {
+    if (s.opening !== t) setState({ needTarget: null })
+    return
+  }
+  const shown = currentRequest(s)
+  const over = s.active?.storedId !== t || !s.requests.some(r => chatOf(r) === t) || (shown && chatOf(shown) === t)
+  if (over) setState({ needTarget: null })
 }
 subscribe(settleAim)
 
