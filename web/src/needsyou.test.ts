@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
-import { SHEET_PAUSE_MS, aimAtNeed, currentRequest, mergeNeeds, needWords, needsPhrase, sameNeeds, setRequestChat, sheetCanAnswer, sheetShown } from './needsyou'
+import { SHEET_PAUSE_MS, aimAtNeed, currentRequest, mergeNeeds, needWords, needsPhrase, sameNeeds, setRequestChat, sheetBackInView, sheetCanAnswer, sheetShown } from './needsyou'
 import { getState, setState, type ActiveSession, type WaitingItem } from './store'
 
 const req = (id: string, method: string, session: string) => ({ id, method, params: { session_id: session } }) as unknown as ServerRequest
@@ -149,6 +149,21 @@ describe('the pause after a sheet takes over', () => {
     clock += 500
     sheetShown('b')
     expect(sheetCanAnswer('b', clock + 300)).toBe(false)
+  })
+  it('starts the pause again when the app returns to a sheet that replaced another', () => {
+    put(a, b)
+    put(b)
+    clock += 60_000
+    expect(sheetCanAnswer('b', clock)).toBe(true)
+    sheetBackInView()
+    expect(sheetCanAnswer('b', clock + 10)).toBe(false)
+    expect(sheetCanAnswer('b', clock + SHEET_PAUSE_MS)).toBe(true)
+  })
+  it('does not pause a first sheet when the app returns', () => {
+    put(a)
+    clock += 60_000
+    sheetBackInView()
+    expect(sheetCanAnswer('a', clock)).toBe(true)
   })
   it('does not read the clock while no request is open', () => {
     const now = vi.mocked(performance.now)

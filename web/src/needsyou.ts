@@ -120,6 +120,12 @@ export function sheetShown(id: ServerRequest['id']): void {
   if (id === onSheet) shownAt = performance.now()
 }
 
+/** The app is back on screen: a request that replaced another while it was away hasn't been seen yet, so its pause
+ *  starts again from now. */
+export function sheetBackInView(): void {
+  if (followedAnother !== null && followedAnother === onSheet) shownAt = performance.now()
+}
+
 /** Whether a tap made at `at` (an event's timeStamp) may answer this request. A tap meant for the request before it must
  *  not answer this one unseen, where the same button now stands. It compares times, so no timer is involved. */
 export function sheetCanAnswer(id: ServerRequest['id'], at: number): boolean {

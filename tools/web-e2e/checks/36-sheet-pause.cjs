@@ -154,5 +154,39 @@ module.exports = async t => {
   await sheet.getByRole('button', { name: 'Deny' }).click()
   await sheet.waitFor({ state: 'detached', timeout: 3000 })
   await settle()
+
+  // The pause must not run out while nobody can see the sheet: it starts again when the app comes back.
+  const tapAllowOnReturn = how => page.evaluate(how => {
+    if (how === 'page') {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    } else window.hermesResume()
+    ;[...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === 'Allow once').click()
+  }, how)
+  for (const how of ['page', 'shell']) {
+    const [one, two] = [`srv-back-${how}-1`, `srv-back-${how}-2`]
+    await frame(asksToRun(one, 'first command'))
+    await frame(asksToRun(two, 'second command'))
+    await sheet.getByText('first command').waitFor({ timeout: 3000 })
+    await settle()
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.hermesPause()
+      ;[...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === 'Allow once').click()
+    })
+    await sheet.getByText('second command').waitFor({ timeout: 3000 })
+    await settle() // the pause has run out, unseen
+    if (how === 'shell') await page.evaluate(() => Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }))
+    await tapAllowOnReturn(how)
+    await sleep(100)
+    check(answers(one).length === 1 && answers(two).length === 0, `sheet pause: a tap right after coming back does not allow the request that took over while away (${how})`)
+    await settle()
+    await allowOnce.click()
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    await sleep(100)
+    check(answers(two).length === 1, `sheet pause: a tap a moment after coming back works (${how})`)
+    await settle()
+  }
   await page.close()
 }

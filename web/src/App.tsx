@@ -23,7 +23,7 @@ import { RequestSheet } from './components/RequestSheet'
 import { CommandsSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { ChatMenuSheet, DraftMenuSheet } from './components/ChatMenu'
 import { bannerItems, startActivityPolling } from './activity'
-import { aimAtNeed, currentRequest, needWords, needsPhrase, openNeeds, setRequestChat, useLockView } from './needsyou'
+import { aimAtNeed, currentRequest, needWords, needsPhrase, openNeeds, setRequestChat, sheetBackInView, useLockView } from './needsyou'
 import { DialogHost } from './dialog'
 import { WhatsNewAfterUpdate } from './components/WhatsNew'
 import { startWhatsNewAfterUpdate } from './whatsnew'
@@ -94,6 +94,7 @@ window.hermesOpenSession = (id: string, draft?: string) => openSessionFromNotifi
 // Called by the shell when the app returns to the foreground.
 window.hermesResume = () => {
   setAppAway(false)
+  sheetBackInView()
   if (window.matchMedia('(min-width: 840px)').matches && !sideHidden()) refreshPanelValues() // the docked list's rows (at most once a minute)
   onAppResume() // the docked list's order (chatsnapshot.ts)
   noteBack()
@@ -106,7 +107,10 @@ window.hermesPause = () => {
   setAppAway(true) // repeating animations stand still while the app is away (motion.ts)
   noteAway(getState().active?.storedId)
 }
-document.addEventListener('visibilitychange', () => setAppAway(document.visibilityState === 'hidden'))
+document.addEventListener('visibilitychange', () => {
+  setAppAway(document.visibilityState === 'hidden')
+  if (document.visibilityState === 'visible') sheetBackInView()
+})
 
 setRequestChat(requestChat) // needsyou.ts stays free of gateway.ts
 
