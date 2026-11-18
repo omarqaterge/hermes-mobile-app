@@ -32,7 +32,7 @@ The screen has one main page and twelve pages under it. The top-bar title is the
 **Opens from:** the main page's row Models; Back from Add a provider and from API keys. **Closes with:** Back to the main page. **Source:** `Settings.tsx` `ModelsPage`. One page for the model a bot thinks with (task 07 of the redesign; decision `docs/decisions/settings-layout.md`). Top to bottom:
 | Element | Shows | Tap |
 |---|---|---|
-| Bot chips (header "Bot") | Only with more than one bot: one pill per bot | Chooses whose model and providers the page shows |
+| Bot chips (header "Bot") | Only with more than one bot: one pill per bot; the chips and their header are a group named by the header (`ProfileChips`, as on every page with bot chips) | Chooses whose model and providers the page shows |
 | Section New chats use (footer "Change the model of a single chat from the model chip above its text box.") | One row: the bot's model (or "No model set"), sub its provider | Opens the model picker for that bot (below). With several bots, the picker has the switch "Set one model for all bots" above its list |
 | Section Connected | One row per connected provider of the bot, as in the provider list (3.17): a filled dot, the name, what is connected. Shows "Loading…" or the load error with Try again while the catalog loads. No section when nothing is connected | Opens the provider sheet (3.17) |
 | Add a provider | A full-width gold button with a plus, the page's one gold element | Opens the Add a provider page |

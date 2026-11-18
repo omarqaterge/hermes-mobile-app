@@ -310,6 +310,15 @@ const contrast = (a, b) => {
   return (x + 0.05) / (y + 0.05)
 }
 
+// The open page (a ScreenShell: a Settings page, the Library…), found by role: a region named by its title that holds
+// a level-1 heading (the title). `pageTitle` is that title, or with `name` the open page's title matching it (as
+// `hasText` would); `pageHeadings` are the page's section headings (level 3), or with `name` the ones matching it;
+// `settingsSection` is the titled section (a group named by its heading) whose heading matches `name`.
+const openPage = pg => pg.getByRole('region').filter({ has: pg.getByRole('heading', { level: 1 }) })
+const pageTitle = (pg, name) => openPage(pg).getByRole('heading', name === undefined ? { level: 1 } : { level: 1, name }).first()
+const pageHeadings = (pg, name) => openPage(pg).getByRole('heading', name === undefined ? { level: 3 } : { level: 3, name })
+const settingsSection = (pg, name) => pg.getByRole('group', { name })
+
 // Settings' main page → one of its seven rows (Models, Connectors, Behaviour, Access & privacy, Appearance, Voice, About &
 // help): taps the row by its role and name and waits for the page's title. Settings must be open on its main page.
 async function settingsPage(page, name) {
@@ -317,4 +326,4 @@ async function settingsPage(page, name) {
   await page.locator('.screen .title', { hasText: name }).waitFor({ timeout: 5000 })
 }
 
-module.exports = { settingsPage, openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }
+module.exports = { settingsPage, openPage, pageTitle, pageHeadings, settingsSection, openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }

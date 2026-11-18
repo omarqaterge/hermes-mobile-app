@@ -2,7 +2,7 @@ import { useBackHandler } from '../backstack'
 import { confirmDialog } from '../dialog'
 import { openFileInCanvas } from '../canvas'
 import { useSheetDrag } from './useSheetDrag'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { api, ApiError, qs } from '../api'
 import { errText, newSession, resumeSession, rpc } from '../gateway'
@@ -25,9 +25,12 @@ export const EmbeddedShell = createContext<{ slot: HTMLElement | null } | null>(
 
 export function ScreenShell({ title, actions, children, onBack, className }: { title: string; actions?: ReactNode; children: ReactNode; onBack?: () => void; className?: string }) {
   const embedded = useContext(EmbeddedShell)
+  const titleId = useId()
   if (embedded) return <>{embedded.slot && actions ? createPortal(actions, embedded.slot) : null}{children}</>
+  // The page is a region named by its title, and the title its level-1 heading: screen readers and the browser checks
+  // find the open page by role and name. Neither changes anything on screen.
   return (
-    <div className={className ? `screen ${className}` : 'screen'}>
+    <div className={className ? `screen ${className}` : 'screen'} role="region" aria-labelledby={titleId}>
       <header className="topbar">
         <button className="back-btn" aria-label="Back" onClick={() => (onBack ? onBack() : closeScreen())}>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -35,7 +38,7 @@ export function ScreenShell({ title, actions, children, onBack, className }: { t
           </svg>
         </button>
         <div className="title-btn">
-          <span className="title">{title}</span>
+          <span className="title" id={titleId} role="heading" aria-level={1}>{title}</span>
         </div>
         {actions}
       </header>

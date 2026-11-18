@@ -2,7 +2,7 @@
 // chats use on the Models page (one model for all bots); then the main page of task 06: its seven rows in two sections, the attention cards, each
 // moved row on its new page, search landing there, Back from every page, and the rows and cards at 320 px and in Light.
 // Each control is found by its role and name, used, and its effect checked.
-const { WEB, calls, check, mock, nativeShell, settingsPage, contrast, expectIdle } = require('../lib.cjs')
+const { WEB, calls, check, mock, nativeShell, settingsPage, contrast, expectIdle, openPage, pageTitle, pageHeadings, settingsSection } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -53,11 +53,13 @@ module.exports = async t => {
   {
     // Two bots: Settings closed and opened again reads the bot list once more.
     await mock({ bots: true })
+    // On Settings' main page first (the Back above leaves Appearance), so this Back closes Settings.
+    await sp.getByRole('searchbox', { name: 'Search settings' }).or(sp.getByRole('textbox', { name: 'Search settings' })).waitFor({ timeout: 3000 }).catch(() => {})
     await sp.evaluate(() => window.hermesBack())
-    await sp.locator('.screen').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await openPage(sp).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     await openSettings()
     await settingsPage(sp, 'Models')
-    await sp.locator('.set-section', { has: sp.locator('.set-heading', { hasText: /^New chats use$/ }) }).getByRole('button').first().click()
+    await settingsSection(sp, /^New chats use$/).getByRole('button').first().click()
     await sp.getByRole('switch', { name: 'Set one model for all bots' }).click()
     const since = Date.now()
     const picker = sp.getByRole('dialog').filter({ has: sp.getByPlaceholder('Search models…') })
@@ -192,10 +194,10 @@ module.exports = async t => {
     check((await p.getByRole('switch', { name: 'Read every reply aloud' }).count()) === 1, 'voice: Read every reply aloud lives on the Voice page')
     await back(p)
     await settingsPage(p, 'Models')
-    await p.locator('.screen .set-title', { hasText: 'All keys' }).waitFor({ timeout: 5000 })
-    const mHeads = (await p.locator('.screen .set-heading').allInnerTexts()).map(h => h.toLowerCase())
+    await openPage(p).getByRole('button', { name: /^All keys/ }).waitFor({ timeout: 5000 })
+    const mHeads = (await pageHeadings(p).allInnerTexts()).map(h => h.toLowerCase())
     const mRows = await p.locator('.screen .set-row .set-title').allInnerTexts()
-    const addAt = await p.evaluate(() => { const all = [...document.querySelectorAll('.screen .set-heading, .screen .btn.primary')].map(e => e.textContent.trim().toLowerCase()); return all })
+    const addAt = await pageHeadings(p).or(openPage(p).getByRole('button')).evaluateAll(es => es.filter(e => e.getAttribute('role') === 'heading' || /^H[1-6]$/.test(e.tagName) || e.classList.contains('primary')).sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)).map(e => e.textContent.trim().toLowerCase()))
     check(mHeads[0] === 'new chats use' && mHeads.includes('if the model fails') && addAt.indexOf('add a provider') > addAt.indexOf('new chats use') && addAt.indexOf('add a provider') < addAt.indexOf('if the model fails') && mRows.includes('Fallback models') && mRows[mRows.length - 1] === 'All keys', `models: New chats use, then Add a provider, If the model fails and All keys last (${addAt.join(' | ')}; ${mRows.join(', ')})`)
     await p.close()
   }
@@ -251,11 +253,11 @@ module.exports = async t => {
     const gold = await btn.evaluate(e => e.classList.contains('primary')).catch(() => false)
     check(gold && (await p.locator('.screen .btn.primary').count()) === 1, 'attention: Add a provider is the one gold button on the page')
     await btn.click()
-    const t = await p.locator('.screen .title', { hasText: 'Add a provider' }).waitFor({ timeout: 4000 }).then(() => 'Add a provider', () => '')
+    const t = await pageTitle(p, 'Add a provider').waitFor({ timeout: 4000 }).then(() => 'Add a provider', () => '')
     check(t === 'Add a provider', 'attention: Add a provider opens the Add a provider flow')
     await mock({ configured: true })
     await back(p) // Add a provider → Models
-    await p.locator('.screen .title', { hasText: /^Models$/ }).waitFor({ timeout: 3000 }).catch(() => {})
+    await pageTitle(p, /^Models$/).waitFor({ timeout: 3000 }).catch(() => {})
     await back(p)
     await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 3000 })
     await cm.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})

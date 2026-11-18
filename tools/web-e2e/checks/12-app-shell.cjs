@@ -1,7 +1,7 @@
 // In the app shell: token and key, test build, remote debugging, Live mode, hidden display, assistant, setup, uninstall, Claude sign-in.
 const fs = require('fs')
 const path = require('path')
-const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsPage } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsPage, openPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -499,7 +499,7 @@ module.exports = async t => {
       await cs.getByRole('button', { name: 'Settings', exact: true }).click()
       await settingsPage(cs, 'Models')
       // Signed in: a row under Connected on the Models page; signed out: under Add a provider.
-      const anthropic = cs.locator('.providers .set-row', { hasText: 'Anthropic (Claude)' }).first()
+      const anthropic = openPage(cs).getByRole('button', { name: 'Anthropic (Claude)' }).first()
       if (!(await anthropic.waitFor({ timeout: 3000 }).then(() => true, () => false))) await cs.getByRole('button', { name: 'Add a provider' }).click()
       await anthropic.click()
     }

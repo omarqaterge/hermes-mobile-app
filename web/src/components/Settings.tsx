@@ -4,7 +4,7 @@
 import { savedTheme, setTheme, type Theme } from '../theme'
 import { autoReadOn, loadVoices, saveTtsConfig, setAutoRead, testVoice, ttsAvailable, ttsConfig, useVoice, type TtsConfig } from '../voice'
 import { confirmDialog } from '../dialog'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { defaultAccess, errText, loadDefaultModel, loadProfiles, reconnectNow, type Access } from '../gateway'
@@ -211,9 +211,10 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only, n
 /** Horizontal profile chips; `all` adds an "All bots" chip (value "*"). */
 export function ProfileChips({ value, onChange, all, label = 'Bot' }: { value: string; onChange: (v: string) => void; all?: boolean; label?: string }) {
   const profiles = useStore(s => s.profiles)
+  const id = useId()
   return (
-    <div className="scope-bar">
-      <h3 className="set-heading">{label}</h3>
+    <div className="scope-bar" role="group" aria-labelledby={id}>
+      <h3 className="set-heading" id={id}>{label}</h3>
     <div className="chips-row">
       {all && (
         <button className={`pill${value === '*' ? ' on' : ''}`} onClick={() => onChange('*')}>

@@ -1,7 +1,7 @@
 // Settings → Models: provider rotation. The fallback chain (config.yaml fallback_providers: add, reorder, remove, kept
 // routing keys; under "If the model fails", folded until opened) and a provider's credential pool (keys, status, rotation
 // strategy, add and remove). Then the one Models page and its Add a provider flow (task 07).
-const { WEB, calls, check, mock, sleep, settingsPage, trayOpen } = require('../lib.cjs')
+const { WEB, calls, check, mock, sleep, settingsPage, trayOpen, openPage, pageTitle, pageHeadings, settingsSection } = require('../lib.cjs')
 
 // The fallback list, opened: the fold row "Fallback models" on the Models page, then its group.
 const openFallbacks = async pg => {
@@ -153,7 +153,7 @@ module.exports = async t => {
     const MOCK = require('../lib.cjs').MOCK
     const pg = await browser.newPage({ viewport: { width: 375, height: 812 } })
     await pg.addInitScript(trayOpen)
-    const title = () => pg.locator('.screen .title').innerText().catch(() => '')
+    const title = () => pageTitle(pg).innerText().catch(() => '')
     const toSettings = async () => {
       await pg.getByRole('button', { name: /^Sessions/ }).click()
       await pg.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -176,26 +176,26 @@ module.exports = async t => {
     check(withNotice.top === without.top && withNotice.title === without.title && withNotice.w === without.w, `models: the notice does not move the Hermux mark or title (${JSON.stringify(withNotice)} with it, ${JSON.stringify(without)} without)`)
     await pg.evaluate(() => { document.querySelector('.empty').classList.add('has-notice'); document.querySelector('.empty-notice').style.display = '' })
     await notice.getByRole('button', { name: 'Connect a model' }).click()
-    await pg.locator('.screen .title', { hasText: 'Add a provider' }).waitFor({ timeout: 5000 })
+    await pageTitle(pg, 'Add a provider').waitFor({ timeout: 5000 })
     check((await title()) === 'Add a provider', 'models: Connect a model on the empty screen opens Add a provider')
     await pg.evaluate(() => window.hermesBack())
-    const backToChat = await pg.locator('.screen').waitFor({ state: 'detached', timeout: 4000 }).then(() => true, () => false)
+    const backToChat = await openPage(pg).waitFor({ state: 'detached', timeout: 4000 }).then(() => true, () => false)
     check(backToChat && (await pg.getByPlaceholder('Message Hermux').isVisible()), 'models: Back from there returns to the chat')
 
     await toSettings()
     await settingsPage(pg, 'Models')
     const sentence = pg.getByText('Hermux needs a model to think with. Sign in with a subscription you already have, or paste an API key.')
     await ok(sentence, 'models: with nothing connected the page says Hermux needs a model, in one sentence')
-    check((await pg.locator('.screen .set-heading', { hasText: /^New chats use$/ }).count()) === 0 && (await pg.locator('.screen .set-heading', { hasText: /^Connected$/ }).count()) === 0, 'models: with nothing connected there is no New chats use or Connected section')
+    check((await pageHeadings(pg, /^New chats use$/).count()) === 0 && (await pageHeadings(pg, /^Connected$/).count()) === 0, 'models: with nothing connected there is no New chats use or Connected section')
     const add = pg.getByRole('button', { name: 'Add a provider' })
-    check((await add.count()) === 1 && (await add.evaluate(e => e.classList.contains('primary'))) && (await pg.locator('.screen .btn.primary').count()) === 1, 'models: Add a provider is the page’s one gold button')
-    const heads = (await pg.locator('.screen .set-heading').allInnerTexts()).map(h => h.toLowerCase())
-    check(heads.includes('if the model fails') && (await pg.locator('.screen .set-title').allInnerTexts()).pop() === 'All keys', `models: If the model fails, then All keys last (${heads.join(' | ')})`)
+    check((await add.count()) === 1 && (await add.evaluate(e => e.classList.contains('primary'))) && (await openPage(pg).getByRole('button').evaluateAll(bs => bs.filter(b => b.classList.contains('primary')).length)) === 1, 'models: Add a provider is the page’s one gold button')
+    const heads = (await pageHeadings(pg).allInnerTexts()).map(h => h.toLowerCase())
+    check(heads.includes('if the model fails') && (await openPage(pg).getByRole('button').last().innerText()).split('\n')[0] === 'All keys', `models: If the model fails, then All keys last (${heads.join(' | ')})`)
 
     // The fallback list: closed, saying None; opened, today's list and controls.
     const fold = pg.getByRole('button', { name: /^Fallback models/ })
     check((await fold.getAttribute('aria-expanded')) === 'false' && (await pg.getByRole('group', { name: 'Fallback models' }).count()) === 0, 'models: the fallback list is closed by default')
-    await pg.waitForFunction(() => [...document.querySelectorAll('.set-value')].some(e => e.textContent === 'None'), null, { timeout: 5000 }).catch(() => {})
+    await fold.getByText('None', { exact: true }).waitFor({ timeout: 5000 }).catch(() => {})
     check((await fold.innerText()).includes('None'), `models: closed, it says None when there are no fallbacks (${JSON.stringify(await fold.innerText())})`)
     await fold.click()
     const list = pg.getByRole('group', { name: 'Fallback models' })
@@ -205,13 +205,13 @@ module.exports = async t => {
 
     // Add a provider: search, Sign in with an account you have, Use an API key, Your own server; nothing connected listed.
     await add.click()
-    await pg.locator('.screen .title', { hasText: 'Add a provider' }).waitFor({ timeout: 5000 })
-    await pg.locator('.screen .set-heading', { hasText: 'Use an API key' }).waitFor({ timeout: 5000 })
-    const aHeads = await pg.locator('.screen .set-heading').allInnerTexts()
+    await pageTitle(pg, 'Add a provider').waitFor({ timeout: 5000 })
+    await pageHeadings(pg, 'Use an API key').waitFor({ timeout: 5000 })
+    const aHeads = await pageHeadings(pg).allInnerTexts()
     const at = h => aHeads.findIndex(x => x.toLowerCase().startsWith(h))
     check(at('sign in with an account you have') >= 0 && at('sign in with an account you have') < at('use an api key') && at('use an api key') < at('all providers') && at('all providers') < at('your own server'), `add a provider: Sign in, Use an API key, All providers, Your own server, in that order (${aHeads.join(' | ')})`)
     check((await pg.getByPlaceholder('Search providers (e.g. deepseek, groq)').count()) === 1, 'add a provider: it has the provider search')
-    const signIn = pg.locator('.set-section', { has: pg.locator('.set-heading', { hasText: 'Sign in with an account you have' }) })
+    const signIn = settingsSection(pg, 'Sign in with an account you have')
     check((await signIn.getByRole('button', { name: /^OpenAI/ }).count()) >= 1, 'add a provider: a provider with a sign-in is under Sign in with an account you have')
     await pg.getByPlaceholder('Search providers (e.g. deepseek, groq)').fill('deeps')
     check((await pg.getByRole('button', { name: /^DeepSeek/ }).count()) >= 1, 'add a provider: the search finds a provider')
@@ -219,7 +219,7 @@ module.exports = async t => {
 
     // Add a key with no model yet: the picker opens by itself, limited to that provider; choosing ends on Models.
     const since = Date.now()
-    await pg.locator('.set-section', { has: pg.locator('.set-heading', { hasText: 'Use an API key' }) }).getByRole('button', { name: /^DeepSeek/ }).click()
+    await settingsSection(pg, 'Use an API key').getByRole('button', { name: /^DeepSeek/ }).click()
     const sheet = pg.getByRole('dialog').filter({ hasText: 'API key' })
     await sheet.getByLabel('DeepSeek API key').fill('sk-deepseek-mock-0009')
     await sheet.getByRole('button', { name: 'Save', exact: true }).click()
@@ -231,21 +231,21 @@ module.exports = async t => {
       check(put && put.body.value === 'sk-deepseek-mock-0009' && !/sk-deepseek/.test(put.query || ''), 'add a provider: the key goes in the body, never the URL')
     }
     await picker.getByRole('button', { name: /^deepseek-chat/ }).click()
-    await pg.locator('.screen .title', { hasText: /^Models$/ }).waitFor({ timeout: 5000 }).catch(() => {})
+    await pageTitle(pg, /^Models$/).waitFor({ timeout: 5000 }).catch(() => {})
     {
       const set = calls().filter(c => c.t >= since && c.http === 'POST' && c.path === '/api/model/set').pop()
       check(set && set.body.model === 'deepseek-chat' && set.body.provider === 'deepseek', `add a provider: choosing a model sets it for new chats (${JSON.stringify(set?.body)})`)
     }
     check((await title()) === 'Models', 'add a provider: choosing the model ends on the Models page')
     await ok(pg.getByText('New chats use deepseek-chat'), 'add a provider: the toast says “New chats use <model>”', 3000)
-    await ok(pg.locator('.set-section', { has: pg.locator('.set-heading', { hasText: /^Connected$/ }) }).getByRole('button', { name: /^DeepSeek/ }), 'models: the connected provider is a row under Connected')
-    check((await pg.locator('.screen .set-heading', { hasText: /^New chats use$/ }).count()) === 1, 'models: with a provider connected, New chats use is back')
+    await ok(settingsSection(pg, /^Connected$/).getByRole('button', { name: /^DeepSeek/ }), 'models: the connected provider is a row under Connected')
+    check((await pageHeadings(pg, /^New chats use$/).count()) === 1, 'models: with a provider connected, New chats use is back')
 
     // A second provider, with a model already: no picker; the sheet's Choose a model stays the way.
     await pg.getByRole('button', { name: 'Add a provider' }).click()
-    await pg.locator('.screen .set-heading', { hasText: 'Use an API key' }).waitFor({ timeout: 5000 })
-    check((await pg.locator('.screen').getByRole('button', { name: /^DeepSeek/ }).count()) === 0, 'add a provider: a connected provider is not listed again')
-    await pg.locator('.set-section', { has: pg.locator('.set-heading', { hasText: 'Use an API key' }) }).getByRole('button', { name: /^OpenRouter/ }).click()
+    await pageHeadings(pg, 'Use an API key').waitFor({ timeout: 5000 })
+    check((await openPage(pg).getByRole('button', { name: /^DeepSeek/ }).count()) === 0, 'add a provider: a connected provider is not listed again')
+    await settingsSection(pg, 'Use an API key').getByRole('button', { name: /^OpenRouter/ }).click()
     const sheet2 = pg.getByRole('dialog').filter({ hasText: 'API key' })
     await sheet2.getByLabel('OpenRouter API key').fill('sk-or-mock-0001')
     await sheet2.getByRole('button', { name: 'Save', exact: true }).click()
@@ -255,16 +255,16 @@ module.exports = async t => {
     await pg.evaluate(() => window.hermesBack()) // the sheet
     await pg.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     await pg.evaluate(() => window.hermesBack()) // Add a provider → Models
-    check(await pg.locator('.screen .title', { hasText: /^Models$/ }).waitFor({ timeout: 3000 }).then(() => true, () => false), 'add a provider: Back goes up to Models')
+    check(await pageTitle(pg, /^Models$/).waitFor({ timeout: 3000 }).then(() => true, () => false), 'add a provider: Back goes up to Models')
     await pg.evaluate(() => window.hermesBack())
     await pg.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 3000 })
     await pg.evaluate(() => window.hermesBack())
-    await pg.locator('.screen').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await openPage(pg).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
 
     // The empty screen's notice goes once there is a model.
     await pg.reload()
     await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-    await pg.waitForFunction(() => !!document.querySelector('.empty svg.logo'), null, { timeout: 8000 }).catch(() => {})
+    await pg.getByRole('img', { name: 'Hermux', exact: true }).first().waitFor({ timeout: 8000 }).catch(() => {})
     await sleep(1200)
     check((await notice.count()) === 0, 'models: with a model, the empty screen has no notice')
 
@@ -272,9 +272,9 @@ module.exports = async t => {
     await pg.getByRole('button', { name: /^Model: .*Change model$/ }).click()
     await pg.getByPlaceholder('Search models…').waitFor({ timeout: 5000 })
     await pg.getByRole('button', { name: 'Add a provider', exact: true }).click()
-    await pg.locator('.screen .title', { hasText: 'Add a provider' }).waitFor({ timeout: 5000 }).then(() => check(true, 'model sheet: Add a provider opens Settings on Add a provider'), () => check(false, 'model sheet: Add a provider opens Settings on Add a provider'))
+    await pageTitle(pg, 'Add a provider').waitFor({ timeout: 5000 }).then(() => check(true, 'model sheet: Add a provider opens Settings on Add a provider'), () => check(false, 'model sheet: Add a provider opens Settings on Add a provider'))
     await pg.evaluate(() => window.hermesBack())
-    const chatAgain = await pg.locator('.screen').waitFor({ state: 'detached', timeout: 4000 }).then(() => true, () => false)
+    const chatAgain = await openPage(pg).waitFor({ state: 'detached', timeout: 4000 }).then(() => true, () => false)
     check(chatAgain && (await pg.getByPlaceholder('Message Hermux').isVisible()) && (await pg.getByPlaceholder('Search models…').count()) === 0, 'model sheet: Back from Add a provider returns to the chat')
     await pg.close()
     await fetch(MOCK + '/api/env', { method: 'DELETE', body: JSON.stringify({ key: 'DEEPSEEK_API_KEY' }) })
@@ -291,10 +291,10 @@ module.exports = async t => {
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     await settingsPage(pg, 'Models')
-    await pg.locator('.screen .set-heading', { hasText: /^New chats use$/ }).waitFor({ timeout: 5000 })
+    await pageHeadings(pg, /^New chats use$/).waitFor({ timeout: 5000 })
     check((await pg.getByRole('button', { name: 'Work', exact: true }).count()) === 1, 'models: with several bots, the page has bot chips')
     await pg.getByRole('button', { name: 'Work', exact: true }).click()
-    await ok(pg.locator('.set-section', { has: pg.locator('.set-heading', { hasText: /^New chats use$/ }) }).getByRole('button', { name: /^other-model/ }), 'models: a bot chip shows that bot’s model under New chats use')
+    await ok(settingsSection(pg, /^New chats use$/).getByRole('button', { name: /^other-model/ }), 'models: a bot chip shows that bot’s model under New chats use')
     await pg.close()
     await mock({ bots: false })
     const one = await browser.newPage({ viewport: { width: 375, height: 812 } })
@@ -303,9 +303,9 @@ module.exports = async t => {
     await one.getByRole('button', { name: /^Sessions/ }).click()
     await one.getByRole('button', { name: 'Settings', exact: true }).click()
     await settingsPage(one, 'Models')
-    await one.locator('.screen .set-heading', { hasText: /^New chats use$/ }).waitFor({ timeout: 5000 })
-    check((await one.locator('.screen .scope-bar').count()) === 0, 'models: with one bot, no bot chips')
-    await one.locator('.set-section', { has: one.locator('.set-heading', { hasText: /^New chats use$/ }) }).getByRole('button').first().click()
+    await pageHeadings(one, /^New chats use$/).waitFor({ timeout: 5000 })
+    check((await openPage(one).getByRole('group', { name: 'Bot', exact: true }).count()) === 0, 'models: with one bot, no bot chips')
+    await settingsSection(one, /^New chats use$/).getByRole('button').first().click()
     await one.getByPlaceholder('Search models…').waitFor({ timeout: 5000 })
     check((await one.getByRole('switch', { name: 'Set one model for all bots' }).count()) === 0, 'models: with one bot, the picker has no Set one model for all bots')
     await one.close()
