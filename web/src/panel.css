@@ -291,3 +291,29 @@ html[data-motion='full'] .app:has(> .drawer.open) > .stage {
     display: grid;
   }
 }
+
+/* ── Needs you (needsyou.ts): the group on top of the chat list, its rows, and the same amber dot on the header button
+   and in the activity banner. Amber (--warn) means "waits for you" and nothing else in the list. Still: no shimmer. ── */
+.needs-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.activity-banner .needs-dot {
+  margin-right: 0;
+}
+.needs-dot.on-menu {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  margin: 0;
+}
+.group-title.needs-title,
+.session-state.needs-word {
+  color: var(--warn);
+}

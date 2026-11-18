@@ -69,6 +69,19 @@ export function chatListChanged(restored = false): void {
 export function holdChatSnapshot(on: boolean): void {
   dragging = on
   if (!on && wanted && !touching) takeChatSnapshot()
+  if (!on) freed()
+}
+
+/** A finger is on the panel or a row is lifted: the list's rows must not move now. */
+export const chatListHeld = (): boolean => touching || dragging
+
+const freeSubs = new Set<() => void>()
+/** `fn` runs each time the list stops being held (needsyou.ts applies what waited). */
+export function onChatListFree(fn: () => void): void {
+  freeSubs.add(fn)
+}
+function freed(): void {
+  if (!chatListHeld()) freeSubs.forEach(f => f())
 }
 
 /** A swipe has started pulling the closed panel in: the rows are put in order now, before they can be seen. */
@@ -147,6 +160,7 @@ const settle = () => {
   if (now === touching) return
   touching = now
   if (!touching && wanted && !dragging) takeChatSnapshot()
+  if (!touching) freed()
 }
 const opts = { capture: true, passive: true }
 window.addEventListener('touchstart', e => {

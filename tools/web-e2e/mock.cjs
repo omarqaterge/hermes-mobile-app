@@ -45,6 +45,9 @@ canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lan
 // A chat with a canvas and things that scroll sideways (code, table, card): the swipe-left-to-canvas checks.
 canvasDocs['s-panel'] = [{ id: 'dside', title: 'Side', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Side\n\nPanel text' }]
 let activityItems = []
+// The plugin's `waiting` list on /activity. A test item may carry `request` (what session.resume then hands back in
+// open_requests, as Hermes does for a chat with an open request) and `keep` (the plugin hasn't heard of the answer yet).
+let waitingItems = []
 // The plugin's /tool-result: the stored output of a finished tool call, by tool_id (filled by every tool.complete the mock sends).
 const toolResults = new Map()
 // The plugin's /memory (MEMORY.md / USER.md) and /bots, kept so POST /memory and PUT /bots/<name> change what the next GET says.
@@ -165,6 +168,7 @@ const server = http.createServer((req, res) => {
       // Test hooks: set the activity feed, bump a chat's message count (a reply landed there).
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
+      if (b.waiting) waitingItems = b.waiting
       if (b.unconfigured) {
         providerConfigured = false
         envSet = {}
@@ -266,7 +270,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
-    if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems })
+    if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems, waiting: waitingItems.map(({ request, keep, ...w }) => w) })
     if (p === '/api/plugins/hermes-mobile/sent-counts') {
       // Messages the user sent (plugin /sent-counts): half of message_count here, each turn being a message and a reply.
       const ids = JSON.parse(body || '{}').ids || []
@@ -887,6 +891,13 @@ wss.on('connection', ws => {
           return reply({ session_id: 'rt-s-long', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages })
         }
         const res = { session_id: runtimeGen ? `rt${runtimeGen}-${sid}` : `rt-${sid}`, resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages: [{ role: 'user', text: `hello ${sid}`, row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: `answer ${sid}`, timestamp: 1790000060 }] }
+        const asks = waitingItems.find(w => w.session === sid && w.request)
+        if (asks) {
+          res.open_requests = [{ ...asks.request, params: { session_id: res.session_id, ...asks.request.params } }]
+          waiting.set(asks.request.id, () => {
+            if (!asks.keep) waitingItems = waitingItems.filter(w => w !== asks)
+          })
+        }
         // A slow phone: the cached copy must be on screen long before this answer.
         if (sid === 's-slow') return later(1500, () => reply(res))
         return reply(res)

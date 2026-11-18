@@ -185,6 +185,18 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     timer**, and it can't answer anything: answers still go through the sheet, the fingerprint and the unlock.
   - **Limit:** a chat running in another Hermes process (the messaging gateway) can show as waiting, but its request is
     not delivered to this page, as today: opening it shows no sheet, and it is answered where it was asked.
+  - **Built.** `GET /activity` gained `waiting` (`tools/test_waiting.py`). `web/src/needsyou.ts` merges it with the page's
+    own requests; the chat list has the Needs you group on top (amber dot, "Needs you · wants to run a command", no
+    shimmer, no Allow or Deny; a tap opens the chat and the existing sheet asks); the header button turns amber and reads
+    "Chats (one needs you)" / "Chats (2 need you)", before the unread state; a sub-agent's request shows its top chat with
+    "A sub-agent …" (task 09 can put a name in `who`). Checks: the end of `05`.
+  - **The banner differs from the task on purpose.** It names waiting chats first whenever it is showing, but a chat that
+    only waits does not bring it up: a wait can last an hour, and a banner for that long took 32 px from the chat (614 to
+    582 px, 314 to 282 with the keyboard). So the chat keeps its height in every state.
+  - **Polling is unchanged:** a chat that only waits keeps the 9 s schedule, so one answered from a notification leaves the
+    group at the next poll, or at once when the app returns to the screen. Answers given in the app or known to the
+    socket take it out at once.
+  - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its

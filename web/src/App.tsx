@@ -4,7 +4,7 @@ import { useModelReady } from './model-ready'
 import { appVersion, haptic, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow } from './gateway'
+import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow, requestChat } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Toast, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { stepMark, stepWord } from './toolsay'
@@ -23,6 +23,7 @@ import { RequestSheet } from './components/RequestSheet'
 import { CommandsSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { ChatMenuSheet, DraftMenuSheet } from './components/ChatMenu'
 import { bannerItems, startActivityPolling } from './activity'
+import { needWords, needsPhrase, openNeeds, setRequestChat } from './needsyou'
 import { DialogHost } from './dialog'
 import { WhatsNewAfterUpdate } from './components/WhatsNew'
 import { startWhatsNewAfterUpdate } from './whatsnew'
@@ -107,6 +108,8 @@ window.hermesPause = () => {
 }
 document.addEventListener('visibilitychange', () => setAppAway(document.visibilityState === 'hidden'))
 
+setRequestChat(requestChat) // needsyou.ts stays free of gateway.ts
+
 function Header() {
   const title = useStore(shownTitle)
   const settled = useStore(viewSettled) // false while another chat opens: `active` is not the chat on screen
@@ -119,13 +122,23 @@ function Header() {
   const canvasDocs = useCanvas(c => c.docs.length)
   const canvasWriting = useCanvas(c => Boolean(c.writing))
   const unread = useStore(s => s.unread.length > 0)
+  const needs = useStore(s => openNeeds(s).length)
   const [wide, sideHidden] = useSidePanel()
-  // Wide screens: ☰ hides or shows the docked chat list (sidepanel.ts); phones: it opens the drawer.
-  const menuLabel = wide ? (sideHidden ? 'Show chat list' : 'Hide chat list') : unread ? 'Sessions (unread chats)' : 'Sessions'
+  // Wide screens: ☰ hides or shows the docked chat list (sidepanel.ts); phones: it opens the drawer. A chat that needs
+  // the person comes before unread ones, in the name and in the dot.
+  const needing = needs > 0 ? needsPhrase(needs) : ''
+  const menuLabel = wide
+    ? `${sideHidden ? 'Show chat list' : 'Hide chat list'}${needing ? ` (${needing})` : ''}`
+    : needing
+      ? `Chats (${needing})`
+      : unread
+        ? 'Sessions (unread chats)'
+        : 'Sessions'
   return (
     <header className="topbar">
       <button className="icon-btn menu-btn" aria-label={menuLabel} onClick={() => (wide ? toggleSide() : setState({ drawer: true }))}>
-        <Icon n="menu" size={22} />{unread && <span className="unread-dot on-menu" />}
+        <Icon n="menu" size={22} />
+        {needing ? <span className="needs-dot on-menu" /> : unread && <span className="unread-dot on-menu" />}
       </button>
       <button className="title-btn" onClick={() => setState({ sheet: 'status' })}>
         <span className="title">
@@ -205,9 +218,28 @@ function ActivityBanner() {
   const activeId = useStore(s => s.active?.storedId)
   const running = useStore(s => s.active?.running ?? false)
   const sessions = useStore(s => s.sessions)
+  const needs = useStore(openNeeds)
   // The open chat's own live turn already has the status line.
-  const shown = bannerItems(items, activeId, running)
-  if (shown.length === 0) return null
+  const all = bannerItems(items, activeId, running)
+  // The banner shows when it always did: a wait can last an hour, and that height belongs to the chat (the header button
+  // and the list say it meanwhile). While it shows, chats that need the person come first, named as waiting, not working.
+  if (all.length === 0) return null
+  const shown = all.filter(i => !needs.some(n => n.session === i.session))
+  if (needs.length > 0) {
+    // With the words of the chat list. A tap opens the chat; its sheet asks.
+    const n = needs[0]
+    const more = needs.length - 1 + shown.length
+    return (
+      <button className="activity-banner" onClick={() => void openSessionFromNotification(n.session)}>
+        <span className="needs-dot" />
+        <span className="activity-text">
+          <b>{plainTitle(sessions.find(x => x.id === n.session)?.title) || 'another chat'}: </b>
+          Needs you · {needWords(n)}
+          {more > 0 ? <span className="dim"> (+{more} more)</span> : null}
+        </span>
+      </button>
+    )
+  }
   const first = shown[0]
   const here = first.session === activeId
   const where = here ? '' : plainTitle(sessions.find(x => x.id === first.session)?.title) || first.profile || 'another chat'

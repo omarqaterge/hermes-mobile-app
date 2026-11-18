@@ -10,6 +10,7 @@ import { Title, plainTitle } from './Title'
 import { ago, lastActive } from '../unread'
 import { dayLabel, frozenActivity, orderChats, recentIds } from '../chatorder'
 import { holdChatSnapshot, useChatSnapshot } from '../chatsnapshot'
+import { needWords, useListedNeeds, type Need } from '../needsyou'
 import { archiveChat, deleteChat, pinChat } from '../chatactions'
 import { cronJobId, runName, useJobName } from '../panelvalues'
 import { Chevron, MenuGroup, MenuRow, MenuSheet } from './ui'
@@ -37,6 +38,8 @@ interface RowProps {
   active: boolean
   pinned: boolean
   archived?: boolean
+  /** The row stands in the Needs you group: what the chat waits for replaces the working and unread states. */
+  need?: Need
   onOpen: () => void
   onRight: (a: RightAction) => void
   onDelete: () => void
@@ -44,13 +47,13 @@ interface RowProps {
   onMenu: () => void
 }
 
-function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLongPress, onMenu }: RowProps) {
+function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete, onLongPress, onMenu }: RowProps) {
   // Working right now: the open chat's own turn, or any chat in the plugin's activity feed (a background
   // memory/skills review after a reply doesn't count: the answer is already in).
   const working = useStore(
     st => (st.active?.storedId === s.id && !!st.active?.running) || st.activity.some(a => a.session === s.id && !a.review)
-  )
-  const unread = useStore(st => !active && st.unread.includes(s.id)) && !working
+  ) && !need
+  const unread = useStore(st => !active && st.unread.includes(s.id)) && !working && !need
   const ref = useRef<HTMLDivElement>(null)
   const g = useRef({ x0: 0, y0: 0, mode: '' as '' | 'swipe' | 'scroll' | 'drag', moved: false, y: 0, id: 0, timer: 0 as unknown as ReturnType<typeof setTimeout>, zone: '' })
   const [dx, setDx] = useState(0)
@@ -156,12 +159,14 @@ function SwipeRow({ s, active, pinned, archived, onOpen, onRight, onDelete, onLo
       >
         <span className="session-main">
           {working && <span className="visually-hidden">Working</span>}
+          {need && <span className="visually-hidden">Needs you</span>}
           <span className={`session-title${working ? ' working' : ''}`}>
+            {need && <span className="needs-dot" />}
             {unread && <span className="unread-dot" role="img" aria-label="Finished, not opened yet" />}
             {pinned && <span className="pin-dot"><Icon n="pin" /> </span>}
             {s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}
           </span>
-          <RowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} />
+          {need ? <NeedLine need={need} /> : <RowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} />}
         </span>
         <button
             className="row-menu-btn"
@@ -195,6 +200,16 @@ function RowLine({ s, state }: { s: SessionListRow; state: '' | 'Working' | 'Fin
   return (
     <span className="session-sub dim small">
       {parts.flatMap((p, i) => (i ? [' · ', p] : [p]))}
+    </span>
+  )
+}
+
+/** The line under the title of a chat that waits: the state word, then what for. Screen readers already heard the word
+ *  before the title, as with "Working". */
+function NeedLine({ need }: { need: Need }) {
+  return (
+    <span className="session-sub dim small">
+      <span className="session-state needs-word" aria-hidden="true">Needs you</span> · {needWords(need)}
     </span>
   )
 }
@@ -415,6 +430,7 @@ export function SessionList({ query }: { query: string }) {
   const loading = useStore(s => s.sessionsLoading)
   const profile = useStore(s => s.profile)
   const activeId = useStore(s => s.active?.storedId)
+  const needs = useListedNeeds()
   const [order, setOrder] = useOrder(profile)
   // Last activity as of the latest snapshot (chatsnapshot.ts): a reply that lands does not move a row; a chat listed
   // after the snapshot uses its time now. The date headings are worked out as of the snapshot too.
@@ -452,20 +468,39 @@ export function SessionList({ query }: { query: string }) {
   const match = (s: SessionListRow) => !needle || `${s.title || ''} ${s.preview || ''}`.toLowerCase().includes(needle)
   const canReorder = !needle
 
+  // The Needs you group, on top: a chat in it is not repeated under Pinned or its date.
+  const needRows = useMemo(() => {
+    const byId = new Map(sessions.map(s => [s.id, s]))
+    return needs.flatMap(need => {
+      const s = byId.get(need.session)
+      return s && match(s) ? [{ s, need }] : []
+    })
+  }, [sessions, needs, needle]) // eslint-disable-line react-hooks/exhaustive-deps
+  const needIds = useMemo(() => new Set(needs.map(n => n.session)), [needs])
+
   const pinnedRows = useMemo(() => {
     const byId = new Map(sessions.map(s => [s.id, s]))
-    return order.pinned.map(id => byId.get(id)).filter((s): s is SessionListRow => Boolean(s) && match(s!))
-  }, [sessions, order.pinned, needle]) // eslint-disable-line react-hooks/exhaustive-deps
+    return order.pinned.filter(id => !needIds.has(id)).map(id => byId.get(id)).filter((s): s is SessionListRow => Boolean(s) && match(s!))
+  }, [sessions, order.pinned, needle, needIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const chats = useMemo(() => {
+  const ordered = useMemo(() => {
     const others = sessions.filter(s => !order.pinned.includes(s.id) && match(s))
     // Last activity from the snapshot (or the saved custom order).
     return orderChats(others, order.manual, activity)
   }, [sessions, order.pinned, order.manual, needle, activity]) // eslint-disable-line react-hooks/exhaustive-deps
+  const chats = useMemo(() => ordered.filter(s => !needIds.has(s.id)), [ordered, needIds])
+  /** A custom order made from the rows on show, with the chats now in the group back in their places: they return there. */
+  const withWaiting = (ids: string[]) => {
+    const out = [...ids]
+    ordered.forEach((s, i) => {
+      if (needIds.has(s.id)) out.splice(Math.min(i, out.length), 0, s.id)
+    })
+    return out
+  }
 
   const drag = useDrag((list, ids) => {
     if (list === 'pinned') setOrder(o => ({ ...o, pinned: [...ids, ...o.pinned.filter(x => !ids.includes(x))] }))
-    else setOrder(o => ({ ...o, manual: ids }))
+    else setOrder(o => ({ ...o, manual: withWaiting(ids) }))
   }, gap)
 
   useEffect(() => {
@@ -506,18 +541,19 @@ export function SessionList({ query }: { query: string }) {
     if (container) drag.begin(list, container, ids, id, y, pointerId, rowTop, opts)
   }
 
-  const row = (s: SessionListRow, list: ListName | null, idx: number) => (
+  const row = (s: SessionListRow, list: ListName | null, idx: number, need?: Need) => (
     <div
       key={s.id}
       data-id={s.id}
-      className={drag.view?.id === s.id ? 'drag-item dragging' : 'drag-item'}
+      className={`${drag.view?.id === s.id ? 'drag-item dragging' : 'drag-item'}${need ? ' motion-in' : ''}`}
       style={list ? drag.styleFor(list, s.id, idx) : undefined}
     >
       <SwipeRow
         s={s}
         active={s.id === activeId}
         pinned={order.pinned.includes(s.id)}
-        archived={!list}
+        archived={!list && !need}
+        need={need}
         onOpen={() => {
           haptic()
           resumeSession(s.id).catch(e => toast(errText(e), 'error'))
@@ -534,7 +570,7 @@ export function SessionList({ query }: { query: string }) {
             onLift: () => {
               if (list === 'chats') {
                 setPinZone(true)
-                if (!wasManual) setOrder(o => ({ ...o, manual: chats.map(x => x.id) }))
+                if (!wasManual) setOrder(o => ({ ...o, manual: withWaiting(chats.map(x => x.id)) }))
               }
             },
             onCancel: () => {
@@ -574,13 +610,13 @@ export function SessionList({ query }: { query: string }) {
                       const at = dropIndex(chatsRef.current, y, s.id)
                       const ids = chats.map(x => x.id)
                       ids.splice(Math.min(at, ids.length), 0, s.id)
-                      setOrder(o => ({ ...o, pinned: o.pinned.filter(x => x !== s.id), manual: ids }))
+                      setOrder(o => ({ ...o, pinned: o.pinned.filter(x => x !== s.id), manual: withWaiting(ids) }))
                       toast('Unpinned')
                     }
                   }
           })
         }}
-        onMenu={() => setMenu({ s, archived: !list })}
+        onMenu={() => setMenu({ s, archived: !list && !need })}
       />
     </div>
   )
@@ -610,6 +646,14 @@ export function SessionList({ query }: { query: string }) {
     <>
       {loading && sessions.length === 0 && <div className="dim pad">Loading chats…</div>}
       {!loading && sessions.length === 0 && <div className="dim pad">No chats yet</div>}
+      {needRows.length > 0 && (
+        <div role="group" aria-labelledby="needs-you-title">
+          <div id="needs-you-title" className="group-title needs-title" role="heading" aria-level={2}>
+            Needs you
+          </div>
+          {needRows.map(({ s, need }, i) => row(s, null, i, need))}
+        </div>
+      )}
       {(pinnedRows.length > 0 || pinZone) && (
         <>
           <div className="group-title">

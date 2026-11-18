@@ -1,5 +1,5 @@
 // Answers from a notification, several questions at once, a huge approval warning, phone data approvals.
-const { calls, rpcs, sleep, check, nativeShell, WEB } = require('../lib.cjs')
+const { calls, rpcs, sleep, check, mock, nativeShell, WEB } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -233,5 +233,201 @@ module.exports = async t => {
     check(rpcs('prompt.submit').length === before.submits && rpcs('config.set').length === before.sets && rpcs('slash.exec').length === before.slash, 'card: a button whose text is "/yolo on" sends nothing and changes no access')
     check((await page.getByText('Cards can’t run commands').count()) > 0, 'card: the refusal is shown')
     await page.close()
+  }
+  // ── Needs you: chats that wait for an answer, in the chat list, on the header button and in the banner ──
+  {
+    const page = await t.browser.newPage({ viewport: { width: 360, height: 740 } })
+    await page.addInitScript(nativeShell)
+    await page.addInitScript(() => {
+      const orig = WebSocket.prototype.send
+      WebSocket.prototype.send = function (d) {
+        window.__ws = this
+        return orig.call(this, d)
+      }
+    })
+    const asks = (session, kind, request, extra = {}) => {
+      const now = Date.now() / 1000
+      return { session, kind, who: '', profile: 'default', since: now - 5, until: now + 600, ...(request ? { request } : {}), ...extra }
+    }
+    const approval = id => ({ id, method: 'approval', params: { command: 'rm -rf /tmp/needs', description: 'delete a folder', pattern_key: 'recursive delete', pattern_keys: ['recursive delete'] } })
+    const question = id => ({ id, method: 'clarify', params: { question: 'Which size?', choices: ['Small', 'Large'] } })
+    // The app reads /activity on its usual schedule, and at once when it comes back to the screen.
+    const setWaiting = async (list, working = []) => {
+      await mock({ waiting: list, activity: working.map(session => ({ session, text: 'Waiting for your approval', short: 'Approve?', profile: 'default', ts: Date.now() / 1000 })) })
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    }
+    const header = name => page.getByRole('button', { name })
+    const group = page.getByRole('group', { name: 'Needs you' })
+    const openList = name => header(name).click()
+    const row = id => page.locator(`.drawer [data-id="${id}"]`)
+    const closeList = async () => {
+      await page.evaluate(() => window.hermesBack())
+      await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 3000 })
+      await sleep(100)
+    }
+
+    await mock({ waiting: [] })
+    await page.goto(WEB + '/')
+    await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await header(/^Sessions/).waitFor({ timeout: 5000 })
+    await openList(/^Sessions/)
+    await page.getByText('Chat 3', { exact: true }).waitFor({ timeout: 5000 })
+    check((await group.count()) === 0, 'needs you: no group while no chat waits')
+    await closeList()
+
+    // A chat in the background asks for approval.
+    await setWaiting([asks('s-3', 'approval', approval('srv-needs-1'), { keep: true })], ['s-3'])
+    await header('Chats (one needs you)').waitFor({ timeout: 4000 })
+    check(true, 'needs you: the header button says one chat needs you')
+    const dot = await header('Chats (one needs you)').evaluate(b => {
+      const probe = document.createElement('span')
+      probe.style.background = 'var(--warn)'
+      b.append(probe)
+      const want = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return { want, has: [...b.querySelectorAll('span')].some(e => getComputedStyle(e).backgroundColor === want) }
+    })
+    check(dot.has, `needs you: the header button shows the amber state (${JSON.stringify(dot)})`)
+    const banner = page.getByRole('button', { name: /Chat 3: Needs you · wants to run a command/ })
+    check((await banner.count()) === 1, 'needs you: the banner names the chat with the same words')
+    await openList('Chats (one needs you)')
+    await group.waitFor({ timeout: 3000 })
+    check((await group.getByRole('heading', { name: 'Needs you' }).count()) === 1, 'needs you: the group has its heading')
+    check((await group.getByText('Chat 3', { exact: true }).count()) === 1, 'needs you: the chat is in the group')
+    const line = await row('s-3').innerText()
+    check(/Needs you/.test(line) && /wants to run a command/.test(line), `needs you: the row says what it waits for (${line})`)
+    check((await row('s-3').count()) === 1, 'needs you: the chat is not repeated under its date')
+    check((await group.getByRole('button', { name: /Allow|Deny/ }).count()) === 0, 'needs you: nothing in the list can answer')
+    const heard = await group.evaluate(g => [...g.querySelectorAll('.visually-hidden')].map(e => e.textContent))
+    check(heard.includes('Needs you'), `needs you: screen readers hear the state (${heard})`)
+    check((await group.evaluate(g => g.querySelectorAll('.session-title.working').length)) === 0, 'needs you: no shimmer on the row')
+    const firstDate = page.locator('.drawer .group-title').nth(1)
+    check((await group.boundingBox()).y < (await firstDate.boundingBox()).y, 'needs you: the group is on top of the list')
+    check(calls().filter(c => c.answer === 'srv-needs-1').length === 0, 'needs you: nothing was answered by showing it')
+
+    // The tap opens the chat, and Hermes's open request brings up the existing sheet.
+    await group.getByText('Chat 3', { exact: true }).click()
+    const deny = page.getByRole('button', { name: 'Deny' })
+    await deny.waitFor({ timeout: 5000 })
+    check((await page.getByRole('button', { name: 'Allow once' }).count()) === 1, 'needs you: a tap opens the chat with the approval sheet')
+    check(calls().filter(c => c.answer === 'srv-needs-1').length === 0, 'needs you: opening the chat answers nothing')
+    await deny.click()
+    await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 3000 })
+    await sleep(200)
+    const ans = calls().filter(c => c.answer === 'srv-needs-1')
+    check(ans.length === 1 && ans[0].result.choice === 'deny', `needs you: the sheet's answer reaches Hermes (${JSON.stringify(ans)})`)
+    // `keep`: the plugin still lists it, as in the moment before it hears of the answer.
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await sleep(300)
+    await openList(/^Sessions/)
+    await page.getByText('Chat 4', { exact: true }).waitFor({ timeout: 3000 })
+    check((await group.count()) === 0, 'needs you: answering takes the chat out of the group at once')
+    check((await row('s-3').count()) === 1, 'needs you: the answered chat is back in the list')
+    await closeList()
+    await setWaiting([])
+
+    // A question behaves the same; two chats are counted.
+    await setWaiting([asks('s-4', 'question', question('srv-needs-2')), asks('s-5', 'phone_data')], ['s-11'])
+    await header('Chats (2 need you)').waitFor({ timeout: 4000 })
+    check(true, 'needs you: the header button counts two chats')
+    await page.getByRole('button', { name: /Chat 4: Needs you · asked a question \(\+2 more\)/ }).waitFor({ timeout: 3000 })
+    check(true, 'needs you: the banner lists chats that wait before chats that work, and counts the rest')
+    // A wait can last an hour: alone it adds no bar, so the chat keeps its height (the button and the list say it).
+    await setWaiting([asks('s-4', 'question', question('srv-needs-2')), asks('s-5', 'phone_data')])
+    await page.waitForFunction(() => !document.querySelector('.activity-banner'), null, { timeout: 4000 })
+    check((await header('Chats (2 need you)').count()) === 1, 'needs you: a chat that only waits adds no banner, and the button still says it')
+    await openList('Chats (2 need you)')
+    await group.waitFor({ timeout: 3000 })
+    check(/asked a question/.test(await row('s-4').innerText()), 'needs you: a question has its own words')
+    check(/wants to read phone data/.test(await row('s-5').innerText()), 'needs you: a phone data request has its own words')
+    await page.getByRole('textbox', { name: 'Search chats' }).fill('Chat 5')
+    await sleep(100)
+    check((await row('s-4').count()) === 0 && (await row('s-5').count()) === 1, 'needs you: the search filters the group too')
+    await page.getByRole('textbox', { name: 'Search chats' }).fill('')
+    await row('s-4').waitFor({ timeout: 2000 })
+    await group.getByText('Chat 4', { exact: true }).click()
+    await page.getByText('Which size?').first().waitFor({ timeout: 5000 })
+    await page.getByRole('button', { name: 'Skip' }).click()
+    await sleep(300)
+    check(calls().filter(c => c.answer === 'srv-needs-2').length === 1, 'needs you: the question is answered on its sheet')
+    await header('Chats (one needs you)').waitFor({ timeout: 3000 })
+    check(true, 'needs you: the answered question leaves the count')
+
+    // Answered somewhere else (a notification): the plugin stops listing it.
+    await setWaiting([])
+    await header(/^Sessions/).waitFor({ timeout: 4000 })
+    check((await page.getByRole('button', { name: /Needs you/ }).count()) === 0, 'needs you: answered elsewhere, the button and the banner go back')
+
+    // A pinned chat moves into the group, and returns to Pinned afterwards.
+    await openList(/^Sessions/)
+    await row('s-6').getByRole('button', { name: 'Chat options' }).click()
+    await page.getByRole('dialog', { name: 'Chat options' }).getByRole('button', { name: 'Pin to top' }).click()
+    await page.locator('.drawer .pin-list [data-id="s-6"]').waitFor({ timeout: 3000 })
+    await setWaiting([asks('s-6', 'approval')])
+    await group.waitFor({ timeout: 4000 })
+    check((await row('s-6').count()) === 1 && (await page.locator('.drawer .pin-list [data-id="s-6"]').count()) === 0, 'needs you: a pinned chat is not repeated under Pinned')
+    await setWaiting([])
+    await page.locator('.drawer .pin-list [data-id="s-6"]').waitFor({ timeout: 4000 })
+    check((await group.count()) === 0, 'needs you: a pinned chat goes back to Pinned')
+    await page.locator('.drawer .pin-list [data-id="s-6"]').getByRole('button', { name: 'Chat options' }).click()
+    await page.getByRole('dialog', { name: 'Chat options' }).getByRole('button', { name: 'Unpin' }).click()
+    await sleep(200)
+
+    // Rows do not move under a finger: what arrives meanwhile waits until it lifts.
+    const heading = page.locator('.drawer .group-title').first()
+    const box = await heading.boundingBox()
+    const before = (await row('s-7').boundingBox()).y
+    await page.mouse.move(box.x + 20, box.y + box.height / 2)
+    await page.mouse.down()
+    await setWaiting([asks('s-8', 'approval')])
+    await sleep(500)
+    check((await group.count()) === 0 && (await row('s-7').boundingBox()).y === before, 'needs you: no row moves while a finger is on the list')
+    await page.mouse.up()
+    await group.waitFor({ timeout: 2000 })
+    check(true, 'needs you: the group comes when the finger lifts')
+    await sleep(1000)
+    const running = await page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').length)
+    check(running === 0, `needs you: nothing keeps moving while a chat waits (${running} running)`)
+    await setWaiting([])
+    await group.waitFor({ state: 'detached', timeout: 4000 })
+    await closeList()
+
+    // A chat attached to this page: its request is known at once, and leaves when Hermes withdraws it.
+    await openList(/^Sessions/)
+    await page.getByText('Chat 9', { exact: true }).click()
+    await page.locator('.msg.user', { hasText: 'hello s-9' }).waitFor({ timeout: 5000 })
+    await page.getByPlaceholder('Message Hermux').fill('hello there')
+    await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await sleep(300)
+    const live = rpcs('prompt.submit').pop().params.session_id
+    await openList(/^Sessions/)
+    await page.getByText('Chat 10', { exact: true }).click()
+    await page.locator('.msg.user', { hasText: 'hello s-10' }).waitFor({ timeout: 5000 })
+    const frame = (f, sid) => page.evaluate(([f]) => window.__ws.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', ...f }) })), [f, sid])
+    await frame({ id: 'srv-needs-live', method: 'clarify', params: { session_id: live, question: 'Asked from behind?' } })
+    await header('Chats (one needs you)').waitFor({ timeout: 3000 })
+    check(true, 'needs you: a request from an attached chat counts at once, without waiting for the feed')
+    await frame({ method: 'event', params: { type: 'request.cancel', session_id: live, payload: { id: 'srv-needs-live', method: 'clarify', reason: 'resolved' } } })
+    await header(/^Sessions/).waitFor({ timeout: 3000 })
+    check(true, 'needs you: a request withdrawn by Hermes leaves at once')
+    await mock({ waiting: [], activity: [] })
+    await page.close()
+
+    // A wide screen: the button keeps its own name and adds the state; the docked list shows the group.
+    const wide = await t.browser.newPage({ viewport: { width: 1000, height: 740 } })
+    await wide.addInitScript(nativeShell)
+    await mock({ waiting: [asks('s-3', 'approval')] })
+    await wide.goto(WEB + '/')
+    await wide.getByRole('button', { name: 'Hide chat list (one needs you)' }).waitFor({ timeout: 15000 })
+    check(true, 'needs you: on a wide screen the button keeps its name and adds the state')
+    await wide.getByRole('group', { name: 'Needs you' }).getByText('Chat 3', { exact: true }).waitFor({ timeout: 3000 })
+    check(true, 'needs you: the docked list shows the group')
+    // A chat of another bot isn't in this list: nothing here points at a chat that can't be opened.
+    await mock({ waiting: [asks('other-bot-chat', 'approval', null, { profile: 'other' })] })
+    await wide.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await wide.getByRole('button', { name: 'Hide chat list', exact: true }).waitFor({ timeout: 4000 })
+    check((await wide.getByRole('button', { name: /Needs you/ }).count()) === 0 && (await wide.getByRole('group', { name: 'Needs you' }).count()) === 0, 'needs you: a chat that is not in this list is not counted')
+    await mock({ waiting: [] })
+    await wide.close()
   }
 }

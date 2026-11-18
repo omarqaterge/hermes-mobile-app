@@ -1,16 +1,26 @@
 // Live "what is Hermes doing" feed for the banner: polls the plugin's /activity while the app is open.
-// It covers work the chat stream doesn't show, e.g. the background memory/skills review after a reply.
+// It covers work the chat stream doesn't show, e.g. the background memory/skills review after a reply, and which chats
+// wait for an answer (`waiting`, needsyou.ts), on the same schedule.
 import { api } from './api'
-import { loadSessionsSoon } from './gateway'
-import { getState, setState, subscribe, type ActivityItem } from './store'
+import { loadSessionsSoon, requestChat } from './gateway'
+import { getState, setState, subscribe, type ActivityItem, type WaitingItem } from './store'
 
 let timer: ReturnType<typeof setInterval> | null = null
+
+// When this page last saw a chat's request end (answered here, or `request.cancel`), in seconds. The plugin hears of it a
+// moment later, so a wait that began before that is over, whatever an answer on its way still says.
+const endedAt = new Map<string, number>()
+const stillOpen = (w: WaitingItem) => w.since > (endedAt.get(w.session) ?? -1)
 
 async function poll(): Promise<void> {
   if (document.visibilityState !== 'visible' || getState().conn !== 'open') return
   try {
-    const r = await api<{ items: ActivityItem[] }>('GET', '/api/plugins/hermes-mobile/activity')
+    const r = await api<{ items: ActivityItem[]; waiting?: WaitingItem[] }>('GET', '/api/plugins/hermes-mobile/activity')
     const items = r.items ?? []
+    const listed = r.waiting ?? [] // a plugin older than the app has no such field
+    for (const id of endedAt.keys()) if (!listed.some(w => w.session === id)) endedAt.delete(id)
+    const waiting = listed.filter(stillOpen)
+    if (JSON.stringify(waiting) !== JSON.stringify(getState().waiting)) setState({ waiting })
     const before = getState().activity
     if (JSON.stringify(items) !== JSON.stringify(before)) {
       setState({ activity: items })
@@ -25,6 +35,16 @@ async function poll(): Promise<void> {
 /** What ActivityBanner shows: everything except the open chat's own live turn (it has the status line). */
 export function bannerItems(items: ActivityItem[], activeId: string | undefined, running: boolean): ActivityItem[] {
   return items.filter(i => !(running && i.session === activeId && !i.review))
+}
+
+/** A request left this page: its chat stops waiting now, not at the next poll. */
+function requestsEnded(ended: ReturnType<typeof getState>['requests']): void {
+  const at = Date.now() / 1000
+  const chats = new Set(ended.map(requestChat))
+  for (const id of chats) endedAt.set(id, at)
+  if (!getState().waiting.some(w => chats.has(w.session))) return
+  queueMicrotask(() => setState(s => ({ waiting: s.waiting.filter(stillOpen) })))
+  setTimeout(() => void poll(), 300)
 }
 
 function bannerVisible(items: ActivityItem[], activeId: string | undefined, running: boolean): boolean {
@@ -45,10 +65,17 @@ export function startActivityPolling(): void {
   }, 3000)
   // The post-turn poll follows the turn's end itself (up to one 3 s tick late before, which made the review show late).
   let wasRunning = false
+  let requests = getState().requests
   subscribe(() => {
-    const running = Boolean(getState().active?.running)
+    const s = getState()
+    const running = Boolean(s.active?.running)
     if (wasRunning && !running) setTimeout(() => void poll(), 300)
     wasRunning = running
+    if (s.requests !== requests) {
+      const ended = requests.filter(r => !s.requests.some(n => n.id === r.id))
+      requests = s.requests
+      if (ended.length) requestsEnded(ended)
+    }
   })
   document.addEventListener('visibilitychange', () => void poll())
 }

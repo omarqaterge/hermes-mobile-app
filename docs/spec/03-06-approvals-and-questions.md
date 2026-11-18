@@ -108,7 +108,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `sidepanel.ts` | Wide screens: hide or dock the chat list column (`hm.sideHidden.v1`, `html[data-side]`). |
 | `splitview.ts` | Wide screens: the canvas column's width, the divider drag with its snaps, the pull from the right edge, and the shell's edge claim (`DOCK`, `hm.canvasSplit.v1`, `html[data-split]`, `html.resizing`; 3.7). |
 | `custommodels.ts` | Model ids typed into a model picker (Hermes Desktop's "Custom model"): candidate check, remembered ids per provider. |
-| `activity.ts` | Polling of `GET /activity` for the activity banner. |
+| `activity.ts` | Polling of `GET /activity` for the activity banner and for which chats wait (`waiting`). |
+| `needsyou.ts` | Which chats wait for an answer: the Needs you group, the header button and the banner (3.13). It only lists them: answers go through this sheet. |
 | `tasks.ts` | Tick state of Markdown task lists. |
 | `unread.ts` | Unread chats and "time ago". |
 | `visit.ts` | Last time each chat was on screen (`lastVisit`, `markVisit`) and the first message newer than that (`firstUnseen`), for the "New Messages" divider; leaving and coming back with the same chat open (`noteAway`, `noteBack`, `isAway`, `lastBack`, `onBack`, `newWhileAway`, `BACK_GRACE_MS`). |

@@ -1381,6 +1381,9 @@ function approvalChat(req: ServerRequest): string {
   return chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || sid
 }
 
+/** The stored chat a request belongs to, for the chat list's "Needs you" (needsyou.ts). */
+export const requestChat = approvalChat
+
 /** Answers a request from Hermes. Over the lock screen (lockview.ts) only Deny goes through: anything else asks for an
  *  unlock and returns false, the request stays open. The first Allow in a chat session asks for the fingerprint or
  *  screen lock (approval-lock.ts): it returns false and answers once that is confirmed. */
