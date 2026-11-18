@@ -220,6 +220,72 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     keeps its own entry. The sheet's pause restarts when the app comes back and also covers choices, Next and the dots.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
+- **Sub-agents, nested chats and background tasks (task 09): stopped before building, for the owner to decide.** Nothing
+  is built. The answers below come from running the pinned Hermes (b8a8be18 with `hermes/patches`, started by
+  `tools/hermes-contract/start-hermes.sh`) with a scripted fake model and the app's calls, on a desktop; no phone.
+  **Two of the conditions that stop this task are met, both about background tasks:** a background task does not follow
+  the chat's access mode and approval rules (answer 3), and stopping a chat leaves it running (answer 6). Sub-agents pass
+  every condition.
+  1. **A sub-agent's approval reaches the app: yes. It does not say which sub-agent asks.** It arrives as an ordinary
+     `approval` request on the parent chat. Allow ran the command, Deny blocked it.
+     The plugin's `waiting` lists the top chat with "A sub-agent" (read from `activity.json`: the route's `/proc` check
+     can't pass on a desktop Mac). The request carries no sub-agent id or goal. For a top-level sub-agent the request's
+     `command` was identical to the text of its latest `subagent.tool` event, so the app can name it by matching them. A
+     nested sub-agent sends only `subagent.start` and `subagent.complete`, so it can't be matched and keeps the fixed
+     words; neither can two sub-agents running the same command. **Questions:** a sub-agent has no `clarify` tool (calling
+     it answers "Tool 'clarify' does not exist"), so it can't ask one. No Hermes patch is needed.
+  2. **`subagent.tail`, `subagent.steer`, `subagent.interrupt` work,** at depth 0 and depth 1. `tail` gives a plain-text
+     transcript (its header repeats the goal), `available: false` once finished or for an unknown id. `steer` answers
+     `queued` and the text reached the sub-agent's next model request; after the end it answers `rejected`. `interrupt`
+     stops that one only (its command is killed, state `interrupted`, a sibling's command runs to its end); after the end it
+     answers `found: false`. `subagent.list` gives both depths with `parent_id`, `status`, `last_tool` and
+     `accepting_steer`, and forgets a sub-agent when it ends.
+  3. **`prompt.background` works, and does not follow the chat's rules.** It answers `task_id` and runs beside a reply.
+     `background.complete` carries only `task_id` and `text` (a failure is the text `error: …`), not the prompt. Hermes's
+     code sends nothing else for it, and the task is in neither `subagent.list` nor `delegation.status`. It has a
+     stored chat (`bg_…`, source `tui`) with **`parent_session_id` empty**, which `session.list` returns as an ordinary
+     chat with its own title. It starts with none of the chat's history. Its rules, for a command Hermes flags, compared
+     with a sub-agent in the same chat:
+
+     | The chat is in | Sub-agent | Background task |
+     |---|---|---|
+     | Off (asks) | asks in the app | **never asks**: left "pending approval", not run, the task carries on and reports done |
+     | Full access | runs | **not run** (stricter than the chat) |
+     | Auto access | blocked by the plugin | not run, by Hermes's check rather than Auto's |
+     | Has read phone data, recorded under its stored id (any chat reopened since) | asks | **`curl` ran without asking** |
+     | Has read phone data, recorded under both ids | not tested | not run |
+
+     It runs under its own key (`bg_…`), so `/yolo`, the approval channel and the plugin's links to the chat don't reach it.
+  4. **The reasoning level can be known without a Hermes patch.** The events and `SubagentSnapshot` don't carry it, but the
+     sub-agent's stored chat does: `model_config.reasoning_config` in `GET /api/sessions/{child_session_id}`, there within
+     a second of the start, while it runs and afterwards. Tested: nothing set gives the chat's level at that moment
+     (high, and low after the chat changed); `delegation.reasoning_effort: minimal` gives minimal over a chat on high; `false`
+     gives `enabled: false`; an unknown word falls back to the chat's. **Limit:** this is the level Hermes gave the
+     sub-agent. On the way out Hermes lowers it to what the provider supports (`clamp_effort`), and for a sub-agent nothing
+     reports that lowered level. The composer's chip also shows the level set, not the level sent.
+  5. **After it has finished: readable, branchable, not listed.** `GET /api/sessions/{id}/messages` reads a sub-agent's
+     chat while it runs and afterwards. `session.resume` opens a finished one, and `session.branch` then makes an ordinary
+     chat from it, so "Continue in a new chat" is possible with existing calls (its title starts "Subagent: …"). Its row
+     has `parent_session_id` set, but neither `session.list` nor `GET /api/sessions` returns it on request
+     (`include_children` and similar do nothing). Only the setting `sessions.show_subagents` brings such chats into
+     `session.list`, as rows with no parent field, and it is a setting of the whole bot. Rows for chats finished earlier
+     would need something new, most simply a plugin field reading `parent_session_id` from the database.
+  6. **Stopping: sub-agents stop, background tasks don't.** `session.interrupt` stopped sub-agents at both depths, during
+     the parent's turn and after it (their commands were killed, state `interrupted`, the marker files never appeared).
+     A background task kept running after `session.interrupt` and after `session.close`, wrote its marker file and delivered
+     `background.complete`. No call stops one: `subagent.interrupt` answers `found: false` and `session.interrupt` with its
+     id answers "session not found".
+  - **Found on the way, for the build:** a top-level sub-agent always runs detached, so the parent's turn ends while it
+    works. From reading the code, the composer then shows no Stop (it needs `running`), although `session.interrupt` would
+    stop the sub-agent. Not tried in the app.
+  - **Found on the way, in the app today:** `/bg <task>` goes through `slash.exec` to a separate Hermes process. In a chat
+    that has read phone data (recorded under both ids) its `curl` ran without asking, and no result reached the chat in the
+    8 s watched. The app sends `/bg` like any other command, so this is not new with the redesign. Not changed here.
+  - **For the owner to decide:** (a) background tasks: a Hermes patch that ties them to their chat (stoppable, same
+    approval key and phone-data links, parent recorded), or leave "Run in background" out and build the sub-agent parts
+    now; (b) whether `/bg` stays while the phone-data rule doesn't cover it; (c) whether the sheet may show the level
+    set, labelled as such, given the limit in answer 4.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
