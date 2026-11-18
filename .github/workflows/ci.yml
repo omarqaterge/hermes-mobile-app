@@ -174,6 +174,7 @@ jobs:
       - run: python3 tools/test_battery.py
       - run: python3 tools/test_approval.py
       - run: python3 tools/test_waiting.py
+      - run: python3 tools/test_nested.py
       - run: python3 tools/test_chip.py
       - run: python3 tools/test_phone_app.py
       - run: python3 tools/test_phone_data.py

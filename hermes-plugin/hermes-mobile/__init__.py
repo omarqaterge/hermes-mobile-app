@@ -43,6 +43,7 @@ FAIL_GRACE = 6.0  # seconds after a final API error before "failed" is notified 
 _lock = threading.Lock()
 _last_text: dict = {}  # session_id -> latest final_text
 _subagents: dict = {}  # sub-agent session id -> the session that started it ("" unknown), newest last; see _note_subagent
+_nested: dict = {}  # running sub-agent's session id -> (its top chat, profile, until); see _nested_begin
 _waiting: dict = {}  # (chat id, kind, who) -> an open request of that chat, for GET /activity's `waiting`; see _wait_begin
 _active: dict = {}  # session_id -> {"text", "ts", "profile"}
 _last_end: dict = {}  # session_id -> when its last real turn ended (session_end); bounded by _note_end
@@ -50,6 +51,7 @@ _turn_started: dict = {}  # session id -> when its turn began (diagnostic log); 
 MAX_SUBAGENTS = 1024  # sub-agent ids remembered; a sub-agent finishes long before this many newer ones start
 MAX_WAITING = 64  # open requests remembered; the oldest go
 WAIT_LONGEST = 86400  # a request with no time limit (Hermes's timeout set to 0) stops being listed after this long
+NESTED_LONGEST = 6 * 3600  # s a running sub-agent is counted when its end is never reported
 WAIT_KINDS = ("approval", "phone_data", "question")  # all a `waiting` entry can say it is
 WAIT_WHO = ("", "A sub-agent")  # and who can be asking: anything else in the file was not written by this plugin
 PHONE_DATA_COMMAND = "<phone_data> (plugin approval rule)"  # the label Hermes gives the phone data tool's approval
@@ -399,6 +401,17 @@ def _others_kept(current: dict, me: str, now: float) -> dict:
     return kept
 
 
+def _nested_entry_ok(n, now: float) -> bool:
+    return (isinstance(n, dict) and isinstance(n.get("session"), str) and bool(n["session"]) and len(n["session"]) <= 200
+            and isinstance(n.get("running"), int) and not isinstance(n.get("running"), bool) and 0 < n["running"] <= MAX_SUBAGENTS
+            and _is_number(n.get("until")) and now < n["until"] <= now + NESTED_LONGEST
+            and (n.get("profile") is None or isinstance(n.get("profile"), str)))
+
+
+def _kept_nested(n) -> dict:
+    return {"session": n["session"], "running": n["running"], "profile": n.get("profile") or "", "until": n["until"]}
+
+
 def _kept_entry(pid, v, now: float):
     """What stays of another process's entry, or None. Anything malformed is left out, so it can't stop this write."""
     try:
@@ -415,9 +428,12 @@ def _kept_entry(pid, v, now: float):
         raw = v.get("waiting")
         # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
         waits = [_kept_wait(w) for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []
-        if not working and not waits:
+        raw = v.get("nested")
+        nested = [_kept_nested(n) for n in raw[:MAX_SUBAGENTS] if _nested_entry_ok(n, now)] if isinstance(raw, list) else []
+        if not working and not waits and not nested:
             return None
-        return {"at": at if _is_number(at) else 0, "items": items if working else [], **({"waiting": waits} if waits else {})}
+        return {"at": at if _is_number(at) else 0, "items": items if working else [],
+                **({"waiting": waits} if waits else {}), **({"nested": nested} if nested else {})}
     except Exception:
         return None
 
@@ -437,13 +453,15 @@ def _publish_activity() -> None:
                     del _waiting[key]
                 waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until", "open", "last")}
                          for v in _waiting.values()]
+                nested = _nested_counts(now)
             current = _read_activity()
             if current is None:
                 return  # the next write (the status loop's beat, the next hook) tries again
             me = str(os.getpid())
             others = _others_kept(current, me, now)
             # This process's entry goes first, so no number of others can push it out.
-            data = {me: {"at": now, "items": mine, **({"waiting": waits} if waits else {})}} if mine or waits else {}
+            data = {me: {"at": now, "items": mine, **({"waiting": waits} if waits else {}),
+                         **({"nested": nested} if nested else {})}} if mine or waits or nested else {}
             data.update(others)
             fd, tmp = tempfile.mkstemp(prefix=".activity-", dir=os.path.dirname(ACTIVITY_FILE))  # never shared between writers
             with os.fdopen(fd, "w") as f:
@@ -517,6 +535,37 @@ def _wait_clear(chat: str) -> None:
             del _waiting[k]
     if keys:
         _publish_activity()
+
+
+def _nested_begin(child: str) -> None:
+    """A sub-agent started: GET /activity counts it under its top chat until it stops. Only the number goes out, never
+    its goal. If its stop is never reported (the process survives a lost worker), NESTED_LONGEST ends the count."""
+    with _lock:
+        chat, _who = _asker(child)
+        _nested.pop(child, None)
+        _nested[child] = (chat, _profile(), time.time() + NESTED_LONGEST)
+        while len(_nested) > MAX_SUBAGENTS:
+            _nested.pop(next(iter(_nested)))
+    _publish_activity()
+
+
+def _nested_end(child) -> None:
+    with _lock:
+        gone = _nested.pop(child, None)
+    if gone:
+        _publish_activity()
+
+
+def _nested_counts(now: float) -> list:
+    """Call with _lock held. One entry per chat: how many of its sub-agents run."""
+    for key in [k for k, v in _nested.items() if v[2] <= now]:
+        del _nested[key]
+    out: dict = {}
+    for chat, profile, until in _nested.values():
+        cur = out.setdefault(chat, {"session": chat, "running": 0, "profile": profile, "until": until})
+        cur["running"] += 1
+        cur["until"] = max(cur["until"], until)
+    return list(out.values())
 
 
 def _clarify_timeout():
@@ -984,8 +1033,13 @@ def _on_subagent_start(child_session_id=None, parent_session_id=None, child_goal
         pass
     if child_session_id:
         _note_subagent(child_session_id, parent_session_id)
+        _nested_begin(child_session_id)
     if parent_session_id:
         _set_status(parent_session_id, f"Sub-agent: {_short(child_goal, 60)}", "Agents")
+
+
+def _on_subagent_stop(child_session_id=None, **_):
+    _nested_end(child_session_id)
 
 
 def _tidy_approval_text(s):
@@ -1548,6 +1602,7 @@ def register(ctx):
     ctx.register_hook("post_tool_call", _on_post_tool_call)
     ctx.register_hook("on_skill_lifecycle", _on_skill_lifecycle)
     ctx.register_hook("subagent_start", _on_subagent_start)
+    ctx.register_hook("subagent_stop", _on_subagent_stop)
     ctx.register_hook("pre_approval_request", _on_pre_approval_request)
     ctx.register_hook("post_approval_response", _on_post_approval_response)
     ctx.register_hook("on_session_start", _on_session_start)
