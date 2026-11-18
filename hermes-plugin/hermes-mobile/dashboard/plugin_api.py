@@ -878,7 +878,9 @@ async def delete_diag():
 
 @router.get("/activity")
 async def get_activity():
-    """Live work reported by the plugin hooks in every Hermes process, including background self-review."""
+    """Live work reported by the plugin hooks in every Hermes process, including background self-review. `waiting`:
+    the requests (approval, phone data, question) that are open right now: which chat, what kind, who asks, since and
+    until when. It carries none of a request's text and nothing here can answer one."""
     import time
 
     _slow_all()  # in case the gateway (or a chat's poller) loaded after this module
@@ -887,21 +889,25 @@ async def get_activity():
     try:
         data = json.loads(path.read_text())
     except Exception:
-        return {"items": []}
+        return {"items": [], "waiting": []}
     now = time.time()
     items = []
+    waiting = []
     for pid, entry in data.items():
-        if now - entry.get("at", 0) > 300:
-            continue
         # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries.
         if str(pid).isdigit() and not Path("/proc", str(pid)).exists():
+            continue
+        # Before the age check: nothing refreshes an entry while its chat only waits for an answer.
+        waiting += [w for w in entry.get("waiting", []) if w.get("until", 0) > now]
+        if now - entry.get("at", 0) > 300:
             continue
         for it in entry.get("items", []):
             limit = 60 if it.get("review") else 180
             if now - it.get("ts", 0) <= limit:
                 items.append(it)
     items.sort(key=lambda i: i.get("ts", 0), reverse=True)
-    return {"items": items}
+    waiting.sort(key=lambda w: w.get("since", 0))  # oldest first, so a row keeps its place in the list
+    return {"items": items, "waiting": waiting}
 
 
 # ── what of the phone Hermes can reach (the app's Setup check) ──

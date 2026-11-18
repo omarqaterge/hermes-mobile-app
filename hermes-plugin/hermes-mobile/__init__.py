@@ -37,11 +37,15 @@ FAIL_GRACE = 6.0  # seconds after a final API error before "failed" is notified 
 
 _lock = threading.Lock()
 _last_text: dict = {}  # session_id -> latest final_text
-_subagents: dict = {}  # sub-agent session ids (insertion order), newest last; bounded by _note_subagent
+_subagents: dict = {}  # sub-agent session id -> the session that started it ("" unknown), newest last; see _note_subagent
+_waiting: dict = {}  # (chat id, kind, who) -> an open request of that chat, for GET /activity's `waiting`; see _wait_begin
 _active: dict = {}  # session_id -> {"text", "ts", "profile"}
 _last_end: dict = {}  # session_id -> when its last real turn ended (session_end); bounded by _note_end
 _turn_started: dict = {}  # session id -> when its turn began (diagnostic log); bounded by _note_start
 MAX_SUBAGENTS = 1024  # sub-agent ids remembered; a sub-agent finishes long before this many newer ones start
+MAX_WAITING = 64  # open requests remembered; the oldest go
+WAIT_LONGEST = 86400  # a request with no time limit (Hermes's timeout set to 0) stops being listed after this long
+PHONE_DATA_COMMAND = "<phone_data> (plugin approval rule)"  # the label Hermes gives the phone data tool's approval
 MAX_LAST_END = 256  # chats whose last turn end is remembered (only the next FAIL_GRACE seconds matter)
 MAX_TURN_STARTS = 256  # turns whose start is remembered; a chat with a status entry is never dropped to make room
 _review_turns: set = set()  # turn ids of Hermes's background self-review (memory / skills), not user turns
@@ -259,18 +263,26 @@ def _publish_activity() -> None:
     """Write what this process is doing to a shared file so the app's banner (GET /activity) can show it.
     One entry per Hermes process (pid); readers drop entries that stopped updating."""
     try:
+        now = time.time()
         with _lock:
             mine = [{"session": sid, "text": v["text"], "short": v.get("short", ""), "profile": v["profile"],
                      "review": bool(v.get("review")), "ts": v["ts"]} for sid, v in _active.items()]
+            for key in [k for k, v in _waiting.items() if v["until"] <= now]:
+                del _waiting[key]
+            waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until")} for v in _waiting.values()]
         try:
             with open(ACTIVITY_FILE) as f:
                 data = json.load(f)
         except Exception:
             data = {}
-        now = time.time()
-        data = {k: v for k, v in data.items() if v.get("items") and now - v.get("at", 0) < 300}
-        if mine:
-            data[str(os.getpid())] = {"at": now, "items": mine}
+
+        def keep(v: dict) -> bool:
+            # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
+            return bool(v.get("items") and now - v.get("at", 0) < 300) or any(w.get("until", 0) > now for w in v.get("waiting", []))
+
+        data = {k: v for k, v in data.items() if keep(v)}
+        if mine or waits:
+            data[str(os.getpid())] = {"at": now, "items": mine, **({"waiting": waits} if waits else {})}
         else:
             data.pop(str(os.getpid()), None)
         os.makedirs(os.path.dirname(ACTIVITY_FILE), exist_ok=True)
@@ -282,11 +294,79 @@ def _publish_activity() -> None:
         pass
 
 
-def _note_subagent(session_id) -> None:
-    """Remember a sub-agent's session id (its hooks are ignored), keeping only the newest MAX_SUBAGENTS."""
+def _asker(session_id: str) -> tuple:
+    """The chat a request belongs to and who in it asks: a sub-agent's request is its top chat's, with `who` saying so
+    in fixed words (never its goal or anything else the model wrote). Call with _lock held."""
+    chat, who = session_id, ""
+    for _ in range(16):  # sub-agents can nest; the bound only guards against a damaged chain
+        parent = _subagents.get(chat)
+        if parent is None:
+            break
+        who = "A sub-agent"
+        if not parent:
+            break
+        chat = parent
+    return chat, who
+
+
+def _wait_begin(session_id, kind: str, timeout) -> None:
+    """A request is open: GET /activity lists it under `waiting` until _wait_end, the chat's turn ends or `timeout` (s)
+    passes, however long that is. Only the chat, the kind and who: no text of the request, and nothing that can answer
+    it. Several open requests of one kind in a chat are counted."""
+    if not session_id:
+        return
+    now = time.time()
+    limit = timeout if isinstance(timeout, (int, float)) and timeout > 0 else WAIT_LONGEST
+    with _lock:
+        chat, who = _asker(session_id)
+        cur = _waiting.pop((chat, kind, who), None)
+        _waiting[(chat, kind, who)] = {"session": chat, "kind": kind, "who": who, "profile": _profile(),
+                                       "since": cur["since"] if cur else now,
+                                       "until": max(now + limit, cur["until"] if cur else 0),
+                                       "open": (cur["open"] if cur else 0) + 1}
+        while len(_waiting) > MAX_WAITING:
+            _waiting.pop(next(iter(_waiting)))
+    _publish_activity()
+
+
+def _wait_end(session_id, kind: str) -> None:
+    if not session_id:
+        return
+    with _lock:
+        chat, who = _asker(session_id)
+        cur = _waiting.get((chat, kind, who))
+        if cur is None:
+            return
+        cur["open"] -= 1
+        if cur["open"] <= 0:
+            del _waiting[(chat, kind, who)]
+    _publish_activity()
+
+
+def _wait_clear(chat: str) -> None:
+    """The chat's turn ended: nothing of it is waiting any more."""
+    with _lock:
+        keys = [k for k in _waiting if k[0] == chat]
+        for k in keys:
+            del _waiting[k]
+    if keys:
+        _publish_activity()
+
+
+def _clarify_timeout():
+    try:
+        from tools.clarify_gateway import get_clarify_timeout
+        return get_clarify_timeout()
+    except Exception:
+        return 3600
+
+
+def _note_subagent(session_id, parent="") -> None:
+    """Remember a sub-agent's session id and who started it (its hooks are ignored; a request it makes belongs to the
+    chat above it), keeping only the newest MAX_SUBAGENTS."""
     with _lock:
         _subagents.pop(session_id, None)
-        _subagents[session_id] = True
+        _subagents[session_id] = parent or ""
         while len(_subagents) > MAX_SUBAGENTS:
             _subagents.pop(next(iter(_subagents)))
 
@@ -684,6 +764,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
         # The app's notification answers a single question in place (choices become quick replies).
         _send("ask", "Hermux asks", q or "Hermux has a question", session_id or "", urgent=True,
               choices=choices, single=single)
+        _wait_begin(session_id, "question", _clarify_timeout())
     return None  # observe only
 
 
@@ -709,6 +790,7 @@ def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, sess
             _set_status(session_id, "Thinking…", "Thinking")
     if tool_name == "clarify":
         _send("clear", session=session_id or "", what="ask")  # answered anywhere (app sheet, island, notification)
+        _wait_end(session_id, "question")
     if tool_name == "memory" and status in (None, "success", "ok"):
         a = args if isinstance(args, dict) else {}
         action = a.get("action", "update")
@@ -735,7 +817,7 @@ def _on_subagent_start(child_session_id=None, parent_session_id=None, child_goal
     except Exception:
         pass
     if child_session_id:
-        _note_subagent(child_session_id)
+        _note_subagent(child_session_id, parent_session_id)
     if parent_session_id:
         _set_status(parent_session_id, f"Sub-agent: {_short(child_goal, 60)}", "Agents")
 
@@ -771,6 +853,9 @@ def _on_pre_approval_request(command=None, description=None, session_key=None, s
           what=description or "", command=command or "",
           request_id=_approval_request_id(session_key, command, kw.get("request_id")),
           allow_session=kw.get("allow_session") is not False)
+    # A coalesced request waits on one already listed, and its end isn't always reported: only the first one counts.
+    if not kw.get("coalesced"):
+        _wait_begin(sid, _approval_kind(command), timeout)
 
 
 def _approval_request_id(session_key, command, given=None) -> str:
@@ -789,9 +874,15 @@ def _approval_request_id(session_key, command, given=None) -> str:
     return ids[-1] if ids else ""
 
 
-def _on_post_approval_response(session_key=None, session_id=None, **_):
+def _approval_kind(command) -> str:
+    return "phone_data" if command == PHONE_DATA_COMMAND else "approval"
+
+
+def _on_post_approval_response(session_key=None, session_id=None, command=None, coalesced=None, **_):
     # Answered anywhere (app sheet, notification, timeout): drop the notification.
     _send("clear", session=session_id or session_key or "", what="approval")
+    if not coalesced:
+        _wait_end(session_id or session_key or "", _approval_kind(command))
 
 
 def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retryable=None, retry_count=None,
@@ -863,6 +954,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     if not session_id or session_id in _subagents:
         return
     _note_end(session_id)
+    _wait_clear(session_id)
     _end_phone_app(session_id)
     with _lock:
         turn = (_active.get(session_id) or {}).get("turn") or {}

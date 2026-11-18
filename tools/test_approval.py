@@ -32,6 +32,7 @@ spec.loader.exec_module(plugin)
 sent = []
 plugin._send = lambda kind, *a, **kw: sent.append((kind, kw))
 plugin._set_status = lambda *a, **kw: None
+plugin._publish_activity = lambda: None  # no activity file in the real home
 
 print("approval request id")
 queue["k"] = [{"command": "chmod 777 /tmp/a", "request_id": "A"}, {"command": "chmod 777 /tmp/b", "request_id": "B"}]
