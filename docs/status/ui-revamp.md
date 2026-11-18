@@ -163,6 +163,29 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   `30-settings.cjs` rewritten because the pages they covered changed (listed in the PR). Chat height unchanged (614 /
   314 px at 360 x 740). Needs a phone: real sign-ins and keys, TalkBack, the empty screen (manual-tests).
 
+- **"Needs you" (task 08, PR against `redesign`): what the app knows, found before building.** Read in the app, the
+  plugin and the Hermes build the app is pinned to (`web/vendor/hermes-shared/.hermes-commit`).
+  - **A chat the page is attached to: yes, at once.** A chat left running stays attached to the page's socket, so its
+    approval or question arrives as a request in `store.requests`, with the live session id, and leaves through
+    `request.cancel` when it is answered anywhere or times out. `App` draws it as the sheet whichever chat is open.
+  - **Any other chat (the socket was replaced while the app was away, the usual case when someone comes back later):
+    the page gets no frame until it opens that chat.** Then `session.resume` hands back the live session with
+    `open_requests`, and the shared channel delivers them, so the existing sheet asks. Nothing is lost, but nothing
+    tells the list either.
+  - **`GET /activity` does not fill that gap today.** The hooks do set the status short to "Approve?" or "Asking", but
+    a status with no tool running goes stale after 180 s (`STALE_AFTER`, and the route's own 180 s limit), while Hermes
+    waits 300 s for an approval and 3600 s for a question by default. And "Approve?" stays after the answer until the
+    next hook, so it can't be read as "still waiting".
+  - **The Android service** knows the pending approval or question for its notification, from the plugin's events, but
+    keeps it to itself; the page is not told.
+  - **The smallest change:** one added field on the `GET /activity` answer, `waiting`: for each open request the chat
+    id, a kind (`approval`, `phone_data`, `question`), who asks when it isn't the chat itself, and when it started and
+    ends. It is set by the hooks that already fire, cleared by the ones that fire when the request ends, and carries no
+    request text. It rides on the app's existing activity poll. **No Hermes patch, no new route, no new polling, no
+    timer**, and it can't answer anything: answers still go through the sheet, the fingerprint and the unlock.
+  - **Limit:** a chat running in another Hermes process (the messaging gateway) can show as waiting, but its request is
+    not delivered to this page, as today: opening it shows no sheet, and it is answered where it was asked.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
