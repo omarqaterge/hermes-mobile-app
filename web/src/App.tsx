@@ -7,8 +7,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow, requestChat } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Toast, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
+import { SubAgentSheet, SubGroupHead, SubGroupRows, groupProps } from './components/SubAgents'
 import { stepMark, stepWord } from './toolsay'
 import { foldMap } from './fold'
+import { subFoldMap, type SubItem } from './subagents'
+import { askUnlock, lockView } from './lockview'
 import { turnChanges } from './changes'
 import { TurnChangesCard } from './components/Changes'
 import { Chevron, Collapse } from './components/ui'
@@ -500,6 +503,19 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   // Runs of tool calls fold into one line; tapping it opens them (keyed by the run's first item id).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(() => new Set())
   const folds = useMemo(() => foldMap(items ?? [], openRuns), [items, openRuns])
+  // A chat's sub-agents fold the same way: one line, opened by a tap (keyed by the group's first item id).
+  const subFolds = useMemo(() => subFoldMap(items ?? []), [items])
+  const shimmerAt = useMemo(() => Math.max(-1, ...[...subFolds].flatMap(([i, f]) => ('head' in f && f.head.running ? [i] : []))), [subFolds])
+  const [openSubs, setOpenSubs] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleSubs = useCallback((id: string) => {
+    if (lockView()) return askUnlock('Unlock the phone to see this')
+    setOpenSubs(s => {
+      const n = new Set(s)
+      if (!n.delete(id)) n.add(id)
+      return n
+    })
+  }, [])
+  const subChat = useStore(s => s.opening ?? s.active?.storedId ?? '')
   const changes = useMemo(() => turnChanges(items ?? [], running), [items, running])
   const toggleRun = useCallback((id: string) => {
     setOpenRuns(o => {
@@ -765,6 +781,17 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       )}
       {items.slice(start).map((it, i) => {
         // One element per item, also when folded: search and jump find messages by child index.
+        const sub = subFolds.get(start + i)
+        if (sub) {
+          if (!('head' in sub)) return <div key={it.id} className="folded" />
+          const open = openSubs.has(it.id)
+          return (
+            <div key={it.id} className="tool-run-wrap">
+              <SubGroupHead id={it.id} {...groupProps(sub.head)} shimmer={start + i === shimmerAt} open={open} onToggle={toggleSubs} />
+              {open && <SubGroupRows chat={subChat} keys={sub.head.keys} items={sub.head.members.map(m => items[m] as SubItem)} />}
+            </div>
+          )
+        }
         const f = folds.get(start + i)
         const card = changes.get(start + i)
         const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
@@ -916,6 +943,7 @@ export function App() {
       {sheet === 'status' && <StatusSheet />}
       {sheet === 'rollback' && <RollbackSheet />}
       {sheet === 'context' && <ContextSheet />}
+      {sheet === 'subagent' && <SubAgentSheet />}
       <StatsCard />
       <ReportHost />
       {request && <RequestSheet key={request.id} req={request} />}

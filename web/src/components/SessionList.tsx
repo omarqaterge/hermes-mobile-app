@@ -16,6 +16,8 @@ import { cronJobId, runName, useJobName } from '../panelvalues'
 import { Chevron, MenuGroup, MenuRow, MenuSheet } from './ui'
 import { ChatMenuHeader } from './ChatMenu'
 import { Icon } from './icons'
+import { NestedRows, NestedToggle } from './SubAgents'
+import { forgetChat, noteStored, searchNested, useNested, useRunningChats, type NestedHit } from '../subagents'
 
 /** A scheduled job's run (source "cron"): a clock and the job's name. */
 function RunSource({ s }: { s: SessionListRow }) {
@@ -50,9 +52,10 @@ interface RowProps {
 function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete, onLongPress, onMenu }: RowProps) {
   // Working right now: the open chat's own turn, or any chat in the plugin's activity feed (a background
   // memory/skills review after a reply doesn't count: the answer is already in).
-  const working = useStore(
+  const nested = useNested(s.id)
+  const working = (useStore(
     st => (st.active?.storedId === s.id && !!st.active?.running) || st.activity.some(a => a.session === s.id && !a.review)
-  ) && !need
+  ) || nested.running > 0) && !need
   const unread = useStore(st => !active && st.unread.includes(s.id)) && !working && !need
   const ref = useRef<HTMLDivElement>(null)
   const g = useRef({ x0: 0, y0: 0, mode: '' as '' | 'swipe' | 'scroll' | 'drag', moved: false, y: 0, id: 0, timer: 0 as unknown as ReturnType<typeof setTimeout>, zone: '' })
@@ -166,8 +169,9 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
             {pinned && <span className="pin-dot"><Icon n="pin" /> </span>}
             {s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}
           </span>
-          {need ? <NeedLine need={need} /> : <RowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} />}
+          {need ? <NeedLine need={need} /> : <RowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} agents={nested.total} />}
         </span>
+        <NestedToggle chat={s.id} />
         <button
             className="row-menu-btn"
             aria-label="Chat options"
@@ -190,11 +194,12 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
  *  The state word is text, so it does not rest on the dot's colour; screen readers already hear the state before the
  *  title (the dot's label, the hidden "Working"), so the word is hidden from them and they hear it once. One line: it
  *  never wraps, a long source is cut with an ellipsis. */
-function RowLine({ s, state }: { s: SessionListRow; state: '' | 'Working' | 'Finished' }) {
+function RowLine({ s, state, agents = 0 }: { s: SessionListRow; state: '' | 'Working' | 'Finished'; agents?: number }) {
   const parts: React.ReactNode[] = []
   const when = ago(lastActive(s))
   if (when) parts.push(when)
   if (state) parts.push(<span key="state" className="session-state" aria-hidden="true">{state}</span>)
+  if (agents) parts.push(`${agents} sub-agent${agents === 1 ? '' : 's'}`)
   if (s.source === 'cron') parts.push(<RunSource key="run" s={s} />)
   else if (s.source && s.source !== 'mobile') parts.push(s.source)
   return (
@@ -446,8 +451,10 @@ export function SessionList({ query }: { query: string }) {
   const chatsRef = useRef<HTMLDivElement>(null)
 
   const [hits, setHits] = useState<MessageHit[] | null>(null)
+  const [agentHits, setAgentHits] = useState<NestedHit[]>([])
   const q2 = query.trim()
   useEffect(() => {
+    setAgentHits([])
     if (q2.length < 2) {
       setHits(null)
       return
@@ -457,15 +464,28 @@ export function SessionList({ query }: { query: string }) {
       searchMessages(q2)
         .then(h => !dead && setHits(h))
         .catch(() => !dead && setHits([]))
+      searchNested(q2, profile)
+        .then(found => {
+          if (dead) return
+          for (const h of found) noteStored(h.chat, [{ id: h.child, parent: '', goal: h.goal, model: '', started: 0, ended: 1, reason: '', steps: 0 }])
+          setAgentHits(found)
+        })
+        .catch(() => {}) // a plugin older than the app
     }, 350)
     return () => {
       dead = true
       clearTimeout(t)
     }
-  }, [q2])
+  }, [q2, profile])
 
   const needle = query.trim().toLowerCase()
-  const match = (s: SessionListRow) => !needle || `${s.title || ''} ${s.preview || ''}`.toLowerCase().includes(needle)
+  // A sub-agent found by its goal shows under its chat, and brings the chat into the results.
+  const agentsFound = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    for (const h of agentHits) m.set(h.chat, (m.get(h.chat) ?? new Set()).add(h.child))
+    return m
+  }, [agentHits])
+  const match = (s: SessionListRow) => !needle || agentsFound.has(s.id) || `${s.title || ''} ${s.preview || ''}`.toLowerCase().includes(needle)
   const canReorder = !needle
 
   // The Needs you group, on top: a chat in it is not repeated under Pinned or its date.
@@ -475,19 +495,19 @@ export function SessionList({ query }: { query: string }) {
       const s = byId.get(need.session)
       return s && match(s) ? [{ s, need }] : []
     })
-  }, [sessions, needs, needle]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, needs, needle, agentsFound]) // eslint-disable-line react-hooks/exhaustive-deps
   const needIds = useMemo(() => new Set(needs.map(n => n.session)), [needs])
 
   const pinnedRows = useMemo(() => {
     const byId = new Map(sessions.map(s => [s.id, s]))
     return order.pinned.filter(id => !needIds.has(id)).map(id => byId.get(id)).filter((s): s is SessionListRow => Boolean(s) && match(s!))
-  }, [sessions, order.pinned, needle, needIds]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, order.pinned, needle, needIds, agentsFound]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const ordered = useMemo(() => {
     const others = sessions.filter(s => !order.pinned.includes(s.id) && match(s))
     // Last activity from the snapshot (or the saved custom order).
     return orderChats(others, order.manual, activity)
-  }, [sessions, order.pinned, order.manual, needle, activity]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, order.pinned, order.manual, needle, activity, agentsFound]) // eslint-disable-line react-hooks/exhaustive-deps
   const chats = useMemo(() => ordered.filter(s => !needIds.has(s.id)), [ordered, needIds])
   /** A custom order made from the rows on show, with the chats now in the group back in their places: they return there. */
   const withWaiting = (ids: string[]) => restoreAside(ids, ordered.map(s => s.id), needIds)
@@ -521,7 +541,10 @@ export function SessionList({ query }: { query: string }) {
     })
   }
   const remove = async (s: SessionListRow) => {
-    if (await deleteChat(profile, s.id, plainTitle(s.title) || s.preview || '')) setArchivedRows(a => a && a.filter(x => x.id !== s.id))
+    if (await deleteChat(profile, s.id, plainTitle(s.title) || s.preview || '')) {
+      forgetChat(s.id) // its nested rows go with it
+      setArchivedRows(a => a && a.filter(x => x.id !== s.id))
+    }
   }
 
   /** Where (0-based) a row dropped at height y would land among the rows of a list, ignoring the dragged one. */
@@ -534,6 +557,10 @@ export function SessionList({ query }: { query: string }) {
     const ids = (list === 'pinned' ? pinnedRows : chats).map(s => s.id)
     if (container) drag.begin(list, container, ids, id, y, pointerId, rowTop, opts)
   }
+
+  // Only one ring turns in the list, on the first chat that has something running (at most two repeating animations).
+  const runningChats = useRunningChats()
+  const turningChat = [...needRows.map(r => r.s), ...pinnedRows, ...chats].find(s => runningChats.includes(s.id))?.id
 
   const row = (s: SessionListRow, list: ListName | null, idx: number, need?: Need) => (
     <div
@@ -614,6 +641,7 @@ export function SessionList({ query }: { query: string }) {
         }}
         onMenu={() => setMenu({ s, archived: !list && !need })}
       />
+      <NestedRows chat={s.id} snapAt={snap.at} only={needle ? agentsFound.get(s.id) : undefined} turning={s.id === turningChat} />
     </div>
   )
 

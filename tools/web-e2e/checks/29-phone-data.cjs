@@ -5,6 +5,18 @@
 // Those were only compiled; they need a real phone (docs/status/phone-data.md).
 const { WEB, MOCK, check, sleep, nativeShell, png, openLibraryPart, settingsPage } = require('../lib.cjs')
 
+// A sub-agent's goal shows in its sheet (spec 3.3): the group's line, then its row.
+const openSubAgent = async pg => {
+  const group = pg.getByRole('button', { name: /^(Used )?\d+ sub-agents?( ·|$)/ })
+  if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click() // `expand` above may have opened it
+  await pg.getByRole('button', { name: /look at http/ }).click()
+  await pg.getByRole('dialog', { name: 'Sub-agent' }).waitFor({ timeout: 3000 })
+}
+const closeSubAgent = async pg => {
+  await pg.evaluate(() => window.hermesBack())
+  await sleep(150)
+}
+
 module.exports = async t => {
   const { browser } = t
   const open = async (pd, { bridge = true } = {}) => {
@@ -526,10 +538,12 @@ module.exports = async t => {
     }))
     check(spots.tool.length === 1 && spots.tool[0][0] === 0 && spots.tool[0][1] === 1 && hits.length === 0, `phone data leaks: a tool card's media waits behind a tap (${JSON.stringify(spots.tool)}, ${JSON.stringify(hits)})`)
     check(spots.notice[0] === 0 && spots.notice[1] === 1, `phone data leaks: a notice's image waits behind a tap (${JSON.stringify(spots.notice)})`)
+    await openSubAgent(pg)
     await pg.locator('.sub-goal a').click()
     const dlg = await pg.locator('.dialog').innerText({ timeout: 3000 }).catch(() => null)
     check(dlg && dlg.includes('Site: beacon.test') && dlg.includes('?d=ROWS') && (await pg.evaluate(() => window.__opened)).length === 0, `phone data leaks: a link in a subagent's goal shows its address first (${dlg})`)
     await pg.locator('.dialog').getByRole('button', { name: 'Cancel' }).click()
+    await closeSubAgent(pg)
 
     // the placeholder says when the address carries data, and its tap asks the shell to pass exactly that address
     const hold = pg.locator('.notice .remote-hold')
@@ -570,9 +584,11 @@ module.exports = async t => {
     await expand(pg)
     const ctl = await pg.evaluate(() => ({ holds: document.querySelectorAll('.remote-hold').length, noticeImg: document.querySelectorAll('.notice img').length }))
     check(ctl.holds >= 2 && ctl.noticeImg === 0 && !hits.some(h => h.includes('/tool.png') || h.includes('/notice.png')), `phone data leaks, control: a tool card's and a notice's images also wait behind a tap, nothing fetched (${JSON.stringify(ctl)})`)
+    await openSubAgent(pg)
     await pg.locator('.sub-goal a').click()
     await sleep(300)
     check((await pg.locator('.dialog').count()) === 0 && (await pg.evaluate(() => window.__opened)).some(u => u.includes('/goal?d=ROWS')), 'phone data leaks, control: a subagent goal link opens at once')
+    await closeSubAgent(pg)
     // control: an HTML page in a chat with no phone_data call still runs in its frame
     await runCanvas(pg, '<p>hello</p>')
     const frames = await pg.evaluate(() => ({ frames: document.querySelectorAll('iframe.html-frame').length, held: document.querySelectorAll('.html-held').length }))

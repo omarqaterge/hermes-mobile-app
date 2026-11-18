@@ -7,7 +7,7 @@ The chat view draws `store.active.items`, an array of `ChatItem` (`web/src/store
 | `user` | A sent prompt, or a stored user row. | Right-aligned bubble (below). |
 | `assistant` | Streamed `message.delta` / `reasoning.delta`, or a stored assistant row. | Reasoning block, Markdown reply, actions (below). |
 | `tool` | `tool.generating`, `tool.start`, `tool.complete`, or a stored tool row. | Tool card (below). |
-| `subagent` | `subagent.*` events. | Sub-agent card (below). |
+| `subagent` | `subagent.*` events; put back after their `delegate_task` call when a chat is reopened. | One line for the group (below). |
 | `notice` | Stored system rows; steer, slash, review, background and compress results; send failures; model errors. | Coloured box with Markdown text. |
 
 There is no separate item kind for approvals, images, files or errors. Approvals are a sheet (3.6). Images and files are parts of user messages (and of Markdown in replies). Errors are `notice` items with level `error`, or a tool card in the error state. Cards written by Hermes in a reply are Markdown code fences (3.9).
@@ -69,9 +69,28 @@ Actions are not drawn on earlier segments of a turn (a reply split by tool calls
 - **Stored output.** A tool card restored from history has no result text. When opened, the card fetches it from the plugin (`GET /tool-result?id=<tool call id>`), shows "Loading output…", caches it, and says "No output recorded" if there is none. Cards with a locally made id are not fetched.
 - **Folding.** `web/src/fold.ts` `toolRuns` finds runs of at least three tool cards with only tool cards and reasoning-only replies between them. A closed run is one line (`ToolRunHead`): up to four tool icons, what the calls did in words and their summed time, such as "Ran 2 commands and read 3 files · 42s" (`runLabel` with the run's `summary` from `runSummary`: commands, edited files (counted once per path), read files, searches, web and browser use, task updates, other tools; when there are more than three kinds, the first two by name and the rest as "used N other tools"), or "Running 4 tools…" while one runs, " · N failed" when some failed, the list of tool names, a spinner while one runs, and a chevron. Tap toggles the run (keyed by its first item's id). A run still working keeps its last card visible. Every item keeps its own element in the list, folded ones as empty placeholders, so message search can find them by position.
 
-#### Sub-agent card
+#### Sub-agents
 
-`SubagentView`: "⇶ Sub-agent" and its status (`running`, `done`…), the goal, the latest detail while it is not done, and the summary when finished. Created and updated by the `subagent.*` events.
+Decision: [nested-chats.md](../decisions/nested-chats.md). Code: `web/src/subagents.ts` (records, grouping, words), `web/src/components/SubAgents.tsx`, `web/src/subagents.css`.
+
+**The group** (`subGroups`, `subFoldMap`, `SubGroupHead`). Sub-agent items next to each other are one group, and one started by a member joins that group wherever it stands. Closed it is one line: "3 sub-agents · 1 done" while they run (with the working shimmer, on the newest running group only, under Full animations), "Used 3 sub-agents · 2 min" when all have ended (`groupWords`). A failed or timed-out one adds "· 1 failed" in `--err`, also folded. A tap opens it: over the lock screen it asks for an unlock instead.
+
+**A row** (`SubRow`, drawn only while the group is open): a state mark, the goal, the model's short name and the level in dim text ("haiku · low", `runsOn`, the composer chip's short forms), and the state word: Waiting, Working, Done, Failed, Timed out, Stopped, or Finished when the app only knows it has ended (`STATE_WORD`, `stateOf`). Nested ones stand under their parent, indented (`inTreeOrder`: by `parent_id` or the stored chat, else `depth`). The current step shows under one that runs. A tap opens its sheet.
+
+**The sheet** (`SubAgentSheet`, `aria-label` "Sub-agent"; store `sheet: 'subagent'`, `openSubSheet`). One size, moved: it rests at about half the screen and is pulled up to just under the chat's header; pulled down it returns to half, then closes. Android Back closes it, or goes back one step. It closes if the app shows over the lock screen (`lockview.ts`).
+
+- **Head:** the goal; "Sub-agent of <chat title>" (a nested one: of its parent's goal in quotation marks), the state, the time.
+- **Model and Reasoning,** side by side, first under the head. The level comes from the sub-agent's stored chat (`GET /nested`, or `GET /api/sessions/{id}` with an older plugin, tried a few times while the row appears): `effortWord` gives Off, Minimal, Low, Medium, High, Extra high, Max, Ultra, or "Model default"; until it is read "Checking…", then "Not reported". It is never worked out from settings. "· same as the chat" shows when `delegation.reasoning_effort` sets nothing and the level equals the chat's (`followsChat`).
+- **Numbers:** steps, tokens in and out, files read and written (`numbersLine`).
+- **What it is doing** (`aria-label` "What it is doing"): while it runs, `subagent.tail` as plain text without the transcript's header (`tailText`), at most every 3 s (`TAIL_EVERY_MS`), one call at a time, only while this sheet is open, it runs and the app is on screen. **What it did** (`aria-label` "What it did"): its steps and summary, from the event and `GET /api/sessions/{id}/messages` (`storedSteps`), as plain text.
+- **Its own sub-agents** (`aria-label` "Its own sub-agents"): rows as above; a tap replaces the content and a Back arrow returns.
+- **Tell it something** (`aria-label` "Tell it something"): `subagent.steer`, shown while it takes messages; gone once Hermes refuses one.
+- **Continue in a new chat,** for one that ended: `session.resume` of its stored chat, `session.branch`, then that chat opens. Not offered when the chat or the sub-agent has read phone data, because a new chat would have no record of it.
+- **Sub-agent settings** opens Settings on Behaviour. **Stop** (red, last) asks first, then `subagent.interrupt`.
+
+**Text.** Goals, steps, output and summaries are the model's: plain text, cut and cleaned of control and direction characters (`plainLine`). In the sheet the goal and the summary go through `Linked`, so an address in a chat that has read phone data is shown in full before it opens; the output and the steps have no links. Every event, list and stored row is checked by type (`mergeEvent`, `cleanStored`, `cleanNestedFeed`), so a malformed value can't break the page. A step or token change updates that sub-agent's record and its one row (`useSubAgent`), not the chat's items (`itemChanged`).
+
+**Sync.** Once when a chat that has sub-agents or a `delegate_task` call opens, and when the app returns: `GET /nested`, `subagent.list` (`noteRoster`: one it no longer lists has ended) and the items go back in place (`withSubItems`). No timer.
 
 #### Notice
 

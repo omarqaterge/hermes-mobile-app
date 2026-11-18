@@ -75,7 +75,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `App.tsx` | Root: `Header`, banners, `Chat`, `FindBar`, the layer stack, `window.hermesBack`, `hermesResume`, `hermesPause`, `hermesOpenSession`. |
 | `Title.tsx` | Chat titles; a branched chat is stored as "⎇ <title>" (Hermes keeps only plain text) and drawn with a branch icon (`BranchIcon`); `plainTitle` and `keepBranch` keep the mark when renaming. |
 | `AutoAccess.tsx` | `AutoButton` (composer's model row) and `DefaultAccessRow` (Settings). |
-| `ChatItems.tsx` | `ItemView`, `ToolCard`, `ToolRunHead`, user and assistant messages, sub-agent card, message actions. |
+| `ChatItems.tsx` | `ItemView`, `ToolCard`, `ToolRunHead`, user and assistant messages, message actions. |
+| `SubAgents.tsx` | The sub-agent group, rows and sheet (3.3), and the nested rows of the chat list (3.13). `AskedBy` in `RequestSheet.tsx` says which sub-agent asks: see below. |
 | `Markdown.tsx` | Markdown renderer, code blocks, Mermaid, task lists, tables, link handling, sanitiser. |
 | `Media.tsx` | `Media`, `Lightbox`, `FileChip`, audio player. |
 | `Diff.tsx` | `DiffView`, `looksLikeDiff`, `stripAnsi`. |
@@ -109,6 +110,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `splitview.ts` | Wide screens: the canvas column's width, the divider drag with its snaps, the pull from the right edge, and the shell's edge claim (`DOCK`, `hm.canvasSplit.v1`, `html[data-split]`, `html.resizing`; 3.7). |
 | `custommodels.ts` | Model ids typed into a model picker (Hermes Desktop's "Custom model"): candidate check, remembered ids per provider. |
 | `activity.ts` | Polling of `GET /activity` for the activity banner and for which chats wait (`waiting`). |
+| `subagents.ts` `askerOf` | The sub-agent an approval comes from. Hermes's request doesn't say, so it is the running one whose latest `subagent.tool` text is exactly the request's `command`; none or several: nobody is named. The sheet says "Sub-agent “<goal>” wants to run this" (`quotedGoal`: at most 60 characters, its own quotation marks replaced, set apart in `.quoted-goal`), and without a match, or over the lock screen, "A sub-agent wants to run this" when the `waiting` feed says so. A nested sub-agent sends no `subagent.tool`, so it gets the fixed words. Sub-agents have no `clarify` tool. |
 | `needsyou.ts` | Which chats wait for an answer: the Needs you group, the header button and the banner (3.13). It only lists them: answers go through this sheet. |
 | `tasks.ts` | Tick state of Markdown task lists. |
 | `unread.ts` | Unread chats and "time ago". |

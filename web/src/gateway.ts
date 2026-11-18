@@ -9,7 +9,9 @@ import { api } from './api'
 import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
+import type { SubagentInterruptResult, SubagentListResult, SubagentSteerResult, SubagentTailResult } from '@hermes/shared/gateway-contract.generated'
 import { noteLineage, noteListRow } from './lineage'
+import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteRoster, subAgentsOf, withSubItems } from './subagents'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -652,6 +654,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     return
   }
   setState({ active: { ...next, title }, opening: null, preview: null, drawer: false })
+  void syncSubAgents()
   if (opts.auto) bootMark('chat-live')
   if (prev && prev.storedId !== next.storedId) retire(prev)
   rememberSession(next.storedId)
@@ -1147,6 +1150,55 @@ export async function interrupt(): Promise<void> {
   }
 }
 
+// ── sub-agents (subagents.ts, components/SubAgents.tsx) ──
+export const subAgentTail = (runtimeId: string, id: string) =>
+  rpc<SubagentTailResult>('subagent.tail', { session_id: runtimeId, subagent_id: id }, 10_000)
+
+/** True when Hermes took the text. */
+export async function steerSubAgent(runtimeId: string, id: string, text: string): Promise<boolean> {
+  if (lockView()) return false
+  const r = await rpc<SubagentSteerResult>('subagent.steer', { session_id: runtimeId, subagent_id: id, text })
+  return r?.status === 'queued'
+}
+
+/** True when it was still running. */
+export async function stopSubAgent(runtimeId: string, id: string): Promise<boolean> {
+  if (lockView()) return false
+  const r = await rpc<SubagentInterruptResult>('subagent.interrupt', { session_id: runtimeId, subagent_id: id })
+  return r?.found === true
+}
+
+/** An ordinary new chat that starts from a finished sub-agent's work: its stored chat is opened only to be branched. */
+export async function continueSubAgent(child: string, goal: string): Promise<void> {
+  if (lockView()) return
+  const opened = await rpc<SessionResumeResult>('session.resume', { session_id: child }, 60_000)
+  try {
+    const r = await rpc<{ stored_session_id: string }>('session.branch', { session_id: opened.session_id })
+    const base = goal.slice(0, 60) || 'Sub-agent'
+    await renameStored(r.stored_session_id, `\u2387 ${base}`).catch(() => {})
+    await resumeSession(r.stored_session_id)
+    loadSessionsSoon()
+  } finally {
+    void rpc('session.close', { session_id: opened.session_id }).catch(() => {})
+  }
+}
+
+/** The open chat's sub-agents as they are now. Once per opening or return, and only for a chat known to have some. */
+async function syncSubAgents(): Promise<void> {
+  const a = getState().active
+  if (!a) return
+  const known = nestedOf(a.storedId)
+  if (!known.total && !a.items.some(i => i.kind === 'tool' && i.name === 'delegate_task')) return
+  await loadStored(a.storedId, a.profile)
+  const r = await rpc<SubagentListResult>('subagent.list', { session_id: a.runtimeId }).catch(() => null)
+  if (r) noteRoster(a.storedId, r.subagents)
+  updateActive(x => {
+    if (x.storedId !== a.storedId) return null
+    const items = withSubItems(x.items, subAgentsOf(x.storedId))
+    return items === x.items ? null : { items }
+  })
+}
+
 export async function undoLast(): Promise<void> {
   const a = getState().active
   if (!a) return
@@ -1532,6 +1584,7 @@ document.addEventListener('visibilitychange', () => {
     noteBack()
     void checkSocket()
     void syncRunning()
+    void syncSubAgents()
   } else {
     // Kept for the next cold start, so the chat is on screen before Hermes answers.
     const a = getState().active
@@ -1570,6 +1623,11 @@ client.onEvent((ev: GatewayEvent) => {
     // Another chat (one you left while it worked) renamed itself or finished: refresh the drawer's counts,
     // which is what marks it unread.
     if (type === 'session.title' || type === 'message.complete') loadSessionsSoon()
+    // Its sub-agents go on: their rows in the chat list follow.
+    if (type.startsWith('subagent.') && ev.session_id) {
+      const chat = chatOfRuntime.get(ev.session_id) || warm.find(w => w.runtimeId === ev.session_id)?.storedId
+      if (chat) noteEvent(chat, type, payload)
+    }
     return
   }
 
@@ -1653,21 +1711,15 @@ client.onEvent((ev: GatewayEvent) => {
     case 'subagent.thinking':
     case 'subagent.tool':
     case 'subagent.complete': {
-      const p = payload as unknown as SubagentEventPayload
-      const id = `sub-${p.subagent_id || p.task_index}`
-      const exists = getState().active!.items.some(i => i.id === id)
-      const detail = p.tool_preview || p.text || p.tool_name || undefined
-      const status = type === 'subagent.complete' ? String(p.status || 'done') : String(p.status || 'running')
-      const readsPhone = (p as { tool_name?: string }).tool_name === 'phone_data' // sticky: the chat has read phone data
-      if (!exists) {
+      // The record holds everything (subagents.ts). The chat's item changes only when what its group shows does: a new
+      // step or token count reaches the one row that draws it, not the chat.
+      const rec = noteEvent(getState().active!.storedId, type, payload)
+      const id = `sub-${keyOfEvent(payload)}`
+      const item = getState().active!.items.find(i => i.id === id)
+      if (!item) {
         closeAssistant()
-        pushItem({ kind: 'subagent', id, goal: p.goal, status, detail, summary: p.summary, tools: p.tool_count || 0, ...(readsPhone ? { phoneData: true } : {}) })
-      } else
-        patchItem(id, it =>
-          it.kind === 'subagent'
-            ? { ...it, status, detail: detail ?? it.detail, summary: p.summary ?? it.summary, tools: p.tool_count ?? it.tools, ...(readsPhone ? { phoneData: true } : {}) }
-            : it
-        )
+        pushItem({ kind: 'subagent', id, ...itemFields(rec) })
+      } else if (item.kind === 'subagent' && itemChanged(item, rec)) patchItem(id, it => (it.kind === 'subagent' ? { ...it, ...itemFields(rec) } : it))
       break
     }
     case 'todo.updated':
@@ -1686,7 +1738,10 @@ client.onEvent((ev: GatewayEvent) => {
         // A context compression gives the chat a new stored id: link it to the old one before anything asks the app about it.
         const a = getState().active
         const sid = (payload as { stored_session_id?: unknown }).stored_session_id
-        if (a && typeof sid === 'string' && sid && sid !== a.storedId) noteLineage([a.storedId, sid], a.runtimeId)
+        if (a && typeof sid === 'string' && sid && sid !== a.storedId) {
+          noteLineage([a.storedId, sid], a.runtimeId)
+          moveChat(a.storedId, sid)
+        }
       }
       updateActive(x => ({ info: { ...x.info, ...(payload as object) } }))
       break

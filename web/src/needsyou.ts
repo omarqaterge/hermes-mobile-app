@@ -10,6 +10,7 @@ import { getState, setState, subscribe, type AppState, type WaitingItem } from '
 import { chatListHeld, onChatListFree } from './chatsnapshot'
 import { lockView, onLockView } from './lockview'
 import { SUB_AGENT } from './waiting'
+import { askerOf, quotedGoal } from './subagents'
 
 export interface Need {
   /** The stored id of the chat. */
@@ -17,6 +18,8 @@ export interface Need {
   kind: string
   /** Who in the chat asks, when it isn't the chat itself ("A sub-agent"). */
   who: string
+  /** Which sub-agent, when a request this page holds could be matched to one (`askerOf`). Never from the feed. */
+  goal?: string
 }
 
 const WORDS = new Map([
@@ -32,8 +35,9 @@ const WORDS = new Map([
 
 /** What the chat waits for, in a few words of this app's own: nothing from the feed is printed. A kind this build doesn't
  *  know gets neutral words, and the only "who" is the fixed one. */
-export function needWords(n: Pick<Need, 'kind' | 'who'>): string {
+export function needWords(n: Pick<Need, 'kind' | 'who' | 'goal'>): string {
   const what = WORDS.get(n.kind) ?? 'is waiting for you'
+  if (n.goal) return `Sub-agent ${quotedGoal(n.goal)} ${what}`
   return n.who === SUB_AGENT ? `${SUB_AGENT} ${what}` : what
 }
 
@@ -44,7 +48,11 @@ export function mergeNeeds(waiting: WaitingItem[], requests: ServerRequest[], ch
   for (const w of waiting) if (w.session && !out.has(w.session)) out.set(w.session, { session: w.session, kind: w.kind, who: w.who ?? '' })
   for (const r of requests) {
     const session = chatOf(r)
-    if (session && !out.has(session)) out.set(session, { session, kind: r.method, who: '' })
+    if (!session) continue
+    const asker = r.method === 'approval' ? askerOf(session, (r.params as { command?: unknown }).command) : null
+    const cur = out.get(session)
+    if (!cur) out.set(session, { session, kind: r.method, who: asker ? SUB_AGENT : '', ...(asker?.goal ? { goal: asker.goal } : {}) })
+    else if (asker?.goal && !cur.goal && (cur.who === SUB_AGENT || !cur.who)) out.set(session, { ...cur, who: SUB_AGENT, goal: asker.goal })
   }
   return [...out.values()]
 }
@@ -70,7 +78,7 @@ export function needsOf(s: Pick<AppState, 'waiting' | 'requests' | 'active'>): N
 }
 
 export function sameNeeds(a: Need[], b: Need[]): boolean {
-  return a.length === b.length && a.every((n, i) => n.session === b[i].session && n.kind === b[i].kind && n.who === b[i].who)
+  return a.length === b.length && a.every((n, i) => n.session === b[i].session && n.kind === b[i].kind && n.who === b[i].who && n.goal === b[i].goal)
 }
 
 let openMemo: { needs: Need[]; sessions: AppState['sessions']; open: string | undefined; out: Need[] } | null = null

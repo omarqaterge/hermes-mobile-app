@@ -1,0 +1,148 @@
+/* Sub-agents: the one-line group in the chat, the rows under a chat in the list, and the sheet (spec 3.3, 3.13). */
+.sub-group { min-height: 44px; }
+.sub-group .chev { margin-left: auto; display: inline-flex; }
+.sub-group-live { color: var(--text); }
+.sub-group-words { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sub-group-failed { color: var(--err); white-space: nowrap; }
+/* The chat list's shimmer, at its frame limit, on one line only: the newest group that runs. */
+.sub-shimmer {
+  -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: working-shimmer 2s steps(48) infinite;
+}
+html:not([data-motion='full']) .sub-shimmer { animation: none; -webkit-mask-image: none; mask-image: none; }
+.sub-rows { display: flex; flex-direction: column; }
+.sub-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 10px;
+  text-align: left;
+  font-size: 0.85rem;
+  border-radius: 10px;
+}
+.sub-row:active, .nested-row:active, .nested-more:active { background: var(--press); }
+.sub-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sub-row-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.sub-row-goal { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sub-row-on { flex: 0 1 auto; max-width: 38%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.75rem; }
+.sub-row-state { flex: none; font-size: 0.75rem; color: var(--dim); }
+.sub-row-state.bad, .sub-bad, .nested-side.bad { color: var(--err); }
+.sub-row-step { font-family: var(--mono); font-size: 0.75rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sub-mark { flex: none; display: inline-flex; width: 16px; height: 18px; align-items: center; justify-content: center; color: var(--dim); }
+.sub-mark-bad { color: var(--err); }
+.sub-ring {
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin: 2px 1px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--dim);
+}
+.sub-ring.turning { animation: sub-turn 1s linear infinite; }
+@keyframes sub-turn { to { transform: rotate(360deg); } }
+html:not([data-motion='full']) .sub-ring.turning, .drawer:not(.open) .sub-ring.turning { animation: none; }
+
+/* Under a chat in the list: inside the row's container, a guide line on the left, 44 px each. */
+.nested-toggle {
+  flex: none;
+  width: 32px;
+  align-self: stretch;
+  margin: -9px 0;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+}
+.nested-rows { display: flex; flex-direction: column; padding-bottom: 2px; }
+.nested-row, .nested-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  min-width: 0;
+  padding: 0 10px;
+  border-left: 1px solid var(--border);
+  font-size: 0.85rem;
+  text-align: left;
+}
+.nested-more { margin-left: 12px; color: var(--dim); }
+.nested-goal { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nested-side { flex: 0 1 auto; max-width: 42%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.75rem; }
+
+/* One size, moved: half height at rest, pulled up to leave the chat's header showing, never the whole screen. */
+.sheet.sub-sheet {
+  height: calc(100dvh - 64px);
+  max-height: none;
+  padding-bottom: 0;
+  gap: 0;
+  transition: transform var(--motion-sheet, 0.22s) ease;
+  animation: none;
+  will-change: transform;
+}
+html[data-motion='off'] .sheet.sub-sheet { transition: none; }
+.sub-sheet-head { flex: none; touch-action: none; padding-bottom: 8px; }
+.sub-title-row { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; }
+.sub-title-text { min-width: 0; flex: 1; }
+.sub-back { flex: none; width: 44px; height: 44px; margin: -8px 0 -8px -10px; display: grid; place-items: center; }
+.sub-goal {
+  font-weight: 600;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.sub-of { margin-top: 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* It scrolls within the part on screen: at half height that is what the resting position leaves. */
+.sub-sheet-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(54dvh - 92px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+.sub-sheet.at-top .sub-sheet-scroll { max-height: none; }
+.sub-values { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sub-value { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); }
+.sub-value-text { overflow-wrap: anywhere; font-size: 0.875rem; }
+.sub-label { margin-bottom: 4px; }
+.sub-tail {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sub-steps { margin: 0; padding-left: 20px; font-size: 0.8rem; color: var(--dim); overflow-wrap: anywhere; }
+.sub-summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.875rem; }
+.sub-steer { display: flex; gap: 8px; align-items: center; }
+.sub-steer .sheet-input { flex: 1; min-width: 0; }
+.sub-wide { width: 100%; min-height: 44px; flex: none; }
+.sub-settings { min-height: 44px; flex: none; align-self: flex-start; text-decoration: underline; }
+
+/* What a sub-agent asks for on the request sheet: the goal is quoted and set apart from the app's own words. */
+.quoted-goal {
+  font-family: var(--mono);
+  padding: 1px 5px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}

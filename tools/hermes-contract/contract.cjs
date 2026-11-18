@@ -363,6 +363,60 @@ async function runTurn(c, key, prompt, { answer, interrupt, completes = 1 } = {}
   t.to = c.events.length
   return r
 }
+// A sub-agent still running ("delegate slowly"): what the app reads and sends for it (gateway.ts, subagents.ts, SubAgents.tsx).
+function subAgentCases() {
+  const q = v => encodeURIComponent(v)
+  // Hermes writes the stored row a moment after the start: asked again for a few seconds, like the sheet does.
+  const until = async (read, ok) => {
+    let r
+    for (let i = 0; i < 40; i++) {
+      r = await read()
+      if (r.error || ok(r.result)) return r
+      await sleep(250)
+    }
+    return r
+  }
+  const P = c => `${PLUGIN}/nested`
+  return [
+    {
+      name: 'prompt.submit (a sub-agent that keeps running)',
+      run: async c => {
+        c.subFrom = c.events.length
+        const r = await c.rpc('prompt.submit', { session_id: c.newRuntime, text: 'delegate slowly' })
+        if (r.error) return r
+        const e = await c.event('subagent.tool', c.newRuntime, c.subFrom, 60_000)
+        if (e.error) return e
+        c.sub = e.result.subagent_id
+        c.subChild = e.result.child_session_id
+        return r
+      }
+    },
+    { name: 'event subagent.tool (sub-agent still running)', run: c => c.merged('subagent.tool', c.newRuntime, c.subFrom) },
+    { name: 'subagent.list', run: c => until(() => c.rpc('subagent.list', { session_id: c.newRuntime }), x => x?.subagents?.length) },
+    { name: 'subagent.tail', run: c => until(() => c.rpc('subagent.tail', { session_id: c.newRuntime, subagent_id: c.sub }), x => x?.available) },
+    { name: 'subagent.steer', run: c => c.rpc('subagent.steer', { session_id: c.newRuntime, subagent_id: c.sub, text: 'Be quick' }) },
+    { name: 'GET plugin /nested', run: c => until(() => c.http('GET', `${P(c)}?session=${q(c.newStored)}`), x => x?.children?.length) },
+    {
+      name: 'GET plugin /nested-counts (its numbers)',
+      run: async c => {
+        const r = await until(() => c.http('GET', `${P(c)}-counts`), x => Object.keys(x?.counts ?? {}).length)
+        return r.error ? r : { result: { counts: Object.values(r.result.counts) } }
+      }
+    },
+    { name: 'GET plugin /nested-search', run: c => until(() => c.http('GET', `${P(c)}-search?q=${q('Wait a')}`), x => x?.hits?.length) },
+    { name: 'GET /api/sessions/<sub-agent> (its stored level)', run: c => c.http('GET', `/api/sessions/${q(c.subChild)}`) },
+    { name: 'GET /api/sessions/<sub-agent>/messages', run: c => c.http('GET', `/api/sessions/${q(c.subChild)}/messages`) },
+    {
+      name: 'subagent.interrupt',
+      run: async c => {
+        c.subStop = c.events.length
+        return c.rpc('subagent.interrupt', { session_id: c.newRuntime, subagent_id: c.sub })
+      }
+    },
+    { name: 'event subagent.complete (after subagent.interrupt)', run: c => c.event('subagent.complete', c.newRuntime, c.subStop, 30_000) }
+  ]
+}
+
 const TURNS = [
   { key: 'approve', prompt: 'run the thing', opts: { answer: { method: 'approval', result: { choice: 'once' } } }, request: 'approval', events: ['tool.start', 'tool.complete', 'message.complete'] },
   { key: 'deny', prompt: 'run the thing', opts: { answer: { method: 'approval', result: { choice: 'deny' } } }, request: 'approval', events: ['tool.complete', 'message.complete'] },
@@ -521,6 +575,7 @@ const CASES = [
     }
   },
   ...moreTurnCases(),
+  ...subAgentCases(),
   { name: 'session.close (new chat)', run: c => c.rpc('session.close', { session_id: c.newRuntime }) },
   { name: 'session.delete', run: c => c.rpc('session.delete', { session_id: c.stored }) }
 ]

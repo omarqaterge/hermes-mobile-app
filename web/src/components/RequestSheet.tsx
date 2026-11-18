@@ -12,6 +12,8 @@ import { tidyApprovalText } from '../text'
 import { useBackHandler } from '../backstack'
 import { ADVANCE_MS, nextStep } from '../clarify'
 import { Icon } from './icons'
+import { askerOf, quotedGoal } from '../subagents'
+import { SUB_AGENT } from '../waiting'
 
 /** Runs `answer` unless the tap came too soon after this sheet took over from another request (needsyou.ts). Refusing
  *  (Deny, Cancel) never goes through here. */
@@ -301,6 +303,23 @@ function otherChat(s: AppState, req: ServerRequest): string {
   return plainTitle(s.sessions.find(x => x.id === chat)?.title) || 'another chat'
 }
 
+/** Says so when the command comes from a sub-agent. The goal is the model's text: quoted, cut short and set apart, so it can't
+ *  read as the app's words. It is left out over the lock screen, and when no one sub-agent can be told apart. */
+function AskedBy({ req, locked }: { req: ServerRequest; locked: boolean }) {
+  const p = req.params as Record<string, unknown>
+  const chat = requestChat(req)
+  const feedSays = useStore(s => s.waiting.some(w => w.session === chat && w.who === SUB_AGENT) && !s.waiting.some(w => w.session === chat && !w.who))
+  if (req.method !== 'approval') return null
+  const asker = askerOf(chat, p.command)
+  if (!asker && !feedSays) return null
+  const what = phoneDataTextOf(p) !== null ? 'wants to read your phone' : 'wants to run this'
+  return (
+    <div className="sheet-from dim small">
+      {asker?.goal && !locked ? <>Sub-agent <span className="quoted-goal">{quotedGoal(asker.goal)}</span> {what}</> : `${SUB_AGENT} ${what}`}
+    </div>
+  )
+}
+
 export function RequestSheet({ req }: { req: ServerRequest }) {
   const from = useStore(s => otherChat(s, req))
   const locked = useLockView() // no chat titles over the lock screen
@@ -310,6 +329,7 @@ export function RequestSheet({ req }: { req: ServerRequest }) {
       <div className="sheet" role="dialog">
         <div className="sheet-grip" />
         {from && !locked && <div className="sheet-from dim small">From {from}</div>}
+        <AskedBy req={req} locked={locked} />
         {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
       </div>
     </div>

@@ -34,7 +34,7 @@ Each flow lists the steps in the order the code runs them. "Page" = the WebView 
      running card (or adds one; a replayed start for a card already shown adds nothing); `tool.complete` fills in
      args, duration, summary, result text and inline diff; `tool.output_risk` flags a card. Canvas tool events
      also call `canvasWritingStarted`, `canvasCallStarted` and `canvasToolDone` (3.7).
-   - `subagent.start|progress|thinking|tool|complete` keep one card per sub-agent; `todo.updated` sets the task
+   - `subagent.start|progress|thinking|tool|complete` update that sub-agent's record (`noteEvent`, also for another chat this page is attached to) and, when what its group shows changed, its item; `todo.updated` sets the task
      list; `session.usage` and `session.info` update the chat (usage that carries `context_max` and `context_used` also updates `ctx` through `refreshCtx`, so the context ring moves during a long turn); `session.title` renames it.
    - `message.complete` drops leftover generating cards, puts the final text on the reply (`fullReply` keeps the
      streamed text unless the final one is longer and ends with it), adds an error notice on failure, hands the

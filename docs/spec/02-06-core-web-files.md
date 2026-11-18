@@ -30,6 +30,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `menu.css` — the menus' look (3.20 `MenuSheet` and its parts; the chat menu 3.5, a chat row's menu 3.13): header, quick-action tiles, groups and rows, the solid form over the side panel, the rows of `PickerSheet`, and Chat details' long values.
 - `settings.css` — the Settings main page (3.15): one line per row (title, line and value cut with an ellipsis, so a narrow screen or a wider font never wraps them) and the attention cards (`.attn-card`: solid, a gold or red border, `--text` and `--glass-dim` text, a 44 px button, the shared row arrival).
 - `waiting.ts` — The plugin's `waiting` list as the page should show it, after requests that ended here (`visibleWaiting`).
+- `subagents.ts` — A chat's sub-agents: the records from events, `subagent.list` and the plugin, grouping, nesting, state words, the open and closed rows of the list (3.3, 3.13).
 - `needsyou.ts` — Which chats wait for the person's answer (`needsOf`, `openNeeds`, `useListedNeeds`): the chat list's Needs you group, the header button and the banner (3.13).
 - `chatactions.ts` — Pin, Archive and Delete for a chat (`pinChat`, `archiveChat`, `deleteChat`), shared by the chat menu and the chat list (3.5, 3.13).
 - `ChatMenu.tsx` (in `components/`) — the chat menu, the new-chat menu and their shared header (3.5).
