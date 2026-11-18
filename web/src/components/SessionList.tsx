@@ -10,7 +10,7 @@ import { Title, plainTitle } from './Title'
 import { ago, lastActive } from '../unread'
 import { dayLabel, frozenActivity, orderChats, recentIds } from '../chatorder'
 import { holdChatSnapshot, useChatSnapshot } from '../chatsnapshot'
-import { needWords, useListedNeeds, type Need } from '../needsyou'
+import { aimAtNeed, needWords, useListedNeeds, type Need } from '../needsyou'
 import { archiveChat, deleteChat, pinChat } from '../chatactions'
 import { cronJobId, runName, useJobName } from '../panelvalues'
 import { Chevron, MenuGroup, MenuRow, MenuSheet } from './ui'
@@ -556,7 +556,9 @@ export function SessionList({ query }: { query: string }) {
         need={need}
         onOpen={() => {
           haptic()
-          resumeSession(s.id).catch(e => toast(errText(e), 'error'))
+          const opening = resumeSession(s.id)
+          if (need) aimAtNeed(s.id)
+          opening.catch(e => toast(errText(e), 'error'))
         }}
         onRight={a => archive(s.id, a === 'archive')}
         onDelete={() => remove(s)}

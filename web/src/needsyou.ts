@@ -6,7 +6,7 @@
 // the request sheet there asks, with the fingerprint and unlock rules (docs/decisions/approval-needs-fingerprint.md).
 import { useSyncExternalStore } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
-import { getState, subscribe, type AppState, type WaitingItem } from './store'
+import { getState, setState, subscribe, type AppState, type WaitingItem } from './store'
 import { chatListHeld, onChatListFree } from './chatsnapshot'
 import { SUB_AGENT } from './waiting'
 
@@ -87,6 +87,27 @@ export function openNeeds(s: AppState): Need[] {
   openMemo = { needs, sessions: s.sessions, open, out }
   return out
 }
+
+/** Call right after starting to open a chat from Needs you: while that goes on, its request is the one the sheet shows. */
+export function aimAtNeed(chat: string): void {
+  setState({ needTarget: chat })
+}
+
+/** The request the sheet shows: the chat opened from Needs you first, so the row and the sheet agree; else the oldest. */
+export function currentRequest(s: Pick<AppState, 'requests' | 'needTarget'>): ServerRequest | undefined {
+  const aimed = s.needTarget ? s.requests.find(r => chatOf(r) === s.needTarget) : undefined
+  return aimed ?? s.requests[0]
+}
+
+// The aim ends when the person went elsewhere, the chat failed to open, or it is open and waits for nothing more.
+function settleAim(): void {
+  const s = getState()
+  const t = s.needTarget
+  if (!t) return
+  const elsewhere = s.opening ? s.opening !== t : s.active?.storedId !== t
+  if (elsewhere || (!s.opening && !needsOf(s).some(n => n.session === t))) setState({ needTarget: null })
+}
+subscribe(settleAim)
 
 /** The header button's words: "one needs you", "2 need you". */
 export const needsPhrase = (n: number): string => (n === 1 ? 'one needs you' : `${n} need you`)

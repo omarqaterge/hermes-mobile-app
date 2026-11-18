@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-contract.generated'
-import { answerRequest, rejectRequest } from '../gateway'
+import { answerRequest, rejectRequest, requestChat } from '../gateway'
+import { useStore, type AppState } from '../store'
+import { plainTitle } from './Title'
 import { haptic } from '../bridge'
 import { Linked } from './Linked'
 import { phoneDataTextOf, phoneDataView, splitUntrusted } from '../phone-data-request'
@@ -280,11 +282,21 @@ function MaskedValue({ req }: { req: ServerRequest }) {
   )
 }
 
+/** The chat a request comes from when it is not the one on screen ('' when it is): a sheet can come up over another chat,
+ *  and what it asks must not look like this chat's. */
+function otherChat(s: AppState, req: ServerRequest): string {
+  const chat = requestChat(req)
+  if (!chat || chat === (s.opening ?? s.active?.storedId)) return ''
+  return plainTitle(s.sessions.find(x => x.id === chat)?.title) || 'another chat'
+}
+
 export function RequestSheet({ req }: { req: ServerRequest }) {
+  const from = useStore(s => otherChat(s, req))
   return (
     <div className="sheet-backdrop">
       <div className="sheet" role="dialog">
         <div className="sheet-grip" />
+        {from && <div className="sheet-from dim small">From {from}</div>}
         {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
       </div>
     </div>

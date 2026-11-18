@@ -23,7 +23,7 @@ import { RequestSheet } from './components/RequestSheet'
 import { CommandsSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { ChatMenuSheet, DraftMenuSheet } from './components/ChatMenu'
 import { bannerItems, startActivityPolling } from './activity'
-import { needWords, needsPhrase, openNeeds, setRequestChat } from './needsyou'
+import { aimAtNeed, currentRequest, needWords, needsPhrase, openNeeds, setRequestChat } from './needsyou'
 import { DialogHost } from './dialog'
 import { WhatsNewAfterUpdate } from './components/WhatsNew'
 import { startWhatsNewAfterUpdate } from './whatsnew'
@@ -230,7 +230,13 @@ function ActivityBanner() {
     const n = needs[0]
     const more = needs.length - 1 + shown.length
     return (
-      <button className="activity-banner" onClick={() => void openSessionFromNotification(n.session)}>
+      <button
+        className="activity-banner"
+        onClick={() => {
+          openSessionFromNotification(n.session)
+          aimAtNeed(n.session)
+        }}
+      >
         <span className="needs-dot" />
         <span className="activity-text">
           <b>{plainTitle(sessions.find(x => x.id === n.session)?.title) || 'another chat'}: </b>
@@ -815,7 +821,7 @@ export function App() {
   const sheet = useStore(s => s.sheet)
   const screen = useStore(s => s.screen)
   const screenKey = useStore(s => s.screenProfile) || '-'
-  const request = useStore(s => s.requests[0])
+  const request = useStore(currentRequest)
   const toasts = useStore(s => s.toasts)
   const scale = useStore(s => s.textScale)
   const [injected, setInjected] = useState<string | null>(null)

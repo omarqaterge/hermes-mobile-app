@@ -428,6 +428,23 @@ module.exports = async t => {
     await withdraw('srv-needs-live', 'clarify')
     await header(/^Sessions/).waitFor({ timeout: 3000 })
     check(true, 'needs you: a request withdrawn by Hermes leaves at once')
+
+    // The row names one chat, so the sheet that opens is that chat's, even if another chat's request came first.
+    await setWaiting([asks('s-12', 'approval', approval('srv-needs-mine'), { delay: 900 })])
+    await openList('Chats (one needs you)')
+    await title('Chat 12', group).click()
+    await frame({ id: 'srv-needs-other', method: 'clarify', params: { session_id: live, question: 'Asked by another chat?' } })
+    await sheet.getByText('Asked by another chat?').waitFor({ timeout: 3000 })
+    check((await sheet.getByText('From Chat 9', { exact: true }).count()) === 1, "needs you: a sheet for a chat that isn't on screen names that chat")
+    await sheet.getByRole('button', { name: 'Deny' }).waitFor({ timeout: 5000 })
+    check((await sheet.getByText('Asked by another chat?').count()) === 0, 'needs you: the chat opened from the group has its request shown first')
+    check((await sheet.getByText(/^From /).count()) === 0, 'needs you: the open chat\'s own request names no chat')
+    await sheet.getByRole('button', { name: 'Deny' }).click()
+    await sheet.getByText('Asked by another chat?').waitFor({ timeout: 3000 })
+    check((await sheet.getByText('From Chat 9', { exact: true }).count()) === 1, 'needs you: the other request follows, still naming its chat')
+    check(calls().filter(c => c.answer === 'srv-needs-mine').length === 1 && calls().filter(c => c.answer === 'srv-needs-other').length === 0, 'needs you: the answer went to the request on the sheet')
+    await withdraw('srv-needs-other', 'clarify')
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
     await mock({ waiting: [], activity: [] })
     await page.close()
 

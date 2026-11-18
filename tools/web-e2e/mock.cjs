@@ -46,7 +46,8 @@ canvasDocs['s-slowstart'] = [{ id: 'dlife', title: 'Life', type: 'markdown', lan
 canvasDocs['s-panel'] = [{ id: 'dside', title: 'Side', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 12, path: '', created: Date.now() / 1000, content: '# Side\n\nPanel text' }]
 let activityItems = []
 // The plugin's `waiting` list on /activity. A test item may carry `request` (what session.resume then hands back in
-// open_requests, as Hermes does for a chat with an open request) and `keep` (the plugin hasn't heard of the answer yet).
+// open_requests, as Hermes does for a chat with an open request), `keep` (the plugin hasn't heard of the answer yet) and
+// `delay` (ms before that resume answers).
 let waitingItems = []
 // The plugin's /tool-result: the stored output of a finished tool call, by tool_id (filled by every tool.complete the mock sends).
 const toolResults = new Map()
@@ -270,7 +271,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
-    if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems, waiting: waitingItems.map(({ request, keep, ...w }) => w) })
+    if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems, waiting: waitingItems.map(({ request, keep, delay, ...w }) => w) })
     if (p === '/api/plugins/hermes-mobile/sent-counts') {
       // Messages the user sent (plugin /sent-counts): half of message_count here, each turn being a message and a reply.
       const ids = JSON.parse(body || '{}').ids || []
@@ -897,6 +898,7 @@ wss.on('connection', ws => {
           waiting.set(asks.request.id, () => {
             if (!asks.keep) waitingItems = waitingItems.filter(w => w !== asks)
           })
+          if (asks.delay) return later(asks.delay, () => reply(res))
         }
         // A slow phone: the cached copy must be on screen long before this answer.
         if (sid === 's-slow') return later(1500, () => reply(res))

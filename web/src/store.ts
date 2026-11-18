@@ -161,6 +161,8 @@ export interface AppState {
   activity: ActivityItem[]
   /** Chats with an open request, from the same answer (needsyou.ts). */
   waiting: WaitingItem[]
+  /** The chat just opened from Needs you: its request goes first (needsyou.ts `currentRequest`). */
+  needTarget: string | null
   /** The profile's default model, shown in the header before a chat exists. */
   defaultModel: string
   /** …and its reasoning level (config agent.reasoning_effort, or the model's own override). */
@@ -234,6 +236,7 @@ let state: AppState = {
   health: null,
   activity: [],
   waiting: [],
+  needTarget: null,
   defaultModel: "",
   defaultEffort: ""
 }

@@ -317,3 +317,7 @@ html[data-motion='full'] .app:has(> .drawer.open) > .stage {
 .session-state.needs-word {
   color: var(--warn);
 }
+.sheet-from {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
