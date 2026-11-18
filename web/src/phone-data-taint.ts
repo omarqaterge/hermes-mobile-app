@@ -88,6 +88,32 @@ export function nativeTainted(id: string | null | undefined, strict = false): bo
   return yes
 }
 
+export type ReadState = 'read' | 'clear' | 'unknown'
+
+/** A decision that must not fail open: has this chat read phone data? Asks the app's record about every id it has had, now,
+ *  with nothing remembered ('read' is final, so a yes needs no second look). 'unknown' when a shell is there and its record
+ *  can't answer. Without a shell (a browser) there is no record: only the chat's items can tell. */
+export function chatReadState(chat: { storedId: string; runtimeId: string; items: readonly ChatItem[] }): ReadState {
+  if (isTaintedItems(chat.items)) return 'read'
+  const b = remoteBridge()
+  if (!b) return 'clear'
+  if (typeof b.phoneDataTainted !== 'function') return 'unknown'
+  let unsure = false
+  for (const id of new Set([chat.storedId, chat.runtimeId].flatMap(i => [i, ...lineageOf(i)]))) {
+    try {
+      const yes = b.phoneDataTainted(id) as unknown
+      if (yes === true) {
+        known.add(id)
+        return 'read'
+      }
+      if (yes !== false) unsure = true
+    } catch {
+      unsure = true
+    }
+  }
+  return unsure ? 'unknown' : 'clear'
+}
+
 const taintedState = (s: AppState): boolean => isTaintedItems(shownItems(s)) || shownIds(s).some(id => nativeTainted(id))
 
 export const useTainted = (): boolean => useStore(taintedState)

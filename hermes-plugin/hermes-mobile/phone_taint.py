@@ -142,6 +142,13 @@ def has_read(ids: Any) -> bool:
         return any(i in _mem or i in known for i in ids)
 
 
+def any_read() -> bool:
+    """Has any chat read phone data (or is the record damaged)? When not, nothing about a chat's history matters."""
+    with _lock:
+        known = _file_chats()
+        return known is None or bool(_mem) or bool(known)
+
+
 @contextlib.contextmanager
 def _file_lock() -> Iterator[None]:
     """An exclusive lock on a file next to the state file, so two processes can't each write over the other's entry."""

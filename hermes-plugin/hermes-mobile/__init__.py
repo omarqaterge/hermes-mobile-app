@@ -1356,6 +1356,35 @@ def _on_session_start(session_id=None, **_):
     _taint_sync(session_id)
 
 
+_INHERIT_SEEN: set = set()   # stored ids already looked up (a chat's origin doesn't change)
+
+
+def _inherit_read(sids) -> None:
+    """A chat made from one that has read phone data holds what that chat held: a branch copies its messages, and Hermes
+    announces no branch to a plugin. So the first time a chat is seen while any chat has read, the chats it came from are
+    looked up, before the tool call it arrives with is judged. It looks only at the chat's origin: a parent that reads later
+    gives its branch nothing. Costs nothing while no chat has read. Never raises."""
+    try:
+        pt = _phone_taint()
+        if not pt.any_read():
+            return
+        for sid in sids:
+            sid = str(sid or "").strip()
+            if not sid or sid in _INHERIT_SEEN:
+                continue
+            came_from = _phone_data().stored_ancestors(sid)
+            if came_from is None:
+                continue   # not known yet: the next call asks again
+            if len(_INHERIT_SEEN) > 2000:
+                _INHERIT_SEEN.clear()
+            _INHERIT_SEEN.add(sid)
+            if came_from and pt.has_read(came_from) and not pt.has_read([sid]):
+                pt.mark([sid])
+                _report_taint([sid])
+    except Exception:
+        pass
+
+
 def _in_slash_worker() -> bool:
     """This process is Hermes's slash worker (`python -m tui_gateway.slash_worker`), which runs /bg tasks for one chat."""
     try:
@@ -1418,6 +1447,7 @@ def _taint_directive(tool_name, args, session_id, task_id):
             pass
     started_by = _detached_from(session_id, task_id)
     scope = list(dict.fromkeys([*ids, *(started_by or [])]))
+    _inherit_read([session_id, *(started_by or [])])
     try:
         if started_by is not None:
             return _phone_taint().check_detached(tool_name, args, scope)

@@ -1320,6 +1320,11 @@ wss.on('connection', ws => {
         return reply({ ok: true })
       case 'session.close':
         return reply({ closed: true })
+      case 'session.branch': {
+        // As the pinned Hermes answers (tools/hermes-contract): a new live and stored chat, its parent named.
+        const stored = `s-branch-${++created}`
+        return reply({ session_id: `rt-${stored}`, stored_session_id: stored, title: 'Branch', parent: String(params.session_id || '').replace(/^rt-/, ''), message_count: 2, info: CHAT_INFO })
+      }
       case 'session.delete':
         return reply({ deleted: params.session_id })
       case 'session.title':

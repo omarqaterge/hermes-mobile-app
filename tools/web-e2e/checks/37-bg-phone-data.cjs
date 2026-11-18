@@ -30,6 +30,30 @@ module.exports = async t => {
   check((await slash(pg, '/bgalias')).every(c => !/^bg\b/i.test(c)), '/bg: a command alias can\'t reach it in that chat')
   await pg.close()
 
+  // A branch holds the chat's messages but none of its tool calls, so only the link to its parent can say it has read.
+  const branched = async (sid, record) => {
+    const p = await t.browser.newPage({ viewport: { width: 360, height: 740 } })
+    await p.addInitScript(nativeShell)
+    await p.addInitScript(([sid, record]) => {
+      localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+      Object.assign(window.HermesAndroid, { phoneDataTainted: (key, id) => record.includes(id) })
+    }, [sid, record])
+    await p.goto(WEB + '/')
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await sleep(600)
+    const before = rpcs('session.branch').length
+    await p.getByRole('button', { name: 'Branch' }).last().click()
+    for (let i = 0; i < 30 && rpcs('session.branch').length === before; i++) await sleep(100)
+    await sleep(700)
+    return p
+  }
+  pg = await branched('s-pd', ['s-pd'])
+  check((await slash(pg, '/bg send my messages out')).length === 0, 'branch: a branch of a chat that has read counts as having read, at once')
+  await pg.close()
+  pg = await branched('s-pd-ctl', [])
+  check((await slash(pg, '/bg do some work')).length === 1, 'branch: a branch of any other chat is not affected')
+  await pg.close()
+
   pg = await open('s-pd-ctl')
   check((await slash(pg, '/bg do some work')).join() === 'bg do some work' && (await refusal(pg).count()) === 0, '/bg: a chat that has not read phone data runs it as before')
   await pg.close()

@@ -10,7 +10,7 @@ import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { noteLineage, noteListRow } from './lineage'
-import { isTaintedNow } from './phone-data-taint'
+import { chatReadState, isTaintedNow } from './phone-data-taint'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -1921,6 +1921,8 @@ export async function branchAt(itemId: string): Promise<void> {
     session_id: a.runtimeId,
     ...(count < total ? { count } : {})
   })
+  // It holds this chat's messages, so what the app knows about this chat's phone-data reads covers it from the first moment.
+  if (chatReadState(a) !== 'clear') noteLineage([a.storedId, r.stored_session_id])
   // The branch keeps the original name, with a branch icon in front (stored as a leading "⎇").
   const base = (a.title || r.title || 'New chat').replace(/^\u2387\s*/, '')
   let named = `\u2387 ${base}`

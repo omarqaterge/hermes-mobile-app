@@ -309,6 +309,43 @@ def _state_db() -> Path:
 ANCESTRY_BUDGET_S = 3.0   # the whole lookup, however many queries; it runs on the background reporting thread
 
 
+def stored_ancestors(sid: str, limit: int = 16, budget: float = 1.0):
+    """The stored chats this one came from, nearest first: its `parent_session_id` links, or `_branched_from` when a branch
+    has no such link, whatever made them (a branch, a compression, a sub-agent). Read-only and quick, so a tool call can
+    wait for it. None when it can't be told now (no such row yet, or the database can't be read); the caller asks again."""
+    try:
+        import sqlite3
+        db = _state_db()
+        if not sid or not db.exists():
+            return None
+        end = time.monotonic() + budget
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=budget)
+        try:
+            con.set_progress_handler(lambda: 1 if time.monotonic() > end else 0, 1000)
+            out: list = []
+            cur = sid
+            for _ in range(limit):
+                row = con.execute("SELECT parent_session_id, model_config FROM sessions WHERE id = ?", (cur,)).fetchone()
+                if row is None:
+                    return None if cur == sid else out
+                parent = row[0]
+                if not parent:
+                    try:
+                        cfg = json.loads(row[1]) if isinstance(row[1], str) else None
+                    except ValueError:
+                        cfg = None
+                    parent = cfg.get("_branched_from") if isinstance(cfg, dict) else None
+                if not isinstance(parent, str) or not parent or parent == sid or parent in out:
+                    return out
+                out.append(parent)
+                cur = parent
+            return out
+        finally:
+            con.close()
+    except Exception:
+        return None
+
+
 def compression_ancestors(sid: str, limit: int = MAX_CHATS, budget: float = ANCESTRY_BUDGET_S) -> list:
     """The stored ids a context compression rotated away from, nearest first: a chat that read in segment S1 and was
     compressed to S2 is known to the app as S1 only. Walks `parent_session_id` upward while the parent ended by

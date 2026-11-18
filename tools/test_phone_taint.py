@@ -857,6 +857,47 @@ init._phone_taint = good
 out_of_worker(had_key)
 reset()
 
+print("chats made from one that has read")
+import sqlite3  # noqa: E402
+_bdb = tmp / "branches.db"
+_con = sqlite3.connect(_bdb)
+_con.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT)")
+_con.executemany("INSERT INTO sessions VALUES (?,?,?)", [
+    ("br-parent", None, None), ("br-1", "br-parent", '{"_branched_from": "br-parent"}'),
+    ("br-2", None, '{"_branched_from": "br-parent"}'), ("br-3", "br-1", None), ("br-free", None, "{not json"),
+    ("br-early", "br-late-parent", None), ("br-late-parent", None, None)])
+_con.commit()
+real_db, real_anc = pd.__dict__.get("_state_db"), pd.stored_ancestors
+pd._state_db = lambda: _bdb
+init._phone_data = lambda: pd
+reset()
+init._INHERIT_SEEN.clear()
+asked = []
+pd.stored_ancestors = lambda sid, *a, **k: (asked.append(sid), real_anc(sid, *a, **k))[1]
+check("no chat has read: a chat's origin isn't even looked up", action("terminal", CURL, "br-1") is None and not asked)
+pt.mark(["br-parent"])
+check("a branch of a chat that has read is asked about, at its first send", action("terminal", CURL, "br-1") == "approve")
+check("and is marked", pt.has_read(["br-1"]))
+check("also when only _branched_from names the parent", action("terminal", CURL, "br-2") == "approve")
+check("and for a branch of that branch", action("terminal", CURL, "br-3") == "approve")
+check("a chat with no such origin is left alone", action("terminal", CURL, "br-free") is None and not pt.has_read(["br-free"]))
+check("the origin is looked up once", asked.count("br-free") == 1 and (action("terminal", CURL, "br-free"), asked.count("br-free"))[1] == 1)
+check("a branch made before its parent read stays as it was", action("terminal", CURL, "br-early") is None)
+pt.mark(["br-late-parent"])
+check("the parent's later read gives the branch nothing", action("terminal", CURL, "br-early") is None)
+check("a chat not stored yet is asked about again", action("terminal", CURL, "br-new") is None and "br-new" not in init._INHERIT_SEEN)
+_con.execute("INSERT INTO sessions VALUES ('br-new', 'br-parent', NULL)")
+_con.commit()
+check("and is marked once its row is there", action("terminal", CURL, "br-new") == "approve")
+_con.close()
+pd.stored_ancestors = real_anc
+if real_db is None:
+    del pd._state_db
+else:
+    pd._state_db = real_db
+reset()
+init._INHERIT_SEEN.clear()
+
 print("prompt section")
 src = open(os.path.join(PLUG, "phone_data.py")).read()
 check("the system prompt says asks happen after a read", "Once this chat has read phone data" in src)
