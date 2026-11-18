@@ -96,15 +96,34 @@ export function aimAtNeed(chat: string): void {
 
 let onSheet: ServerRequest['id'] | null = null
 
+/** How long after taking over from another request a sheet ignores every answer but a refusal. */
+export const SHEET_PAUSE_MS = 700
+let followedAnother: ServerRequest['id'] | null = null // the request now on the sheet, if it replaced another there
+let shownAt = 0
+
 /** The request the sheet shows. One on the sheet stays until it is answered or withdrawn, so what a finger is about to
  *  tap never changes under it. Only when the sheet is free is the next one chosen: the chat opened from Needs you first,
  *  so the row and the sheet agree, else the oldest. */
 export function currentRequest(s: Pick<AppState, 'requests' | 'needTarget'>): ServerRequest | undefined {
   const kept = onSheet === null ? undefined : s.requests.find(r => r.id === onSheet)
   if (kept) return kept
+  const replaced = onSheet !== null
   const next = (s.needTarget ? s.requests.find(r => chatOf(r) === s.needTarget) : undefined) ?? s.requests[0]
   onSheet = next?.id ?? null
+  followedAnother = next && replaced ? next.id : null
+  shownAt = performance.now()
   return next
+}
+
+/** The sheet is on screen with this request: the pause counts from here. */
+export function sheetShown(id: ServerRequest['id']): void {
+  if (id === onSheet) shownAt = performance.now()
+}
+
+/** Whether a tap made at `at` (an event's timeStamp) may answer this request. A tap meant for the request before it must
+ *  not answer this one unseen, where the same button now stands. It compares times, so no timer is involved. */
+export function sheetCanAnswer(id: ServerRequest['id'], at: number): boolean {
+  return followedAnother !== id || at - shownAt >= SHEET_PAUSE_MS
 }
 
 // The aim lasts only while it has a real request to bring forward: it ends when the person goes elsewhere or the chat

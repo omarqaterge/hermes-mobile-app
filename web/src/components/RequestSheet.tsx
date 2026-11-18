@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-contract.generated'
 import { answerRequest, rejectRequest, requestChat } from '../gateway'
 import { useStore, type AppState } from '../store'
 import { plainTitle } from './Title'
-import { useLockView } from '../needsyou'
+import { sheetCanAnswer, sheetShown, useLockView } from '../needsyou'
 import { haptic } from '../bridge'
 import { Linked } from './Linked'
 import { phoneDataTextOf, phoneDataView, splitUntrusted } from '../phone-data-request'
@@ -12,6 +12,12 @@ import { tidyApprovalText } from '../text'
 import { useBackHandler } from '../backstack'
 import { ADVANCE_MS, nextStep } from '../clarify'
 import { Icon } from './icons'
+
+/** Runs `answer` unless the tap came too soon after this sheet took over from another request (needsyou.ts). Refusing
+ *  (Deny, Cancel) never goes through here. */
+const confirming = (req: ServerRequest, answer: () => void) => (e: React.MouseEvent) => {
+  if (sheetCanAnswer(req.id, e.timeStamp)) answer()
+}
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
   once: 'Allow once',
@@ -47,10 +53,10 @@ function PhoneDataApproval({ req, text }: { req: ServerRequest; text: string }) 
         {v.ok ? (
           <button
             className="btn primary"
-            onClick={() => {
+            onClick={confirming(req, () => {
               haptic()
               answerRequest(req, { choice: 'once' })
-            }}
+            })}
           >
             Allow once
           </button>
@@ -89,7 +95,8 @@ function Approval({ req }: { req: ServerRequest }) {
           <button
             key={c}
             className={c === 'deny' ? 'btn danger' : c === 'once' ? 'btn primary' : 'btn'}
-            onClick={() => {
+            onClick={e => {
+              if (c !== 'deny' && !sheetCanAnswer(req.id, e.timeStamp)) return
               haptic()
               answerRequest(req, { choice: c })
             }}
@@ -222,7 +229,7 @@ function Clarify({ req }: { req: ServerRequest }) {
         ))}
       </div>
       <div className="sheet-actions">
-        <button className="btn" onClick={() => answerRequest(req, { answer: '' })}>
+        <button className="btn" onClick={confirming(req, () => answerRequest(req, { answer: '' }))}>
           Skip
         </button>
         {multi && step > 0 ? (
@@ -238,11 +245,11 @@ function Clarify({ req }: { req: ServerRequest }) {
           <button
             className="btn primary"
             disabled={!ready}
-            onClick={() => {
+            onClick={confirming(req, () => {
               haptic()
               if (p.questions && (p.questions as unknown[]).length) answerRequest(req, { answers })
               else answerRequest(req, { answer: answers['_'] })
-            }}
+            })}
           >
             Answer
           </button>
@@ -275,7 +282,7 @@ function MaskedValue({ req }: { req: ServerRequest }) {
         <button className="btn" onClick={() => rejectRequest(req)}>
           Cancel
         </button>
-        <button className="btn primary" disabled={!value} onClick={() => answerRequest(req, { value })}>
+        <button className="btn primary" disabled={!value} onClick={confirming(req, () => answerRequest(req, { value }))}>
           Send
         </button>
       </div>
@@ -294,6 +301,7 @@ function otherChat(s: AppState, req: ServerRequest): string {
 export function RequestSheet({ req }: { req: ServerRequest }) {
   const from = useStore(s => otherChat(s, req))
   const locked = useLockView() // no chat titles over the lock screen
+  useLayoutEffect(() => sheetShown(req.id), [req.id])
   return (
     <div className="sheet-backdrop">
       <div className="sheet" role="dialog">

@@ -211,6 +211,9 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     regular files of at most 1 MiB), no entry can break it, its work lines carry only strings, and nothing is restored from
     memory: a failed read skips the write instead. The lock view clears the group at once. At the pinned Hermes every
     request the app accepts carries a session id, so nothing changed for a request without one.
+  - **Review round 3.** A sheet that follows another request ignores answers for 700 ms, except Deny and Cancel. The feed
+    refuses text that can't be encoded, replaces a file this user may not read, runs off the event loop, reads at most 64
+    process entries, and drops entries dated in the future.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
 **Next:** the new look of the chat screen, the side panel, the

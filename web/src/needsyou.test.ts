@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
-import { aimAtNeed, currentRequest, mergeNeeds, needWords, needsPhrase, sameNeeds, setRequestChat } from './needsyou'
+import { SHEET_PAUSE_MS, aimAtNeed, currentRequest, mergeNeeds, needWords, needsPhrase, sameNeeds, setRequestChat, sheetCanAnswer, sheetShown } from './needsyou'
 import { getState, setState, type ActiveSession, type WaitingItem } from './store'
 
 const req = (id: string, method: string, session: string) => ({ id, method, params: { session_id: session } }) as unknown as ServerRequest
@@ -107,5 +107,54 @@ describe('which request the sheet shows', () => {
     aimAtNeed('T')
     setState({ opening: null })
     expect(getState().needTarget).toBeNull()
+  })
+})
+
+describe('the pause after a sheet takes over', () => {
+  let clock = 1_000_000
+  const a = req('a', 'approval', 'rt-A')
+  const b = req('b', 'approval', 'rt-B')
+  const put = (...requests: ServerRequest[]) => {
+    setState({ requests })
+    return currentRequest(getState())?.id
+  }
+  beforeEach(() => {
+    setRequestChat(chatOf)
+    vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    put()
+    clock += 60_000
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('does not delay the first sheet after none', () => {
+    put(a)
+    expect(sheetCanAnswer('a', clock)).toBe(true)
+  })
+  it('ignores answers to the sheet that replaced another until the pause is over', () => {
+    put(a, b)
+    clock += 5000
+    expect(put(b)).toBe('b')
+    expect(sheetCanAnswer('b', clock + 60)).toBe(false)
+    expect(sheetCanAnswer('b', clock + SHEET_PAUSE_MS - 1)).toBe(false)
+    expect(sheetCanAnswer('b', clock + SHEET_PAUSE_MS)).toBe(true)
+  })
+  it('counts a tap made before the sheet appeared as too soon', () => {
+    put(a, b)
+    put(b)
+    expect(sheetCanAnswer('b', clock - 10)).toBe(false)
+  })
+  it('counts from when the sheet is really on screen', () => {
+    put(a, b)
+    put(b)
+    clock += 500
+    sheetShown('b')
+    expect(sheetCanAnswer('b', clock + 300)).toBe(false)
+  })
+  it('does not pause a request that arrives once the sheet has closed', () => {
+    put(a)
+    put()
+    clock += 100
+    put(b)
+    expect(sheetCanAnswer('b', clock)).toBe(true)
   })
 })

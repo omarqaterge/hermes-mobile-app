@@ -488,6 +488,112 @@ module.exports = async t => {
     await withdraw('srv-needs-third', 'clarify')
     await sheet.waitFor({ state: 'detached', timeout: 3000 })
 
+    // A tap meant for one request never answers the next, which appears with its buttons in the same place.
+    const answers = id => calls().filter(c => c.answer === id)
+    const asksToRun = (id, command) => ({ id, method: 'approval', params: { session_id: live, command, description: '', choices: ['once', 'deny'] } })
+    const allowOnce = sheet.getByRole('button', { name: 'Allow once' })
+    const settle = () => sleep(800) // longer than the pause, and than any sheet's arrival
+    // In the page, so the time between the taps is the time asked for even on a busy machine: taps Allow once, waits,
+    // taps what is then at the same spot, and says how long after the first tap the second came.
+    const doubleTap = gap => page.evaluate(async gap => {
+      const allow = [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === 'Allow once')
+      const r = allow.getBoundingClientRect()
+      const x = r.left + r.width / 2, y = r.top + r.height / 2
+      const t0 = performance.now()
+      allow.click()
+      await new Promise(done => setTimeout(done, gap))
+      document.elementFromPoint(x, y).click()
+      return performance.now() - t0
+    }, gap)
+    for (const level of ['off', 'reduced', 'full']) {
+      await setMotion(page, level)
+      for (const gap of [60, 300, 600]) {
+        const [first, second] = [`srv-tap-${level}-${gap}-1`, `srv-tap-${level}-${gap}-2`]
+        await settle()
+        await frame(asksToRun(first, 'first command'))
+        await frame(asksToRun(second, 'second command'))
+        await sheet.getByText('first command').waitFor({ timeout: 3000 })
+        await settle()
+        const took = await doubleTap(gap)
+        await sheet.getByText('second command').waitFor({ timeout: 3000 })
+        await sleep(100)
+        check(answers(first).length === 1 && answers(first)[0].result.choice === 'once', `sheet pause: the first tap answers the first request (${level}, ${gap} ms)`)
+        check(took >= 690 || answers(second).length === 0, `sheet pause: a second tap ${gap} ms later does not allow the next request (${level}, it came after ${Math.round(took)} ms)`)
+        await settle()
+        await allowOnce.click()
+        await sheet.waitFor({ state: 'detached', timeout: 3000 })
+        await sleep(100)
+        check(answers(second).length === 1 && answers(second)[0].result.choice === 'once', `sheet pause: a tap after the pause allows it (${level}, ${gap} ms)`)
+      }
+    }
+    await setMotion(page, 'off')
+    // A real double tap, through the pointer.
+    await settle()
+    await frame(asksToRun('srv-tap-real-1', 'first command'))
+    await frame(asksToRun('srv-tap-real-2', 'second command'))
+    await sheet.getByText('first command').waitFor({ timeout: 3000 })
+    await settle()
+    const spot = await allowOnce.boundingBox()
+    await page.mouse.dblclick(spot.x + spot.width / 2, spot.y + spot.height / 2)
+    await sheet.getByText('second command').waitFor({ timeout: 3000 })
+    await sleep(100)
+    check(answers('srv-tap-real-1').length === 1 && answers('srv-tap-real-2').length === 0, 'sheet pause: a real double tap answers only the first request')
+    await sheet.getByRole('button', { name: 'Deny' }).click() // Deny works during the pause
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    await sleep(100)
+    check(answers('srv-tap-real-2').length === 1 && answers('srv-tap-real-2')[0].result.choice === 'deny', 'sheet pause: Deny works at once')
+    // The first sheet after none is not delayed.
+    await settle()
+    await frame(asksToRun('srv-tap-first', 'only command'))
+    await sheet.getByText('only command').waitFor({ timeout: 3000 })
+    await page.evaluate(() => [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === 'Allow once').click())
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    await sleep(100)
+    check(answers('srv-tap-first').length === 1, 'sheet pause: the first sheet after none answers at once')
+    // The other kinds: every answer waits, only a refusal goes through.
+    const afterAllow = (labels, fill) => page.evaluate(async ({ labels, fill }) => {
+      const button = t => [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === t)
+      button('Allow once').click()
+      await new Promise(requestAnimationFrame)
+      if (fill) {
+        const input = document.querySelector('[role="dialog"] input')
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, fill)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await new Promise(requestAnimationFrame)
+      }
+      const t0 = performance.now()
+      for (const l of labels) button(l)?.click()
+      return performance.now() - t0
+    }, { labels, fill })
+    await settle()
+    await frame(asksToRun('srv-kind-1', 'first command'))
+    await frame({ id: 'srv-kind-q', method: 'clarify', params: { session_id: live, question: 'Pick one?' } })
+    await sheet.getByText('first command').waitFor({ timeout: 3000 })
+    await settle()
+    await afterAllow(['Skip'])
+    await sheet.getByText('Pick one?').waitFor({ timeout: 3000 })
+    await sleep(100)
+    check(answers('srv-kind-q').length === 0, 'sheet pause: Skip waits on a question that took over')
+    await settle()
+    await sheet.getByRole('button', { name: 'Skip' }).click()
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    await sleep(100)
+    check(answers('srv-kind-q').length === 1, 'sheet pause: Skip works after the pause')
+    await settle()
+    await frame(asksToRun('srv-kind-2', 'first command'))
+    await frame({ id: 'srv-kind-p', method: 'sudo', params: { session_id: live, command: 'x' } })
+    await sheet.getByText('first command').waitFor({ timeout: 3000 })
+    await settle()
+    await afterAllow(['Send'], 'secret')
+    await sheet.getByRole('button', { name: 'Send' }).waitFor({ timeout: 3000 })
+    await sleep(100)
+    check(answers('srv-kind-p').length === 0, 'sheet pause: Send waits on a password request that took over')
+    await sheet.getByRole('button', { name: 'Cancel' }).click() // refusing is never held back
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    await sleep(100)
+    check(answers('srv-kind-p').length === 1 && !!answers('srv-kind-p')[0].error, 'sheet pause: Cancel works during the pause')
+    await settle()
+
     // Over the lock screen nothing says which chat waits for what.
     await setWaiting([asks('s-13', 'question')], ['s-13'])
     await page.getByRole('button', { name: /Chat 13: Needs you · asked a question/ }).waitFor({ timeout: 4000 })
