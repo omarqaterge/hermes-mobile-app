@@ -57,6 +57,8 @@ def _path(*parts):  # /proc as on the phone, also on a computer without one: onl
 _path.home = _Path.home
 papi.Path = _path
 plugin._send = lambda *a, **kw: None
+# The status thread sleeps on the event it was started with: a new one never wakes it, so it can't write the file mid-test.
+plugin._status_dirty = types.SimpleNamespace(set=lambda: None)
 plugin.ACTIVITY_FILE = os.path.join(home, ".hermes", "mobile", "activity.json")
 
 
@@ -243,6 +245,54 @@ plugin._waiting.clear()
 plugin._active.clear()
 plugin._publish_activity()
 check("a removed file starts empty", entries() == {}, entries())
+
+print("what the file can't make the feed say")
+now = time.time()
+good = {"session": "real", "kind": "approval", "who": "", "profile": "p", "since": now, "until": now + 60}
+alive = str(os.getpid())
+forged = [
+    "not a dict", 7, None, ["x"],
+    dict(good, session=""), dict(good, session=5), dict(good, kind="anything the agent likes"), dict(good, kind=["approval"]),
+    dict(good, who="Your bank"), dict(good, who=["A sub-agent"]), dict(good, until=now + plugin.WAIT_LONGEST + 600),
+    dict(good, until="soon"), dict(good, until=True), dict(good, until=float("inf")), dict(good, until=float("nan")),
+    dict(good, since="then"), dict(good, since=float("nan")),
+]
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({alive: {"at": now, "items": [], "waiting": forged + [dict(good, extra="request text")]},
+               "not-a-pid": {"at": now, "items": [], "waiting": [dict(good, session="no-pid")]},
+               "111": "not a dict", "112": None, "113": ["x"]}, f)
+w = waiting()
+check("only the well-formed entry of a real process is served", [x["session"] for x in w] == ["real"], w)
+check("with only the known fields", set(w[0]) == {"session", "kind", "who", "profile", "since", "until"} if w else False, w)
+check("the limits agree", papi.WAIT_LONGEST == plugin.WAIT_LONGEST and papi.WAIT_KINDS == plugin.WAIT_KINDS and papi.WAIT_WHO == plugin.WAIT_WHO)
+with open(plugin.ACTIVITY_FILE, "w") as f:  # as another process's entry: a writer replaces its own
+    json.dump({"4343": {"at": now, "items": [], "waiting": forged + [good]},
+               "not-a-pid": {"at": now, "items": [], "waiting": [dict(good, session="no-pid")]},
+               "111": "not a dict", "112": None, "113": ["x"]}, f)
+plugin._waiting.clear()
+plugin._active.clear()
+plugin._publish_activity()
+kept = entries()
+check("the writer survives all of it and keeps only the good entry", list(kept) == ["4343"] and [x["session"] for x in kept["4343"]["waiting"]] == ["real"], kept)
+plugin._waiting.clear()
+plugin._wait_begin("long", "question", 10 * plugin.WAIT_LONGEST)
+plugin._wait_begin("endless", "question", float("inf"))
+check("a very long limit from Hermes is capped", all(v["until"] <= time.time() + plugin.WAIT_LONGEST for v in plugin._waiting.values()) and len(waiting()) >= 2, plugin._waiting)
+plugin._waiting.clear()
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({alive: {"at": "x", "items": [{"session": "bad-at", "ts": now}]},
+               "1": {"at": now, "items": "nope"},
+               str(os.getpid()) + "0": {"at": now},
+               "text-key": "not a dict", "other-key": 5,
+               }, f)
+check("a malformed working entry can't stop the feed", answer() == {"items": [], "waiting": []}, answer())
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({alive: {"at": now, "items": ["x", {"session": "no-ts"}, {"session": "bad", "ts": "y"}, {"session": "fine", "ts": now}]}}, f)
+check("nor a malformed item", [i["session"] for i in answer()["items"]] == ["fine"], answer())
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    f.write("[1, 2]")
+check("nor a file that isn't an object", answer() == {"items": [], "waiting": []}, answer())
+os.remove(plugin.ACTIVITY_FILE)
 
 print("nothing here can answer")
 src = (ROOT / "hermes-plugin" / "hermes-mobile" / "dashboard" / "plugin_api.py").read_text()

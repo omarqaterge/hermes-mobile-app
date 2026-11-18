@@ -19,6 +19,7 @@ event's text.
 
 import contextlib
 import json
+import math
 import os
 import re
 import shutil
@@ -47,6 +48,8 @@ _turn_started: dict = {}  # session id -> when its turn began (diagnostic log); 
 MAX_SUBAGENTS = 1024  # sub-agent ids remembered; a sub-agent finishes long before this many newer ones start
 MAX_WAITING = 64  # open requests remembered; the oldest go
 WAIT_LONGEST = 86400  # a request with no time limit (Hermes's timeout set to 0) stops being listed after this long
+WAIT_KINDS = ("approval", "phone_data", "question")  # all a `waiting` entry can say it is
+WAIT_WHO = ("", "A sub-agent")  # and who can be asking: anything else in the file was not written by this plugin
 PHONE_DATA_COMMAND = "<phone_data> (plugin approval rule)"  # the label Hermes gives the phone data tool's approval
 MAX_LAST_END = 256  # chats whose last turn end is remembered (only the next FAIL_GRACE seconds matter)
 MAX_TURN_STARTS = 256  # turns whose start is remembered; a chat with a status entry is never dropped to make room
@@ -306,6 +309,33 @@ def _read_activity() -> dict:
     return data
 
 
+def _is_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _wait_entry_ok(pid, w, now: float) -> bool:
+    """The file can be edited by anything running as this user (an agent's command too), so an entry counts only if it
+    is what _wait_begin writes: a process id, a known kind and who, and a time limit no further off than ours."""
+    return (str(pid).isdigit() and isinstance(w, dict) and isinstance(w.get("session"), str) and bool(w["session"])
+            and isinstance(w.get("kind"), str) and w["kind"] in WAIT_KINDS
+            and isinstance(w.get("who"), str) and w["who"] in WAIT_WHO
+            and _is_number(w.get("since")) and _is_number(w.get("until")) and now < w["until"] <= now + WAIT_LONGEST)
+
+
+def _kept_entry(pid, v, now: float):
+    """What stays of another process's entry, or None. Anything malformed is left out, so it can't stop this write."""
+    if not isinstance(v, dict):
+        return None
+    items, at = v.get("items"), v.get("at")
+    working = isinstance(items, list) and bool(items) and _is_number(at) and now - at < 300
+    raw = v.get("waiting")
+    # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
+    waits = [w for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []
+    if not working and not waits:
+        return None
+    return {"at": at if _is_number(at) else 0, "items": items if working else [], **({"waiting": waits} if waits else {})}
+
+
 def _publish_activity() -> None:
     """Write what this process is doing to a shared file so the app's banner (GET /activity) can show it.
     One entry per Hermes process (pid); readers drop entries that stopped updating."""
@@ -320,13 +350,8 @@ def _publish_activity() -> None:
                 for key in [k for k, v in _waiting.items() if v["until"] <= now]:
                     del _waiting[key]
                 waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until")} for v in _waiting.values()]
-            data = _read_activity()
-
-            def keep(v: dict) -> bool:
-                # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
-                return bool(v.get("items") and now - v.get("at", 0) < 300) or any(w.get("until", 0) > now for w in v.get("waiting", []))
-
-            data = {k: v for k, v in data.items() if keep(v)}
+            kept = {k: _kept_entry(k, v, now) for k, v in _read_activity().items()}
+            data = {k: v for k, v in kept.items() if v is not None}
             if mine or waits:
                 data[str(os.getpid())] = {"at": now, "items": mine, **({"waiting": waits} if waits else {})}
             else:
@@ -368,7 +393,7 @@ def _wait_begin(session_id, kind: str, timeout) -> None:
     if not session_id:
         return
     now = time.time()
-    limit = timeout if isinstance(timeout, (int, float)) and timeout > 0 else WAIT_LONGEST
+    limit = min(timeout, WAIT_LONGEST) if _is_number(timeout) and timeout > 0 else WAIT_LONGEST
     with _lock:
         chat, who = _asker(session_id)
         cur = _waiting.pop((chat, kind, who), None)

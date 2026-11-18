@@ -8,6 +8,7 @@ sync script sees ordinary, canonical files.
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -876,11 +877,35 @@ async def delete_diag():
 
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
+WAIT_LONGEST = 86400  # the longest a request is listed (the same limit as the hooks' in __init__.py)
+WAIT_KINDS = ("approval", "phone_data", "question")
+WAIT_WHO = ("", "A sub-agent")
+
+
+def _is_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _waiting_entry(pid, w, now: float):
+    """One open request as the app may see it, or None. activity.json can be edited by anything running as Hermes's
+    user, so only what the hooks write passes, field by field, and nothing else in the entry goes out."""
+    if not (str(pid).isdigit() and isinstance(w, dict)):
+        return None
+    session, kind, who, since, until = (w.get(k) for k in ("session", "kind", "who", "since", "until"))
+    if not (isinstance(session, str) and session and isinstance(kind, str) and kind in WAIT_KINDS
+            and isinstance(who, str) and who in WAIT_WHO and _is_number(since) and _is_number(until)
+            and now < until <= now + WAIT_LONGEST):
+        return None
+    profile = w.get("profile")
+    return {"session": session, "kind": kind, "who": who, "profile": profile if isinstance(profile, str) else "",
+            "since": since, "until": until}
+
+
 @router.get("/activity")
 async def get_activity():
     """Live work reported by the plugin hooks in every Hermes process, including background self-review. `waiting`:
     the requests (approval, phone data, question) that are open right now: which chat, what kind, who asks, since and
-    until when. It carries none of a request's text and nothing here can answer one."""
+    until when. It carries none of a request's text and nothing here can answer one. A malformed entry is skipped."""
     import time
 
     _slow_all()  # in case the gateway (or a chat's poller) loaded after this module
@@ -890,23 +915,34 @@ async def get_activity():
         data = json.loads(path.read_text())
     except Exception:
         return {"items": [], "waiting": []}
+    if not isinstance(data, dict):
+        return {"items": [], "waiting": []}
     now = time.time()
     items = []
     waiting = []
     for pid, entry in data.items():
+        if not isinstance(entry, dict):
+            continue
         # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries.
         if str(pid).isdigit() and not Path("/proc", str(pid)).exists():
             continue
         # Before the age check: nothing refreshes an entry while its chat only waits for an answer.
-        waiting += [w for w in entry.get("waiting", []) if w.get("until", 0) > now]
-        if now - entry.get("at", 0) > 300:
+        raw = entry.get("waiting")
+        for w in raw if isinstance(raw, list) else []:
+            clean = _waiting_entry(pid, w, now)
+            if clean:
+                waiting.append(clean)
+        at, listed = entry.get("at"), entry.get("items")
+        if not _is_number(at) or now - at > 300 or not isinstance(listed, list):
             continue
-        for it in entry.get("items", []):
+        for it in listed:
+            if not isinstance(it, dict) or not _is_number(it.get("ts")):
+                continue
             limit = 60 if it.get("review") else 180
-            if now - it.get("ts", 0) <= limit:
+            if now - it["ts"] <= limit:
                 items.append(it)
-    items.sort(key=lambda i: i.get("ts", 0), reverse=True)
-    waiting.sort(key=lambda w: w.get("since", 0))  # oldest first, so a row keeps its place in the list
+    items.sort(key=lambda i: i["ts"], reverse=True)
+    waiting.sort(key=lambda w: w["since"])  # oldest first, so a row keeps its place in the list
     return {"items": items, "waiting": waiting}
 
 
