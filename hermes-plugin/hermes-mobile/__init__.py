@@ -935,8 +935,50 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
     return None  # observe only
 
 
+_RESULT_SESSION = re.compile(r'\\*"session_id\\*"\s*:\s*\\*"([^"\\]{1,200})')
+_RESULT_ID = re.compile(r'\\*"id\\*"\s*:\s*\\*"([^"\\]{1,200})')
+_RESULT_SCAN = 2_000_000   # characters of a result looked through
+_CHATS_NAMED = 50          # chats of one result looked up
+
+
+def _chats_read_by(tool_name, args, result) -> set:
+    """The chats whose messages this tool call just returned: `session_search`'s results, `find_chats` when it searched
+    for words (its snippets are their text). Read from the text, so a cut-off result still counts."""
+    out: set = set()
+    text = result if isinstance(result, str) else json.dumps(result, default=str)
+    text = text[:_RESULT_SCAN]
+    for name, a in _phone_taint()._calls(tool_name, args):
+        if name == "session_search":
+            out.update(_RESULT_SESSION.findall(text))
+            if isinstance(a.get("session_id"), str):
+                out.add(a["session_id"])
+        elif name == "find_chats" and a.get("text"):
+            out.update(_RESULT_ID.findall(text))
+    return out
+
+
+def _taint_from_reading(tool_name, args, result, session_id, task_id) -> None:
+    """A chat that reads the messages of one that has read phone data now holds them too, so it counts as having read: it
+    is asked before sending anything out, and a background task is blocked. Never raises."""
+    try:
+        pt = _phone_taint()
+        if not pt.any_read():
+            return
+        ids = list(pt.chat_ids(session_id, task_id))
+        found = [c for c in _chats_read_by(tool_name, args, result) if c not in ids][:_CHATS_NAMED]
+        if not ids or not found:
+            return
+        _inherit_read(found)
+        if pt.has_read(found) and not pt.has_read(ids):
+            pt.mark(ids)
+            _report_taint(ids)
+    except Exception:
+        pass
+
+
 def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, session_id=None, turn_id=None,
-                       tool_call_id=None, **_):
+                       tool_call_id=None, task_id=None, **_):
+    _taint_from_reading(tool_name, args, result, session_id, task_id)
     tool_name, args = _peel_bridge(tool_name, args)
     if tool_name in ("write_file", "patch"):
         try:
