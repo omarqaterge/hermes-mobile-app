@@ -86,7 +86,7 @@ module.exports = async t => {
   check(answers('srv-tap-first').length === 1, 'sheet pause: the first sheet after none answers at once')
   // The other kinds: every answer waits, only a refusal goes through.
   const afterAllow = (labels, fill) => page.evaluate(async ({ labels, fill }) => {
-    const button = t => [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === t)
+    const button = t => [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === t || b.getAttribute('aria-label') === t)
     button('Allow once').click()
     await new Promise(requestAnimationFrame)
     if (fill) {
@@ -152,6 +152,38 @@ module.exports = async t => {
   await sleep(100)
   check((await page.getByText('Can’t allow phone data here').count()) === 0 && answers('srv-kind-d').length === 0, 'sheet pause: a phone data Allow waits too')
   await sheet.getByRole('button', { name: 'Deny' }).click()
+  await sheet.waitFor({ state: 'detached', timeout: 3000 })
+  await settle()
+
+  // A batch of questions: a tap during the pause records no choice and moves to no other question.
+  await frame(asksToRun('srv-batch-1', 'first command'))
+  await frame({ id: 'srv-batch-q', method: 'clarify', params: { session_id: live, questions: [
+    { qid: 'a', question: 'Which size?', choices: ['Small', 'Large'], multi_select: false },
+    { qid: 'b', question: 'Which colour?', choices: ['Red', 'Blue'], multi_select: false }
+  ] } })
+  await sheet.getByText('first command').waitFor({ timeout: 3000 })
+  await settle()
+  await afterAllow(['Small'])
+  await sheet.getByText('Which size?').waitFor({ timeout: 3000 })
+  await sleep(450) // longer than a picked choice takes to move on, still inside the pause
+  check((await sheet.getByText('Question 1 of 2').count()) === 1 && (await sheet.getByRole('button', { name: 'Small' }).getAttribute('aria-pressed')) === 'false', 'sheet pause: a choice tapped during the pause is not recorded and does not move on')
+  await settle()
+  for (const [name, control] of [['Next', 'Next'], ['a question dot', 'Go to question 2']]) {
+    await frame({ id: `srv-batch-next-${name}`, method: 'clarify', params: { session_id: live, questions: [
+      { qid: 'x', question: 'First of two?', choices: ['Yes'], multi_select: false },
+      { qid: 'y', question: 'Second of two?', choices: ['No'], multi_select: false }
+    ] } })
+    await sheet.getByRole('button', { name: 'Skip' }).click() // the batch above, or the last one of this loop, gives way
+    await sheet.getByText('First of two?').waitFor({ timeout: 3000 })
+    await page.evaluate(c => [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === c || b.getAttribute('aria-label') === c).click(), control)
+    await sleep(100)
+    check((await sheet.getByText('First of two?').count()) === 1, `sheet pause: ${name} does not move on during the pause`)
+    await settle()
+  }
+  await sheet.getByRole('button', { name: 'Yes' }).click()
+  await sheet.getByText('Second of two?').waitFor({ timeout: 3000 })
+  check((await sheet.getByRole('button', { name: 'Go to question 1' }).count()) === 1, 'sheet pause: a choice works after the pause, and moves on')
+  await sheet.getByRole('button', { name: 'Skip' }).click()
   await sheet.waitFor({ state: 'detached', timeout: 3000 })
   await settle()
 

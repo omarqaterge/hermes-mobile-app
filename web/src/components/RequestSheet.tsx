@@ -110,11 +110,13 @@ function Approval({ req }: { req: ServerRequest }) {
 }
 
 function OneQuestion({
+  req,
   q,
   value,
   onChange,
   onPicked
 }: {
+  req: ServerRequest
   q: ClarifyQuestion
   value: string
   onChange: (v: string) => void
@@ -133,14 +135,14 @@ function OneQuestion({
                 key={c}
                 className={`choice${on ? ' on' : ''}`}
                 aria-pressed={on}
-                onClick={() => {
+                onClick={confirming(req, () => {
                   haptic()
                   if (q.multi_select) onChange((on ? selected.filter(x => x !== c) : [...selected, c]).join('\n'))
                   else {
                     onChange(c)
                     onPicked?.()
                   }
-                }}
+                })}
               >
                 <Icon n={q.multi_select ? (on ? 'squareCheck' : 'square') : on ? 'active' : 'circle'} />{' '}
                 {c}
@@ -208,7 +210,7 @@ function Clarify({ req }: { req: ServerRequest }) {
                 key={q.qid}
                 className={`clarify-dot${(answers[q.qid] || '').trim() ? ' done' : ''}${k === step ? ' on' : ''}`}
                 aria-label={`Go to question ${k + 1}`}
-                onClick={() => goTo(k)}
+                onClick={confirming(req, () => goTo(k))}
               />
             ))}
           </span>
@@ -218,6 +220,7 @@ function Clarify({ req }: { req: ServerRequest }) {
         {shown.map(q => (
           <OneQuestion
             key={q.qid}
+            req={req}
             q={q}
             value={answers[q.qid] || ''}
             onChange={v => {
@@ -238,7 +241,7 @@ function Clarify({ req }: { req: ServerRequest }) {
           </button>
         ) : null}
         {multi && !last ? (
-          <button className="btn primary" onClick={() => goTo(step + 1)}>
+          <button className="btn primary" onClick={confirming(req, () => goTo(step + 1))}>
             Next
           </button>
         ) : (

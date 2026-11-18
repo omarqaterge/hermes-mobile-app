@@ -216,6 +216,8 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     process entries, and drops entries dated in the future.
     The pause's browser checks live in `36-sheet-pause.cjs`: in `05` they kept the shared page idle for more than 45 s, so
     the app re-synced the chat `05` leaves running, and `06` saw a late `session.close`. Keep `05` short.
+  - **Final review.** Only live processes count toward the feed's 64 places, and the writer drops dead ones and always
+    keeps its own entry. The sheet's pause restarts when the app comes back and also covers choices, Next and the dots.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
 **Next:** the new look of the chat screen, the side panel, the
