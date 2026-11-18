@@ -198,6 +198,43 @@ they reach it as one word (a quoted `"--motion off --glass off"`, as happened in
 neither and prints no "motion off, glass off" in its median line, so the page runs with the app's own defaults (Full,
 glass on). Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
 
+The Settings main page (task 06): `uicost.cjs --runs 7` at 4x CPU, two rounds each, the build before (`redesign` at
+the start of the task) and the build after run in turn on one machine, with the options as separate words. `uicost.cjs`
+gained the moments for this: opening Settings from the side panel's gear (until the search box shows and nothing on it
+moves), then each page from its row on the main page (until the page's own first row shows and is still): Behaviour
+(found by its old name "Hermux settings" on the build before), Models, Access & privacy and About & help (pages only the
+new build has). Both builds were measured with the new script.
+
+| Date (change) | Moment | Before | After | Change |
+|---|---|---|---|---|
+| 2026-11-18 (Settings main page, effects on: Glass on, Animations Full) | Start-up | 493 / 498 ms, work 468 / 474 ms | 502 / 512 ms, work 480 / 488 ms | +2 to 3% (Settings is not drawn at start-up; the new CSS file is the only change on this path) |
+| | Opening a chat | 34 / 30 ms, work 39 / 37 ms | 30 / 31 ms, work 38 / 39 ms | none |
+| | First words of a reply | 394 / 394 ms | 394 / 393 ms | none |
+| | Scrolling a long chat | work 255 / 261 ms, no frame over 25 ms | work 257 / 268 ms, no frame over 25 ms | +1 to 3% |
+| | Opening the chat list | 196 / 193 ms, work 21 / 22 ms | 191 / 196 ms, work 21 / 22 ms | none |
+| | Opening a row's menu / the chat's menu | work 24 / 24 and 28 / 28 ms | work 23 / 24 and 28 / 30 ms | none |
+| | **Opening Settings** | 447 / 433 ms, work 67 / 68 ms | 433 / 432 ms, work 60 / 55 ms | −1 to 3% time, **−10 to 19% work** |
+| | **Opening Behaviour** | 41 / 42 ms, work 55 / 54 ms | 44 / 44 ms, work 60 / 60 ms | **+5 to 7% time, +9 to 11% work** (see below) |
+| | Opening Models / Access & privacy / About & help (new) | – | 3 / 3, 5 / 5, 6 / 7 ms; work 7 / 7, 9 / 9, 10 / 11 ms | new pages |
+| 2026-11-18 (Settings main page, effects off: Glass off, Animations Off) | Start-up | 494 / 540 ms | 529 / 523 ms | none (noisy on both) |
+| | **Opening Settings** | 28 / 30 ms, work 32 / 34 ms | 23 / 22 ms, work 26 / 27 ms | **−20% work** |
+| | **Opening Behaviour** | 39 / 48 ms, work 51 / 57 ms | 55 / 55 ms, work 64 / 64 ms | **+12 to 25% work** (see below) |
+| | Opening Models / Access & privacy / About & help (new) | – | 4 / 3, 5 / 5, 7 / 7 ms; work 6 / 6, 8 / 8, 10 / 10 ms | new pages |
+
+**Opening Behaviour is over the 5% limit, and the cause is not found.** Opening Settings and then Behaviour costs the same
+main-thread work in total on both builds (effects on: 122 / 122 ms before, 120 / 115 ms after; effects off: 83 / 91 ms
+before, 90 / 91 ms after): the work moved from the main page, which is much shorter now, to Behaviour. A timeline trace of
+the whole move to Behaviour until nothing on it moves (5 runs each, all the main thread's tasks) gives 79.6 ms before and
+80.3 ms after (+1%): a little more layout and paint (Behaviour now starts with Replies and has three more rows: Dynamic
+UI, "See what Hermux remembers", Advanced settings) and a little less script. Tried, each measured against the build
+before in alternating rounds of 9 (the extra ~6 ms of work held in every round): the Dynamic UI answer redrawing only its
+section (`RepliesSection`, kept: simpler, no measurable change); the build without `settings.css` (no change); without
+the three new rows (about 2 ms of the 6); without their icons (no change); without the attention cards (no change); the
+main page asking the plugin for Dynamic UI ahead, as the old main page did, so Behaviour draws once (no change,
+reverted). At 4x CPU the difference is 5 to 7 ms of work on one tap that happens rarely; on a phone it is about one
+frame. Left for the owner to decide (task 06's PR). Not measured here: heat and battery on a phone
+(`docs/manual-tests.md`).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

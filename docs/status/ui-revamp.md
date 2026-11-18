@@ -127,6 +127,27 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   It now compares at answer time and uploads through the same debounce (`web/src/order.test.ts`); the check counts only
   writes made since it began. The race was on `redesign` already, the same code.
 
+- **The Settings main page (task 06, PR against `redesign`).** The main page is Search settings, the attention cards
+  (Connect a model in gold → Models; Hermux is offline in red → Reconnect; Update to <version>, the update row itself;
+  each only when it applies, `web/src/settings.css`) and two sections: Hermux (Models, Connectors, Behaviour, Access &
+  privacy) and This app (Appearance, Voice, About & help), each row with its value or line and no switch. New pages:
+  Models (Default models, Model providers, All keys), Access & privacy (Approvals, Phone data, Background apps, Kept on
+  this phone) and About & help (Updates, Help, Versions, Developer, Uninstall last); "Hermux settings" is Behaviour,
+  starting with Replies (Dynamic UI, moved to `components/DynamicUI.tsx`), with "See what Hermux remembers" (Memory
+  inside Settings) and Advanced settings last. Back goes up one step (`PARENT` in `Settings.tsx`). The protected rows
+  (Auto for all chats, Confirm approvals with fingerprint, Phone data, Background apps, the diagnostic log) are the same
+  components, byte for byte, in their new place. Old place names in the app, the plugin's messages and the Android
+  notification text now name the new places. Decision: `settings-layout.md`. Checks: the new part of `30-settings.cjs`;
+  the other Settings checks only navigate differently (`lib.cjs` `settingsPage`), none removed or reworded. `uicost.cjs`
+  gained opening Settings and each page. Costs: opening Settings is 10 to 20% cheaper, **opening Behaviour 9 to 12% more
+  work** (the total for Settings then Behaviour is the same; cause not found after six tries, left for the owner:
+  docs/performance-history.md). Needs a phone: the moved protections, the cards, TalkBack, battery (manual-tests).
+  - Found, not changed (on `redesign` before this task, same failures there): `08-queue-and-feed.cjs` "then the saved
+    document replaces it" and "idle label says who wrote it" fail on every run on this machine; at 4x CPU
+    `16-canvas-panel.cjs` stops at its line 402 (`getByText('Plan', { exact: true })` finds the tab and the document's
+    heading) and `29-phone-data.cjs` "a Markdown document's remote image waits behind a tap" failed once in three (it
+    waits a fixed 900 ms for the document to open). Each belongs in its own PR.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
@@ -165,7 +186,7 @@ covered), `31-fixed-points.cjs` green.
 
    Output: `android/build/hermes-mobile.apk`. Install it like an update (open the file on the phone, or
    `adb install -r android/build/hermes-mobile.apk`): same key and same build number, so Android keeps all the app's
-   data. Never `HM_DEVTOOLS` with the release key (the script refuses). Settings → About shows `0.9.8-redesign`; the
+   data. Never `HM_DEVTOOLS` with the release key (the script refuses). Settings → About & help shows `0.9.8-redesign`; the
    app's update check reads it as 0.9.8, so it offers nothing until the next release, which then replaces the test
    build as a normal update. Checked on 2026-11-17 with a throwaway key: the APK says versionCode 908, versionName
    0.9.8-redesign.
@@ -174,7 +195,7 @@ covered), `31-fixed-points.cjs` green.
    - **The Hermux plugin inside Hermes: yes, it is replaced.** The APK carries the plugin of the commit it was built
      from, stamped with that commit's time, which is newer than the release's, so the app's plugin update (spec 6.6)
      installs it at the first quiet moment. After going back, the release finds the installed plugin `newer` and leaves
-     it ("Newer than this app's copy, so it was left as it is" in Settings → About → Hermux plugin): **the plugin stays
+     it ("Newer than this app's copy, so it was left as it is" in Settings → About & help → Hermux plugin): **the plugin stays
      on the redesign's copy**. Today that copy is `main`'s plugin, which differs from v0.9.8's only inside the plugin
      (bounded memory of chats and sub-agents, Auto access following a chat into its sub-agents, cards no longer allowed
      to call the two file tools, card pictures waiting for a tap); no route or field was removed or renamed, so the
@@ -193,12 +214,12 @@ covered), `31-fixed-points.cjs` green.
    2. Open it and tap Update: same key and same build number, so it installs over the test build and keeps the data
       (from a computer: `adb install -r hermux.apk`). Do not uninstall the test build first: uninstalling deletes the
       app's data.
-   3. Open Hermux: the chats and settings are there. Settings → About shows the release's version; the Hermux plugin
+   3. Open Hermux: the chats and settings are there. Settings → About & help shows the release's version; the Hermux plugin
       row says the plugin is newer than this app's copy, which is expected (see 2).
    4. Optional, to put the release's own plugin back as well: in Termux run the installer again,
       `curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh | bash`. It
       takes the latest release (not `main`), installs that release's plugin and scripts and opens Android's installer
-      for the release APK (the same build, so Update or cancel). Settings → About → Hermux plugin then says current.
+      for the release APK (the same build, so Update or cancel). Settings → About & help → Hermux plugin then says current.
    - To keep the release's plugin untouched for the whole trial instead: before installing the test build, in Debian
      run `touch /root/.hermes/hermes-mobile-plugin/hold` (the app then leaves the plugin and scripts alone, "Held for
      testing"), and `rm` that file after going back.
