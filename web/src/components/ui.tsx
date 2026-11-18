@@ -10,9 +10,11 @@ import { lessMotion } from '../motion'
 // ── grouped settings lists ──────────────────────────────────
 
 export function Section({ title, footer, children }: { title?: string; footer?: ReactNode; children: ReactNode }) {
+  // A titled section is a group named by its heading, so it can be found by role and name.
+  const id = useId()
   return (
-    <section className="set-section">
-      {title && <h3 className="set-heading">{title}</h3>}
+    <section className="set-section" role={title ? 'group' : undefined} aria-labelledby={title ? id : undefined}>
+      {title && <h3 className="set-heading" id={id}>{title}</h3>}
       <div className="set-card">{children}</div>
       {footer && <div className="set-foot">{footer}</div>}
     </section>

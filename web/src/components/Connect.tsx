@@ -1,4 +1,4 @@
-// Connecting Hermes to a model: the device-code sign-in sheet (used by Settings → Model providers) and the first-run
+// Connecting Hermes to a model: the device-code sign-in sheet (used by Settings → Models) and the first-run
 // welcome (the model step of the SetupFlow) that walks a fresh install through signing in or pasting a key, then picking a model.
 //
 // Sign-ins use the dashboard's own /api/providers/oauth routes (the ones Hermes's web dashboard uses):

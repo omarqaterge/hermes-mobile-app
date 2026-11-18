@@ -1,7 +1,7 @@
 // In the app shell: token and key, test build, remote debugging, Live mode, hidden display, assistant, setup, uninstall, Claude sign-in.
 const fs = require('fs')
 const path = require('path')
-const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsPage } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsPage, openPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -485,7 +485,7 @@ module.exports = async t => {
   }
   await np.close()
 
-  // ── Claude sign-in (Settings → Models → Model providers → Anthropic). Like the pinned Hermes, a Claude login (Termux's
+  // ── Claude sign-in (Settings → Models → Anthropic, under Connected or Add a provider). Like the pinned Hermes, a Claude login (Termux's
   // `hermes auth add anthropic` or the plugin's in-app login) only lands in the credential pool: the app must read it there. ──
   {
     const cs = await browser.newPage({ viewport: { width: 375, height: 812 } })
@@ -498,8 +498,10 @@ module.exports = async t => {
       await cs.getByRole('button', { name: /^Sessions/ }).click()
       await cs.getByRole('button', { name: 'Settings', exact: true }).click()
       await settingsPage(cs, 'Models')
-      await cs.locator('.set-row', { hasText: 'Model providers' }).click()
-      await cs.locator('.providers .set-row', { hasText: 'Anthropic (Claude)' }).click()
+      // Signed in: a row under Connected on the Models page; signed out: under Add a provider.
+      const anthropic = openPage(cs).getByRole('button', { name: 'Anthropic (Claude)' }).first()
+      if (!(await anthropic.waitFor({ timeout: 3000 }).then(() => true, () => false))) await cs.getByRole('button', { name: 'Add a provider' }).click()
+      await anthropic.click()
     }
     const claudeRow = cs.locator('.sheet .set-row', { hasText: 'Claude Pro / Max' })
     await openAccounts()

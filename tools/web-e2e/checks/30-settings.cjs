@@ -1,8 +1,8 @@
-// Settings' main page and the pages the redesign moves: Appearance (Dark / OLED black / Light theme, text size), the settings search, Default
-// models (one model for all bots); then the main page of task 06: its seven rows in two sections, the attention cards, each
+// Settings' main page and the pages the redesign moves: Appearance (Dark / OLED black / Light theme, text size), the settings search, New
+// chats use on the Models page (one model for all bots); then the main page of task 06: its seven rows in two sections, the attention cards, each
 // moved row on its new page, search landing there, Back from every page, and the rows and cards at 320 px and in Light.
 // Each control is found by its role and name, used, and its effect checked.
-const { WEB, calls, check, mock, nativeShell, settingsPage, contrast, expectIdle } = require('../lib.cjs')
+const { WEB, calls, check, mock, nativeShell, settingsPage, contrast, expectIdle, openPage, pageTitle, pageHeadings, settingsSection } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -49,11 +49,18 @@ module.exports = async t => {
     await sp.evaluate(() => window.hermesBack())
   }
 
-  // ── Default models (Settings → Models): Set one model for all bots asks Hermes to switch each bot's model ──
+  // ── New chats use (Settings → Models, two bots): Set one model for all bots asks Hermes to switch each bot's model ──
   {
+    // Two bots: Settings closed and opened again reads the bot list once more.
+    await mock({ bots: true })
+    // On Settings' main page first (the Back above leaves Appearance), so this Back closes Settings.
+    await sp.getByRole('searchbox', { name: 'Search settings' }).or(sp.getByRole('textbox', { name: 'Search settings' })).waitFor({ timeout: 3000 }).catch(() => {})
+    await sp.evaluate(() => window.hermesBack())
+    await openPage(sp).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await openSettings()
     await settingsPage(sp, 'Models')
-    await sp.getByRole('button', { name: /^Default models/ }).click()
-    await sp.getByRole('button', { name: /^Set one model for all bots/ }).click()
+    await settingsSection(sp, /^New chats use$/).getByRole('button').first().click()
+    await sp.getByRole('switch', { name: 'Set one model for all bots' }).click()
     const since = Date.now()
     const picker = sp.getByRole('dialog').filter({ has: sp.getByPlaceholder('Search models…') })
     await picker.waitFor({ timeout: 5000 })
@@ -61,6 +68,7 @@ module.exports = async t => {
     await sp.waitForTimeout(800)
     const set = calls().filter(c => c.t >= since && c.http === 'POST' && c.path === '/api/model/set')
     check(set.length >= 1 && set.every(c => c.body.model === 'mock-sonnet'), `default models: Set one model for all bots switches every bot's model (${JSON.stringify(set.map(c => c.body))})`)
+    await mock({ bots: false })
   }
   await sp.close()
 
@@ -131,7 +139,7 @@ module.exports = async t => {
       check(t === name && home, `settings: ${name} opens its page and Back returns to the main page (${t})`)
     }
     // Pages under a page: Back goes to the page they came from.
-    const under = [['Models', /^Default models/, 'Default models'], ['Models', /^Model providers/, 'Model providers'], ['Models', /^All keys/, 'API keys'], ['Behaviour', /^See what Hermux remembers/, 'Memory'], ['Behaviour', /^Advanced settings/, 'Advanced settings']]
+    const under = [['Models', /^Add a provider/, 'Add a provider'], ['Models', /^All keys/, 'API keys'], ['Behaviour', /^See what Hermux remembers/, 'Memory'], ['Behaviour', /^Advanced settings/, 'Advanced settings']]
     for (const [from, row, to] of under) {
       await settingsPage(p, from)
       await p.getByRole('button', { name: row }).click()
@@ -186,8 +194,11 @@ module.exports = async t => {
     check((await p.getByRole('switch', { name: 'Read every reply aloud' }).count()) === 1, 'voice: Read every reply aloud lives on the Voice page')
     await back(p)
     await settingsPage(p, 'Models')
+    await openPage(p).getByRole('button', { name: /^All keys/ }).waitFor({ timeout: 5000 })
+    const mHeads = (await pageHeadings(p).allInnerTexts()).map(h => h.toLowerCase())
     const mRows = await p.locator('.screen .set-row .set-title').allInnerTexts()
-    check(JSON.stringify(mRows) === '["Default models","Model providers","All keys"]', `models: Default models and Model providers, then All keys (${mRows.join(', ')})`)
+    const addAt = await pageHeadings(p).or(openPage(p).getByRole('button')).evaluateAll(es => es.filter(e => e.getAttribute('role') === 'heading' || /^H[1-6]$/.test(e.tagName) || e.classList.contains('primary')).sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)).map(e => e.textContent.trim().toLowerCase()))
+    check(mHeads[0] === 'new chats use' && mHeads.includes('if the model fails') && addAt.indexOf('add a provider') > addAt.indexOf('new chats use') && addAt.indexOf('add a provider') < addAt.indexOf('if the model fails') && mRows.includes('Fallback models') && mRows[mRows.length - 1] === 'All keys', `models: New chats use, then Add a provider, If the model fails and All keys last (${addAt.join(' | ')}; ${mRows.join(', ')})`)
     await p.close()
   }
 
@@ -242,9 +253,11 @@ module.exports = async t => {
     const gold = await btn.evaluate(e => e.classList.contains('primary')).catch(() => false)
     check(gold && (await p.locator('.screen .btn.primary').count()) === 1, 'attention: Add a provider is the one gold button on the page')
     await btn.click()
-    const t = await p.locator('.screen .title', { hasText: 'Models' }).waitFor({ timeout: 4000 }).then(() => 'Models', () => '')
-    check(t === 'Models', 'attention: Add a provider opens the Models page')
+    const t = await pageTitle(p, 'Add a provider').waitFor({ timeout: 4000 }).then(() => 'Add a provider', () => '')
+    check(t === 'Add a provider', 'attention: Add a provider opens the Add a provider flow')
     await mock({ configured: true })
+    await back(p) // Add a provider → Models
+    await pageTitle(p, /^Models$/).waitFor({ timeout: 3000 }).catch(() => {})
     await back(p)
     await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 3000 })
     await cm.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})

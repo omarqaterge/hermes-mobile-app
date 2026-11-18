@@ -50,7 +50,7 @@ const onOff = (off: string, auto: string, on: string) => [
 export const HERMES_SETTINGS: HGroup[] = [
   {
     title: 'When a model fails',
-    footer: 'The fallback models themselves are under Settings → Models → Model providers.',
+    footer: 'The fallback models themselves are under Settings → Models → If the model fails.',
     items: [
       { key: 'agent.api_max_retries', label: 'Retries before a fallback', help: 'How often Hermux retries a failing request before it switches to the next fallback model. 1 switches fastest.', kind: 'number', min: 1, max: 10 },
       { key: 'fallback.min_switch_reset_seconds', label: 'Wait out short rate limits', help: 'If the main model says it is free again within this time, Hermux waits instead of switching.', kind: 'number', min: 0, max: 3600, unit: s, zeroLabel: 'Always switch' },

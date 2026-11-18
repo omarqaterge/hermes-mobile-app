@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { openSettingsOn } from '../settings-open'
 import type { CommandsCatalogResult, GoalSnapshot, ModelOptionsResult } from '@hermes/shared/gateway-contract.generated'
 import { canRestoreFile, checkpointDiff, folderLabel, hunksOnly, listCheckpoints, reasonLabel, restoreCheckpoint, restoreLines, restoreSummary, type CheckpointFolder, type DiffFile, type Snapshot } from '../checkpoints'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
@@ -182,6 +183,11 @@ export function ModelSheet() {
           </div>
         )}
         {data && !q && <div className="dim small pad">Missing a model? Type its exact name in the search box to use it.</div>}
+        {/* Last row: Settings on Add a provider; Back there comes back to this chat (settings-open.ts). */}
+        <button className="row model-add" onClick={() => { haptic(); openSettingsOn('add') }}>
+          <Icon n="plus" />
+          <span>Add a provider</span>
+        </button>
       </div>
     </Shell>
   )

@@ -17,6 +17,7 @@ All the sheets below share the `Shell` frame in `web/src/components/Sheets.tsx` 
 | Typed-id block | "Use “<id>”" when the search text is a model id (no spaces) that no provider lists exactly; one row per connected provider (current first, also providers whose list is empty), each naming the provider (aria-label "Use <id> with <provider>"). | Picks that id for that provider like a model row; once the switch succeeded the id is remembered (`hm.customModels.v1`) and shows from then on as a normal row under its provider. | none | Hidden without a search or when the id is listed. |
 | Forget button | ✕ on a remembered typed id's row (aria-label "Forget <model>") | Removes the id from `hm.customModels.v1`. | none | Only on remembered ids. |
 | Hint | "Missing a model? Type its exact name in the search box to use it." | | | Only without a search. |
+| Add a provider | The last row, with a plus (`.model-add`) | Opens Settings on the Add a provider page (`openSettingsOn` in `web/src/settings-open.ts`, 3.15) and closes this sheet; Back there returns to the chat. | none | Always shown. |
 | Star button per row | ☆ / ★ (aria-label "Star <model>" / "Unstar <model>") | Toggles the favourite. | none | |
 | Status text | "Loading models…" until the first answer; an error box if `model.options` failed. | | | |
 
