@@ -19,7 +19,6 @@ event's text.
 
 import contextlib
 import errno
-import itertools
 import json
 import math
 import os
@@ -62,7 +61,9 @@ ACTIVITY_LOCK_TRIES = 5  # tries for the file's lock before writing without it
 ACTIVITY_LOCK_WAIT = 0.02  # seconds between them: a hook waits 0.08 s at most
 ACTIVITY_MAX_BYTES = 1 << 20  # far more than the plugin writes; a bigger file is not read
 ACTIVITY_FUTURE_S = 60  # an entry dated further ahead than this was not written by a hook, and would never age out
-ACTIVITY_MAX_PROCESSES = 64  # process entries kept from the file: a real phone has a handful
+ACTIVITY_MAX_PROCESSES = 64  # live process entries in the file, this one included: a real phone has a handful
+ACTIVITY_MAX_LOOKUPS = 1024  # /proc lookups per write, so a file full of forged entries costs a hook little
+PROC_DIR = "/proc"
 ACTIVITY_REPLACE_ERRORS = (errno.ELOOP, errno.ENXIO, errno.EACCES, errno.EPERM)  # retrying won't help: replace the file
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
@@ -374,10 +375,34 @@ def _kept_wait(w: dict) -> dict:
             "last": last if _is_number(last) else w["since"]}
 
 
+def _pid_alive(pid) -> bool:
+    """Whether a process entry's owner still runs. Without /proc (not on a phone) nothing can be said, so it counts as alive."""
+    return not os.path.isdir(PROC_DIR) or os.path.exists(os.path.join(PROC_DIR, str(pid)))
+
+
+def _others_kept(current: dict, me: str, now: float) -> dict:
+    """The other processes' entries worth keeping: well formed and alive, in the file's order, leaving room for this one.
+    Entries of dead processes go, so forged ones can't fill the places; age is no test, as a process that only waits
+    doesn't refresh its entry."""
+    kept, lookups = {}, 0
+    for pid, entry in current.items():
+        if len(kept) >= ACTIVITY_MAX_PROCESSES - 1 or lookups >= ACTIVITY_MAX_LOOKUPS:
+            break
+        if pid == me:
+            continue
+        clean = _kept_entry(pid, entry, now)
+        if clean is None:
+            continue
+        lookups += 1
+        if _pid_alive(pid):
+            kept[pid] = clean
+    return kept
+
+
 def _kept_entry(pid, v, now: float):
     """What stays of another process's entry, or None. Anything malformed is left out, so it can't stop this write."""
     try:
-        if not isinstance(v, dict):
+        if not isinstance(v, dict) or not str(pid).isdigit():
             return None
         at = v.get("at")
         if _is_number(at) and at > now + ACTIVITY_FUTURE_S:
@@ -415,12 +440,11 @@ def _publish_activity() -> None:
             current = _read_activity()
             if current is None:
                 return  # the next write (the status loop's beat, the next hook) tries again
-            kept = {k: _kept_entry(k, v, now) for k, v in itertools.islice(current.items(), ACTIVITY_MAX_PROCESSES)}
-            data = {k: v for k, v in kept.items() if v is not None}
-            if mine or waits:
-                data[str(os.getpid())] = {"at": now, "items": mine, **({"waiting": waits} if waits else {})}
-            else:
-                data.pop(str(os.getpid()), None)
+            me = str(os.getpid())
+            others = _others_kept(current, me, now)
+            # This process's entry goes first, so no number of others can push it out.
+            data = {me: {"at": now, "items": mine, **({"waiting": waits} if waits else {})}} if mine or waits else {}
+            data.update(others)
             fd, tmp = tempfile.mkstemp(prefix=".activity-", dir=os.path.dirname(ACTIVITY_FILE))  # never shared between writers
             with os.fdopen(fd, "w") as f:
                 json.dump(data, f)

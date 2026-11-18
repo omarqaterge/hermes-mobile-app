@@ -6,7 +6,6 @@ sync script sees ordinary, canonical files.
 """
 
 import hmac
-import itertools
 import json
 import logging
 import math
@@ -881,7 +880,8 @@ async def delete_diag():
 
 ACTIVITY_MAX_BYTES = 1 << 20  # the same limit as the hooks' in __init__.py
 ACTIVITY_FUTURE_S = 60  # an entry dated further ahead than this was not written by a hook, and would never age out
-ACTIVITY_MAX_PROCESSES = 64  # process entries looked at: a real phone has a handful, and each costs a /proc lookup
+ACTIVITY_MAX_PROCESSES = 64  # live process entries served from: a real phone has a handful
+ACTIVITY_MAX_LOOKUPS = 1024  # /proc lookups per answer, however many entries a forged file holds
 
 
 def _read_activity_file(path) -> dict:
@@ -989,13 +989,19 @@ def get_activity():  # a plain def: FastAPI runs it in its thread pool, so the f
     now = time.time()
     items = []
     waiting = []
-    for pid, entry in itertools.islice(data.items(), ACTIVITY_MAX_PROCESSES):
+    live = lookups = 0
+    for pid, entry in data.items():
+        if live >= ACTIVITY_MAX_PROCESSES or lookups >= ACTIVITY_MAX_LOOKUPS:
+            break
         try:  # one entry, whatever it holds, can't break the others
-            if not isinstance(entry, dict):
+            if not (isinstance(entry, dict) and str(pid).isdigit() and (entry.get("items") or entry.get("waiting"))):
                 continue
-            # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries.
-            if str(pid).isdigit() and not Path("/proc", str(pid)).exists():
+            # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries. Only live
+            # ones count toward the limit, so dead (or forged) entries can't use up the places.
+            lookups += 1
+            if not Path("/proc", str(pid)).exists():
                 continue
+            live += 1
             at = entry.get("at")
             if _is_number(at) and at > now + ACTIVITY_FUTURE_S:
                 continue

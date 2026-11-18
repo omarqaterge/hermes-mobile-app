@@ -48,12 +48,13 @@ _Path = papi.Path
 
 
 proc_lookups = []
+route_alive = set()  # more pids the route takes for running
 
 
 def _path(*parts):  # /proc as on the phone, also on a computer without one: only this process is alive
     if parts and parts[0] == "/proc":
         proc_lookups.append(parts[1])
-        return types.SimpleNamespace(exists=lambda: parts[1] == str(os.getpid()))
+        return types.SimpleNamespace(exists=lambda: parts[1] == str(os.getpid()) or parts[1] in route_alive)
     return _Path(*parts)
 
 
@@ -63,6 +64,15 @@ plugin._send = lambda *a, **kw: None
 # The status thread sleeps on the event it was started with: a new one never wakes it, so it can't write the file mid-test.
 plugin._status_dirty = types.SimpleNamespace(set=lambda: None)
 plugin.ACTIVITY_FILE = os.path.join(home, ".hermes", "mobile", "activity.json")
+plugin.PROC_DIR = os.path.join(home, "proc")  # the writer's view of which processes run
+
+
+def running(*pids):
+    for pid in pids:
+        os.makedirs(os.path.join(plugin.PROC_DIR, str(pid)), exist_ok=True)
+
+
+running(os.getpid(), 4242, 4343, 4344, 5151)
 
 
 def answer():
@@ -489,22 +499,60 @@ import inspect  # noqa: E402
 check("the route is a plain function, so it runs off the event loop", not inspect.iscoroutinefunction(papi.get_activity))
 now = time.time()
 alive = str(os.getpid())
-many = {alive: {"at": now, "items": [], "waiting": [dict(good, since=now, until=now + 60)]}}
-many.update({str(100000 + i): {} for i in range(80000)})
+wait = dict(good, since=now, until=now + 60)
+far = dict(good, since=now, until=now + plugin.WAIT_LONGEST - 60)
+# Well-formed entries of dead processes, ahead of the real one in the file, nearly a day from ending.
+forged = {str(100000 + i): {"at": now, "items": [], "waiting": [far]} for i in range(papi.ACTIVITY_MAX_PROCESSES + 10)}
 with open(plugin.ACTIVITY_FILE, "w") as f:
-    json.dump(many, f, separators=(",", ":"))  # under the size limit
-proc_lookups.clear()
+    json.dump({**forged, alive: {"at": now, "items": [], "waiting": [wait]}}, f)
 result = answer()
-check("the route looks at a bounded number of them", len(proc_lookups) <= papi.ACTIVITY_MAX_PROCESSES, len(proc_lookups))
-check("and still serves the real one", [w["session"] for w in result["waiting"]] == ["real"], result["waiting"])
+check("dead processes don't use up the route's places", [w["until"] for w in result["waiting"]] == [wait["until"]], len(result["waiting"]))
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({str(100000 + i): {"at": 1, "items": [1]} for i in range(25000)}, f, separators=(",", ":"))
+proc_lookups.clear()
+answer()
+check("the route's /proc lookups are bounded", 0 < len(proc_lookups) <= papi.ACTIVITY_MAX_LOOKUPS, len(proc_lookups))
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({str(100000 + i): {} for i in range(80000)}, f, separators=(",", ":"))
+proc_lookups.clear()
+answer()
+check("an empty entry costs no lookup", not proc_lookups, len(proc_lookups))
+route_alive.update(str(200000 + i) for i in range(papi.ACTIVITY_MAX_PROCESSES + 10))
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({p: {"at": now, "items": [], "waiting": [wait]} for p in sorted(route_alive)}, f)
+check("live processes are capped", len(answer()["waiting"]) == papi.ACTIVITY_MAX_PROCESSES, len(answer()["waiting"]))
+route_alive.clear()
+
 plugin._active.clear()
 plugin._waiting.clear()
-many = {str(100000 + i): {"at": now, "waiting": [dict(good, since=now, until=now + 60)]} for i in range(plugin.ACTIVITY_MAX_PROCESSES + 50)}
 with open(plugin.ACTIVITY_FILE, "w") as f:
-    json.dump(many, f)
+    json.dump({**forged, "4242": {"at": now, "items": [], "waiting": [far]}}, f)
+plugin._wait_begin("mine", "approval", 300)
+kept = entries()
+check("the writer drops entries of dead processes", set(kept) == {alive, "4242"}, len(kept))
+check("its own entry comes first", list(kept)[0] == alive, list(kept)[:2])
+others = [str(300000 + i) for i in range(plugin.ACTIVITY_MAX_PROCESSES + 10)]
+running(*others)
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({p: {"at": now, "items": [], "waiting": [far]} for p in others}, f)
 plugin._publish_activity()
-check("the writer keeps a bounded number", len(entries()) <= plugin.ACTIVITY_MAX_PROCESSES, len(entries()))
-check("the limits agree", papi.ACTIVITY_MAX_PROCESSES == plugin.ACTIVITY_MAX_PROCESSES)
+kept = entries()
+check("its own entry survives any number of live ones", list(kept)[0] == alive and kept[alive]["waiting"][0]["session"] == "mine", list(kept)[:2])
+check("the writer keeps a bounded number", len(kept) == plugin.ACTIVITY_MAX_PROCESSES, len(kept))
+real_exists = os.path.exists
+checked = []
+os.path.exists = lambda p: (checked.append(p), real_exists(p))[1]
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({str(400000 + i): {"at": now, "items": [], "waiting": [far]} for i in range(plugin.ACTIVITY_MAX_LOOKUPS + 100)}, f)
+plugin._publish_activity()
+os.path.exists = real_exists
+check("the writer's /proc lookups are bounded", len([p for p in checked if p.startswith(plugin.PROC_DIR)]) <= plugin.ACTIVITY_MAX_LOOKUPS, len(checked))
+proc_dir, plugin.PROC_DIR = plugin.PROC_DIR, os.path.join(home, "no-proc-here")
+check("without /proc a process counts as alive", plugin._pid_alive(999999))
+plugin.PROC_DIR = proc_dir
+check("with it, a missing one doesn't", not plugin._pid_alive(999999))
+plugin._waiting.clear()
+check("the limits agree", papi.ACTIVITY_MAX_PROCESSES == plugin.ACTIVITY_MAX_PROCESSES and papi.ACTIVITY_MAX_LOOKUPS == plugin.ACTIVITY_MAX_LOOKUPS)
 os.remove(plugin.ACTIVITY_FILE)
 
 print("deep nesting and dates in the future")
