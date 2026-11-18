@@ -106,6 +106,9 @@ bad = [
 Path(plugin.ACTIVITY_FILE).write_text(json.dumps({me: {"at": time.time(), "items": [], "nested": bad}}))
 got = activity().get("nested")
 check("an edited file gives only a chat id and a number", got == [{"session": "<b>x</b>", "running": 2}], got)
+for entry in bad[1:]:
+    Path(plugin.ACTIVITY_FILE).write_text(json.dumps({me: {"at": time.time(), "items": [], "nested": [entry]}}))
+    check(f"a malformed entry counts for nothing: {str(entry)[:40]}", "nested" not in activity(), activity())
 Path(plugin.ACTIVITY_FILE).write_text(json.dumps({me: {"at": time.time(), "items": [], "nested": "nope"}}))
 check("`nested` that is no list is ignored", "nested" not in activity(), activity())
 Path(plugin.ACTIVITY_FILE).write_text(json.dumps({"999": {"at": time.time(), "items": [], "nested": [{"session": "dead", "running": 1, "until": future}]}}))
