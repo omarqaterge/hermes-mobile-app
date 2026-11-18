@@ -977,6 +977,40 @@ textarea {
   font-size: 1.4rem;
   font-weight: 700;
 }
+/* No model yet (task 07): a notice under the mark. The mark must not move, so the notice has a fixed height and
+   `.has-notice` puts a spacer of the same height (plus the notice's margin) above the mark: the centred column grows
+   evenly on both sides. The spacer may shrink to nothing when the screen is too short to centre (keyboard open), where
+   the column starts at the top as before. */
+.empty {
+  --empty-notice-h: 5.9rem;
+}
+.empty.has-notice::before {
+  content: '';
+  flex: 0 1 calc(var(--empty-notice-h) + 14px);
+  min-height: 0;
+}
+.empty-notice {
+  box-sizing: border-box;
+  height: var(--empty-notice-h);
+  flex: none;
+  margin-top: 14px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+.empty-notice .btn {
+  min-height: 44px;
+  padding: 8px 18px;
+}
 .suggestions {
   display: grid;
   gap: 8px;
@@ -1575,6 +1609,16 @@ textarea {
 }
 .star-btn.starred {
   color: var(--accent);
+}
+/* The model sheet's last row (task 07): Settings → Add a provider. */
+.row.model-add {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 6px;
+  gap: 10px;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  text-align: left;
 }
 .star-btn:active {
   background: var(--surface-2);

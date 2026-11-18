@@ -1,5 +1,7 @@
 import { HERMUX_MARK } from './components/hermux-mark'
-import { appVersion, isDevtoolsBuild } from './bridge'
+import { openSettingsOn } from './settings-open'
+import { useModelReady } from './model-ready'
+import { appVersion, haptic, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow } from './gateway'
@@ -331,11 +333,22 @@ function Empty({ onPick }: { onPick: (t: string) => void }) {
   const profile = useStore(s => s.profile)
   const catalog = useCommandCatalog()
   const picks = useMemo(() => suggestions(catalog), [catalog, profile])
+  // The bot can't think yet: a notice under the mark (which keeps its place: `.has-notice` adds the notice's height above
+  // as well, so the centred column doesn't move), with the way to Add a provider. Asked once per bot (model-ready.ts).
+  const noModel = useModelReady() === false
   return (
-    <div className="empty">
+    <div className={noModel ? 'empty has-notice' : 'empty'}>
       <svg className="logo" viewBox="0 0 100 100" role="img" aria-label="Hermux" dangerouslySetInnerHTML={{ __html: HERMUX_MARK }} />
       <div className="empty-title">Hermux</div>
       <div className="dim">{profile === 'default' ? 'Your agent, on your phone.' : `Profile: ${profile}`}</div>
+      {noModel && (
+        <div className="empty-notice" role="group" aria-label="No model connected yet">
+          <span>No model connected yet</span>
+          <button className="btn primary" onClick={() => { haptic(); openSettingsOn('add') }}>
+            Connect a model
+          </button>
+        </div>
+      )}
       <div className="suggestions">
         {picks.map(s => (
           <button key={s.text} className="suggestion" onClick={() => onPick(s.text)}>

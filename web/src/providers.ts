@@ -1,4 +1,4 @@
-// The model-provider catalog shown by Connect (first run) and Settings → Model providers.
+// The model-provider catalog shown by Connect (first run) and Settings → Models (Connected, Add a provider).
 //
 // The list comes FROM Hermes at runtime, from the same two dashboard routes Hermes Desktop's Settings → Providers
 // uses: GET /api/env (rows with category "provider", tagged by Hermes's unified provider_catalog() with

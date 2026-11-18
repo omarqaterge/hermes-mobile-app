@@ -5,7 +5,7 @@
 // (Settings → Access & privacy → Approvals).
 import { HERMES_SETTINGS } from './hermes-settings'
 
-export type SettingsPageId = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'defaults' | 'accounts' | 'keys' | 'connectors' | 'hermes' | 'memory' | 'config' | 'access' | 'about'
+export type SettingsPageId = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'add' | 'keys' | 'connectors' | 'hermes' | 'memory' | 'config' | 'access' | 'about'
 
 export interface SettingsEntry {
   /** The page to open. */
@@ -22,8 +22,8 @@ export interface SettingsEntry {
 
 /** Each page's name, also the top bar's title (Settings.tsx). `hermes` is Behaviour, once "Hermux settings". */
 const PAGE_NAME: Record<SettingsPageId, string> = {
-  hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Models', defaults: 'Default models',
-  accounts: 'Model providers', keys: 'API keys', connectors: 'Connectors', hermes: 'Behaviour', memory: 'Memory', config: 'Advanced settings',
+  hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Models', add: 'Add a provider',
+  keys: 'API keys', connectors: 'Connectors', hermes: 'Behaviour', memory: 'Memory', config: 'Advanced settings',
   access: 'Access & privacy', about: 'About & help'
 }
 
@@ -31,7 +31,7 @@ const e = (page: SettingsPageId, title: string, where: string, sub?: string, wor
 
 const STATIC: SettingsEntry[] = [
   // The main page: Hermux
-  e('models', 'Models', 'Settings → Hermux', 'Default models, model providers and keys', 'model bot profile provider', null),
+  e('models', 'Models', 'Settings → Hermux', 'The model new chats use, providers and keys', 'model bot profile provider default', null),
   e('connectors', 'Connectors', 'Settings → Hermux', 'Mail, web search, apps and services', 'mcp integrations services plugins skills home assistant', null),
   e('hermes', 'Behaviour', 'Settings → Hermux', 'Memory, long chats, limits, sub-agents', 'hermux settings agent hermes config safety', null),
   e('access', 'Access & privacy', 'Settings → Hermux', 'Approvals, phone data, background apps, what stays on this phone', 'permissions privacy security', null),
@@ -40,8 +40,9 @@ const STATIC: SettingsEntry[] = [
   e('voice', 'Voice', 'Settings → This app', 'Read aloud, dictation, Live mode', 'tts speech speak', null),
   e('about', 'About & help', 'Settings → This app', 'Updates, help, versions', 'version info', null),
   // Models
-  e('defaults', 'Default models', 'Settings → Models', 'Which model each bot starts with', 'model bot profile', null),
-  e('accounts', 'Model providers', 'Settings → Models', 'Sign-ins, API keys, your own server', 'login account chatgpt claude openai nous grok minimax', null),
+  e('models', 'New chats use', 'Settings → Models', 'Which model each bot starts with', 'default models model bot profile'),
+  e('models', 'Connected', 'Settings → Models', 'The providers this bot can use', 'model providers sign-ins accounts'),
+  e('add', 'Add a provider', 'Settings → Models', 'Sign in, paste an API key or use your own server', 'model providers connect login account chatgpt claude openai nous grok minimax', null),
   e('keys', 'All keys', 'Settings → Models', 'Every key of providers and tools', 'api keys token secret env openai tavily', null),
   // Behaviour
   e('hermes', 'Dynamic UI', 'Behaviour → Replies', 'Tables, charts and forms you can tap', 'openui cards plugin'),
@@ -85,9 +86,9 @@ const STATIC: SettingsEntry[] = [
   e('stt', "Phone’s speech recognition", 'Speech recognition', 'Android’s recogniser (usually Google’s)', 'stt google'),
   e('stt', 'Add from Hugging Face', 'Speech recognition', 'Paste the model’s link', 'model download onnx'),
   e('stt', 'Add files from this phone', 'Speech recognition', 'The model’s .onnx files and tokens.txt, or a .zip', 'model import'),
-  // Default models, model providers, keys
-  e('defaults', 'Set one model for all bots', 'Models → Default models'),
-  e('accounts', 'Fallback models', 'Models → Model providers', 'Tried when a model fails', 'rotation backup failover'),
+  // Models: the model new chats use, the fallback list, keys
+  e('models', 'Set one model for all bots', 'Models → New chats use', undefined, undefined, 'New chats use'),
+  e('models', 'Fallback models', 'Models → If the model fails', 'Tried when a model fails', 'rotation backup failover'),
   e('keys', 'Only keys that are set', 'Models → All keys', 'Turn off to see every key Hermux supports'),
   e('keys', 'Add a custom key', 'Models → All keys', undefined, 'env variable secret'),
   // Connectors

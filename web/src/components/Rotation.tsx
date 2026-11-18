@@ -19,7 +19,7 @@ import type { ProviderEntry } from '../providers'
 import { ModelPicker } from './Settings'
 import { loadPool, type PoolEntry } from './SignIn'
 import { LoadError, Status, useLoader } from './Screens'
-import { Row, Section, SelectRow } from './ui'
+import { Chevron, Collapse, Row, Section, SelectRow } from './ui'
 import { Icon } from './icons'
 
 /** Hermes's SUPPORTED_POOL_STRATEGIES (agent/credential_pool.py); a missing or unknown value means fill_first. */
@@ -115,8 +115,9 @@ async function removeById(profile: string, e: PoolEntry & { provider: string }) 
 const saveConfig = (profile: string, config: Record<string, unknown>) => api('PUT', `/api/config?${qs({ profile })}`, { config }, { profile: false })
 
 /**
- * Settings → Model providers: the fallback chain. The bot's main model first (not movable here: it is the default model),
- * then each fallback with ↑ ↓ and ✕, and "Add a fallback model" (the model picker of every connected provider).
+ * Settings → Models → If the model fails: the fallback chain, folded by default to one row ("Fallback models", with
+ * "N fallback models" or "None"); opened, the bot's main model first (not movable here: it is the default model), then
+ * each fallback with ↑ ↓ and ✕, and "Add a fallback model" (the model picker of every connected provider).
  * `version` changes when something on the page was connected or removed, so the cooling-down notes are re-read.
  */
 export function FallbackSection({ profile, version = 0 }: { profile: string; version?: number }) {
@@ -126,6 +127,7 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
   const prof = useStore(s => s.profiles.find(p => p.name === profile))
   const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
   const chain = useMemo(() => chainOf(data?.fallback_providers), [data])
   // Hermes also tries the older single `fallback_model` after the list; this page can't delete it (PUT /api/config merges).
   const legacy = useMemo(() => chainOf(data?.fallback_model).filter(l => !chain.some(c => same(c, l))), [data, chain])
@@ -164,11 +166,22 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
 
   const status = (provider: string) => (cooling(pool ?? undefined, provider) ? <span className="pool-badge cooling">Keys cooling down</span> : null)
   const mainProvider = (prof?.provider || '').trim()
+  const count = chain.length + legacy.length
+  const summary = error ? 'Couldn’t load' : !data ? '' : count ? `${count} fallback model${count === 1 ? '' : 's'}` : 'None'
   return (
     <Section
-      title="Fallback models"
+      title="If the model fails"
       footer="When the main model is rate-limited, out of credit, refuses its key or is gone, Hermux switches to the next model in this list and goes back to the main one once it works again."
     >
+      <button className="set-row fold-row" aria-expanded={open} onClick={() => { haptic(); setOpen(!open) }}>
+        <span className="set-text">
+          <span className="set-title">Fallback models</span>
+        </span>
+        <span className="set-value">{summary}</span>
+        <span className="set-chev"><Chevron open={open} /></span>
+      </button>
+      <Collapse open={open}>
+      <div role="group" aria-label="Fallback models">
       {error ? (
         <LoadError error={error} onRetry={reload} /> // first, so a list from before a failed re-read can't be edited and saved
       ) : !data ? (
@@ -226,6 +239,8 @@ export function FallbackSection({ profile, version = 0 }: { profile: string; ver
           <Row icon="plus" tone="gold" title="Add a fallback model" sub={chain.length ? 'Tried after the ones above' : 'Any model of a connected provider'} chevron disabled={busy} onClick={() => setAdding(true)} />
         </>
       )}
+      </div>
+      </Collapse>
       {adding && (
         <ModelPicker
           profile={profile}

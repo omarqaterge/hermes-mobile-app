@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { defaultAccess, errText, loadDefaultModel, loadProfiles, reconnectNow, type Access } from '../gateway'
-import { getState, setState, toast, useStore } from '../store'
+import { closeScreen, getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataAllowMore, phoneDataForget, phoneDataLost, phoneDataOpenSettings, phoneDataOverflowed, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { useBootSummary } from '../boot'
@@ -29,7 +29,7 @@ import { approvalLockAvailable, approvalLockState, confirmAlways, setApprovalLoc
 import { SttSettings } from './SttSettings'
 import { chosenSttName, loadSttModels, sttAvailable, useSttModels } from '../stt'
 import { UninstallSection } from './Uninstall'
-import { ProviderList } from './Providers'
+import { ProviderList, ProviderListView, useCatalog } from './Providers'
 import { FallbackSection } from './Rotation'
 import { HermesSettingsPage } from './HermesSettings'
 import { ConnectorsPage } from './Connectors'
@@ -40,7 +40,8 @@ import { pluginRow, runPluginUpdate, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 import { Icon, type IconName } from './icons'
-import { modelConnected } from './Setup'
+import { recheckModel, useModelReady } from '../model-ready'
+import { takeSettingsStart } from '../settings-open'
 
 // ── shared ───────────────────────────────────────────────────
 
@@ -94,11 +95,13 @@ export async function setProfileModel(profile: string, provider: string, model: 
   // The reasoning level new chats start with; a per-model override would beat it, so set that too.
   await api('PUT', `/api/config?${qs({ profile })}`, { config: { agent: { reasoning_effort: effort, reasoning_overrides: { [model]: effort } } } }, { profile: false })
   void loadDefaultModel() // the header on the empty home screen follows the default
+  recheckModel() // the empty new-chat screen's "No model connected yet" and the Connect a model card follow it
 }
 
 /** Provider → model picker for a profile. `target` is shown in the title. */
 /** `noEffort` hides the reasoning pills (a fallback model has no reasoning level of its own here). */
-export function ModelPicker({ profile, target, onPick, onClose, refresh, only, noEffort }: { profile: string; target: string; onPick: (provider: string, model: string, effort: string) => Promise<void>; onClose: () => void; refresh?: boolean; only?: string[]; noEffort?: boolean }) {
+/** `allBots` (Settings → Models with several bots) adds the switch "Set one model for all bots" above the list. */
+export function ModelPicker({ profile, target, onPick, onClose, refresh, only, noEffort, allBots }: { profile: string; target: string; onPick: (provider: string, model: string, effort: string) => Promise<void>; onClose: () => void; refresh?: boolean; only?: string[]; noEffort?: boolean; allBots?: { on: boolean; onChange: (v: boolean) => void } }) {
   const [data, setData] = useState<ModelOptions | null>(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
@@ -151,11 +154,16 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only, n
           ))}
         </div>
       )}
+      {allBots && (
+        <div className="picker-all">
+          <ToggleRow title="Set one model for all bots" sub={allBots.on ? 'The model you pick goes to every bot' : undefined} on={allBots.on} onChange={allBots.onChange} />
+        </div>
+      )}
       <input className="search" placeholder="Search models…" value={q} onChange={e => setQ(e.target.value)} />
       <div className="sheet-scroll">
         {err && <div className="notice notice-error">{err}</div>}
         {!data && !err && <div className="dim pad">Loading models…</div>}
-        {data && !providers.length && !q && <div className="dim pad">No connected providers. Connect one under Settings → Models → Model providers.</div>}
+        {data && !providers.length && !q && <div className="dim pad">No connected providers. Connect one under Settings → Models → Add a provider.</div>}
         {providers.map(p => (
           <div key={p.slug} className="picker-block">
             <div className="picker-group">
@@ -235,46 +243,6 @@ export async function forProfiles(target: string, fn: (profile: string) => Promi
   }
   if (failed.length) toast(failed.join(' · '), 'error', 8000)
   return failed.length < names.length
-}
-
-// ── Models ───────────────────────────────────────────────────
-
-function ModelsTab() {
-  const profiles = useStore(s => s.profiles)
-  const [pick, setPick] = useState<string | null>(null) // profile name or "*"
-  const target = pick === '*' ? 'all bots' : profileLabel(profiles.find(p => p.name === pick) || { name: pick || '' })
-  return (
-    <>
-      <Section footer="The model each bot starts new chats with. Change the model of a single chat from the chip in its header.">
-        <Row icon="sparkles" tone="gold" title="Set one model for all bots" chevron onClick={() => setPick('*')} />
-      </Section>
-      <Section title="Bots">
-        {profiles.map(p => (
-          <Row
-            key={p.name}
-            icon={profileLabel(p).slice(0, 1).toUpperCase()}
-            tone="gold"
-            title={profileLabel(p)}
-            sub={`${p.model || 'no model set'}${p.provider ? ` · ${p.provider.replace(/^custom:/, '')}` : ''}`}
-            chevron
-            onClick={() => setPick(p.name)}
-          />
-        ))}
-      </Section>
-      {pick && (
-        <ModelPicker
-          profile={pick === '*' ? getState().profile : pick}
-          target={target}
-          onClose={() => setPick(null)}
-          onPick={async (provider, model, effort) => {
-            const ok = await forProfiles(pick, n => setProfileModel(n, provider, model, effort))
-            await loadProfiles()
-            if (ok) toast(`${model} → ${target}`)
-          }}
-        />
-      )}
-    </>
-  )
 }
 
 // ── Keys ─────────────────────────────────────────────────────
@@ -397,7 +365,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
         {!keyName && (
           <>
             <div className="notice">
-              For a model provider, connect it under Settings → Models → Model providers instead (or “Add an OpenAI-compatible endpoint” there if it isn’t listed): a
+              For a model provider, connect it under Settings → Models → Add a provider instead (or “Add an OpenAI-compatible endpoint” there if it isn’t listed): a
               key added here doesn’t put any models in the model menu.
             </div>
             <label className="field">
@@ -916,7 +884,7 @@ function AppearancePage() {
 type Page = SettingsPageId
 const PAGE_TITLE: Record<Page, string> = SETTINGS_PAGE_NAME
 /** Where Back goes from a page (every other page goes back to the main page). */
-const PARENT: Partial<Record<Page, Page>> = { stt: 'voice', defaults: 'models', accounts: 'models', keys: 'models', memory: 'hermes', config: 'hermes' }
+const PARENT: Partial<Record<Page, Page>> = { stt: 'voice', add: 'models', keys: 'models', memory: 'hermes', config: 'hermes' }
 const ACCESS_NAME: Record<Access, string> = { off: 'Auto off', auto: 'Auto access', full: 'Full access' }
 
 /** One attention card on the main page: an icon, a title, one line and one button. Shown only while its condition is true. */
@@ -936,31 +904,23 @@ function AttentionCard({ tone, icon, title, line, action, primary, onAction }: {
 }
 
 /** The main page's attention cards, most urgent first: no model connected, Hermux offline, an update ready. No new polling:
- *  the model check is the setup check's own question (`modelConnected`), asked once when the page opens and again when the
- *  connection opens; the update check is the one the update row always made when Settings opened (at most once a minute). */
+ *  the model check is the setup check's own question (`useModelReady`, model-ready.ts), asked once when the page opens and
+ *  again when the connection opens; the update check is the one the update row always made when Settings opened (at most
+ *  once a minute). Connect a model opens Add a provider directly (Back from there goes to Models). */
 function AttentionCards({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
-  const profile = useStore(s => s.profile)
   const u = useUpdate()
-  const [hasModel, setHasModel] = useState<boolean | null>(null)
+  const hasModel = useModelReady({ fresh: true })
   useEffect(() => {
     void checkForUpdate()
   }, [])
-  useEffect(() => {
-    if (conn !== 'open') return
-    let live = true
-    void modelConnected().then(v => live && setHasModel(v))
-    return () => {
-      live = false
-    }
-  }, [conn, profile])
   const online = conn === 'open'
   const update = u.phase === 'available' || u.phase === 'permission' || u.phase === 'downloading' || u.phase === 'installing'
   if (online && hasModel !== false && !update) return null
   return (
     <div className="attn-list">
       {online && hasModel === false && (
-        <AttentionCard tone="gold" icon="sparkles" title="Connect a model" line="Hermux needs a model to think with." action="Add a provider" primary onAction={() => go('models')} />
+        <AttentionCard tone="gold" icon="sparkles" title="Connect a model" line="Hermux needs a model to think with." action="Add a provider" primary onAction={() => go('add')} />
       )}
       {!online && (
         <AttentionCard
@@ -1026,19 +986,85 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
   )
 }
 
-/** Models: in this task the two pages that were on the main page (Default models, Model providers), reached from one
- *  page, and the API keys page as a dim last row. */
-function ModelsPage({ go }: { go: (p: Page) => void }) {
-  const model = useStore(s => s.defaultModel || s.profiles.find(p => p.name === s.profile)?.model || '')
+/** Models: one page for the model a bot thinks with. Bot chips (only with several bots), "New chats use" (the bot's model;
+ *  the picker, with "Set one model for all bots" when there are several), "Connected" (one row per connected provider,
+ *  opening its sheet), the gold "Add a provider", "If the model fails" (the fallback list, folded) and a dim "All keys".
+ *  With nothing connected and no working model, one sentence stands where the model and the providers would be. */
+function ModelsPage({ go, scope, setScope, rotation, bump }: { go: (p: Page) => void; scope: string; setScope: (v: string) => void; rotation: number; bump: () => void }) {
+  const profiles = useStore(s => s.profiles)
+  const prof = profiles.find(p => p.name === scope)
+  const ready = useModelReady({ fresh: true })
+  const cat = useCatalog(scope)
+  const [pick, setPick] = useState(false)
+  const [all, setAll] = useState(false)
+  const several = profiles.length > 1
+  const none = cat.data != null && !cat.data.some(e => e.connected) && ready === false
+  const target = all ? '*' : scope
+  const label = all ? 'all bots' : prof ? profileLabel(prof) : scope
+  const provider = (prof?.provider || '').replace(/^custom:/, '')
+  return (
+    <div className="models-page">
+      {several && <ProfileChips value={scope} onChange={setScope} />}
+      {none ? (
+        <div className="models-empty">Hermux needs a model to think with. Sign in with a subscription you already have, or paste an API key.</div>
+      ) : (
+        <>
+          <Section title="New chats use" footer="Change the model of a single chat from the model chip above its text box.">
+            <Row icon="sparkles" tone="blue" title={prof?.model || 'No model set'} sub={provider || undefined} chevron onClick={() => setPick(true)} />
+          </Section>
+          <ProviderListView cat={cat} profile={scope} part="connected" onChange={() => { bump(); recheckModel() }} onPicked={() => void loadProfiles()} />
+        </>
+      )}
+      <div className="models-add">
+        <button className="btn primary block" onClick={() => { haptic(); go('add') }}>
+          <Icon n="plus" /> Add a provider
+        </button>
+      </div>
+      <FallbackSection key={scope} profile={scope} version={rotation} />
+      <div className="models-keys">
+        <Section>
+          <Row icon="key" tone="gray" title="All keys" sub="Every key of providers and tools" chevron onClick={() => go('keys')} />
+        </Section>
+      </div>
+      {pick && (
+        <ModelPicker
+          profile={scope}
+          target={label}
+          allBots={several ? { on: all, onChange: setAll } : undefined}
+          onClose={() => setPick(false)}
+          onPick={async (p, model, effort) => {
+            const ok = await forProfiles(target, n => setProfileModel(n, p, model, effort))
+            await loadProfiles()
+            if (ok) toast(all ? `${model} → all bots` : `New chats use ${model}`)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Add a provider: the catalog minus what is connected (Sign in with an account you have, Use an API key, Your own
+ *  server). A provider opens its sheet; with no model yet, a successful connect opens the model picker for that provider at
+ *  once, and choosing a model ends on Models. */
+function AddProviderPage({ scope, setScope, go, bump }: { scope: string; setScope: (v: string) => void; go: (p: Page) => void; bump: () => void }) {
+  const several = useStore(s => s.profiles.length > 1)
+  const ready = useModelReady()
+  const prof = useStore(s => s.profiles.find(p => p.name === scope))
   return (
     <>
-      <Section>
-        <Row icon="sparkles" tone="gold" title="Default models" sub="Which model each bot starts with" value={model || undefined} chevron onClick={() => go('defaults')} />
-        <Row icon="user" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
-      </Section>
-      <Section>
-        <Row icon="key" tone="gray" title="All keys" sub="Every key of providers and tools" chevron onClick={() => go('keys')} />
-      </Section>
+      {several && <ProfileChips value={scope} onChange={setScope} />}
+      <ProviderList
+        key={scope}
+        profile={scope}
+        part="add"
+        needsModel={() => ready === false || !prof?.model}
+        onChange={() => { bump(); recheckModel() }}
+        onPicked={() => {
+          void loadProfiles()
+          go('models')
+        }}
+      />
+      <div className="dim small pad">Every provider this agent version supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → Models → All keys.</div>
     </>
   )
 }
@@ -1358,7 +1384,9 @@ function HermesRow({ version }: { version: string }) {
 export function SettingsScreen() {
   const current = useStore(s => s.profile)
   const opened = useStore(s => s.screenProfile)
-  const [page, setPage] = useState<Page>(() => (opened ? 'keys' : 'hub'))
+  const [start] = useState(takeSettingsStart) // opened on a page from elsewhere (the chat's model sheet, the empty chat)
+  const [page, setPage] = useState<Page>(() => start?.page || (opened ? 'keys' : 'hub'))
+  const [closeFrom, setCloseFrom] = useState<Page | null>(start?.back === 'close' ? start.page : null) // Back here closes Settings
   const [scope, setScope] = useState(opened || current)
   const [rotation, setRotation] = useState(0) // bumped when a provider changed: the fallback list re-reads its key status
   const [slot, setSlot] = useState<HTMLElement | null>(null) // the Memory page's Add button goes in the top bar
@@ -1383,24 +1411,22 @@ export function SettingsScreen() {
     raf = requestAnimationFrame(look)
     return () => cancelAnimationFrame(raf)
   }, [target])
-  const back = () => setPage(PARENT[page] || 'hub')
-  useBackHandler(back, page !== 'hub') // Back on a page returns to the page it was opened from (PARENT), else the main page
+  useEffect(() => {
+    if (closeFrom && page !== closeFrom) setCloseFrom(null) // moved on (to Models after a pick): Back goes up as usual
+  }, [page, closeFrom])
+  const back = () => (closeFrom === page ? closeScreen() : setPage(PARENT[page] || 'hub'))
+  // Back on a page returns to the page it was opened from (PARENT), else the main page; on the page Settings was opened on
+  // from the chat, it closes Settings and the chat is there again.
+  useBackHandler(back, page !== 'hub')
+  const bump = () => setRotation(v => v + 1)
   return (
     <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : back} actions={page === 'memory' ? <span className="lib-actions" ref={setSlot} /> : undefined}>
       {page === 'hub' && <Hub go={setPage} pick={pick} />}
       {page === 'appearance' && <AppearancePage />}
       {page === 'voice' && <VoiceSettings openStt={() => setPage('stt')} />}
       {page === 'stt' && <SttSettings />}
-      {page === 'models' && <ModelsPage go={setPage} />}
-      {page === 'defaults' && <ModelsTab />}
-      {page === 'accounts' && (
-        <>
-          <ProfileChips value={scope} onChange={setScope} label="Sign-ins for" />
-          <FallbackSection key={scope} profile={scope} version={rotation} />
-          <ProviderList profile={scope} onChange={() => setRotation(v => v + 1)} onPicked={() => void loadProfiles()} />
-          <div className="dim small pad">Every provider this agent version supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → Models → All keys.</div>
-        </>
-      )}
+      {page === 'models' && <ModelsPage go={setPage} scope={scope} setScope={setScope} rotation={rotation} bump={bump} />}
+      {page === 'add' && <AddProviderPage go={setPage} scope={scope} setScope={setScope} bump={bump} />}
       {page === 'keys' && <KeysTab scope={scope} setScope={setScope} />}
       {page === 'connectors' && <ConnectorsPage scope={scope} setScope={setScope} />}
       {page === 'hermes' && <HermesSettingsPage scope={scope} setScope={setScope} openMemory={() => setPage('memory')} openAdvanced={() => setPage('config')} />}

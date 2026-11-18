@@ -1,6 +1,7 @@
 // Connecting Hermes to a model provider: a searchable list of every provider the phone's Hermes supports (its own
 // provider catalog, read at runtime: see providers.ts), each with "Paste API key" and/or "Sign in", plus your own
-// OpenAI-compatible server. Used by the first-run model step (Connect.tsx WelcomeBody) and Settings → Model providers.
+// OpenAI-compatible server. Used by the first-run model step (Connect.tsx WelcomeBody, the whole list) and Settings → Models
+// (the connected providers on the page, the rest under Add a provider).
 //
 // Writes go through the dashboard REST routes Hermes Desktop uses, scoped with ?profile=: keys → PUT/DELETE /api/env
 // (the profile's .env), sign-ins → /api/providers/oauth (device code in the app; Claude in Termux via the bridge's
@@ -35,18 +36,55 @@ const loadCatalog = async (profile: string) => {
 
 const OWN: Preset = { name: '', base_url: '', needs_key: false }
 
-/** Every provider for one profile. `onChange` after anything was connected or removed; `onPicked` after a model was picked. */
-export function ProviderList({ profile, onChange, onPicked }: { profile: string; onChange?: () => void; onPicked?: () => void }) {
-  const { data, error, loading, reload } = useLoader(() => loadCatalog(profile), [profile])
+/** The provider catalog for one bot (env keys, sign-ins, own endpoints), loaded once per bot; `reload` after a change. */
+export const useCatalog = (profile: string) => useLoader(() => loadCatalog(profile), [profile])
+export type Catalog = ReturnType<typeof useCatalog>
+
+/** Which part of the list to show: `all` (the setup flow's model step: connected, popular, all, your own server),
+ *  `connected` (Settings → Models: one row per connected provider) or `add` (Settings → Models → Add a provider: the
+ *  catalog minus what is connected, as Sign in, Use an API key and Your own server). */
+export type ProviderPart = 'all' | 'connected' | 'add'
+
+interface ListProps {
+  profile: string
+  /** After anything was connected or removed. */
+  onChange?: () => void
+  /** After a model was picked from a provider's sheet (or from the picker that opened by itself). */
+  onPicked?: () => void
+  part?: ProviderPart
+  /** Asked when a provider sheet opens: true when the bot has no model yet, so a successful connect opens the model
+   *  picker at once, limited to that provider. Without it the sheet's "Choose a model" button is the way, as before. */
+  needsModel?: () => boolean
+}
+
+/** Every provider for one profile, with its own catalog load. */
+export function ProviderList(props: ListProps) {
+  const cat = useCatalog(props.profile)
+  return <ProviderListView {...props} cat={cat} />
+}
+
+/** The list over a catalog the caller loaded (Settings → Models shares it with its empty state). */
+export function ProviderListView({ cat, profile, onChange, onPicked, part = 'all', needsModel }: ListProps & { cat: Catalog }) {
+  const { data, error, loading, reload } = cat
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
   const [custom, setCustom] = useState<Preset | null>(null)
+  const [auto, setAuto] = useState<string[] | null>(null) // the picker opened by itself after a first connect: its slugs
   const waitingTermux = useRef(false)
+  const needed = useRef(false) // the bot had no model when the sheet opened
 
   const changed = () => {
     reload()
     onChange?.()
     void loadDefaultModel()
+  }
+  // A provider was just connected (key saved, sign-in approved, endpoint saved): with no model yet, choose one now.
+  const connectedNow = (slugs: string[]) => {
+    if (!needed.current) return
+    needed.current = false
+    setOpenId(null)
+    setCustom(null)
+    setAuto(slugs)
   }
 
   // Back from Termux (Claude sign-in): see whether the login landed, and say so.
@@ -56,9 +94,11 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
       waitingTermux.current = false
       void loadCatalog(profile)
         .then(list => {
-          if (list.find(x => x.id === 'anthropic')?.connected) {
+          const e = list.find(x => x.id === 'anthropic')
+          if (e?.connected) {
             toast('Signed in to Claude')
             afterSignIn()
+            connectedNow(e.slugs)
           } else toast('Claude is not signed in. If Termux showed an error, try again.', 'error', 6000)
         })
         .catch(() => {})
@@ -77,10 +117,15 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
   const open = openId ? list.find(e => e.id === openId) || null : null
 
   const tap = (e: ProviderEntry) => {
+    needed.current = Boolean(needsModel?.()) && !e.connected
     if (e.preset && !e.endpoint) return setCustom(e.preset)
     setOpenId(e.id)
   }
-  const row = (e: ProviderEntry) => (
+  const ownServer = () => {
+    needed.current = Boolean(needsModel?.())
+    setCustom(OWN)
+  }
+  const row = (e: ProviderEntry, sub?: string) => (
     <Row
       key={e.id}
       title={
@@ -89,27 +134,57 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
           <span>{e.name}</span>
         </span>
       }
-      sub={e.connected ? connectedText(e) : e.blurb}
-      value={e.connected ? undefined : methods(e)}
+      sub={sub ?? (e.connected ? connectedText(e) : e.blurb)}
+      value={e.connected || sub ? undefined : methods(e)}
       chevron
       onClick={() => tap(e)}
     />
   )
+  const search = (
+    <label className="set-search">
+      <span aria-hidden="true"><Icon n="search" /></span>
+      <input placeholder="Search providers (e.g. deepseek, groq)" value={q} onChange={e => setQ(e.target.value)} />
+    </label>
+  )
+  const own = data && (
+    <Section title="Your own server" footer="Any OpenAI-compatible API: vLLM, llama.cpp, LocalAI, a company gateway…">
+      <Row icon="plus" tone="gold" title="Add an OpenAI-compatible endpoint" sub="Its address, and a key if it needs one" chevron onClick={ownServer} />
+    </Section>
+  )
+
+  // Add a provider: the providers that offer a sign-in in the app first, then those with a key (popular, then the rest).
+  const signInable = (e: ProviderEntry) => e.signIns.some(s => s.kind !== 'command')
+  const keyed = (e: ProviderEntry) => Boolean(e.key || e.preset || e.fields.length) || !signInable(e)
+  const signInSub = (e: ProviderEntry) => e.signIns.filter(s => s.kind !== 'command').map(s => s.label).join(' · ')
+  const addSignIn = [...popular, ...rest].filter(signInable)
+  const addPopular = popular.filter(keyed)
+  const addRest = rest.filter(keyed)
 
   return (
     <div className="providers">
-      <label className="set-search">
-        <span aria-hidden="true"><Icon n="search" /></span>
-        <input placeholder="Search providers (e.g. deepseek, groq)" value={q} onChange={e => setQ(e.target.value)} />
-      </label>
-      <Status loading={loading} error={error} empty={!loading && !error && !shown.length} emptyText="No provider matches. Try your own server below." onRetry={reload} />
-      {connected.length > 0 && <Section title={`Connected · ${connected.length}`}>{connected.map(row)}</Section>}
-      {popular.length > 0 && <Section title="Popular">{popular.map(row)}</Section>}
-      {rest.length > 0 && <Section title={q.trim() ? 'More' : `All providers · ${rest.length}`}>{rest.map(row)}</Section>}
-      {data && (
-        <Section title="Your own server" footer="Any OpenAI-compatible API: vLLM, llama.cpp, LocalAI, a company gateway…">
-          <Row icon="plus" tone="gold" title="Add an OpenAI-compatible endpoint" sub="Its address, and a key if it needs one" chevron onClick={() => setCustom(OWN)} />
-        </Section>
+      {part === 'connected' ? (
+        <>
+          <Status loading={loading} error={error} empty={false} emptyText="" onRetry={reload} />
+          {connected.length > 0 && <Section title="Connected">{connected.map(e => row(e))}</Section>}
+        </>
+      ) : part === 'add' ? (
+        <>
+          {search}
+          <Status loading={loading} error={error} empty={!loading && !error && !popular.length && !rest.length} emptyText="No provider matches. Try your own server below." onRetry={reload} />
+          {addSignIn.length > 0 && <Section title="Sign in with an account you have" footer="Use a subscription you already pay for: no key needed.">{addSignIn.map(e => row(e, signInSub(e)))}</Section>}
+          {addPopular.length > 0 && <Section title="Use an API key">{addPopular.map(e => row(e))}</Section>}
+          {addRest.length > 0 && <Section title={q.trim() ? 'More' : `All providers · ${addRest.length}`}>{addRest.map(e => row(e))}</Section>}
+          {own}
+        </>
+      ) : (
+        <>
+          {search}
+          <Status loading={loading} error={error} empty={!loading && !error && !shown.length} emptyText="No provider matches. Try your own server below." onRetry={reload} />
+          {connected.length > 0 && <Section title={`Connected · ${connected.length}`}>{connected.map(e => row(e))}</Section>}
+          {popular.length > 0 && <Section title="Popular">{popular.map(e => row(e))}</Section>}
+          {rest.length > 0 && <Section title={q.trim() ? 'More' : `All providers · ${rest.length}`}>{rest.map(e => row(e))}</Section>}
+          {own}
+        </>
       )}
       {open && (
         <ProviderSheet
@@ -117,6 +192,7 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
           profile={profile}
           onClose={() => setOpenId(null)}
           onChanged={changed}
+          onConnected={() => connectedNow(open.slugs)}
           onTermux={() => (waitingTermux.current = true)}
           onPicked={() => {
             setOpenId(null)
@@ -129,9 +205,25 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
           preset={custom}
           profile={profile}
           onClose={() => setCustom(null)}
-          onSaved={() => {
+          onSaved={name => {
             setCustom(null)
             changed()
+            const id = name.toLowerCase().replace(/ /g, '-')
+            connectedNow([name, id, `custom:${id}`])
+          }}
+        />
+      )}
+      {auto && (
+        <ModelPicker
+          profile={profile}
+          target="new chats"
+          refresh
+          only={auto}
+          onClose={() => setAuto(null)}
+          onPick={async (provider, model, effort) => {
+            await setProfileModel(profile, provider, model, effort)
+            toast(`New chats use ${model}`)
+            onPicked?.()
           }}
         />
       )}
@@ -140,7 +232,7 @@ export function ProviderList({ profile, onChange, onPicked }: { profile: string;
 }
 
 /** One provider: its sign-ins, its API key, its other settings, then the model picker for it. */
-function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPicked }: { entry: ProviderEntry; profile: string; onClose: () => void; onChanged: () => void; onTermux: () => void; onPicked: () => void }) {
+function ProviderSheet({ entry: e, profile, onClose, onChanged, onConnected, onTermux, onPicked }: { entry: ProviderEntry; profile: string; onClose: () => void; onChanged: () => void; onConnected: () => void; onTermux: () => void; onPicked: () => void }) {
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [device, setDevice] = useState<OAuthProvider | null>(null)
@@ -169,7 +261,11 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
   const saveKey = () => {
     if (!e.key) return
     haptic()
-    void run(putEnv(e.key.env, key.trim()), `${e.name} connected`).then(ok => ok && setKey(''))
+    void run(putEnv(e.key.env, key.trim()), `${e.name} connected`).then(ok => {
+      if (!ok) return
+      setKey('')
+      onConnected()
+    })
   }
   const removeField = (f: Field) =>
     void confirmDialog({ title: `Remove ${f.env}?`, message: 'The saved value is deleted from this bot’s .env.', confirmLabel: 'Remove', danger: true }).then(ok => ok && run(delEnv(f.env), `${f.env} removed`))
@@ -309,6 +405,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
             setClaude(false)
             afterSignIn()
             onChanged()
+            onConnected()
           }}
           onTermux={() => {
             setClaude(false)
@@ -325,6 +422,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
           onDone={() => {
             setDevice(null)
             onChanged()
+            onConnected()
           }}
         />
       )}
@@ -354,7 +452,7 @@ interface Validate {
 }
 
 /** An OpenAI-compatible server (Mistral, Groq, Ollama presets, or your own): address + key, ask it for its models, save. */
-function EndpointSheet({ preset, profile, onClose, onSaved }: { preset: Preset; profile: string; onClose: () => void; onSaved: () => void }) {
+function EndpointSheet({ preset, profile, onClose, onSaved }: { preset: Preset; profile: string; onClose: () => void; onSaved: (name: string) => void }) {
   const [name, setName] = useState(preset.name)
   const [url, setUrl] = useState(preset.base_url)
   const [key, setKey] = useState('')
@@ -385,7 +483,7 @@ function EndpointSheet({ preset, profile, onClose, onSaved }: { preset: Preset; 
     api('POST', `/api/providers/custom-endpoints?${qs({ profile })}`, { ...body(), discover_models: true, ...(models?.length ? { models } : {}) }, { profile: false })
       .then(() => {
         toast(`${name.trim()} connected`)
-        onSaved()
+        onSaved(name.trim())
       })
       .catch(err => toast(errText(err), 'error', 6000))
       .finally(() => setBusy(false))

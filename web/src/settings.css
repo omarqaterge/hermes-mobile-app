@@ -73,3 +73,38 @@
 .attn-btn.primary {
   color: var(--accent-ink);
 }
+
+/* Settings → Models (task 07): one page. The sentence that stands in for the model and the providers while nothing is
+   connected, the gold Add a provider button (the page's one gold element), the fold row of the fallback list, and the
+   dim All keys row last. Solid, like every full page. */
+.models-empty {
+  margin: 4px 4px 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.97rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+.models-add {
+  margin: 4px 0 18px;
+}
+.models-add .btn {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.fold-row .set-chev .chevron {
+  width: 16px;
+  height: 16px;
+}
+.models-keys .set-title,
+.models-keys .set-icon {
+  opacity: 0.72;
+}
+.picker-all {
+  margin: 0 -4px;
+}

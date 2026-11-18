@@ -1,6 +1,7 @@
 // What the interface costs at the moments a person feels: start-up, opening a chat, the first words of a streamed reply,
 // scrolling a long chat, opening the chat list and scrolling it, opening a row's menu and the chat's menu, opening Settings
-// and its pages (Behaviour, Models, Access & privacy, About & help: a page an older build doesn't have is left out), in a
+// and its pages (Behaviour, Models, Add a provider, Access & privacy, About & help: a page an older build doesn't have is
+// left out), in a
 // desktop browser with the CPU slowed down (4× by default).
 // Needs the page and the mock running (`run.sh --serve` in another shell, with the same HM_E2E_* ports if it chose others).
 //   node uicost.cjs [--runs 5] [--throttle 4] [--motion off|reduced|full] [--glass on|off]
@@ -153,17 +154,26 @@ async function one(browser) {
     await sleep(800)
     const pages = [
       ['pBehaviour', ['Behaviour', 'Hermux settings'], 'Retries before a fallback'],
-      ['pModels', ['Models'], 'Set one model'],
+      ['pModels', ['Models'], 'All keys'],
       ['pAccess', ['Access & privacy'], 'Auto for all chats'],
       ['pAbout', ['About & help'], 'Last start-up']
     ]
     for (const [key, rows, content] of pages) {
       const row = await page.evaluate(rows => rows.find(r => [...document.querySelectorAll('.set-title')].some(e => e.textContent === r)) || '', rows)
       if (!row) continue
-      // Models: its own page holds the Default models row; the content checked is that page's first row.
-      const want = key === 'pModels' ? 'Default models' : content
+      // Models: its last row, All keys, which both the page of task 06 and the one Models page of task 07 have.
+      const want = content
       const shown = new Function(`return () => [...document.querySelectorAll('.screen .set-title, .screen .set-sub')].some(e => e.textContent.startsWith(${JSON.stringify(want)})) && !document.querySelector('input[aria-label="Search settings"]') && !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)`)()
       out[key] = await inPage(page, work, null, row, shown)
+      // From Models: its gold Add a provider (task 07), until the catalog's "Use an API key" section shows and is still.
+      if (key === 'pModels' && (await page.locator('.models-add .btn').count())) {
+        await sleep(600)
+        const listed = () => [...document.querySelectorAll('.screen .set-heading')].some(e => e.textContent === 'Use an API key') && !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)
+        out.pAdd = await inPage(page, work, '.models-add .btn', null, listed)
+        await page.evaluate(() => window.hermesBack())
+        await page.locator('.screen .title', { hasText: 'Models' }).waitFor({ timeout: 5000 })
+        await sleep(300)
+      }
       await page.evaluate(() => window.hermesBack())
       await page.locator('input[aria-label="Search settings"]').waitFor({ timeout: 5000 })
       await sleep(600)
@@ -205,7 +215,7 @@ async function one(browser) {
     return v[Math.floor(v.length / 2)]
   }
   console.log(`median of ${runs}, CPU ×${throttle}${motion ? `, motion ${motion}` : ''}${glass ? `, glass ${glass}` : ''}:`)
-  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
+  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAdd', 'opening Add a provider'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
     if (!all.some(r => r[k])) continue // a page this build doesn't have
     console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${k === 'scroll' || k === 'listScroll' ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
   }

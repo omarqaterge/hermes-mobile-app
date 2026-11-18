@@ -27,3 +27,12 @@ so they are not lost in the list.
 - **Words that name a place say the new one** (Settings → Models → Model providers, Settings → About & help, Settings →
   Access & privacy → Phone data), in the app, the plugin's messages and the Android notification text.
 - Full pages stay solid ([glass-and-motion.md](glass-and-motion.md)); the cards are solid too.
+
+**Changed 2026-11-18 (task 07, one Models page):** the Models page no longer opens two sub-pages. It is one page: bot
+chips (only with several bots), "New chats use" (the bot's model; the picker keeps "Set one model for all bots" when
+there are several), "Connected" (one row per connected provider, opening its sheet), the gold "Add a provider", "If the
+model fails" (the fallback list, folded) and the dim "All keys". With nothing connected, one sentence stands where the
+model and the providers would be. "Add a provider" is a page under Models (Back goes to Models) with the catalog minus
+what is connected: "Sign in with an account you have", "Use an API key", "Your own server". The Connect a model card
+opens it directly; the chat's model sheet and the empty new-chat screen open it too, and there Back returns to the chat.
+The pages "Default models" and "Model providers" are gone; their contents are on Models and Add a provider.
