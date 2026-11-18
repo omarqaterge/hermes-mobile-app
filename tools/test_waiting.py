@@ -284,6 +284,36 @@ check("a brief read failure leaves the file, and others' requests, as they are",
 plugin._publish_activity()
 check("the next write puts this process's request in", [w["session"] for w in entries()[str(os.getpid())]["waiting"]] == ["mine"] and "4242" in entries(), entries())
 plugin._waiting.clear()
+for code in (errno.EMFILE, errno.EIO):
+    put({"4242": theirs()})
+    before = open(plugin.ACTIVITY_FILE).read()
+    def fails_now(path, *a, **kw):  # noqa: E306
+        if str(path) == plugin.ACTIVITY_FILE:
+            raise OSError(code, "temporary")
+        return real_open(path, *a, **kw)
+    os.open = fails_now
+    plugin._publish_activity()
+    os.open = real_open
+    check(f"{errno.errorcode[code]} is temporary: the file stays", open(plugin.ACTIVITY_FILE).read() == before)
+for code in (errno.EACCES, errno.EPERM):
+    put({"4242": theirs()})
+    def refused(path, *a, **kw):  # noqa: E306
+        if str(path) == plugin.ACTIVITY_FILE:
+            raise OSError(code, "refused")
+        return real_open(path, *a, **kw)
+    os.open = refused
+    plugin._wait_begin("after-refusal", "approval", 300)
+    os.open = real_open
+    check(f"{errno.errorcode[code]} won't pass: the file is replaced, the feed goes on", [w["session"] for w in entries().get(str(os.getpid()), {}).get("waiting", [])] == ["after-refusal"] and "4242" not in entries(), entries())
+    plugin._waiting.clear()
+if os.geteuid() != 0:  # root reads anything
+    put({"4242": theirs()})
+    os.chmod(plugin.ACTIVITY_FILE, 0)
+    plugin._wait_begin("after-chmod", "approval", 300)
+    check("a file nobody may read is replaced", os.stat(plugin.ACTIVITY_FILE).st_mode & 0o400 and "after-chmod" in json.dumps(entries()), oct(os.stat(plugin.ACTIVITY_FILE).st_mode))
+    os.chmod(plugin.ACTIVITY_FILE, 0o600)
+    plugin._waiting.clear()
+plugin._waiting.clear()
 put({"4242": theirs()})
 plugin._publish_activity()  # this process has now read their request
 put({})  # they answered it: gone from the file

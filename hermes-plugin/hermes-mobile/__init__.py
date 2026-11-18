@@ -60,6 +60,7 @@ ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "acti
 ACTIVITY_LOCK_TRIES = 5  # tries for the file's lock before writing without it
 ACTIVITY_LOCK_WAIT = 0.02  # seconds between them: a hook waits 0.08 s at most
 ACTIVITY_MAX_BYTES = 1 << 20  # far more than the plugin writes; a bigger file is not read
+ACTIVITY_REPLACE_ERRORS = (errno.ELOOP, errno.ENXIO, errno.EACCES, errno.EPERM)  # retrying won't help: replace the file
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
@@ -295,16 +296,16 @@ def _activity_lock():
 
 
 def _read_activity():
-    """The file's entries, or None when it can't be read right now: the caller then leaves the file alone, so a brief read
-    failure wipes nobody's open requests. No file means no entries, and so does one that isn't what this plugin writes
-    (not a regular file, too big, not a JSON object): it is replaced, and nothing from an older read comes back, because
+    """The file's entries, or None after a temporary failure (too many open files, an I/O error): the caller then leaves
+    the file alone, so a brief failure wipes nobody's open requests. No file means no entries, and so does one that isn't
+    what this plugin writes (not a regular file, too big, not a JSON object, one this user may not read): it is replaced, and nothing from an older read comes back, because
     that could revive a request already answered. It never blocks, even on a named pipe put in the file's place."""
     try:
         fd = os.open(ACTIVITY_FILE, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError:
         return {}
     except OSError as e:
-        return {} if e.errno in (errno.ELOOP, errno.ENXIO) else None
+        return {} if e.errno in ACTIVITY_REPLACE_ERRORS else None
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_size > ACTIVITY_MAX_BYTES:
@@ -315,8 +316,8 @@ def _read_activity():
             if not part:
                 break
             raw += part
-    except OSError:
-        return None
+    except OSError as e:
+        return {} if e.errno in ACTIVITY_REPLACE_ERRORS else None
     finally:
         os.close(fd)
     if len(raw) > ACTIVITY_MAX_BYTES:
