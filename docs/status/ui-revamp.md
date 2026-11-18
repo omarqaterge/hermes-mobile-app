@@ -143,7 +143,7 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   work** (the total for Settings then Behaviour is the same; cause not found after six tries, left for the owner:
   docs/performance-history.md). Needs a phone: the moved protections, the cards, TalkBack, battery (manual-tests).
   - Found, not changed (on `redesign` before this task, same failures there): `08-queue-and-feed.cjs` "then the saved
-    document replaces it" and "idle label says who wrote it" fail on every run on this machine; at 4x CPU
+    document replaces it" and "idle label says who wrote it" fail when `run.sh --only 01-08` runs here and pass in `check.sh`'s 07-11 shard; at 4x CPU
     `16-canvas-panel.cjs` stops at its line 402 (`getByText('Plan', { exact: true })` finds the tab and the document's
     heading) and `29-phone-data.cjs` "a Markdown document's remote image waits behind a tap" failed once in three (it
     waits a fixed 900 ms for the document to open). Each belongs in its own PR.
