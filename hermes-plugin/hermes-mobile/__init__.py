@@ -18,11 +18,13 @@ event's text.
 """
 
 import contextlib
+import errno
 import json
 import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import threading
@@ -57,7 +59,7 @@ _review_turns: set = set()  # turn ids of Hermes's background self-review (memor
 ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "activity.json")
 ACTIVITY_LOCK_TRIES = 5  # tries for the file's lock before writing without it
 ACTIVITY_LOCK_WAIT = 0.02  # seconds between them: a hook waits 0.08 s at most
-_activity_seen: dict = {}  # the file's entries as last read, for when it can't be read
+ACTIVITY_MAX_BYTES = 1 << 20  # far more than the plugin writes; a bigger file is not read
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
@@ -275,7 +277,7 @@ def _activity_lock():
     try:
         import fcntl
 
-        fd = os.open(ACTIVITY_FILE + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+        fd = os.open(ACTIVITY_FILE + ".lock", os.O_CREAT | os.O_RDWR | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0), 0o600)
         for attempt in range(ACTIVITY_LOCK_TRIES):
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -292,21 +294,38 @@ def _activity_lock():
             os.close(fd)  # closing lets go of the lock
 
 
-def _read_activity() -> dict:
-    """The file's entries. No file means none. A file that can't be read gives the last entries read here, so a damaged
-    or briefly unreadable file does not wipe what other processes are waiting on."""
-    global _activity_seen
+def _read_activity():
+    """The file's entries, or None when it can't be read right now: the caller then leaves the file alone, so a brief read
+    failure wipes nobody's open requests. No file means no entries, and so does one that isn't what this plugin writes
+    (not a regular file, too big, not a JSON object): it is replaced, and nothing from an older read comes back, because
+    that could revive a request already answered. It never blocks, even on a named pipe put in the file's place."""
     try:
-        with open(ACTIVITY_FILE) as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            raise ValueError("not an object")
+        fd = os.open(ACTIVITY_FILE, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError:
         return {}
-    except Exception:
-        return dict(_activity_seen)
-    _activity_seen = data
-    return data
+    except OSError as e:
+        return {} if e.errno in (errno.ELOOP, errno.ENXIO) else None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > ACTIVITY_MAX_BYTES:
+            return {}
+        raw = b""
+        while len(raw) <= ACTIVITY_MAX_BYTES:
+            part = os.read(fd, 65536)
+            if not part:
+                break
+            raw += part
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if len(raw) > ACTIVITY_MAX_BYTES:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, RecursionError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _is_number(v) -> bool:
@@ -360,7 +379,10 @@ def _publish_activity() -> None:
                     del _waiting[key]
                 waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until", "open", "last")}
                          for v in _waiting.values()]
-            kept = {k: _kept_entry(k, v, now) for k, v in _read_activity().items()}
+            current = _read_activity()
+            if current is None:
+                return  # the next write (the status loop's beat, the next hook) tries again
+            kept = {k: _kept_entry(k, v, now) for k, v in current.items()}
             data = {k: v for k, v in kept.items() if v is not None}
             if mine or waits:
                 data[str(os.getpid())] = {"at": now, "items": mine, **({"waiting": waits} if waits else {})}

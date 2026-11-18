@@ -168,6 +168,8 @@ import fcntl  # noqa: E402
 
 
 def entries():
+    if not os.path.isfile(plugin.ACTIVITY_FILE):  # opening a pipe left in its place would wait for ever
+        return {"not a regular file": True}
     with open(plugin.ACTIVITY_FILE) as f:
         return json.load(f)
 
@@ -236,12 +238,102 @@ plugin._wait_begin("no-fcntl", "approval", 300)
 sys.modules["fcntl"] = saved
 check("nor does a missing lock module stop it", any(w["session"] == "no-fcntl" for w in entries()[str(os.getpid())]["waiting"]), entries())
 
-for name, broken in (("damaged", "{not json"), ("not an object", "[1, 2]")):
-    plugin._publish_activity()
+print("a file that can't be read")
+import errno  # noqa: E402
+import stat  # noqa: E402
+import threading  # noqa: E402
+
+plugin._waiting.clear()
+plugin._active.clear()
+
+
+def within(seconds, fn):
+    """Runs fn on a thread of its own and says whether it ended in time (a blocked read never would)."""
+    t = threading.Thread(target=fn, daemon=True)
+    t.start()
+    t.join(seconds)
+    return not t.is_alive()
+
+
+def put(data):
     with open(plugin.ACTIVITY_FILE, "w") as f:
-        f.write(broken)
+        f.write(data if isinstance(data, str) else json.dumps(data))
+
+
+def theirs():
+    now = time.time()
+    return {"at": now, "items": [], "waiting": [{"session": "their-chat", "kind": "approval", "who": "", "profile": "p",
+                                                 "since": now, "until": now + 300}]}
+
+
+put({"4242": theirs()})
+before = open(plugin.ACTIVITY_FILE).read()
+real_open = os.open
+
+
+def failing_open(path, *a, **kw):
+    if str(path) == plugin.ACTIVITY_FILE:
+        raise OSError(errno.EIO, "read failed")
+    return real_open(path, *a, **kw)
+
+
+os.open = failing_open
+plugin._wait_begin("mine", "approval", 300)
+os.open = real_open
+check("a brief read failure leaves the file, and others' requests, as they are", open(plugin.ACTIVITY_FILE).read() == before, entries())
+plugin._publish_activity()
+check("the next write puts this process's request in", [w["session"] for w in entries()[str(os.getpid())]["waiting"]] == ["mine"] and "4242" in entries(), entries())
+plugin._waiting.clear()
+put({"4242": theirs()})
+plugin._publish_activity()  # this process has now read their request
+put({})  # they answered it: gone from the file
+plugin._publish_activity()
+for name, broken in (("damaged", "{not json"), ("not an object", "[1, 2]")):
+    put(broken)
     plugin._publish_activity()
-    check(f"a {name} file does not wipe another process's open request", "4242" in entries(), list(entries()))
+    check(f"a {name} file is replaced, and an answered request does not come back", entries() == {}, entries())
+put({"4242": theirs()})
+plugin._publish_activity()
+put("x" * (plugin.ACTIVITY_MAX_BYTES + 1))
+plugin._publish_activity()
+check("nor from a file too big to read", entries() == {}, entries())
+put("x" * (plugin.ACTIVITY_MAX_BYTES + 1))
+check("the route does not read one either", answer() == {"items": [], "waiting": []}, answer())
+check("the size limits agree", papi.ACTIVITY_MAX_BYTES == plugin.ACTIVITY_MAX_BYTES)
+os.remove(plugin.ACTIVITY_FILE)
+os.mkfifo(plugin.ACTIVITY_FILE)
+got = []
+check("a named pipe can't hang the route", within(3, lambda: got.append(answer())) and got == [{"items": [], "waiting": []}], got)
+check("nor a write", within(3, plugin._publish_activity))
+check("and the write puts a regular file in its place", stat.S_ISREG(os.lstat(plugin.ACTIVITY_FILE).st_mode), oct(os.lstat(plugin.ACTIVITY_FILE).st_mode))
+os.remove(plugin.ACTIVITY_FILE)
+os.mkfifo(plugin.ACTIVITY_FILE)
+pipe = os.open(plugin.ACTIVITY_FILE, os.O_RDONLY | os.O_NONBLOCK)  # keeps what is written readable
+
+
+def fill_pipe():
+    w = os.open(plugin.ACTIVITY_FILE, os.O_WRONLY | os.O_NONBLOCK)
+    item = {"session": "s", "text": "t", "short": "s", "profile": "p", "ts": time.time()}
+    os.write(w, json.dumps({str(os.getpid()): dict(theirs(), items=[item]), "4242": theirs()}).encode())
+    os.close(w)  # with no writer left, a read gets the text and then its end, as from a file
+
+
+fill_pipe()
+check("what a pipe holds is not believed by the route", answer() == {"items": [], "waiting": []}, answer())
+os.read(pipe, 1 << 16)
+fill_pipe()
+plugin._publish_activity()
+check("nor by a write", entries() == {}, entries())
+os.close(pipe)
+target = plugin.ACTIVITY_FILE + ".elsewhere"
+with open(target, "w") as f:
+    json.dump({"4242": theirs()}, f)
+os.remove(plugin.ACTIVITY_FILE)
+os.symlink(target, plugin.ACTIVITY_FILE)
+check("a link is not followed by the route", answer() == {"items": [], "waiting": []}, answer())
+plugin._publish_activity()
+check("nor by a write, which replaces it", not os.path.islink(plugin.ACTIVITY_FILE) and "4242" in json.load(open(target)) and entries() == {}, entries())
+os.remove(target)
 os.remove(plugin.ACTIVITY_FILE)
 plugin._waiting.clear()
 plugin._active.clear()

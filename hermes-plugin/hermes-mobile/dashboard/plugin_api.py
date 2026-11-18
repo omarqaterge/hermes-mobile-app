@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Optional
@@ -877,6 +878,39 @@ async def delete_diag():
 
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
+ACTIVITY_MAX_BYTES = 1 << 20  # the same limit as the hooks' in __init__.py
+
+
+def _read_activity_file(path) -> dict:
+    """activity.json's entries, or none. It can't block on a named pipe in the file's place, follows no link, and reads
+    a regular file of a sane size only."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return {}
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > ACTIVITY_MAX_BYTES:
+            return {}
+        raw = b""
+        while len(raw) <= ACTIVITY_MAX_BYTES:
+            part = os.read(fd, 65536)
+            if not part:
+                break
+            raw += part
+    except OSError:
+        return {}
+    finally:
+        os.close(fd)
+    if len(raw) > ACTIVITY_MAX_BYTES:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, RecursionError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 WAIT_LONGEST = 86400  # the longest a request is listed (the same limit as the hooks' in __init__.py)
 WAIT_MOST = 64  # the most open requests one entry can count
 WAIT_KINDS = ("approval", "phone_data", "question")
@@ -935,13 +969,7 @@ async def get_activity():
 
     _slow_all()  # in case the gateway (or a chat's poller) loaded after this module
 
-    path = Path.home() / ".hermes" / "mobile" / "activity.json"
-    try:
-        data = json.loads(path.read_text())
-    except Exception:
-        return {"items": [], "waiting": []}
-    if not isinstance(data, dict):
-        return {"items": [], "waiting": []}
+    data = _read_activity_file(Path.home() / ".hermes" / "mobile" / "activity.json")
     now = time.time()
     items = []
     waiting = []
