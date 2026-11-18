@@ -744,7 +744,7 @@ def _open(a: dict, sid: str) -> dict:
         raise PhoneAppError("that is Hermux itself")
     if is_sensitive(pkg, label) and not read_prefs().get("allow_sensitive"):
         raise PhoneAppError(f"{label} looks like a banking, payment, password or 2FA app. The user has not allowed "
-                            "those (Settings → Background apps in the phone app); don't try another way.")
+                            "those (Settings → Access & privacy → Background apps in the phone app); don't try another way.")
     if _state and _state.get("session") not in ("", sid) and _alive():
         raise PhoneAppError(f"another chat is using {_state.get('label')} right now")
     denied = _approve(sid, pkg, label)
