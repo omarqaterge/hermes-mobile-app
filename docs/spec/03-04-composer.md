@@ -103,6 +103,7 @@ One slot, six faces, decided in this order:
 
 - `/yolo [on|off]` switches Full access (3.2): a bare `/yolo` goes to Full access from Off or Auto access, and from Full access back to the mode the chat was in before.
 - `/fast [on|off|status]` sets Hermes's fast mode for this chat with `config.set` key `fast` (value `toggle` when no argument), and a notice reports "Fast mode on for this chat" or "off". It is run this way because Hermes's slash worker process is slow to start on a phone.
+- `/bg` (also `/background`, and through a command alias) in a chat that has read phone data (`isTaintedNow`) is not sent: it runs in a separate Hermes process the phone-data rule doesn't reach. The notice `BG_REFUSED` says so and points to a new chat, which does the same job because a background task starts without the chat's messages. In every other chat it goes on as below.
 - Everything else: `slash.exec`; if that fails (skills and routed commands), `command.dispatch`. The answer's type decides: `alias` runs the target command (up to 3 levels), `prefill` puts the message in the composer, `send` or `skill` submits the message as a prompt (`display_kind: 'skill'` for skills), anything else shows the output as a notice.
 
 #### Slash autocomplete and skills

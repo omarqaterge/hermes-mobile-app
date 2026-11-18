@@ -10,6 +10,7 @@ import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { noteLineage, noteListRow } from './lineage'
+import { isTaintedNow } from './phone-data-taint'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -1002,6 +1003,8 @@ const YOLO_NOTICE: Record<Access, string> = {
   off: 'Auto off: Hermux asks before risky commands again'
 }
 
+export const BG_REFUSED = 'This chat has read data from your phone, so /bg is off here: a background task runs outside the rule that asks before anything is sent out. It starts without this chat’s messages, so you can run it from a new chat.'
+
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
@@ -1013,6 +1016,13 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   // is refused, however the target is spelled (spaces, extra slashes, upper case).
   if (depth > 0 && name.replace(/^[\s/]+/, '').toLowerCase().startsWith('yolo')) {
     pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
+    return
+  }
+  // /bg runs in a separate Hermes process that knows nothing of this chat, so the rule that asks before a chat which has
+  // read phone data sends anything out doesn't reach it. It starts without the chat's history, so a new chat does the
+  // same job. Checked at every alias depth, so a quick command can't reach it either.
+  if (/^(bg|background)$/i.test(name.replace(/^[\s/]+/, '')) && isTaintedNow()) {
+    pushItem({ kind: 'notice', id: newId('n'), text: BG_REFUSED, level: 'warn' })
     return
   }
   if (name.toLowerCase() === 'yolo') {

@@ -1349,6 +1349,9 @@ wss.on('connection', ws => {
         // A quick command that is an alias (config quick_commands: {type: alias, target}): /evilalias0 .. 5 aim at /yolo in different spellings.
         const m = /^evilalias(\d)/.exec(params.command || '')
         const targets = [' /yolo on', '//yolo on', '/YOLO on', '  //  /yolo', 'yolo on', ' /yolo']
+        // /bg as the pinned Hermes answers it (tools/hermes-contract); bgalias is a quick command aimed at it.
+        if (/^bgalias\b/.test(params.command || '')) return reply({ type: 'alias', target: '/bg' })
+        if (/^bg\b/.test(params.command || '')) return reply({ output: 'Background task #1 started' })
         return reply(m ? { type: 'alias', target: targets[Number(m[1])] } : {})
       }
       default:
