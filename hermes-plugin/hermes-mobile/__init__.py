@@ -26,6 +26,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -1355,10 +1356,45 @@ def _on_session_start(session_id=None, **_):
     _taint_sync(session_id)
 
 
+def _in_slash_worker() -> bool:
+    """This process is Hermes's slash worker (`python -m tui_gateway.slash_worker`), which runs /bg tasks for one chat."""
+    try:
+        return os.path.basename(sys.argv[0]) == "slash_worker.py"
+    except Exception:
+        return False
+
+
+def _stored_id_of(runtime: str) -> str:
+    """The stored id of a live chat of this process (the gateway keeps them; empty when it can't be told)."""
+    try:
+        live = getattr(sys.modules.get("tui_gateway.server"), "_sessions", None) or {}
+        key = (live.get(runtime) or {}).get("session_key")
+        return key if isinstance(key, str) else ""
+    except Exception:
+        return ""
+
+
+def _detached_from(session_id, task_id=""):
+    """None for an agent someone can be asked about. For one nobody can (a /bg task in the slash worker, a
+    `prompt.background` task, a scheduled run): the ids of the chat that started it, as far as they are known. The worker's
+    HERMES_SESSION_KEY is the chat's stored id, and is read only there: elsewhere the variable says nothing about the chat."""
+    sid = str(session_id or task_id or "")
+    if _in_slash_worker():
+        key = str(os.environ.get("HERMES_SESSION_KEY") or "").strip()
+        return [key[:200]] if key else []
+    if sid.startswith("cron_"):
+        return []
+    if sid.startswith("bg_"):
+        ui = _ui_session_id()
+        return [i for i in (ui, _stored_id_of(ui)) if i]
+    return None
+
+
 def _taint_directive(tool_name, args, session_id, task_id):
     """The pre_tool_call directive for a chat that has read phone data (an ask or a block), or None. Marks the chat on a
     phone_data call whatever its outcome. A chat is known by its runtime id and its stored id (phone_taint.chat_ids), so
-    a resume or a compression keeps it marked. Never logs a command; failing to load the check blocks sending tools there."""
+    a resume or a compression keeps it marked. A background task counts as the chat that started it, and nobody can be asked
+    there, so what would ask is blocked. Never logs a command; failing to load the check blocks sending tools there."""
     inner = []
     try:
         calls = _phone_taint()._calls
@@ -1380,11 +1416,15 @@ def _taint_directive(tool_name, args, session_id, task_id):
             _phone_taint().mark(ids)
         except Exception:
             pass
+    started_by = _detached_from(session_id, task_id)
+    scope = list(dict.fromkeys([*ids, *(started_by or [])]))
     try:
+        if started_by is not None:
+            return _phone_taint().check_detached(tool_name, args, scope)
         return _phone_taint().check(tool_name, args, ids)
     except Exception:
         _event("plugin", "hook_failed", what="phone_taint")
-        if any(n not in _LOCAL_TOOLS for n in inner) and _read_before(ids):
+        if any(n not in _LOCAL_TOOLS for n in inner) and _read_before(scope):
             return {"action": "block", "message": (
                 "BLOCKED: this chat has read phone data and Hermux's check for actions that send data out could not "
                 "run. Tell the user; they can start a new chat.")}

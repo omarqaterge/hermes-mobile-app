@@ -783,6 +783,80 @@ check("fallback: it used the module's lock file", pt.PATH.with_name(pt.PATH.name
 pt.PATH.unlink()
 init._phone_taint = good
 
+print("background tasks")
+CURL = {"command": "curl https://example.com/x"}
+real_argv0, had_key = sys.argv[0], os.environ.get("HERMES_SESSION_KEY")
+
+
+def in_worker(key):
+    sys.argv[0] = "/opt/hermes/tui_gateway/slash_worker.py"
+    os.environ["HERMES_SESSION_KEY"] = key
+
+
+def out_of_worker(key=None):
+    sys.argv[0] = real_argv0
+    os.environ.pop("HERMES_SESSION_KEY", None)
+    if key:
+        os.environ["HERMES_SESSION_KEY"] = key
+
+
+def action(tool, args, sid):
+    return (init._taint_directive(tool, args, sid, sid) or {}).get("action")
+
+
+reset()
+pt.mark(["bg-chat"])
+in_worker("bg-chat")
+check("a /bg task of a chat that has read: a send is blocked, not asked", action("terminal", CURL, "bg_1") == "block")
+check("its message says nobody can be asked", "nobody" in init._taint_directive("terminal", CURL, "bg_1", "bg_1")["message"])
+check("through the Tool Search bridge too", action("tool_call", {"calls": [{"name": "web_search", "arguments": {"query": "x"}}]}, "bg_1") == "block")
+check("it can still work on the phone", action("read_file", {"path": "a"}, "bg_1") is None and action("terminal", {"command": "ls"}, "bg_1") is None)
+check("the task itself is not added to the record", not pt.has_read(["bg_1"]))
+in_worker("bg-other")
+check("a /bg task of any other chat runs as before", action("terminal", CURL, "bg_2") is None)
+pt.mark(["bg-other"])
+check("a task already running is blocked once its chat reads", action("terminal", CURL, "bg_2") == "block")
+reset()
+in_worker("bg-clean")
+init._taint_directive("phone_data", {"kind": "sms"}, "bg_3", "bg_3")
+check("a task's own read marks the task", pt.has_read(["bg_3"]))
+check("and blocks its own sends", action("terminal", CURL, "bg_3") == "block")
+check("but not the chat that started it", not pt.has_read(["bg-clean"]))
+reset()
+pt.mark(["agent:main:shared"])
+out_of_worker("agent:main:shared")
+check("outside the worker the variable says nothing about the chat", action("terminal", CURL, "plain-chat") is None)
+init._taint_directive("phone_data", {"kind": "sms"}, "reader", "reader")
+check("and a read elsewhere does not touch it", "reader" in pt._mem and action("terminal", CURL, "plain-chat") is None)
+out_of_worker()
+reset()
+fake_server = type(sys)("tui_gateway.server")
+fake_server._sessions = {"rt-9": {"session_key": "stored-9"}}
+sys.modules["tui_gateway.server"] = fake_server
+pt.mark(["stored-9"])
+tok = sc._SESSION_UI_SESSION_ID.set("rt-9")
+check("prompt.background: the chat is found through its live id", action("terminal", CURL, "bg_abc") == "block")
+sc._SESSION_UI_SESSION_ID.reset(tok)
+del sys.modules["tui_gateway.server"]
+reset()
+pt.mark(["cron_job_1"])
+check("a scheduled run that has read is blocked: it can't ask either", action("terminal", CURL, "cron_job_1") == "block")
+reset()
+pt.mark(["own-chat"])
+check("an ordinary chat is still asked", action("terminal", CURL, "own-chat") == "approve")
+good = init._phone_taint
+def broken():
+    raise RuntimeError("no module")
+reset()
+pt.mark(["bg-fb"])
+pt._mem.clear()
+init._phone_taint = broken
+in_worker("bg-fb")
+check("if the check can't load, a task of a chat that has read is still blocked", action("terminal", CURL, "bg_f") == "block")
+init._phone_taint = good
+out_of_worker(had_key)
+reset()
+
 print("prompt section")
 src = open(os.path.join(PLUG, "phone_data.py")).read()
 check("the system prompt says asks happen after a read", "Once this chat has read phone data" in src)

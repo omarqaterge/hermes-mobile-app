@@ -1301,6 +1301,22 @@ def ask_text(name: str, shown: str, why: str = "") -> str:
             f"Allow only if you asked for it. {tag}It would run {what}")
 
 
+def check_detached(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
+    """For an agent nobody can be asked about: a background task or a scheduled run. `ids` are its own and those of the chat
+    that started it. If one of them has read phone data, what `check` would ask about is blocked, at every call, so a read
+    made after the task started counts too. Marks nothing: the task's own reads are its own."""
+    ids = _norm(ids)
+    if not has_read(ids):
+        return None
+    for name, a in _calls(tool_name, args):
+        hit = classify(name, a)
+        if hit is not None:
+            return {"action": "block", "message": (
+                f"BLOCKED: {hit[2]}. This background task belongs to a chat that has read data from your phone, and nobody "
+                "can be asked here before something is sent out. Do the rest without sending anything, or tell the user.")}
+    return None
+
+
 def check(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
     """A pre_tool_call directive asking the user, or None. The ask is a fresh one every time (new rule_key).
     A chat known by one of its ids gets the others added, so a resume or a compression keeps it marked."""
