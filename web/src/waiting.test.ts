@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ENDED_HOLD_S, SUB_AGENT, cleanWaiting, forgetEnded, noteEnded, visibleWaiting, type EndedChat } from './waiting'
+import { ENDED_HOLD_S, SUB_AGENT, cleanActivity, cleanWaiting, forgetEnded, noteEnded, visibleWaiting, type EndedChat } from './waiting'
 import type { WaitingItem } from './store'
 
 const entry = (session: string, open = 1, since = 100, last = since, kind = 'approval'): WaitingItem => ({ session, kind, since, last, open, until: 900 })
@@ -70,5 +70,18 @@ describe('what is taken from the feed', () => {
   it('falls back on counts that make no sense', () => {
     const w = cleanWaiting([{ ...good, open: -1, last: 'x' }])[0]
     expect([w.open, w.last]).toEqual([1, 1])
+  })
+})
+
+describe('the work list from the feed', () => {
+  const good = { session: 's', text: 'Thinking', short: 'Thinking', profile: 'p', review: false, ts: 5 }
+  it('keeps a well-formed line, and only its known fields', () => expect(cleanActivity([{ ...good, extra: { a: 1 } }])).toEqual([good]))
+  it('accepts what an older plugin leaves out', () => {
+    expect(cleanActivity([{ session: 's', text: 't', ts: 1 }])).toEqual([{ session: 's', text: 't', short: undefined, profile: undefined, review: false, ts: 1 }])
+  })
+  it('skips anything React could not draw or the banner could not use', () => {
+    const bad = [null, 'x', { ...good, text: { a: 1 } }, { ...good, text: null }, { ...good, session: ['s'] }, { ...good, session: '' }, { ...good, short: 5 }, { ...good, profile: {} }, { ...good, ts: 'x' }]
+    expect(cleanActivity(bad)).toEqual([])
+    for (const raw of [undefined, null, {}, 'x']) expect(cleanActivity(raw)).toEqual([])
   })
 })

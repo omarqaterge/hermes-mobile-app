@@ -2,7 +2,7 @@
 // was answered, or Hermes withdrew it) the plugin hears of it a moment later, so for a few seconds the feed can still count
 // it. This works out what is really left, from how many the feed counted and how many ended here: a chat with another
 // request open stays listed. After ENDED_HOLD_S the feed is simply believed again, so a wrong guess can't last.
-import type { WaitingItem } from './store'
+import type { ActivityItem, WaitingItem } from './store'
 
 export const ENDED_HOLD_S = 5
 
@@ -11,6 +11,20 @@ export const ENDED_HOLD_S = 5
 export const SUB_AGENT = 'A sub-agent'
 const FEED_KINDS = new Set(['approval', 'phone_data', 'question'])
 const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+const stringOrAbsent = (v: unknown) => v === undefined || typeof v === 'string'
+
+/** The feed's work list: text the banner draws must be text, whatever the file behind the feed holds. */
+export function cleanActivity(raw: unknown): ActivityItem[] {
+  if (!Array.isArray(raw)) return []
+  const out: ActivityItem[] = []
+  for (const i of raw as Array<Partial<ActivityItem> | null>) {
+    if (!i || typeof i !== 'object' || typeof i.session !== 'string' || !i.session || typeof i.text !== 'string') continue
+    if (!stringOrAbsent(i.short) || !stringOrAbsent(i.profile) || !isTime(i.ts)) continue
+    out.push({ session: i.session, text: i.text, short: i.short, profile: i.profile, review: Boolean(i.review), ts: i.ts })
+  }
+  return out
+}
 
 /** The feed's list, taking only what the plugin writes. A kind it doesn't know becomes empty: the neutral words. */
 export function cleanWaiting(raw: unknown): WaitingItem[] {

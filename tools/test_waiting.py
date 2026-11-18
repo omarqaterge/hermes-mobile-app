@@ -290,8 +290,11 @@ with open(plugin.ACTIVITY_FILE, "w") as f:
                }, f)
 check("a malformed working entry can't stop the feed", answer() == {"items": [], "waiting": []}, answer())
 with open(plugin.ACTIVITY_FILE, "w") as f:
-    json.dump({alive: {"at": now, "items": ["x", {"session": "no-ts"}, {"session": "bad", "ts": "y"}, {"session": "fine", "ts": now}]}}, f)
-check("nor a malformed item", [i["session"] for i in answer()["items"]] == ["fine"], answer())
+    item = {"session": "fine", "text": "Thinking", "short": "Thinking", "profile": "p", "review": False, "ts": now}
+    json.dump({alive: {"at": now, "items": ["x", {"session": "no-ts"}, dict(item, session="bad", ts="y"), dict(item, extra={"a": 1}),
+                                            dict(item, session=""), dict(item, session=["s"]), dict(item, text={"a": 1}), dict(item, text=None),
+                                            dict(item, short=5), dict(item, profile=["p"]), {k: v for k, v in item.items() if k != "text"}]}}, f)
+check("nor a malformed item: only strings pass, and only the known fields", answer()["items"] == [item], answer())
 with open(plugin.ACTIVITY_FILE, "w") as f:
     f.write("[1, 2]")
 check("nor a file that isn't an object", answer() == {"items": [], "waiting": []}, answer())

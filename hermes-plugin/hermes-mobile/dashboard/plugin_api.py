@@ -910,6 +910,22 @@ def _waiting_entry(pid, w, now: float):
         return None
 
 
+def _activity_item(it, now: float):
+    """One line of work as the app may see it, or None: the hooks' fields only, with the types they write."""
+    try:
+        if not isinstance(it, dict) or not _is_number(it.get("ts")):
+            return None
+        fields = [it.get(k) for k in ("session", "text", "short", "profile")]
+        if not all(isinstance(v, str) for v in fields) or not fields[0]:
+            return None
+        if now - it["ts"] > (60 if it.get("review") else 180):
+            return None
+        return {"session": fields[0], "text": fields[1], "short": fields[2], "profile": fields[3],
+                "review": bool(it.get("review")), "ts": it["ts"]}
+    except Exception:
+        return None
+
+
 @router.get("/activity")
 async def get_activity():
     """Live work reported by the plugin hooks in every Hermes process, including background self-review. `waiting`:
@@ -946,11 +962,9 @@ async def get_activity():
             if not _is_number(at) or now - at > 300 or not isinstance(listed, list):
                 continue
             for it in listed:
-                if not isinstance(it, dict) or not _is_number(it.get("ts")):
-                    continue
-                limit = 60 if it.get("review") else 180
-                if now - it["ts"] <= limit:
-                    items.append(it)
+                clean = _activity_item(it, now)
+                if clean:
+                    items.append(clean)
         except Exception:
             continue
     items.sort(key=lambda i: i["ts"], reverse=True)
