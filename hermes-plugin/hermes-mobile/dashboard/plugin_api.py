@@ -878,6 +878,7 @@ async def delete_diag():
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
 WAIT_LONGEST = 86400  # the longest a request is listed (the same limit as the hooks' in __init__.py)
+WAIT_MOST = 64  # the most open requests one entry can count
 WAIT_KINDS = ("approval", "phone_data", "question")
 WAIT_WHO = ("", "A sub-agent")
 
@@ -896,9 +897,11 @@ def _waiting_entry(pid, w, now: float):
             and isinstance(who, str) and who in WAIT_WHO and _is_number(since) and _is_number(until)
             and now < until <= now + WAIT_LONGEST):
         return None
-    profile = w.get("profile")
+    profile, count, last = w.get("profile"), w.get("open"), w.get("last")
     return {"session": session, "kind": kind, "who": who, "profile": profile if isinstance(profile, str) else "",
-            "since": since, "until": until}
+            "since": since, "until": until,
+            "open": count if isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= WAIT_MOST else 1,
+            "last": last if _is_number(last) else since}
 
 
 @router.get("/activity")

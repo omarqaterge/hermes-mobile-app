@@ -349,7 +349,8 @@ def _publish_activity() -> None:
                          "review": bool(v.get("review")), "ts": v["ts"]} for sid, v in _active.items()]
                 for key in [k for k, v in _waiting.items() if v["until"] <= now]:
                     del _waiting[key]
-                waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until")} for v in _waiting.values()]
+                waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until", "open", "last")}
+                         for v in _waiting.values()]
             kept = {k: _kept_entry(k, v, now) for k, v in _read_activity().items()}
             data = {k: v for k, v in kept.items() if v is not None}
             if mine or waits:
@@ -389,7 +390,7 @@ def _asker(session_id: str) -> tuple:
 def _wait_begin(session_id, kind: str, timeout) -> None:
     """A request is open: GET /activity lists it under `waiting` until _wait_end, the chat's turn ends or `timeout` (s)
     passes, however long that is. Only the chat, the kind and who: no text of the request, and nothing that can answer
-    it. Several open requests of one kind in a chat are counted."""
+    it. Several open requests of one kind in a chat are counted (`open`), and `last` says when the newest began."""
     if not session_id:
         return
     now = time.time()
@@ -400,7 +401,7 @@ def _wait_begin(session_id, kind: str, timeout) -> None:
         _waiting[(chat, kind, who)] = {"session": chat, "kind": kind, "who": who, "profile": _profile(),
                                        "since": cur["since"] if cur else now,
                                        "until": max(now + limit, cur["until"] if cur else 0),
-                                       "open": (cur["open"] if cur else 0) + 1}
+                                       "open": (cur["open"] if cur else 0) + 1, "last": now}
         while len(_waiting) > MAX_WAITING:
             _waiting.pop(next(iter(_waiting)))
     _publish_activity()

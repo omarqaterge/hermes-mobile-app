@@ -28,6 +28,9 @@ export interface WaitingItem {
   profile?: string
   since: number
   until: number
+  /** How many requests of this kind are open in the chat, and when the newest began. */
+  open?: number
+  last?: number
 }
 
 export type ToolStatus = 'generating' | 'running' | 'done' | 'error'

@@ -87,7 +87,8 @@ plugin._on_pre_approval_request(command=secret, description="sends a token", ses
 w = waiting()
 check("the chat is listed as waiting for an approval", [(x["session"], x["kind"], x["who"]) for x in w] == [("chat-1", "approval", "")], w)
 check("it has a start and an end", w and w[0]["since"] <= time.time() < w[0]["until"], w)
-check("only the chat, the kind, who, the bot and the times", w and set(w[0]) == {"session", "kind", "who", "profile", "since", "until"}, w)
+check("only the chat, the kind, who, the bot, the times and the count", w and set(w[0]) == {"session", "kind", "who", "profile", "since", "until", "open", "last"}, w)
+check("one request is open", w and w[0]["open"] == 1 and w[0]["last"] == w[0]["since"], w)
 text = json.dumps(answer()["waiting"])
 check("no word of the request", "abc123" not in text and "curl" not in text and "token" not in text, text)
 check("the working list keeps its own fields", all(set(i) == {"session", "text", "short", "profile", "review", "ts"} for i in answer()["items"]), answer()["items"])
@@ -107,11 +108,12 @@ print("two at once, and one that waits on another")
 for cmd in ("a", "b"):
     plugin._on_pre_approval_request(command=cmd, session_key="key", session_id="chat-2")
 check("one row for the chat", len(waiting()) == 1, waiting())
+check("counting both", waiting()[0]["open"] == 2 and waiting()[0]["last"] > waiting()[0]["since"], waiting())
 plugin._on_pre_approval_request(command="a", session_key="key", session_id="chat-2", coalesced=True)
 plugin._on_post_approval_response(session_key="key", session_id="chat-2", command="a", coalesced=True, choice="once")
 check("a coalesced request changes nothing", len(waiting()) == 1, waiting())
 plugin._on_post_approval_response(session_key="key", session_id="chat-2", command="a", choice="once")
-check("one answered: still waiting for the other", len(waiting()) == 1, waiting())
+check("one answered: still waiting for the other", len(waiting()) == 1 and waiting()[0]["open"] == 1, waiting())
 plugin._on_post_approval_response(session_key="key", session_id="chat-2", command="b", choice="deny")
 check("both answered: gone", waiting() == [], waiting())
 
@@ -157,7 +159,7 @@ plugin._waiting.clear()
 print("bounded")
 for i in range(plugin.MAX_WAITING + 10):
     plugin._waiting[(f"c{i}", "approval", "")] = {"session": f"c{i}", "kind": "approval", "who": "", "profile": "p",
-                                                  "since": 1.0, "until": time.time() + 60, "open": 1}
+                                                  "since": 1.0, "until": time.time() + 60, "open": 1, "last": 1.0}
 plugin._wait_begin("last", "approval", 60)
 check("the oldest go", len(plugin._waiting) <= plugin.MAX_WAITING and ("last", "approval", "") in plugin._waiting, len(plugin._waiting))
 
@@ -250,7 +252,7 @@ print("what the file can't make the feed say")
 now = time.time()
 good = {"session": "real", "kind": "approval", "who": "", "profile": "p", "since": now, "until": now + 60}
 alive = str(os.getpid())
-forged = [
+forged = [  # each of these must be refused
     "not a dict", 7, None, ["x"],
     dict(good, session=""), dict(good, session=5), dict(good, kind="anything the agent likes"), dict(good, kind=["approval"]),
     dict(good, who="Your bank"), dict(good, who=["A sub-agent"]), dict(good, until=now + plugin.WAIT_LONGEST + 600),
@@ -258,12 +260,13 @@ forged = [
     dict(good, since="then"), dict(good, since=float("nan")),
 ]
 with open(plugin.ACTIVITY_FILE, "w") as f:
-    json.dump({alive: {"at": now, "items": [], "waiting": forged + [dict(good, extra="request text")]},
+    json.dump({alive: {"at": now, "items": [], "waiting": forged + [dict(good, extra="request text", open="many", last="never")]},
                "not-a-pid": {"at": now, "items": [], "waiting": [dict(good, session="no-pid")]},
                "111": "not a dict", "112": None, "113": ["x"]}, f)
 w = waiting()
 check("only the well-formed entry of a real process is served", [x["session"] for x in w] == ["real"], w)
-check("with only the known fields", set(w[0]) == {"session", "kind", "who", "profile", "since", "until"} if w else False, w)
+check("with only the known fields", set(w[0]) == {"session", "kind", "who", "profile", "since", "until", "open", "last"} if w else False, w)
+check("a count that makes no sense counts as one", w and w[0]["open"] == 1, w)
 check("the limits agree", papi.WAIT_LONGEST == plugin.WAIT_LONGEST and papi.WAIT_KINDS == plugin.WAIT_KINDS and papi.WAIT_WHO == plugin.WAIT_WHO)
 with open(plugin.ACTIVITY_FILE, "w") as f:  # as another process's entry: a writer replaces its own
     json.dump({"4343": {"at": now, "items": [], "waiting": forged + [good]},

@@ -4,13 +4,13 @@
 import { api } from './api'
 import { loadSessionsSoon, requestChat } from './gateway'
 import { getState, setState, subscribe, type ActivityItem, type WaitingItem } from './store'
+import { forgetEnded, noteEnded, visibleWaiting, type EndedChat } from './waiting'
 
 let timer: ReturnType<typeof setInterval> | null = null
 
-// When this page last saw a chat's request end (answered here, or `request.cancel`), in seconds. The plugin hears of it a
-// moment later, so a wait that began before that is over, whatever an answer on its way still says.
-const endedAt = new Map<string, number>()
-const stillOpen = (w: WaitingItem) => w.since > (endedAt.get(w.session) ?? -1)
+// Requests this page saw end (answered here, or `request.cancel`), which the plugin may not have heard of yet (waiting.ts).
+const ended = new Map<string, EndedChat>()
+const nowS = () => Date.now() / 1000
 
 async function poll(): Promise<void> {
   if (document.visibilityState !== 'visible' || getState().conn !== 'open') return
@@ -18,8 +18,8 @@ async function poll(): Promise<void> {
     const r = await api<{ items: ActivityItem[]; waiting?: WaitingItem[] }>('GET', '/api/plugins/hermes-mobile/activity')
     const items = r.items ?? []
     const listed = r.waiting ?? [] // a plugin older than the app has no such field
-    for (const id of endedAt.keys()) if (!listed.some(w => w.session === id)) endedAt.delete(id)
-    const waiting = listed.filter(stillOpen)
+    forgetEnded(ended, listed, nowS())
+    const waiting = visibleWaiting(listed, ended, nowS())
     if (JSON.stringify(waiting) !== JSON.stringify(getState().waiting)) setState({ waiting })
     const before = getState().activity
     if (JSON.stringify(items) !== JSON.stringify(before)) {
@@ -38,12 +38,12 @@ export function bannerItems(items: ActivityItem[], activeId: string | undefined,
 }
 
 /** A request left this page: its chat stops waiting now, not at the next poll. */
-function requestsEnded(ended: ReturnType<typeof getState>['requests']): void {
-  const at = Date.now() / 1000
-  const chats = new Set(ended.map(requestChat))
-  for (const id of chats) endedAt.set(id, at)
-  if (!getState().waiting.some(w => chats.has(w.session))) return
-  queueMicrotask(() => setState(s => ({ waiting: s.waiting.filter(stillOpen) })))
+function requestsEnded(gone: ReturnType<typeof getState>['requests']): void {
+  const listed = getState().waiting
+  const chats = gone.map(requestChat)
+  for (const id of chats) noteEnded(ended, id, listed, nowS())
+  if (!listed.some(w => chats.includes(w.session))) return
+  queueMicrotask(() => setState(s => ({ waiting: visibleWaiting(s.waiting, ended, nowS()) })))
   setTimeout(() => void poll(), 300)
 }
 
@@ -72,9 +72,9 @@ export function startActivityPolling(): void {
     if (wasRunning && !running) setTimeout(() => void poll(), 300)
     wasRunning = running
     if (s.requests !== requests) {
-      const ended = requests.filter(r => !s.requests.some(n => n.id === r.id))
+      const gone = requests.filter(r => !s.requests.some(n => n.id === r.id))
       requests = s.requests
-      if (ended.length) requestsEnded(ended)
+      if (gone.length) requestsEnded(gone)
     }
   })
   document.addEventListener('visibilitychange', () => void poll())
