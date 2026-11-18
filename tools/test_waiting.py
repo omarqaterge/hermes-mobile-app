@@ -150,6 +150,8 @@ check("the top chat is listed, saying who asks", [(x["session"], x["who"]) for x
 check("its goal is not", "private" not in json.dumps(w), w)
 plugin._on_post_approval_response(session_key="key", session_id="grandkid", command="rm x", choice="deny")
 check("answered: gone", waiting() == [], waiting())
+plugin._on_subagent_stop(child_session_id="grandkid")
+plugin._on_subagent_stop(child_session_id="kid")  # they have ended: the file is empty again for what follows
 
 print("how a wait can end without an answer")
 plugin._on_pre_tool_call(tool_name="clarify", args={"question": "q"}, session_id="chat-6")

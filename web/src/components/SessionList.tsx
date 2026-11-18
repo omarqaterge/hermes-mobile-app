@@ -58,7 +58,7 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
   ) || nested.running > 0) && !need
   const unread = useStore(st => !active && st.unread.includes(s.id)) && !working && !need
   const ref = useRef<HTMLDivElement>(null)
-  const g = useRef({ x0: 0, y0: 0, mode: '' as '' | 'swipe' | 'scroll' | 'drag', moved: false, y: 0, id: 0, timer: 0 as unknown as ReturnType<typeof setTimeout>, zone: '' })
+  const g = useRef({ down: false, x0: 0, y0: 0, mode: '' as '' | 'swipe' | 'scroll' | 'drag', moved: false, y: 0, id: 0, timer: 0 as unknown as ReturnType<typeof setTimeout>, zone: '' })
   const [dx, setDx] = useState(0)
   const [anim, setAnim] = useState(false)
 
@@ -76,7 +76,7 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
   }
 
   const onDown = (e: React.PointerEvent) => {
-    g.current = { ...g.current, x0: e.clientX, y0: e.clientY, y: e.clientY, id: e.pointerId, mode: '', moved: false, zone: '' }
+    g.current = { ...g.current, down: true, x0: e.clientX, y0: e.clientY, y: e.clientY, id: e.pointerId, mode: '', moved: false, zone: '' }
     clearTimeout(g.current.timer)
     g.current.timer = setTimeout(() => {
       if (!g.current.moved) {
@@ -89,6 +89,7 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
     }, 450)
   }
   const onMove = (e: React.PointerEvent) => {
+    if (!g.current.down) return // a mouse passing over the row is not a swipe; a press on its buttons never reaches onDown
     g.current.y = e.clientY
     if (g.current.mode === 'drag') return
     const x = e.clientX - g.current.x0
@@ -118,6 +119,7 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
     }
   }
   const onUp = () => {
+    g.current.down = false
     clearTimeout(g.current.timer)
     if (g.current.mode !== 'swipe') return
     const z = zoneOf(dx)
@@ -153,6 +155,7 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={() => {
+          g.current.down = false
           clearTimeout(g.current.timer)
           if (g.current.mode === 'swipe') settle(0)
         }}
