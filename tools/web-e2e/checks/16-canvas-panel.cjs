@@ -1,6 +1,6 @@
 // The canvas panel: swipes, Back, wide screens.
 const path = require('path')
-const { WEB, sleep, check, fail, nativeShell } = require('../lib.cjs')
+const { WEB, sleep, check, fail, nativeShell, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -166,11 +166,12 @@ module.exports = async t => {
   }
   await cvw.evaluate(() => window.hermesBack())
   await cvw.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 2000 }).catch(() => {})
-  // Wide screens: a sheet opened on a page (Settings → Uninstall Hermux) covers the docked chat list, not under it.
+  // Wide screens: a sheet opened on a page (Settings → About & help → Uninstall Hermux) covers the docked chat list, not under it.
   {
     const listX = async () => (await cvw.locator('.drawer').boundingBox())?.x ?? -9999
     check((await listX()) >= 0, 'wide screen: the chat list is docked by default')
     await cvw.getByRole('button', { name: 'Settings', exact: true }).click()
+    await settingsPage(cvw, 'About & help')
     await cvw.locator('.set-row', { hasText: 'Uninstall Hermux' }).click()
     const sh = cvw.locator('.sheet', { hasText: 'Uninstall Hermux' }).last()
     await sh.waitFor({ timeout: 3000 })

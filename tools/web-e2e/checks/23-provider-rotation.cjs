@@ -1,6 +1,6 @@
-// Settings → Model providers: provider rotation. The fallback chain (config.yaml fallback_providers: add, reorder,
+// Settings → Models → Model providers: provider rotation. The fallback chain (config.yaml fallback_providers: add, reorder,
 // remove, kept routing keys) and a provider's credential pool (keys, status, rotation strategy, add and remove).
-const { WEB, calls, check, mock, sleep } = require('../lib.cjs')
+const { WEB, calls, check, mock, sleep, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -16,6 +16,7 @@ module.exports = async t => {
   await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.getByRole('button', { name: 'Settings', exact: true }).click()
+  await settingsPage(pg, 'Models')
   await pg.locator('.set-row', { hasText: 'Model providers' }).click()
   const chain = pg.locator('.set-section', { hasText: 'Fallback models' })
   await chain.locator('.set-row', { hasText: 'deepseek-chat' }).waitFor({ timeout: 5000 }).then(() => check(true, 'rotation: the fallback list shows the saved chain'), () => check(false, 'rotation: the fallback list shows the saved chain'))
@@ -97,6 +98,7 @@ module.exports = async t => {
       if (before) await before()
       await pg.getByRole('button', { name: /^Sessions/ }).click()
       await pg.getByRole('button', { name: 'Settings', exact: true }).click()
+      await settingsPage(pg, 'Models')
       await pg.locator('.set-row', { hasText: 'Model providers' }).click()
     }
     const ok = (loc, name) => loc.waitFor({ timeout: 5000 }).then(() => check(true, name), () => check(false, name))

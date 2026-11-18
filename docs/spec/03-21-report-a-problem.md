@@ -1,6 +1,6 @@
 ### 3.21 Report a problem
 
-**Opens from:** Settings → About → Report a problem (`ReportRow`, under What's new); the "Report a problem" link in a
+**Opens from:** Settings → About & help → Report a problem (`ReportRow`, under What's new); the "Report a problem" link in a
 page's error notice (`ReportLink` in `LoadError`, `components/Screens.tsx`) and under "The installer stopped" in the
 setup flow; the Report a problem button of the Backend status sheet while Hermux is offline or has problems (it closes
 that sheet first). `openReport()` opens it from anywhere; `ReportHost`, mounted once in `App.tsx`, shows it.
@@ -71,7 +71,7 @@ minute in the app and 60 a process on Hermes's side (a `log dropped` line says h
 Times are month, day and UTC time, no year or time zone. `HermuxApp` does this only in the app's main process, not in the speech-model probe's. The app's files are in `getNoBackupFilesDir()/diag`, which no device
 backup holds; `HermuxApp.log` is the app's one `DiagLog`. In a plain browser events stay in memory (`memoryEvents`, the last 300).
 
-**The switch and delete button** (`DiagRows` in `web/src/components/DiagRows.tsx`, Settings → About): "Keep a diagnostic log" (on by
+**The switch and delete button** (`DiagRows` in `web/src/components/DiagRows.tsx`, Settings → Access & privacy → Kept on this phone): "Keep a diagnostic log" (on by
 default: on the phone only, and a log has to exist before something goes wrong) and, while it is on, "Delete the diagnostic log"
 (after `confirmDialog`). Off (`setDiagnosticsEnabled`, bridge `setDiagEnabled`) stops every layer, the supervisor too (the file
 `~/.hermes-mobile/diag-off`) and deletes what was kept; a crash is then not recorded either. Delete (`clearDiagnostics`) removes

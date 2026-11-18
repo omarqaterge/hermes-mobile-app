@@ -101,7 +101,7 @@ stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while
 | `Settings.tsx` | The Settings screen and its pages, the model picker, key and option sheets |
 | `Bots.tsx` | The Bots screen and its sheets (create, bot, SOUL.md, rename) |
 | `Providers.tsx` | The provider list, provider sheet and own-endpoint sheet |
-| `HermesSettings.tsx` | Settings → Hermux settings: the grouped Hermes options and the sheet that edits one |
+| `HermesSettings.tsx` | Settings → Behaviour: the grouped Hermes options and the sheet that edits one |
 | `Connectors.tsx` | Settings → Connectors: MCP servers, the catalog, tools with a key and skill keys, with their sheets |
 | `Rotation.tsx` | Provider rotation: the fallback models list and a provider's keys and logins (credential pool) |
 | `providers.ts` | Pure provider catalog: merges Hermes's key list, sign-ins and saved endpoints into rows |
@@ -114,7 +114,7 @@ stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while
 | `timelimit.ts` | `timeLimit` and `LOAD_LIMIT_MS`: the 20 s bound `useLoader` puts on every screen's load |
 | `Uninstall.tsx` | The Danger zone section, the uninstall sheet and its resume at start-up |
 | `uninstall.ts` | Pure uninstall logic and the shell calls |
-| `plugin-sync.ts` | Settings → About → Hermux plugin: `pluginRow` (the state → value, sub, tap action; unit-tested), `updateAnswer`, the shell calls `pluginState` / `pluginUpdate`, and `usePluginState`, refreshed by `window.hermesPluginState()` |
+| `plugin-sync.ts` | Settings → About & help → Hermux plugin: `pluginRow` (the state → value, sub, tap action; unit-tested), `updateAnswer`, the shell calls `pluginState` / `pluginUpdate`, and `usePluginState`, refreshed by `window.hermesPluginState()` |
 | `update.ts` | The in-app app-update check and install request |
 | `releasenotes.ts` | Pure version comparison (`isNewer`), the What's new sections of the changelog (`notesSince`), a section's one-line-per-change summary (`headlines`, `NotesGroup`), and what the after-update sheet does at a start (`afterUpdatePlan`, `isReleaseVersion`) |
 | `SttSettings.tsx` | Settings → Voice → Speech recognition: the phone's recogniser, the on-device model cards and Your own model |

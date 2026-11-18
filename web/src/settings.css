@@ -1,0 +1,75 @@
+/* The Settings main page (components/Settings.tsx Hub, AttentionCards; spec 3.15). Solid content, never glass.
+   - The seven rows keep one line each: the title, the line under it and the value are cut with an ellipsis, so a wider
+     font or a 320 px screen never wraps a row or makes it taller.
+   - An attention card shows only while its condition is true: an icon, a title, one line and one button. Gold is the
+     one primary action ("Add a provider"); red marks the offline card. Its text uses `--text` and `--glass-dim`,
+     which reach 4.5:1 on `--surface` in Default, OLED black and Light (`--dim` reaches only 4.22:1 on Light).
+   - A card arrives with the shared row arrival (motion.css `motion-row`, its length a motion token, so Reduced is a
+     short fade and Off is instant); it leaves at once. */
+
+.set-main .set-title,
+.set-main .set-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+.set-main .set-value {
+  max-width: 46%;
+}
+
+.attn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.attn-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  animation: motion-row var(--motion-base) var(--spring-settle) backwards;
+}
+.attn-card.attn-gold {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.attn-card.attn-red {
+  border-color: color-mix(in srgb, var(--err) 55%, var(--border));
+}
+.attn-card.attn-update {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.attn-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.attn-title {
+  font-size: 0.97rem;
+  font-weight: 650;
+  color: var(--text);
+}
+.attn-line {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--glass-dim);
+}
+.attn-btn {
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 10px 16px;
+  color: var(--text);
+}
+.attn-btn.primary {
+  color: var(--accent-ink);
+}

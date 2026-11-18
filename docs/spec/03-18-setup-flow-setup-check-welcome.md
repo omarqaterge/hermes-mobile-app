@@ -32,7 +32,7 @@ Two screens draw the same list of rows from `setupSteps()` (`web/src/setupflow.t
 Each help text is fixed in `Setup.tsx` `describe`. For example, the installer row says: copy the command, open Termux, long-press, Paste, Enter; it installs Debian and Hermux in about 15 minutes and Termux must stay open.
 
 #### Setup check
-**Opens from:** (screen value `setup`) Settings → Connection → Setup check; the Status sheet; the "Check setup" button on the offline banner in the chat (it appears after the connection has been down for 10 s). **Closes with:** Back. **Source:** `Setup.tsx` `SetupScreen`.
+**Opens from:** (screen value `setup`) Settings → About & help → Setup check; the Status sheet; the "Check setup" button on the offline banner in the chat (it appears after the connection has been down for 10 s). **Closes with:** Back. **Source:** `Setup.tsx` `SetupScreen`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | States |
@@ -75,7 +75,7 @@ A Termux that does not come from F-Droid (`termuxSigner` `other`) cannot take F-
 
 #### Usage stats card (after setup)
 **Source:** `web/src/components/StatsCard.tsx` (`StatsCard.tsx`) `StatsCard`, `SourceSheet`; `web/src/stats.ts`. **Shows:** once, only in a build with an app key (`statsAvailable()`), 1.5 s after setup is finished (`welcomeDone()`) with Hermes connected and nothing else open: no screen, sheet, drawer or request, and not over the lock screen (when the phone locks with it open, `onLockView` in `lockview.ts` closes it). Existing installs see it once too.
-**Layout:** the sheet "Share anonymous usage stats?" says why, what is sent, what is never sent, that it goes to Aptabase and what Aptabase keeps (spec 2.3), and that Settings → About changes it. Buttons: No thanks, Yes. Closing it in any way but Yes leaves stats off (`markStatsAsked` writes the choice as the card opens).
+**Layout:** the sheet "Share anonymous usage stats?" says why, what is sent, what is never sent, that it goes to Aptabase and what Aptabase keeps (spec 2.3), and that Settings → Access & privacy changes it. Buttons: No thanks, Yes. Closing it in any way but Yes leaves stats off (`markStatsAsked` writes the choice as the card opens).
 **After Yes:** the sheet "How did you hear about us?" with fixed choices (GitHub, Reddit, X, YouTube, A friend, Search, Other; `STATS_SOURCES`), no free text, and Skip. It is optional and asked once (`hm.statsSourceAsked`, written as it opens by `markStatsSourceAsked`); a choice sends one `heard_from` event (`answerStatsSource`) and is not kept. Someone who said no here and turns the Settings switch on later gets the question then.
 
 #### Status rows (helper for the Status sheet)

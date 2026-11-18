@@ -1,6 +1,6 @@
 // Opt-in usage stats: never offered without an app key; a card once after setup; only the listed fields; off forgets.
 const path = require('path')
-const { WEB, SHOTS, check, sleep, nativeShell } = require('../lib.cjs')
+const { WEB, SHOTS, check, sleep, nativeShell, settingsPage } = require('../lib.cjs')
 
 const KEY = 'A-EU-0000000000'
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, app-key', 'access-control-allow-methods': 'POST, OPTIONS' }
@@ -37,6 +37,7 @@ const openSettings = async pg => {
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.getByRole('button', { name: 'Settings', exact: true }).click()
   await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+  await settingsPage(pg, 'Access & privacy')
 }
 const row = pg => pg.locator('.set-row', { hasText: 'Share anonymous usage stats' })
 const card = pg => pg.locator('.sheet', { hasText: 'Share anonymous usage stats?' })

@@ -1,4 +1,4 @@
-// Settings → Hermes settings: Hermes's options in groups and in words, with checked input and a way back to the default.
+// Settings → Behaviour (once Hermes settings): Hermes's options in groups and in words, with checked input and a way back to the default.
 const { WEB, calls, check, sleep } = require('../lib.cjs')
 
 module.exports = async t => {
@@ -8,8 +8,8 @@ module.exports = async t => {
   await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.getByRole('button', { name: 'Settings', exact: true }).click()
-  await pg.locator('.set-row', { hasText: 'Hermux settings' }).click()
-  await pg.locator('.screen .title', { hasText: 'Hermux settings' }).waitFor({ timeout: 5000 })
+  await pg.locator('.set-row', { hasText: 'Behaviour' }).click() // once "Hermux settings"
+  await pg.locator('.screen .title', { hasText: 'Behaviour' }).waitFor({ timeout: 5000 })
   await pg.locator('.set-row', { hasText: 'Retries before a fallback' }).waitFor({ timeout: 5000 })
   const groups = await pg.locator('.set-heading').allInnerTexts()
   check(['Memory', 'Long chats', 'Sub-agents', 'Safety and privacy'].every(g => groups.some(x => x.toLowerCase() === g.toLowerCase())), `hermes settings: grouped by section (${groups.join(' | ')})`)

@@ -1,8 +1,9 @@
-// Settings → Hermes settings: the Hermes options that matter on a phone (hermes-settings.ts), grouped, in words, with
+// Settings → Behaviour (once "Hermux settings"): the Hermes options that matter on a phone (hermes-settings.ts), grouped, in words, with
 // proper controls, limits and a way back to Hermes's default. Same routes as Advanced settings: GET /api/config for the
 // bot's values, GET /api/config/defaults (once per run) for the defaults, PUT /api/config with the value nested under its
-// path; Hermes validates and stores it. Options the running Hermes doesn't know are left out.
-import { useEffect, useMemo, useState } from 'react'
+// path; Hermes validates and stores it. Options the running Hermes doesn't know are left out. The page also holds the
+// Dynamic UI switch (first, in Replies), a row to the Memory page and, last, a row to Advanced settings.
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, qs } from '../api'
 import { haptic } from '../bridge'
 import { HERMES_SETTINGS, hasPath, inputText, nested, parseInput, readPath, sameValue, shown, type HSetting, type Json } from '../hermes-settings'
@@ -12,11 +13,12 @@ import { Sheet, Status, useLoader } from './Screens'
 import { ProfileChips, forProfiles } from './Settings'
 import { Row, Section, Toggle, ToggleRow } from './ui'
 import { Icon } from './icons'
+import { DynamicUIRow, useDynamicUI } from './DynamicUI'
 
 let defaultsCache: Record<string, unknown> | null = null
 let zonesCache: string[] | null = null
 
-export function HermesSettingsPage({ scope, setScope }: { scope: string; setScope: (s: string) => void }) {
+export function HermesSettingsPage({ scope, setScope, openMemory, openAdvanced }: { scope: string; setScope: (s: string) => void; openMemory: () => void; openAdvanced: () => void }) {
   const { data, error, loading, reload, setData } = useLoader(async () => {
     defaultsCache ??= await api<Record<string, unknown>>('GET', '/api/config/defaults', undefined, { profile: false })
     // The time zone list comes from Hermes's schema (it knows which zones Python has); without it any text is taken.
@@ -78,18 +80,40 @@ export function HermesSettingsPage({ scope, setScope }: { scope: string; setScop
       <Row key={s.key} title={title(s)} sub={s.help} value={shown(s, value(s))} chevron onClick={() => setEdit(s)} />
     )
 
+  // Replies comes first, with the Dynamic UI switch at its top (it shows even before the bot's options have loaded).
+  const replies = groups.find(g => g.title === 'Replies')
+  const memoryRow = <Row icon="brain" tone="purple" title="See what Hermux remembers" sub="The notes it keeps across chats" chevron onClick={openMemory} />
+
   return (
     <>
       <ProfileChips value={scope} onChange={setScope} label="Settings for" />
+      <RepliesSection footer={replies?.footer}>{replies?.items.map(row)}</RepliesSection>
       <Status loading={loading} error={error} empty={!data} emptyText="" onRetry={reload} />
-      {groups.map(g => (
+      {groups.filter(g => g !== replies).map(g => (
         <Section key={g.title} title={g.title} footer={g.footer}>
+          {g.title === 'Memory' && memoryRow}
           {g.items.map(row)}
         </Section>
       ))}
-      {data && <div className="dim small pad">Every other Hermux option, by its name in config.yaml, is under Settings → Advanced settings.</div>}
+      {data && !groups.some(g => g.title === 'Memory') && <Section title="Memory">{memoryRow}</Section>}
+      <Section>
+        <Row icon="settings" tone="gray" title="Advanced settings" sub="Every option, by its config name" chevron onClick={openAdvanced} />
+      </Section>
       {edit && data && <SettingSheet s={edit} value={value(edit)} def={def(edit)} zones={data.zones} scope={scope} onClose={() => setEdit(null)} onSave={(v, all) => save(edit, v, all)} />}
     </>
+  )
+}
+
+/** Replies, with the Dynamic UI switch first. The switch's state lives here, so its answer redraws this section only,
+ * not the whole page. The section shows once the switch or the bot's Replies options are known. */
+function RepliesSection({ footer, children }: { footer?: string; children?: ReactNode[] }) {
+  const dynamic = useDynamicUI()
+  if (!dynamic && !children?.length) return null
+  return (
+    <Section title="Replies" footer={footer}>
+      {dynamic && <DynamicUIRow state={dynamic} />}
+      {children}
+    </Section>
   )
 }
 

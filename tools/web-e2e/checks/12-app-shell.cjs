@@ -1,7 +1,7 @@
 // In the app shell: token and key, test build, remote debugging, Live mode, hidden display, assistant, setup, uninstall, Claude sign-in.
 const fs = require('fs')
 const path = require('path')
-const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -59,6 +59,7 @@ module.exports = async t => {
       await pg.getByRole('button', { name: /^Sessions/ }).click()
       await pg.getByRole('button', { name: 'Settings', exact: true }).click()
       await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+      await settingsPage(pg, 'About & help')
       return pg
     }
     const strip = pg => pg.locator('.devtools-strip')
@@ -238,9 +239,10 @@ module.exports = async t => {
     check((await nAsked()) === swAt, 'no frame requests for a chat without the bg app')
     await setBg(null)
     check((await np.evaluate(() => window.__dialogs || [])).length === 0, 'no alert/confirm dialogs')
-    // Settings → Background apps
+    // Settings → Access & privacy → Background apps
     await np.getByRole('button', { name: /^Sessions/ }).click()
     await np.getByRole('button', { name: 'Settings', exact: true }).click()
+    await settingsPage(np, 'Access & privacy')
     const bgRow = np.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
     await bgRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the Background apps row'), () => check(false, 'Settings has the Background apps row'))
     check(/Off: Hermux won't open them in the background/.test((await bgRow.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'row explains what Off means')
@@ -252,7 +254,10 @@ module.exports = async t => {
       check(puts.length === 1 && puts[0].body.allow_sensitive === true, `toggling PUTs allow_sensitive (${JSON.stringify(puts.map(c => c.body))})`)
       check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'switch shows on')
     }
-    // Settings → Replies: cards in replies (plugin /openui), on by default
+    // Settings → Behaviour → Replies: cards in replies (plugin /openui), on by default
+    await np.evaluate(() => window.hermesBack()) // Access & privacy → the main page
+    await np.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await settingsPage(np, 'Behaviour')
     const ouiRow = np.locator('.set-row', { hasText: 'Dynamic UI' })
     await ouiRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the cards row'), () => check(false, 'Settings has the cards row'))
     check((await ouiRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'cards: on by default')
@@ -263,14 +268,19 @@ module.exports = async t => {
       check(puts.length === 1 && puts[0].body.enabled === false, `cards toggle PUTs enabled:false (${JSON.stringify(puts.map(c => c.body))})`)
     }
     await ouiRow.click({ timeout: 1500 }).catch(() => {}) // back on for the rest of the run
+    await np.evaluate(() => window.hermesBack()) // Behaviour → the main page
+    await np.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
     await np.evaluate(() => window.hermesBack())
     await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { allow_sensitive: false, available: false, reason: 'Needs Shizuku running' } }) })
     await np.getByRole('button', { name: /^Sessions/ }).click()
     await np.getByRole('button', { name: 'Settings', exact: true }).click()
+    await settingsPage(np, 'Access & privacy')
     const noRow = np.locator('.set-row', { hasText: 'Needs Shizuku running' })
     await noRow.waitFor({ timeout: 5000 }).then(() => check(true, 'unavailable: the reason is the row text'), () => check(false, 'unavailable: the reason is the row text'))
     check((await noRow.getByRole('switch').count()) === 0, 'unavailable: no switch')
     check((await np.locator('.set-row select, .set-row input').count()) === 0, 'settings row uses no native controls')
+    await np.evaluate(() => window.hermesBack()) // Access & privacy → the main page
+    await np.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
     await np.evaluate(() => window.hermesBack())
     await fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify({ bgapps: { available: true, reason: undefined } }) })
   }
@@ -382,6 +392,7 @@ module.exports = async t => {
     })
     await np.getByRole('button', { name: /^Sessions/ }).click()
     await np.getByRole('button', { name: 'Settings', exact: true }).click()
+    await settingsPage(np, 'About & help')
     const unRow = np.locator('.set-row', { hasText: 'Uninstall Hermux' })
     await unRow.waitFor({ timeout: 5000 }).then(() => check(true, 'uninstall: Settings has the Uninstall Hermux row'), () => check(false, 'uninstall: Settings has the Uninstall Hermux row'))
     check((await np.locator('.set-heading', { hasText: 'Danger zone' }).count()) === 1, 'uninstall: in its own Danger zone section')
@@ -474,7 +485,7 @@ module.exports = async t => {
   }
   await np.close()
 
-  // ── Claude sign-in (Settings → Model providers → Anthropic). Like the pinned Hermes, a Claude login (Termux's
+  // ── Claude sign-in (Settings → Models → Model providers → Anthropic). Like the pinned Hermes, a Claude login (Termux's
   // `hermes auth add anthropic` or the plugin's in-app login) only lands in the credential pool: the app must read it there. ──
   {
     const cs = await browser.newPage({ viewport: { width: 375, height: 812 } })
@@ -486,6 +497,7 @@ module.exports = async t => {
     const openAccounts = async () => {
       await cs.getByRole('button', { name: /^Sessions/ }).click()
       await cs.getByRole('button', { name: 'Settings', exact: true }).click()
+      await settingsPage(cs, 'Models')
       await cs.locator('.set-row', { hasText: 'Model providers' }).click()
       await cs.locator('.providers .set-row', { hasText: 'Anthropic (Claude)' }).click()
     }

@@ -275,7 +275,7 @@ sys.modules["tools.approval"] = saved
 print("status and off")
 reset(kinds={**{k: True for k in pd.KINDS}, "sms": False})
 out = pd.tool_handler({"kind": "sms"}, session_id="c")
-check("kind off: sentence, nothing asked, no read", out == "Messages access is off. Ask the user to enable it in Hermux → Settings → Phone data."
+check("kind off: sentence, nothing asked, no read", out == "Messages access is off. Ask the user to enable it in Hermux → Settings → Access & privacy → Phone data."
       and not GATE["calls"] and not reads(), out)
 for lk in (True, "yes", 1):   # locked: say so, ask nothing (only a real true counts)
     reset(locked=lk)
@@ -302,7 +302,7 @@ keyfile.write_text(KEY)
 
 print("every reason token")
 want = {
-    "off": "Contacts access is off. Ask the user to enable it in Hermux → Settings → Phone data.",
+    "off": "Contacts access is off. Ask the user to enable it in Hermux → Settings → Access & privacy → Phone data.",
     "no_permission": "turn the switch off and on",
     "locked": "unlocks it",
     "no_grant": "No approval from the user. In Auto access phone data can't be read, because it can't ask: use Off, which asks each time, or Full access (if the chat is already in Full access, ask the user to switch it off and on again). Scheduled jobs can't read it either.",
@@ -459,7 +459,7 @@ reset(kinds={**{k: False for k in pd.KINDS}, "calls": True})
 p = pd.prompt_section(info)
 check("only enabled kinds listed", "calls" in p and "contacts" not in p, p)
 reset(kinds={k: False for k in pd.KINDS})
-check("all off", pd.prompt_section(info) == pd._OFF_PROMPT and "Settings → Phone data" in pd._OFF_PROMPT)
+check("all off", pd.prompt_section(info) == pd._OFF_PROMPT and "Settings → Access & privacy → Phone data" in pd._OFF_PROMPT)
 check("off text is not frozen as a fact", "when this chat started" in pd._OFF_PROMPT and "call `phone_data`" in pd._OFF_PROMPT
       and "current state" in pd._OFF_PROMPT and len(pd._OFF_PROMPT) <= 1000)
 reset(mode="404")

@@ -64,7 +64,7 @@ final class LocalDashboard {
     static final String UPDATE_TITLE = "Update the Hermux plugin";
     static final String UPDATE_TEXT = "This Hermux needs the newer plugin in Hermes. Hermux is updating it.";
     /** A plugin the app won't replace by itself (held, or changed by hand). */
-    static final String UPDATE_HELD_TEXT = "This Hermux needs the newer plugin in Hermes. Settings → About → Plugin → Update anyway.";
+    static final String UPDATE_HELD_TEXT = "This Hermux needs the newer plugin in Hermes. Settings → About & help → Hermux plugin → Update anyway.";
     /**
      * The plugin notice's text: "Hermux is updating it" only while {@code PluginSync} will update by itself
      * ({@code wanted}: the plugin is older and the automatic tries are not used up), and never for a plugin held or

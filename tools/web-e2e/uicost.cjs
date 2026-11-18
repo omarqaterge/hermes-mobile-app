@@ -1,6 +1,7 @@
 // What the interface costs at the moments a person feels: start-up, opening a chat, the first words of a streamed reply,
-// scrolling a long chat, opening the chat list and scrolling it, opening a row's menu and the chat's menu, in a desktop
-// browser with the CPU slowed down (4× by default).
+// scrolling a long chat, opening the chat list and scrolling it, opening a row's menu and the chat's menu, opening Settings
+// and its pages (Behaviour, Models, Access & privacy, About & help: a page an older build doesn't have is left out), in a
+// desktop browser with the CPU slowed down (4× by default).
 // Needs the page and the mock running (`run.sh --serve` in another shell, with the same HM_E2E_* ports if it chose others).
 //   node uicost.cjs [--runs 5] [--throttle 4] [--motion off|reduced|full] [--glass on|off]
 // Opening the chat list, opening a chat from it and the first words of a reply are tapped and timed inside the page,
@@ -138,6 +139,37 @@ async function one(browser) {
     out.stream = await inPage(page, work, 'button.send[aria-label="Send"]', null, () => [...document.querySelectorAll('.msg.assistant')].some(e => e.textContent.includes('Step 1: checking the result')))
     await page.close()
   }
+  // Opening Settings from the side panel's gear, until its search box shows and nothing on it still moves; then each of
+  // its pages from the main page's row, until the page's own content shows and is still, and Back (untimed). A page
+  // whose row isn't there (an older build: Behaviour was "Hermux settings") is tried by its old name, else left out.
+  {
+    const { page, work } = await open(browser, 's-48')
+    await page.goto(WEB + '/')
+    await page.getByText('answer s-48', { exact: true }).waitFor({ timeout: 30000 })
+    await sleep(1500)
+    await page.locator('button[aria-label^="Sessions"]').click()
+    await sleep(800)
+    out.settings = await inPage(page, work, 'button[aria-label="Settings"]', null, () => !!document.querySelector('input[aria-label="Search settings"]') && !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity))
+    await sleep(800)
+    const pages = [
+      ['pBehaviour', ['Behaviour', 'Hermux settings'], 'Retries before a fallback'],
+      ['pModels', ['Models'], 'Set one model'],
+      ['pAccess', ['Access & privacy'], 'Auto for all chats'],
+      ['pAbout', ['About & help'], 'Last start-up']
+    ]
+    for (const [key, rows, content] of pages) {
+      const row = await page.evaluate(rows => rows.find(r => [...document.querySelectorAll('.set-title')].some(e => e.textContent === r)) || '', rows)
+      if (!row) continue
+      // Models: its own page holds the Default models row; the content checked is that page's first row.
+      const want = key === 'pModels' ? 'Default models' : content
+      const shown = new Function(`return () => [...document.querySelectorAll('.screen .set-title, .screen .set-sub')].some(e => e.textContent.startsWith(${JSON.stringify(want)})) && !document.querySelector('input[aria-label="Search settings"]') && !document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)`)()
+      out[key] = await inPage(page, work, null, row, shown)
+      await page.evaluate(() => window.hermesBack())
+      await page.locator('input[aria-label="Search settings"]').waitFor({ timeout: 5000 })
+      await sleep(600)
+    }
+    await page.close()
+  }
   // Scrolling a long chat: 90 frames of 40 px upwards, frame times from requestAnimationFrame.
   {
     const { page, work } = await open(browser, 's-long')
@@ -168,9 +200,13 @@ async function one(browser) {
     console.log(`run ${i + 1}: ` + Object.entries(r).map(([k, v]) => `${k} ${v.ms} ms / ${Math.round(v.work)} ms work${v.slow != null ? ` / ${v.slow} slow frames, p95 ${v.p95.toFixed(1)} ms` : ''}`).join('; '))
   }
   await browser.close()
-  const med = (k, f) => all.map(r => r[k][f]).sort((a, b) => a - b)[Math.floor(all.length / 2)]
+  const med = (k, f) => {
+    const v = all.filter(r => r[k]).map(r => r[k][f]).sort((a, b) => a - b)
+    return v[Math.floor(v.length / 2)]
+  }
   console.log(`median of ${runs}, CPU ×${throttle}${motion ? `, motion ${motion}` : ''}${glass ? `, glass ${glass}` : ''}:`)
-  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"]]) {
+  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
+    if (!all.some(r => r[k])) continue // a page this build doesn't have
     console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${k === 'scroll' || k === 'listScroll' ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
   }
 })()

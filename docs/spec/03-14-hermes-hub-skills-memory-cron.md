@@ -24,7 +24,7 @@ Skill sheet (title = skill name): a dim line "<category> · <provenance, default
 **Data:** `GET /api/skills`, `PUT /api/skills/toggle`, `GET /api/skills/content` (Hermes dashboard, scoped to the profile).
 
 #### Memory
-**Opens from:** the bot sheet's row "What <bot> remembers" (3.13). **Closes with:** Back (to the chat). **Source:** `Screens.tsx` `MemoryScreen`.
+**Opens from:** the bot sheet's row "What <bot> remembers" (3.13); Settings → Behaviour → Memory → "See what Hermux remembers" (3.15), where it shows inside Settings (its own bar dropped through `EmbeddedShell`, its Add button in the Settings top bar). **Closes with:** Back (to the chat; from Settings, back to Behaviour). **Source:** `Screens.tsx` `MemoryScreen`.
 
 **Layout, top to bottom:**
 | Element | Looks like | Tap | Long-press / swipe | States |

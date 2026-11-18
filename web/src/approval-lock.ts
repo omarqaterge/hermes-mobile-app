@@ -1,4 +1,4 @@
-// Settings → Permissions → "Confirm approvals with fingerprint" (on by default; the Android shell keeps the choice and
+// Settings → Access & privacy → Approvals → "Confirm approvals with fingerprint" (on by default; the Android shell keeps the choice and
 // the confirmed chats, ApprovalLock.java, so the notification's Allow follows the same rule). With it on, the first
 // Allow in a chat session asks for the phone's biometric or screen lock; after one success that chat's later
 // approvals go through until the session ends: the app restarts, or the chat's live Hermes session closes

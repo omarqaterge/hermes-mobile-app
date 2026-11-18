@@ -77,7 +77,7 @@ export function StatsCard() {
         <div className="sheet-desc">
           It goes to Aptabase, a stats service. Aptabase sees your internet address when a report arrives: it keeps a rough country and region and a one-day anonymous code from it, not the address.
         </div>
-        <div className="sheet-desc">You can change this any time in Settings → About.</div>
+        <div className="sheet-desc">You can change this any time in Settings → Access & privacy.</div>
       </div>
       <div className="sheet-actions">
         <button className="btn" onClick={() => setStep(null)}>

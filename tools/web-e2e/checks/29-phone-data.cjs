@@ -1,9 +1,9 @@
-// Settings → Phone data for the agent: master + per-kind switches, decided by the shell (faked here: window.__pd is the
+// Settings → Access & privacy → Phone data for the agent: master + per-kind switches, decided by the shell (faked here: window.__pd is the
 // shell's state and window.__pd.result its answer to phoneDataSet). The page only flips a switch on "ok".
 // Not covered here, because it is Java: the biometric itself, Android's permission dialog, the generation counter that
 // lets an off win over an on in flight, the switch cleared when a permission is seen missing, and blocked detection.
 // Those were only compiled; they need a real phone (docs/status/phone-data.md).
-const { WEB, MOCK, check, sleep, nativeShell, png, openLibraryPart } = require('../lib.cjs')
+const { WEB, MOCK, check, sleep, nativeShell, png, openLibraryPart, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -66,6 +66,7 @@ module.exports = async t => {
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+    await settingsPage(pg, 'Access & privacy')
     return pg
   }
   const fresh = (over = {}) => ({ ready: true, secure: true, result: 'ok', switches: {}, perms: {}, ...over })
@@ -220,6 +221,7 @@ module.exports = async t => {
   {
     // Settings search finds it
     const pg = await open(fresh())
+    await pg.evaluate(() => window.hermesBack()) // the search is on the main page
     await pg.getByLabel('Search settings').fill('phone data')
     await pg.locator('.set-row', { hasText: 'Let the agent read phone data' }).first().waitFor({ timeout: 3000 }).then(() => check(true, 'phone data: Settings search finds it'), () => check(false, 'phone data: Settings search finds it'))
     await pg.close()

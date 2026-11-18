@@ -58,11 +58,11 @@ Also check: the strip stays visible over Settings and other full screens, and a 
 
 Seen on a Xiaomi phone, Android 16 (build `0.8.66-test+devtools` at d866ed3): the strip shows under the status bar and the socket is listed; a build of the same branch without `HM_DEVTOOLS` had no socket. Playwright attached and drove a whole test session. Still to check: the strip over full screens.
 
-## Remote debugging setting (Settings → About), needs a release-style build (not `HM_DEVTOOLS`)
+## Remote debugging setting (Settings → About & help), needs a release-style build (not `HM_DEVTOOLS`)
 
 Tried on a Xiaomi phone, Android 16 (HyperOS), normal build 0.8.66-test (commit a9d6741), and on an Android 15 emulator (Pixel 6 image, arm64). Emulator images are debuggable, so there every WebView opens a `webview_devtools_remote` socket by itself: check the row, strip and notification there, not the socket.
 
-- [x] 1. Android Developer options off: Settings → About has no "Remote debugging" row.
+- [x] 1. Android Developer options off: Settings → About & help has no "Remote debugging" row.
 - [x] 2. Developer options on, no screen lock set: tap the row, Continue. Expected: "Set a screen lock first", stays Off.
 - [x] 3. With a screen lock: Continue opens the phone's own lock screen. A wrong PIN or Back leaves it Off. The right PIN turns it on: the row says "On · 60 min left", the strip shows, the notification "Remote debugging" is there, and `chrome://inspect` on a computer (after `adb forward` as above) lists the page.
       Seen: Back on the lock screen leaves it Off; after unlocking, the row, strip, notification and socket appeared and Playwright attached.
@@ -165,7 +165,7 @@ check on a real phone:
       (`~/bin/hermes-debian --restart`, which stops it at once; a plain `pkill -f 'hermes dashboard'` can leave it answering for a while. The service
       loop starts it after 10 s and it answers about 18 s after the stop), force stop the app and open it at once. In Termux, watch
       `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9119/` turn 200. Expected: the app connects within about
-      a second of that, not up to 15 s later. Note the `socket` and `sessions` times in Settings → About → Last start-up.
+      a second of that, not up to 15 s later. Note the `socket` and `sessions` times in Settings → About & help → Last start-up.
 
 ## Confirm approvals with fingerprint (owner only: needs the phone's fingerprint or PIN)
 
@@ -176,7 +176,7 @@ check on a real phone:
 - [ ] Leave the app with an approval waiting, tap Allow once on the notification (phone unlocked): the app opens on
       the chat and Allow asks for the fingerprint. After that, notification Allows in that chat go straight through.
 - [ ] Restart the app (close it from Recents): the next Allow asks again.
-- [ ] Settings → Permissions → Confirm approvals with fingerprint: turning it off asks for the fingerprint first.
+- [ ] Settings → Access & privacy → Approvals → Confirm approvals with fingerprint: turning it off asks for the fingerprint first.
 - [ ] Android 8 or 9 phone if at hand: the screen-lock screen or "Use screen lock" fallback works.
 
 ## Connectors (Settings → Connectors)
@@ -189,14 +189,14 @@ check on a real phone:
       Expected: the row reads Connected and Hermux reads your calendar in a new chat; Sign out returns to the sign-in step.
 - [ ] **A tool with a key.** Web search: save a key for another service; it reads "In use" and a new chat searches with it. Disconnect deletes the key.
 
-## The plugin follows the app (Settings → About → Hermux plugin; spec 6.6)
+## The plugin follows the app (Settings → About & help → Hermux plugin; spec 6.6)
 
 Needs a phone with Hermes set up and an app build from this branch or later. Before you start, keep a copy of the
 plugin: `~/bin/hermes-debian sh -c 'cp -a /root/.hermes/plugins/hermes-mobile /root/hermes-mobile-plugin-backup'`.
 
 1. **Old plugin catches up.** On a phone whose plugin predates this (no `BUILD_STAMP`:
    `~/bin/hermes-debian cat /root/.hermes/plugins/hermes-mobile/BUILD_STAMP` fails), install the new APK over the old
-   app, open it once, then leave it with no chat running. Within about a minute Settings → About → Hermux plugin goes
+   app, open it once, then leave it with no chat running. Within about a minute Settings → About & help → Hermux plugin goes
    from "This app has a newer version…" to "Up to date with this app"; the `BUILD_STAMP` now ends in `apk`; Settings →
    Replies → Dynamic UI is there, and every profile's `plugins/hermes-mobile` is a link to the main copy.
 2. **Never during a chat.** With an update waiting, start a long turn and leave the app: nothing restarts until the
@@ -296,7 +296,7 @@ YouTube was seen playing in an Android 15 emulator's WebView (Chrome 124) throug
       Expected: the box shows them whole.
 - [ ] Same with the phone locked. Expected: the unlock comes first, then the box.
 
-## Phone data for the agent (Settings → Phone data for the agent)
+## Phone data for the agent (Settings → Access & privacy → Phone data)
 
 Tested 2026-11-05 on one real phone, Android 16, with the owner present:
 
@@ -323,7 +323,7 @@ Still to do (not yet tried on a phone):
       "Tap to load" with its host and loads only after the tap; the link opens a dialog with the full address first.
 - [ ] In a protected chat, have the agent give an HTML preview. Expected: it shows as text, not rendered.
 - [ ] Make a protected chat grow until Hermes compresses it, then ask for a remote image. Expected: still blocked.
-- [ ] After some reads, Settings → About → Report a problem, look at the text before sending. Expected: no names,
+- [ ] After some reads, Settings → About & help → Report a problem, look at the text before sending. Expected: no names,
       numbers, message text or coordinates.
 - [ ] Fill the record of chats (many chats that read) if you can, or check the rows by their spec: the "Allow more chats"
       and "Forget" rows in Settings, each asking for the screen lock; "Forget" warns first.
@@ -337,7 +337,7 @@ Still to do (not yet tried on a phone):
 ## What's new after an update
 
 Needs a release-style build with a plain version name (`VERSION_NAME=0.9.7 android/build.sh`: a `+devtools` name keeps
-the sheet away by design) and Settings → About → Remote debugging to change `hm.whatsNewSeen.v1`.
+the sheet away by design) and Settings → About & help → Remote debugging to change `hm.whatsNewSeen.v1`.
 
 Seen on an Android 16 phone (build `0.9.7` at d66178c, before the scroll bar): with the stored version set to 0.9.5 the
 sheet opened about 25 ms after the chat, listed 0.9.7 and 0.9.6 from the real changelog with "Smaller changes and fixes"
@@ -349,7 +349,7 @@ requests), not by hand or airplane mode.
 
 - [ ] The scroll bar: on a phone, a long list shows a visible bar at the right of the sheet even when not scrolling.
 - [ ] A real update from an installed older release to the next one, by hand.
-- [ ] Settings → About → What's new (before an update) still opens, once a release newer than the installed one exists.
+- [ ] Settings → About & help → What's new (before an update) still opens, once a release newer than the installed one exists.
 
 ## Security fixes (the `security-fixes` PR): phone pass 2026-11-16
 
@@ -402,7 +402,7 @@ The `redesign` branch reaches `main` only after the owner has tried it on a phon
 the release are in `docs/status/ui-revamp.md`. The browser checks cover what a page can show; these lines are what only a
 phone shows, in the order a person meets them. Try each on the redesign build, then again after going back to the release.
 
-- [ ] Start-up: the app opens on the last chat from its cache, then goes live; Settings → About shows the redesign version name.
+- [ ] Start-up: the app opens on the last chat from its cache, then goes live; Settings → About & help shows the redesign version name.
 - [ ] The keyboard: tap the text box; the composer sits right above the keyboard, the last message stays readable, nothing jumps when it closes.
 - [ ] A quick request typed one-handed, then the same by Dictate (the phone's or the on-device recogniser); Stop dictation ends it.
 - [ ] Live mode from the composer: talk, pause, hear the reply; Interrupt and talking over it cut in; Mute microphone; End.
@@ -442,4 +442,9 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] The chat menu on a phone (Chat options at the top of a chat): Search opens the find bar, Canvas opens the canvas (its count matches the documents), Share opens Android's share sheet with the chat as Markdown, Pin puts the chat first under Pinned in the chat list and Unpin takes it out. Read replies aloud flips without closing the menu and the line under it changes; the next reply is read aloud. Archive starts a new chat and the old one is under Archived. Delete asks first. With TalkBack: each quick action is read with its full name ("Search in chat", "Share chat", "Pin to top"), the switch as a switch with its line, Undo last turn while a reply runs as dimmed with "Wait for the reply to finish".
 - [ ] A chat's menu in the chat list opens over the open panel as a solid sheet (no blur on blur), Back closes it and leaves the panel open; the pencil renames, Pin to top, Archive and Delete work as before. On the smallest phone (or the largest Display size and font size) no label in either menu wraps.
 - [ ] Chat details: Bot, Working folder, the model and provider, Usage when known; the copy button copies the Chat ID.
+- [ ] The Settings main page on a phone: Search settings, then Hermux (Models, Connectors, Behaviour, Access & privacy) and This app (Appearance, Voice, About & help); the current model, the Auto mode, the theme and the app version on the right; no switch. At the largest font and Display size no title or line wraps (they end in "…"). With TalkBack each row is read as its title, line and value; Back from every page goes up one step, and from the main page closes Settings.
+- [ ] Access & privacy keeps every protection: turning "Confirm approvals with fingerprint" off asks for the fingerprint or screen lock first (a cancel leaves it on); Phone data asks Android for each permission and Forget asks first; turning a Background apps app to Always asks first; Auto for all chats to Full access asks first; Delete the log asks first. Then the same after going back to the release, in their old places.
+- [ ] The attention cards: with Hermux stopped (Settings → About & help → Reconnect, or Termux closed), the main page shows "Hermux is offline" in red; Reconnect brings it back and the card goes. A new bot with no provider shows "Connect a model" in gold; Add a provider opens Models. When an update exists the card "Update to <version>" downloads and installs it as the row did.
+- [ ] Behaviour opens on Replies with Dynamic UI first; "See what Hermux remembers" opens Memory, and Back returns to Behaviour; Advanced settings is last. Read every reply aloud is only on Voice.
+- [ ] Ten minutes of ordinary use with Settings opened a few times: the battery drop is the same as before (the main page asks Hermes once whether a model is connected when it opens, and nothing repeats).
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.
