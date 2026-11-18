@@ -656,10 +656,10 @@ export function SessionList({ query }: { query: string }) {
       )}
       {(pinnedRows.length > 0 || pinZone) && (
         <>
-          <div className="group-title">
+          <div id="pinned-title" className="group-title" role="heading" aria-level={2}>
             <Icon n="pin" /> Pinned{hover === 'unpin' && <span className="pin-hint"> · release to unpin</span>}
           </div>
-          <div ref={pinnedRef} className={hover === 'pin' ? 'pin-list drop-hot' : 'pin-list'}>
+          <div ref={pinnedRef} role="group" aria-labelledby="pinned-title" className={hover === 'pin' ? 'pin-list drop-hot' : 'pin-list'}>
             {pinnedRows.map((s, i) => row(s, 'pinned', i))}
             {pinnedRows.length === 0 && <div className="pin-empty">Drop here to pin</div>}
           </div>
