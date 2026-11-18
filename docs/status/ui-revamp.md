@@ -196,7 +196,7 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   - **Polling is unchanged:** a chat that only waits keeps the 9 s schedule, so one answered from a notification leaves the
     group at the next poll, or at once when the app returns to the screen. Answers given in the app or known to the
     socket take it out at once.
-  - **Costs:** no change a person can feel at 4x CPU (docs/performance-history.md), measured with no chat waiting. Chat
+  - **Costs:** no change a person can feel at 4x CPU (docs/performance-history.md, measured again after review round 2), with no chat waiting. Chat
     height unchanged: 614 / 314 px at 360 x 740, also while a chat waits.
   - **Review round 1.** `activity.json` is treated as editable by an agent: the route and the writer take only well-formed
     entries (numeric pid, known kind and who, finite times, an end at most a day away), and the app prints only its own
@@ -206,6 +206,11 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     "From <chat>" for a chat not on screen. Over the lock screen the banner line, a docked group and "From" are gone; the
     existing banner text "Waiting for your approval" still shows there, as before this task. A chat in the group keeps its
     place in Pinned. The checks in `05` find everything by role, name and visible text.
+  - **Review round 2.** A request on the sheet now stays until it is answered or withdrawn; the chat opened from Needs you
+    only decides what comes next, and the `waiting` feed has no say in that. The feed's reader can't hang (no blocking,
+    regular files of at most 1 MiB), no entry can break it, its work lines carry only strings, and nothing is restored from
+    memory: a failed read skips the write instead. The lock view clears the group at once. At the pinned Hermes every
+    request the app accepts carries a session id, so nothing changed for a request without one.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
 **Next:** the new look of the chat screen, the side panel, the
