@@ -884,24 +884,30 @@ WAIT_WHO = ("", "A sub-agent")
 
 
 def _is_number(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    try:
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    except OverflowError:  # an integer too big for a float
+        return False
 
 
 def _waiting_entry(pid, w, now: float):
     """One open request as the app may see it, or None. activity.json can be edited by anything running as Hermes's
     user, so only what the hooks write passes, field by field, and nothing else in the entry goes out."""
-    if not (str(pid).isdigit() and isinstance(w, dict)):
+    try:
+        if not (str(pid).isdigit() and isinstance(w, dict)):
+            return None
+        session, kind, who, since, until = (w.get(k) for k in ("session", "kind", "who", "since", "until"))
+        if not (isinstance(session, str) and session and isinstance(kind, str) and kind in WAIT_KINDS
+                and isinstance(who, str) and who in WAIT_WHO and _is_number(since) and _is_number(until)
+                and now < until <= now + WAIT_LONGEST):
+            return None
+        profile, count, last = w.get("profile"), w.get("open"), w.get("last")
+        return {"session": session, "kind": kind, "who": who, "profile": profile if isinstance(profile, str) else "",
+                "since": since, "until": until,
+                "open": count if isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= WAIT_MOST else 1,
+                "last": last if _is_number(last) else since}
+    except Exception:
         return None
-    session, kind, who, since, until = (w.get(k) for k in ("session", "kind", "who", "since", "until"))
-    if not (isinstance(session, str) and session and isinstance(kind, str) and kind in WAIT_KINDS
-            and isinstance(who, str) and who in WAIT_WHO and _is_number(since) and _is_number(until)
-            and now < until <= now + WAIT_LONGEST):
-        return None
-    profile, count, last = w.get("profile"), w.get("open"), w.get("last")
-    return {"session": session, "kind": kind, "who": who, "profile": profile if isinstance(profile, str) else "",
-            "since": since, "until": until,
-            "open": count if isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= WAIT_MOST else 1,
-            "last": last if _is_number(last) else since}
 
 
 @router.get("/activity")
@@ -924,26 +930,29 @@ async def get_activity():
     items = []
     waiting = []
     for pid, entry in data.items():
-        if not isinstance(entry, dict):
-            continue
-        # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries.
-        if str(pid).isdigit() and not Path("/proc", str(pid)).exists():
-            continue
-        # Before the age check: nothing refreshes an entry while its chat only waits for an answer.
-        raw = entry.get("waiting")
-        for w in raw if isinstance(raw, list) else []:
-            clean = _waiting_entry(pid, w, now)
-            if clean:
-                waiting.append(clean)
-        at, listed = entry.get("at"), entry.get("items")
-        if not _is_number(at) or now - at > 300 or not isinstance(listed, list):
-            continue
-        for it in listed:
-            if not isinstance(it, dict) or not _is_number(it.get("ts")):
+        try:  # one entry, whatever it holds, can't break the others
+            if not isinstance(entry, dict):
                 continue
-            limit = 60 if it.get("review") else 180
-            if now - it["ts"] <= limit:
-                items.append(it)
+            # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries.
+            if str(pid).isdigit() and not Path("/proc", str(pid)).exists():
+                continue
+            # Before the age check: nothing refreshes an entry while its chat only waits for an answer.
+            raw = entry.get("waiting")
+            for w in raw if isinstance(raw, list) else []:
+                clean = _waiting_entry(pid, w, now)
+                if clean:
+                    waiting.append(clean)
+            at, listed = entry.get("at"), entry.get("items")
+            if not _is_number(at) or now - at > 300 or not isinstance(listed, list):
+                continue
+            for it in listed:
+                if not isinstance(it, dict) or not _is_number(it.get("ts")):
+                    continue
+                limit = 60 if it.get("review") else 180
+                if now - it["ts"] <= limit:
+                    items.append(it)
+        except Exception:
+            continue
     items.sort(key=lambda i: i["ts"], reverse=True)
     waiting.sort(key=lambda w: w["since"])  # oldest first, so a row keeps its place in the list
     return {"items": items, "waiting": waiting}

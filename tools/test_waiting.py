@@ -297,6 +297,29 @@ with open(plugin.ACTIVITY_FILE, "w") as f:
 check("nor a file that isn't an object", answer() == {"items": [], "waiting": []}, answer())
 os.remove(plugin.ACTIVITY_FILE)
 
+print("numbers too big for a float")
+now = time.time()
+huge = 10 ** 400
+good = {"session": "real", "kind": "approval", "who": "", "profile": "p", "since": now, "until": now + 60}
+check("a huge integer is not a number here", not plugin._is_number(huge) and not papi._is_number(huge))
+bad = [dict(good, since=huge), dict(good, until=huge), dict(good, since=-huge)]
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({alive: {"at": huge, "items": [{"session": "x", "ts": huge}], "waiting": bad + [dict(good, open=huge, last=huge)]},
+               "4444": {"at": now, "items": [{"session": "x", "ts": huge}]}}, f)
+w = answer()["waiting"]
+check("the route survives them and serves the good entry", [x["session"] for x in w] == ["real"] and w[0]["open"] == 1 and w[0]["last"] == now, w)
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({"4343": {"at": huge, "items": [1], "waiting": bad + [good]}}, f)
+plugin._publish_activity()
+check("a write survives them and keeps the good entry", [x["session"] for x in entries().get("4343", {}).get("waiting", [])] == ["real"], entries())
+real_check = papi._waiting_entry
+papi._waiting_entry = lambda pid, w, now: (_ for _ in ()).throw(RuntimeError("boom")) if w.get("session") == "breaks" else real_check(pid, w, now)
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({"1" + alive: {"at": now}, alive: {"at": now, "items": [], "waiting": [dict(good, session="breaks")]}}, f)
+check("an entry that breaks is skipped alone", answer() == {"items": [], "waiting": []}, answer())
+papi._waiting_entry = real_check
+os.remove(plugin.ACTIVITY_FILE)
+
 print("nothing here can answer")
 src = (ROOT / "hermes-plugin" / "hermes-mobile" / "dashboard" / "plugin_api.py").read_text()
 route = src[src.index('@router.get("/activity")'):src.index("# ── what of the phone Hermes can reach")]

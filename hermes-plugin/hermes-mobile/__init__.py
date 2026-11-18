@@ -310,30 +310,39 @@ def _read_activity() -> dict:
 
 
 def _is_number(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    try:
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    except OverflowError:  # an integer too big for a float
+        return False
 
 
 def _wait_entry_ok(pid, w, now: float) -> bool:
     """The file can be edited by anything running as this user (an agent's command too), so an entry counts only if it
     is what _wait_begin writes: a process id, a known kind and who, and a time limit no further off than ours."""
-    return (str(pid).isdigit() and isinstance(w, dict) and isinstance(w.get("session"), str) and bool(w["session"])
-            and isinstance(w.get("kind"), str) and w["kind"] in WAIT_KINDS
-            and isinstance(w.get("who"), str) and w["who"] in WAIT_WHO
-            and _is_number(w.get("since")) and _is_number(w.get("until")) and now < w["until"] <= now + WAIT_LONGEST)
+    try:
+        return (str(pid).isdigit() and isinstance(w, dict) and isinstance(w.get("session"), str) and bool(w["session"])
+                and isinstance(w.get("kind"), str) and w["kind"] in WAIT_KINDS
+                and isinstance(w.get("who"), str) and w["who"] in WAIT_WHO
+                and _is_number(w.get("since")) and _is_number(w.get("until")) and now < w["until"] <= now + WAIT_LONGEST)
+    except Exception:
+        return False
 
 
 def _kept_entry(pid, v, now: float):
     """What stays of another process's entry, or None. Anything malformed is left out, so it can't stop this write."""
-    if not isinstance(v, dict):
+    try:
+        if not isinstance(v, dict):
+            return None
+        items, at = v.get("items"), v.get("at")
+        working = isinstance(items, list) and bool(items) and _is_number(at) and now - at < 300
+        raw = v.get("waiting")
+        # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
+        waits = [w for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []
+        if not working and not waits:
+            return None
+        return {"at": at if _is_number(at) else 0, "items": items if working else [], **({"waiting": waits} if waits else {})}
+    except Exception:
         return None
-    items, at = v.get("items"), v.get("at")
-    working = isinstance(items, list) and bool(items) and _is_number(at) and now - at < 300
-    raw = v.get("waiting")
-    # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
-    waits = [w for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []
-    if not working and not waits:
-        return None
-    return {"at": at if _is_number(at) else 0, "items": items if working else [], **({"waiting": waits} if waits else {})}
 
 
 def _publish_activity() -> None:
