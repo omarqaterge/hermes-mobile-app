@@ -220,12 +220,18 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     keeps its own entry. The sheet's pause restarts when the app comes back and also covers choices, Next and the dots.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
-- **Sub-agents, nested chats and background tasks (task 09): stopped before building, for the owner to decide.** Nothing
-  is built. The answers below come from running the pinned Hermes (b8a8be18 with `hermes/patches`, started by
-  `tools/hermes-contract/start-hermes.sh`) with a scripted fake model and the app's calls, on a desktop; no phone.
-  **Two of the conditions that stop this task are met, both about background tasks:** a background task does not follow
-  the chat's access mode and approval rules (answer 3), and stopping a chat leaves it running (answer 6). Sub-agents pass
-  every condition.
+- **Sub-agents and nested chats (task 09, PR against `redesign`).** Built: the one-line group in the chat, the sub-agent's
+  sheet, the rows under a chat in the list, who asks on the request sheet (`web/src/subagents.ts`,
+  `components/SubAgents.tsx`, `subagents.css`; the plugin's `nested` counts and `/nested` routes; checks in `38-subagents.cjs`,
+  `web/src/subagents.test.ts`, `tools/test_nested.py`). **Background tasks are not built:** the owner chose on 2026-11-18 to
+  leave them for later ([roadmap 21](../roadmap/21-background-tasks.md), [decision](../decisions/nested-chats.md)), because
+  of what answers 3 and 6 below show. `/bg` is refused in a chat that has read phone data (its own PR). Where a goal comes
+  from: the `subagent.*` events of the app's socket, or Hermes's stored chat through `GET /nested`, shown as plain text. The
+  `activity.json` feed gives only numbers and the fixed words of task 08, because an agent can edit that file. Needs a
+  phone: see `docs/manual-tests.md`.
+
+  What the pinned Hermes does, found first by running it (b8a8be18 with `hermes/patches`, started by
+  `tools/hermes-contract/start-hermes.sh`) with a scripted fake model and the app's calls, on a desktop:
   1. **A sub-agent's approval reaches the app: yes. It does not say which sub-agent asks.** It arrives as an ordinary
      `approval` request on the parent chat. Allow ran the command, Deny blocked it.
      The plugin's `waiting` lists the top chat with "A sub-agent" (read from `activity.json`: the route's `/proc` check
@@ -275,16 +281,13 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
      A background task kept running after `session.interrupt` and after `session.close`, wrote its marker file and delivered
      `background.complete`. No call stops one: `subagent.interrupt` answers `found: false` and `session.interrupt` with its
      id answers "session not found".
-  - **Found on the way, for the build:** a top-level sub-agent always runs detached, so the parent's turn ends while it
-    works. From reading the code, the composer then shows no Stop (it needs `running`), although `session.interrupt` would
-    stop the sub-agent. Not tried in the app.
-  - **Found on the way, in the app today:** `/bg <task>` goes through `slash.exec` to a separate Hermes process. In a chat
-    that has read phone data (recorded under both ids) its `curl` ran without asking, and no result reached the chat in the
-    8 s watched. The app sends `/bg` like any other command, so this is not new with the redesign. Not changed here.
-  - **For the owner to decide:** (a) background tasks: a Hermes patch that ties them to their chat (stoppable, same
-    approval key and phone-data links, parent recorded), or leave "Run in background" out and build the sub-agent parts
-    now; (b) whether `/bg` stays while the phone-data rule doesn't cover it; (c) whether the sheet may show the level
-    set, labelled as such, given the limit in answer 4.
+  - **Found on the way:** a top-level sub-agent always runs detached, so the parent's turn ends while it works. The
+    composer now keeps Stop until they have ended (checked in `38`).
+  - **Found on the way:** `/bg <task>` goes through `slash.exec` to a separate Hermes process. In a chat that has read phone
+    data (recorded under both ids) its `curl` ran without asking, and no result reached the chat in the 8 s watched. The app
+    now refuses it in such a chat (PR #206).
+  - **The owner's answers (2026-11-18):** build the sub-agent parts now and keep background tasks for later; fix `/bg`
+    without taking a feature away; show the level Hermes gave the sub-agent.
 
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
