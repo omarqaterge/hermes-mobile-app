@@ -316,7 +316,7 @@ each reporting a new step five times a second, with their group open in the chat
 of a few ms where 1 or 2 ms is already over 5%. The first "effects on" round of this build was noisier than the others (its
 start-up 582 ms against 516 in the second). The first version cost more (the chat list +33% with effects off, its menus +25%)
 because every row did sub-agent work; rows without sub-agents now do none. The start-up rise is not explained further: the
-page holds about 25 KB more code and styles. Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
+page holds more code and styles. Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
 
 ## Adding a measurement
 
