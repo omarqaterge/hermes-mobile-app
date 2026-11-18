@@ -7,7 +7,7 @@ import { confirmDialog } from '../dialog'
 import { useEffect, useMemo, useState } from 'react'
 import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
-import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
+import { defaultAccess, errText, loadDefaultModel, loadProfiles, reconnectNow, type Access } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic, openExternal, openRemoteDebugging, phoneDataAllowMore, phoneDataForget, phoneDataLost, phoneDataOpenSettings, phoneDataOverflowed, phoneDataSet, phoneDataState, turnOffRemoteDebugging, type PhoneDataState } from '../bridge'
 import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
@@ -15,13 +15,13 @@ import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
 import { WhatsNewSections } from './WhatsNew'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
-import { ScreenShell, Sheet, Status, useLoader } from './Screens'
+import { EmbeddedShell, MemoryScreen, ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../live'
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
-import { Collapse, Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
+import { Collapse, IconChip, Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
-import { searchSettings, type SettingsEntry } from '../settings-search'
+import { SETTINGS_PAGE_NAME, searchSettings, type SettingsEntry, type SettingsPageId } from '../settings-search'
 import { setGlass, setMotionLevel, useGlass, useMotionLevel, type MotionLevel } from '../motion'
 import { setModelBarMode, useTray, type ModelBarMode } from '../tray'
 import { findSettingsTarget, flashElement } from '../flash'
@@ -39,11 +39,12 @@ import { DiagRows } from './DiagRows'
 import { pluginRow, runPluginUpdate, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
-import { Icon } from './icons'
+import { Icon, type IconName } from './icons'
+import { modelConnected } from './Setup'
 
 // ── shared ───────────────────────────────────────────────────
 
-/** Permissions → "Confirm approvals with fingerprint" (approval-lock.ts); only inside the Android shell. */
+/** Access & privacy → Approvals → "Confirm approvals with fingerprint" (approval-lock.ts); only inside the Android shell. */
 function ApprovalLockRow() {
   const [st, setSt] = useState(approvalLockState)
   if (!approvalLockAvailable()) return null
@@ -154,7 +155,7 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only, n
       <div className="sheet-scroll">
         {err && <div className="notice notice-error">{err}</div>}
         {!data && !err && <div className="dim pad">Loading models…</div>}
-        {data && !providers.length && !q && <div className="dim pad">No connected providers. Connect one under Settings → Model providers.</div>}
+        {data && !providers.length && !q && <div className="dim pad">No connected providers. Connect one under Settings → Models → Model providers.</div>}
         {providers.map(p => (
           <div key={p.slug} className="picker-block">
             <div className="picker-group">
@@ -396,7 +397,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
         {!keyName && (
           <>
             <div className="notice">
-              For a model provider, connect it under Settings → Model providers instead (or “Add an OpenAI-compatible endpoint” there if it isn’t listed): a
+              For a model provider, connect it under Settings → Models → Model providers instead (or “Add an OpenAI-compatible endpoint” there if it isn’t listed): a
               key added here doesn’t put any models in the model menu.
             </div>
             <label className="field">
@@ -910,21 +911,85 @@ function AppearancePage() {
   )
 }
 
-// ── screen: a hub of grouped rows, each opening its own page ─
+// ── screen: the main page (attention cards, two sections of rows), each row opening its own page ─
 
-type Page = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'accounts' | 'keys' | 'connectors' | 'hermes' | 'config'
-const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Default models', accounts: 'Model providers', keys: 'API keys', connectors: 'Connectors', hermes: 'Hermux settings', config: 'Advanced settings' }
+type Page = SettingsPageId
+const PAGE_TITLE: Record<Page, string> = SETTINGS_PAGE_NAME
+/** Where Back goes from a page (every other page goes back to the main page). */
+const PARENT: Partial<Record<Page, Page>> = { stt: 'voice', defaults: 'models', accounts: 'models', keys: 'models', memory: 'hermes', config: 'hermes' }
+const ACCESS_NAME: Record<Access, string> = { off: 'Auto off', auto: 'Auto access', full: 'Full access' }
+
+/** One attention card on the main page: an icon, a title, one line and one button. Shown only while its condition is true. */
+function AttentionCard({ tone, icon, title, line, action, primary, onAction }: { tone: 'gold' | 'red'; icon: IconName; title: string; line: string; action: string; primary?: boolean; onAction: () => void }) {
+  return (
+    <div className={`attn-card attn-${tone}`} role="group" aria-label={title}>
+      <IconChip tone={tone}>{icon}</IconChip>
+      <div className="attn-text">
+        <div className="attn-title">{title}</div>
+        <div className="attn-line">{line}</div>
+        <button className={`btn attn-btn${primary ? ' primary' : ''}`} onClick={() => { haptic(); onAction() }}>
+          {action}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** The main page's attention cards, most urgent first: no model connected, Hermux offline, an update ready. No new polling:
+ *  the model check is the setup check's own question (`modelConnected`), asked once when the page opens and again when the
+ *  connection opens; the update check is the one the update row always made when Settings opened (at most once a minute). */
+function AttentionCards({ go }: { go: (p: Page) => void }) {
+  const conn = useStore(s => s.conn)
+  const profile = useStore(s => s.profile)
+  const u = useUpdate()
+  const [hasModel, setHasModel] = useState<boolean | null>(null)
+  useEffect(() => {
+    void checkForUpdate()
+  }, [])
+  useEffect(() => {
+    if (conn !== 'open') return
+    let live = true
+    void modelConnected().then(v => live && setHasModel(v))
+    return () => {
+      live = false
+    }
+  }, [conn, profile])
+  const online = conn === 'open'
+  const update = u.phase === 'available' || u.phase === 'permission' || u.phase === 'downloading' || u.phase === 'installing'
+  if (online && hasModel !== false && !update) return null
+  return (
+    <div className="attn-list">
+      {online && hasModel === false && (
+        <AttentionCard tone="gold" icon="sparkles" title="Connect a model" line="Hermux needs a model to think with." action="Add a provider" primary onAction={() => go('models')} />
+      )}
+      {!online && (
+        <AttentionCard
+          tone="red"
+          icon="warning"
+          title="Hermux is offline"
+          line={conn === 'connecting' ? 'Connecting…' : 'Chats and settings can’t reach it right now.'}
+          action="Reconnect"
+          onAction={() => {
+            reconnectNow()
+            toast('Reconnecting…')
+          }}
+        />
+      )}
+      {update && u.latest && (
+        <div className="attn-card attn-update set-card" role="group" aria-label={`Update to ${u.latest}`}>
+          <UpdateRow />
+        </div>
+      )}
+    </div>
+  )
+}
 
 function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => void }) {
   const [q, setQ] = useState('')
   const hits = useMemo(() => searchSettings(q), [q])
-  const conn = useStore(s => s.conn)
-  const bootLine = useBootSummary()
-  // The open chat knows the version; without one, the health check (/api/status) does.
-  const hermesVersion = useStore(s => s.active?.info?.version || s.health?.version || '')
+  const model = useStore(s => s.defaultModel || s.profiles.find(p => p.name === s.profile)?.model || '')
   const [theme] = useState<Theme>(savedTheme)
-  const [autoRead, setAutoReadState] = useState(autoReadOn)
-  const connLabel = conn === 'open' ? 'Connected' : conn === 'connecting' ? 'Connecting…' : 'Offline'
+  const [access] = useState<Access>(defaultAccess)
   const search = (
     <label className="set-search">
       <span aria-hidden="true"><Icon n="search" /></span>
@@ -943,45 +1008,86 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
     )
   }
   return (
-    <>
+    <div className="set-main">
       {search}
-      <Section title="Appearance">
-        <Row icon="palette" tone="purple" title="Appearance" sub="Theme, text size and effects" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
-      </Section>
-      <Section title="Voice">
-        <ToggleRow icon="speaker" tone="gold" title="Read every reply aloud" sub="In all chats" on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
-        <Row icon="chat" tone="teal" title="Voice" sub="Engine, voice, speed and pitch" chevron onClick={() => go('voice')} />
-      </Section>
+      <AttentionCards go={go} />
       <Section title="Hermux">
-        <Row icon="sparkles" tone="gold" title="Default models" sub="Which model each bot starts with" chevron onClick={() => go('models')} />
-        <Row icon="user" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
-        <Row icon="key" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
-        <Row icon="plug" tone="teal" title="Connectors" sub="MCP servers, web search, Home Assistant and other services" chevron onClick={() => go('connectors')} />
-        <Row icon="sliders" tone="purple" title="Hermux settings" sub="Limits, memory, long chats, sub-agents, safety" chevron onClick={() => go('hermes')} />
-        <Row icon="settings" tone="gray" title="Advanced settings" sub="Every Hermux option, by its config name" chevron onClick={() => go('config')} />
+        <Row icon="sparkles" tone="blue" title="Models" value={model || 'None yet'} chevron onClick={() => go('models')} />
+        <Row icon="plug" tone="teal" title="Connectors" sub="Mail, web search, apps and services" chevron onClick={() => go('connectors')} />
+        <Row icon="sliders" tone="purple" title="Behaviour" sub="Memory, long chats, limits, sub-agents" chevron onClick={() => go('hermes')} />
+        <Row icon="shield" tone="green" title="Access & privacy" value={ACCESS_NAME[access]} chevron onClick={() => go('access')} />
       </Section>
-      <Section title="Permissions" footer="What new and existing chats start in. A chat you set with its own Auto button keeps that choice.">
+      <Section title="This app">
+        <Row icon="palette" tone="purple" title="Appearance" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
+        <Row icon="speaker" tone="teal" title="Voice" sub="Read aloud, dictation, Live mode" chevron onClick={() => go('voice')} />
+        <Row icon="info" tone="gray" title="About & help" value={appVersion()} chevron onClick={() => go('about')} />
+      </Section>
+    </div>
+  )
+}
+
+/** Models: in this task the two pages that were on the main page (Default models, Model providers), reached from one
+ *  page, and the API keys page as a dim last row. */
+function ModelsPage({ go }: { go: (p: Page) => void }) {
+  const model = useStore(s => s.defaultModel || s.profiles.find(p => p.name === s.profile)?.model || '')
+  return (
+    <>
+      <Section>
+        <Row icon="sparkles" tone="gold" title="Default models" sub="Which model each bot starts with" value={model || undefined} chevron onClick={() => go('defaults')} />
+        <Row icon="user" tone="green" title="Model providers" sub="Sign-ins, API keys, your own server" chevron onClick={() => go('accounts')} />
+      </Section>
+      <Section>
+        <Row icon="key" tone="gray" title="All keys" sub="Every key of providers and tools" chevron onClick={() => go('keys')} />
+      </Section>
+    </>
+  )
+}
+
+/** Access & privacy: what Hermux may do and read, and what the app keeps on this phone. Each row is the component it was
+ *  on the main page, moved as it is, with its own lock, request and confirmation. */
+function AccessPage() {
+  return (
+    <>
+      <Section title="Approvals" footer="What new and existing chats start in. A chat you set with its own Auto button keeps that choice.">
         <DefaultAccessRow />
         <ApprovalLockRow />
       </Section>
-      <OpenUISection />
       <PhoneDataSection />
       <BgAppsSection />
-      <Section title="Connection">
-        <Row icon="signal" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
-        <Row icon="refresh" tone="blue" title="Reconnect / start Hermux" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
-        <Row icon="check" tone="teal" title="Setup check" sub="Permissions, background running, the plugin" chevron onClick={() => setState({ screen: 'setup' })} />
+      <Section title="Kept on this phone">
+        <DiagRows />
+        <StatsRow />
       </Section>
-      <Section title="About">
+    </>
+  )
+}
+
+/** About & help: updates, help, versions, the developer rows and Uninstall last. */
+function AboutPage() {
+  const conn = useStore(s => s.conn)
+  const bootLine = useBootSummary()
+  // The open chat knows the version; without one, the health check (/api/status) does.
+  const hermesVersion = useStore(s => s.active?.info?.version || s.health?.version || '')
+  const connLabel = conn === 'open' ? 'Connected' : conn === 'connecting' ? 'Connecting…' : 'Offline'
+  return (
+    <>
+      <Section title="Updates">
         <Row title="App" value={appVersion()} />
         <UpdateRow />
         <WhatsNewRow />
+      </Section>
+      <Section title="Help">
         <ReportRow />
-        <DiagRows />
+        <Row icon="check" tone="teal" title="Setup check" sub="Permissions, background running, the plugin" chevron onClick={() => setState({ screen: 'setup' })} />
+        <Row icon="signal" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
+        <Row icon="refresh" tone="blue" title="Reconnect / start Hermux" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
+      </Section>
+      <Section title="Versions">
         <HermesRow version={hermesVersion ? `v${String(hermesVersion).replace(/^v/, '')}` : '—'} />
         <PluginRow />
+      </Section>
+      <Section title="Developer">
         <Row title="Last start-up" sub={bootLine || 'Not measured yet'} />
-        <StatsRow />
         <RemoteDebugRow />
       </Section>
       <UninstallSection />
@@ -1003,35 +1109,6 @@ function RemoteDebugRow() {
       on={state.on}
       onChange={v => { if (v) openRemoteDebugging(); else turnOffRemoteDebugging() }}
     />
-  )
-}
-
-/** Hermes answering with OpenUI cards, tables, charts and forms in the chat (plugin /openui). New chats only:
- *  Hermes freezes its system prompt per chat. Cards already in chats keep showing either way. */
-const OPENUI = '/api/plugins/hermes-mobile/openui'
-function OpenUISection() {
-  const [on, setOn] = useState<boolean | null>(null)
-  useEffect(() => {
-    let live = true
-    api<{ enabled?: boolean }>('GET', OPENUI, undefined, { profile: false })
-      .then(r => live && setOn(r.enabled !== false))
-      .catch(() => {}) // an older plugin: no section
-    return () => {
-      live = false
-    }
-  }, [])
-  if (on === null) return null
-  const set = (v: boolean) => {
-    setOn(v)
-    api('PUT', OPENUI, { enabled: v }, { profile: false }).catch(e => {
-      setOn(!v)
-      toast(`Couldn’t save: ${errText(e)}`, 'error')
-    })
-  }
-  return (
-    <Section title="Replies">
-      <ToggleRow icon="puzzle" tone="green" title="Dynamic UI" sub="Tables, charts and forms you can tap. Applies to new chats" on={on} onChange={set} />
-    </Section>
   )
 }
 
@@ -1284,6 +1361,7 @@ export function SettingsScreen() {
   const [page, setPage] = useState<Page>(() => (opened ? 'keys' : 'hub'))
   const [scope, setScope] = useState(opened || current)
   const [rotation, setRotation] = useState(0) // bumped when a provider changed: the fallback list re-reads its key status
+  const [slot, setSlot] = useState<HTMLElement | null>(null) // the Memory page's Add button goes in the top bar
   useEffect(() => {
     void loadProfiles()
   }, [])
@@ -1305,26 +1383,35 @@ export function SettingsScreen() {
     raf = requestAnimationFrame(look)
     return () => cancelAnimationFrame(raf)
   }, [target])
-  useBackHandler(() => setPage(page === 'stt' ? 'voice' : 'hub'), page !== 'hub') // Back on a sub-page returns to the hub (Speech recognition: to Voice)
+  const back = () => setPage(PARENT[page] || 'hub')
+  useBackHandler(back, page !== 'hub') // Back on a page returns to the page it was opened from (PARENT), else the main page
   return (
-    <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : () => setPage(page === 'stt' ? 'voice' : 'hub')}>
+    <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : back} actions={page === 'memory' ? <span className="lib-actions" ref={setSlot} /> : undefined}>
       {page === 'hub' && <Hub go={setPage} pick={pick} />}
       {page === 'appearance' && <AppearancePage />}
       {page === 'voice' && <VoiceSettings openStt={() => setPage('stt')} />}
       {page === 'stt' && <SttSettings />}
-      {page === 'models' && <ModelsTab />}
+      {page === 'models' && <ModelsPage go={setPage} />}
+      {page === 'defaults' && <ModelsTab />}
       {page === 'accounts' && (
         <>
           <ProfileChips value={scope} onChange={setScope} label="Sign-ins for" />
           <FallbackSection key={scope} profile={scope} version={rotation} />
           <ProviderList profile={scope} onChange={() => setRotation(v => v + 1)} onPicked={() => void loadProfiles()} />
-          <div className="dim small pad">Every provider this agent version supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → API keys.</div>
+          <div className="dim small pad">Every provider this agent version supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → Models → All keys.</div>
         </>
       )}
       {page === 'keys' && <KeysTab scope={scope} setScope={setScope} />}
       {page === 'connectors' && <ConnectorsPage scope={scope} setScope={setScope} />}
-      {page === 'hermes' && <HermesSettingsPage scope={scope} setScope={setScope} />}
+      {page === 'hermes' && <HermesSettingsPage scope={scope} setScope={setScope} openMemory={() => setPage('memory')} openAdvanced={() => setPage('config')} />}
+      {page === 'memory' && (
+        <EmbeddedShell.Provider value={{ slot }}>
+          <MemoryScreen />
+        </EmbeddedShell.Provider>
+      )}
       {page === 'config' && <ConfigTab scope={scope} setScope={setScope} />}
+      {page === 'access' && <AccessPage />}
+      {page === 'about' && <AboutPage />}
     </ScreenShell>
   )
 }

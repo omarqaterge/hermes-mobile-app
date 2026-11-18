@@ -89,7 +89,7 @@ function GoogleSheet({ profile, status: s, onStatus, onClose }: { profile: strin
           if (r.installing) timer = setTimeout(poll, INSTALL_POLL_MS)
           else if (!r.install_error) {
             setError('')
-            toast('Google’s libraries are installed. If a chat can’t use Google yet, restart Hermux (Settings → Reconnect).', 'info', 8000)
+            toast('Google’s libraries are installed. If a chat can’t use Google yet, restart Hermux (Settings → About & help → Reconnect / start Hermux).', 'info', 8000)
           }
         })
         .catch(() => {

@@ -310,4 +310,11 @@ const contrast = (a, b) => {
   return (x + 0.05) / (y + 0.05)
 }
 
-module.exports = { openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }
+// Settings' main page → one of its seven rows (Models, Connectors, Behaviour, Access & privacy, Appearance, Voice, About &
+// help): taps the row by its role and name and waits for the page's title. Settings must be open on its main page.
+async function settingsPage(page, name) {
+  await page.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click()
+  await page.locator('.screen .title', { hasText: name }).waitFor({ timeout: 5000 })
+}
+
+module.exports = { settingsPage, openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }

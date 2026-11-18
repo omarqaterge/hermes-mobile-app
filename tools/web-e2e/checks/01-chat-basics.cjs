@@ -1,6 +1,6 @@
 // Start-up marks, the model picked before the first message, the context ring, access modes, model picker.
 const fs = require('fs')
-const { WEB, LOG, calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
+const { WEB, LOG, calls, rpcs, sleep, check, mock, png, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -143,11 +143,12 @@ module.exports = async t => {
   await page.getByRole('button', { name: 'Send' }).click()
   await sleep(500)
   check(rpcs('config.set').some(c => c.params.key === 'fast' && c.params.value === 'off') && (await page.getByText('Fast mode off').count()) > 0, '/fast off turns it off')
-  // ── Settings → Permissions → "Auto for all chats": the mode a chat starts in ──
+  // ── Settings → Access & privacy → "Auto for all chats": the mode a chat starts in ──
   {
     const autoPuts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/auto')
     await page.getByRole('button', { name: /^Sessions/ }).click()
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await settingsPage(page, 'Access & privacy')
     const row = page.locator('.set-row', { hasText: 'Auto for all chats' })
     await row.waitFor({ timeout: 5000 })
     await row.click()
@@ -160,6 +161,8 @@ module.exports = async t => {
     await page.getByText('Auto access', { exact: true }).click()
     await sleep(300)
     check(await page.evaluate(() => localStorage.getItem('hm.defaultAccess.v1') === 'auto'), 'default Auto access saved')
+    await page.evaluate(() => window.hermesBack()) // Access & privacy → the main page
+    await page.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
     await page.evaluate(() => window.hermesBack())
     const before = autoPuts().length
     await page.evaluate(() => window.hermesShortcut('new'))

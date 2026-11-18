@@ -34,7 +34,7 @@ module.exports = async t => {
     await p.getByText(done, { exact: false }).first().waitFor({ timeout: 8000 })
   }
 
-  // ── the chat screen, the side panel, Settings and three of its pages ──
+  // ── the chat screen, the side panel, Settings and its pages ──
   {
     const p = await open()
     await clean('the chat screen', p.locator('body'))
@@ -44,7 +44,7 @@ module.exports = async t => {
     await p.getByRole('button', { name: 'Settings' }).click()
     await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
     await clean('Settings', p.locator('body'), 'Appearance')
-    for (const name of [/^Appearance/, /^Voice/, /^Connectors/]) {
+    for (const name of [/^Appearance/, /^Voice/, /^Connectors/, /^Models/, /^Behaviour/, /^Access & privacy/, /^About & help/]) {
       await p.getByRole('button', { name }).first().click()
       await p.waitForTimeout(300)
       await clean(`Settings page ${name}`, p.locator('body'))

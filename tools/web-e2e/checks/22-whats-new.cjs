@@ -1,5 +1,5 @@
 // Settings → About → What's new: the changelog of every release since the installed version, under the update row.
-const { WEB, check, nativeShell } = require('../lib.cjs')
+const { WEB, check, nativeShell, settingsPage } = require('../lib.cjs')
 
 const LOG = `# What's new
 
@@ -48,6 +48,7 @@ module.exports = async t => {
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+    await settingsPage(pg, 'About & help')
     return { pg, asked }
   }
 

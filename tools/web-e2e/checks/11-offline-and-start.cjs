@@ -1,5 +1,5 @@
 // Offline queue, attachments over a reconnect, message times, /btw, shortcut, suggestions, About, hub, setup check.
-const { addFiles, WEB, calls, rpcs, sleep, check, mock, png } = require('../lib.cjs')
+const { addFiles, WEB, calls, rpcs, sleep, check, mock, png, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -223,11 +223,14 @@ module.exports = async t => {
   await page.evaluate(() => window.hermesShortcut('new'))
   await page.getByRole('button', { name: /^Sessions/ }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await settingsPage(page, 'About & help')
   const hv = page.locator('.set-row', { hasText: /Hermux.*v0\.21\.5/ }).last()
   await hv.waitFor({ timeout: 5000 })
   check(((await hv.textContent()) || '').includes('v0.21.5'), `About → Hermes version (${await hv.textContent()})`)
   check(!((await hv.textContent()) || '').includes('Tap to update'), 'About → Hermes has no update button')
   check(!((await hv.textContent()) || '').includes('Different from what the app was made for'), 'a Hermes build equal to the tested one raises no warning')
+  await page.evaluate(() => window.hermesBack()) // About & help → the main page
+  await page.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
   await page.evaluate(() => window.hermesBack())
 
   // ── The side panel's rows: Scheduled, Skills and Library, each opening its page; Back returns to the chat ──

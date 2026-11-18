@@ -28,6 +28,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `Library.tsx` (in `components/`) — the Library page (3.14).
 - `panel.css` — the side panel's look (3.13): the glass sheet over the chat, its inside, the docked column on wide screens and the chat stepping back behind it.
 - `menu.css` — the menus' look (3.20 `MenuSheet` and its parts; the chat menu 3.5, a chat row's menu 3.13): header, quick-action tiles, groups and rows, the solid form over the side panel, the rows of `PickerSheet`, and Chat details' long values.
+- `settings.css` — the Settings main page (3.15): one line per row (title, line and value cut with an ellipsis, so a narrow screen or a wider font never wraps them) and the attention cards (`.attn-card`: solid, a gold or red border, `--text` and `--glass-dim` text, a 44 px button, the shared row arrival).
 - `chatactions.ts` — Pin, Archive and Delete for a chat (`pinChat`, `archiveChat`, `deleteChat`), shared by the chat menu and the chat list (3.5, 3.13).
 - `ChatMenu.tsx` (in `components/`) — the chat menu, the new-chat menu and their shared header (3.5).
 - `tray.ts` — the composer's tray (3.4 Tray): `useTray` / `trayState` (`TrayState`: `mode`, `open`, `hint`), `trayForChat`, `trayFirstSend`, `takeTrayJump` (true once after a change that came with another chat, so the tray takes it without moving), `setTrayOpen`, `dismissTrayHint`, `modelBarMode` / `setModelBarMode` (`ModelBarMode`, `hm.modelBar`), `HINT_MS`, the one-time hint key `hm.trayHint.v1`, and `resetTrayForTests`. Tests in `tray.test.ts`.
@@ -36,7 +37,8 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `stats.ts` — opt-in usage stats (spec 2.3): `startStats` runs once from `main.tsx`, after the first render; with no app key it does nothing.
 - `report.ts` — Report a problem (spec 3.21): what a report holds (`reportDetails`), the log scrubber (`scrubLog`), the filled-in GitHub new-issue link (`fallbackUrl`) and sending through the relay (`sendReport`).
 - `Report.tsx` (in `components/`) — the Report a problem sheet, its Settings row and the link error states show (spec 3.21).
-- `DiagRows.tsx` (in `components/`) — Settings → About's switch and delete button for the diagnostic log (3.21).
+- `DiagRows.tsx` (in `components/`) — Settings → Access & privacy's switch and delete button for the diagnostic log (3.21).
+- `DynamicUI.tsx` (in `components/`) — Settings → Behaviour → Replies: the Dynamic UI switch (`useDynamicUI` reads and writes the plugin's `/openui`; `DynamicUIRow` is the row), moved from the main page (3.15).
 - `applog.ts` — what the page itself adds to the diagnostic log: `startAppLog` runs once from `main.tsx`; the shape of page errors and error toasts, never their words. `openChatText` gives the scrubber the open chat's text.
 - `diaglog.ts` — the page's side of the diagnostic log: `logEvent` checks every part of an event (`checkedFields`) and hands it to the shell, or keeps it in memory in a plain browser; `stackFrames`, `noteConn`, `noteRpc` and `routeName` say what is taken from an error, a connection, a gateway call and a dashboard path. It sends nothing.
 - `diagnostics.ts` — what Report a problem may include (`collectDiagnostics`, `diagnosticsText`) and the Settings switch and delete button (`diagnosticsEnabled`, `setDiagnosticsEnabled`, `clearDiagnostics`, `flushDiagToPlugin`).

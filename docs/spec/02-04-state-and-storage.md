@@ -10,7 +10,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.autoread` | `voice.ts` (`AUTO`) | Read replies aloud for every chat: `'1'` / `'0'`. Mirrored to the shell with `setReadAloud`. | No |
 | `hm.autoread.chats` (inventory name `hm.autoread`) | `voice.ts` (`AUTO_CHATS`) | Per-chat read-aloud override: `{chatId: boolean}`; wins over the global switch. | No (chat ids) |
 | `hm.autostartDone` | `components/Setup.tsx` | `'1'` once the user confirmed the Autostart step. | No |
-| `hm.boot.v1` | `boot.ts` | The latest start-up's stage marks: `{at, marks: [[stage, ms]…]}` (stages `script`, `token-asked`, `token`, `socket`, `painted`, `resume-start`, `sessions`, `chat-live`; each recorded once per page load). Shown in Settings → About. | No |
+| `hm.boot.v1` | `boot.ts` | The latest start-up's stage marks: `{at, marks: [[stage, ms]…]}` (stages `script`, `token-asked`, `token`, `socket`, `painted`, `resume-start`, `sessions`, `chat-live`; each recorded once per page load). Shown in Settings → About & help → Last start-up. | No |
 | `hm.glass` | `motion.ts` | Glass effects (Settings → Appearance → Effects): `'1'` on, `'0'` solid surfaces. Absent: on. | No |
 | `hm.libraryPart` | `library.ts` | The Library page's last part: `canvases`, `files` or `projects`. Absent or anything else: Canvases. Written when the part changes and when the canvas panel's "Open a file from the phone…" opens Files. | No |
 | `hm.motion` | `motion.ts` | Animations: `full`, `reduced` or `off`. Absent (or anything else): Off when the phone asks for no animations, else Full. The browser checks store `off` unless a check is about motion (7.3). | No |
@@ -109,7 +109,7 @@ Paths are inside Debian; `~` is `/root`. Exact formats are in 5.5.
 | `~/.hermes/mobile/activity.json` | plugin (every Hermes process) | What Hermes is doing now; `GET /activity` → the activity banner. |
 | `~/.hermes/mobile/auto.json` | `PUT /auto` | Chats in Auto access (the plugin's block rule reads it). |
 | `~/.hermes/mobile/prefs.json` | `PUT /prefs` | Drawer pins and order, per profile. |
-| `~/.hermes/mobile/openui.json` | `PUT /openui` | Settings → Replies: cards on or off. |
+| `~/.hermes/mobile/openui.json` | `PUT /openui` | Settings → Behaviour → Replies: cards on or off. |
 | `~/.hermes/mobile/bgapps.json` | `PUT /bgapps` | Background apps: allow sensitive apps. |
 | `~/.hermes/mobile/bots.json`, `bots.heartbeat` | `bots.py`, `PUT /bots/{name}` | Bots on/off (3.16). |
 | `~/.hermes/mobile/canvas/<chat id>/<doc id>.json` | `canvas.py` | Canvas documents with version history. |

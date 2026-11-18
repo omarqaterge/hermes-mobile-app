@@ -1,6 +1,6 @@
 // Report a problem: the sheet in Settings → About, the relay, the GitHub fallback, the scrubbed log, the screenshot.
 const path = require('path')
-const { WEB, SHOTS, check, sleep, png } = require('../lib.cjs')
+const { WEB, SHOTS, check, sleep, png, settingsPage } = require('../lib.cjs')
 
 const RELAY = 'https://relay.test/'
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'POST, OPTIONS' }
@@ -48,6 +48,7 @@ const openSheet = async pg => {
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.getByRole('button', { name: 'Settings', exact: true }).click()
   await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+  await settingsPage(pg, 'About & help')
   const row = pg.locator('.set-row', { hasText: 'Report a problem' })
   await row.scrollIntoViewIfNeeded()
   await row.click()
@@ -188,12 +189,13 @@ module.exports = async t => {
     await ctx.close()
   }
 
-  // Settings → About: the switch and the delete button. Off stops the log on Hermes's side too.
+  // Settings → Access & privacy → Kept on this phone: the switch and the delete button. Off stops the log on Hermes's side too.
   {
     const { ctx, pg } = await open(browser, {})
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.getByRole('button', { name: 'Settings', exact: true }).click()
     await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+    await settingsPage(pg, 'Access & privacy')
     const toggle = pg.locator('.set-row', { hasText: 'Keep a diagnostic log' })
     await toggle.scrollIntoViewIfNeeded()
     const del = pg.locator('.set-row', { hasText: 'Delete the diagnostic log' })

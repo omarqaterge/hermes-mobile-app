@@ -21,7 +21,7 @@ the plugin's files (names and contents, `BUILD_STAMP` and `__pycache__` left out
 | A check finds the plugin `older` | The update runs at once if everything is quiet (below), else it waits for one of the next events. |
 | A turn ends (a `status` event goes from working to not working) | 15 s later: the update, if one is waiting and everything is quiet. |
 | The app leaves the screen (`MainActivity.onStop`) | The update, if one is waiting and everything is quiet. |
-| The user taps Settings → About → Hermux plugin | The update now, even with the app on screen (`--user`; `--force` after "Replace" for a copy changed by hand). |
+| The user taps Settings → About & help → Hermux plugin | The update now, even with the app on screen (`--user`; `--force` after "Replace" for a copy changed by hand). |
 
 "Quiet" (`maybeApply`): `HermesService.hermesIdle()` (no working beat within `WORKING_TTL_MS`, no approval or question
 open), the app not on screen, at least 2 min (`BUSY_GAP_MS`) since the last try, fewer than 3 failed tries for this
@@ -132,7 +132,7 @@ line. The cron ticker needs no copy step once it lives in the plugin folder: it 
 The APK's copy of `plugin-update.sh` (with the supervisor inside) is about 30 KB, one `bash -c` argument well under
 Linux's 128 KiB limit for one argument; the scripts travel in the bundle, not in it.
 
-**What the app shows.** Settings → About → Hermux plugin (3.15), from `PluginSync.state` through the bridge
+**What the app shows.** Settings → About & help → Hermux plugin (3.15), from `PluginSync.state` through the bridge
 (`pluginState`, `pluginUpdate`, 4.5; `web/src/plugin-sync.ts`). The state lives in the `hermes` preferences (2.4).
 
 **Who gets what.**

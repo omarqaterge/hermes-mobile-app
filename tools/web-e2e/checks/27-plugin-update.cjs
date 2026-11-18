@@ -1,6 +1,6 @@
 // Settings → About → Hermux plugin (the app's own plugin update, PluginSync.java), and the app against an old plugin
 // that lacks newer routes (an app updated before its plugin caught up): no broken pages, the sections just stay away.
-const { WEB, check, sleep, nativeShell } = require('../lib.cjs')
+const { WEB, check, sleep, nativeShell, settingsPage } = require('../lib.cjs')
 
 const OLD_ROUTES = /\/api\/plugins\/hermes-mobile\/(google|openui|bgapps|plugin-info|sent-counts)(\?|$|\/)/
 
@@ -19,6 +19,7 @@ async function open(browser, { oldPlugin } = {}) {
   await pg.getByRole('button', { name: /^Sessions/ }).click()
   await pg.getByRole('button', { name: 'Settings', exact: true }).click()
   await pg.locator('.screen .title', { hasText: 'Settings' }).waitFor({ timeout: 5000 })
+  await settingsPage(pg, 'About & help')
   return { ctx, pg, errors }
 }
 const row = pg => pg.locator('.set-row', { hasText: 'Hermux plugin' })
@@ -117,8 +118,12 @@ module.exports = async t => {
   // An old plugin (no /google, /openui, /bgapps, /plugin-info, /sent-counts): Settings, Connectors and Hermes settings open.
   {
     const { ctx, pg, errors } = await open(browser, { oldPlugin: true })
+    await pg.evaluate(() => window.hermesBack()) // About & help → the main page
+    await pg.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await settingsPage(pg, 'Behaviour') // the Dynamic UI switch lives here now
     await sleep(800)
     check((await pg.locator('.set-row', { hasText: 'Dynamic UI' }).count()) === 0, 'old plugin: no cards switch (its route is missing)')
+    await pg.evaluate(() => window.hermesBack())
     await pg.locator('.set-row', { hasText: 'Connectors' }).click()
     await pg.locator('.screen .title', { hasText: 'Connectors' }).waitFor({ timeout: 5000 })
     await pg.locator('.set-row', { hasText: 'server-filesystem' }).waitFor({ timeout: 5000 }).then(() => check(true, 'old plugin: Connectors lists MCP servers'), () => check(false, 'old plugin: Connectors lists MCP servers'))

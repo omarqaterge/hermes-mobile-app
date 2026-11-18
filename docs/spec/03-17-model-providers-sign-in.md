@@ -1,11 +1,11 @@
 ### 3.17 Model providers + sign-in
 
-Settings → Model providers and the model step of the first-run flow (3.18) share one list. The catalog is read from Hermes at run time, so a provider a newer Hermes adds shows up without an app change.
+Settings → Models → Model providers and the model step of the first-run flow (3.18) share one list. The catalog is read from Hermes at run time, so a provider a newer Hermes adds shows up without an app change.
 
 **Source files:** `web/src/components/Providers.tsx` (`ProviderList`, `ProviderSheet`, `EndpointSheet`), `web/src/providers.ts` (`buildCatalog`, `POPULAR`, `PRESETS`, `matches`, `methods`, `connectedText`, `onlySlugs`), `web/src/components/Connect.tsx` (`DeviceLoginSheet`, `WelcomeBody`), `web/src/components/SignIn.tsx` (`ClaudeSignInSheet`, `loadPool`, `PoolEntry`, `withPoolStatus`, `afterSignIn`), `web/src/components/Rotation.tsx` (`FallbackSection`, `KeyPoolSection`, `STRATEGIES`, `chainOf`, `strategyOf`, `nextUp`, `sourceText`).
 
 #### Provider list
-**Opens from:** Settings → Model providers; the model step of the setup flow. **Closes with:** Back (it is part of a page). **Source:** `Providers.tsx` `ProviderList`.
+**Opens from:** Settings → Models → Model providers; the model step of the setup flow. **Closes with:** Back (it is part of a page). **Source:** `Providers.tsx` `ProviderList`.
 
 The catalog is built from four calls, each scoped to the bot: `GET /api/env` (keys, with provider tags), `GET /api/providers/oauth` (sign-ins), `GET /api/providers/custom-endpoints` (saved own servers) and `GET /api/credentials/pool` (a Claude login lives only in the credential pool). A failure of the last three degrades quietly to empty.
 
@@ -60,7 +60,7 @@ Fields: Name; Address (base URL); API key (marked "(if it needs one)" for preset
 #### Provider rotation (fallback models and key pools)
 **Source:** `Rotation.tsx`. Two of Hermes's own mechanisms, through routes the pinned Hermes has (no plugin route): the fallback chain (`fallback_providers` in config.yaml) and the credential pool (several keys or logins per provider, in `auth.json`) with its rotation strategy (`credential_pool_strategies.<provider>` in config.yaml). Every call is scoped with `?profile=` to the bot chosen in the chips.
 
-**Fallback models** (`FallbackSection`, on Settings → Model providers above the search field; not in the setup flow). Read with `GET /api/config?profile=`; the pool (for the status notes) loads beside it and never holds the card up. Both are re-read when a provider on the page was connected or removed. While the config loads: "Loading…"; if it fails or takes over 20 s: the error with "Try again" (`useLoader`, 3.20). With no fallback set, "No fallback models yet" sits between the main model and Add.
+**Fallback models** (`FallbackSection`, on Settings → Models → Model providers above the search field; not in the setup flow). Read with `GET /api/config?profile=`; the pool (for the status notes) loads beside it and never holds the card up. Both are re-read when a provider on the page was connected or removed. While the config loads: "Loading…"; if it fails or takes over 20 s: the error with "Try again" (`useLoader`, 3.20). With no fallback set, "No fallback models yet" sits between the main model and Add.
 | Element | Looks like | Tap | States |
 |---|---|---|---|
 | Main model row | Number 1, the bot's model, sub "Main model · <provider>" | nothing (change it under Default models or a provider's "Choose a model") | "No model set" |

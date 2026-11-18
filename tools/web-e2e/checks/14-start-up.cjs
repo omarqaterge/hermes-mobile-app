@@ -1,5 +1,5 @@
 // Start-up order: profiles and the other start-up requests after the chat, a new chat kept, the canvas button while resuming.
-const { MOCK, WEB, calls, sleep, check, mock } = require('../lib.cjs')
+const { MOCK, WEB, calls, sleep, check, mock, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -57,7 +57,7 @@ module.exports = async t => {
   check((await scv.locator('.canvas-panel').count()) === 1 && (await scv.locator('.canvas-tab-title', { hasText: 'Life' }).count()) === 1, 'canvas stays open on the chat once it has loaded')
   await scv.close()
 
-  // ── Settings → About → Last start-up follows the marks while it is on screen (it used to stop at the mark it opened with) ──
+  // ── Settings → About & help → Last start-up follows the marks while it is on screen (it used to stop at the mark it opened with) ──
   const sbt = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await sbt.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-slowstart', profile: 'default' })))
   await mock({ holdSlowResume: true }) // however slowly this machine opens Settings, the chat is still loading
@@ -65,6 +65,7 @@ module.exports = async t => {
   await sleep(600) // connected, the held resume is in flight (its start closes the drawer)
   await sbt.getByRole('button', { name: 'Sessions' }).click()
   await sbt.getByRole('button', { name: 'Settings', exact: true }).click()
+  await settingsPage(sbt, 'About & help')
   const bootRow = sbt.locator('.screen', { hasText: 'Last start-up' }).getByText(/^script /)
   await bootRow.waitFor({ timeout: 5000 })
   check(!/chat-live/.test(await bootRow.innerText()), 'Last start-up: opened while the chat is still loading, no chat-live yet')

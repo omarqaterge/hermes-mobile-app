@@ -118,7 +118,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
           ))}
         </Section>
       )}
-      <div className="dim small pad">Model sign-ins and keys are under Settings → Model providers; every other key is under Settings → API keys.</div>
+      <div className="dim small pad">Model sign-ins and keys are under Settings → Models → Model providers; every other key is under Settings → Models → All keys.</div>
       {open && <ServerSheet server={open} profile={scope} onClose={() => setServer(null)} onChanged={servers.reload} />}
       {adding && (
         <AddServerSheet
@@ -455,7 +455,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
     try {
       const r = await api<{ needs_nous_auth?: boolean }>('PUT', `${base}/provider?${p}`, { provider: prov.name }, { profile: false })
       if (r?.needs_nous_auth) {
-        toast(`${prov.name} needs a Nous Portal sign-in with a subscription that includes it (Settings → Model providers → Nous).`, 'error', 8000)
+        toast(`${prov.name} needs a Nous Portal sign-in with a subscription that includes it (Settings → Models → Model providers → Nous).`, 'error', 8000)
         return false
       }
       if (say) toast(`${w.title}: ${prov.name}`)

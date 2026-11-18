@@ -1,6 +1,6 @@
 // Confirm approvals with fingerprint: the first Allow in a chat session asks the shell for the biometric or screen
 // lock (faked here: window.__al is the shell's answer), later approvals in that chat don't; Deny never asks.
-const { WEB, calls, rpcs, check, sleep, nativeShell, mock, png } = require('../lib.cjs')
+const { WEB, calls, rpcs, check, sleep, nativeShell, mock, png, settingsPage } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -103,9 +103,10 @@ module.exports = async t => {
     c = await confirms(pg)
     check(c.length === 2 && answers('srv-approval-long').length === beforeLong + 1, `approval lock: later approvals in the chat don't ask again (${c.length} prompts)`)
 
-    // Settings → Permissions: the switch, and turning it off asks first
+    // Settings → Access & privacy → Approvals: the switch, and turning it off asks first
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.getByRole('button', { name: 'Settings', exact: true }).click()
+    await settingsPage(pg, 'Access & privacy')
     const row = pg.locator('.set-row', { hasText: 'Confirm approvals with fingerprint' })
     await row.waitFor({ timeout: 5000 })
     check((await row.getByRole('switch').getAttribute('aria-checked')) === 'true', 'approval lock: the Settings switch is on by default')
@@ -122,11 +123,12 @@ module.exports = async t => {
     await pg.close()
   }
   {
-    // Settings → Background apps: every change to banking, payment, password and 2FA apps asks, even with approvals' switch off
+    // Settings → Access & privacy → Background apps: every change to banking, payment, password and 2FA apps asks, even with approvals' switch off
     await mock({ bgapps: { allow_sensitive: false, available: true } })
     const pg = await open({ on: false, secure: true, result: 'cancel' })
     await pg.getByRole('button', { name: /^Sessions/ }).click()
     await pg.getByRole('button', { name: 'Settings', exact: true }).click()
+    await settingsPage(pg, 'Access & privacy')
     const row = pg.locator('.set-row', { hasText: 'Allow banking, payment, password and 2FA apps' })
     await row.waitFor({ timeout: 5000 })
     const puts = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/bgapps')

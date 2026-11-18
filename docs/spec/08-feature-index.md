@@ -21,11 +21,11 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Every memory write shown as a diff | 3.3 |
 | File checkpoints: folders a chat changed, diff per file, restore (undoable) | 3.5 |
 | Auto button beside the composer's model chip: Off / Auto access / Full access per chat, with a warning dialog for Full | 3.2, 2.2.1a |
-| Default Auto mode for all chats (Settings → Permissions → Auto for all chats) | 3.15 |
+| Default Auto mode for all chats (Settings → Access & privacy → Approvals → Auto for all chats) | 3.15 |
 | Approvals and questions with long warnings scrolling and repeats shown once with a count | 3.6 |
 | `/btw` side questions, opened by pulling up past the last message (about 110 px) | 3.12 |
 | Share to Hermux from any app; attach photos, camera shots and files; share a chat as Markdown | 3.4, 3.5, 4.2, 4.7 |
-| Cards in replies (tables, charts, tabs, buttons, forms) drawn by OpenUI, with live read-only data; off switch in Settings → Replies | 3.9, 3.15, 5.4 |
+| Cards in replies (tables, charts, tabs, buttons, forms) drawn by OpenUI, with live read-only data; off switch in Settings → Behaviour → Replies | 3.9, 3.15, 5.4 |
 
 **Canvas, gallery, apps**
 
@@ -34,7 +34,7 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Canvas shared with Hermux: sandboxed HTML, versions with diff and restore | 3.7 |
 | Canvas opens as a panel from the right (tap button or swipe left; swipe right on its top bar, ✕ or Back closes); wide screens keep it beside the chat | 3.7 |
 | Canvas gallery (the Library's Canvases part) of every document from every chat and profile, type chips, search, rename/copy/share/delete; old Library items shown as "Saved copy" | 3.8 |
-| Hermux uses an app on a hidden screen (`phone_app`), with a card, live thumbnail, Take over and Stop; sensitive apps refused unless allowed in Settings → Background apps | 3.10, 2.2.8, 3.15, 4.7, 5.2 |
+| Hermux uses an app on a hidden screen (`phone_app`), with a card, live thumbnail, Take over and Stop; sensitive apps refused unless allowed in Settings → Access & privacy → Background apps | 3.10, 2.2.8, 3.15, 4.7, 5.2 |
 
 **Voice**
 
@@ -53,22 +53,22 @@ One line per user-visible feature, with the section that describes it. Sources: 
 | Side panel: a glass sheet over the chat with search inside every message, Scheduled / Skills / Library rows, the bot sheet, Settings and New chat in a bar; pin, archive, delete, ordered by last activity (read when the panel opens, so rows never move while you look), "Working" and "Finished" on the rows, scheduled runs named after their job, Sort by recent | 3.13 |
 | Links from one chat to another (`hermes-chat:` links in replies, bare chat ids become links) | 3.3, 5.3 |
 | Skills, memory screen, cron jobs, and the Library (Canvases, Files, Projects) | 3.14, 3.8 |
-| Settings: Dark / OLED black / Light theme, every Hermux setting | 3.15 |
+| Settings: a main page of seven rows in two sections (Hermux: Models, Connectors, Behaviour, Access & privacy; This app: Appearance, Voice, About & help) with attention cards (Connect a model, Hermux is offline, Update to <version>); Dark / OLED black / Light theme, every Hermux setting | 3.15 |
 | Last start-up timings (Settings) and faster start-up (the last chat drawn from its cache before Hermes answers) | 3.15, 2.2.5 |
 | Bots (profiles) with their own default model, keys and SOUL.md; the plugin is linked into every profile | 3.16, 6.1 |
 | Model providers: every provider Hermes supports, Paste API key, Sign in (ChatGPT, Grok, Nous Portal), search | 3.17 |
-| Hermux settings: Hermux's options in groups and in words (limits, memory, long chats, sub-agents, web and tools, safety, housekeeping), checked input, Use default | 3.15 |
+| Behaviour (once Hermux settings): Hermux's options in groups and in words (limits, memory, long chats, sub-agents, web and tools, safety, housekeeping), checked input, Use default | 3.15 |
 | Connectors: MCP servers (add by address or command, from Hermes's catalog, on/off, test, account sign-in in the browser, remove), tools with a key or an account (web search, Home Assistant, image generation…: on/off, pick the service, paste or remove its key), keys for skills | 3.15 |
 | Provider rotation: fallback models (add, reorder, remove), several keys per provider, which key to use, cooling down / in use | 3.17 |
 | Claude signs in inside the app (claude.ai code), Use Termux instead | 3.17, 5.4 |
 | Launcher shortcuts (New chat, Live mode, last chat) | 4.2, 4.6, 3.1 |
 | Two-column layout on tablets and foldables | 3.1, 3.7 |
-| One-tap app update (Settings → About) and the "App updates" notification | 2.2.10, 3.15, 4.7 |
-| Opt-in usage stats (card once after setup, Settings → About switch, "How did you hear about us?"); needs an app key in the build | 2.3, 2.4, 3.15, 3.18 |
-| Report a problem (Settings → About, error states): a public GitHub issue through the owner's relay, or GitHub's filled-in page | 2.3, 2.4, 3.15, 3.21, 7.1 |
-| Diagnostic log (Settings → About; on the phone, sent only inside a report, private through the relay): crashes, why Android ended the app, failed calls, the agent's turns and service restarts, never chats | 2.3, 2.4, 3.15, 3.21, 4.1, 4.5, 5.1, 5.4, 6.2 |
-| Phone data for the agent switches (Settings): a master and six kinds, each turned on with the screen lock then its Android permission; read-only, off by default | 3.15, 4.2, 4.5 |
-| Uninstall Hermux (Settings → Danger zone), with a backup offer | 3.19, 4.7, 6.5 |
+| One-tap app update (Settings → About & help) and the "App updates" notification | 2.2.10, 3.15, 4.7 |
+| Opt-in usage stats (card once after setup, Settings → Access & privacy switch, "How did you hear about us?"); needs an app key in the build | 2.3, 2.4, 3.15, 3.18 |
+| Report a problem (Settings → About & help, error states): a public GitHub issue through the owner's relay, or GitHub's filled-in page | 2.3, 2.4, 3.15, 3.21, 7.1 |
+| Diagnostic log (Settings → Access & privacy; on the phone, sent only inside a report, private through the relay): crashes, why Android ended the app, failed calls, the agent's turns and service restarts, never chats | 2.3, 2.4, 3.15, 3.21, 4.1, 4.5, 5.1, 5.4, 6.2 |
+| Phone data for the agent switches (Settings → Access & privacy): a master and six kinds, each turned on with the screen lock then its Android permission; read-only, off by default | 3.15, 4.2, 4.5 |
+| Uninstall Hermux (Settings → About & help, last), with a backup offer | 3.19, 4.7, 6.5 |
 
 **Notifications and background**
 
