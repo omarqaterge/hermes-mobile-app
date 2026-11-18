@@ -31,7 +31,7 @@ html:not([data-motion='full']) .sub-shimmer { animation: none; -webkit-mask-imag
 .sub-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sub-row-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .sub-row-goal { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.sub-row-on { flex: 0 1 auto; max-width: 38%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.75rem; }
+.sub-row-on { flex: none; max-width: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.75rem; }
 .sub-row-state { flex: none; font-size: 0.75rem; color: var(--dim); }
 .sub-row-state.bad, .sub-bad, .nested-side.bad { color: var(--err); }
 .sub-row-step { font-family: var(--mono); font-size: 0.75rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -75,7 +75,7 @@ html:not([data-motion='full']) .sub-ring.turning, .drawer:not(.open) .sub-ring.t
 }
 .nested-more { margin-left: 12px; color: var(--dim); }
 .nested-goal { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.nested-side { flex: 0 1 auto; max-width: 42%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.75rem; }
+.nested-side { flex: none; max-width: 52%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.75rem; }
 
 /* One size, moved: half height at rest, pulled up to leave the chat's header showing, never the whole screen. */
 .sheet.sub-sheet {
@@ -88,7 +88,7 @@ html:not([data-motion='full']) .sub-ring.turning, .drawer:not(.open) .sub-ring.t
   will-change: transform;
 }
 html[data-motion='off'] .sheet.sub-sheet { transition: none; }
-.sub-sheet-head { flex: none; touch-action: none; padding-bottom: 8px; }
+.sub-sheet-head { flex: none; display: flex; flex-direction: column; touch-action: none; padding-bottom: 8px; }
 .sub-title-row { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; }
 .sub-title-text { min-width: 0; flex: 1; }
 .sub-back { flex: none; width: 44px; height: 44px; margin: -8px 0 -8px -10px; display: grid; place-items: center; }

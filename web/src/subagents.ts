@@ -130,6 +130,7 @@ const EFFORT_WORD: Record<string, string> = {
   max: 'Max',
   ultra: 'Ultra'
 }
+const MODEL_SHOWN = 18
 const EFFORT_SHORT: Record<string, string> = { medium: 'med', minimal: 'min', none: 'off' }
 
 /** The level in words; undefined while it isn't known. */
@@ -142,9 +143,11 @@ export function effortWord(e: string | undefined): string | undefined {
 export const modelShort = (m: string): string => m.slice(m.lastIndexOf('/') + 1)
 
 /** "haiku · low"; the level is left out until it is known. */
-export function runsOn(a: Pick<SubAgent, 'model' | 'effort'>): string {
+export function runsOn(a: Pick<SubAgent, 'model' | 'effort'>, shown = MODEL_SHOWN): string {
   const level = a.effort ? EFFORT_SHORT[a.effort] ?? (EFFORT_WORD[a.effort] ? a.effort : '') : ''
-  return [modelShort(a.model), level].filter(Boolean).join(' · ')
+  const m = modelShort(a.model)
+  // A long name gives way first, so the level stays readable on a narrow row.
+  return [level && m.length > shown ? `${m.slice(0, shown - 1)}…` : m, level].filter(Boolean).join(' · ')
 }
 
 /** Does the level follow the chat that started it? Only when no level is set for sub-agents and the two agree. */

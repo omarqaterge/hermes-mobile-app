@@ -113,7 +113,8 @@ const SubRow = memo(function SubRow({ chat, id, level, onOpen }: { chat: string;
         <span className="sub-row-line">
           <span className="sub-row-goal">{a.goal || 'Sub-agent'}</span>
           {on && <span className="sub-row-on dim">{on}</span>}
-          <span className={`sub-row-state${wentWrong(a.state) ? ' bad' : ''}`}>{STATE_WORD[a.state]}</span>
+          {/* The mark already says Working and Done; the word stays for screen readers. */}
+          <span className={a.state === 'working' || a.state === 'done' ? 'visually-hidden' : `sub-row-state${wentWrong(a.state) ? ' bad' : ''}`}>{STATE_WORD[a.state]}</span>
         </span>
         {isLive(a.state) && a.step && <span className="sub-row-step dim">{a.step}</span>}
       </span>
@@ -154,7 +155,7 @@ const NestedRow = memo(function NestedRow({ chat, id, level, turning }: { chat: 
   useSubAgentRow(chat, id) // redraws only for what the row says
   const a = getSubAgent(chat, id)
   if (!a) return null
-  const side = isLive(a.state) ? runsOn(a) : a.state === 'done' || a.state === 'ended' ? '' : STATE_WORD[a.state]
+  const side = isLive(a.state) ? runsOn(a, 12) : a.state === 'done' || a.state === 'ended' ? '' : STATE_WORD[a.state]
   return (
     <button className="nested-row" style={{ marginLeft: 12 + Math.min(level, 5) * 14 }} aria-label={`Sub-agent: ${a.goal || 'no goal given'}, ${STATE_WORD[a.state]}`} onClick={() => openNestedRow(chat, a.key)}>
       <StateMark state={a.state} turning={turning} />

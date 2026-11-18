@@ -63,6 +63,7 @@ describe('state words and levels', () => {
     expect(runsOn({ model: 'a/haiku', effort: 'medium' })).toBe('haiku · med')
     expect(runsOn({ model: 'a/haiku', effort: 'none' })).toBe('haiku · off')
     expect(runsOn({ model: 'a/haiku' })).toBe('haiku')
+    expect(runsOn({ model: 'a/a-very-long-model-name', effort: 'low' }, 8)).toBe('a-very-… · low') // the level stays
   })
   it('says "same as the chat" only when nothing is set for sub-agents and the levels agree', () => {
     expect(followsChat('high', null, 'high')).toBe(true)
