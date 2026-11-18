@@ -39,6 +39,7 @@ import {
   useNested,
   useNestedChoice,
   useSubAgent,
+  useSubAgentRow,
   useSubTarget,
   wentWrong,
   type SubAgent,
@@ -150,7 +151,8 @@ function openNestedRow(chat: string, key: string): void {
 }
 
 const NestedRow = memo(function NestedRow({ chat, id, level, turning }: { chat: string; id: string; level: number; turning: boolean }) {
-  const a = useSubAgent(chat, id)
+  useSubAgentRow(chat, id) // redraws only for what the row says
+  const a = getSubAgent(chat, id)
   if (!a) return null
   const side = isLive(a.state) ? runsOn(a) : a.state === 'done' || a.state === 'ended' ? '' : STATE_WORD[a.state]
   return (

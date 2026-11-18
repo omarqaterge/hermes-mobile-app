@@ -17,7 +17,7 @@ import { Chevron, MenuGroup, MenuRow, MenuSheet } from './ui'
 import { ChatMenuHeader } from './ChatMenu'
 import { Icon } from './icons'
 import { NestedRows, NestedToggle } from './SubAgents'
-import { forgetChat, noteStored, searchNested, useNested, useRunningChats, type NestedHit } from '../subagents'
+import { forgetChat, noteStored, searchNested, useChatsWithAgents, useNested, useRunningChats, type NestedHit } from '../subagents'
 
 /** A scheduled job's run (source "cron"): a clock and the job's name. */
 function RunSource({ s }: { s: SessionListRow }) {
@@ -42,6 +42,9 @@ interface RowProps {
   archived?: boolean
   /** The row stands in the Needs you group: what the chat waits for replaces the working and unread states. */
   need?: Need
+  /** It has sub-agents / one of them runs (`useChatsWithAgents`): only such a row does anything about them. */
+  hasAgents: boolean
+  agentsRun: boolean
   onOpen: () => void
   onRight: (a: RightAction) => void
   onDelete: () => void
@@ -49,13 +52,12 @@ interface RowProps {
   onMenu: () => void
 }
 
-function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete, onLongPress, onMenu }: RowProps) {
+function SwipeRow({ s, active, pinned, archived, need, hasAgents, agentsRun, onOpen, onRight, onDelete, onLongPress, onMenu }: RowProps) {
   // Working right now: the open chat's own turn, or any chat in the plugin's activity feed (a background
   // memory/skills review after a reply doesn't count: the answer is already in).
-  const nested = useNested(s.id)
   const working = (useStore(
     st => (st.active?.storedId === s.id && !!st.active?.running) || st.activity.some(a => a.session === s.id && !a.review)
-  ) || nested.running > 0) && !need
+  ) || agentsRun) && !need
   const unread = useStore(st => !active && st.unread.includes(s.id)) && !working && !need
   const ref = useRef<HTMLDivElement>(null)
   const g = useRef({ down: false, x0: 0, y0: 0, mode: '' as '' | 'swipe' | 'scroll' | 'drag', moved: false, y: 0, id: 0, timer: 0 as unknown as ReturnType<typeof setTimeout>, zone: '' })
@@ -172,9 +174,9 @@ function SwipeRow({ s, active, pinned, archived, need, onOpen, onRight, onDelete
             {pinned && <span className="pin-dot"><Icon n="pin" /> </span>}
             {s.title ? <Title text={s.title} /> : s.preview || 'Untitled'}
           </span>
-          {need ? <NeedLine need={need} /> : <RowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} agents={nested.total} />}
+          {need ? <NeedLine need={need} /> : hasAgents ? <AgentsRowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} /> : <RowLine s={s} state={working ? 'Working' : unread ? 'Finished' : ''} />}
         </span>
-        <NestedToggle chat={s.id} />
+        {hasAgents && <NestedToggle chat={s.id} />}
         <button
             className="row-menu-btn"
             aria-label="Chat options"
@@ -210,6 +212,11 @@ function RowLine({ s, state, agents = 0 }: { s: SessionListRow; state: '' | 'Wor
       {parts.flatMap((p, i) => (i ? [' · ', p] : [p]))}
     </span>
   )
+}
+
+/** The same line for a chat with sub-agents: it says how many. */
+function AgentsRowLine({ s, state }: { s: SessionListRow; state: '' | 'Working' | 'Finished' }) {
+  return <RowLine s={s} state={state} agents={useNested(s.id).total} />
 }
 
 /** The line under the title of a chat that waits: the state word, then what for. Screen readers already heard the word
@@ -563,6 +570,7 @@ export function SessionList({ query }: { query: string }) {
 
   // Only one ring turns in the list, on the first chat that has something running (at most two repeating animations).
   const runningChats = useRunningChats()
+  const withAgents = useChatsWithAgents()
   const turningChat = [...needRows.map(r => r.s), ...pinnedRows, ...chats].find(s => runningChats.includes(s.id))?.id
 
   const row = (s: SessionListRow, list: ListName | null, idx: number, need?: Need) => (
@@ -578,6 +586,8 @@ export function SessionList({ query }: { query: string }) {
         pinned={order.pinned.includes(s.id)}
         archived={!list && !need}
         need={need}
+        hasAgents={withAgents.has(s.id)}
+        agentsRun={runningChats.includes(s.id)}
         onOpen={() => {
           haptic()
           const opening = resumeSession(s.id)
@@ -644,7 +654,7 @@ export function SessionList({ query }: { query: string }) {
         }}
         onMenu={() => setMenu({ s, archived: !list && !need })}
       />
-      <NestedRows chat={s.id} snapAt={snap.at} only={needle ? agentsFound.get(s.id) : undefined} turning={s.id === turningChat} />
+      {withAgents.has(s.id) && <NestedRows chat={s.id} snapAt={snap.at} only={needle ? agentsFound.get(s.id) : undefined} turning={s.id === turningChat} />}
     </div>
   )
 

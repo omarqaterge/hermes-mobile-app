@@ -434,8 +434,10 @@ const summaries = new Map<string, NestedSummary>()
 const recordSubs = new Map<string, Set<() => void>>()
 const chatSubs = new Map<string, Set<() => void>>()
 const runningSubs = new Set<() => void>()
+const withAgentsSubs = new Set<() => void>()
 let feedKnown = false
 let running: string[] = []
+let withAgents: ReadonlySet<string> = new Set()
 
 const recordId = (chat: string, key: string) => `${chat}\n${key}`
 const tell = (set: Set<() => void> | undefined) => set?.forEach(f => f())
@@ -465,6 +467,13 @@ function chatChanged(chat: string): void {
   if (all.join('\n') !== running.join('\n')) {
     running = all
     runningSubs.forEach(f => f())
+  }
+  if (next.total > 0 !== withAgents.has(chat)) {
+    const n = new Set(withAgents)
+    if (next.total > 0) n.add(chat)
+    else n.delete(chat)
+    withAgents = n
+    withAgentsSubs.forEach(f => f())
   }
 }
 
@@ -662,7 +671,8 @@ export function moveChat(from: string, to: string): void {
 
 export function forgetChat(chat: string): void {
   chats.delete(chat)
-  if (summaries.delete(chat)) tell(chatSubs.get(chat))
+  counts.delete(chat)
+  chatChanged(chat)
 }
 
 /** The sub-agent an approval comes from: the one running whose latest command is exactly the one asked about. Nothing when
@@ -765,6 +775,24 @@ export const useNested = (chat: string): NestedSummary =>
     () => nestedOf(chat)
   )
 
+/** What a row in the chat list shows of a sub-agent. A new step or token count doesn't change it, so it doesn't redraw. */
+const rowText = (a: SubAgent | undefined): string => (a ? [a.state, a.goal, a.model, a.effort ?? '?'].join('\n') : '')
+export const useSubAgentRow = (chat: string, key: string): string =>
+  useSyncExternalStore(
+    f => addTo(recordSubs, recordId(chat, key), f),
+    () => rowText(getSubAgent(chat, key))
+  )
+
+/** The chats that have sub-agents: all the chat list has to know until it draws one. Most rows then cost nothing. */
+export const useChatsWithAgents = (): ReadonlySet<string> =>
+  useSyncExternalStore(
+    f => {
+      withAgentsSubs.add(f)
+      return () => withAgentsSubs.delete(f)
+    },
+    () => withAgents
+  )
+
 /** The chats with something running, in no particular order. Changes only when that set changes. */
 export const useRunningChats = (): string[] =>
   useSyncExternalStore(
@@ -838,6 +866,7 @@ export function resetSubAgents(): void {
   summaries.clear()
   chosen.clear()
   running = []
+  withAgents = new Set()
   feedKnown = false
   countsAt = 0
   countsFor = ''
