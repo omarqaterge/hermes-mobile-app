@@ -235,6 +235,37 @@ reverted). At 4x CPU the difference is 5 to 7 ms of work on one tap that happens
 frame. Left for the owner to decide (task 06's PR). Not measured here: heat and battery on a phone
 (`docs/manual-tests.md`).
 
+One Models page and Add a provider (task 07): `uicost.cjs --runs 7` at 4x CPU, the build before (`redesign` at the
+start of the task) and the build after served in turn on one machine, two rounds each with effects on (the app's
+defaults: Glass on, Animations Full) and one each with `--motion off --glass off`. `uicost.cjs` now times Models until
+its last row, All keys, shows (both builds have it) and gained one moment: from Models, its gold Add a provider until
+the catalog's "Use an API key" section shows and is still (only the new build has it).
+
+| Date (change) | Moment | Before | After | Change |
+|---|---|---|---|---|
+| 2026-11-18 (one Models page, effects on) | Start-up | 490 / 505 ms, work 466 / 480 ms | 493 / 494 ms, work 464 / 473 ms | none |
+| | Opening a chat | 30 / 31 ms, work 39 / 40 ms | 31 / 31 ms, work 39 / 40 ms | none |
+| | First words of a reply | 393 / 402 ms | 393 / 394 ms | none |
+| | Scrolling a long chat | work 265 / 253 ms, no frame over 25 ms | work 256 / 251 ms, no frame over 25 ms | none |
+| | Opening the chat list | 190 / 188 ms, work 21 / 22 ms | 191 / 195 ms, work 21 / 21 ms | none |
+| | Opening a row's menu / the chat's menu | work 24 / 25 and 32 / 30 ms | work 25 / 24 and 30 / 28 ms | none |
+| | Opening Settings | 430 / 432 ms, work 44 / 59 ms | 430 / 428 ms, work 46 / 60 ms | none (noisy on both) |
+| | **Opening Models** | 3 / 3 ms, work 7 / 7 ms | 9 / 8 ms, work 12 / 12 ms | **+5 ms work** (see below) |
+| | Opening Add a provider (new) | – | 23 / 24 ms, work 26 / 26 ms | new page |
+| 2026-11-18 (one Models page, effects off) | Start-up | 488 ms, work 464 ms | 488 ms, work 464 ms | none |
+| | Opening Settings | 21 ms, work 24 ms | 22 ms, work 25 ms | none |
+| | **Opening Models** | 3 ms, work 6 ms | 8 ms, work 12 ms | **+6 ms work** |
+| | Opening Add a provider (new) | – | 24 ms, work 23 ms | new page |
+
+**Opening Models is over the 5% limit, by design of the task.** The page before was three rows that opened two other
+pages; it now holds what those pages held: the model row, the Connected rows from the provider catalog, the fold row of
+the fallback list (whose config is read for its count) and the bot chips with several bots. The old way to the same
+content was Models, then Model providers (about 25 ms, the cost of Add a provider now), so reaching the providers costs
+less than before; the Models page alone costs about 5 ms more of work at 4x CPU, under one frame on a phone. Hermes is
+asked once more each time Models opens (`setup.runtime_check`, the same question the main page asks), off the main
+thread. Left for the owner to judge (task 07's PR). Not measured here: heat and battery on a phone
+(`docs/manual-tests.md`).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

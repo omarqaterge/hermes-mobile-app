@@ -148,6 +148,21 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     heading) and `29-phone-data.cjs` "a Markdown document's remote image waits behind a tap" failed once in three (it
     waits a fixed 900 ms for the document to open). Each belongs in its own PR.
 
+- **One Models page and Add a provider (task 07, PR against `redesign`).** Settings → Models is one page (`ModelsPage`):
+  bot chips with several bots, New chats use (the model picker, with the switch "Set one model for all bots" when there
+  are several bots), Connected (`ProviderListView` part `connected` over `useCatalog`), the gold Add a provider, If the
+  model fails (`FallbackSection` folded to "Fallback models · N fallback models / None", a `group` when open) and a dim
+  All keys. With nothing connected and no working model, one sentence instead. The pages Default models and Model
+  providers are gone; a new page Add a provider (`AddProviderPage`, `ProviderList` part `add`: Sign in with an account
+  you have, Use an API key, All providers, Your own server, minus what is connected). After a first connect with no
+  model the picker opens by itself for that provider and ends on Models ("New chats use <model>"). Ways in: the Connect
+  a model card, the chat's model sheet's last row and the empty new-chat screen's "No model connected yet" notice
+  (`openSettingsOn` in `settings-open.ts`; Back there returns to the chat). The model question is shared
+  (`model-ready.ts`, asked once per bot while connected, again after a connect or a pick; no polling). The setup flow's
+  model step keeps the whole list (part `all`). Checks: a new section in `23-provider-rotation.cjs`; three checks of
+  `30-settings.cjs` rewritten because the pages they covered changed (listed in the PR). Chat height unchanged (614 /
+  314 px at 360 x 740). Needs a phone: real sign-ins and keys, TalkBack, the empty screen (manual-tests).
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
