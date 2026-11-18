@@ -20,6 +20,19 @@ export interface ActivityItem {
   ts: number
 }
 
+/** A request that is open in some chat (the plugin's `GET /activity`, `waiting`). */
+export interface WaitingItem {
+  session: string
+  kind: string
+  who?: string
+  profile?: string
+  since: number
+  until: number
+  /** How many requests of this kind are open in the chat, and when the newest began. */
+  open?: number
+  last?: number
+}
+
 export type ToolStatus = 'generating' | 'running' | 'done' | 'error'
 
 export type ChatItem =
@@ -146,6 +159,10 @@ export interface AppState {
   health: import('./health').Health | null
   /** What Hermes is doing right now on the phone (plugin /activity), incl. background self-review. */
   activity: ActivityItem[]
+  /** Chats with an open request, from the same answer (needsyou.ts). */
+  waiting: WaitingItem[]
+  /** The chat just opened from Needs you: its request goes first (needsyou.ts `currentRequest`). */
+  needTarget: string | null
   /** The profile's default model, shown in the header before a chat exists. */
   defaultModel: string
   /** …and its reasoning level (config agent.reasoning_effort, or the model's own override). */
@@ -218,6 +235,8 @@ let state: AppState = {
   textScale: savedScale,
   health: null,
   activity: [],
+  waiting: [],
+  needTarget: null,
   defaultModel: "",
   defaultEffort: ""
 }

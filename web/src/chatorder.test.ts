@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { activityTimes, dayLabel, frozenActivity, mergeListed, orderChats, recentIds, sameTimes } from './chatorder'
+import { activityTimes, dayLabel, frozenActivity, mergeListed, orderChats, recentIds, restoreAside, sameTimes } from './chatorder'
 
 const rows = [
   { id: 'a', started_at: 300 },
@@ -89,4 +89,15 @@ describe('date groups', () => {
     const frozen = frozenActivity(new Map([['old', now - 60_000]]), () => 0)
     expect(dayLabel(frozen(created), now)).toBe('Today')
   })
+})
+
+describe('an order rebuilt while chats are set aside', () => {
+  const aside = new Set(['b'])
+  test('a chat set aside returns to its place', () => expect(restoreAside(['c', 'a'], ['a', 'b', 'c'], aside)).toEqual(['c', 'b', 'a']))
+  test('at the start and past the end too', () => {
+    expect(restoreAside(['c', 'a'], ['b', 'a', 'c'], aside)).toEqual(['b', 'c', 'a'])
+    expect(restoreAside(['c', 'a'], ['a', 'c', 'x', 'y', 'b'], aside)).toEqual(['c', 'a', 'b'])
+  })
+  test('nothing set aside: the order as shown', () => expect(restoreAside(['c', 'a'], ['a', 'c'], new Set())).toEqual(['c', 'a']))
+  test('never lists a chat twice', () => expect(restoreAside(['b', 'a'], ['a', 'b'], aside)).toEqual(['a', 'b']))
 })

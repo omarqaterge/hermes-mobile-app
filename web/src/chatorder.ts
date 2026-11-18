@@ -33,6 +33,16 @@ export function recentIds<T extends OrderRow>(rows: T[], activity: (r: T) => num
   return [...rows].sort((a, b) => activity(b) - activity(a) || createdMs(b) - createdMs(a)).map(r => r.id)
 }
 
+/** A saved order rebuilt from the rows on show (`shown`): the ids set aside for now (`aside`) go back to their places in
+ *  `before`, so a chat that is away in the Needs you group returns where it was. */
+export function restoreAside(shown: string[], before: string[], aside: ReadonlySet<string>): string[] {
+  const out = shown.filter(id => !aside.has(id))
+  before.forEach((id, i) => {
+    if (aside.has(id)) out.splice(Math.min(i, out.length), 0, id)
+  })
+  return out
+}
+
 /** The activity times of a snapshot: each listed chat's time now. */
 export function activityTimes<T extends OrderRow>(rows: T[], activity: (r: T) => number): Map<string, number> {
   return new Map(rows.map(r => [r.id, activity(r)]))

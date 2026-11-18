@@ -163,6 +163,63 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   `30-settings.cjs` rewritten because the pages they covered changed (listed in the PR). Chat height unchanged (614 /
   314 px at 360 x 740). Needs a phone: real sign-ins and keys, TalkBack, the empty screen (manual-tests).
 
+- **"Needs you" (task 08, PR against `redesign`): what the app knows, found before building.** Read in the app, the
+  plugin and the Hermes build the app is pinned to (`web/vendor/hermes-shared/.hermes-commit`).
+  - **A chat the page is attached to: yes, at once.** A chat left running stays attached to the page's socket, so its
+    approval or question arrives as a request in `store.requests`, with the live session id, and leaves through
+    `request.cancel` when it is answered anywhere or times out. `App` draws it as the sheet whichever chat is open.
+  - **Any other chat (the socket was replaced while the app was away, the usual case when someone comes back later):
+    the page gets no frame until it opens that chat.** Then `session.resume` hands back the live session with
+    `open_requests`, and the shared channel delivers them, so the existing sheet asks. Nothing is lost, but nothing
+    tells the list either.
+  - **`GET /activity` does not fill that gap today.** The hooks do set the status short to "Approve?" or "Asking", but
+    a status with no tool running goes stale after 180 s (`STALE_AFTER`, and the route's own 180 s limit), while Hermes
+    waits 300 s for an approval and 3600 s for a question by default. And "Approve?" stays after the answer until the
+    next hook, so it can't be read as "still waiting".
+  - **The Android service** knows the pending approval or question for its notification, from the plugin's events, but
+    keeps it to itself; the page is not told.
+  - **The smallest change:** one added field on the `GET /activity` answer, `waiting`: for each open request the chat
+    id, a kind (`approval`, `phone_data`, `question`), who asks when it isn't the chat itself, and when it started and
+    ends. It is set by the hooks that already fire, cleared by the ones that fire when the request ends, and carries no
+    request text. It rides on the app's existing activity poll. **No Hermes patch, no new route, no new polling, no
+    timer**, and it can't answer anything: answers still go through the sheet, the fingerprint and the unlock.
+  - **Limit:** a chat running in another Hermes process (the messaging gateway) can show as waiting, but its request is
+    not delivered to this page, as today: opening it shows no sheet, and it is answered where it was asked.
+  - **Built.** `GET /activity` gained `waiting` (`tools/test_waiting.py`). `web/src/needsyou.ts` merges it with the page's
+    own requests; the chat list has the Needs you group on top (amber dot, "Needs you · wants to run a command", no
+    shimmer, no Allow or Deny; a tap opens the chat and the existing sheet asks); the header button turns amber and reads
+    "Chats (one needs you)" / "Chats (2 need you)", before the unread state; a sub-agent's request shows its top chat with
+    "A sub-agent …" (task 09 can put a name in `who`). Checks: the end of `05`.
+  - **The banner differs from the task on purpose.** It names waiting chats first whenever it is showing, but a chat that
+    only waits does not bring it up: a wait can last an hour, and a banner for that long took 32 px from the chat (614 to
+    582 px, 314 to 282 with the keyboard). So the chat keeps its height in every state.
+  - **Polling is unchanged:** a chat that only waits keeps the 9 s schedule, so one answered from a notification leaves the
+    group at the next poll, or at once when the app returns to the screen. Answers given in the app or known to the
+    socket take it out at once.
+  - **Costs:** no change a person can feel at 4x CPU (docs/performance-history.md, measured again after review round 2), with no chat waiting. Chat
+    height unchanged: 614 / 314 px at 360 x 740, also while a chat waits.
+  - **Review round 1.** `activity.json` is treated as editable by an agent: the route and the writer take only well-formed
+    entries (numeric pid, known kind and who, finite times, an end at most a day away), and the app prints only its own
+    words. Writes hold a file lock (a few short tries, never a hang) through their own temporary file, and an unreadable
+    file doesn't wipe other processes' requests. The feed also gives `open` and `last`, so a chat stays listed while
+    another of its requests is open (`web/src/waiting.ts`). The sheet shows the tapped chat's request first and says
+    "From <chat>" for a chat not on screen. Over the lock screen the banner line, a docked group and "From" are gone; the
+    existing banner text "Waiting for your approval" still shows there, as before this task. A chat in the group keeps its
+    place in Pinned. The checks in `05` find everything by role, name and visible text.
+  - **Review round 2.** A request on the sheet now stays until it is answered or withdrawn; the chat opened from Needs you
+    only decides what comes next, and the `waiting` feed has no say in that. The feed's reader can't hang (no blocking,
+    regular files of at most 1 MiB), no entry can break it, its work lines carry only strings, and nothing is restored from
+    memory: a failed read skips the write instead. The lock view clears the group at once. At the pinned Hermes every
+    request the app accepts carries a session id, so nothing changed for a request without one.
+  - **Review round 3.** A sheet that follows another request ignores answers for 700 ms, except Deny and Cancel. The feed
+    refuses text that can't be encoded, replaces a file this user may not read, runs off the event loop, reads at most 64
+    process entries, and drops entries dated in the future.
+    The pause's browser checks live in `36-sheet-pause.cjs`: in `05` they kept the shared page idle for more than 45 s, so
+    the app re-synced the chat `05` leaves running, and `06` saw a late `session.close`. Keep `05` short.
+  - **Final review.** Only live processes count toward the feed's 64 places, and the writer drops dead ones and always
+    keeps its own entry. The sheet's pause restarts when the app comes back and also covers choices, Next and the dots.
+  - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
-import { beforeAll, expect, test } from 'vitest'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeAll, expect, test } from 'vitest'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
@@ -132,7 +132,14 @@ test('a text that no longer starts the same is split from its start', () => {
 
 // The page: a reply drawn while it streams is the same elements as the reply drawn at once.
 const html = (el: Element) => el.innerHTML.replace(/>\n+</g, '><')
+// Every root is closed after its test, so no React work is left to run once the test environment has gone.
+const roots = new Set<Root>()
+afterEach(async () => {
+  await act(async () => roots.forEach(r => r.unmount()))
+  roots.clear()
+})
 async function draw(text: string, streaming: boolean, host = document.createElement('div'), root = createRoot(host)) {
+  roots.add(root)
   await act(async () => root.render(<Markdown text={text} streaming={streaming} />))
   return { host, root }
 }

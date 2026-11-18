@@ -8,8 +8,10 @@ sync script sees ordinary, canonical files.
 import hmac
 import json
 import logging
+import math
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Optional
@@ -876,32 +878,151 @@ async def delete_diag():
 
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
+ACTIVITY_MAX_BYTES = 1 << 20  # the same limit as the hooks' in __init__.py
+ACTIVITY_FUTURE_S = 60  # an entry dated further ahead than this was not written by a hook, and would never age out
+ACTIVITY_MAX_PROCESSES = 64  # live process entries served from: a real phone has a handful
+ACTIVITY_MAX_LOOKUPS = 1024  # /proc lookups per answer, however many entries a forged file holds
+
+
+def _read_activity_file(path) -> dict:
+    """activity.json's entries, or none. It can't block on a named pipe in the file's place, follows no link, and reads
+    a regular file of a sane size only."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return {}
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > ACTIVITY_MAX_BYTES:
+            return {}
+        raw = b""
+        while len(raw) <= ACTIVITY_MAX_BYTES:
+            part = os.read(fd, 65536)
+            if not part:
+                break
+            raw += part
+    except OSError:
+        return {}
+    finally:
+        os.close(fd)
+    if len(raw) > ACTIVITY_MAX_BYTES:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, RecursionError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+WAIT_LONGEST = 86400  # the longest a request is listed (the same limit as the hooks' in __init__.py)
+WAIT_MOST = 64  # the most open requests one entry can count
+WAIT_KINDS = ("approval", "phone_data", "question")
+WAIT_WHO = ("", "A sub-agent")
+
+
+def _is_number(v) -> bool:
+    try:
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    except OverflowError:  # an integer too big for a float
+        return False
+
+
+def _is_text(v) -> bool:
+    """A string that can be sent: one holding a lone surrogate passes `str` but can't be encoded, and would break the answer."""
+    if not isinstance(v, str):
+        return False
+    try:
+        v.encode("utf-8")
+        return True
+    except UnicodeError:
+        return False
+
+
+def _waiting_entry(pid, w, now: float):
+    """One open request as the app may see it, or None. activity.json can be edited by anything running as Hermes's
+    user, so only what the hooks write passes, field by field, and nothing else in the entry goes out."""
+    try:
+        if not (str(pid).isdigit() and isinstance(w, dict)):
+            return None
+        session, kind, who, since, until = (w.get(k) for k in ("session", "kind", "who", "since", "until"))
+        if not (_is_text(session) and session and isinstance(kind, str) and kind in WAIT_KINDS
+                and isinstance(who, str) and who in WAIT_WHO and _is_number(since) and _is_number(until)
+                and now < until <= now + WAIT_LONGEST):
+            return None
+        profile, count, last = w.get("profile"), w.get("open"), w.get("last")
+        if isinstance(profile, str) and not _is_text(profile):
+            return None
+        return {"session": session, "kind": kind, "who": who, "profile": profile if isinstance(profile, str) else "",
+                "since": since, "until": until,
+                "open": count if isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= WAIT_MOST else 1,
+                "last": last if _is_number(last) else since}
+    except Exception:
+        return None
+
+
+def _activity_item(it, now: float):
+    """One line of work as the app may see it, or None: the hooks' fields only, with the types they write."""
+    try:
+        if not isinstance(it, dict) or not _is_number(it.get("ts")):
+            return None
+        fields = [it.get(k) for k in ("session", "text", "short", "profile")]
+        if not all(_is_text(v) for v in fields) or not fields[0]:
+            return None
+        if it["ts"] > now + ACTIVITY_FUTURE_S or now - it["ts"] > (60 if it.get("review") else 180):
+            return None
+        return {"session": fields[0], "text": fields[1], "short": fields[2], "profile": fields[3],
+                "review": bool(it.get("review")), "ts": it["ts"]}
+    except Exception:
+        return None
+
+
 @router.get("/activity")
-async def get_activity():
-    """Live work reported by the plugin hooks in every Hermes process, including background self-review."""
+def get_activity():  # a plain def: FastAPI runs it in its thread pool, so the file and /proc never hold up the event loop
+    """Live work reported by the plugin hooks in every Hermes process, including background self-review. `waiting`:
+    the requests (approval, phone data, question) that are open right now: which chat, what kind, who asks, since and
+    until when. It carries none of a request's text and nothing here can answer one. A malformed entry is skipped."""
     import time
 
     _slow_all()  # in case the gateway (or a chat's poller) loaded after this module
 
-    path = Path.home() / ".hermes" / "mobile" / "activity.json"
-    try:
-        data = json.loads(path.read_text())
-    except Exception:
-        return {"items": []}
+    data = _read_activity_file(Path.home() / ".hermes" / "mobile" / "activity.json")
     now = time.time()
     items = []
+    waiting = []
+    live = lookups = 0
     for pid, entry in data.items():
-        if now - entry.get("at", 0) > 300:
+        if live >= ACTIVITY_MAX_PROCESSES or lookups >= ACTIVITY_MAX_LOOKUPS:
+            break
+        try:  # one entry, whatever it holds, can't break the others
+            if not (isinstance(entry, dict) and str(pid).isdigit() and (entry.get("items") or entry.get("waiting"))):
+                continue
+            # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries. Only live
+            # ones count toward the limit, so dead (or forged) entries can't use up the places.
+            lookups += 1
+            if not Path("/proc", str(pid)).exists():
+                continue
+            live += 1
+            at = entry.get("at")
+            if _is_number(at) and at > now + ACTIVITY_FUTURE_S:
+                continue
+            # Before the age check: nothing refreshes an entry while its chat only waits for an answer.
+            raw = entry.get("waiting")
+            for w in raw if isinstance(raw, list) else []:
+                clean = _waiting_entry(pid, w, now)
+                if clean:
+                    waiting.append(clean)
+            listed = entry.get("items")
+            if not _is_number(at) or now - at > 300 or not isinstance(listed, list):
+                continue
+            for it in listed:
+                clean = _activity_item(it, now)
+                if clean:
+                    items.append(clean)
+        except Exception:
             continue
-        # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries.
-        if str(pid).isdigit() and not Path("/proc", str(pid)).exists():
-            continue
-        for it in entry.get("items", []):
-            limit = 60 if it.get("review") else 180
-            if now - it.get("ts", 0) <= limit:
-                items.append(it)
-    items.sort(key=lambda i: i.get("ts", 0), reverse=True)
-    return {"items": items}
+    items.sort(key=lambda i: i["ts"], reverse=True)
+    waiting.sort(key=lambda w: w["since"])  # oldest first, so a row keeps its place in the list
+    return {"items": items, "waiting": waiting}
 
 
 # ── what of the phone Hermes can reach (the app's Setup check) ──

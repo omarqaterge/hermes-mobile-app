@@ -17,11 +17,16 @@ something answers without the proof, the fallback says so in plain words (at mos
 event's text.
 """
 
+import contextlib
+import errno
 import json
+import math
 import os
 import re
 import shutil
+import stat
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -37,15 +42,29 @@ FAIL_GRACE = 6.0  # seconds after a final API error before "failed" is notified 
 
 _lock = threading.Lock()
 _last_text: dict = {}  # session_id -> latest final_text
-_subagents: dict = {}  # sub-agent session ids (insertion order), newest last; bounded by _note_subagent
+_subagents: dict = {}  # sub-agent session id -> the session that started it ("" unknown), newest last; see _note_subagent
+_waiting: dict = {}  # (chat id, kind, who) -> an open request of that chat, for GET /activity's `waiting`; see _wait_begin
 _active: dict = {}  # session_id -> {"text", "ts", "profile"}
 _last_end: dict = {}  # session_id -> when its last real turn ended (session_end); bounded by _note_end
 _turn_started: dict = {}  # session id -> when its turn began (diagnostic log); bounded by _note_start
 MAX_SUBAGENTS = 1024  # sub-agent ids remembered; a sub-agent finishes long before this many newer ones start
+MAX_WAITING = 64  # open requests remembered; the oldest go
+WAIT_LONGEST = 86400  # a request with no time limit (Hermes's timeout set to 0) stops being listed after this long
+WAIT_KINDS = ("approval", "phone_data", "question")  # all a `waiting` entry can say it is
+WAIT_WHO = ("", "A sub-agent")  # and who can be asking: anything else in the file was not written by this plugin
+PHONE_DATA_COMMAND = "<phone_data> (plugin approval rule)"  # the label Hermes gives the phone data tool's approval
 MAX_LAST_END = 256  # chats whose last turn end is remembered (only the next FAIL_GRACE seconds matter)
 MAX_TURN_STARTS = 256  # turns whose start is remembered; a chat with a status entry is never dropped to make room
 _review_turns: set = set()  # turn ids of Hermes's background self-review (memory / skills), not user turns
 ACTIVITY_FILE = os.path.join(os.path.expanduser("~"), ".hermes", "mobile", "activity.json")
+ACTIVITY_LOCK_TRIES = 5  # tries for the file's lock before writing without it
+ACTIVITY_LOCK_WAIT = 0.02  # seconds between them: a hook waits 0.08 s at most
+ACTIVITY_MAX_BYTES = 1 << 20  # far more than the plugin writes; a bigger file is not read
+ACTIVITY_FUTURE_S = 60  # an entry dated further ahead than this was not written by a hook, and would never age out
+ACTIVITY_MAX_PROCESSES = 64  # live process entries in the file, this one included: a real phone has a handful
+ACTIVITY_MAX_LOOKUPS = 1024  # /proc lookups per write, so a file full of forged entries costs a hook little
+PROC_DIR = "/proc"
+ACTIVITY_REPLACE_ERRORS = (errno.ELOOP, errno.ENXIO, errno.EACCES, errno.EPERM)  # retrying won't help: replace the file
 REVIEW_STALE = 60  # background work that stops reporting for this long is over (it fires no session_end)
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
@@ -255,38 +274,265 @@ def _send(kind: str, title: str = "Hermux", body: str = "", session: str = "", u
 
 # ── pinned status line ──────────────────────────────────────
 
+@contextlib.contextmanager
+def _activity_lock():
+    """Holds the activity file's lock, so one process's read, change and replace can't lose another's. It never hangs a
+    hook: a few short tries, then on without it, as also when this system has no working file locks."""
+    fd = None
+    try:
+        import fcntl
+
+        fd = os.open(ACTIVITY_FILE + ".lock", os.O_CREAT | os.O_RDWR | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        for attempt in range(ACTIVITY_LOCK_TRIES):
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if attempt + 1 < ACTIVITY_LOCK_TRIES:
+                    time.sleep(ACTIVITY_LOCK_WAIT)
+    except (ImportError, OSError):
+        pass
+    try:
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)  # closing lets go of the lock
+
+
+def _read_activity():
+    """The file's entries, or None after a temporary failure (too many open files, an I/O error): the caller then leaves
+    the file alone, so a brief failure wipes nobody's open requests. No file means no entries, and so does one that isn't
+    what this plugin writes (not a regular file, too big, not a JSON object, one this user may not read): it is replaced, and nothing from an older read comes back, because
+    that could revive a request already answered. It never blocks, even on a named pipe put in the file's place."""
+    try:
+        fd = os.open(ACTIVITY_FILE, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return {}
+    except OSError as e:
+        return {} if e.errno in ACTIVITY_REPLACE_ERRORS else None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > ACTIVITY_MAX_BYTES:
+            return {}
+        raw = b""
+        while len(raw) <= ACTIVITY_MAX_BYTES:
+            part = os.read(fd, 65536)
+            if not part:
+                break
+            raw += part
+    except OSError as e:
+        return {} if e.errno in ACTIVITY_REPLACE_ERRORS else None
+    finally:
+        os.close(fd)
+    if len(raw) > ACTIVITY_MAX_BYTES:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, RecursionError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _is_number(v) -> bool:
+    try:
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    except OverflowError:  # an integer too big for a float
+        return False
+
+
+def _is_text(v) -> bool:
+    """A string that can be sent: one holding a lone surrogate passes `str` but can't be encoded, and would break the answer."""
+    if not isinstance(v, str):
+        return False
+    try:
+        v.encode("utf-8")
+        return True
+    except UnicodeError:
+        return False
+
+
+def _item_ok(it) -> bool:
+    return isinstance(it, dict) and _is_number(it.get("ts")) and bool(it.get("session")) and all(_is_text(it.get(k)) for k in ("session", "text", "short", "profile"))
+
+
+def _wait_entry_ok(pid, w, now: float) -> bool:
+    """The file can be edited by anything running as this user (an agent's command too), so an entry counts only if it
+    is what _wait_begin writes: a process id, a known kind and who, and a time limit no further off than ours."""
+    try:
+        return (str(pid).isdigit() and isinstance(w, dict) and _is_text(w.get("session")) and bool(w["session"])
+                and (not isinstance(w.get("profile"), str) or _is_text(w["profile"]))
+                and isinstance(w.get("kind"), str) and w["kind"] in WAIT_KINDS
+                and isinstance(w.get("who"), str) and w["who"] in WAIT_WHO
+                and _is_number(w.get("since")) and _is_number(w.get("until")) and now < w["until"] <= now + WAIT_LONGEST)
+    except Exception:
+        return False
+
+
+def _kept_wait(w: dict) -> dict:
+    count, last, profile = w.get("open"), w.get("last"), w.get("profile")
+    return {"session": w["session"], "kind": w["kind"], "who": w["who"], "profile": profile if isinstance(profile, str) else "",
+            "since": w["since"], "until": w["until"], "open": count if type(count) is int and 1 <= count <= MAX_WAITING else 1,
+            "last": last if _is_number(last) else w["since"]}
+
+
+def _pid_alive(pid) -> bool:
+    """Whether a process entry's owner still runs. Without /proc (not on a phone) nothing can be said, so it counts as alive."""
+    return not os.path.isdir(PROC_DIR) or os.path.exists(os.path.join(PROC_DIR, str(pid)))
+
+
+def _others_kept(current: dict, me: str, now: float) -> dict:
+    """The other processes' entries worth keeping: well formed and alive, in the file's order, leaving room for this one.
+    Entries of dead processes go, so forged ones can't fill the places; age is no test, as a process that only waits
+    doesn't refresh its entry."""
+    kept, lookups = {}, 0
+    for pid, entry in current.items():
+        if len(kept) >= ACTIVITY_MAX_PROCESSES - 1 or lookups >= ACTIVITY_MAX_LOOKUPS:
+            break
+        if pid == me:
+            continue
+        clean = _kept_entry(pid, entry, now)
+        if clean is None:
+            continue
+        lookups += 1
+        if _pid_alive(pid):
+            kept[pid] = clean
+    return kept
+
+
+def _kept_entry(pid, v, now: float):
+    """What stays of another process's entry, or None. Anything malformed is left out, so it can't stop this write."""
+    try:
+        if not isinstance(v, dict) or not str(pid).isdigit():
+            return None
+        at = v.get("at")
+        if _is_number(at) and at > now + ACTIVITY_FUTURE_S:
+            return None
+        # Only the fields the hooks write are copied, so nothing else in the file (deep nesting too) can break the write.
+        items = [{"session": it["session"], "text": it["text"], "short": it["short"], "profile": it["profile"],
+                  "review": bool(it.get("review")), "ts": it["ts"]}
+                 for it in v["items"] if _item_ok(it)] if isinstance(v.get("items"), list) else []
+        working = bool(items) and _is_number(at) and now - at < 300
+        raw = v.get("waiting")
+        # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
+        waits = [_kept_wait(w) for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []
+        if not working and not waits:
+            return None
+        return {"at": at if _is_number(at) else 0, "items": items if working else [], **({"waiting": waits} if waits else {})}
+    except Exception:
+        return None
+
+
 def _publish_activity() -> None:
     """Write what this process is doing to a shared file so the app's banner (GET /activity) can show it.
     One entry per Hermes process (pid); readers drop entries that stopped updating."""
+    tmp = None
     try:
-        with _lock:
-            mine = [{"session": sid, "text": v["text"], "short": v.get("short", ""), "profile": v["profile"],
-                     "review": bool(v.get("review")), "ts": v["ts"]} for sid, v in _active.items()]
-        try:
-            with open(ACTIVITY_FILE) as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-        now = time.time()
-        data = {k: v for k, v in data.items() if v.get("items") and now - v.get("at", 0) < 300}
-        if mine:
-            data[str(os.getpid())] = {"at": now, "items": mine}
-        else:
-            data.pop(str(os.getpid()), None)
         os.makedirs(os.path.dirname(ACTIVITY_FILE), exist_ok=True)
-        tmp = ACTIVITY_FILE + f".{os.getpid()}"
-        with open(tmp, "w") as f:
-            json.dump(data, f)
-        os.replace(tmp, ACTIVITY_FILE)
+        with _activity_lock():
+            now = time.time()
+            with _lock:
+                mine = [{"session": sid, "text": v["text"], "short": v.get("short", ""), "profile": v["profile"],
+                         "review": bool(v.get("review")), "ts": v["ts"]} for sid, v in _active.items()]
+                for key in [k for k, v in _waiting.items() if v["until"] <= now]:
+                    del _waiting[key]
+                waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until", "open", "last")}
+                         for v in _waiting.values()]
+            current = _read_activity()
+            if current is None:
+                return  # the next write (the status loop's beat, the next hook) tries again
+            me = str(os.getpid())
+            others = _others_kept(current, me, now)
+            # This process's entry goes first, so no number of others can push it out.
+            data = {me: {"at": now, "items": mine, **({"waiting": waits} if waits else {})}} if mine or waits else {}
+            data.update(others)
+            fd, tmp = tempfile.mkstemp(prefix=".activity-", dir=os.path.dirname(ACTIVITY_FILE))  # never shared between writers
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp, ACTIVITY_FILE)
+            tmp = None
     except Exception:
         pass
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
-def _note_subagent(session_id) -> None:
-    """Remember a sub-agent's session id (its hooks are ignored), keeping only the newest MAX_SUBAGENTS."""
+def _asker(session_id: str) -> tuple:
+    """The chat a request belongs to and who in it asks: a sub-agent's request is its top chat's, with `who` saying so
+    in fixed words (never its goal or anything else the model wrote). Call with _lock held."""
+    chat, who = session_id, ""
+    for _ in range(16):  # sub-agents can nest; the bound only guards against a damaged chain
+        parent = _subagents.get(chat)
+        if parent is None:
+            break
+        who = "A sub-agent"
+        if not parent:
+            break
+        chat = parent
+    return chat, who
+
+
+def _wait_begin(session_id, kind: str, timeout) -> None:
+    """A request is open: GET /activity lists it under `waiting` until _wait_end, the chat's turn ends or `timeout` (s)
+    passes, however long that is. Only the chat, the kind and who: no text of the request, and nothing that can answer
+    it. Several open requests of one kind in a chat are counted (`open`), and `last` says when the newest began."""
+    if not session_id:
+        return
+    now = time.time()
+    limit = min(timeout, WAIT_LONGEST) if _is_number(timeout) and timeout > 0 else WAIT_LONGEST
+    with _lock:
+        chat, who = _asker(session_id)
+        cur = _waiting.pop((chat, kind, who), None)
+        _waiting[(chat, kind, who)] = {"session": chat, "kind": kind, "who": who, "profile": _profile(),
+                                       "since": cur["since"] if cur else now,
+                                       "until": max(now + limit, cur["until"] if cur else 0),
+                                       "open": (cur["open"] if cur else 0) + 1, "last": now}
+        while len(_waiting) > MAX_WAITING:
+            _waiting.pop(next(iter(_waiting)))
+    _publish_activity()
+
+
+def _wait_end(session_id, kind: str) -> None:
+    if not session_id:
+        return
+    with _lock:
+        chat, who = _asker(session_id)
+        cur = _waiting.get((chat, kind, who))
+        if cur is None:
+            return
+        cur["open"] -= 1
+        if cur["open"] <= 0:
+            del _waiting[(chat, kind, who)]
+    _publish_activity()
+
+
+def _wait_clear(chat: str) -> None:
+    """The chat's turn ended: nothing of it is waiting any more."""
+    with _lock:
+        keys = [k for k in _waiting if k[0] == chat]
+        for k in keys:
+            del _waiting[k]
+    if keys:
+        _publish_activity()
+
+
+def _clarify_timeout():
+    try:
+        from tools.clarify_gateway import get_clarify_timeout
+        return get_clarify_timeout()
+    except Exception:
+        return 3600
+
+
+def _note_subagent(session_id, parent="") -> None:
+    """Remember a sub-agent's session id and who started it (its hooks are ignored; a request it makes belongs to the
+    chat above it), keeping only the newest MAX_SUBAGENTS."""
     with _lock:
         _subagents.pop(session_id, None)
-        _subagents[session_id] = True
+        _subagents[session_id] = parent or ""
         while len(_subagents) > MAX_SUBAGENTS:
             _subagents.pop(next(iter(_subagents)))
 
@@ -684,6 +930,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
         # The app's notification answers a single question in place (choices become quick replies).
         _send("ask", "Hermux asks", q or "Hermux has a question", session_id or "", urgent=True,
               choices=choices, single=single)
+        _wait_begin(session_id, "question", _clarify_timeout())
     return None  # observe only
 
 
@@ -709,6 +956,7 @@ def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, sess
             _set_status(session_id, "Thinking…", "Thinking")
     if tool_name == "clarify":
         _send("clear", session=session_id or "", what="ask")  # answered anywhere (app sheet, island, notification)
+        _wait_end(session_id, "question")
     if tool_name == "memory" and status in (None, "success", "ok"):
         a = args if isinstance(args, dict) else {}
         action = a.get("action", "update")
@@ -735,7 +983,7 @@ def _on_subagent_start(child_session_id=None, parent_session_id=None, child_goal
     except Exception:
         pass
     if child_session_id:
-        _note_subagent(child_session_id)
+        _note_subagent(child_session_id, parent_session_id)
     if parent_session_id:
         _set_status(parent_session_id, f"Sub-agent: {_short(child_goal, 60)}", "Agents")
 
@@ -771,6 +1019,9 @@ def _on_pre_approval_request(command=None, description=None, session_key=None, s
           what=description or "", command=command or "",
           request_id=_approval_request_id(session_key, command, kw.get("request_id")),
           allow_session=kw.get("allow_session") is not False)
+    # A coalesced request waits on one already listed, and its end isn't always reported: only the first one counts.
+    if not kw.get("coalesced"):
+        _wait_begin(sid, _approval_kind(command), timeout)
 
 
 def _approval_request_id(session_key, command, given=None) -> str:
@@ -789,9 +1040,15 @@ def _approval_request_id(session_key, command, given=None) -> str:
     return ids[-1] if ids else ""
 
 
-def _on_post_approval_response(session_key=None, session_id=None, **_):
+def _approval_kind(command) -> str:
+    return "phone_data" if command == PHONE_DATA_COMMAND else "approval"
+
+
+def _on_post_approval_response(session_key=None, session_id=None, command=None, coalesced=None, **_):
     # Answered anywhere (app sheet, notification, timeout): drop the notification.
     _send("clear", session=session_id or session_key or "", what="approval")
+    if not coalesced:
+        _wait_end(session_id or session_key or "", _approval_kind(command))
 
 
 def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retryable=None, retry_count=None,
@@ -863,6 +1120,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     if not session_id or session_id in _subagents:
         return
     _note_end(session_id)
+    _wait_clear(session_id)
     _end_phone_app(session_id)
     with _lock:
         turn = (_active.get(session_id) or {}).get("turn") or {}
