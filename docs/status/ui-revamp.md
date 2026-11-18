@@ -227,8 +227,11 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   leave them for later ([roadmap 21](../roadmap/21-background-tasks.md), [decision](../decisions/nested-chats.md)), because
   of what answers 3 and 6 below show. `/bg` is refused in a chat that has read phone data (its own PR). Where a goal comes
   from: the `subagent.*` events of the app's socket, or Hermes's stored chat through `GET /nested`, shown as plain text. The
-  `activity.json` feed gives only numbers and the fixed words of task 08, because an agent can edit that file. Needs a
-  phone: see `docs/manual-tests.md`.
+  `activity.json` feed gives only numbers and the fixed words of task 08, because an agent can edit that file. Chat height
+  unchanged while sub-agents run: 614 / 314 px at 360 x 740 (`38`). With ten running, no frame took over 25 ms in the chat
+  or the list; start-up costs 5 to 9% more work at 4x CPU, over the 5% limit (docs/performance-history.md). A swipe on a
+  chat row now needs a press, because a mouse passing over a row could start one. Needs a phone: see
+  `docs/manual-tests.md`.
 
   What the pinned Hermes does, found first by running it (b8a8be18 with `hermes/patches`, started by
   `tools/hermes-contract/start-hermes.sh`) with a scripted fake model and the app's calls, on a desktop:

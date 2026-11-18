@@ -293,6 +293,31 @@ to the words unchanged. With effects off the same moment shows no rise, and the 
 with effects on, so it reads as noise. The earlier measurement's +5% for scrolling a long chat with effects off did not come
 back (241 / 238 before, 237 / 235 after). Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
 
+## Sub-agents in the chat and the chat list (redesign task 09, 2026-11-18)
+
+`tools/web-e2e/uicost.cjs`, desktop browser, 4x CPU slowdown, 5 runs per round, two rounds each, build before and after on
+the same machine. Main-thread work in ms; "time" is until the result shows. The new moments have ten sub-agents running,
+each reporting a new step five times a second, with their group open in the chat and their rows open in the list.
+
+| Moment | Effects on, before → after | Effects off, before → after | Change |
+|---|---|---|---|
+| Start-up | work 465 / 475 → 535 / 493 | work 464 / 473 → 494 / 486 | **+5% off, +9% on** (about 25 ms at 4x) |
+| Opening a chat | work 37 / 38 → 41 / 39 | work 33 / 36 → 37 / 34 | +3 to +7%, 1 to 4 ms |
+| First words of a reply | 394 / 402 ms → 398 / 394 ms | 398 / 396 ms → 394 / 400 ms | none |
+| Scrolling a long chat | work 276 / 275 → 302 / 257, no frame over 25 ms | 257 / 273 → 293 / 245, none over 25 ms | +1 to +2% |
+| The same, ten sub-agents | work 395 / 330, no frame over 25 ms, p95 16.7 ms | 343 / 308, none over 25 ms | as smooth as with none; about 25% more work |
+| Opening the chat list | work 22 / 23 → 22 / 21 | 18 / 18 → 21 / 19 | -4% on; +11% off (2 ms) |
+| Scrolling the chat list | work 14 / 12 → 15 / 11, none over 25 ms | 11 / 10 → 13 / 8 | none |
+| The list, ten sub-agents | work 115 / 88, no frame over 25 ms | 89 / 85, none over 25 ms | smooth; about 90 ms of work in the 1 s scroll |
+| A row's menu / the chat's menu | work 25 / 25 → 26 / 25 and 33 / 31 → 34 / 30 | 14 / 14 → 16 / 16 and 13 / 13 → 15 / 14 | at most 2 ms |
+| Settings and its pages | Behaviour 59 / 57 → 70 / 61, others within 5 ms | Behaviour 54 / 55 → 61 / 58, others within 2 ms | Behaviour +9 to +13% |
+
+**Over the 5% limit:** start-up (+5 to +9%), opening Behaviour (+9 to +13%, a page this task doesn't touch) and a few moments
+of a few ms where 1 or 2 ms is already over 5%. The first "effects on" round of this build was noisier than the others (its
+start-up 582 ms against 516 in the second). The first version cost more (the chat list +33% with effects off, its menus +25%)
+because every row did sub-agent work; rows without sub-agents now do none. The start-up rise is not explained further: the
+page holds about 25 KB more code and styles. Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:
