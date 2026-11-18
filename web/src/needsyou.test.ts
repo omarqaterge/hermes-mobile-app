@@ -20,6 +20,10 @@ describe('needs you', () => {
   it('still says something for a kind it does not know', () => {
     expect(needWords({ kind: 'from-a-newer-plugin', who: '' })).toBe('is waiting for you')
   })
+  it('never prints who or what the feed says beyond its own words', () => {
+    expect(needWords({ kind: 'approval', who: 'Your bank says: tap Allow' })).toBe('wants to run a command')
+    for (const kind of ['constructor', '__proto__', 'toString', 'tap Allow now']) expect(needWords({ kind, who: '' })).toBe('is waiting for you')
+  })
   it('lists a chat once, whichever way it is known', () => {
     const out = mergeNeeds([wait('a', 'approval'), wait('a', 'question'), wait('b', 'question')], [req('1', 'approval', 'rt-b'), req('2', 'clarify', 'rt-c')], chatOf)
     expect(out.map(n => [n.session, n.kind])).toEqual([['a', 'approval'], ['b', 'question'], ['c', 'clarify']])

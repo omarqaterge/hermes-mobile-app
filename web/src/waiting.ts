@@ -6,6 +6,32 @@ import type { WaitingItem } from './store'
 
 export const ENDED_HOLD_S = 5
 
+/** The one thing the feed may say about who asks. `activity.json` can be edited by an agent running as Hermes's user, so
+ *  nothing it holds is ever shown as words: only this exact value counts. */
+export const SUB_AGENT = 'A sub-agent'
+const FEED_KINDS = new Set(['approval', 'phone_data', 'question'])
+const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+/** The feed's list, taking only what the plugin writes. A kind it doesn't know becomes empty: the neutral words. */
+export function cleanWaiting(raw: unknown): WaitingItem[] {
+  if (!Array.isArray(raw)) return []
+  const out: WaitingItem[] = []
+  for (const w of raw as Array<Partial<WaitingItem> | null>) {
+    if (!w || typeof w !== 'object' || typeof w.session !== 'string' || !w.session || !isTime(w.since) || !isTime(w.until)) continue
+    out.push({
+      session: w.session,
+      kind: typeof w.kind === 'string' && FEED_KINDS.has(w.kind) ? w.kind : '',
+      who: w.who === SUB_AGENT ? SUB_AGENT : '',
+      profile: typeof w.profile === 'string' ? w.profile : '',
+      since: w.since,
+      until: w.until,
+      open: Number.isInteger(w.open) && (w.open as number) > 0 ? w.open : 1,
+      last: isTime(w.last) ? w.last : w.since
+    })
+  }
+  return out
+}
+
 export interface EndedChat {
   /** When its last request ended here (s). */
   at: number

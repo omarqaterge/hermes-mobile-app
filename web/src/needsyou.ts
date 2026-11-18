@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { getState, subscribe, type AppState, type WaitingItem } from './store'
 import { chatListHeld, onChatListFree } from './chatsnapshot'
+import { SUB_AGENT } from './waiting'
 
 export interface Need {
   /** The stored id of the chat. */
@@ -17,21 +18,22 @@ export interface Need {
   who: string
 }
 
-const WORDS: Record<string, string> = {
-  approval: 'wants to run a command',
-  phone_data: 'wants to read phone data',
-  question: 'asked a question',
-  clarify: 'asked a question',
-  sudo: 'wants a password',
-  secret: 'wants a key',
-  otp: 'wants a code',
-  'connection.request': 'wants to connect an account'
-}
+const WORDS = new Map([
+  ['approval', 'wants to run a command'],
+  ['phone_data', 'wants to read phone data'],
+  ['question', 'asked a question'],
+  ['clarify', 'asked a question'],
+  ['sudo', 'wants a password'],
+  ['secret', 'wants a key'],
+  ['otp', 'wants a code'],
+  ['connection.request', 'wants to connect an account']
+])
 
-/** What the chat waits for, in a few words. A kind this build doesn't know still says something true. */
+/** What the chat waits for, in a few words of this app's own: nothing from the feed is printed. A kind this build doesn't
+ *  know gets neutral words, and the only "who" is the fixed one. */
 export function needWords(n: Pick<Need, 'kind' | 'who'>): string {
-  const what = WORDS[n.kind] ?? 'is waiting for you'
-  return n.who ? `${n.who} ${what}` : what
+  const what = WORDS.get(n.kind) ?? 'is waiting for you'
+  return n.who === SUB_AGENT ? `${SUB_AGENT} ${what}` : what
 }
 
 /** Requests are named by the live session; `chatOf` gives their stored chat. One entry per chat, oldest wait first; the

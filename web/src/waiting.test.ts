@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ENDED_HOLD_S, forgetEnded, noteEnded, visibleWaiting, type EndedChat } from './waiting'
+import { ENDED_HOLD_S, SUB_AGENT, cleanWaiting, forgetEnded, noteEnded, visibleWaiting, type EndedChat } from './waiting'
 import type { WaitingItem } from './store'
 
 const entry = (session: string, open = 1, since = 100, last = since, kind = 'approval'): WaitingItem => ({ session, kind, since, last, open, until: 900 })
@@ -49,5 +49,26 @@ describe('what the feed still counts after a request ended here', () => {
     noteEnded(ended, 'c', [entry('c')], 100)
     forgetEnded(ended, [entry('a'), entry('c')], 201)
     expect([...ended.keys()]).toEqual(['a'])
+  })
+})
+
+describe('what is taken from the feed', () => {
+  const good = { session: 's', kind: 'approval', who: '', profile: 'p', since: 1, until: 2, open: 2, last: 1.5 }
+  it('keeps a well-formed entry as it is', () => expect(cleanWaiting([good])).toEqual([good]))
+  it('takes only the exact who', () => {
+    expect(cleanWaiting([{ ...good, who: SUB_AGENT }])[0].who).toBe(SUB_AGENT)
+    for (const who of ['Your bank', 'a sub-agent', ['A sub-agent'], 7]) expect(cleanWaiting([{ ...good, who }])[0].who).toBe('')
+  })
+  it('turns a kind it does not know, or one only requests have, into none', () => {
+    for (const kind of ['tap Allow', 'sudo', 'constructor', 5]) expect(cleanWaiting([{ ...good, kind }])[0].kind).toBe('')
+  })
+  it('skips what is not an entry', () => {
+    const bad = [null, 'x', 3, [], { ...good, session: '' }, { ...good, session: 1 }, { ...good, since: 'x' }, { ...good, until: Infinity }, { ...good, until: NaN }]
+    expect(cleanWaiting(bad)).toEqual([])
+    for (const raw of [undefined, null, 'x', {}]) expect(cleanWaiting(raw)).toEqual([])
+  })
+  it('falls back on counts that make no sense', () => {
+    const w = cleanWaiting([{ ...good, open: -1, last: 'x' }])[0]
+    expect([w.open, w.last]).toEqual([1, 1])
   })
 })
