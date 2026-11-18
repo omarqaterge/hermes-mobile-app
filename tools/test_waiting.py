@@ -507,6 +507,37 @@ check("the writer keeps a bounded number", len(entries()) <= plugin.ACTIVITY_MAX
 check("the limits agree", papi.ACTIVITY_MAX_PROCESSES == plugin.ACTIVITY_MAX_PROCESSES)
 os.remove(plugin.ACTIVITY_FILE)
 
+print("deep nesting and dates in the future")
+now = time.time()
+for depth, name in ((200000, "far too deep to parse"),):
+    with open(plugin.ACTIVITY_FILE, "w") as f:
+        f.write('{"4242": ' + "[" * depth + "]" * depth + "}")
+    check(f"{name}: the route gets nothing from it", answer() == {"items": [], "waiting": []}, "")
+    plugin._waiting.clear()
+    plugin._wait_begin("after-deep", "approval", 300)
+    check(f"{name}: it counts as damaged and the write goes on", list(entries()) == [alive] and entries()[alive]["waiting"][0]["session"] == "after-deep", "")
+plugin._waiting.clear()
+deep = "[" * 3000 + "]" * 3000  # parses, but must not be carried along
+text = json.dumps({"4343": {"at": now, "extra": "DEEP", "items": [dict(item, extra="DEEP")],
+                            "waiting": [dict(good, extra="DEEP", open="DEEP", last="DEEP")]}})
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    f.write(text.replace('"DEEP"', deep))
+plugin._publish_activity()
+kept = entries().get("4343", {})
+check("only the known fields of another entry are written back", set(kept) == {"at", "items", "waiting"} and set(kept["items"][0]) == set(item) and "extra" not in kept["waiting"][0] and kept["waiting"][0]["open"] == 1, str(kept)[:200])
+future = now + plugin.ACTIVITY_FUTURE_S + 600
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({alive: {"at": future, "items": [dict(item, ts=now)], "waiting": [good]},
+               "4343": {"at": future, "items": [item], "waiting": [good]}, "4344": {"at": now + 5, "items": [item]}}, f)
+result = answer()
+check("the route ignores an entry dated in the future", result == {"items": [], "waiting": []}, result)
+plugin._publish_activity()
+check("the writer doesn't keep one, but allows a small difference", list(entries()) == ["4344"], list(entries()))
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({alive: {"at": now, "items": [dict(item, ts=future)]}}, f)
+check("nor is a work line dated in the future served", answer()["items"] == [], answer())
+os.remove(plugin.ACTIVITY_FILE)
+
 print("nothing here can answer")
 src = (ROOT / "hermes-plugin" / "hermes-mobile" / "dashboard" / "plugin_api.py").read_text()
 route = src[src.index('@router.get("/activity")'):src.index("# ── what of the phone Hermes can reach")]

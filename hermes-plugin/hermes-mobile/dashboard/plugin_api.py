@@ -880,6 +880,7 @@ async def delete_diag():
 # ── what Hermes is doing right now (feeds the app's banner) ──
 
 ACTIVITY_MAX_BYTES = 1 << 20  # the same limit as the hooks' in __init__.py
+ACTIVITY_FUTURE_S = 60  # an entry dated further ahead than this was not written by a hook, and would never age out
 ACTIVITY_MAX_PROCESSES = 64  # process entries looked at: a real phone has a handful, and each costs a /proc lookup
 
 
@@ -967,7 +968,7 @@ def _activity_item(it, now: float):
         fields = [it.get(k) for k in ("session", "text", "short", "profile")]
         if not all(_is_text(v) for v in fields) or not fields[0]:
             return None
-        if now - it["ts"] > (60 if it.get("review") else 180):
+        if it["ts"] > now + ACTIVITY_FUTURE_S or now - it["ts"] > (60 if it.get("review") else 180):
             return None
         return {"session": fields[0], "text": fields[1], "short": fields[2], "profile": fields[3],
                 "review": bool(it.get("review")), "ts": it["ts"]}
@@ -995,13 +996,16 @@ def get_activity():  # a plain def: FastAPI runs it in its thread pool, so the f
             # A Hermes process that died mid-turn (killed, restarted) can't report "done": drop its entries.
             if str(pid).isdigit() and not Path("/proc", str(pid)).exists():
                 continue
+            at = entry.get("at")
+            if _is_number(at) and at > now + ACTIVITY_FUTURE_S:
+                continue
             # Before the age check: nothing refreshes an entry while its chat only waits for an answer.
             raw = entry.get("waiting")
             for w in raw if isinstance(raw, list) else []:
                 clean = _waiting_entry(pid, w, now)
                 if clean:
                     waiting.append(clean)
-            at, listed = entry.get("at"), entry.get("items")
+            listed = entry.get("items")
             if not _is_number(at) or now - at > 300 or not isinstance(listed, list):
                 continue
             for it in listed:
