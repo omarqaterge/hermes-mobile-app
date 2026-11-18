@@ -517,7 +517,13 @@ module.exports = async t => {
     const widePanel = wide.getByRole('complementary', { name: 'Chats' })
     await widePanel.getByRole('group', { name: 'Needs you' }).getByText('Chat 3', { exact: true }).waitFor({ timeout: 3000 })
     check(true, 'needs you: the docked list shows the group')
+    // A finger on the docked list doesn't hold the group back when the lock view starts.
+    const today = await widePanel.getByRole('heading', { name: 'Today' }).boundingBox()
+    await wide.mouse.move(today.x + 20, today.y + today.height / 2)
+    await wide.mouse.down()
     await wide.evaluate(() => window.hermesLockView(true))
+    check((await widePanel.getByRole('group', { name: 'Needs you' }).count()) === 0, 'needs you: the lock view clears the group at once, even under a finger')
+    await wide.mouse.up()
     await widePanel.getByRole('group', { name: 'Needs you' }).waitFor({ state: 'detached', timeout: 2000 })
     check((await widePanel.getByText('wants to run a command').count()) === 0, 'needs you: over the lock screen a docked list shows no group and no words')
     await wide.evaluate(() => window.hermesLockView(false))

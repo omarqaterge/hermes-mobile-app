@@ -132,9 +132,10 @@ export const needsPhrase = (n: number): string => (n === 1 ? 'one needs you' : `
 let shown: Need[] = NONE
 const listeners = new Set<() => void>()
 function refresh(): void {
-  if (chatListHeld()) return
-  // Over the lock screen a docked list says nothing of what a chat waits for.
-  const next = lockView() ? NONE : needsOf(getState())
+  // Over the lock screen a docked list says nothing of what a chat waits for, at once, even under a finger.
+  const locked = lockView()
+  if (!locked && chatListHeld()) return
+  const next = locked ? NONE : needsOf(getState())
   if (next === shown || sameNeeds(next, shown)) return
   shown = next
   listeners.forEach(f => f())
