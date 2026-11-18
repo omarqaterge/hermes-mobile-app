@@ -198,6 +198,14 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     socket take it out at once.
   - **Costs:** no change a person can feel at 4x CPU (docs/performance-history.md), measured with no chat waiting. Chat
     height unchanged: 614 / 314 px at 360 x 740, also while a chat waits.
+  - **Review round 1.** `activity.json` is treated as editable by an agent: the route and the writer take only well-formed
+    entries (numeric pid, known kind and who, finite times, an end at most a day away), and the app prints only its own
+    words. Writes hold a file lock (a few short tries, never a hang) through their own temporary file, and an unreadable
+    file doesn't wipe other processes' requests. The feed also gives `open` and `last`, so a chat stays listed while
+    another of its requests is open (`web/src/waiting.ts`). The sheet shows the tapped chat's request first and says
+    "From <chat>" for a chat not on screen. Over the lock screen the banner line, a docked group and "From" are gone; the
+    existing banner text "Waiting for your approval" still shows there, as before this task. A chat in the group keeps its
+    place in Pinned. The checks in `05` find everything by role, name and visible text.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
 **Next:** the new look of the chat screen, the side panel, the
