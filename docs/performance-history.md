@@ -266,6 +266,31 @@ asked once more each time Models opens (`setup.runtime_check`, the same question
 thread. Left for the owner to judge (task 07's PR). Not measured here: heat and battery on a phone
 (`docs/manual-tests.md`).
 
+"Needs you" (task 08): `uicost.cjs --runs 7` at 4x CPU, the build before (`redesign` at the start of the task) and the
+build after served in turn on one machine, two rounds each with effects on (the app's defaults) and one each with
+`--motion off --glass off`. No chat was waiting in these runs, which is the usual state; the group's own cost with a chat
+waiting (one or two more rows) was not timed.
+
+| Date (change) | Moment | Before | After | Change |
+|---|---|---|---|---|
+| 2026-11-18 (Needs you, effects on) | Start-up | 490 / 492 ms, work 468 / 468 ms | 492 / 495 ms, work 468 / 472 ms | none |
+| | Opening a chat | 30 / 30 ms, work 36 / 36 ms | 30 / 30 ms, work 37 / 38 ms | none |
+| | First words of a reply | 394 / 394 ms, work 38 / 34 ms | 393 / 394 ms, work 36 / 34 ms | none |
+| | Scrolling a long chat | work 278 / 249 ms, no frame over 25 ms | work 246 / 247 ms, no frame over 25 ms | none |
+| | Opening the chat list | 195 / 191 ms, work 21 / 21 ms | 197 / 196 ms, work 19 / 21 ms | none |
+| | Scrolling the chat list | work 13 / 10 ms, no frame over 25 ms | work 9 / 9 ms, no frame over 25 ms | none |
+| | Opening a row's menu / the chat's menu | work 25 / 24 and 28 / 25 ms | work 25 / 23 and 27 / 28 ms | none |
+| | Opening Settings | 431 / 429 ms, work 63 / 58 ms | 431 / 420 ms, work 58 / 58 ms | none |
+| 2026-11-18 (Needs you, effects off) | Start-up | 492 ms, work 471 ms | 497 ms, work 473 ms | +1% |
+| | Opening a chat | 27 ms, work 34 ms | 28 ms, work 35 ms | none |
+| | First words of a reply | 398 ms, work 28 ms | 398 ms, work 31 ms | same time, +3 ms work (one round) |
+| | Scrolling a long chat | work 239 ms, no frame over 25 ms | work 252 ms, no frame over 25 ms | +5% work (one round) |
+| | Opening the chat list | 10 ms, work 19 ms | 11 ms, work 19 ms | none |
+
+The two rows marked "one round" are the only ones at or past the edge. With effects on, the same two moments came out level
+or lower over two rounds, and the same build's scrolling work varied by 29 ms between rounds, so they read as noise, but
+effects off had only one round. Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

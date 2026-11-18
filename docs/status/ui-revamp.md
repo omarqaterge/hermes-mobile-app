@@ -196,6 +196,8 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   - **Polling is unchanged:** a chat that only waits keeps the 9 s schedule, so one answered from a notification leaves the
     group at the next poll, or at once when the app returns to the screen. Answers given in the app or known to the
     socket take it out at once.
+  - **Costs:** no change a person can feel at 4x CPU (docs/performance-history.md), measured with no chat waiting. Chat
+    height unchanged: 614 / 314 px at 360 x 740, also while a chat waits.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
 **Next:** the new look of the chat screen, the side panel, the
