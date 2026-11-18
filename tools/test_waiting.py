@@ -415,6 +415,41 @@ check("an entry that breaks is skipped alone", answer() == {"items": [], "waitin
 papi._waiting_entry = real_check
 os.remove(plugin.ACTIVITY_FILE)
 
+print("text that can't be sent")
+try:
+    from starlette.responses import JSONResponse
+
+    def http_body(value):
+        return JSONResponse(value).body
+except ImportError:  # the same encoding, where the web framework isn't installed
+    def http_body(value):
+        return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
+
+bad_text = "\ud800"
+now = time.time()
+alive = str(os.getpid())
+good = {"session": "real", "kind": "approval", "who": "", "profile": "p", "since": now, "until": now + 60}
+item = {"session": "fine", "text": "Thinking", "short": "Thinking", "profile": "p", "review": False, "ts": now}
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({alive: {"at": now, "waiting": [dict(good, session=bad_text), dict(good, profile=bad_text), good],
+                       "items": [dict(item, session=bad_text), dict(item, text=bad_text), dict(item, short=bad_text), dict(item, profile=bad_text), item]}}, f)
+result = answer()
+check("a lone surrogate is refused, the good entries stay", [w["session"] for w in result["waiting"]] == ["real"] and result["items"] == [item], result)
+try:
+    body = json.loads(http_body(result))
+except Exception as e:
+    body = repr(e)
+check("the answer can be sent", isinstance(body, dict) and body["items"] == [item], body)
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({"4343": {"at": now, "waiting": [dict(good, session=bad_text), dict(good, profile=bad_text), good],
+                        "items": [dict(item, text=bad_text), item]}}, f)
+plugin._waiting.clear()
+plugin._active.clear()
+plugin._publish_activity()
+kept = entries().get("4343", {})
+check("the writer doesn't keep such entries", [w["session"] for w in kept.get("waiting", [])] == ["real"] and [i["session"] for i in kept.get("items", [])] == ["fine"], kept)
+os.remove(plugin.ACTIVITY_FILE)
+
 print("nothing here can answer")
 src = (ROOT / "hermes-plugin" / "hermes-mobile" / "dashboard" / "plugin_api.py").read_text()
 route = src[src.index('@router.get("/activity")'):src.index("# ── what of the phone Hermes can reach")]

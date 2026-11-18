@@ -335,11 +335,27 @@ def _is_number(v) -> bool:
         return False
 
 
+def _is_text(v) -> bool:
+    """A string that can be sent: one holding a lone surrogate passes `str` but can't be encoded, and would break the answer."""
+    if not isinstance(v, str):
+        return False
+    try:
+        v.encode("utf-8")
+        return True
+    except UnicodeError:
+        return False
+
+
+def _item_ok(it) -> bool:
+    return isinstance(it, dict) and _is_number(it.get("ts")) and bool(it.get("session")) and all(_is_text(it.get(k)) for k in ("session", "text", "short", "profile"))
+
+
 def _wait_entry_ok(pid, w, now: float) -> bool:
     """The file can be edited by anything running as this user (an agent's command too), so an entry counts only if it
     is what _wait_begin writes: a process id, a known kind and who, and a time limit no further off than ours."""
     try:
-        return (str(pid).isdigit() and isinstance(w, dict) and isinstance(w.get("session"), str) and bool(w["session"])
+        return (str(pid).isdigit() and isinstance(w, dict) and _is_text(w.get("session")) and bool(w["session"])
+                and (not isinstance(w.get("profile"), str) or _is_text(w["profile"]))
                 and isinstance(w.get("kind"), str) and w["kind"] in WAIT_KINDS
                 and isinstance(w.get("who"), str) and w["who"] in WAIT_WHO
                 and _is_number(w.get("since")) and _is_number(w.get("until")) and now < w["until"] <= now + WAIT_LONGEST)
@@ -352,8 +368,9 @@ def _kept_entry(pid, v, now: float):
     try:
         if not isinstance(v, dict):
             return None
-        items, at = v.get("items"), v.get("at")
-        working = isinstance(items, list) and bool(items) and _is_number(at) and now - at < 300
+        at = v.get("at")
+        items = [it for it in v["items"] if _item_ok(it)] if isinstance(v.get("items"), list) else []
+        working = bool(items) and _is_number(at) and now - at < 300
         raw = v.get("waiting")
         # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
         waits = [w for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []

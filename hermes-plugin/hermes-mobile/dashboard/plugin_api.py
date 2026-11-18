@@ -924,6 +924,17 @@ def _is_number(v) -> bool:
         return False
 
 
+def _is_text(v) -> bool:
+    """A string that can be sent: one holding a lone surrogate passes `str` but can't be encoded, and would break the answer."""
+    if not isinstance(v, str):
+        return False
+    try:
+        v.encode("utf-8")
+        return True
+    except UnicodeError:
+        return False
+
+
 def _waiting_entry(pid, w, now: float):
     """One open request as the app may see it, or None. activity.json can be edited by anything running as Hermes's
     user, so only what the hooks write passes, field by field, and nothing else in the entry goes out."""
@@ -931,11 +942,13 @@ def _waiting_entry(pid, w, now: float):
         if not (str(pid).isdigit() and isinstance(w, dict)):
             return None
         session, kind, who, since, until = (w.get(k) for k in ("session", "kind", "who", "since", "until"))
-        if not (isinstance(session, str) and session and isinstance(kind, str) and kind in WAIT_KINDS
+        if not (_is_text(session) and session and isinstance(kind, str) and kind in WAIT_KINDS
                 and isinstance(who, str) and who in WAIT_WHO and _is_number(since) and _is_number(until)
                 and now < until <= now + WAIT_LONGEST):
             return None
         profile, count, last = w.get("profile"), w.get("open"), w.get("last")
+        if isinstance(profile, str) and not _is_text(profile):
+            return None
         return {"session": session, "kind": kind, "who": who, "profile": profile if isinstance(profile, str) else "",
                 "since": since, "until": until,
                 "open": count if isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= WAIT_MOST else 1,
@@ -950,7 +963,7 @@ def _activity_item(it, now: float):
         if not isinstance(it, dict) or not _is_number(it.get("ts")):
             return None
         fields = [it.get(k) for k in ("session", "text", "short", "profile")]
-        if not all(isinstance(v, str) for v in fields) or not fields[0]:
+        if not all(_is_text(v) for v in fields) or not fields[0]:
             return None
         if now - it["ts"] > (60 if it.get("review") else 180):
             return None
