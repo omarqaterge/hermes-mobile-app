@@ -111,7 +111,7 @@ export function currentRequest(s: Pick<AppState, 'requests' | 'needTarget'>): Se
   const next = (s.needTarget ? s.requests.find(r => chatOf(r) === s.needTarget) : undefined) ?? s.requests[0]
   onSheet = next?.id ?? null
   followedAnother = next && replaced ? next.id : null
-  shownAt = performance.now()
+  if (next) shownAt = performance.now() // not on every store change while no request is open (streaming)
   return next
 }
 

@@ -150,6 +150,12 @@ describe('the pause after a sheet takes over', () => {
     sheetShown('b')
     expect(sheetCanAnswer('b', clock + 300)).toBe(false)
   })
+  it('does not read the clock while no request is open', () => {
+    const now = vi.mocked(performance.now)
+    now.mockClear()
+    for (let i = 0; i < 5; i++) currentRequest(getState())
+    expect(now).not.toHaveBeenCalled()
+  })
   it('does not pause a request that arrives once the sheet has closed', () => {
     put(a)
     put()
