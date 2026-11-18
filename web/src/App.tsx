@@ -23,7 +23,7 @@ import { RequestSheet } from './components/RequestSheet'
 import { CommandsSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { ChatMenuSheet, DraftMenuSheet } from './components/ChatMenu'
 import { bannerItems, startActivityPolling } from './activity'
-import { aimAtNeed, currentRequest, needWords, needsPhrase, openNeeds, setRequestChat } from './needsyou'
+import { aimAtNeed, currentRequest, needWords, needsPhrase, openNeeds, setRequestChat, useLockView } from './needsyou'
 import { DialogHost } from './dialog'
 import { WhatsNewAfterUpdate } from './components/WhatsNew'
 import { startWhatsNewAfterUpdate } from './whatsnew'
@@ -218,7 +218,9 @@ function ActivityBanner() {
   const activeId = useStore(s => s.active?.storedId)
   const running = useStore(s => s.active?.running ?? false)
   const sessions = useStore(s => s.sessions)
-  const needs = useStore(openNeeds)
+  const waiting = useStore(openNeeds)
+  // Over the lock screen the banner stays as it was: it doesn't say which chat waits for what.
+  const needs = useLockView() ? [] : waiting
   // The open chat's own live turn already has the status line.
   const all = bannerItems(items, activeId, running)
   // The banner shows when it always did: a wait can last an hour, and that height belongs to the chat (the header button

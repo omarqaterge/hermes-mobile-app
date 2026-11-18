@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { getState, setState, subscribe, type AppState, type WaitingItem } from './store'
 import { chatListHeld, onChatListFree } from './chatsnapshot'
+import { lockView, onLockView } from './lockview'
 import { SUB_AGENT } from './waiting'
 
 export interface Need {
@@ -118,13 +119,18 @@ let shown: Need[] = NONE
 const listeners = new Set<() => void>()
 function refresh(): void {
   if (chatListHeld()) return
-  const next = needsOf(getState())
+  // Over the lock screen a docked list says nothing of what a chat waits for.
+  const next = lockView() ? NONE : needsOf(getState())
   if (next === shown || sameNeeds(next, shown)) return
   shown = next
   listeners.forEach(f => f())
 }
 subscribe(refresh)
 onChatListFree(refresh)
+onLockView(refresh)
+
+/** Whether the app is showing over the lock screen, for what must say less there. */
+export const useLockView = (): boolean => useSyncExternalStore(onLockView, lockView)
 
 export function useListedNeeds(): Need[] {
   return useSyncExternalStore(

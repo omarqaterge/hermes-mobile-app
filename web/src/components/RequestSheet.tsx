@@ -4,6 +4,7 @@ import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-con
 import { answerRequest, rejectRequest, requestChat } from '../gateway'
 import { useStore, type AppState } from '../store'
 import { plainTitle } from './Title'
+import { useLockView } from '../needsyou'
 import { haptic } from '../bridge'
 import { Linked } from './Linked'
 import { phoneDataTextOf, phoneDataView, splitUntrusted } from '../phone-data-request'
@@ -292,11 +293,12 @@ function otherChat(s: AppState, req: ServerRequest): string {
 
 export function RequestSheet({ req }: { req: ServerRequest }) {
   const from = useStore(s => otherChat(s, req))
+  const locked = useLockView() // no chat titles over the lock screen
   return (
     <div className="sheet-backdrop">
       <div className="sheet" role="dialog">
         <div className="sheet-grip" />
-        {from && <div className="sheet-from dim small">From {from}</div>}
+        {from && !locked && <div className="sheet-from dim small">From {from}</div>}
         {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
       </div>
     </div>
