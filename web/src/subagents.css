@@ -1,20 +1,6 @@
-/* Sub-agents: the one-line group in the chat, the rows under a chat in the list, and the sheet (spec 3.3, 3.13). */
-.sub-group { min-height: 44px; }
-.sub-group .chev { margin-left: auto; display: inline-flex; }
-.sub-group-live { color: var(--text); }
-.sub-group-words { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.sub-group-failed { color: var(--err); white-space: nowrap; }
-/* The chat list's shimmer, at its frame limit, on one line only: the newest group that runs. */
-.sub-shimmer {
-  -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
-  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
-  -webkit-mask-size: 300% 100%;
-  mask-size: 300% 100%;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  animation: working-shimmer 2s steps(48) infinite;
-}
-html:not([data-motion='full']) .sub-shimmer { animation: none; -webkit-mask-image: none; mask-image: none; }
+/* The sub-agent rows and sheet (spec 3.3, 3.13): part of the lazy bundle hm-subagents. What every start needs is in
+   subagents-core.css. */
+
 .sub-rows { display: flex; flex-direction: column; }
 .sub-row {
   display: flex;
@@ -51,16 +37,6 @@ html:not([data-motion='full']) .sub-shimmer { animation: none; -webkit-mask-imag
 @keyframes sub-turn { to { transform: rotate(360deg); } }
 html:not([data-motion='full']) .sub-ring.turning, .drawer:not(.open) .sub-ring.turning { animation: none; }
 
-/* Under a chat in the list: inside the row's container, a guide line on the left, 44 px each. */
-.nested-toggle {
-  flex: none;
-  width: 32px;
-  align-self: stretch;
-  margin: -9px 0;
-  display: grid;
-  place-items: center;
-  color: var(--dim);
-}
 .nested-rows { display: flex; flex-direction: column; padding-bottom: 2px; }
 .nested-row, .nested-more {
   display: flex;
@@ -137,5 +113,3 @@ html[data-motion='off'] .sheet.sub-sheet { transition: none; }
 .sub-wide { width: 100%; min-height: 44px; flex: none; }
 .sub-settings { min-height: 44px; flex: none; align-self: flex-start; text-decoration: underline; }
 
-/* Who asks, under what is to be approved: ordinary type, so a goal can't pass for the command. */
-.sheet-asked { margin-top: 8px; overflow-wrap: anywhere; }

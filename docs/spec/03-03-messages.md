@@ -71,7 +71,7 @@ Actions are not drawn on earlier segments of a turn (a reply split by tool calls
 
 #### Sub-agents
 
-Decision: [nested-chats.md](../decisions/nested-chats.md). Code: `web/src/subagents.ts` (records, grouping, words), `web/src/components/SubAgents.tsx`, `web/src/subagents.css`.
+Decision: [nested-chats.md](../decisions/nested-chats.md). Code: `web/src/subagents.ts` (records, grouping, words), `web/src/components/SubAgentsCore.tsx` and `web/src/subagents-core.css` (the group's line), and the lazy bundle `hm-subagents` with the rows and the sheet: `web/src/components/SubAgents.tsx`, `web/src/subagents-view.ts`, `web/src/subagents.css` (2.6). It loads when the group's line first shows, so a chat without sub-agents costs nothing.
 
 **The group** (`subGroups`, `subFoldMap`, `SubGroupHead`). Sub-agent items next to each other are one group, and one started by a member joins that group wherever it stands. Closed it is one line: "3 sub-agents · 1 done" while they run (with the working shimmer, on the newest running group only, under Full animations), "Used 3 sub-agents · 2 min" when all have ended (`groupWords`). A failed or timed-out one adds "· 1 failed" in `--err`, also folded. A tap opens it: over the lock screen it asks for an unlock instead.
 

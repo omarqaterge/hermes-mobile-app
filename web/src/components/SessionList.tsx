@@ -16,7 +16,7 @@ import { cronJobId, runName, useJobName } from '../panelvalues'
 import { Chevron, MenuGroup, MenuRow, MenuSheet } from './ui'
 import { ChatMenuHeader } from './ChatMenu'
 import { Icon } from './icons'
-import { NestedRows, NestedToggle } from './SubAgents'
+import { NestedRows, NestedToggle } from './SubAgentsCore'
 import { forgetChat, noteStored, searchNested, useChatsWithAgents, useNested, useRunningChats, type NestedHit } from '../subagents'
 
 /** A scheduled job's run (source "cron"): a clock and the job's name. */

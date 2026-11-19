@@ -6,27 +6,20 @@ import {
   askerOf,
   cleanNestedFeed,
   cleanStored,
-  effortWord,
-  firstRows,
-  followsChat,
   getSubAgent,
   groupWords,
-  inTreeOrder,
   itemChanged,
   itemFields,
   listState,
   mergeEvent,
-  modelShort,
   nestedOf,
   noteEvent,
   noteItems,
   noteRoster,
   noteStored,
-  numbersLine,
   plainLine,
   quotedGoal,
   resetSubAgents,
-  runsOn,
   setFeedKnownForTest,
   setNestedFeed,
   stateOf,
@@ -37,6 +30,7 @@ import {
   type SubAgent,
   type SubItem
 } from './subagents'
+import { effortWord, firstRows, followsChat, inTreeOrder, modelShort, numbersLine, runsOn } from './subagents-view'
 import { storedSteps, tailText } from './components/SubAgents'
 
 const item = (id: string, status: string, more: Partial<SubItem> = {}): SubItem => ({ kind: 'subagent', id: `sub-${id}`, agent: id, goal: id, status, tools: 0, ...more })

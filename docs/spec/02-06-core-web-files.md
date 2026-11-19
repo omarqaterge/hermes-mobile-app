@@ -30,7 +30,8 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `menu.css` — the menus' look (3.20 `MenuSheet` and its parts; the chat menu 3.5, a chat row's menu 3.13): header, quick-action tiles, groups and rows, the solid form over the side panel, the rows of `PickerSheet`, and Chat details' long values.
 - `settings.css` — the Settings main page (3.15): one line per row (title, line and value cut with an ellipsis, so a narrow screen or a wider font never wraps them) and the attention cards (`.attn-card`: solid, a gold or red border, `--text` and `--glass-dim` text, a 44 px button, the shared row arrival).
 - `waiting.ts` — The plugin's `waiting` list as the page should show it, after requests that ended here (`visibleWaiting`).
-- `subagents.ts` — A chat's sub-agents: the records from events, `subagent.list` and the plugin, grouping, nesting, state words, the open and closed rows of the list (3.3, 3.13).
+- `subagents.ts` — A chat's sub-agents: the records from events, `subagent.list` and the plugin, grouping, nesting, state words, the open and closed rows of the list (3.3, 3.13). This is the part every start needs; what only the rows and the sheet need is in the lazy bundle `hm-subagents` (below, `lazy.ts`).
+- `components/SubAgentsCore.tsx` — What of the sub-agent interface every start needs: the group's line (`SubGroupHead`, `groupProps`), the chevron on a chat's row (`NestedToggle`, `useListShown`), and stand-ins for `SubGroupRows`, `NestedRows` and `SubAgentSheet` that draw the real ones once the bundle has run. `loadSubAgentUi` runs it once and adds its CSS as `<style id="hm-subagents-css">`. It is asked for when a group's line is on screen, when a sheet opens, and for a chat with sub-agents when the chat list shows or its rows are open, so a chat without sub-agents never runs it and the rows are ready before they can be tapped. `subagents-core.css` holds the styles of what shows before that (the line, the chevron, who asks on the request sheet), so nothing moves when the bundle arrives. A failed load leaves the line working and is tried again at the next need; a sheet that was waiting for it closes.
 - `needsyou.ts` — Which chats wait for the person's answer (`needsOf`, `openNeeds`, `useListedNeeds`): the chat list's Needs you group, the header button and the banner (3.13).
 - `chatactions.ts` — Pin, Archive and Delete for a chat (`pinChat`, `archiveChat`, `deleteChat`), shared by the chat menu and the chat list (3.5, 3.13).
 - `ChatMenu.tsx` (in `components/`) — the chat menu, the new-chat menu and their shared header (3.5).
@@ -89,8 +90,12 @@ These files carry the plumbing every screen uses. Screens are in 3.
 - `boot.ts` — start-up timing marks (`bootMark`, `lastBoot`, `bootSummary`; `onBootMark` tells listeners about each new mark and `useBootSummary` is the live line for Settings) in `hm.boot.v1`; the shell logs its own
   stages to logcat tag `hmboot`.
 - `lazy.ts` — `runLazy(id, global)`: big optional bundles (Mermaid as `hm-mermaid`, OpenUI as `hm-openui`, KaTeX and
-  highlight.js as `hm-rich`) ship in `index.html` as inert `<script type="text/hm-lazy">` text (`vite.config.ts`
-  `lazyBundle`) and are run once, on first use; a failed load can be retried.
+  highlight.js as `hm-rich`, the sub-agent rows and sheet as `hm-subagents`) ship in `index.html` as inert `<script type="text/hm-lazy">` text (`vite.config.ts`
+  `lazyBundle`) and are run once, on first use; a failed load can be retried. `hm-subagents` (`subagents-ui-entry.tsx`:
+  `components/SubAgents.tsx`, `subagents-view.ts`, `subagents.css`, about 20 KB) is part of the running app rather than a
+  library, so the `hostedByApp` plugin of `vite.config.ts` gives it no copies: each of its imports of React or of `src/` reads
+  from `window.__hmSubAgentHost`, the object `subAgentHost` builds just before it runs and which is removed right after.
+  `window.__hmSubAgents` is what the bundle hands back. `subagents-host.test.ts` checks that every name it imports is there.
 - `mdsplit.ts` — `splitStream`: cuts a streaming reply's Markdown into parts at the start of top-level blocks, so only
   the last part is read again on each update (3.3, "A reply that arrives in pieces"). `REMARK` is the list of Markdown
   extensions the splitter and `Markdown` share; `MIN_PART` the shortest finished part.

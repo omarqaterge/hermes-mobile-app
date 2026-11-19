@@ -222,7 +222,8 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
 
 - **Sub-agents and nested chats (task 09, PR against `redesign`).** Built: the one-line group in the chat, the sub-agent's
   sheet, the rows under a chat in the list, who asks on the request sheet (`web/src/subagents.ts`,
-  `components/SubAgents.tsx`, `subagents.css`; the plugin's `nested` counts and `/nested` routes; checks in `38-subagents.cjs`,
+  `components/SubAgentsCore.tsx`, `subagents-core.css`, and the lazy bundle `hm-subagents` with the rows and the sheet:
+  `components/SubAgents.tsx`, `subagents-view.ts`, `subagents.css`; the plugin's `nested` counts and `/nested` routes; checks in `38-subagents.cjs`,
   `web/src/subagents.test.ts`, `tools/test_nested.py`). **Background tasks are not built:** the owner chose on 2026-11-18 to
   leave them for later ([roadmap 21](../roadmap/21-background-tasks.md), [decision](../decisions/nested-chats.md)), because
   of what answers 3 and 6 below show. `/bg` is refused in a chat that has read phone data (its own PR). Where a goal comes

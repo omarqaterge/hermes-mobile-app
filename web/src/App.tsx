@@ -8,7 +8,7 @@ import { afterChatOpens, compressChat, connect, errText, openSessionFromNotifica
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Toast, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
 import { NeedWords } from './components/SessionList'
-import { SubAgentSheet, SubGroupHead, SubGroupRows, groupProps } from './components/SubAgents'
+import { SubAgentSheet, SubGroupHead, SubGroupRows, groupProps } from './components/SubAgentsCore'
 import { stepMark, stepWord } from './toolsay'
 import { foldMap } from './fold'
 import { subFoldMap, type SubItem } from './subagents'

@@ -1,5 +1,6 @@
-// Sub-agents on screen (spec 3.3, 3.13): the one-line group in the chat, the rows under a chat in the list, and the sheet
-// that shows one of them. Goals, steps and output are the model's words: plain text only, never Markdown or HTML. Nothing
+// Sub-agents on screen (spec 3.3, 3.13): the opened group's rows, the rows under a chat in the list, and the sheet that shows
+// one of them. This file is in the lazy bundle `hm-subagents` (subagents-ui-entry.tsx): it costs nothing until a chat has
+// sub-agents, and what it imports from the app reaches it through `subAgentHost` in SubAgentsCore.tsx. Goals, steps and output are the model's words: plain text only, never Markdown or HTML. Nothing
 // here can approve anything: approvals stay on the request sheet of the parent chat.
 import { Component, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
@@ -9,19 +10,13 @@ import { confirmDialog } from '../dialog'
 import { continueSubAgent, errText, resumeSession, steerSubAgent, stopSubAgent, subAgentTail } from '../gateway'
 import { askUnlock, lockView } from '../lockview'
 import { useLockView } from '../needsyou'
-import { useSidePanel } from '../sidepanel'
 import { GuardCtx, chatTainted, idsReadState, isTaintedNow } from '../phone-data-taint'
 import { openSettingsOn } from '../settings-open'
 import { getState, setState, toast, useStore } from '../store'
 import {
   STATE_WORD,
   cleanStored,
-  effortWord,
-  firstRows,
-  followsChat,
   getSubAgent,
-  groupWords,
-  inTreeOrder,
   isLive,
   listHeld,
   listState,
@@ -29,11 +24,8 @@ import {
   nestedIsOpen,
   noteItems,
   noteStored,
-  numbersLine,
   openSubSheet,
   plainLine,
-  runsOn,
-  setNestedOpen,
   shortTime,
   subAgentsOf,
   useListFree,
@@ -44,26 +36,19 @@ import {
   useSubTarget,
   wentWrong,
   type SubAgent,
-  type SubGroup,
   type SubItem,
   type SubState
 } from '../subagents'
+import { effortWord, firstRows, followsChat, inTreeOrder, numbersLine, runsOn } from '../subagents-view'
+import { useListShown } from './SubAgentsCore'
 import { Icon } from './icons'
 import { Linked } from './Linked'
 import { plainTitle } from './Title'
-import { Chevron } from './ui'
 
 export const TAIL_EVERY_MS = 3000
 export const NESTED_SHOWN = 6
 
 const profileOf = () => getState().profile
-
-/** The chat list is on screen: open on a phone, or docked. A closed panel draws no nested rows and reads nothing for them. */
-function useListShown(): boolean {
-  const open = useStore(s => s.drawer)
-  const [wide, hidden] = useSidePanel()
-  return (wide && !hidden) || open
-}
 
 /** What state a sub-agent is in, as a mark: a ring while it works, a tick, a cross for what went wrong. */
 function StateMark({ state, turning }: { state: SubState; turning?: boolean }) {
@@ -73,35 +58,6 @@ function StateMark({ state, turning }: { state: SubState; turning?: boolean }) {
 }
 
 // ── in the chat ──
-export const SubGroupHead = memo(function SubGroupHead({
-  id,
-  words,
-  failed,
-  running,
-  shimmer,
-  open,
-  onToggle
-}: {
-  id: string
-  words: string
-  failed: number
-  running: boolean
-  shimmer: boolean
-  open: boolean
-  onToggle: (id: string) => void
-}) {
-  return (
-    <button className={`tool-run sub-group${running ? ' sub-group-live' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
-      <Icon n="subagent" />
-      <span className={`tool-run-label sub-group-words${shimmer ? ' sub-shimmer' : ''}`}>{words}</span>
-      {failed > 0 && <span className="sub-group-failed">· {failed} failed</span>}
-      <span className="chev"><Chevron open={open} /></span>
-    </button>
-  )
-})
-
-export const groupProps = (g: SubGroup) => ({ words: groupWords(g), failed: g.failed, running: g.running > 0 })
-
 /** One line for a sub-agent: its goal, what it runs on, its state; the current step under it while it runs. */
 const SubRow = memo(function SubRow({ chat, id, level, onOpen }: { chat: string; id: string; level: number; onOpen: (key: string) => void }) {
   const a = useSubAgent(chat, id)
@@ -207,31 +163,6 @@ export function NestedRows({ chat, snapAt, only, turning }: { chat: string; snap
         <button className="nested-more" onClick={() => { haptic(); setAll(true) }}>Show all {keys.length}</button>
       )}
     </div>
-  )
-}
-
-/** The chevron on a chat's row, when the chat has sub-agents. */
-export function NestedToggle({ chat }: { chat: string }) {
-  const s = useNested(chat)
-  useNestedChoice()
-  const locked = useLockView()
-  const listShown = useListShown()
-  if (!s.total || locked || !listShown) return null
-  const open = nestedIsOpen(chat, s)
-  return (
-    <button
-      className="nested-toggle"
-      aria-label={open ? 'Hide sub-agents' : 'Show sub-agents'}
-      aria-expanded={open}
-      onPointerDown={e => e.stopPropagation()}
-      onClick={e => {
-        e.stopPropagation()
-        haptic()
-        setNestedOpen(chat, !open)
-      }}
-    >
-      <Chevron open={open} />
-    </button>
   )
 }
 

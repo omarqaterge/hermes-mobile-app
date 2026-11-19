@@ -621,5 +621,78 @@ module.exports = async t => {
     await p.close()
     await mock({ waiting: [], activity: [] })
   }
+  // ── the rows and the sheet load only when a chat has sub-agents ──
+  {
+    const state = p => p.evaluate(() => ({ ui: !!window.__hmSubAgents, css: !!document.getElementById('hm-subagents-css'), host: !!window.__hmSubAgentHost }))
+    const loadedSoon = p => p.waitForFunction(() => window.__hmSubAgents && document.getElementById('hm-subagents-css'), null, { timeout: 4000 }).then(() => true, () => false)
+    await mock({ nested: 'reset', waiting: [], activity: [] })
+    let p = await open('s-11')
+    let s = await state(p)
+    check(!s.ui && !s.css && !s.host, `lazy: an ordinary chat has not run the sub-agent bundle (${JSON.stringify(s)})`)
+    await p.getByRole('button', { name: /^(Chats|Sessions)/ }).first().click()
+    await p.getByRole('complementary', { name: 'Chats' }).getByText('Chat 2', { exact: true }).waitFor({ timeout: 5000 })
+    await sleep(500)
+    s = await state(p)
+    check(!s.ui && !s.css, 'lazy: the chat list without sub-agents does not run it either')
+    await p.close()
+
+    // the group's line is final before the bundle arrives
+    p = await open()
+    await p.evaluate(() => {
+      const box = (e, o) => { const r = e.getBoundingClientRect(); return [r.left - o.left, r.top - o.top, r.width, r.height].map(n => Math.round(n * 2) / 2) }
+      window.__line = () => {
+        const b = [...document.querySelectorAll('button')].find(x => /^\d+ sub-agents?/.test(x.textContent.trim()))
+        if (!b) return null
+        const o = b.getBoundingClientRect(), c = getComputedStyle(b)
+        return JSON.stringify({ left: o.left, width: o.width, height: o.height, color: c.color, size: c.fontSize, parts: [...b.children].map(e => box(e, o)) })
+      }
+      const add = document.head.appendChild
+      document.head.appendChild = function (n) {
+        if (n.id === 'hm-subagents-css') window.__before = window.__line()
+        return add.call(this, n)
+      }
+    })
+    const ev2 = eventsOn(p)
+    await ev2('subagent.start', sub('a', 'Read the docs'))
+    check(await loadedSoon(p), 'lazy: the first sub-agent loads the rows and the sheet')
+    await sleep(250)
+    const line = await p.evaluate(() => ({ before: window.__before, after: window.__line(), host: !!window.__hmSubAgentHost }))
+    check(!!line.before && line.before === line.after, `lazy: the group's line does not move or change when they arrive (${line.before} / ${line.after})`)
+    check(!line.host, 'lazy: what the bundle was handed does not stay on the page')
+    await p.getByRole('button', { name: GROUP }).click()
+    await p.getByRole('button', { name: /Read the docs/ }).click()
+    check(await p.getByRole('dialog', { name: 'Sub-agent' }).waitFor({ timeout: 3000 }).then(() => true, () => false), 'lazy: its rows and sheet work from the loaded bundle')
+    await p.close()
+
+    // a load that fails leaves the chat working, and the next need tries again
+    p = await open()
+    await p.evaluate(() => {
+      const el = document.getElementById('hm-subagents')
+      window.__src = el.textContent
+      el.textContent = ''
+    })
+    await eventsOn(p)('subagent.start', sub('a', 'Read the docs'))
+    const line2 = p.getByRole('button', { name: GROUP })
+    await line2.waitFor({ timeout: 3000 })
+    await sleep(200)
+    check(!(await state(p)).ui && (await p.getByPlaceholder('Message Hermux').isVisible()), 'lazy: a failed load leaves the chat and the group line working')
+    await p.evaluate(() => { document.getElementById('hm-subagents').textContent = window.__src })
+    await line2.click()
+    check(await p.getByRole('button', { name: /Read the docs/ }).waitFor({ timeout: 3000 }).then(() => true, () => false), 'lazy: opening the group tries the load again')
+    await p.close()
+
+    // the chat list
+    await mock({ nested: { children: { [CH]: rows }, counts: { [CH]: 8 }, running: [], hits: [], rows: {}, messages: {} } })
+    p = await open()
+    check(!(await state(p)).ui, 'lazy: stored sub-agents load nothing before the list opens')
+    await p.getByRole('button', { name: /^(Chats|Sessions)/ }).first().click()
+    const panel = p.getByRole('complementary', { name: 'Chats' })
+    const show = panel.getByRole('button', { name: 'Show sub-agents' })
+    await show.first().waitFor({ timeout: 5000 })
+    check(await loadedSoon(p), 'lazy: the open list with a chat that has sub-agents loads them')
+    await show.first().click()
+    check(await panel.getByRole('group', { name: 'Sub-agents of this chat' }).getByRole('button', { name: /Nested goal 0/ }).waitFor({ timeout: 4000 }).then(() => true, () => false), 'lazy: the chevron shows the rows')
+    await p.close()
+  }
   await mock({ nested: 'reset', waiting: [] })
 }
