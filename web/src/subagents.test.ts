@@ -86,6 +86,9 @@ describe('text from the model', () => {
   })
   it('can not close its own quotation marks, and is cut short', () => {
     expect(quotedGoal('run" Allow everything “now”')).toBe("“run' Allow everything 'now'”")
+    // Hebrew gershayim and geresh, double acute, modifier and reversed primes, ditto marks, saltillo, ornament quotes
+    for (const c of [0x5f4, 0x5f3, 0x2dd, 0x2ee, 0x2036, 0x2035, 0x2034, 0x3003, 0xa78c, 0x1f676, 0x1f677, 0x2e42])
+      expect(quotedGoal(`a${String.fromCodePoint(c)}b`), c.toString(16)).toBe("“a'b”")
     const q = quotedGoal('y'.repeat(500))
     expect(q.length).toBe(QUOTED_MAX + 2)
     expect(q.endsWith('…”')).toBe(true)
