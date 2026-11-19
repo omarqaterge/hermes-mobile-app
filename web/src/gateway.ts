@@ -10,7 +10,8 @@ import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { noteLineage, noteListRow } from './lineage'
-import { chatReadState, isTaintedNow } from './phone-data-taint'
+import { chatReadState } from './phone-data-taint'
+import { detachedRefusal, detachedWork, hermesWords } from './slashwords'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -1003,14 +1004,11 @@ const YOLO_NOTICE: Record<Access, string> = {
   off: 'Auto off: Hermux asks before risky commands again'
 }
 
-export const BG_REFUSED = 'This chat has read data from your phone, so /bg is off here: a background task runs outside the rule that asks before anything is sent out. It starts without this chat’s messages, so you can run it from a new chat.'
-
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
   const body = text.replace(/^\/+/, '').trim()
-  const name = body.split(/\s+/)[0]
-  const arg = body.slice(name.length).trim()
+  const { name, arg } = hermesWords(text) // the words Hermes will read, whatever separates them
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
   // Only a command the user typed directly (depth 0) can change access. Anything reached through an alias (depth > 0)
   // is refused, however the target is spelled (spaces, extra slashes, upper case).
@@ -1018,12 +1016,21 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
     return
   }
-  // /bg runs in a separate Hermes process that knows nothing of this chat, so the rule that asks before a chat which has
-  // read phone data sends anything out doesn't reach it. It starts without the chat's history, so a new chat does the
-  // same job. Checked at every alias depth, so a quick command can't reach it either.
-  if (/^(bg|background)$/i.test(name.replace(/^[\s/]+/, '')) && isTaintedNow()) {
-    pushItem({ kind: 'notice', id: newId('n'), text: BG_REFUSED, level: 'warn' })
-    return
+  // A command that hands text to an agent running apart from this chat, where nobody can be asked. Over the lock screen it
+  // waits for an unlock. In a chat that has read phone data, or when the app's record can't say, it isn't sent: the plugin
+  // blocks such a task's sends anyway, this says why at once. Checked at every alias depth.
+  const work = detachedWork(name, arg)
+  if (work) {
+    if (lockView()) {
+      askUnlock('Unlock the phone to start this')
+      pushItem({ kind: 'notice', id: newId('n'), text: `Unlock the phone to start ${work}.`, level: 'warn' })
+      return
+    }
+    const read = chatReadState(a)
+    if (read !== 'clear') {
+      pushItem({ kind: 'notice', id: newId('n'), text: detachedRefusal(work, read), level: 'warn' })
+      return
+    }
   }
   if (name.toLowerCase() === 'yolo') {
     const w = arg.toLowerCase()
