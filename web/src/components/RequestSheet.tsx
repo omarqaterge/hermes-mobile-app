@@ -13,7 +13,7 @@ import { useBackHandler } from '../backstack'
 import { ADVANCE_MS, nextStep } from '../clarify'
 import { Icon } from './icons'
 import { askerOf, quotedGoal } from '../subagents'
-import { SUB_AGENT } from '../waiting'
+import { SUB_AGENT, arrivedAt, subAgentAsks } from '../waiting'
 
 /** Runs `answer` unless the tap came too soon after this sheet took over from another request (needsyou.ts). Refusing
  *  (Deny, Cancel) never goes through here. */
@@ -306,8 +306,9 @@ function otherChat(s: AppState, req: ServerRequest): string {
 }
 
 /** After what is to be approved: who asks, when that is known. A goal is the model's text, so it is ordinary small type,
- *  quoted and cut short, and can't pass for the command. It is named only when the running sub-agent's last command is this
- *  one, the feed says a sub-agent asks and the chat itself isn't asking; otherwise, and over the lock screen, fixed words. */
+ *  quoted and cut short, and can't pass for the command. It is named only when the one sub-agent running has this command as
+ *  its last, the feed says a sub-agent asks about this request (an entry no older than the request) and the chat itself
+ *  isn't asking; otherwise, and over the lock screen, fixed words. */
 function AskedBy({ req }: { req: ServerRequest }) {
   const p = req.params as Record<string, unknown>
   const chat = requestChat(req)
@@ -315,9 +316,9 @@ function AskedBy({ req }: { req: ServerRequest }) {
   // Read when the request arrives: what the sub-agent reports next doesn't change who asked.
   const asker = useMemo(() => askerOf(chat, p.command), [req.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const feedSubAgent = useStore(s => s.waiting.some(w => w.session === chat && w.who === SUB_AGENT))
-  const feedChat = useStore(s => s.waiting.some(w => w.session === chat && !w.who))
+  const asks = useStore(s => subAgentAsks(s.waiting, chat, arrivedAt(req.id)))
   if (!asker && !feedSubAgent) return null
-  const named = asker?.goal && feedSubAgent && !feedChat && !locked
+  const named = asker?.goal && asks && !locked
   return <div className="sheet-asked dim small">{named ? <>Asked by the sub-agent working on <bdi>{quotedGoal(asker.goal)}</bdi></> : 'Asked by a sub-agent'}</div>
 }
 

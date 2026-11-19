@@ -9,7 +9,7 @@ import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { getState, setState, subscribe, type AppState, type WaitingItem } from './store'
 import { chatListHeld, onChatListFree } from './chatsnapshot'
 import { lockView, onLockView } from './lockview'
-import { SUB_AGENT } from './waiting'
+import { SUB_AGENT, arrivedAt, subAgentAsks } from './waiting'
 import { askerOf, quotedGoal } from './subagents'
 
 export interface Need {
@@ -60,9 +60,8 @@ export function mergeNeeds(waiting: WaitingItem[], requests: ServerRequest[], ch
       out.set(session, { session, kind: r.method, who: '' })
       continue
     }
-    // A sub-agent is named only when the feed says one asks and that the chat itself doesn't.
-    const listed = waiting.filter(w => w.session === session)
-    if (r.method !== 'approval' || cur.goal || !listed.some(w => w.who === SUB_AGENT) || listed.some(w => !w.who)) continue
+    // A sub-agent is named only when the feed says one asks about this request and that the chat itself doesn't.
+    if (r.method !== 'approval' || cur.goal || !subAgentAsks(waiting, session, arrivedAt(r.id))) continue
     const asker = askerOf(session, (r.params as { command?: unknown }).command)
     if (asker?.goal) out.set(session, { ...cur, who: SUB_AGENT, goal: asker.goal })
   }

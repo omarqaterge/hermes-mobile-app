@@ -50,7 +50,7 @@ let activityItems = []
 // `delay` (ms before that resume answers).
 let waitingItems = []
 // Sub-agents (checks 38): what the plugin's /nested routes and subagent.* answer; a test sets parts with {nested: {...}}.
-const NESTED_START = { children: {}, counts: {}, running: [], hits: [], rows: {}, messages: {}, roster: [], tail: 'Working on it', steer: 'queued', found: true, failResume: [] }
+const NESTED_START = { children: {}, counts: {}, running: [], hits: [], rows: {}, messages: {}, roster: [], tail: 'Working on it', steer: 'queued', found: true, failResume: [] , slowResume: [] }
 let nested = { ...NESTED_START }
 // The plugin's /tool-result: the stored output of a finished tool call, by tool_id (filled by every tool.complete the mock sends).
 const toolResults = new Map()
@@ -916,6 +916,8 @@ wss.on('connection', ws => {
           })
           if (asks.delay) return later(asks.delay, () => reply(res))
         }
+        // Sub-agents (checks 38): a chat that opens slowly, with nothing of it on screen until it answers.
+        if (nested.slowResume.includes(sid)) return later(1500, () => reply(res))
         // A slow phone: the cached copy must be on screen long before this answer.
         if (sid === 's-slow') return later(1500, () => reply(res))
         return reply(res)

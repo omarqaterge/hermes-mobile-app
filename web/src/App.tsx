@@ -516,7 +516,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       return n
     })
   }, [])
-  const subChat = useStore(s => s.opening ?? s.active?.storedId ?? '')
+  // The chat whose items are drawn: while one chat opens without a preview, that is still the chat being left.
+  const subChat = useStore(s => shownKey(s) ?? '')
   const changes = useMemo(() => turnChanges(items ?? [], running), [items, running])
   const toggleRun = useCallback((id: string) => {
     setOpenRuns(o => {

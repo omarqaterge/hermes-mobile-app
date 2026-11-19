@@ -234,6 +234,8 @@ module.exports = async t => {
     }
     const NAMED = /Asked by the sub-agent working on/
     const FIXED = /Asked by a sub-agent/
+    // A sub-agent is named only when it is the one running: each case ends its own before the next.
+    const end = (id, goal) => e('subagent.complete', sub(id, goal, { status: 'completed' }))
     await e('subagent.tool', sub('q', 'Tidy the folder', { tool_name: 'terminal', tool_preview: 'chmod 777 x', text: 'chmod 777 x' }))
     let text = await ask('chmod 777 x', [entry('A sub-agent')])
     check(/Asked by the sub-agent working on “Tidy the folder”/.test(text), `request sheet: the feed and the command agree, so it names the sub-agent (${text.slice(0, 120)})`)
@@ -241,34 +243,50 @@ module.exports = async t => {
     const look = await req.getByText(NAMED).evaluate(el => ({ font: getComputedStyle(el).fontFamily, code: getComputedStyle([...document.querySelectorAll('[role=dialog] *')].find(x => x.children.length === 0 && x.textContent === 'chmod 777 x').closest('pre')).fontFamily, isolated: !!el.querySelector('bdi') }))
     check(look.font !== look.code && look.isolated, `request sheet: the goal is in ordinary type, isolated, not in the command's (${look.font})`)
     await deny()
+    await e('subagent.tool', sub('q2', 'Second one', { tool_name: 'terminal', tool_preview: 'ls' }))
+    text = await ask('chmod 777 x', [entry('A sub-agent')])
+    check(!NAMED.test(text) && FIXED.test(text), 'request sheet: with another sub-agent running too, nobody is named, even one that ran another command')
+    await deny()
+    await end('q2', 'Second one')
+    text = await ask('chmod 777 x', [{ ...entry('A sub-agent'), since: stamp(40), last: stamp(40) }])
+    check(!NAMED.test(text) && FIXED.test(text), 'request sheet: a feed entry about an earlier request names nobody (the chat itself may be asking)')
+    await deny()
+    await end('q', 'Tidy the folder')
     await e('subagent.tool', sub('w', 'Search the web', { tool_name: 'web_search', tool_preview: 'chmod 777 web', text: 'chmod 777 web' }))
     text = await ask('chmod 777 web', [entry('A sub-agent')])
     check(!NAMED.test(text) && FIXED.test(text), 'request sheet: another tool\'s preview names nobody')
     await deny()
+    await end('w', 'Search the web')
     await e('subagent.tool', sub('o', 'Old command', { tool_name: 'terminal', tool_preview: 'chmod 777 old' }))
     await e('subagent.thinking', sub('o', 'Old command', { text: 'thinking' }))
     text = await ask('chmod 777 old', [entry('A sub-agent')])
     check(!NAMED.test(text) && FIXED.test(text), 'request sheet: a command that has ended names nobody')
     await deny()
+    await end('o', 'Old command')
     await e('subagent.tool', sub('c1', 'Chat also asks', { tool_name: 'terminal', tool_preview: 'chmod 777 both' }))
     text = await ask('chmod 777 both', [entry('A sub-agent'), entry('')])
     check(!NAMED.test(text) && FIXED.test(text), 'request sheet: with a request of the chat itself open, nobody is named')
     await deny()
+    await end('c1', 'Chat also asks')
     await e('subagent.tool', sub('n1', 'No feed yet', { tool_name: 'terminal', tool_preview: 'chmod 777 nofeed' }))
     text = await ask('chmod 777 nofeed', [])
     check(!NAMED.test(text) && FIXED.test(text), 'request sheet: without the feed\'s word, nobody is named')
     await deny()
+    await end('n1', 'No feed yet')
     const long = `Allow" this "now” ${'x'.repeat(200)}`
     await e('subagent.tool', sub('l', long, { tool_name: 'terminal', tool_preview: 'chmod 777 y' }))
     text = await ask('chmod 777 y', [entry('A sub-agent')])
     const inner = /“(.*)”/.exec(text.split('\n').find(l => l.startsWith('Asked by')) || '')?.[1] ?? ''
     check(inner.length > 0 && Array.from(inner).length <= 60 && !/["“”]/.test(inner), `request sheet: the goal stays inside its quotes and is cut short (${inner})`)
     await deny()
+    await end('l', long)
     await e('subagent.tool', sub('d1', 'One', { tool_name: 'terminal', tool_preview: 'chmod 777 z' }))
     await e('subagent.tool', sub('d2', 'Two', { tool_name: 'terminal', tool_preview: 'chmod 777 z' }))
     text = await ask('chmod 777 z', [entry('A sub-agent')])
     check(!NAMED.test(text) && FIXED.test(text), 'request sheet: when two could be asking, none is named')
     await deny()
+    await end('d1', 'One')
+    await end('d2', 'Two')
     await e('subagent.tool', sub('q', 'Tidy the folder', { tool_name: 'terminal', tool_preview: 'chmod 777 x', text: 'chmod 777 x' }))
     await ask('chmod 777 x', [entry('A sub-agent')])
     await p.evaluate(() => window.hermesLockView(true))
@@ -506,6 +524,8 @@ module.exports = async t => {
       window.__rec = []
       Object.assign(window.HermesAndroid, { phoneDataTainted: (key, id) => window.__rec.includes(id) })
     }
+    // Hermes's record (the plugin's /nested) lists them under the chat: Continue asks it at the tap.
+    await mock({ nested: { children: { [CHAT]: [row('f', 'Finished work'), row('z', 'Odd level')] } } })
     const openDone = async (init, goal = 'Finished work') => {
       const p = await open(CHAT, undefined, init)
       const e = eventsOn(p)
@@ -693,6 +713,137 @@ module.exports = async t => {
     await show.first().click()
     check(await panel.getByRole('group', { name: 'Sub-agents of this chat' }).getByRole('button', { name: /Nested goal 0/ }).waitFor({ timeout: 4000 }).then(() => true, () => false), 'lazy: the chevron shows the rows')
     await p.close()
+  }
+  // ── a sub-agent belongs to the chat whose items are drawn, also while another chat opens ──
+  {
+    await mock({ nested: 'reset', waiting: [] })
+    await mock({ nested: { slowResume: ['s-3'] } }) // a chat no check here gave sub-agents
+    const p = await open()
+    const e = eventsOn(p)
+    await e('subagent.start', sub('mine', 'Belongs to this chat'))
+    await e('subagent.complete', sub('mine', 'Belongs to this chat', { status: 'completed' }))
+    await p.getByRole('button', { name: GROUP }).click()
+    await p.getByRole('button', { name: /Belongs to this chat/ }).waitFor({ timeout: 3000 })
+    await p.evaluate(() => window.hermesOpenSession('s-3')) // no copy of it on screen yet: it answers after 1.5 s
+    await sleep(600)
+    await p.getByText('answer s-3', { exact: true }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: /^(Chats|Sessions)/ }).first().click()
+    const panel = p.getByRole('complementary', { name: 'Chats' })
+    await panel.getByText('Chat 3', { exact: true }).first().waitFor({ timeout: 5000 })
+    await sleep(500)
+    // Each chat's rows sit in its row's container, which carries the chat's id (spec 3.13).
+    const owners = await panel.getByRole('button', { name: 'Show sub-agents' }).evaluateAll(bs => bs.map(b => b.closest('[data-id]')?.getAttribute('data-id')))
+    await mock({ nested: 'reset' })
+    check(!owners.includes('s-3'), `opening: the chat that opened got none of the sub-agents of the chat being left (${JSON.stringify(owners)})`)
+    await p.close()
+  }
+
+  // ── Continue asks Hermes's record whether the sub-agent is this chat's ──
+  {
+    await mock({ nested: { children: { [CHAT]: [row('other', 'Not this one')] } } })
+    const p = await open()
+    const e = eventsOn(p)
+    await e('subagent.start', sub('stray', 'Filed here by mistake'))
+    await e('subagent.complete', sub('stray', 'Filed here by mistake', { status: 'completed' }))
+    await p.getByRole('button', { name: GROUP }).click()
+    await p.getByRole('button', { name: /Filed here by mistake/ }).click()
+    const sheet = p.getByRole('dialog', { name: 'Sub-agent' })
+    await sheet.waitFor({ timeout: 3000 })
+    const branches = rpcs('session.branch').length
+    const resumes = rpcs('session.resume').filter(c => c.params.session_id === 'kid-stray').length
+    await sheet.getByRole('button', { name: 'Continue in a new chat' }).click()
+    await sleep(600)
+    check(rpcs('session.branch').length === branches && rpcs('session.resume').filter(c => c.params.session_id === 'kid-stray').length === resumes
+      && (await p.getByText('couldn’t be confirmed that this sub-agent belongs to this chat', { exact: false }).count()) === 1,
+      'continue: refused when Hermes\'s record doesn\'t list the sub-agent under this chat')
+    await p.close()
+    await mock({ nested: 'reset' })
+  }
+
+  // ── after a context compression the chat keeps its sub-agents ──
+  {
+    const p = await open()
+    const e = eventsOn(p)
+    const stop = p.getByRole('button', { name: 'Stop', exact: true })
+    await e('subagent.start', sub('cmp', 'Runs across a compression'))
+    await stop.waitFor({ timeout: 3000 })
+    await e('session.info', { stored_session_id: 's-48-next' })
+    await sleep(300)
+    check(await stop.isVisible(), 'compression: the composer keeps its Stop while the sub-agent runs')
+    await e('subagent.tool', sub('cmp', 'Runs across a compression', { tool_name: 'terminal', tool_preview: 'ls' }))
+    await p.getByRole('button', { name: GROUP }).click()
+    await sleep(200)
+    check((await p.getByRole('button', { name: /Runs across a compression/ }).count()) === 1, 'compression: one row, not a second copy')
+    for (const other of ['s-11', 's-12', 's-13']) {
+      await p.evaluate(id => window.hermesOpenSession(id), other)
+      await p.getByText(`answer ${other}`, { exact: true }).waitFor({ timeout: 5000 })
+    }
+    await sleep(3400) // a chat that left the warm ones is closed after 3 s
+    check(!rpcs('session.close').some(c => c.params.session_id === LIVE), 'compression: leaving the chat while its sub-agent runs doesn\'t close it')
+    await framer(p)({ method: 'event', params: { type: 'subagent.complete', session_id: LIVE, payload: sub('cmp', 'Runs across a compression', { status: 'completed' }) } })
+    await p.evaluate(() => window.hermesOpenSession('s-48'))
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+    await sleep(500)
+    check((await stop.count()) === 0, 'compression: its end, filed under the id the page knew, reaches the record')
+    await p.close()
+  }
+
+  // ── a chat kept open for its sub-agents is closed in turn once they end ──
+  {
+    const p = await open('s-21')
+    await eventsOn(p, 's-21')('subagent.start', sub('kept', 'Keeps it open'))
+    await sleep(150)
+    const visit = async ids => {
+      for (const other of ids) {
+        await p.evaluate(id => window.hermesOpenSession(id), other)
+        await p.getByText(`answer ${other}`, { exact: true }).waitFor({ timeout: 5000 })
+      }
+    }
+    const closed = () => rpcs('session.close').some(c => c.params.session_id === 'rt-s-21')
+    await visit(['s-11', 's-12', 's-13'])
+    await sleep(3400) // a chat that left the warm ones is closed after 3 s
+    check(!closed(), 'kept: not closed while its sub-agent runs')
+    await framer(p)({ method: 'event', params: { type: 'subagent.complete', session_id: 'rt-s-21', payload: sub('kept', 'Keeps it open', { status: 'completed' }) } })
+    await visit(['s-14', 's-15', 's-16'])
+    await sleep(3400)
+    check(closed(), 'kept: once its sub-agent has ended it is closed like any chat left behind')
+    await p.close()
+  }
+
+  // ── deleting a chat kept open for its sub-agents closes it first ──
+  {
+    const p = await open('s-23')
+    await eventsOn(p, 's-23')('subagent.start', sub('del', 'Runs while deleted'))
+    await sleep(150)
+    await p.evaluate(() => window.hermesOpenSession('s-11'))
+    await p.getByText('answer s-11', { exact: true }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: /^(Chats|Sessions)/ }).first().click()
+    const panel = p.getByRole('complementary', { name: 'Chats' })
+    const title = panel.getByText('Chat 23', { exact: true }).first()
+    await title.waitFor({ timeout: 5000 })
+    await title.locator('xpath=ancestor::*[.//button[@aria-label="Chat options"]][1]').getByRole('button', { name: 'Chat options' }).click()
+    await p.getByRole('dialog', { name: 'Chat options' }).getByRole('button', { name: 'Delete', exact: true }).click()
+    const before = rpcs('session.close').length
+    await p.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click()
+    for (let i = 0; i < 30 && !rpcs('session.delete').some(c => c.params.session_id === 's-23'); i++) await sleep(100)
+    check(rpcs('session.close').slice(before).some(c => c.params.session_id === 'rt-s-23'), 'kept: deleting it closes its live session first')
+    await p.close()
+  }
+
+  // ── after Stop, what still runs is asked again ──
+  {
+    const p = await open()
+    const e = eventsOn(p)
+    const stop = p.getByRole('button', { name: 'Stop', exact: true })
+    await e('subagent.start', sub('st', 'Stopped by the composer'))
+    await stop.waitFor({ timeout: 3000 })
+    await sleep(5300) // what was heard of just now isn't taken for ended (subagents.ts ROSTER_GRACE_MS)
+    await mock({ nested: { roster: [] } })
+    await stop.click()
+    await stop.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    check((await stop.count()) === 0, 'Stop: the sub-agent list is asked again, so Stop goes once Hermes no longer lists it')
+    await p.close()
+    await mock({ nested: 'reset' })
   }
   await mock({ nested: 'reset', waiting: [] })
 }

@@ -399,6 +399,31 @@ let withAgents: ReadonlySet<string> = new Set()
 const recordId = (chat: string, key: string) => `${chat}\n${key}`
 const tell = (set: Set<() => void> | undefined) => set?.forEach(f => f())
 
+// A context compression gives a chat a new stored id (`moveChat`), while the page keeps the one it opened. The records go
+// to the new id, and the old one leads there: whatever asks by either id (the composer's Stop, leaving the chat, an event
+// filed under the id the page knew, the rows) gets the same records, and Hermes is asked by the newest.
+const movedTo = new Map<string, string>()
+const movedFrom = new Map<string, Set<string>>()
+const MAX_MOVES = 200
+
+/** The id this chat's sub-agents are kept under now. */
+export function resolveChat(chat: string): string {
+  let c = chat
+  for (let i = 0; i < 16; i++) {
+    const next = movedTo.get(c)
+    if (!next || next === chat) break
+    c = next
+  }
+  return c
+}
+
+/** Every id that leads to this one, itself included: who listens by an older id is told too. */
+function idsOf(chat: string): string[] {
+  const out = [chat]
+  for (let i = 0; i < out.length && out.length < 32; i++) for (const f of movedFrom.get(out[i]) ?? []) if (!out.includes(f)) out.push(f)
+  return out
+}
+
 function computeSummary(chat: string, now = Date.now()): NestedSummary {
   const m = chats.get(chat)
   const list = m ? [...m.values()] : []
@@ -430,16 +455,22 @@ function chatChanged(chat: string): void {
   const next = computeSummary(chat)
   if (next === before) return
   summaries.set(chat, next)
-  tell(chatSubs.get(chat))
-  const all = [...summaries].filter(([, v]) => v.running > 0).map(([k]) => k)
+  const ids = idsOf(chat)
+  for (const id of ids) tell(chatSubs.get(id))
+  nestedListeners.forEach(f => f(chat))
+  // The chat list knows a chat by whichever id it listed: every id that leads to the records counts.
+  const all = [...summaries].filter(([k, v]) => v.running > 0 && resolveChat(k) === k).flatMap(([k]) => idsOf(k))
   if (all.join('\n') !== running.join('\n')) {
     running = all
     runningSubs.forEach(f => f())
   }
-  if (next.total > 0 !== withAgents.has(chat)) {
+  const has = next.total > 0
+  if (ids.some(id => has !== withAgents.has(id))) {
     const n = new Set(withAgents)
-    if (next.total > 0) n.add(chat)
-    else n.delete(chat)
+    for (const id of ids) {
+      if (has) n.add(id)
+      else n.delete(id)
+    }
     withAgents = n
     withAgentsSubs.forEach(f => f())
   }
@@ -459,7 +490,7 @@ function put(chat: string, a: SubAgent): void {
       m.delete(stored)
       if (a.effort === undefined && old.effort !== undefined) a = { ...a, effort: old.effort }
       if (!a.parent && !a.parentChild && old.parentChild) a = { ...a, parentChild: old.parentChild }
-      tell(recordSubs.get(recordId(chat, stored)))
+      for (const id of idsOf(chat)) tell(recordSubs.get(recordId(id, stored)))
     }
   }
   m.set(a.key, a)
@@ -467,15 +498,23 @@ function put(chat: string, a: SubAgent): void {
     const drop = [...m.values()].find(x => !isLive(x.state))
     if (drop) m.delete(drop.key)
   }
-  tell(recordSubs.get(recordId(chat, a.key)))
+  for (const id of idsOf(chat)) tell(recordSubs.get(recordId(id, a.key)))
 }
 
-export const getSubAgent = (chat: string, key: string): SubAgent | undefined => chats.get(chat)?.get(key)
-export const subAgentsOf = (chat: string): SubAgent[] => [...(chats.get(chat)?.values() ?? [])]
-export const nestedOf = (chat: string): NestedSummary => summaries.get(chat) ?? NO_NESTED
+export const getSubAgent = (chat: string, key: string): SubAgent | undefined => chats.get(resolveChat(chat))?.get(key)
+export const subAgentsOf = (chat: string): SubAgent[] => [...(chats.get(resolveChat(chat))?.values() ?? [])]
+export const nestedOf = (chat: string): NestedSummary => summaries.get(resolveChat(chat)) ?? NO_NESTED
+
+const nestedListeners = new Set<(chat: string) => void>()
+/** Runs `fn` with a chat's id (the one its records are under) each time what is known of its sub-agents changes. */
+export function onNestedChange(fn: (chat: string) => void): () => void {
+  nestedListeners.add(fn)
+  return () => nestedListeners.delete(fn)
+}
 
 /** A `subagent.*` event of this chat. */
 export function noteEvent(chat: string, type: string, payload: unknown, now = Date.now()): SubAgent {
+  chat = resolveChat(chat)
   const key = keyOfEvent((payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>)
   const a = mergeEvent(getSubAgent(chat, key), type, payload, now)
   put(chat, a)
@@ -485,6 +524,7 @@ export function noteEvent(chat: string, type: string, payload: unknown, now = Da
 
 /** The chat's items when its group is opened: a chat reloaded from the phone's cache has no records yet. */
 export function noteItems(chat: string, items: readonly SubItem[], now = Date.now()): void {
+  chat = resolveChat(chat)
   let changed = false
   for (const it of items) {
     const a = fromItem(it, now)
@@ -501,6 +541,7 @@ const FEED_GRACE_MS = 15_000
 
 /** `subagent.list` for a chat just opened: what runs now. A running one it no longer lists has ended while the page wasn't told. */
 export function noteRoster(chat: string, raw: unknown, now = Date.now()): void {
+  chat = resolveChat(chat)
   const list = Array.isArray(raw) ? raw : []
   const seen = new Set<string>()
   for (const r of list) {
@@ -554,6 +595,7 @@ export function cleanStored(raw: unknown): StoredChild[] {
 }
 
 export function noteStored(chat: string, rows: readonly StoredChild[], now = Date.now()): void {
+  chat = resolveChat(chat)
   const known = new Map(subAgentsOf(chat).flatMap(a => (a.child ? [[a.child, a] as const] : [])))
   for (const r of rows) {
     const cur = known.get(r.id)
@@ -615,34 +657,61 @@ export function setNestedFeed(next: Map<string, number>): void {
 }
 
 /** A context compression gave the chat a new stored id. */
+/** A context compression gave the chat `from` the stored id `to`. Its records go there, merged with any already there (an
+ *  event that reached the new id first): for one sub-agent the record heard of last stays. The old id leads to the new one
+ *  from now on (`resolveChat`). */
 export function moveChat(from: string, to: string): void {
+  from = resolveChat(from)
+  to = resolveChat(to)
+  if (!from || !to || from === to) return
   const m = chats.get(from)
-  if (!m || from === to) return
-  chats.delete(from)
-  chats.set(to, m)
+  if (m) {
+    chats.delete(from)
+    const into = chats.get(to) ?? new Map<string, SubAgent>()
+    for (const [k, a] of m) {
+      const cur = into.get(k)
+      into.set(k, cur && cur.seenAt >= a.seenAt ? cur : a)
+    }
+    chats.delete(to)
+    chats.set(to, into) // newest last
+  }
   const n = counts.get(from)
   if (n !== undefined) {
     counts.delete(from)
-    counts.set(to, n)
+    counts.set(to, Math.max(n, counts.get(to) ?? 0))
+  }
+  if (chosen.has(from) && !chosen.has(to)) chosen.set(to, chosen.get(from)!)
+  movedTo.set(from, to)
+  movedFrom.set(to, new Set([...(movedFrom.get(to) ?? []), from]))
+  while (movedTo.size > MAX_MOVES) {
+    const [old, next] = movedTo.entries().next().value as [string, string]
+    movedTo.delete(old)
+    movedFrom.get(next)?.delete(old)
   }
   summaries.delete(from)
-  tell(chatSubs.get(from))
+  summaries.delete(to) // worked out again below, for every id that now leads to it
+  for (const id of idsOf(to)) {
+    tell(chatSubs.get(id))
+    for (const a of chats.get(to)?.values() ?? []) tell(recordSubs.get(recordId(id, a.key)))
+  }
   chatChanged(to)
 }
 
 export function forgetChat(chat: string): void {
+  chat = resolveChat(chat)
   chats.delete(chat)
   counts.delete(chat)
   chatChanged(chat)
 }
 
-/** The sub-agent an approval comes from: the one running whose latest command is exactly the one asked about. Nothing when
- *  none or several match: then the sheet stays with fixed words rather than name the wrong one. */
+/** The sub-agent an approval may come from: the only one running in the chat, when its latest command is exactly the one
+ *  asked about. Nothing when none runs or several do (two could have run the same command): then the sheet keeps the fixed
+ *  words rather than name the wrong one. The caller also needs the feed to say a sub-agent asks (waiting.ts subAgentAsks). */
 export function askerOf(chat: string, command: unknown): SubAgent | null {
   const c = str(command)
   if (!c) return null
-  const found = subAgentsOf(chat).filter(a => isLive(a.state) && a.command === c)
-  return found.length === 1 ? found[0] : null
+  const live = subAgentsOf(chat).filter(a => isLive(a.state))
+  return live.length === 1 && live[0].command === c ? live[0] : null
 }
 
 // ── reading what Hermes stored (plugin routes; nothing on a timer) ──
@@ -652,6 +721,7 @@ const reading = new Set<string>()
 
 /** One chat's sub-agents as stored. Called when something is about to show them; one call at a time per chat. */
 export async function loadStored(chat: string, profile: string): Promise<boolean> {
+  chat = resolveChat(chat) // Hermes is asked by the newest id: it follows a compression back, not forward
   if (reading.has(chat)) return false
   reading.add(chat)
   try {
@@ -662,6 +732,17 @@ export async function loadStored(chat: string, profile: string): Promise<boolean
     return false // a plugin older than the app: rows show what the events said
   } finally {
     reading.delete(chat)
+  }
+}
+
+/** The stored chats of this chat's sub-agents, at every depth, as Hermes's own record has them now (the plugin follows each
+ *  one's parent up to the chat, across a compression). Null when it can't be told: then nothing may count as the chat's. */
+export async function storedChildIds(chat: string, profile: string): Promise<Set<string> | null> {
+  try {
+    const r = await api<{ children?: unknown }>('GET', `${NESTED_API}/nested?session=${encodeURIComponent(resolveChat(chat))}${profileQuery(profile)}`)
+    return new Set(cleanStored(r?.children).map(c => c.id))
+  } catch {
+    return null
   }
 }
 
@@ -826,6 +907,8 @@ export function resetSubAgents(): void {
   counts.clear()
   summaries.clear()
   chosen.clear()
+  movedTo.clear()
+  movedFrom.clear()
   running = []
   withAgents = new Set()
   feedKnown = false

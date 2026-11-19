@@ -40,7 +40,8 @@ import { BEAT_MS, DEADLINE_MS, beatDecision, retryBanner, retryDelayMs, retryHer
 import { createAgentBuilds } from './agentbuild'
 import { askUnlock, lockView } from './lockview'
 import type { SubagentInterruptResult, SubagentListResult, SubagentSteerResult, SubagentTailResult } from '@hermes/shared/gateway-contract.generated'
-import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, subAgentsOf, withSubItems, type SubAgent } from './subagents'
+import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, onNestedChange, storedChildIds, subAgentsOf, withSubItems, type SubAgent } from './subagents'
+import { noteArrived } from './waiting'
 import { idsReadState, isTaintedItems } from './phone-data-taint'
 import { onChatOpen, runChatOpen } from './chatopen'
 import { ctxFromStatText, stripCtxStat } from './ctxring'
@@ -472,7 +473,12 @@ function closeLater(runtimeId: string, ms = 3000): void {
 const stillWorking = (a: ActiveSession): boolean => a.running || nestedOf(a.storedId).live > 0
 
 function retire(prev: ActiveSession | null): void {
-  if (!prev || stillWorking(prev)) return // a working chat stays open, as before: it finishes and notifies
+  if (!prev) return
+  if (stillWorking(prev)) return keepWhileWorking(prev) // stays open: it finishes and notifies, then becomes a warm one
+  warmUp(prev)
+}
+
+function warmUp(prev: { storedId: string; runtimeId: string }): void {
   if (getState().active?.runtimeId === prev.runtimeId) return
   const i = warm.findIndex(w => w.storedId === prev.storedId)
   if (i >= 0) warm.splice(i, 1)
@@ -483,7 +489,33 @@ function retire(prev: ActiveSession | null): void {
 function unwarm(storedId: string): void {
   const i = warm.findIndex(w => w.storedId === storedId)
   if (i >= 0) warm.splice(i, 1)
+  unkeep(storedId)
 }
+
+// Chats left while they worked (their reply, or sub-agents after it). They are not closed then, since closing stops what
+// they started; once that has ended they join the warm ones and are closed in turn like any other.
+const KEPT_MAX = 50
+const kept: Array<{ storedId: string; runtimeId: string; running: boolean }> = []
+
+function keepWhileWorking(a: ActiveSession): void {
+  if (kept.some(k => k.runtimeId === a.runtimeId)) return
+  kept.push({ storedId: a.storedId, runtimeId: a.runtimeId, running: a.running })
+  if (kept.length > KEPT_MAX) kept.shift() // stays open as it was, no longer followed
+}
+
+function unkeep(storedId: string): void {
+  for (let i = kept.length - 1; i >= 0; i--) if (kept[i].storedId === storedId) kept.splice(i, 1)
+}
+
+/** Kept chats whose work has ended become warm ones. */
+function releaseKept(): void {
+  for (const k of [...kept]) {
+    if (k.running || nestedOf(k.storedId).live > 0) continue
+    kept.splice(kept.indexOf(k), 1)
+    warmUp(k)
+  }
+}
+onNestedChange(() => releaseKept())
 
 function keepPreview(a: ActiveSession | null): void {
   if (a) rememberChat(a.profile, a.storedId, a.title, a.items)
@@ -672,7 +704,11 @@ export async function deleteSession(storedId: string): Promise<void> {
   const keep = (getState().active?.attachments ?? []).map(a => (a.path || a.ref || '').split('/').pop() || '').filter(Boolean)
   // Hermes refuses to delete a chat that still has a live session (error 4023): close ours first.
   const open = getState().active
-  const live = [...(open && open.storedId === storedId ? [open.runtimeId] : []), ...warm.filter(w => w.storedId === storedId).map(w => w.runtimeId)]
+  const live = [
+    ...(open && open.storedId === storedId ? [open.runtimeId] : []),
+    ...warm.filter(w => w.storedId === storedId).map(w => w.runtimeId),
+    ...kept.filter(k => k.storedId === storedId).map(k => k.runtimeId) // kept open for its sub-agents
+  ]
   unwarm(storedId)
   forgetChat(getState().profile, storedId)
   for (const id of live) {
@@ -1152,6 +1188,7 @@ export async function interrupt(): Promise<void> {
   } catch (err) {
     toast(errText(err), 'error')
   }
+  if (nestedOf(a.storedId).live > 0) void syncSubAgents().catch(() => {}) // what is still running, now
 }
 
 // ── sub-agents (subagents.ts, components/SubAgents.tsx) ──
@@ -1169,6 +1206,7 @@ export async function steerSubAgent(runtimeId: string, id: string, text: string)
 export async function stopSubAgent(runtimeId: string, id: string): Promise<boolean> {
   if (lockView()) return false
   const r = await rpc<SubagentInterruptResult>('subagent.interrupt', { session_id: runtimeId, subagent_id: id })
+  if (getState().active?.runtimeId === runtimeId) void syncSubAgents().catch(() => {}) // what is still running, now
   return r?.found === true
 }
 
@@ -1189,6 +1227,10 @@ export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'chil
     ids.push(from?.child)
     up = from
   }
+  // Hermes's own record decides that this sub-agent belongs to this chat (its stored chat descends from it): what the page
+  // filed under the chat could be another chat's, and the checks above and the access below would then be the wrong chat's.
+  const mine = await storedChildIds(chat, getState().profile)
+  if (!mine?.has(agent.child)) throw new Error('This can’t continue in a new chat: it couldn’t be confirmed that this sub-agent belongs to this chat.')
   if (agent.phoneData || isTaintedItems(here?.items) || idsReadState(ids) !== 'clear') throw new Error('This can’t continue in a new chat: phone data may be involved')
   const parentAccess = here ? accessOf(here) : rememberedAccess(chat)
   const opened = await rpc<SessionResumeResult>('session.resume', { session_id: agent.child }, 60_000)
@@ -1413,6 +1455,7 @@ export function errText(err: unknown): string {
 
 client.onRequest((req: ServerRequest) => {
   if (!SERVER_REQUESTS.has(req.method)) return false
+  noteArrived(req.id, Date.now() / 1000) // who asks is named only from a feed entry this new (waiting.ts)
   setState(s => ({ requests: [...s.requests.filter(r => r.id !== req.id), req] }))
   if (req.method === 'approval' && liveBridge.active) liveBridge.onApproval(req)
   // Approvals and questions are notified by the hermes-mobile plugin on the phone (works while
@@ -1645,6 +1688,14 @@ client.onEvent((ev: GatewayEvent) => {
     // Another chat (one you left while it worked) renamed itself or finished: refresh the drawer's counts,
     // which is what marks it unread.
     if (type === 'session.title' || type === 'message.complete') loadSessionsSoon()
+    // A chat kept open while its reply ran: that reply has ended.
+    if (type === 'message.complete') {
+      const k = kept.find(x => x.runtimeId === ev.session_id)
+      if (k) {
+        k.running = false
+        releaseKept()
+      }
+    }
     // Its sub-agents go on: their rows in the chat list follow.
     if (type.startsWith('subagent.') && ev.session_id) {
       const chat = chatOfRuntime.get(ev.session_id) || warm.find(w => w.runtimeId === ev.session_id)?.storedId
