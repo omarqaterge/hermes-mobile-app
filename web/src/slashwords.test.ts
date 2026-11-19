@@ -23,8 +23,8 @@ describe('reading a command as Hermes does', () => {
 
 describe('commands that start work apart from the chat', () => {
   it('finds a background task, however it is spelled', () => {
-    for (const n of ['bg', 'BG', 'bac', 'backg', 'background']) expect(detachedWork(n, 'x')).toBe('a background task')
-    for (const n of ['b', 'ba', 'bgx', 'box', 'btw', 'help']) expect(detachedWork(n, 'x')).toBeNull() // /b is ambiguous, /ba is /battery
+    for (const n of ['bg', 'BG', 'background']) expect(detachedWork(n, 'x')).toBe('a background task')
+    for (const n of ['b', 'ba', 'bac', 'backg', 'bgx', 'box', 'btw', 'help']) expect(detachedWork(n, 'x')).toBeNull() // none of these starts one
   })
   it('finds what schedules a prompt, and leaves the rest of /cron alone', () => {
     for (const a of ['add "every 1h" hi', 'ADD x', '"add" x', 'cre"ate" x', 'edit id --prompt y']) expect(detachedWork('cron', a)).toBe('a scheduled job')

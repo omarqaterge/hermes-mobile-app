@@ -1,7 +1,7 @@
 // How Hermes reads a slash command, so the app judges the same word Hermes will run. Hermes takes
 // `cmd.strip().lstrip('/').split(maxsplit=1)`, and Python's split() also breaks on separators a JavaScript `\s` doesn't
-// know (U+001C to U+001F, U+0085), while `\s` knows one Python doesn't (U+FEFF). Its worker then expands a unique beginning
-// of a command name.
+// know (U+001C to U+001F, U+0085), while `\s` knows one Python doesn't (U+FEFF). Its worker then expands the beginning of
+// some command names (seen on the pinned build: /cr, /k and /bl do, /b and /bac don't start a background task).
 
 const SPACES = new Set([9, 10, 11, 12, 13, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000])
 for (let c = 0x2000; c <= 0x200a; c++) SPACES.add(c)
@@ -52,7 +52,7 @@ function subcommand(words: string[]): string {
 export function detachedWork(typedName: string, arg: string): string | null {
   const name = typedName.toLowerCase()
   const words = shellWords(arg)
-  if (name === 'bg' || names(name, 'background', 3)) return 'a background task'
+  if (name === 'bg' || name === 'background') return 'a background task' // Hermes expands neither from a beginning
   if (names(name, 'cron', 2) && ['add', 'create', 'edit'].includes(words[0]?.toLowerCase() ?? '')) return 'a scheduled job'
   if (names(name, 'kanban', 1) && ['create', 'dispatch', 'daemon'].includes(subcommand(words))) return 'a board task'
   if (names(name, 'blueprint', 2) && words.slice(1).some(w => w.includes('='))) return 'an automation'
