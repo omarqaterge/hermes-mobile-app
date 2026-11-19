@@ -11,7 +11,8 @@ import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { noteLineage, noteListRow } from './lineage'
 import { chatReadState } from './phone-data-taint'
-import { detachedRefusal, detachedWork, hermesWords } from './slashwords'
+import { detachedRefusal, detachedWork, hermesWords, lockSafeCommand, loosensApprovals } from './slashwords'
+import { confirmLooseApprovals } from './access-confirm'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -740,17 +741,23 @@ export async function sendPrompt(text: string): Promise<boolean> {
   rememberPrompt(trimmed)
   const a = await targetChat()
 
+  // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first. A slash
+  // command needs one unless it only shows something (lockSafeCommand, in a chat with access off), whatever its spelling:
+  // an unknown name, a beginning Hermes would expand and a quick command all wait. /yolo stays: there it can only turn
+  // access off (setYolo, setAccess). Hermes's prompt.submit runs no slash command, so text that isn't one only talks.
+  const isSlash = trimmed.startsWith('/')
+  if (lockView()) {
+    const { name, arg } = hermesWords(trimmed)
+    const ok = isSlash ? name.toLowerCase() === 'yolo' || (accessOf(a) === 'off' && lockSafeCommand(name, arg)) : accessOf(a) === 'off'
+    if (!ok) {
+      askUnlock(isSlash ? 'Unlock the phone to run this command' : 'Unlock the phone to use this chat')
+      throw new Error(isSlash ? 'Unlock the phone to run this command' : 'Unlock the phone to use this chat')
+    }
+  }
   const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(trimmed)
   if (btw) {
     openBtw(btw[1] || '')
     return true
-  }
-  // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first, for a
-  // slash command too. /yolo stays: there it can only turn access off (setYolo, setAccess).
-  const isSlash = trimmed.startsWith('/')
-  if (lockView() && accessOf(a) !== 'off' && !(isSlash && hermesWords(trimmed).name.toLowerCase() === 'yolo')) {
-    askUnlock('Unlock the phone to use this chat')
-    throw new Error('Unlock the phone to use this chat')
   }
   if (isSlash) {
     await runSlash(a, trimmed)
@@ -1017,21 +1024,24 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
     return
   }
-  // A command that hands text to an agent running apart from this chat, where nobody can be asked. Over the lock screen it
-  // waits for an unlock. In a chat that has read phone data, or when the app's record can't say, it isn't sent: the plugin
+  // A command that hands text to an agent running apart from this chat, where nobody can be asked, or changes a board other
+  // agents work from. In a chat that has read phone data, or when the app's record can't say, it isn't sent: the plugin
   // blocks such a task's sends anyway, this says why at once. Checked at every alias depth.
   const work = detachedWork(name, arg)
   if (work) {
-    if (lockView()) {
-      askUnlock('Unlock the phone to start this')
-      pushItem({ kind: 'notice', id: newId('n'), text: `Unlock the phone to start ${work}.`, level: 'warn' })
-      return
-    }
     const read = chatReadState(a)
     if (read !== 'clear') {
       pushItem({ kind: 'notice', id: newId('n'), text: detachedRefusal(work, read), level: 'warn' })
       return
     }
+  }
+  // Approvals off, or left to a model, lets every chat of the bot run commands without asking: the same confirmation as
+  // Full access, at every alias depth. Only a command the page can see is caught; a quick command the worker resolves
+  // itself isn't (the user wrote it into config.yaml).
+  const loosen = loosensApprovals(name, arg)
+  if (loosen && !(await confirmLooseApprovals(loosen))) {
+    pushItem({ kind: 'notice', id: newId('n'), text: 'Approvals not changed.', level: 'info' })
+    return
   }
   if (name.toLowerCase() === 'yolo') {
     const w = arg.toLowerCase()

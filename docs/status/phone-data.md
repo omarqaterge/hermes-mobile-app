@@ -134,3 +134,24 @@ Run against the pinned Hermes (b8a8be18) with a fake model; no phone.
 - **Worker commands that hand typed text to a new agent, refused in such a chat:** `/bg`, `/background`, `/cron add|create|edit`, `/kanban create|dispatch|daemon`, `/blueprint <name> slot=value`. **Looked at and left alone:** commands Hermes routes to the chat's own agent (`/goal`, `/loop`, `/plan`, `/queue`, `/steer`, `/retry`, `/undo`, `/compress`, `/learn`, `/init`, `/moa`, `/proactive`), `/review` (a sub-agent of the chat), `/cron list|run|pause|resume|remove`, `/suggestions` and `/curator` (no typed text), quick commands of type `exec` (the owner's own shell lines).
 - **Not closed:** the agent can read Hermes's `state.db` with file or shell tools, which no rule sees. Needs a phone: `docs/manual-tests.md`.
 
+## Security re-check of PR 206 (2026-11-19, second round)
+
+Run against the pinned Hermes (b8a8be18) and in a desktop browser with the mock; no phone. Tests and checks ran in a
+temporary `HOME` and `HERMES_HOME`; `tools/test_phone_taint.py` now sets its own and fails if a plugin path is outside it.
+
+- **Lock screen:** slash text did reach `sendPrompt` there (the composer and Live mode's transcript; the browser checks type
+  it into the composer). Now only commands that show something run there (`lockSafeCommand`); everything else, `/approvals
+  off`, `/cron run`/`remove`, `/rollback`, quick commands and aliases included, asks for an unlock. Unlocked, `/approvals
+  off` and `smart` ask with the Full access dialog.
+- **Background tasks of a chat that has read:** the terminal runs only commands known to read; `phone_app`, `execute_code`
+  and writes into Hermes's folders are blocked there. `rish`, `hermes` and Hermes's modules count as sending in every chat
+  that has read.
+- **`/kanban`:** only subcommands that read are allowed in such a chat, read as Hermes reads them (`--`, `--board`); `/bp`
+  counts as `/blueprint`.
+- **Reading other chats:** every chat a result names is checked (not 50 of them); a branch is looked up in the profile that
+  found it; `session_search`'s browse mode and failed results mark nobody; a branch made before its parent read stays
+  unmarked (the record now keeps when each chat first read, `since`).
+- **Not closed:** a quick command that Hermes's worker resolves itself is not seen by the page, so `/approvals off` reached
+  that way doesn't ask (the user wrote it into `config.yaml`); over the lock screen it waits for an unlock like any unknown
+  command. A background task's `canvas` and `phone_data` calls are not restricted further.
+

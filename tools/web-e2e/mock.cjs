@@ -1356,8 +1356,8 @@ wss.on('connection', ws => {
         const cmd = params.command || ''
         if (/^(bg|bgalias)\b/.test(cmd)) return reply({ output: 'Background task #1 started' })
         if (/^contractalias\b/.test(cmd)) return reply({ output: 'Commands' })
-        // These two stand for a worker that failed: only then does the page ask command.dispatch, which names the target.
-        if (/^(evilalias\d|bgdown)\b/.test(cmd)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5030, message: 'slash worker failed' } }))
+        // These stand for a worker that failed: only then does the page ask command.dispatch, which names the target.
+        if (/^(evilalias\d|bgdown|apdown)\b/.test(cmd)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5030, message: 'slash worker failed' } }))
         return reply({})
       }
       case 'command.dispatch': {
@@ -1367,6 +1367,7 @@ wss.on('connection', ws => {
         const targets = [' /yolo on', '//yolo on', '/YOLO on', '  //  /yolo', 'yolo on', ' /yolo']
         if (evil) return reply({ type: 'alias', target: targets[Number(evil[1])] })
         if (name === 'bgdown' || name === 'bgalias') return reply({ type: 'alias', target: '/bg' })
+        if (name === 'apdown') return reply({ type: 'alias', target: '/approvals off' })
         if (name === 'contractalias') return reply({ type: 'alias', target: '/help' })
         return reply({})
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detachedRefusal, detachedWork, hermesWords } from './slashwords'
+import { detachedRefusal, detachedWork, hermesShlex, hermesWords, kanbanReadOnly, lockSafeCommand, loosensApprovals } from './slashwords'
 
 const ch = (...codes: number[]) => String.fromCharCode(...codes)
 
@@ -32,13 +32,57 @@ describe('commands that start work apart from the chat', () => {
     for (const a of ['', 'list', 'run id', 'pause id', 'remove id', 'resume id']) expect(detachedWork('cron', a)).toBeNull()
     expect(detachedWork('c', 'add x')).toBeNull()
   })
-  it('finds board tasks and automations with values', () => {
-    expect(detachedWork('kanban', 'create "do it"')).toBe('a board task')
-    expect(detachedWork('kanban', '--board main dispatch')).toBe('a board task')
-    expect(detachedWork('k', 'daemon')).toBe('a board task')
-    for (const a of ['', 'list', 'show t1', 'comment t1 create']) expect(detachedWork('kanban', a)).toBeNull()
+  it('finds every /kanban command that changes a board or starts work, and automations with values', () => {
+    for (const a of ['create "do it"', '--board main dispatch', 'swarm x', '-- create x', '--board b -- dispatch', 'specify t1', 'decompose --all', 'comment t1 hi', 'boards create x', 'archive t1'])
+      expect(detachedWork('kanban', a)).toBe('a board command')
+    expect(detachedWork('k', 'daemon')).toBe('a board command')
+    for (const a of ['', 'list', 'show t1', '--board b list']) expect(detachedWork('kanban', a)).toBeNull()
     expect(detachedWork('blueprint', 'daily topic=x')).toBe('an automation')
-    for (const a of ['', 'daily']) expect(detachedWork('blueprint', a)).toBeNull()
+    expect(detachedWork('bp', 'daily topic=x')).toBe('an automation')
+    expect(detachedWork('BP', 'daily topic=x')).toBe('an automation')
+    for (const a of ['', 'daily']) for (const n of ['blueprint', 'bp']) expect(detachedWork(n, a)).toBeNull()
+  })
+})
+
+// The answers of the pinned Hermes: Python's shlex.split and its kanban parser, run on the same text.
+describe('/kanban arguments as Hermes reads them', () => {
+  it('splits like shlex.split, then drops a wrapping pair of quotes', () => {
+    const cases: Array<[string, string[] | null]> = [
+      ['', []], ['ls --mine', ['ls', '--mine']], ['create "do it"', ['create', 'do it']], ["'list'", ['list']], ['"list" x', ['list', 'x']],
+      ['li"st"', ['list']], ["list 'unterminated", null], ['list \\', null], ['a\\ b', ['a b']], ['"a\\"b"', ['a"b']], ["'a\\b'", ['a\\b']],
+      ['x\u3000y', ['x\u3000y']], [`"'list'"`, ['list']]
+    ]
+    for (const [text, want] of cases) expect(hermesShlex(text), text).toEqual(want)
+  })
+  it('only reads for its help and the subcommands that show something', () => {
+    const read = ['', 'help', '?', '-h', '--he', 'list', 'ls --mine', 'show t1 --json', '--board b list', '--board=b ls', '--boa b ls', '--b b show x',
+      '-- list', '--board b -- show t1', `"'list'"`, 'stats', 'log t1', 'runs t1', 'context t1', 'assignees', 'notify-list', 'diag', 'boards', 'boards list', 'boards current', "'list'", 'li"st"']
+    for (const a of read) expect(kanbanReadOnly(a), a).toBe(true)
+    const change = ['-- create x', '--board b -- dispatch', 'swarm x', 'specify x', 'decompose --all', 'comment t1 hi', 'create "do it"',
+      'boards create x', 'create -h', 'watch', 'tail t1', 'dispatch --dry-run', '--board', '--board -x list', '--other list', 'LIST',
+      "list 'unterminated", 'list \\', 'archive t1', 'gc', 'repair']
+    for (const a of change) expect(kanbanReadOnly(a), a).toBe(false)
+  })
+})
+
+describe('over the lock screen', () => {
+  it('runs only commands that show something, by their exact names', () => {
+    for (const [n, a] of [['help', ''], ['help', 'kanban'], ['status', ''], ['STATUS', ''], ['version', ''], ['v', ''], ['whoami', ''], ['agents', ''],
+      ['tasks', ''], ['usage', ''], ['context', ''], ['ctx', 'all'], ['kanban', 'list'], ['kanban', '']] as const)
+      expect(lockSafeCommand(n, a), `${n} ${a}`).toBe(true)
+    for (const [n, a] of [['approvals', 'off'], ['approvals', ''], ['cron', 'run x'], ['cron', 'remove x'], ['cron', 'list'], ['rollback', '1'],
+      ['usage', 'reset'], ['status', 'x'], ['stat', ''], ['he', ''], ['k', 'list'], ['kanban', 'create x'], ['kanban', '-- create x'],
+      ['yolo', ''], ['btw', 'hi'], ['bg', 'x'], ['myquick', ''], ['model', ''], ['new', ''], ['context', 'x']] as const)
+      expect(lockSafeCommand(n, a), `${n} ${a}`).toBe(false)
+  })
+})
+
+describe('/approvals that let commands run without asking', () => {
+  it('finds off and smart, by every beginning Hermes expands to /approvals', () => {
+    for (const n of ['approvals', 'APPROVALS', 'ap', 'app', 'appr', 'approv', 'approva', 'approval'])
+      for (const a of ['off', 'OFF', 'smart', 'Smart']) expect(loosensApprovals(n, a), `${n} ${a}`).toBe(a.toLowerCase())
+    for (const [n, a] of [['approvals', 'manual'], ['approvals', ''], ['approvals', 'off now'], ['a', 'off'], ['approve', 'off'], ['approvalsx', 'off'], ['yolo', 'off']] as const)
+      expect(loosensApprovals(n, a), `${n} ${a}`).toBeNull()
   })
 })
 
