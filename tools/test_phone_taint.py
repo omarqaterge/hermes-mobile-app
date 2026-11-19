@@ -15,8 +15,14 @@ from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUG = os.path.join(HERE, "..", "hermes-plugin", "hermes-mobile")
+# A home of its own, set before the plugin is imported: its paths are computed at import (phone_taint.PATH, the activity file,
+# the state database), and the machine running the test may have a real Hermes whose HERMES_HOME and HERMES_* variables
+# would otherwise be used. Nothing outside `tmp` is read or written.
 tmp = Path(tempfile.mkdtemp())
+for _k in [k for k in os.environ if k.startswith("HERMES")]:
+    del os.environ[_k]
 os.environ["HOME"] = str(tmp)
+os.environ["HERMES_HOME"] = str(tmp / ".hermes")
 
 
 def load(name, fn):
@@ -28,6 +34,7 @@ def load(name, fn):
 
 
 pt = load("hm_phone_taint", "phone_taint.py")
+_PATH_AT_IMPORT = pt.PATH
 pt.PATH = tmp / "mobile" / "phone-read.json"
 init = load("hm_init", "__init__.py")
 fails = 0
@@ -55,6 +62,27 @@ def asks(tool, args, chat="c1"):
 def hook(tool, args, chat):
     return init._on_pre_tool_call(tool_name=tool, args=args, session_id=chat, turn_id="t", task_id="", tool_call_id="1")
 
+
+print("the test's own home")
+_pd_paths = load("hm_phone_data_paths", "phone_data.py")
+
+
+def _inside(p) -> bool:
+    try:
+        return Path(os.path.realpath(p)).is_relative_to(Path(os.path.realpath(tmp)))
+    except Exception:
+        return False
+
+
+_used = {"phone_taint.PATH": _PATH_AT_IMPORT, "__init__._READ_FILE": init._READ_FILE, "__init__.ACTIVITY_FILE": init.ACTIVITY_FILE,
+         "HOME": os.path.expanduser("~"), "HERMES_HOME": os.environ.get("HERMES_HOME", "")}
+try:
+    _used["phone_data._state_db()"] = _pd_paths._state_db()   # needs Hermes's hermes_constants; absent here is fine
+except ImportError:
+    pass
+_outside = {k: str(v) for k, v in _used.items() if not _inside(v)}
+check("every path the plugin uses resolves inside the temporary home", not _outside, _outside)
+check("no HERMES_* variable from the machine is left", sorted(k for k in os.environ if k.startswith("HERMES")) == ["HERMES_HOME"])
 
 print("commands that can send data out ask in a chat that has read")
 reset()
