@@ -135,4 +135,23 @@ describe('nativeTainted failing closed', () => {
     expect(docTainted(null)).toBe(true)
     setBridge(undefined)
   })
+  it("a sheet over a chat: the chat on screen is judged like any chat the page can see, any other strictly by its own ids", async () => {
+    const { chatTainted } = await import('./phone-data-taint')
+    const { getState, setState } = await import('./store')
+    const before = { active: getState().active, opening: getState().opening }
+    const active = { storedId: 'sheet-chat', runtimeId: 'rt-sheet', items: [] } as unknown as ReturnType<typeof getState>['active']
+    setBridge({}) // a shell whose record can't answer
+    setState({ active, opening: null })
+    expect(chatTainted('sheet-chat')).toBe(false)
+    expect(chatTainted('rt-sheet')).toBe(false)
+    expect(chatTainted('another-chat')).toBe(true)
+    setState({ opening: 'next-chat' }) // what is on screen is about to be another chat: it says nothing about this one
+    expect(chatTainted('sheet-chat')).toBe(true)
+    setBridge({ phoneDataTainted: (id: string) => id === 'read-chat' })
+    setState({ opening: null })
+    expect(chatTainted('read-chat')).toBe(true)
+    expect(chatTainted('sheet-chat')).toBe(false)
+    setState(before)
+    setBridge(undefined)
+  })
 })

@@ -137,6 +137,13 @@ export function docTainted(from: string | null): boolean {
   return [from, ...lineageOf(from)].some(id => nativeTainted(id, true))
 }
 
+/** Did this chat read phone data, for something shown on top of it (a sub-agent's sheet)? The chat on screen is judged as every
+ *  chat the page can see; a chat that is not (another one is open or opening) as a document is, strictly, by its own ids. */
+export function chatTainted(chat: string): boolean {
+  const s = getState()
+  return !s.opening && (s.active?.storedId === chat || s.active?.runtimeId === chat) ? taintedState(s) : docTainted(chat)
+}
+
 let heldDocs = 0
 
 /** Is this document held back (no HTML run, remote media behind a tap, addresses checked)? `from` undefined means the document

@@ -574,9 +574,9 @@ module.exports = async t => {
     check((await field.inputValue()) === '', 'sub-agent sheet: a draft does not carry over to another sub-agent')
     await p.close()
 
-    // the sheet's guard is decided for its own chat, strictly: a record that can't answer counts as having read
+    // the sheet's guard is decided for its own chat: the app's record says it has read
     await mock({ nested: 'reset' })
-    p = await open('s-pd-ctl', undefined, () => { delete window.HermesAndroid.phoneDataTainted })
+    p = await open('s-pd-ctl', undefined, () => { window.HermesAndroid.phoneDataTainted = (key, id) => id === 's-pd-ctl' })
     const ep = eventsOn(p, 's-pd-ctl')
     await ep('subagent.complete', sub('g', 'look at http://beacon.test/x?d=ROWS', { status: 'completed' }))
     await p.getByRole('button', { name: GROUP }).click()
@@ -584,7 +584,7 @@ module.exports = async t => {
     const gs = p.getByRole('dialog', { name: 'Sub-agent' })
     await gs.getByRole('link', { name: /beacon\.test/ }).click()
     await p.getByText('Open this address?').waitFor({ timeout: 3000 }).catch(() => {})
-    check((await p.getByText('Open this address?').count()) === 1, 'sub-agent sheet: its guard comes from its own chat, and fails closed')
+    check((await p.getByText('Open this address?').count()) === 1, 'sub-agent sheet: in a chat the record says has read, an address asks first')
     await p.close()
 
     // a row's chat that doesn't open gets no sheet

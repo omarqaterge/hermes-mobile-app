@@ -10,7 +10,7 @@ import { continueSubAgent, errText, resumeSession, steerSubAgent, stopSubAgent, 
 import { askUnlock, lockView } from '../lockview'
 import { useLockView } from '../needsyou'
 import { useSidePanel } from '../sidepanel'
-import { GuardCtx, docTainted, idsReadState, isTaintedNow } from '../phone-data-taint'
+import { GuardCtx, chatTainted, idsReadState, isTaintedNow } from '../phone-data-taint'
 import { openSettingsOn } from '../settings-open'
 import { getState, setState, toast, useStore } from '../store'
 import {
@@ -512,7 +512,7 @@ function SheetBody({
       dead = true
     }
   }, [a?.child, live])
-  const guarded = useStore(() => docTainted(chat)) // the sheet's own chat decides, whatever is on screen behind it
+  const guarded = useStore(() => chatTainted(chat)) // the sheet's own chat decides, whatever is on screen behind it
   const [refused, setRefused] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
