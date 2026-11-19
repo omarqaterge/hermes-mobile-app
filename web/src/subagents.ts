@@ -56,6 +56,8 @@ export interface SubAgent {
   secs: number
   accepting: boolean
   phoneData: boolean
+  /** Known only from the stored chats, which record no end yet: the list may show it as running while the feed counts some. */
+  noEndStored?: boolean
   seenAt: number
   order: number
 }
@@ -65,6 +67,7 @@ const STEP_MAX = 200
 const COMMAND_MAX = 20_000
 const SUMMARY_MAX = 20_000
 export const QUOTED_MAX = 60
+const APPROVING_TOOL = 'terminal'
 const MAX_CHATS = 40
 const MAX_PER_CHAT = 200
 
@@ -83,10 +86,17 @@ export function plainLine(v: unknown, max = GOAL_MAX): string {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t
 }
 
-/** A goal as it may stand beside the app's own words: short, one line, in quotation marks it can't close itself. */
+const NOT_SHOWN = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu
+const TOO_MANY_MARKS = /(\p{M}{2})\p{M}+/gu
+// Every kind of quotation mark, so the text can't seem to close the one the app puts around it.
+const QUOTE_LIKE = new RegExp(`[\\p{Pi}\\p{Pf}"'\`${String.fromCodePoint(0xb4, 0x2b9, 0x2ba, 0x2bb, 0x2bc, 0x2bd, 0x2c8, 0x2ca, 0x2cb, 0x2032, 0x2033, 0x201a, 0x201e, 0x275b, 0x275c, 0x275d, 0x275e, 0x301d, 0x301e, 0x301f, 0xff02, 0xff07, 0xff40, 0x300c, 0x300d, 0x300e, 0x300f, 0xfe41, 0xfe42, 0xfe43, 0xfe44, 0xff62, 0xff63)}]`, 'gu')
+
+/** A goal as it may stand beside the app's own words: one short line in quotation marks it can't close itself, with nothing
+ *  invisible in it and no pile of combining marks. Counted in characters, so a cut never splits one. Show it inside <bdi>. */
 export function quotedGoal(goal: unknown): string {
-  const t = plainLine(goal, GOAL_MAX).replace(/["“”„‟«»]/g, "'")
-  return `“${t.length > QUOTED_MAX ? `${t.slice(0, QUOTED_MAX - 1).trimEnd()}…` : t}”`
+  const t = plainLine(str(goal).replace(NOT_SHOWN, ''), GOAL_MAX).replace(TOO_MANY_MARKS, '$1').replace(QUOTE_LIKE, "'").trim()
+  const chars = Array.from(t)
+  return `“${chars.length > QUOTED_MAX ? `${chars.slice(0, QUOTED_MAX - 1).join('').trimEnd()}…` : t}”`
 }
 
 export function stateOf(status: unknown, finished: boolean): SubState {
@@ -120,23 +130,28 @@ export function stateOf(status: unknown, finished: boolean): SubState {
 export const isLive = (s: SubState): boolean => s === 'waiting' || s === 'working'
 export const wentWrong = (s: SubState): boolean => s === 'failed' || s === 'timeout'
 
-const EFFORT_WORD: Record<string, string> = {
-  none: 'Off',
-  minimal: 'Minimal',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra high',
-  max: 'Max',
-  ultra: 'Ultra'
-}
+// Maps, not objects: these are looked up with values from outside, and `__proto__` is a key of every object.
+const EFFORT_WORD = new Map([
+  ['none', 'Off'],
+  ['minimal', 'Minimal'],
+  ['low', 'Low'],
+  ['medium', 'Medium'],
+  ['high', 'High'],
+  ['xhigh', 'Extra high'],
+  ['max', 'Max'],
+  ['ultra', 'Ultra']
+])
 const MODEL_SHOWN = 18
-const EFFORT_SHORT: Record<string, string> = { medium: 'med', minimal: 'min', none: 'off' }
+const EFFORT_SHORT = new Map([
+  ['medium', 'med'],
+  ['minimal', 'min'],
+  ['none', 'off']
+])
 
 /** The level in words; undefined while it isn't known. */
 export function effortWord(e: string | undefined): string | undefined {
   if (e === undefined) return undefined
-  return e === '' ? 'Model default' : EFFORT_WORD[e]
+  return e === '' ? 'Model default' : EFFORT_WORD.get(e)
 }
 
 /** The text after the last `/`, as the composer's model chip shows it. */
@@ -144,7 +159,7 @@ export const modelShort = (m: string): string => m.slice(m.lastIndexOf('/') + 1)
 
 /** "haiku · low"; the level is left out until it is known. */
 export function runsOn(a: Pick<SubAgent, 'model' | 'effort'>, shown = MODEL_SHOWN): string {
-  const level = a.effort ? EFFORT_SHORT[a.effort] ?? (EFFORT_WORD[a.effort] ? a.effort : '') : ''
+  const level = a.effort ? EFFORT_SHORT.get(a.effort) ?? (EFFORT_WORD.has(a.effort) ? a.effort : '') : ''
   const m = modelShort(a.model)
   // A long name gives way first, so the level stays readable on a narrow row.
   return [level && m.length > shown ? `${m.slice(0, shown - 1)}…` : m, level].filter(Boolean).join(' · ')
@@ -154,7 +169,7 @@ export function runsOn(a: Pick<SubAgent, 'model' | 'effort'>, shown = MODEL_SHOW
 export function followsChat(effort: string | undefined, configured: unknown, chatEffort: string | undefined): boolean {
   if (effort === undefined || !chatEffort) return false
   const set = configured === false ? 'none' : str(configured).trim().toLowerCase()
-  return !(set === 'none' || set in EFFORT_WORD) && effort === chatEffort
+  return !(set === 'none' || EFFORT_WORD.has(set)) && effort === chatEffort
 }
 
 export function shortTime(secs: number): string {
@@ -193,6 +208,9 @@ export function mergeEvent(prev: SubAgent | undefined, type: string, raw: unknow
   const id = plainLine(p.subagent_id, 120)
   const tool = plainLine(p.tool_name, 80)
   const preview = str(p.tool_preview) || (type === 'subagent.tool' ? str(p.text) : '')
+  // Only `terminal` raises an approval whose text is its preview, and Hermes reports no end of a tool: the next thing the
+  // sub-agent reports means the command is over. A list of who runs says nothing about that.
+  const command = type === 'subagent.tool' && tool === APPROVING_TOOL ? preview.slice(0, COMMAND_MAX) : type === 'subagent.list' || type === 'subagent.start' ? prev?.command ?? '' : ''
   const state = finished || p.status != null ? stateOf(p.status, finished) : prev?.state ?? 'working'
   return {
     key: prev?.key ?? keyOfEvent(p),
@@ -206,7 +224,7 @@ export function mergeEvent(prev: SubAgent | undefined, type: string, raw: unknow
     ...(prev?.effort !== undefined ? { effort: prev.effort } : {}),
     state,
     step: type === 'subagent.tool' ? plainLine(preview || tool, STEP_MAX) : prev?.step ?? '',
-    command: type === 'subagent.tool' ? preview.slice(0, COMMAND_MAX) : prev?.command ?? '',
+    command,
     tools: count(p.tool_count) || prev?.tools || 0,
     steps: count(p.api_calls) || prev?.steps || 0,
     tokensIn: count(p.input_tokens) || prev?.tokensIn || 0,
@@ -265,7 +283,8 @@ function fromItem(it: SubItem, at: number): SubAgent {
     depth: Math.min(count(it.depth), 8),
     goal: plainLine(it.goal),
     model: plainLine(it.model, 160),
-    state: stateOf(it.status, false),
+    // A saved item is old news: whether it still runs is for Hermes to say (`subagent.*`, `subagent.list`).
+    state: isLive(stateOf(it.status, false)) ? 'ended' : stateOf(it.status, false),
     step: '',
     command: '',
     tools: count(it.tools),
@@ -393,7 +412,18 @@ export function firstRows<T extends { agent: Pick<SubAgent, 'state'> }>(rows: re
 
 /** A chat reopened from Hermes has its `delegate_task` calls but no sub-agent items: each known sub-agent goes back after
  *  the call that names its goal. One no call names stays out of the chat (it still has its row in the chat list). */
-export function withSubItems(items: ChatItem[], list: readonly SubAgent[]): ChatItem[] {
+export function withSubItems(original: ChatItem[], list: readonly SubAgent[]): ChatItem[] {
+  let items = original
+  // Items already there follow their records, so one whose end the page missed stops showing as running.
+  const records = new Map(list.map(a => [a.key, a]))
+  let changed = false
+  items = items.map(it => {
+    const a = it.kind === 'subagent' ? records.get(itemKey(it)) : undefined
+    if (it.kind !== 'subagent' || !a || !itemChanged(it, a)) return it
+    changed = true
+    return { ...it, ...itemFields(a) }
+  })
+  const updated = items
   const have = new Set(items.flatMap(i => (i.kind === 'subagent' ? [itemKey(i)] : [])))
   const add = new Map<number, SubItem[]>()
   const byKey = new Map(list.map(a => [a.key, a]))
@@ -417,7 +447,7 @@ export function withSubItems(items: ChatItem[], list: readonly SubAgent[]): Chat
     if (at < 0) continue
     add.set(at, [...(add.get(at) ?? []), { kind: 'subagent', id: `sub-${a.key}`, ...itemFields(a) }])
   }
-  if (!add.size) return items
+  if (!add.size) return changed ? updated : original
   return items.flatMap((it, i) => [it, ...(add.get(i) ?? [])])
 }
 
@@ -425,10 +455,13 @@ export function withSubItems(items: ChatItem[], list: readonly SubAgent[]): Chat
 export interface NestedSummary {
   keys: string[]
   total: number
+  /** How many the chat list may show as running: the feed's count, a hint that an edited file can change. */
   running: number
+  /** How many Hermes has told this page run: what the composer's Stop and keeping the chat open go by. */
+  live: number
   failed: number
 }
-const NO_NESTED: NestedSummary = { keys: [], total: 0, running: 0, failed: 0 }
+const NO_NESTED: NestedSummary = { keys: [], total: 0, running: 0, live: 0, failed: 0 }
 
 const chats = new Map<string, Map<string, SubAgent>>()
 const feed = new Map<string, number>()
@@ -445,19 +478,30 @@ let withAgents: ReadonlySet<string> = new Set()
 const recordId = (chat: string, key: string) => `${chat}\n${key}`
 const tell = (set: Set<() => void> | undefined) => set?.forEach(f => f())
 
-function computeSummary(chat: string): NestedSummary {
+function computeSummary(chat: string, now = Date.now()): NestedSummary {
   const m = chats.get(chat)
   const list = m ? [...m.values()] : []
-  const live = list.filter(a => isLive(a.state)).length
+  const running = list.filter(a => isLive(a.state))
+  // For the list: what the feed counts, and what was heard of a moment ago, which the feed may not have reached yet. With a
+  // plugin that sends no counts, all that the page knows of.
+  const heard = feedKnown ? running.filter(a => now - a.seenAt < FEED_GRACE_MS).length : running.length
   const total = Math.max(list.length, counts.get(chat) ?? 0, feed.get(chat) ?? 0)
   const next: NestedSummary = {
     keys: list.map(a => a.key),
     total,
-    running: Math.max(live, feed.get(chat) ?? 0),
+    running: Math.max(heard, feed.get(chat) ?? 0),
+    live: running.length,
     failed: list.filter(a => wentWrong(a.state)).length
   }
   const cur = summaries.get(chat)
-  return cur && cur.total === next.total && cur.running === next.running && cur.failed === next.failed && cur.keys.join('\n') === next.keys.join('\n') ? cur : next
+  return cur && cur.total === next.total && cur.running === next.running && cur.live === next.live && cur.failed === next.failed && cur.keys.join('\n') === next.keys.join('\n') ? cur : next
+}
+
+/** What a row in the chat list shows. The record decides, except that the feed, a hint, says whether a chat this page gets no
+ *  events from still has something running. It changes only this row's look, never a record. */
+export function listState(a: Pick<SubAgent, 'state' | 'noEndStored'>, chatRunning: boolean): SubState {
+  if (isLive(a.state)) return chatRunning ? a.state : 'ended'
+  return a.noEndStored && chatRunning ? 'working' : a.state
 }
 
 function chatChanged(chat: string): void {
@@ -532,6 +576,7 @@ export function noteItems(chat: string, items: readonly SubItem[], now = Date.no
 }
 
 const ROSTER_GRACE_MS = 5000
+const FEED_GRACE_MS = 15_000
 
 /** `subagent.list` for a chat just opened: what runs now. A running one it no longer lists has ended while the page wasn't told. */
 export function noteRoster(chat: string, raw: unknown, now = Date.now()): void {
@@ -544,7 +589,7 @@ export function noteRoster(chat: string, raw: unknown, now = Date.now()): void {
     if (!plainLine(p.subagent_id, 120)) continue
     seen.add(key)
     const cur = getSubAgent(chat, key)
-    const merged = mergeEvent(cur, 'subagent.progress', p, now)
+    const merged = mergeEvent(cur, 'subagent.list', p, now)
     // The roster doesn't name the stored chat: a row known only from there is the same sub-agent when the goal is the same.
     const stored = cur ? undefined : subAgentsOf(chat).find(x => x.key.startsWith('c:') && x.goal === merged.goal)
     const next = stored ? { ...merged, child: stored.child, effort: stored.effort, parentChild: stored.parentChild } : merged
@@ -581,7 +626,7 @@ export function cleanStored(raw: unknown): StoredChild[] {
     const c = r as Record<string, unknown>
     const id = plainLine(c.id, 200)
     if (!id) continue
-    const effort = typeof c.effort === 'string' && (c.effort === '' || c.effort in EFFORT_WORD) ? c.effort : undefined
+    const effort = typeof c.effort === 'string' && (c.effort === '' || EFFORT_WORD.has(c.effort)) ? c.effort : undefined
     out.push({ id, parent: plainLine(c.parent, 200), goal: plainLine(c.goal), model: plainLine(c.model, 160), ...(effort !== undefined ? { effort } : {}), started: seconds(c.started), ended: seconds(c.ended), reason: plainLine(c.reason, 40), steps: count(c.messages) })
   }
   return out
@@ -604,7 +649,8 @@ export function noteStored(chat: string, rows: readonly StoredChild[], now = Dat
       goal: r.goal,
       model: r.model,
       ...(r.effort !== undefined ? { effort: r.effort } : {}),
-      state: r.ended ? 'ended' : (feed.get(chat) ?? 0) > 0 ? 'working' : 'ended',
+      state: 'ended', // only Hermes's events or its list say that one runs
+      ...(r.ended ? {} : { noEndStored: true }),
       step: '',
       command: '',
       tools: 0,
@@ -638,21 +684,12 @@ export function cleanNestedFeed(raw: unknown): Map<string, number> {
   return out
 }
 
-const FEED_GRACE_MS = 15_000
-
-/** The feed's latest counts. Once the plugin is known to send them, a chat it no longer counts has nothing running. */
-export function setNestedFeed(next: Map<string, number>, now = Date.now()): void {
-  const touched = new Set([...feed.keys(), ...next.keys()])
+/** The feed's latest counts: hints for the chat list. They end no record and never reach the composer's Stop: only
+ *  `subagent.complete` or a `subagent.list` that leaves one out do that. */
+export function setNestedFeed(next: Map<string, number>): void {
+  const touched = new Set([...feed.keys(), ...next.keys(), ...chats.keys()])
   feed.clear()
   for (const [k, v] of next) feed.set(k, v)
-  if (feedKnown)
-    for (const [chat, m] of chats)
-      if (!next.has(chat))
-        for (const a of [...m.values()])
-          if (isLive(a.state) && now - a.seenAt > FEED_GRACE_MS) {
-            put(chat, { ...a, state: 'ended', accepting: false })
-            touched.add(chat)
-          }
   touched.forEach(chatChanged)
 }
 

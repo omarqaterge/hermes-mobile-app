@@ -14,6 +14,7 @@ import {
   inTreeOrder,
   itemChanged,
   itemFields,
+  listState,
   mergeEvent,
   modelShort,
   nestedOf,
@@ -56,6 +57,11 @@ describe('state words and levels', () => {
     expect(['none', 'minimal', 'xhigh', 'max', ''].map(effortWord)).toEqual(['Off', 'Minimal', 'Extra high', 'Max', 'Model default'])
     expect(effortWord(undefined)).toBeUndefined()
     expect(effortWord('nonsense')).toBeUndefined()
+    expect(effortWord('__proto__')).toBeUndefined()
+    expect(effortWord('constructor')).toBeUndefined()
+    expect(runsOn({ model: 'm', effort: '__proto__' })).toBe('m')
+    expect(followsChat('high', '__proto__', 'high')).toBe(true)
+    expect(cleanStored([{ id: 'x', effort: '__proto__' }])[0].effort).toBeUndefined()
   })
   it('uses the short forms of the model chip', () => {
     expect(modelShort('anthropic/claude-haiku')).toBe('claude-haiku')
@@ -89,6 +95,13 @@ describe('text from the model', () => {
     const q = quotedGoal('y'.repeat(500))
     expect(q.length).toBe(QUOTED_MAX + 2)
     expect(q.endsWith('…”')).toBe(true)
+    const u = (...c: number[]) => String.fromCodePoint(...c)
+    expect(quotedGoal(`a${u(0x202e)}b${u(0x200b)}c${u(0x2066)}d${u(0xad)}e${u(0xfe0f)}f${u(0xe0041)}`)).toBe('“abcdef”') // nothing invisible
+    expect(quotedGoal(`e${u(0x301, 0x302, 0x303, 0x304)}x`)).toBe(`“e${u(0x301, 0x302)}x”`) // no pile of marks
+    expect(quotedGoal(`${u(0xff02)}a${u(0x201d)}b${u(0x300d)}c${u(0x2019)}`)).toBe("“'a'b'c'”") // nothing that looks like a closing quote
+    const emoji = quotedGoal(u(0x1f600).repeat(100))
+    expect(Array.from(emoji).length).toBe(QUOTED_MAX + 2)
+    expect(() => encodeURIComponent(emoji)).not.toThrow() // never cut in half
   })
 })
 
@@ -187,14 +200,29 @@ describe('the records', () => {
     noteEvent('c', 'subagent.complete', { subagent_id: 'b', status: 'timeout' })
     expect(nestedOf('c')).toMatchObject({ total: 2, running: 1, failed: 1 })
   })
-  it('names the asker only when exactly one running sub-agent ran that command', () => {
-    noteEvent('c', 'subagent.tool', { subagent_id: 'a', goal: 'A', tool_preview: 'rm x' })
+  it('names the asker only when exactly one running sub-agent has that terminal command going', () => {
+    const tool = (id: string, preview: string, name = 'terminal') => noteEvent('c', 'subagent.tool', { subagent_id: id, goal: id, tool_name: name, tool_preview: preview })
+    tool('a', 'rm x')
     expect(askerOf('c', 'rm x')?.key).toBe('a')
     expect(askerOf('c', 'other')).toBeNull()
     expect(askerOf('c', 42)).toBeNull()
-    noteEvent('c', 'subagent.tool', { subagent_id: 'b', goal: 'B', tool_preview: 'rm x' })
+    tool('b', 'rm x')
     expect(askerOf('c', 'rm x')).toBeNull()
     noteEvent('c', 'subagent.complete', { subagent_id: 'b', status: 'completed' })
+    expect(askerOf('c', 'rm x')?.key).toBe('a')
+    tool('w', 'query', 'web_search')
+    tool('f', '/a/file', 'write_file')
+    expect(askerOf('c', 'query')).toBeNull()
+    expect(askerOf('c', '/a/file')).toBeNull()
+    noteEvent('c', 'subagent.thinking', { subagent_id: 'a', text: 'next' })
+    expect(askerOf('c', 'rm x')).toBeNull() // that command is over
+    tool('a', 'rm y')
+    tool('a', 'query two', 'web_search')
+    expect(askerOf('c', 'rm y')).toBeNull()
+  })
+  it('keeps the command through a list of who runs', () => {
+    noteEvent('c', 'subagent.tool', { subagent_id: 'a', tool_name: 'terminal', tool_preview: 'rm x' })
+    noteRoster('c', [{ subagent_id: 'a', goal: 'G', status: 'running' }])
     expect(askerOf('c', 'rm x')?.key).toBe('a')
   })
   it('takes only well-formed counts from the feed', () => {
@@ -202,19 +230,39 @@ describe('the records', () => {
     expect([...m]).toEqual([['c', 2]])
     expect(cleanNestedFeed('nope').size).toBe(0)
   })
-  it('ends what the feed no longer counts, once the plugin is known to send it', () => {
-    noteEvent('c', 'subagent.start', { subagent_id: 'a' }, 0)
-    setNestedFeed(new Map(), 60_000)
-    expect(getSubAgent('c', 'a')?.state).toBe('working') // an older plugin sends nothing at all
+  it('takes the feed as a hint for the list only', () => {
     setFeedKnownForTest(true)
-    setNestedFeed(new Map([['c', 1]]), 60_000)
+    noteEvent('c', 'subagent.start', { subagent_id: 'a' }, Date.now() - 60_000)
+    setNestedFeed(new Map())
+    expect(getSubAgent('c', 'a')?.state).toBe('working') // a missing entry ends nothing
+    expect(nestedOf('c')).toMatchObject({ running: 0, live: 1 })
+    expect(listState(getSubAgent('c', 'a')!, false)).toBe('ended')
+    expect(listState(getSubAgent('c', 'a')!, true)).toBe('working')
+    setNestedFeed(new Map([['forged', 9]]))
+    expect(nestedOf('forged')).toMatchObject({ running: 9, live: 0, total: 9 })
+  })
+  it('ends a record only on its end or a list that leaves it out', () => {
+    noteEvent('c', 'subagent.start', { subagent_id: 'a' }, 0)
+    noteRoster('c', [{ subagent_id: 'a', status: 'running' }], 60_000)
     expect(getSubAgent('c', 'a')?.state).toBe('working')
-    setNestedFeed(new Map(), 60_000)
+    noteRoster('c', [], 120_000)
     expect(getSubAgent('c', 'a')?.state).toBe('ended')
   })
+  it('never makes a running record from a saved item or a stored row', () => {
+    noteItems('c', [item('saved', 'working')])
+    expect(getSubAgent('c', 'saved')?.state).toBe('ended')
+    expect(nestedOf('c').live).toBe(0)
+    setNestedFeed(new Map([['c', 2]]))
+    noteStored('c', [{ id: 'k', parent: 'c', goal: 'G', model: 'm', effort: 'low', started: 1, ended: 0, reason: '', steps: 1 }])
+    const row = getSubAgent('c', 'c:k')!
+    expect(row.state).toBe('ended')
+    expect(nestedOf('c').live).toBe(0)
+    expect(listState(row, true)).toBe('working') // the list may still show it as running
+    expect(listState(row, false)).toBe('ended')
+  })
   it('counts what the feed reports before any row is known', () => {
-    setNestedFeed(new Map([['c', 3]]), 1)
-    expect(nestedOf('c')).toMatchObject({ total: 3, running: 3, keys: [] })
+    setNestedFeed(new Map([['c', 3]]))
+    expect(nestedOf('c')).toMatchObject({ total: 3, running: 3, live: 0, keys: [] })
   })
   it('keeps the true level from the stored chat, and only a known one', () => {
     noteEvent('c', 'subagent.start', { subagent_id: 'a', child_session_id: 'k', goal: 'G' })
@@ -249,6 +297,9 @@ describe('the records', () => {
     const out = withSubItems([text('x'), call, text('y')], [a, lost])
     expect(out.map(i => i.id)).toEqual(['x', 't', 'sub-a', 'y'])
     expect(withSubItems(out, [a])).toBe(out)
+    const ended = noteEvent('c', 'subagent.complete', { subagent_id: 'a', status: 'completed' })
+    const next = withSubItems(out, [ended])
+    expect((next[2] as SubItem).status).toBe('done') // an item follows its record, so no group shimmers for ever
   })
 })
 

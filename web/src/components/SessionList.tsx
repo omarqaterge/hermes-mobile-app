@@ -10,7 +10,7 @@ import { Title, plainTitle } from './Title'
 import { ago, lastActive } from '../unread'
 import { dayLabel, frozenActivity, orderChats, recentIds, restoreAside } from '../chatorder'
 import { holdChatSnapshot, useChatSnapshot } from '../chatsnapshot'
-import { aimAtNeed, needWords, useListedNeeds, type Need } from '../needsyou'
+import { aimAtNeed, needParts, useListedNeeds, type Need } from '../needsyou'
 import { archiveChat, deleteChat, pinChat } from '../chatactions'
 import { cronJobId, runName, useJobName } from '../panelvalues'
 import { Chevron, MenuGroup, MenuRow, MenuSheet } from './ui'
@@ -219,12 +219,18 @@ function AgentsRowLine({ s, state }: { s: SessionListRow; state: '' | 'Working' 
   return <RowLine s={s} state={state} agents={useNested(s.id).total} />
 }
 
+/** What a chat waits for. A sub-agent's goal stands in its own <bdi>, so its text direction can't reorder the app's words. */
+export function NeedWords({ need }: { need: Need }) {
+  const { asker, lead, what } = needParts(need)
+  return <>{lead}{asker ? <><bdi>{asker}</bdi> </> : null}{what}</>
+}
+
 /** The line under the title of a chat that waits: the state word, then what for. Screen readers already heard the word
  *  before the title, as with "Working". */
 function NeedLine({ need }: { need: Need }) {
   return (
     <span className="session-sub dim small">
-      <span className="session-state needs-word" aria-hidden="true">Needs you</span> · {needWords(need)}
+      <span className="session-state needs-word" aria-hidden="true">Needs you</span> · <NeedWords need={need} />
     </span>
   )
 }

@@ -137,12 +137,5 @@ html[data-motion='off'] .sheet.sub-sheet { transition: none; }
 .sub-wide { width: 100%; min-height: 44px; flex: none; }
 .sub-settings { min-height: 44px; flex: none; align-self: flex-start; text-decoration: underline; }
 
-/* What a sub-agent asks for on the request sheet: the goal is quoted and set apart from the app's own words. */
-.quoted-goal {
-  font-family: var(--mono);
-  padding: 1px 5px;
-  border-radius: 4px;
-  overflow-wrap: anywhere;
-  background: color-mix(in srgb, currentColor 14%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-}
+/* Who asks, under what is to be approved: ordinary type, so a goal can't pass for the command. */
+.sheet-asked { margin-top: 8px; overflow-wrap: anywhere; }

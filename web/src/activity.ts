@@ -75,8 +75,10 @@ export function startActivityPolling(): void {
     wasRunning = running
     if (s.requests !== requests) {
       const gone = requests.filter(r => !s.requests.some(n => n.id === r.id))
+      const fresh = s.requests.some(r => !requests.some(n => n.id === r.id))
       requests = s.requests
       if (gone.length) requestsEnded(gone)
+      if (fresh) setTimeout(() => void poll(), 300) // who asks: the sheet says it once the feed has it
     }
   })
   document.addEventListener('visibilitychange', () => void poll())

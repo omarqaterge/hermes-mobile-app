@@ -36,9 +36,15 @@ const WORDS = new Map([
 /** What the chat waits for, in a few words of this app's own: nothing from the feed is printed. A kind this build doesn't
  *  know gets neutral words, and the only "who" is the fixed one. */
 export function needWords(n: Pick<Need, 'kind' | 'who' | 'goal'>): string {
-  const what = WORDS.get(n.kind) ?? 'is waiting for you'
-  if (n.goal) return `Sub-agent ${quotedGoal(n.goal)} ${what}`
-  return n.who === SUB_AGENT ? `${SUB_AGENT} ${what}` : what
+  const { asker, lead, what } = needParts(n)
+  return `${lead}${asker ? `${asker} ` : ''}${what}`
+}
+
+/** The words in parts, so a goal can be drawn apart from the app's own (inside <bdi>). */
+export function needParts(n: Pick<Need, 'kind' | 'who' | 'goal'> & { what?: string }): { asker: string; lead: string; what: string } {
+  const what = n.what ?? WORDS.get(n.kind) ?? 'is waiting for you'
+  const asker = n.goal ? quotedGoal(n.goal) : ''
+  return { asker, lead: asker ? 'Sub-agent ' : n.who === SUB_AGENT ? `${SUB_AGENT} ` : '', what }
 }
 
 /** Requests are named by the live session; `chatOf` gives their stored chat. One entry per chat, oldest wait first; the
@@ -49,10 +55,16 @@ export function mergeNeeds(waiting: WaitingItem[], requests: ServerRequest[], ch
   for (const r of requests) {
     const session = chatOf(r)
     if (!session) continue
-    const asker = r.method === 'approval' ? askerOf(session, (r.params as { command?: unknown }).command) : null
     const cur = out.get(session)
-    if (!cur) out.set(session, { session, kind: r.method, who: asker ? SUB_AGENT : '', ...(asker?.goal ? { goal: asker.goal } : {}) })
-    else if (asker?.goal && !cur.goal && (cur.who === SUB_AGENT || !cur.who)) out.set(session, { ...cur, who: SUB_AGENT, goal: asker.goal })
+    if (!cur) {
+      out.set(session, { session, kind: r.method, who: '' })
+      continue
+    }
+    // A sub-agent is named only when the feed says one asks and that the chat itself doesn't.
+    const listed = waiting.filter(w => w.session === session)
+    if (r.method !== 'approval' || cur.goal || !listed.some(w => w.who === SUB_AGENT) || listed.some(w => !w.who)) continue
+    const asker = askerOf(session, (r.params as { command?: unknown }).command)
+    if (asker?.goal) out.set(session, { ...cur, who: SUB_AGENT, goal: asker.goal })
   }
   return [...out.values()]
 }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-contract.generated'
 import { answerRequest, rejectRequest, requestChat } from '../gateway'
@@ -50,6 +50,7 @@ function PhoneDataApproval({ req, text }: { req: ServerRequest; text: string }) 
           )}
         </div>
         {v.ok ? <div className="sheet-desc">Only this once. What it reads goes into the chat and to your model provider.</div> : null}
+        <AskedBy req={req} />
       </div>
       <div className="sheet-actions col">
         {v.ok ? (
@@ -91,6 +92,7 @@ function Approval({ req }: { req: ServerRequest }) {
       <div className="sheet-scroll">
         {p.description ? <div className="sheet-desc"><Linked text={tidyApprovalText(String(p.description))} /></div> : null}
         {p.command ? <pre className="sheet-code"><Linked text={String(p.command)} /></pre> : null}
+        <AskedBy req={req} />
       </div>
       <div className="sheet-actions col">
         {choices.map(c => (
@@ -303,21 +305,20 @@ function otherChat(s: AppState, req: ServerRequest): string {
   return plainTitle(s.sessions.find(x => x.id === chat)?.title) || 'another chat'
 }
 
-/** Says so when the command comes from a sub-agent. The goal is the model's text: quoted, cut short and set apart, so it can't
- *  read as the app's words. It is left out over the lock screen, and when no one sub-agent can be told apart. */
-function AskedBy({ req, locked }: { req: ServerRequest; locked: boolean }) {
+/** After what is to be approved: who asks, when that is known. A goal is the model's text, so it is ordinary small type,
+ *  quoted and cut short, and can't pass for the command. It is named only when the running sub-agent's last command is this
+ *  one, the feed says a sub-agent asks and the chat itself isn't asking; otherwise, and over the lock screen, fixed words. */
+function AskedBy({ req }: { req: ServerRequest }) {
   const p = req.params as Record<string, unknown>
   const chat = requestChat(req)
-  const feedSays = useStore(s => s.waiting.some(w => w.session === chat && w.who === SUB_AGENT) && !s.waiting.some(w => w.session === chat && !w.who))
-  if (req.method !== 'approval') return null
-  const asker = askerOf(chat, p.command)
-  if (!asker && !feedSays) return null
-  const what = phoneDataTextOf(p) !== null ? 'wants to read your phone' : 'wants to run this'
-  return (
-    <div className="sheet-from dim small">
-      {asker?.goal && !locked ? <>Sub-agent <span className="quoted-goal">{quotedGoal(asker.goal)}</span> {what}</> : `${SUB_AGENT} ${what}`}
-    </div>
-  )
+  const locked = useLockView()
+  // Read when the request arrives: what the sub-agent reports next doesn't change who asked.
+  const asker = useMemo(() => askerOf(chat, p.command), [req.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const feedSubAgent = useStore(s => s.waiting.some(w => w.session === chat && w.who === SUB_AGENT))
+  const feedChat = useStore(s => s.waiting.some(w => w.session === chat && !w.who))
+  if (!asker && !feedSubAgent) return null
+  const named = asker?.goal && feedSubAgent && !feedChat && !locked
+  return <div className="sheet-asked dim small">{named ? <>Asked by the sub-agent working on <bdi>{quotedGoal(asker.goal)}</bdi></> : 'Asked by a sub-agent'}</div>
 }
 
 export function RequestSheet({ req }: { req: ServerRequest }) {
@@ -329,7 +330,6 @@ export function RequestSheet({ req }: { req: ServerRequest }) {
       <div className="sheet" role="dialog">
         <div className="sheet-grip" />
         {from && !locked && <div className="sheet-from dim small">From {from}</div>}
-        <AskedBy req={req} locked={locked} />
         {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
       </div>
     </div>

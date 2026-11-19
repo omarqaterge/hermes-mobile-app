@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow, requestChat } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Toast, type Todo } from './store'
 import { ItemView, ToolRunHead } from './components/ChatItems'
+import { NeedWords } from './components/SessionList'
 import { SubAgentSheet, SubGroupHead, SubGroupRows, groupProps } from './components/SubAgents'
 import { stepMark, stepWord } from './toolsay'
 import { foldMap } from './fold'
@@ -26,7 +27,7 @@ import { RequestSheet } from './components/RequestSheet'
 import { CommandsSheet, GoalSheet, ModelSheet, ContextSheet, RollbackSheet, SessionActionsSheet, StatusSheet, useCompress } from './components/Sheets'
 import { ChatMenuSheet, DraftMenuSheet } from './components/ChatMenu'
 import { bannerItems, startActivityPolling } from './activity'
-import { aimAtNeed, currentRequest, needWords, needsPhrase, openNeeds, setRequestChat, sheetBackInView, useLockView } from './needsyou'
+import { aimAtNeed, currentRequest, needsPhrase, openNeeds, setRequestChat, sheetBackInView, useLockView } from './needsyou'
 import { DialogHost } from './dialog'
 import { WhatsNewAfterUpdate } from './components/WhatsNew'
 import { startWhatsNewAfterUpdate } from './whatsnew'
@@ -249,7 +250,7 @@ function ActivityBanner() {
         <span className="needs-dot" />
         <span className="activity-text">
           <b>{plainTitle(sessions.find(x => x.id === n.session)?.title) || 'another chat'}: </b>
-          Needs you · {needWords(n)}
+          Needs you · <NeedWords need={n} />
           {more > 0 ? <span className="dim"> (+{more} more)</span> : null}
         </span>
       </button>
