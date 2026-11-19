@@ -745,15 +745,16 @@ export async function sendPrompt(text: string): Promise<boolean> {
     openBtw(btw[1] || '')
     return true
   }
-  if (trimmed.startsWith('/')) {
-    await runSlash(a, trimmed)
-    return true
-  }
-
-  // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first.
-  if (lockView() && accessOf(a) !== 'off') {
+  // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first, for a
+  // slash command too. /yolo stays: there it can only turn access off (setYolo, setAccess).
+  const isSlash = trimmed.startsWith('/')
+  if (lockView() && accessOf(a) !== 'off' && !(isSlash && hermesWords(trimmed).name.toLowerCase() === 'yolo')) {
     askUnlock('Unlock the phone to use this chat')
     throw new Error('Unlock the phone to use this chat')
+  }
+  if (isSlash) {
+    await runSlash(a, trimmed)
+    return true
   }
 
   if (a.running) {

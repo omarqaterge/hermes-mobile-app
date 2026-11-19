@@ -99,6 +99,8 @@ One slot, six faces, decided in this order:
 
 **Queue** (`send(undefined, 'queue')` in `Composer.tsx`, state in `web/src/queue.ts`): the text sent is built exactly as for Send (`withQuotes(quotes, text)`, so quotes travel with it); it is added to the open chat's queue (`enqueue`, `hm.queue.v1`), and the box and the quotes are cleared. Queued messages are shown at the end of the chat (3.2) and sent one by one when the chat's turn ends (2.2.1 step 8a). The queue lives in the page, not in Hermes: a queued message is sent only while the app shows that chat (closing the app, or opening another chat, keeps it and pauses it until Resume). It is a different thing from the offline outbox. The placeholder while a reply runs is "Queue or steer a follow-up…".
 
+Over the lock screen a chat in Auto or Full access sends nothing until the phone is unlocked (`sendPrompt`), a slash command included. `/yolo` is the exception, because there it can only turn access off.
+
 `runSlash`: shows the command as a user item, then:
 
 - `/yolo [on|off]` switches Full access (3.2): a bare `/yolo` goes to Full access from Off or Auto access, and from Full access back to the mode the chat was in before.

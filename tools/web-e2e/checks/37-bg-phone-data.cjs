@@ -110,5 +110,21 @@ module.exports = async t => {
   check((await slash(pg, '/cron add "every 1h" x')).length === 0, 'lock screen: so does a scheduled job')
   await sent(pg, '/help', 'lock screen: another command in a chat with approvals on works as before')
   await pg.evaluate(() => window.hermesLockView(false))
+  // In a chat that runs without asking, any command needs the unlock; /yolo may still turn that off.
+  const yolo = v => rpcs('config.set').filter(c => c.params.key === 'yolo' && c.params.value === v).length
+  const on = yolo('1')
+  await slash(pg, '/yolo on')
+  for (let i = 0; i < 30 && yolo('1') === on; i++) await sleep(100)
+  await sleep(300)
+  await pg.evaluate(() => window.hermesLockView(true))
+  check((await slash(pg, '/help')).length === 0, 'lock screen: a chat in Full access sends no slash command')
+  check((await pg.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)) >= 3, 'lock screen: it asks for an unlock instead')
+  const off = yolo('0')
+  await slash(pg, '/yolo off')
+  for (let i = 0; i < 30 && yolo('0') === off; i++) await sleep(100)
+  check(yolo('0') === off + 1, 'lock screen: /yolo off still turns Full access off')
+  await sleep(300)
+  await sent(pg, '/help', 'lock screen: with access off the command goes as before')
+  await pg.evaluate(() => window.hermesLockView(false))
   await pg.close()
 }
