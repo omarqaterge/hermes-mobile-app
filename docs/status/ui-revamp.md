@@ -230,7 +230,9 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   from: the `subagent.*` events of the app's socket, or Hermes's stored chat through `GET /nested`, shown as plain text. The
   `activity.json` feed gives only numbers and the fixed words of task 08, because an agent can edit that file. Chat height
   unchanged while sub-agents run: 614 / 314 px at 360 x 740 (`38`). With ten running, no frame took over 25 ms in the chat
-  or the list; start-up costs 5 to 9% more work at 4x CPU, over the 5% limit (docs/performance-history.md). A swipe on a
+  or the list. After the rows and the sheet became a lazy bundle, start-up costs about 1% more work at 4x CPU (about 3 ms);
+  the rise first reported for opening Behaviour was drift between runs (docs/performance-history.md). A security review's 14
+  findings are fixed (who is named as asking, goals, what ends a record, Stop, leaving a chat, Continue, the plugin's rows). A swipe on a
   chat row now needs a press, because a mouse passing over a row could start one. Needs a phone: see
   `docs/manual-tests.md`.
 

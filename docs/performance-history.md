@@ -293,30 +293,53 @@ to the words unchanged. With effects off the same moment shows no rise, and the 
 with effects on, so it reads as noise. The earlier measurement's +5% for scrolling a long chat with effects off did not come
 back (241 / 238 before, 237 / 235 after). Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
 
-## Sub-agents in the chat and the chat list (redesign task 09, 2026-11-18)
+## Sub-agents in the chat and the chat list (redesign task 09, 2026-11-19)
 
-`tools/web-e2e/uicost.cjs`, desktop browser, 4x CPU slowdown, 5 runs per round, two rounds each, build before and after on
-the same machine. Main-thread work in ms; "time" is until the result shows. The new moments have ten sub-agents running,
-each reporting a new step five times a second, with their group open in the chat and their rows open in the list.
+`tools/web-e2e/uicost.cjs`, desktop browser, 4x CPU slowdown, 5 runs per round, two rounds each, on the final code. "Before"
+is `redesign` without the sub-agent work. The two builds were served side by side and measured in turn (before, after, after,
+before), so that a machine drifting over the hour falls on both. Main-thread work in ms for round 1 / round 2. The new
+moments have ten sub-agents running, each reporting a new step five times a second, with their group open in the chat and
+their rows open in the list.
 
-| Moment | Effects on, before → after | Effects off, before → after | Change |
+| Moment | Effects on, before → after | Effects off, before → after | Change in work |
 |---|---|---|---|
-| Start-up | work 465 / 475 → 535 / 493 | work 464 / 473 → 494 / 486 | **+5% off, +9% on** (about 25 ms at 4x) |
-| Opening a chat | work 37 / 38 → 41 / 39 | work 33 / 36 → 37 / 34 | +3 to +7%, 1 to 4 ms |
-| First words of a reply | 394 / 402 ms → 398 / 394 ms | 398 / 396 ms → 394 / 400 ms | none |
-| Scrolling a long chat | work 276 / 275 → 302 / 257, no frame over 25 ms | 257 / 273 → 293 / 245, none over 25 ms | +1 to +2% |
-| The same, ten sub-agents | work 395 / 330, no frame over 25 ms, p95 16.7 ms | 343 / 308, none over 25 ms | as smooth as with none; about 25% more work |
-| Opening the chat list | work 22 / 23 → 22 / 21 | 18 / 18 → 21 / 19 | -4% on; +11% off (2 ms) |
-| Scrolling the chat list | work 14 / 12 → 15 / 11, none over 25 ms | 11 / 10 → 13 / 8 | none |
-| The list, ten sub-agents | work 115 / 88, no frame over 25 ms | 89 / 85, none over 25 ms | smooth; about 90 ms of work in the 1 s scroll |
-| A row's menu / the chat's menu | work 25 / 25 → 26 / 25 and 33 / 31 → 34 / 30 | 14 / 14 → 16 / 16 and 13 / 13 → 15 / 14 | at most 2 ms |
-| Settings and its pages | Behaviour 59 / 57 → 70 / 61, others within 5 ms | Behaviour 54 / 55 → 61 / 58, others within 2 ms | Behaviour +9 to +13% |
+| Start-up | 457 / 469 → 469 / 470 | 463 / 464 → 464 / 475 | **+1%** both |
+| Opening a chat | 38 / 39 → 37 / 35 | 34 / 35 → 32 / 33 | -6% both |
+| First words of a reply | 35 / 37 → 33 / 33 | 27 / 29 → 26 / 26 | -8%, -7%; time unchanged (about 395 ms) |
+| Scrolling a long chat | 254 / 253 → 250 / 247, no frame over 25 ms | 237 / 239 → 238 / 242, none | -2%, +1% |
+| The same, ten sub-agents | 325 / 325, no frame over 25 ms, p95 16.7 to 16.8 ms | 299 / 307, none, p95 16.7 ms | as smooth as with none; 26 to 31% more work |
+| Opening the chat list | 21 / 20 → 19 / 21 | 18 / 18 → 19 / 19 | -2%; **+6% off (1 ms)** |
+| Scrolling the chat list | 11 / 11 → 9 / 11, none over 25 ms | 9 / 9 → 9 / 8, none | -9%, -6% |
+| The list, ten sub-agents | 86 / 87, no frame over 25 ms, p95 16.8 ms | 79 / 81, none, p95 16.7 to 16.8 ms | smooth; about 80 to 90 ms of work in the 1 s scroll |
+| A row's menu | 24 / 22 → 23 / 22 | 15 / 14 → 15 / 14 | -2%, none |
+| The chat's menu | 27 / 27 → 27 / 26 | 14 / 13 → 14 / 13 | -2%, none |
+| Settings | 47 / 59 → 45 / 45 | 25 / 24 → 24 / 24 | -15% (one slow "before" round), -2% |
+| Behaviour | 57 / 58 → 57 / 56 | 57 / 55 → 54 / 53 | -2%, -4% |
+| Models | 12 / 12 → 12 / 12 | 11 / 11 → 12 / 11 | none, +5% (under 1 ms) |
+| Add a provider | 25 / 26 → 25 / 25 | 23 / 23 → 24 / 23 | -2%, +2% |
+| Access & privacy | 9 / 9 → 9 / 9 | 8 / 8 → 8 / 8 | none |
+| About & help | 11 / 10 → 11 / 11 | 10 / 9 → 10 / 9 | +5% (under 1 ms), none |
 
-**Over the 5% limit:** start-up (+5 to +9%), opening Behaviour (+9 to +13%, a page this task doesn't touch) and a few moments
-of a few ms where 1 or 2 ms is already over 5%. The first "effects on" round of this build was noisier than the others (its
-start-up 582 ms against 516 in the second). The first version cost more (the chat list +33% with effects off, its menus +25%)
-because every row did sub-agent work; rows without sub-agents now do none. The start-up rise is not explained further: the
-page holds more code and styles. Not measured here: heat and battery on a phone (`docs/manual-tests.md`).
+**Start-up, measured more closely.** One page load of each build in turn, 15 times, median of main-thread work: effects off
+471.5 → 474.2 ms, effects on 477.1 → 480.0 ms, so **+0.6%, about 3 ms at 4x**. Before the split the same measurement gave +5.6
+and +4.9 ms. The first measurement of this feature said +5 to +9%. Most of that was work every chat row did, since removed,
+and the rest was drift between a "before" run and a later "after" run.
+
+**The split.** The rows, the sheet and their styles are now a lazy bundle (`hm-subagents`, about 20 KB as text in the page) that
+runs when a chat has sub-agents on screen. The script that runs at every start grew by 19.9 KB instead of 32.2 KB, and its
+styles by 0.4 KB instead of 4.2 KB. What remains at every start is what a chat needs to receive sub-agent events and to draw
+the group's line.
+
+**Opening Behaviour** was reported as +9 to +13%. It was drift, not a cost: this work doesn't touch the page, and with the builds
+measured in turn (11 loads each) it took 51.2 → 52.6 ms with effects off and 53.9 → 53.1 ms with effects on, in both directions
+within about 3%.
+
+**Still over 5%, all by about a millisecond.** In work: opening the chat list with effects off (18 → 19 ms in both rounds, so
+probably real; its cause was not looked into further, and with effects on the list shows no rise), Models with effects off and
+About & help with effects on (each under 1 ms, within the rounding of whole milliseconds). In time until the result shows, the
+same size: the chat list with effects off (10 → 11 ms), Add a provider with effects on, Models with effects off, Access &
+privacy with effects on (about 5.5 → 7 ms) and About & help (6 to 7 ms). Not measured: the one-time run of the bundle when the
+first sub-agent appears, and heat and battery on a phone (`docs/manual-tests.md`).
 
 ## Adding a measurement
 
