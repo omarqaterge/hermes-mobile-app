@@ -965,6 +965,7 @@ NESTED_LONGEST = 6 * 3600
 NESTED_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 NESTED_ROWS = 200
 NESTED_DEPTH = 8
+NESTED_CONFIG_MAX = 200_000   # bytes of a row's model_config that are read at all
 
 
 def _nested_entry(n, now: float):
@@ -1057,20 +1058,26 @@ def get_nested(session: str, profile: Optional[str] = None):
             marks = ",".join("?" * len(frontier))
             rows = con.execute(
                 f"SELECT id, parent_session_id, title, model, model_config, started_at, ended_at, end_reason, message_count "
-                f"FROM sessions WHERE parent_session_id IN ({marks}) ORDER BY started_at LIMIT ?",
-                (*frontier, NESTED_ROWS)).fetchall()
+                f"FROM sessions WHERE parent_session_id IN ({marks}) AND length(model_config) <= ? "
+                f"ORDER BY started_at LIMIT ?",
+                (*frontier, NESTED_CONFIG_MAX, NESTED_ROWS)).fetchall()
             frontier = []
             for sid, parent, title, model, raw, started, ended, reason, messages in rows:
-                cfg = _delegate_config(raw)
-                if cfg is None or sid in seen or not _is_text(sid) or len(children) >= NESTED_ROWS:
+                try:   # one damaged row costs only that row
+                    cfg = _delegate_config(raw)
+                    if (cfg is None or sid in seen or not _is_text(sid) or not _is_text(parent)
+                            or len(sid) > 200 or len(children) >= NESTED_ROWS):
+                        continue
+                    child = {"id": sid, "parent": session if parent in segments else parent,
+                             "goal": _subagent_goal(con, sid, title), "model": model if _is_text(model) else "",
+                             "effort": _nested_effort(cfg), "started": started if _is_number(started) else 0,
+                             "ended": ended if _is_number(ended) else 0, "reason": reason if _is_text(reason) else "",
+                             "messages": messages if isinstance(messages, int) and not isinstance(messages, bool) else 0}
+                except Exception:
                     continue
                 seen.add(sid)
                 frontier.append(sid)
-                children.append({"id": sid, "parent": session if parent in segments else parent,
-                                 "goal": _subagent_goal(con, sid, title), "model": model if _is_text(model) else "",
-                                 "effort": _nested_effort(cfg), "started": started if _is_number(started) else 0,
-                                 "ended": ended if _is_number(ended) else 0, "reason": reason if _is_text(reason) else "",
-                                 "messages": messages if isinstance(messages, int) else 0})
+                children.append(child)
     except sqlite3.Error:
         return {"children": []}
     finally:
@@ -1084,14 +1091,19 @@ def _nested_index(con) -> tuple:
     titles: dict = {}
     for sid, parent, title, raw in con.execute(
             "SELECT id, parent_session_id, title, model_config FROM sessions WHERE parent_session_id IS NOT NULL "
-            "AND model_config LIKE '%_delegate_from%' ORDER BY started_at DESC LIMIT 5000"):
-        if _delegate_config(raw) is not None:
-            parents[sid] = parent
-            titles[sid] = title
+            "AND length(model_config) <= ? AND model_config LIKE '%_delegate_from%' ORDER BY started_at DESC LIMIT 5000",
+            (NESTED_CONFIG_MAX,)):
+        try:
+            if _is_text(sid) and _is_text(parent) and _delegate_config(raw) is not None:
+                parents[sid] = parent
+                titles[sid] = title
+        except Exception:
+            continue
     # A compressed chat's own continuation only: its sub-agents and branches also name it as their parent.
     after = {old: new for old, new, raw in con.execute(
         "SELECT p.id, c.id, c.model_config FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
-        "WHERE p.end_reason = 'compression'") if new not in parents and "_branched_from" not in str(raw or "")}
+        "WHERE p.end_reason = 'compression' AND COALESCE(length(c.model_config), 0) <= ?", (NESTED_CONFIG_MAX,))
+        if _is_text(old) and _is_text(new) and new not in parents and "_branched_from" not in str(raw or "")}
     return parents, after, titles
 
 

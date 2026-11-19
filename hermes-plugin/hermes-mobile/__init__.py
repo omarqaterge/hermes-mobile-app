@@ -550,8 +550,18 @@ def _nested_begin(child: str) -> None:
 
 
 def _nested_end(child) -> None:
+    """A sub-agent ended. A context compression may have given it a new stored id since it started: then it is counted under
+    one of the ids it had before, so those are looked up, off the lock."""
     with _lock:
         gone = _nested.pop(child, None)
+    if gone is None and child:
+        try:
+            older = _phone_data().compression_ancestors(child, budget=1.0)
+        except Exception:
+            older = []
+        with _lock:
+            for sid in older:
+                gone = _nested.pop(sid, None) or gone
     if gone:
         _publish_activity()
 

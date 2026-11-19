@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 home = tempfile.mkdtemp(prefix="hm-nested-")
 os.environ["HOME"] = home
+os.environ["HERMES_HOME"] = os.path.join(home, ".hermes")  # never the Hermes data of the machine running this
 sys.path.insert(0, str(ROOT / "hermes-plugin" / "hermes-mobile"))
 fails = 0
 
@@ -91,6 +92,12 @@ with plugin._lock:
 plugin._publish_activity()
 check("one whose end was never reported runs out", "nested" not in activity(), activity())
 
+plugin._on_subagent_start(child_session_id="kid-old", parent_session_id="chat-c")
+check("before its compression it counts", activity().get("nested") == [{"session": "chat-c", "running": 1}], activity())
+plugin._phone_data = lambda: types.SimpleNamespace(compression_ancestors=lambda sid, budget=0: ["kid-old"] if sid == "kid-new" else [])
+plugin._on_subagent_stop(child_session_id="kid-new")
+check("a stop under the id a compression gave it ends the count", "nested" not in activity(), activity())
+
 me = str(os.getpid())
 future = time.time() + 60
 bad = [
@@ -144,6 +151,11 @@ row("sub-b", "chat", "Subagent: Write it", "x/opus", kid({"enabled": False}, "ch
 row("sub-a-1", "sub-a", "Subagent: Deep one", "x/haiku", kid("nonsense", "sub-a"), 4.0)
 row("branch", "chat", "A branch", cfg={"_branched_from": "chat"})
 row("broken", "chat", "Subagent: Broken", cfg="{not json")
+row("big", "chat", "Subagent: Huge", cfg=json.dumps({**kid("low", "chat"), "pad": "x" * (papi.NESTED_CONFIG_MAX + 1)}))
+row("odd-parent", "chat", "Subagent: Odd effort", "x/m", {"reasoning_config": {"effort": ["low"]}, "_delegate_from": "chat"}, 5.0)
+con.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)", (b"blob-id", "chat", "Subagent: Blob id", "m", json.dumps(kid("low", "chat")), 6.0, None, None, 1))
+con.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)", ("blob-parent", b"not-text", "Subagent: Blob parent", "m", json.dumps(kid("low", "chat")), 7.0, None, None, 1))
+con.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)", ("bad-row", "chat", "Subagent: Bad row", "m", json.dumps(kid("low", "chat")), 8.0, None, None, 1))
 row("other", None, "Other chat")
 row("other-sub", "other", "Subagent: Elsewhere", cfg=kid("high", "other"))
 con.execute("INSERT INTO messages (session_id, role, content) VALUES ('sub-a','user','Read the docs in full')")
@@ -151,9 +163,13 @@ con.execute("INSERT INTO messages (session_id, role, content) VALUES ('sub-a','u
 con.execute("INSERT INTO messages (session_id, role, content) VALUES ('sub-b','user','[{\"type\":\"text\"}]')")
 con.commit()
 
+real_goal = papi._subagent_goal
+papi._subagent_goal = lambda c, sid, title: (_ for _ in ()).throw(ValueError("damaged")) if sid == "bad-row" else real_goal(c, sid, title)
 kids = papi.get_nested("chat")["children"]
+papi._subagent_goal = real_goal
 by = {k["id"]: k for k in kids}
-check("a chat's sub-agents, at every depth, also from before a compression", set(by) == {"sub-a", "sub-b", "sub-a-1"}, list(by))
+check("a chat's sub-agents, at every depth, also from before a compression", set(by) == {"sub-a", "sub-b", "sub-a-1", "odd-parent"}, list(by))
+check("a row too big, one without text ids and one that fails to read are left out, the others stay", not {"big", "bad-row", "blob-parent"} & set(by) and all(isinstance(k, str) for k in by))
 check("a branch, a damaged row and another chat's are left out", not {"branch", "broken", "other-sub"} & set(by))
 check("the level Hermes gave it", by["sub-a"]["effort"] == "low", by["sub-a"])
 check("thinking turned off reads as none", by["sub-b"]["effort"] == "none", by["sub-b"])
@@ -166,7 +182,7 @@ check("times and the end reason", by["sub-a"]["ended"] == 9.0 and by["sub-a"]["r
 check("an unknown chat has none", papi.get_nested("nobody") == {"children": []})
 check("a silly id is refused quietly", papi.get_nested("x" * 500) == {"children": []})
 got = papi.get_nested_counts()["counts"]
-check("counts per top chat, under its current id", got == {"chat": 3, "other": 1}, got)
+check("counts per top chat, under its current id", got == {"chat": 5, "other": 1}, got)  # sub-a, sub-b, sub-a-1, odd-parent, bad-row
 got = papi.get_nested_search("DEEP")["hits"]
 check("search finds a nested one under its top chat", got == [{"chat": "chat", "child": "sub-a-1", "goal": "Deep one"}], got)
 check("one letter searches nothing", papi.get_nested_search("d") == {"hits": []})

@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 home = tempfile.mkdtemp(prefix="hm-waiting-")
 os.environ["HOME"] = home  # the activity file and everything else the plugin writes stay out of the real home
+os.environ["HERMES_HOME"] = os.path.join(home, ".hermes")
 fails = 0
 
 
