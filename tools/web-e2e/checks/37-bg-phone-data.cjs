@@ -27,7 +27,13 @@ module.exports = async t => {
   check((await refusal(pg).count()) === 1, '/bg: the chat says why, and that a new chat can run it')
   check((await slash(pg, '/BACKGROUND again')).length === 0, '/bg: the long name and another case are refused too')
   check((await slash(pg, '/help')).length === 1, '/bg: other commands still work in that chat')
-  check((await slash(pg, '/bgalias')).every(c => !/^bg\b/i.test(c)), '/bg: a command alias can\'t reach it in that chat')
+  // Hermes's worker resolves a quick command itself, so the page can't see where it leads: what the task may do is decided by
+  // the plugin (tools/test_phone_taint.py). When the worker fails, the page gets the target and stops it here.
+  check((await slash(pg, '/bgalias')).join() === 'bgalias', '/bg: a quick command goes to the worker, which the plugin guards')
+  const before = await refusal(pg).count()
+  await slash(pg, '/bgdown')
+  await sleep(300)
+  check(!rpcs('slash.exec').some(c => /^bg\b/i.test(c.params.command)) && (await refusal(pg).count()) === before + 1, '/bg: an alias named by command.dispatch is refused')
   await pg.close()
 
   // A branch holds the chat's messages but none of its tool calls, so only the link to its parent can say it has read.

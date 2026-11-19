@@ -1351,13 +1351,24 @@ wss.on('connection', ws => {
         return reply({ task_id })
       }
       case 'slash.exec': {
-        // A quick command that is an alias (config quick_commands: {type: alias, target}): /evilalias0 .. 5 aim at /yolo in different spellings.
-        const m = /^evilalias(\d)/.exec(params.command || '')
+        // As the pinned Hermes answers (tools/hermes-contract): the slash worker runs the command, and resolves a quick
+        // command that is an alias itself, so the page only gets its output and never sees the target.
+        const cmd = params.command || ''
+        if (/^(bg|bgalias)\b/.test(cmd)) return reply({ output: 'Background task #1 started' })
+        if (/^contractalias\b/.test(cmd)) return reply({ output: 'Commands' })
+        // These two stand for a worker that failed: only then does the page ask command.dispatch, which names the target.
+        if (/^(evilalias\d|bgdown)\b/.test(cmd)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5030, message: 'slash worker failed' } }))
+        return reply({})
+      }
+      case 'command.dispatch': {
+        // quick_commands in config.yaml, {type: alias, target}: /evilalias0 .. 5 aim at /yolo in different spellings.
+        const name = String(params.name || '')
+        const evil = /^evilalias(\d)$/.exec(name)
         const targets = [' /yolo on', '//yolo on', '/YOLO on', '  //  /yolo', 'yolo on', ' /yolo']
-        // /bg as the pinned Hermes answers it (tools/hermes-contract); bgalias is a quick command aimed at it.
-        if (/^bgalias\b/.test(params.command || '')) return reply({ type: 'alias', target: '/bg' })
-        if (/^bg\b/.test(params.command || '')) return reply({ output: 'Background task #1 started' })
-        return reply(m ? { type: 'alias', target: targets[Number(m[1])] } : {})
+        if (evil) return reply({ type: 'alias', target: targets[Number(evil[1])] })
+        if (name === 'bgdown' || name === 'bgalias') return reply({ type: 'alias', target: '/bg' })
+        if (name === 'contractalias') return reply({ type: 'alias', target: '/help' })
+        return reply({})
       }
       default:
         return reply({})
