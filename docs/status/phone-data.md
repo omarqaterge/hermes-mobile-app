@@ -122,3 +122,15 @@ app says the feature isn't available.
 | D Plugin | `hermes-plugin/hermes-mobile/phone_data.py`, `__init__.py`, `tools/test_phone_data.py`, the plugin job in `.github/workflows/ci.yml` |
 | E Switches | `PhoneData.java`, `android/AndroidManifest.xml`, `MainActivity.java`, `secure-bridge.ts`, `bridge.ts`, `Settings.tsx`, `settings-search.ts`, `tools/web-e2e/mock.cjs`, `tools/web-e2e/checks/29-phone-data.cjs` |
 | F Gate | `PhoneDataGrants.java`, `HermesService.java`, `web/src/gateway.ts`, `RequestSheet.tsx`, `notif-answer.ts`, `tools/web-e2e/checks/05-questions-and-approvals.cjs`, `25-approval-lock.cjs` |
+
+## Work that runs apart from a chat (security review of PR 206, 2026-11-19)
+
+Run against the pinned Hermes (b8a8be18) with a fake model; no phone.
+
+- **Background tasks.** Hermes's slash worker loads the plugin, its `pre_tool_call` hook fires there, and `HERMES_SESSION_KEY` is the chat's stored id. A `/bg` task of a chat that has read is now blocked from sending, also when it was running before the read, and when a quick command started it. `prompt.background` is covered through the live chat (the app doesn't use it).
+- **Branches** lost the mark, on `main` too (the same code): a branch's `curl` ran without a question. Fixed in the plugin and in `branchAt`.
+- **`session_search`** let a new chat or a background task read a marked chat's messages, through the Tool Search bridge. The reader is now marked.
+- **Scheduled jobs** made with `/cron add` carry no link to the chat (no origin, no key), so the plugin can't tie them to it. The app refuses them in a chat that has read. A run counts as "nobody can be asked" once it has read, or found a marked chat.
+- **Worker commands that hand typed text to a new agent, refused in such a chat:** `/bg`, `/background`, `/cron add|create|edit`, `/kanban create|dispatch|daemon`, `/blueprint <name> slot=value`. **Looked at and left alone:** commands Hermes routes to the chat's own agent (`/goal`, `/loop`, `/plan`, `/queue`, `/steer`, `/retry`, `/undo`, `/compress`, `/learn`, `/init`, `/moa`, `/proactive`), `/review` (a sub-agent of the chat), `/cron list|run|pause|resume|remove`, `/suggestions` and `/curator` (no typed text), quick commands of type `exec` (the owner's own shell lines).
+- **Not closed:** the agent can read Hermes's `state.db` with file or shell tools, which no rule sees. Needs a phone: `docs/manual-tests.md`.
+
