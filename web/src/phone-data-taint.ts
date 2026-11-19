@@ -88,6 +88,25 @@ export function nativeTainted(id: string | null | undefined, strict = false): bo
   return yes
 }
 
+/** For a decision that must not fail open: has any of these chat ids read phone data? Asks the app's record now, with nothing
+ *  remembered, and follows each id's lineage. 'unknown' when a shell is there and its record can't answer. */
+export function idsReadState(ids: readonly (string | null | undefined)[]): 'read' | 'clear' | 'unknown' {
+  const b = remoteBridge()
+  if (!b) return 'clear'
+  if (typeof b.phoneDataTainted !== 'function') return 'unknown'
+  let unsure = false
+  for (const id of new Set(ids.flatMap(i => (i ? [i, ...lineageOf(i)] : [])))) {
+    try {
+      const yes = b.phoneDataTainted(id) as unknown
+      if (yes === true) return 'read'
+      if (yes !== false) unsure = true
+    } catch {
+      unsure = true
+    }
+  }
+  return unsure ? 'unknown' : 'clear'
+}
+
 const taintedState = (s: AppState): boolean => isTaintedItems(shownItems(s)) || shownIds(s).some(id => nativeTainted(id))
 
 export const useTainted = (): boolean => useStore(taintedState)

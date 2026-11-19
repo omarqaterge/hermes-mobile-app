@@ -99,7 +99,7 @@ One slot, six faces, decided in this order:
 
 **Queue** (`send(undefined, 'queue')` in `Composer.tsx`, state in `web/src/queue.ts`): the text sent is built exactly as for Send (`withQuotes(quotes, text)`, so quotes travel with it); it is added to the open chat's queue (`enqueue`, `hm.queue.v1`), and the box and the quotes are cleared. Queued messages are shown at the end of the chat (3.2) and sent one by one when the chat's turn ends (2.2.1 step 8a). The queue lives in the page, not in Hermes: a queued message is sent only while the app shows that chat (closing the app, or opening another chat, keeps it and pauses it until Resume). It is a different thing from the offline outbox. The placeholder while a reply runs is "Queue or steer a follow-up…".
 
-**Stop while sub-agents run.** Hermes ends the reply while a top-level sub-agent goes on. With an empty box the chat keeps Stop (`session.interrupt`, which stops them at every depth) in Dictate's place until they have ended (`useNested`).
+**Stop while sub-agents run.** Hermes ends the reply while a top-level sub-agent goes on. With an empty box the chat keeps Stop (`session.interrupt`, which stops them at every depth) in Dictate's place until they have ended (`useNested`, its `live` count, which only Hermes's own events and list change). Over the lock screen, with no reply running, it asks for an unlock instead.
 
 `runSlash`: shows the command as a user item, then:
 

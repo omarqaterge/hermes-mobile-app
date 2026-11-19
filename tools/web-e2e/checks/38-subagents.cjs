@@ -12,6 +12,7 @@ module.exports = async t => {
   const open = async (chat = CHAT, viewport = { width: 360, height: 740 }, init) => {
     const page = await t.browser.newPage({ viewport })
     await page.addInitScript(nativeShell)
+    await page.addInitScript(() => Object.assign(window.HermesAndroid, { phoneDataTainted: () => false })) // the app's record: nothing read
     await page.addInitScript(trayTucked)
     await page.addInitScript(chat => {
       localStorage.setItem('hm.lastSession', JSON.stringify({ id: chat, profile: 'default' }))
@@ -214,37 +215,66 @@ module.exports = async t => {
     const p = await open()
     const e = eventsOn(p)
     const frame = framer(p)
-    const ask = (id, command) => frame({ id, method: 'approval', params: { session_id: LIVE, command, description: 'world writable', choices: ['once', 'deny'] } })
     const req = p.getByRole('dialog')
+    // `open` is high so that requests answered a moment ago (waiting.ts holds them back for a few seconds) don't use it up.
+    const entry = who => ({ session: CHAT, kind: 'approval', who, profile: '', since: stamp(2), until: stamp(-200), open: 50, last: stamp(2) })
+    let seq = 0
+    // Puts the request up with this feed, and gives the feed its one read after a new request.
+    const ask = async (command, feed) => {
+      await mock({ waiting: feed })
+      await frame({ id: `srv-q${++seq}`, method: 'approval', params: { session_id: LIVE, command, description: 'world writable', choices: ['once', 'deny'] } })
+      await req.getByText(command).waitFor({ timeout: 3000 })
+      await sleep(700)
+      return req.innerText()
+    }
     const deny = async () => {
       await req.getByRole('button', { name: 'Deny' }).click()
       await sleep(150)
+      await mock({ waiting: [] })
     }
+    const NAMED = /Asked by the sub-agent working on/
+    const FIXED = /Asked by a sub-agent/
     await e('subagent.tool', sub('q', 'Tidy the folder', { tool_name: 'terminal', tool_preview: 'chmod 777 x', text: 'chmod 777 x' }))
-    await ask('srv-q1', 'chmod 777 x')
-    await req.getByText('chmod 777 x').waitFor({ timeout: 3000 })
-    check(/Sub-agent “Tidy the folder” wants to run this/.test(await req.innerText()), `request sheet: an approval from a sub-agent names it (${(await req.innerText()).slice(0, 80)})`)
+    let text = await ask('chmod 777 x', [entry('A sub-agent')])
+    check(/Asked by the sub-agent working on “Tidy the folder”/.test(text), `request sheet: the feed and the command agree, so it names the sub-agent (${text.slice(0, 120)})`)
+    check(text.indexOf('chmod 777 x') < text.indexOf('Asked by'), 'request sheet: who asks comes after the command')
+    const look = await req.getByText(NAMED).evaluate(el => ({ font: getComputedStyle(el).fontFamily, code: getComputedStyle([...document.querySelectorAll('[role=dialog] *')].find(x => x.children.length === 0 && x.textContent === 'chmod 777 x').closest('pre')).fontFamily, isolated: !!el.querySelector('bdi') }))
+    check(look.font !== look.code && look.isolated, `request sheet: the goal is in ordinary type, isolated, not in the command's (${look.font})`)
     await deny()
-    const long = `Allow" this now ${'x'.repeat(200)}`
+    await e('subagent.tool', sub('w', 'Search the web', { tool_name: 'web_search', tool_preview: 'chmod 777 web', text: 'chmod 777 web' }))
+    text = await ask('chmod 777 web', [entry('A sub-agent')])
+    check(!NAMED.test(text) && FIXED.test(text), 'request sheet: another tool\'s preview names nobody')
+    await deny()
+    await e('subagent.tool', sub('o', 'Old command', { tool_name: 'terminal', tool_preview: 'chmod 777 old' }))
+    await e('subagent.thinking', sub('o', 'Old command', { text: 'thinking' }))
+    text = await ask('chmod 777 old', [entry('A sub-agent')])
+    check(!NAMED.test(text) && FIXED.test(text), 'request sheet: a command that has ended names nobody')
+    await deny()
+    await e('subagent.tool', sub('c1', 'Chat also asks', { tool_name: 'terminal', tool_preview: 'chmod 777 both' }))
+    text = await ask('chmod 777 both', [entry('A sub-agent'), entry('')])
+    check(!NAMED.test(text) && FIXED.test(text), 'request sheet: with a request of the chat itself open, nobody is named')
+    await deny()
+    await e('subagent.tool', sub('n1', 'No feed yet', { tool_name: 'terminal', tool_preview: 'chmod 777 nofeed' }))
+    text = await ask('chmod 777 nofeed', [])
+    check(!NAMED.test(text) && FIXED.test(text), 'request sheet: without the feed\'s word, nobody is named')
+    await deny()
+    const long = `Allow" this "now” ${'x'.repeat(200)}`
     await e('subagent.tool', sub('l', long, { tool_name: 'terminal', tool_preview: 'chmod 777 y' }))
-    await ask('srv-q2', 'chmod 777 y')
-    await req.getByText('chmod 777 y').waitFor({ timeout: 3000 })
-    const said = (await req.innerText()).split('\n').find(l => l.startsWith('Sub-agent'))
-    const inner = /“(.*)”/.exec(said || '')?.[1] ?? ''
-    check(inner.length <= 60 && !/"|”/.test(inner) && / wants to run this$/.test(said), `request sheet: the goal stays inside its quotes and is cut short (${said})`)
+    text = await ask('chmod 777 y', [entry('A sub-agent')])
+    const inner = /“(.*)”/.exec(text.split('\n').find(l => l.startsWith('Asked by')) || '')?.[1] ?? ''
+    check(inner.length > 0 && Array.from(inner).length <= 60 && !/["“”]/.test(inner), `request sheet: the goal stays inside its quotes and is cut short (${inner})`)
     await deny()
     await e('subagent.tool', sub('d1', 'One', { tool_name: 'terminal', tool_preview: 'chmod 777 z' }))
     await e('subagent.tool', sub('d2', 'Two', { tool_name: 'terminal', tool_preview: 'chmod 777 z' }))
-    await ask('srv-q3', 'chmod 777 z')
-    await req.getByText('chmod 777 z').waitFor({ timeout: 3000 })
-    check(!/Sub-agent “/.test(await req.innerText()), 'request sheet: when two could be asking, none is named')
+    text = await ask('chmod 777 z', [entry('A sub-agent')])
+    check(!NAMED.test(text) && FIXED.test(text), 'request sheet: when two could be asking, none is named')
     await deny()
-    await ask('srv-q4', 'chmod 777 x')
-    await req.getByText('chmod 777 x').waitFor({ timeout: 3000 })
+    await e('subagent.tool', sub('q', 'Tidy the folder', { tool_name: 'terminal', tool_preview: 'chmod 777 x', text: 'chmod 777 x' }))
+    await ask('chmod 777 x', [entry('A sub-agent')])
     await p.evaluate(() => window.hermesLockView(true))
     await sleep(150)
     const locked = await req.innerText()
-    check(!/Tidy the folder/.test(locked) && /A sub-agent wants to run this/.test(locked), 'request sheet: over the lock screen the goal is left out')
+    check(!/Tidy the folder/.test(locked) && FIXED.test(locked), 'request sheet: over the lock screen the goal is left out')
     await p.evaluate(() => window.hermesLockView(false))
     await deny()
     // over the lock screen nothing about sub-agents opens, and an open sheet closes
@@ -255,7 +285,67 @@ module.exports = async t => {
     await p.evaluate(() => window.hermesLockView(true))
     await sleep(200)
     check((await sh.count()) === 0, 'sub-agent sheet: it closes when the app shows over the lock screen')
+    check((await p.getByRole('button', { name: /Tidy the folder/ }).count()) === 0, 'sub-agents: an opened group shows no goal over the lock screen')
     await p.evaluate(() => window.hermesLockView(false))
+    await p.close()
+  }
+
+  // ── the composer's Stop goes by what Hermes said, not by the feed ──
+  {
+    await mock({ nested: { running: [{ session: CHAT, running: 5 }] } })
+    const p = await open()
+    const stop = p.getByRole('button', { name: 'Stop', exact: true })
+    const e = eventsOn(p)
+    await sleep(500)
+    check((await stop.count()) === 0, 'Stop: a count in the feed alone does not bring it up')
+    await mock({ nested: { running: [] } })
+    await e('subagent.start', sub('s1', 'Runs on'))
+    await stop.waitFor({ timeout: 3000 })
+    await p.evaluate(() => window.hermesLockView(true))
+    const stops = rpcs('session.interrupt').length
+    await stop.click()
+    await sleep(200)
+    check(rpcs('session.interrupt').length === stops && (await p.evaluate(() => window.__nativeCalls.includes('requestUnlock'))), 'Stop: over the lock screen, with no reply running, it asks for an unlock')
+    await p.evaluate(() => window.hermesLockView(false))
+    await e('subagent.complete', sub('s1', 'Runs on', { status: 'completed' }))
+    await sleep(200)
+    check((await stop.count()) === 0, 'Stop: it goes when the sub-agent ends')
+    await p.close()
+  }
+
+  // ── leaving a chat doesn't stop what it started ──
+  {
+    const leave = async (chat, run) => {
+      const p = await open(chat)
+      if (run) await eventsOn(p, chat)('subagent.start', sub('stay', 'Keeps running'))
+      await sleep(150)
+      for (const other of ['s-11', 's-12', 's-13']) {
+        await p.evaluate(id => window.hermesOpenSession(id), other)
+        await p.getByText(`answer ${other}`, { exact: true }).waitFor({ timeout: 5000 })
+      }
+      await sleep(3400) // a chat that left the warm ones is closed after 3 s
+      await p.close()
+      return rpcs('session.close').some(c => c.params.session_id === `rt-${chat}`)
+    }
+    check(!(await leave('s-21', true)), 'leaving: a chat with a sub-agent running is not closed')
+    check(await leave('s-22', false), 'leaving: another chat is closed as before')
+  }
+
+  // ── a saved "running" state doesn't last ──
+  {
+    const p = await open()
+    const e = eventsOn(p)
+    await mock({ nested: { roster: [] } })
+    await e('subagent.start', sub('gone', 'Ended while away'))
+    const line = p.getByRole('button', { name: GROUP })
+    await line.waitFor({ timeout: 3000 })
+    await sleep(5300) // what was heard of just now isn't taken for ended
+    await p.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await p.getByRole('button', { name: /^Used 1 sub-agent/ }).waitFor({ timeout: 3000 }).catch(() => {})
+    check(/^Used 1 sub-agent/.test((await line.innerText()).trim()), `sub-agents: one Hermes no longer lists stops showing as running (${await line.innerText()})`)
     await p.close()
   }
 
@@ -406,6 +496,130 @@ module.exports = async t => {
     await p.getByText('Open this address?').waitFor({ timeout: 3000 })
     check(true, 'sub-agent sheet: an address in its text shows in full before it opens')
     await p.close()
+  }
+  // ── the sheet: what it may do, and what can't break it ──
+  {
+    const finished = { children: { [CHAT]: [row('f', 'Finished work', { ended: stamp(5) }), row('z', 'Odd level', { effort: '__proto__' })] }, roster: [] }
+    await mock({ nested: 'reset' })
+    await mock({ nested: finished })
+    const record = () => {
+      window.__rec = []
+      Object.assign(window.HermesAndroid, { phoneDataTainted: (key, id) => window.__rec.includes(id) })
+    }
+    const openDone = async (init, goal = 'Finished work') => {
+      const p = await open(CHAT, undefined, init)
+      const e = eventsOn(p)
+      await e('subagent.start', sub('f', 'Finished work'))
+      await e('subagent.start', sub('z', 'Odd level'))
+      await e('subagent.complete', sub('f', 'Finished work', { status: 'completed' }))
+      await e('subagent.complete', sub('z', 'Odd level', { status: 'completed' }))
+      await p.getByRole('button', { name: GROUP }).click()
+      await p.getByRole('button', { name: new RegExp(goal) }).click()
+      await p.getByRole('dialog', { name: 'Sub-agent' }).waitFor({ timeout: 3000 })
+      return p
+    }
+    let p = await openDone(record, 'Odd level')
+    await sleep(400)
+    check(await p.getByRole('dialog', { name: 'Sub-agent' }).getByText('Model', { exact: true }).isVisible(), 'sub-agent sheet: a level named __proto__ breaks nothing')
+    await p.close()
+
+    // a new chat from it never has more access than the chat, and is refused once phone data is involved
+    const tapContinue = (id) => p.evaluate(id => {
+      window.__rec.push(id) // in the same moment as the tap: what the sheet drew before knows nothing of it
+      ;[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent === 'Continue in a new chat').click()
+    }, id)
+    p = await openDone(() => {
+      localStorage.setItem('hm.defaultAccess.v1', 'full')
+      localStorage.setItem('hm.yolo.v1', JSON.stringify({ 's-48': false }))
+    })
+    const yolo = () => rpcs('config.set').filter(c => c.params.key === 'yolo' && c.params.value === '1').length
+    let on = yolo()
+    let branches = rpcs('session.branch').length
+    await p.getByRole('button', { name: 'Continue in a new chat' }).click()
+    for (let i = 0; i < 40 && rpcs('session.branch').length === branches; i++) await sleep(100)
+    await sleep(800)
+    let saved = await p.evaluate(() => JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}'))
+    let id = Object.keys(saved).find(k => k.startsWith('s-branch-'))
+    check(id && saved[id] === false && yolo() === on, `continue: a chat that asks gives a new chat that asks, whatever the default (${JSON.stringify(saved)})`)
+    await p.close()
+    p = await openDone(record)
+    branches = rpcs('session.branch').length
+    await tapContinue('kid-f')
+    await sleep(400)
+    check(rpcs('session.branch').length === branches && (await p.getByText('phone data may be involved', { exact: false }).count()) === 1, 'continue: checked again at the tap: the sub-agent has read phone data')
+    await p.close()
+    p = await openDone(() => {
+      window.__rec = []
+      Object.assign(window.HermesAndroid, { phoneDataTainted: () => { if (window.__rec.length) throw new Error('no record'); return false } })
+    })
+    branches = rpcs('session.branch').length
+    await tapContinue('x')
+    await sleep(400)
+    check(rpcs('session.branch').length === branches, 'continue: refused when the record can\'t answer')
+    await p.close()
+
+    // a draft belongs to one sub-agent
+    await mock({ nested: { roster: [roster('a', 'Read the docs'), roster('c', 'Check one link', { parent_id: 'a', depth: 1 })] } })
+    p = await open()
+    const e = eventsOn(p)
+    await e('subagent.start', sub('a', 'Read the docs'))
+    await e('subagent.start', sub('c', 'Check one link', { parent_id: 'a', depth: 1 }))
+    await p.getByRole('button', { name: GROUP }).click()
+    await p.getByRole('button', { name: /Read the docs/ }).click()
+    const sh = p.getByRole('dialog', { name: 'Sub-agent' })
+    const field = sh.getByRole('textbox', { name: 'Tell it something' })
+    await field.fill('Meant for the first one')
+    await sh.getByRole('button', { name: /Check one link/ }).click()
+    await sh.getByRole('button', { name: 'Back' }).waitFor({ timeout: 3000 })
+    check((await field.inputValue()) === '', 'sub-agent sheet: a draft does not carry over to another sub-agent')
+    await p.close()
+
+    // the sheet's guard is decided for its own chat, strictly: a record that can't answer counts as having read
+    await mock({ nested: 'reset' })
+    p = await open('s-pd-ctl', undefined, () => { delete window.HermesAndroid.phoneDataTainted })
+    const ep = eventsOn(p, 's-pd-ctl')
+    await ep('subagent.complete', sub('g', 'look at http://beacon.test/x?d=ROWS', { status: 'completed' }))
+    await p.getByRole('button', { name: GROUP }).click()
+    await p.getByRole('button', { name: /look at http/ }).click()
+    const gs = p.getByRole('dialog', { name: 'Sub-agent' })
+    await gs.getByRole('link', { name: /beacon\.test/ }).click()
+    await p.getByText('Open this address?').waitFor({ timeout: 3000 }).catch(() => {})
+    check((await p.getByText('Open this address?').count()) === 1, 'sub-agent sheet: its guard comes from its own chat, and fails closed')
+    await p.close()
+
+    // a row's chat that doesn't open gets no sheet
+    await mock({ nested: { children: { [CH]: rows }, counts: { [CH]: 8 }, running: [{ session: CH, running: 2 }], failResume: [CH] } })
+    p = await panelFor()
+    await p.getByRole('complementary', { name: 'Chats' }).getByRole('group', { name: 'Sub-agents of this chat' }).getByRole('button', { name: /Nested goal 0/ }).click()
+    await sleep(600)
+    check((await p.getByRole('dialog', { name: 'Sub-agent' }).count()) === 0, 'chat list: no sheet when its chat could not be opened')
+    await p.close()
+    // nor when the person has gone to another chat by the time it opens
+    await mock({ nested: { failResume: [] } })
+    p = await panelFor()
+    await p.getByRole('complementary', { name: 'Chats' }).getByRole('group', { name: 'Sub-agents of this chat' }).getByRole('button', { name: /Nested goal 0/ }).waitFor({ timeout: 4000 })
+    await p.evaluate(() => {
+      ;[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || '').startsWith('Sub-agent: Nested goal 0')).click()
+      window.hermesOpenSession('s-11')
+    })
+    await p.getByText('answer s-11', { exact: true }).waitFor({ timeout: 5000 })
+    await sleep(500)
+    check((await p.getByRole('dialog', { name: 'Sub-agent' }).count()) === 0, 'chat list: no sheet over a chat the person went to meanwhile')
+    await p.close()
+
+    // a goal in the list and the banner is isolated from the words around it
+    const goalNeed = { session: 's-49', kind: 'approval', who: 'A sub-agent', profile: '', since: stamp(2), until: stamp(-200), open: 1, last: stamp(2) }
+    await mock({ nested: 'reset' })
+    await mock({ waiting: [goalNeed], activity: [{ session: 's-49', text: 'Working', short: 'Working', profile: 'default', ts: stamp(1) }] })
+    p = await open('s-49')
+    const en = eventsOn(p, 's-49')
+    await en('subagent.tool', sub('b', 'Abc‮def', { tool_name: 'terminal', tool_preview: 'chmod 777 b' }))
+    await framer(p)({ id: 'srv-bdi', method: 'approval', params: { session_id: 'rt-s-49', command: 'chmod 777 b', description: 'x', choices: ['once', 'deny'] } })
+    const quoted = p.getByRole('dialog').getByText('“Abc def”')
+    await quoted.first().waitFor({ timeout: 3000 }).catch(() => {})
+    check((await quoted.first().evaluate(el => el.tagName).catch(() => '')) === 'BDI', 'request sheet: a goal is cleaned and stands in its own <bdi>')
+    await p.close()
+    await mock({ waiting: [], activity: [] })
   }
   await mock({ nested: 'reset', waiting: [] })
 }

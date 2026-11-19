@@ -50,7 +50,7 @@ let activityItems = []
 // `delay` (ms before that resume answers).
 let waitingItems = []
 // Sub-agents (checks 38): what the plugin's /nested routes and subagent.* answer; a test sets parts with {nested: {...}}.
-const NESTED_START = { children: {}, counts: {}, running: [], hits: [], rows: {}, messages: {}, roster: [], tail: 'Working on it', steer: 'queued', found: true }
+const NESTED_START = { children: {}, counts: {}, running: [], hits: [], rows: {}, messages: {}, roster: [], tail: 'Working on it', steer: 'queued', found: true, failResume: [] }
 let nested = { ...NESTED_START }
 // The plugin's /tool-result: the stored output of a finished tool call, by tool_id (filled by every tool.complete the mock sends).
 const toolResults = new Map()
@@ -811,6 +811,7 @@ wss.on('connection', ws => {
         // Like Hermes's resume reply: the stored id comes back as resumed / session_key (no stored_session_id) and
         // info has no title (the app takes it from session.list). tools/hermes-contract checks this against Hermes.
         const sid = params.session_id
+        if (nested.failResume.includes(sid)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5000, message: 'could not open' } }))
         if (goneDraft(sid)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 4007, message: 'session not found' } }))
         if (sid === 's-run') {
           reply({
@@ -1349,6 +1350,11 @@ wss.on('connection', ws => {
         return reply({ ok: true })
       case 'session.close':
         return reply({ closed: true })
+      case 'session.branch': {
+        // As the pinned Hermes answers (tools/hermes-contract): a new live and stored chat, its parent named.
+        const stored = `s-branch-${++created}`
+        return reply({ session_id: `rt-${stored}`, stored_session_id: stored, title: 'Branch', parent: String(params.session_id || '').replace(/^rt-/, ''), message_count: 2, info: CHAT_INFO })
+      }
       // Sub-agents as the pinned Hermes answers (tools/hermes-contract compares them).
       case 'subagent.list':
         return reply({ subagents: nested.roster, delegations: [] })

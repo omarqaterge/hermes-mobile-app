@@ -1,4 +1,5 @@
 import { useNested } from '../subagents'
+import { askUnlock, lockView } from '../lockview'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { bargeInAvailable, fmtPause, getLivePause, interruptLive, liveAvailable, setLiveMute, startLive, stopLive } from '../live'
 import { startListening, stopListening, useVoice, voiceErrorText, voiceInputAvailable } from '../voice'
@@ -48,7 +49,7 @@ const EFFORT_SHORT: Record<string, string> = { medium: 'med', minimal: 'min', no
 
 
 /** A sub-agent outlives the reply that started it: the chat's Stop stays until they have ended. */
-const useSubAgentsRun = (): boolean => useNested(useStore(s => s.active?.storedId ?? '')).running > 0
+const useSubAgentsRun = (): boolean => useNested(useStore(s => s.active?.storedId ?? '')).live > 0
 
 export function Composer({ injected, onInjected }: { injected: string | null; onInjected: () => void }) {
   // Each chat keeps its own unsent text; the new-chat screen has one per profile.
@@ -625,7 +626,12 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             <span className="stop-square" />
           </button>
         ) : (running || subAgentsRun) && !text.trim() && !quotes.length ? (
-          <button key="stop" className="send stop" aria-label="Stop" onClick={() => { haptic(); void interrupt() }}>
+          <button key="stop" className="send stop" aria-label="Stop" onClick={() => {
+            haptic()
+            // Stopping work that goes on without a reply is an action: over the lock screen it waits for an unlock.
+            if (!running && lockView()) return askUnlock('Unlock the phone to stop this')
+            void interrupt()
+          }}>
             <span className="stop-square" />
           </button>
         ) : running ? (

@@ -1,7 +1,7 @@
 // Sub-agents on screen (spec 3.3, 3.13): the one-line group in the chat, the rows under a chat in the list, and the sheet
 // that shows one of them. Goals, steps and output are the model's words: plain text only, never Markdown or HTML. Nothing
 // here can approve anything: approvals stay on the request sheet of the parent chat.
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Component, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { haptic } from '../bridge'
 import { useBackHandler } from '../backstack'
@@ -10,7 +10,7 @@ import { continueSubAgent, errText, resumeSession, steerSubAgent, stopSubAgent, 
 import { askUnlock, lockView } from '../lockview'
 import { useLockView } from '../needsyou'
 import { useSidePanel } from '../sidepanel'
-import { isTaintedNow, nativeTainted } from '../phone-data-taint'
+import { GuardCtx, docTainted, idsReadState, isTaintedNow } from '../phone-data-taint'
 import { openSettingsOn } from '../settings-open'
 import { getState, setState, toast, useStore } from '../store'
 import {
@@ -24,6 +24,7 @@ import {
   inTreeOrder,
   isLive,
   listHeld,
+  listState,
   loadStored,
   nestedIsOpen,
   noteItems,
@@ -147,20 +148,24 @@ function openNestedRow(chat: string, key: string): void {
   if (getState().active?.storedId === chat) return openSubSheet(chat, key)
   setState({ drawer: false })
   resumeSession(chat)
-    .then(() => openSubSheet(chat, key))
+    .then(() => {
+      // Only over its own chat: the person may have gone elsewhere, or the chat didn't open.
+      if (getState().active?.storedId === chat) openSubSheet(chat, key)
+    })
     .catch(e => toast(errText(e), 'error'))
 }
 
-const NestedRow = memo(function NestedRow({ chat, id, level, turning }: { chat: string; id: string; level: number; turning: boolean }) {
+const NestedRow = memo(function NestedRow({ chat, id, level, turning, chatRunning }: { chat: string; id: string; level: number; turning: boolean; chatRunning: boolean }) {
   useSubAgentRow(chat, id) // redraws only for what the row says
   const a = getSubAgent(chat, id)
   if (!a) return null
-  const side = isLive(a.state) ? runsOn(a, 12) : a.state === 'done' || a.state === 'ended' ? '' : STATE_WORD[a.state]
+  const state = listState(a, chatRunning)
+  const side = isLive(state) ? runsOn(a, 12) : state === 'done' || state === 'ended' ? '' : STATE_WORD[state]
   return (
-    <button className="nested-row" style={{ marginLeft: 12 + Math.min(level, 5) * 14 }} aria-label={`Sub-agent: ${a.goal || 'no goal given'}, ${STATE_WORD[a.state]}`} onClick={() => openNestedRow(chat, a.key)}>
-      <StateMark state={a.state} turning={turning} />
+    <button className="nested-row" style={{ marginLeft: 12 + Math.min(level, 5) * 14 }} aria-label={`Sub-agent: ${a.goal || 'no goal given'}, ${STATE_WORD[state]}`} onClick={() => openNestedRow(chat, a.key)}>
+      <StateMark state={state} turning={turning} />
       <span className="nested-goal">{a.goal || 'Sub-agent'}</span>
-      {side && <span className={`nested-side${wentWrong(a.state) ? ' bad' : ' dim'}`}>{side}</span>}
+      {side && <span className={`nested-side${wentWrong(state) ? ' bad' : ' dim'}`}>{side}</span>}
     </button>
   )
 })
@@ -191,10 +196,13 @@ export function NestedRows({ chat, snapAt, only, turning }: { chat: string; snap
   else if (!listHeld()) m.keys = [...m.keys.filter(k => levels.has(k)), ...now.filter(k => !m.keys.includes(k))]
   const keys = memory.current!.keys.filter(k => levels.has(k))
   const list = all ? keys : keys.slice(0, NESTED_SHOWN)
-  const firstLive = list.find(k => getSubAgent(chat, k)?.state === 'working')
+  const firstLive = list.find(k => {
+    const a = getSubAgent(chat, k)
+    return a && listState(a, s.running > 0) === 'working'
+  })
   return (
     <div className="nested-rows" role="group" aria-label="Sub-agents of this chat">
-      {list.map(k => <NestedRow key={k} chat={chat} id={k} level={levels.get(k) ?? 0} turning={turning && k === firstLive} />)}
+      {list.map(k => <NestedRow key={k} chat={chat} id={k} level={levels.get(k) ?? 0} turning={turning && k === firstLive} chatRunning={s.running > 0} />)}
       {keys.length > list.length && (
         <button className="nested-more" onClick={() => { haptic(); setAll(true) }}>Show all {keys.length}</button>
       )}
@@ -357,9 +365,31 @@ function useLevel(chat: string, a: SubAgent | undefined): boolean {
   return gaveUp
 }
 
+/** Whatever goes wrong while drawing one sub-agent stays in its sheet: the chat underneath goes on working. */
+export class SheetBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  render() {
+    if (!this.state.failed) return this.props.children
+    const close = () => setState({ sheet: null })
+    return (
+      <div className="sheet-backdrop" onClick={close}>
+        <div className="sheet" role="dialog" aria-label="Sub-agent" onClick={e => e.stopPropagation()}>
+          <div className="sheet-desc">This sub-agent can’t be shown.</div>
+          <button className="btn" onClick={close}>Close</button>
+        </div>
+      </div>
+    )
+  }
+}
+
 export function SubAgentSheet() {
   const target = useSubTarget()
-  return target ? <SheetFor key={`${target.chat}\n${target.key}`} chat={target.chat} first={target.key} /> : null
+  if (!target) return null
+  const id = `${target.chat}\n${target.key}`
+  return <SheetBoundary key={id}><SheetFor key={id} chat={target.chat} first={target.key} /></SheetBoundary>
 }
 
 function SheetFor({ chat, first }: { chat: string; first: string }) {
@@ -425,7 +455,7 @@ function SheetFor({ chat, first }: { chat: string; first: string }) {
   return (
     <div className="sheet-backdrop sub-backdrop" onClick={close}>
       <div ref={sheet} className={`sheet sub-sheet${tall ? ' at-top' : ''}`} role="dialog" aria-label="Sub-agent" onClick={e => e.stopPropagation()}>
-        <SheetBody chat={chat} id={key} depth={path.length} grip={grip} onBack={back} onOpen={k => setPath(p => [...p, k])} onFocusField={() => setTall(true)} />
+        <SheetBody key={key} chat={chat} id={key} depth={path.length} grip={grip} onBack={back} onOpen={k => setPath(p => [...p, k])} onFocusField={() => setTall(true)} />
       </div>
     </div>
   )
@@ -482,6 +512,7 @@ function SheetBody({
       dead = true
     }
   }, [a?.child, live])
+  const guarded = useStore(() => docTainted(chat)) // the sheet's own chat decides, whatever is on screen behind it
   const [refused, setRefused] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -497,7 +528,7 @@ function SheetBody({
   const canSteer = live && !!a.id && !!runtime && a.accepting && !refused
   const canStop = live && !!a.id && !!runtime
   // A new chat made from this one has no record of what was read here, so it isn't offered once phone data is involved.
-  const canContinue = !live && !!a.child && !a.phoneData && !isTaintedNow() && !nativeTainted(a.child) && !nativeTainted(chat)
+  const canContinue = !live && !!a.child && !a.phoneData && !isTaintedNow() && idsReadState([chat, a.child]) === 'clear'
   const locked = () => {
     if (!lockView()) return false
     askUnlock('Unlock the phone first')
@@ -534,7 +565,7 @@ function SheetBody({
     if (!a.child || busy || locked()) return
     setBusy(true)
     try {
-      await continueSubAgent(a.child, a.goal)
+      await continueSubAgent(chat, a)
       setState({ sheet: null })
     } catch (e) {
       toast(errText(e), 'error')
@@ -542,7 +573,7 @@ function SheetBody({
     setBusy(false)
   }
   return (
-    <>
+    <GuardCtx.Provider value={guarded || a.phoneData}>
       <div className="sub-sheet-head" {...grip}>
         <div className="sheet-grip" />
         <div className="sub-title-row">
@@ -621,6 +652,6 @@ function SheetBody({
         <button className="sub-settings dim small" onClick={() => { haptic(); openSettingsOn('hermes') }}>Sub-agent settings</button>
         {canStop && <button className="btn danger sub-wide" onClick={() => void stop()}>Stop</button>}
       </div>
-    </>
+    </GuardCtx.Provider>
   )
 }

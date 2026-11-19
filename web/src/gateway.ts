@@ -40,7 +40,8 @@ import { BEAT_MS, DEADLINE_MS, beatDecision, retryBanner, retryDelayMs, retryHer
 import { createAgentBuilds } from './agentbuild'
 import { askUnlock, lockView } from './lockview'
 import type { SubagentInterruptResult, SubagentListResult, SubagentSteerResult, SubagentTailResult } from '@hermes/shared/gateway-contract.generated'
-import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteRoster, subAgentsOf, withSubItems } from './subagents'
+import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, subAgentsOf, withSubItems, type SubAgent } from './subagents'
+import { idsReadState, isTaintedItems } from './phone-data-taint'
 import { onChatOpen, runChatOpen } from './chatopen'
 import { ctxFromStatText, stripCtxStat } from './ctxring'
 import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, watchHermes, wsUrl } from './bridge'
@@ -467,8 +468,11 @@ function closeLater(runtimeId: string, ms = 3000): void {
 }
 
 /** `prev` is no longer on screen: keep it warm (an idle one) and close the oldest warm chats. */
+/** Closing a chat stops what it started, so one whose reply has ended counts as working while its sub-agents run. */
+const stillWorking = (a: ActiveSession): boolean => a.running || nestedOf(a.storedId).live > 0
+
 function retire(prev: ActiveSession | null): void {
-  if (!prev || prev.running) return // a working chat stays open, as before: it finishes and notifies
+  if (!prev || stillWorking(prev)) return // a working chat stays open, as before: it finishes and notifies
   if (getState().active?.runtimeId === prev.runtimeId) return
   const i = warm.findIndex(w => w.storedId === prev.storedId)
   if (i >= 0) warm.splice(i, 1)
@@ -487,7 +491,7 @@ function keepPreview(a: ActiveSession | null): void {
 
 async function closeActiveIfIdle(): Promise<void> {
   const a = getState().active
-  if (a && !a.running) {
+  if (a && !stillWorking(a)) {
     try {
       await rpc('session.close', { session_id: a.runtimeId })
     } catch {
@@ -1168,13 +1172,30 @@ export async function stopSubAgent(runtimeId: string, id: string): Promise<boole
   return r?.found === true
 }
 
-/** An ordinary new chat that starts from a finished sub-agent's work: its stored chat is opened only to be branched. */
-export async function continueSubAgent(child: string, goal: string): Promise<void> {
-  if (lockView()) return
-  const opened = await rpc<SessionResumeResult>('session.resume', { session_id: child }, 60_000)
+const ACCESS_ORDER: Access[] = ['off', 'auto', 'full']
+const lowerAccess = (a: Access, b: Access): Access => ACCESS_ORDER[Math.min(ACCESS_ORDER.indexOf(a), ACCESS_ORDER.indexOf(b))]
+
+/** An ordinary new chat that starts from a finished sub-agent's work: its stored chat is opened only to be branched. It never
+ *  has more access than the chat that started the sub-agent, and is not made at all when phone data is involved, or may be:
+ *  a new chat would have no record of the read. */
+export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'child' | 'goal' | 'phoneData' | 'parentChild' | 'parent'>): Promise<void> {
+  if (lockView() || !agent.child) return
+  const a = getState().active
+  const here = a?.storedId === chat ? a : null
+  const family = subAgentsOf(chat)
+  const ids: Array<string | undefined> = [chat, here?.runtimeId, agent.child]
+  for (let up: Pick<SubAgent, 'parent' | 'parentChild'> | undefined = agent, n = 0; up && n < 8; n++) {
+    const from: SubAgent | undefined = family.find(x => (up!.parent && x.id === up!.parent) || (up!.parentChild && x.child === up!.parentChild))
+    ids.push(from?.child)
+    up = from
+  }
+  if (agent.phoneData || isTaintedItems(here?.items) || idsReadState(ids) !== 'clear') throw new Error('This can’t continue in a new chat: phone data may be involved')
+  const parentAccess = here ? accessOf(here) : rememberedAccess(chat)
+  const opened = await rpc<SessionResumeResult>('session.resume', { session_id: agent.child }, 60_000)
   try {
     const r = await rpc<{ stored_session_id: string }>('session.branch', { session_id: opened.session_id })
-    const base = goal.slice(0, 60) || 'Sub-agent'
+    rememberYolo(r.stored_session_id, lowerAccess(parentAccess, defaultAccess())) // before it opens: opening applies this
+    const base = agent.goal.slice(0, 60) || 'Sub-agent'
     await renameStored(r.stored_session_id, `\u2387 ${base}`).catch(() => {})
     await resumeSession(r.stored_session_id)
     loadSessionsSoon()
@@ -1189,6 +1210,7 @@ async function syncSubAgents(): Promise<void> {
   if (!a) return
   const known = nestedOf(a.storedId)
   if (!known.total && !a.items.some(i => i.kind === 'tool' && i.name === 'delegate_task')) return
+  noteItems(a.storedId, a.items.filter((i): i is Extract<ChatItem, { kind: 'subagent' }> => i.kind === 'subagent'))
   await loadStored(a.storedId, a.profile)
   const r = await rpc<SubagentListResult>('subagent.list', { session_id: a.runtimeId }).catch(() => null)
   if (r) noteRoster(a.storedId, r.subagents)
