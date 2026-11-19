@@ -71,12 +71,12 @@ def chat_ids(session_id: Any = "", task_id: Any = "") -> Tuple[str, ...]:
 def _norm(ids: Any) -> List[str]:
     if isinstance(ids, str):
         ids = [ids]
-    out: List[str] = []
+    out: Dict[str, None] = {}
     for i in ids or ():
         i = str(i or "").strip()[:200]
-        if i and i not in out:
-            out.append(i)
-    return out
+        if i:
+            out[i] = None
+    return list(out)
 
 
 def _with_parents(ids: List[str]) -> List[str]:
@@ -255,7 +255,20 @@ _NET_WORDS = frozenset((
     "termux-sms-send termux-share termux-open termux-open-url termux-telephony-call xdg-open "
     "yt-dlp youtube-dl you-get gallery-dl gdown aria2 axel mosh autossh sshpass adb "
     "torsocks tsocks proxychains proxychains4").split())
-_SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish".split())
+# `rish` is Shizuku's shell wrapper on the phone (`rish -c '...'` runs the text as the shell user): read like a shell.
+_SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish rish".split())
+# Hermes itself: its programs and its modules start an agent, a gateway or a scheduled job, or change what Hermes does, so
+# they can send whatever the chat holds. `python -m hermes_cli.main`, `python3 ~/.hermes/hermes-agent/cli.py` count too.
+_HERMES_PROGS = frozenset(("hermes", "hermes-agent", "hermes-acp"))
+_HERMES_MODULES = frozenset(("hermes_cli", "tui_gateway", "gateway", "cron", "acp_adapter", "agent", "run_agent", "cli",
+                             "mcp_serve", "batch_runner", "model_tools", "tools", "plugins", "providers", "pm",
+                             "hermes_platform", "mini_swe_runner"))
+_HERMES_SCRIPT = re.compile(r"(?:^|/)(?:hermes-agent|hermes_cli|tui_gateway|acp_adapter)/|(?:^|/)hermes[^/]*/(?:cli|run_agent|"
+                            r"mcp_serve|batch_runner)\.py$")
+
+
+def _hermes_module(mod: str) -> bool:
+    return mod.split(".", 1)[0] in _HERMES_MODULES
 _INTERP = re.compile(r"^(?:python[0-9.]*|pypy3?|node(?:js)?|deno|bun|perl|ruby|php|lua|luajit|tclsh|osascript|Rscript)$")
 _ONELINER = re.compile(r"^(?:-[a-zA-Z]*[ceEr]|-p[ne]?|--eval|--exec|--print)$")   # -c -e -E -r -pe -ne --eval ...
 _NET_MODULES = ("http.server", "http.client", "SimpleHTTPServer", "smtpd", "smtplib", "ftplib", "telnetlib", "poplib",
@@ -941,6 +954,8 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
         return "command name chosen by a pattern"
     if base in _NET_WORDS:
         return f"network command {base}"
+    if base in _HERMES_PROGS:
+        return f"{base} (starts Hermes or an agent, or changes Hermes)"
     if base == "gh":
         sub = None
         j = 0
@@ -1056,8 +1071,12 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
                 mod = args[j + 1]
                 if mod == "pip":
                     return _pkg_match("pip", args[j + 2:], argd[j + 2:])
+                if _hermes_module(mod):
+                    return f"{base} -m {mod} (Hermes)"
                 return f"{base} -m {mod}" if mod.startswith(_NET_MODULES) else None
             if a.startswith("-m") and len(a) > 2:
+                if _hermes_module(a[2:]):
+                    return f"{base} {a} (Hermes)"
                 return f"{base} {a}" if a[2:].startswith(_NET_MODULES) else None
             if a.startswith(("--eval=", "--print=", "--exec=")):
                 return _oneliner(base, a.split("=", 1)[0], a.split("=", 1)[1], argd[j])
@@ -1071,6 +1090,8 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             if _inline_script(a) or (xa and a in repl):   # /dev/stdin, /proc/self/fd/0, <(...): code, not a local file
                 return _fed_code(base, body, piped) if body and not piped and _PROCSUB not in a \
                     else f"{base} running code from input"
+            if _HERMES_SCRIPT.search(a):
+                return f"{base} running Hermes ({_base(a)})"
             return None   # a script file: its contents are not looked at
         return _fed_code(base, body, piped) if fed else None
     if base in ("sqlite3", "sqlite"):
@@ -1155,7 +1176,10 @@ _RE_NETCODE = re.compile(
     r"|require\(\s*['\"`](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process|cluster|worker_threads)"
     r"|\bimport\s*\(\s*(?:['\"`](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process|cluster|worker_threads)|[^'\"`\s)])"
     r"|\bfrom\s+['\"](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process)['\"]|https?\.(?:get|request)"
-    r"|\burlretrieve|\bcurl_exec|\bstream_socket_client|\bSoapClient|\bget_headers\b",
+    r"|\burlretrieve|\bcurl_exec|\bstream_socket_client|\bSoapClient|\bget_headers\b"
+    # Hermes's own code: it starts agents and jobs (`import hermes_cli.main`, `from cron.jobs import ...`)
+    r"|\b(?:hermes_cli|tui_gateway|run_agent|acp_adapter|mcp_serve|batch_runner)\b"
+    r"|\bfrom\s+(?:gateway|cron|agent)(?:\.\w+)*\s+import\b|\bimport\s+(?:gateway|cron)\b",
     re.I)
 # A call that reads from a web address: PHP `fopen("http://...")`, pandas `read_csv("https://...")`, `urlopen(...)`, `imread(...)`.
 _RE_URLREAD = re.compile(
@@ -1308,19 +1332,144 @@ def ask_text(name: str, shown: str, why: str = "") -> str:
             f"Allow only if you asked for it. {tag}It would run {what}")
 
 
+# ── an agent nobody can be asked about (a background task, a scheduled run) of a chat that has read ──
+# Its terminal runs only what is known to read and change nothing: these commands, each with plain arguments, no
+# redirection into a file, nothing built at run time. Everything else is blocked, whatever it is, because there is
+# nobody to ask: a script the task wrote (`python3 /tmp/x.py`, `./x.sh`), `rish`, `hermes`, an editor, a package tool.
+_RO_CMDS = frozenset("ls pwd whoami id date uname df du wc head tail cat stat file grep egrep fgrep sort uniq cut tr nl "
+                     "basename dirname realpath readlink which echo printf true false test [ seq ps free uptime cd find".split())
+_RO_ENV = re.compile(r"^(?:LC_\w+|LANG|LANGUAGE|TZ|NO_COLOR|COLUMNS|TERM)=[\w.:/@-]*$")
+_RO_REDIRECT = frozenset((">/dev/null", "1>/dev/null", "2>/dev/null", "&>/dev/null", "2>&1", ">&2", "1>&2"))
+_RO_NO_OPT = {   # options that write a file, run a program or change the system
+    "sort": re.compile(r"^(?:-o|--output|-T|--temporary-directory|--compress-program|--random-source)|^-[a-zA-Z]*o"),
+    "date": re.compile(r"^(?:-s|--set)|^-[a-zA-Z]*s"),
+    "file": re.compile(r"^(?:-C|--compile)"),
+    "find": re.compile(r"^-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$"),
+}
+
+
+def detached_terminal(text: Any) -> Optional[str]:
+    """Why a terminal command of such a task is blocked, or None when it only reads (see _RO_CMDS)."""
+    t = text if isinstance(text, str) else ""
+    if len(t) > MAX_SCAN:
+        return "a command too long to read"
+    hit = _match_text(t)
+    if hit:
+        return hit
+    for w, d, _piped, body in _parse(t):
+        if body:
+            return "a command fed inline text"
+        k = 0
+        while k < len(w) and _RO_ENV.match(w[k]) and not d[k]:
+            k += 1
+        if k >= len(w):
+            continue
+        word = w[k]
+        if d[k] or "/" in word or _base(word) not in _RO_CMDS or _ASSIGN.match(word):
+            return f"{word[:40]} (not on the list of commands that only read)"
+        args = w[k + 1:]
+        argd = d[k + 1:]
+        skip = False
+        for j, (a, dyn) in enumerate(zip(args, argd)):
+            if skip:
+                skip = False
+                continue
+            if a in (">", "1>", "2>", "&>") and j + 1 < len(args) and args[j + 1] == "/dev/null":
+                skip = True
+                continue
+            if a in _RO_REDIRECT:
+                continue
+            if "<" in a or ">" in a:
+                return "a redirection (it can write a file)"
+            if _PLACEHOLDER in a or _PROCSUB in a or (dyn and not _HOME_PATH.match(a)):
+                return "an argument built at run time"
+            bad = _RO_NO_OPT.get(word)
+            if bad is not None and bad.match(a):
+                return f"{word} {a[:30]}"
+        if word == "uniq" and len([a for a in args if not a.startswith("-")]) > 1:
+            return "uniq writing a file"
+    return None
+
+
+def _hermes_roots() -> List[Path]:
+    """The folders of Hermes and this app: ~/.hermes (every profile is under it), HERMES_HOME, ~/.hermes-mobile."""
+    roots = [Path.home() / ".hermes", Path.home() / ".hermes-mobile"]
+    env = os.environ.get("HERMES_HOME", "")
+    if env:
+        roots.append(Path(env))
+    try:
+        from hermes_constants import get_hermes_home
+        roots.append(Path(get_hermes_home()))
+    except Exception:
+        pass
+    out: List[Path] = []
+    for r in roots:
+        try:
+            out.append(Path(os.path.realpath(os.path.expanduser(str(r)))))
+        except Exception:
+            pass
+    return out
+
+
+def _under_hermes(path: Any) -> bool:
+    """Whether a path a tool would write is in Hermes's or this app's folders. Fails closed (an unreadable path: yes).
+    A relative path is taken from the terminal's folder, as Hermes's file tools take it; links are followed."""
+    if not isinstance(path, str) or not path.strip():
+        return True
+    try:
+        p = os.path.expanduser(path.strip())
+        if not os.path.isabs(p):
+            p = os.path.join(os.environ.get("TERMINAL_CWD") or os.getcwd(), p)
+        real = Path(os.path.realpath(p))
+        return any(real == r or real.is_relative_to(r) for r in _hermes_roots())
+    except Exception:
+        return True
+
+
+_V4A_PATH = re.compile(r"^\*\*\*\s*(?:Update|Add|Delete) File:\s*(.+?)\s*$|^\*\*\*\s*Move to:\s*(.+?)\s*$", re.M)
+
+
+def _written_paths(name: str, a: Dict[str, Any]) -> List[Any]:
+    """The paths write_file or patch would write; a V4A patch names its files in its own headers."""
+    if name == "patch" and str(a.get("mode") or "replace") == "patch":
+        text = a.get("patch") if isinstance(a.get("patch"), str) else ""
+        found = [m.group(1) or m.group(2) for m in _V4A_PATH.finditer(text)]
+        return found or [None]   # a patch whose files can't be told: fails closed
+    return [a.get("path")]
+
+
+_DETACHED_NEVER = frozenset(("phone_app", "execute_code"))   # an app on the phone; code that can do what the terminal can't
+
+
+def detached_block(name: str, a: Dict[str, Any]) -> Optional[str]:
+    """Why one tool call of such a task is blocked, or None. Stricter than `classify`: no phone_app, no code, a terminal
+    that only reads, and no file written in Hermes's or this app's folders (a task could otherwise change what every chat
+    runs: config, skills, plugins, the record of chats that have read)."""
+    if name in _DETACHED_NEVER:
+        return f"{name} (not for a background task of this chat)"
+    if name == "terminal":
+        why = detached_terminal(_first_text(a, "command", "code"))
+        return f"terminal: {why}" if why else None
+    if name in ("write_file", "patch"):
+        return f"{name} into Hermes's folders" if any(_under_hermes(p) for p in _written_paths(name, a)) else None
+    hit = classify(name, a)
+    return hit[2] if hit is not None else None
+
+
 def check_detached(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
     """For an agent nobody can be asked about: a background task or a scheduled run. `ids` are its own and those of the chat
-    that started it. If one of them has read phone data, what `check` would ask about is blocked, at every call, so a read
+    that started it. If one of them has read phone data, what `detached_block` names is blocked, at every call, so a read
     made after the task started counts too. Marks nothing: the task's own reads are its own."""
     ids = _norm(ids)
     if not has_read(ids):
         return None
     for name, a in _calls(tool_name, args):
-        hit = classify(name, a)
-        if hit is not None:
+        why = detached_block(name, a)
+        if why is not None:
             return {"action": "block", "message": (
-                f"BLOCKED: {hit[2]}. This background task belongs to a chat that has read data from your phone, and nobody "
-                "can be asked here before something is sent out. Do the rest without sending anything, or tell the user.")}
+                f"BLOCKED: {why}. This background task belongs to a chat that has read data from your phone, and nobody "
+                "can be asked here, so it may only read: no command that is not known to only read, nothing sent out, "
+                "nothing written in Hermes's folders. Do the rest without that, or tell the user.")}
     return None
 
 

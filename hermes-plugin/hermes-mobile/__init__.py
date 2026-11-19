@@ -1245,6 +1245,10 @@ def _phone_taint():
 _LOCAL_TOOLS = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "openui_reference", "clarify", "todo",
                           "todo_list", "read_file", "write_file", "patch", "search_files", "skill_view", "skills_list",
                           "session_search", "tool_search", "tool_describe"})
+# What a background task of a chat that has read may still use when phone_taint.py cannot load: tools that only read.
+_DETACHED_READ_TOOLS = frozenset({"find_chats", "openui_reference", "clarify", "todo", "todo_list", "read_file",
+                                  "search_files", "skill_view", "skills_list", "session_search", "tool_search",
+                                  "tool_describe"})
 _READ_CHATS: set = set()   # chat ids that called phone_data in this process, kept even if phone_taint.py cannot load
 _READ_FILE = Path.home() / ".hermes" / "mobile" / "phone-read.json"   # phone_taint.PATH, read directly by the fallback
 
@@ -1496,7 +1500,8 @@ def _taint_directive(tool_name, args, session_id, task_id):
         return _phone_taint().check(tool_name, args, ids)
     except Exception:
         _event("plugin", "hook_failed", what="phone_taint")
-        if any(n not in _LOCAL_TOOLS for n in inner) and _read_before(scope):
+        allowed = _DETACHED_READ_TOOLS if started_by is not None else _LOCAL_TOOLS
+        if any(n not in allowed for n in inner) and _read_before(scope):
             return {"action": "block", "message": (
                 "BLOCKED: this chat has read phone data and Hermux's check for actions that send data out could not "
                 "run. Tell the user; they can start a new chat.")}

