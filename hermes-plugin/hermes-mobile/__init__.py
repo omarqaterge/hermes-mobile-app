@@ -937,39 +937,58 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
 
 _RESULT_SESSION = re.compile(r'\\*"session_id\\*"\s*:\s*\\*"([^"\\]{1,200})')
 _RESULT_ID = re.compile(r'\\*"id\\*"\s*:\s*\\*"([^"\\]{1,200})')
+# find_chats writes each chat as {"id": ..., "profile": ...}: the profile its database is in
+_RESULT_ID_PROFILE = re.compile(r'\\*"id\\*"\s*:\s*\\*"([^"\\]{1,200})\\*"\s*,\s*\\*"profile\\*"\s*:\s*\\*"([^"\\]{1,100})')
+# A result that holds no chat's messages: a failure, or session_search listing recent chats by title (mode "browse")
+_RESULT_FAILED = re.compile(r'^\s*\{\s*"(?:error"\s*:|(?:success|ok)"\s*:\s*false\b)')
+_RESULT_BROWSE = re.compile(r'^\s*\{\s*"success"\s*:\s*true\s*,\s*"mode"\s*:\s*"browse"')
 _RESULT_SCAN = 2_000_000   # characters of a result looked through
-_CHATS_NAMED = 50          # chats of one result looked up
+_CHATS_NAMED = 50          # chats of one result whose origin is looked up in a database (every one is checked in the record)
 
 
-def _chats_read_by(tool_name, args, result) -> set:
-    """The chats whose messages this tool call just returned: `session_search`'s results, `find_chats` when it searched
-    for words (its snippets are their text). Read from the text, so a cut-off result still counts."""
-    out: set = set()
+def _chats_read_by(tool_name, args, result, status=None) -> dict:
+    """The chats whose messages this tool call just returned, each with the profile it was found in ('' = this agent's):
+    `session_search`'s results, `find_chats` when it searched for words (its snippets are their text). Read from the text,
+    so a cut-off result still counts. Nothing for a call that failed, or for session_search's `browse` mode, which lists
+    titles of recent chats and no messages; through the Tool Search bridge the result's shape can't be told, so it
+    counts."""
+    out: dict = {}
+    if status in ("error", "blocked"):
+        return out
     text = result if isinstance(result, str) else json.dumps(result, default=str)
     text = text[:_RESULT_SCAN]
+    single = tool_name != "tool_call"
+    if single and (_RESULT_FAILED.match(text) or (tool_name == "session_search" and _RESULT_BROWSE.match(text))):
+        return out
     for name, a in _phone_taint()._calls(tool_name, args):
         if name == "session_search":
-            out.update(_RESULT_SESSION.findall(text))
+            prof = a.get("profile") if isinstance(a.get("profile"), str) else ""
+            for c in _RESULT_SESSION.findall(text):
+                out.setdefault(c, prof)
             if isinstance(a.get("session_id"), str):
-                out.add(a["session_id"])
+                out.setdefault(a["session_id"], prof)
         elif name == "find_chats" and a.get("text"):
-            out.update(_RESULT_ID.findall(text))
+            for c, prof in _RESULT_ID_PROFILE.findall(text):
+                out.setdefault(c, prof)
+            for c in _RESULT_ID.findall(text):
+                out.setdefault(c, "")
     return out
 
 
-def _taint_from_reading(tool_name, args, result, session_id, task_id) -> None:
+def _taint_from_reading(tool_name, args, result, session_id, task_id, status=None) -> None:
     """A chat that reads the messages of one that has read phone data now holds them too, so it counts as having read: it
-    is asked before sending anything out, and a background task is blocked. Never raises."""
+    is asked before sending anything out, and a background task is blocked. Every chat in the result is checked against
+    the record; only the database lookups for chats made from another (`_inherit_read`) are capped. Never raises."""
     try:
         pt = _phone_taint()
         if not pt.any_read():
             return
         ids = list(pt.chat_ids(session_id, task_id))
-        found = [c for c in _chats_read_by(tool_name, args, result) if c not in ids][:_CHATS_NAMED]
+        found = {c: p for c, p in _chats_read_by(tool_name, args, result, status).items() if c not in ids}
         if not ids or not found:
             return
-        _inherit_read(found)
-        if pt.has_read(found) and not pt.has_read(ids):
+        _inherit_read(list(found)[:_CHATS_NAMED], found)
+        if pt.has_read(list(found)) and not pt.has_read(ids):
             pt.mark(ids)
             _report_taint(ids)
     except Exception:
@@ -978,7 +997,7 @@ def _taint_from_reading(tool_name, args, result, session_id, task_id) -> None:
 
 def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, session_id=None, turn_id=None,
                        tool_call_id=None, task_id=None, **_):
-    _taint_from_reading(tool_name, args, result, session_id, task_id)
+    _taint_from_reading(tool_name, args, result, session_id, task_id, status)
     tool_name, args = _peel_bridge(tool_name, args)
     if tool_name in ("write_file", "patch"):
         try:
@@ -1293,7 +1312,12 @@ def _fallback_save(ids) -> None:
                 for i in new:
                     chats[i] = now
             tmp = _READ_FILE.with_name(_READ_FILE.name + f".{os.getpid()}.fb.tmp")
-            tmp.write_text(json.dumps({"chats": chats, "full": True} if full else {"chats": chats}))
+            body = {"chats": chats}
+            if isinstance(raw.get("since"), dict):
+                body["since"] = raw["since"]   # kept as it was: these ids' first read isn't known here, so they get none
+            if full:
+                body["full"] = True
+            tmp.write_text(json.dumps(body))
             tmp.replace(_READ_FILE)
         finally:
             if fd is not None:
@@ -1402,29 +1426,54 @@ def _on_session_start(session_id=None, **_):
     _taint_sync(session_id)
 
 
-_INHERIT_SEEN: set = set()   # stored ids already looked up (a chat's origin doesn't change)
+_INHERIT_SEEN: set = set()   # (profile, stored id) already looked up (a chat's origin doesn't change)
 
 
-def _inherit_read(sids) -> None:
+def _profile_db(profile: str):
+    """The state database of a profile named in a tool's result, or None for this agent's own."""
+    if not profile:
+        return None
+    try:
+        return _chat_search().profiles().get(profile)
+    except Exception:
+        return None
+
+
+def _made_after_read(origin, pt) -> bool:
+    """Whether a chat with this origin ([(parent, when the chat made from it was created), ...], nearest first) holds what
+    a chat that had read held: some parent on the way had read by the time the chat made from it was created. A time that
+    isn't known counts as yes."""
+    for parent, created in origin:
+        if not pt.has_read([parent]):
+            continue
+        since = pt.read_since(parent)
+        if since is None or created is None or since <= created:
+            return True
+    return False
+
+
+def _inherit_read(sids, profiles=None) -> None:
     """A chat made from one that has read phone data holds what that chat held: a branch copies its messages, and Hermes
     announces no branch to a plugin. So the first time a chat is seen while any chat has read, the chats it came from are
-    looked up, before the tool call it arrives with is judged. It looks only at the chat's origin: a parent that reads later
-    gives its branch nothing. Costs nothing while no chat has read. Never raises."""
+    looked up (in the profile a tool's result found it in, `profiles`), before the tool call it arrives with is judged. A
+    chat made before its parent read holds nothing of that read and is left alone (`_made_after_read`). Costs nothing
+    while no chat has read. Never raises."""
     try:
         pt = _phone_taint()
         if not pt.any_read():
             return
         for sid in sids:
             sid = str(sid or "").strip()
-            if not sid or sid in _INHERIT_SEEN:
+            prof = str((profiles or {}).get(sid) or "")
+            if not sid or (prof, sid) in _INHERIT_SEEN:
                 continue
-            came_from = _phone_data().stored_ancestors(sid)
-            if came_from is None:
+            origin = _phone_data().stored_origin(sid, db=_profile_db(prof))
+            if origin is None:
                 continue   # not known yet: the next call asks again
             if len(_INHERIT_SEEN) > 2000:
                 _INHERIT_SEEN.clear()
-            _INHERIT_SEEN.add(sid)
-            if came_from and pt.has_read(came_from) and not pt.has_read([sid]):
+            _INHERIT_SEEN.add((prof, sid))
+            if origin and not pt.has_read([sid]) and _made_after_read(origin, pt):
                 pt.mark([sid])
                 _report_taint([sid])
     except Exception:

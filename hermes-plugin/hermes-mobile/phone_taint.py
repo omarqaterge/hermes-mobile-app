@@ -19,7 +19,7 @@ Auto access Hermes's gate approves without asking; and a chat whose runtime id a
 call is no longer recognised.
 
 The chats that have read are remembered in memory and in ~/.hermes/mobile/phone-read.json (chat ids and times only,
-never data, at most MAX_CHATS, written atomically under a file lock; an id that has no room is never dropped: the file
+`since` holding when each chat this version recorded first read, never data, at most MAX_CHATS, written atomically under a file lock; an id that has no room is never dropped: the file
 gets a `full` flag and every chat counts as having read, as for a damaged file). A damaged file (not JSON, wrong shape)
 means every chat counts as having read, and is left as it is until someone deletes it; a missing file means nobody has.
 Nothing here logs a command, a result or a message.
@@ -47,7 +47,7 @@ MAX_DEPTH = 4     # nested `bash -c '...'` levels looked into
 _lock = threading.Lock()
 _mem: Dict[str, float] = {}
 _parents: Dict[str, str] = {}   # subagent stored id -> parent stored id (this process only)
-_cache: tuple = (None, {})   # ((mtime_ns, inode, size), {chat: time})
+_cache: tuple = (None, {}, {})   # ((mtime_ns, inode, size), {chat: time}, {chat: first read})
 
 
 def chat_ids(session_id: Any = "", task_id: Any = "") -> Tuple[str, ...]:
@@ -95,39 +95,73 @@ def ancestors(ids: Any) -> List[str]:
     return _with_parents(_norm(ids))
 
 
-def _read_file() -> Optional[Dict[str, float]]:
-    """The saved chats; {} when there is no file; None when the file exists but is damaged (not JSON, no `chats` object,
-    a time that is not a number, unreadable): then every chat counts as having read (fail closed, as the fallback in
-    __init__.py does)."""
+def _read_state() -> Tuple[Optional[Dict[str, float]], Dict[str, float]]:
+    """The saved chats and, for those this version first recorded, when each first read (`since`). Chats: {} when there
+    is no file; None when the file exists but is damaged (not JSON, no `chats` object, a time that is not a number,
+    unreadable): then every chat counts as having read (fail closed, as the fallback in __init__.py does). A chat an
+    older version recorded has no `since`: its time there is its latest read, not its first, so it is never used."""
     try:
         text = PATH.read_text()
     except FileNotFoundError:
-        return {}
+        return {}, {}
     except Exception:
-        return None
+        return None, {}
     try:
         d = json.loads(text)
         if isinstance(d, dict) and d.get("full") is True:
-            return None   # an id had no room (MAX_CHATS): it may be a real chat, so every chat counts as having read
+            return None, {}   # an id had no room (MAX_CHATS): it may be a real chat, so every chat counts as having read
         raw = d.get("chats") if isinstance(d, dict) else None
-        return {str(k)[:200]: float(v) for k, v in raw.items()} if isinstance(raw, dict) else None
+        if not isinstance(raw, dict):
+            return None, {}
+        chats = {str(k)[:200]: float(v) for k, v in raw.items()}
     except Exception:
-        return None
+        return None, {}
+    since: Dict[str, float] = {}
+    rs = d.get("since")
+    if isinstance(rs, dict):
+        for k, v in rs.items():
+            k = str(k)[:200]
+            if k in chats and isinstance(v, (int, float)) and not isinstance(v, bool):
+                since[k] = float(v)
+    return chats, since
 
 
-def _file_chats() -> Optional[Dict[str, float]]:
-    """`_read_file`, cached until the file changes."""
+def _read_file() -> Optional[Dict[str, float]]:
+    return _read_state()[0]
+
+
+def _file_state() -> Tuple[Optional[Dict[str, float]], Dict[str, float]]:
+    """`_read_state`, cached until the file changes."""
     global _cache
     try:
         s = PATH.stat()
         st = (s.st_mtime_ns, s.st_ino, s.st_size)
     except OSError:
-        return {}
+        return {}, {}
     if _cache[0] == st:
-        return _cache[1]
-    chats = _read_file()
-    _cache = (st, chats)
-    return chats
+        return _cache[1], _cache[2]
+    chats, since = _read_state()
+    _cache = (st, chats, since)
+    return chats, since
+
+
+def _file_chats() -> Optional[Dict[str, float]]:
+    return _file_state()[0]
+
+
+def read_since(chat: Any) -> Optional[float]:
+    """When this chat first read phone data, as far as it is known; None when it isn't (an older version's entry, a damaged
+    file, a chat that hasn't read). A caller comparing times takes None as the safe answer."""
+    i = str(chat or "").strip()[:200]
+    if not i:
+        return None
+    with _lock:
+        chats, since = _file_state()
+        if chats is None:
+            return None
+        if i in chats:
+            return since.get(i)
+        return _mem.get(i)
 
 
 def has_read(ids: Any) -> bool:
@@ -179,23 +213,27 @@ def mark(ids: Any) -> None:
         with _lock:
             now = time.time()
             for i in ids:
-                _mem.pop(i, None)
-                _mem[i] = now
+                _mem[i] = _mem.pop(i, now)   # keeps the first time this process saw it read; newest last
             while len(_mem) > MAX_CHATS:
                 _mem.pop(next(iter(_mem)))
             try:
                 with _file_lock():
-                    chats = _read_file()   # read again inside the lock: another process may have added entries
+                    chats, since = _read_state()   # read again inside the lock: another process may have added entries
                     if chats is None:
                         return   # a damaged file stays as it is (every chat counts as read); delete it to start over
                     full = len(chats) + len([i for i in ids if i not in chats]) > MAX_CHATS
                     if not full:
                         for i in ids:
+                            if i not in chats:
+                                since[i] = now   # recorded now for the first time: when it first read
                             chats[i] = now
                     PATH.parent.mkdir(parents=True, exist_ok=True)
                     tmp = PATH.with_name(PATH.name + f".{os.getpid()}.tmp")
                     # no room: never drop an old chat. The file's own `full` flag makes every chat count as having read
-                    tmp.write_text(json.dumps({"chats": chats, "full": True} if full else {"chats": chats}))
+                    body: Dict[str, Any] = {"chats": chats, "since": {k: v for k, v in since.items() if k in chats}}
+                    if full:
+                        body["full"] = True
+                    tmp.write_text(json.dumps(body))
                     tmp.replace(PATH)
             except Exception:
                 pass   # the in-memory entry still holds for this process

@@ -384,7 +384,12 @@ check("another chat still does not", pt.check("terminal", {"command": "curl http
 print("remembered across a restart")
 raw = json.loads(pt.PATH.read_text())
 check("file holds ids and times only",
-      set(raw) == {"chats"} and list(raw["chats"]) == ["c1"] and isinstance(raw["chats"]["c1"], float))
+      set(raw) == {"chats", "since"} and list(raw["chats"]) == ["c1"] and isinstance(raw["chats"]["c1"], float)
+      and list(raw["since"]) == ["c1"] and isinstance(raw["since"]["c1"], float))
+_first = raw["since"]["c1"]
+pt.mark("c1")
+check("since keeps the first read, a later read changes only the chat's own time",
+      json.loads(pt.PATH.read_text())["since"]["c1"] == _first and pt.read_since("c1") == _first)
 pt._mem.clear()
 pt._cache = (None, {})
 check("a new process reads the file", asks("terminal", {"command": "curl http://x"}, "c1"))
@@ -809,6 +814,11 @@ check("fallback: past the bound nothing is dropped and the file's full flag is s
 check("fallback: with the flag set every chat counts as having read", init._read_before(["fb-never-seen"]) is True)
 check("fallback: it used the module's lock file", pt.PATH.with_name(pt.PATH.name + ".lock").exists())
 pt.PATH.unlink()
+pt.PATH.write_text(json.dumps({"chats": {"fbs-1": 5.0}, "since": {"fbs-1": 4.0}}))
+init._fallback_save(["fbs-2"])
+_d = json.loads(pt.PATH.read_text())
+check("fallback: it keeps when each chat first read, and gives the new id none", _d.get("since") == {"fbs-1": 4.0} and "fbs-2" in _d["chats"])
+pt.PATH.unlink()
 init._phone_taint = good
 
 print("background tasks")
@@ -959,36 +969,55 @@ print("chats made from one that has read")
 import sqlite3  # noqa: E402
 _bdb = tmp / "branches.db"
 _con = sqlite3.connect(_bdb)
-_con.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT)")
-_con.executemany("INSERT INTO sessions VALUES (?,?,?)", [
-    ("br-parent", None, None), ("br-1", "br-parent", '{"_branched_from": "br-parent"}'),
-    ("br-2", None, '{"_branched_from": "br-parent"}'), ("br-3", "br-1", None), ("br-free", None, "{not json"),
-    ("br-early", "br-late-parent", None), ("br-late-parent", None, None)])
+import time as _t  # noqa: E402
+_BEFORE, _AFTER = _t.time() - 3600, _t.time() + 3600   # made an hour before the reads below, or an hour after
+_con.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT, started_at REAL)")
+_con.executemany("INSERT INTO sessions VALUES (?,?,?,?)", [
+    ("br-parent", None, None, _BEFORE - 60), ("br-1", "br-parent", '{"_branched_from": "br-parent"}', _AFTER),
+    ("br-2", None, '{"_branched_from": "br-parent"}', _AFTER), ("br-3", "br-1", None, _AFTER + 60),
+    ("br-free", None, "{not json", _AFTER), ("br-early", "br-late-parent", None, _BEFORE),
+    ("br-late-parent", None, None, _BEFORE - 60), ("br-notime", "br-parent", None, None),
+    ("br-old-of-early", "br-early", None, _AFTER + 60), ("br-legacy", "br-legacy-parent", None, _BEFORE),
+    ("br-legacy-parent", None, None, _BEFORE - 60)])
 _con.commit()
-real_db, real_anc = pd.__dict__.get("_state_db"), pd.stored_ancestors
+real_db, real_origin = pd.__dict__.get("_state_db"), pd.stored_origin
 pd._state_db = lambda: _bdb
 init._phone_data = lambda: pd
 reset()
 init._INHERIT_SEEN.clear()
 asked = []
-pd.stored_ancestors = lambda sid, *a, **k: (asked.append(sid), real_anc(sid, *a, **k))[1]
+pd.stored_origin = lambda sid, *a, **k: (asked.append(sid), real_origin(sid, *a, **k))[1]
 check("no chat has read: a chat's origin isn't even looked up", action("terminal", CURL, "br-1") is None and not asked)
 pt.mark(["br-parent"])
-check("a branch of a chat that has read is asked about, at its first send", action("terminal", CURL, "br-1") == "approve")
+check("a branch made after its parent read is asked about, at its first send", action("terminal", CURL, "br-1") == "approve")
 check("and is marked", pt.has_read(["br-1"]))
 check("also when only _branched_from names the parent", action("terminal", CURL, "br-2") == "approve")
 check("and for a branch of that branch", action("terminal", CURL, "br-3") == "approve")
+check("a branch whose creation time isn't known counts as made after", action("terminal", CURL, "br-notime") == "approve")
 check("a chat with no such origin is left alone", action("terminal", CURL, "br-free") is None and not pt.has_read(["br-free"]))
 check("the origin is looked up once", asked.count("br-free") == 1 and (action("terminal", CURL, "br-free"), asked.count("br-free"))[1] == 1)
-check("a branch made before its parent read stays as it was", action("terminal", CURL, "br-early") is None)
 pt.mark(["br-late-parent"])
-check("the parent's later read gives the branch nothing", action("terminal", CURL, "br-early") is None)
-check("a chat not stored yet is asked about again", action("terminal", CURL, "br-new") is None and "br-new" not in init._INHERIT_SEEN)
-_con.execute("INSERT INTO sessions VALUES ('br-new', 'br-parent', NULL)")
+check("a branch made before its parent read is not marked, even at its first send after the read",
+      action("terminal", CURL, "br-early") is None and not pt.has_read(["br-early"]))
+check("nor is a branch of that branch made later", action("terminal", CURL, "br-old-of-early") is None)
+_raw = json.loads(pt.PATH.read_text())
+_raw["chats"]["br-legacy-parent"] = _t.time()   # recorded by an older version: its time is a latest read, not a first
+pt.PATH.write_text(json.dumps(_raw))
+check("a parent an older version recorded has no known first read: its branch counts as made after",
+      pt.read_since("br-legacy-parent") is None and action("terminal", CURL, "br-legacy") == "approve")
+check("a chat not stored yet is asked about again", action("terminal", CURL, "br-new") is None and ("", "br-new") not in init._INHERIT_SEEN)
+_con.execute("INSERT INTO sessions VALUES ('br-new', 'br-parent', NULL, ?)", (_AFTER,))
 _con.commit()
 check("and is marked once its row is there", action("terminal", CURL, "br-new") == "approve")
+_odb = tmp / "old-schema.db"
+_oc = sqlite3.connect(_odb)
+_oc.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT)")
+_oc.execute("INSERT INTO sessions VALUES ('os-1', 'br-parent', NULL)")
+_oc.commit()
+_oc.close()
+check("a database without started_at gives the origin with no times", real_origin("os-1", db=_odb) == [("br-parent", None)])
 _con.close()
-pd.stored_ancestors = real_anc
+pd.stored_origin = real_origin
 if real_db is None:
     del pd._state_db
 else:
@@ -1002,7 +1031,7 @@ init._INHERIT_SEEN.clear()
 reports = []
 real_report = init._report_taint
 init._report_taint = lambda new: reports.append(list(new))
-init._phone_data = lambda: type("NoDb", (), {"stored_ancestors": staticmethod(lambda sid: [])})
+init._phone_data = lambda: type("NoDb", (), {"stored_origin": staticmethod(lambda sid, **k: [])})
 FOUND = json.dumps({"success": True, "results": [{"session_id": "rd-marked", "messages": [{"content": "secret"}]}]})
 OTHER = json.dumps({"success": True, "results": [{"session_id": "rd-plain", "messages": []}]})
 init._on_post_tool_call("session_search", {"query": "x"}, FOUND, session_id="rd-1")
@@ -1034,6 +1063,45 @@ init._on_post_tool_call("session_search", {"query": "x"}, FOUND, session_id="bg_
 check("a background task that finds it is blocked from sending", action("terminal", CURL, "bg_r") == "block")
 check("and the chat that started it stays as it was", not pt.has_read(["rd-clean"]))
 out_of_worker(had_key)
+BROWSE = json.dumps({"success": True, "mode": "browse", "results": [{"session_id": "rd-marked", "title": "t", "preview": "p"}]})
+init._on_post_tool_call("session_search", {}, BROWSE, session_id="rd-browse")
+check("session_search listing recent chats (mode browse) marks nobody", not pt.has_read(["rd-browse"]))
+init._on_post_tool_call("session_search", {}, BROWSE[:70], session_id="rd-browse2")
+check("not even when cut off", not pt.has_read(["rd-browse2"]))
+for failed, what in ((json.dumps({"success": False, "error": "no session rd-marked"}), "success false"),
+                     (json.dumps({"error": "session rd-marked not found", "session_id": "rd-marked"}), "an error"),
+                     (json.dumps({"ok": False, "error": "find failed"}), "ok false")):
+    init._on_post_tool_call("session_search", {"session_id": "rd-marked"}, failed, session_id="rd-fail")
+    check(f"a failed result marks nobody ({what})", not pt.has_read(["rd-fail"]))
+init._on_post_tool_call("session_search", {"session_id": "rd-marked"}, FOUND, status="error", session_id="rd-fail")
+check("nor does a call Hermes reports as failed", not pt.has_read(["rd-fail"]))
+init._on_post_tool_call("tool_call", {"calls": [{"name": "session_search", "arguments": {}}]}, json.dumps({"results": [{"result": BROWSE}]}), session_id="rd-bridge")
+check("through the Tool Search bridge the shape can't be told: it counts", pt.has_read(["rd-bridge"]))
+MANY = json.dumps({"ok": True, "chats": [{"id": f"rd-x{i}", "profile": "default", "snippet": "secret"} for i in range(199)]
+                  + [{"id": "rd-marked", "profile": "default", "snippet": "secret"}]})
+looked = []
+init._phone_data = lambda: type("CountDb", (), {"stored_origin": staticmethod(lambda sid, **k: (looked.append(sid), [])[1])})
+init._on_post_tool_call("find_chats", {"text": "secret", "limit": 200}, MANY, session_id="rd-many")
+check("find_chats with 200 chats: the marked one at the end still marks the reader", pt.has_read(["rd-many"]))
+check("and at most 50 of them are looked up in a database", 0 < len(looked) <= 50)
+print("a chat found in another profile is looked up in that profile")
+_wdb = tmp / "work-profile.db"
+_wc = sqlite3.connect(_wdb)
+_wc.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT, started_at REAL)")
+_wc.execute("INSERT INTO sessions VALUES ('pf-branch', 'pf-parent', NULL, ?)", (_t.time() + 3600,))
+_wc.commit()
+_wc.close()
+_defdb = tmp / "default-profile.db"
+sqlite3.connect(_defdb).execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT, started_at REAL)").connection.close()
+pt.mark(["pf-parent"])
+init._INHERIT_SEEN.clear()
+pd._state_db = lambda: _defdb
+init._phone_data = lambda: pd
+real_cs = init._chat_search
+init._chat_search = lambda: type("Profiles", (), {"profiles": staticmethod(lambda: {"default": str(_defdb), "work": str(_wdb)})})
+init._on_post_tool_call("find_chats", {"text": "x"}, json.dumps({"ok": True, "chats": [{"id": "pf-branch", "profile": "work", "snippet": "x"}]}), session_id="rd-pf")
+check("its branch is found there and marked, and so is the reader", pt.has_read(["pf-branch"]) and pt.has_read(["rd-pf"]))
+init._chat_search = real_cs
 init._report_taint = real_report
 init._phone_data = lambda: pd
 reset()
