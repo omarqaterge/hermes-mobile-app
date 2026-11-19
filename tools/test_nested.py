@@ -186,6 +186,55 @@ check("counts per top chat, under its current id", got == {"chat": 5, "other": 1
 got = papi.get_nested_search("DEEP")["hits"]
 check("search finds a nested one under its top chat", got == [{"chat": "chat", "child": "sub-a-1", "goal": "Deep one"}], got)
 check("one letter searches nothing", papi.get_nested_search("d") == {"hits": []})
+# SQLite's length() of text stops at a NUL: a model_config with one near its start would pass a limit on length() and be
+# read whole. Every query that limits it counts bytes instead (CAST AS BLOB).
+NUL_TAIL = "\x00" + "x" * (papi.NESTED_CONFIG_MAX + 10)
+row("nul-big", "chat", "Subagent: NUL", cfg=json.dumps(kid("low", "chat")) + NUL_TAIL, started=9.0)
+row("old2", reason="compression", ended=5.0)
+row("nul-cont", "old2", "Continued", cfg="{}" + NUL_TAIL)
+con.commit()
+fetched = []
+real_con = papi._nested_con
+
+
+class _Rows:
+    def __init__(self, cur):
+        self.cur = cur
+
+    def _seen(self, rows):
+        for r in rows if isinstance(rows, list) else [rows]:
+            if r:
+                fetched.extend(len(v) for v in r if isinstance(v, (str, bytes)))
+        return rows
+
+    def fetchall(self):
+        return self._seen(self.cur.fetchall())
+
+    def fetchone(self):
+        return self._seen(self.cur.fetchone())
+
+    def __iter__(self):
+        for r in self.cur:
+            self._seen(r)
+            yield r
+
+
+class _Con:
+    def __init__(self, c):
+        self.c = c
+
+    def execute(self, *a):
+        return _Rows(self.c.execute(*a))
+
+    def __getattr__(self, name):
+        return getattr(self.c, name)
+
+
+papi._nested_con = lambda profile=None: (lambda c: _Con(c) if c is not None else None)(real_con(profile))
+papi.get_nested("chat"), papi.get_nested_counts(), papi.get_nested_search("Subagent")
+papi._nested_con = real_con
+check("a model_config with a NUL near its start is still limited by its size in bytes",
+      fetched and max(fetched) <= papi.NESTED_CONFIG_MAX, max(fetched or [0]))
 con.execute("DROP TABLE messages")
 con.commit()
 check("an unreadable table answers empty", papi.get_nested("chat") == {"children": []})

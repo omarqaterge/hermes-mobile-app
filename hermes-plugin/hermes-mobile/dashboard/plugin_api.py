@@ -965,7 +965,7 @@ NESTED_LONGEST = 6 * 3600
 NESTED_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 NESTED_ROWS = 200
 NESTED_DEPTH = 8
-NESTED_CONFIG_MAX = 200_000   # bytes of a row's model_config that are read at all
+NESTED_CONFIG_MAX = 200_000   # bytes of a row's model_config that are read at all (counted as a blob: length() of text stops at a NUL)
 
 
 def _nested_entry(n, now: float):
@@ -1058,7 +1058,7 @@ def get_nested(session: str, profile: Optional[str] = None):
             marks = ",".join("?" * len(frontier))
             rows = con.execute(
                 f"SELECT id, parent_session_id, title, model, model_config, started_at, ended_at, end_reason, message_count "
-                f"FROM sessions WHERE parent_session_id IN ({marks}) AND length(model_config) <= ? "
+                f"FROM sessions WHERE parent_session_id IN ({marks}) AND length(CAST(model_config AS BLOB)) <= ? "
                 f"ORDER BY started_at LIMIT ?",
                 (*frontier, NESTED_CONFIG_MAX, NESTED_ROWS)).fetchall()
             frontier = []
@@ -1091,7 +1091,7 @@ def _nested_index(con) -> tuple:
     titles: dict = {}
     for sid, parent, title, raw in con.execute(
             "SELECT id, parent_session_id, title, model_config FROM sessions WHERE parent_session_id IS NOT NULL "
-            "AND length(model_config) <= ? AND model_config LIKE '%_delegate_from%' ORDER BY started_at DESC LIMIT 5000",
+            "AND length(CAST(model_config AS BLOB)) <= ? AND model_config LIKE '%_delegate_from%' ORDER BY started_at DESC LIMIT 5000",
             (NESTED_CONFIG_MAX,)):
         try:
             if _is_text(sid) and _is_text(parent) and _delegate_config(raw) is not None:
@@ -1102,7 +1102,7 @@ def _nested_index(con) -> tuple:
     # A compressed chat's own continuation only: its sub-agents and branches also name it as their parent.
     after = {old: new for old, new, raw in con.execute(
         "SELECT p.id, c.id, c.model_config FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
-        "WHERE p.end_reason = 'compression' AND COALESCE(length(c.model_config), 0) <= ?", (NESTED_CONFIG_MAX,))
+        "WHERE p.end_reason = 'compression' AND COALESCE(length(CAST(c.model_config AS BLOB)), 0) <= ?", (NESTED_CONFIG_MAX,))
         if _is_text(old) and _is_text(new) and new not in parents and "_branched_from" not in str(raw or "")}
     return parents, after, titles
 
