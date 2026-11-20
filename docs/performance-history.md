@@ -341,6 +341,16 @@ same size: the chat list with effects off (10 → 11 ms), Add a provider with ef
 privacy with effects on (about 5.5 → 7 ms) and About & help (6 to 7 ms). Not measured: the one-time run of the bundle when the
 first sub-agent appears, and heat and battery on a phone (`docs/manual-tests.md`).
 
+**Again after the second security review (2026-11-20).** Its fixes touch opening a chat and the chat list (every id a
+chat had counts), so the same measurement was repeated against `redesign`, the same way. The script that runs at every
+start is now 22.2 KB larger than `redesign` (2.3 KB of it from these fixes). Start-up, 15 alternating loads: effects off
+474.4 → 477.9 ms (+0.7%), effects on 478.7 → 484.7 ms (+1.3%); in the rounds +1% and +2%. Opening a chat -4 to -7%, the
+chat list's scroll with effects on unchanged. Ten sub-agents: no frame over 25 ms and p95 16.7 to 16.8 ms in the chat and
+the list; work in the chat's scroll 348 / 349 ms with effects on (325 before these fixes, against a `redesign` that also
+measured 2 to 3% higher this time) and 297 / 295 with effects off, in the list 93 / 87 and 79 / 79. Over 5%, all by about
+a millisecond: opening the chat list with effects off (17.5 → 19 ms of work, the same rise as before), its scroll with
+effects off (8 → 8.5 ms), Models with effects off (under 1 ms), and in time Access & privacy with effects off (6 → 6.5 ms).
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:
