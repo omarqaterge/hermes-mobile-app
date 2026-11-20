@@ -626,7 +626,8 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
             <span className="stop-square" />
           </button>
         ) : (running || subAgentsRun) && !text.trim() && !quotes.length ? (
-          <button key="stop" className="send stop" aria-label="Stop" onClick={() => {
+          <button key="stop" className="send stop" aria-label="Stop" disabled={!!opening} onClick={() => {
+            if (getState().opening) return
             haptic()
             // Stopping work that goes on without a reply is an action: over the lock screen it waits for an unlock.
             if (!running && lockView()) return askUnlock('Unlock the phone to stop this')

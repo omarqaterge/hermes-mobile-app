@@ -837,7 +837,6 @@ module.exports = async t => {
     const stop = p.getByRole('button', { name: 'Stop', exact: true })
     await e('subagent.start', sub('st', 'Stopped by the composer'))
     await stop.waitFor({ timeout: 3000 })
-    await sleep(5300) // what was heard of just now isn't taken for ended (subagents.ts ROSTER_GRACE_MS)
     await mock({ nested: { roster: [] } })
     await stop.click()
     await stop.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})

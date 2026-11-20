@@ -540,7 +540,7 @@ const ROSTER_GRACE_MS = 5000
 const FEED_GRACE_MS = 15_000
 
 /** `subagent.list` for a chat just opened: what runs now. A running one it no longer lists has ended while the page wasn't told. */
-export function noteRoster(chat: string, raw: unknown, now = Date.now()): void {
+export function noteRoster(chat: string, raw: unknown, now = Date.now(), graceMs = ROSTER_GRACE_MS): void {
   chat = resolveChat(chat)
   const list = Array.isArray(raw) ? raw : []
   const seen = new Set<string>()
@@ -563,7 +563,11 @@ export function noteRoster(chat: string, raw: unknown, now = Date.now()): void {
       startedAt: cur?.startedAt || (started ? started * 1000 : now)
     })
   }
-  for (const a of subAgentsOf(chat)) if (isLive(a.state) && !seen.has(a.key) && now - a.seenAt > ROSTER_GRACE_MS) put(chat, { ...a, state: 'ended', accepting: false })
+  for (const a of subAgentsOf(chat)) {
+    if (isLive(a.state) && !seen.has(a.key) && (graceMs <= 0 || now - a.seenAt > graceMs)) {
+      put(chat, { ...a, state: 'ended', accepting: false })
+    }
+  }
   chatChanged(chat)
 }
 

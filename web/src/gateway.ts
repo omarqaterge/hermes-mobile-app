@@ -44,6 +44,7 @@ import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, no
 import { noteArrived } from './waiting'
 import { idsReadState, isTaintedItems } from './phone-data-taint'
 import { onChatOpen, runChatOpen } from './chatopen'
+import { viewSettled } from './chatview'
 import { ctxFromStatText, stripCtxStat } from './ctxring'
 import { appInBackground, cancelNotification, chatSeen, notify, setLastChat, startHermes, watchHermes, wsUrl } from './bridge'
 import {
@@ -1180,15 +1181,18 @@ export function drainQueue(chat: string, force: boolean): void {
 const bare = (s: string) => s.replace(/^\/+/, '').trim()
 
 export async function interrupt(): Promise<void> {
-  const a = getState().active
+  const s = getState()
+  if (!viewSettled(s)) return
+  const a = s.active
   if (!a) return
+  if (!a.running && lockView()) return
   if (a.running) noteTurnEnd('stopped') // the queue pauses when this turn ends
   try {
     await rpc('session.interrupt', { session_id: a.runtimeId })
   } catch (err) {
     toast(errText(err), 'error')
   }
-  if (nestedOf(a.storedId).live > 0) void syncSubAgents().catch(() => {}) // what is still running, now
+  if (nestedOf(a.storedId).live > 0) void syncSubAgents({ afterStop: true }).catch(() => {}) // what is still running, now
 }
 
 // ── sub-agents (subagents.ts, components/SubAgents.tsx) ──
@@ -1206,7 +1210,7 @@ export async function steerSubAgent(runtimeId: string, id: string, text: string)
 export async function stopSubAgent(runtimeId: string, id: string): Promise<boolean> {
   if (lockView()) return false
   const r = await rpc<SubagentInterruptResult>('subagent.interrupt', { session_id: runtimeId, subagent_id: id })
-  if (getState().active?.runtimeId === runtimeId) void syncSubAgents().catch(() => {}) // what is still running, now
+  if (getState().active?.runtimeId === runtimeId) void syncSubAgents({ afterStop: true }).catch(() => {}) // what is still running, now
   return r?.found === true
 }
 
@@ -1276,8 +1280,10 @@ export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'chil
   }
 }
 
+let stopSyncTimer: ReturnType<typeof setTimeout> | null = null
+
 /** The open chat's sub-agents as they are now. Once per opening or return, and only for a chat known to have some. */
-async function syncSubAgents(): Promise<void> {
+async function syncSubAgents(opts: { afterStop?: boolean; skipGrace?: boolean } = {}): Promise<void> {
   const a = getState().active
   if (!a) return
   const known = nestedOf(a.storedId)
@@ -1285,12 +1291,21 @@ async function syncSubAgents(): Promise<void> {
   noteItems(a.storedId, a.items.filter((i): i is Extract<ChatItem, { kind: 'subagent' }> => i.kind === 'subagent'))
   await loadStored(a.storedId, a.profile)
   const r = await rpc<SubagentListResult>('subagent.list', { session_id: a.runtimeId }).catch(() => null)
-  if (r) noteRoster(a.storedId, r.subagents)
+  if (r) noteRoster(a.storedId, r.subagents, Date.now(), opts.afterStop || opts.skipGrace ? 0 : undefined)
   updateActive(x => {
     if (x.storedId !== a.storedId) return null
     const items = withSubItems(x.items, subAgentsOf(x.storedId))
     return items === x.items ? null : { items }
   })
+  // After an explicit Stop, if Hermes still listed a sub-agent while tearing it down, check once more (bounded, no loop).
+  if (opts.afterStop && nestedOf(a.storedId).live > 0) {
+    if (stopSyncTimer) clearTimeout(stopSyncTimer)
+    const target = a.storedId
+    stopSyncTimer = setTimeout(() => {
+      stopSyncTimer = null
+      if (getState().active?.storedId === target && nestedOf(target).live > 0) void syncSubAgents({ skipGrace: true }).catch(() => {})
+    }, 1500)
+  }
 }
 
 export async function undoLast(): Promise<void> {
