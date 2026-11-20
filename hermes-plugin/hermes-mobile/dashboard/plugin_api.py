@@ -965,6 +965,11 @@ NESTED_LONGEST = 6 * 3600
 NESTED_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 NESTED_ROWS = 200
 NESTED_DEPTH = 8
+NESTED_INDEX_LIMIT = 5000
+NESTED_ID_MAX = 200
+NESTED_TITLE_MAX = 500
+NESTED_MODEL_MAX = 200
+NESTED_REASON_MAX = 100
 NESTED_CONFIG_MAX = 200_000   # bytes of a row's model_config that are read at all (counted as a blob: length() of text stops at a NUL)
 
 
@@ -972,7 +977,7 @@ def _nested_entry(n, now: float):
     """How many sub-agents run in a chat, or None: a chat id and a number, nothing else (the file is editable)."""
     try:
         session, running, until = n.get("session"), n.get("running"), n.get("until")
-        if not (_is_text(session) and session and len(session) <= 200 and isinstance(running, int)
+        if not (_is_text(session) and session and len(session) <= NESTED_ID_MAX and isinstance(running, int)
                 and not isinstance(running, bool) and 0 < running <= NESTED_MOST and _is_number(until)
                 and now < until <= now + NESTED_LONGEST):
             return None
@@ -987,9 +992,26 @@ def _delegate_config(raw):
 
     try:
         cfg = json.loads(raw) if isinstance(raw, str) else None
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
     return cfg if isinstance(cfg, dict) and cfg.get("_delegate_from") else None
+
+
+def _is_continuation(raw) -> bool:
+    """Whether a child row's model_config can belong to a compression continuation (never a branch, sub-agent, or damaged JSON)."""
+    import json
+
+    if raw is None or raw == "":
+        return True
+    if not isinstance(raw, str):
+        return False
+    if _delegate_config(raw) is not None:
+        return False
+    try:
+        cfg = json.loads(raw)
+    except (ValueError, RecursionError):
+        return False
+    return isinstance(cfg, dict) and not cfg.get("_branched_from")
 
 
 def _nested_effort(cfg: dict) -> str:
@@ -1005,18 +1027,25 @@ def _nested_effort(cfg: dict) -> str:
 
 def _nested_con(profile):
     import sqlite3
+    from urllib.parse import quote
 
     db_path = _home(profile) / "state.db"
-    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) if db_path.exists() else None
+    if not db_path.exists():
+        return None
+    return sqlite3.connect(f"file:{quote(str(db_path), safe='/')}?mode=ro", uri=True, timeout=5)
 
 
 def _chat_segments(con, session: str) -> list:
     """The chat's stored id and the ones a context compression rotated it away from, nearest first."""
     out = [session]
     for _ in range(16):
-        row = con.execute("SELECT p.id FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
-                          "WHERE c.id = ? AND p.end_reason = 'compression'", (out[-1],)).fetchone()
-        if not row or row[0] in out:
+        row = con.execute(
+            "SELECT p.id, c.model_config FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
+            "WHERE c.id = ? AND p.end_reason = 'compression' "
+            "AND length(CAST(p.id AS BLOB)) <= ? "
+            "AND COALESCE(length(CAST(c.model_config AS BLOB)), 0) <= ?",
+            (out[-1], NESTED_ID_MAX, NESTED_CONFIG_MAX)).fetchone()
+        if not row or not _is_text(row[0]) or len(row[0]) > NESTED_ID_MAX or not _is_continuation(row[1]) or row[0] in out:
             break
         out.append(row[0])
     return out
@@ -1045,10 +1074,13 @@ def get_nested(session: str, profile: Optional[str] = None):
     import sqlite3
 
     children: list = []
-    con = _nested_con(profile) if _is_text(session) and session and len(session) <= 200 else None
-    if con is None:
-        return {"children": children}
+    if not (_is_text(session) and session and len(session) <= NESTED_ID_MAX):
+        return {"children": children, "segments": []}
+    con = None
     try:
+        con = _nested_con(profile)
+        if con is None:
+            return {"children": children, "segments": []}
         segments = _chat_segments(con, session)
         frontier = list(segments)
         seen = set(segments)
@@ -1057,16 +1089,20 @@ def get_nested(session: str, profile: Optional[str] = None):
                 break
             marks = ",".join("?" * len(frontier))
             rows = con.execute(
-                f"SELECT id, parent_session_id, title, model, model_config, started_at, ended_at, end_reason, message_count "
-                f"FROM sessions WHERE parent_session_id IN ({marks}) AND length(CAST(model_config AS BLOB)) <= ? "
+                f"SELECT id, parent_session_id, substr(title, 1, ?), substr(model, 1, ?), model_config, "
+                f"started_at, ended_at, substr(end_reason, 1, ?), message_count "
+                f"FROM sessions WHERE parent_session_id IN ({marks}) "
+                f"AND length(CAST(id AS BLOB)) <= ? AND length(CAST(parent_session_id AS BLOB)) <= ? "
+                f"AND length(CAST(model_config AS BLOB)) <= ? "
                 f"ORDER BY started_at LIMIT ?",
-                (*frontier, NESTED_CONFIG_MAX, NESTED_ROWS)).fetchall()
+                (NESTED_TITLE_MAX, NESTED_MODEL_MAX, NESTED_REASON_MAX,
+                 *frontier, NESTED_ID_MAX, NESTED_ID_MAX, NESTED_CONFIG_MAX, NESTED_ROWS)).fetchall()
             frontier = []
             for sid, parent, title, model, raw, started, ended, reason, messages in rows:
                 try:   # one damaged row costs only that row
                     cfg = _delegate_config(raw)
                     if (cfg is None or sid in seen or not _is_text(sid) or not _is_text(parent)
-                            or len(sid) > 200 or len(children) >= NESTED_ROWS):
+                            or len(sid) > NESTED_ID_MAX or len(parent) > NESTED_ID_MAX or len(children) >= NESTED_ROWS):
                         continue
                     child = {"id": sid, "parent": session if parent in segments else parent,
                              "goal": _subagent_goal(con, sid, title), "model": model if _is_text(model) else "",
@@ -1079,10 +1115,11 @@ def get_nested(session: str, profile: Optional[str] = None):
                 frontier.append(sid)
                 children.append(child)
     except sqlite3.Error:
-        return {"children": []}
+        return {"children": [], "segments": []}
     finally:
-        con.close()
-    return {"children": children}
+        if con is not None:
+            con.close()
+    return {"children": children, "segments": segments}
 
 
 def _nested_index(con) -> tuple:
@@ -1090,20 +1127,34 @@ def _nested_index(con) -> tuple:
     parents: dict = {}
     titles: dict = {}
     for sid, parent, title, raw in con.execute(
-            "SELECT id, parent_session_id, title, model_config FROM sessions WHERE parent_session_id IS NOT NULL "
-            "AND length(CAST(model_config AS BLOB)) <= ? AND model_config LIKE '%_delegate_from%' ORDER BY started_at DESC LIMIT 5000",
-            (NESTED_CONFIG_MAX,)):
+            "SELECT id, parent_session_id, substr(title, 1, ?), model_config FROM sessions "
+            "WHERE parent_session_id IS NOT NULL "
+            "AND length(CAST(id AS BLOB)) <= ? AND length(CAST(parent_session_id AS BLOB)) <= ? "
+            "AND length(CAST(model_config AS BLOB)) <= ? AND model_config LIKE '%_delegate_from%' "
+            "ORDER BY started_at DESC LIMIT ?",
+            (NESTED_TITLE_MAX, NESTED_ID_MAX, NESTED_ID_MAX, NESTED_CONFIG_MAX, NESTED_INDEX_LIMIT)):
         try:
-            if _is_text(sid) and _is_text(parent) and _delegate_config(raw) is not None:
+            if (_is_text(sid) and _is_text(parent) and len(sid) <= NESTED_ID_MAX and len(parent) <= NESTED_ID_MAX
+                    and _delegate_config(raw) is not None):
                 parents[sid] = parent
                 titles[sid] = title
         except Exception:
             continue
     # A compressed chat's own continuation only: its sub-agents and branches also name it as their parent.
-    after = {old: new for old, new, raw in con.execute(
-        "SELECT p.id, c.id, c.model_config FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
-        "WHERE p.end_reason = 'compression' AND COALESCE(length(CAST(c.model_config AS BLOB)), 0) <= ?", (NESTED_CONFIG_MAX,))
-        if _is_text(old) and _is_text(new) and new not in parents and "_branched_from" not in str(raw or "")}
+    after: dict = {}
+    for old, new, raw in con.execute(
+            "SELECT p.id, c.id, c.model_config FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
+            "WHERE p.end_reason = 'compression' "
+            "AND length(CAST(p.id AS BLOB)) <= ? AND length(CAST(c.id AS BLOB)) <= ? "
+            "AND COALESCE(length(CAST(c.model_config AS BLOB)), 0) <= ? "
+            "ORDER BY c.started_at DESC LIMIT ?",
+            (NESTED_ID_MAX, NESTED_ID_MAX, NESTED_CONFIG_MAX, NESTED_INDEX_LIMIT)):
+        try:
+            if (_is_text(old) and _is_text(new) and len(old) <= NESTED_ID_MAX and len(new) <= NESTED_ID_MAX
+                    and old not in after and _is_continuation(raw)):
+                after[old] = new
+        except Exception:
+            continue
     return parents, after, titles
 
 
@@ -1125,11 +1176,12 @@ def get_nested_counts(profile: Optional[str] = None):
     """How many sub-agents each chat has had, for the chat list's "3 sub-agents". Numbers only."""
     import sqlite3
 
-    con = _nested_con(profile)
     counts: dict = {}
-    if con is None:
-        return {"counts": counts}
+    con = None
     try:
+        con = _nested_con(profile)
+        if con is None:
+            return {"counts": counts}
         parents, after, _titles = _nested_index(con)
         for sid in parents:
             chat = _top_chat(sid, parents, after)
@@ -1137,7 +1189,8 @@ def get_nested_counts(profile: Optional[str] = None):
     except sqlite3.Error:
         return {"counts": {}}
     finally:
-        con.close()
+        if con is not None:
+            con.close()
     return {"counts": counts}
 
 
@@ -1147,11 +1200,14 @@ def get_nested_search(q: str, profile: Optional[str] = None):
     import sqlite3
 
     needle = q.strip().lower()[:100] if isinstance(q, str) else ""
-    con = _nested_con(profile) if len(needle) >= 2 else None
     hits: list = []
-    if con is None:
+    if len(needle) < 2:
         return {"hits": hits}
+    con = None
     try:
+        con = _nested_con(profile)
+        if con is None:
+            return {"hits": hits}
         parents, after, titles = _nested_index(con)
         for sid, title in titles.items():
             goal = _title_goal(title)
@@ -1162,7 +1218,8 @@ def get_nested_search(q: str, profile: Optional[str] = None):
     except sqlite3.Error:
         return {"hits": []}
     finally:
-        con.close()
+        if con is not None:
+            con.close()
     return {"hits": hits}
 
 

@@ -179,8 +179,8 @@ check("a nested one names the sub-agent above it", by["sub-a-1"]["parent"] == "s
 check("the goal is its first message", by["sub-a"]["goal"] == "Read the docs in full", by["sub-a"])
 check("a first message that isn't plain text falls back to the title", by["sub-b"]["goal"] == "Write it", by["sub-b"])
 check("times and the end reason", by["sub-a"]["ended"] == 9.0 and by["sub-a"]["reason"] == "agent_close" and by["sub-b"]["ended"] == 0, by["sub-a"])
-check("an unknown chat has none", papi.get_nested("nobody") == {"children": []})
-check("a silly id is refused quietly", papi.get_nested("x" * 500) == {"children": []})
+check("an unknown chat has none", papi.get_nested("nobody")["children"] == [])
+check("a silly id is refused quietly", papi.get_nested("x" * 500) == {"children": [], "segments": []})
 got = papi.get_nested_counts()["counts"]
 check("counts per top chat, under its current id", got == {"chat": 5, "other": 1}, got)  # sub-a, sub-b, sub-a-1, odd-parent, bad-row
 got = papi.get_nested_search("DEEP")["hits"]
@@ -235,12 +235,104 @@ papi.get_nested("chat"), papi.get_nested_counts(), papi.get_nested_search("Subag
 papi._nested_con = real_con
 check("a model_config with a NUL near its start is still limited by its size in bytes",
       fetched and max(fetched) <= papi.NESTED_CONFIG_MAX, max(fetched or [0]))
+
+# Finding 1: _chat_segments only climbs real compression continuations, never branches, sub-agents, or damaged rows.
+row("s1", None, "Root chat", reason="compression", ended=10.0)
+row("s2", "s1", "Root chat continued", cfg={})
+row("sa1", "s1", "Subagent: Private work", "x/m", kid("low", "s1"), 11.0)
+row("sa2", "s1", "Subagent: Sibling work", "x/m", kid("low", "s1"), 11.5)
+row("b1", "s1", "Branch of s1", cfg={"_branched_from": "s1"})
+row("s_bad", "s1", "Broken continuation", cfg="{not json")
+row("s_big", "s1", "Huge continuation", cfg="{}" + NUL_TAIL)
+con.commit()
+b1_res = papi.get_nested("b1")
+check("a branch of a compressed chat does not inherit the original chat's sub-agents",
+      b1_res["children"] == [] and b1_res.get("segments") == ["b1"], b1_res)
+sa1_res = papi.get_nested("sa1")
+check("a sub-agent of a compressed chat does not climb into its parent's siblings",
+      sa1_res["children"] == [] and sa1_res.get("segments") == ["sa1"], sa1_res)
+s2_res = papi.get_nested("s2")
+check("a compression continuation inherits sub-agents and reports its real segments",
+      {c["id"] for c in s2_res["children"]} == {"sa1", "sa2"} and s2_res.get("segments") == ["s2", "s1"], s2_res)
+check("a broken or over-sized model_config does not climb across compression",
+      papi.get_nested("s_bad")["children"] == [] and papi.get_nested("s_big")["children"] == [],
+      (papi.get_nested("s_bad"), papi.get_nested("s_big")))
+
+# Finding 7(c): over-long title, model, end_reason and ids are capped or skipped in SQL.
+HUGE = 250_000
+row("huge-fields", "chat", "Subagent: " + "t" * HUGE, "m" * HUGE, kid("low", "chat"), 12.0, 13.0, "r" * HUGE, 1)
+row("i" * HUGE, "chat", "Subagent: Huge id", "m", kid("low", "chat"), 12.5)
+con.commit()
+fetched = []
+papi._nested_con = lambda profile=None: (lambda c: _Con(c) if c is not None else None)(real_con(profile))
+hf_nested = papi.get_nested("chat")
+papi.get_nested_counts()
+papi.get_nested_search("tttt")
+papi._nested_con = real_con
+hf_row = next((c for c in hf_nested["children"] if c["id"] == "huge-fields"), None)
+check("over-long title, model, end_reason and ids are capped or skipped in SQL",
+      hf_row is not None and len(hf_row["goal"]) <= 500 and len(hf_row["model"]) <= 200 and len(hf_row["reason"]) <= 100
+      and all(len(c["id"]) <= 200 for c in hf_nested["children"])
+      and fetched and max(fetched) <= papi.NESTED_CONFIG_MAX,
+      (max(fetched or [0]), len(hf_row["goal"]) if hf_row else None))
+
+# Finding 7(a): _nested_index after query excludes sub-agents by _delegate_config (not `new not in parents`), caps rows, skips bad rows.
+row("comp-old", None, "Old compressed", reason="compression", ended=1.0)
+row("comp-sub", "comp-old", "Subagent: Early child", "m", kid("low", "comp-old"), 0.5)
+row("comp-old-bad", None, "Old compressed 2", reason="compression", ended=1.0)
+row("comp-bad", "comp-old-bad", "Bad cont", "m", "{bad", 0.6)
+con.executemany(
+    "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)",
+    [(f"pad-{i}", "other", f"Subagent: Pad {i}", "m", json.dumps(kid("low", "other")), 100.0 + i, None, None, 1)
+     for i in range(5005)],
+)
+con.commit()
+_parents, after_map, _titles = papi._nested_index(con)
+check("_nested_index excludes sub-agents past the parents limit and broken rows from compression continuations",
+      "comp-old" not in after_map and "comp-old-bad" not in after_map,
+      (after_map.get("comp-old"), after_map.get("comp-old-bad")))
+
+# Finding 7(b): _nested_con sqlite3.Error returns empty answers, and URI-escaping handles ? and # in path.
+def _boom(profile=None):
+    raise sqlite3.OperationalError("database is locked")
+
+papi._nested_con = _boom
+try:
+    n_err = papi.get_nested("chat")
+    c_err = papi.get_nested_counts()
+    s_err = papi.get_nested_search("deep")
+    open_err_ok = n_err.get("children") == [] and c_err == {"counts": {}} and s_err == {"hits": []}
+except sqlite3.Error as e:
+    open_err_ok = False
+    n_err = str(e)
+papi._nested_con = real_con
+check("a locked or damaged database on open gives empty answers instead of raising", open_err_ok, n_err)
+
+odd_dir = Path(home) / "dir?with#chars"
+odd_dir.mkdir(parents=True, exist_ok=True)
+odd_db = odd_dir / "state.db"
+odd_con = sqlite3.connect(odd_db)
+odd_con.executescript("""
+CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, title TEXT, model TEXT, model_config TEXT,
+  started_at REAL, ended_at REAL, end_reason TEXT, message_count INTEGER);
+CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT);
+""")
+odd_con.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)", ("p1", None, "Chat", "m", None, 1.0, None, None, 1))
+odd_con.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)", ("c1", "p1", "Subagent: Hi", "m", json.dumps(kid("low", "p1")), 2.0, None, None, 1))
+odd_con.commit()
+odd_con.close()
+real_home = papi._home
+papi._home = lambda profile=None: odd_dir
+uri_res = papi.get_nested_counts()
+papi._home = real_home
+check("a profile path with ? and # opens state.db cleanly", uri_res == {"counts": {"p1": 1}}, uri_res)
+
 con.execute("DROP TABLE messages")
 con.commit()
-check("an unreadable table answers empty", papi.get_nested("chat") == {"children": []})
+check("an unreadable table answers empty", papi.get_nested("chat")["children"] == [])
 con.close()
 papi._home = lambda profile=None: db.parent / "nowhere"
-check("no database: empty answers", papi.get_nested("chat") == {"children": []} and papi.get_nested_counts() == {"counts": {}} and papi.get_nested_search("docs") == {"hits": []})
+check("no database: empty answers", papi.get_nested("chat")["children"] == [] and papi.get_nested_counts() == {"counts": {}} and papi.get_nested_search("docs") == {"hits": []})
 
 print("FAILED" if fails else "ALL PASSED")
 sys.exit(1 if fails else 0)

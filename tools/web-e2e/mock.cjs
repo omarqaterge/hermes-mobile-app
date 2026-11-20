@@ -275,7 +275,10 @@ const server = http.createServer((req, res) => {
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
-    if (p === '/api/plugins/hermes-mobile/nested') return send({ children: nested.children[url.searchParams.get('session')] ?? [] })
+    if (p === '/api/plugins/hermes-mobile/nested') {
+      const s = url.searchParams.get('session') || ''
+      return send({ children: nested.children[s] ?? [], segments: nested.segments?.[s] ?? (s ? [s] : []) })
+    }
     if (p === '/api/plugins/hermes-mobile/nested-counts') return send({ counts: nested.counts })
     if (p === '/api/plugins/hermes-mobile/nested-search') return send({ hits: nested.hits.filter(h => h.goal.toLowerCase().includes((url.searchParams.get('q') || '').toLowerCase())) })
     {
