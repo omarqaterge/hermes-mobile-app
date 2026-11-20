@@ -746,6 +746,54 @@ export async function storedChildIds(chat: string, profile: string): Promise<Set
   }
 }
 
+/** The stored ids from a sub-agent up through its real parent chain (parent sub-agents and the chat's verified compression
+ *  segments), from `GET /nested`. Null when ownership cannot be confirmed (error, missing, broken parent link or cycle). */
+export async function storedParentChain(chat: string, child: string, profile: string): Promise<string[] | null> {
+  const root = resolveChat(chat)
+  if (!root || !child) return null
+  try {
+    const r = await api<{ children?: unknown; segments?: unknown }>(
+      'GET',
+      `${NESTED_API}/nested?session=${encodeURIComponent(root)}${profileQuery(profile)}`
+    )
+    const kids = cleanStored(r?.children)
+    const byId = new Map(kids.map(c => [c.id, c]))
+    if (!byId.has(child)) return null
+    const segments = Array.isArray(r?.segments)
+      ? r.segments.map(s => plainLine(s, 200)).filter(Boolean)
+      : []
+    const rootIds = new Set(segments.length ? segments : [root])
+    rootIds.add(root)
+    const chain: string[] = []
+    const seen = new Set<string>()
+    let cur = child
+    let reached = false
+    for (let i = 0; i <= 8; i++) {
+      if (rootIds.has(cur)) {
+        reached = true
+        break
+      }
+      if (seen.has(cur)) return null
+      seen.add(cur)
+      chain.push(cur)
+      const row = byId.get(cur)
+      if (!row || !row.parent) return null
+      cur = row.parent
+    }
+    if (!reached) return null
+    for (const seg of segments.length ? segments : [root]) {
+      if (!seen.has(seg)) {
+        seen.add(seg)
+        chain.push(seg)
+      }
+    }
+    if (!seen.has(root)) chain.push(root)
+    return chain
+  } catch {
+    return null
+  }
+}
+
 export const COUNTS_TTL_MS = 60_000
 let countsAt = 0
 let countsFor = ''

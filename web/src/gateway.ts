@@ -9,7 +9,7 @@ import { api } from './api'
 import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
-import { noteLineage, noteListRow } from './lineage'
+import { lineageOf, noteLineage, noteListRow } from './lineage'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -40,7 +40,7 @@ import { BEAT_MS, DEADLINE_MS, beatDecision, retryBanner, retryDelayMs, retryHer
 import { createAgentBuilds } from './agentbuild'
 import { askUnlock, lockView } from './lockview'
 import type { SubagentInterruptResult, SubagentListResult, SubagentSteerResult, SubagentTailResult } from '@hermes/shared/gateway-contract.generated'
-import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, onNestedChange, storedChildIds, subAgentsOf, withSubItems, type SubAgent } from './subagents'
+import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, onNestedChange, storedParentChain, subAgentsOf, withSubItems, type SubAgent } from './subagents'
 import { noteArrived } from './waiting'
 import { idsReadState, isTaintedItems } from './phone-data-taint'
 import { onChatOpen, runChatOpen } from './chatopen'
@@ -1218,27 +1218,57 @@ const lowerAccess = (a: Access, b: Access): Access => ACCESS_ORDER[Math.min(ACCE
  *  a new chat would have no record of the read. */
 export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'child' | 'goal' | 'phoneData' | 'parentChild' | 'parent'>): Promise<void> {
   if (lockView() || !agent.child) return
-  const a = getState().active
-  const here = a?.storedId === chat ? a : null
+  const profile = getState().profile
   const family = subAgentsOf(chat)
-  const ids: Array<string | undefined> = [chat, here?.runtimeId, agent.child]
+  const memAncestors: SubAgent[] = []
   for (let up: Pick<SubAgent, 'parent' | 'parentChild'> | undefined = agent, n = 0; up && n < 8; n++) {
     const from: SubAgent | undefined = family.find(x => (up!.parent && x.id === up!.parent) || (up!.parentChild && x.child === up!.parentChild))
-    ids.push(from?.child)
+    if (!from || memAncestors.includes(from)) break
+    memAncestors.push(from)
     up = from
   }
-  // Hermes's own record decides that this sub-agent belongs to this chat (its stored chat descends from it): what the page
-  // filed under the chat could be another chat's, and the checks above and the access below would then be the wrong chat's.
-  const mine = await storedChildIds(chat, getState().profile)
-  if (!mine?.has(agent.child)) throw new Error('This can’t continue in a new chat: it couldn’t be confirmed that this sub-agent belongs to this chat.')
-  if (agent.phoneData || isTaintedItems(here?.items) || idsReadState(ids) !== 'clear') throw new Error('This can’t continue in a new chat: phone data may be involved')
-  const parentAccess = here ? accessOf(here) : rememberedAccess(chat)
+  // Hermes's own record decides that this sub-agent belongs to this chat and gives its real parent chain (parent
+  // sub-agents and verified compression segments): what the page filed under the chat is never trusted alone.
+  const chain = await storedParentChain(chat, agent.child, profile)
+  if (lockView()) return
+  if (!chain) throw new Error('This can’t continue in a new chat: it couldn’t be confirmed that this sub-agent belongs to this chat.')
+  const allIds = new Set<string>([chat, agent.child, ...chain])
+  for (const m of memAncestors) if (m.child) allIds.add(m.child)
+  for (const id of [...allIds]) for (const l of lineageOf(id)) allIds.add(l)
+  const curActive = getState().active
+  const here = curActive && (allIds.has(curActive.storedId) || allIds.has(curActive.runtimeId)) ? curActive : null
+  if (here) {
+    allIds.add(here.storedId)
+    allIds.add(here.runtimeId)
+  }
+  for (const s of [...warm, ...kept]) {
+    if (allIds.has(s.storedId) || allIds.has(s.runtimeId)) {
+      allIds.add(s.storedId)
+      allIds.add(s.runtimeId)
+    }
+  }
+  const hasTaint = (): boolean =>
+    agent.phoneData === true ||
+    memAncestors.some(m => m.phoneData === true) ||
+    isTaintedItems(here?.items) ||
+    idsReadState([...allIds]) !== 'clear'
+  if (hasTaint()) throw new Error('This can’t continue in a new chat: phone data may be involved')
+  let access: Access = defaultAccess()
+  if (here) access = lowerAccess(access, accessOf(here))
+  for (const id of allIds) access = lowerAccess(access, rememberedAccess(id))
   const opened = await rpc<SessionResumeResult>('session.resume', { session_id: agent.child }, 60_000)
   try {
+    if (lockView()) return
+    if (hasTaint() || isTaintedItems(hydrate(opened.messages ?? []))) {
+      throw new Error('This can’t continue in a new chat: phone data may be involved')
+    }
     const r = await rpc<{ stored_session_id: string }>('session.branch', { session_id: opened.session_id })
-    rememberYolo(r.stored_session_id, lowerAccess(parentAccess, defaultAccess())) // before it opens: opening applies this
+    rememberYolo(r.stored_session_id, access) // before it opens: opening applies this
+    noteLineage([r.stored_session_id, chat, ...chain]) // carries the phone-data mark of every chat in the parent chain
+    if (lockView()) return
     const base = agent.goal.slice(0, 60) || 'Sub-agent'
     await renameStored(r.stored_session_id, `\u2387 ${base}`).catch(() => {})
+    if (lockView()) return
     await resumeSession(r.stored_session_id)
     loadSessionsSoon()
   } finally {
