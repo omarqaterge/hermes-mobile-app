@@ -6,11 +6,20 @@ GET /hermux/hello and GET /hermux/token routes and the X-Hermux-Proof header on 
 tools/hermes-contract checks the page part against the real, pinned Hermes.
 Run: python3 tools/test_token_guard.py (needs fastapi, like the other REST tests; skipped without it).
 """
+import atexit
 import importlib.util
 import os
+import shutil
 import sys
 import tempfile
 import types
+
+# A throwaway HOME and HERMES_HOME before anything else is imported: nothing this test starts (Hermes's own code
+# included) can read or change a real Hermes home, even when it runs alone, outside tools/check.sh.
+_home = tempfile.mkdtemp(prefix="hm-test-home-")
+os.environ["HOME"] = _home
+os.environ["HERMES_HOME"] = os.path.join(_home, ".hermes")
+atexit.register(shutil.rmtree, _home, True)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.join(HERE, "..", "hermes-plugin", "hermes-mobile")
