@@ -192,6 +192,9 @@ check on a real phone:
       your phone, and whether Live mode ever turns speech into a slash command.
 - [ ] Unlocked: `/approvals off` shows the Full access warning; Cancel leaves `/approvals` at manual, Allow sets it off.
       Set it back with `/approvals manual`.
+- [ ] Open a chat with an answer, open the side chat (`/btw`) or start editing a message, then lock the phone and bring
+      the app back over the lock screen: the side chat and the edit box are closed, and no message has Edit or Retry.
+      After unlocking they are back.
 
 ## Connectors (Settings → Connectors)
 

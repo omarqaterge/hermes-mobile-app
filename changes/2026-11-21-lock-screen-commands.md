@@ -8,3 +8,6 @@ rank: normal
   fully list its own commands. Checked in a desktop browser. Not yet tried on a phone.
 - **Turning approvals off now asks first.** `/approvals off` and `/approvals smart` show the same warning as Full access,
   saying they apply to every chat of the bot. Checked in a desktop browser. Not yet tried on a phone.
+- **Over the lock screen, Edit and Retry wait for an unlock.** The buttons aren't shown there, an edit left open
+  closes, and the side chat closes when the phone locks; everything comes back after you unlock. Checked in a desktop
+  browser. Not yet tried on a phone.

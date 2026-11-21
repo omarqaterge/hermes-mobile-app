@@ -144,4 +144,22 @@ module.exports = async t => {
   await slash(pg, '/btw')
   check((await pg.locator('.sheet.btw').count()) === 1, 'unlocked: the side chat opens again')
   await pg.close()
+
+  // ── Edit and Retry start a turn: over the lock screen they are not offered, and an open edit box closes ──
+  pg = await open('s-lock-ctl')
+  const edits = () => pg.locator('.msg.user').getByRole('button', { name: 'Edit' }).count()
+  const retries = () => pg.locator('.msg.assistant').getByRole('button', { name: 'Retry' }).count()
+  check((await edits()) >= 1 && (await retries()) >= 1, `unlocked: Edit and Retry are there (${await edits()}, ${await retries()})`)
+  await pg.locator('.msg.user').last().getByRole('button', { name: 'Edit' }).click()
+  await pg.locator('.edit-box').waitFor({ timeout: 3000 })
+  const submits = rpcs('prompt.submit').length
+  await pg.evaluate(() => window.hermesLockView(true))
+  await sleep(200)
+  check((await pg.locator('.edit-box').count()) === 0, 'lock screen: an edit box left open closes')
+  check((await edits()) === 0 && (await retries()) === 0, `lock screen: no Edit and no Retry (${await edits()}, ${await retries()})`)
+  check(rpcs('prompt.submit').length === submits, 'lock screen: nothing was sent')
+  await pg.evaluate(() => window.hermesLockView(false))
+  await sleep(200)
+  check((await edits()) >= 1 && (await retries()) >= 1, 'unlocked again: Edit and Retry come back')
+  await pg.close()
 }
