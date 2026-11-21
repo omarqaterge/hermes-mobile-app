@@ -112,5 +112,12 @@ class Changelog(unittest.TestCase):
         self.assertEqual(cl.problems(HERE.parent), [])
 
 
+    def test_page_joins_wrapped_bullets(self):
+        (self.root / "CHANGELOG.md").write_text(CHANGELOG + "\n## v0.8.65 (2026-10-28)\n\n- **Older.** Gone.\n")
+        self.assertEqual(cl.page(self.root, "v0.8.66"), "- **Shipped.** Already out.")
+        (self.root / "CHANGELOG.md").write_text(CHANGELOG.replace("Already out.", "Already\n  out.\n\n### Smaller changes and fixes\n\n- **Fix.** One\n  two."))
+        self.assertEqual(cl.page(self.root, "v0.8.66"), "- **Shipped.** Already out.\n\n### Smaller changes and fixes\n\n- **Fix.** One two.")
+        self.assertEqual(cl.page(self.root, "v9.9.9"), "")
+
 if __name__ == "__main__":
     unittest.main()
