@@ -11,6 +11,11 @@ Two security fixes from the `redesign` branch ported to `main`, so the released 
    stored chat; the notification's Allow always opens the app while the setting is on and the phone has a screen lock
    (spec 3.6, 4.3).
 
+After the security review (2026-11-21), on the same PR: the command text sent to Hermes is the text judged
+(`hermesBody`, so U+FEFF can't hide `/approvals off`); the side chat closes over the lock screen; Edit and Retry wait for
+an unlock there (they were never checked, before the port too); the contract compares `slash.exec` and
+`command.dispatch` for a quick command alias. The first three are fixed on `redesign` in a separate PR.
+
 Not ported (not on `main`): the `/bg`, `/cron add` and board-command refusal in a chat that has read phone data, and the
 sub-agent and kept-chat routing.
 
