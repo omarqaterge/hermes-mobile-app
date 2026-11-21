@@ -134,8 +134,14 @@ function anyRead(): boolean {
 export function docTainted(from: string | null): boolean {
   if (!from) return anyRead() || isTaintedNow()
   const s = getState()
-  if (holdsChat(s, from) && taintedState(s)) return true
-  return [from, ...lineageOf(from)].some(id => nativeTainted(id, true))
+  if (holdsChat(s, from) && activeTainted(s)) return true
+  return idsOfChat(from).some(id => nativeTainted(id, true))
+}
+
+/** Every id the page knows for this chat: its own, where a compression moved it (`resolveChat`), and the lineage of both. */
+function idsOfChat(chat: string): string[] {
+  const to = resolveChat(chat)
+  return [...new Set([chat, to, ...lineageOf(chat), ...lineageOf(to)])]
 }
 
 /** Are `s.active`'s items this chat's? Any id it has had counts: its stored and live ids, the page's lineage of either, or where
@@ -147,11 +153,22 @@ function holdsChat(s: AppState, chat: string): boolean {
   return ids.has(chat) || ids.has(resolveChat(chat)) || resolveChat(a.storedId) === resolveChat(chat)
 }
 
-/** Did this chat read phone data, for something shown on top of it (a sub-agent's sheet)? The chat on screen is judged as every
- *  chat the page can see; a chat that is not (another one is open or opening) as a document is, strictly, by its own ids. */
+/** The active chat itself, whatever is drawn (while another chat opens the screen shows that one's preview): its items, and
+ *  the app's record for its stored and live ids and their lineage. */
+function activeTainted(s: AppState): boolean {
+  const a = s.active
+  if (!a) return false
+  return isTaintedItems(a.items) || [a.storedId, a.runtimeId, ...lineageOf(a.storedId), ...lineageOf(a.runtimeId)].some(id => nativeTainted(id))
+}
+
+/** Did this chat read phone data, for something shown on top of it (a sub-agent's sheet)? The chat on screen (none opening) is
+ *  judged as every chat the page can see: its own items and ids, and every id of the chat asked about, asked the same way, so
+ *  it differs from `docTainted` only for a shell whose record can't answer (a chat whose items the page sees counts as clean
+ *  there). Any other chat, or while another one opens, is judged as a document (`docTainted`). */
 export function chatTainted(chat: string): boolean {
   const s = getState()
-  return !s.opening && holdsChat(s, chat) ? taintedState(s) || nativeTainted(chat) : docTainted(chat)
+  if (s.opening || !holdsChat(s, chat)) return docTainted(chat)
+  return activeTainted(s) || idsOfChat(chat).some(id => nativeTainted(id))
 }
 
 let heldDocs = 0
