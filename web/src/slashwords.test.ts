@@ -1,5 +1,7 @@
+import { readFileSync } from 'fs'
 import { describe, expect, it } from 'vitest'
-import { detachedRefusal, detachedWork, hermesShlex, hermesWords, kanbanReadOnly, lockSafeCommand, loosensApprovals } from './slashwords'
+import table from '../vendor/hermes-commands.json'
+import { detachedRefusal, detachedWork, hermesCommand, hermesShlex, hermesWords, kanbanReadOnly, lockSafeCommand, loosensApprovals } from './slashwords'
 
 const ch = (...codes: number[]) => String.fromCharCode(...codes)
 
@@ -21,6 +23,27 @@ describe('reading a command as Hermes does', () => {
   })
 })
 
+describe("Hermes's command table", () => {
+  it('is the one of the pinned build (tools/hermes-commands.py writes it from that build)', () => {
+    expect(table.commit).toBe(readFileSync(new URL('../vendor/hermes-shared/.hermes-commit', import.meta.url), 'utf8').trim())
+    expect(table.names).toContain('blueprint')
+    expect(table.aliases.bp).toBe('blueprint')
+  })
+  it('turns every alias into its command, in any case', () => {
+    for (const [alias, cmd] of Object.entries(table.aliases)) {
+      expect(hermesCommand(alias), alias).toBe(cmd)
+      expect(hermesCommand(alias.toUpperCase()), alias).toBe(cmd)
+    }
+  })
+  it('expands a beginning as the slash worker does: the only match, or the only shortest one', () => {
+    for (const [typed, cmd] of [['cr', 'cron'], ['k', 'kanban'], ['kanb', 'kanban'], ['bl', 'blueprint'], ['blue', 'blueprint'], ['ap', 'approvals'],
+      ['sug', 'suggestions'], ['ba', 'battery'], ['upgrad', 'subscription'], ['stat', 'status'],
+      ['c', 'context'], ['a', 'agents']] as const) // `/c` is the only shortest beginning of the alias /ctx; `/a` of /agents
+      expect(hermesCommand(typed), typed).toBe(cmd)
+    for (const typed of ['', 'b', 'bac', 'background', 'approve', 'approvalsx', 'zz']) expect(hermesCommand(typed), typed).toBe('')
+  })
+})
+
 describe('commands that start work apart from the chat', () => {
   it('finds a background task, however it is spelled', () => {
     for (const n of ['bg', 'BG', 'background']) expect(detachedWork(n, 'x')).toBe('a background task')
@@ -36,11 +59,18 @@ describe('commands that start work apart from the chat', () => {
     for (const a of ['create "do it"', '--board main dispatch', 'swarm x', '-- create x', '--board b -- dispatch', 'specify t1', 'decompose --all', 'comment t1 hi', 'boards create x', 'archive t1'])
       expect(detachedWork('kanban', a)).toBe('a board command')
     expect(detachedWork('k', 'daemon')).toBe('a board command')
+    for (const n of ['kanban', 'KANBAN', 'k', 'kan', 'kanba']) expect(detachedWork(n, 'swarm --worker a "goal"'), n).toBe('a board command')
     for (const a of ['', 'list', 'show t1', '--board b list']) expect(detachedWork('kanban', a)).toBeNull()
     expect(detachedWork('blueprint', 'daily topic=x')).toBe('an automation')
     expect(detachedWork('bp', 'daily topic=x')).toBe('an automation')
     expect(detachedWork('BP', 'daily topic=x')).toBe('an automation')
+    expect(detachedWork('bl', 'daily topic=x')).toBe('an automation')
     for (const a of ['', 'daily']) for (const n of ['blueprint', 'bp']) expect(detachedWork(n, a)).toBeNull()
+  })
+  it('finds an accepted suggestion, which schedules a job, by the alias too', () => {
+    for (const n of ['suggestions', 'suggest', 'SUGGEST', 'sug'])
+      for (const a of ['accept 1', 'ADD 2', 'schedule abc']) expect(detachedWork(n, a), `${n} ${a}`).toBe('a scheduled job')
+    for (const a of ['', 'dismiss 1', 'catalog', 'clear']) expect(detachedWork('suggest', a), a).toBeNull()
   })
 })
 
@@ -67,12 +97,13 @@ describe('/kanban arguments as Hermes reads them', () => {
 
 describe('over the lock screen', () => {
   it('runs only commands that show something, by their exact names', () => {
-    for (const [n, a] of [['help', ''], ['help', 'kanban'], ['status', ''], ['STATUS', ''], ['version', ''], ['v', ''], ['whoami', ''], ['agents', ''],
-      ['tasks', ''], ['usage', ''], ['context', ''], ['ctx', 'all'], ['kanban', 'list'], ['kanban', '']] as const)
+    for (const [n, a] of [['help', ''], ['help', 'kanban'], ['status', ''], ['STATUS', ''], ['version', ''], ['whoami', ''], ['agents', ''],
+      ['usage', ''], ['context', ''], ['context', 'all'], ['kanban', 'list'], ['kanban', '']] as const)
       expect(lockSafeCommand(n, a), `${n} ${a}`).toBe(true)
     for (const [n, a] of [['approvals', 'off'], ['approvals', ''], ['cron', 'run x'], ['cron', 'remove x'], ['cron', 'list'], ['rollback', '1'],
       ['usage', 'reset'], ['status', 'x'], ['stat', ''], ['he', ''], ['k', 'list'], ['kanban', 'create x'], ['kanban', '-- create x'],
-      ['yolo', ''], ['btw', 'hi'], ['bg', 'x'], ['myquick', ''], ['model', ''], ['new', ''], ['context', 'x']] as const)
+      ['yolo', ''], ['btw', 'hi'], ['bg', 'x'], ['myquick', ''], ['model', ''], ['new', ''], ['context', 'x'], ['kanban', 'swarm x'],
+      ['v', ''], ['tasks', ''], ['ctx', 'all']] as const) // an alias waits too
       expect(lockSafeCommand(n, a), `${n} ${a}`).toBe(false)
   })
 })

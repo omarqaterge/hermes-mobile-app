@@ -1,7 +1,12 @@
 // How Hermes reads a slash command, so the app judges the same word Hermes will run. Hermes takes
 // `cmd.strip().lstrip('/').split(maxsplit=1)`, and Python's split() also breaks on separators a JavaScript `\s` doesn't
-// know (U+001C to U+001F, U+0085), while `\s` knows one Python doesn't (U+FEFF). Its worker then expands the beginning of
-// some command names (seen on the pinned build: /cr, /k and /bl do, /b and /bac don't start a background task).
+// know (U+001C to U+001F, U+0085), while `\s` knows one Python doesn't (U+FEFF). Its slash worker then resolves an alias
+// (`/bp` is /blueprint) and expands a beginning (`/cr` is /cron), both from Hermes's own command table, copied from the
+// pinned build into web/vendor/hermes-commands.json by tools/hermes-commands.py.
+import hermesTable from '../vendor/hermes-commands.json'
+
+const NAMES: readonly string[] = hermesTable.names
+const ALIASES: Readonly<Record<string, string>> = hermesTable.aliases
 
 const SPACES = new Set([9, 10, 11, 12, 13, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000])
 for (let c = 0x2000; c <= 0x200a; c++) SPACES.add(c)
@@ -34,8 +39,23 @@ const shellWords = (arg: string): string[] =>
     .filter(Boolean)
     .map(w => w.replace(/['"\\]/g, ''))
 
-/** `typed` names this command: all of it, or the beginning Hermes would expand to it. */
-const names = (typed: string, full: string, shortest: number): boolean => typed.length >= shortest && full.startsWith(typed)
+/** The built-in command Hermes's slash worker runs for this typed name, '' for none: the name itself or the command of an
+ *  alias, else the one name a beginning expands to (the only match, or the only shortest one; then its alias resolved).
+ *  Skills a phone has installed only add matches, so a beginning that names a built-in here names that built-in or a
+ *  skill there, never another built-in. A quick command or a plugin command of the same name isn't known here. */
+export function hermesCommand(typed: string): string {
+  const n = typed.toLowerCase()
+  if (!n) return ''
+  if (Object.prototype.hasOwnProperty.call(ALIASES, n)) return ALIASES[n]
+  if (NAMES.includes(n)) return n
+  let m = NAMES.filter(c => c.startsWith(n))
+  if (m.length > 1) {
+    const min = Math.min(...m.map(c => c.length))
+    m = m.filter(c => c.length === min)
+  }
+  if (m.length !== 1) return ''
+  return Object.prototype.hasOwnProperty.call(ALIASES, m[0]) ? ALIASES[m[0]] : m[0]
+}
 
 /** Python's `shlex.split(text)` (POSIX), which Hermes's /kanban runs on its arguments, then a fully wrapping pair of quotes
  *  taken off each word as /kanban does. null when a quote isn't closed or the text ends in a backslash: Hermes refuses such
@@ -127,30 +147,32 @@ export function kanbanReadOnly(arg: string): boolean {
 }
 
 /** What this command would start or change that runs apart from the chat, in words for a sentence; null for anything else.
- *  These are the commands of Hermes's slash worker that hand typed text to a new agent, or change a board other agents
- *  work from. Listing is left alone, and so is every command that runs inside the chat itself, which the chat's own rules
- *  cover. */
+ *  These are the commands of Hermes's slash worker that hand typed text to a new agent, schedule a job, or change a board
+ *  other agents work from (`/kanban swarm` and every other subcommand that doesn't only read). Listing is left alone, and so
+ *  is every command that runs inside the chat itself, which the chat's own rules cover. The name is read as Hermes reads it
+ *  (hermesCommand); `/background` counts too, though Hermes has no such name. */
 export function detachedWork(typedName: string, arg: string): string | null {
-  const name = typedName.toLowerCase()
-  const words = shellWords(arg)
-  if (name === 'bg' || name === 'background') return 'a background task' // Hermes expands neither from a beginning
-  if (names(name, 'cron', 2) && ['add', 'create', 'edit'].includes(words[0]?.toLowerCase() ?? '')) return 'a scheduled job'
-  if (names(name, 'kanban', 1) && !kanbanReadOnly(arg)) return 'a board command'
-  if ((name === 'bp' || names(name, 'blueprint', 2)) && words.slice(1).some(w => w.includes('='))) return 'an automation'
+  const cmd = hermesCommand(typedName)
+  const sub = shellWords(arg)[0]?.toLowerCase() ?? ''
+  if (cmd === 'bg' || typedName.toLowerCase() === 'background') return 'a background task'
+  if (cmd === 'cron' && ['add', 'create', 'edit'].includes(sub)) return 'a scheduled job'
+  if (cmd === 'suggestions' && ['accept', 'add', 'schedule'].includes(sub)) return 'a scheduled job'
+  if (cmd === 'kanban' && !kanbanReadOnly(arg)) return 'a board command'
+  if (cmd === 'blueprint' && shellWords(arg).slice(1).some(w => w.includes('='))) return 'an automation'
   return null
 }
 
-// Over the lock screen a slash command runs only when it is on this list (exact names: a beginning Hermes would expand,
-// a quick command or an alias is not known here, so it waits for an unlock). Each only shows something; none changes a
-// setting or starts work. /yolo is handled apart: there it can only turn access off.
-const LOCK_BARE = new Set(['status', 'version', 'v', 'whoami', 'agents', 'tasks', 'usage'])
+// Over the lock screen a slash command runs only when it is on this list, by its exact name: an alias, a beginning Hermes
+// would expand, a quick command or a plugin command waits for an unlock. Each only shows something; none changes a setting
+// or starts work. /yolo is handled apart: there it can only turn access off.
+const LOCK_BARE = new Set(['status', 'version', 'whoami', 'agents', 'usage'])
 
-/** Whether this command may run over the lock screen. */
+/** Whether this command may run over the lock screen (what it would run must also be no quick command: lockedNames). */
 export function lockSafeCommand(typedName: string, arg: string): boolean {
   const name = typedName.toLowerCase()
   if (name === 'help') return true
   if (LOCK_BARE.has(name)) return arg === ''
-  if (name === 'context' || name === 'ctx') return arg === '' || arg.toLowerCase() === 'all'
+  if (name === 'context') return arg === '' || arg.toLowerCase() === 'all'
   if (name === 'kanban') return kanbanReadOnly(arg)
   return false
 }
@@ -158,7 +180,7 @@ export function lockSafeCommand(typedName: string, arg: string): boolean {
 /** `/approvals off` or `/approvals smart`, also by a beginning Hermes expands to it (`/ap` and longer): the mode that lets
  *  commands run without asking, in every chat of the bot. null for anything else (`manual`, a bare `/approvals`). */
 export function loosensApprovals(typedName: string, arg: string): 'off' | 'smart' | null {
-  if (!names(typedName.toLowerCase(), 'approvals', 2)) return null
+  if (hermesCommand(typedName) !== 'approvals') return null
   const w = arg.toLowerCase()
   return w === 'off' || w === 'smart' ? w : null
 }
