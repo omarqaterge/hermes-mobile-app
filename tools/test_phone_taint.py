@@ -127,7 +127,7 @@ QUIET = [
     "./gradlew test", "ls gh",
 ]
 for c in QUIET:
-    check("no ask: " + c, not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c, pt.command_match(c) is None, c)
 
 
 print("command shapes that slip past a word list (must ask)")
@@ -167,7 +167,7 @@ QUIET_SHAPES = [
  "cat ${F}", "mkdir -p $HOME/x", "node build.js", "python3 script.py", "n_requests=1; echo $n_requests",
 ]
 for c in QUIET_SHAPES:
-    check("no ask: " + c.split("\n")[0][:60], not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c.split("\n")[0][:60], pt.command_match(c) is None, c)
 check("a heredoc body is data: host and links lines do not ask", pt.command_match("cat <<'EOF'\nhost = 1\nlinks = 2\nEOF") is None)
 check("an unquoted heredoc body still runs $(...)", pt.command_match("cat <<EOF\n$(curl x)\nEOF") == "network command curl")
 check("a quoted heredoc body does not", pt.command_match("cat <<'EOF'\n$(curl x)\nEOF") is None)
@@ -219,7 +219,7 @@ ROUND3_QUIET = [
   'bash -s foo <<EOF\necho hi\nEOF',
 ]
 for c in ROUND3_QUIET:
-    check("no ask: " + c.split("\n")[0][:60], not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c.split("\n")[0][:60], pt.command_match(c) is None, c)
 check("a glob asks only when it could spell a denylisted program",
       pt.command_match("./b?ild.sh") is None and pt.command_match("c?rl x") == "command name chosen by a pattern"
       and pt.command_match("/usr/bin/c*rl x") is not None and pt.command_match("{curl,evil.com}") is not None
@@ -278,7 +278,7 @@ ROUND4_QUIET = [
   "python3 -c 'import pandas as pd; pd.read_csv(\"data.csv\")'",
 ]
 for c in ROUND4_QUIET:
-    check("no ask: " + c.split("\n")[0][:70], not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c.split("\n")[0][:70], pt.command_match(c) is None, c)
 ROUND4_CODE_QUIET = [
   "from os import path\nprint(path.sep)", "from os import getcwd, listdir\nprint(getcwd())", "from os import environ as e\nprint(e.get('HOME'))",
   "import pandas as pd\npd.read_csv('data.csv')", "import pandas as pd\ndf = pd.read_json('local.json')", "print('see https://example.com/docs')",
@@ -999,14 +999,53 @@ for cmd in ("echo 'curl x' >> ~/.bashrc", "echo x>>~/.profile", "printf x | tee 
             "cd $D; echo x > y", "cat > ~/.termux/boot/s.sh <<EOF\ncurl x\nEOF", "echo x > /etc/profile.d/z.sh",
             f"echo x > {pathdir}/git", "python3 -c \"open('/root/.bashrc','a').write('x')\"", "tee ~/.hermes/config.yaml < x"):
     check(f"terminal asks: {cmd!r}", asks("terminal", {"command": cmd}, "wg-chat"))
-for cmd in ("ls ~/.hermes", "cat ~/.bashrc", "grep x ~/.profile", "echo hi > /tmp/out.txt", "python3 x.py", "sort -u a > b.txt",
-            "ls -la 2>/dev/null", "cp a b", "make 2>&1", "cat notes.txt | wc -l"):
+# Round 4: the command word doesn't matter (wrappers, interpreters the old list missed), reads ask too, deleting the
+# record asks, a target known only at run time asks, and whole folders count (fish's conf.d and the like).
+for cmd in ("env cp x ~/.bashrc", "command cp x ~/.bashrc", "nohup tee ~/.zshrc < x", "nice cp x ~/bin/y", "timeout 5 cp x ~/.profile",
+            "busybox cp x ~/.hermes/config.yaml", "echo x | xargs cp -t ~/.local/bin", "find . -name x -exec cp {} ~/.bashrc \;",
+            "python3.14 -c 'open(\"/root/.bashrc\",\"a\")'", "nodejs -e 'require(\"fs\").appendFileSync(process.env.F, \"x\")'",
+            "deno eval 'Deno.writeTextFileSync(Deno.env.get(\"F\"), \"x\")'", "bun -e 'Bun.write(process.argv[1], \"x\")'",
+            "rm ~/.hermes/mobile/phone-read.json", "rm -f ~/.her*/mobile/*", "unlink ~/.hermes/mobile/phone-read.json",
+            "python3 -c 'import os; os.remove(os.path.join(os.path.expanduser(\"~\"), \".her\" + \"mes/mobile/phone-read.json\"))'",
+            "python3 -c 'import os; os.unlink(os.environ[\"F\"])'",
+            "python3 -c 'from pathlib import Path; (Path.home() / (\".her\" + \"mes\") / \"mobile\" / \"phone-read.json\").unlink()'",
+            "cp -t$DEST x", "cp --target-directory=$DEST x", "dd if=x of=$F", "sed -i s/a/b/ $F", "cp x \"$(dirname $F)\"/y",
+            "bash -c 'cp x $D'", "F=~/.bas; cp x ${F}hrc", "cp x ~/.{bash,zsh}rc", "cp x `cat target`",
+            "cp x ~/.config/fish/conf.d/a.fish", "echo x > ~/.bashrc.d/a.sh", "cp x ~/.shortcuts/run",
+            "cp x /data/data/com.termux/files/usr/etc/profile", "echo x > lib/python3.12/site-packages/a.pth",
+            "ls ~/.hermes", "cat ~/.bashrc", "grep x ~/.profile", "source ~/.bashrc", "$HOME/bin/tool a"):
+    check(f"terminal asks: {cmd!r}", asks("terminal", {"command": cmd}, "wg-chat"))
+for cmd in ("echo hi > /tmp/out.txt", "python3 x.py", "sort -u a > b.txt", "ls -la 2>/dev/null", "cp a b", "make 2>&1",
+            "cat notes.txt | wc -l", "ls $D", "echo $HOME", "x=$(ls); echo $x", "[[ -f x ]] && echo y", "grep -rn foo src | head",
+            "python3 -m pytest", "git commit -m 'fix'", "mkdir -p build && cp a build/a", "python3 -c 'print(1)'"):
     check(f"terminal left alone: {cmd!r}", not asks("terminal", {"command": cmd}, "wg-chat"))
+os.environ["TERMINAL_CWD"] = str(hh)
+check("a command that writes in a working folder that is such a place asks", asks("terminal", {"command": "echo x > config.yaml"}, "wg-chat")
+      and not asks("terminal", {"command": "ls"}, "wg-chat"))
+os.environ.pop("TERMINAL_CWD")
+for path, what in (("~/.config/fish/conf.d/a.fish", "a file in fish's conf.d"), ("~/.config/environment.d/x.conf", "environment.d"),
+                   ("~/.bashrc.d/a.sh", "a file in .bashrc.d"), ("~/.shortcuts/run", "a Termux:Widget shortcut"),
+                   (str(tmp / "usr" / "etc" / "profile"), "Termux's own etc"), (str(tmp / "lib" / "site-packages" / "a.pth"), "Python's packages"),
+                   (str(outside / "x" / "conf.d" / "y"), "a conf.d anywhere"), ("~/.gitconfig", ".gitconfig")):
+    check(f"write_file asks: {what}", asks("write_file", {"path": path, "content": "x"}, "wg-chat"))
 for code in ("import os\nopen(os.path.expanduser('~/.bashrc'), 'a').write('x')", "from pathlib import Path\n(Path.home() / '.pro' 'file').write_text('x')",
-             "open('/root/.hermes/config.yaml', 'w').write('x')", "import shutil; shutil.copy('x', '/usr/local/bin/y')"):
+             "open('/root/.hermes/config.yaml', 'w').write('x')", "import shutil; shutil.copy('x', '/usr/local/bin/y')",
+             # round 4: deleting the record, a name built at run time, a function reached another way, names that are read
+             "import os\nos.remove(os.path.join(os.path.expanduser('~'), '.her' + 'mes', 'mobile', 'phone-read.json'))",
+             "import os\nos.unlink(p)", "from os import remove as r\nr(p)", "import os as o\no.rename('a', b)",
+             "from pathlib import Path\n(Path.home() / ('.her' + 'mes') / 'mobile' / 'phone-read.json').unlink()",
+             "import pathlib\npathlib.Path(p).write_text('x')", "from pathlib import Path\nPath.unlink(p)", "open(p, 'w')", "open(p, mode)",
+             "open(file=p, mode='a')", "import io\nio.open(p, 'w')", "import shutil\nshutil.rmtree(d)", "import os\ndel_ = os.remove\ndel_(p)",
+             "import os\ngetattr(os, 'rem' + 'ove')(p)", "import os\nos.__dict__['remove'](p)", "from os import *\nremove(p)",
+             "import tarfile\ntarfile.open('a.tar').extractall('/')", "print(open('/root/.bashrc').read())", "import os\nos.listdir(os.path.expanduser('~/.termux'))",
+             "this is not python: os.unlink(x", "import os\nm = os\nm.remove(p)", "import sys\nsys.modules['os'].remove(p)",
+             "from shutil import move\nmove(a, b)", "from os import remove\nf = [remove]\nf[0](p)", "import io\nio.FileIO(p, 'w')"):
     check(f"execute_code asks: {code!r}", asks("execute_code", {"code": code}, "wg-chat"))
-for code in ("print(1)", "open('/tmp/x', 'w').write('a')", "import json\nprint(json.dumps({}))"):
+for code in ("print(1)", "open('/tmp/x', 'w').write('a')", "import json\nprint(json.dumps({}))", "open(p).read()", "with open(p) as f:\n    print(f.read())",
+             "s = 'a'.replace('a', 'b')\nt = s.replace('b', 'c')", "items = [1]\nitems.remove(1)", "from pathlib import Path\nPath('out.txt').write_text('x')",
+             "import os\nos.makedirs('build', exist_ok=True)", "import shutil\nprint(shutil.which('git'))", "import os\nprint(os.path.exists(p))"):
     check(f"execute_code left alone: {code!r}", not asks("execute_code", {"code": code}, "wg-chat"))
+check("the writer lists are gone", not hasattr(pt, "_WRITERS") and not hasattr(pt, "_CODE_WRITES"))
 check("a chat that has not read writes all of these without a question",
       pt.check("write_file", {"path": "~/.bashrc"}, "wg-clean") is None and pt.check("terminal", {"command": "echo x >> ~/.bashrc"}, "wg-clean") is None)
 os.environ["PATH"] = old_path

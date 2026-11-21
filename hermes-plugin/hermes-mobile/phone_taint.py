@@ -27,6 +27,7 @@ Nothing here logs a command, a result or a message.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import os
@@ -1475,22 +1476,34 @@ def _written_paths(name: str, a: Dict[str, Any]) -> List[Any]:
     return [a.get("path")]
 
 
-# Shell start-up files (read by every new shell, so what is written there runs later without a question). By name, wherever.
+# Shell start-up files and other files a program reads its settings from at start, by name, wherever they are: what is
+# written there runs later without a question.
 _STARTUP = frozenset((".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zshenv", ".zprofile",
                       ".zlogin", ".zlogout", ".kshrc", ".mkshrc", ".cshrc", ".tcshrc", ".login", ".logout", ".inputrc", ".envrc",
-                      "bash.bashrc", "config.fish"))
-# The same places by words in a command or a script: Hermes's and this app's folders, Termux's (its boot scripts and
-# settings), the start-up files, /etc, a folder of programs.
-_GUARDED_TEXT = re.compile(r"\.hermes|hermes[-_]agent|hermes_home|\.termux|/etc/|(?:^|[\s/'\"=:])(?:s?bin|\.local/bin)(?:/|$)|"
-                           + "|".join(re.escape(n) for n in sorted(_STARTUP)) + r"|fish/conf\.d", re.I)
-_GLOB = re.compile(r"[*?\[]")
+                      "bash.bashrc", "config.fish", ".gitconfig", ".vimrc", ".exrc", "sitecustomize.py", "usercustomize.py"))
+# Whole folders whose files run later: in the home folder, and by name wherever they are (a folder of programs, settings,
+# Python's packages, the `*.d` folders shells and services read every file of).
+_HOME_DIRS = (".termux", ".shortcuts", ".config/fish", ".config/environment.d", ".config/autostart", ".config/systemd",
+              ".config/git", ".config/nvim", ".vim", ".oh-my-zsh", ".bashrc.d", ".zshrc.d", ".profile.d")
+_DIR_NAMES = frozenset(("bin", "sbin", "etc", "site-packages", "dist-packages", "conf.d", "profile.d", "bashrc.d", "zshrc.d"))
+# The same places by words in a command or a script, read or written: Hermes's and this app's folders, the folders and
+# files above.
+_GUARDED_TEXT = re.compile(r"\.hermes|hermes[-_]agent|hermes_home|/etc\b|(?:^|[\s/'\"=:])(?:s?bin|\.local/bin)(?:/|$|[\s'\"])|"
+                           + "|".join(re.escape(n) for n in sorted(_STARTUP | set(_HOME_DIRS) | (_DIR_NAMES - {"bin", "sbin", "etc"}))),
+                           re.I)
+# A word whose file is known only when the line runs: a variable, a substitution, a glob, a brace list.
+_RUNTIME = re.compile(r"[$`*?\x00\x01]|\[[^\]]*\]|\{[^{}]*(?:,|\.\.)[^{}]*\}")
 _NULL_REDIRECT = frozenset((">/dev/null", "1>/dev/null", "2>/dev/null", "&>/dev/null", "2>&1", ">&2", "1>&2"))
+# Commands that only read or print, whatever they are given (no option of theirs writes a file).
+_READERS = frozenset("ls cat grep egrep fgrep rg head tail wc echo printf pwd stat du df cut tr nl whoami id uname which type "
+                     "test [ [[ true false ps free uptime cd pushd popd basename dirname realpath readlink seq date file cmp".split())
 
 
 def guarded_place(path: Any) -> Optional[str]:
     """Where a file a tool would write sits, when what is written there changes what Hermes, this app or a shell runs
-    later: Hermes's or this app's folders (config, skills, plugins, the record of chats that have read), Termux's folder, a
-    shell start-up file, /etc, a folder of programs (one named bin or sbin, or one on PATH). None for any other file. Fails
+    later: Hermes's or this app's folders (config, skills, plugins, the record of chats that have read), a shell start-up
+    file (`_STARTUP`), a whole folder whose files run later (`_HOME_DIRS` in the home folder: Termux's, fish's `conf.d`...;
+    `_DIR_NAMES` anywhere: `bin`, `etc`, `site-packages`, `conf.d`...), a folder on PATH. None for any other file. Fails
     closed: a path that can't be read counts as Hermes's folders."""
     if _under_hermes(path):
         return "Hermes's or this app's folders"
@@ -1499,76 +1512,221 @@ def guarded_place(path: Any) -> Optional[str]:
         if not os.path.isabs(p):
             p = os.path.join(os.environ.get("TERMINAL_CWD") or os.getcwd(), p)
         real = Path(os.path.realpath(p))
-        if real.name in _STARTUP or any(n in _STARTUP for n in Path(p).parts):
+        parts = set(Path(p).parts) | set(real.parts)
+        if real.name in _STARTUP or parts & _STARTUP:
             return "a shell start-up file"
         home = Path(os.path.realpath(os.path.expanduser("~")))
-        if real.is_relative_to(home / ".termux") or real.is_relative_to(Path(os.path.realpath("/etc"))):
+        if any(real.is_relative_to(home / d) for d in _HOME_DIRS) or real.is_relative_to(Path(os.path.realpath("/etc"))) \
+                or "etc" in parts:
             return "Termux's or the system's settings"
         on_path = {os.path.realpath(x) for x in (os.environ.get("PATH") or "").split(os.pathsep) if x}
-        if any(part in ("bin", "sbin") for part in real.parent.parts) or str(real.parent) in on_path:
+        if parts & _DIR_NAMES or str(real.parent) in on_path or str(real) in on_path:
             return "a folder of programs"
     except Exception:
         return "Hermes's or this app's folders"
     return None
 
 
-# Programs that write files they are given, or that can write anywhere (an interpreter, a shell, an editor).
-_WRITERS = frozenset("cp mv ln install tee dd rsync truncate touch chmod chown mkdir unzip tar patch sed perl python python3 "
-                     "node ruby php lua sh bash zsh dash ash ksh fish rish awk gawk ed ex vi vim nvim nano".split())
-
-
 def terminal_guarded(text: Any) -> Optional[str]:
-    """Why a shell command of a chat that has read asks before it runs, when it may write a file that `guarded_place`
-    names; None otherwise. A command that writes (a redirection into a file, or a program of `_WRITERS`) asks when any word
-    of the line names such a place, or when a file it writes is named at run time (a variable, a substitution, a glob)."""
+    """Why a shell command of a chat that has read asks before it runs, so that it can't change a place `guarded_place`
+    names; None otherwise. It asks when its text names such a place anywhere, whatever the command (reads too); when it
+    may write (a redirection into a file, or any command not in `_READERS`) and a word of the line is known only at run
+    time (`_RUNTIME`); when it writes in a working folder that is such a place; and when it runs an interpreter and the
+    line holds code that writes or deletes files (`_CODE_WORDS`)."""
     t = text if isinstance(text, str) else ""
     if len(t) > MAX_SCAN:
         return "a command too long to read"
-    writes = named = False
+    named = "a command that names Hermes's folders, a shell start-up file or a folder of programs"
+    if _GUARDED_TEXT.search(t):
+        return named
+    writes = runtime = interp = False
     for w, d, _piped, body in _parse(t):
         k = 0
-        while k < len(w) and _ASSIGN.match(w[k]) and not d[k]:
+        while k < len(w) and _ASSIGN.match(w[k]):
             k += 1
-        base = _base(w[k]) if k < len(w) else ""
-        for j, (a, dyn) in enumerate(zip(w, d)):
+        if k < len(w) and (d[k] or _base(w[k]) not in _READERS):
+            writes = True
+        if body:
+            writes = True
+        for a, dyn in zip(w, d):
             if _GUARDED_TEXT.search(a) or ("/" in a and not dyn and guarded_place(a)):
-                named = True
+                return named
+            if dyn or _RUNTIME.search(a):
+                runtime = True
             if ">" in a and a not in _NULL_REDIRECT:
                 writes = True
-                glued = a.rsplit(">", 1)[1]
-                if not glued and j + 1 >= len(w):
-                    continue   # `2>&1` (the reader ends the command at `&`): no file named here
-                target = glued or w[j + 1]
-                target_dyn = dyn or (not glued and d[j + 1])
-                if target.startswith("&") or target == "/dev/null" or _PROCSUB in target:
-                    continue   # another stream, nothing, or a command (`>(...)`, read on its own)
-                if target_dyn or _PLACEHOLDER in target or _GLOB.search(target) or guarded_place(target):
-                    return "a redirection into a file Hermes, this app or a shell runs from, or one named at run time"
-        if base in _WRITERS or body:
-            writes = True
-            if base in ("cp", "mv", "ln", "install", "tee", "touch", "truncate", "rsync") and any(
-                    dyn or _PLACEHOLDER in a or _GLOB.search(a) for a, dyn in zip(w[k + 1:], d[k + 1:]) if not a.startswith("-")):
-                return f"{base} with a file named at run time"
-        if base in ("cd", "pushd") and any(d[k + 1:]):
-            named = True   # a folder named at run time: anything written after it may land anywhere
-    if writes and named:
-        return "a command that writes and names Hermes's folders, a shell start-up file or a folder of programs"
+            if _INTERP.match(_base(a)):
+                interp = True
+    if writes and runtime:
+        return "a command that writes, deletes or redirects to a file named at run time"
+    if writes and guarded_place(os.path.join(os.environ.get("TERMINAL_CWD") or os.getcwd(), "x")):
+        return "a command that writes in Hermes's folders, a shell start-up file's folder or a folder of programs"
+    if interp and _CODE_WORDS.search(t):
+        return "code that writes or deletes files, run from the terminal"
     return None
 
 
-_CODE_WRITES = re.compile(r"\bopen\s*\(|\.write(?:_text|_bytes)?\s*\(|\bshutil\.|\bos\.(?:rename|replace|symlink|link|chmod|"
-                          r"makedirs|mkdir)\b|\bPath\s*\(|\bsubprocess\b")
-_CODE_HOME = re.compile(r"expanduser|Path\.home|\bHOME\b|getenv|environ|getcwd|chdir", re.I)
+# Words of code that writes or deletes files, or reaches such a function by a name built at run time (any language: what
+# a script or a one-liner is read by when it isn't Python).
+_CODE_WORDS = re.compile(r"\b(?:open\w*|write\w*|append\w*|remove\w*|unlink\w*|rm\w*|rename\w*|replace|move\w*|copy\w*|"
+                         r"mkdir\w*|makedirs|chmod\w*|chown\w*|symlink\w*|link\w*|truncate\w*|touch|utime\w*|mkfifo|mknod|"
+                         r"extract\w*|getattr|setattr|__dict__|vars|globals|locals|builtins|__builtins__)\b")
+# In Python: functions of these modules that write or delete files (os's, shutil's), the methods of a path that do, and
+# the names that reach a function by text.
+_OS_WRITES = frozenset("remove unlink rmdir removedirs rename renames replace makedirs mkdir chmod lchmod chown lchown "
+                       "symlink link truncate utime mkfifo mknod open".split())
+_SHUTIL_READS = frozenset(("which", "disk_usage", "get_terminal_size", "get_archive_formats", "get_unpack_formats"))
+_PATH_WRITES = frozenset("write_text write_bytes unlink touch mkdir rmdir chmod lchmod symlink_to hardlink_to link_to "
+                         "rename replace open".split())
+_PATH_ONLY = frozenset(("rename", "replace", "open"))   # also a method of a text or another object: counts on a path only
+_REACH = frozenset(("getattr", "setattr", "delattr", "vars", "globals", "locals", "__builtins__", "builtins", "__dict__",
+                    "modules"))
+_FILE_MODULES = frozenset(("os", "posix", "nt", "shutil", "io", "codecs", "pathlib", "builtins"))
+
+
+def _literal_ok(node: Any) -> bool:
+    """A plain text naming a file outside the guarded places."""
+    return isinstance(node, ast.Constant) and isinstance(node.value, str) and not guarded_place(node.value)
+
+
+def _py_unclear_write(code: str) -> Optional[bool]:
+    """Whether Python code writes or deletes a file the reader can't name before it runs (a target that isn't a plain text,
+    or a function reached by a name built at run time). None when the code isn't Python."""
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None
+    mods: Dict[str, str] = {}                  # a name bound to a file module: name -> module
+    funcs: Dict[str, Tuple[str, str]] = {"open": ("builtins", "open")}   # a name bound to a function: (module, its name)
+    classes = {"Path", "PurePath", "PosixPath", "WindowsPath"}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for al in n.names:
+                top = al.name.split(".")[0]
+                if top in _FILE_MODULES:
+                    mods[al.asname or top] = top
+        elif isinstance(n, ast.ImportFrom) and (n.module or "").split(".")[0] in _FILE_MODULES:
+            top = (n.module or "").split(".")[0]
+            for al in n.names:
+                if al.name == "*":
+                    return True
+                if top == "pathlib":
+                    classes.add(al.asname or al.name)
+                else:
+                    funcs[al.asname or al.name] = (top, al.name)
+
+    def writer(mod: str, name: str) -> bool:
+        return (mod in ("os", "posix", "nt") and name in _OS_WRITES) or (mod == "shutil" and name not in _SHUTIL_READS)
+
+    def write_mode(call: Any, pos: int) -> bool:
+        mode = call.args[pos] if len(call.args) > pos else next((k.value for k in call.keywords if k.arg == "mode"), None)
+        if mode is None:
+            return False
+        return not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)) or bool(set(mode.value) & set("wax+"))
+
+    def is_path(node: Any) -> bool:
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Name) and f.id in classes:
+                return True
+            if isinstance(f, ast.Attribute):
+                return f.attr in classes or f.attr in ("home", "cwd", "joinpath", "with_name", "with_suffix", "with_stem",
+                                                       "expanduser", "resolve", "absolute") or is_path(f.value)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return True
+        if isinstance(node, ast.Attribute) and node.attr in ("parent", "parents"):
+            return True
+        return False
+
+    def path_literal(node: Any) -> bool:
+        f = node.func if isinstance(node, ast.Call) else None
+        return (isinstance(f, ast.Name) and f.id in classes or isinstance(f, ast.Attribute) and f.attr in classes) \
+            and len(node.args) == 1 and not node.keywords and _literal_ok(node.args[0])
+
+    called = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and n.id in _REACH:
+            return True
+        if isinstance(n, ast.Attribute) and n.attr in _REACH:
+            return True
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        called.add(id(f))
+        targets: Optional[List[Any]] = None
+        if isinstance(f, ast.Name) and f.id in funcs:
+            mod, orig = funcs[f.id]
+            if orig == "open" and mod in ("builtins", "io", "codecs"):
+                if not write_mode(n, 1):
+                    continue
+                targets = list(n.args[:1])
+            elif writer(mod, orig):
+                targets = list(n.args[:2])
+        elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in mods:
+            mod = mods[f.value.id]
+            if writer(mod, f.attr):
+                targets = list(n.args[:2])
+            elif mod in ("io", "codecs", "builtins") and f.attr in ("open", "FileIO"):
+                if not write_mode(n, 1):
+                    continue
+                targets = list(n.args[:1])
+            elif mod == "pathlib" and f.attr in _PATH_WRITES:
+                return True   # Path.unlink(p): the path comes as an argument
+        elif isinstance(f, ast.Attribute) and f.attr in _PATH_WRITES:
+            recv = f.value
+            if isinstance(recv, ast.Constant):
+                continue   # a text's own method ("a".replace)
+            if f.attr in _PATH_ONLY and not is_path(recv):
+                continue   # another object's rename/replace/open
+            if f.attr == "open" and not write_mode(n, 0):
+                continue
+            if not path_literal(recv):
+                return True
+            continue
+        elif isinstance(f, ast.Attribute) and f.attr in ("extractall", "extract"):
+            return True
+        if targets is None:
+            continue
+        if any(isinstance(a, ast.Starred) for a in n.args) or any(k.arg is None for k in n.keywords):
+            return True
+        others = [k.value for k in n.keywords if k.arg not in ("mode", "encoding", "errors", "newline", "buffering",
+                                                               "exist_ok", "parents", "follow_symlinks", "closefd")]
+        if not targets and not others:
+            return True
+        if not all(_literal_ok(a) for a in targets + others):
+            return True
+    # A file function or module named but not called here (passed on, or kept under another name) writes where nobody
+    # can tell.
+    bases = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in mods and id(n) not in bases:
+            return True
+        if id(n) in called:
+            continue
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in funcs and (
+                funcs[n.id][1] == "open" or writer(*funcs[n.id])):
+            return True
+        if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id in mods and (
+                writer(mods[n.value.id], n.attr) or n.attr == "open"):
+            return True
+    return False
 
 
 def code_guarded(code: Any) -> Optional[str]:
-    """The same for a script given to execute_code: code that writes files and names such a place, or builds a path from
-    the home folder or the environment."""
+    """The same for a script given to execute_code: it asks when the code names such a place anywhere (reads too), and when
+    it writes or deletes a file it doesn't name by a plain text outside them (`_py_unclear_write`; code that isn't Python
+    asks when it holds any word of `_CODE_WORDS`)."""
     c = code if isinstance(code, str) else ""
     if len(c) > MAX_SCAN:
         return "a script too long to read"
-    if _CODE_WRITES.search(c) and (_GUARDED_TEXT.search(c) or _CODE_HOME.search(c)):
-        return "code that writes files and names Hermes's folders, a shell start-up file, a folder of programs or the home folder"
+    if _GUARDED_TEXT.search(c):
+        return "code that names Hermes's folders, a shell start-up file or a folder of programs"
+    try:
+        unclear = _py_unclear_write(c)
+    except Exception:
+        unclear = True
+    if unclear or (unclear is None and _CODE_WORDS.search(c)):
+        return "code that writes or deletes a file named at run time"
     return None
 
 
