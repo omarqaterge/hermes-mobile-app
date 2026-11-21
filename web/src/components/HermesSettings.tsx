@@ -14,6 +14,7 @@ import { ProfileChips, forProfiles } from './Settings'
 import { Row, Section, Toggle, ToggleRow } from './ui'
 import { Icon } from './icons'
 import { DynamicUIRow, useDynamicUI } from './DynamicUI'
+import { toastNewChats } from '../newchats'
 
 let defaultsCache: Record<string, unknown> | null = null
 let zonesCache: string[] | null = null
@@ -46,7 +47,7 @@ export function HermesSettingsPage({ scope, setScope, openMemory, openAdvanced }
     haptic()
     const ok = await forProfiles(all ? '*' : scope, p => api('PUT', `/api/config?${qs({ profile: p })}`, { config: nested(s.key, v) }, { profile: false }))
     if (ok) {
-      toast(`${s.label}: ${shown(s, v)}${all ? ' for all bots' : ''}`)
+      toastNewChats(`${s.label}: ${shown(s, v)}${all ? ' for all bots' : ''}`)
       reload()
     }
     return ok

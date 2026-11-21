@@ -14,7 +14,7 @@ import { remoteDebugRow, useRemoteDebug } from '../remotedebug'
 import { useBootSummary } from '../boot'
 import { checkForUpdate, isNewer, startUpdate, useUpdate } from '../update'
 import { WhatsNewSections } from './WhatsNew'
-import { checkHermes, compat, useHermesBuild } from '../hermes-update'
+import { checkHermes, compat, mismatchLine, useHermesBuild } from '../hermes-update'
 import { EmbeddedShell, MemoryScreen, ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../live'
@@ -43,6 +43,9 @@ import { Icon, type IconName } from './icons'
 import { recheckModel, useModelReady } from '../model-ready'
 import { takeSettingsStart } from '../settings-open'
 import { modelsChanged } from '../modelcache'
+import { BotTag } from './BotTag'
+import { AboutThis } from './AboutThis'
+import { toastNewChats } from '../newchats'
 
 // ── shared ───────────────────────────────────────────────────
 
@@ -209,10 +212,11 @@ export function ModelPicker({ profile, target, onPick, onClose, refresh, only, n
   )
 }
 
-/** Horizontal profile chips; `all` adds an "All bots" chip (value "*"). */
+/** Horizontal profile chips; `all` adds an "All bots" chip (value "*"). Hidden with one bot: there is nothing to choose. */
 export function ProfileChips({ value, onChange, all, label = 'Bot' }: { value: string; onChange: (v: string) => void; all?: boolean; label?: string }) {
   const profiles = useStore(s => s.profiles)
   const id = useId()
+  if (profiles.length < 2) return null
   return (
     <div className="scope-bar" role="group" aria-labelledby={id}>
       <h3 className="set-heading" id={id}>{label}</h3>
@@ -350,7 +354,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
     setBusy(false)
     if (ok) {
       modelsChanged() // a provider key: the chat's model picker fetches its live list again
-      toast(what === 'save' ? `${key} saved${all ? ' for all bots' : ''}` : `${key} removed${all ? ' from all bots' : ''}`)
+      toastNewChats(what === 'save' ? `${key} saved${all ? ' for all bots' : ''}` : `${key} removed${all ? ' from all bots' : ''}`)
       onSaved()
       onClose()
     }
@@ -501,7 +505,7 @@ function ConfigTab({ scope, setScope }: { scope: string; setScope: (s: string) =
     haptic()
     const ok = await forProfiles(all ? '*' : scope, p => api('PUT', `/api/config?${qs({ profile: p })}`, { config: nest(key, value) }, { profile: false }))
     if (ok) {
-      toast(`Saved${all ? ' for all bots' : ''}`)
+      toastNewChats(`Saved${all ? ' for all bots' : ''}`)
       reload()
       if (key === 'model' || key.startsWith('model.')) void loadProfiles()
       if (key.startsWith('agent.reasoning') || key === 'model' || key.startsWith('model.')) void loadDefaultModel()
@@ -712,7 +716,7 @@ function VoiceSettings({ openStt }: { openStt: () => void }) {
         footer={
           engine && engine !== 'com.google.android.tts'
             ? real.length <= 1
-              ? `${engineLabel} only offers Android the one voice selected inside its own app, so other voices can’t be listed here. Pick the voice there and it is used here.`
+              ? `${engineLabel} offers Android only the voice chosen in its own app, so pick the voice there.`
               : `Voices come from ${engineLabel}.`
             : undefined
         }
@@ -730,9 +734,13 @@ function VoiceSettings({ openStt }: { openStt: () => void }) {
           <Row icon="mic" tone="teal" title="Speech recognition" value={chosenSttName(stt)} chevron onClick={openStt} />
         </Section>
       )}
-      <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said. Interrupt by talking keeps the microphone on while Hermux speaks and stops it when you say something; turn it off if your surroundings cut Hermux off by mistake.">
+      <Section title="Live mode" footer="Pause before sending is how long you stay silent before Live mode sends what you said.">
         <SliderRow icon="clock" tone="purple" title="Pause before sending" value={livePause} min={0.5} max={6} step={0.5} format={v => `${v.toFixed(1)} s`} onChange={v => { setLivePauseState(v); setLivePause(v) }} />
         <ToggleRow icon="hand" tone="blue" title="Interrupt by talking" sub="Talk over Hermux to cut it off" on={bargeIn} onChange={v => { setBargeInState(v); setLiveBargeIn(v) }} />
+        <AboutThis title="Live mode">
+          <p>Pause before sending is how long you stay silent before Live mode sends what you said.</p>
+          <p>Interrupt by talking keeps the microphone on while Hermux speaks and stops it when you say something. Turn it off if your surroundings cut Hermux off by mistake.</p>
+        </AboutThis>
       </Section>
       <AssistantSection />
       <Section>
@@ -762,20 +770,32 @@ function AssistantSection() {
     <Section
       title="Phone assistant"
       footer={
-        (on
-          ? 'Long-press the power button (or swipe in from a bottom corner) to talk to Hermux in Live mode. If it still opens another assistant, set the power-button shortcut to the assistant in the phone’s settings.'
-          : 'Choose Hermux under “Digital assistant app”. Then long-pressing the power button opens Hermux in Live mode, from any app.') +
-        (lockAssistAvailable()
+        lockAssistAvailable()
           ? onLock
-            ? ' On the lock screen, Live mode opens without unlocking, for talking only: allowing a command, answering a question or opening your chats asks you to unlock.'
-            : ' On the lock screen, the phone asks you to unlock first.'
-          : '')
+            ? 'On the lock screen Live mode is for talking only: allowing a command, answering a question or opening your chats asks you to unlock.'
+            : 'On the lock screen, the phone asks you to unlock first.'
+          : on
+            ? 'Long-press the power button to talk to Hermux in Live mode, from any app.'
+            : 'Choose Hermux under “Digital assistant app” to open Live mode from any app.'
       }
     >
-      <Row icon="sparkles" tone="gold" title="Use Hermux as phone assistant" value={on ? 'On' : 'Off'} chevron onClick={() => bridge.openAssistantSettings?.()} />
+      <Row
+        icon="sparkles"
+        tone="gold"
+        title="Use Hermux as phone assistant"
+        sub={on ? 'Long-press the power button for Live mode' : 'Choose Hermux under “Digital assistant app”'}
+        value={on ? 'On' : 'Off'}
+        chevron
+        onClick={() => bridge.openAssistantSettings?.()}
+      />
       {lockAssistAvailable() && (
         <ToggleRow icon="lock" tone="purple" title="Talk to Hermux on the lock screen" on={onLock} onChange={v => { setOnLock(v); setLockAssist(v) }} />
       )}
+      <AboutThis title="Phone assistant">
+        <p>Choose Hermux under “Digital assistant app”. Then long-pressing the power button (or swiping in from a bottom corner) opens Hermux in Live mode, from any app.</p>
+        <p>If it still opens another assistant, set the power-button shortcut to the assistant in the phone’s settings.</p>
+        {lockAssistAvailable() && <p>With “Talk to Hermux on the lock screen” on, Live mode opens without unlocking, for talking only: allowing a command, answering a question or opening your chats asks you to unlock. Off, the phone asks you to unlock first.</p>}
+      </AboutThis>
     </Section>
   )
 }
@@ -807,7 +827,7 @@ const MODEL_BAR_SUB: Record<ModelBarMode, string> = {
   tucked: 'Tap or drag the handle above the text box to see it',
   open: 'Always shown above the text box'
 }
-const MODEL_BAR_FOOT = 'The model, Auto, the context ring and the live status. Tucked away, a new chat shows them until its first message.'
+const MODEL_BAR_FOOT = 'The model, Auto, the context ring and the live status; tucked away, a new chat shows them until its first message.'
 const EFFECTS_FOOT = "Until you choose, Animations follows your phone: Off when it is set to remove animations, otherwise Full."
 
 function AppearancePage() {
@@ -888,6 +908,8 @@ type Page = SettingsPageId
 const PAGE_TITLE: Record<Page, string> = SETTINGS_PAGE_NAME
 /** Where Back goes from a page (every other page goes back to the main page). */
 const PARENT: Partial<Record<Page, Page>> = { stt: 'voice', add: 'models', keys: 'models', memory: 'hermes', config: 'hermes' }
+/** The pages that apply to one bot (`scope`): with several bots their top bar names it (BotTag). */
+const BOT_PAGES = new Set<Page>(['models', 'add', 'keys', 'connectors', 'hermes', 'config'])
 const ACCESS_NAME: Record<Access, string> = { off: 'Auto off', auto: 'Auto access', full: 'Full access' }
 
 /** One attention card on the main page: an icon, a title, one line and one button. Shown only while its condition is true. */
@@ -1038,7 +1060,7 @@ function ModelsPage({ go, scope, setScope, rotation, bump }: { go: (p: Page) => 
           onPick={async (p, model, effort) => {
             const ok = await forProfiles(target, n => setProfileModel(n, p, model, effort))
             await loadProfiles()
-            if (ok) toast(all ? `${model} → all bots` : `New chats use ${model}`)
+            if (ok) toastNewChats(all ? `New chats of every bot use ${model}` : `New chats use ${model}`)
           }}
         />
       )}
@@ -1067,7 +1089,7 @@ function AddProviderPage({ scope, setScope, go, bump }: { scope: string; setScop
           go('models')
         }}
       />
-      <div className="dim small pad">Every provider this agent version supports. ChatGPT, Claude, Grok, Nous and MiniMax sign in right here (Claude can also sign in from Termux). Tool keys are under Settings → Models → All keys.</div>
+      <div className="set-foot pad">ChatGPT, Claude, Grok, Nous and MiniMax sign in right here; tool keys are under Models → All keys.</div>
     </>
   )
 }
@@ -1077,7 +1099,7 @@ function AddProviderPage({ scope, setScope, go, bump }: { scope: string; setScop
 function AccessPage() {
   return (
     <>
-      <Section title="Approvals" footer="What new and existing chats start in. A chat you set with its own Auto button keeps that choice.">
+      <Section title="Approvals" footer="A chat you set with its own Auto button keeps that choice.">
         <DefaultAccessRow />
         <ApprovalLockRow />
       </Section>
@@ -1380,7 +1402,7 @@ function HermesRow({ version }: { version: string }) {
     void checkHermes()
   }, [])
   const mismatch = ['newer', 'older'].includes(compat(h.current))
-  const sub = !mismatch ? undefined : app.phase === 'available' ? `Different from what this app was made for. Update the app (${app.latest}).` : 'Different from what this app was made for. If something breaks, update the app.'
+  const sub = mismatch ? mismatchLine(app.phase === 'available' ? app.latest : null) : undefined
   return <Row icon="health" tone={mismatch ? 'gold' : 'teal'} title="Hermux agent" value={version} sub={sub} />
 }
 
@@ -1423,7 +1445,11 @@ export function SettingsScreen() {
   useBackHandler(back, page !== 'hub')
   const bump = () => setRotation(v => v + 1)
   return (
-    <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : back} actions={page === 'memory' ? <span className="lib-actions" ref={setSlot} /> : undefined}>
+    <ScreenShell
+      title={PAGE_TITLE[page]}
+      onBack={page === 'hub' ? undefined : back}
+      actions={page === 'memory' ? <span className="lib-actions" ref={setSlot} /> : BOT_PAGES.has(page) ? <BotTag profile={scope} /> : undefined}
+    >
       {page === 'hub' && <Hub go={setPage} pick={pick} />}
       {page === 'appearance' && <AppearancePage />}
       {page === 'voice' && <VoiceSettings openStt={() => setPage('stt')} />}

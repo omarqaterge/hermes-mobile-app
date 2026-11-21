@@ -989,8 +989,17 @@ function Toasts({ toasts }: { toasts: Toast[] }) {
   return (
     <div className="toasts">
       {shown.map(t => (
-        <div key={t.id} className={`toast toast-${t.level}${t.leaving ? ' leaving' : ''}`} aria-hidden={t.leaving || undefined}>
-          {t.text}
+        <div key={t.id} className={`toast toast-${t.level}${t.leaving ? ' leaving' : ''}${t.action ? ' with-action' : ''}`} aria-hidden={t.leaving || undefined}>
+          {t.action ? (
+            <>
+              <span className="toast-text">{t.text}</span>
+              <button className="toast-action" onClick={() => { const run = t.action!.run; setState(s => ({ toasts: s.toasts.filter(x => x.id !== t.id) })); run() }}>
+                {t.action.label}
+              </button>
+            </>
+          ) : (
+            t.text
+          )}
         </div>
       ))}
     </div>

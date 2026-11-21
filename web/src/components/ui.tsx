@@ -76,6 +76,24 @@ export function Row({
   )
 }
 
+/** What a list is and how to start it, when it is empty: a drawn icon, one or two sentences and at most one button.
+ *  Solid, like the content around it (spec 3.20). */
+export function EmptyState({ icon, title, text, action, onAction }: { icon: IconName; title: string; text: ReactNode; action?: string; onAction?: () => void }) {
+  const id = useId()
+  return (
+    <div className="empty-state" role="group" aria-labelledby={id}>
+      <span className="empty-state-icon" aria-hidden="true"><Icon n={icon} size={26} /></span>
+      <div className="empty-state-title" id={id}>{title}</div>
+      <div className="empty-state-text">{text}</div>
+      {action && onAction && (
+        <button className="btn primary empty-state-btn" onClick={() => { haptic(); onAction() }}>
+          {action}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── switch ───────────────────────────────────────────────────
 
 export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {

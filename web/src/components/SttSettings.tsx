@@ -20,6 +20,7 @@ import {
 } from '../stt'
 import { Row, Section } from './ui'
 import { Icon } from './icons'
+import { AboutThis } from './AboutThis'
 
 export function SttSettings() {
   const list = useSttModels()
@@ -30,12 +31,12 @@ export function SttSettings() {
   const phone = list.chosen === '' || !list.models.some(m => m.id === list.chosen && m.state === 'ready')
   return (
     <>
-      <Section footer="Used for dictation and Live mode. The phone’s own recogniser may send your voice to its maker’s servers and needs internet unless it has an offline language pack.">
+      <Section footer="The phone’s own recogniser may send your voice to its maker’s servers and needs internet unless it has an offline language pack.">
         <Row icon="phone" tone="blue" title="Phone’s speech recognition" sub="Android’s recogniser (usually Google’s)" value={phone ? <><Icon n="check" /> In use</> : undefined} onClick={phone ? undefined : () => chooseSttModel('')} />
       </Section>
       <Section
         title="On-device models"
-        footer="On-device models run on this phone: your voice never leaves it and they work offline. They use the processor only while the microphone is on. Download one over Wi-Fi: they are 45–140 MB."
+        footer="Your voice never leaves the phone and they work offline; download one over Wi-Fi, as they are 45–140 MB."
       >
         <div className="stt-cards" style={{ display: 'grid', gap: 8, padding: 8 }}>
           {builtIn.map(m => (
@@ -45,7 +46,7 @@ export function SttSettings() {
       </Section>
       <Section
         title="Your own model"
-        footer="Any sherpa-onnx speech model: Moonshine, Whisper, SenseVoice, or a Zipformer, NeMo or Parakeet transducer, in any language. The app recognises the files and tries them on a test recording before using them."
+        footer="Any sherpa-onnx speech model, in any language: the app tries it on a test recording before using it."
       >
         {own.length > 0 && (
           <div className="stt-cards" style={{ display: 'grid', gap: 8, padding: 8 }}>
@@ -58,6 +59,10 @@ export function SttSettings() {
         {list.importError && <div className="notice notice-error">{list.importError}</div>}
         <Row icon="getModel" tone="gold" title="Add from Hugging Face" sub="Paste the model’s link" chevron disabled={Boolean(list.importing)} onClick={() => void addLink()} />
         <Row icon="folder" tone="teal" title="Add files from this phone" sub="The model’s .onnx files and tokens.txt, or a .zip" chevron disabled={Boolean(list.importing)} onClick={pickSttModelFiles} />
+        <AboutThis title="Speech models">
+          <p>On-device models run on this phone: your voice never leaves it and they work offline. They use the processor only while the microphone is on.</p>
+          <p>Your own model can be any sherpa-onnx speech model: Moonshine, Whisper, SenseVoice, or a Zipformer, NeMo or Parakeet transducer, in any language. The app recognises the files and tries them on a test recording before using them.</p>
+        </AboutThis>
       </Section>
     </>
   )

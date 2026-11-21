@@ -26,10 +26,11 @@ import {
 import { confirmDialog } from '../dialog'
 import { errText } from '../gateway'
 import { toast } from '../store'
+import { toastNewChats } from '../newchats'
 import { Sheet, Status, useLoader } from './Screens'
 import { GoogleSection } from './GoogleConnect'
 import { ProfileChips } from './Settings'
-import { Row, Section, Segmented, ToggleRow } from './ui'
+import { EmptyState, Row, Section, Segmented, ToggleRow } from './ui'
 import { Icon } from './icons'
 
 interface EnvRow {
@@ -43,11 +44,12 @@ interface EnvRow {
 
 const State = ({ s }: { s: ConnState }) => <span className={`conn-state conn-${s}`}>{STATE_WORDS[s]}</span>
 
-/** Runs one write, toasts its result, and says whether it worked. */
-async function act(p: Promise<unknown>, done: string): Promise<boolean> {
+/** Runs one write, toasts its result, and says whether it worked. `fresh`: the change reaches new chats only, so the
+ *  toast says so and offers New chat (newchats.ts). */
+async function act(p: Promise<unknown>, done: string, fresh = false): Promise<boolean> {
   try {
     await p
-    if (done) toast(done)
+    if (done) (fresh ? toastNewChats : toast)(done)
     return true
   } catch (e) {
     toast(errText(e), 'error', 8000)
@@ -75,7 +77,7 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
     <>
       <ProfileChips value={scope} onChange={setScope} label="Connectors for" />
       <GoogleSection key={scope} profile={scope} />
-      <Section title="Apps and services (MCP)" footer="MCP servers give Hermux tools from other services: Notion, Linear, GitHub, your own server… A change applies to new chats.">
+      <Section title="Apps and services (MCP)" footer="A change applies to new chats.">
         {(servers.data || []).map(s => (
           <Row
             key={s.name}
@@ -88,8 +90,23 @@ export function ConnectorsPage({ scope, setScope }: { scope: string; setScope: (
             onClick={() => setServer(s.name)}
           />
         ))}
-        <Status loading={servers.loading} error={servers.error} empty={!servers.data?.length} emptyText="No servers yet" onRetry={servers.reload} />
-        <Row icon="plus" tone="gold" title="Add from the catalog" sub="Services Hermux knows how to connect" chevron onClick={() => setCatalog(true)} />
+        <Status
+          loading={servers.loading}
+          error={servers.error}
+          empty={!servers.data?.length}
+          emptyText=""
+          emptyState={
+            <EmptyState
+              icon="plug"
+              title="No apps or services yet"
+              text="A connector gives Hermux tools from another service, such as your notes, your tasks or your code."
+              action="Add from the catalogue"
+              onAction={() => setCatalog(true)}
+            />
+          }
+          onRetry={servers.reload}
+        />
+        {!!servers.data?.length && <Row icon="plus" tone="gold" title="Add from the catalog" sub="Services Hermux knows how to connect" chevron onClick={() => setCatalog(true)} />}
         <Row icon="plus" tone="blue" title="Add a server" sub="By its address, or a command that starts it" chevron onClick={() => setAdding(true)} />
       </Section>
       <Section title="Tools with a key or an account" footer="Tap one to turn it on, pick the service it uses and paste its key.">
@@ -210,7 +227,7 @@ function ServerSheet({ server: s, profile, onClose, onChanged }: { server: McpSe
 
   const toggle = (on: boolean) => {
     setBusy(true)
-    void act(api('PUT', `${base}/enabled?${p}`, { enabled: on }, { profile: false }), on ? `${s.name} on for new chats` : `${s.name} off`).then(() => {
+    void act(api('PUT', `${base}/enabled?${p}`, { enabled: on }, { profile: false }), on ? `${s.name} on for new chats` : `${s.name} off`, true).then(() => {
       setBusy(false)
       onChanged()
     })
@@ -237,7 +254,7 @@ function ServerSheet({ server: s, profile, onClose, onChanged }: { server: McpSe
   }
   const remove = () =>
     void confirmDialog({ title: `Remove ${s.name}?`, message: 'Hermux forgets this server. Its saved token stays in the bot’s .env.', confirmLabel: 'Remove', danger: true }).then(
-      ok => ok && act(api('DELETE', `${base}?${p}`, undefined, { profile: false }), `${s.name} removed`).then(done => done && (onChanged(), onClose()))
+      ok => ok && act(api('DELETE', `${base}?${p}`, undefined, { profile: false }), `${s.name} removed`, true).then(done => done && (onChanged(), onClose()))
     )
 
   const waiting = flow && flow.status !== 'approved' && flow.status !== 'error'
@@ -291,7 +308,7 @@ function AddServerSheet({ profile, onClose, onAdded }: { profile: string; onClos
     if (!built.ok) return
     setBusy(true)
     haptic()
-    void act(api('POST', `/api/mcp/servers?${qs({ profile })}`, built.body, { profile: false }), `${built.body.name} added`).then(ok => {
+    void act(api('POST', `/api/mcp/servers?${qs({ profile })}`, built.body, { profile: false }), `${built.body.name} added`, true).then(ok => {
       setBusy(false)
       if (ok) onAdded(String(built.body.name))
     })
@@ -371,7 +388,7 @@ function CatalogSheet({ profile, onClose, onAdded }: { profile: string; onClose:
           toast(`${pick.name} is installing in the background. It shows up here when it’s ready.`, 'info', 8000)
           onClose()
         } else {
-          toast(`${pick.name} added`)
+          toastNewChats(`${pick.name} added`)
           onAdded(pick.name)
         }
       })
@@ -443,7 +460,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
   const toggle = (on: boolean) => {
     setBusy(true)
     setEnabled(on)
-    void act(api('PUT', `${base}?${p}`, { enabled: on }, { profile: false }), on ? `${w.title} on for new chats` : `${w.title} off`).then(ok => {
+    void act(api('PUT', `${base}?${p}`, { enabled: on }, { profile: false }), on ? `${w.title} on for new chats` : `${w.title} off`, true).then(ok => {
       setBusy(false)
       if (!ok) setEnabled(!on)
       onChanged()
@@ -458,7 +475,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
         toast(`${prov.name} needs a Nous Portal sign-in with a subscription that includes it (Settings → Models → Add a provider → Nous).`, 'error', 8000)
         return false
       }
-      if (say) toast(`${w.title}: ${prov.name}`)
+      if (say) toastNewChats(`${w.title}: ${prov.name}`)
       return true
     } catch (e) {
       toast(errText(e), 'error', 8000)
@@ -481,7 +498,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
       const ok = await act(api('PUT', `${base}/env?${p}`, { env }, { profile: false }), '')
       // A key alone doesn't switch services: make the one just set up the one in use.
       const switched = ok && (prov.is_active || (await pick(prov, false)))
-      if (switched) toast(`${prov.name} connected`)
+      if (switched) toastNewChats(`${prov.name} connected`)
       setVals({})
       setBusy(false)
       changed()
@@ -500,7 +517,7 @@ function ToolsetSheet({ toolset: t, profile, onClose, onChanged }: { toolset: To
           ''
         )) && all
       }
-      if (all) toast(`${prov.name} disconnected`)
+      if (all) toastNewChats(`${prov.name} disconnected`)
       setBusy(false)
       changed()
     })

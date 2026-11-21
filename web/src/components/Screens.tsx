@@ -16,6 +16,9 @@ import { Linked } from './Linked'
 import { ReportLink } from './Report'
 import { LOAD_LIMIT_MS, timeLimit, TimeLimitError } from '../timelimit'
 import { Icon, iconOf, type IconName } from './icons'
+import { EmptyState } from './ui'
+import { BotTag } from './BotTag'
+import { jobPaused, lastFailed, lastRunWords, nextRunWords, type Job } from '../jobwords'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -127,9 +130,12 @@ export function LoadError({ error, onRetry }: { error: string; onRetry?: () => v
   )
 }
 
-export function Status({ loading, error, empty, emptyText, onRetry }: { loading: boolean; error: string; empty: boolean; emptyText: string; onRetry?: () => void }) {
+/** A list's load state: the error, "Loading…", or when it is empty `emptyState` (an `EmptyState`, ui.tsx) or else the
+ *  dim `emptyText`. */
+export function Status({ loading, error, empty, emptyText, emptyState, onRetry }: { loading: boolean; error: string; empty: boolean; emptyText: string; emptyState?: ReactNode; onRetry?: () => void }) {
   if (error) return <LoadError error={error} onRetry={onRetry} />
   if (loading && empty) return <div className="dim pad">Loading…</div>
+  if (empty && emptyState) return <>{emptyState}</>
   if (empty && emptyText) return <div className="dim pad">{emptyText}</div>
   return null
 }
@@ -207,14 +213,32 @@ export function SkillsScreen({ onUse }: { onUse: (text: string) => void }) {
   const total = data?.length ?? 0
   const on = (data || []).filter(s => s.enabled).length
   return (
-    <ScreenShell title={`Skills ${total ? `· ${on}/${total} on` : ''}`}>
+    <ScreenShell title={`Skills ${total ? `· ${on}/${total} on` : ''}`} actions={<BotTag />}>
       <div className="screen-tools">
         <input className="search" placeholder="Search skills…" value={q} onChange={e => setQ(e.target.value)} />
         <button className={`pill${onlyOn ? ' on' : ''}`} onClick={() => setOnlyOn(v => !v)}>
           Enabled
         </button>
       </div>
-      <Status loading={loading} error={error} empty={!data?.length} emptyText="No skills" />
+      <Status
+        loading={loading}
+        error={error}
+        empty={!data?.length}
+        emptyText=""
+        emptyState={
+          <EmptyState
+            icon="puzzle"
+            title="No skills yet"
+            text="Skills teach Hermux how to do a job. Ask Hermux to make one, or turn on one it comes with."
+            action="Ask Hermux to make one"
+            onAction={() => {
+              onUse('Make a skill that ')
+              setState({ screen: null })
+            }}
+          />
+        }
+      />
+      {!!data?.length && !groups.length && <div className="dim pad">No skills match</div>}
       {groups.map(([cat, rows]) => (
         <div key={cat} className="group">
           <div className="group-title">
@@ -307,9 +331,12 @@ export function MemoryScreen() {
     <ScreenShell
       title="Memory"
       actions={
-        <button className="icon-btn" aria-label="Add" onClick={() => setEdit({ old: null, text: '' })}>
-          <Icon n="plus" />
-        </button>
+        <>
+          <BotTag />
+          <button className="icon-btn" aria-label="Add" onClick={() => setEdit({ old: null, text: '' })}>
+            <Icon n="plus" />
+          </button>
+        </>
       }
     >
       <div className="segmented">
@@ -330,7 +357,21 @@ export function MemoryScreen() {
           </span>
         </div>
       )}
-      <Status loading={loading} error={error} empty={!snap?.entries.length} emptyText="Nothing saved yet" />
+      <Status
+        loading={loading}
+        error={error}
+        empty={!snap?.entries.length}
+        emptyText=""
+        emptyState={
+          <EmptyState
+            icon="brain"
+            title={tab === 'user' ? 'Nothing about you yet' : 'No notes yet'}
+            text={tab === 'user' ? 'Hermux keeps notes here as it learns about you. Add the first one yourself.' : 'Hermux keeps notes here as it learns how you work. Add the first one yourself.'}
+            action="Add a memory"
+            onAction={() => setEdit({ old: null, text: '' })}
+          />
+        }
+      />
       {snap?.entries.map((e, i) => (
         <button key={i} className={`mem-entry${/^(mac|phone)\s*:/i.test(e) ? ' device' : ''}`} onClick={() => setEdit({ old: e, text: e })}>
           {e}
@@ -373,13 +414,8 @@ export function MemoryScreen() {
 
 // ── Cron ─────────────────────────────────────────────────────
 
-type Job = Record<string, unknown> & { id?: string; job_id?: string }
-
 function jobId(j: Job): string {
   return String(j.id ?? j.job_id ?? '')
-}
-function jobPaused(j: Job): boolean {
-  return Boolean(j.paused) || j.enabled === false || String(j.state || '').toLowerCase() === 'paused'
 }
 function jobSchedule(j: Job): string {
   const s = j.schedule as unknown
@@ -490,25 +526,40 @@ export function CronScreen() {
 
   return (
     <ScreenShell
-      title="Cron jobs"
+      title="Scheduled"
       actions={
-        <button className="icon-btn" aria-label="New job" onClick={() => setCreating(true)}>
-          <Icon n="plus" />
-        </button>
+        <>
+          <BotTag />
+          <button className="icon-btn" aria-label="New job" onClick={() => setCreating(true)}>
+            <Icon n="plus" />
+          </button>
+        </>
       }
     >
-      <Status loading={loading} error={error} empty={!data?.length} emptyText="No scheduled jobs on this phone yet. Tap the plus button to create one." />
+      <Status
+        loading={loading}
+        error={error}
+        empty={!data?.length}
+        emptyText=""
+        emptyState={
+          <EmptyState
+            icon="clock"
+            title="Nothing scheduled yet"
+            text="A scheduled job runs a request on its own at the times you choose, on this phone, and tells you when the result is ready."
+            action="New scheduled job"
+            onAction={() => setCreating(true)}
+          />
+        }
+      />
       {(data || []).map(j => (
         <div key={jobId(j)} className={`card${jobPaused(j) ? ' muted' : ''}`}>
           <div className="card-head">
             <span className="list-title">{String(j.name || String(j.prompt || '').slice(0, 60) || jobId(j))}</span>
             <span className={`tag${jobPaused(j) ? ' off' : ''}`}>{jobPaused(j) ? 'paused' : 'active'}</span>
           </div>
-          <div className="mono small">{jobSchedule(j)}</div>
-          <div className="dim small">
-            Next: {fmtTime(j.next_run_at ?? j.next_run)} · Last: {fmtTime(j.last_run_at ?? j.last_run)}
-            {j.last_status ? ` (${String(j.last_status)})` : ''}
-          </div>
+          <div className="job-when">{nextRunWords(j)}</div>
+          <div className={`job-last${lastFailed(j) ? ' failed' : ''}`}>{lastRunWords(j)}</div>
+          <div className="mono small dim">{jobSchedule(j)}</div>
           {j.prompt ? <div className="card-text"><Linked text={String(j.prompt).slice(0, 240)} /></div> : null}
           <div className="card-actions">
             <button onClick={() => void act(j, 'trigger')}><Icon n="play" /> Run now</button>
@@ -901,7 +952,21 @@ export function ProjectsScreen() {
         </button>
       }
     >
-      <Status loading={loading} error={error} empty={!data?.projects?.length} emptyText="No projects yet. A project groups chats around a folder — tap the plus button to create one." />
+      <Status
+        loading={loading}
+        error={error}
+        empty={!data?.projects?.length}
+        emptyText=""
+        emptyState={
+          <EmptyState
+            icon="folder"
+            title="No projects yet"
+            text="A project keeps the chats about one folder together, and Hermux works in that folder."
+            action="New project"
+            onAction={() => setCreating(true)}
+          />
+        }
+      />
       {data?.projects?.map(p => (
         <button key={p.id} className={`card as-button${data.active_id === p.id ? ' active' : ''}`} onClick={() => void show(p)}>
           <div className="card-head">

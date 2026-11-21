@@ -74,6 +74,34 @@ stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while
 
 **`Screens.tsx` primitives.** `ScreenShell` is the frame of every full screen: top bar with the Back button (`aria-label` "Back", calls `closeScreen()` or the screen's own `onBack`), the title, optional action buttons, then the body. The title is the page's level-1 heading (`role="heading"`, `aria-level` 1) and the screen a region (`role="region"`) named by it (`aria-labelledby`), so screen readers and the browser checks find the open page by role and name; neither changes anything on screen. `Sheet` is the tall bottom sheet used by every form (grip, title, content; backdrop tap, grip drag and Android Back close it). `useLoader(load, deps)` runs an async load, keeps `data`, `error`, `loading`, `reload` and `setData`, and reloads when `deps` change; only the latest load counts (an older one that answers late is dropped). A load that takes longer than `LOAD_LIMIT_MS` (20 s, `web/src/timelimit.ts` `timeLimit`, which rejects with a `TimeLimitError`) ends in the error "Hermux didn’t answer in time.", so "Loading…" never stays; if its answer still comes later it fills the screen. `Status` shows the shared states: an error notice (`LoadError`: the error and, when the screen passes `onRetry`, a "Try again" button that calls `reload`; when the dashboard didn't answer at all, an error starting "Hermux unreachable", also a "Setup check" link that opens the Setup check screen, as its other links do), "Loading…" while loading with nothing yet, or the screen's empty text (nothing when that is empty).
 
+**The inner pages' shared pieces** (the design rules on the pages behind the side panel and Settings; `web/src/pages.css`).
+- `EmptyState` (`ui.tsx`): an empty list's place: a drawn icon, a title, one or two sentences and at most one gold button
+  (`action`, `onAction`). It is a group named by its title, so checks and screen readers find it by role and name. `Status`
+  takes it as `emptyState` and shows it instead of the dim `emptyText` once the list loaded empty.
+- `BotTag` (`components/BotTag.tsx`): the bot a page applies to, in its top bar: a small pill with the bot icon and the
+  bot's name (`role="note"`, accessible name "Bot: <name>"), cut with an ellipsis inside the bar's height. It draws
+  nothing with one bot. Used by Skills, Memory, Scheduled (the open bot) and by Settings' bot pages (the page's bot).
+- `AboutThis` (`components/AboutThis.tsx`): a row "About this" at the end of a section; it opens a sheet with the longer
+  explanation, so the section's footer stays one sentence.
+- `toastNewChats` (`web/src/newchats.ts`, `NEW_CHATS_NOTE`): the confirmation after a change only new chats see (Hermux
+  fixes a chat's tools, connectors, model and reply options when it starts). The text gets ". Applies to new chats."
+  unless it already names new chats, and the toast carries the button New chat, which closes the page or sheet and
+  starts a chat with `startDraft`, as the side panel's New chat does. It stays 6 s. A toast with a button (`Toast`'s
+  `action` in `store.ts`, the fourth argument of `toast`) takes taps (`with-action`); the rest of the toast strip lets
+  them through; tapping the button removes the toast.
+- `pages.css`: on wide screens page content keeps a centred maximum width of 720 px and bottom sheets 640 px (the top bar
+  and the backdrop still span the window). On the pages and in their sheets pills, buttons, card buttons, breadcrumbs, the
+  two- and three-way switches and list rows are at least 44 px tall; the top bar's buttons, switches and the search's
+  clear button get a transparent `::after` layer that takes taps over 44 px without growing. On the chat screen nothing
+  grows (decision `chat-height-belongs-to-content.md`): the photo and file remove buttons, the compress hint's
+  close button, the canvas tools and Close canvas, and the reply actions get the same kind of layer. The reply actions sit
+  44 px apart centre to centre (gap 15 px) and the canvas tools 8 px apart, so neighbouring layers don't overlap; a reply
+  action's layer reaches 4 px up (never over the message above) and the rest down, into the gap before the next message.
+  No text on these pages is under 12 px (tags, connector states, group titles). Light theme: text these pages show
+  reaches 4.5:1 (3:1 when large): the gold buttons, selected pills and switch segments use `--accent-2` behind
+  `--accent-ink`, gold words `--glass-accent`, green words and dim words on `--surface-2` darker mixes of the same
+  variables.
+
 **`Linked.tsx`.** `Linked` renders plain text with web addresses (`http(s)://`, `www.`) and `mailto:` addresses as links (`linkParts` in `web/src/text.ts`) that open through the `openExternal` bridge call, so outside the app in the default browser or mail app (a tap on a link stops the message bubble's own tap). It is used wherever plain text from Hermux or the user is shown: tool cards and reasoning blocks in the chat, user and queued messages, approval and question sheets, subagent cards, diff lines (`DiffView`), text documents in the canvas, gallery and file browser, the scheduled-task prompt, and the error notices of hub screens and the gallery.
 
 **`theme.ts`.** See Appearance (3.15): `savedTheme`, `resolveTheme`, `applyTheme`, `setTheme`, `systemDark`.
@@ -97,7 +125,12 @@ stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while
 | `ChatMenu.tsx` | The chat menu from the header (`ChatMenuSheet`), the new-chat menu (`DraftMenuSheet`) and the header they share with a chat row's menu (`ChatMenuHeader`) (3.5) |
 | `chatsnapshot.ts` | When the Chats list's order is read: the snapshot of each chat's last activity, taken when the panel opens, the bot changes or a chat is created, deleted, archived or restored, never under a finger (`takeChatSnapshot`, `useChatSnapshot`, `chatListChanged`, `holdChatSnapshot`, `panelOpenGestureStarted`, `panelOpenGestureEnded`, `onAppResume`; 3.13) |
 | `order.ts` | Pins and custom order per profile, in `localStorage` and mirrored to the plugin |
-| `Screens.tsx` | The Skills, Memory, Cron, Files and Projects screens, plus `ScreenShell`, `EmbeddedShell`, `Sheet`, `useLoader`, `Status` |
+| `Screens.tsx` | The Skills, Memory, Scheduled (`CronScreen`), Files and Projects screens, plus `ScreenShell`, `EmbeddedShell`, `Sheet`, `useLoader`, `Status` |
+| `jobwords.ts` | Scheduled's card words: `whenWords`, `nextRunWords`, `lastRunWords`, `lastFailed`, `jobPaused` (unit-tested) |
+| `BotTag.tsx` | The bot a page applies to, in its top bar, only with several bots |
+| `AboutThis.tsx` | The "About this" row and its sheet |
+| `newchats.ts` | `toastNewChats`: "Applies to new chats" with the button New chat |
+| `pages.css` | The inner pages: centred widths, 44 px targets, the empty states, the bot pill, the toast's button, Light contrast |
 | `Settings.tsx` | The Settings screen and its pages, the model picker, key and option sheets |
 | `Bots.tsx` | The Bots screen and its sheets (create, bot, SOUL.md, rename) |
 | `Providers.tsx` | The provider list, provider sheet and own-endpoint sheet |
@@ -123,6 +156,6 @@ stops while the app is away (`setAppAway` sets `<html data-app-away>`) and while
 | `flash.ts` | `findSettingsTarget` and `flashElement`: scroll to a Settings row and flash it |
 | `hermes-update.ts` | The phone's Hermes version and its match with the version the app was made for |
 | `theme.ts` | The four themes and how they reach the page and Android |
-| `ui.tsx` | Sections, rows, switches, pickers, sliders, segmented control, `Collapse`, `Chevron` |
+| `ui.tsx` | Sections, rows, switches, pickers, sliders, segmented control, `EmptyState`, `Collapse`, `Chevron` |
 | `dialog.tsx` | `confirmDialog`, `promptDialog` and their host |
 | `useSheetDrag.ts` | Drag-down-to-close for bottom sheets |
