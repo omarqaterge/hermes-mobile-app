@@ -1563,9 +1563,10 @@ function setChatOfRuntime(runtimeId: string, storedId: string): void {
  *  which chat it is (one still live that is just no longer followed). */
 function forgetRuntime(runtimeId: string, keepRoute = false): void {
   const ids = idsOfRuntime.get(runtimeId)
-  idsOfRuntime.delete(runtimeId)
-  if (!keepRoute) chatOfRuntime.delete(runtimeId)
   for (const id of ids ?? []) forgetApprovalConfirm(id)
+  if (keepRoute) return ids?.clear() // still in the list, so its route goes when it is the oldest: both maps stay bounded
+  idsOfRuntime.delete(runtimeId)
+  chatOfRuntime.delete(runtimeId)
 }
 onChatOpen('approval-lock', ({ chat }) => setChatOfRuntime(chat.runtimeId, chat.storedId))
 function chatClosed(runtimeId: string): void {

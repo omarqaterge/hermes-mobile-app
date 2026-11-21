@@ -175,6 +175,17 @@ describe('round 5, 2: a fingerprint confirmation ends with every live session it
     for (let i = 1; i <= 51; i++) await resumeSession(`r5-k${i}`)
     expect(approvalNeedsConfirm('r5-k0')).toBe(true)
     expect(forgotten).toContain('r5-k0')
+    expect(requestChat(approval('q4-b', 'rt-r5-k0'))).toBe('r5-k0') // still live: its approvals still name its chat
+  })
+
+  it('(b) a chat pushed out of the kept ones is still forgotten in turn as the oldest, route and all', async () => {
+    rpcHandler = (method, params) => {
+      const sid = String(params.session_id || '')
+      return method === 'session.resume' ? { session_id: `rt-${sid}`, stored_session_id: sid, messages: [], running: true, info: {} } : {}
+    }
+    for (let i = 0; i <= 51; i++) await resumeSession(`r5-m${i}`) // r5-m0 is pushed out of the kept ones
+    for (let i = 1; i <= 64; i++) requestChat(approval(`q7-${i}`, `r5-n${i}`)) // 64 newer live sessions
+    expect(requestChat(approval('q7', 'rt-r5-m0'))).toBe('rt-r5-m0') // its route went with it
   })
 
   it('(b) at most 64 live sessions are followed: the oldest goes and its confirmation with it', async () => {
