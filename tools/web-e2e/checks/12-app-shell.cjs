@@ -1,7 +1,7 @@
 // In the app shell: token and key, test build, remote debugging, Live mode, hidden display, assistant, setup, uninstall, Claude sign-in.
 const fs = require('fs')
 const path = require('path')
-const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsPage, openPage } = require('../lib.cjs')
+const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsPage, openPage, lowContrast } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
@@ -714,4 +714,103 @@ module.exports = async t => {
   check(rpcs('session.list').length === opened, 'with the socket open the signal does nothing')
   await rp.close()
   await sleep(4000) // the other open pages are back on their own backoff by now
+
+  // ── Task 10: the Settings pages, Bots and Setup check (one-sentence footers, About this, widths, Light) ──
+  {
+    const open = async (w, h, store = {}, shell = false) => {
+      const p = await browser.newPage({ viewport: { width: w, height: h } })
+      if (shell) await p.addInitScript(nativeShell)
+      await p.addInitScript(s => { for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v) }, store)
+      await p.goto(WEB + '/')
+      await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      return p
+    }
+    const toSettings = async p => {
+      if (await p.getByRole('button', { name: /^Sessions/ }).count()) await p.getByRole('button', { name: /^Sessions/ }).click()
+      await p.getByRole('button', { name: 'Settings', exact: true }).click()
+      await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    }
+    const up = async p => {
+      await p.evaluate(() => window.hermesBack())
+      await sleep(200)
+    }
+    const PAGES = ['Models', 'Connectors', 'Behaviour', 'Access & privacy', 'Appearance', 'Voice', 'About & help']
+
+    // Footers are one sentence; the longer words sit behind "About this".
+    {
+      const p = await open(375, 812, {}, true)
+      await toSettings(p)
+      const long = []
+      for (const name of PAGES) {
+        await settingsPage(p, name)
+        await sleep(600)
+        for (const f of await p.locator('.screen .set-foot').allInnerTexts()) {
+          // Phone data's footer is the protected section's own disclosure and stays as it is (Access & privacy).
+          if (/^Results go to your chosen model provider/.test(f)) continue
+          if (f.trim().split(/(?<=[.!?])\s+(?=[A-Z“])/).length > 1) long.push(`${name}: ${f}`)
+        }
+        await up(p)
+      }
+      check(long.length === 0, `settings: every footer on the pages is one sentence (${JSON.stringify(long)})`)
+      await settingsPage(p, 'Voice')
+      const about = p.getByRole('group', { name: 'Live mode' }).getByRole('button', { name: 'About this' })
+      await about.click()
+      await p.getByRole('dialog').filter({ hasText: 'Interrupt by talking keeps the microphone on' }).waitFor({ timeout: 3000 }).then(() => check(true, 'voice: About this holds the longer explanation'), () => check(false, 'voice: About this holds the longer explanation'))
+      await p.evaluate(() => window.hermesBack())
+      await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      check((await p.locator('.screen .title', { hasText: 'Voice' }).count()) === 1, 'voice: Back closes About this and stays on Voice')
+      await p.close()
+    }
+
+    // Light theme and 320 px on every page; 1400 px keeps a centred maximum width.
+    for (const [w, h, theme] of [[320, 640, 'light'], [1400, 900, 'default']]) {
+      const p = await open(w, h, { 'hm.theme': theme })
+      await toSettings(p)
+      for (const name of PAGES) {
+        await settingsPage(p, name)
+        await sleep(700)
+        const m = await p.evaluate(() => {
+          const body = document.querySelector('.screen .screen-body')
+          const kids = [...body.children].map(k => k.getBoundingClientRect()).filter(r => r.width)
+          const b = body.getBoundingClientRect()
+          const left = Math.min(...kids.map(r => r.left)), right = Math.max(...kids.map(r => r.right))
+          return { over: document.documentElement.scrollWidth > innerWidth + 1 || body.scrollWidth > body.clientWidth + 1, width: Math.round(right - left), gapL: Math.round(left - b.left), gapR: Math.round(b.right - right) }
+        })
+        if (w === 320) {
+          check(!m.over, `settings, 320 px: ${name} is no wider than the screen (${JSON.stringify(m)})`)
+          const bad = await lowContrast(p, '.screen')
+          check(bad.length === 0, `settings, Light: ${name} has no text under 4.5:1 (${JSON.stringify(bad)})`)
+        } else check(m.width <= 720 && Math.abs(m.gapL - m.gapR) <= 24 && m.gapL > 100, `settings, ${w} px: ${name}'s content keeps a centred maximum width (${JSON.stringify(m)})`)
+        await up(p)
+      }
+      await p.close()
+    }
+
+    // Bots with one bot: what a bot is, and New bot; Light reaches 4.5:1 there and on Setup check.
+    {
+      const p = await open(375, 812, { 'hm.theme': 'light' })
+      await p.getByRole('button', { name: /^Sessions/ }).click()
+      await p.getByRole('button', { name: 'Bot: default' }).click()
+      await p.getByRole('button', { name: 'Manage bots' }).click()
+      const one = p.getByRole('group', { name: 'One bot so far' })
+      await one.waitFor({ timeout: 5000 }).then(() => check(true, 'bots, one bot: says what a bot is'), () => check(false, 'bots, one bot: says what a bot is'))
+      check((await p.locator('.screen').getByText('Main bot').count()) === 1 && (await p.locator('.screen').getByText('Main profile').count()) === 0, 'bots: the main bot is called a bot, not a profile')
+      const bad = await lowContrast(p, '.screen')
+      check(bad.length === 0, `bots, Light: text reaches 4.5:1 (${JSON.stringify(bad)})`)
+      await one.getByRole('button', { name: 'New bot' }).click()
+      await p.getByRole('dialog').filter({ hasText: 'New bot' }).waitFor({ timeout: 3000 }).then(() => check(true, 'bots, one bot: New bot opens the new bot sheet'), () => check(false, 'bots, one bot: New bot opens the new bot sheet'))
+      await p.evaluate(() => window.hermesBack())
+      await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      await p.getByRole('button', { name: 'Back' }).last().click()
+      await p.locator('.screen').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      await toSettings(p)
+      await settingsPage(p, 'About & help')
+      await p.getByRole('button', { name: /^Setup check/ }).click()
+      await p.locator('.setup-hero-title').waitFor({ timeout: 5000 })
+      await sleep(500)
+      const badS = await lowContrast(p, '.screen')
+      check(badS.length === 0, `setup check, Light: text reaches 4.5:1 (${JSON.stringify(badS)})`)
+      await p.close()
+    }
+  }
 }

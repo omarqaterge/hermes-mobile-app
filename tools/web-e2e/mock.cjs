@@ -95,6 +95,7 @@ let codexPolls = 0
 // entry to the profile's credential pool; /api/providers/oauth keeps saying logged_in: false for the Anthropic card
 // (its status reads ~/.hermes/.anthropic_oauth.json and env vars only), /api/credentials/pool lists the entry.
 let extraBots = false
+let emptyLists = false // true: Skills, Scheduled, Projects, Memory, the gallery and the MCP servers answer with nothing (empty states)
 let claudePool = []
 let claudeLoginMissing = false // true = an older plugin without /claude-login (404)
 const claudeEntry = () => ({ index: claudePool.length + 1, id: 'c0ffee', label: 'anthropic-oauth-1', auth_type: 'oauth', source: 'manual:hermes_pkce', priority: 0, last_status: null, request_count: 0, token_preview: 'sk-a...abcd', has_refresh: true })
@@ -218,6 +219,7 @@ const server = http.createServer((req, res) => {
       if (b.openui) openui = { ...openui, ...b.openui }
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bots !== undefined) extraBots = b.bots // a second bot in the profile list (the side panel's bot sheet)
+      if (b.empty !== undefined) emptyLists = b.empty
       if (b.bump) {
         // Like Hermes: session.list is sorted by last activity, so a chat that got a message moves to the front of the list.
         const i = allSessions.findIndex(x => x.id === b.bump)
@@ -280,6 +282,7 @@ const server = http.createServer((req, res) => {
       const name = (url.searchParams.get('path') || '').split('/').pop()
       return send({ data_url: 'data:text/plain;base64,' + Buffer.from(FILE_TEXT[name] ?? 'hello').toString('base64'), size: (FILE_TEXT[name] ?? 'hello').length })
     }
+    if (p === '/api/cron/jobs' && req.method === 'GET' && emptyLists) return send([])
     if (p === '/api/cron/jobs' && req.method === 'GET') return send([{ id: 'j1', name: 'Morning brief', schedule: '0 9 * * *', prompt: 'Brief me', next_run_at: null }])
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
@@ -394,6 +397,8 @@ const server = http.createServer((req, res) => {
     if (p === '/api/hermes/update/check') return send({ install_method: 'git', current_version: '0.21.5+4582.gb8a8be1', behind: 12, update_available: true, can_apply: true, message: null })
     if (p === '/api/plugins/hermes-mobile/refresh-logins') return send({ ok: true, anthropic: 0 })
     if (p === '/api/plugins/hermes-mobile/cleanup') return send({ ok: true, dry_run: false, removed: [], freed_bytes: 0 })
+    // The Bots page's list (the dashboard's /api/profiles): the same bots as profiles.list.
+    if (p === '/api/profiles' && req.method === 'GET') return send({ profiles: [{ name: 'default', is_default: true, model: 'mock-model', skill_count: 3 }, ...(extraBots ? [{ name: 'work', display_name: 'Work', is_default: false, model: 'other-model', skill_count: 1 }] : [])] })
     if (p === '/api/plugins/hermes-mobile/profiles/link') return send({ linked: [] }) // profiles that now share the default's plugin
     if (p === '/api/model/info') return send({ model: 'mock-model' })
     // Account sign-ins: the pinned Hermes's list; ChatGPT is a device-code flow approved on the 2nd poll.
@@ -527,6 +532,7 @@ const server = http.createServer((req, res) => {
       if (b.config?.credential_pool_strategies) rotation.credential_pool_strategies = { ...rotation.credential_pool_strategies, ...b.config.credential_pool_strategies }
       return send({ ok: true })
     }
+    if (p === '/api/skills' && emptyLists) return send([])
     if (p === '/api/skills') return send([{ name: 'a', enabled: true }, { name: 'b', enabled: true }, { name: 'c', enabled: false }])
     if (p === '/api/plugins/hermes-mobile/memory' && req.method === 'POST') {
       // Like the plugin: Hermes's memory store does the change, the answer holds its result and the fresh snapshot of THAT target only.
@@ -550,6 +556,7 @@ const server = http.createServer((req, res) => {
         [b.target]: snap
       })
     }
+    if (p === '/api/plugins/hermes-mobile/memory' && emptyLists) return send({ memory: { ...memory.memory, entries: [], used: 0 }, user: { ...memory.user, entries: [], used: 0 } })
     if (p === '/api/plugins/hermes-mobile/memory') return send(memory)
     if (p === '/api/status') return send({ version: '0.21.5', components: { dashboard: { status: 'ok' } } })
     if (p === '/api/plugins/hermes-mobile/checkpoints' && req.method === 'GET') {
@@ -605,6 +612,7 @@ const server = http.createServer((req, res) => {
       return send(libraryItems[i])
     }
     // Canvas gallery (plugin gallery.py): every chat's canvas documents, by type, searchable, with the chat.
+    if (p === '/api/plugins/hermes-mobile/gallery' && emptyLists) return send({ items: [], categories: {} })
     if (p === '/api/plugins/hermes-mobile/gallery') {
       const KIND = { html: 'HTML', markdown: 'Markdown', code: 'Code', text: 'Text', json: 'JSON', csv: 'CSV', svg: 'SVG', mermaid: 'Mermaid' }
       const words = (url.searchParams.get('q') || '').toLowerCase().split(/\s+/).filter(Boolean)
@@ -1402,6 +1410,7 @@ wss.on('connection', ws => {
         if (params.session_id === 'rt-s-cold') return reply({ context_used: 0, context_max: 0, context_percent: 0 })
         return reply({ context_used: 100, context_max: 1000, context_percent: 10 })
       case 'projects.list':
+        if (emptyLists) return reply({ projects: [] })
         return reply({ projects: [{ id: 'p1', name: 'Thesis', primary_path: '/root/projects/thesis', folders: [{ path: '/root/projects/thesis' }] }] })
       case 'projects.project_sessions':
         return reply({ project: { previewSessions: [{ id: 's-3', title: 'Chat 3' }, { id: 's-4', title: 'Chat 4' }] } })
@@ -1541,6 +1550,7 @@ function connectorsRoute(p, method, url, body, send) {
     }
     return send(googleStatus()), true
   }
+  if (p === '/api/mcp/servers' && method === 'GET' && emptyLists) return send({ servers: [] }), true
   if (p === '/api/mcp/servers' && method === 'GET') return send({ servers: Object.keys(mcpServers).sort().map(n => mcpSummary(n, mcpServers[n])) }), true
   if (p === '/api/mcp/servers' && method === 'POST') {
     const x = b()

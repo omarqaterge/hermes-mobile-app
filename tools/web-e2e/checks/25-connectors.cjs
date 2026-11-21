@@ -1,5 +1,5 @@
 // Settings → Connectors: MCP servers (add, catalog, on/off, test, browser sign-in, remove), tools with a key, keys for skills.
-const { WEB, calls, check, mock, sleep } = require('../lib.cjs')
+const { WEB, calls, check, mock, sleep, lowContrast } = require('../lib.cjs')
 
 const waitOk = (loc, name, timeout = 5000) => loc.waitFor({ timeout }).then(() => check(true, name), () => check(false, name))
 
@@ -163,5 +163,77 @@ module.exports = async t => {
     await mcp.getByRole('button', { name: 'Try again' }).click()
     await waitOk(mcp.locator('.set-row', { hasText: 'server-filesystem' }), 'connectors: Try again loads the server list')
     await pg.close()
+  }
+
+  // ── Task 10: Applies to new chats with New chat, the empty state, the bot chips and the top bar, 320 px, Light ──
+  {
+    const open = async (w = 375, h = 812, store = {}) => {
+      const p = await browser.newPage({ viewport: { width: w, height: h } })
+      await p.addInitScript(s => { for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v) }, store)
+      await p.goto(WEB + '/')
+      await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      await p.getByRole('button', { name: /^Sessions/ }).click()
+      await p.getByRole('button', { name: 'Settings', exact: true }).click()
+      await p.getByRole('button', { name: /^Connectors/ }).click()
+      await p.locator('.screen .title', { hasText: 'Connectors' }).waitFor({ timeout: 5000 })
+      return p
+    }
+    // A server switched on or off: the toast says it applies to new chats and offers New chat, which starts one.
+    let p = await open()
+    await p.locator('.set-row', { hasText: 'server-filesystem' }).click()
+    const sheet = p.getByRole('dialog').filter({ hasText: 'Hermux can use this server’s tools' })
+    const sw = sheet.getByRole('switch').first()
+    await sw.click()
+    await sleep(400)
+    await sw.click()
+    // Both switches' toasts first, so the one read is the one tapped (a locator is found again at each use).
+    const withNew = p.locator('.toast').filter({ has: p.getByRole('button', { name: 'New chat' }) })
+    await waitOk(withNew.nth(1), 'connectors: switching a server shows a toast with New chat')
+    const said = (await withNew.last().locator('.toast-text').innerText()) || ''
+    const toastEl = p.locator('.toast').filter({ has: p.locator('.toast-text', { hasText: said }) }).first()
+    check(/new chats/i.test(said), `connectors: the toast says the change applies to new chats (${said})`)
+    await toastEl.getByRole('button', { name: 'New chat' }).click()
+    await p.locator('.screen').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'connectors: New chat on the toast closes Settings'), () => check(false, 'connectors: New chat on the toast closes Settings'))
+    check((await p.locator('.msg').count()) === 0 && (await p.getByPlaceholder('Message Hermux').count()) === 1, 'connectors: …and a new, empty chat is open')
+    const left = await p.locator('.toast').allInnerTexts()
+    check(!left.some(x => x.includes(said)), `connectors: the tapped toast goes away (${JSON.stringify(said)} → ${JSON.stringify(left)})`)
+    await p.close()
+
+    // One bot: no chips and no bot in the top bar. Several: the chips, and the top bar names the chosen bot.
+    p = await open()
+    await p.locator('.set-row', { hasText: 'server-filesystem' }).waitFor({ timeout: 5000 })
+    check((await p.getByRole('group', { name: 'Connectors for' }).count()) === 0 && (await p.getByRole('note', { name: /^Bot:/ }).count()) === 0, 'connectors, one bot: no bot chips and no bot in the top bar')
+    const bad = await lowContrast(p, '.screen')
+    check(bad.length === 0, `connectors: Default theme text reaches 4.5:1 (${JSON.stringify(bad)})`)
+    await p.close()
+    await mock({ bots: true })
+    p = await open()
+    await waitOk(p.getByRole('group', { name: 'Connectors for' }), 'connectors, several bots: the bot chips show')
+    await waitOk(p.getByRole('note', { name: 'Bot: default' }), 'connectors, several bots: the top bar names the bot')
+    await p.getByRole('group', { name: 'Connectors for' }).getByRole('button', { name: 'Work', exact: true }).click()
+    await waitOk(p.getByRole('note', { name: 'Bot: Work' }), 'connectors, several bots: choosing a chip changes the bot in the top bar')
+    await p.close()
+    await mock({ bots: false })
+
+    // No servers: what a connector gives, and Add from the catalogue opens the catalogue.
+    await mock({ empty: true })
+    p = await open()
+    const empty = p.getByRole('group', { name: 'No apps or services yet' })
+    await waitOk(empty, 'connectors, no servers: the empty state says what a connector is')
+    check((await p.locator('.set-row', { hasText: 'Add from the catalog' }).count()) === 0 && (await p.locator('.set-row', { hasText: 'Add a server' }).count()) === 1, 'connectors, no servers: the empty state’s button stands for the catalogue row; Add a server stays')
+    await empty.getByRole('button', { name: 'Add from the catalogue' }).click()
+    await waitOk(p.getByRole('dialog').filter({ hasText: 'Add from the catalog' }), 'connectors, no servers: Add from the catalogue opens the catalogue')
+    await p.close()
+    await mock({ empty: false })
+
+    // 320 px: nothing wider than the screen; Light: every word reaches 4.5:1.
+    p = await open(320, 640, { 'hm.theme': 'light' })
+    await p.locator('.set-row', { hasText: 'server-filesystem' }).waitFor({ timeout: 5000 })
+    await sleep(500)
+    const over = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1 || document.querySelector('.screen-body').scrollWidth > document.querySelector('.screen-body').clientWidth + 1)
+    check(!over, 'connectors, 320 px: nothing is wider than the screen')
+    const badL = await lowContrast(p, '.screen')
+    check(badL.length === 0, `connectors, Light: text reaches 4.5:1 (${JSON.stringify(badL)})`)
+    await p.close()
   }
 }

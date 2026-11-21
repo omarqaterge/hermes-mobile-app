@@ -1,5 +1,5 @@
 // Files and its previews, Projects, Cron, the title menu and Chat details.
-const { calls, sleep, check, openLibraryPart } = require('../lib.cjs')
+const { calls, sleep, check, openLibraryPart, WEB, mock, hitArea, lowContrast, pageTitle } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -94,4 +94,168 @@ module.exports = async t => {
   await details.waitFor({ timeout: 3000 })
   check((await details.locator('input').count()) === 0 && (await details.getByRole('button', { name: /Delete|Undo/ }).count()) === 0, 'details sheet has no duplicate actions')
   await page.evaluate(() => window.hermesBack())
+
+  // ── Task 10: the inner pages (empty states, the bot in the top bar, the Scheduled card, widths, touch targets, Light) ──
+  {
+    const { browser } = t
+    const fresh = async (w, h, store = {}) => {
+      const p = await browser.newPage({ viewport: { width: w, height: h } })
+      await p.addInitScript(s => { for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v) }, store)
+      await p.goto(WEB + '/')
+      await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      return p
+    }
+    // A side panel row: on a phone through the Sessions button, on a wide screen straight from the docked list.
+    const panelRow = async (p, name) => {
+      if (await p.getByRole('button', { name: /^Sessions/ }).count()) await p.getByRole('button', { name: /^Sessions/ }).click()
+      await p.getByRole('button', { name }).click()
+    }
+    const library = async (p, part) => {
+      await panelRow(p, /^Library$/)
+      await p.getByRole('button', { name: part, exact: true }).click()
+    }
+    const back = p => p.getByRole('button', { name: 'Back' }).last().click()
+    const seen = (loc, what) => loc.waitFor({ timeout: 5000 }).then(() => check(true, what), () => check(false, what))
+
+    // Empty lists say what the thing is and how to start, with one button that starts it.
+    await mock({ empty: true })
+    const e = await fresh(375, 812)
+    await panelRow(e, /^Skills/)
+    const skillsEmpty = e.getByRole('group', { name: 'No skills yet' })
+    await seen(skillsEmpty, 'empty Skills: says what a skill is')
+    check((await skillsEmpty.getByText(/Skills teach Hermux how to do a job/).count()) === 1 && (await skillsEmpty.getByRole('button').count()) === 1, 'empty Skills: one sentence and one button')
+    await skillsEmpty.getByRole('button', { name: 'Ask Hermux to make one' }).click()
+    await e.locator('.screen').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+    await e.waitForFunction(() => document.querySelector('textarea[placeholder="Message Hermux"]')?.value.startsWith('Make a skill that'), null, { timeout: 3000 }).catch(() => {})
+    check((await e.locator('.screen').count()) === 0 && (await e.getByPlaceholder('Message Hermux').inputValue()).startsWith('Make a skill that'), 'empty Skills: the button returns to the chat with the request started')
+    await e.getByPlaceholder('Message Hermux').fill('')
+
+    await panelRow(e, /^Scheduled/)
+    await seen(pageTitle(e, 'Scheduled'), 'Scheduled: the page is called Scheduled')
+    const jobsEmpty = e.getByRole('group', { name: 'Nothing scheduled yet' })
+    await seen(jobsEmpty, 'empty Scheduled: says what a scheduled job is')
+    await jobsEmpty.getByRole('button', { name: 'New scheduled job' }).click()
+    await seen(e.getByRole('dialog').filter({ hasText: 'New scheduled job' }), 'empty Scheduled: the button opens the new job sheet')
+    await e.evaluate(() => window.hermesBack())
+    await e.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await back(e)
+
+    await openLibraryPart(e, 'Canvases')
+    const canvasEmpty = e.getByRole('group', { name: 'No canvases yet' })
+    await seen(canvasEmpty, 'empty Canvases: says what a canvas is')
+    await e.getByRole('button', { name: 'Projects', exact: true }).click()
+    const projEmpty = e.getByRole('group', { name: 'No projects yet' })
+    await seen(projEmpty, 'empty Projects: says what a project is')
+    await projEmpty.getByRole('button', { name: 'New project' }).click()
+    await seen(e.getByRole('dialog').filter({ hasText: 'New project' }), 'empty Projects: the button opens the new project sheet')
+    await e.evaluate(() => window.hermesBack())
+    await e.getByRole('dialog').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await e.getByRole('button', { name: 'Canvases', exact: true }).click()
+    await canvasEmpty.getByRole('button', { name: 'New chat' }).click()
+    await e.locator('.screen').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'empty Canvases: New chat returns to a new chat'), () => check(false, 'empty Canvases: New chat returns to a new chat'))
+
+    // Memory, from Settings → Behaviour: both tabs explain themselves; the button opens a new memory.
+    await e.getByRole('button', { name: /^Sessions/ }).click()
+    await e.getByRole('button', { name: 'Settings', exact: true }).click()
+    await e.getByRole('button', { name: /^Behaviour/ }).click()
+    await e.getByRole('button', { name: /^See what Hermux remembers/ }).click()
+    const memEmpty = e.getByRole('group', { name: 'No notes yet' })
+    await seen(memEmpty, 'empty Memory: says what the notes are')
+    await e.getByRole('button', { name: 'About you', exact: true }).click()
+    await seen(e.getByRole('group', { name: 'Nothing about you yet' }), 'empty Memory, About you: its own words')
+    await e.getByRole('group', { name: 'Nothing about you yet' }).getByRole('button', { name: 'Add a memory' }).click()
+    await seen(e.getByRole('dialog').filter({ hasText: 'New memory' }), 'empty Memory: Add a memory opens the new memory sheet')
+    await e.close()
+    await mock({ empty: false })
+
+    // The Scheduled card leads with its next run and its last result, in words, before the schedule.
+    const c = await fresh(375, 812)
+    await panelRow(c, /^Scheduled/)
+    const card = c.locator('.card', { hasText: 'Morning brief' })
+    await card.waitFor({ timeout: 5000 })
+    const lines = (await card.innerText()).split('\n').map(x => x.trim()).filter(Boolean)
+    check(lines[2] === 'No next run planned' && lines[3] === 'Hasn’t run yet' && lines[4] === '0 9 * * *', `Scheduled: the card leads with the next run and the last result, then the schedule (${JSON.stringify(lines.slice(0, 5))})`)
+    // Touch targets on the page: the card's buttons and the top bar's.
+    const small = []
+    for (const b of await card.getByRole('button').all()) {
+      const r = await b.boundingBox()
+      if (r.height < 44) small.push([await b.innerText(), Math.round(r.height)])
+    }
+    check(small.length === 0, `Scheduled: every card button is at least 44 px tall (${JSON.stringify(small)})`)
+    for (const name of ['Back', 'New job']) {
+      const h = await hitArea(c.getByRole('button', { name, exact: true }).last())
+      check(h.w >= 44 && h.h >= 44, `Scheduled: ${name} takes taps over at least 44 px (${JSON.stringify(h)})`)
+    }
+    // One bot: no bot in the top bar.
+    check((await c.getByRole('note', { name: /^Bot:/ }).count()) === 0, 'one bot: the Scheduled top bar names no bot')
+    await back(c)
+    await panelRow(c, /^Skills/)
+    await c.locator('.list-row').first().waitFor({ timeout: 5000 })
+    check((await c.getByRole('note', { name: /^Bot:/ }).count()) === 0, 'one bot: the Skills top bar names no bot')
+    const sw = await hitArea(c.getByRole('button', { name: 'Enabled', exact: true }).nth(1))
+    check(sw.h >= 44, `Skills: a skill's switch takes taps over 44 px of height (${JSON.stringify(sw)})`)
+    const pill = await c.getByRole('button', { name: 'Enabled', exact: true }).first().boundingBox()
+    check(pill.height >= 44, `Skills: the Enabled pill is at least 44 px tall (${Math.round(pill.height)})`)
+    await back(c)
+    // Several bots: the top bar names the bot the page applies to.
+    await mock({ bots: true })
+    await c.reload()
+    await c.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await panelRow(c, /^Scheduled/)
+    await seen(c.getByRole('note', { name: 'Bot: default' }), 'several bots: the Scheduled top bar names the bot')
+    const bar = await c.locator('.screen .topbar').boundingBox()
+    check(Math.round(bar.height) <= 57, `several bots: the top bar keeps its height with the bot in it (${Math.round(bar.height)})`)
+    await back(c)
+    await panelRow(c, /^Skills/)
+    await seen(c.getByRole('note', { name: 'Bot: default' }), 'several bots: the Skills top bar names the bot')
+    await back(c)
+    await mock({ bots: false })
+    await c.close()
+
+    // 320 px: nothing wider than the screen. 1000 and 1400 px (the chat list docked beside the page): the content keeps a
+    // centred maximum width.
+    for (const [w, h] of [[320, 640], [1000, 760], [1400, 900]]) {
+      const p = await fresh(w, h)
+      for (const [name, open] of [['Scheduled', () => panelRow(p, /^Scheduled/)], ['Skills', () => panelRow(p, /^Skills/)], ['Files', () => library(p, 'Files')]]) {
+        await open()
+        await p.locator('.screen .screen-body > *').first().waitFor({ timeout: 5000 })
+        await sleep(300)
+        const m = await p.evaluate(() => {
+          const body = document.querySelector('.screen .screen-body')
+          const kids = [...body.children].map(k => k.getBoundingClientRect()).filter(r => r.width)
+          const left = Math.min(...kids.map(r => r.left)), right = Math.max(...kids.map(r => r.right))
+          const b = body.getBoundingClientRect()
+          return { over: document.documentElement.scrollWidth > innerWidth + 1 || body.scrollWidth > body.clientWidth + 1, width: Math.round(right - left), gapL: Math.round(left - b.left), gapR: Math.round(b.right - right) }
+        })
+        if (w <= 320) check(!m.over, `320 px: ${name} is no wider than the screen (${JSON.stringify(m)})`)
+        else check(!m.over && m.width <= 720 && Math.abs(m.gapL - m.gapR) <= 24 && (w < 1400 || m.gapL > 100), `${w} px: ${name}'s content keeps a centred maximum width (${JSON.stringify(m)})`)
+        await back(p)
+        await p.locator('.screen').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      }
+      if (w > 320) {
+        // A sheet is centred at a maximum width too.
+        await panelRow(p, /^Scheduled/)
+        await p.getByRole('button', { name: 'New job' }).click()
+        const sh = await p.getByRole('dialog').boundingBox()
+        check(sh.width <= 640 && Math.abs(sh.x + sh.width / 2 - w / 2) <= 2, `${w} px: a sheet is centred at a maximum width (${JSON.stringify(sh)})`)
+      }
+      await p.close()
+    }
+
+    // Light theme: every word on these pages reaches 4.5:1 (3:1 when large), the empty states too.
+    for (const empty of [false, true]) {
+      await mock({ empty })
+      const p = await fresh(375, 812, { 'hm.theme': 'light' })
+      for (const [name, open] of [['Scheduled', () => panelRow(p, /^Scheduled/)], ['Skills', () => panelRow(p, /^Skills/)], ['Canvases', () => library(p, 'Canvases')], ['Files', () => library(p, 'Files')], ['Projects', () => library(p, 'Projects')]]) {
+        await open()
+        await sleep(800)
+        const bad = await lowContrast(p, '.screen')
+        check(bad.length === 0, `Light${empty ? ', empty' : ''}: ${name} has no text under 4.5:1 (${JSON.stringify(bad)})`)
+        await back(p)
+        await p.locator('.screen').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      }
+      await p.close()
+    }
+    await mock({ empty: false })
+  }
 }

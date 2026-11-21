@@ -179,7 +179,7 @@ module.exports = async t => {
     await p.locator('.set-row', { hasText: 'Retries before a fallback' }).waitFor({ timeout: 5000 })
     const cHeads = (await p.locator('.screen .set-heading').allInnerTexts()).map(h => h.toLowerCase())
     const firstRow = await p.locator('.screen .set-section').filter({ has: p.locator('.set-heading') }).first().locator('.set-title').first().innerText()
-    check(cHeads[1] === 'replies' && cHeads.filter(h => h === 'replies').length === 1 && firstRow === 'Dynamic UI', `behaviour: the first section is Replies, with Dynamic UI first (${cHeads.join(' | ')}; ${firstRow})`)
+    check(cHeads.filter(h => h !== 'bot')[0] === 'replies' && cHeads.filter(h => h === 'replies').length === 1 && firstRow === 'Dynamic UI', `behaviour: the first section is Replies, with Dynamic UI first (${cHeads.join(' | ')}; ${firstRow})`)
     const mem = p.locator('.set-section', { has: p.locator('.set-heading', { hasText: /^Memory$/ }) })
     check((await mem.getByRole('button', { name: /^See what Hermux remembers/ }).count()) === 1, 'behaviour: the Memory section has See what Hermux remembers')
     const last = (await p.locator('.screen .set-row .set-title').allInnerTexts()).pop()
