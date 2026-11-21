@@ -2603,17 +2603,18 @@ public class MainActivity extends Activity {
             getSharedPreferences("hm", MODE_PRIVATE).edit().putBoolean("lockAssist", on).apply();
         }
 
-        /** Allow on an approval (ApprovalLock): asks for the biometric or screen lock unless this chat session is already
-         *  confirmed or the setting is off, then calls window.hermesApprovalConfirm(id, "ok" | "cancel" | "nolock"). */
+        /** Allow on an approval (ApprovalLock): asks for the biometric or screen lock unless this live session (`runtime`,
+         *  the approval's Hermes runtime id) is already confirmed or the setting is off, then calls
+         *  window.hermesApprovalConfirm(id, "ok" | "cancel" | "nolock"). An "ok" is filed under that runtime id only. */
         @JavascriptInterface
-        public void confirmApproval(String key, int id, String session, String what) {
+        public void confirmApproval(String key, int id, String runtime, String what) {
             if (!ok(key)) return;
             runOnUiThread(() -> {
                 java.util.function.Consumer<String> done = r -> {
                     if (web != null) web.evaluateJavascript("window.hermesApprovalConfirm && window.hermesApprovalConfirm(" + id + ",'" + r + "')", null);
                 };
                 if (!foreground || isFinishing()) done.accept("cancel"); // a prompt needs the app on screen
-                else ApprovalLock.ask(MainActivity.this, session, what == null ? "" : what, done);
+                else ApprovalLock.ask(MainActivity.this, runtime, what == null ? "" : what, done);
             });
         }
 
@@ -2771,11 +2772,11 @@ public class MainActivity extends Activity {
             ApprovalLock.setOn(MainActivity.this, on);
         }
 
-        /** The chat's live Hermes session closed: its next Allow asks again. */
+        /** A live Hermes session (runtime id) closed: drop its confirmation (tidying; its id never comes back). */
         @JavascriptInterface
-        public void forgetApproval(String key, String session) {
+        public void forgetApproval(String key, String runtime) {
             if (!ok(key)) return;
-            ApprovalLock.forget(session);
+            ApprovalLock.forget(runtime);
         }
 
         /** Shown over the lock screen: bring up Android's unlock screen before something that acts. */

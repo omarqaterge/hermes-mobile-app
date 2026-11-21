@@ -1,16 +1,18 @@
 // Settings → Access & privacy → Approvals → "Confirm approvals with fingerprint" (on by default; the Android shell keeps the choice and
-// the confirmed chats, ApprovalLock.java, so the notification's Allow follows the same rule). With it on, the first
-// Allow in a chat session asks for the phone's biometric or screen lock; after one success that chat's later
-// approvals go through until the session ends: the app restarts, or the chat's live Hermes session closes
-// (forgetApprovalConfirm, from gateway.ts). Deny never asks. No screen lock: approved as before, with a one-time hint.
+// the confirmed live sessions, ApprovalLock.java). With it on, the first Allow in a chat session asks for the phone's
+// biometric or screen lock; after one success that chat's later approvals go through until the session ends: the app
+// restarts, or the chat's live Hermes session closes. A confirmation is filed under the live session (Hermes's runtime
+// id, the approval's `session_id`) it was made in, never under the stored chat: a new live session has nothing on file,
+// so its first Allow always asks, and a closed one's id never comes back, so nothing has to be forgotten for the rule
+// to hold (forgetApprovalConfirm only tidies). Deny never asks. No screen lock: approved as before, with a one-time hint.
 import { toast } from './store'
 
 type LockBridge = {
-  confirmApproval?: (id: number, session: string, what: string) => void
+  confirmApproval?: (id: number, runtime: string, what: string) => void
   confirmIdentity?: (id: number, what: string) => void
   approvalLockState?: () => string
   setApprovalLock?: (on: boolean) => void
-  forgetApproval?: (session: string) => void
+  forgetApproval?: (runtime: string) => void
 }
 const bridge = () => window.HermesAndroid as unknown as LockBridge | undefined
 
@@ -32,8 +34,15 @@ export function approvalLockState(): { on: boolean; secure: boolean } {
   }
 }
 
-/** Chats confirmed in this page (the shell has the real list; this only skips a round trip). */
+/** Live sessions confirmed in this page, the newest last (the shell has the real list; this only skips a round trip). */
 const confirmed = new Set<string>()
+/** At most this many are kept here (the shell keeps as many): past it the oldest asks again. */
+export const CONFIRMED_MAX = 64
+function noteConfirmed(runtime: string): void {
+  confirmed.delete(runtime)
+  confirmed.add(runtime)
+  while (confirmed.size > CONFIRMED_MAX) confirmed.delete(confirmed.values().next().value as string)
+}
 const waiting = new Map<number, (result: string) => void>()
 let seq = 0
 window.hermesApprovalConfirm = (id, result) => {
@@ -42,9 +51,9 @@ window.hermesApprovalConfirm = (id, result) => {
   done?.(String(result))
 }
 
-/** An Allow in this chat must be confirmed before it goes through. */
-export function approvalNeedsConfirm(session: string): boolean {
-  return approvalLockAvailable() && !confirmed.has(session) && approvalLockState().on
+/** An Allow from this live session (runtime id; '' when unknown, which never counts as confirmed) must be confirmed first. */
+export function approvalNeedsConfirm(runtime: string): boolean {
+  return approvalLockAvailable() && !(runtime && confirmed.has(runtime)) && approvalLockState().on
 }
 
 const NO_LOCK_HINT_KEY = 'hm.approvalNoLockHint.v1'
@@ -58,15 +67,16 @@ function noLockHint(): void {
   toast('This phone has no screen lock, so approvals can’t be confirmed with your fingerprint. Set a screen lock to protect them.')
 }
 
-/** Asks the shell for the biometric or screen lock; true when the Allow may go through. */
-export function confirmAllow(session: string, what: string): Promise<boolean> {
+/** Asks the shell for the biometric or screen lock; true when the Allow may go through. `runtime` is the live session the
+ *  approval came from: a success is filed under it, and only under it ('' files nothing). */
+export function confirmAllow(runtime: string, what: string): Promise<boolean> {
   const b = bridge()
   if (!b?.confirmApproval) return Promise.resolve(true)
   return new Promise(resolve => {
     const id = ++seq
     waiting.set(id, result => {
       if (result === 'ok') {
-        if (session) confirmed.add(session)
+        if (runtime) noteConfirmed(runtime)
         resolve(true)
       } else if (result === 'nolock') {
         noLockHint()
@@ -77,7 +87,7 @@ export function confirmAllow(session: string, what: string): Promise<boolean> {
       }
     })
     try {
-      b.confirmApproval!(id, session, what)
+      b.confirmApproval!(id, runtime, what)
     } catch {
       waiting.delete(id)
       resolve(false)
@@ -113,8 +123,9 @@ export async function setApprovalLock(on: boolean): Promise<boolean> {
   return true
 }
 
-/** The chat's live Hermes session closed: its next Allow asks again. */
-export function forgetApprovalConfirm(session: string): void {
-  confirmed.delete(session)
-  bridge()?.forgetApproval?.(session)
+/** The live Hermes session closed. Tidying only: its id never comes back, so the rule holds without this. */
+export function forgetApprovalConfirm(runtime: string): void {
+  if (!runtime) return
+  confirmed.delete(runtime)
+  bridge()?.forgetApproval?.(runtime)
 }
