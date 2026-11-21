@@ -25,6 +25,16 @@ final class ShareUri {
     }
 
     /**
+     * Before API 35 (from it Android checks the sender itself): must the sender have handed over its own access to the
+     * address (a URI grant)? Yes when the address's provider can't be seen (so nothing is known about it), and when
+     * the provider asks for a read permission this app holds: then this app could open the address by itself, whoever
+     * sent it. Otherwise no: the provider is open to every app, or only a grant can open it anyway.
+     */
+    static boolean needsGrant(boolean providerFound, String readPermission, boolean permissionHeld) {
+        return !providerFound || (readPermission != null && permissionHeld);
+    }
+
+    /**
      * The first n characters of auth against name; only A-Z count as the same letter as a-z (equalsIgnoreCase and
      * toLowerCase also fold other characters onto ASCII, such as a long s onto s). Case is ignored so that no
      * spelling of the app's own name gets through, even if some Android version compared authorities loosely.

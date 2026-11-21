@@ -36,6 +36,9 @@ final class Uninstall {
     static volatile boolean running = false;
     static volatile long runningSince = 0;
     static boolean receiverOn = false;
+    /** The nonce the current run's result must carry (PluginSync.NONCE_EXTRA, inside the result PendingIntent only
+     *  Termux holds): below API 33 the receiver can't be registered as not exported. Taken once. */
+    static final LocalAuth.Awaited awaited = new LocalAuth.Awaited();
 
     /** The apps the flow may remove, by fixed name (the page never passes a package name). */
     static String pkg(Context c, String which) {
@@ -117,6 +120,13 @@ final class Uninstall {
             BroadcastReceiver rx = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context c, Intent in) {
+                    String got;
+                    try {
+                        got = in.getStringExtra(PluginSync.NONCE_EXTRA);
+                    } catch (RuntimeException e) {
+                        return;
+                    }
+                    if (!awaited.take(got)) return; // as PluginSync: only this run's result, once
                     done(c, in.getBundleExtra("result"));
                 }
             };
@@ -127,7 +137,8 @@ final class Uninstall {
             receiverOn = true;
         }
         try {
-            PendingIntent pend = PendingIntent.getBroadcast(app, 4713, new Intent(ACTION).setPackage(app.getPackageName()),
+            PendingIntent pend = PendingIntent.getBroadcast(app, 4713, new Intent(ACTION).setPackage(app.getPackageName())
+                            .putExtra(PluginSync.NONCE_EXTRA, awaited.arm()),
                     PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.RunCommandService");
@@ -144,6 +155,7 @@ final class Uninstall {
             return "ok";
         } catch (Exception e) {
             running = false;
+            awaited.clear();
             prefs(app).edit().putBoolean("uninstall_started", prefs(app).getBoolean("uninstall_removed", false)).apply();
             return "error: " + e.getMessage();
         }
