@@ -132,12 +132,17 @@ jobs:
         run: |
           sha=$(cut -d' ' -f1 android/build/hermux.apk.sha256)
           check="Check the download: SHA-256 of hermux.apk is \`$sha\` (also in hermux.apk.sha256). Proof it was built by this repository's release workflow from this tag: \`gh attestation verify hermux.apk -R $REPO\`. The signing certificate's SHA-256 fingerprint is in the README (Install)."
+          # What changed: this tag's section of CHANGELOG.md, first on the page (nothing when the tag has none).
+          news=$(python3 tools/changelog.py page "$GITHUB_REF_NAME")
+          if [ -n "$news" ]; then news="## What's new"$'\n\n'"$news"$'\n\n---\n\n'; fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" android/build/hermux.apk android/build/hermux.apk.sha256 --clobber
             body=$(gh release view "$GITHUB_REF_NAME" --json body -q .body)
-            case "$body" in *"$sha"*) ;; *) gh release edit "$GITHUB_REF_NAME" --notes "$body"$'\n\n'"$check" ;; esac
+            case "$body" in *"$sha"*) ;; *) body="$body"$'\n\n'"$check" ;; esac
+            case "$body" in *"## What's new"*) ;; *) body="$news$body" ;; esac
+            gh release edit "$GITHUB_REF_NAME" --notes "$body"
           else
             gh release create "$GITHUB_REF_NAME" android/build/hermux.apk android/build/hermux.apk.sha256 \
               --title "Hermux $GITHUB_REF_NAME" \
-              --notes "Install: run the one-line installer from the README in Termux, or download hermux.apk below on your phone. Setup steps: https://github.com/$REPO#install"$'\n\n'"$check"
+              --notes "$news""Install: run the one-line installer from the README in Termux, or download hermux.apk below on your phone. Setup steps: https://github.com/$REPO#install"$'\n\n'"$check"
           fi
