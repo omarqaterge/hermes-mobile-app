@@ -21,16 +21,28 @@ function strip(s: string): string {
   return s.slice(from, to)
 }
 
-/** The command's name, as typed (Hermes compares it in lower case), and the text after it. */
-export function hermesWords(text: string): { name: string; arg: string } {
-  let s = strip(text)
-  let i = 0
-  while (s[i] === '/') i++
-  s = strip(s.slice(i))
-  let end = 0
+/** How the page reads a slash command, and the text it sends for it (`slash.exec`'s `command`): every slash and space in
+ *  front taken off (any mix of them, repeated), then the name up to the first space, then the rest with the spaces around
+ *  taken off. Spaces are Python's set, never JavaScript's `trim` (which also drops U+FEFF, which Python keeps).
+ *
+ *  Hermes reads a command twice, differently: its gateway takes `strip().lstrip('/').split(maxsplit=1)` (so `/ /x` names
+ *  `/x`), its slash worker `strip().split()[0].lstrip('/')` (so `/ /x` names nothing). Rather than guess which one acts,
+ *  the page sends `body`, the name and the rest joined by one space: both read exactly `name` and `arg` from it, and so
+ *  does this function (it gives the same answer for `body` as for the text). Every check, at every alias step, judges these
+ *  same words. */
+export function hermesSlash(text: string): { name: string; arg: string; body: string } {
+  const s = strip(text)
+  let from = 0
+  while (from < s.length && (s[from] === '/' || isSpace(s[from]))) from++
+  let end = from
   while (end < s.length && !isSpace(s[end])) end++
-  return { name: s.slice(0, end), arg: strip(s.slice(end)) }
+  const name = s.slice(from, end)
+  const arg = strip(s.slice(end))
+  return { name, arg, body: arg ? `${name} ${arg}` : name }
 }
+
+/** `/yolo`'s argument that turns Full access off. */
+export const yoloOffArg = (arg: string): boolean => /^(off|0|false|no)$/i.test(arg)
 
 /** The arguments as Hermes's shlex sees them, near enough to compare a subcommand: quotes and backslashes gone. */
 const shellWords = (arg: string): string[] =>
@@ -180,8 +192,11 @@ export function lockSafeCommand(typedName: string, arg: string): boolean {
 /** `/approvals off` or `/approvals smart`, also by a beginning Hermes expands to it (`/ap` and longer): the mode that lets
  *  commands run without asking, in every chat of the bot. null for anything else (`manual`, a bare `/approvals`). */
 export function loosensApprovals(typedName: string, arg: string): 'off' | 'smart' | null {
-  if (hermesCommand(typedName) !== 'approvals') return null
-  const w = arg.toLowerCase()
+  // Invisible format characters (U+FEFF, U+200B and the like) are left out before comparing: asking once too often is
+  // harmless, missing one is not, and Hermes's own handling of them may change.
+  const clean = (t: string) => t.replace(/\p{Cf}/gu, '')
+  if (hermesCommand(clean(typedName)) !== 'approvals') return null
+  const w = strip(clean(arg)).toLowerCase()
   return w === 'off' || w === 'smart' ? w : null
 }
 

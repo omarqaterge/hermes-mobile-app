@@ -10,7 +10,7 @@ import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { lineageOf, noteLineage, noteListRow } from './lineage'
-import { detachedRefusal, detachedWork, hermesWords, lockSafeCommand, loosensApprovals } from './slashwords'
+import { detachedRefusal, detachedWork, hermesSlash, lockSafeCommand, loosensApprovals, yoloOffArg } from './slashwords'
 import { confirmLooseApprovals } from './access-confirm'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
@@ -805,8 +805,8 @@ export async function sendPrompt(text: string): Promise<boolean> {
   // chat to be made, whose access is off there, and the profile's catalog), and again after each wait, since the phone can
   // lock meanwhile. Hermes's prompt.submit runs no slash command, so text that isn't one only talks.
   const isSlash = trimmed.startsWith('/')
-  const { name, arg } = hermesWords(trimmed)
-  const yoloOff = isSlash && name.toLowerCase() === 'yolo' && /^(off|0|false|no)$/i.test(arg.trim())
+  const { name, arg } = hermesSlash(trimmed) // the words runSlash judges and sends
+  const yoloOff = isSlash && name.toLowerCase() === 'yolo' && yoloOffArg(arg)
   const lockedOut = (why: string) => {
     askUnlock(why)
     throw new Error(why)
@@ -1109,8 +1109,9 @@ async function notBuiltIn(a: ActiveSession | null, name: string): Promise<boolea
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
-  const body = text.replace(/^\/+/, '').trim()
-  const { name, arg } = hermesWords(text) // the words Hermes will read, whatever separates them
+  // What is sent and what is judged come from one reading (hermesSlash): `body` is `name` and `arg` joined by one space,
+  // and both of Hermes's readings of it give back exactly those words.
+  const { name, arg, body } = hermesSlash(text)
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
   // The phone may lock while a command waits (a confirmation, Hermes's answer): over the lock screen only a command sendPrompt
   // let through goes on, typed directly. An alias, a fallback to command.dispatch (where a quick command comes first) and
@@ -1121,14 +1122,14 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   }
   const locked = (): boolean => {
     if (!lockView()) return false
-    if (depth === 0 && (name.toLowerCase() === 'yolo' || (accessOf(a) === 'off' && lockSafeCommand(name, arg)))) return false
+    if (depth === 0 && ((name.toLowerCase() === 'yolo' && yoloOffArg(arg)) || (accessOf(a) === 'off' && lockSafeCommand(name, arg)))) return false
     refuseLocked()
     return true
   }
   if (locked()) return
   // Only a command the user typed directly (depth 0) can change access. Anything reached through an alias (depth > 0)
   // is refused, however the target is spelled (spaces, extra slashes, upper case).
-  if (depth > 0 && name.replace(/^[\s/]+/, '').toLowerCase().startsWith('yolo')) {
+  if (depth > 0 && name.toLowerCase().startsWith('yolo')) {
     pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
     return
   }
@@ -1200,7 +1201,7 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     return
   }
   if (type === 'alias' && r?.target && depth < 3) {
-    await runSlash(a, `/${bare(r.target)}${arg ? ` ${arg}` : ''}`, depth + 1)
+    await runSlash(a, `${r.target}${arg ? ` ${arg}` : ''}`, depth + 1) // read again by hermesSlash, however the target is spelled
     return
   }
   if ((type === 'send' || type === 'prefill' || type === 'skill') && r?.notice?.trim()) {
@@ -1280,7 +1281,6 @@ export function drainQueue(chat: string, force: boolean): void {
     toast(errText(e), 'error')
   })
 }
-const bare = (s: string) => s.replace(/^\/+/, '').trim()
 
 export async function interrupt(): Promise<void> {
   const s = getState()
@@ -2138,12 +2138,23 @@ export function filesOf(item: ChatItem): MsgFile[] {
   return item.fileRefs.map((ref, i) => ({ name: item.files?.[i] || ref.replace(/^@file:/, '').split('/').pop() || 'file', ref })).filter(x => x.ref)
 }
 
+/** Over the lock screen Edit and Retry ask for an unlock with sendPrompt's words. */
+const RESEND_LOCKED = 'Unlock the phone to use this chat'
+
 /** Edit / regenerate: drop the user turn `itemId` and everything after it, then send `text` in its place. The
  * message's photos go with it (re-queued with image.attach); `images` overrides them (the edit box can drop some). */
 export async function resendFrom(itemId: string, text: string, images?: MsgImage[], files?: MsgFile[]): Promise<void> {
   const trimmed = text.trim()
   const a = getState().active
   if (!a || !trimmed) return
+  // Over the lock screen an edit or a retry waits for an unlock, whatever the chat's access: it starts a turn and drops the
+  // later ones from Hermes's history, which talking doesn't. Checked again right before the send, since the phone can lock
+  // while the message's row and photos are looked up.
+  const lockedOut = () => {
+    askUnlock(RESEND_LOCKED)
+    throw new Error(RESEND_LOCKED)
+  }
+  if (lockView()) lockedOut()
   if (a.running) throw new Error('Wait for the current reply to finish')
   const cut = a.items.findIndex(i => i.id === itemId)
   if (cut < 0) return
@@ -2169,6 +2180,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
     }
     let r: PromptSubmitResult
     try {
+      if (lockView()) lockedOut()
       r = await rpc<PromptSubmitResult>('prompt.submit', {
         session_id: a.runtimeId,
         text: body,
@@ -2184,6 +2196,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
       // can't truncate to it. Nothing live needs dropping then: send the edited text as a normal prompt. Anywhere
       // else that would put the edit after the later turns, so stop and show what Hermes really holds.
       if (!isLast) throw new Error("That message isn't in this chat's history any more. Start a new chat to begin again")
+      if (lockView()) lockedOut()
       r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: body, surface: 'mobile' })
     }
     rebindKeptRowIds(kept, r?.survivor_user_row_ids)
@@ -2198,7 +2211,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
   }
 }
 
-/** Regenerate the reply of the turn containing `itemId` (an assistant item). */
+/** Regenerate the reply of the turn containing `itemId` (an assistant item). Over the lock screen it waits for an unlock (resendFrom). */
 export async function retryTurn(itemId: string): Promise<void> {
   const a = getState().active
   if (!a) return

@@ -228,4 +228,65 @@ module.exports = async t => {
   await sent(pg, '/kanban swarm x', 'a chat that has not read: /kanban swarm goes as before')
   await sent(pg, '/bp daily topic=x', 'a chat that has not read: /bp with values goes as before')
   await pg.close()
+
+  // ── over the lock screen: a side chat open before the lock closes; Edit and Retry (they start a turn) are not offered ──
+  pg = await open('s-pd-ctl')
+  await slash(pg, '/btw')
+  await pg.locator('.sheet.btw').waitFor({ timeout: 5000 })
+  await pg.evaluate(() => window.hermesLockView(true))
+  await sleep(200)
+  check((await pg.locator('.sheet.btw').count()) === 0, 'lock screen: the side chat open before the lock closes')
+  await pg.evaluate(() => window.hermesLockView(false))
+  await pg.close()
+  pg = await open('s-pd-ctl')
+  const edits = () => pg.locator('.msg.user').getByRole('button', { name: 'Edit' }).count()
+  const retries = () => pg.locator('.msg.assistant').getByRole('button', { name: 'Retry' }).count()
+  check((await edits()) >= 1 && (await retries()) >= 1, `unlocked: Edit and Retry are there (${await edits()}, ${await retries()})`)
+  await pg.locator('.msg.user').last().getByRole('button', { name: 'Edit' }).click()
+  await pg.locator('.edit-box').waitFor({ timeout: 3000 })
+  const submits = rpcs('prompt.submit').length
+  await pg.evaluate(() => window.hermesLockView(true))
+  await sleep(200)
+  check((await pg.locator('.edit-box').count()) === 0, 'lock screen: an edit box left open closes')
+  check((await edits()) === 0 && (await retries()) === 0, `lock screen: no Edit and no Retry (${await edits()}, ${await retries()})`)
+  check(rpcs('prompt.submit').length === submits, 'lock screen: nothing was sent')
+  await pg.evaluate(() => window.hermesLockView(false))
+  await sleep(200)
+  check((await edits()) >= 1 && (await retries()) >= 1, 'unlocked again: Edit and Retry come back')
+  await pg.close()
+
+  // ── slashes and spaces mixed in front: read once, judged and sent the same way ──
+  pg = await open('s-lock-ctl')
+  for (const text of ['/ /approvals off', '// /ap smart', '/\t/approvals off']) {
+    const before = SENT()
+    await pg.getByPlaceholder('Message Hermux').fill(text)
+    await pg.getByRole('button', { name: 'Send', exact: true }).click()
+    const shown = await pg.getByText('Give Hermux full access?').waitFor({ timeout: 3000 }).then(() => true, () => false)
+    await pg.getByRole('button', { name: 'Cancel' }).click().catch(() => {})
+    await sleep(300)
+    check(shown && SENT() === before, `${JSON.stringify(text)}: the Full access warning first, and Cancel sends nothing`)
+  }
+  {
+    const before = SENT()
+    await pg.getByPlaceholder('Message Hermux').fill('/ /approvals off')
+    await pg.getByRole('button', { name: 'Send', exact: true }).click()
+    await pg.getByRole('button', { name: 'Allow full access' }).click()
+    await sleep(400)
+    const s = rpcs('slash.exec').slice(before).map(c => c.params.command)
+    check(s.join() === 'approvals off', `"/ /approvals off": allowed, it goes as the page read it (sent ${JSON.stringify(s)})`)
+  }
+  await pg.evaluate(() => window.hermesLockView(true))
+  for (const text of ['// /ap smart', '/ /cron run job1']) {
+    const before = await pg.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
+    const s = await slash(pg, text)
+    const after = await pg.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
+    check(s.length === 0 && after === before + 1, `lock screen: ${JSON.stringify(text)} waits for an unlock`)
+  }
+  check((await slash(pg, '/ /status')).join() === 'status', 'lock screen: "/ /status" still runs, sent as status')
+  await pg.evaluate(() => window.hermesLockView(false))
+  await pg.close()
+  pg = await open('s-pd', { record: ['s-pd'] })
+  for (const text of ['/ /bg send it', '// /cron add "every 1h" x', '/\u0085/kanban create x'])
+    await refused(pg, text, `phone data: ${JSON.stringify(text)} is refused, read past the slashes and spaces`)
+  await pg.close()
 }

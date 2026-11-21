@@ -1,8 +1,9 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { type ChatItem, toast } from '../store'
 import { branchAt, filesOf, imagesOf, resendFrom, retryTurn, type MsgFile, type MsgImage } from '../gateway'
 import { Markdown } from './Markdown'
 import { useTainted } from '../phone-data-taint'
+import { lockView, onLockView } from '../lockview'
 import { copyRich, copyText, haptic } from '../bridge'
 import { Chevron, Collapse, PickerSheet } from './ui'
 import { toggleSpeak, useVoice } from '../voice'
@@ -279,8 +280,16 @@ function CopyBtn({ text, choose }: { text: string; choose?: boolean }) {
   )
 }
 
+/** True while the app is shown over the lock screen (lockview.ts), for hiding what starts a turn. */
+const useLocked = (): boolean => useSyncExternalStore(onLockView, lockView)
+
 function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'user' }>; actions: boolean; busy: boolean }) {
   const [editing, setEditing] = useState(false)
+  // Over the lock screen there is no Edit (it starts a turn): the button goes, and an edit box left open closes.
+  const locked = useLocked()
+  useEffect(() => {
+    if (locked) setEditing(false)
+  }, [locked])
   const [draft, setDraft] = useState(item.text)
   const [keep, setKeep] = useState<MsgImage[]>(() => imagesOf(item)) // photos sent again with the edit
   const [keepFiles, setKeepFiles] = useState<MsgFile[]>(() => filesOf(item)) // files sent again with the edit
@@ -380,20 +389,22 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
       {actions && (
         <div className="msg-actions user-actions">
           <CopyBtn text={item.text} />
-          <IconBtn
-            label="Edit"
-            disabled={busy}
-            onClick={() => {
-              setDraft(item.text)
-              setKeep(imagesOf(item))
-              setKeepFiles(filesOf(item))
-              setEditing(true)
-              haptic()
-            }}
-          >
-            <path d="M4 20h4L19 9l-4-4L4 16v4z" />
-            <path d="M13.5 6.5l4 4" />
-          </IconBtn>
+          {!locked && (
+            <IconBtn
+              label="Edit"
+              disabled={busy}
+              onClick={() => {
+                setDraft(item.text)
+                setKeep(imagesOf(item))
+                setKeepFiles(filesOf(item))
+                setEditing(true)
+                haptic()
+              }}
+            >
+              <path d="M4 20h4L19 9l-4-4L4 16v4z" />
+              <path d="M13.5 6.5l4 4" />
+            </IconBtn>
+          )}
         </div>
       )}
     </div>
@@ -458,6 +469,7 @@ export const ItemView = memo(function ItemView({ item, actions = false, busy = f
 function AssistantMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'assistant' }>; actions: boolean; busy: boolean }) {
   const time = useTimeTap(item.streaming ? undefined : item.at)
   const tainted = useTainted() // the chat has read phone data: remote media waits for a tap, addresses are checked first
+  const locked = useLocked() // over the lock screen there is no Retry (it starts a turn)
   return (
         <div className="msg assistant" onClick={time.toggle}>
           <Reasoning text={item.reasoning} live={item.streaming && !item.text} />
@@ -468,10 +480,12 @@ function AssistantMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind:
             <div className="msg-actions">
               <CopyBtn text={item.text} choose />
               <SpeakBtn id={item.id} text={item.text} />
-              <IconBtn label="Retry" disabled={busy} onClick={() => run(() => retryTurn(item.id))}>
-                <path d="M20 11a8 8 0 1 0-2.3 5.7" />
-                <path d="M20 4v7h-7" />
-              </IconBtn>
+              {!locked && (
+                <IconBtn label="Retry" disabled={busy} onClick={() => run(() => retryTurn(item.id))}>
+                  <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+                  <path d="M20 4v7h-7" />
+                </IconBtn>
+              )}
               <IconBtn label="Branch" disabled={busy} onClick={() => run(() => branchAt(item.id))}>
                 <circle cx="6" cy="5" r="2" />
                 <circle cx="6" cy="19" r="2" />
