@@ -13,6 +13,9 @@ checksum matches, `gh attestation verify hermux.apk -R omarqaterge/hermes-mobile
 at `refs/tags/v0.9.9`), and `apksigner` shows the fingerprint in the README.
 **Still open (owner):** the `KEYSTORE_PASS` secret is not set, so releases are signed with the old default keystore
 password (the run warns); see [security-followups.md](security-followups.md).
+**Release page notes** (2026-11-21): v0.9.8 and v0.9.9 were published with only the install and check lines; v0.9.9's
+page was edited by hand to add its CHANGELOG section, and `release.yml` now puts it there itself ("What's new",
+`changelog.py page`). v0.9.8's page still has no list.
 How a release is made: `docs/spec/07-05-versioning-and-releases.md` and `python3 tools/changelog.py release`.
 
 **Needs a real phone:** everything marked `web ✓` (not yet tried on a phone) in [docs/improvements.md](../improvements.md).

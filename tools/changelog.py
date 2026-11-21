@@ -19,6 +19,8 @@ Usage:
   python3 tools/changelog.py release vX.Y.Z [YYYY-MM-DD]
                                               writes "## vX.Y.Z (date)" with those notes under an emptied
                                               "## Unreleased" and deletes the fragments (commit both)
+  python3 tools/changelog.py page vX.Y.Z      that release's section of CHANGELOG.md for its GitHub release page, each
+                                              bullet on one line (release.yml; prints nothing for a version not there)
 """
 from __future__ import annotations
 
@@ -129,6 +131,18 @@ def release(root: Path, version: str, date: str) -> str:
     return body
 
 
+def page(root: Path, version: str) -> str:
+    """The "## vX.Y.Z" section of CHANGELOG.md without its heading, each wrapped bullet joined onto one line: GitHub's
+    release page shows a line break where the file wraps. Empty when there is no such section."""
+    text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    m = re.search(rf"^## {re.escape(version)}( .*)?\n", text, re.M)
+    if not m:
+        return ""
+    nxt = re.search(r"^## ", text[m.end():], re.M)
+    body = text[m.end(): m.end() + nxt.start() if nxt else len(text)].strip()
+    return re.sub(r"\n[ \t]+(?=\S)", " ", body)
+
+
 def main(argv: list[str], root: Path | None = None) -> int:
     root = root or Path(__file__).resolve().parent.parent
     cmd = argv[0] if argv else "show"
@@ -148,6 +162,9 @@ def main(argv: list[str], root: Path | None = None) -> int:
             return 1
         release(root, argv[1], argv[2] if len(argv) == 3 else datetime.date.today().isoformat())
         print(f"CHANGELOG.md: wrote {argv[1]}; fragments removed")
+        return 0
+    if cmd == "page" and len(argv) == 2:
+        print(page(root, argv[1]))
         return 0
     print(__doc__)
     return 2
