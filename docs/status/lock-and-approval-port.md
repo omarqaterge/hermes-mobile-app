@@ -16,6 +16,11 @@ After the security review (2026-11-21), on the same PR: the command text sent to
 an unlock there (they were never checked, before the port too); the contract compares `slash.exec` and
 `command.dispatch` for a quick command alias. The first three are fixed on `redesign` in a separate PR.
 
+After the re-check (2026-11-21): a mix of slashes and spaces in front (`/ /approvals off`) no longer skips the warning.
+One reading (`hermesSlash`) gives the judged words and the text sent, at every alias step and for `/yolo off`; a
+generated-text test compares it with a port of Hermes's own steps (checked once against Python itself). Same fix on
+`redesign`.
+
 Not ported (not on `main`): the `/bg`, `/cron add` and board-command refusal in a chat that has read phone data, and the
 sub-agent and kept-chat routing.
 
