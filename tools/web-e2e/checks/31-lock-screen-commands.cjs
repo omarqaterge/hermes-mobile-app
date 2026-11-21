@@ -132,4 +132,16 @@ module.exports = async t => {
   await slash(pg, '/approvals manual')
   check(SENT() === before + 1 && (await dialog().count()) === 0, '/approvals manual: no question')
   await pg.close()
+
+  // ── a side chat open before the phone locks closes over the lock screen ──
+  pg = await open('s-lock-ctl')
+  await slash(pg, '/btw')
+  await pg.locator('.sheet.btw').waitFor({ timeout: 5000 })
+  await pg.evaluate(() => window.hermesLockView(true))
+  await sleep(200)
+  check((await pg.locator('.sheet.btw').count()) === 0, 'lock screen: the side chat open before the lock closes')
+  await pg.evaluate(() => window.hermesLockView(false))
+  await slash(pg, '/btw')
+  check((await pg.locator('.sheet.btw').count()) === 1, 'unlocked: the side chat opens again')
+  await pg.close()
 }
