@@ -975,20 +975,35 @@ def _chats_read_by(tool_name, args, result, status=None) -> dict:
     return out
 
 
+def _result_cut(tool_name, args, result, status=None) -> bool:
+    """Whether a call that returns chats' messages returned more text than `_chats_read_by` looks through."""
+    if status in ("error", "blocked") or not any(n == "session_search" or (n == "find_chats" and a.get("text"))
+                                                  for n, a in _phone_taint()._calls(tool_name, args)):
+        return False
+    text = result if isinstance(result, str) else json.dumps(result, default=str)
+    if tool_name != "tool_call" and (_RESULT_FAILED.match(text) or (tool_name == "session_search" and _RESULT_BROWSE.match(text))):
+        return False   # as _chats_read_by: no chat's messages in it
+    return len(text) > _RESULT_SCAN
+
+
 def _taint_from_reading(tool_name, args, result, session_id, task_id, status=None) -> None:
     """A chat that reads the messages of one that has read phone data now holds them too, so it counts as having read: it
     is asked before sending anything out, and a background task is blocked. Every chat in the result is checked against
-    the record; only the database lookups for chats made from another (`_inherit_read`) are capped. Never raises."""
+    the record. When in doubt the reader is marked: a result longer than what is looked through, more chats than are
+    looked up in a database (`_CHATS_NAMED`, for chats made from another), or one whose origin can't be told yet
+    (`_inherit_read`). Costs nothing while no chat has read. Never raises."""
     try:
         pt = _phone_taint()
         if not pt.any_read():
             return
         ids = list(pt.chat_ids(session_id, task_id))
         found = {c: p for c, p in _chats_read_by(tool_name, args, result, status).items() if c not in ids}
-        if not ids or not found:
+        cut = _result_cut(tool_name, args, result, status)
+        if not ids or not (found or cut):
             return
-        _inherit_read(list(found)[:_CHATS_NAMED], found)
-        if pt.has_read(list(found)) and not pt.has_read(ids):
+        known = _inherit_read(list(found)[:_CHATS_NAMED], found)
+        unsure = cut or len(found) > _CHATS_NAMED or not known
+        if (unsure or pt.has_read(list(found))) and not pt.has_read(ids):
             pt.mark(ids)
             _report_taint(ids)
     except Exception:
@@ -1264,7 +1279,8 @@ def _phone_taint():
 _LOCAL_TOOLS = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "openui_reference", "clarify", "todo",
                           "todo_list", "read_file", "write_file", "patch", "search_files", "skill_view", "skills_list",
                           "session_search", "tool_search", "tool_describe"})
-# What a background task of a chat that has read may still use when phone_taint.py cannot load: tools that only read.
+# What a background task of a chat that has read may use: tools that only read (the same names as phone_taint._DETACHED_OK;
+# a test keeps the two equal). Used only when phone_taint.py cannot load.
 _DETACHED_READ_TOOLS = frozenset({"find_chats", "openui_reference", "clarify", "todo", "todo_list", "read_file",
                                   "search_files", "skill_view", "skills_list", "session_search", "tool_search",
                                   "tool_describe"})
@@ -1452,16 +1468,18 @@ def _made_after_read(origin, pt) -> bool:
     return False
 
 
-def _inherit_read(sids, profiles=None) -> None:
+def _inherit_read(sids, profiles=None) -> bool:
     """A chat made from one that has read phone data holds what that chat held: a branch copies its messages, and Hermes
     announces no branch to a plugin. So the first time a chat is seen while any chat has read, the chats it came from are
     looked up (in the profile a tool's result found it in, `profiles`), before the tool call it arrives with is judged. A
     chat made before its parent read holds nothing of that read and is left alone (`_made_after_read`). Costs nothing
-    while no chat has read. Never raises."""
+    while no chat has read. Returns False when a chat's origin could not be told (not in its database yet, or the lookup
+    failed), True otherwise. Never raises."""
+    known = True
     try:
         pt = _phone_taint()
         if not pt.any_read():
-            return
+            return True
         for sid in sids:
             sid = str(sid or "").strip()
             prof = str((profiles or {}).get(sid) or "")
@@ -1469,6 +1487,7 @@ def _inherit_read(sids, profiles=None) -> None:
                 continue
             origin = _phone_data().stored_origin(sid, db=_profile_db(prof))
             if origin is None:
+                known = False
                 continue   # not known yet: the next call asks again
             if len(_INHERIT_SEEN) > 2000:
                 _INHERIT_SEEN.clear()
@@ -1477,7 +1496,8 @@ def _inherit_read(sids, profiles=None) -> None:
                 pt.mark([sid])
                 _report_taint([sid])
     except Exception:
-        pass
+        return False
+    return known
 
 
 def _in_slash_worker() -> bool:

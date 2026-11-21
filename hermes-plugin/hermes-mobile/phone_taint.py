@@ -1316,16 +1316,24 @@ def _saved_text(a: Dict[str, Any]) -> str:
 
 
 def classify(name: str, a: Dict[str, Any]) -> Optional[Tuple[str, str, str]]:
-    """None when the call sends nothing out, else (tool name, what to show the user, the pattern that matched)."""
+    """None when the call sends nothing out, else (tool name, what to show the user, the pattern that matched). A file
+    written where it changes what Hermes, this app or a shell runs (`guarded_place`) asks too: what is written there could
+    send the data out later, from a run nobody is asked about."""
+    if name in ("write_file", "patch"):
+        for path in _written_paths(name, a):
+            where = guarded_place(path)
+            if where:
+                return name, str(path or "(no file named)"), f"{name} into {where}"
+        return None
     if name in _QUIET:
         return None
     if name == "terminal":
         cmd = _first_text(a, "command", "code")
-        why = command_match(cmd)
+        why = command_match(cmd) or terminal_guarded(cmd)
         return (name, cmd, why) if why else None
     if name == "execute_code":
         code = _first_text(a, "code", "command")
-        why = code_match(code)
+        why = code_match(code) or code_guarded(code)
         return (name, code, why) if why else None
     if name == "process_manage":
         act = str(a.get("action") or "")
@@ -1365,70 +1373,16 @@ def ask_text(name: str, shown: str, why: str = "") -> str:
         return ("This chat has read data from your phone, and the agent wants to save text where other chats can read it, "
                 "which would carry phone data into them. Allow only if the text holds nothing from your phone. "
                 f"{tag}It would save: {s or name}")
+    if name in ("write_file", "patch"):
+        return ("This chat has read data from your phone, and the agent wants to change a file that Hermes, this app or "
+                "your shell runs from, which could send that data out later without asking you. Allow only if you asked "
+                f"for it. {tag}It would write: {s}")
     what = f"the tool {name}" if not s else (f"the command: {s}" if name == "terminal" else f"{name}: {s}")
     return ("This chat has read data from your phone, and the agent wants to run something that can send data out. "
             f"Allow only if you asked for it. {tag}It would run {what}")
 
 
-# ── an agent nobody can be asked about (a background task, a scheduled run) of a chat that has read ──
-# Its terminal runs only what is known to read and change nothing: these commands, each with plain arguments, no
-# redirection into a file, nothing built at run time. Everything else is blocked, whatever it is, because there is
-# nobody to ask: a script the task wrote (`python3 /tmp/x.py`, `./x.sh`), `rish`, `hermes`, an editor, a package tool.
-_RO_CMDS = frozenset("ls pwd whoami id date uname df du wc head tail cat stat file grep egrep fgrep sort uniq cut tr nl "
-                     "basename dirname realpath readlink which echo printf true false test [ seq ps free uptime cd find".split())
-_RO_ENV = re.compile(r"^(?:LC_\w+|LANG|LANGUAGE|TZ|NO_COLOR|COLUMNS|TERM)=[\w.:/@-]*$")
-_RO_REDIRECT = frozenset((">/dev/null", "1>/dev/null", "2>/dev/null", "&>/dev/null", "2>&1", ">&2", "1>&2"))
-_RO_NO_OPT = {   # options that write a file, run a program or change the system
-    "sort": re.compile(r"^(?:-o|--output|-T|--temporary-directory|--compress-program|--random-source)|^-[a-zA-Z]*o"),
-    "date": re.compile(r"^(?:-s|--set)|^-[a-zA-Z]*s"),
-    "file": re.compile(r"^(?:-C|--compile)"),
-    "find": re.compile(r"^-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$"),
-}
-
-
-def detached_terminal(text: Any) -> Optional[str]:
-    """Why a terminal command of such a task is blocked, or None when it only reads (see _RO_CMDS)."""
-    t = text if isinstance(text, str) else ""
-    if len(t) > MAX_SCAN:
-        return "a command too long to read"
-    hit = _match_text(t)
-    if hit:
-        return hit
-    for w, d, _piped, body in _parse(t):
-        if body:
-            return "a command fed inline text"
-        k = 0
-        while k < len(w) and _RO_ENV.match(w[k]) and not d[k]:
-            k += 1
-        if k >= len(w):
-            continue
-        word = w[k]
-        if d[k] or "/" in word or _base(word) not in _RO_CMDS or _ASSIGN.match(word):
-            return f"{word[:40]} (not on the list of commands that only read)"
-        args = w[k + 1:]
-        argd = d[k + 1:]
-        skip = False
-        for j, (a, dyn) in enumerate(zip(args, argd)):
-            if skip:
-                skip = False
-                continue
-            if a in (">", "1>", "2>", "&>") and j + 1 < len(args) and args[j + 1] == "/dev/null":
-                skip = True
-                continue
-            if a in _RO_REDIRECT:
-                continue
-            if "<" in a or ">" in a:
-                return "a redirection (it can write a file)"
-            if _PLACEHOLDER in a or _PROCSUB in a or (dyn and not _HOME_PATH.match(a)):
-                return "an argument built at run time"
-            bad = _RO_NO_OPT.get(word)
-            if bad is not None and bad.match(a):
-                return f"{word} {a[:30]}"
-        if word == "uniq" and len([a for a in args if not a.startswith("-")]) > 1:
-            return "uniq writing a file"
-    return None
-
-
+# ── files that change what Hermes, this app or a shell runs ──
 def _hermes_roots() -> List[Path]:
     """The folders of Hermes and this app: ~/.hermes (every profile is under it), HERMES_HOME, ~/.hermes-mobile."""
     roots = [Path.home() / ".hermes", Path.home() / ".hermes-mobile"]
@@ -1476,22 +1430,117 @@ def _written_paths(name: str, a: Dict[str, Any]) -> List[Any]:
     return [a.get("path")]
 
 
-_DETACHED_NEVER = frozenset(("phone_app", "execute_code"))   # an app on the phone; code that can do what the terminal can't
+# Shell start-up files (read by every new shell, so what is written there runs later without a question). By name, wherever.
+_STARTUP = frozenset((".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zshenv", ".zprofile",
+                      ".zlogin", ".zlogout", ".kshrc", ".mkshrc", ".cshrc", ".tcshrc", ".login", ".logout", ".inputrc", ".envrc",
+                      "bash.bashrc", "config.fish"))
+# The same places by words in a command or a script: Hermes's and this app's folders, Termux's (its boot scripts and
+# settings), the start-up files, /etc, a folder of programs.
+_GUARDED_TEXT = re.compile(r"\.hermes|hermes[-_]agent|hermes_home|\.termux|/etc/|(?:^|[\s/'\"=:])(?:s?bin|\.local/bin)(?:/|$)|"
+                           + "|".join(re.escape(n) for n in sorted(_STARTUP)) + r"|fish/conf\.d", re.I)
+_GLOB = re.compile(r"[*?\[]")
+_NULL_REDIRECT = frozenset((">/dev/null", "1>/dev/null", "2>/dev/null", "&>/dev/null", "2>&1", ">&2", "1>&2"))
+
+
+def guarded_place(path: Any) -> Optional[str]:
+    """Where a file a tool would write sits, when what is written there changes what Hermes, this app or a shell runs
+    later: Hermes's or this app's folders (config, skills, plugins, the record of chats that have read), Termux's folder, a
+    shell start-up file, /etc, a folder of programs (one named bin or sbin, or one on PATH). None for any other file. Fails
+    closed: a path that can't be read counts as Hermes's folders."""
+    if _under_hermes(path):
+        return "Hermes's or this app's folders"
+    try:
+        p = os.path.expanduser(str(path).strip())
+        if not os.path.isabs(p):
+            p = os.path.join(os.environ.get("TERMINAL_CWD") or os.getcwd(), p)
+        real = Path(os.path.realpath(p))
+        if real.name in _STARTUP or any(n in _STARTUP for n in Path(p).parts):
+            return "a shell start-up file"
+        home = Path(os.path.realpath(os.path.expanduser("~")))
+        if real.is_relative_to(home / ".termux") or real.is_relative_to(Path(os.path.realpath("/etc"))):
+            return "Termux's or the system's settings"
+        on_path = {os.path.realpath(x) for x in (os.environ.get("PATH") or "").split(os.pathsep) if x}
+        if any(part in ("bin", "sbin") for part in real.parent.parts) or str(real.parent) in on_path:
+            return "a folder of programs"
+    except Exception:
+        return "Hermes's or this app's folders"
+    return None
+
+
+# Programs that write files they are given, or that can write anywhere (an interpreter, a shell, an editor).
+_WRITERS = frozenset("cp mv ln install tee dd rsync truncate touch chmod chown mkdir unzip tar patch sed perl python python3 "
+                     "node ruby php lua sh bash zsh dash ash ksh fish rish awk gawk ed ex vi vim nvim nano".split())
+
+
+def terminal_guarded(text: Any) -> Optional[str]:
+    """Why a shell command of a chat that has read asks before it runs, when it may write a file that `guarded_place`
+    names; None otherwise. A command that writes (a redirection into a file, or a program of `_WRITERS`) asks when any word
+    of the line names such a place, or when a file it writes is named at run time (a variable, a substitution, a glob)."""
+    t = text if isinstance(text, str) else ""
+    if len(t) > MAX_SCAN:
+        return "a command too long to read"
+    writes = named = False
+    for w, d, _piped, body in _parse(t):
+        k = 0
+        while k < len(w) and _ASSIGN.match(w[k]) and not d[k]:
+            k += 1
+        base = _base(w[k]) if k < len(w) else ""
+        for j, (a, dyn) in enumerate(zip(w, d)):
+            if _GUARDED_TEXT.search(a) or ("/" in a and not dyn and guarded_place(a)):
+                named = True
+            if ">" in a and a not in _NULL_REDIRECT:
+                writes = True
+                glued = a.rsplit(">", 1)[1]
+                if not glued and j + 1 >= len(w):
+                    continue   # `2>&1` (the reader ends the command at `&`): no file named here
+                target = glued or w[j + 1]
+                target_dyn = dyn or (not glued and d[j + 1])
+                if target.startswith("&") or target == "/dev/null" or _PROCSUB in target:
+                    continue   # another stream, nothing, or a command (`>(...)`, read on its own)
+                if target_dyn or _PLACEHOLDER in target or _GLOB.search(target) or guarded_place(target):
+                    return "a redirection into a file Hermes, this app or a shell runs from, or one named at run time"
+        if base in _WRITERS or body:
+            writes = True
+            if base in ("cp", "mv", "ln", "install", "tee", "touch", "truncate", "rsync") and any(
+                    dyn or _PLACEHOLDER in a or _GLOB.search(a) for a, dyn in zip(w[k + 1:], d[k + 1:]) if not a.startswith("-")):
+                return f"{base} with a file named at run time"
+        if base in ("cd", "pushd") and any(d[k + 1:]):
+            named = True   # a folder named at run time: anything written after it may land anywhere
+    if writes and named:
+        return "a command that writes and names Hermes's folders, a shell start-up file or a folder of programs"
+    return None
+
+
+_CODE_WRITES = re.compile(r"\bopen\s*\(|\.write(?:_text|_bytes)?\s*\(|\bshutil\.|\bos\.(?:rename|replace|symlink|link|chmod|"
+                          r"makedirs|mkdir)\b|\bPath\s*\(|\bsubprocess\b")
+_CODE_HOME = re.compile(r"expanduser|Path\.home|\bHOME\b|getenv|environ|getcwd|chdir", re.I)
+
+
+def code_guarded(code: Any) -> Optional[str]:
+    """The same for a script given to execute_code: code that writes files and names such a place, or builds a path from
+    the home folder or the environment."""
+    c = code if isinstance(code, str) else ""
+    if len(c) > MAX_SCAN:
+        return "a script too long to read"
+    if _CODE_WRITES.search(c) and (_GUARDED_TEXT.search(c) or _CODE_HOME.search(c)):
+        return "code that writes files and names Hermes's folders, a shell start-up file, a folder of programs or the home folder"
+    return None
+
+
+# ── an agent nobody can be asked about (a background task, a scheduled run) of a chat that has read ──
+# THE ALLOWLIST for such a task: tools that only read and change nothing. Everything else is blocked, whatever it is,
+# because there is nobody to ask: no terminal and no code at all (a terminal that looked like it only read still started
+# `rish`, a new `hermes` or a script the task wrote), no phone_app, no file written anywhere, nothing sent. The fallback
+# in __init__ (`_DETACHED_READ_TOOLS`) is the same list; a test keeps the two equal.
+_DETACHED_OK = frozenset({"find_chats", "openui_reference", "clarify", "todo", "todo_list", "read_file", "search_files",
+                          "skill_view", "skills_list", "session_search", "tool_search", "tool_describe"})
 
 
 def detached_block(name: str, a: Dict[str, Any]) -> Optional[str]:
-    """Why one tool call of such a task is blocked, or None. Stricter than `classify`: no phone_app, no code, a terminal
-    that only reads, and no file written in Hermes's or this app's folders (a task could otherwise change what every chat
-    runs: config, skills, plugins, the record of chats that have read)."""
-    if name in _DETACHED_NEVER:
-        return f"{name} (not for a background task of this chat)"
-    if name == "terminal":
-        why = detached_terminal(_first_text(a, "command", "code"))
-        return f"terminal: {why}" if why else None
-    if name in ("write_file", "patch"):
-        return f"{name} into Hermes's folders" if any(_under_hermes(p) for p in _written_paths(name, a)) else None
-    hit = classify(name, a)
-    return hit[2] if hit is not None else None
+    """Why one tool call of such a task is blocked, or None for a tool of `_DETACHED_OK`."""
+    if name in _DETACHED_OK:
+        return None
+    return f"{name or 'a tool'} (such a task may only use tools that read)"
 
 
 def check_detached(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
@@ -1506,8 +1555,8 @@ def check_detached(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
         if why is not None:
             return {"action": "block", "message": (
                 f"BLOCKED: {why}. This background task belongs to a chat that has read data from your phone, and nobody "
-                "can be asked here, so it may only read: no command that is not known to only read, nothing sent out, "
-                "nothing written in Hermes's folders. Do the rest without that, or tell the user.")}
+                "can be asked here, so it may only use tools that read: no terminal, no code, no phone app, nothing "
+                "written, nothing sent out. Do the rest without that, or tell the user.")}
     return None
 
 

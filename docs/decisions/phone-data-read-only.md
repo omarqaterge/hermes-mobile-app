@@ -234,3 +234,15 @@ because Hermes offers no way to switch that choice off; it is harmless but usele
 no ask: its call reaches the plugin with no chat, and the shell's filter lets `localhost` through. Under the rule above
 ("only for actions that can send data out"), the page now refuses a card's tools that send their arguments out
 (everything but `find_chats`) in such a chat (`guardedCall` in `web/src/openui-query.ts`).
+
+**Update 2026-11-21 (background tasks and files that run, asked for in the third security review of PR #206).**
+
+- **A background task of a chat that has read only reads.** A task nobody can be asked about (a `/bg` task, a
+  `prompt.background` task, a scheduled run) may use only tools that read: no terminal and no code at all (a terminal
+  limited to commands that only read still let `rish`, a new `hermes` or a script the task wrote through), no `phone_app`,
+  no file written anywhere, nothing sent. A new tool is blocked there until someone adds it to that list.
+- **Writing where something runs from asks.** In a chat that has read, `write_file` and `patch` ask before they write into
+  Hermes's or this app's folders, Termux's folder, `/etc`, a shell start-up file or a folder of programs; a terminal command
+  or a script that writes asks when it names such a place or a file named at run time. Everywhere else they stay quiet.
+- **A search that can't be fully checked marks the searching chat**, so an ordinary chat can now be marked after a large
+  search though none of what it read had read: accepted, it errs on the safe side.

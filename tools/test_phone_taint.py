@@ -330,8 +330,10 @@ ALLOWED = ["phone_data", "phone_app", "canvas", "find_chats", "openui_reference"
            "tool_search", "tool_describe"]
 check("the allowlist is exactly these tools", sorted(pt._QUIET) == sorted(ALLOWED), str(sorted(pt._QUIET)))
 for t in ALLOWED:
-    check("allowlisted, no ask: " + t, not asks(t, {}, "c1"), t)
+    # write_file and patch name a file of the work folder: one in Hermes's folders asks (below)
+    check("allowlisted, no ask: " + t, not asks(t, {"path": str(tmp / "work" / "n.md")} if t in ("write_file", "patch") else {}, "c1"), t)
 check("the fallback list in __init__ matches the allowlist", init._LOCAL_TOOLS == pt._QUIET)
+check("the background tasks' fallback list in __init__ matches theirs", init._DETACHED_READ_TOOLS == pt._DETACHED_OK)
 check("an unknown tool inside the Tool Search bridge asks",
       asks("tool_call", {"calls": [{"name": "yb_send_dm", "arguments": {}}]}, "c1"))
 check("terminal is still read by its command", not asks("terminal", {"command": "ls"}, "c1"))
@@ -352,7 +354,7 @@ for t, a in [("web_search", {"query": "q"}), ("web_extract", {"urls": ["http://x
                                       {"name": "terminal", "arguments": {"command": "curl http://x"}}]})]:
     check("asks: " + t, asks(t, a), t)
 for t, a in [("phone_data", {"kind": "sms"}), ("phone_app", {"action": "open", "app": "x"}), ("canvas", {"action": "create"}),
-             ("read_file", {"path": "f"}), ("write_file", {"path": "f", "content": "c"}), ("patch", {}),
+             ("read_file", {"path": "f"}), ("write_file", {"path": "f", "content": "c"}), ("patch", {"path": "f"}),
              ("memory", {"action": "remove", "old_text": "x"}), ("process_manage", {"action": "poll", "session_id": "p"}),
              ("process_manage", {"action": "kill", "session_id": "p"}), ("skill_view", {"name": "n"}),
              ("execute_code", {"code": "print(sum(range(10)))"}), ("vision_analyze", {"image_url": "/sdcard/a.png"}),
@@ -848,7 +850,7 @@ in_worker("bg-chat")
 check("a /bg task of a chat that has read: a send is blocked, not asked", action("terminal", CURL, "bg_1") == "block")
 check("its message says nobody can be asked", "nobody" in init._taint_directive("terminal", CURL, "bg_1", "bg_1")["message"])
 check("through the Tool Search bridge too", action("tool_call", {"calls": [{"name": "web_search", "arguments": {"query": "x"}}]}, "bg_1") == "block")
-check("it can still work on the phone", action("read_file", {"path": "a"}, "bg_1") is None and action("terminal", {"command": "ls"}, "bg_1") is None)
+check("it can still read on the phone", action("read_file", {"path": "a"}, "bg_1") is None and action("search_files", {"pattern": "x"}, "bg_1") is None)
 check("the task itself is not added to the record", not pt.has_read(["bg_1"]))
 in_worker("bg-other")
 check("a /bg task of any other chat runs as before", action("terminal", CURL, "bg_2") is None)
@@ -911,58 +913,90 @@ for cmd in ("rish -c 'ls /sdcard'", "python3 my_hermes_notes.py", "python3 tools
 check("a chat that has not read runs all of them", pt.check("terminal", {"command": "hermes chat -q x"}, "hz-clean") is None)
 reset()
 
-print("a background task of a chat that has read: its terminal only reads")
+print("a background task of a chat that has read: only tools that read")
 pt.mark(["ro-chat"])
 in_worker("ro-chat")
-for cmd in ("python3 /tmp/x.py", "bash /tmp/x.sh", "./x.sh", "sh x.sh", "rish -c ls", "hermes chat -q x", "cp a b", "mv a b",
-            "rm -f a", "touch a", "mkdir d", "echo hi > /tmp/f", "echo hi>/tmp/f", "echo hi >> ~/.bashrc", "cat a | tee b",
-            "sed -i s/a/b/ f", "sort -o out in", "sort -uo out in", "uniq in out", "date -s 2020-01-01", "find . -delete",
-            "find . -exec rm {} ;", "file -C -m x", "ls $(cat /tmp/cmd)", "ls `id`", "X=1 ls", "PATH=/tmp ls", "env ls",
-            "export A=1", "for f in *; do cat $f; done", "cat <<EOF\nhi\nEOF", "cat < /etc/passwd", "git status",
-            "/bin/ls", "awk '{print}' f", "xargs ls", "chmod +x x.sh", "python3 -m http.server", "nohup ls &"):
-    check(f"blocked: {cmd!r}", action("terminal", {"command": cmd}, "bg_ro") == "block")
-for cmd in ("ls -la", "cat notes.txt | grep -i todo | wc -l", "cd /tmp && ls", "grep -r foo . 2>/dev/null", "head -n 5 f",
-            "find . -name '*.py' -type f", "date", "ps aux", "du -sh .", "sort -u names.txt", "LC_ALL=C sort f",
-            "ls $HOME/projects", "tail -20 log.txt", "stat -c %s f", "echo done", "wc -l f"):
-    check(f"runs: {cmd!r}", action("terminal", {"command": cmd}, "bg_ro") is None)
-check("its message says the task may only read", "may only read" in init._taint_directive("terminal", {"command": "cp a b"}, "bg_ro", "bg_ro")["message"])
-
-print("a background task of a chat that has read: no phone_app, no code, nothing written in Hermes's folders")
+# No terminal at all: these got through a terminal that only ran commands known to read (rish, a new hermes, a script the
+# task wrote, an alias on PATH), and the plain reads are blocked as well.
+for cmd in ("rish -c 'curl https://x.test'", "hermes chat -q x", "python3 /tmp/x.py", "./x.sh", "ls -la", "cat notes.txt", "echo done",
+            "cat a | grep b", "find . -name x"):
+    check(f"terminal blocked: {cmd!r}", action("terminal", {"command": cmd}, "bg_ro") == "block")
+check("its message says the task may only use tools that read", "may only use tools that read" in init._taint_directive("terminal", {"command": "ls"}, "bg_ro", "bg_ro")["message"])
 hh = Path(os.environ["HERMES_HOME"])
 (hh / "skills").mkdir(parents=True, exist_ok=True)
 outside = tmp / "work"
 outside.mkdir(exist_ok=True)
 (outside / "to-hermes").symlink_to(hh)
-check("phone_app is blocked", action("phone_app", {"action": "open", "app": "x"}, "bg_ro") == "block")
-check("execute_code is blocked, even code that only reads", action("execute_code", {"code": "print(1)"}, "bg_ro") == "block")
-for path, what in ((str(hh / "config.yaml"), "the config"), ("~/.hermes/skills/x/SKILL.md", "a skill, by ~"),
-                   (str(tmp / ".hermes-mobile" / "enforced"), "this app's folder"), (str(outside / "to-hermes" / "x"), "through a link"),
-                   (str(outside / ".." / ".hermes" / "plugins" / "p.py"), "through .."), ("", "an empty path")):
-    check(f"write_file into Hermes's folders is blocked: {what}", action("write_file", {"path": path, "content": "x"}, "bg_ro") == "block")
-    check(f"patch too: {what}", action("patch", {"path": path, "old_string": "a", "new_string": "b"}, "bg_ro") == "block")
-os.environ["TERMINAL_CWD"] = str(tmp)
-check("a relative path is taken from the terminal's folder", action("write_file", {"path": ".hermes/config.yaml", "content": "x"}, "bg_ro") == "block")
-os.environ.pop("TERMINAL_CWD")
-check("a V4A patch is judged by the files it names", action("patch", {"mode": "patch", "patch": f"*** Begin Patch\n*** Update File: {outside}/a.txt\n@@\n-a\n+b\n*** Add File: {hh}/hooks/x.sh\n+x\n*** End Patch"}, "bg_ro") == "block")
-check("and one that names no file is blocked", action("patch", {"mode": "patch", "patch": "@@\n-a\n+b"}, "bg_ro") == "block")
-check("a file elsewhere is written as before", action("write_file", {"path": str(outside / "notes.md"), "content": "x"}, "bg_ro") is None
-      and action("patch", {"mode": "patch", "patch": f"*** Begin Patch\n*** Update File: {outside}/a.txt\n@@\n-a\n+b\n*** End Patch"}, "bg_ro") is None)
+for tool, a in (("execute_code", {"code": "print(1)"}), ("phone_app", {"action": "open", "app": "x"}), ("process_manage", {"action": "list"}),
+                ("write_file", {"path": str(outside / "notes.md"), "content": "x"}), ("patch", {"path": str(hh / "config.yaml")}),
+                ("memory", {"action": "add", "content": "x"}), ("skill_manage", {"action": "create"}), ("canvas", {"action": "create"}),
+                ("delegate_task", {"goal": "x"}), ("cronjob", {"action": "create"}), ("phone_data", {"kind": "sms"}), ("some_future_tool", {}),
+                ("tool_call", {"calls": [{"name": "read_file", "arguments": {}}, {"name": "terminal", "arguments": {"command": "ls"}}]})):
+    check(f"blocked: {tool}", action(tool, a, "bg_ro") == "block")
+for tool in sorted(pt._DETACHED_OK):
+    check(f"left to it: {tool}", action(tool, {"path": "a", "query": "x"}, "bg_ro") is None)
 check("reading Hermes's folders stays allowed", action("read_file", {"path": str(hh / "config.yaml")}, "bg_ro") is None)
 in_worker("ro-clean")
 check("a background task of a chat that has not read keeps all of it",
       all(action(t, a, "bg_ok") is None for t, a in (("phone_app", {"action": "open"}), ("execute_code", {"code": "print(1)"}),
           ("write_file", {"path": str(hh / "config.yaml"), "content": "x"}), ("terminal", {"command": "python3 /tmp/x.py"}))))
 out_of_worker()
-check("an ordinary chat that has read still writes its files and runs its scripts",
-      action("write_file", {"path": str(hh / "notes.md"), "content": "x"}, "ro-chat") is None
+check("an ordinary chat that has read still writes its own files and runs its scripts",
+      action("write_file", {"path": str(outside / "notes.md"), "content": "x"}, "ro-chat") is None
       and action("terminal", {"command": "python3 /tmp/x.py"}, "ro-chat") is None and action("phone_app", {"action": "open"}, "ro-chat") is None)
 init._phone_taint = broken
 in_worker("ro-chat")
-check("if the check can't load, such a task still can't use phone_app or write files",
+check("if the check can't load, such a task still can't use phone_app, write files or a terminal",
       action("phone_app", {"action": "open"}, "bg_fb2") == "block" and action("write_file", {"path": "/tmp/x", "content": "x"}, "bg_fb2") == "block"
-      and action("read_file", {"path": "a"}, "bg_fb2") is None)
+      and action("terminal", {"command": "ls"}, "bg_fb2") == "block" and action("read_file", {"path": "a"}, "bg_fb2") is None)
 init._phone_taint = good
 out_of_worker(had_key)
+reset()
+
+print("a chat that has read: writing where Hermes, this app or a shell runs from asks")
+pt.mark(["wg-chat"])
+(tmp / ".termux" / "boot").mkdir(parents=True, exist_ok=True)
+(tmp / "bin").mkdir(exist_ok=True)
+pathdir = tmp / "tools-on-path"
+pathdir.mkdir(exist_ok=True)
+old_path = os.environ.get("PATH", "")
+os.environ["PATH"] = f"{pathdir}{os.pathsep}{old_path}"
+for path, what in ((str(hh / "config.yaml"), "Hermes's config"), ("~/.hermes/skills/x/SKILL.md", "a skill, by ~"),
+                   (str(hh / "plugins" / "p" / "__init__.py"), "a plugin"), (str(tmp / ".hermes-mobile" / "enforced"), "this app's folder"),
+                   (str(outside / "to-hermes" / "x"), "through a link"), (str(outside / ".." / ".hermes" / "hooks" / "x.sh"), "through .."),
+                   ("~/.bashrc", ".bashrc"), ("~/.profile", ".profile"), ("~/.zshrc", ".zshrc"), (str(outside / ".bash_profile"), "a start-up file anywhere"),
+                   ("~/.config/fish/config.fish", "fish's config"), ("~/.termux/boot/start.sh", "a Termux boot script"),
+                   ("/etc/profile.d/x.sh", "/etc"), ("~/bin/ls", "a bin folder"), ("~/.local/bin/cat", "~/.local/bin"),
+                   (str(pathdir / "git"), "a folder on PATH"), ("", "an empty path")):
+    check(f"write_file asks: {what}", asks("write_file", {"path": path, "content": "x"}, "wg-chat"))
+    check(f"patch asks: {what}", asks("patch", {"path": path, "old_string": "a", "new_string": "b"}, "wg-chat"))
+check("the question names the file and says why", "runs from" in pt.check("write_file", {"path": "~/.bashrc"}, "wg-chat")["message"]
+      and ".bashrc" in pt.check("write_file", {"path": "~/.bashrc"}, "wg-chat")["message"])
+os.environ["TERMINAL_CWD"] = str(tmp)
+check("a relative path is taken from the terminal's folder", asks("write_file", {"path": ".hermes/config.yaml"}, "wg-chat")
+      and asks("write_file", {"path": ".bashrc"}, "wg-chat"))
+os.environ.pop("TERMINAL_CWD")
+check("a V4A patch is judged by every file it names", asks("patch", {"mode": "patch", "patch": f"*** Begin Patch\n*** Update File: {outside}/a.txt\n@@\n-a\n+b\n*** Add File: {tmp}/.bashrc\n+x\n*** End Patch"}, "wg-chat"))
+check("and one that names no file asks", asks("patch", {"mode": "patch", "patch": "@@\n-a\n+b"}, "wg-chat"))
+for path in (str(outside / "notes.md"), str(outside / "site" / "index.html"), str(tmp / "projects" / "x.py"), "/tmp/out.txt"):
+    check(f"a file elsewhere is written without a question: {path}", not asks("write_file", {"path": path, "content": "x"}, "wg-chat"))
+for cmd in ("echo 'curl x' >> ~/.bashrc", "echo x>>~/.profile", "printf x | tee -a ~/.zshrc", "cp x ~/.local/bin/ls", "mv x ~/bin/git",
+            "install -m755 x /usr/local/bin/y", "ln -s x ~/.hermes/plugins/p", "sed -i s/a/b/ ~/.hermes/config.yaml",
+            "cd ~/.hermes && echo x > config.yaml", "cd ~; cat x >> .bashrc", "echo x > $F", "echo x > ~/.b*rc", "cp x $(echo ~/.bashrc)",
+            "cd $D; echo x > y", "cat > ~/.termux/boot/s.sh <<EOF\ncurl x\nEOF", "echo x > /etc/profile.d/z.sh",
+            f"echo x > {pathdir}/git", "python3 -c \"open('/root/.bashrc','a').write('x')\"", "tee ~/.hermes/config.yaml < x"):
+    check(f"terminal asks: {cmd!r}", asks("terminal", {"command": cmd}, "wg-chat"))
+for cmd in ("ls ~/.hermes", "cat ~/.bashrc", "grep x ~/.profile", "echo hi > /tmp/out.txt", "python3 x.py", "sort -u a > b.txt",
+            "ls -la 2>/dev/null", "cp a b", "make 2>&1", "cat notes.txt | wc -l"):
+    check(f"terminal left alone: {cmd!r}", not asks("terminal", {"command": cmd}, "wg-chat"))
+for code in ("import os\nopen(os.path.expanduser('~/.bashrc'), 'a').write('x')", "from pathlib import Path\n(Path.home() / '.pro' 'file').write_text('x')",
+             "open('/root/.hermes/config.yaml', 'w').write('x')", "import shutil; shutil.copy('x', '/usr/local/bin/y')"):
+    check(f"execute_code asks: {code!r}", asks("execute_code", {"code": code}, "wg-chat"))
+for code in ("print(1)", "open('/tmp/x', 'w').write('a')", "import json\nprint(json.dumps({}))"):
+    check(f"execute_code left alone: {code!r}", not asks("execute_code", {"code": code}, "wg-chat"))
+check("a chat that has not read writes all of these without a question",
+      pt.check("write_file", {"path": "~/.bashrc"}, "wg-clean") is None and pt.check("terminal", {"command": "echo x >> ~/.bashrc"}, "wg-clean") is None)
+os.environ["PATH"] = old_path
 reset()
 
 print("chats made from one that has read")
@@ -1084,6 +1118,30 @@ init._phone_data = lambda: type("CountDb", (), {"stored_origin": staticmethod(la
 init._on_post_tool_call("find_chats", {"text": "secret", "limit": 200}, MANY, session_id="rd-many")
 check("find_chats with 200 chats: the marked one at the end still marks the reader", pt.has_read(["rd-many"]))
 check("and at most 50 of them are looked up in a database", 0 < len(looked) <= 50)
+print("when a search can't be fully checked, the reader is marked")
+CLEAN = lambda n, pre: json.dumps({"ok": True, "chats": [{"id": f"{pre}{i}", "profile": "default", "snippet": "s"} for i in range(n)]})
+init._on_post_tool_call("find_chats", {"text": "s", "limit": 60}, CLEAN(60, "rd-c"), session_id="rd-sixty")
+check("more chats than are looked up (none of them marked): the reader is marked", pt.has_read(["rd-sixty"]))
+init._on_post_tool_call("find_chats", {"text": "s"}, CLEAN(10, "rd-d"), session_id="rd-ten")
+check("ten chats that were all looked up and none had read: the reader stays as it was", not pt.has_read(["rd-ten"]))
+init._phone_data = lambda: type("NoRow", (), {"stored_origin": staticmethod(lambda sid, **k: None)})
+init._INHERIT_SEEN.clear()
+init._on_post_tool_call("find_chats", {"text": "s"}, CLEAN(3, "rd-e"), session_id="rd-unknown")
+check("a chat whose origin can't be told yet: the reader is marked", pt.has_read(["rd-unknown"]))
+init._phone_data = lambda: type("Boom", (), {"stored_origin": staticmethod(lambda sid, **k: 1 / 0)})
+init._on_post_tool_call("find_chats", {"text": "s"}, CLEAN(3, "rd-f"), session_id="rd-boom")
+check("a lookup that fails: the reader is marked", pt.has_read(["rd-boom"]))
+init._phone_data = lambda: type("CountDb", (), {"stored_origin": staticmethod(lambda sid, **k: [])})
+init._INHERIT_SEEN.clear()
+LONG = json.dumps({"success": True, "results": [{"session_id": "rd-y", "summary": "x" * (init._RESULT_SCAN + 10)}, {"session_id": "rd-marked"}]})
+init._on_post_tool_call("session_search", {"query": "x"}, LONG, session_id="rd-long")
+check("a result longer than what is read, the marked chat past the end: the reader is marked", pt.has_read(["rd-long"]))
+init._on_post_tool_call("session_search", {"query": "x"}, "x" * (init._RESULT_SCAN + 10), session_id="rd-long2")
+check("and so for a long result whose chats can't be read at all", pt.has_read(["rd-long2"]))
+init._on_post_tool_call("read_file", {"path": "f"}, "x" * (init._RESULT_SCAN + 10), session_id="rd-long3")
+check("a long result of a tool that reads no chat marks nobody", not pt.has_read(["rd-long3"]))
+init._on_post_tool_call("session_search", {}, json.dumps({"success": True, "mode": "browse", "results": [], "pad": "x" * (init._RESULT_SCAN + 10)}), session_id="rd-long4")
+check("nor does a long browse listing", not pt.has_read(["rd-long4"]))
 print("a chat found in another profile is looked up in that profile")
 _wdb = tmp / "work-profile.db"
 _wc = sqlite3.connect(_wdb)
