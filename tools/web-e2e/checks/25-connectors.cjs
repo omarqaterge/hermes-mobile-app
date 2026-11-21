@@ -184,7 +184,7 @@ module.exports = async t => {
     const sheet = p.getByRole('dialog').filter({ hasText: 'Hermux can use this server’s tools' })
     const sw = sheet.getByRole('switch').first()
     await sw.click()
-    await sleep(400)
+    await p.locator('.toast').filter({ has: p.getByRole('button', { name: 'New chat' }) }).first().waitFor({ timeout: 5000 })
     await sw.click()
     // Both switches' toasts first, so the one read is the one tapped (a locator is found again at each use).
     const withNew = p.locator('.toast').filter({ has: p.getByRole('button', { name: 'New chat' }) })
@@ -195,7 +195,10 @@ module.exports = async t => {
     await toastEl.getByRole('button', { name: 'New chat' }).click()
     await p.locator('.screen').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'connectors: New chat on the toast closes Settings'), () => check(false, 'connectors: New chat on the toast closes Settings'))
     check((await p.locator('.msg').count()) === 0 && (await p.getByPlaceholder('Message Hermux').count()) === 1, 'connectors: …and a new, empty chat is open')
-    const left = await p.locator('.toast').allInnerTexts()
+    // A toast that leaves fades out first (marked aria-hidden meanwhile): wait for that, then read what is still shown.
+    const shownToasts = p.locator('.toast:not([aria-hidden="true"])')
+    await shownToasts.filter({ hasText: said }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    const left = await shownToasts.allInnerTexts()
     check(!left.some(x => x.includes(said)), `connectors: the tapped toast goes away (${JSON.stringify(said)} → ${JSON.stringify(left)})`)
     await p.close()
 
@@ -229,7 +232,7 @@ module.exports = async t => {
     // 320 px: nothing wider than the screen; Light: every word reaches 4.5:1.
     p = await open(320, 640, { 'hm.theme': 'light' })
     await p.locator('.set-row', { hasText: 'server-filesystem' }).waitFor({ timeout: 5000 })
-    await sleep(500)
+    await sleep(500) // the page's slide-in ends before widths and colours are read (nothing to wait on but time)
     const over = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1 || document.querySelector('.screen-body').scrollWidth > document.querySelector('.screen-body').clientWidth + 1)
     check(!over, 'connectors, 320 px: nothing is wider than the screen')
     const badL = await lowContrast(p, '.screen')

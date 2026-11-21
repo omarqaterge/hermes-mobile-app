@@ -209,7 +209,7 @@ module.exports = async t => {
   {
     const p = await shell({ width: 360, height: 740 }, 's-48', true)
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
-    await sleep(500)
+    await sleep(500) // the chat's scroll to the end settles before the controls' boxes are probed
     const short = []
     const acts = p.locator('.msg-actions button')
     for (let i = 0; i < (await acts.count()); i++) {

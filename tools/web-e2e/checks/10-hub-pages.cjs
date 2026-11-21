@@ -219,7 +219,7 @@ module.exports = async t => {
       for (const [name, open] of [['Scheduled', () => panelRow(p, /^Scheduled/)], ['Skills', () => panelRow(p, /^Skills/)], ['Files', () => library(p, 'Files')]]) {
         await open()
         await p.locator('.screen .screen-body > *').first().waitFor({ timeout: 5000 })
-        await sleep(300)
+        await sleep(300) // the page's slide-in ends before its box is measured
         const m = await p.evaluate(() => {
           const body = document.querySelector('.screen .screen-body')
           const kids = [...body.children].map(k => k.getBoundingClientRect()).filter(r => r.width)
@@ -248,7 +248,7 @@ module.exports = async t => {
       const p = await fresh(375, 812, { 'hm.theme': 'light' })
       for (const [name, open] of [['Scheduled', () => panelRow(p, /^Scheduled/)], ['Skills', () => panelRow(p, /^Skills/)], ['Canvases', () => library(p, 'Canvases')], ['Files', () => library(p, 'Files')], ['Projects', () => library(p, 'Projects')]]) {
         await open()
-        await sleep(800)
+        await sleep(800) // the page and its list have loaded and slid in before the colours are read
         const bad = await lowContrast(p, '.screen')
         check(bad.length === 0, `Light${empty ? ', empty' : ''}: ${name} has no text under 4.5:1 (${JSON.stringify(bad)})`)
         await back(p)

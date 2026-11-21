@@ -732,7 +732,7 @@ module.exports = async t => {
     }
     const up = async p => {
       await p.evaluate(() => window.hermesBack())
-      await sleep(200)
+      await sleep(200) // the page's slide-out ends before the next one opens
     }
     const PAGES = ['Models', 'Connectors', 'Behaviour', 'Access & privacy', 'Appearance', 'Voice', 'About & help']
 
@@ -743,7 +743,7 @@ module.exports = async t => {
       const long = []
       for (const name of PAGES) {
         await settingsPage(p, name)
-        await sleep(600)
+        await sleep(600) // the page's rows have loaded and slid in before the footers are read
         for (const f of await p.locator('.screen .set-foot').allInnerTexts()) {
           // Phone data's footer is the protected section's own disclosure and stays as it is (Access & privacy).
           if (/^Results go to your chosen model provider/.test(f)) continue
@@ -768,7 +768,7 @@ module.exports = async t => {
       await toSettings(p)
       for (const name of PAGES) {
         await settingsPage(p, name)
-        await sleep(700)
+        await sleep(700) // the page's rows have loaded and slid in before widths and colours are read
         const m = await p.evaluate(() => {
           const body = document.querySelector('.screen .screen-body')
           const kids = [...body.children].map(k => k.getBoundingClientRect()).filter(r => r.width)
@@ -807,7 +807,7 @@ module.exports = async t => {
       await settingsPage(p, 'About & help')
       await p.getByRole('button', { name: /^Setup check/ }).click()
       await p.locator('.setup-hero-title').waitFor({ timeout: 5000 })
-      await sleep(500)
+      await sleep(500) // the page's slide-in ends before colours are read
       const badS = await lowContrast(p, '.screen')
       check(badS.length === 0, `setup check, Light: text reaches 4.5:1 (${JSON.stringify(badS)})`)
       await p.close()
