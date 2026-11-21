@@ -52,3 +52,22 @@ test('an answer that arrives after Clear is dropped, not shown in the main chat 
   expect(btwDone(late, 'late answer')).toBe(true)
   expect(snap().msgs).toEqual([])
 })
+
+test('the side sheet closes when the app is shown over the lock screen, and Clear does nothing there', async () => {
+  await askBtw('kept?')
+  expect(btwDone(`t${task}`, 'kept answer')).toBe(true)
+  expect(snap().open).toBe(true)
+  window.hermesLockView?.(true)
+  try {
+    expect(snap().open).toBe(false)
+    clearBtw()
+    expect(snap().msgs).toHaveLength(1)
+    openBtw()
+    expect(snap().open).toBe(false)
+  } finally {
+    window.hermesLockView?.(false)
+  }
+  openBtw()
+  expect(snap().open).toBe(true)
+  expect(snap().msgs).toHaveLength(1)
+})

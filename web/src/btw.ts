@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { rpc, errText } from './gateway'
-import { askUnlock, lockView } from './lockview'
+import { askUnlock, lockView, onLockView } from './lockview'
 import { getState } from './store'
 
 /** A /btw side chat: questions about the open chat that run on a snapshot of it, detached from the main turn. */
@@ -43,12 +43,19 @@ export function closeBtw(): void {
   set({ open: false })
 }
 
+// The side sheet keeps its own open state (it isn't the store's `sheet`, which lockview.ts closes): when the app is shown
+// over the lock screen, it closes too, so nothing of it is seen or used there. Its exchanges stay for after the unlock.
+onLockView(() => {
+  if (lockView() && state.open) closeBtw()
+})
+
 /**
  * Empty the side chat: its exchanges go, so the next question carries no earlier side answers. Hermes keeps nothing
  * of it between questions (each one runs on a fresh snapshot), so this is the whole reset. Answers still on their
  * way are dropped when they arrive (their task ids stay known, so they don't show up in the main chat).
  */
 export function clearBtw(): void {
+  if (lockView()) return askUnlock('Unlock the phone to ask on the side')
   set({ msgs: [] })
 }
 
