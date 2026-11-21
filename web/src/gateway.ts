@@ -1529,18 +1529,24 @@ client.onRequest((req: ServerRequest) => {
   return true
 })
 
-/** Stored chat id of each live Hermes session opened here, so closing one ends its approval confirmation. */
+/** Stored chat id of each live Hermes session opened here (the newest, after a compression). */
 const chatOfRuntime = new Map<string, string>()
-onChatOpen('approval-lock', ({ chat }) => {
-  chatOfRuntime.set(chat.runtimeId, chat.storedId)
-})
+/** Every stored id each of those sessions has had: an approval confirmed under any of them ends when the session closes. */
+const idsOfRuntime = new Map<string, Set<string>>()
+function setChatOfRuntime(runtimeId: string, storedId: string): void {
+  chatOfRuntime.set(runtimeId, storedId)
+  const ids = idsOfRuntime.get(runtimeId) ?? new Set<string>()
+  ids.add(storedId)
+  idsOfRuntime.set(runtimeId, ids)
+}
+onChatOpen('approval-lock', ({ chat }) => setChatOfRuntime(chat.runtimeId, chat.storedId))
 function chatClosed(runtimeId: string): void {
   appliedModel.delete(runtimeId)
   setPhoneDataFullAccess(runtimeId, false) // the live session is gone: the Full access pass for phone data goes with it
-  const storedId = chatOfRuntime.get(runtimeId)
-  if (storedId === undefined) return
+  const ids = idsOfRuntime.get(runtimeId)
   chatOfRuntime.delete(runtimeId)
-  forgetApprovalConfirm(storedId)
+  idsOfRuntime.delete(runtimeId)
+  for (const id of ids ?? []) forgetApprovalConfirm(id)
 }
 // A page that (re)loads doesn't know which chats were in Full access: start with none (the shell also clears every pass
 // when a page starts). Each chat's access is re-applied by setAccess when it opens, and the pass comes back only
@@ -1760,7 +1766,7 @@ client.onEvent((ev: GatewayEvent) => {
         moveChat(prev, sid)
         if (k) k.storedId = sid
         if (w) w.storedId = sid
-        if (chatOfRuntime.has(ev.session_id)) chatOfRuntime.set(ev.session_id, sid)
+        if (chatOfRuntime.has(ev.session_id)) setChatOfRuntime(ev.session_id, sid)
       }
     }
     if (type === 'session.title' || type === 'message.complete') loadSessionsSoon()
@@ -1890,7 +1896,7 @@ client.onEvent((ev: GatewayEvent) => {
         if (a && typeof sid === 'string' && sid && sid !== a.storedId) {
           noteLineage([a.storedId, sid], a.runtimeId)
           moveChat(a.storedId, sid)
-          if (chatOfRuntime.has(a.runtimeId)) chatOfRuntime.set(a.runtimeId, sid)
+          if (chatOfRuntime.has(a.runtimeId)) setChatOfRuntime(a.runtimeId, sid)
         }
       }
       updateActive(x => ({ info: { ...x.info, ...(payload as object) } }))
@@ -2255,7 +2261,7 @@ export async function compressChat(): Promise<string> {
     moveChat(a.storedId, newSid)
     for (const k of kept) if (k.runtimeId === a.runtimeId) k.storedId = newSid
     for (const w of warm) if (w.runtimeId === a.runtimeId) w.storedId = newSid
-    if (chatOfRuntime.has(a.runtimeId)) chatOfRuntime.set(a.runtimeId, newSid)
+    if (chatOfRuntime.has(a.runtimeId)) setChatOfRuntime(a.runtimeId, newSid)
   }
   if (r.compressed === false || r.summary?.noop || r.summary?.aborted || r.summary?.refused_would_grow) return r.message || r.summary?.headline || 'Nothing to compress'
   const b = r.before_messages, n = r.after_messages
