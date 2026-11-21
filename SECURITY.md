@@ -8,6 +8,19 @@ taken seriously. The maintainer is one person, so replies are best effort and th
 The [latest release](https://github.com/omarqaterge/hermes-mobile-app/releases/latest) and the `main` branch. Older
 releases are not patched: update to the newest one.
 
+## Checking a download
+
+Every Hermux release is signed with the same key. Its certificate's SHA-256 fingerprint:
+
+```text
+2D:51:19:F7:DE:4B:4D:B3:F4:C1:78:0F:27:E7:6B:CD:72:EB:54:DB:B7:9B:54:9D:CE:3E:11:58:F7:13:3E:8D
+```
+
+Check it with `apksigner verify --print-certs hermux.apk` (Android SDK) or `keytool -printcert -jarfile hermux.apk` (any
+JDK). Releases after v0.9.8 also carry `hermux.apk.sha256` and a build provenance attestation:
+`gh attestation verify hermux.apk -R omarqaterge/hermes-mobile-app` proves the release workflow built it from the
+release's tag. An APK with another fingerprint is not from this project; please report where you found it.
+
 ## How to report a vulnerability
 
 **Please don't post exploit details, keys or anyone's personal data in a public issue.**
