@@ -21,6 +21,20 @@ describe('isTaintedItems', () => {
     expect(isTaintedItems([tool('tool_call', { calls: [{ name: 'read_file' }] })])).toBe(false)
     expect(isTaintedItems([tool('tool_call', { calls: 'phone_data' })])).toBe(false)
   })
+  it('reads every tool_call shape the pinned Hermes runs: a top-level name, calls as a JSON string or one object, names with spaces', () => {
+    for (const args of [
+      { name: 'phone_data', arguments: '{"kind":"sms"}' },
+      { name: ' phone_data ' },
+      { calls: '[{"name":"phone_data","arguments":"{}"}]' },
+      { calls: '{"name":"phone_data"}' },
+      { calls: { name: 'phone_data', arguments: {} } },
+      { calls: [{ name: 'phone_data\n' }] }
+    ])
+      expect(isTaintedItems([tool('tool_call', args)]), JSON.stringify(args)).toBe(true)
+    // `calls` given wins over a top-level name, as in Hermes; text that isn't JSON runs nothing.
+    expect(isTaintedItems([tool('tool_call', { calls: [{ name: 'read_file' }], name: 'phone_data' })])).toBe(false)
+    expect(isTaintedItems([tool('tool_call', { calls: '[{"name":"phone_data"' })])).toBe(false)
+  })
   it('is cheap on a long chat and follows a new array', () => {
     const long: ChatItem[] = Array.from({ length: 20000 }, (_, i) => said('m' + i))
     const t = performance.now()

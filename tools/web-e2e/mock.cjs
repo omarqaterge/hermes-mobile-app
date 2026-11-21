@@ -80,6 +80,10 @@ let providerConfigured = true // false = a fresh install (the welcome opens)
 // true = like the pinned Hermes on a fresh install: setup.status scoped to a profile says a provider is configured although
 // none is (its loose probe); setup.runtime_check still says ok: false.
 let looseStatus = false
+// Quick commands config.yaml would hold ({quickCommands: ['version']} to /__mock): commands.catalog lists them under "User
+// commands", as Hermes does. Over the lock screen the app won't run a command of such a name.
+let quickCommands = []
+let catalogWarning = '' // commands.catalog's `warning` ({catalogWarning: '...'} to /__mock): a loader that failed
 let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps (Settings → Background apps)
 let openui = { enabled: true } // the plugin's /openui (Settings → Replies)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
@@ -196,6 +200,8 @@ const server = http.createServer((req, res) => {
         for (const go of canvasGate.held.splice(0)) go()
       }
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
+      if (b.quickCommands) quickCommands = b.quickCommands
+      if (typeof b.catalogWarning === 'string') catalogWarning = b.catalogWarning
       if (b.models) modelsMock = { ...modelsMock, ...b.models }
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
@@ -1329,6 +1335,11 @@ wss.on('connection', ws => {
         return reply({ ok: true })
       case 'session.close':
         return reply({ closed: true })
+      case 'session.branch': {
+        // As the pinned Hermes answers (tools/hermes-contract): a new live and stored chat, its parent named.
+        const stored = `s-branch-${++created}`
+        return reply({ session_id: `rt-${stored}`, stored_session_id: stored, title: 'Branch', parent: String(params.session_id || '').replace(/^rt-/, ''), message_count: 2, info: CHAT_INFO })
+      }
       case 'session.delete':
         return reply({ deleted: params.session_id })
       case 'session.title':
@@ -1336,7 +1347,7 @@ wss.on('connection', ws => {
       case 'session.set_hidden':
         return reply({ hidden: !!params.hidden, session_key: params.session_id })
       case 'commands.catalog':
-        return reply({ categories: [], skills: {}, pairs: [] })
+        return reply({ categories: quickCommands.length ? [{ name: 'User commands', pairs: quickCommands.map(n => [`/${n}`, 'exec: true']) }] : [], skills: {}, pairs: [], warning: catalogWarning })
       case 'session.context_breakdown':
         if (params.session_id === 'rt-s-full') return reply({ context_used: 850, context_max: 1000, context_percent: 85 })
         // Like Hermes before a reopened chat's first turn: no agent yet, so no figures
@@ -1355,10 +1366,25 @@ wss.on('connection', ws => {
         return reply({ task_id })
       }
       case 'slash.exec': {
-        // A quick command that is an alias (config quick_commands: {type: alias, target}): /evilalias0 .. 5 aim at /yolo in different spellings.
-        const m = /^evilalias(\d)/.exec(params.command || '')
+        // As the pinned Hermes answers (tools/hermes-contract): the slash worker runs the command, and resolves a quick
+        // command that is an alias itself, so the page only gets its output and never sees the target.
+        const cmd = params.command || ''
+        if (/^(bg|bgalias)\b/.test(cmd)) return reply({ output: 'Background task #1 started' })
+        if (/^contractalias\b/.test(cmd)) return reply({ output: 'Commands' })
+        // These stand for a worker that failed: only then does the page ask command.dispatch, which names the target.
+        if (/^(evilalias\d|bgdown|apdown|help down)\b/.test(cmd)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5030, message: 'slash worker failed' } }))
+        return reply({})
+      }
+      case 'command.dispatch': {
+        // quick_commands in config.yaml, {type: alias, target}: /evilalias0 .. 5 aim at /yolo in different spellings.
+        const name = String(params.name || '')
+        const evil = /^evilalias(\d)$/.exec(name)
         const targets = [' /yolo on', '//yolo on', '/YOLO on', '  //  /yolo', 'yolo on', ' /yolo']
-        return reply(m ? { type: 'alias', target: targets[Number(m[1])] } : {})
+        if (evil) return reply({ type: 'alias', target: targets[Number(evil[1])] })
+        if (name === 'bgdown' || name === 'bgalias') return reply({ type: 'alias', target: '/bg' })
+        if (name === 'apdown') return reply({ type: 'alias', target: '/approvals off' })
+        if (name === 'contractalias') return reply({ type: 'alias', target: '/help' })
+        return reply({})
       }
       default:
         return reply({})

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Checks the mock Hermes of the browser tests (tools/web-e2e/mock.cjs) against the real, pinned Hermes: starts the mock
 # on 127.0.0.1:9119 and the pinned Hermes (start-hermes.sh) on 127.0.0.1:${HM_CONTRACT_PORT:-9229}, then runs
-# contract.cjs. Needs git, uv, Node 22 and tools/web-e2e's node_modules (the mock uses `ws`) and python3 for the fake model
+# contract.cjs, after checking web/vendor/hermes-commands.json against the clone (hermes-commands.py --check). Needs git, uv, Node 22 and tools/web-e2e's node_modules (the mock uses `ws`) and python3 for the fake model
 # the Hermes talks to (fake-model.py). No real model or key is used.
 # Usage: tools/hermes-contract/run.sh [work dir]   (default: a new temp dir; pass one to reuse the clone and venv)
 set -euo pipefail
@@ -21,6 +21,9 @@ export HM_E2E_MOCK_PORT=${HM_E2E_MOCK_PORT:-9119}
 HM_E2E_LOG="$work/mock-calls.jsonl" node ../web-e2e/mock.cjs > "$work/mock.log" 2>&1 & MOCK=$!
 export HM_CONTRACT_KEY=contract-event-key
 ./start-hermes.sh "$work" "$port"
+# The app's copy of Hermes's command table (web/vendor/hermes-commands.json, which the lock screen and the background-task
+# rules read names by) must be the pinned Hermes's.
+python3 ../hermes-commands.py "$work/hermes-agent" --check
 kill -0 "$MOCK" || { echo "the mock didn't start:"; cat "$work/mock.log"; exit 1; }
 status=0
 HM_CONTRACT_NOTE="$work/note.txt" node contract.cjs "http://127.0.0.1:$HM_E2E_MOCK_PORT" "http://127.0.0.1:$port" || status=$?

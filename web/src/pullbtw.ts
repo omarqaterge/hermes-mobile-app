@@ -1,5 +1,6 @@
 import { haptic } from './bridge'
 import { openBtw, btwOpen } from './btw'
+import { lockView } from './lockview'
 import { getState } from './store'
 
 // Pull up past the last message of a chat: the list stretches like a rubber band, and a firm pull opens the
@@ -60,7 +61,7 @@ export function installPullToBtw(el: HTMLElement): () => void {
   const down = (e: TouchEvent) => {
     start = null
     const s = getState()
-    if (e.touches.length !== 1 || s.drawer || s.screen || s.sheet || btwOpen() || !s.active?.runtimeId) return
+    if (e.touches.length !== 1 || s.drawer || s.screen || s.sheet || btwOpen() || !s.active?.runtimeId || lockView()) return
     if (!atBottom(el)) return
     const t = e.target as Element | null
     if (!t || t.closest(SKIP)) return

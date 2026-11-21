@@ -19,7 +19,7 @@ Auto access Hermes's gate approves without asking; and a chat whose runtime id a
 call is no longer recognised.
 
 The chats that have read are remembered in memory and in ~/.hermes/mobile/phone-read.json (chat ids and times only,
-never data, at most MAX_CHATS, written atomically under a file lock; an id that has no room is never dropped: the file
+`since` holding when each chat this version recorded first read, never data, at most MAX_CHATS, written atomically under a file lock; an id that has no room is never dropped: the file
 gets a `full` flag and every chat counts as having read, as for a damaged file). A damaged file (not JSON, wrong shape)
 means every chat counts as having read, and is left as it is until someone deletes it; a missing file means nobody has.
 Nothing here logs a command, a result or a message.
@@ -27,6 +27,7 @@ Nothing here logs a command, a result or a message.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import os
@@ -47,7 +48,7 @@ MAX_DEPTH = 4     # nested `bash -c '...'` levels looked into
 _lock = threading.Lock()
 _mem: Dict[str, float] = {}
 _parents: Dict[str, str] = {}   # subagent stored id -> parent stored id (this process only)
-_cache: tuple = (None, {})   # ((mtime_ns, inode, size), {chat: time})
+_cache: tuple = (None, {}, {})   # ((mtime_ns, inode, size), {chat: time}, {chat: first read})
 
 
 def chat_ids(session_id: Any = "", task_id: Any = "") -> Tuple[str, ...]:
@@ -71,12 +72,12 @@ def chat_ids(session_id: Any = "", task_id: Any = "") -> Tuple[str, ...]:
 def _norm(ids: Any) -> List[str]:
     if isinstance(ids, str):
         ids = [ids]
-    out: List[str] = []
+    out: Dict[str, None] = {}
     for i in ids or ():
         i = str(i or "").strip()[:200]
-        if i and i not in out:
-            out.append(i)
-    return out
+        if i:
+            out[i] = None
+    return list(out)
 
 
 def _with_parents(ids: List[str]) -> List[str]:
@@ -95,39 +96,73 @@ def ancestors(ids: Any) -> List[str]:
     return _with_parents(_norm(ids))
 
 
-def _read_file() -> Optional[Dict[str, float]]:
-    """The saved chats; {} when there is no file; None when the file exists but is damaged (not JSON, no `chats` object,
-    a time that is not a number, unreadable): then every chat counts as having read (fail closed, as the fallback in
-    __init__.py does)."""
+def _read_state() -> Tuple[Optional[Dict[str, float]], Dict[str, float]]:
+    """The saved chats and, for those this version first recorded, when each first read (`since`). Chats: {} when there
+    is no file; None when the file exists but is damaged (not JSON, no `chats` object, a time that is not a number,
+    unreadable): then every chat counts as having read (fail closed, as the fallback in __init__.py does). A chat an
+    older version recorded has no `since`: its time there is its latest read, not its first, so it is never used."""
     try:
         text = PATH.read_text()
     except FileNotFoundError:
-        return {}
+        return {}, {}
     except Exception:
-        return None
+        return None, {}
     try:
         d = json.loads(text)
         if isinstance(d, dict) and d.get("full") is True:
-            return None   # an id had no room (MAX_CHATS): it may be a real chat, so every chat counts as having read
+            return None, {}   # an id had no room (MAX_CHATS): it may be a real chat, so every chat counts as having read
         raw = d.get("chats") if isinstance(d, dict) else None
-        return {str(k)[:200]: float(v) for k, v in raw.items()} if isinstance(raw, dict) else None
+        if not isinstance(raw, dict):
+            return None, {}
+        chats = {str(k)[:200]: float(v) for k, v in raw.items()}
     except Exception:
-        return None
+        return None, {}
+    since: Dict[str, float] = {}
+    rs = d.get("since")
+    if isinstance(rs, dict):
+        for k, v in rs.items():
+            k = str(k)[:200]
+            if k in chats and isinstance(v, (int, float)) and not isinstance(v, bool):
+                since[k] = float(v)
+    return chats, since
 
 
-def _file_chats() -> Optional[Dict[str, float]]:
-    """`_read_file`, cached until the file changes."""
+def _read_file() -> Optional[Dict[str, float]]:
+    return _read_state()[0]
+
+
+def _file_state() -> Tuple[Optional[Dict[str, float]], Dict[str, float]]:
+    """`_read_state`, cached until the file changes."""
     global _cache
     try:
         s = PATH.stat()
         st = (s.st_mtime_ns, s.st_ino, s.st_size)
     except OSError:
-        return {}
+        return {}, {}
     if _cache[0] == st:
-        return _cache[1]
-    chats = _read_file()
-    _cache = (st, chats)
-    return chats
+        return _cache[1], _cache[2]
+    chats, since = _read_state()
+    _cache = (st, chats, since)
+    return chats, since
+
+
+def _file_chats() -> Optional[Dict[str, float]]:
+    return _file_state()[0]
+
+
+def read_since(chat: Any) -> Optional[float]:
+    """When this chat first read phone data, as far as it is known; None when it isn't (an older version's entry, a damaged
+    file, a chat that hasn't read). A caller comparing times takes None as the safe answer."""
+    i = str(chat or "").strip()[:200]
+    if not i:
+        return None
+    with _lock:
+        chats, since = _file_state()
+        if chats is None:
+            return None
+        if i in chats:
+            return since.get(i)
+        return _mem.get(i)
 
 
 def has_read(ids: Any) -> bool:
@@ -140,6 +175,13 @@ def has_read(ids: Any) -> bool:
         if known is None:
             return True
         return any(i in _mem or i in known for i in ids)
+
+
+def any_read() -> bool:
+    """Has any chat read phone data (or is the record damaged)? When not, nothing about a chat's history matters."""
+    with _lock:
+        known = _file_chats()
+        return known is None or bool(_mem) or bool(known)
 
 
 @contextlib.contextmanager
@@ -172,23 +214,27 @@ def mark(ids: Any) -> None:
         with _lock:
             now = time.time()
             for i in ids:
-                _mem.pop(i, None)
-                _mem[i] = now
+                _mem[i] = _mem.pop(i, now)   # keeps the first time this process saw it read; newest last
             while len(_mem) > MAX_CHATS:
                 _mem.pop(next(iter(_mem)))
             try:
                 with _file_lock():
-                    chats = _read_file()   # read again inside the lock: another process may have added entries
+                    chats, since = _read_state()   # read again inside the lock: another process may have added entries
                     if chats is None:
                         return   # a damaged file stays as it is (every chat counts as read); delete it to start over
                     full = len(chats) + len([i for i in ids if i not in chats]) > MAX_CHATS
                     if not full:
                         for i in ids:
+                            if i not in chats:
+                                since[i] = now   # recorded now for the first time: when it first read
                             chats[i] = now
                     PATH.parent.mkdir(parents=True, exist_ok=True)
                     tmp = PATH.with_name(PATH.name + f".{os.getpid()}.tmp")
                     # no room: never drop an old chat. The file's own `full` flag makes every chat count as having read
-                    tmp.write_text(json.dumps({"chats": chats, "full": True} if full else {"chats": chats}))
+                    body: Dict[str, Any] = {"chats": chats, "since": {k: v for k, v in since.items() if k in chats}}
+                    if full:
+                        body["full"] = True
+                    tmp.write_text(json.dumps(body))
                     tmp.replace(PATH)
             except Exception:
                 pass   # the in-memory entry still holds for this process
@@ -248,7 +294,20 @@ _NET_WORDS = frozenset((
     "termux-sms-send termux-share termux-open termux-open-url termux-telephony-call xdg-open "
     "yt-dlp youtube-dl you-get gallery-dl gdown aria2 axel mosh autossh sshpass adb "
     "torsocks tsocks proxychains proxychains4").split())
-_SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish".split())
+# `rish` is Shizuku's shell wrapper on the phone (`rish -c '...'` runs the text as the shell user): read like a shell.
+_SHELLS = frozenset("sh bash zsh dash ash ksh csh tcsh fish rish".split())
+# Hermes itself: its programs and its modules start an agent, a gateway or a scheduled job, or change what Hermes does, so
+# they can send whatever the chat holds. `python -m hermes_cli.main`, `python3 ~/.hermes/hermes-agent/cli.py` count too.
+_HERMES_PROGS = frozenset(("hermes", "hermes-agent", "hermes-acp"))
+_HERMES_MODULES = frozenset(("hermes_cli", "tui_gateway", "gateway", "cron", "acp_adapter", "agent", "run_agent", "cli",
+                             "mcp_serve", "batch_runner", "model_tools", "tools", "plugins", "providers", "pm",
+                             "hermes_platform", "mini_swe_runner"))
+_HERMES_SCRIPT = re.compile(r"(?:^|/)(?:hermes-agent|hermes_cli|tui_gateway|acp_adapter)/|(?:^|/)hermes[^/]*/(?:cli|run_agent|"
+                            r"mcp_serve|batch_runner)\.py$")
+
+
+def _hermes_module(mod: str) -> bool:
+    return mod.split(".", 1)[0] in _HERMES_MODULES
 _INTERP = re.compile(r"^(?:python[0-9.]*|pypy3?|node(?:js)?|deno|bun|perl|ruby|php|lua|luajit|tclsh|osascript|Rscript)$")
 _ONELINER = re.compile(r"^(?:-[a-zA-Z]*[ceEr]|-p[ne]?|--eval|--exec|--print)$")   # -c -e -E -r -pe -ne --eval ...
 _NET_MODULES = ("http.server", "http.client", "SimpleHTTPServer", "smtpd", "smtplib", "ftplib", "telnetlib", "poplib",
@@ -934,6 +993,8 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
         return "command name chosen by a pattern"
     if base in _NET_WORDS:
         return f"network command {base}"
+    if base in _HERMES_PROGS:
+        return f"{base} (starts Hermes or an agent, or changes Hermes)"
     if base == "gh":
         sub = None
         j = 0
@@ -1049,8 +1110,12 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
                 mod = args[j + 1]
                 if mod == "pip":
                     return _pkg_match("pip", args[j + 2:], argd[j + 2:])
+                if _hermes_module(mod):
+                    return f"{base} -m {mod} (Hermes)"
                 return f"{base} -m {mod}" if mod.startswith(_NET_MODULES) else None
             if a.startswith("-m") and len(a) > 2:
+                if _hermes_module(a[2:]):
+                    return f"{base} {a} (Hermes)"
                 return f"{base} {a}" if a[2:].startswith(_NET_MODULES) else None
             if a.startswith(("--eval=", "--print=", "--exec=")):
                 return _oneliner(base, a.split("=", 1)[0], a.split("=", 1)[1], argd[j])
@@ -1064,6 +1129,8 @@ def _match_cmd(cmd: _Cmd, whole: str, depth: int) -> Optional[str]:
             if _inline_script(a) or (xa and a in repl):   # /dev/stdin, /proc/self/fd/0, <(...): code, not a local file
                 return _fed_code(base, body, piped) if body and not piped and _PROCSUB not in a \
                     else f"{base} running code from input"
+            if _HERMES_SCRIPT.search(a):
+                return f"{base} running Hermes ({_base(a)})"
             return None   # a script file: its contents are not looked at
         return _fed_code(base, body, piped) if fed else None
     if base in ("sqlite3", "sqlite"):
@@ -1148,7 +1215,10 @@ _RE_NETCODE = re.compile(
     r"|require\(\s*['\"`](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process|cluster|worker_threads)"
     r"|\bimport\s*\(\s*(?:['\"`](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process|cluster|worker_threads)|[^'\"`\s)])"
     r"|\bfrom\s+['\"](?:node:)?(?:https?|http2|net|tls|dgram|dns|child_process)['\"]|https?\.(?:get|request)"
-    r"|\burlretrieve|\bcurl_exec|\bstream_socket_client|\bSoapClient|\bget_headers\b",
+    r"|\burlretrieve|\bcurl_exec|\bstream_socket_client|\bSoapClient|\bget_headers\b"
+    # Hermes's own code: it starts agents and jobs (`import hermes_cli.main`, `from cron.jobs import ...`)
+    r"|\b(?:hermes_cli|tui_gateway|run_agent|acp_adapter|mcp_serve|batch_runner)\b"
+    r"|\bfrom\s+(?:gateway|cron|agent)(?:\.\w+)*\s+import\b|\bimport\s+(?:gateway|cron)\b",
     re.I)
 # A call that reads from a web address: PHP `fopen("http://...")`, pandas `read_csv("https://...")`, `urlopen(...)`, `imread(...)`.
 _RE_URLREAD = re.compile(
@@ -1197,14 +1267,59 @@ _QUIET = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "openui_r
                     "tool_search", "tool_describe"})
 
 
+_BRIDGE = frozenset(("tool_call", "tool_search", "tool_describe"))
+
+
+def tool_call_entries(args: Any) -> Optional[List[Tuple[str, Dict[str, Any]]]]:
+    """The calls a `tool_call` (Hermes's Tool Search bridge) runs, read the way the pinned Hermes reads them
+    (tools/tool_search_validation.py normalize_tool_call_entries): `calls` as a list, one object or a JSON string of either;
+    with no `calls`, the old single shape (a top-level `name` and `arguments`); names with spaces around them trimmed;
+    `arguments` as an object, a JSON string of one, or nothing. None for a shape Hermes refuses (it then runs no tool)."""
+    if not isinstance(args, dict):
+        return None
+    raw = args.get("calls")
+    if raw is None:
+        if not str(args.get("name") or "").strip():
+            return None
+        raw = [{"name": args.get("name"), "arguments": args.get("arguments")}]
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list) or not raw:
+        return None
+    out = []
+    for c in raw:
+        if not isinstance(c, dict):
+            return None
+        name = str(c.get("name") or "").strip()
+        if not name or name in _BRIDGE:
+            return None
+        inner = c.get("arguments")
+        if inner is None or (isinstance(inner, str) and not inner.strip()):
+            inner = {}
+        if isinstance(inner, str):
+            try:
+                inner = json.loads(inner)
+            except ValueError:
+                return None
+        if not isinstance(inner, dict):
+            return None
+        out.append((name, inner))
+    return out
+
+
 def _calls(tool_name: Any, args: Any) -> Iterator[Tuple[str, Dict[str, Any]]]:
-    """The tool calls inside one call: Hermes's Tool Search bridge (`tool_call`) can carry several."""
-    if tool_name == "tool_call" and isinstance(args, dict) and isinstance(args.get("calls"), list):
-        for c in args["calls"]:
-            if isinstance(c, dict) and c.get("name"):
-                inner = c.get("arguments")
-                yield str(c["name"]), inner if isinstance(inner, dict) else {}
-        return
+    """The tool calls inside one call: Hermes's Tool Search bridge (`tool_call`) can carry several (`tool_call_entries`).
+    A `tool_call` whose shape can't be read stays one call named `tool_call`, which asks (fails closed)."""
+    if tool_name == "tool_call":
+        entries = tool_call_entries(args)
+        if entries is not None:
+            yield from entries
+            return
     yield str(tool_name or ""), args if isinstance(args, dict) else {}
 
 
@@ -1247,16 +1362,24 @@ def _saved_text(a: Dict[str, Any]) -> str:
 
 
 def classify(name: str, a: Dict[str, Any]) -> Optional[Tuple[str, str, str]]:
-    """None when the call sends nothing out, else (tool name, what to show the user, the pattern that matched)."""
+    """None when the call sends nothing out, else (tool name, what to show the user, the pattern that matched). A file
+    written where it changes what Hermes, this app or a shell runs (`guarded_place`) asks too: what is written there could
+    send the data out later, from a run nobody is asked about."""
+    if name in ("write_file", "patch"):
+        for path in _written_paths(name, a):
+            where = guarded_place(path)
+            if where:
+                return name, str(path or "(no file named)"), f"{name} into {where}"
+        return None
     if name in _QUIET:
         return None
     if name == "terminal":
         cmd = _first_text(a, "command", "code")
-        why = command_match(cmd)
+        why = command_match(cmd) or terminal_guarded(cmd)
         return (name, cmd, why) if why else None
     if name == "execute_code":
         code = _first_text(a, "code", "command")
-        why = code_match(code)
+        why = code_match(code) or code_guarded(code)
         return (name, code, why) if why else None
     if name == "process_manage":
         act = str(a.get("action") or "")
@@ -1296,9 +1419,348 @@ def ask_text(name: str, shown: str, why: str = "") -> str:
         return ("This chat has read data from your phone, and the agent wants to save text where other chats can read it, "
                 "which would carry phone data into them. Allow only if the text holds nothing from your phone. "
                 f"{tag}It would save: {s or name}")
+    if name in ("write_file", "patch"):
+        return ("This chat has read data from your phone, and the agent wants to change a file that Hermes, this app or "
+                "your shell runs from, which could send that data out later without asking you. Allow only if you asked "
+                f"for it. {tag}It would write: {s}")
     what = f"the tool {name}" if not s else (f"the command: {s}" if name == "terminal" else f"{name}: {s}")
     return ("This chat has read data from your phone, and the agent wants to run something that can send data out. "
             f"Allow only if you asked for it. {tag}It would run {what}")
+
+
+# ── files that change what Hermes, this app or a shell runs ──
+def _hermes_roots() -> List[Path]:
+    """The folders of Hermes and this app: ~/.hermes (every profile is under it), HERMES_HOME, ~/.hermes-mobile."""
+    roots = [Path.home() / ".hermes", Path.home() / ".hermes-mobile"]
+    env = os.environ.get("HERMES_HOME", "")
+    if env:
+        roots.append(Path(env))
+    try:
+        from hermes_constants import get_hermes_home
+        roots.append(Path(get_hermes_home()))
+    except Exception:
+        pass
+    out: List[Path] = []
+    for r in roots:
+        try:
+            out.append(Path(os.path.realpath(os.path.expanduser(str(r)))))
+        except Exception:
+            pass
+    return out
+
+
+def _under_hermes(path: Any) -> bool:
+    """Whether a path a tool would write is in Hermes's or this app's folders. Fails closed (an unreadable path: yes).
+    A relative path is taken from the terminal's folder, as Hermes's file tools take it; links are followed."""
+    if not isinstance(path, str) or not path.strip():
+        return True
+    try:
+        p = os.path.expanduser(path.strip())
+        if not os.path.isabs(p):
+            p = os.path.join(os.environ.get("TERMINAL_CWD") or os.getcwd(), p)
+        real = Path(os.path.realpath(p))
+        return any(real == r or real.is_relative_to(r) for r in _hermes_roots())
+    except Exception:
+        return True
+
+
+_V4A_PATH = re.compile(r"^\*\*\*\s*(?:Update|Add|Delete) File:\s*(.+?)\s*$|^\*\*\*\s*Move to:\s*(.+?)\s*$", re.M)
+
+
+def _written_paths(name: str, a: Dict[str, Any]) -> List[Any]:
+    """The paths write_file or patch would write; a V4A patch names its files in its own headers."""
+    if name == "patch" and str(a.get("mode") or "replace") == "patch":
+        text = a.get("patch") if isinstance(a.get("patch"), str) else ""
+        found = [m.group(1) or m.group(2) for m in _V4A_PATH.finditer(text)]
+        return found or [None]   # a patch whose files can't be told: fails closed
+    return [a.get("path")]
+
+
+# Shell start-up files and other files a program reads its settings from at start, by name, wherever they are: what is
+# written there runs later without a question.
+_STARTUP = frozenset((".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zshenv", ".zprofile",
+                      ".zlogin", ".zlogout", ".kshrc", ".mkshrc", ".cshrc", ".tcshrc", ".login", ".logout", ".inputrc", ".envrc",
+                      "bash.bashrc", "config.fish", ".gitconfig", ".vimrc", ".exrc", "sitecustomize.py", "usercustomize.py"))
+# Whole folders whose files run later: in the home folder, and by name wherever they are (a folder of programs, settings,
+# Python's packages, the `*.d` folders shells and services read every file of).
+_HOME_DIRS = (".termux", ".shortcuts", ".config/fish", ".config/environment.d", ".config/autostart", ".config/systemd",
+              ".config/git", ".config/nvim", ".vim", ".oh-my-zsh", ".bashrc.d", ".zshrc.d", ".profile.d")
+_DIR_NAMES = frozenset(("bin", "sbin", "etc", "site-packages", "dist-packages", "conf.d", "profile.d", "bashrc.d", "zshrc.d"))
+# The same places by words in a command or a script, read or written: Hermes's and this app's folders, the folders and
+# files above.
+_GUARDED_TEXT = re.compile(r"\.hermes|hermes[-_]agent|hermes_home|/etc\b|(?:^|[\s/'\"=:])(?:s?bin|\.local/bin)(?:/|$|[\s'\"])|"
+                           + "|".join(re.escape(n) for n in sorted(_STARTUP | set(_HOME_DIRS) | (_DIR_NAMES - {"bin", "sbin", "etc"}))),
+                           re.I)
+# A word whose file is known only when the line runs: a variable, a substitution, a glob, a brace list.
+_RUNTIME = re.compile(r"[$`*?\x00\x01]|\[[^\]]*\]|\{[^{}]*(?:,|\.\.)[^{}]*\}")
+_NULL_REDIRECT = frozenset((">/dev/null", "1>/dev/null", "2>/dev/null", "&>/dev/null", "2>&1", ">&2", "1>&2"))
+# Commands that only read or print, whatever they are given (no option of theirs writes a file).
+_READERS = frozenset("ls cat grep egrep fgrep rg head tail wc echo printf pwd stat du df cut tr nl whoami id uname which type "
+                     "test [ [[ true false ps free uptime cd pushd popd basename dirname realpath readlink seq date file cmp".split())
+
+
+def guarded_place(path: Any) -> Optional[str]:
+    """Where a file a tool would write sits, when what is written there changes what Hermes, this app or a shell runs
+    later: Hermes's or this app's folders (config, skills, plugins, the record of chats that have read), a shell start-up
+    file (`_STARTUP`), a whole folder whose files run later (`_HOME_DIRS` in the home folder: Termux's, fish's `conf.d`...;
+    `_DIR_NAMES` anywhere: `bin`, `etc`, `site-packages`, `conf.d`...), a folder on PATH. None for any other file. Fails
+    closed: a path that can't be read counts as Hermes's folders."""
+    if _under_hermes(path):
+        return "Hermes's or this app's folders"
+    try:
+        p = os.path.expanduser(str(path).strip())
+        if not os.path.isabs(p):
+            p = os.path.join(os.environ.get("TERMINAL_CWD") or os.getcwd(), p)
+        real = Path(os.path.realpath(p))
+        parts = set(Path(p).parts) | set(real.parts)
+        if real.name in _STARTUP or parts & _STARTUP:
+            return "a shell start-up file"
+        home = Path(os.path.realpath(os.path.expanduser("~")))
+        if any(real.is_relative_to(home / d) for d in _HOME_DIRS) or real.is_relative_to(Path(os.path.realpath("/etc"))) \
+                or "etc" in parts:
+            return "Termux's or the system's settings"
+        on_path = {os.path.realpath(x) for x in (os.environ.get("PATH") or "").split(os.pathsep) if x}
+        if parts & _DIR_NAMES or str(real.parent) in on_path or str(real) in on_path:
+            return "a folder of programs"
+    except Exception:
+        return "Hermes's or this app's folders"
+    return None
+
+
+def terminal_guarded(text: Any) -> Optional[str]:
+    """Why a shell command of a chat that has read asks before it runs, so that it can't change a place `guarded_place`
+    names; None otherwise. It asks when its text names such a place anywhere, whatever the command (reads too); when it
+    may write (a redirection into a file, or any command not in `_READERS`) and a word of the line is known only at run
+    time (`_RUNTIME`); when it writes in a working folder that is such a place; and when it runs an interpreter and the
+    line holds code that writes or deletes files (`_CODE_WORDS`)."""
+    t = text if isinstance(text, str) else ""
+    if len(t) > MAX_SCAN:
+        return "a command too long to read"
+    named = "a command that names Hermes's folders, a shell start-up file or a folder of programs"
+    if _GUARDED_TEXT.search(t):
+        return named
+    writes = runtime = interp = False
+    for w, d, _piped, body in _parse(t):
+        k = 0
+        while k < len(w) and _ASSIGN.match(w[k]):
+            k += 1
+        if k < len(w) and (d[k] or _base(w[k]) not in _READERS):
+            writes = True
+        if body:
+            writes = True
+        for a, dyn in zip(w, d):
+            if _GUARDED_TEXT.search(a) or ("/" in a and not dyn and guarded_place(a)):
+                return named
+            if dyn or _RUNTIME.search(a):
+                runtime = True
+            if ">" in a and a not in _NULL_REDIRECT:
+                writes = True
+            if _INTERP.match(_base(a)):
+                interp = True
+    if writes and runtime:
+        return "a command that writes, deletes or redirects to a file named at run time"
+    if writes and guarded_place(os.path.join(os.environ.get("TERMINAL_CWD") or os.getcwd(), "x")):
+        return "a command that writes in Hermes's folders, a shell start-up file's folder or a folder of programs"
+    if interp and _CODE_WORDS.search(t):
+        return "code that writes or deletes files, run from the terminal"
+    return None
+
+
+# Words of code that writes or deletes files, or reaches such a function by a name built at run time (any language: what
+# a script or a one-liner is read by when it isn't Python).
+_CODE_WORDS = re.compile(r"\b(?:open\w*|write\w*|append\w*|remove\w*|unlink\w*|rm\w*|rename\w*|replace|move\w*|copy\w*|"
+                         r"mkdir\w*|makedirs|chmod\w*|chown\w*|symlink\w*|link\w*|truncate\w*|touch|utime\w*|mkfifo|mknod|"
+                         r"extract\w*|getattr|setattr|__dict__|vars|globals|locals|builtins|__builtins__)\b")
+# In Python: functions of these modules that write or delete files (os's, shutil's), the methods of a path that do, and
+# the names that reach a function by text.
+_OS_WRITES = frozenset("remove unlink rmdir removedirs rename renames replace makedirs mkdir chmod lchmod chown lchown "
+                       "symlink link truncate utime mkfifo mknod open".split())
+_SHUTIL_READS = frozenset(("which", "disk_usage", "get_terminal_size", "get_archive_formats", "get_unpack_formats"))
+_PATH_WRITES = frozenset("write_text write_bytes unlink touch mkdir rmdir chmod lchmod symlink_to hardlink_to link_to "
+                         "rename replace open".split())
+_PATH_ONLY = frozenset(("rename", "replace", "open"))   # also a method of a text or another object: counts on a path only
+_REACH = frozenset(("getattr", "setattr", "delattr", "vars", "globals", "locals", "__builtins__", "builtins", "__dict__",
+                    "modules"))
+_FILE_MODULES = frozenset(("os", "posix", "nt", "shutil", "io", "codecs", "pathlib", "builtins"))
+
+
+def _literal_ok(node: Any) -> bool:
+    """A plain text naming a file outside the guarded places."""
+    return isinstance(node, ast.Constant) and isinstance(node.value, str) and not guarded_place(node.value)
+
+
+def _py_unclear_write(code: str) -> Optional[bool]:
+    """Whether Python code writes or deletes a file the reader can't name before it runs (a target that isn't a plain text,
+    or a function reached by a name built at run time). None when the code isn't Python."""
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None
+    mods: Dict[str, str] = {}                  # a name bound to a file module: name -> module
+    funcs: Dict[str, Tuple[str, str]] = {"open": ("builtins", "open")}   # a name bound to a function: (module, its name)
+    classes = {"Path", "PurePath", "PosixPath", "WindowsPath"}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for al in n.names:
+                top = al.name.split(".")[0]
+                if top in _FILE_MODULES:
+                    mods[al.asname or top] = top
+        elif isinstance(n, ast.ImportFrom) and (n.module or "").split(".")[0] in _FILE_MODULES:
+            top = (n.module or "").split(".")[0]
+            for al in n.names:
+                if al.name == "*":
+                    return True
+                if top == "pathlib":
+                    classes.add(al.asname or al.name)
+                else:
+                    funcs[al.asname or al.name] = (top, al.name)
+
+    def writer(mod: str, name: str) -> bool:
+        return (mod in ("os", "posix", "nt") and name in _OS_WRITES) or (mod == "shutil" and name not in _SHUTIL_READS)
+
+    def write_mode(call: Any, pos: int) -> bool:
+        mode = call.args[pos] if len(call.args) > pos else next((k.value for k in call.keywords if k.arg == "mode"), None)
+        if mode is None:
+            return False
+        return not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)) or bool(set(mode.value) & set("wax+"))
+
+    def is_path(node: Any) -> bool:
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Name) and f.id in classes:
+                return True
+            if isinstance(f, ast.Attribute):
+                return f.attr in classes or f.attr in ("home", "cwd", "joinpath", "with_name", "with_suffix", "with_stem",
+                                                       "expanduser", "resolve", "absolute") or is_path(f.value)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return True
+        if isinstance(node, ast.Attribute) and node.attr in ("parent", "parents"):
+            return True
+        return False
+
+    def path_literal(node: Any) -> bool:
+        f = node.func if isinstance(node, ast.Call) else None
+        return (isinstance(f, ast.Name) and f.id in classes or isinstance(f, ast.Attribute) and f.attr in classes) \
+            and len(node.args) == 1 and not node.keywords and _literal_ok(node.args[0])
+
+    called = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and n.id in _REACH:
+            return True
+        if isinstance(n, ast.Attribute) and n.attr in _REACH:
+            return True
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        called.add(id(f))
+        targets: Optional[List[Any]] = None
+        if isinstance(f, ast.Name) and f.id in funcs:
+            mod, orig = funcs[f.id]
+            if orig == "open" and mod in ("builtins", "io", "codecs"):
+                if not write_mode(n, 1):
+                    continue
+                targets = list(n.args[:1])
+            elif writer(mod, orig):
+                targets = list(n.args[:2])
+        elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in mods:
+            mod = mods[f.value.id]
+            if writer(mod, f.attr):
+                targets = list(n.args[:2])
+            elif mod in ("io", "codecs", "builtins") and f.attr in ("open", "FileIO"):
+                if not write_mode(n, 1):
+                    continue
+                targets = list(n.args[:1])
+            elif mod == "pathlib" and f.attr in _PATH_WRITES:
+                return True   # Path.unlink(p): the path comes as an argument
+        elif isinstance(f, ast.Attribute) and f.attr in _PATH_WRITES:
+            recv = f.value
+            if isinstance(recv, ast.Constant):
+                continue   # a text's own method ("a".replace)
+            if f.attr in _PATH_ONLY and not is_path(recv):
+                continue   # another object's rename/replace/open
+            if f.attr == "open" and not write_mode(n, 0):
+                continue
+            if not path_literal(recv):
+                return True
+            continue
+        elif isinstance(f, ast.Attribute) and f.attr in ("extractall", "extract"):
+            return True
+        if targets is None:
+            continue
+        if any(isinstance(a, ast.Starred) for a in n.args) or any(k.arg is None for k in n.keywords):
+            return True
+        others = [k.value for k in n.keywords if k.arg not in ("mode", "encoding", "errors", "newline", "buffering",
+                                                               "exist_ok", "parents", "follow_symlinks", "closefd")]
+        if not targets and not others:
+            return True
+        if not all(_literal_ok(a) for a in targets + others):
+            return True
+    # A file function or module named but not called here (passed on, or kept under another name) writes where nobody
+    # can tell.
+    bases = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in mods and id(n) not in bases:
+            return True
+        if id(n) in called:
+            continue
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in funcs and (
+                funcs[n.id][1] == "open" or writer(*funcs[n.id])):
+            return True
+        if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id in mods and (
+                writer(mods[n.value.id], n.attr) or n.attr == "open"):
+            return True
+    return False
+
+
+def code_guarded(code: Any) -> Optional[str]:
+    """The same for a script given to execute_code: it asks when the code names such a place anywhere (reads too), and when
+    it writes or deletes a file it doesn't name by a plain text outside them (`_py_unclear_write`; code that isn't Python
+    asks when it holds any word of `_CODE_WORDS`)."""
+    c = code if isinstance(code, str) else ""
+    if len(c) > MAX_SCAN:
+        return "a script too long to read"
+    if _GUARDED_TEXT.search(c):
+        return "code that names Hermes's folders, a shell start-up file or a folder of programs"
+    try:
+        unclear = _py_unclear_write(c)
+    except Exception:
+        unclear = True
+    if unclear or (unclear is None and _CODE_WORDS.search(c)):
+        return "code that writes or deletes a file named at run time"
+    return None
+
+
+# ── an agent nobody can be asked about (a background task, a scheduled run) of a chat that has read ──
+# THE ALLOWLIST for such a task: tools that only read and change nothing. Everything else is blocked, whatever it is,
+# because there is nobody to ask: no terminal and no code at all (a terminal that looked like it only read still started
+# `rish`, a new `hermes` or a script the task wrote), no phone_app, no file written anywhere, nothing sent. The fallback
+# in __init__ (`_DETACHED_READ_TOOLS`) is the same list; a test keeps the two equal.
+_DETACHED_OK = frozenset({"find_chats", "openui_reference", "clarify", "todo", "todo_list", "read_file", "search_files",
+                          "skill_view", "skills_list", "session_search", "tool_search", "tool_describe"})
+
+
+def detached_block(name: str, a: Dict[str, Any]) -> Optional[str]:
+    """Why one tool call of such a task is blocked, or None for a tool of `_DETACHED_OK`."""
+    if name in _DETACHED_OK:
+        return None
+    return f"{name or 'a tool'} (such a task may only use tools that read)"
+
+
+def check_detached(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:
+    """For an agent nobody can be asked about: a background task or a scheduled run. `ids` are its own and those of the chat
+    that started it. If one of them has read phone data, what `detached_block` names is blocked, at every call, so a read
+    made after the task started counts too. Marks nothing: the task's own reads are its own."""
+    ids = _norm(ids)
+    if not has_read(ids):
+        return None
+    for name, a in _calls(tool_name, args):
+        why = detached_block(name, a)
+        if why is not None:
+            return {"action": "block", "message": (
+                f"BLOCKED: {why}. This background task belongs to a chat that has read data from your phone, and nobody "
+                "can be asked here, so it may only use tools that read: no terminal, no code, no phone app, nothing "
+                "written, nothing sent out. Do the rest without that, or tell the user.")}
+    return None
 
 
 def check(tool_name: Any, args: Any, ids: Any) -> Optional[dict]:

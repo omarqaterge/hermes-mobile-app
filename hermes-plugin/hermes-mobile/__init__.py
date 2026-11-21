@@ -26,6 +26,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -712,11 +713,13 @@ def _short(v, n=70) -> str:
 def _peel_bridge(tool_name, args):
     """Hermes's Tool Search bridge: the model calls deferred tools through ``tool_call`` (and looks them up with
     ``tool_search`` / ``tool_describe``). The status shows the tool underneath, like Hermes's own hooks do."""
-    if tool_name == "tool_call" and isinstance(args, dict) and isinstance(args.get("calls"), list):
-        calls = [c for c in args["calls"] if isinstance(c, dict) and c.get("name")]
+    if tool_name == "tool_call":
+        try:
+            calls = _phone_taint().tool_call_entries(args) or []
+        except Exception:
+            calls = []
         if len(calls) == 1:
-            inner = calls[0].get("arguments")
-            return str(calls[0]["name"]), inner if isinstance(inner, dict) else {}
+            return calls[0]
         if calls:
             return "tool_call", {"name": f"{len(calls)} tools"}
     return tool_name, args
@@ -934,8 +937,84 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
     return None  # observe only
 
 
+_RESULT_SESSION = re.compile(r'\\*"session_id\\*"\s*:\s*\\*"([^"\\]{1,200})')
+_RESULT_ID = re.compile(r'\\*"id\\*"\s*:\s*\\*"([^"\\]{1,200})')
+# find_chats writes each chat as {"id": ..., "profile": ...}: the profile its database is in
+_RESULT_ID_PROFILE = re.compile(r'\\*"id\\*"\s*:\s*\\*"([^"\\]{1,200})\\*"\s*,\s*\\*"profile\\*"\s*:\s*\\*"([^"\\]{1,100})')
+# A result that holds no chat's messages: a failure, or session_search listing recent chats by title (mode "browse")
+_RESULT_FAILED = re.compile(r'^\s*\{\s*"(?:error"\s*:|(?:success|ok)"\s*:\s*false\b)')
+_RESULT_BROWSE = re.compile(r'^\s*\{\s*"success"\s*:\s*true\s*,\s*"mode"\s*:\s*"browse"')
+_RESULT_SCAN = 2_000_000   # characters of a result looked through
+_CHATS_NAMED = 50          # chats of one result whose origin is looked up in a database (every one is checked in the record)
+
+
+def _chats_read_by(tool_name, args, result, status=None) -> dict:
+    """The chats whose messages this tool call just returned, each with the profile it was found in ('' = this agent's):
+    `session_search`'s results, `find_chats` when it searched for words (its snippets are their text). Read from the text,
+    so a cut-off result still counts. Nothing for a call that failed, or for session_search's `browse` mode, which lists
+    titles of recent chats and no messages; through the Tool Search bridge the result's shape can't be told, so it
+    counts."""
+    out: dict = {}
+    if status in ("error", "blocked"):
+        return out
+    text = result if isinstance(result, str) else json.dumps(result, default=str)
+    text = text[:_RESULT_SCAN]
+    single = tool_name != "tool_call"
+    if single and (_RESULT_FAILED.match(text) or (tool_name == "session_search" and _RESULT_BROWSE.match(text))):
+        return out
+    for name, a in _phone_taint()._calls(tool_name, args):
+        if name == "session_search":
+            prof = a.get("profile") if isinstance(a.get("profile"), str) else ""
+            for c in _RESULT_SESSION.findall(text):
+                out.setdefault(c, prof)
+            if isinstance(a.get("session_id"), str):
+                out.setdefault(a["session_id"], prof)
+        elif name == "find_chats" and a.get("text"):
+            for c, prof in _RESULT_ID_PROFILE.findall(text):
+                out.setdefault(c, prof)
+            for c in _RESULT_ID.findall(text):
+                out.setdefault(c, "")
+    return out
+
+
+def _result_cut(tool_name, args, result, status=None) -> bool:
+    """Whether a call that returns chats' messages returned more text than `_chats_read_by` looks through."""
+    if status in ("error", "blocked") or not any(n == "session_search" or (n == "find_chats" and a.get("text"))
+                                                  for n, a in _phone_taint()._calls(tool_name, args)):
+        return False
+    text = result if isinstance(result, str) else json.dumps(result, default=str)
+    if tool_name != "tool_call" and (_RESULT_FAILED.match(text) or (tool_name == "session_search" and _RESULT_BROWSE.match(text))):
+        return False   # as _chats_read_by: no chat's messages in it
+    return len(text) > _RESULT_SCAN
+
+
+def _taint_from_reading(tool_name, args, result, session_id, task_id, status=None) -> None:
+    """A chat that reads the messages of one that has read phone data now holds them too, so it counts as having read: it
+    is asked before sending anything out, and a background task is blocked. Every chat in the result is checked against
+    the record. When in doubt the reader is marked: a result longer than what is looked through, more chats than are
+    looked up in a database (`_CHATS_NAMED`, for chats made from another), or one whose origin can't be told yet
+    (`_inherit_read`). Costs nothing while no chat has read. Never raises."""
+    try:
+        pt = _phone_taint()
+        if not pt.any_read():
+            return
+        ids = list(pt.chat_ids(session_id, task_id))
+        found = {c: p for c, p in _chats_read_by(tool_name, args, result, status).items() if c not in ids}
+        cut = _result_cut(tool_name, args, result, status)
+        if not ids or not (found or cut):
+            return
+        known = _inherit_read(list(found)[:_CHATS_NAMED], found)
+        unsure = cut or len(found) > _CHATS_NAMED or not known
+        if (unsure or pt.has_read(list(found))) and not pt.has_read(ids):
+            pt.mark(ids)
+            _report_taint(ids)
+    except Exception:
+        pass
+
+
 def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, session_id=None, turn_id=None,
-                       tool_call_id=None, **_):
+                       tool_call_id=None, task_id=None, **_):
+    _taint_from_reading(tool_name, args, result, session_id, task_id, status)
     tool_name, args = _peel_bridge(tool_name, args)
     if tool_name in ("write_file", "patch"):
         try:
@@ -1202,6 +1281,11 @@ def _phone_taint():
 _LOCAL_TOOLS = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "openui_reference", "clarify", "todo",
                           "todo_list", "read_file", "write_file", "patch", "search_files", "skill_view", "skills_list",
                           "session_search", "tool_search", "tool_describe"})
+# What a background task of a chat that has read may use: tools that only read (the same names as phone_taint._DETACHED_OK;
+# a test keeps the two equal). Used only when phone_taint.py cannot load.
+_DETACHED_READ_TOOLS = frozenset({"find_chats", "openui_reference", "clarify", "todo", "todo_list", "read_file",
+                                  "search_files", "skill_view", "skills_list", "session_search", "tool_search",
+                                  "tool_describe"})
 _READ_CHATS: set = set()   # chat ids that called phone_data in this process, kept even if phone_taint.py cannot load
 _READ_FILE = Path.home() / ".hermes" / "mobile" / "phone-read.json"   # phone_taint.PATH, read directly by the fallback
 
@@ -1246,7 +1330,12 @@ def _fallback_save(ids) -> None:
                 for i in new:
                     chats[i] = now
             tmp = _READ_FILE.with_name(_READ_FILE.name + f".{os.getpid()}.fb.tmp")
-            tmp.write_text(json.dumps({"chats": chats, "full": True} if full else {"chats": chats}))
+            body = {"chats": chats}
+            if isinstance(raw.get("since"), dict):
+                body["since"] = raw["since"]   # kept as it was: these ids' first read isn't known here, so they get none
+            if full:
+                body["full"] = True
+            tmp.write_text(json.dumps(body))
             tmp.replace(_READ_FILE)
         finally:
             if fd is not None:
@@ -1355,10 +1444,103 @@ def _on_session_start(session_id=None, **_):
     _taint_sync(session_id)
 
 
+_INHERIT_SEEN: set = set()   # (profile, stored id) already looked up (a chat's origin doesn't change)
+
+
+def _profile_db(profile: str):
+    """The state database of a profile named in a tool's result, or None for this agent's own."""
+    if not profile:
+        return None
+    try:
+        return _chat_search().profiles().get(profile)
+    except Exception:
+        return None
+
+
+def _made_after_read(origin, pt) -> bool:
+    """Whether a chat with this origin ([(parent, when the chat made from it was created), ...], nearest first) holds what
+    a chat that had read held: some parent on the way had read by the time the chat made from it was created. A time that
+    isn't known counts as yes."""
+    for parent, created in origin:
+        if not pt.has_read([parent]):
+            continue
+        since = pt.read_since(parent)
+        if since is None or created is None or since <= created:
+            return True
+    return False
+
+
+def _inherit_read(sids, profiles=None) -> bool:
+    """A chat made from one that has read phone data holds what that chat held: a branch copies its messages, and Hermes
+    announces no branch to a plugin. So the first time a chat is seen while any chat has read, the chats it came from are
+    looked up (in the profile a tool's result found it in, `profiles`), before the tool call it arrives with is judged. A
+    chat made before its parent read holds nothing of that read and is left alone (`_made_after_read`). Costs nothing
+    while no chat has read. Returns False when a chat's origin could not be told (not in its database yet, or the lookup
+    failed), True otherwise. Never raises."""
+    known = True
+    try:
+        pt = _phone_taint()
+        if not pt.any_read():
+            return True
+        for sid in sids:
+            sid = str(sid or "").strip()
+            prof = str((profiles or {}).get(sid) or "")
+            if not sid or (prof, sid) in _INHERIT_SEEN:
+                continue
+            origin = _phone_data().stored_origin(sid, db=_profile_db(prof))
+            if origin is None:
+                known = False
+                continue   # not known yet: the next call asks again
+            if len(_INHERIT_SEEN) > 2000:
+                _INHERIT_SEEN.clear()
+            _INHERIT_SEEN.add((prof, sid))
+            if origin and not pt.has_read([sid]) and _made_after_read(origin, pt):
+                pt.mark([sid])
+                _report_taint([sid])
+    except Exception:
+        return False
+    return known
+
+
+def _in_slash_worker() -> bool:
+    """This process is Hermes's slash worker (`python -m tui_gateway.slash_worker`), which runs /bg tasks for one chat."""
+    try:
+        return os.path.basename(sys.argv[0]) == "slash_worker.py"
+    except Exception:
+        return False
+
+
+def _stored_id_of(runtime: str) -> str:
+    """The stored id of a live chat of this process (the gateway keeps them; empty when it can't be told)."""
+    try:
+        live = getattr(sys.modules.get("tui_gateway.server"), "_sessions", None) or {}
+        key = (live.get(runtime) or {}).get("session_key")
+        return key if isinstance(key, str) else ""
+    except Exception:
+        return ""
+
+
+def _detached_from(session_id, task_id=""):
+    """None for an agent someone can be asked about. For one nobody can (a /bg task in the slash worker, a
+    `prompt.background` task, a scheduled run): the ids of the chat that started it, as far as they are known. The worker's
+    HERMES_SESSION_KEY is the chat's stored id, and is read only there: elsewhere the variable says nothing about the chat."""
+    sid = str(session_id or task_id or "")
+    if _in_slash_worker():
+        key = str(os.environ.get("HERMES_SESSION_KEY") or "").strip()
+        return [key[:200]] if key else []
+    if sid.startswith("cron_"):
+        return []
+    if sid.startswith("bg_"):
+        ui = _ui_session_id()
+        return [i for i in (ui, _stored_id_of(ui)) if i]
+    return None
+
+
 def _taint_directive(tool_name, args, session_id, task_id):
     """The pre_tool_call directive for a chat that has read phone data (an ask or a block), or None. Marks the chat on a
     phone_data call whatever its outcome. A chat is known by its runtime id and its stored id (phone_taint.chat_ids), so
-    a resume or a compression keeps it marked. Never logs a command; failing to load the check blocks sending tools there."""
+    a resume or a compression keeps it marked. A background task counts as the chat that started it, and nobody can be asked
+    there, so what would ask is blocked. Never logs a command; failing to load the check blocks sending tools there."""
     inner = []
     try:
         calls = _phone_taint()._calls
@@ -1380,11 +1562,17 @@ def _taint_directive(tool_name, args, session_id, task_id):
             _phone_taint().mark(ids)
         except Exception:
             pass
+    started_by = _detached_from(session_id, task_id)
+    scope = list(dict.fromkeys([*ids, *(started_by or [])]))
+    _inherit_read([session_id, *(started_by or [])])
     try:
+        if started_by is not None:
+            return _phone_taint().check_detached(tool_name, args, scope)
         return _phone_taint().check(tool_name, args, ids)
     except Exception:
         _event("plugin", "hook_failed", what="phone_taint")
-        if any(n not in _LOCAL_TOOLS for n in inner) and _read_before(ids):
+        allowed = _DETACHED_READ_TOOLS if started_by is not None else _LOCAL_TOOLS
+        if any(n not in allowed for n in inner) and _read_before(scope):
             return {"action": "block", "message": (
                 "BLOCKED: this chat has read phone data and Hermux's check for actions that send data out could not "
                 "run. Tell the user; they can start a new chat.")}

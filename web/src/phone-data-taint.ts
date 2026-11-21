@@ -23,8 +23,24 @@ export function isPhoneDataCall(it: ChatItem): boolean {
   if (it.kind !== 'tool') return false
   if (it.name === TOOL) return true
   if (it.name !== 'tool_call') return false
-  const calls = (it.args as { calls?: unknown } | null | undefined)?.calls
-  return Array.isArray(calls) && calls.some(c => (c as { name?: unknown } | null)?.name === TOOL)
+  return bridgedNames(it.args).includes(TOOL)
+}
+
+/** The tool names a `tool_call` runs, read as the pinned Hermes reads them (normalize_tool_call_entries): `calls` as a list,
+ *  one object or a JSON string of either; with no `calls`, a top-level `name`; each name with the spaces around it trimmed. */
+export function bridgedNames(args: unknown): string[] {
+  const a = args && typeof args === 'object' ? (args as { calls?: unknown; name?: unknown }) : {}
+  let calls: unknown = a.calls
+  if (calls == null) calls = [{ name: a.name }]
+  if (typeof calls === 'string') {
+    try {
+      calls = JSON.parse(calls)
+    } catch {
+      return []
+    }
+  }
+  const list = Array.isArray(calls) ? calls : calls && typeof calls === 'object' ? [calls] : []
+  return list.map(c => (c && typeof c === 'object' ? String((c as { name?: unknown }).name ?? '').trim() : '')).filter(Boolean)
 }
 
 const memo = new WeakMap<readonly ChatItem[], boolean>()
@@ -86,6 +102,32 @@ export function nativeTainted(id: string | null | undefined, strict = false): bo
     unknown.set(id, t)
   }
   return yes
+}
+
+export type ReadState = 'read' | 'clear' | 'unknown'
+
+/** A decision that must not fail open: has this chat read phone data? Asks the app's record about every id it has had, now,
+ *  with nothing remembered ('read' is final, so a yes needs no second look). 'unknown' when a shell is there and its record
+ *  can't answer. Without a shell (a browser) there is no record: only the chat's items can tell. */
+export function chatReadState(chat: { storedId: string; runtimeId: string; items: readonly ChatItem[] }): ReadState {
+  if (isTaintedItems(chat.items)) return 'read'
+  const b = remoteBridge()
+  if (!b) return 'clear'
+  if (typeof b.phoneDataTainted !== 'function') return 'unknown'
+  let unsure = false
+  for (const id of new Set([chat.storedId, chat.runtimeId].flatMap(i => [i, ...lineageOf(i)]))) {
+    try {
+      const yes = b.phoneDataTainted(id) as unknown
+      if (yes === true) {
+        known.add(id)
+        return 'read'
+      }
+      if (yes !== false) unsure = true
+    } catch {
+      unsure = true
+    }
+  }
+  return unsure ? 'unknown' : 'clear'
 }
 
 const taintedState = (s: AppState): boolean => isTaintedItems(shownItems(s)) || shownIds(s).some(id => nativeTainted(id))

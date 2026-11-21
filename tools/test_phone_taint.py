@@ -15,8 +15,14 @@ from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUG = os.path.join(HERE, "..", "hermes-plugin", "hermes-mobile")
+# A home of its own, set before the plugin is imported: its paths are computed at import (phone_taint.PATH, the activity file,
+# the state database), and the machine running the test may have a real Hermes whose HERMES_HOME and HERMES_* variables
+# would otherwise be used. Nothing outside `tmp` is read or written.
 tmp = Path(tempfile.mkdtemp())
+for _k in [k for k in os.environ if k.startswith("HERMES")]:
+    del os.environ[_k]
 os.environ["HOME"] = str(tmp)
+os.environ["HERMES_HOME"] = str(tmp / ".hermes")
 
 
 def load(name, fn):
@@ -28,6 +34,7 @@ def load(name, fn):
 
 
 pt = load("hm_phone_taint", "phone_taint.py")
+_PATH_AT_IMPORT = pt.PATH
 pt.PATH = tmp / "mobile" / "phone-read.json"
 init = load("hm_init", "__init__.py")
 fails = 0
@@ -55,6 +62,27 @@ def asks(tool, args, chat="c1"):
 def hook(tool, args, chat):
     return init._on_pre_tool_call(tool_name=tool, args=args, session_id=chat, turn_id="t", task_id="", tool_call_id="1")
 
+
+print("the test's own home")
+_pd_paths = load("hm_phone_data_paths", "phone_data.py")
+
+
+def _inside(p) -> bool:
+    try:
+        return Path(os.path.realpath(p)).is_relative_to(Path(os.path.realpath(tmp)))
+    except Exception:
+        return False
+
+
+_used = {"phone_taint.PATH": _PATH_AT_IMPORT, "__init__._READ_FILE": init._READ_FILE, "__init__.ACTIVITY_FILE": init.ACTIVITY_FILE,
+         "HOME": os.path.expanduser("~"), "HERMES_HOME": os.environ.get("HERMES_HOME", "")}
+try:
+    _used["phone_data._state_db()"] = _pd_paths._state_db()   # needs Hermes's hermes_constants; absent here is fine
+except ImportError:
+    pass
+_outside = {k: str(v) for k, v in _used.items() if not _inside(v)}
+check("every path the plugin uses resolves inside the temporary home", not _outside, _outside)
+check("no HERMES_* variable from the machine is left", sorted(k for k in os.environ if k.startswith("HERMES")) == ["HERMES_HOME"])
 
 print("commands that can send data out ask in a chat that has read")
 reset()
@@ -99,7 +127,7 @@ QUIET = [
     "./gradlew test", "ls gh",
 ]
 for c in QUIET:
-    check("no ask: " + c, not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c, pt.command_match(c) is None, c)
 
 
 print("command shapes that slip past a word list (must ask)")
@@ -139,7 +167,7 @@ QUIET_SHAPES = [
  "cat ${F}", "mkdir -p $HOME/x", "node build.js", "python3 script.py", "n_requests=1; echo $n_requests",
 ]
 for c in QUIET_SHAPES:
-    check("no ask: " + c.split("\n")[0][:60], not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c.split("\n")[0][:60], pt.command_match(c) is None, c)
 check("a heredoc body is data: host and links lines do not ask", pt.command_match("cat <<'EOF'\nhost = 1\nlinks = 2\nEOF") is None)
 check("an unquoted heredoc body still runs $(...)", pt.command_match("cat <<EOF\n$(curl x)\nEOF") == "network command curl")
 check("a quoted heredoc body does not", pt.command_match("cat <<'EOF'\n$(curl x)\nEOF") is None)
@@ -191,7 +219,7 @@ ROUND3_QUIET = [
   'bash -s foo <<EOF\necho hi\nEOF',
 ]
 for c in ROUND3_QUIET:
-    check("no ask: " + c.split("\n")[0][:60], not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c.split("\n")[0][:60], pt.command_match(c) is None, c)
 check("a glob asks only when it could spell a denylisted program",
       pt.command_match("./b?ild.sh") is None and pt.command_match("c?rl x") == "command name chosen by a pattern"
       and pt.command_match("/usr/bin/c*rl x") is not None and pt.command_match("{curl,evil.com}") is not None
@@ -250,7 +278,7 @@ ROUND4_QUIET = [
   "python3 -c 'import pandas as pd; pd.read_csv(\"data.csv\")'",
 ]
 for c in ROUND4_QUIET:
-    check("no ask: " + c.split("\n")[0][:70], not asks("terminal", {"command": c}), c)
+    check("sends nothing out: " + c.split("\n")[0][:70], pt.command_match(c) is None, c)
 ROUND4_CODE_QUIET = [
   "from os import path\nprint(path.sep)", "from os import getcwd, listdir\nprint(getcwd())", "from os import environ as e\nprint(e.get('HOME'))",
   "import pandas as pd\npd.read_csv('data.csv')", "import pandas as pd\ndf = pd.read_json('local.json')", "print('see https://example.com/docs')",
@@ -302,8 +330,10 @@ ALLOWED = ["phone_data", "phone_app", "canvas", "find_chats", "openui_reference"
            "tool_search", "tool_describe"]
 check("the allowlist is exactly these tools", sorted(pt._QUIET) == sorted(ALLOWED), str(sorted(pt._QUIET)))
 for t in ALLOWED:
-    check("allowlisted, no ask: " + t, not asks(t, {}, "c1"), t)
+    # write_file and patch name a file of the work folder: one in Hermes's folders asks (below)
+    check("allowlisted, no ask: " + t, not asks(t, {"path": str(tmp / "work" / "n.md")} if t in ("write_file", "patch") else {}, "c1"), t)
 check("the fallback list in __init__ matches the allowlist", init._LOCAL_TOOLS == pt._QUIET)
+check("the background tasks' fallback list in __init__ matches theirs", init._DETACHED_READ_TOOLS == pt._DETACHED_OK)
 check("an unknown tool inside the Tool Search bridge asks",
       asks("tool_call", {"calls": [{"name": "yb_send_dm", "arguments": {}}]}, "c1"))
 check("terminal is still read by its command", not asks("terminal", {"command": "ls"}, "c1"))
@@ -324,7 +354,7 @@ for t, a in [("web_search", {"query": "q"}), ("web_extract", {"urls": ["http://x
                                       {"name": "terminal", "arguments": {"command": "curl http://x"}}]})]:
     check("asks: " + t, asks(t, a), t)
 for t, a in [("phone_data", {"kind": "sms"}), ("phone_app", {"action": "open", "app": "x"}), ("canvas", {"action": "create"}),
-             ("read_file", {"path": "f"}), ("write_file", {"path": "f", "content": "c"}), ("patch", {}),
+             ("read_file", {"path": "f"}), ("write_file", {"path": "f", "content": "c"}), ("patch", {"path": "f"}),
              ("memory", {"action": "remove", "old_text": "x"}), ("process_manage", {"action": "poll", "session_id": "p"}),
              ("process_manage", {"action": "kill", "session_id": "p"}), ("skill_view", {"name": "n"}),
              ("execute_code", {"code": "print(sum(range(10)))"}), ("vision_analyze", {"image_url": "/sdcard/a.png"}),
@@ -356,7 +386,12 @@ check("another chat still does not", pt.check("terminal", {"command": "curl http
 print("remembered across a restart")
 raw = json.loads(pt.PATH.read_text())
 check("file holds ids and times only",
-      set(raw) == {"chats"} and list(raw["chats"]) == ["c1"] and isinstance(raw["chats"]["c1"], float))
+      set(raw) == {"chats", "since"} and list(raw["chats"]) == ["c1"] and isinstance(raw["chats"]["c1"], float)
+      and list(raw["since"]) == ["c1"] and isinstance(raw["since"]["c1"], float))
+_first = raw["since"]["c1"]
+pt.mark("c1")
+check("since keeps the first read, a later read changes only the chat's own time",
+      json.loads(pt.PATH.read_text())["since"]["c1"] == _first and pt.read_since("c1") == _first)
 pt._mem.clear()
 pt._cache = (None, {})
 check("a new process reads the file", asks("terminal", {"command": "curl http://x"}, "c1"))
@@ -403,6 +438,19 @@ check("hook returns nothing in another chat", hook("terminal", {"command": "curl
 check("hook returns nothing for ls in the tainted chat", hook("terminal", {"command": "ls"}, "c5") is None)
 hook("tool_call", {"calls": [{"name": "phone_data", "arguments": {"kind": "sms"}}]}, "c7")
 check("a phone_data call through the bridge marks the chat", pt.has_read("c7"))
+# Every shape the pinned Hermes runs (tools/tool_search_validation.py normalize_tool_call_entries).
+for n, shape in enumerate(({"name": "phone_data", "arguments": '{"kind": "sms"}'}, {"name": " phone_data "},
+                           {"calls": '[{"name": "phone_data", "arguments": "{}"}]'}, {"calls": '{"name": "phone_data"}'},
+                           {"calls": {"name": "phone_data", "arguments": {}}}, {"calls": [{"name": "phone_data\n", "arguments": " "}]})):
+    hook("tool_call", shape, f"c7-{n}")
+    check(f"a phone_data call through the bridge in another shape marks the chat: {shape}", pt.has_read(f"c7-{n}"))
+check("a bridged call's arguments given as text are read", asks("tool_call", {"name": "terminal", "arguments": '{"command": "curl x"}'}, "c7")
+      and not asks("tool_call", {"name": "terminal", "arguments": '{"command": "ls"}'}, "c7"))
+check("calls given win over a top-level name, as in Hermes", list(pt._calls("tool_call", {"calls": [{"name": "ls"}], "name": "phone_data"})) == [("ls", {})])
+check("a tool_call Hermes refuses stays one call that asks", all(
+    list(pt._calls("tool_call", bad)) == [("tool_call", bad)] and asks("tool_call", bad, "c7")
+    for bad in ({}, {"calls": "[{"}, {"calls": []}, {"calls": [{"name": "x", "arguments": "[1]"}]}, {"calls": [{"name": "tool_call"}]}, {"calls": ["x"]})))
+check("the status line shows the tool underneath in every shape", init._peel_bridge("tool_call", {"calls": '{"name": " terminal ", "arguments": "{\\"command\\": \\"ls\\"}"}'}) == ("terminal", {"command": "ls"}))
 
 print("failing to load the check blocks sending tools in a chat that read")
 good = init._phone_taint
@@ -781,7 +829,392 @@ check("fallback: past the bound nothing is dropped and the file's full flag is s
 check("fallback: with the flag set every chat counts as having read", init._read_before(["fb-never-seen"]) is True)
 check("fallback: it used the module's lock file", pt.PATH.with_name(pt.PATH.name + ".lock").exists())
 pt.PATH.unlink()
+pt.PATH.write_text(json.dumps({"chats": {"fbs-1": 5.0}, "since": {"fbs-1": 4.0}}))
+init._fallback_save(["fbs-2"])
+_d = json.loads(pt.PATH.read_text())
+check("fallback: it keeps when each chat first read, and gives the new id none", _d.get("since") == {"fbs-1": 4.0} and "fbs-2" in _d["chats"])
+pt.PATH.unlink()
 init._phone_taint = good
+
+print("background tasks")
+CURL = {"command": "curl https://example.com/x"}
+real_argv0, had_key = sys.argv[0], os.environ.get("HERMES_SESSION_KEY")
+
+
+def in_worker(key):
+    sys.argv[0] = "/opt/hermes/tui_gateway/slash_worker.py"
+    os.environ["HERMES_SESSION_KEY"] = key
+
+
+def out_of_worker(key=None):
+    sys.argv[0] = real_argv0
+    os.environ.pop("HERMES_SESSION_KEY", None)
+    if key:
+        os.environ["HERMES_SESSION_KEY"] = key
+
+
+def action(tool, args, sid):
+    return (init._taint_directive(tool, args, sid, sid) or {}).get("action")
+
+
+reset()
+pt.mark(["bg-chat"])
+in_worker("bg-chat")
+check("a /bg task of a chat that has read: a send is blocked, not asked", action("terminal", CURL, "bg_1") == "block")
+check("its message says nobody can be asked", "nobody" in init._taint_directive("terminal", CURL, "bg_1", "bg_1")["message"])
+check("through the Tool Search bridge too", action("tool_call", {"calls": [{"name": "web_search", "arguments": {"query": "x"}}]}, "bg_1") == "block")
+check("it can still read on the phone", action("read_file", {"path": "a"}, "bg_1") is None and action("search_files", {"pattern": "x"}, "bg_1") is None)
+check("the task itself is not added to the record", not pt.has_read(["bg_1"]))
+in_worker("bg-other")
+check("a /bg task of any other chat runs as before", action("terminal", CURL, "bg_2") is None)
+pt.mark(["bg-other"])
+check("a task already running is blocked once its chat reads", action("terminal", CURL, "bg_2") == "block")
+reset()
+in_worker("bg-clean")
+init._taint_directive("phone_data", {"kind": "sms"}, "bg_3", "bg_3")
+check("a task's own read marks the task", pt.has_read(["bg_3"]))
+check("and blocks its own sends", action("terminal", CURL, "bg_3") == "block")
+check("but not the chat that started it", not pt.has_read(["bg-clean"]))
+reset()
+pt.mark(["agent:main:shared"])
+out_of_worker("agent:main:shared")
+check("outside the worker the variable says nothing about the chat", action("terminal", CURL, "plain-chat") is None)
+init._taint_directive("phone_data", {"kind": "sms"}, "reader", "reader")
+check("and a read elsewhere does not touch it", "reader" in pt._mem and action("terminal", CURL, "plain-chat") is None)
+out_of_worker()
+reset()
+fake_server = type(sys)("tui_gateway.server")
+fake_server._sessions = {"rt-9": {"session_key": "stored-9"}}
+sys.modules["tui_gateway.server"] = fake_server
+pt.mark(["stored-9"])
+tok = sc._SESSION_UI_SESSION_ID.set("rt-9")
+check("prompt.background: the chat is found through its live id", action("terminal", CURL, "bg_abc") == "block")
+sc._SESSION_UI_SESSION_ID.reset(tok)
+del sys.modules["tui_gateway.server"]
+reset()
+pt.mark(["cron_job_1"])
+check("a scheduled run that has read is blocked: it can't ask either", action("terminal", CURL, "cron_job_1") == "block")
+reset()
+pt.mark(["own-chat"])
+check("an ordinary chat is still asked", action("terminal", CURL, "own-chat") == "approve")
+good = init._phone_taint
+def broken():
+    raise RuntimeError("no module")
+reset()
+pt.mark(["bg-fb"])
+pt._mem.clear()
+init._phone_taint = broken
+in_worker("bg-fb")
+check("if the check can't load, a task of a chat that has read is still blocked", action("terminal", CURL, "bg_f") == "block")
+init._phone_taint = good
+out_of_worker(had_key)
+reset()
+
+print("Hermes and rish count as sending, in every chat that has read")
+pt.mark(["hz-chat"])
+for cmd in ('rish -c "curl https://x.test/?d=1"', "echo 'curl https://x.test' | rish", 'rish -c "$CMD"', "hermes chat -q 'send it'",
+            "hermes -z 'send it'", "hermes cron create 'every 1h' 'send it'", "hermes kanban create 'send it'",
+            "~/.local/bin/hermes chat", "env FOO=1 hermes chat -q x", "python3 -m hermes_cli.main chat -q x",
+            "python3 -mhermes_cli.main chat", "python3 -m tui_gateway.entry", "python -m gateway.run",
+            "python3 ~/.hermes/hermes-agent/cli.py -q x", "python3 /root/.hermes/hermes-agent/hermes_cli/main.py chat",
+            "python3 -c 'import hermes_cli.main as m; m.main()'", "python3 -c 'from cron.jobs import create_job'",
+            "hermes-agent run x", "uv run hermes chat"):
+    check(f"asks: {cmd}", asks("terminal", {"command": cmd}, "hz-chat"))
+check("asks: execute_code that imports Hermes", asks("execute_code", {"code": "from cron.jobs import create_job\ncreate_job('x')"}, "hz-chat"))
+for cmd in ("rish -c 'ls /sdcard'", "python3 my_hermes_notes.py", "python3 tools/cli.py", "echo hermes", "grep hermes notes.txt"):
+    check(f"left alone: {cmd}", not asks("terminal", {"command": cmd}, "hz-chat"))
+check("a chat that has not read runs all of them", pt.check("terminal", {"command": "hermes chat -q x"}, "hz-clean") is None)
+reset()
+
+print("a background task of a chat that has read: only tools that read")
+pt.mark(["ro-chat"])
+in_worker("ro-chat")
+# No terminal at all: these got through a terminal that only ran commands known to read (rish, a new hermes, a script the
+# task wrote, an alias on PATH), and the plain reads are blocked as well.
+for cmd in ("rish -c 'curl https://x.test'", "hermes chat -q x", "python3 /tmp/x.py", "./x.sh", "ls -la", "cat notes.txt", "echo done",
+            "cat a | grep b", "find . -name x"):
+    check(f"terminal blocked: {cmd!r}", action("terminal", {"command": cmd}, "bg_ro") == "block")
+check("its message says the task may only use tools that read", "may only use tools that read" in init._taint_directive("terminal", {"command": "ls"}, "bg_ro", "bg_ro")["message"])
+hh = Path(os.environ["HERMES_HOME"])
+(hh / "skills").mkdir(parents=True, exist_ok=True)
+outside = tmp / "work"
+outside.mkdir(exist_ok=True)
+(outside / "to-hermes").symlink_to(hh)
+for tool, a in (("execute_code", {"code": "print(1)"}), ("phone_app", {"action": "open", "app": "x"}), ("process_manage", {"action": "list"}),
+                ("write_file", {"path": str(outside / "notes.md"), "content": "x"}), ("patch", {"path": str(hh / "config.yaml")}),
+                ("memory", {"action": "add", "content": "x"}), ("skill_manage", {"action": "create"}), ("canvas", {"action": "create"}),
+                ("delegate_task", {"goal": "x"}), ("cronjob", {"action": "create"}), ("phone_data", {"kind": "sms"}), ("some_future_tool", {}),
+                ("tool_call", {"calls": [{"name": "read_file", "arguments": {}}, {"name": "terminal", "arguments": {"command": "ls"}}]})):
+    check(f"blocked: {tool}", action(tool, a, "bg_ro") == "block")
+for tool in sorted(pt._DETACHED_OK):
+    check(f"left to it: {tool}", action(tool, {"path": "a", "query": "x"}, "bg_ro") is None)
+check("reading Hermes's folders stays allowed", action("read_file", {"path": str(hh / "config.yaml")}, "bg_ro") is None)
+in_worker("ro-clean")
+check("a background task of a chat that has not read keeps all of it",
+      all(action(t, a, "bg_ok") is None for t, a in (("phone_app", {"action": "open"}), ("execute_code", {"code": "print(1)"}),
+          ("write_file", {"path": str(hh / "config.yaml"), "content": "x"}), ("terminal", {"command": "python3 /tmp/x.py"}))))
+out_of_worker()
+check("an ordinary chat that has read still writes its own files and runs its scripts",
+      action("write_file", {"path": str(outside / "notes.md"), "content": "x"}, "ro-chat") is None
+      and action("terminal", {"command": "python3 /tmp/x.py"}, "ro-chat") is None and action("phone_app", {"action": "open"}, "ro-chat") is None)
+init._phone_taint = broken
+in_worker("ro-chat")
+check("if the check can't load, such a task still can't use phone_app, write files or a terminal",
+      action("phone_app", {"action": "open"}, "bg_fb2") == "block" and action("write_file", {"path": "/tmp/x", "content": "x"}, "bg_fb2") == "block"
+      and action("terminal", {"command": "ls"}, "bg_fb2") == "block" and action("read_file", {"path": "a"}, "bg_fb2") is None)
+init._phone_taint = good
+out_of_worker(had_key)
+reset()
+
+print("a chat that has read: writing where Hermes, this app or a shell runs from asks")
+pt.mark(["wg-chat"])
+(tmp / ".termux" / "boot").mkdir(parents=True, exist_ok=True)
+(tmp / "bin").mkdir(exist_ok=True)
+pathdir = tmp / "tools-on-path"
+pathdir.mkdir(exist_ok=True)
+old_path = os.environ.get("PATH", "")
+os.environ["PATH"] = f"{pathdir}{os.pathsep}{old_path}"
+for path, what in ((str(hh / "config.yaml"), "Hermes's config"), ("~/.hermes/skills/x/SKILL.md", "a skill, by ~"),
+                   (str(hh / "plugins" / "p" / "__init__.py"), "a plugin"), (str(tmp / ".hermes-mobile" / "enforced"), "this app's folder"),
+                   (str(outside / "to-hermes" / "x"), "through a link"), (str(outside / ".." / ".hermes" / "hooks" / "x.sh"), "through .."),
+                   ("~/.bashrc", ".bashrc"), ("~/.profile", ".profile"), ("~/.zshrc", ".zshrc"), (str(outside / ".bash_profile"), "a start-up file anywhere"),
+                   ("~/.config/fish/config.fish", "fish's config"), ("~/.termux/boot/start.sh", "a Termux boot script"),
+                   ("/etc/profile.d/x.sh", "/etc"), ("~/bin/ls", "a bin folder"), ("~/.local/bin/cat", "~/.local/bin"),
+                   (str(pathdir / "git"), "a folder on PATH"), ("", "an empty path")):
+    check(f"write_file asks: {what}", asks("write_file", {"path": path, "content": "x"}, "wg-chat"))
+    check(f"patch asks: {what}", asks("patch", {"path": path, "old_string": "a", "new_string": "b"}, "wg-chat"))
+check("the question names the file and says why", "runs from" in pt.check("write_file", {"path": "~/.bashrc"}, "wg-chat")["message"]
+      and ".bashrc" in pt.check("write_file", {"path": "~/.bashrc"}, "wg-chat")["message"])
+os.environ["TERMINAL_CWD"] = str(tmp)
+check("a relative path is taken from the terminal's folder", asks("write_file", {"path": ".hermes/config.yaml"}, "wg-chat")
+      and asks("write_file", {"path": ".bashrc"}, "wg-chat"))
+os.environ.pop("TERMINAL_CWD")
+check("a V4A patch is judged by every file it names", asks("patch", {"mode": "patch", "patch": f"*** Begin Patch\n*** Update File: {outside}/a.txt\n@@\n-a\n+b\n*** Add File: {tmp}/.bashrc\n+x\n*** End Patch"}, "wg-chat"))
+check("and one that names no file asks", asks("patch", {"mode": "patch", "patch": "@@\n-a\n+b"}, "wg-chat"))
+for path in (str(outside / "notes.md"), str(outside / "site" / "index.html"), str(tmp / "projects" / "x.py"), "/tmp/out.txt"):
+    check(f"a file elsewhere is written without a question: {path}", not asks("write_file", {"path": path, "content": "x"}, "wg-chat"))
+for cmd in ("echo 'curl x' >> ~/.bashrc", "echo x>>~/.profile", "printf x | tee -a ~/.zshrc", "cp x ~/.local/bin/ls", "mv x ~/bin/git",
+            "install -m755 x /usr/local/bin/y", "ln -s x ~/.hermes/plugins/p", "sed -i s/a/b/ ~/.hermes/config.yaml",
+            "cd ~/.hermes && echo x > config.yaml", "cd ~; cat x >> .bashrc", "echo x > $F", "echo x > ~/.b*rc", "cp x $(echo ~/.bashrc)",
+            "cd $D; echo x > y", "cat > ~/.termux/boot/s.sh <<EOF\ncurl x\nEOF", "echo x > /etc/profile.d/z.sh",
+            f"echo x > {pathdir}/git", "python3 -c \"open('/root/.bashrc','a').write('x')\"", "tee ~/.hermes/config.yaml < x"):
+    check(f"terminal asks: {cmd!r}", asks("terminal", {"command": cmd}, "wg-chat"))
+# Round 4: the command word doesn't matter (wrappers, interpreters the old list missed), reads ask too, deleting the
+# record asks, a target known only at run time asks, and whole folders count (fish's conf.d and the like).
+for cmd in ("env cp x ~/.bashrc", "command cp x ~/.bashrc", "nohup tee ~/.zshrc < x", "nice cp x ~/bin/y", "timeout 5 cp x ~/.profile",
+            "busybox cp x ~/.hermes/config.yaml", "echo x | xargs cp -t ~/.local/bin", "find . -name x -exec cp {} ~/.bashrc \;",
+            "python3.14 -c 'open(\"/root/.bashrc\",\"a\")'", "nodejs -e 'require(\"fs\").appendFileSync(process.env.F, \"x\")'",
+            "deno eval 'Deno.writeTextFileSync(Deno.env.get(\"F\"), \"x\")'", "bun -e 'Bun.write(process.argv[1], \"x\")'",
+            "rm ~/.hermes/mobile/phone-read.json", "rm -f ~/.her*/mobile/*", "unlink ~/.hermes/mobile/phone-read.json",
+            "python3 -c 'import os; os.remove(os.path.join(os.path.expanduser(\"~\"), \".her\" + \"mes/mobile/phone-read.json\"))'",
+            "python3 -c 'import os; os.unlink(os.environ[\"F\"])'",
+            "python3 -c 'from pathlib import Path; (Path.home() / (\".her\" + \"mes\") / \"mobile\" / \"phone-read.json\").unlink()'",
+            "cp -t$DEST x", "cp --target-directory=$DEST x", "dd if=x of=$F", "sed -i s/a/b/ $F", "cp x \"$(dirname $F)\"/y",
+            "bash -c 'cp x $D'", "F=~/.bas; cp x ${F}hrc", "cp x ~/.{bash,zsh}rc", "cp x `cat target`",
+            "cp x ~/.config/fish/conf.d/a.fish", "echo x > ~/.bashrc.d/a.sh", "cp x ~/.shortcuts/run",
+            "cp x /data/data/com.termux/files/usr/etc/profile", "echo x > lib/python3.12/site-packages/a.pth",
+            "ls ~/.hermes", "cat ~/.bashrc", "grep x ~/.profile", "source ~/.bashrc", "$HOME/bin/tool a"):
+    check(f"terminal asks: {cmd!r}", asks("terminal", {"command": cmd}, "wg-chat"))
+for cmd in ("echo hi > /tmp/out.txt", "python3 x.py", "sort -u a > b.txt", "ls -la 2>/dev/null", "cp a b", "make 2>&1",
+            "cat notes.txt | wc -l", "ls $D", "echo $HOME", "x=$(ls); echo $x", "[[ -f x ]] && echo y", "grep -rn foo src | head",
+            "python3 -m pytest", "git commit -m 'fix'", "mkdir -p build && cp a build/a", "python3 -c 'print(1)'"):
+    check(f"terminal left alone: {cmd!r}", not asks("terminal", {"command": cmd}, "wg-chat"))
+os.environ["TERMINAL_CWD"] = str(hh)
+check("a command that writes in a working folder that is such a place asks", asks("terminal", {"command": "echo x > config.yaml"}, "wg-chat")
+      and not asks("terminal", {"command": "ls"}, "wg-chat"))
+os.environ.pop("TERMINAL_CWD")
+for path, what in (("~/.config/fish/conf.d/a.fish", "a file in fish's conf.d"), ("~/.config/environment.d/x.conf", "environment.d"),
+                   ("~/.bashrc.d/a.sh", "a file in .bashrc.d"), ("~/.shortcuts/run", "a Termux:Widget shortcut"),
+                   (str(tmp / "usr" / "etc" / "profile"), "Termux's own etc"), (str(tmp / "lib" / "site-packages" / "a.pth"), "Python's packages"),
+                   (str(outside / "x" / "conf.d" / "y"), "a conf.d anywhere"), ("~/.gitconfig", ".gitconfig")):
+    check(f"write_file asks: {what}", asks("write_file", {"path": path, "content": "x"}, "wg-chat"))
+for code in ("import os\nopen(os.path.expanduser('~/.bashrc'), 'a').write('x')", "from pathlib import Path\n(Path.home() / '.pro' 'file').write_text('x')",
+             "open('/root/.hermes/config.yaml', 'w').write('x')", "import shutil; shutil.copy('x', '/usr/local/bin/y')",
+             # round 4: deleting the record, a name built at run time, a function reached another way, names that are read
+             "import os\nos.remove(os.path.join(os.path.expanduser('~'), '.her' + 'mes', 'mobile', 'phone-read.json'))",
+             "import os\nos.unlink(p)", "from os import remove as r\nr(p)", "import os as o\no.rename('a', b)",
+             "from pathlib import Path\n(Path.home() / ('.her' + 'mes') / 'mobile' / 'phone-read.json').unlink()",
+             "import pathlib\npathlib.Path(p).write_text('x')", "from pathlib import Path\nPath.unlink(p)", "open(p, 'w')", "open(p, mode)",
+             "open(file=p, mode='a')", "import io\nio.open(p, 'w')", "import shutil\nshutil.rmtree(d)", "import os\ndel_ = os.remove\ndel_(p)",
+             "import os\ngetattr(os, 'rem' + 'ove')(p)", "import os\nos.__dict__['remove'](p)", "from os import *\nremove(p)",
+             "import tarfile\ntarfile.open('a.tar').extractall('/')", "print(open('/root/.bashrc').read())", "import os\nos.listdir(os.path.expanduser('~/.termux'))",
+             "this is not python: os.unlink(x", "import os\nm = os\nm.remove(p)", "import sys\nsys.modules['os'].remove(p)",
+             "from shutil import move\nmove(a, b)", "from os import remove\nf = [remove]\nf[0](p)", "import io\nio.FileIO(p, 'w')"):
+    check(f"execute_code asks: {code!r}", asks("execute_code", {"code": code}, "wg-chat"))
+for code in ("print(1)", "open('/tmp/x', 'w').write('a')", "import json\nprint(json.dumps({}))", "open(p).read()", "with open(p) as f:\n    print(f.read())",
+             "s = 'a'.replace('a', 'b')\nt = s.replace('b', 'c')", "items = [1]\nitems.remove(1)", "from pathlib import Path\nPath('out.txt').write_text('x')",
+             "import os\nos.makedirs('build', exist_ok=True)", "import shutil\nprint(shutil.which('git'))", "import os\nprint(os.path.exists(p))"):
+    check(f"execute_code left alone: {code!r}", not asks("execute_code", {"code": code}, "wg-chat"))
+check("the writer lists are gone", not hasattr(pt, "_WRITERS") and not hasattr(pt, "_CODE_WRITES"))
+check("a chat that has not read writes all of these without a question",
+      pt.check("write_file", {"path": "~/.bashrc"}, "wg-clean") is None and pt.check("terminal", {"command": "echo x >> ~/.bashrc"}, "wg-clean") is None)
+os.environ["PATH"] = old_path
+reset()
+
+print("chats made from one that has read")
+import sqlite3  # noqa: E402
+_bdb = tmp / "branches.db"
+_con = sqlite3.connect(_bdb)
+import time as _t  # noqa: E402
+_BEFORE, _AFTER = _t.time() - 3600, _t.time() + 3600   # made an hour before the reads below, or an hour after
+_con.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT, started_at REAL)")
+_con.executemany("INSERT INTO sessions VALUES (?,?,?,?)", [
+    ("br-parent", None, None, _BEFORE - 60), ("br-1", "br-parent", '{"_branched_from": "br-parent"}', _AFTER),
+    ("br-2", None, '{"_branched_from": "br-parent"}', _AFTER), ("br-3", "br-1", None, _AFTER + 60),
+    ("br-free", None, "{not json", _AFTER), ("br-early", "br-late-parent", None, _BEFORE),
+    ("br-late-parent", None, None, _BEFORE - 60), ("br-notime", "br-parent", None, None),
+    ("br-old-of-early", "br-early", None, _AFTER + 60), ("br-legacy", "br-legacy-parent", None, _BEFORE),
+    ("br-legacy-parent", None, None, _BEFORE - 60)])
+_con.commit()
+real_db, real_origin = pd.__dict__.get("_state_db"), pd.stored_origin
+pd._state_db = lambda: _bdb
+init._phone_data = lambda: pd
+reset()
+init._INHERIT_SEEN.clear()
+asked = []
+pd.stored_origin = lambda sid, *a, **k: (asked.append(sid), real_origin(sid, *a, **k))[1]
+check("no chat has read: a chat's origin isn't even looked up", action("terminal", CURL, "br-1") is None and not asked)
+pt.mark(["br-parent"])
+check("a branch made after its parent read is asked about, at its first send", action("terminal", CURL, "br-1") == "approve")
+check("and is marked", pt.has_read(["br-1"]))
+check("also when only _branched_from names the parent", action("terminal", CURL, "br-2") == "approve")
+check("and for a branch of that branch", action("terminal", CURL, "br-3") == "approve")
+check("a branch whose creation time isn't known counts as made after", action("terminal", CURL, "br-notime") == "approve")
+check("a chat with no such origin is left alone", action("terminal", CURL, "br-free") is None and not pt.has_read(["br-free"]))
+check("the origin is looked up once", asked.count("br-free") == 1 and (action("terminal", CURL, "br-free"), asked.count("br-free"))[1] == 1)
+pt.mark(["br-late-parent"])
+check("a branch made before its parent read is not marked, even at its first send after the read",
+      action("terminal", CURL, "br-early") is None and not pt.has_read(["br-early"]))
+check("nor is a branch of that branch made later", action("terminal", CURL, "br-old-of-early") is None)
+_raw = json.loads(pt.PATH.read_text())
+_raw["chats"]["br-legacy-parent"] = _t.time()   # recorded by an older version: its time is a latest read, not a first
+pt.PATH.write_text(json.dumps(_raw))
+check("a parent an older version recorded has no known first read: its branch counts as made after",
+      pt.read_since("br-legacy-parent") is None and action("terminal", CURL, "br-legacy") == "approve")
+check("a chat not stored yet is asked about again", action("terminal", CURL, "br-new") is None and ("", "br-new") not in init._INHERIT_SEEN)
+_con.execute("INSERT INTO sessions VALUES ('br-new', 'br-parent', NULL, ?)", (_AFTER,))
+_con.commit()
+check("and is marked once its row is there", action("terminal", CURL, "br-new") == "approve")
+_odb = tmp / "old-schema.db"
+_oc = sqlite3.connect(_odb)
+_oc.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT)")
+_oc.execute("INSERT INTO sessions VALUES ('os-1', 'br-parent', NULL)")
+_oc.commit()
+_oc.close()
+check("a database without started_at gives the origin with no times", real_origin("os-1", db=_odb) == [("br-parent", None)])
+_con.close()
+pd.stored_origin = real_origin
+if real_db is None:
+    del pd._state_db
+else:
+    pd._state_db = real_db
+reset()
+init._INHERIT_SEEN.clear()
+
+print("reading a chat that has read")
+reset()
+init._INHERIT_SEEN.clear()
+reports = []
+real_report = init._report_taint
+init._report_taint = lambda new: reports.append(list(new))
+init._phone_data = lambda: type("NoDb", (), {"stored_origin": staticmethod(lambda sid, **k: [])})
+FOUND = json.dumps({"success": True, "results": [{"session_id": "rd-marked", "messages": [{"content": "secret"}]}]})
+OTHER = json.dumps({"success": True, "results": [{"session_id": "rd-plain", "messages": []}]})
+init._on_post_tool_call("session_search", {"query": "x"}, FOUND, session_id="rd-1")
+check("nothing has been read: a search marks nobody", not pt.has_read(["rd-1"]))
+pt.mark(["rd-marked"])
+init._on_post_tool_call("session_search", {"query": "x"}, OTHER, session_id="rd-2")
+check("a search that finds other chats marks nobody", not pt.has_read(["rd-2"]))
+init._on_post_tool_call("session_search", {"query": "x"}, FOUND, session_id="rd-3")
+check("a search that returns a marked chat marks the reader", pt.has_read(["rd-3"]) and ["rd-3"] in reports)
+check("so its next send asks", action("terminal", CURL, "rd-3") == "approve")
+init._on_post_tool_call("tool_call", {"calls": [{"name": "session_search", "arguments": {"query": "x"}}]}, json.dumps({"results": [{"result": FOUND}]}), session_id="rd-4")
+check("also through the Tool Search bridge, with the answer inside a string", pt.has_read(["rd-4"]))
+init._on_post_tool_call("session_search", {"session_id": "rd-marked"}, "cut off", session_id="rd-5")
+check("asking for a marked chat by id counts, whatever came back", pt.has_read(["rd-5"]))
+init._on_post_tool_call("session_search", {"query": "x"}, FOUND[:60], session_id="rd-6")
+check("a cut-off answer still counts", pt.has_read(["rd-6"]))
+HIT = json.dumps({"chats": [{"id": "rd-marked", "snippet": "secret"}]})
+init._on_post_tool_call("find_chats", {"text": "secret"}, HIT, session_id="rd-7")
+check("find_chats with words counts", pt.has_read(["rd-7"]))
+init._on_post_tool_call("find_chats", {"kind": "image"}, HIT, session_id="rd-8")
+check("find_chats listing files only does not", not pt.has_read(["rd-8"]))
+init._on_post_tool_call("read_file", {"path": "a"}, FOUND, session_id="rd-9")
+check("another tool's output is not read as a search", not pt.has_read(["rd-9"]))
+for odd in (None, 7, ["x"], {"a": object()}):
+    init._on_post_tool_call("session_search", {"query": "x"}, odd, session_id="rd-odd")
+check("an odd result breaks nothing", not pt.has_read(["rd-odd"]))
+in_worker("rd-clean")
+init._on_post_tool_call("session_search", {"query": "x"}, FOUND, session_id="bg_r", task_id="bg_r")
+check("a background task that finds it is blocked from sending", action("terminal", CURL, "bg_r") == "block")
+check("and the chat that started it stays as it was", not pt.has_read(["rd-clean"]))
+out_of_worker(had_key)
+BROWSE = json.dumps({"success": True, "mode": "browse", "results": [{"session_id": "rd-marked", "title": "t", "preview": "p"}]})
+init._on_post_tool_call("session_search", {}, BROWSE, session_id="rd-browse")
+check("session_search listing recent chats (mode browse) marks nobody", not pt.has_read(["rd-browse"]))
+init._on_post_tool_call("session_search", {}, BROWSE[:70], session_id="rd-browse2")
+check("not even when cut off", not pt.has_read(["rd-browse2"]))
+for failed, what in ((json.dumps({"success": False, "error": "no session rd-marked"}), "success false"),
+                     (json.dumps({"error": "session rd-marked not found", "session_id": "rd-marked"}), "an error"),
+                     (json.dumps({"ok": False, "error": "find failed"}), "ok false")):
+    init._on_post_tool_call("session_search", {"session_id": "rd-marked"}, failed, session_id="rd-fail")
+    check(f"a failed result marks nobody ({what})", not pt.has_read(["rd-fail"]))
+init._on_post_tool_call("session_search", {"session_id": "rd-marked"}, FOUND, status="error", session_id="rd-fail")
+check("nor does a call Hermes reports as failed", not pt.has_read(["rd-fail"]))
+init._on_post_tool_call("tool_call", {"calls": [{"name": "session_search", "arguments": {}}]}, json.dumps({"results": [{"result": BROWSE}]}), session_id="rd-bridge")
+check("through the Tool Search bridge the shape can't be told: it counts", pt.has_read(["rd-bridge"]))
+MANY = json.dumps({"ok": True, "chats": [{"id": f"rd-x{i}", "profile": "default", "snippet": "secret"} for i in range(199)]
+                  + [{"id": "rd-marked", "profile": "default", "snippet": "secret"}]})
+looked = []
+init._phone_data = lambda: type("CountDb", (), {"stored_origin": staticmethod(lambda sid, **k: (looked.append(sid), [])[1])})
+init._on_post_tool_call("find_chats", {"text": "secret", "limit": 200}, MANY, session_id="rd-many")
+check("find_chats with 200 chats: the marked one at the end still marks the reader", pt.has_read(["rd-many"]))
+check("and at most 50 of them are looked up in a database", 0 < len(looked) <= 50)
+print("when a search can't be fully checked, the reader is marked")
+CLEAN = lambda n, pre: json.dumps({"ok": True, "chats": [{"id": f"{pre}{i}", "profile": "default", "snippet": "s"} for i in range(n)]})
+init._on_post_tool_call("find_chats", {"text": "s", "limit": 60}, CLEAN(60, "rd-c"), session_id="rd-sixty")
+check("more chats than are looked up (none of them marked): the reader is marked", pt.has_read(["rd-sixty"]))
+init._on_post_tool_call("find_chats", {"text": "s"}, CLEAN(10, "rd-d"), session_id="rd-ten")
+check("ten chats that were all looked up and none had read: the reader stays as it was", not pt.has_read(["rd-ten"]))
+init._phone_data = lambda: type("NoRow", (), {"stored_origin": staticmethod(lambda sid, **k: None)})
+init._INHERIT_SEEN.clear()
+init._on_post_tool_call("find_chats", {"text": "s"}, CLEAN(3, "rd-e"), session_id="rd-unknown")
+check("a chat whose origin can't be told yet: the reader is marked", pt.has_read(["rd-unknown"]))
+init._phone_data = lambda: type("Boom", (), {"stored_origin": staticmethod(lambda sid, **k: 1 / 0)})
+init._on_post_tool_call("find_chats", {"text": "s"}, CLEAN(3, "rd-f"), session_id="rd-boom")
+check("a lookup that fails: the reader is marked", pt.has_read(["rd-boom"]))
+init._phone_data = lambda: type("CountDb", (), {"stored_origin": staticmethod(lambda sid, **k: [])})
+init._INHERIT_SEEN.clear()
+LONG = json.dumps({"success": True, "results": [{"session_id": "rd-y", "summary": "x" * (init._RESULT_SCAN + 10)}, {"session_id": "rd-marked"}]})
+init._on_post_tool_call("session_search", {"query": "x"}, LONG, session_id="rd-long")
+check("a result longer than what is read, the marked chat past the end: the reader is marked", pt.has_read(["rd-long"]))
+init._on_post_tool_call("session_search", {"query": "x"}, "x" * (init._RESULT_SCAN + 10), session_id="rd-long2")
+check("and so for a long result whose chats can't be read at all", pt.has_read(["rd-long2"]))
+init._on_post_tool_call("read_file", {"path": "f"}, "x" * (init._RESULT_SCAN + 10), session_id="rd-long3")
+check("a long result of a tool that reads no chat marks nobody", not pt.has_read(["rd-long3"]))
+init._on_post_tool_call("session_search", {}, json.dumps({"success": True, "mode": "browse", "results": [], "pad": "x" * (init._RESULT_SCAN + 10)}), session_id="rd-long4")
+check("nor does a long browse listing", not pt.has_read(["rd-long4"]))
+print("a chat found in another profile is looked up in that profile")
+_wdb = tmp / "work-profile.db"
+_wc = sqlite3.connect(_wdb)
+_wc.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT, started_at REAL)")
+_wc.execute("INSERT INTO sessions VALUES ('pf-branch', 'pf-parent', NULL, ?)", (_t.time() + 3600,))
+_wc.commit()
+_wc.close()
+_defdb = tmp / "default-profile.db"
+sqlite3.connect(_defdb).execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT, started_at REAL)").connection.close()
+pt.mark(["pf-parent"])
+init._INHERIT_SEEN.clear()
+pd._state_db = lambda: _defdb
+init._phone_data = lambda: pd
+real_cs = init._chat_search
+init._chat_search = lambda: type("Profiles", (), {"profiles": staticmethod(lambda: {"default": str(_defdb), "work": str(_wdb)})})
+init._on_post_tool_call("find_chats", {"text": "x"}, json.dumps({"ok": True, "chats": [{"id": "pf-branch", "profile": "work", "snippet": "x"}]}), session_id="rd-pf")
+check("its branch is found there and marked, and so is the reader", pt.has_read(["pf-branch"]) and pt.has_read(["rd-pf"]))
+init._chat_search = real_cs
+init._report_taint = real_report
+init._phone_data = lambda: pd
+reset()
 
 print("prompt section")
 src = open(os.path.join(PLUG, "phone_data.py")).read()

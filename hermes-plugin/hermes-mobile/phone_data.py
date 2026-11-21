@@ -309,6 +309,59 @@ def _state_db() -> Path:
 ANCESTRY_BUDGET_S = 3.0   # the whole lookup, however many queries; it runs on the background reporting thread
 
 
+def stored_origin(sid: str, limit: int = 16, budget: float = 1.0, db=None):
+    """Where this stored chat came from, nearest first: [(parent id, when the chat made from it was created), ...]. The
+    parent is the row's `parent_session_id`, or `_branched_from` when a branch has no such link, whatever made it (a branch,
+    a compression, a sub-agent); the time is that child row's `started_at` (None when it isn't there). `db` is the state
+    database of the profile the chat is in (default: this agent's). Read-only and quick, so a tool call can wait for it.
+    None when it can't be told now (no such row yet, or the database can't be read); the caller asks again."""
+    try:
+        import sqlite3
+        db = Path(db) if db else _state_db()
+        if not sid or not db.exists():
+            return None
+        end = time.monotonic() + budget
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=budget)
+        try:
+            con.set_progress_handler(lambda: 1 if time.monotonic() > end else 0, 1000)
+            try:
+                con.execute("SELECT started_at FROM sessions LIMIT 0")
+                query = "SELECT parent_session_id, model_config, started_at FROM sessions WHERE id = ?"
+            except sqlite3.OperationalError:
+                query = "SELECT parent_session_id, model_config, NULL FROM sessions WHERE id = ?"   # no times: the safe answer
+            out: list = []
+            seen = {sid}
+            cur = sid
+            for _ in range(limit):
+                row = con.execute(query, (cur,)).fetchone()
+                if row is None:
+                    return None if cur == sid else out
+                parent = row[0]
+                if not parent:
+                    try:
+                        cfg = json.loads(row[1]) if isinstance(row[1], str) else None
+                    except ValueError:
+                        cfg = None
+                    parent = cfg.get("_branched_from") if isinstance(cfg, dict) else None
+                if not isinstance(parent, str) or not parent or parent in seen:
+                    return out
+                created = row[2] if isinstance(row[2], (int, float)) and not isinstance(row[2], bool) else None
+                out.append((parent, float(created) if created is not None else None))
+                seen.add(parent)
+                cur = parent
+            return out
+        finally:
+            con.close()
+    except Exception:
+        return None
+
+
+def stored_ancestors(sid: str, limit: int = 16, budget: float = 1.0, db=None):
+    """The ids of `stored_origin`, nearest first (None when it can't be told now)."""
+    got = stored_origin(sid, limit, budget, db)
+    return None if got is None else [p for p, _t in got]
+
+
 def compression_ancestors(sid: str, limit: int = MAX_CHATS, budget: float = ANCESTRY_BUDGET_S) -> list:
     """The stored ids a context compression rotated away from, nearest first: a chat that read in segment S1 and was
     compressed to S2 is known to the app as S1 only. Walks `parent_session_id` upward while the parent ended by
