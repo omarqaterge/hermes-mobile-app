@@ -147,7 +147,7 @@ export async function connect(): Promise<void> {
     scheduleReconnect()
     return
   }
-  warm.length = 0 // runtimes of the old socket: Hermes reaps those itself once it sees the socket gone
+  for (const w of warm.splice(0)) chatClosed(w.runtimeId) // runtimes of the old socket: Hermes reaps those itself once it sees the socket gone
   try {
     await client.connect(url)
     await afterConnect()
@@ -509,7 +509,7 @@ const kept: Array<{ storedId: string; runtimeId: string; running: boolean }> = [
 function keepWhileWorking(a: ActiveSession): void {
   if (kept.some(k => k.runtimeId === a.runtimeId)) return
   kept.push({ storedId: a.storedId, runtimeId: a.runtimeId, running: a.running })
-  if (kept.length > KEPT_MAX) kept.shift() // stays open as it was, no longer followed
+  if (kept.length > KEPT_MAX) forgetRuntime(kept.shift()!.runtimeId, true) // stays open as it was, no longer followed
 }
 
 function unkeep(storedId: string): void {
@@ -702,6 +702,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   void syncSubAgents()
   if (opts.auto) bootMark('chat-live')
   if (prev && prev.storedId !== next.storedId) retire(prev)
+  else if (prev && prev.runtimeId !== next.runtimeId) chatClosed(prev.runtimeId) // the same chat, a new live session: the old one is gone
   rememberSession(next.storedId)
   markSeen(next.storedId)
   chatSeen(next.storedId)
@@ -1535,22 +1536,42 @@ client.onRequest((req: ServerRequest) => {
 
 /** Stored chat id of each live Hermes session opened here (the newest, after a compression). */
 const chatOfRuntime = new Map<string, string>()
-/** Every stored id each of those sessions has had: an approval confirmed under any of them ends when the session closes. */
+/** Every stored id an approval of each live session was, or could be, answered under (`approvalChat` notes each one it
+ *  gives): closing the session, or losing track of it, forgets the fingerprint confirmation under all of them. */
 const idsOfRuntime = new Map<string, Set<string>>()
+const RUNTIMES_MAX = 64 // live sessions followed (one on screen, 2 warm, at most 50 kept): past it the oldest is forgotten
+const IDS_MAX = 32 // stored ids per live session: past it the oldest is forgotten
+function noteConfirmKey(runtimeId: string, storedId: string): void {
+  if (!runtimeId || !storedId) return
+  const ids = idsOfRuntime.get(runtimeId) ?? new Set<string>()
+  idsOfRuntime.delete(runtimeId)
+  idsOfRuntime.set(runtimeId, ids) // the newest last
+  ids.delete(storedId)
+  ids.add(storedId)
+  if (ids.size > IDS_MAX) {
+    const [old] = ids
+    ids.delete(old)
+    forgetApprovalConfirm(old)
+  }
+  if (idsOfRuntime.size > RUNTIMES_MAX) forgetRuntime(idsOfRuntime.keys().next().value as string)
+}
 function setChatOfRuntime(runtimeId: string, storedId: string): void {
   chatOfRuntime.set(runtimeId, storedId)
-  const ids = idsOfRuntime.get(runtimeId) ?? new Set<string>()
-  ids.add(storedId)
-  idsOfRuntime.set(runtimeId, ids)
+  noteConfirmKey(runtimeId, storedId)
+}
+/** A live session is gone, or no longer followed: an Allow under any stored id it had asks again. `keepRoute` keeps knowing
+ *  which chat it is (one still live that is just no longer followed). */
+function forgetRuntime(runtimeId: string, keepRoute = false): void {
+  const ids = idsOfRuntime.get(runtimeId)
+  idsOfRuntime.delete(runtimeId)
+  if (!keepRoute) chatOfRuntime.delete(runtimeId)
+  for (const id of ids ?? []) forgetApprovalConfirm(id)
 }
 onChatOpen('approval-lock', ({ chat }) => setChatOfRuntime(chat.runtimeId, chat.storedId))
 function chatClosed(runtimeId: string): void {
   appliedModel.delete(runtimeId)
   setPhoneDataFullAccess(runtimeId, false) // the live session is gone: the Full access pass for phone data goes with it
-  const ids = idsOfRuntime.get(runtimeId)
-  chatOfRuntime.delete(runtimeId)
-  idsOfRuntime.delete(runtimeId)
-  for (const id of ids ?? []) forgetApprovalConfirm(id)
+  forgetRuntime(runtimeId)
 }
 // A page that (re)loads doesn't know which chats were in Full access: start with none (the shell also clears every pass
 // when a page starts). Each chat's access is re-applied by setAccess when it opens, and the pass comes back only
@@ -1567,8 +1588,10 @@ onChatOpen('phone-data-pass', ({ chat }) => {
 function approvalChat(req: ServerRequest): string {
   const sid = String(req.params.session_id || '')
   const a = getState().active
-  if (a && (!sid || a.runtimeId === sid)) return a.storedId
-  return chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || sid
+  const onScreen = a && (!sid || a.runtimeId === sid)
+  const chat = onScreen ? a.storedId : chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || sid
+  noteConfirmKey(onScreen ? a.runtimeId : sid, chat) // a confirmation under it ends with this live session
+  return chat
 }
 
 /** The stored chat a request belongs to, for the chat list's "Needs you" (needsyou.ts). */
@@ -1712,6 +1735,7 @@ async function syncRunning(): Promise<void> {
     const next = baseActive(r, a.storedId)
     next.items = applySavedStats(next.items, next.storedId)
     setState({ active: { ...next, title: next.title || cur.title, goal: cur.goal } })
+    if (next.runtimeId !== cur.runtimeId) chatClosed(cur.runtimeId) // replaced by a new live session: no longer followed
   } catch {
     /* keep waiting */
   }
@@ -1770,7 +1794,7 @@ client.onEvent((ev: GatewayEvent) => {
         moveChat(prev, sid)
         if (k) k.storedId = sid
         if (w) w.storedId = sid
-        if (chatOfRuntime.has(ev.session_id)) setChatOfRuntime(ev.session_id, sid)
+        setChatOfRuntime(ev.session_id, sid)
       }
     }
     if (type === 'session.title' || type === 'message.complete') loadSessionsSoon()
@@ -1900,7 +1924,7 @@ client.onEvent((ev: GatewayEvent) => {
         if (a && typeof sid === 'string' && sid && sid !== a.storedId) {
           noteLineage([a.storedId, sid], a.runtimeId)
           moveChat(a.storedId, sid)
-          if (chatOfRuntime.has(a.runtimeId)) setChatOfRuntime(a.runtimeId, sid)
+          setChatOfRuntime(a.runtimeId, sid)
         }
       }
       updateActive(x => ({ info: { ...x.info, ...(payload as object) } }))
@@ -2265,7 +2289,7 @@ export async function compressChat(): Promise<string> {
     moveChat(a.storedId, newSid)
     for (const k of kept) if (k.runtimeId === a.runtimeId) k.storedId = newSid
     for (const w of warm) if (w.runtimeId === a.runtimeId) w.storedId = newSid
-    if (chatOfRuntime.has(a.runtimeId)) setChatOfRuntime(a.runtimeId, newSid)
+    setChatOfRuntime(a.runtimeId, newSid)
   }
   if (r.compressed === false || r.summary?.noop || r.summary?.aborted || r.summary?.refused_would_grow) return r.message || r.summary?.headline || 'Nothing to compress'
   const b = r.before_messages, n = r.after_messages
