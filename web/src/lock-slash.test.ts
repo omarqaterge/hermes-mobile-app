@@ -14,11 +14,13 @@ vi.mock('./access-confirm', async orig => ({
   confirmLooseApprovals: async () => lock.onConfirm()
 }))
 
+import { askBtw, btwOpen, closeBtw } from './btw'
 import { client, sendPrompt } from './gateway'
 import { setState, type ActiveSession } from './store'
 
 type Answer = (params: Record<string, unknown>) => unknown
 let sent: string[]
+let seen: Record<string, Record<string, unknown>>
 let answers: Record<string, Answer>
 
 function open(): void {
@@ -34,8 +36,11 @@ beforeEach(() => {
   lock.unlocks = 0
   lock.onConfirm = () => true
   sent = []
+  seen = {}
+  closeBtw()
   answers = { 'commands.catalog': () => ({ categories: [], skills: {} }) }
   vi.spyOn(client, 'request').mockImplementation(((method: string, params: Record<string, unknown>) => {
+    seen[method] = params
     sent.push(method === 'slash.exec' ? `slash.exec ${params.command}` : method === 'command.dispatch' ? `command.dispatch ${params.name}` : method)
     try {
       return Promise.resolve(answers[method] ? answers[method](params) : {})
@@ -99,6 +104,97 @@ describe('over the lock screen', () => {
       expect(sent, answer.type).toEqual(['commands.catalog', 'slash.exec help'])
     }
     expect(lock.unlocks).toBe(3)
+  })
+})
+
+describe('over the lock screen, a catalog that can not be read in full', () => {
+  test('a catalog with a warning (a loader failed) or one that is not well formed counts as not built in', async () => {
+    lock.on = true
+    const cases: unknown[] = [
+      { categories: [], skills: {}, warning: 'quick_commands discovery unavailable: boom' },
+      { categories: [], skills: {}, warning: 'skills named like a built-in: /status' },
+      { categories: [], skills: {}, warning: 5 },
+      null,
+      'catalog',
+      {},
+      { skills: {} },
+      { categories: 'User commands', skills: {} },
+      { categories: [{ name: 'User commands' }], skills: {} },
+      { categories: [{ name: 'User commands', pairs: ['/status'] }], skills: {} },
+      { categories: [null], skills: {} },
+      { categories: [] },
+      { categories: [], skills: [] }
+    ]
+    for (const c of cases) {
+      answers['commands.catalog'] = () => c
+      sent = []
+      await expect(sendPrompt('/status'), JSON.stringify(c)).rejects.toThrow('Unlock the phone')
+      expect(sent).toEqual(['commands.catalog'])
+    }
+  })
+
+  test('an empty warning is no warning', async () => {
+    lock.on = true
+    answers['commands.catalog'] = () => ({ categories: [{ name: 'Session', pairs: [['/status', 'x']] }], skills: {}, warning: '' })
+    await sendPrompt('/status')
+    expect(sent).toEqual(['commands.catalog', 'slash.exec status'])
+  })
+})
+
+describe('over the lock screen with no chat open', () => {
+  beforeEach(() => {
+    lock.on = true
+    setState({ active: null, profile: 'work' })
+  })
+
+  test('a command the catalog shadows, or one the catalog cannot vouch for, makes no chat', async () => {
+    for (const c of [() => ({ categories: [{ name: 'User commands', pairs: [['/status', 'exec: x']] }], skills: {} }), fails('no catalog')]) {
+      answers['commands.catalog'] = c
+      sent = []
+      await expect(sendPrompt('/status')).rejects.toThrow('Unlock the phone')
+      expect(sent).toEqual(['commands.catalog'])
+    }
+    expect(seen['commands.catalog']).toEqual({ profile: 'work' })
+  })
+
+  test('/yolo with anything but off makes no chat', async () => {
+    for (const text of ['/yolo', '/yolo on', '/yolo 1', '/yolo full', '/yolo offf'])
+      await expect(sendPrompt(text), text).rejects.toThrow('Unlock the phone')
+    expect(sent).toEqual([])
+  })
+
+  test('/btw makes no chat', async () => {
+    await expect(sendPrompt('/btw what is this')).rejects.toThrow('Unlock the phone')
+    expect(sent).toEqual([])
+    expect(btwOpen()).toBe(false)
+  })
+})
+
+describe('/btw and the side chat over the lock screen', () => {
+  test('/btw typed just before the phone locks is not opened', async () => {
+    queueMicrotask(() => {
+      lock.on = true
+    })
+    await expect(sendPrompt('/btw what is this')).rejects.toThrow('Unlock the phone')
+    expect(btwOpen()).toBe(false)
+    expect(sent).toEqual([])
+  })
+
+  test('the side chat asks nothing while the phone is locked', async () => {
+    lock.on = true
+    await askBtw('a question')
+    expect(sent).toEqual([])
+    expect(lock.unlocks).toBe(1)
+    lock.on = false
+    await askBtw('a question')
+    expect(sent).toEqual(['prompt.btw'])
+  })
+
+  test('/yolo off still goes over the lock screen', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { headers: { 'Content-Type': 'application/json' } }))
+    lock.on = true
+    await sendPrompt('/yolo off')
+    expect(sent).toContain('config.set')
   })
 })
 

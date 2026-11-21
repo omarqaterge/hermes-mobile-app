@@ -83,6 +83,7 @@ let looseStatus = false
 // Quick commands config.yaml would hold ({quickCommands: ['version']} to /__mock): commands.catalog lists them under "User
 // commands", as Hermes does. Over the lock screen the app won't run a command of such a name.
 let quickCommands = []
+let catalogWarning = '' // commands.catalog's `warning` ({catalogWarning: '...'} to /__mock): a loader that failed
 let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps (Settings → Background apps)
 let openui = { enabled: true } // the plugin's /openui (Settings → Replies)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
@@ -200,6 +201,7 @@ const server = http.createServer((req, res) => {
       }
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.quickCommands) quickCommands = b.quickCommands
+      if (typeof b.catalogWarning === 'string') catalogWarning = b.catalogWarning
       if (b.models) modelsMock = { ...modelsMock, ...b.models }
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
@@ -1345,7 +1347,7 @@ wss.on('connection', ws => {
       case 'session.set_hidden':
         return reply({ hidden: !!params.hidden, session_key: params.session_id })
       case 'commands.catalog':
-        return reply({ categories: quickCommands.length ? [{ name: 'User commands', pairs: quickCommands.map(n => [`/${n}`, 'exec: true']) }] : [], skills: {}, pairs: [] })
+        return reply({ categories: quickCommands.length ? [{ name: 'User commands', pairs: quickCommands.map(n => [`/${n}`, 'exec: true']) }] : [], skills: {}, pairs: [], warning: catalogWarning })
       case 'session.context_breakdown':
         if (params.session_id === 'rt-s-full') return reply({ context_used: 850, context_max: 1000, context_percent: 85 })
         // Like Hermes before a reopened chat's first turn: no agent yet, so no figures

@@ -150,6 +150,21 @@ module.exports = async t => {
   }
   await mock({ quickCommands: [] })
   check((await slash(pg, '/version')).join() === 'version', 'lock screen: and runs again when none has')
+  // A catalog with a warning (a loader failed, so a quick command of that name may be missing from it) can't vouch for one.
+  await mock({ catalogWarning: 'quick_commands discovery unavailable: broken config.yaml' })
+  {
+    const before = await unlocks()
+    check((await slash(pg, '/status')).length === 0 && (await unlocks()) === before + 1, 'lock screen: /status waits when the catalog has a warning')
+  }
+  await mock({ catalogWarning: '' })
+  check((await slash(pg, '/status')).join() === 'status', 'lock screen: and runs again without one')
+  // /yolo with anything but off waits, before a chat or a setting is touched.
+  for (const text of ['/yolo', '/yolo on']) {
+    const before = await unlocks()
+    const sets = rpcs('config.set').length
+    await slash(pg, text)
+    check(rpcs('config.set').length === sets && (await unlocks()) === before + 1, `lock screen: ${text} waits for an unlock`)
+  }
   // A worker that fails isn't followed by command.dispatch there (where a quick command runs first), nor is an alias.
   {
     const dispatched = rpcs('command.dispatch').length

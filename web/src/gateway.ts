@@ -741,24 +741,33 @@ export async function sendPrompt(text: string): Promise<boolean> {
   if (getState().opening) throw new Error('Still opening your chat — wait a moment')
   // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first. A slash
   // command needs one unless it only shows something (lockSafeCommand, by its exact name, in a chat with access off): an
-  // unknown name, an alias, a beginning Hermes would expand, a quick command and a plugin command all wait. Judged before
-  // anything is sent (a new chat, the command), and again after each wait, since the phone can lock meanwhile. /yolo stays:
-  // there it can only turn access off (setYolo, setAccess). Hermes's prompt.submit runs no slash command, so text that
-  // isn't one only talks.
+  // unknown name, an alias, a beginning Hermes would expand, a quick command and a plugin command all wait; so does /yolo
+  // with anything but off. Everything is decided before anything is sent (a new chat, the command; with no chat open, the
+  // chat to be made, whose access is off there, and the profile's catalog), and again after each wait, since the phone can
+  // lock meanwhile. Hermes's prompt.submit runs no slash command, so text that isn't one only talks.
   const isSlash = trimmed.startsWith('/')
   const { name, arg } = hermesWords(trimmed)
+  const yoloOff = isSlash && name.toLowerCase() === 'yolo' && /^(off|0|false|no)$/i.test(arg.trim())
   const lockedOut = (why: string) => {
     askUnlock(why)
     throw new Error(why)
   }
-  if (lockView() && isSlash && name.toLowerCase() !== 'yolo' && !lockSafeCommand(name, arg)) lockedOut('Unlock the phone to run this command')
+  /** Why this can't go on in chat `a` over the lock screen; '' when it can (or the phone isn't locked). */
+  const lockWhy = (a: ActiveSession | null): string => {
+    if (!lockView()) return ''
+    if (!isSlash) return accessOf(a) === 'off' ? '' : 'Unlock the phone to use this chat'
+    return yoloOff || (accessOf(a) === 'off' && lockSafeCommand(name, arg)) ? '' : 'Unlock the phone to run this command'
+  }
+  const catalogWhy = async (a: ActiveSession | null): Promise<string> =>
+    lockView() && isSlash && !yoloOff && (await notBuiltIn(a, name)) ? 'Unlock the phone to run this command' : lockWhy(a)
+  const before = pendingNew ? null : getState().active
+  const why = lockWhy(before) || (lockView() ? await catalogWhy(before) : '')
+  if (why) lockedOut(why)
+  const judged = lockView()
   rememberPrompt(trimmed)
   const a = await targetChat()
-  if (lockView()) {
-    const yolo = isSlash && name.toLowerCase() === 'yolo'
-    if (!yolo && accessOf(a) !== 'off') lockedOut(isSlash ? 'Unlock the phone to run this command' : 'Unlock the phone to use this chat')
-    if (isSlash && !yolo && (await notBuiltIn(a, name))) lockedOut('Unlock the phone to run this command')
-  }
+  const after = lockWhy(a) || (lockView() && (!judged || a !== before) ? await catalogWhy(a) : '')
+  if (after) lockedOut(after)
   const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(trimmed)
   if (btw) {
     openBtw(btw[1] || '')
@@ -1018,16 +1027,21 @@ const YOLO_NOTICE: Record<Access, string> = {
 }
 
 /** Over the lock screen: whether Hermes may run something else than its built-in command for this name, by the profile's
- *  command catalog, asked each time: a quick command (config.yaml, its "User commands"), a plugin command, a skill or a
- *  bundle of that name. An answer that can't be had counts as yes. A plugin command with a built-in's name isn't listed
- *  there, so it isn't seen. */
-async function notBuiltIn(a: ActiveSession, name: string): Promise<boolean> {
+ *  command catalog, asked each time (for chat `a`, or with none open for the profile a new chat is made in): a quick command
+ *  (config.yaml, its "User commands"), a plugin command, a skill or a bundle of that name. Fails closed: an answer that
+ *  can't be had, one that isn't a well-formed catalog, or one with a `warning` (a loader failed, so a quick command, plugin
+ *  command or skill of that name may be missing from the list; also Hermes's notice about skills with a built-in's name)
+ *  counts as yes. A plugin command with a built-in's name isn't listed there, so it isn't seen. */
+async function notBuiltIn(a: ActiveSession | null, name: string): Promise<boolean> {
   try {
-    const cat = await rpc<CommandsCatalogResult>('commands.catalog', { session_id: a.runtimeId })
+    const cat = await rpc<CommandsCatalogResult>('commands.catalog', a ? { session_id: a.runtimeId } : { profile: getState().profile })
+    const rows = (x: unknown): x is unknown[][] => Array.isArray(x) && x.every(r => Array.isArray(r))
+    if (!cat || typeof cat !== 'object' || (cat.warning != null && cat.warning !== '')) return true
+    if (!cat.skills || typeof cat.skills !== 'object' || Array.isArray(cat.skills)) return true
+    if (!Array.isArray(cat.categories) || !cat.categories.every(c => c && typeof c.name === 'string' && rows(c.pairs))) return true
     const key = `/${name.toLowerCase()}`
-    const listed = (rows: string[][] | undefined) => (rows || []).some(r => String(r[0] || '').toLowerCase() === key)
-    if (Object.keys(cat?.skills || {}).some(k => k.toLowerCase() === key)) return true
-    return (cat?.categories || []).some(c => (c.name === 'User commands' || c.name === 'Plugin commands') && listed(c.pairs))
+    if (Object.keys(cat.skills).some(k => k.toLowerCase() === key)) return true
+    return cat.categories.some(c => (c.name === 'User commands' || c.name === 'Plugin commands') && (c.pairs ?? []).some(r => String(r[0] || '').toLowerCase() === key))
   } catch {
     return true
   }
