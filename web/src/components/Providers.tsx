@@ -19,6 +19,7 @@ import { ClaudeSignInSheet, afterSignIn, loadPool, withPoolStatus } from './Sign
 import { Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
 import { Row, Section, SelectRow } from './ui'
+import { modelsChanged } from '../modelcache'
 
 const loadCatalog = async (profile: string) => {
   const p = qs({ profile })
@@ -155,6 +156,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onTermux, onPick
     return what
       .then(() => {
         toast(ok)
+        modelsChanged() // the chat's model picker fetches its live list again on its next open
         onChanged()
         return true
       })
