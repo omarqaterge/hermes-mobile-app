@@ -1278,7 +1278,8 @@ export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'chil
     }
     const r = await rpc<{ stored_session_id: string }>('session.branch', { session_id: opened.session_id })
     rememberYolo(r.stored_session_id, access) // before it opens: opening applies this
-    noteLineage([r.stored_session_id, chat, ...chain]) // carries the phone-data mark of every chat in the parent chain
+    // No lineage link: the new chat is a different chat (lineage.ts groups ids of ONE chat, both ways). Nothing in the chain
+    // read phone data (checked above), so it starts clean, and its own reads later never mark the chat it came from.
     if (lockView()) return
     const base = agent.goal.slice(0, 60) || 'Sub-agent'
     await renameStored(r.stored_session_id, `\u2387 ${base}`).catch(() => {})

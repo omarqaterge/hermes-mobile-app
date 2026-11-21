@@ -18,7 +18,7 @@ vi.mock('./api', () => ({
 }))
 
 import { client, continueSubAgent } from './gateway'
-import { lineageOf, resetLineageForTests } from './lineage'
+import { lineageOf, noteLineage, resetLineageForTests } from './lineage'
 import { setState, type ActiveSession } from './store'
 import { resetSubAgents } from './subagents'
 
@@ -116,8 +116,9 @@ describe('continueSubAgent fail-closed parent chain and lock-screen checks', () 
     expect(yolo['new-branched']).toBe(false)
   })
 
-  test('new chat carries the lineage of every chat in the real parent chain', async () => {
+  test('round 4, 1: the new chat is a different chat, never in the lineage group of the chat it came from', async () => {
     activeChat('s2', false)
+    noteLineage(['s2', 's1'])
     mockApi.nested = async () => ({
       children: [childRow('sa1', 's2'), childRow('sa2', 'sa1')],
       segments: ['s2', 's1']
@@ -125,8 +126,47 @@ describe('continueSubAgent fail-closed parent chain and lock-screen checks', () 
 
     await continueSubAgent('s2', { child: 'sa2', goal: 'Deep', phoneData: false })
 
-    const lin = lineageOf('new-branched')
-    expect(lin).toEqual(expect.arrayContaining(['sa2', 'sa1', 's2', 's1']))
+    expect(calls.some(c => c.method === 'session.branch')).toBe(true)
+    for (const id of ['s2', 's1', 'sa1', 'sa2']) expect(lineageOf('new-branched')).not.toContain(id)
+    expect(lineageOf('s2')).toEqual(['s1'])
+    // A read in the new chat later marks only it: the app's record is asked about the parent's own ids alone.
+    expect(lineageOf('s1')).not.toContain('new-branched')
+  })
+
+  test.each([
+    ['missing', undefined],
+    ['empty', []],
+    ['not starting with the chat', ['s1', 's2']],
+    ['longer than the plugin sends', ['s2', ...Array.from({ length: 17 }, (_, i) => `old${i}`)]],
+    ['with an id that is not a string', ['s2', 42]],
+    ['with an empty id', ['s2', '']],
+    ['with a repeated id', ['s2', 's1', 's1']],
+    ['not an array', 's2']
+  ])('round 4, 2: refuses to continue when segments are %s', async (_name, segments) => {
+    activeChat('s2', false)
+    mockApi.nested = async () => ({ children: [childRow('sa1', 's2')], ...(segments === undefined ? {} : { segments }) })
+
+    await expect(continueSubAgent('s2', { child: 'sa1', goal: 'Work', phoneData: false })).rejects.toThrow('couldn’t be confirmed')
+    expect(calls.map(c => c.method)).toEqual([])
+  })
+
+  test('round 4, 2: refuses when the sub-agent\'s parent walk ends outside the chat\'s segments', async () => {
+    activeChat('s2', false)
+    mockApi.nested = async () => ({ children: [childRow('sa1', 'elsewhere')], segments: ['s2', 's1'] })
+
+    await expect(continueSubAgent('s2', { child: 'sa1', goal: 'Work', phoneData: false })).rejects.toThrow('couldn’t be confirmed')
+    expect(calls.map(c => c.method)).toEqual([])
+  })
+
+  test('round 4, 2: seventeen segments (the most the plugin sends) still continue', async () => {
+    activeChat('s2', false)
+    mockApi.nested = async () => ({
+      children: [childRow('sa1', 's2')],
+      segments: ['s2', ...Array.from({ length: 16 }, (_, i) => `old${i}`)]
+    })
+
+    await continueSubAgent('s2', { child: 'sa1', goal: 'Work', phoneData: false })
+    expect(calls.some(c => c.method === 'session.branch')).toBe(true)
   })
 
   test('refuses to continue when a compressed segment in the real parent chain read phone data', async () => {

@@ -760,8 +760,14 @@ export async function storedChildIds(chat: string, profile: string): Promise<Set
   }
 }
 
+/** The most compression segments the plugin sends: the chat and the 16 it was compressed from (`_chat_segments`). */
+const MAX_SEGMENTS = 17
+const isStoredId = (x: unknown): x is string => typeof x === 'string' && x.length > 0 && x.length <= 200 && plainLine(x, 200) === x
+
 /** The stored ids from a sub-agent up through its real parent chain (parent sub-agents and the chat's verified compression
- *  segments), from `GET /nested`. Null when ownership cannot be confirmed (error, missing, broken parent link or cycle). */
+ *  segments), from `GET /nested`. Null when ownership cannot be confirmed (error; `segments` missing, empty, longer than the
+ *  plugin sends, not starting with the chat, or with a bad id; broken parent link or cycle): it never falls back to the chat
+ *  alone, which would skip the earlier segments' checks. */
 export async function storedParentChain(chat: string, child: string, profile: string): Promise<string[] | null> {
   const root = resolveChat(chat)
   if (!root || !child) return null
@@ -770,39 +776,22 @@ export async function storedParentChain(chat: string, child: string, profile: st
       'GET',
       `${NESTED_API}/nested?session=${encodeURIComponent(root)}${profileQuery(profile)}`
     )
-    const kids = cleanStored(r?.children)
-    const byId = new Map(kids.map(c => [c.id, c]))
+    const segments = r?.segments
+    if (!Array.isArray(segments) || segments.length === 0 || segments.length > MAX_SEGMENTS) return null
+    if (segments[0] !== root || !segments.every(isStoredId) || new Set(segments).size !== segments.length) return null
+    const byId = new Map(cleanStored(r?.children).map(c => [c.id, c]))
     if (!byId.has(child)) return null
-    const segments = Array.isArray(r?.segments)
-      ? r.segments.map(s => plainLine(s, 200)).filter(Boolean)
-      : []
-    const rootIds = new Set(segments.length ? segments : [root])
-    rootIds.add(root)
+    const rootIds = new Set<string>(segments)
     const chain: string[] = []
-    const seen = new Set<string>()
     let cur = child
-    let reached = false
-    for (let i = 0; i <= 8; i++) {
-      if (rootIds.has(cur)) {
-        reached = true
-        break
-      }
-      if (seen.has(cur)) return null
-      seen.add(cur)
+    for (let i = 0; !rootIds.has(cur); i++) {
+      if (i > 8 || chain.includes(cur)) return null
       chain.push(cur)
       const row = byId.get(cur)
       if (!row || !row.parent) return null
       cur = row.parent
     }
-    if (!reached) return null
-    for (const seg of segments.length ? segments : [root]) {
-      if (!seen.has(seg)) {
-        seen.add(seg)
-        chain.push(seg)
-      }
-    }
-    if (!seen.has(root)) chain.push(root)
-    return chain
+    return [...chain, ...segments]
   } catch {
     return null
   }
