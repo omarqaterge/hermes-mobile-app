@@ -208,3 +208,9 @@ Run with the plugin tests, the unit tests and the browser checks, all in a tempo
 - **Not closed:** a program or script file that does the writing (`python3 x.py`, `sh run.sh`, `make`); Python code that
   writes through a library the reader doesn't know (`df.to_csv(p)`, `sqlite3.connect(p)`, `zipfile` in write mode). The
   plugin stays a speed bump; the app's record, filter and dialogs are the enforcement.
+- **Also not closed (final re-check of round 4, accepted as speed-bump limits):** in `execute_code`, a `Path` held in a
+  variable then opened for writing (`p = Path.home() / ...; p.open("w")`), the destination of `Path.replace`/`rename`
+  (and `symlink_to`), and `from io import FileIO`; in the terminal, a redirect glued to its target (`echo x >/path`),
+  a quoted heredoc or `sh -c` body fed to a shell, and a guarded folder reached through `cd` (`cd /; cd etc`, `cd
+  ~/.config`). Fixes 2 to 5 of round 4 hold, and the app-side record, filter and fingerprint rule were unchanged. Known
+  outside this PR: `auto_mode.py`'s `_calls` still unwraps only list-shaped `tool_call` (already on `main`).
