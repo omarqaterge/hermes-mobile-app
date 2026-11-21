@@ -719,7 +719,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   setState({ active: { ...next, title }, opening: null, preview: null, drawer: false, ...closeSubSheetIf(next.storedId) })
   void syncSubAgents()
   if (opts.auto) bootMark('chat-live')
-  if (prev && prev.storedId !== next.storedId) retire(prev)
+  if (prev && !sameChat(prev.storedId, next.storedId)) retire(prev)
   else if (prev && prev.runtimeId !== next.runtimeId) chatClosed(prev.runtimeId) // the same chat, a new live session: the old one is gone
   rememberSession(next.storedId)
   markSeen(next.storedId)

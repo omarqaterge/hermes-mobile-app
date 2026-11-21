@@ -93,6 +93,15 @@ const paths: Array<[string, () => Promise<string>]> = [
     await resumeSession('p2')
     return 'p2'
   }],
+  ['the chat on screen, compressed (a1 -> a2), reopened under the new id with a new live session while working', async () => {
+    running.add('p3')
+    await resumeSession('p3')
+    await allow('rt-p3', 'p3')
+    moveChat('p3', 'p3-next')
+    runtimeOf.set('p3-next', 'rt-p3-new')
+    await resumeSession('p3-next')
+    return 'p3'
+  }],
   ['a warm chat reopened with a new live session (unwarm drops the old one)', async () => {
     await resumeSession('p4')
     await allow('rt-p4', 'p4')
