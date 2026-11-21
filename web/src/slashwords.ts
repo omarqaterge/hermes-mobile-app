@@ -21,23 +21,28 @@ function strip(s: string): string {
   return s.slice(from, to)
 }
 
-/** The command text the page sends to Hermes (`slash.exec`'s `command`): the slashes in front and the spaces around taken
- *  off with Python's set, as Hermes does, never with JavaScript's `trim` (which also drops U+FEFF, which Python keeps). So
- *  Hermes reads from it exactly the name and arguments `hermesWords` gives for the same text. */
-export function hermesBody(text: string): string {
+/** How the page reads a slash command, and the text it sends for it (`slash.exec`'s `command`): every slash and space in
+ *  front taken off (any mix of them, repeated), then the name up to the first space, then the rest with the spaces around
+ *  taken off. Spaces are Python's set, never JavaScript's `trim` (which also drops U+FEFF, which Python keeps).
+ *
+ *  Hermes reads a command twice, differently: its gateway takes `strip().lstrip('/').split(maxsplit=1)` (so `/ /x` names
+ *  `/x`), its slash worker `strip().split()[0].lstrip('/')` (so `/ /x` names nothing). Rather than guess which one acts,
+ *  the page sends `body`, the name and the rest joined by one space: both read exactly `name` and `arg` from it, and so
+ *  does this function (it gives the same answer for `body` as for the text). Every check, at every alias step, judges these
+ *  same words. */
+export function hermesSlash(text: string): { name: string; arg: string; body: string } {
   const s = strip(text)
-  let i = 0
-  while (s[i] === '/') i++
-  return strip(s.slice(i))
+  let from = 0
+  while (from < s.length && (s[from] === '/' || isSpace(s[from]))) from++
+  let end = from
+  while (end < s.length && !isSpace(s[end])) end++
+  const name = s.slice(from, end)
+  const arg = strip(s.slice(end))
+  return { name, arg, body: arg ? `${name} ${arg}` : name }
 }
 
-/** The command's name, as typed (Hermes compares it in lower case), and the text after it. */
-export function hermesWords(text: string): { name: string; arg: string } {
-  const s = hermesBody(text)
-  let end = 0
-  while (end < s.length && !isSpace(s[end])) end++
-  return { name: s.slice(0, end), arg: strip(s.slice(end)) }
-}
+/** `/yolo`'s argument that turns Full access off. */
+export const yoloOffArg = (arg: string): boolean => /^(off|0|false|no)$/i.test(arg)
 
 /** The arguments as Hermes's shlex sees them, near enough to compare a subcommand: quotes and backslashes gone. */
 const shellWords = (arg: string): string[] =>
