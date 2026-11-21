@@ -3,8 +3,11 @@ authentication's line protocol (HELLO, the HERMUX proof, POKE) pokes the ticker 
 nonces under the shared key; the raw key as the first line still pokes until the enforced file exists; a server nonce
 is single use; long, slow or malformed lines are refused; a held port is retried with a bounded back-off and each
 change is noted once, in the loop-events log's fixed shape. Stdlib only. Run: python3 tools/test_cron_ticker.py"""
+import atexit
 import importlib.util
 import json
+import os
+import shutil
 import logging
 import re
 import socket
@@ -14,6 +17,13 @@ import threading
 import time
 import types
 from pathlib import Path
+
+# A throwaway HOME and HERMES_HOME before anything else is imported: nothing this test starts (Hermes's own code
+# included) can read or change a real Hermes home, even when it runs alone, outside tools/check.sh.
+_home = tempfile.mkdtemp(prefix="hm-test-home-")
+os.environ["HOME"] = _home
+os.environ["HERMES_HOME"] = os.path.join(_home, ".hermes")
+atexit.register(shutil.rmtree, _home, True)
 
 HERE = Path(__file__).resolve().parent
 PLUGIN = HERE.parent / "hermes-plugin" / "hermes-mobile"
@@ -423,8 +433,6 @@ ct.threading = threading
 root.setLevel(logging.WARNING)
 
 print("the script's own folder leaves sys.path first")
-import os  # noqa: E402
-import shutil  # noqa: E402
 import subprocess  # noqa: E402
 
 real_dir = tmp / "real"

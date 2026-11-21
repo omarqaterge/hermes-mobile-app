@@ -177,7 +177,7 @@ the phone), every connection, permission and guard rail, all twelve limits, and 
 
 You need an arm64 Android phone (Android 8+, about 6 GB free during setup, 3.5 GB once installed) and a model: a
 subscription you already have (ChatGPT, Claude, SuperGrok, Nous Portal) or an API key (for example
-[OpenRouter](https://openrouter.ai/keys), or Gemini's free tier). No root. About 15 minutes, mostly waiting.
+[OpenRouter](https://openrouter.ai/keys), or Gemini's free tier). No root. About 10 minutes, mostly waiting.
 
 **On the phone (Android 11+):**
 
@@ -190,6 +190,24 @@ subscription you already have (ChatGPT, Claude, SuperGrok, Nous Portal) or an AP
 
 The app follows each step and picks up wherever you stopped. If Google Play Protect says "App blocked" or "Unsafe app",
 tap **More details** → **Install anyway**: Hermux isn't on Google Play, and Play Protect warns about apps it hasn't seen.
+
+<details>
+<summary><b>Check that your download is the real Hermux</b></summary>
+
+Every release is signed with the same key. Its certificate's SHA-256 fingerprint is:
+
+```text
+2D:51:19:F7:DE:4B:4D:B3:F4:C1:78:0F:27:E7:6B:CD:72:EB:54:DB:B7:9B:54:9D:CE:3E:11:58:F7:13:3E:8D
+```
+
+On a computer with the Android SDK, `apksigner verify --print-certs hermux.apk` prints it (the line
+`Signer #1 certificate SHA-256 digest`, without the colons); `keytool -printcert -jarfile hermux.apk` (any JDK) prints it
+with them. Releases after v0.9.8 also carry `hermux.apk.sha256` and a build provenance attestation:
+`gh attestation verify hermux.apk -R omarqaterge/hermes-mobile-app` proves the file was built by this repository's
+release workflow from the release's tag. Updates inside the app are safe either way: Android installs an update only when
+it is signed with the same key.
+
+</details>
 
 <details>
 <summary><b>From a computer</b> (also the route for Android 8-10)</summary>
