@@ -204,3 +204,23 @@ describe('round 6: every path a live session leaves the page by ends its fingerp
     expect(approvalNeedsConfirm(chat)).toBe(true)
   }, 15_000)
 })
+
+describe('round 6, 3: approvals of a kept chat name it', () => {
+  it('a kept chat whose opening was overtaken is found through the kept ones', async () => {
+    running.add('k1')
+    await overtaken('k1', 'k1-other') // goes kept without the chat-open step: not in chatOfRuntime
+    expect(requestChat(approval('rt-k1'))).toBe('k1')
+  })
+
+  it('syncRunning records the new live session, so it is named after it leaves the lists', async () => {
+    running.add('k2')
+    await resumeSession('k2')
+    running.delete('k2')
+    runtimeOf.set('k2', 'rt-k2-new')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.waitFor(() => expect(getState().active?.runtimeId).toBe('rt-k2-new'))
+    setState({ active: { ...getState().active!, running: true } })
+    await switchProfile('other2') // left running, no longer followed: only its route is kept
+    expect(requestChat(approval('rt-k2-new'))).toBe('k2')
+  })
+})

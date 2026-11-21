@@ -1608,7 +1608,7 @@ function approvalChat(req: ServerRequest): string {
   const sid = String(req.params.session_id || '')
   const a = getState().active
   const onScreen = a && (!sid || a.runtimeId === sid)
-  const chat = onScreen ? a.storedId : chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || sid
+  const chat = onScreen ? a.storedId : chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || kept.find(k => k.runtimeId === sid)?.storedId || sid
   noteConfirmKey(onScreen ? a.runtimeId : sid, chat) // a confirmation under it ends with this live session
   return chat
 }
@@ -1754,7 +1754,10 @@ async function syncRunning(): Promise<void> {
     const next = baseActive(r, a.storedId)
     next.items = applySavedStats(next.items, next.storedId)
     setState({ active: { ...next, title: next.title || cur.title, goal: cur.goal } })
-    if (next.runtimeId !== cur.runtimeId) chatClosed(cur.runtimeId) // replaced by a new live session: no longer followed
+    if (next.runtimeId !== cur.runtimeId) {
+      chatClosed(cur.runtimeId) // replaced by a new live session: no longer followed
+      setChatOfRuntime(next.runtimeId, next.storedId) // approvals from the new one name this chat
+    }
   } catch {
     /* keep waiting */
   }
