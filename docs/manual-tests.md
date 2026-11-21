@@ -183,6 +183,16 @@ check on a real phone:
 - [ ] Settings → Permissions → Confirm approvals with fingerprint: turning it off asks for the fingerprint first.
 - [ ] Android 8 or 9 phone if at hand: the screen-lock screen or "Use screen lock" fallback works.
 
+## Slash commands over the lock screen (owner only: needs "Talk to Hermes on the lock screen")
+
+- [ ] Over the lock screen, in a chat in Full access: a slash command asks for an unlock, and `/yolo off` works.
+- [ ] Over the lock screen, in a chat with approvals on: type `/approvals off`, `/cron run <a job>` and a quick command
+      from your config: each asks for an unlock and nothing changes (`/approvals` afterwards still says manual).
+      `/status`, `/help` and `/kanban list` still answer. Say whether the keyboard over the lock screen works at all on
+      your phone, and whether Live mode ever turns speech into a slash command.
+- [ ] Unlocked: `/approvals off` shows the Full access warning; Cancel leaves `/approvals` at manual, Allow sets it off.
+      Set it back with `/approvals manual`.
+
 ## Connectors (Settings → Connectors)
 
 - [ ] **MCP sign-in on the phone.** Add a remote MCP server with an account sign-in (for example from the catalog) and tap Sign in.

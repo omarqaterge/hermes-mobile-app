@@ -51,6 +51,8 @@ These files carry the plumbing every screen uses. Screens are in 3.
   message (only after `done`). In `gateway.ts`, `endTurn` applies `turnOver` to the chat whose turn it was and to no
   other.
 - `approval-lock.ts` — Confirm approvals with fingerprint (3.6): `approvalLockAvailable`, `approvalLockState`, `approvalNeedsConfirm`, `confirmAllow` (bridge `confirmApproval`, answered through `window.hermesApprovalConfirm`), `confirmAlways` (bridge `confirmIdentity`, for a setting that asks on every change), `setApprovalLock`, `forgetApprovalConfirm`; confirmations are keyed by the approval's live session (runtime id), at most `CONFIRMED_MAX`.
+- `slashwords.ts` — Reads a slash command the way Hermes does (`hermesWords`: Python's separators; `hermesShlex` for `shlex.split`; `hermesCommand` turns a typed name into the built-in command Hermes's slash worker runs, by an alias or a beginning it expands, from Hermes's own command table in `web/vendor/hermes-commands.json`), names the commands that may run over the lock screen (`lockSafeCommand`, with `kanbanReadOnly` for a `/kanban` that only reads) and the ones that turn approvals off (`loosensApprovals`; 3.4).
+- `access-confirm.ts` — The Full access confirmation, shared: `confirmFullAccess` (the Auto button, 3.2) and `confirmLooseApprovals` (`/approvals off` and `smart`, 3.4); `FULL_ACCESS_TITLE` and `FULL_ACCESS_CONFIRM` are its title and button.
 - `chatcache.ts` — last-seen items of recent chats (`rememberChat`, `cachedChat`, `forgetChat`, `saveChatToDisk`)
   (2.2.5).
 - `boot.ts` — start-up timing marks (`bootMark`, `lastBoot`, `bootSummary`; `onBootMark` tells listeners about each new mark and `useBootSummary` is the live line for Settings) in `hm.boot.v1`; the shell logs its own

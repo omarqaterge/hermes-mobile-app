@@ -75,6 +75,10 @@ let providerConfigured = true // false = a fresh install (the welcome opens)
 // true = like the pinned Hermes on a fresh install: setup.status scoped to a profile says a provider is configured although
 // none is (its loose probe); setup.runtime_check still says ok: false.
 let looseStatus = false
+// Quick commands config.yaml would hold ({quickCommands: ['version']} to /__mock): commands.catalog lists them under "User
+// commands", as Hermes does. Over the lock screen the app won't run a command of such a name.
+let quickCommands = []
+let catalogWarning = '' // commands.catalog's `warning` ({catalogWarning: '...'} to /__mock): a loader that failed
 let bgapps = { allow_sensitive: false, available: true } // the plugin's /bgapps (Settings → Background apps)
 let openui = { enabled: true } // the plugin's /openui (Settings → Replies)
 let phoneAccess = { files: true, termux_api: true, shizuku: 'ok' } // the plugin's /phone-access (Setup check)
@@ -189,6 +193,8 @@ const server = http.createServer((req, res) => {
         for (const go of canvasGate.held.splice(0)) go()
       }
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
+      if (b.quickCommands) quickCommands = b.quickCommands
+      if (typeof b.catalogWarning === 'string') catalogWarning = b.catalogWarning
       if (b.models) modelsMock = { ...modelsMock, ...b.models }
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
@@ -1284,7 +1290,7 @@ wss.on('connection', ws => {
       case 'session.set_hidden':
         return reply({ hidden: !!params.hidden, session_key: params.session_id })
       case 'commands.catalog':
-        return reply({ categories: [], skills: {}, pairs: [] })
+        return reply({ categories: quickCommands.length ? [{ name: 'User commands', pairs: quickCommands.map(n => [`/${n}`, 'exec: true']) }] : [], skills: {}, pairs: [], warning: catalogWarning })
       case 'session.context_breakdown':
         if (params.session_id === 'rt-s-full') return reply({ context_used: 850, context_max: 1000, context_percent: 85 })
         // Like Hermes before a reopened chat's first turn: no agent yet, so no figures
@@ -1306,8 +1312,13 @@ wss.on('connection', ws => {
         // A quick command that is an alias (config quick_commands: {type: alias, target}): /evilalias0 .. 5 aim at /yolo in different spellings.
         const m = /^evilalias(\d)/.exec(params.command || '')
         const targets = [' /yolo on', '//yolo on', '/YOLO on', '  //  /yolo', 'yolo on', ' /yolo']
+        // These stand for a worker that failed: only then does the page ask command.dispatch, which names the target.
+        if (/^(apdown|help down)\b/.test(params.command || '')) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5030, message: 'slash worker failed' } }))
         return reply(m ? { type: 'alias', target: targets[Number(m[1])] } : {})
       }
+      case 'command.dispatch':
+        // quick_commands in config.yaml, {type: alias, target}: /apdown aims at /approvals off.
+        return reply(params.name === 'apdown' ? { type: 'alias', target: '/approvals off' } : {})
       default:
         return reply({})
     }
