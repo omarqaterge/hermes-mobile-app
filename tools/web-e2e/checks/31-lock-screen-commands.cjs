@@ -162,4 +162,35 @@ module.exports = async t => {
   await sleep(200)
   check((await edits()) >= 1 && (await retries()) >= 1, 'unlocked again: Edit and Retry come back')
   await pg.close()
+
+  // ── slashes and spaces mixed in front: read once, judged and sent the same way ──
+  pg = await open('s-lock-ctl')
+  for (const text of ['/ /approvals off', '// /ap smart', '/\t/approvals off']) {
+    const before = SENT()
+    await pg.getByPlaceholder('Message Hermux').fill(text)
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    const shown = await pg.getByText('Give Hermux full access?').waitFor({ timeout: 3000 }).then(() => true, () => false)
+    await pg.getByRole('button', { name: 'Cancel' }).click().catch(() => {})
+    await sleep(300)
+    check(shown && SENT() === before, `${JSON.stringify(text)}: the Full access warning first, and Cancel sends nothing`)
+  }
+  {
+    const before = SENT()
+    await pg.getByPlaceholder('Message Hermux').fill('/ /approvals off')
+    await pg.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await pg.getByRole('button', { name: 'Allow full access' }).click()
+    await sleep(400)
+    const s = rpcs('slash.exec').slice(before).map(c => c.params.command)
+    check(s.join() === 'approvals off', `"/ /approvals off": allowed, it goes as the page read it (sent ${JSON.stringify(s)})`)
+  }
+  await pg.evaluate(() => window.hermesLockView(true))
+  for (const text of ['// /ap smart', '/ /cron run job1']) {
+    const before = await pg.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
+    const s = await slash(pg, text)
+    const after = await pg.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
+    check(s.length === 0 && after === before + 1, `lock screen: ${JSON.stringify(text)} waits for an unlock`)
+  }
+  check((await slash(pg, '/ /status')).join() === 'status', 'lock screen: "/ /status" still runs, sent as status')
+  await pg.evaluate(() => window.hermesLockView(false))
+  await pg.close()
 }
