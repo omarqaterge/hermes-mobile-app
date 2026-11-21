@@ -952,10 +952,13 @@ def _waiting_entry(pid, w, now: float):
         profile, count, last = w.get("profile"), w.get("open"), w.get("last")
         if isinstance(profile, str) and not _is_text(profile):
             return None
+        max_t = now + ACTIVITY_FUTURE_S
+        since_c = min(max(since, 0.0), max_t)
+        last_c = min(max(last, 0.0), max_t) if _is_number(last) else since_c
         return {"session": session, "kind": kind, "who": who, "profile": profile if isinstance(profile, str) else "",
-                "since": since, "until": until,
+                "since": since_c, "until": until,
                 "open": count if isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= WAIT_MOST else 1,
-                "last": last if _is_number(last) else since}
+                "last": last_c}
     except Exception:
         return None
 

@@ -370,11 +370,14 @@ def _wait_entry_ok(pid, w, now: float) -> bool:
         return False
 
 
-def _kept_wait(w: dict) -> dict:
+def _kept_wait(w: dict, now: float) -> dict:
     count, last, profile = w.get("open"), w.get("last"), w.get("profile")
+    max_t = now + ACTIVITY_FUTURE_S
+    since_c = min(max(w["since"], 0.0), max_t)
+    last_c = min(max(last, 0.0), max_t) if _is_number(last) else since_c
     return {"session": w["session"], "kind": w["kind"], "who": w["who"], "profile": profile if isinstance(profile, str) else "",
-            "since": w["since"], "until": w["until"], "open": count if type(count) is int and 1 <= count <= MAX_WAITING else 1,
-            "last": last if _is_number(last) else w["since"]}
+            "since": since_c, "until": w["until"], "open": count if type(count) is int and 1 <= count <= MAX_WAITING else 1,
+            "last": last_c}
 
 
 def _pid_alive(pid) -> bool:
@@ -427,7 +430,7 @@ def _kept_entry(pid, v, now: float):
         working = bool(items) and _is_number(at) and now - at < 300
         raw = v.get("waiting")
         # An open request outlives the 300 s limit on working entries: Hermes waits up to an hour for an answer.
-        waits = [_kept_wait(w) for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []
+        waits = [_kept_wait(w, now) for w in raw if _wait_entry_ok(pid, w, now)] if isinstance(raw, list) else []
         raw = v.get("nested")
         nested = [_kept_nested(n) for n in raw[:MAX_SUBAGENTS] if _nested_entry_ok(n, now)] if isinstance(raw, list) else []
         if not working and not waits and not nested:

@@ -587,6 +587,27 @@ check("the writer doesn't keep one, but allows a small difference", list(entries
 with open(plugin.ACTIVITY_FILE, "w") as f:
     json.dump({alive: {"at": now, "items": [dict(item, ts=future)]}}, f)
 check("nor is a work line dated in the future served", answer()["items"] == [], answer())
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({
+        alive: {"at": now, "items": [], "waiting": [
+            dict(good, session="clamp-hi", who="A sub-agent", since=-50.0, last=now + 10**6),
+            dict(good, session="clamp-lo", who="A sub-agent", since=now + 10**6, last=-25.0),
+        ]},
+        "4344": {"at": now, "items": [], "waiting": [
+            dict(good, session="kept-clamp", who="A sub-agent", since=-10.0, last=now + 10**6),
+        ]},
+    }, f)
+served = {w["session"]: w for w in answer()["waiting"]}
+cap = time.time() + plugin.ACTIVITY_FUTURE_S + 2
+check("waiting since and last are clamped to [0, now + ACTIVITY_FUTURE_S]",
+      "clamp-hi" in served and "clamp-lo" in served
+      and 0 <= served["clamp-hi"]["since"] <= cap and 0 <= served["clamp-hi"]["last"] <= cap
+      and 0 <= served["clamp-lo"]["since"] <= cap and 0 <= served["clamp-lo"]["last"] <= cap,
+      served)
+plugin._publish_activity()
+kept_w = entries().get("4344", {}).get("waiting", [{}])[0]
+check("kept waiting entries clamp since and last too",
+      0 <= kept_w.get("since", -1) <= cap and 0 <= kept_w.get("last", -1) <= cap, kept_w)
 os.remove(plugin.ACTIVITY_FILE)
 
 print("nothing here can answer")

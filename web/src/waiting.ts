@@ -60,11 +60,18 @@ export function noteArrived(id: unknown, at: number): void {
 }
 export const arrivedAt = (id: unknown): number | undefined => arrived.get(id)
 
-/** The feed says a sub-agent of this chat asks, about a request that arrived at `at`, and the chat itself asks nothing. */
+/** The feed says a sub-agent of this chat asks for an approval, about a request that arrived at `at`, and the chat
+ *  itself asks nothing. */
 export function subAgentAsks(list: readonly WaitingItem[], chat: string, at: number | undefined): boolean {
   if (at === undefined) return false
   const mine = list.filter(w => w.session === chat)
-  return !mine.some(w => !w.who) && mine.some(w => w.who === SUB_AGENT && (w.last ?? w.since) >= at - ASK_SLACK_S)
+  return (
+    !mine.some(w => !w.who) &&
+    mine.some(w => {
+      const t = w.last ?? w.since
+      return w.who === SUB_AGENT && w.kind === 'approval' && t >= at - ASK_SLACK_S && t <= at + ASK_SLACK_S
+    })
+  )
 }
 
 export interface EndedChat {
@@ -94,7 +101,13 @@ export function visibleWaiting(list: WaitingItem[], ended: Map<string, EndedChat
     const e = ended.get(w.session)
     if (!e || now - e.at >= ENDED_HOLD_S) return true
     const mine = list.filter(x => x.session === w.session)
-    if (mine.some(x => (x.last ?? x.since) > e.at)) return true // one began after that: it is new
+    if (
+      mine.some(x => {
+        const t = x.last ?? x.since
+        return t > e.at && t <= now + ASK_SLACK_S
+      })
+    )
+      return true // one began after that: it is new
     const open = openIn(mine, w.session)
     return (e.seen === null ? open - e.count : Math.min(open, e.seen - e.count)) > 0
   })
