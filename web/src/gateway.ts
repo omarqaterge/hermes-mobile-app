@@ -10,7 +10,7 @@ import { api } from './api'
 import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
-import { hermesWords, lockSafeCommand, loosensApprovals } from './slashwords'
+import { hermesBody, hermesWords, lockSafeCommand, loosensApprovals } from './slashwords'
 import { confirmLooseApprovals } from './access-confirm'
 import { noteLineage, noteListRow } from './lineage'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
@@ -1052,7 +1052,8 @@ async function notBuiltIn(a: ActiveSession | null, name: string): Promise<boolea
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
-  const body = text.replace(/^\/+/, '').trim()
+  // What is sent and what is judged are the same text: Hermes reads `body` with Python's strip, which keeps U+FEFF.
+  const body = hermesBody(text)
   const { name, arg } = hermesWords(text) // the words Hermes will read, whatever separates them
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
   // The phone may lock while a command waits (a confirmation, Hermes's answer): over the lock screen only a command sendPrompt
