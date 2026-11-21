@@ -474,6 +474,9 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] Over the lock screen (Talk to Hermes on the lock screen on): in a chat in Full access a slash command asks for an unlock and `/yolo off` works; in a chat with approvals on `/bg` asks for an unlock.
 - [ ] Over the lock screen, in a chat with approvals on: type `/approvals off`, `/cron run <a job>` and a quick command from your config: each asks for an unlock and nothing changes (`/approvals` afterwards still says manual). `/status`, `/help` and `/kanban list` still answer. Say whether the keyboard over the lock screen works at all on your phone, and whether Live mode ever turns speech into text starting with `/`.
 - [ ] Unlocked: `/approvals off` shows the Full access warning; Cancel leaves `/approvals` at manual, Allow sets it off. Set it back with `/approvals manual`.
+- [ ] Open a chat with an answer, open the side chat (`/btw`) or start editing a message, then lock the phone and bring
+      the app back over the lock screen: the side chat and the edit box are closed, and no message has Edit or Retry.
+      After unlocking they are back.
 - [ ] A chat that has read phone data, in Debian with Hermes running: start `/bg` asking it to run `hermes chat -q hi`, `rish -c id`, and a script it writes to `/tmp`: each is blocked in the task, while `ls` and `cat` of a file work. `/kanban swarm x` and `/bp <name> a=b` are refused in that chat.
 - [ ] Branch a chat before it reads phone data, then let it read: the branch's network commands don't ask. In a new chat, ask the agent to list recent chats without searching: its network commands don't ask.
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.

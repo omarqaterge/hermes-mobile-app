@@ -2139,12 +2139,23 @@ export function filesOf(item: ChatItem): MsgFile[] {
   return item.fileRefs.map((ref, i) => ({ name: item.files?.[i] || ref.replace(/^@file:/, '').split('/').pop() || 'file', ref })).filter(x => x.ref)
 }
 
+/** Over the lock screen Edit and Retry ask for an unlock with sendPrompt's words. */
+const RESEND_LOCKED = 'Unlock the phone to use this chat'
+
 /** Edit / regenerate: drop the user turn `itemId` and everything after it, then send `text` in its place. The
  * message's photos go with it (re-queued with image.attach); `images` overrides them (the edit box can drop some). */
 export async function resendFrom(itemId: string, text: string, images?: MsgImage[], files?: MsgFile[]): Promise<void> {
   const trimmed = text.trim()
   const a = getState().active
   if (!a || !trimmed) return
+  // Over the lock screen an edit or a retry waits for an unlock, whatever the chat's access: it starts a turn and drops the
+  // later ones from Hermes's history, which talking doesn't. Checked again right before the send, since the phone can lock
+  // while the message's row and photos are looked up.
+  const lockedOut = () => {
+    askUnlock(RESEND_LOCKED)
+    throw new Error(RESEND_LOCKED)
+  }
+  if (lockView()) lockedOut()
   if (a.running) throw new Error('Wait for the current reply to finish')
   const cut = a.items.findIndex(i => i.id === itemId)
   if (cut < 0) return
@@ -2170,6 +2181,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
     }
     let r: PromptSubmitResult
     try {
+      if (lockView()) lockedOut()
       r = await rpc<PromptSubmitResult>('prompt.submit', {
         session_id: a.runtimeId,
         text: body,
@@ -2185,6 +2197,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
       // can't truncate to it. Nothing live needs dropping then: send the edited text as a normal prompt. Anywhere
       // else that would put the edit after the later turns, so stop and show what Hermes really holds.
       if (!isLast) throw new Error("That message isn't in this chat's history any more. Start a new chat to begin again")
+      if (lockView()) lockedOut()
       r = await rpc<PromptSubmitResult>('prompt.submit', { session_id: a.runtimeId, text: body, surface: 'mobile' })
     }
     rebindKeptRowIds(kept, r?.survivor_user_row_ids)
@@ -2199,7 +2212,7 @@ export async function resendFrom(itemId: string, text: string, images?: MsgImage
   }
 }
 
-/** Regenerate the reply of the turn containing `itemId` (an assistant item). */
+/** Regenerate the reply of the turn containing `itemId` (an assistant item). Over the lock screen it waits for an unlock (resendFrom). */
 export async function retryTurn(itemId: string): Promise<void> {
   const a = getState().active
   if (!a) return

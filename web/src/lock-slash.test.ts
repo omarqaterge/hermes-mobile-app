@@ -15,7 +15,7 @@ vi.mock('./access-confirm', async orig => ({
 }))
 
 import { askBtw, btwOpen, closeBtw } from './btw'
-import { client, sendPrompt } from './gateway'
+import { client, resendFrom, retryTurn, sendPrompt } from './gateway'
 import { setState, type ActiveSession } from './store'
 
 type Answer = (params: Record<string, unknown>) => unknown
@@ -268,5 +268,58 @@ describe('/approvals off with characters JavaScript and Python read differently'
     for (const c of ['\u001c', '\u001d', '\u001e', '\u001f', '\u0085']) await sendPrompt(`/approvals${c}off`)
     expect(lock.asked).toBe(5)
     expect(sent).toEqual([])
+  })
+})
+
+describe('Edit and Retry over the lock screen', () => {
+  const withTurn = (yolo: boolean, autoAccess = false) => {
+    open()
+    setState(s => ({
+      active: s.active && {
+        ...s.active,
+        info: { ...s.active.info, yolo } as ActiveSession['info'],
+        autoAccess,
+        items: [
+          { kind: 'user', id: 'u1', text: 'first', at: 1 },
+          { kind: 'assistant', id: 'a1', text: 'answer', at: 2 }
+        ] as ActiveSession['items']
+      }
+    }))
+    answers['session.history'] = () => ({ messages: [{ role: 'user', text: 'first', row_id: 7 }] })
+  }
+
+  test('Edit and Retry send no turn over the lock screen, whatever the chat\'s access', async () => {
+    lock.on = true
+    for (const [yolo, auto] of [[false, false], [true, false], [true, true]] as const) {
+      withTurn(yolo, auto)
+      sent = []
+      await expect(resendFrom('u1', 'edited')).rejects.toThrow('Unlock the phone to use this chat')
+      await expect(retryTurn('a1')).rejects.toThrow('Unlock the phone to use this chat')
+      expect(sent, `yolo ${yolo} auto ${auto}`).toEqual([])
+    }
+    expect(lock.unlocks).toBe(6)
+  })
+
+  test('the phone locking while the message is looked up sends nothing', async () => {
+    withTurn(true)
+    answers['session.history'] = () => {
+      lock.on = true
+      return { messages: [{ role: 'user', text: 'first', row_id: 7 }] }
+    }
+    await resendFrom('u1', 'edited')
+    expect(sent).toContain('session.history')
+    expect(sent).not.toContain('prompt.submit')
+    expect(lock.unlocks).toBe(1)
+  })
+
+  test('unlocked, Edit and Retry send as before', async () => {
+    withTurn(true)
+    await resendFrom('u1', 'edited')
+    expect(sent).toContain('prompt.submit')
+    expect(seen['prompt.submit']).toMatchObject({ text: 'edited', truncate_before_row_id: 7 })
+    withTurn(false)
+    sent = []
+    await retryTurn('a1')
+    expect(sent).toContain('prompt.submit')
   })
 })

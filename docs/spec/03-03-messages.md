@@ -42,13 +42,14 @@ Actions are not drawn on earlier segments of a turn (a reply split by tool calls
 
 `resendFrom(itemId, text, images, files)` in `web/src/gateway.ts`:
 
-1. Refuses while a reply runs ("Wait for the current reply to finish").
-2. Finds the user message's durable row id (`userRowId`: the item's `rowId`, else read from `session.history` by position from the end).
-3. Replaces the view from that message onward with the new user message and starts "running".
-4. Re-queues the message's photos with `image.attach` (Hermes queued them for the original turn only). Files travel as their `@file:` references in front of the text.
-5. Calls `prompt.submit` with `truncate_before_row_id` and `confirm_truncate`. Editing the very first message also sets `confirm_empty_truncate`.
-6. If Hermes says the row is "no longer in session history" and it was the last turn (a failed last turn is stored but never entered the live history), it sends the text as a normal prompt. Otherwise it fails with "That message isn't in this chat's history any more. Start a new chat to begin again".
-7. On any failure it takes the photos back out of Hermes's queue (`image.detach`), reloads the chat from Hermes (`resumeSession`) and toasts "Send failed: <reason>".
+1. Over the lock screen, whatever the chat's access, asks for an unlock and sends nothing ("Unlock the phone to use this chat", the words `sendPrompt` uses): it starts a turn and drops the later ones from Hermes's history, which talking there doesn't. Checked again right before each `prompt.submit`, since the phone can lock while the row and photos are looked up. The Edit and Retry buttons aren't shown over the lock screen (`useLocked` in `ChatItems.tsx`), and an edit box left open closes.
+2. Refuses while a reply runs ("Wait for the current reply to finish").
+3. Finds the user message's durable row id (`userRowId`: the item's `rowId`, else read from `session.history` by position from the end).
+4. Replaces the view from that message onward with the new user message and starts "running".
+5. Re-queues the message's photos with `image.attach` (Hermes queued them for the original turn only). Files travel as their `@file:` references in front of the text.
+6. Calls `prompt.submit` with `truncate_before_row_id` and `confirm_truncate`. Editing the very first message also sets `confirm_empty_truncate`.
+7. If Hermes says the row is "no longer in session history" and it was the last turn (a failed last turn is stored but never entered the live history), it sends the text as a normal prompt. Otherwise it fails with "That message isn't in this chat's history any more. Start a new chat to begin again".
+8. On any failure it takes the photos back out of Hermes's queue (`image.detach`), reloads the chat from Hermes (`resumeSession`) and toasts "Send failed: <reason>".
 
 **Undo last turn** (chat menu, 3.5) calls `session.undo`, reloads the chat and toasts "Last turn undone". It is disabled while a reply runs.
 
