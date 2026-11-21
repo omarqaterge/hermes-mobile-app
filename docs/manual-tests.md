@@ -487,3 +487,14 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] With a reply running in another chat, opening the picker no longer slows that reply.
 - [ ] Stop the dashboard (Hermes running without the plugin's dashboard): Settings → Model providers shows
       "Hermux unreachable" with a "Setup check" link that opens Setup check; Back returns to Settings.
+
+## Inner pages (task 10, not yet on a phone)
+
+- [ ] In a chat, tap a photo's remove button, the compress hint's close button, the canvas tools and each reply action
+      with a thumb: each one takes the tap at its edge, and a tap just below a reply action never opens the next message.
+- [ ] The chat shows as many lines as before (idle and with the keyboard open).
+- [ ] Change a setting that applies to new chats (a model, Dynamic UI, an app in Connectors): the toast says "Applies to
+      new chats"; New chat on it closes Settings and opens a new chat.
+- [ ] With one bot, no bot chips anywhere; add a second bot: the chips come back and each bot page's top bar names its bot.
+- [ ] Empty Skills, Memory, Scheduled and Library parts: each button starts the right thing.
+- [ ] On a tablet or a phone in landscape: pages and sheets keep a centred width; Light theme small text reads well.

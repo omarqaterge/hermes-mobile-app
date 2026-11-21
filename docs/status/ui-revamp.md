@@ -295,6 +295,20 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   - **The owner's answers (2026-11-18):** build the sub-agent parts now and keep background tasks for later; fix `/bg`
     without taking a feature away; show the level Hermes gave the sub-agent.
 
+- **Inner pages sweep (task 10, PR against `redesign`).** The design rules on Skills, Memory, Scheduled, the Library's
+  three parts, Bots, Connectors and every Settings page. Empty lists say what the thing is and offer one button
+  (`EmptyState` in `ui.tsx`). The bot chips are gone with one bot; with several, the bot a page applies to shows in its top
+  bar (`BotTag.tsx`). A change that applies only to new chats says "Applies to new chats" in its toast with a New chat
+  button (`newchats.ts`; the toast's button is the only new behaviour). Buttons on these pages are at least 44 px; the
+  chat's small controls (photo remove, compress close, canvas tools, reply actions) get a larger transparent tap area
+  so the chat keeps its height (614 / 314 px at 360x740, unchanged). Pages keep a centred 720 px width and sheets 640 px
+  on wide screens. Footers are one sentence; the longer text moved behind "About this" (`AboutThis.tsx`). Cron jobs is
+  now "Scheduled", each card leading with the next run and the last result in words (`jobwords.ts`). The Hermes update
+  line says what to do first (`mismatchLine`). Light theme text on these pages reaches 4.5:1 (checked by `lowContrast`
+  in `lib.cjs`). All styles in `web/src/pages.css`.
+  - **Left for later:** the tap areas and the toast were tried in a desktop browser at phone size only; how they feel
+    under a thumb, and the pages on a tablet, need a phone (`docs/manual-tests.md`, "Inner pages").
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

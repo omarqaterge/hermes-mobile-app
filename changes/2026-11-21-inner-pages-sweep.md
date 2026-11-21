@@ -1,0 +1,4 @@
+---
+rank: normal
+---
+- **Clearer, easier-to-tap Settings, Skills, Memory and Scheduled pages.** An empty list now says what it is for and offers one button to start (for example "Ask Hermux to make one" on Skills). With one bot the bot chips are gone; with several, each page's top bar shows which bot it changes. A change that only applies to new chats says so in its message, with a New chat button. Buttons on these pages, and the small controls in a chat (a photo's remove button, the canvas tools, the reply actions), are easier to hit, without making the chat smaller. Cron jobs is now called Scheduled, and each job says when it runs next and whether the last run worked. Notes under each section are one sentence, with the rest behind "About this"; on a tablet the pages keep a readable width, and the light theme's small text is easier to read. Checked with browser tests on a computer; not tried on a phone.
