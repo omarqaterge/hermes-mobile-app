@@ -521,6 +521,10 @@ const CASES = [
     }
   },
   ...moreTurnCases(),
+  // Slash commands (gateway.ts runSlash). The worker resolves a quick command itself: slash.exec answers with its output and
+  // only command.dispatch names the target.
+  { name: 'slash.exec (a quick command that is an alias)', run: c => c.rpc('slash.exec', { session_id: c.newRuntime, command: 'contractalias' }, 90_000) },
+  { name: 'command.dispatch (the same alias)', run: c => c.rpc('command.dispatch', { session_id: c.newRuntime, name: 'contractalias' }) },
   { name: 'session.close (new chat)', run: c => c.rpc('session.close', { session_id: c.newRuntime }) },
   { name: 'session.delete', run: c => c.rpc('session.delete', { session_id: c.stored }) }
 ]
