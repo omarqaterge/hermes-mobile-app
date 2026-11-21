@@ -97,3 +97,27 @@ build, and a launch with Hermes stopped (no way to stop it from the app).
 
 Left out on purpose: anything about Telegram / channels / the bot keeper (decision of 0.7.47), swipe or long-press
 actions the user already rejected, Hermes-side speech-to-text (`voice.record`) and wake word (`wake.*`).
+
+## Known limits: fingerprint confirmation lifecycle (PR #205)
+
+The owner accepted these as known limits for PR #205 (security re-check 7, head c0856dd). The page files a fingerprint
+confirmation under the stored chat id and must forget it whenever the chat's live session is no longer followed; these
+paths still miss that. "On `redesign`" means it was already in the app before #205.
+
+- **F1.** An Allow confirmed in a live session the page no longer follows is kept and never forgotten: for example a
+  bot switch while a chat works and then an approval from that chat, or a working chat pushed out of the 50 kept ones.
+  Partly new in #205.
+- **F2.** `resumeSession` misses a compression the page never saw (no `moveChat`, for example made while offline), so
+  the old live session stays in the kept ones and is never forgotten. New in #205 in this form.
+- **F3.** `newSession` reads the chat on screen before it waits for `session.create` and does not check `openSeq`, so
+  a chat opened meanwhile is dropped without being forgotten. Already on `redesign` and `main`.
+- **F4.** `resumeSession` can hold a stale previous chat when `syncRunning` replaces the chat on screen meanwhile, and
+  `syncRunning`'s early returns drop a new live session. Already on `redesign` and `main`.
+- **F5.** `connect()` misses a chat on screen retired while it waits for `client.connect` (New chat during a
+  reconnect), and a chat in its 3 s `closeLater` wait is not forgotten at a reconnect. Partly new in #205.
+- **F6.** `ApprovalLock.forget` does not cancel a fingerprint prompt that is already open. Already on `redesign` and
+  `main`.
+
+The follow-up PR files confirmations under the live Hermes session (its runtime id) instead of the stored chat id, so
+every new live session asks again: it closes all six, and the page-reload question (the shell keeps its confirmed chats
+across a page reload, PR #205 round 6).
