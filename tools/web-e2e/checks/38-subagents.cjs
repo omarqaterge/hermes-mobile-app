@@ -862,5 +862,34 @@ module.exports = async t => {
     check((await sh.count()) === 0, 'sub-agent sheet: switching to another chat closes the sheet')
     await p.close()
   }
+  // ── round 4: Continue needs the chat's compression segments from Hermes's record, and the new chat is a different chat ──
+  {
+    const done = row('seg', 'Segments checked', { ended: stamp(10), reason: 'agent_close' })
+    await mock({ nested: { children: { [CHAT]: [done] }, segments: { [CHAT]: [] } } })
+    const p = await open()
+    const e = eventsOn(p)
+    await e('subagent.start', sub('seg', 'Segments checked'))
+    await e('subagent.complete', sub('seg', 'Segments checked', { status: 'completed' }))
+    await p.getByRole('button', { name: GROUP }).click()
+    await p.getByRole('button', { name: /Segments checked/ }).click()
+    const sheet = p.getByRole('dialog', { name: 'Sub-agent' })
+    await sheet.waitFor({ timeout: 3000 })
+    const branches = rpcs('session.branch').length
+    await sheet.getByRole('button', { name: 'Continue in a new chat' }).click()
+    await sleep(600)
+    check(rpcs('session.branch').length === branches && rpcs('session.resume').every(c => c.params.session_id !== 'kid-seg')
+      && (await p.getByText('couldn’t be confirmed that this sub-agent belongs to this chat', { exact: false }).count()) >= 1,
+      'continue: refused when the plugin sends no compression segments for the chat (no fallback to the chat alone)')
+    await mock({ nested: { segments: { [CHAT]: [CHAT] } } })
+    await sheet.getByRole('button', { name: 'Continue in a new chat' }).click()
+    for (let i = 0; i < 30 && rpcs('session.branch').length === branches; i++) await sleep(100)
+    await sleep(800)
+    const groups = await p.evaluate(() => JSON.parse(localStorage.getItem('hm.lineage.v1') || '[]'))
+    const joined = groups.filter(g => g.s.includes('s-48') && g.s.some(x => /^s-branch-/.test(x)))
+    check(rpcs('session.branch').length === branches + 1 && joined.length === 0,
+      `continue: the new chat is not put in the lineage of the chat it came from (${JSON.stringify(groups)})`)
+    await p.close()
+    await mock({ nested: 'reset' })
+  }
   await mock({ nested: 'reset', waiting: [] })
 }

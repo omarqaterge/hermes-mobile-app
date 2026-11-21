@@ -330,4 +330,31 @@ module.exports = async t => {
     check(full.length >= 1 && full.every(x => x.on === false), `phone data: Auto access gives no pass (${JSON.stringify(full)})`)
     await pg.close()
   }
+  {
+    // A compression gives the chat a new stored id while its live session runs on: closing that session forgets the
+    // confirmation under every id it had, so the chat's first Allow after it is reopened asks again.
+    const pg = await open({ on: true, secure: true, result: 'ok' }, {})
+    await ask(pg, 'run the thing')
+    await pg.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
+    await sleep(400)
+    const first = (await confirms(pg)).length
+    const chat = await pg.evaluate(() => JSON.parse(localStorage.getItem('hm.lastSession') || '{}').id)
+    await pg.evaluate(chat => window.__socks.at(-1).dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'session.info', session_id: chat, payload: { stored_session_id: `${chat}-compressed` } } }) })), chat)
+    await sleep(200)
+    const closes = rpcs('session.close').length
+    for (const other of ['s-11', 's-12', 's-13']) {
+      await pg.evaluate(id => window.hermesOpenSession(id), other)
+      await pg.getByText(`answer ${other}`, { exact: true }).waitFor({ timeout: 5000 })
+    }
+    await sleep(3400) // a chat that left the warm ones is closed after 3 s
+    const forgot = await pg.evaluate(() => window.__alCalls.filter(c => 'forget' in c).map(c => c.forget))
+    await pg.evaluate(id => window.hermesOpenSession(id), chat)
+    await sleep(800)
+    await ask(pg, 'run the thing')
+    await pg.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
+    await sleep(400)
+    check(rpcs('session.close').length > closes && forgot.includes(chat) && forgot.includes(`${chat}-compressed`) && (await confirms(pg)).length === first + 1,
+      `approval lock: after a compression, closing the chat forgets the confirmation under its old and new ids, and the next Allow asks again (${JSON.stringify(forgot)})`)
+    await pg.close()
+  }
 }
