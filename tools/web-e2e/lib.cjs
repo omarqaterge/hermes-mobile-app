@@ -326,4 +326,55 @@ async function settingsPage(page, name) {
   await page.locator('.screen .title', { hasText: name }).waitFor({ timeout: 5000 })
 }
 
-module.exports = { settingsPage, openPage, pageTitle, pageHeadings, settingsSection, openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }
+// The area a tap reaches a control by: from the middle of `locator`'s box, how far a tap still lands on it (or inside it)
+// to the left, right, top and bottom (document.elementFromPoint, 1 px steps, up to 40 px beyond its box). Returns its box
+// and the hit area's width and height, so a control drawn small can show a 44 px target without growing.
+const hitArea = (locator) => locator.evaluate(el => {
+  const r = el.getBoundingClientRect()
+  const cx = r.left + r.width / 2
+  const cy = r.top + r.height / 2
+  const on = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h)) }
+  const reach = (dx, dy, half) => { let d = 0; while (d < half + 40 && on(cx + dx * (d + 1), cy + dy * (d + 1))) d++; return d }
+  const l = reach(-1, 0, r.width / 2), rt = reach(1, 0, r.width / 2), u = reach(0, -1, r.height / 2), dn = reach(0, 1, r.height / 2)
+  return { box: [Math.round(r.width), Math.round(r.height)], w: l + rt + 1, h: u + dn + 1 }
+})
+
+// Every visible piece of text inside `root` (a selector) whose contrast with the solid background behind it is under
+// WCAG's 4.5:1 (3:1 for large text: 24 px, or 18.7 px bold). Text that is see-through is mixed into that background
+// first. Skipped, as WCAG does: disabled controls and anything inside an element made see-through (opacity under 1, a
+// paused or disabled look). Returns [text, ratio, font size] for each failure, at most 20.
+const lowContrast = (page, root = 'body') => page.evaluate(sel => {
+  const rgb = c => (c.match(/[\d.]+/g) || []).map(Number)
+  const lum = ([r, g, b]) => [r, g, b].map(c => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((s, c, i) => s + c * [0.2126, 0.7152, 0.0722][i], 0)
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05) }
+  const solidBg = e => {
+    for (let n = e; n; n = n.parentElement) {
+      const c = rgb(getComputedStyle(n).backgroundColor)
+      if (c.length === 3 || (c.length === 4 && c[3] === 1)) return c.slice(0, 3)
+    }
+    return rgb(getComputedStyle(document.body).backgroundColor).slice(0, 3)
+  }
+  const faded = e => { for (let n = e; n; n = n.parentElement) { if (Number(getComputedStyle(n).opacity) < 1) return true; if (n.matches(':disabled')) return true } return false }
+  const out = []
+  for (const r of document.querySelectorAll(sel)) {
+    const walk = document.createTreeWalker(r, NodeFilter.SHOW_TEXT)
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      const e = t.parentElement
+      if (!e || !t.textContent.trim() || e.closest('svg, [aria-hidden="true"], .theme-prev')) continue
+      const st = getComputedStyle(e)
+      const box = e.getBoundingClientRect()
+      if (!box.width || !box.height || st.visibility === 'hidden') continue
+      if (faded(e)) continue
+      const bg = solidBg(e)
+      let fg = rgb(st.color)
+      if (fg.length === 4) fg = fg.slice(0, 3).map((c, i) => c * fg[3] + bg[i] * (1 - fg[3]))
+      const px = parseFloat(st.fontSize)
+      const large = px >= 24 || (px >= 18.66 && Number(st.fontWeight) >= 700)
+      const k = ratio(fg.slice(0, 3), bg)
+      if (k < (large ? 3 : 4.5)) out.push([t.textContent.trim().slice(0, 40), Math.round(k * 100) / 100, Math.round(px)])
+    }
+  }
+  return out.slice(0, 20)
+}, root)
+
+module.exports = { hitArea, lowContrast, settingsPage, openPage, pageTitle, pageHeadings, settingsSection, openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }

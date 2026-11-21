@@ -67,3 +67,10 @@ function noteCompat(): void {
   }
   toast('This Hermux agent is a different version than the app was made for. If something breaks, update the app in Settings → About & help.', 'info', 9000)
 }
+
+/** About & help → Versions → Hermux agent, when its build differs from the one this app was made for: what to do first
+ *  ("Update the app"), then why. `update`: the newer app version on offer, if there is one. */
+export function mismatchLine(update: string | null): string {
+  const why = 'this agent is a different build from the one the app was made for.'
+  return update ? `Update the app to ${update}: ${why}` : `If something breaks, update the app: ${why}`
+}

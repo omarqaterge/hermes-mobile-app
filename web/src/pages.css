@@ -1,0 +1,282 @@
+/* The design rules on the inner pages (task 10; spec 3.14, 3.15, 3.16, 3.20). Solid content, never glass.
+   - Wide screens: page content and bottom sheets keep a centred maximum width (720 px for a page, 640 px for a sheet);
+     the top bar and the backdrop still span the window.
+   - Touch targets of at least 44 px on the pages and in their sheets: pills, card buttons, breadcrumbs, the two- and
+     three-way switches, buttons. On the chat screen nothing grows: the small controls there (the attachment's remove
+     button, the compress hint's close button, the canvas tools, the reply actions) get a larger hit area from a
+     transparent `::after` inside their box's neighbourhood, so the layout and the messages' height stay as they are.
+   - An empty list says what the thing is and how to start, with one button (`EmptyState`, ui.tsx).
+   - Light theme: text these pages show reaches 4.5:1. Gold (`--accent`) on white is 3.65:1, so on Light the gold buttons
+     and selected pills use `--accent-2` behind white, and gold or green words use darker mixes of the same variables. */
+
+/* ── wide screens ── */
+.screen-body {
+  padding-left: max(12px, calc((100% - 720px) / 2));
+  padding-right: max(12px, calc((100% - 720px) / 2));
+}
+.sheet-backdrop {
+  justify-content: center;
+}
+.sheet {
+  max-width: 640px;
+}
+
+/* ── touch targets on pages and sheets ── */
+.screen .pill,
+.sheet .pill {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.screen .card-actions {
+  gap: 4px 6px;
+  margin-top: 0;
+}
+.screen .card-actions button {
+  min-height: 44px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.screen .card-actions button:first-child {
+  margin-left: -8px;
+}
+.screen .crumbs button {
+  min-height: 44px;
+  padding: 0 3px;
+}
+.screen .segmented button,
+.screen .seg button {
+  min-height: 44px;
+}
+.screen .btn,
+.sheet .btn {
+  min-height: 44px;
+}
+.screen .file-row {
+  min-height: 48px;
+}
+.screen .list-row {
+  min-height: 44px;
+}
+/* Buttons whose box stays as it is: a transparent layer around them takes the tap. */
+.screen .icon-btn,
+.screen .back-btn,
+.screen .switch,
+.sheet .switch,
+.set-search-clear,
+.attach-x,
+.compress-x,
+.canvas-tool,
+.canvas-x,
+.msg-actions button {
+  position: relative;
+}
+.attach-thumb .attach-x {
+  position: absolute;
+}
+.screen .icon-btn::after,
+.screen .back-btn::after,
+.screen .switch::after,
+.sheet .switch::after,
+.set-search-clear::after,
+.attach-x::after,
+.compress-x::after,
+.canvas-tool::after,
+.canvas-x::after,
+.msg-actions button::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+}
+.screen .back-btn::after {
+  inset: -3px; /* its 1 px border: the layer is placed from inside it */
+}
+.screen .switch::after,
+.sheet .switch::after {
+  inset: -10px -1px;
+}
+.set-search-clear::after {
+  inset: -6px;
+}
+.attach-x::after {
+  inset: -12px;
+}
+/* On a photo the remove button sits in the corner and the photo cuts what lies outside it: the layer grows inwards. */
+.attach-thumb .attach-x::after {
+  inset: -3px -3px -21px -21px;
+}
+.compress-x::after {
+  inset: -6px;
+}
+/* The canvas tools sit 8 px apart (6 before) so their 44 px tap areas don't overlap; the toolbar keeps its height. */
+.canvas-toolbar {
+  gap: 8px;
+}
+.canvas-tool::after {
+  inset: -6px -5px;
+}
+.canvas-x::after {
+  inset: -9px -6px -6px; /* the tool under it takes the space below, so the layer reaches further up */
+}
+/* The reply actions: 44 px apart (centre to centre), so each tap area is 44 px wide without overlapping the next; the row
+   keeps its height. The first icon still lines up with the text above it. */
+.msg-actions,
+.msg-actions.user-actions {
+  gap: 15px;
+}
+.msg-actions .icon-act:not(:first-child) {
+  margin-left: 0;
+}
+/* The layer reaches only 4 px up (the row's own margin), never over the message above, and the rest downwards, into the
+   space before the next message. */
+.msg-actions button::after {
+  inset: -4px -6px -18px;
+}
+.msg-actions .icon-act::after {
+  inset: -4px -8px -11px;
+}
+
+/* ── empty states ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 28px 20px 24px;
+}
+.set-card .empty-state {
+  padding: 22px 18px 18px;
+}
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.empty-state-title {
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--text);
+}
+.empty-state-text {
+  max-width: 34em;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--glass-dim);
+}
+.empty-state-btn {
+  margin-top: 10px;
+}
+
+/* ── the bot a page applies to, in its top bar (BotTag) ── */
+.topbar-bot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.topbar-bot svg {
+  flex: none;
+}
+.topbar-bot-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── a toast with a button (newchats.ts): the toast takes taps, the rest of the strip lets them through ── */
+.toast.with-action {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.toast-text {
+  flex: 1;
+  min-width: 0;
+}
+.toast-action {
+  flex: none;
+  min-height: 44px;
+  padding: 0 4px;
+  font-weight: 650;
+  color: var(--glass-accent, var(--accent));
+}
+
+/* ── Scheduled: each card leads with its next run and its last result ── */
+.job-when {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.job-last {
+  font-size: 0.86rem;
+  color: var(--glass-dim);
+}
+.job-last.failed {
+  color: var(--err);
+}
+.screen .tag {
+  font-size: 0.75rem;
+  padding: 1px 6px;
+}
+
+/* ── About this ── */
+.about-this p {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+/* ── Light theme contrast on the pages ── */
+:root[data-theme='light'] :is(.screen, .sheet) .btn.primary,
+:root[data-theme='light'] :is(.screen, .sheet) .pill.on,
+:root[data-theme='light'] .screen .seg button.on {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: var(--accent-ink);
+}
+:root[data-theme='light'] .screen .card-actions button:not(.danger),
+:root[data-theme='light'] .screen .mini {
+  color: var(--glass-accent);
+}
+:root[data-theme='light'] .screen .tag {
+  color: color-mix(in srgb, var(--ok) 70%, var(--text));
+  border-color: currentColor;
+}
+:root[data-theme='light'] .screen .tag.off {
+  color: var(--glass-dim);
+}
+:root[data-theme='light'] .screen .seg button:not(.on),
+:root[data-theme='light'] .screen .set-count {
+  color: var(--glass-dim);
+}
+:root[data-theme='light'] .screen :is(.group-title, .gallery-cat, .conn-setup) {
+  color: var(--glass-accent);
+}
+:root[data-theme='light'] .screen .conn-connected {
+  color: color-mix(in srgb, var(--ok) 70%, var(--text));
+}
+/* Small words on these pages: never under 12 px. */
+.screen .conn-state,
+.screen .group-title {
+  font-size: 0.75rem;
+}

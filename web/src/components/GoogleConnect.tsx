@@ -37,7 +37,7 @@ export function GoogleSection({ profile }: { profile: string }) {
   const state = data.signed_in || data.unverified ? 'connected' : 'setup'
   return (
     <>
-      <Section title="Google" footer="Hermux reads and writes your mail, calendar and files through its Google Workspace skill. Ask it in any chat.">
+      <Section title="Google" footer="Hermux reads and writes your mail, calendar and files through its Google Workspace skill: ask it in any chat.">
         <Row
           icon="mail"
           tone="red"

@@ -1,5 +1,5 @@
 // Settings → Behaviour (once Hermes settings): Hermes's options in groups and in words, with checked input and a way back to the default.
-const { WEB, calls, check, sleep } = require('../lib.cjs')
+const { WEB, calls, check, sleep, lowContrast } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -107,4 +107,30 @@ module.exports = async t => {
   await pg.locator('.hit-flash').first().waitFor({ timeout: 4000 }).then(() => check(true, 'settings search: the chosen setting is flashed on its page'), () => check(false, 'settings search: the chosen setting is flashed on its page'))
   check((await pg.locator('.hit-flash').first().innerText()).includes('File checkpoints'), 'settings search: the flashed row is the chosen one')
   await pg.close()
+
+  // ── Task 10: a change that only new chats see says so, and its toast starts a new chat ──
+  {
+    const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await p.goto(WEB + '/')
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    await p.getByRole('button', { name: /^Behaviour/ }).click()
+    const dyn = p.getByRole('switch', { name: 'Dynamic UI' })
+    await dyn.waitFor({ timeout: 5000 })
+    await dyn.click()
+    const off = p.locator('.toast', { hasText: 'Dynamic UI off' })
+    await off.waitFor({ timeout: 3000 }).then(() => check(true, 'behaviour: Dynamic UI confirms the change'), () => check(false, 'behaviour: Dynamic UI confirms the change'))
+    check(/Applies to new chats/.test(await off.innerText()) && (await off.getByRole('button', { name: 'New chat' }).count()) === 1, `behaviour: the Dynamic UI toast says it applies to new chats and offers New chat (${(await off.innerText()).replace(/\s+/g, ' ')})`)
+    check((await p.getByRole('group', { name: 'Settings for' }).count()) === 0 && (await p.getByRole('note', { name: /^Bot:/ }).count()) === 0, 'behaviour, one bot: no bot chips and no bot in the top bar')
+    const bad = await lowContrast(p, '.screen')
+    check(bad.length === 0, `behaviour: text reaches 4.5:1 (${JSON.stringify(bad)})`)
+    await dyn.click() // back on, as it was
+    const on = p.locator('.toast', { hasText: 'Dynamic UI on' })
+    await on.waitFor({ timeout: 3000 })
+    await on.getByRole('button', { name: 'New chat' }).click()
+    await p.locator('.screen').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'behaviour: New chat on the toast leaves Settings for a new chat'), () => check(false, 'behaviour: New chat on the toast leaves Settings for a new chat'))
+    check((await p.locator('.msg').count()) === 0, 'behaviour: …the new chat is empty')
+    await p.close()
+  }
 }

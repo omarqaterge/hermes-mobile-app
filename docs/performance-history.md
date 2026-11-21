@@ -351,6 +351,24 @@ measured 2 to 3% higher this time) and 297 / 295 with effects off, in the list 9
 a millisecond: opening the chat list with effects off (17.5 → 19 ms of work, the same rise as before), its scroll with
 effects off (8 → 8.5 ms), Models with effects off (under 1 ms), and in time Access & privacy with effects off (6 → 6.5 ms).
 
+**Inner pages sweep (task 10, 2026-11-21).** `uicost.cjs --runs 5`, CPU ×4, against `redesign` before the change on
+the same machine, with another session's browser tests running beside it. The built page is 9.3 KB
+larger, uncompressed (`pages.css` and the new small modules). No new timer, poll or listener. Three alternating rounds of
+both builds, each with effects off and on, and then four passes with effects on alone (branch, base, branch, base),
+because the rounds showed that the first pass after the page server starts runs high whatever the build is.
+
+- **Effects off, median of three rounds:** start-up 513 → 531 ms (+3.5%, work +4.1%); opening a chat, the first words
+  of a reply, the chat's and the list's scroll, the menus, Settings and its pages unchanged or lower (within 1 ms).
+  Over 5%: the chat's scroll with ten sub-agents (342 → 374 ms of work, while the third round went 533 → 480) and
+  Access & privacy (6 → 7 ms, whole-millisecond rounding).
+- **Effects on, the branch's second pass against the base's two:** start-up 523 ms (base 527, 550), opening a chat
+  31 / 40 ms of work (31 / 39, 31 / 40), the chat's scroll 320 ms of work (291, 311; +6% against their mean, the two base
+  passes differ by 7%), the chat list's scroll 14 ms (23, 16), the menus 27 and 32 ms (26 / 30, 32 / 34), Behaviour
+  62 ms (63, 62). Over 5%: opening Settings, 55 ms of work against 49 and 49 (+6 ms, with time unchanged at 433 ms),
+  and Add a provider, 29 ms against 28 and 23 (time). No frame over 25 ms where there were none, p95 16.7 to 16.8 ms.
+- Chat heights at 360x740 are unchanged: 614 px idle, 314 px with the keyboard (`31-fixed-points.cjs`).
+- Not measured: on a phone (`docs/manual-tests.md`, "Inner pages").
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

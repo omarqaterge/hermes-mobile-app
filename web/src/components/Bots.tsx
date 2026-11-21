@@ -10,6 +10,8 @@ import { promptDialog } from '../dialog'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, profileLabel, setProfileModel } from './Settings'
 import { Icon } from './icons'
+import { EmptyState } from './ui'
+import { toastNewChats } from '../newchats'
 
 interface Profile {
   name: string
@@ -48,7 +50,7 @@ export function BotsScreen() {
         </button>
       }
     >
-      <Status loading={loading} error={error} empty={!profiles.length} emptyText="No profiles" />
+      <Status loading={loading} error={error} empty={!profiles.length} emptyText="No bots" />
       {profiles.map(p => {
         return (
           <div key={p.name} className="card">
@@ -58,13 +60,22 @@ export function BotsScreen() {
                 <span className="list-title">
                   {profileLabel(p)} {p.name !== profileLabel(p) && <span className="dim small mono">{p.name}</span>}
                 </span>
-                <span className="list-sub">{p.is_default ? 'Main profile' : p.description || 'No description'}</span>
+                <span className="list-sub">{p.is_default ? 'Main bot' : p.description || 'No description'}</span>
                 <span className="list-sub">{p.model || 'no model'}</span>
               </button>
             </div>
           </div>
         )
       })}
+      {profiles.length === 1 && (
+        <EmptyState
+          icon="bot"
+          title="One bot so far"
+          text="Each bot is its own Hermux, with its own model, memory, skills and keys. Make another for a different job."
+          action="New bot"
+          onAction={() => setCreating(true)}
+        />
+      )}
       {creating && (
         <CreateSheet
           profiles={profiles}
@@ -134,7 +145,7 @@ function CreateSheet({ profiles, onClose, onCreated }: { profiles: Profile[]; on
             </button>
           ))}
         </div>
-        <div className="dim small">{cloneFrom ? `Copies ${cloneFrom}’s settings, keys, skills and SOUL.md (not its chats or memory).` : 'A fresh profile with the bundled skills.'}</div>
+        <div className="dim small">{cloneFrom ? `Copies ${cloneFrom}’s settings, keys, skills and SOUL.md (not its chats or memory).` : 'A fresh bot with the bundled skills.'}</div>
         <label className="field">
           <span>What is it for? (optional)</span>
           <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Linear algebra tutor" />
@@ -196,7 +207,7 @@ function BotSheet({ p, onClose, onChanged }: { p: Profile; onClose: () => void; 
         onClose={() => setView('main')}
         onPick={async (provider, model, effort) => {
           await setProfileModel(p.name, provider, model, effort)
-          toast(`${label} → ${model}`)
+          toastNewChats(`New chats with ${label} use ${model}`)
           onChanged()
         }}
       />
@@ -206,7 +217,7 @@ function BotSheet({ p, onClose, onChanged }: { p: Profile; onClose: () => void; 
       <div className="sheet-scroll">
         <DescriptionField p={p} onSaved={() => onChanged()} />
         <div className="kv">
-          <div>Profile</div>
+          <div>Id</div>
           <div className="mono small">{p.name}</div>
           <div>Model</div>
           <div>{p.model || '—'}</div>
@@ -221,7 +232,7 @@ function BotSheet({ p, onClose, onChanged }: { p: Profile; onClose: () => void; 
             <Icon n="puzzle" /> Default model
           </button>
           <button className="menu-item" onClick={() => setView('soul')}>
-            <Icon n="pencil" /> Personality (SOUL.md)
+            <Icon n="user" /> Personality (SOUL.md)
           </button>
           <button
             className="menu-item"
@@ -232,7 +243,7 @@ function BotSheet({ p, onClose, onChanged }: { p: Profile; onClose: () => void; 
             <Icon n="key" /> API keys &amp; settings
           </button>
           <button className="menu-item" onClick={() => setView('rename')}>
-            Aa Rename
+            <Icon n="pencil" /> Rename
           </button>
           {!p.is_default && (
             <button className="menu-item danger" onClick={() => void del()}>
@@ -284,7 +295,7 @@ function RenameSheet({ p, onClose, onDone }: { p: Profile; onClose: () => void; 
           <span>New name</span>
           <input value={name} onChange={e => setName(p.is_default ? e.target.value : slug(e.target.value))} autoCapitalize="none" />
         </label>
-        <div className="dim small">{p.is_default ? 'The main profile keeps its id; this changes the name shown.' : 'Renames the folder and keeps chats, memory and skills.'}</div>
+        <div className="dim small">{p.is_default ? 'The main bot keeps its id; this changes the name shown.' : 'Renames the folder and keeps chats, memory and skills.'}</div>
       </div>
       <div className="sheet-actions">
         <button className="btn" onClick={onClose}>
@@ -344,7 +355,7 @@ function SoulSheet({ p, onClose }: { p: Profile; onClose: () => void }) {
           onClick={() =>
             api('PUT', `/api/profiles/${enc(p.name)}/soul`, { content: text }, { profile: false })
               .then(() => {
-                toast('Saved — new chats use it')
+                toastNewChats('Saved. New chats use it')
                 onClose()
               })
               .catch(e => toast(errText(e), 'error'))

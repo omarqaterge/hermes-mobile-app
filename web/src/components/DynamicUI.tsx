@@ -6,6 +6,7 @@ import { api } from '../api'
 import { errText } from '../gateway'
 import { toast } from '../store'
 import { ToggleRow } from './ui'
+import { toastNewChats } from '../newchats'
 
 const OPENUI = '/api/plugins/hermes-mobile/openui'
 
@@ -24,7 +25,7 @@ export function useDynamicUI(): { on: boolean; set: (v: boolean) => void } | nul
   if (on === null) return null
   const set = (v: boolean) => {
     setOn(v)
-    api('PUT', OPENUI, { enabled: v }, { profile: false }).catch(e => {
+    api('PUT', OPENUI, { enabled: v }, { profile: false }).then(() => toastNewChats(`Dynamic UI ${v ? 'on' : 'off'}`), e => {
       setOn(!v)
       toast(`Couldn’t save: ${errText(e)}`, 'error')
     })

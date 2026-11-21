@@ -176,13 +176,16 @@ module.exports = async t => {
     const sh = cvw.locator('.sheet', { hasText: 'Uninstall Hermux' }).last()
     await sh.waitFor({ timeout: 3000 })
     await sleep(300)
+    // The sheet is centred on a wide screen (spec 3.20): probe a point that lies over both the sheet and the docked list.
     const top = await cvw.evaluate(() => {
       const s = [...document.querySelectorAll('.sheet')].pop()
       const r = s.getBoundingClientRect()
-      const el = document.elementFromPoint(r.left + 40, r.top + r.height / 2)
-      return { inSheet: Boolean(el && el.closest('.sheet')), left: r.left, width: r.width }
+      const d = document.querySelector('.drawer').getBoundingClientRect()
+      const x = r.left + 20
+      const el = document.elementFromPoint(x, r.top + r.height / 2)
+      return { inSheet: Boolean(el && el.closest('.sheet')), overList: x > d.left && x < d.right, left: r.left, width: r.width, list: d.right }
     })
-    check(top.inSheet && top.left < 50, `wide screen: a page's sheet is on top of the docked chat list (${JSON.stringify(top)})`)
+    check(top.inSheet && top.overList, `wide screen: a page's sheet is on top of the docked chat list (${JSON.stringify(top)})`)
     for (let i = 0; i < 4 && (await cvw.locator('.screen, .sheet').count()); i++) {
       await cvw.evaluate(() => window.hermesBack())
       await sleep(250)

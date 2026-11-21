@@ -22,6 +22,7 @@ import { ModelPicker, setProfileModel } from './Settings'
 import { Row, Section, SelectRow } from './ui'
 import { Icon } from './icons'
 import { modelsChanged } from '../modelcache'
+import { toastNewChats } from '../newchats'
 
 const loadCatalog = async (profile: string) => {
   const p = qs({ profile })
@@ -223,7 +224,7 @@ export function ProviderListView({ cat, profile, onChange, onPicked, part = 'all
           onClose={() => setAuto(null)}
           onPick={async (provider, model, effort) => {
             await setProfileModel(profile, provider, model, effort)
-            toast(`New chats use ${model}`)
+            toastNewChats(`New chats use ${model}`)
             onPicked?.()
           }}
         />
@@ -437,7 +438,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onConnected, onT
           onClose={() => setPicking(false)}
           onPick={async (provider, model, effort) => {
             await setProfileModel(profile, provider, model, effort)
-            toast(`New chats use ${model}`)
+            toastNewChats(`New chats use ${model}`)
             onPicked()
           }}
         />

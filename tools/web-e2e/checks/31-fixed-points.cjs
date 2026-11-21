@@ -6,7 +6,7 @@
 //     appear beside them; the released app must keep reading what a newer build left behind);
 //   - the accessible names of the chat screen's controls (idle, with text typed, while a reply runs): none may go away.
 // HM_E2E_RECORD=1 prints today's values in the shape of the RECORDED_* constants, to update them on purpose.
-const { WEB, nativeShell, check, trayTucked } = require('../lib.cjs')
+const { WEB, nativeShell, check, trayTucked, hitArea, addFiles, png, sleep } = require('../lib.cjs')
 
 // Heights: recorded on 2026-11-17 from the redesign branch as it started (the same app as main that day: header 57,
 // composer area 102, messages 581, and 281 with the keyboard open), then on 2026-11-17 again once the model row and the
@@ -201,6 +201,52 @@ module.exports = async t => {
     if (record) console.log('RECORDED_NAMES', JSON.stringify(list, null, 2))
     const missing = RECORDED_NAMES.filter(n => !names.has(n))
     check(RECORDED_NAMES.length > 0 && missing.length === 0, `fixed: every recorded control of the chat screen still has its accessible name (missing: ${JSON.stringify(missing)}; new: ${JSON.stringify(list.filter(n => !RECORDED_NAMES.includes(n)))})`)
+    await p.close()
+  }
+
+  // ── the chat screen's small controls take taps over 44 px without growing (task 10): the reply actions, a photo's
+  //    remove button, the compress hint's close button, the canvas tools. Their boxes stay as they were. ──
+  {
+    const p = await shell({ width: 360, height: 740 }, 's-48', true)
+    await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
+    await sleep(500) // the chat's scroll to the end settles before the controls' boxes are probed
+    const short = []
+    const acts = p.locator('.msg-actions button')
+    for (let i = 0; i < (await acts.count()); i++) {
+      const b = acts.nth(i)
+      const h = await hitArea(b)
+      const r = await b.boundingBox()
+      // At the screen's left edge the strip that opens the chat list takes the last pixel or two.
+      if (h.h < 44 || h.w < (r.x < 12 ? 42 : 44)) short.push([await b.getAttribute('aria-label'), h])
+    }
+    check((await acts.count()) >= 4 && short.length === 0, `fixed: each reply action takes taps over 44 x 44 px (${JSON.stringify(short)})`)
+    await addFiles(p, 'Photo', [{ name: 't10.png', mimeType: 'image/png', buffer: png }])
+    await p.locator('.attach-thumb img[alt="t10.png"]').waitFor({ timeout: 5000 })
+    const rm = await hitArea(p.getByRole('button', { name: 'Remove t10.png' }))
+    check(rm.box[0] <= 24 && rm.w >= 44 && rm.h >= 44, `fixed: a photo's remove button stays small and takes taps over 44 x 44 px (${JSON.stringify(rm)})`)
+    await p.getByRole('button', { name: 'Remove t10.png' }).click()
+    await p.close()
+  }
+  {
+    const p = await shell({ width: 360, height: 740 }, 's-full', false)
+    const hint = p.locator('.compress-hint')
+    await hint.waitFor({ timeout: 8000 })
+    const x = await hitArea(hint.getByRole('button').last())
+    check(x.box[1] <= 32 && x.w >= 44 && x.h >= 44, `fixed: the compress hint's close button takes taps over 44 x 44 px (${JSON.stringify(x)})`)
+    await p.close()
+  }
+  {
+    const p = await shell({ width: 360, height: 740 }, 's-5', false)
+    await p.getByText('answer s-5', { exact: true }).waitFor({ timeout: 8000 })
+    await p.getByRole('button', { name: 'Canvas' }).first().click()
+    await p.getByRole('button', { name: 'New document' }).first().click()
+    await p.locator('.picker-opt, .set-row', { hasText: 'Web page' }).click()
+    await p.locator('.dialog input').fill('T10')
+    await p.locator('.dialog button', { hasText: 'Create' }).click()
+    await p.getByRole('button', { name: 'More', exact: true }).last().waitFor({ timeout: 5000 })
+    const res = []
+    for (const name of ['Fill the whole screen', 'More', 'Close canvas']) res.push([name, await hitArea(p.getByRole('button', { name, exact: true }).last())])
+    check(res.every(([, h]) => h.h >= 44 && h.w >= 44), `fixed: the canvas tools take taps over 44 x 44 px (${JSON.stringify(res)})`)
     await p.close()
   }
 }

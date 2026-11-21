@@ -19,7 +19,7 @@ export function UninstallSection() {
   if (!isNative || !canUninstall()) return null // a browser, or an older app build without the uninstall bridge
   return (
     <>
-      <Section title="Danger zone" footer="Removes Hermux, all chats and every helper app from this phone. You can save a backup first.">
+      <Section title="Danger zone" footer="Removes Hermux, all chats and every helper app from this phone; you can save a backup first.">
         <Row icon="trash" danger title="Uninstall Hermux" sub="Hermux, Debian, chats, Termux and the helper apps" chevron onClick={() => setOpen(true)} />
       </Section>
       {open && <UninstallSheet onClose={() => setOpen(false)} />}

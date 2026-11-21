@@ -167,7 +167,7 @@ module.exports = async t => {
     // Each row opens its page; Back returns to the chat.
     await p.evaluate(() => window.hermesBack())
     await p.waitForFunction(() => !document.querySelector('.drawer.open'), null, { timeout: 3000 })
-    for (const [row, title] of [[/^Scheduled/, 'Cron jobs'], [/^Skills/, 'Skills'], [/^Library$/, 'Library']]) {
+    for (const [row, title] of [[/^Scheduled/, 'Scheduled'], [/^Skills/, 'Skills'], [/^Library$/, 'Library']]) {
       await sessions(p).click()
       await p.getByRole('button', { name: row }).click()
       const ok = await p.locator('.screen .title', { hasText: title }).waitFor({ timeout: 4000 }).then(() => true, () => false)

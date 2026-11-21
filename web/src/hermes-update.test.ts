@@ -18,3 +18,11 @@ describe('hermes build compatibility', () => {
     expect(compat('', T)).toBe('unknown')
   })
 })
+
+describe('the agent build line in About & help', () => {
+  it('says what to do before why', async () => {
+    const { mismatchLine } = await import('./hermes-update')
+    expect(mismatchLine('1.2.3')).toMatch(/^Update the app to 1\.2\.3: this agent is a different build/)
+    expect(mismatchLine(null)).toMatch(/^If something breaks, update the app: /)
+  })
+})

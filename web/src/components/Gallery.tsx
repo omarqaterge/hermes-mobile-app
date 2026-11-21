@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react'
 import { copyText, haptic, shareText as nativeShare } from '../bridge'
 import { confirmDialog, promptDialog } from '../dialog'
 import { ago } from '../unread'
-import { toast } from '../store'
+import { setState, toast } from '../store'
+import { startDraft } from '../gateway'
 import { deleteItem, itemContent, openGallery, openItemChat, renameItem, setGalleryFilter, setGalleryQuery, useGallery, type GalleryItem } from '../gallery'
 import { Sheetish, TYPE_ICON } from './Canvas'
 import { DocView } from './DocView'
 import { ScreenShell, Sheet, Status } from './Screens'
-import { Row, Section, Segmented } from './ui'
+import { EmptyState, Row, Section, Segmented } from './ui'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
 import { Icon } from './icons'
@@ -158,7 +159,26 @@ export function GalleryScreen() {
           )}
         </div>
       )}
-      <Status loading={loading} error={loading ? error : ''} empty={!items.length} emptyText={shownQuery ? `Nothing matches “${shownQuery}”.` : 'Nothing here yet. Everything Hermux or you put on a chat’s canvas shows up here.'} />
+      <Status
+        loading={loading}
+        error={loading ? error : ''}
+        empty={!items.length}
+        emptyText={shownQuery ? `Nothing matches “${shownQuery}”.` : ''}
+        emptyState={
+          shownQuery ? undefined : (
+            <EmptyState
+              icon="layers"
+              title="No canvases yet"
+              text="A canvas is the page beside a chat where Hermux puts documents, tables and drawings. Everything on a chat’s canvas shows up here."
+              action="New chat"
+              onAction={() => {
+                setState({ screen: null })
+                startDraft()
+              }}
+            />
+          )
+        }
+      />
       {shown.length > 0 && (
         <div className="gallery-grid">
           {shown.map(i => (
