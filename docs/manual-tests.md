@@ -395,3 +395,13 @@ Emulator (AOSP Android 15, arm64), build from `main` at the #185 merge. The comm
 Found and fixed after this pass: the stopped card's "So far" kept counting (it now stops where the installer was last
 heard), and the kill left `.git/index.lock` in the Hermes checkout, so the next run stopped with "could not write index"
 (the installer now removes git locks over 2 minutes old there).
+
+## Model picker opens at once (not yet on a phone)
+
+- [ ] Open a chat's model picker twice: the second open shows the list at once (no "Loading models…"), and the list
+      matches the providers that are signed in on that profile.
+- [ ] "Refresh the list" shows "Updating the list…", then new models a provider added show up.
+- [ ] Sign in to a provider (or save a key), then open the picker: its models are there after the refresh.
+- [ ] With a reply running in another chat, opening the picker no longer slows that reply.
+- [ ] Stop the dashboard (Hermes running without the plugin's dashboard): Settings → Model providers shows
+      "Hermux unreachable" with a "Setup check" link that opens Setup check; Back returns to Settings.
