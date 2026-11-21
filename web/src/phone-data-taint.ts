@@ -9,6 +9,7 @@ import { createContext, useContext, useLayoutEffect } from 'react'
 import { openExternal } from './bridge'
 import { confirmDialog } from './dialog'
 import { lineageOf } from './lineage'
+import { resolveChat } from './subagents'
 import { getState, subscribe, useStore, type AppState, type ChatItem } from './store'
 
 /** True inside an assistant message of a chat that has read phone data (set by Markdown). */
@@ -133,15 +134,24 @@ function anyRead(): boolean {
 export function docTainted(from: string | null): boolean {
   if (!from) return anyRead() || isTaintedNow()
   const s = getState()
-  if (s.active?.storedId === from && taintedState(s)) return true
+  if (holdsChat(s, from) && taintedState(s)) return true
   return [from, ...lineageOf(from)].some(id => nativeTainted(id, true))
+}
+
+/** Are `s.active`'s items this chat's? Any id it has had counts: its stored and live ids, the page's lineage of either, or where
+ *  a compression moved it (`resolveChat`): after one, the chat list names the new id while `active.storedId` keeps the old. */
+function holdsChat(s: AppState, chat: string): boolean {
+  const a = s.active
+  if (!a || !chat) return false
+  const ids = new Set([a.storedId, a.runtimeId, ...lineageOf(a.storedId), ...lineageOf(a.runtimeId)])
+  return ids.has(chat) || ids.has(resolveChat(chat)) || resolveChat(a.storedId) === resolveChat(chat)
 }
 
 /** Did this chat read phone data, for something shown on top of it (a sub-agent's sheet)? The chat on screen is judged as every
  *  chat the page can see; a chat that is not (another one is open or opening) as a document is, strictly, by its own ids. */
 export function chatTainted(chat: string): boolean {
   const s = getState()
-  return !s.opening && (s.active?.storedId === chat || s.active?.runtimeId === chat) ? taintedState(s) : docTainted(chat)
+  return !s.opening && holdsChat(s, chat) ? taintedState(s) || nativeTainted(chat) : docTainted(chat)
 }
 
 let heldDocs = 0
