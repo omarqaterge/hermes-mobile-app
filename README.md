@@ -177,7 +177,7 @@ the phone), every connection, permission and guard rail, all twelve limits, and 
 
 You need an arm64 Android phone (Android 8+, about 6 GB free during setup, 3.5 GB once installed) and a model: a
 subscription you already have (ChatGPT, Claude, SuperGrok, Nous Portal) or an API key (for example
-[OpenRouter](https://openrouter.ai/keys), or Gemini's free tier). No root. About 15 minutes, mostly waiting.
+[OpenRouter](https://openrouter.ai/keys), or Gemini's free tier). No root. About 10 minutes, mostly waiting.
 
 **On the phone (Android 11+):**
 

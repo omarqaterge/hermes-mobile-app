@@ -107,6 +107,7 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `favs.ts` | Starred models. |
 | `sidepanel.ts` | Wide screens: hide or dock the chat list column (`hm.sideHidden.v1`, `html[data-side]`). |
 | `splitview.ts` | Wide screens: the canvas column's width, the divider drag with its snaps, the pull from the right edge, and the shell's edge claim (`DOCK`, `hm.canvasSplit.v1`, `html[data-split]`, `html.resizing`; 3.7). |
+| `modelcache.ts` | The chat model picker's kept list (`hm.modelOptions.v1`) and when to ask Hermes for a live one (3.5). |
 | `custommodels.ts` | Model ids typed into a model picker (Hermes Desktop's "Custom model"): candidate check, remembered ids per provider. |
 | `activity.ts` | Polling of `GET /activity` for the activity banner and for which chats wait (`waiting`). |
 | `needsyou.ts` | Which chats wait for an answer: the Needs you group, the header button and the banner (3.13). It only lists them: answers go through this sheet. |

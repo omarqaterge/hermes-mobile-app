@@ -51,6 +51,8 @@ let activityItems = []
 let waitingItems = []
 // The plugin's /tool-result: the stored output of a finished tool call, by tool_id (filled by every tool.complete the mock sends).
 const toolResults = new Map()
+// The chat model picker's model.options: {fail, mark, delay} (see the RPC case), set through /__mock {models: {...}}.
+let modelsMock = { fail: false, mark: false, delay: 0 }
 // The plugin's /memory (MEMORY.md / USER.md) and /bots, kept so POST /memory and PUT /bots/<name> change what the next GET says.
 const memory = { memory: { target: 'memory', entries: ['x', 'y'], used: 1100, limit: 2200 }, user: { target: 'user', entries: ['z'], used: 10, limit: 1375 } }
 let botKeep = []
@@ -194,6 +196,7 @@ const server = http.createServer((req, res) => {
         for (const go of canvasGate.held.splice(0)) go()
       }
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
+      if (b.models) modelsMock = { ...modelsMock, ...b.models }
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
       if (b.poolSeeded) poolSeeded = new Set(b.poolSeeded)
@@ -790,8 +793,14 @@ wss.on('connection', ws => {
         return reply({ provider_configured: providerConfigured || (looseStatus && !!params.profile), ready: true })
       case 'setup.runtime_check':
         return reply(providerConfigured ? { ok: true } : { ok: false, error: 'Hermes is not connected to any AI provider yet.' })
-      case 'model.options':
-        return reply({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: ['mock-model', 'mock-sonnet'] }] })
+      case 'model.options': {
+        // fail: every model.options call fails (the picker's error + Try again); mark: a live (refresh) answer
+        // lists one more model, so a check can tell the live list from the cached one.
+        if (modelsMock.fail) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5033, message: 'model catalog unavailable' } }))
+        const list = ['mock-model', 'mock-sonnet', ...(modelsMock.mark && params.refresh ? ['mock-live'] : [])]
+        const answer = () => reply({ model: 'mock-model', provider: 'mock', providers: [{ slug: 'mock', name: 'Mock', authenticated: true, models: list }] })
+        return modelsMock.delay && !params.refresh ? later(modelsMock.delay, answer) : answer() // delay: a slow plain read
+      }
       case 'session.resume': {
         // Like Hermes's resume reply: the stored id comes back as resumed / session_key (no stored_session_id) and
         // info has no title (the app takes it from session.list). tools/hermes-contract checks this against Hermes.
