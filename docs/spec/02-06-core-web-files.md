@@ -50,7 +50,7 @@ These files carry the plumbing every screen uses. Screens are in 3.
   `done`, `takeTurnEnd` reads it once when the turn ends, and `queueGoesOn` says whether the queue sends its next
   message (only after `done`). In `gateway.ts`, `endTurn` applies `turnOver` to the chat whose turn it was and to no
   other.
-- `approval-lock.ts` — Confirm approvals with fingerprint (3.6): `approvalLockAvailable`, `approvalLockState`, `approvalNeedsConfirm`, `confirmAllow` (bridge `confirmApproval`, answered through `window.hermesApprovalConfirm`), `confirmAlways` (bridge `confirmIdentity`, for a setting that asks on every change), `setApprovalLock`, `forgetApprovalConfirm`.
+- `approval-lock.ts` — Confirm approvals with fingerprint (3.6): `approvalLockAvailable`, `approvalLockState`, `approvalNeedsConfirm`, `confirmAllow` (bridge `confirmApproval`, answered through `window.hermesApprovalConfirm`), `confirmAlways` (bridge `confirmIdentity`, for a setting that asks on every change), `setApprovalLock`, `forgetApprovalConfirm`; confirmations are keyed by the approval's live session (runtime id), at most `CONFIRMED_MAX`.
 - `chatcache.ts` — last-seen items of recent chats (`rememberChat`, `cachedChat`, `forgetChat`, `saveChatToDisk`)
   (2.2.5).
 - `boot.ts` — start-up timing marks (`bootMark`, `lastBoot`, `bootSummary`; `onBootMark` tells listeners about each new mark and `useBootSummary` is the live line for Settings) in `hm.boot.v1`; the shell logs its own

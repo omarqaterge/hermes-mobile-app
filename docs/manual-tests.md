@@ -174,8 +174,12 @@ check on a real phone:
       doesn't ask.
 - [ ] Cancel the prompt: nothing runs, the sheet stays, the toast says why. Deny never asks.
 - [ ] Leave the app with an approval waiting, tap Allow once on the notification (phone unlocked): the app opens on
-      the chat and Allow asks for the fingerprint. After that, notification Allows in that chat go straight through.
+      the chat and Allow asks for the fingerprint. After that, a notification Allow in that chat still opens the app
+      (the notification can't tell the chat's live session), and the sheet's Allow goes through without the fingerprint.
+      Try on Android 8–11 (the app opens from the service) and 12+ (the button opens the app itself).
 - [ ] Restart the app (close it from Recents): the next Allow asks again.
+- [ ] Confirm one Allow in a chat, restart Hermes (not the app), then ask for another approval in that chat: the chat
+      has a new live session, so Allow asks again.
 - [ ] Settings → Permissions → Confirm approvals with fingerprint: turning it off asks for the fingerprint first.
 - [ ] Android 8 or 9 phone if at hand: the screen-lock screen or "Use screen lock" fallback works.
 

@@ -7,23 +7,33 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.CancellationSignal;
 
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
  * Settings → Permissions → "Confirm approvals with fingerprint" (preference "approvalLock", default on). With it on,
  * the first Allow in a chat session needs the phone's biometric or screen lock; after one success the chat's later
- * approvals go through until the session ends. A session ends when this process ends (app or phone restart, Android
- * stopping the app) or when the page says the chat's live Hermes session closed ({@link #forget}). Deny never asks.
- * Kept here, not in the page, so the notification's Allow (HermesService) follows the same rule.
+ * approvals go through until the session ends: this process ends (app or phone restart, Android stopping the app) or
+ * the chat's live Hermes session closes. A confirmation is filed under the live session it was made in (Hermes's
+ * runtime id, which the page passes), never under the stored chat: a new live session has nothing on file, so its first
+ * Allow always asks, and a closed one's id never comes back, so nothing has to be forgotten for the rule to hold
+ * ({@link #forget} only tidies). Deny never asks. The notification's Allow (HermesService) never knows the live session,
+ * so it always opens the app while this is {@link #needed}.
  */
 final class ApprovalLock {
     private ApprovalLock() {}
 
     static final String PREF = "approvalLock";
-    /** Stored chat ids whose Allow was confirmed while this process runs. */
-    private static final Set<String> confirmed = ConcurrentHashMap.newKeySet();
+    /** At most this many confirmed live sessions are kept; past it the oldest asks again (the page keeps as many). */
+    static final int MAX = 64;
+    /** Live sessions (runtime ids) whose Allow was confirmed while this process runs, the oldest first. */
+    private static final Map<String, Boolean> confirmed = new LinkedHashMap<String, Boolean>(16, 0.75f, false) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+            return size() > MAX;
+        }
+    };
 
     static boolean on(Context c) {
         return c.getSharedPreferences("hm", Context.MODE_PRIVATE).getBoolean(PREF, true);
@@ -31,7 +41,9 @@ final class ApprovalLock {
 
     static void setOn(Context c, boolean on) {
         c.getSharedPreferences("hm", Context.MODE_PRIVATE).edit().putBoolean(PREF, on).apply();
-        confirmed.clear(); // turned off and on again: every chat asks again
+        synchronized (confirmed) {
+            confirmed.clear(); // turned off and on again: every chat asks again
+        }
     }
 
     /** The phone has a PIN, pattern, password or biometric lock (nothing to confirm with otherwise). */
@@ -40,17 +52,36 @@ final class ApprovalLock {
         return km != null && km.isDeviceSecure();
     }
 
-    static boolean isConfirmed(String session) {
-        return session != null && !session.isEmpty() && confirmed.contains(session);
+    /** This live session's Allow was confirmed ('' or null never is). */
+    static boolean isConfirmed(String runtime) {
+        if (runtime == null || runtime.isEmpty()) return false;
+        synchronized (confirmed) {
+            return confirmed.containsKey(runtime);
+        }
     }
 
-    static void forget(String session) {
-        if (session != null) confirmed.remove(session);
+    /** Files a success under this live session only (package-private for tools/test_approval_lock.sh). */
+    static void confirm(String runtime) {
+        if (runtime == null || runtime.isEmpty()) return;
+        synchronized (confirmed) {
+            confirmed.remove(runtime); // the newest last
+            confirmed.put(runtime, Boolean.TRUE);
+        }
     }
 
-    /** An Allow for this chat must be confirmed first (setting on, a screen lock to confirm with, not yet confirmed). */
-    static boolean needed(Context c, String session) {
-        return on(c) && secure(c) && !isConfirmed(session);
+    /** The live session closed (tidying: its id never comes back). A prompt still open for it may still answer "ok";
+     *  that files only this closed id, which no later approval carries. */
+    static void forget(String runtime) {
+        if (runtime == null) return;
+        synchronized (confirmed) {
+            confirmed.remove(runtime);
+        }
+    }
+
+    /** A notification's Allow must open the app first (setting on, a screen lock to confirm with). The notification only
+     *  names the stored chat, never the live session a confirmation is filed under, so it can't tell a confirmed one. */
+    static boolean needed(Context c) {
+        return on(c) && secure(c);
     }
 
     static String stateJson(Context c) {
@@ -71,12 +102,12 @@ final class ApprovalLock {
      * without a biometric fall back to the screen-lock screen); API 26–27 use the screen-lock screen
      * (createConfirmDeviceCredentialIntent, answered in {@link #onResult}).
      */
-    static void ask(Activity a, String session, String what, Consumer<String> done) {
-        if (!on(a) || isConfirmed(session)) {
+    static void ask(Activity a, String runtime, String what, Consumer<String> done) {
+        if (!on(a) || isConfirmed(runtime)) {
             done.accept("ok");
             return;
         }
-        prompt(a, session, "Allow Hermux to run this?", what,
+        prompt(a, runtime, "Allow Hermux to run this?", what,
                 "Confirm it is you. Other approvals in this chat won't ask again until the app restarts or the chat closes.", done);
     }
 
@@ -97,8 +128,10 @@ final class ApprovalLock {
         }
         if (pending != null && pendingActivity != a) finish("cancel"); // its activity is gone: that prompt never answers
         if (pending != null) {
-            if (!java.util.Objects.equals(session, pendingSession)) {
-                done.accept("cancel"); // another chat's prompt is up: one confirmation never covers two chats
+            if (session == null || session.isEmpty() || !session.equals(pendingSession)) {
+                // another live session's prompt is up, or one with no live session (a setting): one confirmation never
+                // covers two of them
+                done.accept("cancel");
                 return;
             }
             // a prompt is already up (two quick taps): the new caller gets the same answer as the first
@@ -139,7 +172,7 @@ final class ApprovalLock {
         pending = null;
         pendingSession = null;
         cancel = null;
-        if ("ok".equals(result) && s != null && !s.isEmpty()) confirmed.add(s);
+        if ("ok".equals(result)) confirm(s); // only the live session this prompt was opened for
         if (d != null) d.accept(result);
     }
 

@@ -1351,18 +1351,12 @@ client.onRequest((req: ServerRequest) => {
   return true
 })
 
-/** Stored chat id of each live Hermes session opened here, so closing one ends its approval confirmation. */
-const chatOfRuntime = new Map<string, string>()
-onChatOpen('approval-lock', ({ chat }) => {
-  chatOfRuntime.set(chat.runtimeId, chat.storedId)
-})
+/** The live session is gone: drop what the page kept for it. Nothing here is needed for the fingerprint rule (a closed live
+ *  session's id never comes back, approval-lock.ts); it only tidies. */
 function chatClosed(runtimeId: string): void {
   appliedModel.delete(runtimeId)
   setPhoneDataFullAccess(runtimeId, false) // the live session is gone: the Full access pass for phone data goes with it
-  const storedId = chatOfRuntime.get(runtimeId)
-  if (storedId === undefined) return
-  chatOfRuntime.delete(runtimeId)
-  forgetApprovalConfirm(storedId)
+  forgetApprovalConfirm(runtimeId)
 }
 // A page that (re)loads doesn't know which chats were in Full access: start with none (the shell also clears every pass
 // when a page starts). Each chat's access is re-applied by setAccess when it opens, and the pass comes back only
@@ -1375,13 +1369,9 @@ onChatOpen('phone-data-pass', ({ chat }) => {
   setPhoneDataFullAccess(chat.runtimeId, false)
   if (chat.info.yolo && rememberedAccess(chat.storedId) === 'full' && !lockView()) void setAccess(chat, 'full', false).catch(() => {})
 })
-/** The stored chat id an approval came from (Hermes names the live session). */
-function approvalChat(req: ServerRequest): string {
-  const sid = String(req.params.session_id || '')
-  const a = getState().active
-  if (a && (!sid || a.runtimeId === sid)) return a.storedId
-  return chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || sid
-}
+/** The live session (runtime id) an approval came from: its fingerprint confirmation is filed under this. Hermes always names
+ *  it; one that doesn't gets '' and asks every time. */
+const approvalSession = (req: ServerRequest): string => String(req.params.session_id || '')
 
 /** Answers a request from Hermes. Over the lock screen (lockview.ts) only Deny goes through: anything else asks for an
  *  unlock and returns false, the request stays open. The first Allow in a chat session asks for the fingerprint or
@@ -1402,10 +1392,10 @@ export function answerRequest(req: ServerRequest, result: Record<string, unknown
     result = { ...result, choice: 'once' }
   }
   if (req.method === 'approval' && result.choice !== 'deny') {
-    const chat = approvalChat(req)
-    if (approvalNeedsConfirm(chat)) {
+    const live = approvalSession(req)
+    if (approvalNeedsConfirm(live)) {
       const what = (pd !== null ? phoneDataView(pd).text : String(req.params.command || req.params.description || 'a command')).slice(0, 160)
-      void confirmAllow(chat, what).then(ok => {
+      void confirmAllow(live, what).then(ok => {
         if (!ok || !getState().requests.some(r => r.id === req.id)) return
         if (lockView()) askUnlock('Unlock the phone to allow this') // locked while the prompt was up: nothing is allowed
         else respondNow(req, result)

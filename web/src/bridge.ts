@@ -60,11 +60,11 @@ interface AndroidBridge {
   signInTermux?(provider: string, profile: string): boolean
   saveImage?(id: number, name: string, path: string, b64: string): void // into Pictures/Hermux; answers window.__hmImage(id, ok)
   shareImage?(id: number, name: string, path: string, b64: string): void // share sheet; answers window.__hmImage(id, ok)
-  confirmApproval?(id: number, session: string, what: string): void // fingerprint / screen lock for an Allow; answers window.hermesApprovalConfirm(id, result)
+  confirmApproval?(id: number, runtime: string, what: string): void // fingerprint / screen lock for an Allow in this live session (runtime id); answers window.hermesApprovalConfirm(id, result)
   confirmIdentity?(id: number, what: string): void // the same prompt, every time, whatever the approvals setting
   approvalLockState?(): string // {on, secure}: Confirm approvals with fingerprint
   setApprovalLock?(on: boolean): void
-  forgetApproval?(session: string): void // the chat's live session closed: its next Allow asks again
+  forgetApproval?(runtime: string): void // a live session closed: drop its confirmation (tidying)
   phoneDataState?(): string // JSON {ready, master, kinds, switches, perms, secure}: booleans only (Settings → Phone data for the agent)
   phoneDataSet?(id: number, kind: string, on: boolean): void // kind is a kind or "master"; on asks for the screen lock, then Android's permission; answers window.hermesPhoneData(id, result)
   phoneDataOpenSettings?(): void // Android's settings page for this app
