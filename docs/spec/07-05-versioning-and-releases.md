@@ -27,20 +27,19 @@ comment next to `LocalKey.ENFORCE`, and `LocalDashboard.P_HELLO` has its own not
    in Settings, a line in Settings while the window lasts, how often the keeper says hello.
 7. After the release has reached most phones: update the privacy and security lists (`docs/security.md`, and the summary in the README).
 
-**Release checklist: proving a download is the real APK** (not done yet; decided 2026-11-17, see
-`docs/decisions/release-integrity.md`). Today a release carries only `hermux.apk`: no checksum, no signing fingerprint
-and no attestation, and `phone/install.sh` installs what it downloads without checking it. Updates are safe already
-(Android installs an update only when it is signed with the same key); a first install has nothing to check against.
-Before the next release, or in the PR that prepares it:
-1. Publish the release certificate's SHA-256 fingerprint once, in the README (Install) and `SECURITY.md`: read it from
-   the latest published `hermux.apk` with `apksigner verify --print-certs hermux.apk`, and say how to check a download
-   with the same command. It never changes between releases (same key), so it is written once.
-2. In `release.yml`'s `apk` job, attest the APK (`actions/attest-build-provenance`, pinned; the job needs
-   `id-token: write` and `attestations: write`), so `gh attestation verify hermux.apk -R <owner>/<repo>` proves it was
-   built by this workflow from the tagged commit. Someone who can only edit the release can't fake that.
-3. Upload `hermux.apk.sha256` (`sha256sum hermux.apk`, the same form as the Debian image's `.sha256`, 7.4) with the APK,
-   and put the hash in the release notes. It catches a broken download; it does not prove who made the file, since
-   whoever can replace the APK can replace the hash too.
-4. Optional: `phone/install.sh` checks the downloaded `.sha256`, and the certificate fingerprint where `apksigner` is
-   available (Termux usually lacks it), before handing the APK to the installer.
-5. Update this section, 7.4 (`release.yml`) and `docs/security.md` to say what the release now carries.
+**Proving a download is the real APK** (done 2026-11-21 for the releases after v0.9.8; decision
+`docs/decisions/release-integrity.md`). Updates were already safe (Android installs an update only when it is signed with
+the same key); these let a first install be checked too:
+1. The release certificate's SHA-256 fingerprint, `2D:51:19:F7:DE:4B:4D:B3:F4:C1:78:0F:27:E7:6B:CD:72:EB:54:DB:B7:9B:54:9D:CE:3E:11:58:F7:13:3E:8D`
+   (read from the v0.9.7 and v0.9.8 `hermux.apk`: their v1, v2 and v3 signatures all name it), is published in the README
+   (Install, "Check that your download is the real Hermux") and `SECURITY.md` ("Checking a download"), with the commands
+   that print it (`apksigner verify --print-certs`, `keytool -printcert -jarfile`). It never changes between releases (same
+   key), so it is written once.
+2. `release.yml`'s `apk` job attests the APK (`actions/attest-build-provenance`, 7.4), so `gh attestation verify hermux.apk
+   -R <owner>/<repo>` proves it was built by that workflow from the tagged commit. Someone who can only edit the release
+   can't fake that.
+3. `hermux.apk.sha256` (`sha256sum` form, like the Debian image's `.sha256`, 7.4) is uploaded with the APK and the hash is
+   in the release notes. It catches a broken download; it does not prove who made the file.
+4. Not done (optional in the decision): `phone/install.sh` checking the `.sha256` or the fingerprint before installing.
+   The app's update and the installers pick files by name (`hermux.apk`, or a name ending in `.apk`), so the `.sha256`
+   file is never taken for the APK.
