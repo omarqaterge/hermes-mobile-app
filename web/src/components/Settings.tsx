@@ -42,6 +42,7 @@ import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommo
 import { Icon, type IconName } from './icons'
 import { recheckModel, useModelReady } from '../model-ready'
 import { takeSettingsStart } from '../settings-open'
+import { modelsChanged } from '../modelcache'
 
 // ── shared ───────────────────────────────────────────────────
 
@@ -348,6 +349,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
     )
     setBusy(false)
     if (ok) {
+      modelsChanged() // a provider key: the chat's model picker fetches its live list again
       toast(what === 'save' ? `${key} saved${all ? ' for all bots' : ''}` : `${key} removed${all ? ' from all bots' : ''}`)
       onSaved()
       onClose()

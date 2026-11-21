@@ -32,7 +32,7 @@ work follows:
 | October 2026 | Per-chat access levels (Off, Auto access, Full access); Hermes's catastrophic command list stays blocked in every level. Banking, payment, password and 2FA apps refused by default when Hermux uses your apps. |
 | v0.9.6, 3 Nov 2026 | Fingerprint or screen lock on the first Allow in a chat. A locked phone can't approve commands, answer questions or reply from a notification. Usage stats opt-in, off by default. Remote debugging behind Developer options and the screen lock, off again after 60 minutes. |
 | v0.9.7, 14 Nov 2026 | Local authentication: Hermux, the plugin and the phone's helper scripts check that a local server holds the shared key before sending it anything, and sign every request; the key itself is never sent. The dashboard's token goes only to a caller holding the key. Phone data for the agent, off by default and read-only, with a one-use grant per read, reviewed in five rounds. Cards and command aliases can't change a chat's access. Changing the sensitive-apps setting asks for your fingerprint every time. Problem reports hide phone numbers and coordinates. |
-| On `main`, next release | The fixes from a second security review: web pictures, video and sound in replies wait for a tap in every chat, and pictures in cards too; a page security policy; share and intent checks, so another app can't make Hermux read its own private files; the installer checks the Shizuku download; cards read no files and can't search the web in a chat that has read phone data; the pairing code field needs an unlocked phone; Auto access keeps blocking dangerous commands after a chat is compressed. |
+| On `main`, next release | The fixes from a second security review: web pictures, video and sound in replies wait for a tap in every chat, and pictures in cards too; a page security policy; share and intent checks, so another app can't make Hermux read its own private files; the installer checks the Shizuku download; cards read no files and can't search the web in a chat that has read phone data; the pairing code field needs an unlocked phone; Auto access keeps blocking dangerous commands after a chat is compressed. Each release carries a checksum and a build provenance attestation, and the signing certificate's fingerprint is published, so a first download can be checked. |
 
 Around the code: CodeQL scans every pull request and runs weekly (Java, TypeScript, Python and the workflows), secret
 scanning with push protection is on, and a release is built only from a commit on `main` whose CI passed.
@@ -120,7 +120,9 @@ scanning with push protection is on, and a release is built only from a commit o
 - **Approvals follow you.** A locked phone asks you to unlock before it allows anything, and, by default, the first Allow
   in a chat asks for your fingerprint or screen lock.
 - **Updates are checked.** Release APKs are built by the public workflow in `.github/workflows/release.yml` and signed
-  with a key held as a repository secret. Android asks you to confirm each install. The plugin that updates with the app
+  with a key held as a repository secret. Android asks you to confirm each install. A first download can be checked
+  too: the signing certificate's fingerprint is in the README and [SECURITY.md](../SECURITY.md), and each release after
+  v0.9.8 carries `hermux.apk.sha256` and a build provenance attestation (`gh attestation verify`). The plugin that updates with the app
   is checked against a SHA-256 inside the signed APK before anything is unpacked.
 - **Its own logs stay clean.** The diagnostic log is checked against a fixed shape when written, so messages, tool data,
   paths and chat IDs can't get in; it leaves the phone only in a report you submit.
@@ -191,5 +193,6 @@ adb shell dumpsys package com.omarqaterge.hermesmobile | grep -E "permission|gra
   [docs/decisions](decisions/README.md).
 - Plain `http` is allowed to loopback only, for the app itself; it is one short file:
   `android/res/xml/network_security_config.xml`.
+- Check a downloaded APK: the fingerprint and the commands are in [SECURITY.md](../SECURITY.md#checking-a-download).
 - Build it yourself instead of trusting the release: [Build the app yourself](../README.md#build-from-source).
 - Found a vulnerability? Please read [SECURITY.md](../SECURITY.md) before posting details in public.

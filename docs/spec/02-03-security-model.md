@@ -37,12 +37,29 @@ A test build (`devtoolsBuild()`) keeps debugging on whatever this setting does: 
 - `safeLink(uri)`: links handed to other apps (`openExternal`, and main-frame navigations in
   `shouldOverrideUrlLoading`) must be `http`, `https`, `mailto` or `tel`; `intent:`, `file:`, `content:`,
   `market:` and the rest are dropped. Sub-frame navigations never leave the app (`!req.isForMainFrame()` → blocked),
-  and the page itself only navigates within `file:`.
+  and the main frame loads one file only, the app's own page (`MainActivity.PAGE`, `ownPage`: that address with any
+  query or fragment); a main-frame navigation to any other `file:` address is refused.
 - Share to Hermux (`ShareUri`): `MainActivity` opens a shared file with its own rights, so `takeShare` keeps, and
   `readShared` opens, only `content` addresses of other apps. A `file:` address (the app's own `hermes` preferences
   hold the event key) or an address of one of the app's own providers (authority equal to the package name or starting
   with it and a dot) is dropped, and `sharedItem` answers `{name, error}` ("can't be shared") for one that got in.
   The scheme must be exactly lower case `content`, the only spelling `ContentResolver` opens.
+  The sender must itself be able to read what it shares: from Android 15 (API 35) Android checks that before the
+  activity starts (`android:requireContentUriPermissionFromCaller="read"` on `MainActivity`, 4.2). Before it,
+  `MainActivity.shareGranted` asks for the sender's own access handed over (a URI grant to this app,
+  `checkUriPermission`) when `ShareUri.needsGrant` says so: the address's provider can't be seen, or it asks for a
+  read permission this app holds (contacts, messages or photos once their phone-data switch is on). Known limit
+  before Android 15: Android records no grant for an app that already holds the provider's permission (photos on
+  Android 10+ are the exception), so with the Contacts switch on a contact card shared from the Contacts app answers
+  "can't be shared", as does a photo on Android 8 and 9 with the Photos switch on.
+- Install and command results (`LocalAuth.Awaited`): below Android 13 a receiver registered at run time can't be
+  marked not exported, so every result the app waits for must carry the nonce of its run, which travels inside the
+  result `PendingIntent` that only the answering side holds (`PluginSync.NONCE_EXTRA`). `PluginSync`, the Termux
+  probe and `Uninstall` (`Uninstall.awaited`) take it once (`take`); the app update and the helper-app installs
+  (`MainActivity.updateAwaited`, `helperAwaited`, checked by `installResult`) accept it for the whole install
+  session (`matches`: Android answers twice, the prompt and then the final answer) and drop it at the final answer.
+  A result without the awaited nonce is ignored, so the prompt the app opens is always the one Android's installer
+  sent for its own session.
 - Intent gate (`IntentGate`): `MainActivity` is exported, so any app could send it the extras made for the app's own
   notifications and shortcuts. Every intent the app builds for `MainActivity` carries the per-install secret
   `intent_nonce` in the `hm_gate` extra (`IntentGate.mark`); `onCreate` and `onNewIntent` call `IntentGate.strip`

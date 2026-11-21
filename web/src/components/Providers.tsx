@@ -21,6 +21,7 @@ import { Sheet, Status, useLoader } from './Screens'
 import { ModelPicker, setProfileModel } from './Settings'
 import { Row, Section, SelectRow } from './ui'
 import { Icon } from './icons'
+import { modelsChanged } from '../modelcache'
 
 const loadCatalog = async (profile: string) => {
   const p = qs({ profile })
@@ -248,6 +249,7 @@ function ProviderSheet({ entry: e, profile, onClose, onChanged, onConnected, onT
     return what
       .then(() => {
         toast(ok)
+        modelsChanged() // the chat's model picker fetches its live list again on its next open
         onChanged()
         return true
       })

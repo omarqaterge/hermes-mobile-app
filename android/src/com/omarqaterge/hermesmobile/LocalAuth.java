@@ -128,6 +128,12 @@ final class LocalAuth {
         /** No result is awaited any more. */
         void clear() { want.set(null); }
 
+        /** True whenever {@code got} is the awaited nonce (constant time), without using it up: for a result that comes
+         *  in more than one message (an install session's prompt, then its final answer). */
+        boolean matches(String got) {
+            return nonceMatches(want.get(), got);
+        }
+
         /** True, once, when {@code got} is the awaited nonce (constant time); false otherwise, and then nothing changes. */
         boolean take(String got) {
             String w = want.get();

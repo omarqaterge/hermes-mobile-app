@@ -68,8 +68,11 @@ jobs:
     needs: web
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # id-token and attestations: write only for the build provenance attestation of hermux.apk.
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       # The token (contents: write) is not saved in .git/config; the publish step passes it to gh itself.
       - uses: actions/checkout@v5
@@ -110,16 +113,31 @@ jobs:
               echo "$apk has hm_devtools (WebView remote debugging)"; exit 1
             fi
           done
+      # Proof the download is the real one (docs/decisions/release-integrity.md): a checksum file beside the APK, and a
+      # build provenance attestation that `gh attestation verify hermux.apk -R <repo>` checks. The checksum only catches a
+      # broken download; the attestation proves this workflow built the file from the tagged commit.
+      - name: Checksum of the APK
+        working-directory: android/build
+        run: sha256sum hermux.apk > hermux.apk.sha256 && cat hermux.apk.sha256
+      - name: Attest the APK (build provenance)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: android/build/hermux.apk
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         # A release made on GitHub's website (Releases -> Draft a new release) creates the tag and the release together:
-        # then this only attaches the APK files to it.
+        # then this attaches the files to it and adds the check lines to its notes.
         run: |
+          sha=$(cut -d' ' -f1 android/build/hermux.apk.sha256)
+          check="Check the download: SHA-256 of hermux.apk is \`$sha\` (also in hermux.apk.sha256). Proof it was built by this repository's release workflow from this tag: \`gh attestation verify hermux.apk -R $REPO\`. The signing certificate's SHA-256 fingerprint is in the README (Install)."
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" android/build/hermux.apk --clobber
+            gh release upload "$GITHUB_REF_NAME" android/build/hermux.apk android/build/hermux.apk.sha256 --clobber
+            body=$(gh release view "$GITHUB_REF_NAME" --json body -q .body)
+            case "$body" in *"$sha"*) ;; *) gh release edit "$GITHUB_REF_NAME" --notes "$body"$'\n\n'"$check" ;; esac
           else
-            gh release create "$GITHUB_REF_NAME" android/build/hermux.apk \
+            gh release create "$GITHUB_REF_NAME" android/build/hermux.apk android/build/hermux.apk.sha256 \
               --title "Hermux $GITHUB_REF_NAME" \
-              --notes "Install: run the one-line installer from the README in Termux, or download hermux.apk below on your phone. Setup steps: https://github.com/${{ github.repository }}#install"
+              --notes "Install: run the one-line installer from the README in Termux, or download hermux.apk below on your phone. Setup steps: https://github.com/$REPO#install"$'\n\n'"$check"
           fi

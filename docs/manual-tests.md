@@ -469,3 +469,13 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] Ten sub-agents for ten minutes (`delegation.max_concurrent_children`): the chat and the list scroll smoothly; compare heat and the battery drop with a chat without them. With a sub-agent's sheet open, then closed, the battery screen shows no extra wake-ups once it is closed.
 - [ ] `/bg` in a chat that has read phone data is refused with the reason, and works in a new chat.
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.
+
+## Model picker opens at once (not yet on a phone)
+
+- [ ] Open a chat's model picker twice: the second open shows the list at once (no "Loading models…"), and the list
+      matches the providers that are signed in on that profile.
+- [ ] "Refresh the list" shows "Updating the list…", then new models a provider added show up.
+- [ ] Sign in to a provider (or save a key), then open the picker: its models are there after the refresh.
+- [ ] With a reply running in another chat, opening the picker no longer slows that reply.
+- [ ] Stop the dashboard (Hermes running without the plugin's dashboard): Settings → Model providers shows
+      "Hermux unreachable" with a "Setup check" link that opens Setup check; Back returns to Settings.
