@@ -148,7 +148,6 @@ export async function connect(): Promise<void> {
     return
   }
   for (const w of warm.splice(0)) chatClosed(w.runtimeId) // runtimes of the old socket: Hermes reaps those itself once it sees the socket gone
-  for (const k of kept) forgetRuntime(k.runtimeId, true) // their work may have died with the old socket: an Allow there asks again
   try {
     await client.connect(url)
     await afterConnect()
@@ -451,7 +450,6 @@ export async function switchProfile(profile: string): Promise<void> {
   openSeq++
   keepPreview(getState().active)
   for (const w of warm.splice(0)) closeLater(w.runtimeId, 0)
-  const left = getState().active
   await closeActiveIfIdle()
   try {
     localStorage.setItem('hm.profile', profile)
@@ -460,7 +458,6 @@ export async function switchProfile(profile: string): Promise<void> {
   }
   sessionLimit = SESSIONS_PAGE
   setState({ profile, active: null, opening: null, sessions: cachedSessions(profile), drawer: false, defaultModel: '', ...closeSubSheetIf() })
-  if (left) unfollow(left.runtimeId) // one still working is left running, no longer followed
   void loadSessions()
   void loadDefaultModel()
 }
@@ -485,13 +482,6 @@ function closeLater(runtimeId: string, ms = 3000): void {
 const followed = (runtimeId: string): boolean =>
   getState().active?.runtimeId === runtimeId || warm.some(w => w.runtimeId === runtimeId) || kept.some(k => k.runtimeId === runtimeId)
 
-/** A live session left the page's lists without being closed: unless it is still in one, an Allow confirmed through it asks
- *  again (it stays known for routing until it is the oldest noted, `forgetRuntime`). Every removal from `active`, `warm` and
- *  `kept` either closes the session (`chatClosed` on `session.close`), keeps it in another list, or calls this. */
-function unfollow(runtimeId: string): void {
-  if (!followed(runtimeId)) forgetRuntime(runtimeId, true)
-}
-
 /** `prev` is no longer on screen: keep it warm (an idle one) and close the oldest warm chats. */
 /** Closing a chat stops what it started, so one whose reply has ended counts as working while its sub-agents run. */
 const stillWorking = (a: ActiveSession): boolean => a.running || nestedOf(a.storedId).live > 0
@@ -505,18 +495,15 @@ function retire(prev: ActiveSession | null): void {
 function warmUp(prev: { storedId: string; runtimeId: string }): void {
   if (getState().active?.runtimeId === prev.runtimeId) return
   const i = warm.findIndex(w => w.storedId === prev.storedId)
-  const [old] = i >= 0 ? warm.splice(i, 1) : []
+  if (i >= 0) warm.splice(i, 1)
   warm.unshift({ storedId: prev.storedId, runtimeId: prev.runtimeId })
-  if (old) unfollow(old.runtimeId)
   for (const w of warm.splice(WARM)) closeLater(w.runtimeId)
 }
 
-/** This chat leaves the warm and kept ones (it opens, is deleted or replaced). `stays` is a live session it goes on in. */
-function unwarm(storedId: string, stays?: string): void {
-  const gone: string[] = []
-  for (let i = warm.length - 1; i >= 0; i--) if (sameChat(warm[i].storedId, storedId)) gone.push(...warm.splice(i, 1).map(w => w.runtimeId))
-  for (let i = kept.length - 1; i >= 0; i--) if (sameChat(kept[i].storedId, storedId)) gone.push(...kept.splice(i, 1).map(k => k.runtimeId))
-  for (const rt of gone) if (rt !== stays) unfollow(rt)
+/** This chat leaves the warm and kept ones (it opens, is deleted or replaced). */
+function unwarm(storedId: string): void {
+  for (let i = warm.length - 1; i >= 0; i--) if (sameChat(warm[i].storedId, storedId)) warm.splice(i, 1)
+  for (let i = kept.length - 1; i >= 0; i--) if (sameChat(kept[i].storedId, storedId)) kept.splice(i, 1)
 }
 
 // Chats left while they worked (their reply, or sub-agents after it). They are not closed then, since closing stops what
@@ -527,7 +514,7 @@ const kept: Array<{ storedId: string; runtimeId: string; running: boolean }> = [
 function keepWhileWorking(a: ActiveSession): void {
   if (kept.some(k => k.runtimeId === a.runtimeId)) return
   kept.push({ storedId: a.storedId, runtimeId: a.runtimeId, running: a.running })
-  if (kept.length > KEPT_MAX) forgetRuntime(kept.shift()!.runtimeId, true) // stays open as it was, no longer followed
+  if (kept.length > KEPT_MAX) kept.shift() // stays open as it was, no longer followed
 }
 
 /** Kept chats whose work has ended become warm ones. */
@@ -692,7 +679,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     if (seq === openSeq) setState({ opening: null, preview: null })
     throw err
   }
-  unwarm(storedId, r.session_id)
+  unwarm(storedId)
   agents.trackBuild(r.session_id) // a fresh resume builds its agent in the background too
   if (opts.auto && openSeq !== seq) {
     // The user went elsewhere while this was loading: the live session it opened goes warm (or kept), like any chat left.
@@ -1552,45 +1539,24 @@ client.onRequest((req: ServerRequest) => {
   return true
 })
 
-/** Stored chat id of each live Hermes session opened here (the newest, after a compression). */
+/** Stored chat id of each live Hermes session opened here (the newest, after a compression), for routing an approval or a
+ *  sub-agent event to its chat. Not used for the fingerprint confirmation, which is filed under the live session itself. */
 const chatOfRuntime = new Map<string, string>()
-/** Every stored id an approval of each live session was, or could be, answered under (`approvalChat` notes each one it
- *  gives): closing the session, or losing track of it, forgets the fingerprint confirmation under all of them. */
-const idsOfRuntime = new Map<string, Set<string>>()
-const RUNTIMES_MAX = 64 // live sessions followed (one on screen, 2 warm, at most 50 kept): past it the oldest is forgotten
-const IDS_MAX = 32 // stored ids per live session: past it the oldest is forgotten
-function noteConfirmKey(runtimeId: string, storedId: string): void {
-  if (!runtimeId || !storedId) return
-  const ids = idsOfRuntime.get(runtimeId) ?? new Set<string>()
-  idsOfRuntime.delete(runtimeId)
-  idsOfRuntime.set(runtimeId, ids) // the newest last
-  ids.delete(storedId)
-  ids.add(storedId)
-  if (ids.size > IDS_MAX) {
-    const [old] = ids
-    ids.delete(old)
-    forgetApprovalConfirm(old)
-  }
-  if (idsOfRuntime.size > RUNTIMES_MAX) forgetRuntime(idsOfRuntime.keys().next().value as string)
-}
+const RUNTIMES_MAX = 64 // routes kept, the newest last: past it the oldest goes (its approvals then name the live session)
 function setChatOfRuntime(runtimeId: string, storedId: string): void {
-  chatOfRuntime.set(runtimeId, storedId)
-  noteConfirmKey(runtimeId, storedId)
-}
-/** A live session is gone, or no longer followed: an Allow under any stored id it had asks again. `keepRoute` keeps knowing
- *  which chat it is (one still live that is just no longer followed). */
-function forgetRuntime(runtimeId: string, keepRoute = false): void {
-  const ids = idsOfRuntime.get(runtimeId)
-  for (const id of ids ?? []) forgetApprovalConfirm(id)
-  if (keepRoute) return ids?.clear() // still in the list, so its route goes when it is the oldest: both maps stay bounded
-  idsOfRuntime.delete(runtimeId)
+  if (!runtimeId || !storedId) return
   chatOfRuntime.delete(runtimeId)
+  chatOfRuntime.set(runtimeId, storedId)
+  if (chatOfRuntime.size > RUNTIMES_MAX) chatOfRuntime.delete(chatOfRuntime.keys().next().value as string)
 }
-onChatOpen('approval-lock', ({ chat }) => setChatOfRuntime(chat.runtimeId, chat.storedId))
+onChatOpen('chat-route', ({ chat }) => setChatOfRuntime(chat.runtimeId, chat.storedId))
+/** The live session is gone: drop what the page kept for it. Nothing here is needed for the fingerprint rule (a closed live
+ *  session's id never comes back); it only tidies. */
 function chatClosed(runtimeId: string): void {
   appliedModel.delete(runtimeId)
   setPhoneDataFullAccess(runtimeId, false) // the live session is gone: the Full access pass for phone data goes with it
-  forgetRuntime(runtimeId)
+  chatOfRuntime.delete(runtimeId)
+  forgetApprovalConfirm(runtimeId)
 }
 // A page that (re)loads doesn't know which chats were in Full access: start with none (the shell also clears every pass
 // when a page starts). Each chat's access is re-applied by setAccess when it opens, and the pass comes back only
@@ -1607,11 +1573,13 @@ onChatOpen('phone-data-pass', ({ chat }) => {
 function approvalChat(req: ServerRequest): string {
   const sid = String(req.params.session_id || '')
   const a = getState().active
-  const onScreen = a && (!sid || a.runtimeId === sid)
-  const chat = onScreen ? a.storedId : chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || kept.find(k => k.runtimeId === sid)?.storedId || sid
-  noteConfirmKey(onScreen ? a.runtimeId : sid, chat) // a confirmation under it ends with this live session
-  return chat
+  if (a && (!sid || a.runtimeId === sid)) return a.storedId
+  return chatOfRuntime.get(sid) || warm.find(w => w.runtimeId === sid)?.storedId || kept.find(k => k.runtimeId === sid)?.storedId || sid
 }
+
+/** The live session (runtime id) an approval came from: its fingerprint confirmation is filed under this. Hermes always names
+ *  it; one that doesn't gets '' and asks every time. */
+const approvalSession = (req: ServerRequest): string => String(req.params.session_id || '')
 
 /** The stored chat a request belongs to, for the chat list's "Needs you" (needsyou.ts). */
 export const requestChat = approvalChat
@@ -1635,10 +1603,10 @@ export function answerRequest(req: ServerRequest, result: Record<string, unknown
     result = { ...result, choice: 'once' }
   }
   if (req.method === 'approval' && result.choice !== 'deny') {
-    const chat = approvalChat(req)
-    if (approvalNeedsConfirm(chat)) {
+    const live = approvalSession(req)
+    if (approvalNeedsConfirm(live)) {
       const what = (pd !== null ? phoneDataView(pd).text : String(req.params.command || req.params.description || 'a command')).slice(0, 160)
-      void confirmAllow(chat, what).then(ok => {
+      void confirmAllow(live, what).then(ok => {
         if (!ok || !getState().requests.some(r => r.id === req.id)) return
         if (lockView()) askUnlock('Unlock the phone to allow this') // locked while the prompt was up: nothing is allowed
         else respondNow(req, result)

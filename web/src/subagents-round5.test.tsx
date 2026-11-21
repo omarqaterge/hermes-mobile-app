@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Security review 5 of the sub-agent work: finding 1 (the chat on screen judged by itself, not by what is drawn, and by every
-// id of the chat asked about) and finding 2 (a fingerprint confirmation ends with every live session it came through).
+// id of the chat asked about). Finding 2 (the fingerprint confirmation) is in approval-confirm-session.test.ts.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type RpcHandler = (method: string, params: Record<string, unknown>) => unknown
@@ -13,8 +13,7 @@ vi.mock('./api', () => ({
 const { getState, setState } = await import('./store')
 const { noteLineage, resetLineageForTests } = await import('./lineage')
 const { moveChat, resetSubAgents } = await import('./subagents')
-const { answerRequest, client, requestChat, resumeSession, rpc } = await import('./gateway')
-const { approvalNeedsConfirm } = await import('./approval-lock')
+const { client, resumeSession } = await import('./gateway')
 const { chatTainted, docTainted } = await import('./phone-data-taint')
 
 type ActiveItems = NonNullable<ReturnType<typeof getState>['active']>['items']
@@ -107,99 +106,5 @@ describe('round 5, 1(b): the chat on screen never answers clean where docTainted
     shell([])
     setState({ active: activeOf('r5d-chat') })
     expect(chatTainted('r5d-chat')).toBe(false)
-  })
-})
-
-describe('round 5, 2: a fingerprint confirmation ends with every live session it was answered through', () => {
-  let forgotten: string[]
-  const lockShell = () => {
-    forgotten = []
-    ;(window as unknown as { HermesAndroid?: unknown }).HermesAndroid = {
-      approvalLockState: () => JSON.stringify({ on: true, secure: true }),
-      confirmApproval: (id: number) => setTimeout(() => window.hermesApprovalConfirm?.(id, 'ok'), 0),
-      forgetApproval: (session: string) => forgotten.push(session)
-    }
-  }
-  const approval = (n: string, runtime: string) => ({ id: n, method: 'approval', params: { session_id: runtime, command: 'ls' } }) as never
-  const allow = async (n: string, runtime: string, chat: string) => {
-    answerRequest(approval(n, runtime), { choice: 'once' })
-    await vi.waitFor(() => expect(approvalNeedsConfirm(chat)).toBe(false))
-  }
-  beforeEach(() => lockShell())
-
-  it('(a) a chat whose opening was overtaken goes warm unrecorded: its approvals still end when it closes', async () => {
-    let resolveX!: () => void
-    const base = rpcHandler
-    rpcHandler = (method, params) =>
-      method === 'session.resume' && params.session_id === 'r5-x'
-        ? new Promise(r => (resolveX = () => r(base(method, params))))
-        : base(method, params)
-    const px = resumeSession('r5-x')
-    await resumeSession('r5-y')
-    resolveX()
-    await px
-    expect(getState().active?.storedId).toBe('r5-y')
-    expect(requestChat(approval('q1', 'rt-r5-x'))).toBe('r5-x') // routed through the warm chats
-    await allow('q1', 'rt-r5-x', 'r5-x')
-    await rpc('session.close', { session_id: 'rt-r5-x' })
-    expect(approvalNeedsConfirm('r5-x')).toBe(true)
-  })
-
-  it('(a) syncRunning replacing the chat on screen with a new live session forgets the old one', async () => {
-    await resumeSession('r5-s')
-    await allow('q2', 'rt-r5-s', 'r5-s')
-    setState({ active: { ...getState().active!, running: true } })
-    rpcHandler = method =>
-      method === 'session.resume' ? { session_id: 'rt-r5-s-2', stored_session_id: 'r5-s', messages: [], running: false, info: {} } : {}
-    document.dispatchEvent(new Event('visibilitychange'))
-    await vi.waitFor(() => expect(getState().active?.runtimeId).toBe('rt-r5-s-2'))
-    expect(approvalNeedsConfirm('r5-s')).toBe(true)
-  })
-
-  it('(b) a resume of the same chat with a new live session forgets the old one', async () => {
-    await resumeSession('r5-r')
-    await allow('q3', 'rt-r5-r', 'r5-r')
-    rpcHandler = method => (method === 'session.resume' ? { session_id: 'rt-r5-r-2', stored_session_id: 'r5-r', messages: [], info: {} } : {})
-    await resumeSession('r5-r')
-    expect(getState().active?.runtimeId).toBe('rt-r5-r-2')
-    expect(approvalNeedsConfirm('r5-r')).toBe(true)
-  })
-
-  it('(b) a chat pushed out of the kept ones (past 50) forgets its confirmation', async () => {
-    rpcHandler = (method, params) => {
-      const sid = String(params.session_id || '')
-      return method === 'session.resume' ? { session_id: `rt-${sid}`, stored_session_id: sid, messages: [], running: true, info: {} } : {}
-    }
-    await resumeSession('r5-k0')
-    await allow('q4', 'rt-r5-k0', 'r5-k0')
-    for (let i = 1; i <= 51; i++) await resumeSession(`r5-k${i}`)
-    expect(approvalNeedsConfirm('r5-k0')).toBe(true)
-    expect(forgotten).toContain('r5-k0')
-    expect(requestChat(approval('q4-b', 'rt-r5-k0'))).toBe('r5-k0') // still live: its approvals still name its chat
-  })
-
-  it('(b) a chat pushed out of the kept ones is still forgotten in turn as the oldest, route and all', async () => {
-    rpcHandler = (method, params) => {
-      const sid = String(params.session_id || '')
-      return method === 'session.resume' ? { session_id: `rt-${sid}`, stored_session_id: sid, messages: [], running: true, info: {} } : {}
-    }
-    for (let i = 0; i <= 51; i++) await resumeSession(`r5-m${i}`) // r5-m0 is pushed out of the kept ones
-    for (let i = 1; i <= 64; i++) requestChat(approval(`q7-${i}`, `r5-n${i}`)) // 64 newer live sessions
-    expect(requestChat(approval('q7', 'rt-r5-m0'))).toBe('rt-r5-m0') // its route went with it
-  })
-
-  it('(b) at most 64 live sessions are followed: the oldest goes and its confirmation with it', async () => {
-    expect(requestChat(approval('q5', 'r5-b0'))).toBe('r5-b0')
-    await allow('q5', 'r5-b0', 'r5-b0')
-    for (let i = 1; i <= 64; i++) requestChat(approval(`q5-${i}`, `r5-b${i}`))
-    expect(approvalNeedsConfirm('r5-b0')).toBe(true)
-  })
-
-  it('(b) at most 32 stored ids per live session: the oldest goes and its confirmation with it', async () => {
-    await resumeSession('r5-c')
-    await allow('q6', 'rt-r5-c', 'r5-c')
-    for (let i = 1; i <= 32; i++)
-      (client as unknown as { handleEvent: (ev: unknown) => void }).handleEvent({ type: 'session.info', session_id: 'rt-r5-c', payload: { stored_session_id: `r5-c${i}` } })
-    expect(approvalNeedsConfirm('r5-c')).toBe(true)
   })
 })

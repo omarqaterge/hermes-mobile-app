@@ -69,3 +69,6 @@ echo "java-check: local dashboard test $(tail -1 "$OUT/localdash.txt")"
 # The app's record of chats that asked to read phone data (PhoneDataChats.java) on a plain JDK.
 ../tools/test_phone_data_chats.sh > "$OUT/pdchats.txt" 2>&1 || { grep -v '^PASS' "$OUT/pdchats.txt"; echo "java-check: phone data chats test FAILED"; exit 1; }
 echo "java-check: phone data chats test $(tail -1 "$OUT/pdchats.txt")"
+# The confirmed live sessions of "Confirm approvals with fingerprint" (ApprovalLock.java), with the jar checked above.
+ANDROID_ALL_JAR="$JAR" ../tools/test_approval_lock.sh > "$OUT/approvallock.txt" 2>&1 || { grep -v '^PASS' "$OUT/approvallock.txt"; echo "java-check: approval lock test FAILED"; exit 1; }
+echo "java-check: approval lock test $(tail -1 "$OUT/approvallock.txt")"
