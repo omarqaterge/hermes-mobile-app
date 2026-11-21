@@ -1,7 +1,7 @@
 // Commands that start an agent apart from the chat, in a chat that has read phone data (spec 3.4). The plugin is what
 // blocks such an agent's sends (5.1, tools/test_phone_taint.py); the app refuses at once and says why. Every other chat keeps
 // these commands.
-const { WEB, check, sleep, rpcs, nativeShell } = require('../lib.cjs')
+const { WEB, check, sleep, rpcs, nativeShell, mock } = require('../lib.cjs')
 
 const SENT = () => rpcs('slash.exec').length
 
@@ -132,7 +132,7 @@ module.exports = async t => {
   pg = await open('s-pd-ctl')
   await pg.evaluate(() => window.hermesLockView(true))
   const unlocks = () => pg.evaluate(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length)
-  for (const text of ['/approvals off', '/ap smart', '/cron run job1', '/cron remove job1', '/rollback 1', '/myquick', '/usage reset', '/kanban -- create x', '/stat', '/btw what time is it'])
+  for (const text of ['/approvals off', '/ap smart', '/cron run job1', '/cron remove job1', '/rollback 1', '/myquick', '/usage reset', '/kanban -- create x', '/stat', '/v', '/tasks', '/ctx', '/kanban swarm x', '/btw what time is it'])
   {
     const before = await unlocks()
     const sent = await slash(pg, text)
@@ -142,6 +142,20 @@ module.exports = async t => {
   await pg.getByPlaceholder('Message Hermux').fill('')
   for (const text of ['/status', '/kanban list', '/kanban --board b show t1', '/context', '/whoami'])
     check((await slash(pg, text)).join() === text.slice(1), `lock screen: ${text} still runs`)
+  // A quick command (config.yaml) of the same name: Hermes may run it instead, so it waits; the catalog is asked each time.
+  await mock({ quickCommands: ['version'] })
+  {
+    const before = await unlocks()
+    check((await slash(pg, '/version')).length === 0 && (await unlocks()) === before + 1, 'lock screen: /version waits when a quick command has that name')
+  }
+  await mock({ quickCommands: [] })
+  check((await slash(pg, '/version')).join() === 'version', 'lock screen: and runs again when none has')
+  // A worker that fails isn't followed by command.dispatch there (where a quick command runs first), nor is an alias.
+  {
+    const dispatched = rpcs('command.dispatch').length
+    const sent = await slash(pg, '/help down')
+    check(sent.join() === 'help down' && rpcs('command.dispatch').length === dispatched, 'lock screen: a worker that fails is not followed by command.dispatch')
+  }
   await pg.evaluate(() => window.hermesLockView(false))
   check((await slash(pg, '/cron run job1')).length === 1, 'unlocked: /cron run goes as before')
   await pg.close()
@@ -174,6 +188,13 @@ module.exports = async t => {
   await pg.getByRole('button', { name: 'Cancel' }).click()
   await sleep(300)
   check(!rpcs('slash.exec').some(c => /^approvals/i.test(c.params.command)), '/approvals off reached through a quick command: Cancel sends nothing')
+  // The phone locks while the question is up, and someone allows it over the lock screen: nothing is sent.
+  r = await ask('/approvals off')
+  await pg.evaluate(() => window.hermesLockView(true))
+  await pg.getByRole('button', { name: 'Allow full access' }).click({ force: true }).catch(() => {})
+  await sleep(400)
+  check(SENT() === r.before && (await pg.getByText('Unlock the phone to run this command.').count()) >= 1, '/approvals off: allowed after the phone locked, nothing is sent')
+  await pg.evaluate(() => window.hermesLockView(false))
   const before = SENT()
   await slash(pg, '/approvals manual')
   check(SENT() === before + 1 && (await dialog().count()) === 0, '/approvals manual: no question')
@@ -181,11 +202,12 @@ module.exports = async t => {
 
   // ── a chat that has read: only /kanban that shows something, and /bp with values is refused ──
   pg = await open('s-pd', { record: ['s-pd'] })
-  for (const text of ['/kanban swarm x', '/kanban -- create x', '/kanban --board b -- dispatch', '/kanban specify t1', '/kanban decompose --all', '/kanban comment t1 hi', '/bp daily topic=x'])
+  for (const text of ['/kanban swarm x', '/k swarm x', '/kanba swarm --worker a x', '/kanban -- create x', '/kanban --board b -- dispatch', '/kanban specify t1', '/kanban decompose --all', '/kanban comment t1 hi', '/bp daily topic=x', '/BP daily topic=x', '/bl daily topic=x', '/suggest accept 1', '/suggestions add 2', '/sug schedule 3'])
     await refused(pg, text, `read chat: ${text} is refused`)
   await sent(pg, '/kanban --board b list', 'read chat: /kanban list with a board still works')
   await sent(pg, '/kanban show t1', 'read chat: /kanban show still works')
   await sent(pg, '/bp', 'read chat: /bp alone still shows the catalog')
+  await sent(pg, '/suggest', 'read chat: /suggest alone still lists the suggestions')
   await pg.close()
   pg = await open('s-pd-ctl')
   await sent(pg, '/kanban swarm x', 'a chat that has not read: /kanban swarm goes as before')
