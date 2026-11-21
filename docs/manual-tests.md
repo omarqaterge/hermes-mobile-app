@@ -458,3 +458,13 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] The sheet's pause: with two approvals waiting (two commands in one turn, or two chats), double-tap Allow once: only the first is allowed and the second stays on the sheet. Read it, tap Allow once about a second later, and it goes through. Deny works at once. Try with Animations on Full, Reduced and Off, and with TalkBack. With a second request arriving while the app is in the background, a tap right after coming back does nothing; a moment later it works. On a batch of questions that follows another request, a quick tap on a choice records nothing.
 - [ ] Needs you with a chat from a messaging platform that asks: the row shows, opening it shows no sheet, and answering where it was asked removes the row. Say if this is confusing.
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.
+
+## Model picker opens at once (not yet on a phone)
+
+- [ ] Open a chat's model picker twice: the second open shows the list at once (no "Loading models…"), and the list
+      matches the providers that are signed in on that profile.
+- [ ] "Refresh the list" shows "Updating the list…", then new models a provider added show up.
+- [ ] Sign in to a provider (or save a key), then open the picker: its models are there after the refresh.
+- [ ] With a reply running in another chat, opening the picker no longer slows that reply.
+- [ ] Stop the dashboard (Hermes running without the plugin's dashboard): Settings → Model providers shows
+      "Hermux unreachable" with a "Setup check" link that opens Setup check; Back returns to Settings.

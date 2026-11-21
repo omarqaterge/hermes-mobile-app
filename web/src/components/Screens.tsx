@@ -95,11 +95,28 @@ export function useLoader<T>(load: () => Promise<T>, deps: unknown[]) {
 }
 
 /** A load's error with "Try again", in a notice. */
+/** Opens Setup check, like its other links (Back from it goes to the chat). */
+function openSetupCheck() {
+  haptic()
+  setState({ sheet: null, screen: 'setup' })
+}
+
 export function LoadError({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  // The dashboard didn't answer at all (api.ts): Setup check finds and fixes what stopped it.
+  const unreachable = error.startsWith('Hermux unreachable')
   return (
     <div className="notice notice-error load-error">
       <span>
-        <Linked text={error} /> <ReportLink />
+        <Linked text={error} />{' '}
+        {unreachable && (
+          <>
+            <button className="report-link" onClick={openSetupCheck}>
+              Setup check
+            </button>
+            {' · '}
+          </>
+        )}
+        <ReportLink />
       </span>
       {onRetry && (
         <button className="btn" onClick={onRetry}>
