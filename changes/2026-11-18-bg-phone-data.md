@@ -23,3 +23,10 @@ rank: normal
 - **Over the lock screen, quick commands and aliases wait for an unlock**, and a command already on its way stops if the
   phone locks while it waits (for example while the `/approvals off` warning is up). Checked in a desktop browser. Not yet
   tried on a phone.
+- **Phone-data chats ask more often before touching what runs later.** In a chat that has read your phone data, a terminal
+  command or a script now asks whenever it names Hermes's folders, a shell start-up file or a folder of programs, even just
+  to read it, and whenever it writes to a file whose name is only known when it runs. Expect a few more questions in such a
+  chat. Checked against a test copy of Hermux. Not yet tried on a phone.
+- **Over the lock screen, `/yolo` only turns access off.** `/yolo on` and a bare `/yolo` wait for an unlock, and so do
+  the side chat (`/btw`) and its pull-up gesture. A command also waits when Hermes can't fully list its own commands.
+  Checked in a desktop browser. Not yet tried on a phone.

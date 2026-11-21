@@ -189,3 +189,22 @@ Fixing these would weaken the rules above, so they stay. Each one errs on the si
 - A chat made from a marked one whose creation time isn't known counts as made after the read.
 - In the app, a chat in the same lineage group as a marked chat (a compression or a branch the page saw) counts as marked.
 - A damaged or full record file marks every chat until it is cleared.
+
+
+## Security re-check of PR 206 (2026-11-21, fourth round)
+
+Run with the plugin tests, the unit tests and the browser checks, all in a temporary `HOME` and `HERMES_HOME`; no phone.
+
+- **Writing where something runs from** (`phone_taint.py`): no list of programs any more. A terminal command or a script
+  asks when its text names a guarded place (reads too), when it writes or deletes a file named at run time (or it can't be
+  told), and `guarded_place` covers whole folders (fish's `conf.d`, `.bashrc.d`, `.shortcuts`, any `bin`, `etc`,
+  `site-packages`, `conf.d`). Extra asks are accepted (`find -name '*.py'`, `for f in *.txt`, `open(out, 'w')`).
+- **Tool Search bridge:** every `tool_call` shape the pinned Hermes runs is read (`tool_call_entries`, the page's
+  `bridgedNames`); a shape Hermes refuses asks.
+- **Lock screen:** decided before a chat is made (`lockWhy`), the catalog asked by profile with no chat open; a catalog
+  with a `warning` or a malformed one counts as not built in; `/yolo` only for off; `/btw`, `askBtw` and the pull-up
+  gesture wait for an unlock.
+- **CI:** the Hermes contract job runs `hermes-commands.py --check`.
+- **Not closed:** a program or script file that does the writing (`python3 x.py`, `sh run.sh`, `make`); Python code that
+  writes through a library the reader doesn't know (`df.to_csv(p)`, `sqlite3.connect(p)`, `zipfile` in write mode). The
+  plugin stays a speed bump; the app's record, filter and dialogs are the enforcement.
