@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { rpc, errText } from './gateway'
+import { askUnlock, lockView } from './lockview'
 import { getState } from './store'
 
 /** A /btw side chat: questions about the open chat that run on a snapshot of it, detached from the main turn. */
@@ -29,6 +30,8 @@ let seq = 0
 
 /** Open the mini chat for the current chat (a different chat starts a fresh one), optionally asking right away. */
 export function openBtw(question = ''): void {
+  // A side question runs an agent turn: over the lock screen it waits for an unlock, like everything that acts.
+  if (lockView()) return askUnlock('Unlock the phone to ask on the side')
   const sid = getState().active?.runtimeId || ''
   set({ open: true, session: sid, msgs: sid === state.session ? state.msgs : [] })
   if (question.trim()) void askBtw(question)
@@ -53,6 +56,7 @@ export async function askBtw(question: string): Promise<void> {
   const a = getState().active
   const q = question.trim()
   if (!a || !q) return
+  if (lockView()) return askUnlock('Unlock the phone to ask on the side')
   const id = `btw${++seq}`
   // Each call sees a fresh snapshot of the main chat; earlier side answers ride along so follow-ups make sense.
   const prior = state.msgs.filter(m => m.a && !m.error).slice(-6)

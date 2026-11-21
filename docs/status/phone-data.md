@@ -122,3 +122,95 @@ app says the feature isn't available.
 | D Plugin | `hermes-plugin/hermes-mobile/phone_data.py`, `__init__.py`, `tools/test_phone_data.py`, the plugin job in `.github/workflows/ci.yml` |
 | E Switches | `PhoneData.java`, `android/AndroidManifest.xml`, `MainActivity.java`, `secure-bridge.ts`, `bridge.ts`, `Settings.tsx`, `settings-search.ts`, `tools/web-e2e/mock.cjs`, `tools/web-e2e/checks/29-phone-data.cjs` |
 | F Gate | `PhoneDataGrants.java`, `HermesService.java`, `web/src/gateway.ts`, `RequestSheet.tsx`, `notif-answer.ts`, `tools/web-e2e/checks/05-questions-and-approvals.cjs`, `25-approval-lock.cjs` |
+
+## Work that runs apart from a chat (security review of PR 206, 2026-11-19)
+
+Run against the pinned Hermes (b8a8be18) with a fake model; no phone.
+
+- **Background tasks.** Hermes's slash worker loads the plugin, its `pre_tool_call` hook fires there, and `HERMES_SESSION_KEY` is the chat's stored id. A `/bg` task of a chat that has read is now blocked from sending, also when it was running before the read, and when a quick command started it. `prompt.background` is covered through the live chat (the app doesn't use it).
+- **Branches** lost the mark, on `main` too (the same code): a branch's `curl` ran without a question. Fixed in the plugin and in `branchAt`.
+- **`session_search`** let a new chat or a background task read a marked chat's messages, through the Tool Search bridge. The reader is now marked.
+- **Scheduled jobs** made with `/cron add` carry no link to the chat (no origin, no key), so the plugin can't tie them to it. The app refuses them in a chat that has read. A run counts as "nobody can be asked" once it has read, or found a marked chat.
+- **Worker commands that hand typed text to a new agent, refused in such a chat:** `/bg`, `/background`, `/cron add|create|edit`, `/kanban create|dispatch|daemon`, `/blueprint <name> slot=value`. **Looked at and left alone:** commands Hermes routes to the chat's own agent (`/goal`, `/loop`, `/plan`, `/queue`, `/steer`, `/retry`, `/undo`, `/compress`, `/learn`, `/init`, `/moa`, `/proactive`), `/review` (a sub-agent of the chat), `/cron list|run|pause|resume|remove`, `/suggestions` and `/curator` (no typed text), quick commands of type `exec` (the owner's own shell lines).
+- **Not closed:** the agent can read Hermes's `state.db` with file or shell tools, which no rule sees. Needs a phone: `docs/manual-tests.md`.
+
+## Security re-check of PR 206 (2026-11-19, second round)
+
+Run against the pinned Hermes (b8a8be18) and in a desktop browser with the mock; no phone. Tests and checks ran in a
+temporary `HOME` and `HERMES_HOME`; `tools/test_phone_taint.py` now sets its own and fails if a plugin path is outside it.
+
+- **Lock screen:** slash text did reach `sendPrompt` there (the composer and Live mode's transcript; the browser checks type
+  it into the composer). Now only commands that show something run there (`lockSafeCommand`); everything else, `/approvals
+  off`, `/cron run`/`remove`, `/rollback`, quick commands and aliases included, asks for an unlock. Unlocked, `/approvals
+  off` and `smart` ask with the Full access dialog.
+- **Background tasks of a chat that has read:** the terminal runs only commands known to read; `phone_app`, `execute_code`
+  and writes into Hermes's folders are blocked there. `rish`, `hermes` and Hermes's modules count as sending in every chat
+  that has read.
+- **`/kanban`:** only subcommands that read are allowed in such a chat, read as Hermes reads them (`--`, `--board`); `/bp`
+  counts as `/blueprint`.
+- **Reading other chats:** every chat a result names is checked (not 50 of them); a branch is looked up in the profile that
+  found it; `session_search`'s browse mode and failed results mark nobody; a branch made before its parent read stays
+  unmarked (the record now keeps when each chat first read, `since`).
+- **Not closed:** a quick command that Hermes's worker resolves itself is not seen by the page, so `/approvals off` reached
+  that way doesn't ask (the user wrote it into `config.yaml`); over the lock screen it waits for an unlock like any unknown
+  command. A background task's `canvas` and `phone_data` calls are not restricted further.
+
+
+## Security re-check of PR 206 (2026-11-21, third round)
+
+Run in a desktop browser with the mock and with the plugin tests, all in a temporary `HOME` and `HERMES_HOME`; no phone.
+
+- **Lock screen:** judged before anything is sent (before a new chat is made), with the profile's command catalog asked each
+  time (a quick command, plugin command or skill with an allowed name waits), and again after each wait: after the
+  `/approvals off` confirmation, at each alias step; no `command.dispatch` fallback and no alias, `send` or `skill` answer is
+  followed there. Aliases (`/v`, `/tasks`, `/ctx`) wait too.
+- **Command names** come from Hermes's own table (`web/vendor/hermes-commands.json`, `tools/hermes-commands.py`; regenerate
+  when the pin moves): `/bp`, `/suggest`, beginnings such as `/k`, `/bl`. `/suggestions accept` counts as a scheduled job.
+- **Background tasks of a chat that has read:** only tools that read (`_DETACHED_OK`): no terminal, no code, no
+  `phone_app`, no writes, nothing sent.
+- **Chats that have read:** writing into Hermes's or the app's folders, `~/.termux`, `/etc`, a shell start-up file or a
+  folder of programs asks (`write_file`/`patch` by the real path; terminal and code by their text).
+- **Searches:** when the check can't be complete (a cut result, more than 50 chats, an origin not known yet), the reader is
+  marked.
+- **Not closed:** a terminal command or script that writes such a place by a path built some other way (a script file, code
+  that assembles the name); a plugin command that has a built-in's name over the lock screen; ordinary chats marked by
+  mistake (below).
+
+### Known limits: chats marked that hadn't read (finding 6, not fixed)
+
+Fixing these would weaken the rules above, so they stay. Each one errs on the side of asking.
+
+- A search whose result is cut off, names more than 50 chats, or names a chat whose origin can't be read yet marks the
+  searching chat (finding 4 asks for exactly that).
+- Through the Tool Search bridge, a `session_search` in browse mode or a failed one still counts: the result's shape can't
+  be told there.
+- Text inside a search result that looks like `"id": "..."` (a snippet a model wrote) names a chat; when that chat can't be
+  found, the reader is marked.
+- A chat made from a marked one whose creation time isn't known counts as made after the read.
+- In the app, a chat in the same lineage group as a marked chat (a compression or a branch the page saw) counts as marked.
+- A damaged or full record file marks every chat until it is cleared.
+
+
+## Security re-check of PR 206 (2026-11-21, fourth round)
+
+Run with the plugin tests, the unit tests and the browser checks, all in a temporary `HOME` and `HERMES_HOME`; no phone.
+
+- **Writing where something runs from** (`phone_taint.py`): no list of programs any more. A terminal command or a script
+  asks when its text names a guarded place (reads too), when it writes or deletes a file named at run time (or it can't be
+  told), and `guarded_place` covers whole folders (fish's `conf.d`, `.bashrc.d`, `.shortcuts`, any `bin`, `etc`,
+  `site-packages`, `conf.d`). Extra asks are accepted (`find -name '*.py'`, `for f in *.txt`, `open(out, 'w')`).
+- **Tool Search bridge:** every `tool_call` shape the pinned Hermes runs is read (`tool_call_entries`, the page's
+  `bridgedNames`); a shape Hermes refuses asks.
+- **Lock screen:** decided before a chat is made (`lockWhy`), the catalog asked by profile with no chat open; a catalog
+  with a `warning` or a malformed one counts as not built in; `/yolo` only for off; `/btw`, `askBtw` and the pull-up
+  gesture wait for an unlock.
+- **CI:** the Hermes contract job runs `hermes-commands.py --check`.
+- **Not closed:** a program or script file that does the writing (`python3 x.py`, `sh run.sh`, `make`); Python code that
+  writes through a library the reader doesn't know (`df.to_csv(p)`, `sqlite3.connect(p)`, `zipfile` in write mode). The
+  plugin stays a speed bump; the app's record, filter and dialogs are the enforcement.
+- **Also not closed (final re-check of round 4, accepted as speed-bump limits):** in `execute_code`, a `Path` held in a
+  variable then opened for writing (`p = Path.home() / ...; p.open("w")`), the destination of `Path.replace`/`rename`
+  (and `symlink_to`), and `from io import FileIO`; in the terminal, a redirect glued to its target (`echo x >/path`),
+  a quoted heredoc or `sh -c` body fed to a shell, and a guarded folder reached through `cd` (`cd /; cd etc`, `cd
+  ~/.config`). Fixes 2 to 5 of round 4 hold, and the app-side record, filter and fingerprint rule were unchanged. Known
+  outside this PR: `auto_mode.py`'s `_calls` still unwraps only list-shaped `tool_call` (already on `main`).

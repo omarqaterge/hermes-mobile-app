@@ -35,3 +35,14 @@ may load web images, so the card hold and the shell's filter (in chats that have
   its first run).
 
 **Links:** spec 2.3, 3.9, 4.3, 7.1, 7.5; `docs/decisions/phone-data-read-only.md` (update 2026-11-16).
+
+## Share and install checks (2026-11-17)
+
+**State:** done on the local branch `local/install-share-checks`, not pushed (kept back until the owner says so).
+Shares need the sender's own access (spec 2.3, `ShareUri.needsGrant`, the manifest's
+`requireContentUriPermissionFromCaller`), install, update and uninstall results carry their run's nonce
+(`LocalAuth.Awaited`), and the main frame loads only the app's own page (`MainActivity.ownPage`).
+
+**Needs a real phone:** sharing a photo, a PDF and a contact card into Hermux on Android 15+ and on one older
+version (with and without the phone-data switches on); an app update and a helper-app install end to end, on
+Android 12 or older if one is at hand; Settings → Uninstall Hermux.

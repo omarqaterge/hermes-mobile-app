@@ -465,4 +465,22 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] Stop with sub-agents running after the reply has ended: the composer shows Stop, and it ends them all, at every depth.
 - [ ] Ten sub-agents for ten minutes (`delegation.max_concurrent_children`): the chat and the list scroll smoothly; compare heat and the battery drop with a chat without them. With a sub-agent's sheet open, then closed, the battery screen shows no extra wake-ups once it is closed.
 - [ ] `/bg` in a chat that has read phone data is refused with the reason, and works in a new chat.
+- [ ] A chat that has read phone data, in Debian with Hermes running: `/bg` is refused with the reason, and a quick command aimed at `/bg` starts a task whose network command is blocked. Start a `/bg` task in another chat, let that chat read phone data while the task runs: the task's next network command is blocked.
+- [ ] Branch a chat that has read phone data: remote images in the branch wait for a tap at once, and its first network command asks. In a new chat, ask the agent to search for words from that chat: its next network command asks.
+- [ ] `/cron add`, `/kanban create` and `/blueprint <name> a=b` are refused in a chat that has read phone data and work in a new chat. `/cron list` works in both.
+- [ ] Over the lock screen (Talk to Hermes on the lock screen on): in a chat in Full access a slash command asks for an unlock and `/yolo off` works; in a chat with approvals on `/bg` asks for an unlock.
+- [ ] Over the lock screen, in a chat with approvals on: type `/approvals off`, `/cron run <a job>` and a quick command from your config: each asks for an unlock and nothing changes (`/approvals` afterwards still says manual). `/status`, `/help` and `/kanban list` still answer. Say whether the keyboard over the lock screen works at all on your phone, and whether Live mode ever turns speech into text starting with `/`.
+- [ ] Unlocked: `/approvals off` shows the Full access warning; Cancel leaves `/approvals` at manual, Allow sets it off. Set it back with `/approvals manual`.
+- [ ] A chat that has read phone data, in Debian with Hermes running: start `/bg` asking it to run `hermes chat -q hi`, `rish -c id`, and a script it writes to `/tmp`: each is blocked in the task, while `ls` and `cat` of a file work. `/kanban swarm x` and `/bp <name> a=b` are refused in that chat.
+- [ ] Branch a chat before it reads phone data, then let it read: the branch's network commands don't ask. In a new chat, ask the agent to list recent chats without searching: its network commands don't ask.
 - [ ] Go back to the release (`docs/status/ui-revamp.md`): the chats, drafts, pins, theme and settings are all there and the release works.
+
+## Model picker opens at once (not yet on a phone)
+
+- [ ] Open a chat's model picker twice: the second open shows the list at once (no "Loading models…"), and the list
+      matches the providers that are signed in on that profile.
+- [ ] "Refresh the list" shows "Updating the list…", then new models a provider added show up.
+- [ ] Sign in to a provider (or save a key), then open the picker: its models are there after the refresh.
+- [ ] With a reply running in another chat, opening the picker no longer slows that reply.
+- [ ] Stop the dashboard (Hermes running without the plugin's dashboard): Settings → Model providers shows
+      "Hermux unreachable" with a "Setup check" link that opens Setup check; Back returns to Settings.

@@ -23,6 +23,12 @@ import { fmtCost } from '../ctxring'
 import { openReport } from './Report'
 import { Icon } from './icons'
 import { Row as SetRow, Section } from './ui'
+import { LoadError } from './Screens'
+import { LOAD_LIMIT_MS, timeLimit } from '../timelimit'
+import { cachedModels, liveOnce, refreshDue, refreshing, saveModels, slim, type ModelList } from '../modelcache'
+
+/** How long the model picker's live refresh waits for the subscription-token renewal before going on without it. */
+const LOGIN_LIMIT_MS = 8000
 
 function Shell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
   const close = onClose ?? (() => setState({ sheet: null }))
@@ -40,24 +46,61 @@ function Shell({ title, children, onClose }: { title: string; children: React.Re
 
 export function ModelSheet() {
   const active = useStore(s => s.active)
-  const [data, setData] = useState<ModelOptionsResult | null>(null)
+  const profile = useStore(s => s.profile)
+  // The list shown last time, at once (Hermes takes seconds to build it on a phone); Hermes's answer replaces it.
+  const [data, setData] = useState<ModelList | null>(() => cachedModels(profile))
   const [q, setQ] = useState('')
   const [err, setErr] = useState('')
+  const [updating, setUpdating] = useState(() => refreshing(profile))
+  const [tries, setTries] = useState(0) // Try again / Refresh the list: load once more
+  const forced = useRef(false)
   useEffect(() => {
-    // A plain open reads Hermes's disk cache of each provider's catalog (stale after a new login or new models):
-    // show it at once, then swap in the live list.
     let gone = false
-    rpc<ModelOptionsResult>('model.options', { session_id: active?.runtimeId })
-      .then(r => !gone && setData(r))
-      .catch(e => setErr(errText(e)))
-    refreshLogins()
-      .then(() => rpc<ModelOptionsResult>('model.options', { session_id: active?.runtimeId, refresh: true }))
-      .then(r => !gone && setData(r))
+    let live = false // a live list arrived: a later plain read (maybe staler) must not replace it
+    setErr('')
+    // A plain open reads Hermes's disk cache of each provider's catalog (stale after a new login or new models).
+    // No answer within LOAD_LIMIT_MS ends in an error with Try again; a late answer still fills the list.
+    const plain = rpc<ModelOptionsResult>('model.options', { session_id: active?.runtimeId })
+    plain
+      .then(r => {
+        if (gone || live) return
+        const list = slim(r)
+        saveModels(profile, list, false)
+        setData(list)
+        setErr('')
+      })
       .catch(() => {})
+    timeLimit(plain, LOAD_LIMIT_MS).catch(e => !gone && !live && setErr(errText(e)))
+    // The live list (every catalog fetched again) only when the last one is old, or when asked: it is slow on a phone
+    // and runs beside a reply. One already running (opened before) is waited for instead of starting another.
+    if (forced.current || refreshDue(profile) || refreshing(profile)) {
+      forced.current = false
+      setUpdating(true)
+      liveOnce(profile, () =>
+        // An expired subscription token is renewed first, so the live list has that provider's models; a dashboard that
+        // doesn't answer holds it for LOGIN_LIMIT_MS at most.
+        timeLimit(refreshLogins(), LOGIN_LIMIT_MS)
+          .catch(() => null)
+          .then(() => rpc<ModelOptionsResult>('model.options', { session_id: active?.runtimeId, refresh: true }))
+      )
+        .then(list => {
+          if (gone) return
+          live = true
+          setData(list)
+          setErr('')
+        })
+        .catch(() => {})
+        .finally(() => !gone && setUpdating(false))
+    }
     return () => {
       gone = true
     }
-  }, [active?.runtimeId])
+  }, [active?.runtimeId, profile, tries])
+  const again = (live: boolean) => {
+    haptic()
+    forced.current = live
+    setTries(n => n + 1)
+  }
   const currentModel = active?.info.model || data?.model
   const currentProvider = active?.info.provider || data?.provider
   const defaultEffort = useStore(s => s.defaultEffort)
@@ -152,7 +195,7 @@ export function ModelSheet() {
       </div>
       <input className="search" placeholder="Search models…" value={q} onChange={e => setQ(e.target.value)} />
       <div className="sheet-scroll">
-        {err && <div className="notice notice-error">{err}</div>}
+        {err && !data && <LoadError error={err} onRetry={() => again(false)} />}
         {!data && !err && <div className="dim pad">Loading models…</div>}
         {favRows.length > 0 && (
           <div className="group fav-group">
@@ -182,7 +225,18 @@ export function ModelSheet() {
             ))}
           </div>
         )}
-        {data && !q && <div className="dim small pad">Missing a model? Type its exact name in the search box to use it.</div>}
+        {data && !q && (
+          <div className="dim small pad model-foot">
+            Missing a model? Type its exact name in the search box to use it.{' '}
+            {updating ? (
+              <span className="model-updating">Updating the list…</span>
+            ) : (
+              <button className="report-link" onClick={() => again(true)}>
+                Refresh the list
+              </button>
+            )}
+          </div>
+        )}
         {/* Last row: Settings on Add a provider; Back there comes back to this chat (settings-open.ts). */}
         <button className="row model-add" onClick={() => { haptic(); openSettingsOn('add') }}>
           <Icon n="plus" />

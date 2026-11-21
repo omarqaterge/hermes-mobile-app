@@ -7,15 +7,26 @@ Part 1 fakes Hermes's helpers. Part 2 (only when Hermes is importable) uses Herm
 credential pool on a throwaway HERMES_HOME, with only the network exchange faked, and checks the login lands where
 `hermes auth add anthropic` puts it.
 """
+import atexit
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import types
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+# Where Hermes's code is (for part 2), from the caller's home before it is replaced below; only its code is imported.
+HERMES_AGENT = Path(os.environ.get("HERMES_AGENT_DIR") or Path.home() / ".hermes" / "hermes-agent")
+# A throwaway HOME and HERMES_HOME before anything else is imported: nothing this test starts (Hermes's own code
+# included) can read or change a real Hermes home, even when it runs alone, outside tools/check.sh.
+_home = tempfile.mkdtemp(prefix="hm-test-home-")
+os.environ["HOME"] = _home
+os.environ["HERMES_HOME"] = os.path.join(_home, ".hermes")
+atexit.register(shutil.rmtree, _home, True)
 
 HERE = Path(__file__).resolve().parent
 MOD = HERE.parent / "hermes-plugin" / "hermes-mobile" / "claude_login.py"
@@ -175,7 +186,7 @@ if os.environ.get("HM_CLAUDE_REAL") != "1":
         m.start = real_start
 
     # Part 2: the real Hermes, in a child process (its modules must not meet the fakes above).
-    hermes = Path(os.environ.get("HERMES_AGENT_DIR", Path.home() / ".hermes" / "hermes-agent"))
+    hermes = HERMES_AGENT
     probe = subprocess.run([sys.executable, "-c", "import agent.anthropic_credentials, hermes_cli.auth_commands"],
                            cwd=hermes, capture_output=True, text=True) if hermes.is_dir() else None
     if probe is None or probe.returncode != 0:

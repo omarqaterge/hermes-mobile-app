@@ -735,6 +735,12 @@ public class LocalDashboardTest {
         String n4 = aw.arm();
         aw.clear();
         check(!aw.take(n4), "awaited: nothing taken after clear (a run that could not start)");
+        // An install session answers twice (its prompt, then the final answer): matches() does not use the nonce up.
+        String n5 = aw.arm();
+        check(aw.matches(n5) && aw.matches(n5), "awaited: matches the run's nonce, more than once");
+        check(!aw.matches(null) && !aw.matches("") && !aw.matches(LocalAuth.nonce()) && !aw.matches(n4), "awaited: no nonce, another or an earlier one: no match");
+        aw.clear();
+        check(!aw.matches(n5), "awaited: no match after clear");
         java.util.Set<Integer> codes = new java.util.HashSet<>();
         for (int i = 0; i < 1000; i++) codes.add(LocalAuth.nextRequestCode(0x47140000));
         boolean inRange = true;
