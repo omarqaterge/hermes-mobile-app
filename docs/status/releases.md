@@ -1,17 +1,17 @@
 # Releases
 
-**State:** v0.8.67 (2026-10-30) is the latest published release. v0.9.6 (2026-11-03) is written up in CHANGELOG.md but was
-never tagged or published: the first release called Hermux will be the next one (v0.9.7), and its notes include the
-v0.9.6 section. It accepts updates from the current repo address, `omarqaterge/hermux` and `hermuxlab/hermux`, and
-ships as `hermux.apk` only from the release after v0.9.7 on (v0.9.7 carries `hermux.apk` and `hermes-mobile.apk`, the same file; decided 2026-11-14). The repo rename waits about 2 weeks and a look at the download count
-([repo-rename.md](repo-rename.md)).
+**State:** v0.9.8 (2026-11-14) is the latest published release, the second one called Hermux, carrying only
+`hermux.apk`. The repo rename waits for a look at the download count ([repo-rename.md](repo-rename.md)).
 
 **Next:** a release when the owner decides. Only the owner creates `v*` tags (they publish the app); agents propose.
 A tag only publishes when its commit is on `main` and CI passed on it (`tools/release-gate.sh`, since 2026-11-15): tag the
 merge commit, and if CI failed there, re-run its failed jobs and then the Release workflow.
-**Before the next release** (2026-11-17): releases carry no checksum, signing fingerprint or attestation yet. Add
-them first: the list is "Release checklist: proving a download is the real APK" in
-`docs/spec/07-05-versioning-and-releases.md` (decision: [release-integrity.md](../decisions/release-integrity.md)).
+**Proof of the real APK** (decision 2026-11-17, done 2026-11-21): the signing certificate's fingerprint is in the
+README and `SECURITY.md`; from the release after v0.9.8 on, `release.yml` attests the APK and uploads
+`hermux.apk.sha256`, with the hash in the notes (spec 7.5). The first release with them is their first real run: check
+that the release has both files and that `gh attestation verify hermux.apk -R omarqaterge/hermes-mobile-app` passes.
+**Still open (owner):** the `KEYSTORE_PASS` secret is not set, so releases are signed with the old default keystore
+password (the run warns); see [security-followups.md](security-followups.md).
 How a release is made: `docs/spec/07-05-versioning-and-releases.md` and `python3 tools/changelog.py release`.
 
 **Needs a real phone:** everything marked `web ✓` (not yet tried on a phone) in [docs/improvements.md](../improvements.md).

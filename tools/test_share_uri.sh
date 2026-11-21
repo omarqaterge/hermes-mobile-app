@@ -62,6 +62,20 @@ public class ShareUriTest {
         System.out.println((noOwn ? "PASS  " : "FAIL  ") + "refuses everything when the app's own name is unknown");
         if (!noOwn) fails++;
 
+        // before API 35: when must the sender have handed over its own access (a URI grant)?
+        boolean[] grant = {
+            ShareUri.needsGrant(false, null, false),                              // a provider that can't be seen
+            ShareUri.needsGrant(false, "android.permission.READ_CONTACTS", true),
+            ShareUri.needsGrant(true, "android.permission.READ_CONTACTS", true),  // this app could open it by itself
+            !ShareUri.needsGrant(true, "android.permission.READ_CONTACTS", false), // only a grant opens it anyway
+            !ShareUri.needsGrant(true, null, false),                              // open to every app
+            !ShareUri.needsGrant(true, null, true),
+        };
+        for (int i = 0; i < grant.length; i++) {
+            System.out.println((grant[i] ? "PASS  " : "FAIL  ") + "needsGrant case " + (i + 1));
+            if (!grant[i]) fails++;
+        }
+
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }

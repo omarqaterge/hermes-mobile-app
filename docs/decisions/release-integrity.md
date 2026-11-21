@@ -1,6 +1,6 @@
 # Every release proves its APK is the real one
 
-**Decided:** 2026-11-17. Nothing is released now; this applies to the next release.
+**Decided:** 2026-11-17. **Done:** 2026-11-21, for every release after v0.9.8 (items 1 to 3; the optional installer check is not done).
 
 A release today carries only `hermux.apk`. Updates are protected by Android itself (an update must be signed with the
 same key), but someone installing for the first time has nothing to check the file against. A bare checksum next to the
