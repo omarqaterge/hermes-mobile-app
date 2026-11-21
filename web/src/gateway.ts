@@ -148,6 +148,7 @@ export async function connect(): Promise<void> {
     return
   }
   for (const w of warm.splice(0)) chatClosed(w.runtimeId) // runtimes of the old socket: Hermes reaps those itself once it sees the socket gone
+  for (const k of kept) forgetRuntime(k.runtimeId, true) // their work may have died with the old socket: an Allow there asks again
   try {
     await client.connect(url)
     await afterConnect()
@@ -450,6 +451,7 @@ export async function switchProfile(profile: string): Promise<void> {
   openSeq++
   keepPreview(getState().active)
   for (const w of warm.splice(0)) closeLater(w.runtimeId, 0)
+  const left = getState().active
   await closeActiveIfIdle()
   try {
     localStorage.setItem('hm.profile', profile)
@@ -458,6 +460,7 @@ export async function switchProfile(profile: string): Promise<void> {
   }
   sessionLimit = SESSIONS_PAGE
   setState({ profile, active: null, opening: null, sessions: cachedSessions(profile), drawer: false, defaultModel: '', ...closeSubSheetIf() })
+  if (left) unfollow(left.runtimeId) // one still working is left running, no longer followed
   void loadSessions()
   void loadDefaultModel()
 }
@@ -473,9 +476,20 @@ const warm: Array<{ storedId: string; runtimeId: string }> = []
 function closeLater(runtimeId: string, ms = 3000): void {
   setTimeout(() => {
     // Reopened meanwhile (Hermes handed the same live session back) or still kept for running work: keep it.
-    if (getState().active?.runtimeId === runtimeId || warm.some(w => w.runtimeId === runtimeId) || kept.some(k => k.runtimeId === runtimeId)) return
+    if (followed(runtimeId)) return
     void rpc('session.close', { session_id: runtimeId }).catch(() => {})
   }, ms)
+}
+
+/** Is this live session still followed: on screen, warm or kept? */
+const followed = (runtimeId: string): boolean =>
+  getState().active?.runtimeId === runtimeId || warm.some(w => w.runtimeId === runtimeId) || kept.some(k => k.runtimeId === runtimeId)
+
+/** A live session left the page's lists without being closed: unless it is still in one, an Allow confirmed through it asks
+ *  again (it stays known for routing until it is the oldest noted, `forgetRuntime`). Every removal from `active`, `warm` and
+ *  `kept` either closes the session (`chatClosed` on `session.close`), keeps it in another list, or calls this. */
+function unfollow(runtimeId: string): void {
+  if (!followed(runtimeId)) forgetRuntime(runtimeId, true)
 }
 
 /** `prev` is no longer on screen: keep it warm (an idle one) and close the oldest warm chats. */
@@ -491,14 +505,18 @@ function retire(prev: ActiveSession | null): void {
 function warmUp(prev: { storedId: string; runtimeId: string }): void {
   if (getState().active?.runtimeId === prev.runtimeId) return
   const i = warm.findIndex(w => w.storedId === prev.storedId)
-  if (i >= 0) warm.splice(i, 1)
+  const [old] = i >= 0 ? warm.splice(i, 1) : []
   warm.unshift({ storedId: prev.storedId, runtimeId: prev.runtimeId })
+  if (old) unfollow(old.runtimeId)
   for (const w of warm.splice(WARM)) closeLater(w.runtimeId)
 }
 
-function unwarm(storedId: string): void {
-  for (let i = warm.length - 1; i >= 0; i--) if (sameChat(warm[i].storedId, storedId)) warm.splice(i, 1)
-  unkeep(storedId)
+/** This chat leaves the warm and kept ones (it opens, is deleted or replaced). `stays` is a live session it goes on in. */
+function unwarm(storedId: string, stays?: string): void {
+  const gone: string[] = []
+  for (let i = warm.length - 1; i >= 0; i--) if (sameChat(warm[i].storedId, storedId)) gone.push(...warm.splice(i, 1).map(w => w.runtimeId))
+  for (let i = kept.length - 1; i >= 0; i--) if (sameChat(kept[i].storedId, storedId)) gone.push(...kept.splice(i, 1).map(k => k.runtimeId))
+  for (const rt of gone) if (rt !== stays) unfollow(rt)
 }
 
 // Chats left while they worked (their reply, or sub-agents after it). They are not closed then, since closing stops what
@@ -510,10 +528,6 @@ function keepWhileWorking(a: ActiveSession): void {
   if (kept.some(k => k.runtimeId === a.runtimeId)) return
   kept.push({ storedId: a.storedId, runtimeId: a.runtimeId, running: a.running })
   if (kept.length > KEPT_MAX) forgetRuntime(kept.shift()!.runtimeId, true) // stays open as it was, no longer followed
-}
-
-function unkeep(storedId: string): void {
-  for (let i = kept.length - 1; i >= 0; i--) if (sameChat(kept[i].storedId, storedId)) kept.splice(i, 1)
 }
 
 /** Kept chats whose work has ended become warm ones. */
@@ -678,9 +692,13 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     if (seq === openSeq) setState({ opening: null, preview: null })
     throw err
   }
-  unwarm(storedId)
+  unwarm(storedId, r.session_id)
   agents.trackBuild(r.session_id) // a fresh resume builds its agent in the background too
-  if (opts.auto && openSeq !== seq) return // the user went elsewhere while this was loading
+  if (opts.auto && openSeq !== seq) {
+    // The user went elsewhere while this was loading: the live session it opened goes warm (or kept), like any chat left.
+    if (getState().active?.runtimeId !== r.session_id) retire(baseActive(r, storedId))
+    return
+  }
   const next = baseActive(r, storedId)
   // the id asked for, the one Hermes resumed and the stored one are the same chat; its live id joins them (lineage.ts)
   noteLineage([storedId, r.resumed, r.stored_session_id, r.info?.stored_session_id], next.runtimeId)

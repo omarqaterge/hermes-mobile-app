@@ -377,4 +377,24 @@ module.exports = async t => {
     check(forgot.includes(chat), `approval lock: a reconnect forgets the confirmation of a chat left warm on the old socket (${JSON.stringify(forgot)})`)
     await pg.close()
   }
+  {
+    // The same for a chat kept open for its running work: its work may have died with the old socket, so a confirmation made
+    // in it is forgotten on a reconnect too.
+    const pg = await open({ on: true, secure: true, result: 'ok' })
+    await ask(pg, 'run the thing')
+    await pg.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
+    await sleep(100)
+    const chat = await pg.evaluate(() => JSON.parse(localStorage.getItem('hm.lastSession') || '{}').id)
+    await pg.evaluate(() => window.hermesOpenSession('s-11')) // its turn still runs: the chat is kept, not warm
+    await pg.getByText('answer s-11', { exact: true }).waitFor({ timeout: 5000 })
+    const before = await pg.evaluate(() => window.__alCalls.filter(c => 'forget' in c).length)
+    await mock({ drop: 1500 })
+    await pg.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
+    await mock({ up: true })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await sleep(500)
+    const forgot = await pg.evaluate(n => window.__alCalls.filter(c => 'forget' in c).slice(n).map(c => c.forget), before)
+    check(forgot.includes(chat), `approval lock: a reconnect forgets the confirmation of a chat kept for its running work (${JSON.stringify(forgot)})`)
+    await pg.close()
+  }
 }
