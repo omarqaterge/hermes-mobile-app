@@ -10,7 +10,7 @@ import { api } from './api'
 import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
-import { hermesBody, hermesWords, lockSafeCommand, loosensApprovals } from './slashwords'
+import { hermesSlash, lockSafeCommand, loosensApprovals, yoloOffArg } from './slashwords'
 import { confirmLooseApprovals } from './access-confirm'
 import { noteLineage, noteListRow } from './lineage'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
@@ -747,8 +747,8 @@ export async function sendPrompt(text: string): Promise<boolean> {
   // chat to be made, whose access is off there, and the profile's catalog), and again after each wait, since the phone can
   // lock meanwhile. Hermes's prompt.submit runs no slash command, so text that isn't one only talks.
   const isSlash = trimmed.startsWith('/')
-  const { name, arg } = hermesWords(trimmed)
-  const yoloOff = isSlash && name.toLowerCase() === 'yolo' && /^(off|0|false|no)$/i.test(arg.trim())
+  const { name, arg } = hermesSlash(trimmed) // the words runSlash judges and sends
+  const yoloOff = isSlash && name.toLowerCase() === 'yolo' && yoloOffArg(arg)
   const lockedOut = (why: string) => {
     askUnlock(why)
     throw new Error(why)
@@ -1052,9 +1052,9 @@ async function notBuiltIn(a: ActiveSession | null, name: string): Promise<boolea
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
-  // What is sent and what is judged are the same text: Hermes reads `body` with Python's strip, which keeps U+FEFF.
-  const body = hermesBody(text)
-  const { name, arg } = hermesWords(text) // the words Hermes will read, whatever separates them
+  // What is sent and what is judged come from one reading (hermesSlash): `body` is `name` and `arg` joined by one space,
+  // and both of Hermes's readings of it give back exactly those words.
+  const { name, arg, body } = hermesSlash(text)
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
   // The phone may lock while a command waits (a confirmation, Hermes's answer): over the lock screen only a command sendPrompt
   // let through goes on, typed directly. An alias, a fallback to command.dispatch (where a quick command comes first) and
@@ -1065,14 +1065,14 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   }
   const locked = (): boolean => {
     if (!lockView()) return false
-    if (depth === 0 && (name.toLowerCase() === 'yolo' || (accessOf(a) === 'off' && lockSafeCommand(name, arg)))) return false
+    if (depth === 0 && ((name.toLowerCase() === 'yolo' && yoloOffArg(arg)) || (accessOf(a) === 'off' && lockSafeCommand(name, arg)))) return false
     refuseLocked()
     return true
   }
   if (locked()) return
   // Only a command the user typed directly (depth 0) can change access. Anything reached through an alias (depth > 0)
   // is refused, however the target is spelled (spaces, extra slashes, upper case).
-  if (depth > 0 && name.replace(/^[\s/]+/, '').toLowerCase().startsWith('yolo')) {
+  if (depth > 0 && name.toLowerCase().startsWith('yolo')) {
     pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
     return
   }
@@ -1133,7 +1133,7 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     return
   }
   if (type === 'alias' && r?.target && depth < 3) {
-    await runSlash(a, `/${bare(r.target)}${arg ? ` ${arg}` : ''}`, depth + 1)
+    await runSlash(a, `${r.target}${arg ? ` ${arg}` : ''}`, depth + 1) // read again by hermesSlash, however the target is spelled
     return
   }
   if ((type === 'send' || type === 'prefill' || type === 'skill') && r?.notice?.trim()) {
@@ -1213,7 +1213,6 @@ export function drainQueue(chat: string, force: boolean): void {
     toast(errText(e), 'error')
   })
 }
-const bare = (s: string) => s.replace(/^\/+/, '').trim()
 
 export async function interrupt(): Promise<void> {
   const a = getState().active

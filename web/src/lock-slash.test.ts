@@ -271,6 +271,76 @@ describe('/approvals off with characters JavaScript and Python read differently'
   })
 })
 
+describe('slashes and spaces mixed in front of a command', () => {
+  const mixed = ['/ /approvals off', '// /ap smart', '/\t/approvals off', '/\u0085/approvals off', ' / / / approvals off', '/\u3000//\u001c/APPR smart']
+  test('/approvals off and smart still ask, however the slashes and spaces mix', async () => {
+    lock.onConfirm = () => false
+    for (const text of mixed) await sendPrompt(text)
+    expect(lock.asked).toBe(mixed.length)
+    expect(sent).toEqual([])
+  })
+
+  test('allowed, the command goes as the page read it: name and arguments joined by one space', async () => {
+    for (const text of mixed) await sendPrompt(text)
+    expect(sent).toEqual(['slash.exec approvals off', 'slash.exec ap smart', 'slash.exec approvals off', 'slash.exec approvals off', 'slash.exec approvals off', 'slash.exec APPR smart'])
+  })
+
+  test('over the lock screen they wait for an unlock, and so does a mixed /help with an argument the list does not take', async () => {
+    lock.on = true
+    for (const text of [...mixed, '/ /status now']) await expect(sendPrompt(text), JSON.stringify(text)).rejects.toThrow('Unlock the phone')
+    expect(sent).toEqual([])
+    await sendPrompt('/ /status')
+    expect(sent).toEqual(['commands.catalog', 'slash.exec status'])
+  })
+
+  test('an alias whose target mixes slashes and spaces is read the same way, and asks', async () => {
+    const targets = ['  //  /approvals off', '/ /ap smart', '\t/approvals\u0085off', '//approvals off', 'approvals off', '/\u0085/ap']
+    answers['slash.exec'] = (p: Record<string, unknown>) => {
+      if (p.command === 'myalias' || p.command === 'myalias off') throw new Error('slash worker failed')
+      return { output: 'ok' }
+    }
+    for (const target of targets) {
+      answers['command.dispatch'] = () => ({ type: 'alias', target })
+      sent = []
+      lock.asked = 0
+      await sendPrompt(target === '/\u0085/ap' ? '/myalias off' : '/myalias')
+      expect(lock.asked, JSON.stringify(target)).toBe(1)
+      expect(sent.at(-1), JSON.stringify(target)).toMatch(/^slash\.exec (approvals off|ap smart|ap off)$/)
+    }
+  })
+
+  test('a target that turns out to be /yolo is refused, however it is spelled', async () => {
+    answers['slash.exec'] = fails('slash worker failed')
+    for (const target of ['/ /yolo', '  //  /YOLO on', '/\u0085/yolo off']) {
+      answers['command.dispatch'] = () => ({ type: 'alias', target })
+      sent = []
+      await sendPrompt('/myalias')
+      expect(sent, JSON.stringify(target)).toEqual(['slash.exec myalias', 'command.dispatch myalias'])
+    }
+  })
+})
+
+describe('/yolo off over the lock screen, read as runSlash reads it', () => {
+  test('an argument that only looks like off once JavaScript trims it waits, and makes no chat', async () => {
+    lock.on = true
+    setState({ active: null })
+    for (const text of ['/yolo \ufeffoff', '/yolo of\ufefff', '/yolo \u200boff'])
+      await expect(sendPrompt(text), JSON.stringify(text)).rejects.toThrow('Unlock the phone')
+    expect(sent).toEqual([])
+  })
+
+  test('off with separators only Python knows around it, or slashes and spaces in front, still turns access off', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { headers: { 'Content-Type': 'application/json' } }))
+    lock.on = true
+    for (const text of ['/yolo\u0085off\u001c', '/ /yolo off']) {
+      sent = []
+      await sendPrompt(text)
+      expect(sent, JSON.stringify(text)).toContain('config.set')
+      expect(seen['config.set'], JSON.stringify(text)).toMatchObject({ key: 'yolo', value: '0' })
+    }
+  })
+})
+
 describe('Edit and Retry over the lock screen', () => {
   const withTurn = (yolo: boolean, autoAccess = false) => {
     open()
