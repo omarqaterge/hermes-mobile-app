@@ -3,6 +3,7 @@ import { accessOf, defaultAccess, errText, newSession, setAccess, setDefaultAcce
 import { getState, toast, useStore } from '../store'
 import { viewSettled } from '../chatview'
 import { confirmDialog } from '../dialog'
+import { confirmFullAccess } from '../access-confirm'
 import { PickerSheet, SelectRow, type Option } from './ui'
 import { Icon } from './icons'
 
@@ -38,17 +39,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
   const pick = async (v: string) => {
     const want = v as Access
     if (want === mode) return
-    if (want === 'full') {
-      const ok = await confirmDialog({
-        title: 'Give Hermux full access?',
-        message:
-          'Hermux will run every command in this chat without asking you first: deleting or overwriting files, killing apps and processes, installing software, changing settings, sending data over the network. A wrong step can lose your data, and nothing is checked before it runs. Only Hermux’s short catastrophic list (wiping the disk, shutting down the phone) stays blocked. Use it only for a task you trust, and turn it off afterwards.',
-        confirmLabel: 'Allow full access',
-        icon: 'warning',
-        danger: true
-      })
-      if (!ok) return
-    }
+    if (want === 'full' && !(await confirmFullAccess())) return
     try {
       let a = getState().active
       if (!a) {

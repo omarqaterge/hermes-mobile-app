@@ -10,6 +10,8 @@ import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { lineageOf, noteLineage, noteListRow } from './lineage'
+import { detachedRefusal, detachedWork, hermesWords, lockSafeCommand, loosensApprovals } from './slashwords'
+import { confirmLooseApprovals } from './access-confirm'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -20,6 +22,7 @@ import { applyDraftRead, autoReadFor, liveBridge, setDraftRead, speak } from './
 import { JsonRpcGatewayClient, type GatewayEvent } from '@hermes/shared/json-rpc-gateway'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type {
+  CommandsCatalogResult,
   MessageCompletePayload,
   SessionControlReadResult,
   SessionControlUpdatePayload,
@@ -42,7 +45,7 @@ import { askUnlock, lockView } from './lockview'
 import type { SubagentInterruptResult, SubagentListResult, SubagentSteerResult, SubagentTailResult } from '@hermes/shared/gateway-contract.generated'
 import { getSubAgent, isLive, itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, onNestedChange, resolveChat, storedParentChain, subAgentsOf, subSheetChat, withSubItems, type SubAgent } from './subagents'
 import { noteArrived } from './waiting'
-import { idsReadState, isTaintedItems } from './phone-data-taint'
+import { chatReadState, idsReadState, isTaintedItems } from './phone-data-taint'
 import { onChatOpen, runChatOpen } from './chatopen'
 import { viewSettled } from './chatview'
 import { ctxFromStatText, stripCtxStat } from './ctxring'
@@ -795,23 +798,43 @@ export async function sendPrompt(text: string): Promise<boolean> {
   const trimmed = text.trim()
   if (!trimmed) return true
   if (getState().opening) throw new Error('Still opening your chat — wait a moment')
+  // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first. A slash
+  // command needs one unless it only shows something (lockSafeCommand, by its exact name, in a chat with access off): an
+  // unknown name, an alias, a beginning Hermes would expand, a quick command and a plugin command all wait; so does /yolo
+  // with anything but off. Everything is decided before anything is sent (a new chat, the command; with no chat open, the
+  // chat to be made, whose access is off there, and the profile's catalog), and again after each wait, since the phone can
+  // lock meanwhile. Hermes's prompt.submit runs no slash command, so text that isn't one only talks.
+  const isSlash = trimmed.startsWith('/')
+  const { name, arg } = hermesWords(trimmed)
+  const yoloOff = isSlash && name.toLowerCase() === 'yolo' && /^(off|0|false|no)$/i.test(arg.trim())
+  const lockedOut = (why: string) => {
+    askUnlock(why)
+    throw new Error(why)
+  }
+  /** Why this can't go on in chat `a` over the lock screen; '' when it can (or the phone isn't locked). */
+  const lockWhy = (a: ActiveSession | null): string => {
+    if (!lockView()) return ''
+    if (!isSlash) return accessOf(a) === 'off' ? '' : 'Unlock the phone to use this chat'
+    return yoloOff || (accessOf(a) === 'off' && lockSafeCommand(name, arg)) ? '' : 'Unlock the phone to run this command'
+  }
+  const catalogWhy = async (a: ActiveSession | null): Promise<string> =>
+    lockView() && isSlash && !yoloOff && (await notBuiltIn(a, name)) ? 'Unlock the phone to run this command' : lockWhy(a)
+  const before = pendingNew ? null : getState().active
+  const why = lockWhy(before) || (lockView() ? await catalogWhy(before) : '')
+  if (why) lockedOut(why)
+  const judged = lockView()
   rememberPrompt(trimmed)
   const a = await targetChat()
-
+  const after = lockWhy(a) || (lockView() && (!judged || a !== before) ? await catalogWhy(a) : '')
+  if (after) lockedOut(after)
   const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(trimmed)
   if (btw) {
     openBtw(btw[1] || '')
     return true
   }
-  if (trimmed.startsWith('/')) {
+  if (isSlash) {
     await runSlash(a, trimmed)
     return true
-  }
-
-  // Over the lock screen Hermes may talk but not act on its own: a chat in Auto or Full access needs an unlock first.
-  if (lockView() && accessOf(a) !== 'off') {
-    askUnlock('Unlock the phone to use this chat')
-    throw new Error('Unlock the phone to use this chat')
   }
 
   if (a.running) {
@@ -1062,19 +1085,73 @@ const YOLO_NOTICE: Record<Access, string> = {
   off: 'Auto off: Hermux asks before risky commands again'
 }
 
+/** Over the lock screen: whether Hermes may run something else than its built-in command for this name, by the profile's
+ *  command catalog, asked each time (for chat `a`, or with none open for the profile a new chat is made in): a quick command
+ *  (config.yaml, its "User commands"), a plugin command, a skill or a bundle of that name. Fails closed: an answer that
+ *  can't be had, one that isn't a well-formed catalog, or one with a `warning` (a loader failed, so a quick command, plugin
+ *  command or skill of that name may be missing from the list; also Hermes's notice about skills with a built-in's name)
+ *  counts as yes. A plugin command with a built-in's name isn't listed there, so it isn't seen. */
+async function notBuiltIn(a: ActiveSession | null, name: string): Promise<boolean> {
+  try {
+    const cat = await rpc<CommandsCatalogResult>('commands.catalog', a ? { session_id: a.runtimeId } : { profile: getState().profile })
+    const rows = (x: unknown): x is unknown[][] => Array.isArray(x) && x.every(r => Array.isArray(r))
+    if (!cat || typeof cat !== 'object' || (cat.warning != null && cat.warning !== '')) return true
+    if (!cat.skills || typeof cat.skills !== 'object' || Array.isArray(cat.skills)) return true
+    if (!Array.isArray(cat.categories) || !cat.categories.every(c => c && typeof c.name === 'string' && rows(c.pairs))) return true
+    const key = `/${name.toLowerCase()}`
+    if (Object.keys(cat.skills).some(k => k.toLowerCase() === key)) return true
+    return cat.categories.some(c => (c.name === 'User commands' || c.name === 'Plugin commands') && (c.pairs ?? []).some(r => String(r[0] || '').toLowerCase() === key))
+  } catch {
+    return true
+  }
+}
+
 /** Same routing as Hermes Desktop: slash.exec first; skills and other routed commands go through
  * command.dispatch, whose result says what to do (exec / alias / send / skill / prefill). */
 async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void> {
   const body = text.replace(/^\/+/, '').trim()
-  const name = body.split(/\s+/)[0]
-  const arg = body.slice(name.length).trim()
+  const { name, arg } = hermesWords(text) // the words Hermes will read, whatever separates them
   if (depth === 0) pushItem({ kind: 'user', id: newId('u'), text: `/${body}` })
+  // The phone may lock while a command waits (a confirmation, Hermes's answer): over the lock screen only a command sendPrompt
+  // let through goes on, typed directly. An alias, a fallback to command.dispatch (where a quick command comes first) and
+  // a result to send as a prompt all wait for an unlock. Checked before every request.
+  const refuseLocked = () => {
+    askUnlock('Unlock the phone to run this command')
+    pushItem({ kind: 'notice', id: newId('n'), text: 'Unlock the phone to run this command.', level: 'warn' })
+  }
+  const locked = (): boolean => {
+    if (!lockView()) return false
+    if (depth === 0 && (name.toLowerCase() === 'yolo' || (accessOf(a) === 'off' && lockSafeCommand(name, arg)))) return false
+    refuseLocked()
+    return true
+  }
+  if (locked()) return
   // Only a command the user typed directly (depth 0) can change access. Anything reached through an alias (depth > 0)
   // is refused, however the target is spelled (spaces, extra slashes, upper case).
   if (depth > 0 && name.replace(/^[\s/]+/, '').toLowerCase().startsWith('yolo')) {
     pushItem({ kind: 'notice', id: newId('n'), text: 'A command alias can’t change access. Type /yolo yourself.', level: 'error' })
     return
   }
+  // A command that hands text to an agent running apart from this chat, where nobody can be asked, or changes a board other
+  // agents work from. In a chat that has read phone data, or when the app's record can't say, it isn't sent: the plugin
+  // blocks such a task's sends anyway, this says why at once. Checked at every alias depth.
+  const work = detachedWork(name, arg)
+  if (work) {
+    const read = chatReadState(a)
+    if (read !== 'clear') {
+      pushItem({ kind: 'notice', id: newId('n'), text: detachedRefusal(work, read), level: 'warn' })
+      return
+    }
+  }
+  // Approvals off, or left to a model, lets every chat of the bot run commands without asking: the same confirmation as
+  // Full access, at every alias depth. Only a command the page can see is caught; a quick command the worker resolves
+  // itself isn't (the user wrote it into config.yaml).
+  const loosen = loosensApprovals(name, arg)
+  if (loosen && !(await confirmLooseApprovals(loosen))) {
+    pushItem({ kind: 'notice', id: newId('n'), text: 'Approvals not changed.', level: 'info' })
+    return
+  }
+  if (locked()) return // locked while the confirmation was up
   if (name.toLowerCase() === 'yolo') {
     const w = arg.toLowerCase()
     const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
@@ -1102,8 +1179,13 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   let r: Dispatch | null = null
   try {
     r = await rpc<Dispatch>('slash.exec', { session_id: a.runtimeId, command: body })
-  } catch {
-    // "skill command: use command.dispatch" (4018) and other routed commands
+  } catch (err) {
+    // "skill command: use command.dispatch" (4018) and other routed commands. Never over the lock screen: there a quick
+    // command of the same name runs first.
+    if (lockView()) {
+      pushItem({ kind: 'notice', id: newId('n'), text: `/${name}: ${errText(err)}`, level: 'error' })
+      return
+    }
     try {
       r = await rpc<Dispatch>('command.dispatch', { session_id: a.runtimeId, name, arg: arg || null })
     } catch (err) {
@@ -1113,6 +1195,10 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   }
 
   const type = String(r?.type || 'exec')
+  if (type !== 'exec' && type !== 'plugin' && lockView()) {
+    refuseLocked() // an alias, or a prompt to send: neither is a command that only shows something
+    return
+  }
   if (type === 'alias' && r?.target && depth < 3) {
     await runSlash(a, `/${bare(r.target)}${arg ? ` ${arg}` : ''}`, depth + 1)
     return
@@ -2140,6 +2226,8 @@ export async function branchAt(itemId: string): Promise<void> {
     session_id: a.runtimeId,
     ...(count < total ? { count } : {})
   })
+  // It holds this chat's messages, so what the app knows about this chat's phone-data reads covers it from the first moment.
+  if (chatReadState(a) !== 'clear') noteLineage([a.storedId, r.stored_session_id])
   // The branch keeps the original name, with a branch icon in front (stored as a leading "⎇").
   const base = (a.title || r.title || 'New chat').replace(/^\u2387\s*/, '')
   let named = `\u2387 ${base}`

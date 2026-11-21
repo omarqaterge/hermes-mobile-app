@@ -234,3 +234,19 @@ because Hermes offers no way to switch that choice off; it is harmless but usele
 no ask: its call reaches the plugin with no chat, and the shell's filter lets `localhost` through. Under the rule above
 ("only for actions that can send data out"), the page now refuses a card's tools that send their arguments out
 (everything but `find_chats`) in such a chat (`guardedCall` in `web/src/openui-query.ts`).
+
+**Update 2026-11-21 (background tasks and files that run, asked for in the third security review of PR #206).**
+
+- **A background task of a chat that has read only reads.** A task nobody can be asked about (a `/bg` task, a
+  `prompt.background` task, a scheduled run) may use only tools that read: no terminal and no code at all (a terminal
+  limited to commands that only read still let `rish`, a new `hermes` or a script the task wrote through), no `phone_app`,
+  no file written anywhere, nothing sent. A new tool is blocked there until someone adds it to that list.
+- **Writing where something runs from asks.** In a chat that has read, `write_file` and `patch` ask before they write into
+  Hermes's or this app's folders, Termux's folder, `/etc`, a shell start-up file, a folder whose files run later (fish's
+  `conf.d` and the like) or a folder of programs. A terminal command or a script asks whenever its text names such a place,
+  whatever the command and even when it only reads, and when it writes or deletes a file known only at run time (or it
+  can't be told). Fourth review, same day: the rule no longer goes by a list of programs that write, which wrappers and
+  other interpreters got around; extra asks are accepted. Like the rest of the plugin, this is a speed bump: the agent can
+  still write a script file and run it, and the enforcement stays the app's own record, filter and dialogs.
+- **A search that can't be fully checked marks the searching chat**, so an ordinary chat can now be marked after a large
+  search though none of what it read had read: accepted, it errs on the safe side.
