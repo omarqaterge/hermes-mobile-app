@@ -63,8 +63,10 @@ describe('continueSubAgent fail-closed parent chain and lock-screen checks', () 
   let onResume: (() => void) | null
   let onBranch: (() => void) | null
   let tainted: Set<string>
+  let resumeIds: Record<string, unknown> | null
 
   beforeEach(() => {
+    resumeIds = null
     calls = []
     resumeMessages = []
     onResume = null
@@ -87,7 +89,8 @@ describe('continueSubAgent fail-closed parent chain and lock-screen checks', () 
           session_id: `rt-resumed-${calls.length}`,
           stored_session_id: String(params.session_id || ''),
           messages: resumeMessages,
-          info: { model: 'm', provider: 'p', yolo: false, stored_session_id: String(params.session_id || '') }
+          info: { model: 'm', provider: 'p', yolo: false, stored_session_id: String(params.session_id || '') },
+          ...resumeIds
         })
       }
       if (method === 'session.branch') {
@@ -200,6 +203,44 @@ describe('continueSubAgent fail-closed parent chain and lock-screen checks', () 
 
     await expect(continueSubAgent('s2', { child: 'sa1', goal: 'Work', phoneData: false })).rejects.toThrow('phone data')
     expect(calls.map(c => c.method)).toEqual(['session.resume', 'session.close'])
+  })
+
+  test('round 4, 5: refuses when the chat on screen shows a phone-data read that arrived during session.resume', async () => {
+    const a = activeChat('s2', false)
+    mockApi.nested = async () => ({ children: [childRow('sa1', 's2')], segments: ['s2'] })
+    onResume = () =>
+      setState({ active: { ...a, items: [{ kind: 'tool', id: 't1', name: 'phone_data', status: 'done' } as ActiveSession['items'][number]] } })
+
+    await expect(continueSubAgent('s2', { child: 'sa1', goal: 'Work', phoneData: false })).rejects.toThrow('phone data')
+    expect(calls.map(c => c.method)).toEqual(['session.resume', 'session.close'])
+  })
+
+  test.each([['session_id'], ['resumed'], ['stored_session_id'], ['info.stored_session_id']])(
+    'round 4, 5: refuses when the id session.resume answers with (%s) read phone data',
+    async field => {
+      activeChat('s2', false)
+      mockApi.nested = async () => ({ children: [childRow('sa1', 's2')], segments: ['s2'] })
+      tainted.add('sa1-other')
+      resumeIds =
+        field === 'info.stored_session_id'
+          ? { info: { model: 'm', provider: 'p', yolo: false, stored_session_id: 'sa1-other' } }
+          : { [field]: 'sa1-other' }
+
+      await expect(continueSubAgent('s2', { child: 'sa1', goal: 'Work', phoneData: false })).rejects.toThrow('phone data')
+      expect(calls.some(c => c.method === 'session.branch')).toBe(false)
+    }
+  )
+
+  test('round 4, 5: the new chat gets no more access than the id session.resume answers with', async () => {
+    activeChat('s2', true)
+    localStorage.setItem('hm.defaultAccess.v1', 'full')
+    localStorage.setItem('hm.yolo.v1', JSON.stringify({ s2: true, 'sa1-tip': false }))
+    mockApi.nested = async () => ({ children: [childRow('sa1', 's2')], segments: ['s2'] })
+    resumeIds = { stored_session_id: 'sa1-tip' }
+
+    await continueSubAgent('s2', { child: 'sa1', goal: 'Work', phoneData: false })
+
+    expect(JSON.parse(localStorage.getItem('hm.yolo.v1') || '{}')['new-branched']).toBe(false)
   })
 
   test('stops before session.resume if the phone locks while verifying the parent chain', async () => {

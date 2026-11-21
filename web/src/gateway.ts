@@ -1248,34 +1248,38 @@ export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'chil
   if (!chain) throw new Error('This can’t continue in a new chat: it couldn’t be confirmed that this sub-agent belongs to this chat.')
   const allIds = new Set<string>([chat, agent.child, ...chain])
   for (const m of memAncestors) if (m.child) allIds.add(m.child)
-  for (const id of [...allIds]) for (const l of lineageOf(id)) allIds.add(l)
-  const curActive = getState().active
-  const here = curActive && (allIds.has(curActive.storedId) || allIds.has(curActive.runtimeId)) ? curActive : null
-  if (here) {
-    allIds.add(here.storedId)
-    allIds.add(here.runtimeId)
+  // The chat on screen when it is one of these chats, read again at every check (an await may have changed it).
+  const hereNow = () => {
+    const a = getState().active
+    return a && (allIds.has(a.storedId) || allIds.has(a.runtimeId)) ? a : null
   }
-  for (const s of [...warm, ...kept]) {
-    if (allIds.has(s.storedId) || allIds.has(s.runtimeId)) {
-      allIds.add(s.storedId)
-      allIds.add(s.runtimeId)
-    }
+  /** Every id the chain is known by: lineage, the chat on screen, and the live sessions kept open here. */
+  const widen = (...more: (string | null | undefined)[]) => {
+    for (const id of more) if (id) allIds.add(id)
+    for (const id of [...allIds]) for (const l of lineageOf(id)) allIds.add(l)
+    const h = hereNow()
+    if (h) allIds.add(h.storedId).add(h.runtimeId)
+    for (const s of [...warm, ...kept]) if (allIds.has(s.storedId) || allIds.has(s.runtimeId)) allIds.add(s.storedId).add(s.runtimeId)
   }
+  widen()
+  const here = hereNow()
   const hasTaint = (): boolean =>
     agent.phoneData === true ||
     memAncestors.some(m => m.phoneData === true) ||
     isTaintedItems(here?.items) ||
+    isTaintedItems(hereNow()?.items) ||
     idsReadState([...allIds]) !== 'clear'
   if (hasTaint()) throw new Error('This can’t continue in a new chat: phone data may be involved')
-  let access: Access = defaultAccess()
-  if (here) access = lowerAccess(access, accessOf(here))
-  for (const id of allIds) access = lowerAccess(access, rememberedAccess(id))
   const opened = await rpc<SessionResumeResult>('session.resume', { session_id: agent.child }, 60_000)
   try {
     if (lockView()) return
+    widen(opened.session_id, opened.resumed, opened.stored_session_id, opened.info?.stored_session_id)
     if (hasTaint() || isTaintedItems(hydrate(opened.messages ?? []))) {
       throw new Error('This can’t continue in a new chat: phone data may be involved')
     }
+    let access: Access = defaultAccess()
+    for (const h of [here, hereNow()]) if (h) access = lowerAccess(access, accessOf(h))
+    for (const id of allIds) access = lowerAccess(access, rememberedAccess(id))
     const r = await rpc<{ stored_session_id: string }>('session.branch', { session_id: opened.session_id })
     rememberYolo(r.stored_session_id, access) // before it opens: opening applies this
     // No lineage link: the new chat is a different chat (lineage.ts groups ids of ONE chat, both ways). Nothing in the chain
