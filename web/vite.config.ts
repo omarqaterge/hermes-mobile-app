@@ -23,7 +23,31 @@ const katexWoff2Only: Plugin = {
 // Mermaid is ~2.5 MB and only needed for diagrams; OpenUI is ~4 MB (renderer, its component library, React, CSS) and
 // only needed for ```openui-lang cards; KaTeX and highlight.js (~1 MB with their CSS and fonts) only for math and
 // code blocks.
-function lazyBundle(id: string, entry: string): Plugin {
+// For a bundle that is part of the running app rather than a library: every import of React or of a module of src/, except the
+// bundle's own files, reads from `window.__hmSubAgentHost` (components/SubAgentsCore.tsx `subAgentHost`), so there is one React
+// and one copy of each store.
+function hostedByApp(own: string[]): Plugin {
+  const src = fileURLToPath(new URL('./src/', import.meta.url))
+  const hosted = (key: string) => ({ id: `\0host:${key}`, syntheticNamedExports: true })
+  return {
+    name: 'hosted-by-app',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      if (!importer) return null
+      if (source === 'react' || source === 'react/jsx-runtime') return hosted(source)
+      if (!source.startsWith('.') || source.includes('?')) return null
+      const found = await this.resolve(source, importer, { ...options, skipSelf: true })
+      if (!found?.id.startsWith(src)) return null
+      const key = found.id.slice(src.length).replace(/\.tsx?$/, '')
+      return own.includes(key) ? null : hosted(key)
+    },
+    load(id) {
+      return id.startsWith('\0host:') ? `export default window.__hmSubAgentHost[${JSON.stringify(id.slice(6))}]` : null
+    }
+  }
+}
+
+function lazyBundle(id: string, entry: string, extra: Plugin[] = []): Plugin {
   return {
     name: `lazy-${id}`,
     apply: 'build',
@@ -31,7 +55,7 @@ function lazyBundle(id: string, entry: string): Plugin {
       const out = await build({
         configFile: false,
         logLevel: 'warn',
-        plugins: [katexWoff2Only, react()],
+        plugins: [...extra, katexWoff2Only, react()],
         // Library mode doesn't replace process.env.NODE_ENV; React reads it, and OpenUI also reads
         // process.env["NODE_ENV"] (no `process` in a WebView: it threw at load), hence the whole object too.
         define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'process.env': JSON.stringify({ NODE_ENV: 'production' }) },
@@ -65,7 +89,7 @@ const hermesTested = readFileSync(fileURLToPath(new URL('./vendor/hermes-shared/
 export default defineConfig({
   base: './',
   define: { __HERMES_TESTED__: JSON.stringify(hermesTested), __STATS_KEY__: JSON.stringify(process.env.HERMES_STATS_KEY || ''), __REPORT_URL__: JSON.stringify(process.env.HERMES_REPORT_URL || '') },
-  plugins: [katexWoff2Only, react(), viteSingleFile(), lazyBundle('hm-mermaid', './mermaid-entry.js'), lazyBundle('hm-openui', './src/openui-entry.tsx'), lazyBundle('hm-rich', './src/rich-entry.ts')],
+  plugins: [katexWoff2Only, react(), viteSingleFile(), lazyBundle('hm-mermaid', './mermaid-entry.js'), lazyBundle('hm-openui', './src/openui-entry.tsx'), lazyBundle('hm-rich', './src/rich-entry.ts'), lazyBundle('hm-subagents', './src/subagents-ui-entry.tsx', [hostedByApp(['subagents-ui-entry', 'components/SubAgents', 'subagents-view'])])],
   resolve: {
     alias: { '@hermes/shared': fileURLToPath(new URL('./vendor/hermes-shared', import.meta.url)) }
   },

@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 home = tempfile.mkdtemp(prefix="hm-waiting-")
 os.environ["HOME"] = home  # the activity file and everything else the plugin writes stay out of the real home
+os.environ["HERMES_HOME"] = os.path.join(home, ".hermes")
 fails = 0
 
 
@@ -150,6 +151,8 @@ check("the top chat is listed, saying who asks", [(x["session"], x["who"]) for x
 check("its goal is not", "private" not in json.dumps(w), w)
 plugin._on_post_approval_response(session_key="key", session_id="grandkid", command="rm x", choice="deny")
 check("answered: gone", waiting() == [], waiting())
+plugin._on_subagent_stop(child_session_id="grandkid")
+plugin._on_subagent_stop(child_session_id="kid")  # they have ended: the file is empty again for what follows
 
 print("how a wait can end without an answer")
 plugin._on_pre_tool_call(tool_name="clarify", args={"question": "q"}, session_id="chat-6")
@@ -584,6 +587,27 @@ check("the writer doesn't keep one, but allows a small difference", list(entries
 with open(plugin.ACTIVITY_FILE, "w") as f:
     json.dump({alive: {"at": now, "items": [dict(item, ts=future)]}}, f)
 check("nor is a work line dated in the future served", answer()["items"] == [], answer())
+with open(plugin.ACTIVITY_FILE, "w") as f:
+    json.dump({
+        alive: {"at": now, "items": [], "waiting": [
+            dict(good, session="clamp-hi", who="A sub-agent", since=-50.0, last=now + 10**6),
+            dict(good, session="clamp-lo", who="A sub-agent", since=now + 10**6, last=-25.0),
+        ]},
+        "4344": {"at": now, "items": [], "waiting": [
+            dict(good, session="kept-clamp", who="A sub-agent", since=-10.0, last=now + 10**6),
+        ]},
+    }, f)
+served = {w["session"]: w for w in answer()["waiting"]}
+cap = time.time() + plugin.ACTIVITY_FUTURE_S + 2
+check("waiting since and last are clamped to [0, now + ACTIVITY_FUTURE_S]",
+      "clamp-hi" in served and "clamp-lo" in served
+      and 0 <= served["clamp-hi"]["since"] <= cap and 0 <= served["clamp-hi"]["last"] <= cap
+      and 0 <= served["clamp-lo"]["since"] <= cap and 0 <= served["clamp-lo"]["last"] <= cap,
+      served)
+plugin._publish_activity()
+kept_w = entries().get("4344", {}).get("waiting", [{}])[0]
+check("kept waiting entries clamp since and last too",
+      0 <= kept_w.get("since", -1) <= cap and 0 <= kept_w.get("last", -1) <= cap, kept_w)
 os.remove(plugin.ACTIVITY_FILE)
 
 print("nothing here can answer")

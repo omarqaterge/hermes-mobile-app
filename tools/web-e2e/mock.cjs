@@ -49,6 +49,9 @@ let activityItems = []
 // open_requests, as Hermes does for a chat with an open request), `keep` (the plugin hasn't heard of the answer yet) and
 // `delay` (ms before that resume answers).
 let waitingItems = []
+// Sub-agents (checks 38): what the plugin's /nested routes and subagent.* answer; a test sets parts with {nested: {...}}.
+const NESTED_START = { children: {}, counts: {}, running: [], hits: [], rows: {}, messages: {}, roster: [], tail: 'Working on it', steer: 'queued', found: true, failResume: [] , slowResume: [] }
+let nested = { ...NESTED_START }
 // The plugin's /tool-result: the stored output of a finished tool call, by tool_id (filled by every tool.complete the mock sends).
 const toolResults = new Map()
 // The chat model picker's model.options: {fail, mark, delay} (see the RPC case), set through /__mock {models: {...}}.
@@ -176,6 +179,7 @@ const server = http.createServer((req, res) => {
       const b = JSON.parse(body || '{}')
       if (b.activity) activityItems = b.activity
       if (b.waiting) waitingItems = b.waiting
+      if (b.nested) nested = b.nested === 'reset' ? { ...NESTED_START } : { ...nested, ...b.nested }
       if (b.unconfigured) {
         providerConfigured = false
         envSet = {}
@@ -280,7 +284,20 @@ const server = http.createServer((req, res) => {
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
-    if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems, waiting: waitingItems.map(({ request, keep, delay, ...w }) => w) })
+    if (p === '/api/plugins/hermes-mobile/nested') {
+      const s = url.searchParams.get('session') || ''
+      return send({ children: nested.children[s] ?? [], segments: nested.segments?.[s] ?? (s ? [s] : []) })
+    }
+    if (p === '/api/plugins/hermes-mobile/nested-counts') return send({ counts: nested.counts })
+    if (p === '/api/plugins/hermes-mobile/nested-search') return send({ hits: nested.hits.filter(h => h.goal.toLowerCase().includes((url.searchParams.get('q') || '').toLowerCase())) })
+    {
+      const m = /^\/api\/sessions\/([^/]+)(\/messages)?$/.exec(p)
+      if (m && m[1] !== 'search' && req.method === 'GET' && (decodeURIComponent(m[1]) in nested.rows || m[2])) {
+        const id = decodeURIComponent(m[1])
+        return send(m[2] ? { session_id: id, profile: 'default', messages: nested.messages[id] ?? [] } : nested.rows[id])
+      }
+    }
+    if (p === '/api/plugins/hermes-mobile/activity') return send({ items: activityItems, ...(nested.running.length ? { nested: nested.running } : {}), waiting: waitingItems.map(({ request, keep, delay, ...w }) => w) })
     if (p === '/api/plugins/hermes-mobile/sent-counts') {
       // Messages the user sent (plugin /sent-counts): half of message_count here, each turn being a message and a reply.
       const ids = JSON.parse(body || '{}').ids || []
@@ -729,6 +746,7 @@ wss.on('connection', ws => {
     ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
   }
   const later = (ms, fn) => setTimeout(fn, ms)
+  const sessionKeyOf = rt => (rt.startsWith('rt-new') ? `s-new${rt.slice(6)}` : rt.replace(/^rt-/, ''))
   const live = fn => () => ws.readyState === 1 && fn()
   // Plays [type, payload] events 40 ms apart from `t` ms on; returns the time of the last one.
   const play = (sid, steps, t = 50, gap = 40) => {
@@ -811,6 +829,7 @@ wss.on('connection', ws => {
         // Like Hermes's resume reply: the stored id comes back as resumed / session_key (no stored_session_id) and
         // info has no title (the app takes it from session.list). tools/hermes-contract checks this against Hermes.
         const sid = params.session_id
+        if (nested.failResume.includes(sid)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 5000, message: 'could not open' } }))
         if (goneDraft(sid)) return ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 4007, message: 'session not found' } }))
         if (sid === 's-run') {
           reply({
@@ -915,6 +934,8 @@ wss.on('connection', ws => {
           })
           if (asks.delay) return later(asks.delay, () => reply(res))
         }
+        // Sub-agents (checks 38): a chat that opens slowly, with nothing of it on screen until it answers.
+        if (nested.slowResume.includes(sid)) return later(1500, () => reply(res))
         // A slow phone: the cached copy must be on screen long before this answer.
         if (sid === 's-slow') return later(1500, () => reply(res))
         return reply(res)
@@ -1024,6 +1045,20 @@ wss.on('connection', ws => {
             ['message.complete', { text: 'One, two, three.', usage: usageN(3), status: 'complete', persisted_turn: { row_ids: [row + 5, row + 6], complete: true, user_row_id: row + 5, final_assistant_row_id: row + 6 } }],
             ['session.info', CHAT_INFO]
           ], t + 200)
+          return
+        }
+        if (/^delegate slowly$/.test(params.text)) {
+          // A sub-agent that keeps running until it is stopped (Hermes: its turn ends, it goes on).
+          const tid = `call_slow${row}`, goal = 'Wait a while', args = { goal }
+          const sub = { goal, task_count: 1, task_index: 0, subagent_id: 'sa-0-slow', child_session_id: 'mock-slow-child', delegation_id: 'deleg_slow', depth: 0, model: 'mock-model', tool_count: 1, toolsets: TOOLSETS }
+          nested = { ...nested, roster: [{ subagent_id: 'sa-0-slow', parent_id: null, depth: 0, goal, delegation_id: 'deleg_slow', model: 'mock-model', started_at: Date.now() / 1000, status: 'running', tool_count: 1, last_tool: 'terminal', accepting_steer: true }], children: { ...nested.children, [sessionKeyOf(sid)]: [{ id: 'mock-slow-child', parent: sessionKeyOf(sid), goal, model: 'mock-model', effort: 'high', started: Date.now() / 1000, ended: 0, reason: '', messages: 2 }] }, counts: { ...nested.counts, [sessionKeyOf(sid)]: 1 }, hits: [{ chat: sessionKeyOf(sid), child: 'mock-slow-child', goal }], rows: { ...nested.rows, 'mock-slow-child': { id: 'mock-slow-child', model: 'mock-model', model_config: JSON.stringify({ reasoning_config: { enabled: true, effort: 'high' } }) } }, messages: { ...nested.messages, 'mock-slow-child': [{ id: 1, session_id: 'mock-slow-child', role: 'user', content: goal, tool_calls: null }] } }
+          play(sid, [
+            ...beginning('delegate_task', tid, goal, args),
+            ['subagent.start', { ...sub, tool_count: 0, text: goal }],
+            ['tool.complete', { tool_id: tid, name: 'delegate_task', args, duration_s: 0.1, result: { status: 'dispatched' } }],
+            ['subagent.tool', { ...sub, tool_name: 'terminal', text: 'sleep 8', tool_preview: 'sleep 8' }],
+            ...ending('It is on its way.', 2, row)
+          ])
           return
         }
         if (/^ask me three$/.test(params.text)) {
@@ -1340,6 +1375,19 @@ wss.on('connection', ws => {
         const stored = `s-branch-${++created}`
         return reply({ session_id: `rt-${stored}`, stored_session_id: stored, title: 'Branch', parent: String(params.session_id || '').replace(/^rt-/, ''), message_count: 2, info: CHAT_INFO })
       }
+      // Sub-agents as the pinned Hermes answers (tools/hermes-contract compares them).
+      case 'subagent.list':
+        return reply({ subagents: nested.roster, delegations: [] })
+      case 'subagent.tail':
+        return reply({ subagent_id: params.subagent_id, available: true, text: `=== Hermes subagent live transcript ===\ngoal: hidden\n========================================\n${nested.tail}\n`, truncated: false })
+      case 'subagent.steer':
+        return reply({ status: nested.steer, subagent_id: params.subagent_id, text: params.text })
+      case 'subagent.interrupt':
+        if (nested.found) {
+          nested.roster = nested.roster.filter(x => x.subagent_id !== params.subagent_id)
+          later(60, () => event('subagent.complete', params.session_id, { goal: '', task_count: 1, task_index: 0, subagent_id: params.subagent_id, status: 'interrupted', duration_seconds: 2 }))
+        }
+        return reply({ found: nested.found, subagent_id: params.subagent_id })
       case 'session.delete':
         return reply({ deleted: params.session_id })
       case 'session.title':

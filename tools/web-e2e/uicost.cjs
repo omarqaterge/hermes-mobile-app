@@ -1,5 +1,5 @@
 // What the interface costs at the moments a person feels: start-up, opening a chat, the first words of a streamed reply,
-// scrolling a long chat, opening the chat list and scrolling it, opening a row's menu and the chat's menu, opening Settings
+// scrolling a long chat, the same and the chat list with ten sub-agents running, opening the chat list and scrolling it, opening a row's menu and the chat's menu, opening Settings
 // and its pages (Behaviour, Models, Add a provider, Access & privacy, About & help: a page an older build doesn't have is
 // left out), in a
 // desktop browser with the CPU slowed down (4× by default).
@@ -42,6 +42,12 @@ async function open(browser, chat) {
       if (motion) localStorage.setItem('hm.motion', motion)
       if (glass) localStorage.setItem('hm.glass', glass === 'off' ? '0' : '1')
     } catch { /* */ }
+    // The page's socket, so the sub-agent moment below can put events on it as Hermes would.
+    const send = WebSocket.prototype.send
+    WebSocket.prototype.send = function (d) {
+      window.__ws = this
+      return send.call(this, d)
+    }
   }, [MOCK, chat, motion, glass])
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Performance.enable')
@@ -193,6 +199,41 @@ async function one(browser) {
     }, 90, -40)
     await page.close()
   }
+  // The same scroll, and the chat list's, with ten sub-agents running: each reports a new step five times a second, the
+  // group is open in the chat and their rows are open under the chat in the list. A build without them is left out.
+  {
+    const { page, work } = await open(browser, 's-long')
+    await page.goto(WEB + '/')
+    await page.getByText('answer 149', { exact: true }).waitFor({ timeout: 30000 })
+    await sleep(1000)
+    await page.evaluate(() => {
+      const send = (type, payload) => window.__ws.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: 's-long', payload } }) }))
+      for (let i = 0; i < 10; i++) send('subagent.start', { subagent_id: `bench${i}`, goal: `Bench sub-agent ${i}`, model: 'x/bench-model', depth: 0, task_count: 10, task_index: i })
+      let n = 0
+      window.__bench = setInterval(() => {
+        n++
+        for (let i = 0; i < 10; i++) send('subagent.tool', { subagent_id: `bench${i}`, tool_name: 'terminal', tool_preview: `step ${n}`, tool_count: n })
+      }, 200)
+    })
+    const group = page.getByRole('button', { name: /^10 sub-agents/ })
+    if (await group.waitFor({ timeout: 3000 }).then(() => true, () => false)) {
+      await group.click()
+      await sleep(600)
+      out.scrollSubs = await frameScroll(page, work, () => {
+        let sc = [...document.querySelectorAll('strong')].find(e => e.textContent === 'answer 149')
+        while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+        return sc
+      }, 90, -40)
+      await page.locator('button[aria-label^="Sessions"]').click()
+      await sleep(900)
+      out.listScrollSubs = await frameScroll(page, work, () => {
+        const d = document.querySelector('[role="complementary"]') || document.querySelector('aside')
+        return d && [...d.querySelectorAll('*')].find(e => /(auto|scroll)/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight)
+      }, 60, 40)
+    }
+    await page.evaluate(() => clearInterval(window.__bench))
+    await page.close()
+  }
   return out
 }
 
@@ -215,8 +256,8 @@ async function one(browser) {
     return v[Math.floor(v.length / 2)]
   }
   console.log(`median of ${runs}, CPU ×${throttle}${motion ? `, motion ${motion}` : ''}${glass ? `, glass ${glass}` : ''}:`)
-  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAdd', 'opening Add a provider'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
+  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['scrollSubs', 'the same, 10 sub-agents'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['listScrollSubs', 'the list, 10 sub-agents'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAdd', 'opening Add a provider'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
     if (!all.some(r => r[k])) continue // a page this build doesn't have
-    console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${k === 'scroll' || k === 'listScroll' ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
+    console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${['scroll', 'listScroll', 'scrollSubs', 'listScrollSubs'].includes(k) ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
   }
 })()

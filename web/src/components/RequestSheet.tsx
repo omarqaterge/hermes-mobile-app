@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import type { ApprovalChoice, ClarifyQuestion } from '@hermes/shared/gateway-contract.generated'
 import { answerRequest, rejectRequest, requestChat } from '../gateway'
@@ -12,6 +12,8 @@ import { tidyApprovalText } from '../text'
 import { useBackHandler } from '../backstack'
 import { ADVANCE_MS, nextStep } from '../clarify'
 import { Icon } from './icons'
+import { askerOf, quotedGoal } from '../subagents'
+import { arrivedAt, subAgentAsks } from '../waiting'
 
 /** Runs `answer` unless the tap came too soon after this sheet took over from another request (needsyou.ts). Refusing
  *  (Deny, Cancel) never goes through here. */
@@ -48,6 +50,7 @@ function PhoneDataApproval({ req, text }: { req: ServerRequest; text: string }) 
           )}
         </div>
         {v.ok ? <div className="sheet-desc">Only this once. What it reads goes into the chat and to your model provider.</div> : null}
+        <AskedBy req={req} />
       </div>
       <div className="sheet-actions col">
         {v.ok ? (
@@ -89,6 +92,7 @@ function Approval({ req }: { req: ServerRequest }) {
       <div className="sheet-scroll">
         {p.description ? <div className="sheet-desc"><Linked text={tidyApprovalText(String(p.description))} /></div> : null}
         {p.command ? <pre className="sheet-code"><Linked text={String(p.command)} /></pre> : null}
+        <AskedBy req={req} />
       </div>
       <div className="sheet-actions col">
         {choices.map(c => (
@@ -299,6 +303,22 @@ function otherChat(s: AppState, req: ServerRequest): string {
   const chat = requestChat(req)
   if (!chat || chat === (s.opening ?? s.active?.storedId)) return ''
   return plainTitle(s.sessions.find(x => x.id === chat)?.title) || 'another chat'
+}
+
+/** After what is to be approved: who asks, when that is known. A goal is the model's text, so it is ordinary small type,
+ *  quoted and cut short, and can't pass for the command. It is named only when the one sub-agent running has this command as
+ *  its last, the feed says a sub-agent asks about this request (an entry no older than the request) and the chat itself
+ *  isn't asking; otherwise, and over the lock screen, fixed words. */
+function AskedBy({ req }: { req: ServerRequest }) {
+  const p = req.params as Record<string, unknown>
+  const chat = requestChat(req)
+  const locked = useLockView()
+  // Read when the request arrives: what the sub-agent reports next doesn't change who asked.
+  const asker = useMemo(() => askerOf(chat, p.command), [req.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const asks = useStore(s => subAgentAsks(s.waiting, chat, arrivedAt(req.id)))
+  if (!asks) return null
+  const named = asker?.goal && !locked
+  return <div className="sheet-asked dim small">{named ? <>Asked by the sub-agent working on <bdi>{quotedGoal(asker.goal)}</bdi></> : 'Asked by a sub-agent'}</div>
 }
 
 export function RequestSheet({ req }: { req: ServerRequest }) {

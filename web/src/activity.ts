@@ -4,6 +4,7 @@
 import { api } from './api'
 import { loadSessionsSoon, requestChat } from './gateway'
 import { getState, setState, subscribe, type ActivityItem } from './store'
+import { cleanNestedFeed, setNestedFeed } from './subagents'
 import { cleanActivity, cleanWaiting, forgetEnded, noteEnded, visibleWaiting, type EndedChat } from './waiting'
 
 let timer: ReturnType<typeof setInterval> | null = null
@@ -15,7 +16,8 @@ const nowS = () => Date.now() / 1000
 async function poll(): Promise<void> {
   if (document.visibilityState !== 'visible' || getState().conn !== 'open') return
   try {
-    const r = await api<{ items?: unknown; waiting?: unknown }>('GET', '/api/plugins/hermes-mobile/activity')
+    const r = await api<{ items?: unknown; waiting?: unknown; nested?: unknown }>('GET', '/api/plugins/hermes-mobile/activity')
+    setNestedFeed(cleanNestedFeed(r.nested)) // how many sub-agents run per chat: numbers only
     const items = cleanActivity(r.items)
     const listed = cleanWaiting(r.waiting) // a plugin older than the app has no such field
     forgetEnded(ended, listed, nowS())
@@ -73,8 +75,10 @@ export function startActivityPolling(): void {
     wasRunning = running
     if (s.requests !== requests) {
       const gone = requests.filter(r => !s.requests.some(n => n.id === r.id))
+      const fresh = s.requests.some(r => !requests.some(n => n.id === r.id))
       requests = s.requests
       if (gone.length) requestsEnded(gone)
+      if (fresh) setTimeout(() => void poll(), 300) // who asks: the sheet says it once the feed has it
     }
   })
   document.addEventListener('visibilitychange', () => void poll())

@@ -46,6 +46,34 @@ export function cleanWaiting(raw: unknown): WaitingItem[] {
   return out
 }
 
+// When each request reached this page (s). Who asks is named only from a feed entry about that request: one whose newest
+// request began at most ASK_SLACK_S before this one arrived (the plugin notes it just before Hermes sends the request). An
+// entry older than that is about an earlier request, and says nothing about this one.
+export const ASK_SLACK_S = 5
+const ARRIVED_MAX = 200
+const arrived = new Map<unknown, number>()
+
+export function noteArrived(id: unknown, at: number): void {
+  arrived.delete(id)
+  arrived.set(id, at)
+  while (arrived.size > ARRIVED_MAX) arrived.delete(arrived.keys().next().value)
+}
+export const arrivedAt = (id: unknown): number | undefined => arrived.get(id)
+
+/** The feed says a sub-agent of this chat asks for an approval, about a request that arrived at `at`, and the chat
+ *  itself asks nothing. */
+export function subAgentAsks(list: readonly WaitingItem[], chat: string, at: number | undefined): boolean {
+  if (at === undefined) return false
+  const mine = list.filter(w => w.session === chat)
+  return (
+    !mine.some(w => !w.who) &&
+    mine.some(w => {
+      const t = w.last ?? w.since
+      return w.who === SUB_AGENT && w.kind === 'approval' && t >= at - ASK_SLACK_S && t <= at + ASK_SLACK_S
+    })
+  )
+}
+
 export interface EndedChat {
   /** When its last request ended here (s). */
   at: number
@@ -73,7 +101,13 @@ export function visibleWaiting(list: WaitingItem[], ended: Map<string, EndedChat
     const e = ended.get(w.session)
     if (!e || now - e.at >= ENDED_HOLD_S) return true
     const mine = list.filter(x => x.session === w.session)
-    if (mine.some(x => (x.last ?? x.since) > e.at)) return true // one began after that: it is new
+    if (
+      mine.some(x => {
+        const t = x.last ?? x.since
+        return t > e.at && t <= now + ASK_SLACK_S
+      })
+    )
+      return true // one began after that: it is new
     const open = openIn(mine, w.session)
     return (e.seen === null ? open - e.count : Math.min(open, e.seen - e.count)) > 0
   })

@@ -1,0 +1,29 @@
+/* What is on screen before the sub-agent bundle has run, so nothing moves when it arrives: the group's line, the chevron on a
+   chat's row, and who asks on the request sheet. */
+.sub-group { min-height: 44px; }
+.sub-group .chev { margin-left: auto; display: inline-flex; }
+.sub-group-live { color: var(--text); }
+.sub-group-words { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sub-group-failed { color: var(--err); white-space: nowrap; }
+/* The chat list's shimmer, at its frame limit, on one line only: the newest group that runs. */
+.sub-shimmer {
+  -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: working-shimmer 2s steps(48) infinite;
+}
+html:not([data-motion='full']) .sub-shimmer { animation: none; -webkit-mask-image: none; mask-image: none; }
+.nested-toggle {
+  flex: none;
+  width: 32px;
+  align-self: stretch;
+  margin: -9px 0;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+}
+/* Who asks, under what is to be approved: ordinary type, so a goal can't pass for the command. */
+.sheet-asked { margin-top: 8px; overflow-wrap: anywhere; }

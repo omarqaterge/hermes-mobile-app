@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { startDraft, switchProfile } from '../gateway'
-import { setState, useStore, type Screen } from '../store'
+import { getState, setState, useStore, type Screen } from '../store'
 import { SessionList } from './SessionList'
 import { haptic } from '../bridge'
 import { setSideHidden, useSidePanel } from '../sidepanel'
-import { refreshPanelValues, usePanelValues } from '../panelvalues'
+import { refreshPanelValues as refreshValues, usePanelValues } from '../panelvalues'
+import { loadNestedCounts } from '../subagents'
 import { lessMotion } from '../motion'
 import { Icon, type IconName } from './icons'
 import { Sheet } from './Screens'
@@ -16,6 +17,12 @@ import { openLibrary } from '../library'
 // Skills, Library) and the chats. Bottom, pinned: the bot, Settings and New chat. Spec 3.13.
 
 const botName = (p?: { display_name?: string | null; name?: string }, fallback = '') => p?.display_name || p?.name || fallback
+
+/** What the panel reads when it opens, at most once a minute each: no timer. */
+function refreshPanelValues(): void {
+  refreshValues()
+  void loadNestedCounts(getState().profile)
+}
 
 export function Drawer() {
   const open = useStore(s => s.drawer)

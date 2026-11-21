@@ -72,6 +72,15 @@ export type ChatItem =
       detail?: string
       summary?: string | null
       tools: number
+      /** The sub-agent's key in subagents.ts, and what its group needs after a reload. All optional: older cached chats have none. */
+      agent?: string
+      parent?: string
+      depth?: number
+      model?: string
+      child?: string
+      /** ms */
+      started?: number
+      secs?: number
       /** One of its own tool events named phone_data: the chat counts as having read phone data (phone-data-taint.ts). */
       phoneData?: boolean
     }
@@ -126,7 +135,7 @@ export interface Ctx {
   percent: number
 }
 
-export type Sheet = null | 'model' | 'commands' | 'session-actions' | 'chat-menu' | 'draft-menu' | 'status' | 'rollback' | 'context'
+export type Sheet = null | 'model' | 'commands' | 'session-actions' | 'chat-menu' | 'draft-menu' | 'status' | 'rollback' | 'context' | 'subagent'
 
 export type Screen = null | 'skills' | 'memory' | 'cron' | 'library' | 'settings' | 'bots' | 'setup' | 'welcome'
 

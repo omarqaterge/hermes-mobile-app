@@ -9,6 +9,7 @@ import { createContext, useContext, useLayoutEffect } from 'react'
 import { openExternal } from './bridge'
 import { confirmDialog } from './dialog'
 import { lineageOf } from './lineage'
+import { resolveChat } from './subagents'
 import { getState, subscribe, useStore, type AppState, type ChatItem } from './store'
 
 /** True inside an assistant message of a chat that has read phone data (set by Markdown). */
@@ -106,16 +107,15 @@ export function nativeTainted(id: string | null | undefined, strict = false): bo
 
 export type ReadState = 'read' | 'clear' | 'unknown'
 
-/** A decision that must not fail open: has this chat read phone data? Asks the app's record about every id it has had, now,
- *  with nothing remembered ('read' is final, so a yes needs no second look). 'unknown' when a shell is there and its record
- *  can't answer. Without a shell (a browser) there is no record: only the chat's items can tell. */
-export function chatReadState(chat: { storedId: string; runtimeId: string; items: readonly ChatItem[] }): ReadState {
-  if (isTaintedItems(chat.items)) return 'read'
+/** For a decision that must not fail open: has any of these chat ids read phone data? Asks the app's record now, with nothing
+ *  remembered (a yes is kept: 'read' is final), and follows each id's lineage. 'unknown' when a shell is there and its record
+ *  can't answer. Without a shell (a browser) there is no record: 'clear'. */
+export function idsReadState(ids: readonly (string | null | undefined)[]): ReadState {
   const b = remoteBridge()
   if (!b) return 'clear'
   if (typeof b.phoneDataTainted !== 'function') return 'unknown'
   let unsure = false
-  for (const id of new Set([chat.storedId, chat.runtimeId].flatMap(i => [i, ...lineageOf(i)]))) {
+  for (const id of new Set(ids.flatMap(i => (i ? [i, ...lineageOf(i)] : [])))) {
     try {
       const yes = b.phoneDataTainted(id) as unknown
       if (yes === true) {
@@ -128,6 +128,12 @@ export function chatReadState(chat: { storedId: string; runtimeId: string; items
     }
   }
   return unsure ? 'unknown' : 'clear'
+}
+
+/** The same for a chat: its items first (without a shell only they can tell), then the app's record about every id it has had. */
+export function chatReadState(chat: { storedId: string; runtimeId: string; items: readonly ChatItem[] }): ReadState {
+  if (isTaintedItems(chat.items)) return 'read'
+  return idsReadState([chat.storedId, chat.runtimeId])
 }
 
 const taintedState = (s: AppState): boolean => isTaintedItems(shownItems(s)) || shownIds(s).some(id => nativeTainted(id))
@@ -156,8 +162,41 @@ function anyRead(): boolean {
 export function docTainted(from: string | null): boolean {
   if (!from) return anyRead() || isTaintedNow()
   const s = getState()
-  if (s.active?.storedId === from && taintedState(s)) return true
-  return [from, ...lineageOf(from)].some(id => nativeTainted(id, true))
+  if (holdsChat(s, from) && activeTainted(s)) return true
+  return idsOfChat(from).some(id => nativeTainted(id, true))
+}
+
+/** Every id the page knows for this chat: its own, where a compression moved it (`resolveChat`), and the lineage of both. */
+function idsOfChat(chat: string): string[] {
+  const to = resolveChat(chat)
+  return [...new Set([chat, to, ...lineageOf(chat), ...lineageOf(to)])]
+}
+
+/** Are `s.active`'s items this chat's? Any id it has had counts: its stored and live ids, the page's lineage of either, or where
+ *  a compression moved it (`resolveChat`): after one, the chat list names the new id while `active.storedId` keeps the old. */
+function holdsChat(s: AppState, chat: string): boolean {
+  const a = s.active
+  if (!a || !chat) return false
+  const ids = new Set([a.storedId, a.runtimeId, ...lineageOf(a.storedId), ...lineageOf(a.runtimeId)])
+  return ids.has(chat) || ids.has(resolveChat(chat)) || resolveChat(a.storedId) === resolveChat(chat)
+}
+
+/** The active chat itself, whatever is drawn (while another chat opens the screen shows that one's preview): its items, and
+ *  the app's record for its stored and live ids and their lineage. */
+function activeTainted(s: AppState): boolean {
+  const a = s.active
+  if (!a) return false
+  return isTaintedItems(a.items) || [a.storedId, a.runtimeId, ...lineageOf(a.storedId), ...lineageOf(a.runtimeId)].some(id => nativeTainted(id))
+}
+
+/** Did this chat read phone data, for something shown on top of it (a sub-agent's sheet)? The chat on screen (none opening) is
+ *  judged as every chat the page can see: its own items and ids, and every id of the chat asked about, asked the same way, so
+ *  it differs from `docTainted` only for a shell whose record can't answer (a chat whose items the page sees counts as clean
+ *  there). Any other chat, or while another one opens, is judged as a document (`docTainted`). */
+export function chatTainted(chat: string): boolean {
+  const s = getState()
+  if (s.opening || !holdsChat(s, chat)) return docTainted(chat)
+  return activeTainted(s) || idsOfChat(chat).some(id => nativeTainted(id))
 }
 
 let heldDocs = 0

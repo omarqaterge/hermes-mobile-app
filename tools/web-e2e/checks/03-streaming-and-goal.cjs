@@ -98,12 +98,16 @@ module.exports = async t => {
     await sa.getByText('answer s-44', { exact: true }).waitFor({ timeout: 8000 })
     await sa.getByPlaceholder('Message Hermux').fill('delegate it')
     await sa.getByRole('button', { name: 'Send', exact: true }).click()
-    const goal = await sa.getByText('Count to three', { exact: true }).first().waitFor({ timeout: 5000 }).then(() => true, () => false)
+    // One line while closed (spec 3.3): opened, the sub-agent's row shows its goal and its state in plain words.
+    const line = sa.getByRole('button', { name: /^(Used )?1 sub-agent/ })
+    await line.waitFor({ timeout: 5000 }).catch(() => {})
     const done = await sa.getByText('The helper counted.').waitFor({ timeout: 8000 }).then(() => true, () => false)
     const result = await sa.getByText('One, two, three.').first().waitFor({ timeout: 8000 }).then(() => true, () => false)
-    const head = sa.getByText(/^\W*Sub-agent$/) // the card's heading, whatever icon stands before it
-    const card = (await head.count()) === 1 ? await head.evaluate(el => el.parentElement.parentElement.textContent || '') : ''
-    check(goal && /Count to three/.test(card) && /completed/.test(card), `sub-agents: a sub-agent's card shows its goal and that it finished (${card})`)
+    await line.click()
+    const row = sa.getByRole('button', { name: /Count to three.*(Working|Done)/ }) // the delegate_task card names the goal too
+    const goal = await row.waitFor({ timeout: 3000 }).then(() => true, () => false)
+    const card = goal ? await row.innerText() : ''
+    check(goal && /Count to three/.test(card) && /Done/.test(card), `sub-agents: a sub-agent's card shows its goal and that it finished (${card})`)
     check(done && result, 'sub-agents: the reply goes on, and the sub-agent\'s result comes back into the chat')
     await sa.close()
   }

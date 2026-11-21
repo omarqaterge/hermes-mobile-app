@@ -1,12 +1,49 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
-import { SHEET_PAUSE_MS, aimAtNeed, currentRequest, mergeNeeds, needWords, needsPhrase, sameNeeds, setRequestChat, sheetBackInView, sheetCanAnswer, sheetShown } from './needsyou'
+import { noteEvent, resetSubAgents } from './subagents'
+import { SHEET_PAUSE_MS, aimAtNeed, currentRequest, mergeNeeds, needParts, needWords, needsPhrase, sameNeeds, setRequestChat, sheetBackInView, sheetCanAnswer, sheetShown } from './needsyou'
 import { getState, setState, type ActiveSession, type WaitingItem } from './store'
+import { ASK_SLACK_S, noteArrived } from './waiting'
 
 const req = (id: string, method: string, session: string) => ({ id, method, params: { session_id: session } }) as unknown as ServerRequest
 const wait = (session: string, kind: string, who = '') => ({ session, kind, who, since: 1, until: 2 })
 const chatOf = (r: ServerRequest) => String(r.params.session_id).replace('rt-', '')
+
+describe('who asks', () => {
+  const AT = 1000 // when the request reached the page (s)
+  const sub = (session: string, last = AT - 1) => ({ ...wait(session, 'approval', 'A sub-agent'), since: last, last })
+  const ask = (session: string, command: string) => ({ id: `r-${session}`, method: 'approval', params: { session_id: `rt-${session}`, command } }) as unknown as ServerRequest
+  beforeEach(() => {
+    resetSubAgents()
+    noteArrived('r-n1', AT)
+  })
+  it('names the sub-agent only when the feed says one asks and the chat does not', () => {
+    noteEvent('n1', 'subagent.tool', { subagent_id: 'a', goal: 'Tidy up', tool_name: 'terminal', tool_preview: 'rm x' })
+    const named = mergeNeeds([sub('n1')], [ask('n1', 'rm x')], chatOf)[0]
+    expect(named.goal).toBe('Tidy up')
+    expect(needWords(named)).toBe('Sub-agent “Tidy up” wants to run a command')
+    expect(needParts(named)).toEqual({ asker: '“Tidy up”', lead: 'Sub-agent ', what: 'wants to run a command' })
+    expect(mergeNeeds([sub('n1'), wait('n1', 'approval')], [ask('n1', 'rm x')], chatOf)[0].goal).toBeUndefined()
+    const noFeed = mergeNeeds([], [ask('n1', 'rm x')], chatOf)[0]
+    expect(noFeed).toMatchObject({ who: '' })
+    expect(noFeed.goal).toBeUndefined()
+    expect(mergeNeeds([sub('n1')], [ask('n1', 'another')], chatOf)[0].goal).toBeUndefined()
+  })
+  it('names nobody when another sub-agent runs too, even one that ran another command', () => {
+    noteEvent('n1', 'subagent.tool', { subagent_id: 'a', goal: 'Tidy up', tool_name: 'terminal', tool_preview: 'rm x' })
+    noteEvent('n1', 'subagent.tool', { subagent_id: 'b', goal: 'Other work', tool_name: 'terminal', tool_preview: 'ls' })
+    expect(mergeNeeds([sub('n1')], [ask('n1', 'rm x')], chatOf)[0].goal).toBeUndefined()
+    noteEvent('n1', 'subagent.complete', { subagent_id: 'b', goal: 'Other work', status: 'completed' })
+    expect(mergeNeeds([sub('n1')], [ask('n1', 'rm x')], chatOf)[0].goal).toBe('Tidy up')
+  })
+  it('names nobody from a feed entry about an earlier request, or for a request whose arrival is unknown', () => {
+    noteEvent('n1', 'subagent.tool', { subagent_id: 'a', goal: 'Tidy up', tool_name: 'terminal', tool_preview: 'rm x' })
+    expect(mergeNeeds([sub('n1', AT - ASK_SLACK_S - 1)], [ask('n1', 'rm x')], chatOf)[0].goal).toBeUndefined()
+    expect(mergeNeeds([sub('n1', AT - ASK_SLACK_S)], [ask('n1', 'rm x')], chatOf)[0].goal).toBe('Tidy up')
+    expect(mergeNeeds([sub('n2')], [ask('n2', 'rm x')], chatOf)[0].goal).toBeUndefined()
+  })
+})
 
 describe('needs you', () => {
   it('says what a chat waits for in a few words', () => {

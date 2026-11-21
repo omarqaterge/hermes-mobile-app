@@ -30,6 +30,7 @@ LOG = sys.argv[3] if len(sys.argv) > 3 else None
 WORK = os.path.dirname(os.path.abspath(NOTE))
 MODEL = "contract-model"
 SUB_GOAL = "Count to three"
+SLOW_GOAL = "Wait a while"  # a sub-agent that is still running while the contract asks about it, until it is stopped
 
 # prompt -> (tool calls, final text chunks). Each tool call is (name, args).
 SCRIPTS = {
@@ -43,6 +44,7 @@ SCRIPTS = {
         {"id": "2", "content": "Write", "status": "in_progress"}]}}]})], ["Planned."]),
     "edit files": ([("write_file", {"path": f"{WORK}/site/a.txt", "content": "x\ny\n"}),
                     ("patch", {"path": f"{WORK}/site/b.txt", "old_string": "old", "new_string": "new"})], ["Edited."]),
+    "delegate slowly": ([("delegate_task", {"goal": SLOW_GOAL})], ["It is on its way."]),
     "delegate it": ([("delegate_task", {"goal": SUB_GOAL, "context": "Answer with the three words only."})], ["The helper ", "counted."]),
 }
 SLOW = ["Slow ", "done."] + [" more"] * 40
@@ -74,6 +76,12 @@ def plan(body):
     users = [i for i, m in enumerate(msgs) if m.get("role") == "user"]
     last = text_of(msgs[users[-1]]).strip() if users else ""
     done = sum(1 for m in msgs[(users[-1] if users else 0):] if m.get("role") == "tool")
+    if last.startswith(SLOW_GOAL):
+        if done:
+            return [{"content": "Waited."}], "stop", 0
+        a = json.dumps({"command": "sleep 30"})
+        return [{"tool_calls": [{"index": 0, "id": "call_slow_1", "type": "function", "function": {"name": "terminal", "arguments": a[:12]}}]},
+                {"tool_calls": [{"index": 0, "function": {"arguments": a[12:]}}]}], "tool_calls", 0
     if SUB_GOAL in last:  # the sub-agent delegate_task starts: its goal is its first user message
         return [{"content": "One, two, three."}], "stop", 0
     if last.endswith("slow reply"):

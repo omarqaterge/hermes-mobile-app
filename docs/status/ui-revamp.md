@@ -220,6 +220,81 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     keeps its own entry. The sheet's pause restarts when the app comes back and also covers choices, Next and the dots.
   - **Needs a phone:** a real wait of more than three minutes, answering from a notification, TalkBack (manual-tests).
 
+- **Sub-agents and nested chats (task 09, PR against `redesign`).** Built: the one-line group in the chat, the sub-agent's
+  sheet, the rows under a chat in the list, who asks on the request sheet (`web/src/subagents.ts`,
+  `components/SubAgentsCore.tsx`, `subagents-core.css`, and the lazy bundle `hm-subagents` with the rows and the sheet:
+  `components/SubAgents.tsx`, `subagents-view.ts`, `subagents.css`; the plugin's `nested` counts and `/nested` routes; checks in `38-subagents.cjs`,
+  `web/src/subagents.test.ts`, `tools/test_nested.py`). **Background tasks are not built:** the owner chose on 2026-11-18 to
+  leave them for later ([roadmap 21](../roadmap/21-background-tasks.md), [decision](../decisions/nested-chats.md)), because
+  of what answers 3 and 6 below show. `/bg` is refused in a chat that has read phone data (its own PR). Where a goal comes
+  from: the `subagent.*` events of the app's socket, or Hermes's stored chat through `GET /nested`, shown as plain text. The
+  `activity.json` feed gives only numbers and the fixed words of task 08, because an agent can edit that file. Chat height
+  unchanged while sub-agents run: 614 / 314 px at 360 x 740 (`38`). With ten running, no frame took over 25 ms in the chat
+  or the list. After the rows and the sheet became a lazy bundle, start-up costs about 1% more work at 4x CPU (about 3 ms);
+  the rise first reported for opening Behaviour was drift between runs (docs/performance-history.md). A security review's 14
+  findings are fixed (who is named as asking, goals, what ends a record, Stop, leaving a chat, Continue, the plugin's rows). A second review's six are fixed too: the group of a chat being left while another opens is filed under the right chat and Continue checks Hermes's record; a compression keeps a chat's sub-agents (the old id leads to the new one); who asks is named only when one sub-agent runs and the feed's entry is about this request; a chat kept open for its sub-agents is closed once they end; more quote-like marks; the plugin's size limit counts bytes. A third review's eight are fixed: `_chat_segments` walks only compression continuations (never branches or sub-agents) and Continue fails closed with the lowest access of the real parent chain; Composer Stop is disabled while switching chats and `interrupt()` requires a settled view and checks `lockView()` for sub-agent-only stops; waiting `since`/`last` are clamped, `subAgentAsks` requires an `approval` within the slack window, and `AskedBy` shows only when `subAgentAsks` agrees; `continueSubAgent` re-checks `lockView()` after every `await`; `openNestedRow` requires `!opening`, navigation closes a mismatched sub-agent sheet, and `canContinue` uses `chatTainted(chat)`; `compressChat`, background/`kept` `session.info`, and `setNestedFeed` keep sub-agents across compression; the plugin `/nested*` routes bound queries, URI-escape and catch SQLite errors, and cap column/id lengths; the parent goal subtitle uses `quotedGoal` inside `<bdi>`, `closeLater` protects `kept` runtimes, and explicit Stop drops the 5 s roster grace with a single bounded follow-up sync. A fourth review's five are fixed: the chat made by Continue joins no lineage group (it is a different chat, and starts clean because Continue refuses when the chain read phone data); Continue refuses unless `GET /nested` sends 1 to 17 valid segments starting with the chat (an older plugin can no longer skip the earlier segments' checks); closing a compressed chat's live session forgets the fingerprint confirmation under every stored id it had; the chat on screen counts for phone data under any id it has had, so a sheet opened by the new id after a compression stays guarded; Continue's check after `session.resume` reads the chat on screen again and asks about the ids the resume answers with. A fifth review's two are fixed: the chat being left while another opens is judged for phone data by its own items and ids (not the preview drawn), and a sheet over the chat on screen asks about every id of its chat; a fingerprint confirmation is noted under every live session an approval came through and forgotten whenever one closes, is lost on a reconnect, is replaced by a new one for the same chat, or leaves the kept ones (at most 64 sessions and 32 ids each). Parts of the second were already in the released app (an overtaken opening, `syncRunning`, a reconnect, a resume with a new live session, no bound). A sixth review asked for every way a live session leaves the page's lists: each now keeps it in another list, closes it, or forgets the confirmations made through it (`unfollow`; the list is in spec 3.6 and the PR, one test row per path in `subagents-round6.test.tsx`). Open for the owner: a page reload (not an app restart) keeps the shell's confirmed chats while the new page knows none of their live sessions; clearing them in `onPageStarted` would close that, but it shortens the decision's "until the app restarts", so it waits for the owner. A swipe on a
+  chat row now needs a press, because a mouse passing over a row could start one. Needs a phone: see
+  `docs/manual-tests.md`.
+
+  What the pinned Hermes does, found first by running it (b8a8be18 with `hermes/patches`, started by
+  `tools/hermes-contract/start-hermes.sh`) with a scripted fake model and the app's calls, on a desktop:
+  1. **A sub-agent's approval reaches the app: yes. It does not say which sub-agent asks.** It arrives as an ordinary
+     `approval` request on the parent chat. Allow ran the command, Deny blocked it.
+     The plugin's `waiting` lists the top chat with "A sub-agent" (read from `activity.json`: the route's `/proc` check
+     can't pass on a desktop Mac). The request carries no sub-agent id or goal. For a top-level sub-agent the request's
+     `command` was identical to the text of its latest `subagent.tool` event, so the app can name it by matching them. A
+     nested sub-agent sends only `subagent.start` and `subagent.complete`, so it can't be matched and keeps the fixed
+     words; neither can two sub-agents running the same command. **Questions:** a sub-agent has no `clarify` tool (calling
+     it answers "Tool 'clarify' does not exist"), so it can't ask one. No Hermes patch is needed.
+  2. **`subagent.tail`, `subagent.steer`, `subagent.interrupt` work,** at depth 0 and depth 1. `tail` gives a plain-text
+     transcript (its header repeats the goal), `available: false` once finished or for an unknown id. `steer` answers
+     `queued` and the text reached the sub-agent's next model request; after the end it answers `rejected`. `interrupt`
+     stops that one only (its command is killed, state `interrupted`, a sibling's command runs to its end); after the end it
+     answers `found: false`. `subagent.list` gives both depths with `parent_id`, `status`, `last_tool` and
+     `accepting_steer`, and forgets a sub-agent when it ends.
+  3. **`prompt.background` works, and does not follow the chat's rules.** It answers `task_id` and runs beside a reply.
+     `background.complete` carries only `task_id` and `text` (a failure is the text `error: …`), not the prompt. Hermes's
+     code sends nothing else for it, and the task is in neither `subagent.list` nor `delegation.status`. It has a
+     stored chat (`bg_…`, source `tui`) with **`parent_session_id` empty**, which `session.list` returns as an ordinary
+     chat with its own title. It starts with none of the chat's history. Its rules, for a command Hermes flags, compared
+     with a sub-agent in the same chat:
+
+     | The chat is in | Sub-agent | Background task |
+     |---|---|---|
+     | Off (asks) | asks in the app | **never asks**: left "pending approval", not run, the task carries on and reports done |
+     | Full access | runs | **not run** (stricter than the chat) |
+     | Auto access | blocked by the plugin | not run, by Hermes's check rather than Auto's |
+     | Has read phone data, recorded under its stored id (any chat reopened since) | asks | **`curl` ran without asking** |
+     | Has read phone data, recorded under both ids | not tested | not run |
+
+     It runs under its own key (`bg_…`), so `/yolo`, the approval channel and the plugin's links to the chat don't reach it.
+  4. **The reasoning level can be known without a Hermes patch.** The events and `SubagentSnapshot` don't carry it, but the
+     sub-agent's stored chat does: `model_config.reasoning_config` in `GET /api/sessions/{child_session_id}`, there within
+     a second of the start, while it runs and afterwards. Tested: nothing set gives the chat's level at that moment
+     (high, and low after the chat changed); `delegation.reasoning_effort: minimal` gives minimal over a chat on high; `false`
+     gives `enabled: false`; an unknown word falls back to the chat's. **Limit:** this is the level Hermes gave the
+     sub-agent. On the way out Hermes lowers it to what the provider supports (`clamp_effort`), and for a sub-agent nothing
+     reports that lowered level. The composer's chip also shows the level set, not the level sent.
+  5. **After it has finished: readable, branchable, not listed.** `GET /api/sessions/{id}/messages` reads a sub-agent's
+     chat while it runs and afterwards. `session.resume` opens a finished one, and `session.branch` then makes an ordinary
+     chat from it, so "Continue in a new chat" is possible with existing calls (its title starts "Subagent: …"). Its row
+     has `parent_session_id` set, but neither `session.list` nor `GET /api/sessions` returns it on request
+     (`include_children` and similar do nothing). Only the setting `sessions.show_subagents` brings such chats into
+     `session.list`, as rows with no parent field, and it is a setting of the whole bot. Rows for chats finished earlier
+     would need something new, most simply a plugin field reading `parent_session_id` from the database.
+  6. **Stopping: sub-agents stop, background tasks don't.** `session.interrupt` stopped sub-agents at both depths, during
+     the parent's turn and after it (their commands were killed, state `interrupted`, the marker files never appeared).
+     A background task kept running after `session.interrupt` and after `session.close`, wrote its marker file and delivered
+     `background.complete`. No call stops one: `subagent.interrupt` answers `found: false` and `session.interrupt` with its
+     id answers "session not found".
+  - **Found on the way:** a top-level sub-agent always runs detached, so the parent's turn ends while it works. The
+    composer now keeps Stop until they have ended (checked in `38`).
+  - **Found on the way:** `/bg <task>` goes through `slash.exec` to a separate Hermes process. In a chat that has read phone
+    data (recorded under both ids) its `curl` ran without asking, and no result reached the chat in the 8 s watched. The app
+    now refuses it in such a chat (PR #206).
+  - **The owner's answers (2026-11-18):** build the sub-agent parts now and keep background tasks for later; fix `/bg`
+    without taking a feature away; show the level Hermes gave the sub-agent.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

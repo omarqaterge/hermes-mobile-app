@@ -895,37 +895,7 @@ textarea {
   text-align: center;
 }
 
-/* sub-agents, notices */
-.subagent {
-  border: 1px dashed var(--accent-2);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 0.84rem;
-  background: #1a1610;
-}
-.sub-head {
-  display: flex;
-  justify-content: space-between;
-  color: var(--accent);
-  font-size: 0.75rem;
-  margin-bottom: 3px;
-}
-.sub-status {
-  color: var(--dim);
-}
-.sub-detail {
-  color: var(--dim);
-  font-family: var(--mono);
-  font-size: 0.74rem;
-  margin-top: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sub-summary {
-  margin-top: 5px;
-  white-space: pre-wrap;
-}
+/* notices (sub-agents: subagents.css) */
 .notice {
   font-size: 0.82rem;
   border-radius: 10px;

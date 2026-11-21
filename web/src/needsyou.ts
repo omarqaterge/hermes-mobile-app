@@ -9,7 +9,8 @@ import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { getState, setState, subscribe, type AppState, type WaitingItem } from './store'
 import { chatListHeld, onChatListFree } from './chatsnapshot'
 import { lockView, onLockView } from './lockview'
-import { SUB_AGENT } from './waiting'
+import { SUB_AGENT, arrivedAt, subAgentAsks } from './waiting'
+import { askerOf, quotedGoal } from './subagents'
 
 export interface Need {
   /** The stored id of the chat. */
@@ -17,6 +18,8 @@ export interface Need {
   kind: string
   /** Who in the chat asks, when it isn't the chat itself ("A sub-agent"). */
   who: string
+  /** Which sub-agent, when a request this page holds could be matched to one (`askerOf`). Never from the feed. */
+  goal?: string
 }
 
 const WORDS = new Map([
@@ -32,9 +35,16 @@ const WORDS = new Map([
 
 /** What the chat waits for, in a few words of this app's own: nothing from the feed is printed. A kind this build doesn't
  *  know gets neutral words, and the only "who" is the fixed one. */
-export function needWords(n: Pick<Need, 'kind' | 'who'>): string {
-  const what = WORDS.get(n.kind) ?? 'is waiting for you'
-  return n.who === SUB_AGENT ? `${SUB_AGENT} ${what}` : what
+export function needWords(n: Pick<Need, 'kind' | 'who' | 'goal'>): string {
+  const { asker, lead, what } = needParts(n)
+  return `${lead}${asker ? `${asker} ` : ''}${what}`
+}
+
+/** The words in parts, so a goal can be drawn apart from the app's own (inside <bdi>). */
+export function needParts(n: Pick<Need, 'kind' | 'who' | 'goal'> & { what?: string }): { asker: string; lead: string; what: string } {
+  const what = n.what ?? WORDS.get(n.kind) ?? 'is waiting for you'
+  const asker = n.goal ? quotedGoal(n.goal) : ''
+  return { asker, lead: asker ? 'Sub-agent ' : n.who === SUB_AGENT ? `${SUB_AGENT} ` : '', what }
 }
 
 /** Requests are named by the live session; `chatOf` gives their stored chat. One entry per chat, oldest wait first; the
@@ -44,7 +54,16 @@ export function mergeNeeds(waiting: WaitingItem[], requests: ServerRequest[], ch
   for (const w of waiting) if (w.session && !out.has(w.session)) out.set(w.session, { session: w.session, kind: w.kind, who: w.who ?? '' })
   for (const r of requests) {
     const session = chatOf(r)
-    if (session && !out.has(session)) out.set(session, { session, kind: r.method, who: '' })
+    if (!session) continue
+    const cur = out.get(session)
+    if (!cur) {
+      out.set(session, { session, kind: r.method, who: '' })
+      continue
+    }
+    // A sub-agent is named only when the feed says one asks about this request and that the chat itself doesn't.
+    if (r.method !== 'approval' || cur.goal || !subAgentAsks(waiting, session, arrivedAt(r.id))) continue
+    const asker = askerOf(session, (r.params as { command?: unknown }).command)
+    if (asker?.goal) out.set(session, { ...cur, who: SUB_AGENT, goal: asker.goal })
   }
   return [...out.values()]
 }
@@ -70,7 +89,7 @@ export function needsOf(s: Pick<AppState, 'waiting' | 'requests' | 'active'>): N
 }
 
 export function sameNeeds(a: Need[], b: Need[]): boolean {
-  return a.length === b.length && a.every((n, i) => n.session === b[i].session && n.kind === b[i].kind && n.who === b[i].who)
+  return a.length === b.length && a.every((n, i) => n.session === b[i].session && n.kind === b[i].kind && n.who === b[i].who && n.goal === b[i].goal)
 }
 
 let openMemo: { needs: Need[]; sessions: AppState['sessions']; open: string | undefined; out: Need[] } | null = null

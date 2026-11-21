@@ -1,6 +1,6 @@
 # Roadmap designs
 
-Twenty features Hermux doesn't have yet, each designed far enough that an agent new to the idea can build it once the
+Features Hermux doesn't have yet, each designed far enough that an agent new to the idea can build it once the
 owner says go. **Nothing here is decided or scheduled.** A file in this folder is a design, not a task: build one only
 when the owner asks for it, and settle its "Owner decisions needed" first.
 
@@ -25,6 +25,7 @@ Effort: S under a day, M a few days, L a week or more. "Phone" means it can only
 | 08 | [Health data for the agent](08-health-data.md) | M | Java, plugin, web | the phone-data contract | yes |
 | 09 | ["Your turn" steps](09-your-turn.md) | M | plugin, Java, web | none | yes |
 | 10 | [App list and a cap on apps per reply](10-app-list-and-cap.md) | S–M | plugin, web | none | yes |
+| 21 | [Background tasks](21-background-tasks.md) | M | Hermes patch, plugin, web | sub-agent rows (built) | no |
 | 11 | [Second opinion](11-second-opinion.md) | M | web | none | no |
 | 12 | [Export](12-export.md) | M | Java, web | none | yes |
 | 13 | [Task board](13-task-board.md) | M–L | web | none (most useful with connections) | no |

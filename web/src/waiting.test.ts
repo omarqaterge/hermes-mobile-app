@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { ENDED_HOLD_S, SUB_AGENT, cleanActivity, cleanWaiting, forgetEnded, noteEnded, visibleWaiting, type EndedChat } from './waiting'
+import { ASK_SLACK_S, ENDED_HOLD_S, SUB_AGENT, cleanActivity, cleanWaiting, forgetEnded, noteEnded, subAgentAsks, visibleWaiting, type EndedChat } from './waiting'
 import type { WaitingItem } from './store'
 
-const entry = (session: string, open = 1, since = 100, last = since, kind = 'approval'): WaitingItem => ({ session, kind, since, last, open, until: 900 })
+const entry = (session: string, open = 1, since = 100, last = since, kind = 'approval', who = ''): WaitingItem => ({ session, kind, who, since, last, open, until: 900 })
 const shown = (list: WaitingItem[], ended: Map<string, EndedChat>, now: number) => visibleWaiting(list, ended, now).map(w => w.session)
 
 describe('what the feed still counts after a request ended here', () => {
@@ -35,6 +35,11 @@ describe('what the feed still counts after a request ended here', () => {
     noteEnded(ended, 'a', [entry('a')], 200)
     expect(shown([entry('a', 1, 100, 200.2)], ended, 200.5)).toEqual(['a'])
   })
+  it('ignores a far-future last timestamp when hiding an ended request', () => {
+    const ended = new Map<string, EndedChat>()
+    noteEnded(ended, 'a', [entry('a')], 200)
+    expect(shown([entry('a', 1, 100, 200 + ASK_SLACK_S + 30)], ended, 200.5)).toEqual([])
+  })
   it('does not count on a feed it never saw for long: the feed is believed again', () => {
     const ended = new Map<string, EndedChat>()
     noteEnded(ended, 'a', [], 200) // the feed had not listed it yet
@@ -49,6 +54,17 @@ describe('what the feed still counts after a request ended here', () => {
     noteEnded(ended, 'c', [entry('c')], 100)
     forgetEnded(ended, [entry('a'), entry('c')], 201)
     expect([...ended.keys()]).toEqual(['a'])
+  })
+})
+
+describe('subAgentAsks', () => {
+  it('is true only for a sub-agent approval whose last time is within ASK_SLACK_S of arrival', () => {
+    expect(subAgentAsks([entry('a', 1, 100, 100, 'approval', SUB_AGENT)], 'a', 102)).toBe(true)
+    expect(subAgentAsks([entry('a', 1, 100, 100 + ASK_SLACK_S + 1, 'approval', SUB_AGENT)], 'a', 100)).toBe(false)
+    expect(subAgentAsks([entry('a', 1, 100, 100 - ASK_SLACK_S - 1, 'approval', SUB_AGENT)], 'a', 100)).toBe(false)
+    expect(subAgentAsks([entry('a', 1, 100, 100, 'phone_data', SUB_AGENT)], 'a', 100)).toBe(false)
+    expect(subAgentAsks([entry('a', 1, 100, 100, 'question', SUB_AGENT)], 'a', 100)).toBe(false)
+    expect(subAgentAsks([entry('a', 1, 100, 100, 'approval', SUB_AGENT), entry('a', 1, 100, 100, 'approval', '')], 'a', 100)).toBe(false)
   })
 })
 

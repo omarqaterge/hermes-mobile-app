@@ -445,7 +445,7 @@ export const ItemView = memo(function ItemView({ item, actions = false, busy = f
     case 'tool':
       return <ToolCard item={item} />
     case 'subagent':
-      return <SubagentView item={item} />
+      return null // drawn by its group (App.tsx, SubAgents.tsx)
     case 'notice':
       return (
         <div className={`notice notice-${item.level}`}>
@@ -482,20 +482,6 @@ function AssistantMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind:
             </div>
           )}
           {time.node}
-        </div>
-  )
-}
-
-function SubagentView({ item }: { item: Extract<ChatItem, { kind: 'subagent' }> }) {
-  return (
-        <div className={`subagent sub-${item.status}`}>
-          <div className="sub-head">
-            <span><Icon n="subagent" /> Sub-agent</span>
-            <span className="sub-status">{item.status}</span>
-          </div>
-          <div className="sub-goal"><Linked text={item.goal} /></div>
-          {item.detail && item.status !== 'done' && item.status !== 'completed' && <div className="sub-detail"><Linked text={item.detail} /></div>}
-          {item.summary && <div className="sub-summary"><Linked text={item.summary} /></div>}
         </div>
   )
 }
