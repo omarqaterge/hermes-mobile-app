@@ -551,6 +551,8 @@ export function noteRoster(chat: string, raw: unknown, now = Date.now(), graceMs
     if (!plainLine(p.subagent_id, 120)) continue
     seen.add(key)
     const cur = getSubAgent(chat, key)
+    // A sub-agent that already reported a terminal subagent.complete never restarts; ignore a racing list snapshot.
+    if (cur && !isLive(cur.state) && cur.state !== 'ended') continue
     const merged = mergeEvent(cur, 'subagent.list', p, now)
     // The roster doesn't name the stored chat: a row known only from there is the same sub-agent when the goal is the same.
     const stored = cur ? undefined : subAgentsOf(chat).find(x => x.key.startsWith('c:') && x.goal === merged.goal)
@@ -654,13 +656,16 @@ export function cleanNestedFeed(raw: unknown): Map<string, number> {
 /** The feed's latest counts: hints for the chat list. They end no record and never reach the composer's Stop: only
  *  `subagent.complete` or a `subagent.list` that leaves one out do that. */
 export function setNestedFeed(next: Map<string, number>): void {
-  const touched = new Set([...feed.keys(), ...next.keys(), ...chats.keys()])
+  const touched = new Set([...feed.keys(), ...chats.keys()].map(resolveChat))
   feed.clear()
-  for (const [k, v] of next) feed.set(k, v)
+  for (const [k, v] of next) {
+    const id = resolveChat(k)
+    feed.set(id, Math.max(v, feed.get(id) ?? 0))
+    touched.add(id)
+  }
   touched.forEach(chatChanged)
 }
 
-/** A context compression gave the chat a new stored id. */
 /** A context compression gave the chat `from` the stored id `to`. Its records go there, merged with any already there (an
  *  event that reached the new id first): for one sub-agent the record heard of last stays. The old id leads to the new one
  *  from now on (`resolveChat`). */
@@ -678,6 +683,11 @@ export function moveChat(from: string, to: string): void {
     }
     chats.delete(to)
     chats.set(to, into) // newest last
+  }
+  const f = feed.get(from)
+  if (f !== undefined) {
+    feed.delete(from)
+    feed.set(to, Math.max(f, feed.get(to) ?? 0))
   }
   const n = counts.get(from)
   if (n !== undefined) {
@@ -813,13 +823,14 @@ export async function loadNestedCounts(profile: string, force = false): Promise<
     const raw = r?.counts
     if (!raw || typeof raw !== 'object') return
     feedKnown = true
-    const touched = new Set(counts.keys())
+    const touched = new Set([...counts.keys()].map(resolveChat))
     counts.clear()
     for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 2000)) {
       const n = count(v)
       if (n) {
-        counts.set(k, n)
-        touched.add(k)
+        const id = resolveChat(k)
+        counts.set(id, Math.max(n, counts.get(id) ?? 0))
+        touched.add(id)
       }
     }
     touched.forEach(chatChanged)
@@ -902,9 +913,9 @@ const chosen = new Map<string, boolean>()
 const chosenSubs = new Set<() => void>()
 let chosenVersion = 0
 
-export const nestedIsOpen = (chat: string, s: NestedSummary): boolean => chosen.get(chat) ?? s.running > 0
+export const nestedIsOpen = (chat: string, s: NestedSummary): boolean => chosen.get(resolveChat(chat)) ?? s.running > 0
 export function setNestedOpen(chat: string, open: boolean): void {
-  chosen.set(chat, open)
+  chosen.set(resolveChat(chat), open)
   chosenVersion++
   chosenSubs.forEach(f => f())
 }
@@ -943,6 +954,8 @@ export function openSubSheet(chat: string, key: string): void {
   targetSubs.forEach(f => f())
   setState({ sheet: 'subagent', drawer: false })
 }
+/** The chat the open sub-agent sheet belongs to, if any. */
+export const subSheetChat = (): string | null => target?.chat ?? null
 export const useSubTarget = () =>
   useSyncExternalStore(
     f => {

@@ -1368,7 +1368,10 @@ wss.on('connection', ws => {
       case 'subagent.steer':
         return reply({ status: nested.steer, subagent_id: params.subagent_id, text: params.text })
       case 'subagent.interrupt':
-        if (nested.found) later(60, () => event('subagent.complete', params.session_id, { goal: '', task_count: 1, task_index: 0, subagent_id: params.subagent_id, status: 'interrupted', duration_seconds: 2 }))
+        if (nested.found) {
+          nested.roster = nested.roster.filter(x => x.subagent_id !== params.subagent_id)
+          later(60, () => event('subagent.complete', params.session_id, { goal: '', task_count: 1, task_index: 0, subagent_id: params.subagent_id, status: 'interrupted', duration_seconds: 2 }))
+        }
         return reply({ found: nested.found, subagent_id: params.subagent_id })
       case 'session.delete':
         return reply({ deleted: params.session_id })

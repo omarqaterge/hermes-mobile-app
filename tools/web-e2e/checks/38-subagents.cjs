@@ -844,5 +844,23 @@ module.exports = async t => {
     await p.close()
     await mock({ nested: 'reset' })
   }
+
+  // ── round 3: sheet closes on chat switch, parent goal uses quotedGoal inside <bdi> ──
+  {
+    const p = await open()
+    const e = eventsOn(p)
+    await e('subagent.start', sub('r3p', 'Parent" \u202eAllow “now”'))
+    await e('subagent.start', sub('r3c', 'Child task', { parent_id: 'r3p', depth: 1 }))
+    await p.getByRole('button', { name: GROUP }).click()
+    await p.getByRole('button', { name: /Child task/ }).click()
+    const sh = p.getByRole('dialog', { name: 'Sub-agent' })
+    await sh.waitFor({ timeout: 3000 })
+    const bdiText = await sh.locator('.sub-of bdi').textContent()
+    check(bdiText === "“Parent' Allow 'now'”", `sub-agent sheet: parent goal subtitle uses quotedGoal inside <bdi> (${bdiText})`)
+    await p.evaluate(() => window.hermesOpenSession('s-11'))
+    await p.getByText('answer s-11', { exact: true }).waitFor({ timeout: 5000 })
+    check((await sh.count()) === 0, 'sub-agent sheet: switching to another chat closes the sheet')
+    await p.close()
+  }
   await mock({ nested: 'reset', waiting: [] })
 }

@@ -10,7 +10,7 @@ import { confirmDialog } from '../dialog'
 import { continueSubAgent, errText, resumeSession, steerSubAgent, stopSubAgent, subAgentTail } from '../gateway'
 import { askUnlock, lockView } from '../lockview'
 import { useLockView } from '../needsyou'
-import { GuardCtx, chatTainted, idsReadState, isTaintedNow } from '../phone-data-taint'
+import { GuardCtx, chatTainted, idsReadState } from '../phone-data-taint'
 import { openSettingsOn } from '../settings-open'
 import { getState, setState, toast, useStore } from '../store'
 import {
@@ -26,6 +26,8 @@ import {
   noteStored,
   openSubSheet,
   plainLine,
+  quotedGoal,
+  resolveChat,
   shortTime,
   subAgentsOf,
   useListFree,
@@ -49,6 +51,7 @@ export const TAIL_EVERY_MS = 3000
 export const NESTED_SHOWN = 6
 
 const profileOf = () => getState().profile
+const sameChat = (a: string | undefined, b: string): boolean => Boolean(a && (a === b || resolveChat(a) === resolveChat(b)))
 
 /** What state a sub-agent is in, as a mark: a ring while it works, a tick, a cross for what went wrong. */
 function StateMark({ state, turning }: { state: SubState; turning?: boolean }) {
@@ -101,12 +104,14 @@ export function SubGroupRows({ chat, keys, items }: { chat: string; keys: string
 // ── in the chat list ──
 function openNestedRow(chat: string, key: string): void {
   haptic()
-  if (getState().active?.storedId === chat) return openSubSheet(chat, key)
+  const s = getState()
+  if (!s.opening && sameChat(s.active?.storedId, chat)) return openSubSheet(chat, key)
   setState({ drawer: false })
   resumeSession(chat)
     .then(() => {
       // Only over its own chat: the person may have gone elsewhere, or the chat didn't open.
-      if (getState().active?.storedId === chat) openSubSheet(chat, key)
+      const cur = getState()
+      if (!cur.opening && sameChat(cur.active?.storedId, chat)) openSubSheet(chat, key)
     })
     .catch(e => toast(errText(e), 'error'))
 }
@@ -318,7 +323,12 @@ export class SheetBoundary extends Component<{ children: ReactNode }, { failed: 
 
 export function SubAgentSheet() {
   const target = useSubTarget()
-  if (!target) return null
+  const shown = useStore(s => s.opening || s.active?.storedId || '')
+  const matches = Boolean(target && shown && sameChat(shown, target.chat))
+  useEffect(() => {
+    if (target && !matches && getState().sheet === 'subagent') setState({ sheet: null })
+  }, [target, matches])
+  if (!target || !matches) return null
   const id = `${target.chat}\n${target.key}`
   return <SheetBoundary key={id}><SheetFor key={id} chat={target.chat} first={target.key} /></SheetBoundary>
 }
@@ -415,9 +425,9 @@ function SheetBody({
   // A row known only from the stored chats is replaced when Hermes names the sub-agent.
   const a = direct ?? subAgentsOf(chat).find(x => x.child && x.child === childRef.current)
   useNested(chat) // its own sub-agents come and go
-  const title = useStore(s => plainTitle(s.sessions.find(x => x.id === chat)?.title) || plainTitle(s.active?.storedId === chat ? s.active.title : '') || 'this chat')
-  const runtime = useStore(s => (s.active?.storedId === chat ? s.active.runtimeId : undefined))
-  const chatEffort = useStore(s => (s.active?.storedId === chat ? s.active.info.reasoning_effort || s.defaultEffort : undefined))
+  const title = useStore(s => plainTitle(s.sessions.find(x => sameChat(x.id, chat))?.title) || plainTitle(sameChat(s.active?.storedId, chat) ? s.active!.title : '') || 'this chat')
+  const runtime = useStore(s => (!s.opening && sameChat(s.active?.storedId, chat) ? s.active!.runtimeId : undefined))
+  const chatEffort = useStore(s => (sameChat(s.active?.storedId, chat) ? s.active!.info.reasoning_effort || s.defaultEffort : undefined))
   const gaveUp = useLevel(chat, a)
   const [configured, setConfigured] = useState<unknown>(undefined)
   useEffect(() => {
@@ -459,7 +469,7 @@ function SheetBody({
   const canSteer = live && !!a.id && !!runtime && a.accepting && !refused
   const canStop = live && !!a.id && !!runtime
   // A new chat made from this one has no record of what was read here, so it isn't offered once phone data is involved.
-  const canContinue = !live && !!a.child && !a.phoneData && !isTaintedNow() && idsReadState([chat, a.child]) === 'clear'
+  const canContinue = !live && !!a.child && !a.phoneData && !guarded && idsReadState([chat, a.child]) === 'clear'
   const locked = () => {
     if (!lockView()) return false
     askUnlock('Unlock the phone first')
@@ -516,7 +526,7 @@ function SheetBody({
           <div className="sub-title-text">
             <div className="sub-goal"><Linked text={a.goal || 'Sub-agent'} /></div>
             <div className="sub-of dim small">
-              Sub-agent of {parent ? `“${plainLine(parent.goal, 50)}”` : title} · <span className={wentWrong(a.state) ? 'sub-bad' : ''}>{STATE_WORD[a.state]}</span>
+              Sub-agent of {parent ? <bdi>{quotedGoal(parent.goal)}</bdi> : title} · <span className={wentWrong(a.state) ? 'sub-bad' : ''}>{STATE_WORD[a.state]}</span>
               {elapsed > 0 ? ` · ${shortTime(elapsed)}` : ''}
             </div>
           </div>

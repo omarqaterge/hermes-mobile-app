@@ -40,7 +40,7 @@ import { BEAT_MS, DEADLINE_MS, beatDecision, retryBanner, retryDelayMs, retryHer
 import { createAgentBuilds } from './agentbuild'
 import { askUnlock, lockView } from './lockview'
 import type { SubagentInterruptResult, SubagentListResult, SubagentSteerResult, SubagentTailResult } from '@hermes/shared/gateway-contract.generated'
-import { itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, onNestedChange, storedParentChain, subAgentsOf, withSubItems, type SubAgent } from './subagents'
+import { getSubAgent, isLive, itemChanged, itemFields, keyOfEvent, loadStored, moveChat, nestedOf, noteEvent, noteItems, noteRoster, onNestedChange, resolveChat, storedParentChain, subAgentsOf, subSheetChat, withSubItems, type SubAgent } from './subagents'
 import { noteArrived } from './waiting'
 import { idsReadState, isTaintedItems } from './phone-data-taint'
 import { onChatOpen, runChatOpen } from './chatopen'
@@ -436,6 +436,15 @@ export async function loadSessions(): Promise<void> {
   }
 }
 
+const sameChat = (a: string | null | undefined, b: string | null | undefined): boolean =>
+  Boolean(a && b && (a === b || resolveChat(a) === resolveChat(b)))
+
+/** Close the sub-agent sheet whenever navigation changes the chat on screen away from the sheet's chat. */
+function closeSubSheetIf(stayFor?: string | null): { sheet?: null } {
+  if (getState().sheet !== 'subagent') return {}
+  return sameChat(stayFor, subSheetChat()) ? {} : { sheet: null }
+}
+
 export async function switchProfile(profile: string): Promise<void> {
   if (profile === getState().profile) return
   openSeq++
@@ -448,7 +457,7 @@ export async function switchProfile(profile: string): Promise<void> {
     /* ignore */
   }
   sessionLimit = SESSIONS_PAGE
-  setState({ profile, active: null, opening: null, sessions: cachedSessions(profile), drawer: false, defaultModel: '' })
+  setState({ profile, active: null, opening: null, sessions: cachedSessions(profile), drawer: false, defaultModel: '', ...closeSubSheetIf() })
   void loadSessions()
   void loadDefaultModel()
 }
@@ -463,8 +472,8 @@ const warm: Array<{ storedId: string; runtimeId: string }> = []
 
 function closeLater(runtimeId: string, ms = 3000): void {
   setTimeout(() => {
-    // Reopened meanwhile (Hermes handed the same live session back): keep it.
-    if (getState().active?.runtimeId === runtimeId || warm.some(w => w.runtimeId === runtimeId)) return
+    // Reopened meanwhile (Hermes handed the same live session back) or still kept for running work: keep it.
+    if (getState().active?.runtimeId === runtimeId || warm.some(w => w.runtimeId === runtimeId) || kept.some(k => k.runtimeId === runtimeId)) return
     void rpc('session.close', { session_id: runtimeId }).catch(() => {})
   }, ms)
 }
@@ -488,8 +497,7 @@ function warmUp(prev: { storedId: string; runtimeId: string }): void {
 }
 
 function unwarm(storedId: string): void {
-  const i = warm.findIndex(w => w.storedId === storedId)
-  if (i >= 0) warm.splice(i, 1)
+  for (let i = warm.length - 1; i >= 0; i--) if (sameChat(warm[i].storedId, storedId)) warm.splice(i, 1)
   unkeep(storedId)
 }
 
@@ -505,7 +513,7 @@ function keepWhileWorking(a: ActiveSession): void {
 }
 
 function unkeep(storedId: string): void {
-  for (let i = kept.length - 1; i >= 0; i--) if (kept[i].storedId === storedId) kept.splice(i, 1)
+  for (let i = kept.length - 1; i >= 0; i--) if (sameChat(kept[i].storedId, storedId)) kept.splice(i, 1)
 }
 
 /** Kept chats whose work has ended become warm ones. */
@@ -604,7 +612,7 @@ export async function newSession(opts: { cwd?: string; model?: string; provider?
   if (opts.cwd) chosenCwd.set(active.runtimeId, opts.cwd)
   agents.trackBuild(active.runtimeId)
   keepPreview(prev)
-  setState({ active, opening: null, preview: null, drawer: false })
+  setState({ active, opening: null, preview: null, drawer: false, ...closeSubSheetIf(active.storedId) })
   retire(prev)
   rememberSession(active.storedId)
   applyDraftRead(active.storedId) // a read-aloud choice made on the empty screen
@@ -644,7 +652,7 @@ export function startDraft(): void {
   const prev = getState().active
   keepPreview(prev)
   rememberSession(null)
-  setState({ active: null, opening: null, preview: null, drawer: false })
+  setState({ active: null, opening: null, preview: null, drawer: false, ...closeSubSheetIf() })
   retire(prev)
 }
 
@@ -658,7 +666,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   keepPreview(prev)
   // Draw the chat as it was last seen right away; the resume below replaces it.
   const preview = prev?.storedId === storedId ? null : cachedChat(getState().profile, storedId)
-  setState({ opening: storedId, preview, drawer: false })
+  setState({ opening: storedId, preview, drawer: false, ...closeSubSheetIf(storedId) })
   // After a reconnect the client replays the events this chat missed; let them land first, or they would be applied
   // a second time on top of the reloaded transcript (duplicate tool cards and text).
   const replay = prev?.storedId === storedId ? client.sessionReplayBarrier(prev.runtimeId) : undefined
@@ -690,7 +698,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     retire({ ...next, title })
     return
   }
-  setState({ active: { ...next, title }, opening: null, preview: null, drawer: false })
+  setState({ active: { ...next, title }, opening: null, preview: null, drawer: false, ...closeSubSheetIf(next.storedId) })
   void syncSubAgents()
   if (opts.auto) bootMark('chat-live')
   if (prev && prev.storedId !== next.storedId) retire(prev)
@@ -706,9 +714,9 @@ export async function deleteSession(storedId: string): Promise<void> {
   // Hermes refuses to delete a chat that still has a live session (error 4023): close ours first.
   const open = getState().active
   const live = [
-    ...(open && open.storedId === storedId ? [open.runtimeId] : []),
-    ...warm.filter(w => w.storedId === storedId).map(w => w.runtimeId),
-    ...kept.filter(k => k.storedId === storedId).map(k => k.runtimeId) // kept open for its sub-agents
+    ...(open && sameChat(open.storedId, storedId) ? [open.runtimeId] : []),
+    ...warm.filter(w => sameChat(w.storedId, storedId)).map(w => w.runtimeId),
+    ...kept.filter(k => sameChat(k.storedId, storedId)).map(k => k.runtimeId) // kept open for its sub-agents
   ]
   unwarm(storedId)
   forgetChat(getState().profile, storedId)
@@ -720,9 +728,11 @@ export async function deleteSession(storedId: string): Promise<void> {
     }
   }
   await rpc('session.delete', { session_id: storedId })
-  if (getState().active?.storedId === storedId) {
-    setState({ active: null })
+  if (sameChat(getState().active?.storedId, storedId)) {
+    setState({ active: null, ...closeSubSheetIf() })
     rememberSession(null)
+  } else if (getState().sheet === 'subagent' && sameChat(subSheetChat(), storedId)) {
+    setState({ sheet: null })
   }
   setState(s => ({ sessions: s.sessions.filter(x => x.id !== storedId) }))
   // Its photos, attached files and canvas would otherwise stay on the phone forever. Keep whatever is
@@ -1210,7 +1220,7 @@ export async function steerSubAgent(runtimeId: string, id: string, text: string)
 export async function stopSubAgent(runtimeId: string, id: string): Promise<boolean> {
   if (lockView()) return false
   const r = await rpc<SubagentInterruptResult>('subagent.interrupt', { session_id: runtimeId, subagent_id: id })
-  if (getState().active?.runtimeId === runtimeId) void syncSubAgents({ afterStop: true }).catch(() => {}) // what is still running, now
+  if (getState().active?.runtimeId === runtimeId) void syncSubAgents({ afterStop: id }).catch(() => {}) // what is still running, now
   return r?.found === true
 }
 
@@ -1283,7 +1293,7 @@ export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'chil
 let stopSyncTimer: ReturnType<typeof setTimeout> | null = null
 
 /** The open chat's sub-agents as they are now. Once per opening or return, and only for a chat known to have some. */
-async function syncSubAgents(opts: { afterStop?: boolean; skipGrace?: boolean } = {}): Promise<void> {
+async function syncSubAgents(opts: { afterStop?: boolean | string; skipGrace?: boolean } = {}): Promise<void> {
   const a = getState().active
   if (!a) return
   const known = nestedOf(a.storedId)
@@ -1297,13 +1307,20 @@ async function syncSubAgents(opts: { afterStop?: boolean; skipGrace?: boolean } 
     const items = withSubItems(x.items, subAgentsOf(x.storedId))
     return items === x.items ? null : { items }
   })
-  // After an explicit Stop, if Hermes still listed a sub-agent while tearing it down, check once more (bounded, no loop).
-  if (opts.afterStop && nestedOf(a.storedId).live > 0) {
+  // After an explicit Stop, if Hermes still listed a stopped sub-agent while tearing it down, check once more (bounded, no loop).
+  const stillStoppedLive = (chat: string): boolean => {
+    if (typeof opts.afterStop === 'string') {
+      const sub = getSubAgent(chat, opts.afterStop)
+      return Boolean(sub && isLive(sub.state))
+    }
+    return nestedOf(chat).live > 0
+  }
+  if (opts.afterStop && stillStoppedLive(a.storedId)) {
     if (stopSyncTimer) clearTimeout(stopSyncTimer)
     const target = a.storedId
     stopSyncTimer = setTimeout(() => {
       stopSyncTimer = null
-      if (getState().active?.storedId === target && nestedOf(target).live > 0) void syncSubAgents({ skipGrace: true }).catch(() => {})
+      if (getState().active?.storedId === target && stillStoppedLive(target)) void syncSubAgents({ skipGrace: true }).catch(() => {})
     }, 1500)
   }
 }
@@ -1730,8 +1747,21 @@ client.onEvent((ev: GatewayEvent) => {
   }
   if (type === 'session.info' && ev.session_id) agents.markBuilt(ev.session_id)
   if (!a || !ev.session_id || (ev.session_id !== a.runtimeId && ev.session_id !== a.storedId)) {
-    // Another chat (one you left while it worked) renamed itself or finished: refresh the drawer's counts,
-    // which is what marks it unread.
+    // Another chat (one you left while it worked) compressed, renamed itself or finished: keep its lineage and sub-agents
+    // under the new stored id, and refresh the drawer's counts, which is what marks it unread.
+    if (type === 'session.info' && ev.session_id) {
+      const sid = (payload as { stored_session_id?: unknown }).stored_session_id
+      const k = kept.find(x => x.runtimeId === ev.session_id)
+      const w = warm.find(x => x.runtimeId === ev.session_id)
+      const prev = k?.storedId || w?.storedId || chatOfRuntime.get(ev.session_id)
+      if (typeof sid === 'string' && sid && prev && sid !== prev) {
+        noteLineage([prev, sid], ev.session_id)
+        moveChat(prev, sid)
+        if (k) k.storedId = sid
+        if (w) w.storedId = sid
+        if (chatOfRuntime.has(ev.session_id)) chatOfRuntime.set(ev.session_id, sid)
+      }
+    }
     if (type === 'session.title' || type === 'message.complete') loadSessionsSoon()
     // A chat kept open while its reply ran: that reply has ended.
     if (type === 'message.complete') {
@@ -1743,7 +1773,7 @@ client.onEvent((ev: GatewayEvent) => {
     }
     // Its sub-agents go on: their rows in the chat list follow.
     if (type.startsWith('subagent.') && ev.session_id) {
-      const chat = chatOfRuntime.get(ev.session_id) || warm.find(w => w.runtimeId === ev.session_id)?.storedId
+      const chat = chatOfRuntime.get(ev.session_id) || kept.find(k => k.runtimeId === ev.session_id)?.storedId || warm.find(w => w.runtimeId === ev.session_id)?.storedId
       if (chat) noteEvent(chat, type, payload)
     }
     return
@@ -1859,6 +1889,7 @@ client.onEvent((ev: GatewayEvent) => {
         if (a && typeof sid === 'string' && sid && sid !== a.storedId) {
           noteLineage([a.storedId, sid], a.runtimeId)
           moveChat(a.storedId, sid)
+          if (chatOfRuntime.has(a.runtimeId)) chatOfRuntime.set(a.runtimeId, sid)
         }
       }
       updateActive(x => ({ info: { ...x.info, ...(payload as object) } }))
@@ -2217,7 +2248,14 @@ export async function compressChat(): Promise<string> {
   if (!a) throw new Error('No chat open')
   if (a.running) throw new Error('Wait until Hermux has finished')
   const r = await rpc<SessionCompressResult>('session.compress', { session_id: a.runtimeId }, 300_000)
+  const newSid = r.info?.stored_session_id || r.stored_session_id
   noteLineage([a.storedId, r.info?.stored_session_id, r.stored_session_id], a.runtimeId) // the compressed chat has a new stored id (lineage.ts)
+  if (typeof newSid === 'string' && newSid && newSid !== a.storedId) {
+    moveChat(a.storedId, newSid)
+    for (const k of kept) if (k.runtimeId === a.runtimeId) k.storedId = newSid
+    for (const w of warm) if (w.runtimeId === a.runtimeId) w.storedId = newSid
+    if (chatOfRuntime.has(a.runtimeId)) chatOfRuntime.set(a.runtimeId, newSid)
+  }
   if (r.compressed === false || r.summary?.noop || r.summary?.aborted || r.summary?.refused_would_grow) return r.message || r.summary?.headline || 'Nothing to compress'
   const b = r.before_messages, n = r.after_messages
   const text = b != null && n != null ? `Context compressed: ${b} → ${n} messages` : 'Context compressed'

@@ -12,7 +12,7 @@ import { continueSubAgent, errText, resumeSession, steerSubAgent, stopSubAgent, 
 import { runLazy } from '../lazy'
 import { askUnlock, lockView } from '../lockview'
 import { useLockView } from '../needsyou'
-import { GuardCtx, chatTainted, idsReadState, isTaintedNow } from '../phone-data-taint'
+import { GuardCtx, chatTainted, idsReadState } from '../phone-data-taint'
 import { openSettingsOn } from '../settings-open'
 import { useSidePanel } from '../sidepanel'
 import { getState, setState, toast, useStore } from '../store'
@@ -31,6 +31,8 @@ import {
   noteStored,
   openSubSheet,
   plainLine,
+  quotedGoal,
+  resolveChat,
   setNestedOpen,
   shortTime,
   subAgentsOf,
@@ -75,12 +77,12 @@ export function subAgentHost(): Record<string, Record<string, unknown>> {
     gateway: { continueSubAgent, errText, resumeSession, steerSubAgent, stopSubAgent, subAgentTail },
     lockview: { askUnlock, lockView },
     needsyou: { useLockView },
-    'phone-data-taint': { GuardCtx, chatTainted, idsReadState, isTaintedNow },
+    'phone-data-taint': { GuardCtx, chatTainted, idsReadState },
     'settings-open': { openSettingsOn },
     store: { getState, setState, toast, useStore },
     subagents: {
       EFFORT_WORD, STATE_WORD, cleanStored, getSubAgent, isLive, listHeld, listState, loadStored, nestedIsOpen, noteItems, noteStored,
-      openSubSheet, plainLine, shortTime, subAgentsOf, useListFree, useNested, useNestedChoice, useSubAgent, useSubAgentRow,
+      openSubSheet, plainLine, quotedGoal, resolveChat, shortTime, subAgentsOf, useListFree, useNested, useNestedChoice, useSubAgent, useSubAgentRow,
       useSubTarget, wentWrong
     },
     'components/icons': { Icon },
