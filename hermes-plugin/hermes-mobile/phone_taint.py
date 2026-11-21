@@ -1266,14 +1266,59 @@ _QUIET = frozenset({"phone_data", "phone_app", "canvas", "find_chats", "openui_r
                     "tool_search", "tool_describe"})
 
 
+_BRIDGE = frozenset(("tool_call", "tool_search", "tool_describe"))
+
+
+def tool_call_entries(args: Any) -> Optional[List[Tuple[str, Dict[str, Any]]]]:
+    """The calls a `tool_call` (Hermes's Tool Search bridge) runs, read the way the pinned Hermes reads them
+    (tools/tool_search_validation.py normalize_tool_call_entries): `calls` as a list, one object or a JSON string of either;
+    with no `calls`, the old single shape (a top-level `name` and `arguments`); names with spaces around them trimmed;
+    `arguments` as an object, a JSON string of one, or nothing. None for a shape Hermes refuses (it then runs no tool)."""
+    if not isinstance(args, dict):
+        return None
+    raw = args.get("calls")
+    if raw is None:
+        if not str(args.get("name") or "").strip():
+            return None
+        raw = [{"name": args.get("name"), "arguments": args.get("arguments")}]
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list) or not raw:
+        return None
+    out = []
+    for c in raw:
+        if not isinstance(c, dict):
+            return None
+        name = str(c.get("name") or "").strip()
+        if not name or name in _BRIDGE:
+            return None
+        inner = c.get("arguments")
+        if inner is None or (isinstance(inner, str) and not inner.strip()):
+            inner = {}
+        if isinstance(inner, str):
+            try:
+                inner = json.loads(inner)
+            except ValueError:
+                return None
+        if not isinstance(inner, dict):
+            return None
+        out.append((name, inner))
+    return out
+
+
 def _calls(tool_name: Any, args: Any) -> Iterator[Tuple[str, Dict[str, Any]]]:
-    """The tool calls inside one call: Hermes's Tool Search bridge (`tool_call`) can carry several."""
-    if tool_name == "tool_call" and isinstance(args, dict) and isinstance(args.get("calls"), list):
-        for c in args["calls"]:
-            if isinstance(c, dict) and c.get("name"):
-                inner = c.get("arguments")
-                yield str(c["name"]), inner if isinstance(inner, dict) else {}
-        return
+    """The tool calls inside one call: Hermes's Tool Search bridge (`tool_call`) can carry several (`tool_call_entries`).
+    A `tool_call` whose shape can't be read stays one call named `tool_call`, which asks (fails closed)."""
+    if tool_name == "tool_call":
+        entries = tool_call_entries(args)
+        if entries is not None:
+            yield from entries
+            return
     yield str(tool_name or ""), args if isinstance(args, dict) else {}
 
 

@@ -713,11 +713,13 @@ def _short(v, n=70) -> str:
 def _peel_bridge(tool_name, args):
     """Hermes's Tool Search bridge: the model calls deferred tools through ``tool_call`` (and looks them up with
     ``tool_search`` / ``tool_describe``). The status shows the tool underneath, like Hermes's own hooks do."""
-    if tool_name == "tool_call" and isinstance(args, dict) and isinstance(args.get("calls"), list):
-        calls = [c for c in args["calls"] if isinstance(c, dict) and c.get("name")]
+    if tool_name == "tool_call":
+        try:
+            calls = _phone_taint().tool_call_entries(args) or []
+        except Exception:
+            calls = []
         if len(calls) == 1:
-            inner = calls[0].get("arguments")
-            return str(calls[0]["name"]), inner if isinstance(inner, dict) else {}
+            return calls[0]
         if calls:
             return "tool_call", {"name": f"{len(calls)} tools"}
     return tool_name, args

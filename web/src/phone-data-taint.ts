@@ -23,8 +23,24 @@ export function isPhoneDataCall(it: ChatItem): boolean {
   if (it.kind !== 'tool') return false
   if (it.name === TOOL) return true
   if (it.name !== 'tool_call') return false
-  const calls = (it.args as { calls?: unknown } | null | undefined)?.calls
-  return Array.isArray(calls) && calls.some(c => (c as { name?: unknown } | null)?.name === TOOL)
+  return bridgedNames(it.args).includes(TOOL)
+}
+
+/** The tool names a `tool_call` runs, read as the pinned Hermes reads them (normalize_tool_call_entries): `calls` as a list,
+ *  one object or a JSON string of either; with no `calls`, a top-level `name`; each name with the spaces around it trimmed. */
+export function bridgedNames(args: unknown): string[] {
+  const a = args && typeof args === 'object' ? (args as { calls?: unknown; name?: unknown }) : {}
+  let calls: unknown = a.calls
+  if (calls == null) calls = [{ name: a.name }]
+  if (typeof calls === 'string') {
+    try {
+      calls = JSON.parse(calls)
+    } catch {
+      return []
+    }
+  }
+  const list = Array.isArray(calls) ? calls : calls && typeof calls === 'object' ? [calls] : []
+  return list.map(c => (c && typeof c === 'object' ? String((c as { name?: unknown }).name ?? '').trim() : '')).filter(Boolean)
 }
 
 const memo = new WeakMap<readonly ChatItem[], boolean>()

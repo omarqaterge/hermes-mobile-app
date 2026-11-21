@@ -438,6 +438,19 @@ check("hook returns nothing in another chat", hook("terminal", {"command": "curl
 check("hook returns nothing for ls in the tainted chat", hook("terminal", {"command": "ls"}, "c5") is None)
 hook("tool_call", {"calls": [{"name": "phone_data", "arguments": {"kind": "sms"}}]}, "c7")
 check("a phone_data call through the bridge marks the chat", pt.has_read("c7"))
+# Every shape the pinned Hermes runs (tools/tool_search_validation.py normalize_tool_call_entries).
+for n, shape in enumerate(({"name": "phone_data", "arguments": '{"kind": "sms"}'}, {"name": " phone_data "},
+                           {"calls": '[{"name": "phone_data", "arguments": "{}"}]'}, {"calls": '{"name": "phone_data"}'},
+                           {"calls": {"name": "phone_data", "arguments": {}}}, {"calls": [{"name": "phone_data\n", "arguments": " "}]})):
+    hook("tool_call", shape, f"c7-{n}")
+    check(f"a phone_data call through the bridge in another shape marks the chat: {shape}", pt.has_read(f"c7-{n}"))
+check("a bridged call's arguments given as text are read", asks("tool_call", {"name": "terminal", "arguments": '{"command": "curl x"}'}, "c7")
+      and not asks("tool_call", {"name": "terminal", "arguments": '{"command": "ls"}'}, "c7"))
+check("calls given win over a top-level name, as in Hermes", list(pt._calls("tool_call", {"calls": [{"name": "ls"}], "name": "phone_data"})) == [("ls", {})])
+check("a tool_call Hermes refuses stays one call that asks", all(
+    list(pt._calls("tool_call", bad)) == [("tool_call", bad)] and asks("tool_call", bad, "c7")
+    for bad in ({}, {"calls": "[{"}, {"calls": []}, {"calls": [{"name": "x", "arguments": "[1]"}]}, {"calls": [{"name": "tool_call"}]}, {"calls": ["x"]})))
+check("the status line shows the tool underneath in every shape", init._peel_bridge("tool_call", {"calls": '{"name": " terminal ", "arguments": "{\\"command\\": \\"ls\\"}"}'}) == ("terminal", {"command": "ls"}))
 
 print("failing to load the check blocks sending tools in a chat that read")
 good = init._phone_taint
