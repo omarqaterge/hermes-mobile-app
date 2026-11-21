@@ -21,12 +21,19 @@ function strip(s: string): string {
   return s.slice(from, to)
 }
 
-/** The command's name, as typed (Hermes compares it in lower case), and the text after it. */
-export function hermesWords(text: string): { name: string; arg: string } {
-  let s = strip(text)
+/** The command text the page sends to Hermes (`slash.exec`'s `command`): the slashes in front and the spaces around taken
+ *  off with Python's set, as Hermes does, never with JavaScript's `trim` (which also drops U+FEFF, which Python keeps). So
+ *  Hermes reads from it exactly the name and arguments `hermesWords` gives for the same text. */
+export function hermesBody(text: string): string {
+  const s = strip(text)
   let i = 0
   while (s[i] === '/') i++
-  s = strip(s.slice(i))
+  return strip(s.slice(i))
+}
+
+/** The command's name, as typed (Hermes compares it in lower case), and the text after it. */
+export function hermesWords(text: string): { name: string; arg: string } {
+  const s = hermesBody(text)
   let end = 0
   while (end < s.length && !isSpace(s[end])) end++
   return { name: s.slice(0, end), arg: strip(s.slice(end)) }
@@ -180,8 +187,11 @@ export function lockSafeCommand(typedName: string, arg: string): boolean {
 /** `/approvals off` or `/approvals smart`, also by a beginning Hermes expands to it (`/ap` and longer): the mode that lets
  *  commands run without asking, in every chat of the bot. null for anything else (`manual`, a bare `/approvals`). */
 export function loosensApprovals(typedName: string, arg: string): 'off' | 'smart' | null {
-  if (hermesCommand(typedName) !== 'approvals') return null
-  const w = arg.toLowerCase()
+  // Invisible format characters (U+FEFF, U+200B and the like) are left out before comparing: asking once too often is
+  // harmless, missing one is not, and Hermes's own handling of them may change.
+  const clean = (t: string) => t.replace(/\p{Cf}/gu, '')
+  if (hermesCommand(clean(typedName)) !== 'approvals') return null
+  const w = strip(clean(arg)).toLowerCase()
   return w === 'off' || w === 'smart' ? w : null
 }
 

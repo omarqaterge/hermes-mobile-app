@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs'
 import { describe, expect, it } from 'vitest'
 import table from '../vendor/hermes-commands.json'
-import { detachedRefusal, detachedWork, hermesCommand, hermesShlex, hermesWords, kanbanReadOnly, lockSafeCommand, loosensApprovals } from './slashwords'
+import { detachedRefusal, detachedWork, hermesBody, hermesCommand, hermesShlex, hermesWords, kanbanReadOnly, lockSafeCommand, loosensApprovals } from './slashwords'
 
 const ch = (...codes: number[]) => String.fromCharCode(...codes)
 
@@ -123,5 +123,36 @@ describe('the refusal', () => {
     const unsure = detachedRefusal('a background task', 'unknown')
     expect(unsure).toContain('couldn’t check whether')
     expect(unsure).not.toContain('This chat has read')
+  })
+})
+
+// Where JavaScript's trim and Python's strip disagree: U+FEFF is a space to JavaScript only; U+001C to U+001F and U+0085 to
+// Python only. The page sends hermesBody, so what Hermes reads from it must be what hermesWords judged.
+describe('the text sent is the text judged', () => {
+  const differ = [0xfeff, 0x1c, 0x1d, 0x1e, 0x1f, 0x85]
+  it('Hermes reads from the sent body the same name and arguments the page judged', () => {
+    for (const c of differ) {
+      const x = ch(c)
+      for (const t of [`/${x}approvals off`, `${x}/approvals off`, `/approvals${x}off`, `/approvals off${x}`, `/${x}ap smart`, `//${x}${x}approvals  off ${x}`]) {
+        expect(hermesWords(hermesBody(t)), JSON.stringify(t)).toEqual(hermesWords(t))
+        expect(hermesBody(t).startsWith('/'), JSON.stringify(t)).toBe(false)
+      }
+    }
+  })
+  it('keeps U+FEFF, as Python does, instead of dropping it as trim does', () => {
+    expect(hermesBody(`/${ch(0xfeff)}approvals off`)).toBe(`${ch(0xfeff)}approvals off`)
+    expect(hermesBody(`/approvals off${ch(0x85)}`)).toBe('approvals off')
+  })
+  it('/approvals off and smart with an invisible character in them still ask', () => {
+    for (const x of [ch(0xfeff), ch(0x200b), ch(0x2060)]) {
+      expect(loosensApprovals(hermesWords(`/${x}approvals off`).name, 'off')).toBe('off')
+      expect(loosensApprovals(hermesWords(`/${x}ap smart`).name, 'smart')).toBe('smart')
+      expect(loosensApprovals('approvals', `${x}off`)).toBe('off')
+      expect(loosensApprovals(`appr${x}ovals`, `of${x}f`)).toBe('off')
+    }
+    for (const c of differ.filter(c => c !== 0xfeff)) {
+      const { name, arg } = hermesWords(`/approvals${ch(c)}off`)
+      expect(loosensApprovals(name, arg)).toBe('off')
+    }
   })
 })

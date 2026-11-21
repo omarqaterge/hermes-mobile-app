@@ -3,7 +3,7 @@
 // every wait (the confirmation, Hermes's answer), since the phone can lock meanwhile. Quick commands and aliases wait.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-const lock = vi.hoisted(() => ({ on: false, unlocks: 0, onConfirm: (() => true) as () => boolean }))
+const lock = vi.hoisted(() => ({ on: false, unlocks: 0, asked: 0, onConfirm: (() => true) as () => boolean }))
 vi.mock('./lockview', async orig => ({
   ...(await orig<typeof import('./lockview')>()),
   lockView: () => lock.on,
@@ -11,7 +11,7 @@ vi.mock('./lockview', async orig => ({
 }))
 vi.mock('./access-confirm', async orig => ({
   ...(await orig<typeof import('./access-confirm')>()),
-  confirmLooseApprovals: async () => lock.onConfirm()
+  confirmLooseApprovals: async () => (lock.asked++, lock.onConfirm())
 }))
 
 import { askBtw, btwOpen, closeBtw } from './btw'
@@ -34,6 +34,7 @@ function open(): void {
 beforeEach(() => {
   lock.on = false
   lock.unlocks = 0
+  lock.asked = 0
   lock.onConfirm = () => true
   sent = []
   seen = {}
@@ -242,5 +243,30 @@ describe('when the phone locks while a command waits', () => {
     answers['command.dispatch'] = () => ({ type: 'alias', target: '/help' })
     await sendPrompt('/myalias')
     expect(sent).toEqual(['slash.exec myalias', 'command.dispatch myalias', 'slash.exec help'])
+  })
+})
+
+describe('/approvals off with characters JavaScript and Python read differently', () => {
+  test('U+FEFF in front of the name: the warning is asked, and the command goes as Hermes will read it', async () => {
+    lock.onConfirm = () => false
+    for (const text of ['/\ufeffapprovals off', '/\ufeffapprovals smart', '/\ufeffap off', '/approvals \ufeffoff']) {
+      sent = []
+      await sendPrompt(text)
+      expect(sent, JSON.stringify(text)).toEqual([])
+    }
+    expect(lock.asked).toBe(4)
+  })
+
+  test('what is sent keeps U+FEFF (Python keeps it), so it is never sent as a plain approvals off', async () => {
+    await sendPrompt('/\ufeffapprovals off')
+    expect(lock.asked).toBe(1)
+    expect(seen['slash.exec']).toMatchObject({ command: '\ufeffapprovals off' })
+  })
+
+  test('separators only Python knows still ask', async () => {
+    lock.onConfirm = () => false
+    for (const c of ['\u001c', '\u001d', '\u001e', '\u001f', '\u0085']) await sendPrompt(`/approvals${c}off`)
+    expect(lock.asked).toBe(5)
+    expect(sent).toEqual([])
   })
 })
