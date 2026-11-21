@@ -155,3 +155,37 @@ temporary `HOME` and `HERMES_HOME`; `tools/test_phone_taint.py` now sets its own
   that way doesn't ask (the user wrote it into `config.yaml`); over the lock screen it waits for an unlock like any unknown
   command. A background task's `canvas` and `phone_data` calls are not restricted further.
 
+
+## Security re-check of PR 206 (2026-11-21, third round)
+
+Run in a desktop browser with the mock and with the plugin tests, all in a temporary `HOME` and `HERMES_HOME`; no phone.
+
+- **Lock screen:** judged before anything is sent (before a new chat is made), with the profile's command catalog asked each
+  time (a quick command, plugin command or skill with an allowed name waits), and again after each wait: after the
+  `/approvals off` confirmation, at each alias step; no `command.dispatch` fallback and no alias, `send` or `skill` answer is
+  followed there. Aliases (`/v`, `/tasks`, `/ctx`) wait too.
+- **Command names** come from Hermes's own table (`web/vendor/hermes-commands.json`, `tools/hermes-commands.py`; regenerate
+  when the pin moves): `/bp`, `/suggest`, beginnings such as `/k`, `/bl`. `/suggestions accept` counts as a scheduled job.
+- **Background tasks of a chat that has read:** only tools that read (`_DETACHED_OK`): no terminal, no code, no
+  `phone_app`, no writes, nothing sent.
+- **Chats that have read:** writing into Hermes's or the app's folders, `~/.termux`, `/etc`, a shell start-up file or a
+  folder of programs asks (`write_file`/`patch` by the real path; terminal and code by their text).
+- **Searches:** when the check can't be complete (a cut result, more than 50 chats, an origin not known yet), the reader is
+  marked.
+- **Not closed:** a terminal command or script that writes such a place by a path built some other way (a script file, code
+  that assembles the name); a plugin command that has a built-in's name over the lock screen; ordinary chats marked by
+  mistake (below).
+
+### Known limits: chats marked that hadn't read (finding 6, not fixed)
+
+Fixing these would weaken the rules above, so they stay. Each one errs on the side of asking.
+
+- A search whose result is cut off, names more than 50 chats, or names a chat whose origin can't be read yet marks the
+  searching chat (finding 4 asks for exactly that).
+- Through the Tool Search bridge, a `session_search` in browse mode or a failed one still counts: the result's shape can't
+  be told there.
+- Text inside a search result that looks like `"id": "..."` (a snippet a model wrote) names a chat; when that chat can't be
+  found, the reader is marked.
+- A chat made from a marked one whose creation time isn't known counts as made after the read.
+- In the app, a chat in the same lineage group as a marked chat (a compression or a branch the page saw) counts as marked.
+- A damaged or full record file marks every chat until it is cleared.

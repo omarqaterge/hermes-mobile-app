@@ -17,3 +17,9 @@ rank: normal
 - **A background task of a chat that has read your phone data can only read.** It can't run a script it wrote, start
   Hermes, use Shizuku's shell, use an app on the phone or change Hermes's files. Board commands that change a board are refused
   in such a chat too. Checked against a test copy of Hermux. Not yet tried on a phone.
+- **Phone-data chats ask before changing what runs later.** In a chat that has read your phone data, writing into Hermes's
+  or the app's folders, a shell start-up file such as `.bashrc` or a folder of programs now asks first. A background task of
+  such a chat can only read: it has no terminal at all. Checked against a test copy of Hermux. Not yet tried on a phone.
+- **Over the lock screen, quick commands and aliases wait for an unlock**, and a command already on its way stops if the
+  phone locks while it waits (for example while the `/approvals off` warning is up). Checked in a desktop browser. Not yet
+  tried on a phone.
