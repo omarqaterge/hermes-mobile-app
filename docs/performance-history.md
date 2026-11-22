@@ -432,6 +432,53 @@ back on screen and when Android answers the permission dialog. Chat heights at 3
 with the keyboard (`31-fixed-points.cjs`, at the default size). Not measured: on a phone (`docs/manual-tests.md`, "Text
 size from the phone and the notification switches").
 
+**Agent motion (task 13, 2026-11-22).** Desktop browser, CPU ×4, against `redesign` before the change (a worktree of
+it, both builds served at once on one machine). Main-thread work.
+
+A long streaming reply, `streamcost.cjs 8000 --gap 40 --runs 3` (8000 characters in chunks 40 ms apart, about 29 s;
+the frames are every animation frame of the turn). The first measurement put the branch at +7 to 9 % with effects on;
+a rule-by-rule probe found two causes, both changed: a `:has()` rule (the text box's light standing still beside the
+background-app card, now a class the composer sets) and the still fade over the newest words (left out: row 10 keeps
+its still form). Final, two passes each, base and branch in turn:
+
+| Effects | base | branch | change | frames, base / branch |
+|---|---|---|---|---|
+| on (Full, glass) | 2.00 / 1.95 s | 2.04 / 2.06 s | +3.8 % | 1699–1700, 2 over 25 ms, p95 16.7 ms / the same |
+| off (Off, no glass) | 1.81 / 1.76 s | 1.78 / 1.77 s | none | 1700, 2 over 25 ms / the same |
+
+The moments of `uicost.cjs`, effects on, `--runs 3`, four passes alternating base and branch (base first, then
+branch first, …), each cell the four passes' medians; with effects off (`--runs 5`, three rounds) every moment was
+within about 3 % of the base in the rounds run at the same load.
+
+| Moment | base | branch | change |
+|---|---|---|---|
+| start-up | 470 / 477 / 482 / 485 | 478 / 485 / 485 / 485 | +1 % |
+| opening a chat | 36 / 40 / 37 / 38 | 39 / 41 / 38 / 39 | +4 % |
+| first words of a reply | 34 / 39 / 34 / 34 | 38 / 35 / 37 / 37 | **+3 ms (+9 %)** |
+| scrolling a long chat | 265 / 263 / 264 / 257 | 270 / 261 / 261 / 263 | none |
+| the same, 10 sub-agents | 342 / 351 / 341 / 346 | 366 / 347 / 344 / 353 | +2 % |
+| a long chat of work | 496 / 508 / 515 / 508 | 503 / 508 / 513 / 520 | none |
+| scrolling it | 185 / 187 / 186 / 189 | 249 / 197 / 196 / 203 | **+7 %** |
+| opening the chat list | 20 / 20 / 20 / 20 | 19 / 20 / 20 / 21 | none |
+| scrolling the chat list | 14 / 14 / 11 / 12 | 11 / 12 / 9 / 10 | −19 % |
+| the list, 10 sub-agents | 90 / 89 / 86 / 86 | 64 / 59 / 62 / 61 | −30 % |
+| opening a row's menu | 22 / 24 / 24 / 24 | 26 / 24 / 26 / 33 | **+2 ms (+8 %)** |
+| opening the chat's menu | 27 / 28 / 27 / 27 | 31 / 29 / 30 / 31 | **+3 ms (+13 %)** |
+| opening Settings | 47 / 45 / 47 / 47 | 51 / 48 / 51 / 47 | +5 % |
+| Behaviour, Models, Add a provider, Access, About, Notifications | | | within ±2 % |
+| opening Appearance | 21 / 21 / 21 / 23 | 21 / 25 / 23 / 22 | +7 % (not touched by this change) |
+
+Over the 5 % budget, for the owner to judge: the first words of a reply (+3 ms: the moment the turn's movements start,
+the lift, Stop's turn and the light fading in); scrolling a long chat of work (+7 %, the drawn tick on each finished
+step is an SVG where the time was text); the two menus (+2 and +3 ms; nothing in them changed, and the earlier passes
+showed +13 % for the row's menu and +4 % for the chat's, so part of it is spread). Opening Appearance, which this change
+does not touch, moved by as much. The chat list with sub-agents is faster because nested rows no longer slide in each
+time the list opens. Renders: check 40 counts at most 2 renders of each earlier message during a streamed reply
+(the reply itself about 60). Idle: no animation runs a second after a turn (`expectIdle`). Chat heights at 360x740
+unchanged: 614 px idle, 314 px with the keyboard; the header (57 px) and the composer (69 px) never grew in any frame
+of a turn. Not measured: on a phone, including the battery over ten minutes of work (`docs/manual-tests.md`,
+"Agent motion").
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:
