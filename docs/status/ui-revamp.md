@@ -368,12 +368,16 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   `web/src/agentmotion.ts` (tests in `agentmotion.test.ts`), movement in `web/src/agent-motion.css` on the motion
   tokens, check `40-agent-motion.cjs` (heights per frame, renders per streamed batch, Reduced, Off, OLED, the haptic).
   `streamcost.cjs` gained `--motion`, `--glass` and frame counts. Costs: docs/performance-history.md, task 13.
-  - **Left for later:** the background-tasks row (13) is not built; the streaming reply (row 10) is in its still form (a
-    fade over the newest words cost 3 to 4 % of streaming work at 4x CPU, over the budget with the rest); the turn fold's numbers rise rather than count;
+  - **Two repeating animations at most** (review): the text box's light and the newest live thing (`liveStep`: a reply's
+    orb or caret, a running step, a group's line or lanes); the tray handle has no shimmer (check 34 rewritten); the Needs
+    you ring stands still while the open chat works; nothing repeats while Hermux waits. Check 40 counts them per frame.
+  - **Left for later:** the background-tasks row (13) is not built: background tasks are not offered yet
+    (`docs/decisions/nested-chats.md`); the streaming reply (row 10) is in its still form (a fade over the newest words
+    cost 3 to 4 % of streaming work at 4x CPU); the turn fold's numbers rise rather than count;
     sub-agent lanes show only in an opened group (no automatic opening); the Live orb has no voice level (the shell
     reports none); text box growth, the keyboard, theme changes, skeleton to chat, chat-list reorders and nested rows
-    folding back have no new movement. While a turn runs with the Model bar tucked away, the handle's shimmer (kept, check
-    34) makes three repeating things, one over the task's two. Needs a phone: `docs/manual-tests.md`, "Agent motion",
+    folding back have no new movement. The first words of a reply cost about 1.5 ms more at 4x CPU (+4 %): the movements
+    that start on Send. Needs a phone: `docs/manual-tests.md`, "Agent motion",
     including ten minutes of work for the battery.
 
 **Next:** the new look of the chat screen, the side panel, the

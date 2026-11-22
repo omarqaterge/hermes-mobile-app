@@ -581,7 +581,10 @@ Settings → Appearance → Animations Full, glass on, unless a step says otherw
 - [ ] When the reply ends: the light fades, Stop turns back into Send, the reply's buttons settle in, and the phone
       gives one light tick. A reply that ends while the phone is locked over the lock screen (Talk to Hermux) gives no
       tick; one that ends while you are in another app gives none either.
-- [ ] An approval or a question (Auto off): the light stands still in amber until you answer, then turns gold again.
+- [ ] An approval or a question (Auto off): the light stands still in amber until you answer, then turns gold again;
+      meanwhile nothing else moves (the running step, the sub-agent group's line and lanes stand still).
+- [ ] With the Model bar tucked away, the handle is gold and still while Hermux works; at no moment do more than two
+      things repeat (the light and one step, thought, caret or lane).
 - [ ] Ask for two sub-agents and open their group: each row has a thin lane; the working one moves, a finished one is
       filled green and still, a failed one red; the group's line does not shimmer while open. A failed sub-agent makes
       the group's line shake once.

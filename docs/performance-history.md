@@ -432,52 +432,55 @@ back on screen and when Android answers the permission dialog. Chat heights at 3
 with the keyboard (`31-fixed-points.cjs`, at the default size). Not measured: on a phone (`docs/manual-tests.md`, "Text
 size from the phone and the notification switches").
 
-**Agent motion (task 13, 2026-11-22).** Desktop browser, CPU ×4, against `redesign` before the change (a worktree of
-it, both builds served at once on one machine). Main-thread work.
+**Agent motion (task 13, 2026-11-22, after review).** Desktop browser, CPU ×4, against `redesign` before the change (a
+worktree of it, both builds served at once on one machine). Main-thread work.
 
 A long streaming reply, `streamcost.cjs 8000 --gap 40 --runs 3` (8000 characters in chunks 40 ms apart, about 29 s;
-the frames are every animation frame of the turn). The first measurement put the branch at +7 to 9 % with effects on;
-a rule-by-rule probe found two causes, both changed: a `:has()` rule (the text box's light standing still beside the
-background-app card, now a class the composer sets) and the still fade over the newest words (left out: row 10 keeps
-its still form). Final, two passes each, base and branch in turn:
+the frames are every animation frame of the turn), two passes, base and branch in turn. Two causes found and changed on
+the way: a `:has()` rule (the still light beside the background-app card, now a class) and the still fade over the
+newest words (left out: row 10 keeps its still form).
 
 | Effects | base | branch | change | frames, base / branch |
 |---|---|---|---|---|
-| on (Full, glass) | 2.00 / 1.95 s | 2.04 / 2.06 s | +3.8 % | 1699–1700, 2 over 25 ms, p95 16.7 ms / the same |
-| off (Off, no glass) | 1.81 / 1.76 s | 1.78 / 1.77 s | none | 1700, 2 over 25 ms / the same |
+| on (Full, glass) | 1.99 / 1.92 s | 1.99 / 2.06 s | +3.6 % | 1699–1700, 2 over 25 ms, p95 16.8 ms / the same |
+| off (Off, no glass) | 1.77 / 1.76 s | 1.76 / 1.75 s | none | 1700–1702, 1–2 over 25 ms / the same |
 
-The moments of `uicost.cjs`, effects on, `--runs 3`, four passes alternating base and branch (base first, then
-branch first, …), each cell the four passes' medians; with effects off (`--runs 5`, three rounds) every moment was
-within about 3 % of the base in the rounds run at the same load.
+The moments of `uicost.cjs`, effects on, `--runs 3`, six passes alternating base and branch (base first, then branch
+first, …), each cell the six passes' medians, then the median of those:
 
 | Moment | base | branch | change |
 |---|---|---|---|
-| start-up | 470 / 477 / 482 / 485 | 478 / 485 / 485 / 485 | +1 % |
-| opening a chat | 36 / 40 / 37 / 38 | 39 / 41 / 38 / 39 | +4 % |
-| first words of a reply | 34 / 39 / 34 / 34 | 38 / 35 / 37 / 37 | **+3 ms (+9 %)** |
-| scrolling a long chat | 265 / 263 / 264 / 257 | 270 / 261 / 261 / 263 | none |
-| the same, 10 sub-agents | 342 / 351 / 341 / 346 | 366 / 347 / 344 / 353 | +2 % |
-| a long chat of work | 496 / 508 / 515 / 508 | 503 / 508 / 513 / 520 | none |
-| scrolling it | 185 / 187 / 186 / 189 | 249 / 197 / 196 / 203 | **+7 %** |
-| opening the chat list | 20 / 20 / 20 / 20 | 19 / 20 / 20 / 21 | none |
-| scrolling the chat list | 14 / 14 / 11 / 12 | 11 / 12 / 9 / 10 | −19 % |
-| the list, 10 sub-agents | 90 / 89 / 86 / 86 | 64 / 59 / 62 / 61 | −30 % |
-| opening a row's menu | 22 / 24 / 24 / 24 | 26 / 24 / 26 / 33 | **+2 ms (+8 %)** |
-| opening the chat's menu | 27 / 28 / 27 / 27 | 31 / 29 / 30 / 31 | **+3 ms (+13 %)** |
-| opening Settings | 47 / 45 / 47 / 47 | 51 / 48 / 51 / 47 | +5 % |
-| Behaviour, Models, Add a provider, Access, About, Notifications | | | within ±2 % |
-| opening Appearance | 21 / 21 / 21 / 23 | 21 / 25 / 23 / 22 | +7 % (not touched by this change) |
+| start-up | 479 / 488 / 489 / 486 / 482 / 490 | 485 / 483 / 483 / 489 / 491 / 485 | none |
+| opening a chat | 36 / 38 / 36 / 36 / 36 / 37 | 37 / 37 / 39 / 39 / 38 / 38 | +2 ms (+6 %; −1 % in the run before, see below) |
+| first words of a reply | 34 / 37 / 35 / 34 / 34 / 35 | 37 / 36 / 35 / 35 / 36 / 36 | +1.5 ms (+4 %) |
+| scrolling a long chat | 261 / 258 / 261 / 255 / 254 / 257 | 265 / 272 / 270 / 259 / 275 / 259 | +4 % |
+| the same, 10 sub-agents | 338 / 350 / 341 / 340 / 340 / 344 | 349 / 359 / 353 / 357 / 344 / 346 | +3 % |
+| a long chat of work | 514 / 512 / 513 / 518 / 514 / 512 | 527 / 520 / 518 / 523 / 540 / 514 | +2 % |
+| scrolling it | 184 / 193 / 190 / 186 / 184 / 188 | 195 / 207 / 194 / 192 / 198 / 192 | +4 % |
+| opening the chat list | 21 / 25 / 20 / 19 / 19 / 21 | 19 / 20 / 21 / 22 / 19 / 20 | none |
+| scrolling the chat list | 9 / 10 / 11 / 14 / 10 / 10 | 12 / 9 / 10 / 8 / 11 / 9 | none |
+| the list, 10 sub-agents | 86 / 87 / 84 / 85 / 85 / 89 | 60 / 63 / 61 / 66 / 71 / 64 | −26 % |
+| opening a row's menu | 24 / 22 / 24 / 24 / 24 / 23 | 24 / 23 / 23 / 24 / 23 / 23 | none |
+| opening the chat's menu | 27 / 27 / 27 / 27 / 25 / 26 | 26 / 27 / 27 / 27 / 27 / 28 | none |
+| Settings and its pages | | | within ±6 %, ±1.5 ms (none of them changed) |
 
-Over the 5 % budget, for the owner to judge: the first words of a reply (+3 ms: the moment the turn's movements start,
-the lift, Stop's turn and the light fading in); scrolling a long chat of work (+7 %, the drawn tick on each finished
-step is an SVG where the time was text); the two menus (+2 and +3 ms; nothing in them changed, and the earlier passes
-showed +13 % for the row's menu and +4 % for the chat's, so part of it is spread). Opening Appearance, which this change
-does not touch, moved by as much. The chat list with sub-agents is faster because nested rows no longer slide in each
-time the list opens. Renders: check 40 counts at most 2 renders of each earlier message during a streamed reply
-(the reply itself about 60). Idle: no animation runs a second after a turn (`expectIdle`). Chat heights at 360x740
-unchanged: 614 px idle, 314 px with the keyboard; the header (57 px) and the composer (69 px) never grew in any frame
-of a turn. Not measured: on a phone, including the battery over ten minutes of work (`docs/manual-tests.md`,
-"Agent motion").
+How the four moments over 5 % in the first measurement were looked at (a trace of each, 10 to 12 times per build, both
+builds in turn, adding up the main thread's events by kind): the two menus and the long chat of work's scroll showed no
+difference beyond the spread between rounds (the chat's menu 27.8 / 27.9 ms of work before, 29.0 / 26.8 after; the
+scroll 226.8 / 229.8 against 227.3 / 231.6), and nothing in them runs code of this change. The first words of a reply
+did: about 3 ms more, all of it the movements that start on Send. With every animation turned off in both builds the
+moment is within 1 to 2 ms; turning off one at a time, the message's lift, Stop's turn, and the light and glow fading in
+each take 0 to 1.5 ms, so no one of them is the cost. Stop no longer also pops the whole button (one animation less).
+The review round's own first version made it worse (+18 %): the chat list read whether the open chat works, for the
+Needs you ring, and redrew every row when a reply started; only a small wrapper of that group reads it now (script back
+to the base's: 18.8 / 19.1 against 18.4 / 18.3 ms). Opening a chat measured −1 % in the run before this one, whose code
+differed only by that wrapper, which is not on the page when no chat needs you; read as spread.
+
+Renders: check 40 counts at most 2 renders of each earlier message during a streamed reply (the reply itself about 60).
+Repeating animations: at most two in any frame (check 40 counts them). Idle: nothing runs a second after a turn
+(`expectIdle`). Chat heights at 360x740 unchanged: 614 px idle, 314 px with the keyboard; the header (57 px) and the
+composer (69 px) never grew in any frame of a turn. Not measured: on a phone, including the battery over ten minutes of
+work (`docs/manual-tests.md`, "Agent motion").
 
 ## Adding a measurement
 
