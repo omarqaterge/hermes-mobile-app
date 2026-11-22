@@ -19,7 +19,9 @@ import { Spinner } from './Spinner'
 import { Linked } from './Linked'
 import { VideoEmbeds } from './VideoEmbed'
 import { Icon, type IconName } from './icons'
-import { lessMotion } from '../motion'
+import { lessMotion, pauseWhenHidden } from '../motion'
+import { justSent, toolLive } from '../agentmotion'
+import { DrawnMark, ThinkOrb, useStepEnd } from './AgentMotion'
 
 // Stored outputs fetched for cards restored from history (resumed transcripts omit them).
 const outputCache = new Map<string, string>()
@@ -56,8 +58,13 @@ function argsPreview(args?: Record<string, unknown> | null): string {
   return typeof first === 'string' ? first : ''
 }
 
-export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
+/** `live`: this is the one running step whose words shimmer (agentmotion.ts liveStep). */
+export const ToolCard = memo(function ToolCard({ item, live = false }: { item: Extract<ChatItem, { kind: 'tool' }>; live?: boolean }) {
   const [open, setOpen] = useState(false)
+  // A step seen running that ends draws its tick or its cross once (agent-motion.css); one read from history does not.
+  const ended = useStepEnd(toolLive(item.status), item.status === 'error')
+  const root = useRef<HTMLDivElement>(null)
+  useEffect(() => (live && root.current ? pauseWhenHidden(root.current) : undefined), [live])
   const [stored, setStored] = useState<string | null>(() => outputCache.get(item.id) ?? null)
   const [loadingOut, setLoadingOut] = useState(false)
   useEffect(() => {
@@ -91,15 +98,24 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
   const args = steps ? null : item.args && hasDiff ? Object.fromEntries(Object.entries(item.args).filter(([k]) => !DIFF_DUP_ARGS.has(k))) : item.args
   const icon = TOOL_ICONS[item.name] || 'tool'
   return (
-    <div className={`tool tool-${item.status}${item.risk ? ' tool-risk' : ''}`}>
+    <div ref={root} className={`tool tool-${item.status}${item.risk ? ' tool-risk' : ''}${live ? ' step-live' : ''}${ended === 'failed' ? ' step-failed' : ''}`}>
       <button className="tool-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <span className="tool-icon"><Icon n={icon} /></span>
         <span className="tool-name" title={item.name}>{title}</span>
         <span className="tool-label">{steps?.length ? `${stepsDone}/${steps.length} done` : label}</span>
         <span className="tool-state">
           {item.status === 'generating' || item.status === 'running' ? <Spinner /> : null}
-          {item.status === 'done' ? fmtDuration(item.duration) || <Icon n="check" label="done" /> : null}
-          {item.status === 'error' ? <Icon n="close" label="failed" /> : null}
+          {item.status === 'done' ? (
+            fmtDuration(item.duration) ? (
+              <>
+                <DrawnMark kind="done" draw={ended === 'done'} />
+                <span>{fmtDuration(item.duration)}</span>
+              </>
+            ) : (
+              <DrawnMark kind="done" draw={ended === 'done'} label="done" />
+            )
+          ) : null}
+          {item.status === 'error' ? <DrawnMark kind="failed" draw={ended === 'failed'} label="failed" /> : null}
         </span>
       </button>
       <Collapse open={open}>
@@ -169,9 +185,11 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
 })
 
 /** The line a folded run of tool calls shows: icons of the tools used, "Ran 2 commands and read 3 files · 42s", a chevron. */
-export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }: { id: string; run: ToolRun; open: boolean; onToggle: (id: string) => void }) {
+export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle, live = false }: { id: string; run: ToolRun; open: boolean; onToggle: (id: string) => void; live?: boolean }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => (live && ref.current ? pauseWhenHidden(ref.current) : undefined), [live])
   return (
-    <button className={`tool-run${run.running ? ' running' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
+    <button ref={ref} className={`tool-run${run.running ? ' running' : ''}${live ? ' step-live' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
       <span className="tool-run-icons" aria-hidden="true">
         {run.names.slice(0, 4).map(n => (
           <span key={n} className="tool-icon"><Icon n={TOOL_ICONS[n] || 'tool'} /></span>
@@ -190,9 +208,9 @@ export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }
 
 /** The line a finished turn's work folds into (turnfold.ts): the tools' icons, "Worked 1m 20s · 14 steps", " · 1 failed"
  *  in the error colour, a chevron. A tap opens the turn to exactly what it showed before; another closes it. */
-export const TurnWorkHead = memo(function TurnWorkHead({ work, open, onToggle }: { work: TurnWork; open: boolean; onToggle: (w: TurnWork, wasOpen: boolean) => void }) {
+export const TurnWorkHead = memo(function TurnWorkHead({ work, open, onToggle, arrive = false }: { work: TurnWork; open: boolean; onToggle: (w: TurnWork, wasOpen: boolean) => void; arrive?: boolean }) {
   return (
-    <button className="turn-work" aria-expanded={open} onClick={() => { haptic(); onToggle(work, open) }}>
+    <button className={`turn-work${arrive ? ' arrive' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(work, open) }}>
       <span className="tool-run-icons" aria-hidden="true">
         {work.names.slice(0, 4).map(n => (
           <span key={n} className="tool-icon"><Icon n={TOOL_ICONS[n] || 'tool'} /></span>
@@ -207,18 +225,19 @@ export const TurnWorkHead = memo(function TurnWorkHead({ work, open, onToggle }:
   )
 }, (a, b) =>
   // The turns are worked out again on every streamed batch: a line whose words did not change is not drawn again.
-  a.open === b.open && a.onToggle === b.onToggle && a.work.key === b.work.key && a.work.head === b.work.head && a.work.firstFailed === b.work.firstFailed &&
+  a.open === b.open && a.arrive === b.arrive && a.onToggle === b.onToggle && a.work.key === b.work.key && a.work.head === b.work.head && a.work.firstFailed === b.work.firstFailed &&
   workLabel(a.work) === workLabel(b.work) && a.work.failed === b.work.failed && a.work.names.join() === b.work.names.join())
 
 /** A reply's thought. Live: "Thinking…" and a peek at its latest line. Finished and closed: "Thought for 12s" (when the
  *  page watched it stream, else "Thought process") with its first line after it on the same row while there is room. */
 function Reasoning({ text, live, secs }: { text: string; live: boolean; secs?: number }) {
   const [open, setOpen] = useState(false)
+  const settled = useStepEnd(live, false) // the thought ended on screen: the orb gives way to the brain mark softly
   if (!text.trim()) return null
   return (
     <div className={`reasoning${open ? ' open' : ''}`}>
       <button className="reasoning-head" onClick={() => setOpen(o => !o)}>
-        <span className="reasoning-dot">{live ? <Spinner small /> : <Icon n="brain" size={16} />}</span>
+        <span className={`reasoning-dot${settled ? ' settled' : ''}`}>{live ? <ThinkOrb /> : <Icon n="brain" size={16} />}</span>
         <span className="reasoning-title">{live ? 'Thinking…' : secs !== undefined ? `Thought for ${wholeTime(secs)}` : 'Thought process'}</span>
         {!live && !open ? <span className="reasoning-line" aria-hidden="true">{thoughtLine(text)}</span> : null}
         <span className="chev"><Chevron open={open} /></span>
@@ -320,6 +339,8 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
   const [keep, setKeep] = useState<MsgImage[]>(() => imagesOf(item)) // photos sent again with the edit
   const [keepFiles, setKeepFiles] = useState<MsgFile[]>(() => filesOf(item)) // files sent again with the edit
   const time = useTimeTap(item.at)
+  // The message the composer just sent lifts out of it once (agent-motion.css); history never moves.
+  const [arrives] = useState(() => justSent(item.at))
   const quoted = splitQuote(item.text)
   const ta = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -385,7 +406,7 @@ function UserMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'use
       </div>
     )
   return (
-    <div className="msg user" onClick={time.toggle}>
+    <div className={`msg user${arrives ? ' just-sent' : ''}`} onClick={time.toggle}>
       <div className="bubble">
         {item.images?.length || item.files?.length ? (
           <div className="attach-row">
@@ -474,14 +495,14 @@ function SpeakBtn({ id, text }: { id: string; text: string }) {
 }
 
 /** `quiet`: the reply's thought is folded into its turn's line (turnfold.ts), so it is not drawn. */
-export const ItemView = memo(function ItemView({ item, actions = false, busy = false, quiet = false }: { item: ChatItem; actions?: boolean; busy?: boolean; quiet?: boolean }) {
+export const ItemView = memo(function ItemView({ item, actions = false, busy = false, quiet = false, live = false }: { item: ChatItem; actions?: boolean; busy?: boolean; quiet?: boolean; live?: boolean }) {
   switch (item.kind) {
     case 'user':
       return <UserMsg item={item} actions={actions} busy={busy} />
     case 'assistant':
       return <AssistantMsg item={item} actions={actions} busy={busy} quiet={quiet} />
     case 'tool':
-      return <ToolCard item={item} />
+      return <ToolCard item={item} live={live} />
     case 'subagent':
       return null // drawn by its group (App.tsx, SubAgents.tsx)
     case 'notice':
@@ -497,8 +518,11 @@ function AssistantMsg({ item, actions, busy, quiet }: { item: Extract<ChatItem, 
   const time = useTimeTap(item.streaming ? undefined : item.at)
   const tainted = useTainted() // the chat has read phone data: remote media waits for a tap, addresses are checked first
   const locked = useLocked() // over the lock screen there is no Retry (it starts a turn)
+  // A reply seen streaming: while it streams its newest words come out of a fade, and once complete its actions settle in
+  // (agent-motion.css). One read from history does neither.
+  const settled = useStepEnd(item.streaming, false)
   return (
-        <div className="msg assistant" onClick={time.toggle}>
+        <div className={`msg assistant${item.streaming ? ' streaming' : settled ? ' settled' : ''}`} onClick={time.toggle}>
           {!quiet && <Reasoning text={item.reasoning} live={item.streaming && !item.text} secs={thoughtSecs(item.id)} />}
           {item.text && <Markdown text={item.text} streaming={item.streaming} interactive guard={tainted} />}
           {item.streaming && item.text && <span className="caret" />}

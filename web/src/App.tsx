@@ -58,6 +58,8 @@ import { refreshPanelValues } from './panelvalues'
 import { onAppResume } from './chatsnapshot'
 import { sideHidden } from './sidepanel'
 import { Spinner } from './components/Spinner'
+import { WorkGlow } from './components/AgentMotion'
+import { liveStep, turnTick } from './agentmotion'
 import { BgApp } from './components/BgApp'
 import { LocalAlertBanner } from './components/LocalAlertBanner'
 import { refreshBg } from './bgapp'
@@ -150,7 +152,8 @@ function Header() {
         {needing ? <span className="needs-dot on-menu" /> : unread && <span className="unread-dot on-menu" />}
       </button>
       <button className="title-btn" onClick={() => setState({ sheet: 'status' })}>
-        <span className="title">
+        {/* Keyed by the title: a renamed or newly opened chat's title arrives softly (agent-motion.css). */}
+        <span className="title" key={title || ''}>
           <Title text={title} fallback={hasActive ? 'New chat' : 'Hermux'} />
         </span>
         <span className="subtitle">
@@ -541,6 +544,9 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   // A chat's sub-agents fold the same way: one line, opened by a tap (keyed by the group's first item id).
   const subFolds = useMemo(() => subFoldMap(items ?? []), [items])
   const shimmerAt = useMemo(() => Math.max(-1, ...[...subFolds].flatMap(([i, f]) => ('head' in f && f.head.running ? [i] : []))), [subFolds])
+  // The one running step whose words shimmer (agentmotion.ts): the newest running tool card, or the folded run that holds
+  // it; none while a sub-agent group's line shimmers.
+  const liveAt = useMemo(() => liveStep(items ?? [], shimmerAt >= 0), [items, shimmerAt])
   const [openSubs, setOpenSubs] = useState<ReadonlySet<string>>(() => new Set())
   const toggleSubs = useCallback((id: string) => {
     if (lockView()) return askUnlock('Unlock the phone to see this')
@@ -679,6 +685,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   // painted, it either folds (all its work is above what the reader sees, so nothing visible moves: the answer keeps
   // its place) or waits for the next opening of the chat.
   const foldAnchor = useRef<{ node: Element | null; top: number } | null>(null)
+  /** The turn that just folded on screen: its line arrives softly (agent-motion.css). */
+  const arrived = useRef<string | null>(null)
   useLayoutEffect(() => {
     liveTurn.current = null
   }, [sessionKey])
@@ -693,6 +701,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     const el = scroller.current
     if (!key || !el) return
     liveTurn.current = null
+    // The turn finished on screen: one light tick on the phone, when it ended with an answer (agentmotion.ts).
+    if (turnTick({ wasRunning: true, running, sameChat: true, visible: document.visibilityState === 'visible', locked: lockView(), last: items?.[items.length - 1] })) haptic()
     const w = works.find(x => x.key === key)
     if (!w) return
     const first = start > 0 ? 1 : 0
@@ -711,6 +721,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     const fin = at(w.final)
     const text = fin?.querySelector('.md') ?? fin
     foldAnchor.current = text && !stick.current ? { node: text, top: text.getBoundingClientRect().top } : { node: null, top: 0 }
+    arrived.current = key
     setTurn(key, false)
   }, [running, items]) // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
@@ -880,14 +891,14 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       return (
         <div key={it.id} className={`tool-run-wrap${reveal}`}>
           {mark}
-          <SubGroupHead id={it.id} {...groupProps(sub.head)} shimmer={g === shimmerAt} open={open} onToggle={toggleSubs} />
+          <SubGroupHead id={it.id} {...groupProps(sub.head)} shimmer={g === shimmerAt && !open} open={open} onToggle={toggleSubs} />
           {open && <SubGroupRows chat={subChat} keys={sub.head.keys} items={sub.head.members.map(m => items[m] as SubItem)} />}
         </div>
       )
     }
     const f = folds.get(g)
     const card = changes.get(g)
-    const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, g)} busy={running || previewing} quiet={turnFolds.quiet.has(g)} />
+    const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, g)} busy={running || previewing} quiet={turnFolds.quiet.has(g)} live={g === liveAt} />
     if (!f) {
       if (card) return <div key={it.id} className={`turn-end${reveal}`}>{mark}{view}<TurnChangesCard changes={card} /></div>
       if (opened) return <div key={it.id} className="turn-reveal">{view}</div>
@@ -897,8 +908,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     return (
       <div key={it.id} className={`tool-run-wrap${reveal}`}>
         {mark}
-        <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} />
-        {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} />}
+        <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} live={f.head.running && liveAt >= f.head.start && liveAt < f.head.end && Boolean(folds.get(liveAt)?.hidden)} />
+        {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} live={g === liveAt} />}
         {card && <TurnChangesCard changes={card} />}
       </div>
     )
@@ -932,7 +943,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
           return (
             <div key={it.id} className="turn-work-wrap">
               {mark}
-              <TurnWorkHead work={turn.work} open={turn.open} onToggle={toggleTurn} />
+              <TurnWorkHead work={turn.work} open={turn.open} onToggle={toggleTurn} arrive={turn.work.key === arrived.current} />
               {turn.open && drawItem(it, g, null, revealed.current.has(turn.work.key))}
               {!turn.open && card && <TurnChangesCard changes={card} />}
             </div>
@@ -1034,6 +1045,7 @@ export function App() {
       {/* The chat screen: two glass bars with the message list reaching under both (glass.css, barinsets.ts). The
           stage steps back while a sheet is open over it (motion.css). */}
       <div className="stage" ref={stage}>
+        <WorkGlow />
         <div className="bar-top glass" ref={barTop}>
           <Header />
           <LocalAlertBanner />
