@@ -171,6 +171,10 @@ choice or text, Allowed or Denied), it changes to the next permission request wa
 else it closes (`IslandPanel.nextOrClose`, `IslandState.nextAfter`). A request or question answered elsewhere, or run
 out, still closes as described above.
 
+**A card answer is confirmed on the chip.** After an answer from a card button (Allow once, Allow session, Deny, a
+choice, the Answer field of the pop-up), the chip says "Allowed", "Denied" or "Sent" for two seconds (4.3); an answer
+from the panel shows its own check instead.
+
 #### Gestures
 
 - **Back**, a **tap outside** the panel, or a **drag up** of more than 56 dp (or a quick flick up) closes it. Each

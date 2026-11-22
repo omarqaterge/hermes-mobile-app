@@ -292,7 +292,7 @@ ok '! src "synchronized IslandState islandState()" HermesService | grep -q "need
 # live viewer while Hermux uses an app for that chat; Stop is the card's Stop (ACTION_STOP) and ignores touches through
 # another app's window; nothing runs once the panel is hidden; Progress closes after 90 s without a touch; Done's Open
 # chat clears the Done chip; the Done record leaves the Done chip's rules as they were; the panel is never over the
-# lock screen.
+# lock screen; a card answer is confirmed on the chip, a panel answer is not.
 PROG=android/src/com/omarqaterge/hermesmobile/IslandProgress.java
 PANEL=android/src/com/omarqaterge/hermesmobile/IslandPanel.java
 ok 'src "Notification workingNotification(" HermesService | grep -q "setContentIntent(bgForChip(bg) ? openApp(lastSession, false, true) : islandIntent(lastSession, IslandState.PROGRESS))"' "the working card opens the panel, or the live viewer while Hermux uses an app for that chat"
@@ -311,4 +311,7 @@ ok '! grep -q "setShowWhenLocked\|FLAG_SHOW_WHEN_LOCKED\|setTurnScreenOn" "$PANE
 ok 'src "void apply(IslandState st)" IslandProgress | grep -q "st.arrived()" && src "void apply(IslandState st)" IslandProgress | grep -q "p.swapToPermission(" && src "void apply(IslandState st)" IslandProgress | grep -q "p.swapTo(st.askToShow())"' "a request or question arriving during Progress or Done changes the panel in place"
 ok 'src "void leaveProgress()" IslandPanel | grep -q "prog.stop()" && src "void swapTo(IslandState.Ask a)" IslandPanel | grep -q "leaveProgress()" && src "void swapToPermission(" IslandPanel | grep -q "leaveProgress()"' "the Progress state's loops stop when a request or question takes its place"
 ok 'src "void succeeded()" IslandPanel | grep -q "postDelayed(nextRun" && src "void afterResult()" IslandPermission | grep -q "p.nextOrClose(shown, null)"' "after an answer from the panel, the next request or question waiting takes its place"
+ok 'src "void answerApproval(" HermesService | grep -q "choice, true);" && grep -q "choice, false);" <<<"$FROM" && src "void sendApproval(" HermesService | grep -q "if (card) confirmChip("' "only a card button's answer is confirmed on the chip"
+ok 'src "void sendAnswer(String text)" IslandPanel | grep -q "putExtra(\"panel\", true)" && src "void answerFromNotification(" HermesService | grep -q "!fromPanel) confirmChip(CONFIRM_SENT, true)"' "a card's answer to a question says Sent on the chip; the panel's doesn't"
+ok 'src "Notification statusNotification(" HermesService | sed -n 2p | grep -q "confirmUntil > System.currentTimeMillis()) return confirmNotification()" && grep -q "CONFIRM_MS = 2000" "$SVC"' "the confirmation shows for two seconds"
 [ "$fails" = 0 ] && echo "source rules: ALL PASSED" || { echo "source rules: $fails FAILED"; exit 1; }

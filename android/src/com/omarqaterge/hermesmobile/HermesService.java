@@ -1849,6 +1849,7 @@ public class HermesService extends Service {
     }
 
     Notification statusNotification(String text, String sub, boolean working) {
+        if (confirmUntil > System.currentTimeMillis()) return confirmNotification(); // a card answer went through: 2 s
         boolean flash = flashUntil > System.currentTimeMillis();
         // "When Hermux needs me" off (NotifyChoice): a waiting approval or question is not shown on the chip (no buttons
         // either); it stays in `pending`, so the app's sheet and Needs you still have it and nothing is answered or dropped.
@@ -2335,6 +2336,44 @@ public class HermesService extends Service {
         return b.build();
     }
 
+    /** A card button's answer went through: the chip says so for two seconds ("Allowed", "Denied", "Sent"), so a card
+     *  answer is confirmed as a panel answer is (design 6). Words, green or red: no tick or cross glyph (no-emoji). */
+    String confirmText = "";
+    boolean confirmGood;
+    long confirmUntil = 0;
+    static final long CONFIRM_MS = 2000;
+    static final String CONFIRM_ALLOWED = "Allowed", CONFIRM_DENIED = "Denied", CONFIRM_SENT = "Sent";
+
+    void confirmChip(String text, boolean good) {
+        synchronized (this) {
+            confirmText = text;
+            confirmGood = good;
+            confirmUntil = System.currentTimeMillis() + CONFIRM_MS;
+            postStatus();
+        }
+        main.postDelayed(this::expireConfirm, CONFIRM_MS + 100);
+    }
+
+    synchronized void expireConfirm() {
+        if (confirmUntil != 0 && System.currentTimeMillis() >= confirmUntil) {
+            confirmUntil = 0;
+            postStatus();
+        }
+    }
+
+    Notification confirmNotification() {
+        Notification.Builder b = new Notification.Builder(this, CH_STATUS)
+                .setSmallIcon(confirmGood ? R.drawable.ic_stat_hermes : R.drawable.ic_stat_shield)
+                .setColor(confirmGood ? GREEN : RED)
+                .setContentTitle(confirmText)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setShowWhen(false)
+                .setContentIntent(openApp(lastSession));
+        promote(b, confirmText);
+        return b.build();
+    }
+
     Notification flashNotification() {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
@@ -2454,7 +2493,7 @@ public class HermesService extends Service {
             openPanelToConfirm(i);
             return;
         }
-        sendApproval(session, i.getStringExtra("key"), i.getStringExtra("request_id"), i.getStringExtra("profile"), choice);
+        sendApproval(session, i.getStringExtra("key"), i.getStringExtra("request_id"), i.getStringExtra("profile"), choice, true);
     }
 
     /** Opens the island panel on this request with the choice the card's Allow made, where it asks for the
@@ -2526,13 +2565,14 @@ public class HermesService extends Service {
             if (ApprovalLock.needed(this) && !ApprovalLock.takeGrant(grant, ApprovalLock.grantFor(session, request, choice), System.currentTimeMillis()))
                 return "not confirmed";
         }
-        sendApproval(session, live.optString("key", ""), request, live.optString("profile", ""), choice);
+        sendApproval(session, live.optString("key", ""), request, live.optString("profile", ""), choice, false);
         return null;
     }
 
     /** POSTs one answer to the plugin's /approve (approval.respond) and records how it went. Every gate is the
-     *  caller's: answerApproval (a notification button) and approveFromPanel (the island panel). */
-    void sendApproval(String session, String key, String requestId, String profile, String choice) {
+     *  caller's: answerApproval (a notification button) and approveFromPanel (the island panel). {@code card}: from a
+     *  notification button, so the chip confirms it for two seconds once it went through (the panel shows its own). */
+    void sendApproval(String session, String key, String requestId, String profile, String choice, boolean card) {
         String t = tag("approval", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
         synchronized (this) {
@@ -2572,6 +2612,7 @@ public class HermesService extends Service {
                 if (failed == null) {
                     nm.cancel(t, 2);
                     dropEmptySummary(nm, t);
+                    if (card) confirmChip("deny".equals(choice) ? CONFIRM_DENIED : CONFIRM_ALLOWED, !"deny".equals(choice));
                 } else {
                     postGrouped(nm, t, alert(CH_ALERT, "Couldn't send your answer",
                             "Open Hermux to answer (" + failed + ")", session, true));
@@ -2602,6 +2643,7 @@ public class HermesService extends Service {
         final String text = typed.isEmpty() && i.hasExtra("text") ? i.getStringExtra("text").trim() : typed; // a choice button
         String kind = i.getStringExtra("kind");
         String session = i.getStringExtra("session");
+        boolean fromPanel = i.getBooleanExtra("panel", false); // the island panel shows its own check
         String t = tag("ask".equals(kind) ? "ask" : "reply", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (!text.isEmpty() && openToUnlock(session, text, "answer " + kind)) return;
@@ -2620,6 +2662,7 @@ public class HermesService extends Service {
             if (ok) {
                 nm.cancel(t, 2);
                 dropEmptySummary(nm, t);
+                if ("ask".equals(kind) && !fromPanel) confirmChip(CONFIRM_SENT, true); // a card's answer: the chip says Sent
                 return;
             }
             Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK))

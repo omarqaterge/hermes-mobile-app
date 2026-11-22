@@ -1246,7 +1246,7 @@ public class IslandPanel extends Activity {
         phase = IslandState.SENDING;
         try {
             startService(new Intent(this, HermesService.class).setAction(HermesService.ACTION_ANSWER)
-                    .putExtra("kind", "ask").putExtra("session", ask.session).putExtra("text", text));
+                    .putExtra("kind", "ask").putExtra("session", ask.session).putExtra("text", text).putExtra("panel", true));
         } catch (RuntimeException e) {
             failed();
             return;
