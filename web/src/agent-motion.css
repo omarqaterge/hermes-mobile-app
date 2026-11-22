@@ -110,9 +110,6 @@ html[data-theme='oled'] .work-glow {
 .send > svg {
   animation: agent-face var(--motion-bounce) var(--spring-bounce) backwards;
 }
-.send.stop {
-  animation: agent-pop var(--motion-bounce) var(--spring-bounce) backwards;
-}
 .send.stop > .stop-square {
   animation: agent-turn-in var(--motion-bounce) var(--spring-bounce) backwards;
 }
@@ -128,11 +125,6 @@ html[data-theme='oled'] .work-glow {
     rotate: calc(var(--motion-move) * -90deg);
     scale: calc(1 - var(--motion-move) * 0.7);
     opacity: 0;
-  }
-}
-@keyframes agent-pop {
-  from {
-    scale: calc(1 - var(--motion-move) * 0.25);
   }
 }
 
@@ -159,7 +151,7 @@ html[data-theme='oled'] .work-glow {
   border-radius: 50%;
   background: conic-gradient(from 0deg, var(--accent) 0 30%, transparent 62%, var(--accent));
 }
-html[data-motion='full'] .think-orb {
+html[data-motion='full'] .think-orb:not(.still) {
   animation: agent-turn 1.6s steps(38) infinite, agent-breathe 1.6s steps(38) infinite;
 }
 @keyframes agent-breathe {
@@ -168,7 +160,8 @@ html[data-motion='full'] .think-orb {
     opacity: 0.7;
   }
 }
-html:not([data-motion='full']) .think-orb {
+html:not([data-motion='full']) .think-orb,
+.think-orb.still {
   background: var(--accent);
   opacity: 0.8;
 }
@@ -328,6 +321,11 @@ html:not([data-motion='full']) .sub-lane.live {
   animation: motion-row var(--motion-base) var(--spring-settle) backwards;
 }
 
+/* The caret blinks only while its reply is the one thing that moves (two repeating animations at most). */
+.caret.still {
+  animation: none;
+}
+
 /* ── 10. the answer arrives: left in its still form (the existing caret). A still fade over the last letters of the line
    being written cost 3 to 4 % more main-thread work while a long reply streamed at 4x CPU, over the 5 % budget with
    the rest of these animations (docs/performance-history.md, task 13). ── */
@@ -337,12 +335,13 @@ html:not([data-motion='full']) .sub-lane.live {
   animation: motion-row var(--motion-base) var(--spring-settle) backwards;
 }
 
-/* ── 12. the chat list: an amber ring pulses out from the first Needs you row's dot while the list is open; a nested row
-   opened by its chat's toggle slides out in a short stagger ── */
+/* ── 12. the chat list: an amber ring pulses out from the first Needs you row's dot while the list is open and the open chat
+   is not working (`needs-still`, SessionList.tsx: two repeating things at most); a nested row opened by its chat's
+   toggle slides out in a short stagger ── */
 .needs-dot {
   position: relative;
 }
-html[data-motion='full'] .drawer.open [aria-labelledby='needs-you-title'] > :first-child .needs-dot::after {
+html[data-motion='full'] .drawer.open [aria-labelledby='needs-you-title']:not(.needs-still) > #needs-you-title + * .needs-dot::after {
   content: '';
   position: absolute;
   inset: 0;

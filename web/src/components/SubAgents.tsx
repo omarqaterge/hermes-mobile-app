@@ -102,8 +102,9 @@ const SubRow = memo(function SubRow({ chat, id, level, onOpen, moving = false }:
   )
 })
 
-/** The rows of an opened group. Drawn only while it is open: a closed group costs nothing. */
-export function SubGroupRows({ chat, keys, items }: { chat: string; keys: string[]; items: SubItem[] }) {
+/** The rows of an opened group. Drawn only while it is open: a closed group costs nothing. `still`: Hermux waits for the
+ *  person, so no lane moves. */
+export function SubGroupRows({ chat, keys, items, still = false }: { chat: string; keys: string[]; items: SubItem[]; still?: boolean }) {
   const s = useNested(chat)
   const locked = useLockView() // no goals over the lock screen, also in a group left open
   useLayoutEffect(() => noteItems(chat, items), [chat, items])
@@ -114,8 +115,8 @@ export function SubGroupRows({ chat, keys, items }: { chat: string; keys: string
     if (unknown) void loadStored(chat, profileOf())
   }, [chat, unknown, s.total])
   if (locked) return null
-  // One lane moves at a time: the first that works (the others stand still until it is their turn).
-  const moving = rows.find(r => r.agent.state === 'working')?.agent.key
+  // One lane moves at a time: the first that works (the others stand still until it is their turn); none while waiting.
+  const moving = still ? undefined : rows.find(r => r.agent.state === 'working')?.agent.key
   return (
     <div className="sub-rows">
       {rows.map(r => <SubRow key={r.agent.key} chat={chat} id={r.agent.key} level={r.level} moving={r.agent.key === moving} onOpen={k => openSubSheet(chat, k)} />)}

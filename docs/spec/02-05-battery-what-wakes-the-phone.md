@@ -38,9 +38,9 @@ holds the CPU only while there is work (measurements: `docs/battery.md`, `docs/b
 - **The agent's animations** (3.2, Agent motion) add no timer, poll or per-frame script: each is a CSS animation that
   exists only under Full and only while its state is true (a turn runs, Hermux thinks, a step or a sub-agent runs, the
   chat list shows a chat that needs you), stepped to about 24 frames a second, a transform or an opacity of a layer that
-  already exists, and stands still while the app is away or its element is off screen. While a turn runs at most the
-  text box's light, the tray handle's shimmer (tray closed) and one running step or sub-agent lane move; the step's
-  ring is the spinners' shared 8 Hz tick, as before. The glow behind a working chat is still: it only fades.
+  already exists, and stands still while the app is away or its element is off screen. Two repeating animations at
+  most: the text box's light and the newest live thing (a reply's orb or caret, a running step, a sub-agent group's line
+  or lanes); while Hermux waits for the person, none. The step's ring is the spinners' shared 8 Hz tick, as before. The glow behind a working chat is still: it only fades.
 - **Termux loops:** the app-keeper probes 9121 every 300 s, verifies it with a `hm-local hello` (one Python start;
   `HM_KEEPER_HELLO_EVERY` makes it every Nth round), and only starts a Java VM (`am`) when the service is down or
   doesn't verify; memory sync runs only if its script exists.

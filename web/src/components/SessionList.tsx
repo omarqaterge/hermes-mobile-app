@@ -451,6 +451,10 @@ export function SessionList({ query }: { query: string }) {
   const loading = useStore(s => s.sessionsLoading)
   const profile = useStore(s => s.profile)
   const activeId = useStore(s => s.active?.storedId)
+  // The open chat works (its text box's light moves): the Needs you dot's ring stands still, two repeating things at most.
+  const activeRuns = useStore(s => Boolean(s.active?.running))
+  const activeAgents = useNested(activeId ?? '').live
+  const activeWorks = activeRuns || activeAgents > 0
   const needs = useListedNeeds()
   const [order, setOrder] = useOrder(profile)
   // Last activity as of the latest snapshot (chatsnapshot.ts): a reply that lands does not move a row; a chat listed
@@ -690,7 +694,7 @@ export function SessionList({ query }: { query: string }) {
       {loading && sessions.length === 0 && <div className="dim pad">Loading chats…</div>}
       {!loading && sessions.length === 0 && <div className="dim pad">No chats yet</div>}
       {needRows.length > 0 && (
-        <div role="group" aria-labelledby="needs-you-title">
+        <div role="group" aria-labelledby="needs-you-title" className={activeWorks ? 'needs-still' : undefined}>
           <div id="needs-you-title" className="group-title needs-title" role="heading" aria-level={2}>
             Needs you
           </div>

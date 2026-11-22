@@ -204,6 +204,79 @@ module.exports = async t => {
     await q.close()
   }
 
+  // ── two repeating animations at most while Hermux works: the text box's light and one running step or lane. Counted
+  //    every frame (each element with a running endless animation counts once), with the Model bar tucked away and
+  //    open, with a running step, a sub-agent lane and a background app; while Hermux waits, nothing repeats at all ──
+  {
+    const watch = p => p.evaluate(() => {
+      const w = (window.__rep = { max: 0, at: [], frames: 0, run: true })
+      const tick = () => {
+        if (!w.run) return
+        const els = new Set(document.getAnimations().filter(a => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity).map(a => a.effect.target))
+        w.frames++
+        if (els.size > w.max) {
+          w.max = els.size
+          w.at = [...els].map(e => `${e.tagName.toLowerCase()}.${String(e.className?.baseVal ?? e.className).trim().replace(/\s+/g, '.')}`)
+        }
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    const seen = p => p.evaluate(() => ((window.__rep.run = false), window.__rep))
+    const p = await open('s-48', { 'hm.motion': 'full' })
+    await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
+    // Tucked away (the default here): three running steps.
+    await watch(p)
+    await send(p, 'work slowly')
+    await p.getByText('Slow work done.').waitFor({ timeout: 8000 })
+    const tucked = await seen(p)
+    check(tucked.frames > 30 && tucked.max >= 1 && tucked.max <= 2, `agent motion: Model bar tucked away, running steps: at most two repeating animations in any frame (${tucked.max} over ${tucked.frames} frames: ${tucked.at.join(', ')})`)
+    // A background app on the chat while it works: the card's light replaces the text box's.
+    await watch(p)
+    await send(p, 'work slowly')
+    await stop(p).waitFor({ timeout: 3000 })
+    await p.evaluate(() => window.__hmBg({ session: 's-48', pkg: 'com.example.notes', label: 'Notes', action: 'typing', since: Date.now() }))
+    await p.getByText('Slow work done.').nth(1).waitFor({ timeout: 8000 })
+    const bg = await seen(p)
+    await p.evaluate(() => window.__hmBg(null))
+    check(bg.frames > 30 && bg.max <= 2, `agent motion: with a background app, at most two repeating animations in any frame (${bg.max}: ${bg.at.join(', ')})`)
+    // The Model bar open: the status line shows inside it.
+    await p.getByRole('button', { name: 'Model and status, closed. Open' }).click()
+    await p.getByRole('button', { name: 'Model and status, open. Close' }).waitFor({ timeout: 3000 })
+    await watch(p)
+    await send(p, 'work slowly')
+    await p.getByText('Slow work done.').nth(2).waitFor({ timeout: 8000 })
+    const opened = await seen(p)
+    check(opened.frames > 30 && opened.max >= 1 && opened.max <= 2, `agent motion: Model bar open, running steps: at most two repeating animations in any frame (${opened.max}: ${opened.at.join(', ')})`)
+    // A sub-agent lane: its group opened while it works.
+    await watch(p)
+    await send(p, 'delegate slowly')
+    const group = p.getByRole('button', { name: /1 sub-agent/ })
+    await group.waitFor({ timeout: 5000 })
+    await group.click()
+    await p.locator('.sub-row .sub-lane.live').waitFor({ timeout: 5000 }).catch(() => {})
+    await p.waitForFunction(() => window.__rep.frames > 120, null, { timeout: 5000 }).catch(() => {})
+    const lanes = await seen(p)
+    check(lanes.max >= 1 && lanes.max <= 2, `agent motion: with a sub-agent lane, at most two repeating animations in any frame (${lanes.max}: ${lanes.at.join(', ')})`)
+    await stop(p).click().catch(() => {})
+    await p.close()
+    // Waiting for an approval while its step runs: only the amber light shows it, and nothing repeats.
+    const q = await open('s-48', { 'hm.motion': 'full' })
+    await q.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
+    await send(q, 'run the thing')
+    await q.getByRole('dialog').first().waitFor({ timeout: 5000 })
+    await q.waitForFunction(() => document.querySelector('.composer .edge-light')?.classList.contains('waiting'), null, { timeout: 3000 }).catch(() => {})
+    await watch(q)
+    await q.waitForFunction(() => window.__rep.frames > 30, null, { timeout: 5000 }).catch(() => {})
+    const waiting = await seen(q)
+    const step = await q.evaluate(() => {
+      const t = document.querySelector('.tool.tool-running')
+      return t ? { live: t.classList.contains('step-live'), moving: t.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity) } : null
+    })
+    check(step && !step.live && !step.moving && waiting.max === 0, `agent motion: while Hermux waits for an approval its running step stands still and nothing repeats (step ${JSON.stringify(step)}, ${waiting.max}: ${waiting.at.join(', ')})`)
+    await q.close()
+  }
+
   // ── one light tick per finished turn: none for steps, none over the lock screen ──
   {
     const p = await open('s-48', { 'hm.motion': 'full' })

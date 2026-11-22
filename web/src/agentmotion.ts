@@ -7,8 +7,9 @@
 // - A step's end: a step seen running that ends draws its tick (or its cross) once (`stepEnd`).
 // - A sent message lifts out of the composer once (`noteSent`, `justSent`).
 // - The finished turn's one light tick on the phone (`turnTick`).
-// - The running step that moves (`liveStep`): one at a time, so at most the text box's light, the handle's shimmer and
-//   one step move while a turn runs.
+// - The one thing that moves besides the text box's light (`liveStep`): the newest live thing in the chat (a streaming
+//   reply's thinking orb or caret, a running step, a running sub-agent group's line or lanes), so at most two repeating
+//   animations show while Hermux works.
 import type { ChatItem } from './store'
 
 export type Light = 'working' | 'waiting' | null
@@ -59,14 +60,22 @@ export function turnTick(o: { wasRunning: boolean; running: boolean; sameChat: b
 }
 
 // ── the running step that moves ──
-/** The index of the one running step whose words shimmer: the newest running tool card. None while a sub-agent group's
- *  line shimmers (`groupShimmers`), so a turn never has two shimmering lines. */
-export function liveStep(items: readonly ChatItem[], groupShimmers: boolean): number {
-  if (groupShimmers) return -1
+/** The index of the one item whose repeating animation runs besides the text box's light: walking back from the newest
+ *  item, the first that is live. A streaming reply counts while it shows its thinking orb (a thought, no words yet) or
+ *  its caret (words); a running tool only in the turn that runs (after the last message sent); a running sub-agent
+ *  group anywhere, by its line's index (`groupOf` gives the group a member belongs to while it runs, else -1). Every
+ *  other live thing stands still meanwhile. -1: nothing moves. */
+export function liveStep(items: readonly ChatItem[], groupOf: (i: number) => number): number {
+  let thisTurn = true
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]
-    if (it.kind === 'user') return -1 // only the running turn
-    if (it.kind === 'tool' && toolLive(it.status)) return i
+    if (it.kind === 'user') thisTurn = false
+    else if (it.kind === 'assistant' && it.streaming && (it.text || it.reasoning?.trim())) return i
+    else if (it.kind === 'tool' && thisTurn && toolLive(it.status)) return i
+    else if (it.kind === 'subagent') {
+      const g = groupOf(i)
+      if (g >= 0) return g
+    }
   }
   return -1
 }

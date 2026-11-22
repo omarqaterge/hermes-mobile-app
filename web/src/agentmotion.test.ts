@@ -47,12 +47,25 @@ test('the finished turn ticks once, on screen, unlocked, with an answer; never w
   expect(turnTick({ ...base, last: { kind: 'notice', id: 'n', level: 'error', text: 'failed' } as ChatItem })).toBe(false)
 })
 
-test('one running step moves: the newest running tool of the running turn, none while a group line shimmers', () => {
+test('one thing moves besides the light: the newest live item; older live things stand still', () => {
   const tool = (id: string, status: string): ChatItem => ({ kind: 'tool', id, name: 'terminal', status }) as unknown as ChatItem
   const user = { kind: 'user', id: 'u', text: 'go' } as ChatItem
-  expect(liveStep([user, tool('a', 'running'), tool('b', 'running')], false)).toBe(2)
-  expect(liveStep([user, tool('a', 'running'), tool('b', 'done')], false)).toBe(1)
-  expect(liveStep([user, tool('a', 'done')], false)).toBe(-1)
-  expect(liveStep([tool('old', 'running'), user, tool('a', 'done')], false)).toBe(-1) // an earlier turn's card never moves
-  expect(liveStep([user, tool('a', 'running')], true)).toBe(-1)
+  const reply = (text: string, reasoning = '', streaming = true): ChatItem => ({ kind: 'assistant', id: 'r', text, reasoning, streaming }) as unknown as ChatItem
+  const sub = { kind: 'subagent', id: 's' } as unknown as ChatItem
+  const none = () => -1
+  expect(liveStep([user, tool('a', 'running'), tool('b', 'running')], none)).toBe(2)
+  expect(liveStep([user, tool('a', 'running'), tool('b', 'done')], none)).toBe(1)
+  expect(liveStep([user, tool('a', 'done')], none)).toBe(-1)
+  expect(liveStep([tool('old', 'running'), user, tool('a', 'done')], none)).toBe(-1) // an earlier turn's card never moves
+  // A streaming reply moves while it shows its orb (a thought) or its caret (words); an empty one shows nothing.
+  expect(liveStep([user, tool('a', 'running'), reply('', 'hmm')], none)).toBe(2)
+  expect(liveStep([user, tool('a', 'running'), reply('Hello')], none)).toBe(2)
+  expect(liveStep([user, tool('a', 'running'), reply('')], none)).toBe(1)
+  expect(liveStep([user, reply('done', '', false)], none)).toBe(-1)
+  // A running sub-agent group moves by its line's index, in any turn, unless something newer is live.
+  const group = (i: number) => (i === 1 ? 1 : -1)
+  expect(liveStep([user, sub, reply('on its way', '', false)], group)).toBe(1)
+  expect(liveStep([user, sub, user, reply('', 'thinking')], group)).toBe(3)
+  expect(liveStep([user, sub, user, tool('a', 'running')], group)).toBe(3)
+  expect(liveStep([user, sub, user, reply('done', '', false)], group)).toBe(1)
 })

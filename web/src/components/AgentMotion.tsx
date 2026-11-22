@@ -30,11 +30,11 @@ export function WorkGlow() {
 }
 
 /** The small orb beside "Thinking…": it turns and breathes while the thought streams (Full only), and stands still in
- *  Reduced and Off. */
-export function ThinkOrb() {
+ *  Reduced and Off, and when told (`still`: something newer is the one thing that moves, agentmotion.ts liveStep). */
+export function ThinkOrb({ still = false }: { still?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null)
-  useEffect(() => (ref.current ? pauseWhenHidden(ref.current) : undefined), [])
-  return <span ref={ref} className="think-orb" aria-hidden="true" />
+  useEffect(() => (!still && ref.current ? pauseWhenHidden(ref.current) : undefined), [still])
+  return <span ref={ref} className={`think-orb${still ? ' still' : ''}`} aria-hidden="true" />
 }
 
 /** A tick (done) or a cross (failed) that draws itself once when `draw` is set (a step seen running that just ended),

@@ -543,10 +543,19 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   }, [setTurn])
   // A chat's sub-agents fold the same way: one line, opened by a tap (keyed by the group's first item id).
   const subFolds = useMemo(() => subFoldMap(items ?? []), [items])
-  const shimmerAt = useMemo(() => Math.max(-1, ...[...subFolds].flatMap(([i, f]) => ('head' in f && f.head.running ? [i] : []))), [subFolds])
-  // The one running step whose words shimmer (agentmotion.ts): the newest running tool card, or the folded run that holds
-  // it; none while a sub-agent group's line shimmers.
-  const liveAt = useMemo(() => liveStep(items ?? [], shimmerAt >= 0), [items, shimmerAt])
+  // A running group's members → its line's index, for the one thing that moves (agentmotion.ts liveStep).
+  const runningGroupOf = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const [i, f] of subFolds) if ('head' in f && f.head.running) for (const k of f.head.members) m.set(k, i)
+    return m
+  }, [subFolds])
+  // While Hermux waits for the person nothing says "working": the step's shimmer, the group line's and the lanes stand
+  // still, and only the text box's amber light shows the wait.
+  const waiting = useStore(s => s.requests.length > 0)
+  // The one thing that moves besides the text box's light (agentmotion.ts liveStep): the newest live item, a streaming
+  // reply's orb or caret, a running tool card (or the folded run that holds it), a running group's line or lanes;
+  // nothing while Hermux waits. Two repeating animations at most.
+  const liveAt = useMemo(() => (waiting ? -1 : liveStep(items ?? [], i => runningGroupOf.get(i) ?? -1)), [items, runningGroupOf, waiting])
   const [openSubs, setOpenSubs] = useState<ReadonlySet<string>>(() => new Set())
   const toggleSubs = useCallback((id: string) => {
     if (lockView()) return askUnlock('Unlock the phone to see this')
@@ -891,8 +900,8 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       return (
         <div key={it.id} className={`tool-run-wrap${reveal}`}>
           {mark}
-          <SubGroupHead id={it.id} {...groupProps(sub.head)} shimmer={g === shimmerAt && !open} open={open} onToggle={toggleSubs} />
-          {open && <SubGroupRows chat={subChat} keys={sub.head.keys} items={sub.head.members.map(m => items[m] as SubItem)} />}
+          <SubGroupHead id={it.id} {...groupProps(sub.head)} shimmer={g === liveAt && !open} open={open} onToggle={toggleSubs} />
+          {open && <SubGroupRows chat={subChat} keys={sub.head.keys} items={sub.head.members.map(m => items[m] as SubItem)} still={g !== liveAt} />}
         </div>
       )
     }

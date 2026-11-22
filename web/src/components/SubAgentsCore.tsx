@@ -54,7 +54,7 @@ import { DrawnMark, useStepEnd } from './AgentMotion'
 import { pauseWhenHidden, stagger } from '../motion'
 
 export interface SubAgentUi {
-  SubGroupRows: ComponentType<{ chat: string; keys: string[]; items: SubItem[] }>
+  SubGroupRows: ComponentType<{ chat: string; keys: string[]; items: SubItem[]; still?: boolean }>
   NestedRows: ComponentType<{ chat: string; snapAt: number; only?: ReadonlySet<string>; turning: boolean }>
   SubAgentSheet: ComponentType
   css: string
@@ -139,7 +139,7 @@ function useSubAgentUi(wanted = true): SubAgentUi | null {
 
 // These stand where the real ones go and draw nothing until the bundle has run. The bundle is asked for before they are needed
 // (the group's line, the list showing, rows about to open), and what is on screen by then is final, so nothing moves.
-export function SubGroupRows(p: { chat: string; keys: string[]; items: SubItem[] }) {
+export function SubGroupRows(p: { chat: string; keys: string[]; items: SubItem[]; still?: boolean }) {
   const u = useSubAgentUi()
   return u ? <u.SubGroupRows {...p} /> : null
 }

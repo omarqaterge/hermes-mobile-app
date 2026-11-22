@@ -230,14 +230,14 @@ export const TurnWorkHead = memo(function TurnWorkHead({ work, open, onToggle, a
 
 /** A reply's thought. Live: "Thinking…" and a peek at its latest line. Finished and closed: "Thought for 12s" (when the
  *  page watched it stream, else "Thought process") with its first line after it on the same row while there is room. */
-function Reasoning({ text, live, secs }: { text: string; live: boolean; secs?: number }) {
+function Reasoning({ text, live, secs, still = false }: { text: string; live: boolean; secs?: number; still?: boolean }) {
   const [open, setOpen] = useState(false)
   const settled = useStepEnd(live, false) // the thought ended on screen: the orb gives way to the brain mark softly
   if (!text.trim()) return null
   return (
     <div className={`reasoning${open ? ' open' : ''}`}>
       <button className="reasoning-head" onClick={() => setOpen(o => !o)}>
-        <span className={`reasoning-dot${settled ? ' settled' : ''}`}>{live ? <ThinkOrb /> : <Icon n="brain" size={16} />}</span>
+        <span className={`reasoning-dot${settled ? ' settled' : ''}`}>{live ? <ThinkOrb still={still} /> : <Icon n="brain" size={16} />}</span>
         <span className="reasoning-title">{live ? 'Thinking…' : secs !== undefined ? `Thought for ${wholeTime(secs)}` : 'Thought process'}</span>
         {!live && !open ? <span className="reasoning-line" aria-hidden="true">{thoughtLine(text)}</span> : null}
         <span className="chev"><Chevron open={open} /></span>
@@ -500,7 +500,7 @@ export const ItemView = memo(function ItemView({ item, actions = false, busy = f
     case 'user':
       return <UserMsg item={item} actions={actions} busy={busy} />
     case 'assistant':
-      return <AssistantMsg item={item} actions={actions} busy={busy} quiet={quiet} />
+      return <AssistantMsg item={item} actions={actions} busy={busy} quiet={quiet} live={live} />
     case 'tool':
       return <ToolCard item={item} live={live} />
     case 'subagent':
@@ -514,7 +514,9 @@ export const ItemView = memo(function ItemView({ item, actions = false, busy = f
   }
 })
 
-function AssistantMsg({ item, actions, busy, quiet }: { item: Extract<ChatItem, { kind: 'assistant' }>; actions: boolean; busy: boolean; quiet: boolean }) {
+/** `live`: this reply is the one thing that moves besides the text box's light (its orb or its caret); otherwise both
+ *  stand still (agentmotion.ts liveStep). */
+function AssistantMsg({ item, actions, busy, quiet, live }: { item: Extract<ChatItem, { kind: 'assistant' }>; actions: boolean; busy: boolean; quiet: boolean; live: boolean }) {
   const time = useTimeTap(item.streaming ? undefined : item.at)
   const tainted = useTainted() // the chat has read phone data: remote media waits for a tap, addresses are checked first
   const locked = useLocked() // over the lock screen there is no Retry (it starts a turn)
@@ -523,9 +525,9 @@ function AssistantMsg({ item, actions, busy, quiet }: { item: Extract<ChatItem, 
   const settled = useStepEnd(item.streaming, false)
   return (
         <div className={`msg assistant${item.streaming ? ' streaming' : settled ? ' settled' : ''}`} onClick={time.toggle}>
-          {!quiet && <Reasoning text={item.reasoning} live={item.streaming && !item.text} secs={thoughtSecs(item.id)} />}
+          {!quiet && <Reasoning text={item.reasoning} live={item.streaming && !item.text} still={!live} secs={thoughtSecs(item.id)} />}
           {item.text && <Markdown text={item.text} streaming={item.streaming} interactive guard={tainted} />}
-          {item.streaming && item.text && <span className="caret" />}
+          {item.streaming && item.text && <span className={`caret${live ? '' : ' still'}`} />}
           {item.warning && <div className="warn-line"><Icon n="warning" /> {item.warning}</div>}
           {!item.streaming && item.text && actions && (
             <div className="msg-actions">
