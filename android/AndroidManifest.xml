@@ -107,15 +107,17 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
-        <!-- The question chip's answer box; not over the lock screen, so Android asks for the unlock first. -->
+        <!-- The island panel the status chip's card opens; not over the lock screen (no showWhenLocked), so Android
+             asks for the unlock first. See-through, no system window animation: it runs its own. -->
         <activity
-            android:name=".AnswerBox"
+            android:name=".IslandPanel"
             android:exported="false"
             android:launchMode="singleTask"
             android:taskAffinity=""
             android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar"
-            android:windowSoftInputMode="adjustResize|stateVisible" />
+            android:theme="@style/IslandTheme"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density" />
         <service
             android:name=".HermesService"
             android:exported="false"

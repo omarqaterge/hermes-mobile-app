@@ -1710,6 +1710,47 @@ public class HermesService extends Service {
 
     void postStatus() {
         getSystemService(NotificationManager.class).notify(STATUS_ID, statusNotification(lastStatus, lastSub, lastWorking));
+        IslandPanel.refresh(this); // the open island panel follows every change
+    }
+
+    /** The last answer sent (or tried) from here, for the island panel: it tells sent, failed and gone apart. */
+    IslandState.Outcome lastOutcome;
+
+    /** Records what came of an answer and hands the open panel the news. */
+    void noteOutcome(String kind, String session, String request, String result, String reason) {
+        synchronized (this) {
+            lastOutcome = new IslandState.Outcome(kind, session, request, result, reason, System.currentTimeMillis());
+        }
+        IslandPanel.refresh(this);
+    }
+
+    /** What the island panel shows: a snapshot of the live state, from the fields the chip uses, in the chip's order. */
+    synchronized IslandState islandState() {
+        boolean needs = NotifyChoice.needsMe(this);
+        JSONObject q = needs ? pendingAsk : null;
+        IslandState.Ask ask = null;
+        if (q != null) {
+            String session = q.optString("session", "");
+            java.util.ArrayList<String> choices = new java.util.ArrayList<>();
+            org.json.JSONArray ch = q.optJSONArray("choices");
+            if (ch != null) for (int k = 0; k < ch.length(); k++) choices.add(ch.optString(k, ""));
+            ask = new IslandState.Ask(session, IslandState.chatLine(chatTitle(session), q.optString("profile", "")),
+                    q.optString("body", ""), choices, q.optBoolean("single", true));
+        }
+        String kind = IslandState.pick(needs && pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
+        return new IslandState(kind, ask, lastOutcome);
+    }
+
+    /** A chat's title from what the service knows: the working chat, the other busy chats, the finished ones. */
+    synchronized String chatTitle(String session) {
+        if (session == null || session.isEmpty()) return "";
+        if (session.equals(lastSession) && !lastTitle.isEmpty()) return lastTitle;
+        if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
+            JSONObject o = lastOthers.optJSONObject(k);
+            if (o != null && session.equals(o.optString("session", ""))) return o.optString("title", "");
+        }
+        String[] u = unseen.get(session);
+        return u == null || u[0] == null ? "" : u[0];
     }
 
     /** One collapsed stack for every Hermes notification (replies, approvals, learning, jobs). */
@@ -1894,6 +1935,7 @@ public class HermesService extends Service {
                 err = ex.getMessage();
             }
             final String failed = err;
+            main.post(() -> noteOutcome("stop", session, "", failed == null ? IslandState.Outcome.STOPPED : IslandState.Outcome.FAILED, failed));
             if (failed == null) return;
             main.post(() -> {
                 synchronized (HermesService.this) {
@@ -1954,7 +1996,7 @@ public class HermesService extends Service {
 
     /** A question from Hermes, as a Live Update: "Answer?" chip; expanded, the question in bold, the choices listed,
      * up to two choice buttons and Answer. HyperOS drops a RemoteInput field from a promoted card (the same action
-     * draws on the Needs you card), so tapping the card or Answer opens AnswerBox, which has the field. */
+     * draws on the Needs you card), so tapping the card or Answer opens the island panel, which has the field. */
     Notification askNotification(String sub) {
         JSONObject a = pendingAsk;
         String session = a.optString("session", "");
@@ -1975,7 +2017,7 @@ public class HermesService extends Service {
             t.setSpan(new android.text.style.ForegroundColorSpan(GOLD), st + 1, st + 2, 0);
         }
         if (single) t.append("\nTap to answer");
-        PendingIntent box = answerBox(session, q, choices);
+        PendingIntent box = islandIntent(session, IslandState.QUESTION);
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_hermes)
                 .setColor(GOLD)
@@ -1996,13 +2038,14 @@ public class HermesService extends Service {
         return b.build();
     }
 
-    /** Opens AnswerBox on this question. An activity, so a locked phone asks for the unlock before it shows. */
-    PendingIntent answerBox(String session, String question, java.util.ArrayList<String> choices) {
-        Intent i = new Intent(this, AnswerBox.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(AnswerBox.EXTRA_SESSION, session == null ? "" : session)
-                .putExtra(AnswerBox.EXTRA_QUESTION, question)
-                .putStringArrayListExtra(AnswerBox.EXTRA_CHOICES, choices);
-        return PendingIntent.getActivity(this, ("box:" + session).hashCode(), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    /** Opens the island panel on this chat's state. An activity that is not shown over the lock screen, so a locked
+     *  phone asks for the unlock before it shows. The intent says only which chat and state were tapped: the panel
+     *  shows the live state (islandState). */
+    PendingIntent islandIntent(String session, String kind) {
+        Intent i = new Intent(this, IslandPanel.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(IslandPanel.EXTRA_SESSION, session == null ? "" : session)
+                .putExtra(IslandPanel.EXTRA_KIND, kind);
+        return PendingIntent.getActivity(this, ("island:" + kind + ":" + session).hashCode(), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     /** A button that answers the open question with one fixed choice. */
@@ -2369,6 +2412,8 @@ public class HermesService extends Service {
             }
             final String failed = err;
             main.post(() -> {
+                noteOutcome(PendingAsk.APPROVAL, session, i.getStringExtra("request_id"), failed != null ? IslandState.Outcome.FAILED
+                        : "deny".equals(choice) ? IslandState.Outcome.DENIED : IslandState.Outcome.ALLOWED, failed);
                 synchronized (HermesService.this) {
                     if (session.equals(answering)) answering = null;
                     if (failed == null) {
@@ -2425,6 +2470,7 @@ public class HermesService extends Service {
         }
         MainActivity a = MainActivity.current;
         java.util.function.Consumer<Boolean> done = ok -> {
+            noteOutcome(kind, session, "", ok ? IslandState.Outcome.SENT : IslandState.Outcome.FAILED, ok ? "" : (a == null ? "app not running" : "not delivered"));
             if (ok) {
                 nm.cancel(t, 2);
                 dropEmptySummary(nm, t);

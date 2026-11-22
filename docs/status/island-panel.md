@@ -1,15 +1,21 @@
 # The island panel (what opens from the status chip)
 
-**State** (2026-11-16): designed, not built. The design is final: one small panel that grows out of the top of the
-screen when the chip's card is tapped, with four states (Permission, Question, Progress, Done). It replaces
-`AnswerBox`. Nothing in the app has changed yet.
+**State** (2026-11-22): part 1 of 3 built, in review (branch `island-panel-part1`, against `redesign`). The question
+card and its Answer button open the panel on its Question state: choices, typed answer, Open chat, sending, sent,
+failed and closed elsewhere; opening and closing motion, dragging, reduced motion. `AnswerBox` is gone. Seen on
+Android 15 and Android 8.0 emulators; not yet on a phone.
 
-**Next:** the owner confirms one point (the card's Allow, for a chat not yet confirmed by fingerprint, opens the panel
-and asks there instead of opening the whole app), then the three parts are built one after the other with the prompts
-in the plan. All three change `HermesService.java`, so they don't run beside each other or beside other work there.
+**Next:** the phone checks in `docs/manual-tests.md` ("The island panel"), including the two carried over from the
+answer box (the locked phone; choices over 80 characters). Then part 2 (the Permission state; the owner's point about
+the card's Allow for an unconfirmed chat is still open) and part 3 (Progress, Done, the links between states). All
+three change `HermesService.java`, so they run one after the other.
 
-**Needs a real phone:** yes. The motion, the blur, the keyboard and the locked-phone path can only be judged on one;
-the plan lists the checks.
+**Known limits:** the service keeps the open question in memory, so a restart (an app update) drops the chip and the
+panel until the next question. In part 1 a permission request arriving while the panel is open does not change it
+(part 3 does).
+
+**Needs a real phone:** yes. The motion and its frame rate, the blur's cost, the keyboard, TalkBack and the
+locked-phone path can only be judged on one.
 
 **Links:** [design](../design/island-panel.md), [prototype](../design/island-panel-prototype.html),
-[plan and prompts](../plans/15-island-panel.md), [the answer box it replaces](chip-answer-field.md), spec 4.3.
+[plan and prompts](../plans/15-island-panel.md), spec 3.22, 4.1, 4.3.
