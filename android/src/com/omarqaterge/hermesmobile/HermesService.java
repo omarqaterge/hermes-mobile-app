@@ -1738,7 +1738,22 @@ public class HermesService extends Service {
                     q.optString("body", ""), choices, q.optBoolean("single", true));
         }
         String kind = IslandState.pick(needs && pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
-        return new IslandState(kind, ask, lastOutcome, lastExpired);
+        return new IslandState(kind, ask, lastOutcome, lastExpired, islandApprovals());
+    }
+
+    /** Every permission request waiting, as the island panel shows it, the oldest first (whatever "When Hermux needs
+     *  me" says: the chip and cards follow that choice, and a panel the user opened follows the live request). */
+    synchronized java.util.List<IslandState.Approval> islandApprovals() {
+        java.util.ArrayList<IslandState.Approval> out = new java.util.ArrayList<>();
+        for (PendingAsk.Entry<JSONObject> e : pending.all(PendingAsk.APPROVAL)) {
+            if (out.size() >= IslandState.MAX_APPROVALS) break;
+            JSONObject a = e.payload;
+            out.add(new IslandState.Approval(e.session, e.id, IslandState.chatLine(chatTitle(e.session), a.optString("profile", "")),
+                    a.optString("what", ""), a.optString("command", ""), a.optString("body", ""), a.optBoolean("allow_session", true),
+                    a.optBoolean("phone_data", false), a.optBoolean("phone_data_unreadable", false), e.deadline,
+                    Math.max(1, a.optLong("timeout", 60)) * 1000L));
+        }
+        return out;
     }
 
     /** A chat's title from what the service knows: the working chat, the other busy chats, the finished ones. */
@@ -2133,7 +2148,7 @@ public class HermesService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
-                .setContentIntent(openApp(a.optString("session", "")));
+                .setContentIntent(islandApprovalIntent(a, null)); // the island panel, on the live request
         if (Build.VERSION.SDK_INT >= 36) {
             int p = Math.round(frac * 1000);
             b.setStyle(new Notification.ProgressStyle()
@@ -2365,11 +2380,8 @@ public class HermesService extends Service {
         }
         if (Build.VERSION.SDK_INT >= 31 && !"deny".equals(choice) && ApprovalLock.needed(this)) {
             // Android 12+ refuses to open an activity from a service a notification started (trampoline): Allow opens
-            // the app on that chat directly, where the sheet asks for the fingerprint unless its live session is confirmed.
-            Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
-            if (!session.isEmpty()) open.putExtra("session", session);
-            return PendingIntent.getActivity(this, ("confirm" + session + choice).hashCode(), open,
-                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            // the island panel directly, which asks for the fingerprint at once and then sends that answer itself.
+            return islandApprovalIntent(e, choice);
         }
         Intent i = new Intent(this, HermesService.class).setAction(ACTION_APPROVE)
                 .putExtra("session", session)
@@ -2394,11 +2406,88 @@ public class HermesService extends Service {
         }
         if (!"deny".equals(choice) && openToUnlock(session, null, "approval " + choice)) return;
         // Confirm approvals with fingerprint: the notification can't tell the live session a confirmation is filed under,
-        // so Allow is answered in the app (its sheet asks unless that live session is confirmed).
+        // so it sends nothing: the island panel opens, asks for the fingerprint and sends that answer (Android 8-11; on
+        // 12+ approveIntent opens the panel itself).
         if (!"deny".equals(choice) && ApprovalLock.needed(this)) {
-            openToConfirm(session);
+            openPanelToConfirm(i);
             return;
         }
+        sendApproval(session, i.getStringExtra("key"), i.getStringExtra("request_id"), i.getStringExtra("profile"), choice);
+    }
+
+    /** Opens the island panel on this request with the choice the card's Allow made, where it asks for the
+     *  fingerprint. If Android refuses to open it from the background, the app's own path (openToConfirm). */
+    void openPanelToConfirm(Intent i) {
+        String session = i.getStringExtra("session");
+        Intent panel = new Intent(this, IslandPanel.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(IslandPanel.EXTRA_SESSION, session == null ? "" : session)
+                .putExtra(IslandPanel.EXTRA_KIND, IslandState.PERMISSION)
+                .putExtra(IslandPanel.EXTRA_REQUEST, i.getStringExtra("request_id") == null ? "" : i.getStringExtra("request_id"))
+                .putExtra(IslandPanel.EXTRA_CHOICE, i.getStringExtra("choice"));
+        // Before Android 12 a card button that reaches this service leaves the shade open, so the panel and its PIN
+        // screen would open behind it; apps may still close it there (the broadcast is refused from Android 12).
+        if (Build.VERSION.SDK_INT < 31) sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
+        try {
+            startActivity(panel);
+        } catch (Exception e) {
+            openToConfirm(session);
+        }
+    }
+
+    /** Opens the island panel on a permission request: the card's body ({@code choice} null), or the card's Allow
+     *  once / Allow session while the fingerprint is needed ({@code choice} "once" or "session": the panel asks for it
+     *  at once). The panel shows the live request, never this intent's: the intent names only the chat, the request id
+     *  and the choice. Not shown over the lock screen, so a locked phone asks for the unlock first. */
+    PendingIntent islandApprovalIntent(JSONObject e, String choice) {
+        String session = e.optString("session", ""), request = e.optString("request_id", "");
+        Intent i = new Intent(this, IslandPanel.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(IslandPanel.EXTRA_SESSION, session)
+                .putExtra(IslandPanel.EXTRA_KIND, IslandState.PERMISSION)
+                .putExtra(IslandPanel.EXTRA_REQUEST, request);
+        if (choice != null) i.putExtra(IslandPanel.EXTRA_CHOICE, choice);
+        return PendingIntent.getActivity(this, ("island:approval:" + session + ":" + (choice == null ? "" : choice)).hashCode(), i,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /**
+     * The island panel's answer to the request it shows (IslandPanel, in this process; nothing outside it can call
+     * this). The request is looked up again in what waits now, by chat and request id, and answered with the service's
+     * own copy of it (key, profile), never the panel's. Deny is sent at once. Allow is refused for a phone-data read
+     * (only the app's sheet may allow one), for a request whose text could not be read, for "session" where the request
+     * doesn't offer it, on a locked phone, and, while ApprovalLock.needed, without the one-use grant the panel's
+     * fingerprint prompt filed for this very request and choice (ApprovalLock.askOnce). Returns null when it was handed
+     * on (the outcome follows through noteOutcome), otherwise why nothing was sent.
+     */
+    String approveFromPanel(String session, String request, String choice, String grant) {
+        String why = panelRefusal(session, request, choice, grant);
+        if (why != null) android.util.Log.i("HermesApprove", "island panel answer not sent: " + why); // no request text
+        return why;
+    }
+
+    /** approveFromPanel's work: null once the answer is handed on, otherwise why it was not. */
+    private String panelRefusal(String session, String request, String choice, String grant) {
+        boolean deny = "deny".equals(choice);
+        if (!deny && !"once".equals(choice) && !"session".equals(choice)) return "unknown choice";
+        JSONObject live;
+        synchronized (this) {
+            PendingAsk.Entry<JSONObject> e = pending.find(PendingAsk.APPROVAL, session, request);
+            live = e == null ? null : e.payload;
+        }
+        if (live == null) return "gone";
+        if (!deny) {
+            if (live.optBoolean("phone_data", false) || live.optBoolean("phone_data_unreadable", false)) return "phone data";
+            if ("session".equals(choice) && !live.optBoolean("allow_session", true)) return "no session choice";
+            if (MainActivity.keyguardLocked(this)) return "locked";
+            if (ApprovalLock.needed(this) && !ApprovalLock.takeGrant(grant, ApprovalLock.grantFor(session, request, choice), System.currentTimeMillis()))
+                return "not confirmed";
+        }
+        sendApproval(session, live.optString("key", ""), request, live.optString("profile", ""), choice);
+        return null;
+    }
+
+    /** POSTs one answer to the plugin's /approve (approval.respond) and records how it went. Every gate is the
+     *  caller's: answerApproval (a notification button) and approveFromPanel (the island panel). */
+    void sendApproval(String session, String key, String requestId, String profile, String choice) {
         String t = tag("approval", session);
         NotificationManager nm = getSystemService(NotificationManager.class);
         synchronized (this) {
@@ -2410,10 +2499,10 @@ public class HermesService extends Service {
             try {
                 JSONObject body = new JSONObject()
                         .put("session", session)
-                        .put("key", i.getStringExtra("key"))
+                        .put("key", key)
                         .put("choice", choice)
-                        .put("request_id", i.getStringExtra("request_id"))
-                        .put("profile", i.getStringExtra("profile"));
+                        .put("request_id", requestId)
+                        .put("profile", profile);
                 String path = "/api/plugins/hermes-mobile/approve";
                 String[] res = MainActivity.rawHttp(this, "POST", path, dashboardToken(false), body.toString(), true);
                 if ("401".equals(res[0]) || "403".equals(res[0]))
@@ -2424,12 +2513,12 @@ public class HermesService extends Service {
             }
             final String failed = err;
             main.post(() -> {
-                noteOutcome(PendingAsk.APPROVAL, session, i.getStringExtra("request_id"), failed != null ? IslandState.Outcome.FAILED
+                noteOutcome(PendingAsk.APPROVAL, session, requestId, failed != null ? IslandState.Outcome.FAILED
                         : "deny".equals(choice) ? IslandState.Outcome.DENIED : IslandState.Outcome.ALLOWED, failed);
                 synchronized (HermesService.this) {
                     if (session.equals(answering)) answering = null;
                     if (failed == null) {
-                        pending.answered(PendingAsk.APPROVAL, session, i.getStringExtra("request_id"));
+                        pending.answered(PendingAsk.APPROVAL, session, requestId);
                         syncPending();
                         updateWake(); // the wake lock was held for this approval's deadline
                     }

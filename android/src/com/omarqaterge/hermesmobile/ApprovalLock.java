@@ -19,7 +19,8 @@ import java.util.function.Consumer;
  * runtime id, which the page passes), never under the stored chat: a new live session has nothing on file, so its first
  * Allow always asks, and a closed one's id never comes back, so nothing has to be forgotten for the rule to hold
  * ({@link #forget} only tidies). Deny never asks. The notification's Allow (HermesService) never knows the live session,
- * so it always opens the app while this is {@link #needed}.
+ * so while this is {@link #needed} it never answers by itself: it opens the island panel, which asks every time
+ * ({@link #askOnce}) and hands the service a one-use grant for that one request ({@link #takeGrant}).
  */
 final class ApprovalLock {
     private ApprovalLock() {}
@@ -88,6 +89,55 @@ final class ApprovalLock {
         return "{\"on\":" + on(c) + ",\"secure\":" + secure(c) + "}";
     }
 
+    // ---- the island panel's one-use grants ----
+    /** A grant lives this long after its prompt said "ok"; the panel sends at once, so this only bounds a stray one. */
+    static final long GRANT_MS = 30_000;
+    /** At most this many grants are kept (one per prompt that said "ok"); past it the oldest goes. */
+    static final int MAX_GRANTS = 8;
+    /** Grant id → {what it allows (chat, request, choice), when it was filed}, the oldest first. */
+    private static final Map<String, Object[]> grants = new LinkedHashMap<String, Object[]>(8, 0.75f, false) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest) {
+            return size() > MAX_GRANTS;
+        }
+    };
+
+    /** What a grant allows: one choice for one request of one chat. */
+    static String grantFor(String session, String request, String choice) {
+        return (session == null ? "" : session) + "\n" + (request == null ? "" : request) + "\n" + (choice == null ? "" : choice);
+    }
+
+    /** Files a grant (package-private for tools/test_approval_lock.sh; otherwise only {@link #askOnce}'s "ok"). */
+    static void fileGrant(String id, String what, long now) {
+        if (id == null || id.isEmpty() || what == null) return;
+        synchronized (grants) {
+            grants.put(id, new Object[]{what, now});
+        }
+    }
+
+    /** Takes the grant {@code id} if it allows exactly {@code what} and is fresh: it is gone afterwards either way, so
+     *  one fingerprint sends one answer to one request. */
+    static boolean takeGrant(String id, String what, long now) {
+        if (id == null || id.isEmpty() || what == null) return false;
+        Object[] g;
+        synchronized (grants) {
+            g = grants.remove(id);
+        }
+        return g != null && what.equals(g[0]) && now - (Long) g[1] >= 0 && now - (Long) g[1] <= GRANT_MS;
+    }
+
+    /**
+     * The island panel's Allow: always asks (the panel never knows the live session a confirmation is filed under, so
+     * nothing on file covers it and nothing is filed there), then reports as {@link #ask} does. On "ok" it files the
+     * one-use grant {@code id} for {@code what} ({@link #grantFor}), which HermesService takes before it sends.
+     */
+    static void askOnce(Activity a, String id, String what, String shown, Consumer<String> done) {
+        prompt(a, "", "Allow Hermux to run this?", shown, "Confirm it is you.", r -> {
+            if ("ok".equals(r)) fileGrant(id, what, System.currentTimeMillis());
+            done.accept(r);
+        });
+    }
+
     // ---- the prompt (main thread, one at a time) ----
     private static Consumer<String> pending;
     private static String pendingSession;
@@ -147,7 +197,7 @@ final class ApprovalLock {
         else credential(a, title, what, g);
     }
 
-    /** MainActivity.onDestroy: a prompt it started can't answer any more. */
+    /** MainActivity.onDestroy and IslandPanel.onDestroy: a prompt it started can't answer any more. */
     static void activityGone(Activity a) {
         if (pending != null && pendingActivity == a) finish("cancel");
     }
@@ -240,7 +290,7 @@ final class ApprovalLock {
         }
     }
 
-    /** MainActivity.onActivityResult for {@link #REQ}. */
+    /** MainActivity.onActivityResult and IslandPanel.onActivityResult for {@link #REQ}. */
     static void onResult(int result) {
         boolean asked = credentialUp;
         credentialUp = false;

@@ -2,7 +2,9 @@
 # Tests the island panel's motion numbers (android/.../IslandMotion.java) with a plain JDK, against the design
 # (docs/design/island-panel.md section 4) and the prototype's script (island-panel-prototype.html): the four springs
 # (start, end, overshoot, when they stop, about 400 ms to open), the named curves (ends, a known point of each, the
-# overshoot of back), the close curve, the drag rules, the reduced-motion cap and the timer colour. Needs javac 11+.
+# overshoot of back), the close curve, the drag rules, the reduced-motion cap, the timer colour, and the Permission
+# state's numbers (the ring, its pulse, the answer row's timings and holds, against buildApproval and resolveRow).
+# Needs javac 11+.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -98,6 +100,21 @@ public class IslandMotionTest {
             for (int sh = 0; sh <= 16; sh += 8) smooth &= Math.abs(((c0 >> sh) & 255) - ((c1 >> sh) & 255)) <= 3;
         }
         check(smooth, "timer: the colour never snaps");
+        check(IslandMotion.TIMER_DP == 44 && IslandMotion.TIMER_STROKE_DP == 3 && IslandMotion.TIMER_RED == 0.2,
+                "timer ring: 44 dp, 3 dp thick, red below a fifth (design 5.1)");
+        check(IslandMotion.timerPulse(0) == 1 && near(IslandMotion.timerPulse(0.5), 1.09, 1e-6) && IslandMotion.timerPulse(1) == 1
+                && IslandMotion.timerPulse(0.25) > 1 && IslandMotion.timerPulse(0.25) < 1.09, "timer pulse: to 109 % half way and back");
+        check(IslandMotion.TIMER_PULSE_MS == 260 && IslandMotion.TIMER_PULSE_UNDER_MS == 10_000, "the pulse: 260 ms, in the last 10 seconds");
+        check(IslandMotion.OTHERS_OUT_MS == 120 && IslandMotion.GROW_MS == 320 && IslandMotion.RING_OUT_MS == 160
+                && IslandMotion.RING_OUT_SCALE == 0.8f, "answering: others out 120 ms, grow 320 ms, ring out 160 ms to 80 % (resolveRow)");
+        check(IslandMotion.RESULT_HOLD_MS == 900 && IslandMotion.ELSEWHERE_HOLD_MS == 900 && IslandMotion.EXPIRED_HOLD_MS == 2600,
+                "holds: 900 ms after Allowed or Denied, 900 ms answered elsewhere, 2.6 s run out");
+        check(IslandMotion.EXPIRED_RING_ALPHA == 0.35f && IslandMotion.DIMMED == 0.32f, "run out: the body at 32 %, the ring at 35 %");
+        check(IslandMotion.SPLIT == 0.36f && IslandMotion.SPLIT_GAP == 8, "two buttons split 36 % / 64 % with an 8 dp gap");
+        check(IslandMotion.BUTTON_COLOUR_MS == 200 && IslandMotion.LABEL_IN_MS == 200 && IslandMotion.LABEL_FROM_DX == -4,
+                "a button's colour changes in 200 ms; its result label arrives from 4 dp to the left in 200 ms");
+        check(IslandMotion.COMMAND_LINES == 4, "the command shows four lines, then scrolls");
+
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }
