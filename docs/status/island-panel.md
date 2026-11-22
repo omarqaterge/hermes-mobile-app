@@ -23,7 +23,7 @@ and the scrolled part cuts its content at its edges. **Security review fixes:** 
 touches, activation keys (including on `Pill` and `GuardedText` during the Allow pause and consuming matching key-ups,
 with swallow counted only on first key-down), focus and accessibility/click handlers until fade-in completes (Deny stays usable at once);
 Allow once and Allow this session wait 320 ms after fade-in finishes (580 ms minimum, same with reduced motion,
-extended by 200 ms on swallowed input), and Allow once stays held while fading back in after a failed Deny; other busy
+extended by 200 ms on swallowed input, capped at +400 ms past base), and Allow once stays held while fading back in after a failed Deny; other busy
 chats in `lastOthers` carry `stoppingAt` and `stopAccepted`, `stopTurn` ignores duplicate/stale attempts, `stopFate`
 prefers `!atWork` over a late 404/FAILED, `status` clears `stopping` and `stopAccepted` as soon as the stopped chat
 is no longer working, and the stop failure line scrolls into view after layout via a one-shot `OnLayoutChangeListener`

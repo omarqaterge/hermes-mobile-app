@@ -125,6 +125,15 @@ public class IslandMotionTest {
         hs2.swallowed(nearEnd);
         check(hs2.holdingAllow(nearEnd + IslandMotion.ALLOW_EXTEND_MS - 1),
                 "a tap swallowed near the end of the Allow hold extends it past that tap");
+        // Repeated impatient taps are capped at baseAllowUntil + ALLOW_EXTEND_MAX_MS, so Allow always becomes available.
+        IslandMotion.Hold hcap = new IslandMotion.Hold();
+        hcap.start(5000);
+        hcap.fadeDone(5260);
+        long baseCap = 5000 + IslandMotion.ALLOW_HOLD_MS;
+        for (long t = baseCap - 100; t < baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS + 600; t += 100) hcap.swallowed(t);
+        check(IslandMotion.ALLOW_EXTEND_MAX_MS == 400 && hcap.holdingAllow(baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS - 1)
+                && !hcap.holdingAllow(baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS),
+                "repeated swallowed taps cap Allow's extension at base + ALLOW_EXTEND_MAX_MS (" + IslandMotion.ALLOW_EXTEND_MAX_MS + " ms) so Allow always opens");
         check(IslandMotion.PULSE_TIMES == 3 && IslandMotion.PULSE_MS == 1600 && IslandMotion.PULSE_SCALE == 1.55f,
                 "the Question badge pulses three times, 1.6 s each, to 155 %");
         check(IslandMotion.ANSWER_HOLD_MS == 850 && IslandMotion.CLOSED_HOLD_MS == 900 && IslandMotion.DIMMED == 0.32f,

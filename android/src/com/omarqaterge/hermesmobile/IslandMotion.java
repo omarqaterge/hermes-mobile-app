@@ -176,10 +176,13 @@ final class IslandMotion {
     static final long ALLOW_PAUSE_MS = 320;
     static final long ALLOW_HOLD_MS = STATE_TOUCH_HOLD_MS + ALLOW_PAUSE_MS;
     static final long ALLOW_EXTEND_MS = 200;
+    /** Repeated swallowed taps can extend Allow's hold at most this much past the base Allow deadline. */
+    static final long ALLOW_EXTEND_MAX_MS = 400;
 
     /** Monotonic hold state for content arriving in place: general input (until the fade-in finishes and at least
      *  STATE_TOUCH_HOLD_MS) and Allow (until the fade-in finishes plus ALLOW_PAUSE_MS, at least ALLOW_HOLD_MS in all,
-     *  extended briefly when an input is swallowed during the hold). Plain Java so a JDK test can drive its clock. */
+     *  extended briefly when an input is swallowed during the hold, capped at ALLOW_EXTEND_MAX_MS past base). Plain
+     *  Java so a JDK test can drive its clock. */
     static final class Hold {
         boolean fading, sawSwallow;
         long holdUntil, baseAllowUntil, allowUntil;
@@ -196,7 +199,8 @@ final class IslandMotion {
             if (!fading) return;
             fading = false;
             baseAllowUntil = Math.max(baseAllowUntil, now + ALLOW_PAUSE_MS);
-            allowUntil = Math.max(allowUntil, sawSwallow ? baseAllowUntil + ALLOW_EXTEND_MS : baseAllowUntil);
+            long cap = baseAllowUntil + ALLOW_EXTEND_MAX_MS;
+            allowUntil = Math.min(cap, Math.max(allowUntil, sawSwallow ? baseAllowUntil + ALLOW_EXTEND_MS : baseAllowUntil));
         }
 
         boolean holding(long now) {
@@ -214,7 +218,8 @@ final class IslandMotion {
         void swallowed(long now) {
             if (!holdingAllow(now)) return;
             sawSwallow = true;
-            allowUntil = Math.max(allowUntil, Math.max(baseAllowUntil + ALLOW_EXTEND_MS, now + ALLOW_EXTEND_MS));
+            long cap = baseAllowUntil + ALLOW_EXTEND_MAX_MS;
+            allowUntil = Math.min(cap, Math.max(allowUntil, Math.max(baseAllowUntil + ALLOW_EXTEND_MS, now + ALLOW_EXTEND_MS)));
         }
     }
     /** A line of text that changes: the old one leaves upward on IN, the new one arrives from below on OUT. */
