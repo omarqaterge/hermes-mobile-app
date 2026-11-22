@@ -184,6 +184,7 @@ ok 'grep -q "postDelayed(deadlineRun" <<<"$TAP" && grep -q "asked.deadline <= Sy
 ok 'src "void ended()" IslandPermission | grep -q "removeCallbacks(deadlineRun)" && src "void stop()" IslandPermission | grep -q "removeCallbacks(deadlineRun)"' "the deadline check goes with the request"
 ok 'src "void openPanelToConfirm(" HermesService | grep -q "SDK_INT < 31) sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))"' "before Android 12 the card's Allow closes the shade so the panel and its PIN screen are in front"
 ok 'src "protected void onActivityResult" IslandPanel | grep -q "hideSoftInputFromWindow"' "the PIN screen's keyboard does not stay up over the panel"
+ok 'src "public void onWindowFocusChanged" IslandPanel | grep -q "perm != null && root != null) root.post(this::hideKeyboard)"' "back from the PIN screen the keyboard is put away again once the panel has its focus (the result comes before the focus)"
 ok 'src "void resolve(String c)" IslandPermission | grep -q "errLine" && src "void elsewhere()" IslandPermission | grep -q "errLine.setVisibility(View.GONE)"' "a failure line goes when the answer is sent again or the request is answered elsewhere"
 ok 'src "protected void onActivityResult" IslandPanel | grep -q "ApprovalLock.onResult(this, req, result)" && grep -q "ApprovalLock.onResult(this, req, result)" android/src/com/omarqaterge/hermesmobile/MainActivity.java' "both activities hand the screen-lock result over with themselves and its request code"
 ok '! grep -rq "ApprovalLock.REQ\b" android/src' "no fixed screen-lock request code is left"
@@ -193,4 +194,15 @@ ok 'grep -q "if (deadline <= System.currentTimeMillis()) return \"expired\"" <<<
 ok 'grep -q "allowIt && shown.deadline <= System.currentTimeMillis()" <<<"$TAP"' "the panel offers no Allow past the deadline either"
 ok 'src "static String choiceFor(" IslandPanel | grep -q "in.removeExtra(EXTRA_CHOICE)" && src "protected void onNewIntent(" IslandPanel | grep -q "intent.removeExtra(EXTRA_CHOICE)"' "the card's choice is used once: a panel made again doesn't ask by itself"
 ok 'grep -q "FLAG_WINDOW_IS_PARTIALLY_OBSCURED" android/src/com/omarqaterge/hermesmobile/IslandViews.java && grep -q "SDK_INT >= 29" <<<"$(sed -n "/static boolean partlyCovered/,/^    }/p" android/src/com/omarqaterge/hermesmobile/IslandViews.java)" && grep -q "IslandViews.guardedText(" "$PERM"' "on Android 10+ the answer buttons also ignore touches while another app covers part of the window"
+SEND=$(src 'void send(String c, String grant)' IslandPermission)
+ok '[ "$(grep -n "approveFromPanel" <<<"$SEND" | cut -d: -f1)" -lt "$(grep -n "resolve(c)" <<<"$SEND" | cut -d: -f1)" ]' "a request that ran out or went is found before the row turns into Sending"
+ok 'src "void startOpen()" IslandPanel | grep -q "withPrevious.contains(row)" && grep -q "p.withPrevious.add(textBtn)" "$PERM" && grep -q "p.rows.add(more)" "$PERM"' "N more waiting is in the opening stagger, and Allow this session arrives with the buttons"
+ok 'src "void expire()" IslandPermission | grep -q "fade(row, 1, IslandMotion.EXPIRED_ROW_MS, IslandMotion.OUT"' "the run-out Open chat fades in on out"
+ok 'src "void expire()" IslandPermission | grep -q "stopFade(allow)"' "a fade still running from an answer can't hide the run-out Open chat"
+ok 'src "void ringTo(" IslandPermission | grep -q "pulseRun.cancel()" && src "void ringTo(" IslandPermission | grep -q "ringRun.cancel()" && src "void pulse()" IslandPermission | grep -q "if (ringRun != null) return"' "the ring's fades replace its pulse and each other"
+ok 'sed -n "/void fade(View v, float to, long ms, IslandMotion.Curve curve/,/^    }/p" "$PERM" | grep -q "stopFade(v)"' "a new fade of a view replaces the one still running"
+ok 'src "void showFailed()" IslandPermission | grep -q "if (shown.allowable())"' "a failed answer adds Open chat only where the row has no way into the chat"
+ok 'src "IslandViews.Fit build(" IslandPermission | grep -q "if (!a.what.isEmpty() || a.command.isEmpty())"' "an empty plain-words line is left out"
+ok 'sed -n "/private int\[\] span(Pill p/,/^        }/p" android/src/com/omarqaterge/hermesmobile/IslandViews.java | grep -q "bounceRoom()"' "a growing button's bounce stays inside the card"
+ok '! src "synchronized IslandState islandState()" HermesService | grep -q "needsMe"' "the panel's state follows every waiting request, whatever When Hermux needs me says"
 [ "$fails" = 0 ] && echo "source rules: ALL PASSED" || { echo "source rules: $fails FAILED"; exit 1; }

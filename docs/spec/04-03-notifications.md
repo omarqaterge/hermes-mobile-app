@@ -50,7 +50,7 @@ The person can turn two kinds off inside the app (3.15 Notifications; `NotifyCho
 | `UpdateNotice` (10), `DevTools` (11), `TtsMedia` (7), `AdbPairing` (`pair`) | App update, remote debugging, reading aloud, pairing | Always |
 | `postGrouped`'s summary (3) | The group summary | With any card it groups |
 
-Turning a switch changes the chip at once (`HermesService.notifyChoicesChanged` → `applyNotifyChoices`): with When Hermux needs me off, the approval and question pop-ups showing (`approval:` and `ask:` cards) are removed and the chip re-posted without them; turned on again while one waits, the chip shows it again with its buttons, which follow the unlock and fingerprint rules below unchanged. Allow from a notification, the fingerprint rule and the locked-phone rules do not read the choice (`tools/test_notify_choice.sh` checks the sources).
+Turning a switch changes the chip at once (`HermesService.notifyChoicesChanged` → `applyNotifyChoices`): with When Hermux needs me off, the approval and question pop-ups showing (`approval:` and `ask:` cards) are removed and the chip re-posted without them; turned on again while one waits, the chip shows it again with its buttons, which follow the unlock and fingerprint rules below unchanged. Allow from a notification, the fingerprint rule and the locked-phone rules do not read the choice (`tools/test_notify_choice.sh` checks the sources). Nor does the island panel: the switch decides only whether notifications are posted, and a panel already open follows every question and request the service holds (`HermesService.islandState`, 3.22).
 
 #### The status notification: which state shows
 

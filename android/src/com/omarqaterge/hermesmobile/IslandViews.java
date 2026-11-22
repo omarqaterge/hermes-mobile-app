@@ -766,8 +766,17 @@ final class IslandViews {
             for (int i = 0; i < getChildCount(); i++) place(getChildAt(i));
         }
 
+        /** How far a growing button may bounce past the row: the card's side padding less 4 dp, so the overshoot of
+         *  the back curve stays inside the card's edge. */
+        float bounceRoom() {
+            return dp(getContext(), IslandMotion.PAD - 4);
+        }
+
         private int[] span(Pill p, float w) {
             double l = IslandMotion.lerp(left(p.from, w), left(p.to, w), p.k), r = IslandMotion.lerp(right(p.from, w), right(p.to, w), p.k);
+            float m = bounceRoom();
+            l = Math.max(-m, l);
+            r = Math.min(w + m, r);
             return new int[]{(int) Math.round(l), (int) Math.round(Math.max(l + 1, r))};
         }
 

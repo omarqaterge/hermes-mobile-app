@@ -133,6 +133,8 @@ public class IslandPanel extends Activity {
     long sentAt;
     String sentText = "";
     final ArrayList<View> rows = new ArrayList<>();
+    /** Rows that arrive together with the row before them in the opening stagger (Allow this session with the buttons). */
+    final java.util.HashSet<View> withPrevious = new java.util.HashSet<>();
     final ArrayList<View> choiceRows = new ArrayList<>();
     IslandViews.Badge badge;
     TextView headline, errLine;
@@ -513,10 +515,12 @@ public class IslandPanel extends Activity {
         gR = pr;
         applyGeo();
         if (cScroll != null) cScroll.setClipChildren(false); // the first choice arrives from 8 dp higher
+        int step = -1;
         for (int i = 0; i < rows.size(); i++) {
             View row = rows.get(i);
+            if (step < 0 || !withPrevious.contains(row)) step++;
             row.setAlpha(0);
-            rowIn.put(row, ticker.tween(IslandMotion.rowDelay(i), IslandMotion.ROW_IN_MS, IslandMotion.OUT, v -> {
+            rowIn.put(row, ticker.tween(IslandMotion.rowDelay(step), IslandMotion.ROW_IN_MS, IslandMotion.OUT, v -> {
                 float s = (float) (IslandMotion.ROW_FROM_SCALE + (1 - IslandMotion.ROW_FROM_SCALE) * v);
                 row.setAlpha((float) v);
                 row.setTranslationY((float) (dp(IslandMotion.ROW_FROM_DY) * (1 - v)));
@@ -629,6 +633,9 @@ public class IslandPanel extends Activity {
     public void onWindowFocusChanged(boolean has) {
         super.onWindowFocusChanged(has);
         if (has) startOpen();
+        // Back from the PIN screen its keyboard is still up, and onActivityResult comes before the focus, when hiding
+        // it does nothing yet; the Permission state has nothing to type in, so put it away once the panel has focus.
+        if (has && perm != null && root != null) root.post(this::hideKeyboard);
         // The keyboard opens by itself only when there are no choices; with choices it waits for a tap on the field.
         if (has && firstFocus) {
             firstFocus = false;
@@ -790,6 +797,7 @@ public class IslandPanel extends Activity {
         ask = a;
         phase = IslandState.OPEN;
         rows.clear();
+        withPrevious.clear();
         choiceRows.clear();
         chosenMark = null;
         swapInner(buildQuestion(a));
@@ -806,6 +814,7 @@ public class IslandPanel extends Activity {
         ask = null;
         badge = null;
         rows.clear();
+        withPrevious.clear();
         choiceRows.clear();
         chosenMark = null;
         hideKeyboard();

@@ -16,6 +16,13 @@ closed; two requests of one chat no longer share a notification button; with ani
 still starts; no Allow past the deadline; the card's choice is used once; on Android 10+ the answer buttons also
 ignore touches while another app covers part of the window.
 
+**Design round (2026-11-22):** a send that finds the request gone or run out shows that without the Sending motion;
+"N more waiting" is part of the opening stagger and "Allow this session" arrives with the buttons; the expired Open
+chat fades in on the out curve; the ring's pulse and resize, and each view's fade, replace the previous one; a failed
+Deny on phone data or an unreadable request shows no second Open chat; an empty plain line leaves no gap; the grow
+bounce stays inside the card. The panel follows every waiting request whatever "When Hermux needs me" says. Back from
+the Android 8 PIN screen its keyboard is put away once the panel has focus.
+
 **Next:** the phone checks in `docs/manual-tests.md` ("The island panel"), for parts 1 and 2. Then part 3 (Progress,
 Done, the links between states). It changes `HermesService.java` too, so it waits for part 2.
 

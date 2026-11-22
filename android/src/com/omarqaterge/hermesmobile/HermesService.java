@@ -1726,8 +1726,9 @@ public class HermesService extends Service {
 
     /** What the island panel shows: a snapshot of the live state, from the fields the chip uses, in the chip's order. */
     synchronized IslandState islandState() {
-        boolean needs = NotifyChoice.needsMe(this);
-        JSONObject q = needs ? pendingAsk : null;
+        // Whatever "When Hermux needs me" says: that switch decides only whether notifications are posted; a panel the
+        // user opened follows every question and request the service still holds.
+        JSONObject q = pendingAsk;
         IslandState.Ask ask = null;
         if (q != null) {
             String session = q.optString("session", "");
@@ -1737,12 +1738,12 @@ public class HermesService extends Service {
             ask = new IslandState.Ask(session, IslandState.chatLine(chatTitle(session), q.optString("profile", "")),
                     q.optString("body", ""), choices, q.optBoolean("single", true));
         }
-        String kind = IslandState.pick(needs && pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
+        String kind = IslandState.pick(pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
         return new IslandState(kind, ask, lastOutcome, lastExpired, islandApprovals());
     }
 
     /** Every permission request waiting, as the island panel shows it, the oldest first (whatever "When Hermux needs
-     *  me" says: the chip and cards follow that choice, and a panel the user opened follows the live request). */
+     *  me" says, as for the whole of islandState). */
     synchronized java.util.List<IslandState.Approval> islandApprovals() {
         java.util.ArrayList<IslandState.Approval> out = new java.util.ArrayList<>();
         for (PendingAsk.Entry<JSONObject> e : pending.all(PendingAsk.APPROVAL)) {

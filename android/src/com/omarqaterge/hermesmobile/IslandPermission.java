@@ -59,6 +59,9 @@ final class IslandPermission {
     IslandViews.ButtonRow row;
     IslandViews.Pill deny, allow;
     IslandViews.Ticker.Handle timer;
+    /** The ring's pulse and its fade or resize (ringTo), and each view's running fade: a new one replaces the old. */
+    IslandViews.Ticker.Handle pulseRun, ringRun;
+    final java.util.HashMap<View, IslandViews.Ticker.Handle> fades = new java.util.HashMap<>();
 
     final Runnable timeoutRun = () -> {
         if (IslandState.SENDING.equals(phase)) failed();
@@ -140,11 +143,14 @@ final class IslandPermission {
         // Body: the plain-words line, then the command in its block with a gold $ (four lines, then it scrolls).
         LinearLayout bd = new LinearLayout(p);
         bd.setOrientation(LinearLayout.VERTICAL);
-        IslandViews.MaxScroll whatScroll = new IslandViews.MaxScroll(p);
-        TextView what = IslandViews.text(p, 15, 21, 400, IslandViews.TEXT);
-        what.setText(a.what);
-        whatScroll.addView(what);
-        bd.addView(whatScroll);
+        IslandViews.MaxScroll whatScroll = null;
+        if (!a.what.isEmpty() || a.command.isEmpty()) { // an empty line is left out, as on the card
+            whatScroll = new IslandViews.MaxScroll(p);
+            TextView what = IslandViews.text(p, 15, 21, 400, IslandViews.TEXT);
+            what.setText(a.what);
+            whatScroll.addView(what);
+            bd.addView(whatScroll);
+        }
         if (!a.command.isEmpty()) {
             IslandViews.MaxScroll code = new IslandViews.MaxScroll(p);
             GradientDrawable cb = IslandViews.round(IslandViews.CODE, dp(14));
@@ -161,10 +167,10 @@ final class IslandPermission {
             cmd.setContentDescription(a.command);
             code.addView(cmd);
             code.base = Math.round(IslandViews.sp(p, 18) * IslandMotion.COMMAND_LINES + dp(22));
-            bd.addView(code, p.margins(10, 0));
+            bd.addView(code, p.margins(whatScroll == null ? 0 : 10, 0));
             col.flex.add(code);
         }
-        col.flex.add(whatScroll);
+        if (whatScroll != null) col.flex.add(whatScroll);
         col.addView(bd, p.margins(14, 0));
         p.rows.add(bd);
         body = bd;
@@ -212,7 +218,10 @@ final class IslandPermission {
                 v -> tb.setColor(IslandViews.blend(Color.TRANSPARENT, IslandViews.FILL, v)));
         textBtn.setVisibility(a.allowSession ? View.VISIBLE : View.GONE);
         col.addView(textBtn, p.margins(0, 40 + 2 * IslandPanel.TEXT_BUTTON_ROOM));
-        if (a.allowSession) p.rows.add(textBtn);
+        if (a.allowSession) {
+            p.rows.add(textBtn);
+            p.withPrevious.add(textBtn); // it arrives with the buttons, as in the prototype
+        }
 
         // N more waiting.
         more = IslandViews.text(p, 12.5f, 16, 400, IslandViews.FAINT);
@@ -220,6 +229,7 @@ final class IslandPermission {
         more.setText(IslandState.moreWaiting(others));
         more.setVisibility(others > 0 ? View.VISIBLE : View.GONE);
         col.addView(more, p.margins(6, 0));
+        p.rows.add(more); // last in the opening stagger
 
         grab = grabLine();
         col.addView(grab, grabParams(10));
@@ -308,12 +318,18 @@ final class IslandPermission {
         return true;
     }
 
+    /** The last-10-s pulse; skipped while the ring is fading or resizing (ringTo), and a new one replaces the last. */
     void pulse() {
-        p.ticker.tween(0, IslandMotion.TIMER_PULSE_MS, IslandMotion.STANDARD, v -> {
+        if (ringRun != null) return;
+        if (pulseRun != null) pulseRun.cancel();
+        IslandViews.Ticker.Handle[] me = {null};
+        me[0] = pulseRun = p.ticker.tween(0, IslandMotion.TIMER_PULSE_MS, IslandMotion.STANDARD, v -> {
             float s = (float) IslandMotion.timerPulse(v);
             ring.setScaleX(s);
             ring.setScaleY(s);
-        }, null);
+        }, () -> {
+            if (pulseRun == me[0]) pulseRun = null;
+        });
     }
 
     // ── answering ──
@@ -357,13 +373,9 @@ final class IslandPermission {
         send(c, null);
     }
 
+    /** Hands the answer to the service first, so a request that ran out or went meanwhile is shown as such with the
+     *  row untouched; only an answer handed on (or one that failed, which turns back) turns the row into Sending. */
     void send(String c, String grant) {
-        phase = IslandState.SENDING;
-        sent = true;
-        sentAt = System.currentTimeMillis();
-        choice = c;
-        if (timer != null) timer.cancel();
-        resolve(c);
         HermesService s = HermesService.instance;
         String err;
         try {
@@ -371,24 +383,23 @@ final class IslandPermission {
         } catch (RuntimeException e) {
             err = "error";
         }
-        if (err == null) {
-            p.MAIN.postDelayed(timeoutRun, IslandPanel.SEND_TIMEOUT_MS);
-            return;
-        }
         if ("expired".equals(err)) { // the service saw its deadline pass: shown as run out, nothing sent
-            phase = IslandState.OPEN;
-            sent = false;
             expire();
             return;
         }
         if ("gone".equals(err)) { // it stopped waiting between the tap and the send
-            phase = IslandState.OPEN;
-            sent = false;
             if (shown.deadline - IslandState.EXPIRY_SLACK_MS <= System.currentTimeMillis()) expire();
             else elsewhere();
             return;
         }
-        failed();
+        phase = IslandState.SENDING;
+        sent = true;
+        sentAt = System.currentTimeMillis();
+        choice = c;
+        if (timer != null) timer.cancel();
+        resolve(c);
+        if (err == null) p.MAIN.postDelayed(timeoutRun, IslandPanel.SEND_TIMEOUT_MS);
+        else failed();
     }
 
     IslandViews.Pill chosen() {
@@ -486,14 +497,22 @@ final class IslandPermission {
         ch.setEnabled(true);
         other.setEnabled(true);
         fade(other, 1, IslandMotion.OTHERS_OUT_MS, null);
+        stopFade(errLine);
         errLine.setText(IslandState.APPROVAL_FAILED);
         errLine.setVisibility(View.VISIBLE);
         p.arrive(errLine);
-        textOpensChat = true;
-        textBtn.setText(IslandState.OPEN_CHAT);
-        textBtn.setVisibility(View.VISIBLE);
-        textBtn.setEnabled(true);
-        fade(textBtn, 1, IslandMotion.OTHERS_OUT_MS, null);
+        if (shown.allowable()) {
+            // the text button becomes Open chat; a phone-data or unreadable request already has a way into the chat in
+            // the row (Review in Hermux, Open chat), so it gets no second one
+            textOpensChat = true;
+            textBtn.setText(IslandState.OPEN_CHAT);
+            textBtn.setVisibility(View.VISIBLE);
+            textBtn.setEnabled(true);
+            fade(textBtn, 1, IslandMotion.OTHERS_OUT_MS, null);
+        } else {
+            stopFade(textBtn);
+            textBtn.setVisibility(View.GONE);
+        }
         fixSpacing();
         ringTo(1, 1, IslandMotion.RING_OUT_MS, IslandMotion.OUT);
         lastSecs = -1;
@@ -525,6 +544,10 @@ final class IslandPermission {
         allowOpensChat = true;
         if (allow.moveRun != null) allow.moveRun.cancel();
         if (allow.colourRun != null) allow.colourRun.cancel();
+        stopFade(allow); // a fade still running from an earlier answer would hide Open chat again
+        stopFade(deny);
+        stopFade(textBtn);
+        stopFade(errLine);
         allow.bg = IslandViews.FILL;
         allow.fg = IslandViews.TEXT;
         allow.plain(IslandViews.Pill.NO_ICON);
@@ -535,7 +558,7 @@ final class IslandPermission {
         allow.setEnabled(true);
         row.place(allow);
         row.setAlpha(0);
-        fade(row, 1, IslandMotion.EXPIRED_ROW_MS, null);
+        fade(row, 1, IslandMotion.EXPIRED_ROW_MS, IslandMotion.OUT, null);
         p.card.announceForAccessibility(IslandState.REQUEST_EXPIRED);
         p.MAIN.postDelayed(p.closeRun, IslandMotion.EXPIRED_HOLD_MS);
     }
@@ -618,7 +641,9 @@ final class IslandPermission {
     /** The panel was hidden by our own fingerprint or PIN screen: nothing runs meanwhile. */
     void paused() {
         if (timer != null) timer.cancel();
-        if (ring != null) {
+        if (pulseRun != null) pulseRun.cancel();
+        pulseRun = null;
+        if (ring != null && ringRun == null) {
             ring.setScaleX(1);
             ring.setScaleY(1);
         }
@@ -648,21 +673,45 @@ final class IslandPermission {
     // ── small motions ──
 
     void fade(View v, float to, long ms, Runnable done) {
-        if (v == null) return;
-        float from = v.getAlpha();
-        p.ticker.tween(0, p.reduced ? IslandMotion.reduced(ms) : ms, IslandMotion.LINEAR, x -> v.setAlpha((float) (from + (to - from) * x)), done);
+        fade(v, to, ms, IslandMotion.LINEAR, done);
     }
 
-    /** The ring to this opacity and size (no size change with reduced motion). */
+    /** A view's opacity to {@code to} on {@code curve}; a new fade of the same view replaces the one still running (its
+     *  {@code done} then never runs). */
+    void fade(View v, float to, long ms, IslandMotion.Curve curve, Runnable done) {
+        if (v == null) return;
+        stopFade(v);
+        float from = v.getAlpha();
+        IslandViews.Ticker.Handle[] me = {null};
+        me[0] = p.ticker.tween(0, p.reduced ? IslandMotion.reduced(ms) : ms, curve, x -> v.setAlpha((float) (from + (to - from) * x)), () -> {
+            if (fades.get(v) == me[0]) fades.remove(v);
+            if (done != null) done.run();
+        });
+        fades.put(v, me[0]);
+    }
+
+    void stopFade(View v) {
+        IslandViews.Ticker.Handle h = fades.remove(v);
+        if (h != null) h.cancel();
+    }
+
+    /** The ring to this opacity and size (no size change with reduced motion); it replaces a pulse or an earlier ringTo
+     *  still running. */
     void ringTo(float alpha, float scale, long ms, IslandMotion.Curve curve) {
         if (ring == null) return;
+        if (pulseRun != null) pulseRun.cancel();
+        pulseRun = null;
+        if (ringRun != null) ringRun.cancel();
         float a0 = ring.getAlpha(), s0 = ring.getScaleX();
         float s1 = p.reduced ? 1 : scale;
-        p.ticker.tween(0, p.reduced ? IslandMotion.reduced(ms) : ms, curve, v -> {
+        IslandViews.Ticker.Handle[] me = {null};
+        me[0] = ringRun = p.ticker.tween(0, p.reduced ? IslandMotion.reduced(ms) : ms, curve, v -> {
             ring.setAlpha((float) (a0 + (alpha - a0) * v));
             float s = (float) (s0 + (s1 - s0) * v);
             ring.setScaleX(s);
             ring.setScaleY(s);
-        }, null);
+        }, () -> {
+            if (ringRun == me[0]) ringRun = null;
+        });
     }
 }

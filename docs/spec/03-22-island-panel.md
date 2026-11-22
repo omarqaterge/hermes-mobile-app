@@ -15,6 +15,8 @@ Android asks for the unlock first.
 
 **It shows the service's live state.** The panel reads `HermesService.islandState()` (an `IslandState`) when it opens
 and after every change of the chip (`IslandPanel.refresh`, from `postStatus`), never what the card's intent carried.
+That state is whatever the service still holds, whatever "When Hermux needs me" says (the switch decides only whether
+notifications are posted): once the panel is open it follows every waiting question and permission request.
 Opened when the question is no longer waiting (answered or expired between the tap and the panel), it opens with the header only, the headline "This question is closed" (design 5.2, No longer open), and closes about 0.9 s later: a question that is gone can't be answered.
 
 #### The Question state
@@ -57,14 +59,14 @@ Tapping the card again on a newer question while the panel is open changes the p
 | Chat line | As in the Question state (`IslandState.chatLine`). |
 | Headline | "Run a command?"; for a phone-data read "Let Hermux read your phone?"; for one whose text can't be read "Unreadable phone data request". |
 | Timer | A 44 dp ring on the right, 3 dp thick with round ends on a faint track, with the seconds left inside. It drains clockwise from the top every frame from the request's real deadline (not in one-second steps); gold above half the time, amber down to a fifth, red below, blended around each line (`IslandMotion.timerColour`). The number rolls each second; in the last 10 seconds the ring pulses with each second (to 109 % and back, 260 ms); below a fifth the number takes the ring's colour and the phone ticks once as it turns red. TalkBack says "30 seconds left", "10 seconds left" and "5 seconds left". |
-| Body | The plain-words line with its first letter capitalised, then the command in a dark block with a gold `$`: four lines, then the block scrolls. A phone-data read has no command block: its body is the app's own wording of the request. |
+| Body | The plain-words line with its first letter capitalised (left out when Hermes sent none but a command), then the command in a dark block with a gold `$`: four lines, then the block scrolls. A phone-data read has no command block: its body is the app's own wording of the request. |
 | Buttons | "Deny" (red) on the left, "Allow once" (gold) on the right, split 36 % / 64 %. While the fingerprint is needed (`ApprovalLock.needed`), "Allow once" carries a small fingerprint before its label. A phone-data read: "Deny" and "Review in Hermux" (gold; opens the chat, whose own sheet asks for it). One that can't be read: "Deny" and "Open chat" (quiet). |
 | Text button | "Allow this session" under the buttons, when the request offers it (never for phone data); drawn 40 dp tall with 4 dp of room above and below, all of it touchable. |
 | More waiting | "1 more waiting" / "N more waiting" when other requests wait (`IslandState.moreWaiting`), kept current. |
 
 **Which request.** The panel shows the request tapped (`EXTRA_SESSION`, `EXTRA_REQUEST`) while it still waits,
 otherwise the oldest one waiting (`IslandState.approvalToShow`), from the service's live list
-(`HermesService.islandApprovals`, carried whatever "When Hermux needs me" says, so a panel the user opened follows the
+(`HermesService.islandApprovals`, carried whatever "When Hermux needs me" says, as the whole state is, so a panel the user opened follows the
 live request). Opened with none waiting, it shows the header with "Answered in the app" and closes about 0.9 s later.
 
 **Answering.** Deny is one tap and never asks. Allow once and Allow this session, while the fingerprint is needed, bring
@@ -73,14 +75,16 @@ you.") every time (`ApprovalLock.askOnce`); the panel waits behind it, its timer
 nothing and leaves the panel as it was. The card's Allow opens the panel with the choice (`EXTRA_CHOICE`) and the
 prompt comes up at once, but only when the request on screen is the very one tapped. Before Android 12 that Allow
 reaches the service, which also closes the notification shade (`ACTION_CLOSE_SYSTEM_DIALOGS`, refused from Android 12)
-so the panel and its PIN screen open in front; the PIN screen's keyboard is put away when its result comes back. The
+so the panel and its PIN screen open in front; the PIN screen's keyboard is put away when its result comes back, and again once the panel has its focus back (`onWindowFocusChanged`; the result comes first, before the keyboard can be hidden from the panel). The
 request still runs out while the prompt is up (`deadlineRun`, even when the timer is still because the panel is hidden
 behind a PIN screen), and an "ok" that comes after the deadline sends nothing and shows the request as run out. Past the deadline no
 Allow is sent at all, with or without the fingerprint: the panel shows it as run out, and `approveFromPanel` refuses it
 too. The card's choice is used once (taken off the intent), so a panel made again from it doesn't ask by itself. After
 the tap (and an "ok"), the
 other button fades out in 120 ms and "Allow this session" gives its room back; the tapped button grows to the full
-row in 320 ms and says "Sending…" with a spinner; the timer ring fades away. The answer goes to
+row in 320 ms on back and says "Sending…" with a spinner (its bounce stays inside the card); the timer ring fades
+away. The answer is handed to the service first: a request found run out or gone meanwhile is shown as such and the
+row never turns into Sending. The answer goes to
 `HermesService.approveFromPanel`, which answers only a request still waiting, with the service's own copy of it, and
 never allows a phone-data read, a request that can't be read, or anything on a locked phone; while the fingerprint is
 needed, only with the one-use grant the prompt filed for that request and choice. Then:
@@ -90,11 +94,13 @@ needed, only with the one-use grant the prompt filed for that request and choice
   11+) and TalkBack reads the label. The panel holds 0.9 s, then changes in place to the next request waiting, or
   closes.
 - **Not sent** (the POST failed, the service refused, or no word in 15 s): the two buttons come back with the red line
-  "Couldn't send your answer. Try again, or open the chat." above them, and the text button becomes "Open chat". The
+  "Couldn't send your answer. Try again, or open the chat." above them, and the text button becomes "Open chat" (not
+  for a phone-data or unreadable request, whose row already has "Review in Hermux" or "Open chat"). The
   timer runs on; another Allow asks for the fingerprint again. The red line goes as soon as the next answer is sent,
   or when the request is answered elsewhere. The service also posts its own "Couldn't send your answer" card.
 - **Run out** (the timer at zero, or the request gone within 1.5 s of its deadline): the headline changes to "This
-  request expired", the body fades to 32 %, the ring to 35 %, the buttons become one quiet "Open chat", the phone gives
+  request expired", the body fades to 32 %, the ring to 35 %, the buttons become one quiet "Open chat" (fading in
+  over 200 ms on out), the phone gives
   the reject buzz, and the panel closes after 2.6 s.
 - **Answered somewhere else** (in the app or on the card; it vanished earlier with no answer of the panel's): the
   headline changes to "Answered in the app", the buttons fade, and the panel closes after 0.9 s.
@@ -119,7 +125,8 @@ covers any part of the panel's window (`FLAG_WINDOW_IS_PARTIALLY_OBSCURED`).
 #### Motion
 
 Opening: the pill (132 by 34 dp) widens first, then drops to the panel's height, on springs; the rows fade in one
-after the other from slightly higher and smaller; the dim and the blur come in together. Closing: the content fades,
+after the other from slightly higher and smaller (in the Permission state: the header, the body, the buttons with
+Allow this session, then "N more waiting"); the dim and the blur come in together. Closing: the content fades,
 the panel shrinks back to the pill and the dim and blur fade from where they are. Closed before the opening has
 started, it simply goes. A pressed choice or button shrinks to 97 % and takes its pressed colour in 80 ms; released,
 it springs back in 260 ms and its colour returns in 160 ms (a choice) or 120 ms (a button); the text button only

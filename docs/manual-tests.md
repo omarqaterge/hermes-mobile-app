@@ -348,6 +348,14 @@ screen leaves both until the deadline, when they go. Not yet on a phone.
 - [ ] **Android 8-10 PIN screen.** On a phone without a fingerprint: the PIN screen opens over the panel, the PIN
       sends that one answer, Back from it leaves the panel as it was.
 - [ ] **Another app drawing over the panel.** With a floating window over the buttons, taps on Allow do nothing.
+- [ ] **Partly covered (Android 10+).** With a small floating window (a chat bubble, a screen filter) anywhere over
+      the panel, not over the buttons: taps on Allow do nothing and Deny still works. Not tried on Android 10 or 11.
+- [ ] **Animations off, Permission state.** With Remove animations on: the ring still drains and the seconds change,
+      TalkBack speaks at 30, 10 and 5 seconds, the request runs out on time, and the card's Allow brings up the
+      fingerprint. Seen on an Android 15 emulator (2026-11-22) except TalkBack.
+- [ ] **Android 8.0 PIN screen opened by the card's Allow.** The PIN screen's keyboard may not open by itself; after a
+      tap on the field and the PIN, that request is sent and the keyboard is gone from the panel. Seen on an Android
+      8.0 emulator (2026-11-22).
 
 ## Phone data for the agent (Settings → Access & privacy → Phone data)
 
