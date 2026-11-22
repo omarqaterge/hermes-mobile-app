@@ -1,8 +1,9 @@
 // What a streamed reply costs the page: main-thread CPU while the mock streams a Markdown reply at a model's pace.
 // Needs the page and the mock running (`run.sh --serve` in another shell, with the same HM_E2E_* ports if it chose others).
-//   node streamcost.cjs [chars=8000] [--gap 40] [--runs 3] [--throttle 4] [--top 25]
+//   node streamcost.cjs [chars=8000] [--gap 40] [--runs 3] [--throttle 4] [--top 25] [--motion off|reduced|full] [--glass on|off]
 // Prints, per run and as a median: seconds of main-thread work (all tasks, script, layout, style), tasks over 50 ms,
-// and how long the turn took. --top N also prints the N functions with the most own time from a CPU profile of the
+// how long the turn took, and the page's frames while it streamed (how many, how many took over 25 ms, the 95th
+// percentile frame in ms). --top N also prints the N functions with the most own time from a CPU profile of the
 // last run (HM_PROFILE_OUT=file saves that profile, for a closer look; build with `vite build --minify false` to get
 // real function names). The numbers are a desktop browser's: compare a change with the build before it, on the same
 // machine.
@@ -18,15 +19,25 @@ const gap = arg('gap', 40)
 const runs = arg('runs', 3)
 const throttle = arg('throttle', 1)
 const top = arg('top', 0)
+const sopt = name => {
+  const i = process.argv.indexOf('--' + name)
+  return i > 0 ? process.argv[i + 1] : ''
+}
+const motion = sopt('motion') // empty: whatever the app chooses by itself
+const glass = sopt('glass')
 
 async function one(browser, profile) {
   const page = await browser.newPage({ viewport: { width: 375, height: 812 } })
-  await page.addInitScript(b => {
+  await page.addInitScript(([b, motion, glass]) => {
     window.__hmMockBase = b
-    try { localStorage.setItem('hm.connectedOnce', '1') } catch { /* */ }
+    try {
+      localStorage.setItem('hm.connectedOnce', '1')
+      if (motion) localStorage.setItem('hm.motion', motion)
+      if (glass) localStorage.setItem('hm.glass', glass === 'off' ? '0' : '1')
+    } catch { /* */ }
     window.__long = 0
     new PerformanceObserver(l => { window.__long += l.getEntries().length }).observe({ entryTypes: ['longtask'] })
-  }, MOCK)
+  }, [MOCK, motion, glass])
   await page.goto(WEB + '/')
   await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
   await sleep(1500) // a fixed wait on purpose: the page's start-up requests must be over before the measuring starts
@@ -44,7 +55,20 @@ async function one(browser, profile) {
   await page.getByPlaceholder('Message Hermux').fill(`bench stream ${chars} ${gap}`)
   await page.getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant .caret').waitFor({ timeout: 15000 })
+  // Frames while the reply streams: the gap between one animation frame and the next.
+  await page.evaluate(() => {
+    const f = (window.__frames = { gaps: [], run: true, last: performance.now() })
+    const tick = now => {
+      f.gaps.push(now - f.last)
+      f.last = now
+      if (f.run) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
   await page.locator('.msg.assistant .msg-actions').last().waitFor({ timeout: 600000 })
+  const gaps = await page.evaluate(() => ((window.__frames.run = false), window.__frames.gaps.slice(1)))
+  const sorted = [...gaps].sort((a, b) => a - b)
+  const frames = { n: gaps.length, slow: gaps.filter(g => g > 25).length, p95: sorted[Math.floor(sorted.length * 0.95)] || 0 }
   const wall = (Date.now() - t0) / 1000
   const after = await metrics()
   const long = await page.evaluate(() => window.__long)
@@ -64,7 +88,7 @@ async function one(browser, profile) {
   }
   await page.close()
   const d = k => after[k] - before[k]
-  return { task: d('TaskDuration'), script: d('ScriptDuration'), layout: d('LayoutDuration'), style: d('RecalcStyleDuration'), long, wall, hot }
+  return { task: d('TaskDuration'), script: d('ScriptDuration'), layout: d('LayoutDuration'), style: d('RecalcStyleDuration'), long, wall, hot, frames: frames.n, slow: frames.slow, p95: frames.p95 }
 }
 
 ;(async () => {
@@ -78,11 +102,11 @@ async function one(browser, profile) {
   for (let i = 0; i < runs; i++) {
     const r = await one(browser, top > 0 && i === runs - 1)
     out.push(r)
-    console.log(`run ${i + 1}: tasks ${r.task.toFixed(2)} s (script ${r.script.toFixed(2)}, layout ${r.layout.toFixed(2)}, style ${r.style.toFixed(2)}), ${r.long} tasks over 50 ms, turn ${r.wall.toFixed(1)} s`)
+    console.log(`run ${i + 1}: tasks ${r.task.toFixed(2)} s (script ${r.script.toFixed(2)}, layout ${r.layout.toFixed(2)}, style ${r.style.toFixed(2)}), ${r.long} tasks over 50 ms, turn ${r.wall.toFixed(1)} s, ${r.frames} frames (${r.slow} over 25 ms, p95 ${r.p95.toFixed(1)} ms)`)
   }
   await browser.close()
   const med = k => out.map(r => r[k]).sort((a, b) => a - b)[Math.floor(out.length / 2)]
-  console.log(`${chars} characters, ${gap} ms between chunks${throttle > 1 ? `, CPU ×${throttle}` : ''}: median tasks ${med('task').toFixed(2)} s (script ${med('script').toFixed(2)}, layout ${med('layout').toFixed(2)}, style ${med('style').toFixed(2)}), ${med('long')} tasks over 50 ms, turn ${med('wall').toFixed(1)} s`)
+  console.log(`${chars} characters, ${gap} ms between chunks${throttle > 1 ? `, CPU ×${throttle}` : ''}: median tasks ${med('task').toFixed(2)} s (script ${med('script').toFixed(2)}, layout ${med('layout').toFixed(2)}, style ${med('style').toFixed(2)}), ${med('long')} tasks over 50 ms, turn ${med('wall').toFixed(1)} s, ${med('frames')} frames (${med('slow')} over 25 ms, p95 ${med('p95').toFixed(1)} ms)`)
   const hot = out[out.length - 1].hot
   if (hot) for (const [name, us] of hot) console.log(`  ${(us / 1000).toFixed(0).padStart(6)} ms  ${name}`)
 })()
