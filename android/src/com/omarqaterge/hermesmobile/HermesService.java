@@ -199,6 +199,7 @@ public class HermesService extends Service {
         lastStatus = "Ready";
         stopping = null;
         stopAccepted = false;
+        stopInFlight = false;
         postStatus();
         updateWake();
     }
@@ -210,10 +211,15 @@ public class HermesService extends Service {
     org.json.JSONArray lastOthers = null;
     boolean lastReview = false;
     /** The chat whose Stop button was tapped, until Hermes reports the turn over (or the request fails); when the stop
-     *  was sent (epoch ms), and whether the plugin accepted it (the island panel then never calls it failed). */
+     *  was sent (epoch ms), whether the plugin accepted it (the island panel then never calls it failed), a monotonic
+     *  attempt counter, and whether an HTTP stop request is still in flight (bounded by STOP_IN_FLIGHT_MS). */
     String stopping = null;
     long stoppingAt = 0;
     boolean stopAccepted = false;
+    long stopAttempt = 0;
+    boolean stopInFlight = false;
+    long stopInFlightSince = 0;
+    static final long STOP_IN_FLIGHT_MS = IslandPanel.SEND_TIMEOUT_MS;
     /** The chat whose approval answer (from the notification) is being sent; its chip says "Sending your answer…". */
     String answering = null;
     final java.util.HashMap<String, JSONObject> doneInfo = new java.util.HashMap<>();
@@ -1398,6 +1404,7 @@ public class HermesService extends Service {
                 if (!working || !sessionWorking(stopping)) {
                     stopping = null;
                     stopAccepted = false;
+                    stopInFlight = false;
                 }
                 boolean ended = lastWorking && !working;
                 lastWorking = working;
@@ -1995,13 +2002,17 @@ public class HermesService extends Service {
      *  The chip says "Stopping…" until Hermes reports the turn over; a failure is said plainly. */
     void stopTurn(String session) {
         if (session == null || session.isEmpty()) return;
-        final long attemptAt;
+        final long attempt;
         synchronized (this) {
-            if (session.equals(stopping) && stopAccepted) return; // already accepted for this chat: no duplicate stop
+            long up = android.os.SystemClock.uptimeMillis();
+            if (IslandState.stopBusy(session, stopping, stopAccepted, stopInFlight, stopInFlightSince, up, STOP_IN_FLIGHT_MS))
+                return; // already accepted or in flight for this chat: don't start an overlapping stop
             stopping = session;
             stoppingAt = System.currentTimeMillis();
-            attemptAt = stoppingAt;
             stopAccepted = false;
+            stopInFlight = true;
+            stopInFlightSince = up;
+            attempt = ++stopAttempt;
             postStatus();
         }
         new Thread(() -> {
@@ -2022,8 +2033,11 @@ public class HermesService extends Service {
                 main.post(() -> {
                     boolean mine;
                     synchronized (HermesService.this) {
-                        mine = session.equals(stopping) && stoppingAt == attemptAt;
-                        if (mine) stopAccepted = true; // the turn winds down: Stopping until it ends
+                        mine = IslandState.stop200Counts(session, stopping);
+                        if (mine) {
+                            stopAccepted = true; // a 200 for the chat currently being stopped is accepted even if a retry raced
+                            stopInFlight = false;
+                        }
                     }
                     if (mine) noteOutcome("stop", session, "", IslandState.Outcome.STOPPED, null);
                 });
@@ -2033,7 +2047,8 @@ public class HermesService extends Service {
             // other (the panel would show Stopping again after the failure).
             main.post(() -> {
                 synchronized (HermesService.this) {
-                    if (!session.equals(stopping) || stoppingAt != attemptAt) return;
+                    if (session.equals(stopping) && stopAttempt == attempt) stopInFlight = false;
+                    if (!IslandState.stopFailCounts(session, stopping, attempt, stopAttempt, stopAccepted)) return;
                     stopping = null;
                     stopAccepted = false;
                     noteOutcome("stop", session, "", IslandState.Outcome.FAILED, failed);

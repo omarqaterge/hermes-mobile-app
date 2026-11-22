@@ -229,6 +229,18 @@ public class IslandStateTest {
         check(!IslandState.stopUnheard("A", 1000, quiet), "the turn is over: Stopped, not a failure");
         check(IslandState.newStop(wStop, 0) && IslandState.newStop(wStop, 999) && !IslandState.newStop(wStop, 1000) && !IslandState.newStop(w1, 0),
                 "a stop the panel already took in (one that failed, still held by the service) doesn't start Stopping again");
+        check(IslandState.stopBusy("A", "A", false, true, 1000, 15_999, 15_000)
+                && !IslandState.stopBusy("A", "A", false, true, 1000, 16_000, 15_000)
+                && IslandState.stopBusy("A", "A", true, false, 1000, 99_000, 15_000)
+                && !IslandState.stopBusy("B", "A", false, true, 1000, 1500, 15_000),
+                "stopBusy blocks overlapping stops for the same chat while in flight (bounded by timeout) or accepted, never another chat");
+        check(IslandState.stop200Counts("A", "A") && !IslandState.stop200Counts("A", "B") && !IslandState.stop200Counts("A", null),
+                "a 200 for the chat currently being stopped is accepted even if a later retry raced with it");
+        check(IslandState.stopFailCounts("A", "A", 2, 2, false)
+                && !IslandState.stopFailCounts("A", "A", 1, 2, false)
+                && !IslandState.stopFailCounts("A", "A", 2, 2, true)
+                && !IslandState.stopFailCounts("A", "B", 2, 2, false),
+                "stopFailCounts drops stale attempts, failures after a racing 200 was accepted, and other chats");
         IslandState.Ask qA = ask("A", "Which folder?", "Trips");
         IslandState both = new IslandState(IslandState.PERMISSION, qA, null, null, Arrays.asList(r1, pd));
         IslandState onlyQ = new IslandState(IslandState.QUESTION, qA, null, null, null);
@@ -379,10 +391,10 @@ STOPFAIL=$(src "void stopFailed()" IslandProgress)
 ok 'grep -q "OnLayoutChangeListener" <<<"$STOPFAIL" && grep -q "removeOnLayoutChangeListener(this)" <<<"$STOPFAIL" && grep -q "scroll.smoothScrollTo(0, scrolled.getHeight())" <<<"$STOPFAIL" && ! grep -q "fullScroll" <<<"$STOPFAIL"' "stopFailed scrolls the failure line into view after layout with a one-shot OnLayoutChangeListener and smoothScrollTo (no fullScroll focus jump)"
 ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "enterStopping(false, a.stopAt)" && src "void update(" IslandProgress | grep -q "IslandState.newStop(a, stopSeen)) enterStopping(true, a.stopAt)" && grep -q "IslandState.stopUnheard(session, stopAt, st)) stopFailed();" "$PROG" && src "void stopTurn(String session)" HermesService | grep -q "stopAccepted = true"' "a stop counts from when it was sent, and one that succeeded is never shown as failed"
 STOPTURN=$(src "void stopTurn(String session)" HermesService)
-ok 'grep -q "if (session.equals(stopping) && stopAccepted) return;" <<<"$STOPTURN" && grep -q "final long attemptAt;" <<<"$STOPTURN" && grep -q "attemptAt = stoppingAt;" <<<"$STOPTURN" && grep -q "stoppingAt == attemptAt" <<<"$STOPTURN" && grep -q "stoppingAt != attemptAt" <<<"$STOPTURN" && tr -d "\n" <<<"$STOPTURN" | grep -q "stopping = null;                    stopAccepted = false;                    noteOutcome(\"stop\", session, \"\", IslandState.Outcome.FAILED, failed);"' "stopTurn tags each attempt, ignores stale threads, avoids duplicate stops once accepted, and clears stopping + stopAccepted with FAILED in one post"
+ok 'grep -q "IslandState.stopBusy(session, stopping, stopAccepted, stopInFlight, stopInFlightSince, up, STOP_IN_FLIGHT_MS)" <<<"$STOPTURN" && grep -q "attempt = ++stopAttempt;" <<<"$STOPTURN" && ! grep -q "attemptAt" <<<"$STOPTURN" && grep -q "IslandState.stop200Counts(session, stopping)" <<<"$STOPTURN" && grep -q "IslandState.stopFailCounts(session, stopping, attempt, stopAttempt, stopAccepted)" <<<"$STOPTURN" && tr -d "\n" <<<"$STOPTURN" | grep -q "stopping = null;                    stopAccepted = false;                    noteOutcome(\"stop\", session, \"\", IslandState.Outcome.FAILED, failed);"' "stopTurn uses a monotonic attempt counter, skips overlapping in-flight/accepted stops, accepts racing 200s, ignores stale/post-200 failures, and clears stopping + stopAccepted with FAILED in one post"
 ok 'src "synchronized java.util.List<IslandState.Progress> islandWorking()" HermesService | grep -q "ses.equals(stopping), stoppingAt," && src "synchronized java.util.List<IslandState.Progress> islandWorking()" HermesService | grep -q "ses.equals(stopping) && stopAccepted"' "chats in lastOthers carry stoppingAt and stopAccepted (15-arg Progress constructor)"
 STATUS=$(sed -n '/case "status": {/,/^            }/p' "$SVC")
-ok 'grep -q "if (!working || !sessionWorking(stopping))" <<<"$STATUS" && grep -q "stopAccepted = false;" <<<"$STATUS" && src "synchronized boolean sessionWorking(" HermesService | grep -q "lastOthers"' "status clears stopping and stopAccepted whenever the stopped chat is no longer lastSession or in lastOthers"
+ok 'grep -q "if (!working || !sessionWorking(stopping))" <<<"$STATUS" && grep -q "stopAccepted = false;" <<<"$STATUS" && grep -q "stopInFlight = false;" <<<"$STATUS" && src "synchronized boolean sessionWorking(" HermesService | grep -q "lastOthers"' "status clears stopping, stopAccepted and stopInFlight whenever the stopped chat is no longer lastSession or in lastOthers"
 # The pop-up and the 20 s / 40 s reminders don't ask the panel (review of 78239d3: a request could run out unheard
 # behind a panel nobody looks at, or behind our own PIN screen); whether the pop-up may cover the panel is the owner's.
 APPROVAL=$(sed -n '/case "approval": {/,/^            }/p' "$SVC"); ASK=$(sed -n '/case "ask": {/,/^            }/p' "$SVC")

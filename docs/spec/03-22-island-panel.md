@@ -154,10 +154,13 @@ the service couldn't stop it while the chat still works, or nothing came of it i
 outcome since it was sent, and the plugin didn't accept it, `HermesService.stopAccepted`, carried as `Progress.stopOk`
 for other busy chats too), the two buttons come back with the red line "Couldn't stop Hermux. Open the chat to stop it."
 and the reject buzz (the service also posts its own "Couldn't stop Hermux" card). A stop the plugin accepted is never
-shown as failed and starts no duplicate stop: the panel stays on "Stopping…" until the turn ends, however long it takes
-to wind down. Each stop thread checks its own send time (`stoppingAt`) before writing `stopAccepted` or posting a
-failure, so a stale attempt can't overwrite a newer one, and `status` clears `stopping` and `stopAccepted` as soon as
-the stopped chat is no longer working (`HermesService.sessionWorking`). A stop the panel already took in (`stopSeen`,
+shown as failed, and `stopTurn` starts no overlapping stop for a chat while one is already accepted or in flight
+(`IslandState.stopBusy`, bounded by `HermesService.STOP_IN_FLIGHT_MS`, 15 s): the panel stays on "Stopping…" until the
+turn ends, however long it takes to wind down. Each stop thread is tagged with a monotonic counter
+(`HermesService.stopAttempt`): any 200 for the chat currently being stopped is accepted (`IslandState.stop200Counts`)
+even if a later retry raced with it, while a failure only clears Stopping and posts FAILED when it is the latest attempt
+and no racing 200 was accepted (`IslandState.stopFailCounts`), and `status` clears `stopping`, `stopAccepted` and
+`stopInFlight` as soon as the stopped chat is no longer working (`HermesService.sessionWorking`). A stop the panel already took in (`stopSeen`,
 `IslandState.newStop`) doesn't start Stopping again after its failure.
 
 **The turn ends** while the panel is open (`IslandState.turnFate`): when its reply arrives (the plugin's `flash` with

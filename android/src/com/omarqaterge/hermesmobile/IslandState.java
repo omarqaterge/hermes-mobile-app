@@ -502,6 +502,25 @@ final class IslandState {
         return a != null && a.stopping && (a.stopAt > 0 ? a.stopAt > seen : seen == 0);
     }
 
+    /** Whether a new stop for {@code session} should be skipped because one for that chat is already accepted or still
+     *  in flight (within {@code timeoutMs} on a monotonic clock). */
+    static boolean stopBusy(String session, String stopping, boolean accepted, boolean inFlight, long inFlightSince, long nowMono, long timeoutMs) {
+        if (session == null || session.isEmpty() || !session.equals(stopping)) return false;
+        return accepted || (inFlight && nowMono - inFlightSince < timeoutMs);
+    }
+
+    /** Whether a 200 from a stop request for {@code session} marks the chat's stop as accepted: yes whenever that chat
+     *  is still the one being stopped, even if a later retry raced with it. */
+    static boolean stop200Counts(String session, String stopping) {
+        return session != null && !session.isEmpty() && session.equals(stopping);
+    }
+
+    /** Whether a failed stop attempt ({@code attempt}) for {@code session} clears Stopping and reports FAILED: only
+     *  when it is the latest attempt for that chat and no racing 200 has already been accepted. */
+    static boolean stopFailCounts(String session, String stopping, long attempt, long latestAttempt, boolean accepted) {
+        return session != null && !session.isEmpty() && session.equals(stopping) && attempt == latestAttempt && !accepted;
+    }
+
     /** What the panel changes to after the request {@code overA} or the question {@code overQ} on it was answered
      *  (here or elsewhere): another permission request still waiting, else a single question still waiting that isn't
      *  {@code overQ}, else NONE (it closes). */
