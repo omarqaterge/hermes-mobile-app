@@ -2651,8 +2651,8 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   --surface-2: #ebe9e2;
   --border: #dcd9cf;
   --text: #1d1c19;
-  --dim: #6a6e75;
-  --accent: #b57a10;
+  --dim: #63676e; /* 5.68:1 on white, 5.21:1 on --surface, 4.68:1 on --surface-2 (was #6a6e75: 5.12, 4.69, 4.22) */
+  --accent: #8c600e; /* 5.53:1 on white, 5.07:1 on --surface, 4.56:1 on --surface-2 (was #b57a10: 3.65, 3.34, 3.00) */
   --accent-2: #9a5f0b;
   --accent-ink: #ffffff;
   --shine: rgba(255, 255, 255, 0.6);
