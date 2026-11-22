@@ -126,9 +126,9 @@ final class IslandViews {
                 int act = e.getAction();
                 java.util.function.BooleanSupplier h = hold;
                 if (h != null && h.getAsBoolean()) {
-                    if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    if (act == KeyEvent.ACTION_DOWN) {
                         heldKey = code;
-                        if (onSwallow != null) onSwallow.run();
+                        if (e.getRepeatCount() == 0 && onSwallow != null) onSwallow.run();
                     } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
                         heldKey = 0;
                     }
@@ -842,9 +842,9 @@ final class IslandViews {
                 int act = e.getAction();
                 java.util.function.BooleanSupplier h = hold;
                 if (h != null && h.getAsBoolean()) {
-                    if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    if (act == KeyEvent.ACTION_DOWN) {
                         heldKey = code;
-                        if (onSwallow != null) onSwallow.run();
+                        if (e.getRepeatCount() == 0 && onSwallow != null) onSwallow.run();
                     } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
                         heldKey = 0;
                     }
@@ -1510,9 +1510,9 @@ final class IslandViews {
             if (isActivationKey(code)) {
                 int act = e.getAction();
                 if (holding()) {
-                    if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    if (act == KeyEvent.ACTION_DOWN) {
                         heldKey = code;
-                        swallowed();
+                        if (e.getRepeatCount() == 0) swallowed();
                     } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
                         heldKey = 0;
                     }

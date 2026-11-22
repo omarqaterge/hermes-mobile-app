@@ -690,9 +690,9 @@ public class IslandPanel extends Activity {
         if (IslandViews.isActivationKey(code)) {
             int act = e.getAction();
             if (inner != null && inner.holding()) {
-                if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                if (act == KeyEvent.ACTION_DOWN) {
                     heldKey = code;
-                    inner.swallowed();
+                    if (e.getRepeatCount() == 0) inner.swallowed();
                 } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
                     heldKey = 0;
                 }
