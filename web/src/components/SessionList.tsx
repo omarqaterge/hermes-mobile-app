@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import type { SessionListRow } from '@hermes/shared/gateway-contract.generated'
 import { errText, loadArchived, loadMoreSessions, moreSessionsMayExist, resumeSession, searchMessages, type MessageHit } from '../gateway'
@@ -446,15 +446,28 @@ function SessionMenu({
 }
 
 // ── the list ─────────────────────────────────────────────────
+/** The Needs you group. While the open chat works (its text box's light moves) the first row's ring stands still
+ *  (`needs-still`): two repeating animations at most. Only this wrapper follows that state, so a reply starting or
+ *  ending redraws no row of the list (the rows are the same elements). */
+function NeedsGroup({ children }: { children: ReactNode }) {
+  const activeId = useStore(s => s.active?.storedId)
+  const runs = useStore(s => Boolean(s.active?.running))
+  const agents = useNested(activeId ?? '').live
+  return (
+    <div role="group" aria-labelledby="needs-you-title" className={runs || agents > 0 ? 'needs-still' : undefined}>
+      <div id="needs-you-title" className="group-title needs-title" role="heading" aria-level={2}>
+        Needs you
+      </div>
+      {children}
+    </div>
+  )
+}
+
 export function SessionList({ query }: { query: string }) {
   const sessions = useStore(s => s.sessions)
   const loading = useStore(s => s.sessionsLoading)
   const profile = useStore(s => s.profile)
   const activeId = useStore(s => s.active?.storedId)
-  // The open chat works (its text box's light moves): the Needs you dot's ring stands still, two repeating things at most.
-  const activeRuns = useStore(s => Boolean(s.active?.running))
-  const activeAgents = useNested(activeId ?? '').live
-  const activeWorks = activeRuns || activeAgents > 0
   const needs = useListedNeeds()
   const [order, setOrder] = useOrder(profile)
   // Last activity as of the latest snapshot (chatsnapshot.ts): a reply that lands does not move a row; a chat listed
@@ -694,12 +707,7 @@ export function SessionList({ query }: { query: string }) {
       {loading && sessions.length === 0 && <div className="dim pad">Loading chats…</div>}
       {!loading && sessions.length === 0 && <div className="dim pad">No chats yet</div>}
       {needRows.length > 0 && (
-        <div role="group" aria-labelledby="needs-you-title" className={activeWorks ? 'needs-still' : undefined}>
-          <div id="needs-you-title" className="group-title needs-title" role="heading" aria-level={2}>
-            Needs you
-          </div>
-          {needRows.map(({ s, need }, i) => row(s, null, i, need))}
-        </div>
+        <NeedsGroup>{needRows.map(({ s, need }, i) => row(s, null, i, need))}</NeedsGroup>
       )}
       {(pinnedRows.length > 0 || pinZone) && (
         <>
