@@ -108,3 +108,16 @@
 .picker-all {
   margin: 0 -4px;
 }
+/* Appearance → Text size: "Phone default" on its own line across the top, the five sizes under it, so all six fit a
+   320 px screen at the largest size. */
+.seg.seg-text {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.seg.seg-text button:first-child {
+  grid-column: 1 / -1;
+}
+.seg.seg-text button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
