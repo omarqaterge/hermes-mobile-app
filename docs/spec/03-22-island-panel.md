@@ -75,7 +75,9 @@ prompt comes up at once, but only when the request on screen is the very one tap
 reaches the service, which also closes the notification shade (`ACTION_CLOSE_SYSTEM_DIALOGS`, refused from Android 12)
 so the panel and its PIN screen open in front; the PIN screen's keyboard is put away when its result comes back. The
 request still runs out while the prompt is up (`deadlineRun`, even when the timer is still because the panel is hidden
-behind a PIN screen), and an "ok" that comes after the deadline sends nothing and shows the request as run out. After
+behind a PIN screen), and an "ok" that comes after the deadline sends nothing and shows the request as run out. Past the deadline no
+Allow is sent at all, with or without the fingerprint: the panel shows it as run out, and `approveFromPanel` refuses it
+too. The card's choice is used once (taken off the intent), so a panel made again from it doesn't ask by itself. After
 the tap (and an "ok"), the
 other button fades out in 120 ms and "Allow this session" gives its room back; the tapped button grows to the full
 row in 320 ms and says "Sending…" with a spinner; the timer ring fades away. The answer goes to
@@ -98,7 +100,8 @@ needed, only with the one-use grant the prompt filed for that request and choice
   headline changes to "Answered in the app", the buttons fade, and the panel closes after 0.9 s.
 
 Either of the last two while the prompt is up takes the prompt down (`ApprovalLock.activityGone`); a late "ok" for a
-request no longer on screen sends nothing. Every answer button ignores touches while another app draws over it.
+request no longer on screen sends nothing. Every answer button ignores touches while another app draws over it, and on Android 10+ while another app's window
+covers any part of the panel's window (`FLAG_WINDOW_IS_PARTIALLY_OBSCURED`).
 
 #### Gestures
 
@@ -122,5 +125,6 @@ started, it simply goes. A pressed choice or button shrinks to 97 % and takes it
 it springs back in 260 ms and its colour returns in 160 ms (a choice) or 120 ms (a button); the text button only
 changes its fill. The system's own window animations are turned off. With the
 phone's animations off (Developer options, or Remove animations in Accessibility), the panel only fades in and out,
-in 120 ms, with no pulse. Every movement runs on the display's frame clock and only while it runs; nothing moves or
+in 120 ms, with no pulse; in the Permission state the timer still drains and counts, TalkBack still speaks the seconds,
+the request still runs out on time, and the card's Allow still brings up the fingerprint at once. Every movement runs on the display's frame clock and only while it runs; nothing moves or
 repeats once the panel is hidden.

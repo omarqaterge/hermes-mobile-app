@@ -80,7 +80,31 @@ final class IslandViews {
 
     /** A text in sp with its line height in sp (design 3, "Type"). */
     static TextView text(Context c, float size, float line, int weight, int colour) {
-        TextView t = new TextView(c);
+        return style(new TextView(c), size, line, weight, colour);
+    }
+
+    /** The same text for a button that answers a permission request: it ignores touches while another app's window
+     *  covers it ({@code setFilterTouchesWhenObscured}) or, on Android 10+, any part of the panel's window. */
+    static TextView guardedText(Context c, float size, float line, int weight, int colour) {
+        TextView t = new TextView(c) {
+            @Override
+            public boolean onFilterTouchEventForSecurity(MotionEvent e) {
+                return !partlyCovered(this, e) && super.onFilterTouchEventForSecurity(e);
+            }
+        };
+        t.setFilterTouchesWhenObscured(true);
+        return style(t, size, line, weight, colour);
+    }
+
+    /** A guarded view's touch arrived while another app's window covered part of this window (Android 10+ says so;
+     *  older Android only says when the touch itself passed through one, which setFilterTouchesWhenObscured drops). */
+    static boolean partlyCovered(View v, MotionEvent e) {
+        return v.getFilterTouchesWhenObscured() && Build.VERSION.SDK_INT >= 29
+                && (e.getFlags() & MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED) != 0;
+    }
+
+    private static TextView style(TextView t, float size, float line, int weight, int colour) {
+        Context c = t.getContext();
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
         t.setTypeface(weight(weight));
         t.setTextColor(colour);
@@ -617,6 +641,13 @@ final class IslandViews {
         @Override
         public CharSequence getAccessibilityClassName() {
             return android.widget.Button.class.getName();
+        }
+
+        /** With setFilterTouchesWhenObscured on (every answer button), also no touch while another app covers part of
+         *  the window (Android 10+). */
+        @Override
+        public boolean onFilterTouchEventForSecurity(MotionEvent e) {
+            return !partlyCovered(this, e) && super.onFilterTouchEventForSecurity(e);
         }
 
         void setText(String t) {

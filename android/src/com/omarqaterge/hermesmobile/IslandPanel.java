@@ -504,6 +504,7 @@ public class IslandPanel extends Activity {
                 scrim.setAlpha((float) (IslandMotion.DIM_ALPHA * v));
                 setBlur(v);
             }, this::opened);
+            if (perm != null) perm.start(); // the timer and the card's Allow run with animations off too
             return;
         }
         gW = pw;
@@ -553,9 +554,11 @@ public class IslandPanel extends Activity {
         } else if (ask == null) MAIN.postDelayed(closeRun, IslandMotion.CLOSED_HOLD_MS); // opened on a question that is gone
     }
 
-    /** The choice the card's Allow carried, when it is for the very request on screen and one the panel may send. */
+    /** The choice the card's Allow carried, when it is for the very request on screen and one the panel may send. It is
+     *  taken off the intent, so a panel made again from it (the screen turned) doesn't ask again by itself. */
     static String choiceFor(Intent in, IslandState.Approval a) {
         String c = in.getStringExtra(EXTRA_CHOICE);
+        in.removeExtra(EXTRA_CHOICE);
         if (a == null || !("once".equals(c) || "session".equals(c))) return null;
         String ses = in.getStringExtra(EXTRA_SESSION), req = in.getStringExtra(EXTRA_REQUEST);
         boolean exact = a.session.equals(ses == null ? "" : ses) && a.request.equals(req == null ? "" : req);
@@ -654,8 +657,9 @@ public class IslandPanel extends Activity {
         IslandState st = s.islandState();
         if (IslandState.PERMISSION.equals(intent.getStringExtra(EXTRA_KIND))) {
             String ses = intent.getStringExtra(EXTRA_SESSION), req = intent.getStringExtra(EXTRA_REQUEST);
-            String c = intent.getStringExtra(EXTRA_CHOICE);
             if (perm != null) {
+                String c = intent.getStringExtra(EXTRA_CHOICE);
+                intent.removeExtra(EXTRA_CHOICE); // used once, as in choiceFor
                 perm.newIntent(st, ses, req, "once".equals(c) || "session".equals(c) ? c : null);
                 return;
             }
@@ -736,13 +740,13 @@ public class IslandPanel extends Activity {
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
         super.onActivityResult(req, result, data);
-        if (req != ApprovalLock.REQ) return;
+        if (!ApprovalLock.isOurs(req)) return;
         // The PIN screen's keyboard can stay up over the panel; the Permission state has nothing to type in.
         if (perm != null) {
             InputMethodManager imm = getSystemService(InputMethodManager.class);
             if (imm != null) imm.hideSoftInputFromWindow(getWindow().getDecorView().getWindowToken(), 0);
         }
-        ApprovalLock.onResult(result);
+        ApprovalLock.onResult(this, req, result);
     }
 
     @Override

@@ -150,7 +150,8 @@ final class ApprovalLock {
      * Ask for the biometric or screen lock, then report "ok", "cancel" or "nolock" (no screen lock: approved as before).
      * BiometricPrompt on API 28+ (biometric or the screen lock; on API 28 the button "Use screen lock" and phones
      * without a biometric fall back to the screen-lock screen); API 26–27 use the screen-lock screen
-     * (createConfirmDeviceCredentialIntent, answered in {@link #onResult}).
+     * (createConfirmDeviceCredentialIntent, answered in {@link #onResult}, only by the activity that started it and
+     * only with this prompt's own request code).
      */
     static void ask(Activity a, String runtime, String what, Consumer<String> done) {
         if (!on(a) || isConfirmed(runtime)) {
@@ -207,6 +208,16 @@ final class ApprovalLock {
     }
 
     private static void finish(String result) {
+        // A screen-lock screen still up for this prompt (it ended some other way: cancelled, its activity replaced by
+        // another prompt's) is closed, so a PIN typed there later answers nothing.
+        if (credentialUp && pendingActivity != null && credentialCode >= 0) {
+            try {
+                closeScreen.accept(pendingActivity, credentialCode);
+            } catch (Exception ignored) {
+                // the activity is going anyway
+            }
+        }
+        credentialCode = -1;
         if (cancel != null) {
             try {
                 cancel.cancel();
@@ -270,8 +281,25 @@ final class ApprovalLock {
         }
     }
 
-    static final int REQ = 45;
+    /** The screen-lock screen's request codes: REQ_BASE plus the prompt's number modulo REQ_SPAN, so each prompt has
+     *  its own and a result for an older one is told apart (both fit the 16 bits startActivityForResult allows). */
+    static final int REQ_BASE = 45000, REQ_SPAN = 256;
     private static boolean credentialUp;
+    /** Closes a screen-lock screen of ours that no longer answers anything ({@code Activity.finishActivity}); replaced
+     *  by tools/test_approval_lock.sh, which checks it is called. */
+    static java.util.function.ObjIntConsumer<Activity> closeScreen = Activity::finishActivity;
+    /** The request code of the screen-lock screen up now, -1 for none. */
+    private static int credentialCode = -1;
+
+    /** This prompt's request code. */
+    static int codeFor(int g) {
+        return REQ_BASE + Math.floorMod(g, REQ_SPAN);
+    }
+
+    /** A request code of ours (MainActivity and IslandPanel hand it to {@link #onResult}). */
+    static boolean isOurs(int requestCode) {
+        return requestCode >= REQ_BASE && requestCode < REQ_BASE + REQ_SPAN;
+    }
 
     private static void credential(Activity a, String title, String what, int g) {
         if (g != gen || credentialUp) return;
@@ -283,17 +311,39 @@ final class ApprovalLock {
                 return;
             }
             credentialUp = true;
-            a.startActivityForResult(i, REQ);
+            credentialCode = codeFor(g);
+            a.startActivityForResult(i, credentialCode);
         } catch (Exception e) {
             credentialUp = false;
+            credentialCode = -1;
             finish(g, "cancel");
         }
     }
 
-    /** MainActivity.onActivityResult and IslandPanel.onActivityResult for {@link #REQ}. */
-    static void onResult(int result) {
-        boolean asked = credentialUp;
+    /** MainActivity.onActivityResult and IslandPanel.onActivityResult for a code of ours ({@link #isOurs}). Only the
+     *  activity whose prompt is up, with that prompt's own code, answers it: a screen-lock screen left over in another
+     *  activity, or from an older prompt, answers nothing. */
+    static void onResult(Activity a, int requestCode, int result) {
+        if (!credentialUp || pending == null || a == null || a != pendingActivity || requestCode != credentialCode) return;
         credentialUp = false;
-        if (asked && pending != null) finish(result == Activity.RESULT_OK ? "ok" : "cancel");
+        credentialCode = -1;
+        finish(result == Activity.RESULT_OK ? "ok" : "cancel");
+    }
+
+    /** tools/test_approval_lock.sh only: a prompt of {@code a} waiting on its screen-lock screen, as {@link #credential}
+     *  leaves it; returns that screen's request code. */
+    static int testCredentialPrompt(Activity a, Consumer<String> done) {
+        pending = done;
+        pendingSession = "";
+        pendingActivity = a;
+        int g = ++gen;
+        credentialUp = true;
+        credentialCode = codeFor(g);
+        return credentialCode;
+    }
+
+    /** tools/test_approval_lock.sh only: {@link #activityGone}'s cancel, whatever activity it is. */
+    static void testCancel() {
+        if (pending != null) finish("cancel");
     }
 }

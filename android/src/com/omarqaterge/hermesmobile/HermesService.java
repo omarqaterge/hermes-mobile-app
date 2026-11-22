@@ -2375,7 +2375,7 @@ public class HermesService extends Service {
         if (phoneData && !"deny".equals(choice)) {
             Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
             if (!session.isEmpty()) open.putExtra("session", session);
-            return PendingIntent.getActivity(this, ("phonedata" + session + choice).hashCode(), open,
+            return PendingIntent.getActivity(this, approvalCode("phonedata", session, e.optString("request_id", ""), choice), open,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         }
         if (Build.VERSION.SDK_INT >= 31 && !"deny".equals(choice) && ApprovalLock.needed(this)) {
@@ -2390,8 +2390,15 @@ public class HermesService extends Service {
                 .putExtra("profile", e.optString("profile", ""))
                 .putExtra("choice", choice)
                 .putExtra("phone_data", phoneData);
-        return PendingIntent.getService(this, (session + choice).hashCode(), i,
+        return PendingIntent.getService(this, approvalCode("approve", session, e.optString("request_id", ""), choice), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** A notification PendingIntent's request code for one choice on one request of one chat: two requests waiting in
+     *  one chat (the chip on one, a card on the other) never share a PendingIntent, which FLAG_UPDATE_CURRENT would
+     *  rewrite to the newer request's extras. */
+    static int approvalCode(String what, String session, String request, String choice) {
+        return (what + "\n" + session + "\n" + request + "\n" + (choice == null ? "" : choice)).hashCode();
     }
 
     /** A notification button's answer: POST it to the plugin's /approve (approval.respond). */
@@ -2445,7 +2452,7 @@ public class HermesService extends Service {
                 .putExtra(IslandPanel.EXTRA_KIND, IslandState.PERMISSION)
                 .putExtra(IslandPanel.EXTRA_REQUEST, request);
         if (choice != null) i.putExtra(IslandPanel.EXTRA_CHOICE, choice);
-        return PendingIntent.getActivity(this, ("island:approval:" + session + ":" + (choice == null ? "" : choice)).hashCode(), i,
+        return PendingIntent.getActivity(this, approvalCode("island:approval", session, request, choice), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
@@ -2469,12 +2476,15 @@ public class HermesService extends Service {
         boolean deny = "deny".equals(choice);
         if (!deny && !"once".equals(choice) && !"session".equals(choice)) return "unknown choice";
         JSONObject live;
+        long deadline;
         synchronized (this) {
             PendingAsk.Entry<JSONObject> e = pending.find(PendingAsk.APPROVAL, session, request);
             live = e == null ? null : e.payload;
+            deadline = e == null ? 0 : e.deadline;
         }
         if (live == null) return "gone";
         if (!deny) {
+            if (deadline <= System.currentTimeMillis()) return "expired"; // Hermes has stopped waiting: no late Allow
             if (live.optBoolean("phone_data", false) || live.optBoolean("phone_data_unreadable", false)) return "phone data";
             if ("session".equals(choice) && !live.optBoolean("allow_session", true)) return "no session choice";
             if (MainActivity.keyguardLocked(this)) return "locked";

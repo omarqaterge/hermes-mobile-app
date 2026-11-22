@@ -197,7 +197,7 @@ final class IslandPermission {
         p.rows.add(row);
 
         // Allow this session: a text button drawn 40 dp tall with 4 dp of room above and below, all of it touchable.
-        textBtn = IslandViews.text(p, 14, 0, 500, IslandViews.DIM);
+        textBtn = IslandViews.guardedText(p, 14, 0, 500, IslandViews.DIM);
         textBtn.setGravity(Gravity.CENTER);
         textBtn.setText(IslandState.ALLOW_SESSION);
         GradientDrawable tb = IslandViews.round(Color.TRANSPARENT, dp(12));
@@ -325,6 +325,10 @@ final class IslandPermission {
         boolean allowIt = !"deny".equals(c);
         if (allowIt && (!shown.allowable() || !("once".equals(c) || "session".equals(c)))) return;
         if ("session".equals(c) && (!shown.allowSession || textOpensChat)) return;
+        if (allowIt && shown.deadline <= System.currentTimeMillis()) { // run out: no Allow, with or without the fingerprint
+            expire();
+            return;
+        }
         if (!auto) p.haptic(HapticFeedbackConstants.KEYBOARD_TAP);
         if (allowIt && ApprovalLock.needed(p)) {
             confirming = true;
@@ -369,6 +373,12 @@ final class IslandPermission {
         }
         if (err == null) {
             p.MAIN.postDelayed(timeoutRun, IslandPanel.SEND_TIMEOUT_MS);
+            return;
+        }
+        if ("expired".equals(err)) { // the service saw its deadline pass: shown as run out, nothing sent
+            phase = IslandState.OPEN;
+            sent = false;
+            expire();
             return;
         }
         if ("gone".equals(err)) { // it stopped waiting between the tap and the send

@@ -10,6 +10,12 @@ requests with no Allow. The owner's decision (the card's Allow opens the panel a
 `docs/decisions/approval-needs-fingerprint.md`. Seen on Android 15 and Android 8.0 emulators without Hermes, so the
 answer was never seen arriving and "Allowed"/"Denied" were not seen on screen.
 
+**Review round 1 (2026-11-22):** the security review's findings are fixed on the branch: the screen-lock result is
+taken only by the activity whose prompt is up, with that prompt's own request code, and a cancelled prompt's screen is
+closed; two requests of one chat no longer share a notification button; with animations off the Permission state
+still starts; no Allow past the deadline; the card's choice is used once; on Android 10+ the answer buttons also
+ignore touches while another app covers part of the window.
+
 **Next:** the phone checks in `docs/manual-tests.md` ("The island panel"), for parts 1 and 2. Then part 3 (Progress,
 Done, the links between states). It changes `HermesService.java` too, so it waits for part 2.
 
