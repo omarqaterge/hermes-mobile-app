@@ -470,14 +470,15 @@ final class IslandState {
     }
 
     /**
-     * The fate of the panel's Stop for {@code session}, sent at {@code sentAt}: FAILED when the service could not stop
-     * it; Outcome.STOPPED once the turn is over (whether or not its reply came); otherwise SENDING ("Stopping...").
+     * The fate of the panel's Stop for {@code session}, sent at {@code sentAt}: Outcome.STOPPED once the turn is over
+     * (even if an overlapping stop returned 404 / FAILED); FAILED when the chat still works and the service could not
+     * stop it; otherwise SENDING ("Stopping...").
      */
     static String stopFate(String session, long sentAt, IslandState st) {
         if (st == null) return SENDING;
+        if (!st.atWork(session)) return Outcome.STOPPED;
         Outcome o = st.outcome;
         if (o != null && o.answers("stop", session, sentAt) && Outcome.FAILED.equals(o.result)) return Outcome.FAILED;
-        if (!st.atWork(session)) return Outcome.STOPPED;
         return SENDING;
     }
 

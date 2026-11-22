@@ -22,7 +22,10 @@ failed; new content takes no touch for 260 ms after a change in place; the stop 
 and the scrolled part cuts its content at its edges. **Security review fixes:** monotonic change-in-place hold blocks
 touches, activation keys, focus and accessibility/click handlers until fade-in completes (Deny stays usable at once);
 Allow once and Allow this session wait 320 ms after fade-in finishes (580 ms minimum, same with reduced motion,
-extended by 200 ms on swallowed input), and Allow once stays held while fading back in after a failed Deny.
+extended by 200 ms on swallowed input), and Allow once stays held while fading back in after a failed Deny; other busy
+chats in `lastOthers` carry `stoppingAt` and `stopAccepted`, `stopTurn` ignores duplicate/stale attempts, `stopFate`
+prefers `!atWork` over a late 404/FAILED, and `status` clears `stopping` and `stopAccepted` as soon as the stopped chat
+is no longer working.
 
 **Open question for the owner:** while the panel is open, the service's heads-up pop-up for a new request or question
 (and a request's 20 s / 40 s reminders) can drop over the panel's header. The design doesn't cover notification

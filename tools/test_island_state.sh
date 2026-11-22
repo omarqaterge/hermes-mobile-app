@@ -205,10 +205,15 @@ public class IslandStateTest {
                 "an older stop's failure, or another chat's, is not this one's");
         IslandState stopOk = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 2000), null, null, Arrays.asList(w1), 1, null);
         check(IslandState.SENDING.equals(IslandState.stopFate("A", 1000, stopOk)), "the stop was taken but the turn still runs: still Stopping");
+        IslandState stop404AlreadyOver = new IslandState(IslandState.NONE, null, new IslandState.Outcome("stop", "A", "", "failed", "it isn't running in Hermux", 2000), null, null, Arrays.asList(w2), 1, null);
+        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", 1000, stop404AlreadyOver)), "an overlapping stop returning 404/FAILED after the turn is already over still reads Stopped, not FAILED");
         // The 15 s wait for a stop: the failure line only when nothing came of it (review of 78239d3: the card's Stop
         // sent at 1000 succeeded at 2000, the panel opened at 5000 and the turn takes over 15 s to wind down).
         IslandState.Progress wStop = new IslandState.Progress("A", "Trip", "Trip", "x", 500, 3, "", "", 0, 0, true, 1000, false, "", 0);
         IslandState.Progress wStopOk = new IslandState.Progress("A", "Trip", "Trip", "x", 500, 3, "", "", 0, 0, true, 1000, true, "", 0);
+        IslandState otherStopped = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(w2, wStopOk), 2, null);
+        check(!IslandState.stopUnheard("A", 1000, otherStopped) && !IslandState.newStop(otherStopped.progressFor("A"), 1000),
+                "a stopped chat in lastOthers keeps its stopAt and stopOk, so it never trips the 15 s failure or re-enters Stopping");
         check(wStop.stopAt == 1000 && !wStop.stopOk && wStopOk.stopOk
                 && new IslandState.Progress("A", "", "", "x", 0, 0, "", "", 0, 0, false, 1000, true, "", 0).stopAt == 0,
                 "a chat at work carries when its stop was sent and whether it was accepted (nothing without a stop)");
@@ -368,7 +373,11 @@ ok 'grep -q "line.setClipChildren(false); // the task count" "$PROG"' "the rolli
 ok 'sed -n "/static final class MaxScroll/,/^    }/p" "$VIEWS" | tr -d "\n" | grep -q "protected void dispatchDraw(Canvas c) {            if (!scrolls()) {.*c.clipRect(getScrollX(), getScrollY(), getScrollX() + getWidth(), getScrollY() + getHeight());"' "a scrolling part cuts its content at its edges while it scrolls, so it can't draw over the buttons (landscape, largest text)"
 ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "scrolled.addView(errLine" && ! src "IslandViews.Fit build(" IslandProgress | grep -q "col.addView(errLine"' "the stop failure line is in the scrolled part, so Stop and Open chat stay on the panel"
 ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "enterStopping(false, a.stopAt)" && src "void update(" IslandProgress | grep -q "IslandState.newStop(a, stopSeen)) enterStopping(true, a.stopAt)" && grep -q "IslandState.stopUnheard(session, stopAt, st)) stopFailed();" "$PROG" && src "void stopTurn(String session)" HermesService | grep -q "stopAccepted = true"' "a stop counts from when it was sent, and one that succeeded is never shown as failed"
-ok 'src "void stopTurn(String session)" HermesService | tr -d "\n" | grep -q "if (session.equals(stopping)) stopping = null;                    noteOutcome(\"stop\", session, \"\", IslandState.Outcome.FAILED, failed);"' "a failed stop and the end of Stopping are one post"
+STOPTURN=$(src "void stopTurn(String session)" HermesService)
+ok 'grep -q "if (session.equals(stopping) && stopAccepted) return;" <<<"$STOPTURN" && grep -q "final long attemptAt;" <<<"$STOPTURN" && grep -q "attemptAt = stoppingAt;" <<<"$STOPTURN" && grep -q "stoppingAt == attemptAt" <<<"$STOPTURN" && grep -q "stoppingAt != attemptAt" <<<"$STOPTURN" && tr -d "\n" <<<"$STOPTURN" | grep -q "stopping = null;                    stopAccepted = false;                    noteOutcome(\"stop\", session, \"\", IslandState.Outcome.FAILED, failed);"' "stopTurn tags each attempt, ignores stale threads, avoids duplicate stops once accepted, and clears stopping + stopAccepted with FAILED in one post"
+ok 'src "synchronized java.util.List<IslandState.Progress> islandWorking()" HermesService | grep -q "ses.equals(stopping), stoppingAt," && src "synchronized java.util.List<IslandState.Progress> islandWorking()" HermesService | grep -q "ses.equals(stopping) && stopAccepted"' "chats in lastOthers carry stoppingAt and stopAccepted (15-arg Progress constructor)"
+STATUS=$(sed -n '/case "status": {/,/^            }/p' "$SVC")
+ok 'grep -q "if (!working || !sessionWorking(stopping))" <<<"$STATUS" && grep -q "stopAccepted = false;" <<<"$STATUS" && src "synchronized boolean sessionWorking(" HermesService | grep -q "lastOthers"' "status clears stopping and stopAccepted whenever the stopped chat is no longer lastSession or in lastOthers"
 # The pop-up and the 20 s / 40 s reminders don't ask the panel (review of 78239d3: a request could run out unheard
 # behind a panel nobody looks at, or behind our own PIN screen); whether the pop-up may cover the panel is the owner's.
 APPROVAL=$(sed -n '/case "approval": {/,/^            }/p' "$SVC"); ASK=$(sed -n '/case "ask": {/,/^            }/p' "$SVC")

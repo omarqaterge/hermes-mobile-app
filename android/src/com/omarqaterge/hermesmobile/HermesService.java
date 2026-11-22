@@ -198,6 +198,7 @@ public class HermesService extends Service {
         lastShort = "";
         lastStatus = "Ready";
         stopping = null;
+        stopAccepted = false;
         postStatus();
         updateWake();
     }
@@ -1394,7 +1395,10 @@ public class HermesService extends Service {
                 lastReview = working && e.optBoolean("review", false);
                 double since = e.optDouble("since", 0);
                 if (working && since > 0) workingSince = (long) (since * 1000);
-                if (!working) stopping = null;
+                if (!working || !sessionWorking(stopping)) {
+                    stopping = null;
+                    stopAccepted = false;
+                }
                 boolean ended = lastWorking && !working;
                 lastWorking = working;
                 if (working) flashUntil = 0; // real work beats a flash
@@ -1780,10 +1784,22 @@ public class HermesService extends Service {
             if (ses.isEmpty() || ses.equals(lastSession)) continue;
             boolean oapp = bg != null && bg.session.equals(ses);
             out.add(new IslandState.Progress(ses, IslandState.chatLine(o.optString("title", ""), lastSub), o.optString("title", ""),
-                    o.optString("text", ""), 0, 0, "", "", 0, 0, ses.equals(stopping), oapp ? bg.label : "",
+                    o.optString("text", ""), 0, 0, "", "", 0, 0, ses.equals(stopping), stoppingAt,
+                    ses.equals(stopping) && stopAccepted, oapp ? bg.label : "",
                     oapp && thumb != null ? System.identityHashCode(thumb) : 0));
         }
         return out;
+    }
+
+    /** Chat {@code ses} is among the chats the latest working status named (the chip's chat or in {@code lastOthers}). */
+    synchronized boolean sessionWorking(String ses) {
+        if (ses == null || ses.isEmpty()) return false;
+        if (ses.equals(lastSession)) return true;
+        if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
+            JSONObject o = lastOthers.optJSONObject(k);
+            if (o != null && ses.equals(o.optString("session", ""))) return true;
+        }
+        return false;
     }
 
     /** Every permission request waiting, as the island panel shows it, the oldest first (whatever "When Hermux needs
@@ -1979,9 +1995,12 @@ public class HermesService extends Service {
      *  The chip says "Stopping…" until Hermes reports the turn over; a failure is said plainly. */
     void stopTurn(String session) {
         if (session == null || session.isEmpty()) return;
+        final long attemptAt;
         synchronized (this) {
+            if (session.equals(stopping) && stopAccepted) return; // already accepted for this chat: no duplicate stop
             stopping = session;
             stoppingAt = System.currentTimeMillis();
+            attemptAt = stoppingAt;
             stopAccepted = false;
             postStatus();
         }
@@ -2001,10 +2020,12 @@ public class HermesService extends Service {
             final String failed = err;
             if (failed == null) {
                 main.post(() -> {
+                    boolean mine;
                     synchronized (HermesService.this) {
-                        if (session.equals(stopping)) stopAccepted = true; // the turn winds down: Stopping until it ends
+                        mine = session.equals(stopping) && stoppingAt == attemptAt;
+                        if (mine) stopAccepted = true; // the turn winds down: Stopping until it ends
                     }
-                    noteOutcome("stop", session, "", IslandState.Outcome.STOPPED, null);
+                    if (mine) noteOutcome("stop", session, "", IslandState.Outcome.STOPPED, null);
                 });
                 return;
             }
@@ -2012,7 +2033,9 @@ public class HermesService extends Service {
             // other (the panel would show Stopping again after the failure).
             main.post(() -> {
                 synchronized (HermesService.this) {
-                    if (session.equals(stopping)) stopping = null;
+                    if (!session.equals(stopping) || stoppingAt != attemptAt) return;
+                    stopping = null;
+                    stopAccepted = false;
                     noteOutcome("stop", session, "", IslandState.Outcome.FAILED, failed);
                     postStatus();
                 }
