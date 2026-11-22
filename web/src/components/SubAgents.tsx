@@ -74,7 +74,7 @@ function Lane({ state, moving }: { state: SubState; moving: boolean }) {
   const cls = moving ? ' live' : state === 'done' ? ' done' : wentWrong(state) ? ' bad' : ''
   return (
     <span ref={ref} className={`sub-lane${cls}`} aria-hidden="true">
-      <i />
+      <i className="sub-lane-run" />
     </span>
   )
 }

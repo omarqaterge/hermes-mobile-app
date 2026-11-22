@@ -43,7 +43,7 @@
   opacity: 0;
   transition: opacity var(--motion-settle) var(--ease-fade);
 }
-.edge-light > i {
+.edge-light > .edge-light-layer {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -57,7 +57,7 @@
 .edge-light.waiting {
   opacity: 1;
 }
-html[data-motion='full'] .edge-light.working > i {
+html[data-motion='full'] .edge-light.working:not(.still) > .edge-light-layer {
   animation: agent-turn 4s steps(96) infinite;
 }
 @keyframes agent-turn {
@@ -66,18 +66,18 @@ html[data-motion='full'] .edge-light.working > i {
   }
 }
 /* Still forms: Reduced and Off show the whole edge in gold; waiting shows it in amber at every level. */
-html:not([data-motion='full']) .edge-light.working > i {
+html:not([data-motion='full']) .edge-light.working > .edge-light-layer {
   background: var(--accent);
   opacity: 0.7;
 }
-.edge-light.waiting > i {
+.edge-light.waiting > .edge-light-layer {
   background: var(--warn);
   animation: none;
 }
 /* 15. Hermux uses an app in the background: its card carries the travelling light, and the text box's stands still
    (one light at a time; Composer.tsx sets `still`, a class rather than a :has() rule, which cost style on every
    streamed chunk). */
-.edge-light.working.still > i {
+.edge-light.working.still > .edge-light-layer {
   animation: none;
   background: var(--accent);
   opacity: 0.7;
@@ -172,7 +172,7 @@ html:not([data-motion='full']) .think-orb {
   background: var(--accent);
   opacity: 0.8;
 }
-.reasoning-dot.settled > svg {
+.reasoning-dot.settled {
   animation: agent-settle var(--motion-bounce) var(--spring-bounce) backwards;
 }
 @keyframes agent-settle {
@@ -211,7 +211,7 @@ html[data-motion='full'] .tool-run.step-live .tool-run-label {
   flex: none;
   display: block;
 }
-.drawn-mark path {
+.drawn-mark .drawn-line {
   stroke-dasharray: 1;
   stroke-dashoffset: 0;
 }
@@ -221,10 +221,10 @@ html[data-motion='full'] .tool-run.step-live .tool-run-label {
 .drawn-mark.failed {
   color: var(--err);
 }
-.drawn-mark.draw path {
+.drawn-mark.draw .drawn-line {
   animation: agent-draw var(--motion-settle) var(--spring-gentle) backwards;
 }
-.drawn-mark.draw.failed path + path {
+.drawn-mark.draw.failed .drawn-line + .drawn-line {
   animation-delay: calc(var(--motion-quick) * 0.6);
 }
 .drawn-mark.draw.done {
@@ -240,11 +240,11 @@ html[data-motion='full'] .tool-run.step-live .tool-run-label {
     scale: calc(1 - var(--motion-move) * 0.55);
   }
 }
-html[data-motion='reduced'] .drawn-mark.draw path {
+html[data-motion='reduced'] .drawn-mark.draw .drawn-line {
   animation-name: motion-fade;
 }
-.tool-state .drawn-mark + span {
-  margin-left: 4px;
+.tool-state > .drawn-mark:not(:last-child) {
+  margin-right: 4px;
 }
 .tool.step-failed .tool-head,
 .step-failed-0,
@@ -299,7 +299,7 @@ html[data-motion='reduced'] .drawn-mark.draw path {
   background: var(--err);
   scale: 1 1;
 }
-.sub-lane > i {
+.sub-lane > .sub-lane-run {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -309,7 +309,7 @@ html[data-motion='reduced'] .drawn-mark.draw path {
   opacity: 0;
   translate: -100% 0;
 }
-html[data-motion='full'] .sub-lane.live > i {
+html[data-motion='full'] .sub-lane.live > .sub-lane-run {
   opacity: 1;
   animation: agent-travel 1.6s steps(38) infinite;
 }

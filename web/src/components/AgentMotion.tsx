@@ -17,7 +17,7 @@ export function EdgeLight({ state, still = false }: { state: Light; still?: bool
   useEffect(() => (moving && ref.current ? pauseWhenHidden(ref.current) : undefined), [moving])
   return (
     <span ref={ref} className={`edge-light${state ? ` ${state}` : ''}${still ? ' still' : ''}`} aria-hidden="true">
-      <i />
+      <i className="edge-light-layer" />
     </span>
   )
 }
@@ -44,11 +44,11 @@ export function DrawnMark({ kind, draw, label, size = 14 }: { kind: 'done' | 'fa
   return (
     <svg className={`drawn-mark ${kind}${draw ? ' draw' : ''}`} viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" {...a11y}>
       {kind === 'done' ? (
-        <path pathLength={1} d="M5 12.5l4.5 4.5L19 7.5" />
+        <path className="drawn-line" pathLength={1} d="M5 12.5l4.5 4.5L19 7.5" />
       ) : (
         <>
-          <path pathLength={1} d="M7 7l10 10" />
-          <path pathLength={1} d="M17 7L7 17" />
+          <path className="drawn-line" pathLength={1} d="M7 7l10 10" />
+          <path className="drawn-line" pathLength={1} d="M17 7L7 17" />
         </>
       )}
     </svg>
