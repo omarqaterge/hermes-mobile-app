@@ -130,12 +130,18 @@ recreates from its saved intent does not ask for the card's choice again.
 | Body, with a task list | The task bar: one segment per task, 6 dp high, 4 dp apart, round ends; done green, current gold with a light band crossing it every 1.6 s, to do white 12 %, dropped white 5 %. Under it the current task's name after a gold dot, and "2 of 5 tasks" on the right (`IslandState.tasks`), the number rolling. A task finishing fills green from the left in 300 ms, swells to 170 % of its height and back, and the next segment turns gold 240 ms after the fill starts; the count rolls and the name changes. |
 | Body, without one | A 4 dp line with a soft gold band sweeping across it every 1.25 s, and "7 steps so far" ("1 step so far"; nothing before the first step). |
 | Other chats | One dim line per other busy chat ("Title: step", backticks dropped; "Another chat" with no title), two at most, then "+N more chats" ("+1 more chat") for the rest the plugin counts. |
-| App in use | While Hermux uses an app for this chat: its latest picture (72 dp, corners 12 dp, the one the working card shows), "Using <app>", and a quiet "Watch" button that opens the chat with the live viewer (`MainActivity.EXTRA_BG_VIEW`, 3.10). The panel never shows over the lock screen, so neither does the picture. |
+| App in use | While Hermux uses an app for this chat: its latest picture (72 dp, corners 12 dp, the one the working card shows), "Using <app>", and a quiet "Watch" button (92 dp wide, wider when a large font needs it) that opens the chat with the live viewer (`MainActivity.EXTRA_BG_VIEW`, 3.10). The panel never shows over the lock screen, so neither does the picture. |
 | Buttons | "Stop" with a small square (red) on the left and "Open chat" (quiet) on the right, split 36 % / 64 %. Both ignore a touch through another app's window. |
+
+When the panel can't fit everything (landscape, a large font), the body and the app row scroll together and the header
+and the buttons stay on screen; the scrolled part keeps room for the task bar's swell.
 
 **Stop** is the card's Stop: `ACTION_STOP` to the service (`HermesService.stopTurn`), nothing more, and the panel is
 never over the lock screen. "Open chat" fades, "Stop" grows to the full row and says "Stopping…" with a spinner, and
-the headline says "Stopping…". The card's own Stop, tapped while the panel is open, shows the same. Then
+the headline says "Stopping…". The card's own Stop, tapped while the panel is open, shows the same, and a panel
+opened while the card's Stop is already on its way opens that way (Open chat already gone). All three enter Stopping
+by one path (`IslandProgress.enterStopping`), so each waits for the same outcome and no request breaks in meanwhile.
+Then
 (`IslandState.stopFate`): when the turn is over, a drawn cross and "Stopped" on the red wash, hold 0.9 s, close; when
 the service couldn't stop it (or no word in 15 s), the two buttons come back with the red line "Couldn't stop Hermux.
 Open the chat to stop it." and the reject buzz (the service also posts its own "Couldn't stop Hermux" card).
@@ -153,12 +159,13 @@ without a touch (`PROGRESS_IDLE_MS`, started again by every touch on the window)
 
 | Part | What it shows |
 |---|---|
-| Badge | Green at 16 % with a green check: it pops in from 60 % (380 ms on back), the check draws itself (300 ms), one green ring expands to 160 % and fades (520 ms). |
+| Badge | The green wash (17 %, `GREEN_WASH`) with a green check: it pops in from 60 % (380 ms on back), the check draws itself (300 ms), one green ring expands to 160 % and fades (520 ms). |
 | Headline | "Done". |
-| Body | The start of the reply (three lines at most), then "9 steps · 1m 31s" in dim (`IslandState.doneStats`; a part Hermes didn't send is left out). |
+| Body | The start of the reply (three lines at most), then "9 steps · 1m 31s" in dim (`IslandState.doneStats`; a part Hermes didn't send is left out). It scrolls when the panel can't fit it. |
 | Button | "Open chat", gold, across the row: opens the chat and clears the Done chip, as tapping the Done chip does (`clearDone`). |
 
-Done doesn't close by itself: the user is reading. The working card of a new turn, tapped while Done is open, changes
+Done doesn't close by itself: the user is reading. Each chat keeps its own last reply (`IslandState.dones`, at most
+`MAX_DONE`, the newest first; `doneOf`), so two chats finishing one after the other each keep their Done. The working card of a new turn, tapped while Done is open, changes
 it to that turn's Progress.
 
 #### Changing state
@@ -169,11 +176,18 @@ question arriving during Progress or Done changes it to that state, with one lig
 during a stop on its way it waits); the turn ending changes Progress to Done. After an answer sent from the panel (a
 choice or text, Allowed or Denied), it changes to the next permission request waiting, else to a question waiting,
 else it closes (`IslandPanel.nextOrClose`, `IslandState.nextAfter`). A request or question answered elsewhere, or run
-out, still closes as described above.
+out, still closes as described above. A change right after another stops the earlier content's fade-in where it is
+(`swapIn`). Changing to Progress is spoken by TalkBack (the chat and the step); changing to a question with no choices
+puts the cursor in its field and opens the keyboard (`keyboardIfTyped`), as opening on it does.
+
+**No pop-up over the panel.** While the panel shows Progress or Done (`IslandPanel.takesArrivals`), a question or
+request that arrives gets no pop-up from the service: the panel changes to it. While it shows the Permission state or
+Progress or Done (`showsRequests`), a new request gets no pop-up and no 20 s / 40 s re-alert. The chip, and the
+pinned notification below Android 16, still carry it.
 
 **A card answer is confirmed on the chip.** After an answer from a card button (Allow once, Allow session, Deny, a
-choice, the Answer field of the pop-up), the chip says "Allowed", "Denied" or "Sent" for two seconds (4.3); an answer
-from the panel shows its own check instead.
+choice, the Answer field of the pop-up), the chip says "Allowed", "Denied" or "Sent" for two seconds beside a drawn check or cross (4.3); an
+answer from the panel shows its own check instead.
 
 #### Gestures
 

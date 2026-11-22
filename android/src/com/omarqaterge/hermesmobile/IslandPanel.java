@@ -79,6 +79,20 @@ public class IslandPanel extends Activity {
 
     /** The panel on screen, or null. */
     static volatile IslandPanel shown;
+
+    /** The panel is on screen in Progress or Done, where a request or question arriving takes its place: the
+     *  service's own pop-up for it would only drop over the panel (any thread; a moment stale at worst). */
+    static boolean takesArrivals() {
+        IslandPanel p = shown;
+        return p != null && !p.closing && p.prog != null && p.prog.takesArrivals();
+    }
+
+    /** The panel is on screen with every waiting permission request in reach: in the Permission state (the others as
+     *  "N more waiting", then the next), or in Progress or Done (it changes to the request). */
+    static boolean showsRequests() {
+        IslandPanel p = shown;
+        return p != null && !p.closing && (p.perm != null || (p.prog != null && p.prog.takesArrivals()));
+    }
     static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final AtomicBoolean QUEUED = new AtomicBoolean();
 
@@ -695,11 +709,17 @@ public class IslandPanel extends Activity {
         // The keyboard opens by itself only when there are no choices; with choices it waits for a tap on the field.
         if (has && firstFocus) {
             firstFocus = false;
-            if (ask != null && ask.choices.isEmpty() && field != null && !closing) {
-                field.requestFocus();
-                InputMethodManager imm = getSystemService(InputMethodManager.class);
-                if (imm != null) imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
-            }
+            keyboardIfTyped();
+        }
+    }
+
+    /** A question with no choices is answered by typing: its field takes the focus and the keyboard opens (design
+     *  5.2), when the panel opens on it and when it changes to it in place. */
+    void keyboardIfTyped() {
+        if (ask != null && ask.choices.isEmpty() && field != null && !closing) {
+            field.requestFocus();
+            InputMethodManager imm = getSystemService(InputMethodManager.class);
+            if (imm != null) imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
         }
     }
 
@@ -884,6 +904,7 @@ public class IslandPanel extends Activity {
         if (badge != null) badge.pulse(ticker, reduced);
         haptic(HapticFeedbackConstants.KEYBOARD_TAP);
         card.announceForAccessibility(IslandState.ASKS + ". " + a.question);
+        if (!firstFocus) root.post(this::keyboardIfTyped); // in place, with the window's focus already here
     }
 
     /** The Permission state for request {@code a}, in place of what is on screen (another request after an answer, or
@@ -934,6 +955,7 @@ public class IslandPanel extends Activity {
         swapInner(prog.build(a, st));
         prog.start();
         touched();
+        card.announceForAccessibility(a.chat + ". " + prog.headNow); // the change is spoken, as every other one
     }
 
     /**
@@ -952,7 +974,14 @@ public class IslandPanel extends Activity {
 
     /** Puts {@code now} in place of the content on screen: the old one takes no touch and fades out while shrinking
      *  to 98 %; the new one fades in from 6 dp lower; the height follows on resize. */
+    /** The incoming content's fade-in of the latest change of state, still running or waiting for its delay. */
+    IslandViews.Ticker.Handle swapIn;
+
     void swapInner(IslandViews.Fit now) {
+        // A change right after another: the earlier content's fade-in stops where it is (it would raise the opacity
+        // of what is now leaving, and move the new content), and it leaves from there.
+        if (swapIn != null) swapIn.cancel();
+        swapIn = null;
         IslandViews.Fit old = inner;
         inner = now;
         card.addView(inner);
@@ -972,16 +1001,19 @@ public class IslandPanel extends Activity {
         now.setAlpha(0);
         innerDy = reduced ? 0 : dp(IslandMotion.STATE_IN_DY);
         applyGeo();
-        ticker.tween(delay, inMs, IslandMotion.OUT, v -> {
+        IslandViews.Ticker.Handle[] me = {null};
+        me[0] = ticker.tween(delay, inMs, IslandMotion.OUT, v -> {
             now.setAlpha((float) v);
             if (!reduced) {
                 innerDy = dp(IslandMotion.STATE_IN_DY) * (float) (1 - v);
                 applyGeo();
             }
         }, () -> {
+            if (swapIn == me[0]) swapIn = null;
             innerDy = 0;
             applyGeo();
         });
+        swapIn = me[0];
     }
 
     // ── the Question state (design 5.2) ──

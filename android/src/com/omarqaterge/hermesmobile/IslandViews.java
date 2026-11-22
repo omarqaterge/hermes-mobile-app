@@ -41,9 +41,9 @@ final class IslandViews {
     static final int RED_WASH = 0x26E5564B, RED_TEXT = 0xFFFF8177, GREEN_WASH = 0x2B3DBE7A, GREEN_TEXT = 0xFF6FDCA0;
     /** The badge behind the icon (gold at 14 %), the grab line (white 16 %), the focused field's border (gold 55 %). */
     static final int GOLD_SOFT = 0x24D9A441, GRAB = 0x29FFFFFF, FOCUS = 0x8CD9A441;
-    /** The Done badge (green at 16 %); the task bar's to-do and dropped segments (white 12 %, 5 %), the sweep's track
-     *  (white 10 %) and the light band crossing the current task (white 60 % at its middle). */
-    static final int GREEN_SOFT = 0x293DBE7A, SEG_TODO = 0x1FFFFFFF, SEG_DROPPED = 0x0DFFFFFF, SWEEP_TRACK = 0x1AFFFFFF,
+    /** The task bar's to-do and dropped segments (white 12 %, 5 %), the sweep's track (white 10 %) and the light band
+     *  crossing the current task (white 60 % at its middle). */
+    static final int SEG_TODO = 0x1FFFFFFF, SEG_DROPPED = 0x0DFFFFFF, SWEEP_TRACK = 0x1AFFFFFF,
             SHIMMER = 0x99FFFFFF;
     /** The spinner's track: white 18 % on dark, gold ink 25 % on gold. */
     static final int SPIN_TRACK = 0x2EFFFFFF, SPIN_TRACK_GOLD = 0x401A1307;
@@ -284,7 +284,7 @@ final class IslandViews {
         /** The Done badge: the green wash with a check, no icon. */
         static Badge done(Context c) {
             Badge b = new Badge(c, null);
-            b.fill.setColor(GREEN_SOFT);
+            b.fill.setColor(GREEN_WASH); // the design's green wash (17 %)
             b.ring.setColor(GREEN);
             b.check = 0;
             return b;
@@ -814,6 +814,17 @@ final class IslandViews {
             invalidate();
         }
 
+        /** As wide as its label and icon with 12 dp each side (at least its minimum width), 48 dp tall, where the
+         *  parent lets it choose (Watch); in a ButtonRow it is given its span exactly. */
+        @Override
+        protected void onMeasure(int ws, int hs) {
+            Context ctx = getContext();
+            float iconPx = icon == NO_ICON ? 0 : dp(ctx, 20);
+            float want = label.measureText(text) + iconPx + (iconPx > 0 ? dp(ctx, 8) : 0) + dp(ctx, 24);
+            setMeasuredDimension(resolveSize(Math.max(getSuggestedMinimumWidth(), (int) Math.ceil(want)), ws),
+                    resolveSize(Math.max(getSuggestedMinimumHeight(), Math.round(dp(ctx, 48))), hs));
+        }
+
         @Override
         protected void onDraw(Canvas c) {
             Context ctx = getContext();
@@ -954,11 +965,18 @@ final class IslandViews {
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
 
+        /** The fill, swell and next-gold motions still running: a new task list cancels them first. */
+        final java.util.ArrayList<Ticker.Handle> moving = new java.util.ArrayList<>();
+
         /** The task list now. With {@code animate}, a task that turned done fills and swells, and the next current one
-         *  turns gold after it; a list that changed its length (or a first one) is just drawn. */
+         *  turns gold after it; a list that changed its length (or a first one) is just drawn. Each motion writes only
+         *  to the arrays of its own list, and a newer list cancels the ones still running, so a list that shrinks or
+         *  changes again mid-motion never reaches past its end or a segment the newer list drew. */
         void set(String now, Ticker t, boolean reduced, boolean animate) {
             if (now == null) now = "";
             if (now.equals(states)) return;
+            for (Ticker.Handle m : moving) m.cancel();
+            moving.clear();
             String old = states;
             states = now;
             int n = now.length();
@@ -975,11 +993,11 @@ final class IslandViews {
                     g[i] = 0;
                     final int k = i;
                     long fill = reduced ? IslandMotion.reduced(IslandMotion.TASK_FILL_MS) : IslandMotion.TASK_FILL_MS;
-                    t.tween(0, fill, IslandMotion.STANDARD, v -> { green[k] = v; invalidate(); }, null);
-                    if (!reduced) t.tween(IslandMotion.TASK_SWELL_DELAY_MS, IslandMotion.TASK_SWELL_MS, IslandMotion.BACK, v -> {
-                        height[k] = IslandMotion.swell(v);
+                    moving.add(t.tween(0, fill, IslandMotion.STANDARD, v -> { g[k] = v; invalidate(); }, null));
+                    if (!reduced) moving.add(t.tween(IslandMotion.TASK_SWELL_DELAY_MS, IslandMotion.TASK_SWELL_MS, IslandMotion.BACK, v -> {
+                        h[k] = IslandMotion.swell(v);
                         invalidate();
-                    }, () -> { height[k] = 1; invalidate(); });
+                    }, () -> { h[k] = 1; invalidate(); }));
                 }
             }
             if (same) for (int i = 0; i < n; i++) {
@@ -987,7 +1005,7 @@ final class IslandViews {
                 au[i] = 0;
                 final int k = i;
                 long in = reduced ? IslandMotion.reduced(IslandMotion.TASK_NEXT_IN_MS) : IslandMotion.TASK_NEXT_IN_MS;
-                t.tween(finished && !reduced ? IslandMotion.TASK_NEXT_MS : 0, in, IslandMotion.OUT, v -> { gold[k] = v; invalidate(); }, null);
+                moving.add(t.tween(finished && !reduced ? IslandMotion.TASK_NEXT_MS : 0, in, IslandMotion.OUT, v -> { au[k] = v; invalidate(); }, null));
             }
             green = g;
             gold = au;

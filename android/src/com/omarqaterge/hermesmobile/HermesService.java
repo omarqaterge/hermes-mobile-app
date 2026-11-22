@@ -1426,8 +1426,10 @@ public class HermesService extends Service {
                 boolean doneFlash = e.optBoolean("done", false) || e.optString("short", "").contains("Done");
                 if (doneFlash && session != null && !session.isEmpty()) {
                     // The island panel's Done state, whatever the Done chip's rules below decide for the chip.
-                    lastDone = new IslandState.Done(session, IslandState.chatLine(title, profile), e.optString("reply", ""),
-                            e.optInt("steps", 0), e.optLong("secs", 0), System.currentTimeMillis());
+                    lastDone.remove(session); // one per chat, the newest last
+                    lastDone.put(session, new IslandState.Done(session, IslandState.chatLine(title, profile), e.optString("reply", ""),
+                            e.optInt("steps", 0), e.optLong("secs", 0), System.currentTimeMillis()));
+                    while (lastDone.size() > IslandState.MAX_DONE) lastDone.remove(lastDone.keySet().iterator().next());
                     IslandPanel.refresh(this);
                     if (MainActivity.visible) return; // the app is on screen: its own unread dots show it, no sticky chip
                     if (!NotifyChoice.finishes(this)) return; // Settings → Notifications → "When a task finishes" is off: no Done chip, no badge
@@ -1471,6 +1473,7 @@ public class HermesService extends Service {
                 updateWake();
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
+                if (IslandPanel.showsRequests()) return; // no popup over the island panel: it shows the request itself
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
                 Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
                 hideOnLockScreen(b, ev.optBoolean("phone_data", false));
@@ -1489,6 +1492,7 @@ public class HermesService extends Service {
                 main.postDelayed(expireAskTask, ASK_TTL_MS + 100); // each arrival has its own expiry check
                 postStatus();
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
+                if (IslandPanel.takesArrivals()) return; // no popup over the island panel: it changes to the question
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
                 Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
                 // Answer in the notification; a question with choices offers them as quick replies.
@@ -1744,12 +1748,15 @@ public class HermesService extends Service {
         }
         String kind = IslandState.pick(pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
         java.util.List<IslandState.Progress> working = islandWorking();
+        java.util.ArrayList<IslandState.Done> dones = new java.util.ArrayList<>(lastDone.values());
+        java.util.Collections.reverse(dones); // the newest first
         return new IslandState(kind, ask, lastOutcome, lastExpired, islandApprovals(), working,
-                working.isEmpty() ? 0 : 1 + lastMore, lastDone);
+                working.isEmpty() ? 0 : 1 + lastMore, dones);
     }
 
-    /** The last turn that finished with a reply (its "flash" event), for the island panel's Done state. */
-    IslandState.Done lastDone;
+    /** The last turn of each chat that finished with a reply (its "flash" event), the newest last, for the island
+     *  panel's Done state: a map, so two chats finishing one after the other each keep their own. */
+    final java.util.LinkedHashMap<String, IslandState.Done> lastDone = new java.util.LinkedHashMap<>();
 
     /** Every chat at work, as the island panel's Progress state shows it: the one the chip shows (its step, task list,
      *  clock, steps, a stop on its way, the app Hermux uses for it), then the other busy chats the plugin names. */
@@ -1988,11 +1995,16 @@ public class HermesService extends Service {
                 err = ex.getMessage();
             }
             final String failed = err;
-            main.post(() -> noteOutcome("stop", session, "", failed == null ? IslandState.Outcome.STOPPED : IslandState.Outcome.FAILED, failed));
-            if (failed == null) return;
+            if (failed == null) {
+                main.post(() -> noteOutcome("stop", session, "", IslandState.Outcome.STOPPED, null));
+                return;
+            }
+            // One post: the failure and the end of "Stopping…" together, so no status in between sees one without the
+            // other (the panel would show Stopping again after the failure).
             main.post(() -> {
                 synchronized (HermesService.this) {
                     if (session.equals(stopping)) stopping = null;
+                    noteOutcome("stop", session, "", IslandState.Outcome.FAILED, failed);
                     postStatus();
                 }
                 NotificationManager nm = getSystemService(NotificationManager.class);
@@ -2280,7 +2292,7 @@ public class HermesService extends Service {
             long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());
             long sec = elapsed / 1000;
             boolean needs = NotifyChoice.needsMe(this);
-            if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible && needs) {
+            if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible && !IslandPanel.showsRequests() && needs) {
                 lastReAlert = sec;
                 reAlertApproval();
             }
@@ -2337,7 +2349,7 @@ public class HermesService extends Service {
     }
 
     /** A card button's answer went through: the chip says so for two seconds ("Allowed", "Denied", "Sent"), so a card
-     *  answer is confirmed as a panel answer is (design 6). Words, green or red: no tick or cross glyph (no-emoji). */
+     *  answer is confirmed as a panel answer is (design 6): a drawn check (green) or cross (red) icon beside the word. */
     String confirmText = "";
     boolean confirmGood;
     long confirmUntil = 0;
@@ -2363,7 +2375,7 @@ public class HermesService extends Service {
 
     Notification confirmNotification() {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
-                .setSmallIcon(confirmGood ? R.drawable.ic_stat_hermes : R.drawable.ic_stat_shield)
+                .setSmallIcon(confirmGood ? R.drawable.ic_stat_check : R.drawable.ic_stat_cross)
                 .setColor(confirmGood ? GREEN : RED)
                 .setContentTitle(confirmText)
                 .setOngoing(true)

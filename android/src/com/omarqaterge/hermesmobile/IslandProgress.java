@@ -103,12 +103,20 @@ final class IslandProgress {
         col.addView(hd);
         p.rows.add(hd);
 
-        // Body: the task bar or the sweep, the line under it, the other busy chats.
+        // Body: the task bar or the sweep, the line under it, the other busy chats; then the app row. They scroll
+        // together when the panel can't fit them (landscape, a large font), so the header and the buttons stay put.
+        // The scrolled column keeps room above and below for the bar's swell, which the scroll view would clip.
         body = new LinearLayout(p);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setClipChildren(false);
         fillBody(a, st);
-        col.addView(body, p.margins(14, 0));
+        float swellRoom = (IslandViews.TaskBar.VIEW_DP - IslandMotion.SEG_H_DP) / 2f;
+        LinearLayout scrolled = new LinearLayout(p);
+        scrolled.setOrientation(LinearLayout.VERTICAL);
+        scrolled.setClipChildren(false);
+        int sr = Math.round(dp(swellRoom));
+        scrolled.setPadding(0, sr, 0, sr);
+        scrolled.addView(body);
         p.rows.add(body);
 
         // An app in use for this chat: its picture, "Using <app>", Watch.
@@ -126,10 +134,17 @@ final class IslandProgress {
         appRow.addView(appText, alp);
         watch = pill(IslandState.WATCH, IslandViews.FILL, IslandViews.TEXT, IslandViews.Pill.NO_ICON, IslandViews.ButtonRow.FULL);
         watch.setOnClickListener(v -> p.openChat(session, null, false, true));
-        appRow.addView(watch, new LinearLayout.LayoutParams(Math.round(dp(92)), Math.round(dp(48))));
-        col.addView(appRow, p.margins(14, 0));
+        watch.setMinimumWidth(Math.round(dp(92))); // 92 dp, wider when a large font needs it
+        appRow.addView(watch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Math.round(dp(48))));
+        scrolled.addView(appRow, p.margins(14, 0));
         setApp(a, false);
         if (appRow.getVisibility() == View.VISIBLE) p.rows.add(appRow);
+        IslandViews.MaxScroll scroll = new IslandViews.MaxScroll(p);
+        scroll.addView(scrolled);
+        LinearLayout.LayoutParams slp = p.margins(14 - swellRoom, 0);
+        slp.bottomMargin = -sr;
+        col.addView(scroll, slp);
+        col.flex.add(scroll);
 
         // The failure line, above the buttons, shown only when the stop failed.
         errLine = IslandViews.text(p, 14, 20, 400, IslandViews.RED_TEXT);
@@ -149,7 +164,7 @@ final class IslandProgress {
 
         grab = grabLine(col);
         p.setTitle(headline.getText());
-        if (a.stopping) stoppingLook(false); // the card's Stop is already on its way
+        if (a.stopping) enterStopping(false); // the card's Stop is already on its way
         return col;
     }
 
@@ -206,6 +221,7 @@ final class IslandProgress {
         LinearLayout line = new LinearLayout(p);
         line.setOrientation(LinearLayout.HORIZONTAL);
         line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setClipChildren(false); // the task count's digits roll past its line
         if (a.hasTasks()) {
             bar = new IslandViews.TaskBar(p);
             bar.set(a.states, p.ticker, p.reduced, false);
@@ -361,8 +377,11 @@ final class IslandProgress {
         st.setVisibility(stats.isEmpty() ? View.GONE : View.VISIBLE);
         bd.addView(st, p.margins(d.reply.isEmpty() ? 0 : 8, 0));
         boolean hasBody = !d.reply.isEmpty() || !stats.isEmpty();
-        if (hasBody) {
-            col.addView(bd, p.margins(14, 0));
+        if (hasBody) { // it scrolls when the panel can't fit it, so the header and Open chat stay put
+            IslandViews.MaxScroll scroll = new IslandViews.MaxScroll(p);
+            scroll.addView(bd);
+            col.addView(scroll, p.margins(14, 0));
+            col.flex.add(scroll);
             p.rows.add(bd);
         }
         row = new IslandViews.ButtonRow(p);
@@ -418,12 +437,17 @@ final class IslandProgress {
 
     // ── the live state ──
 
+    /** Progress at rest or Done: a request or question arriving takes the panel's place (not while a stop is on its
+     *  way, nor once it is over). */
+    boolean takesArrivals() {
+        return !p.closing && (done || IslandState.WORKING.equals(phase));
+    }
+
     /** A new snapshot: a request or question arriving changes the panel; the turn ending turns it into Done (or
      *  Stopped, after a stop), or closes it; otherwise the step, the clock, the tasks and the others follow. */
     void apply(IslandState st) {
         if (p.closing || st == null || IslandState.ENDED.equals(phase) || IslandState.Outcome.STOPPED.equals(phase)) return;
-        boolean idle = done || IslandState.WORKING.equals(phase);
-        String arrived = idle ? st.arrived() : IslandState.NONE;
+        String arrived = takesArrivals() ? st.arrived() : IslandState.NONE;
         if (IslandState.PERMISSION.equals(arrived)) {
             p.swapToPermission(st.approvalToShow(null, null), st, null);
             return;
@@ -472,11 +496,7 @@ final class IslandProgress {
         IslandState.Progress was = shown;
         shown = a;
         if (a.since > 0 && a.since != since) since = a.since;
-        if (a.stopping && IslandState.WORKING.equals(phase)) { // the card's Stop, tapped while the panel is open
-            stopAt = System.currentTimeMillis();
-            phase = IslandState.SENDING;
-            stoppingLook(true);
-        }
+        if (a.stopping && IslandState.WORKING.equals(phase)) enterStopping(true); // the card's Stop, tapped while open
         if (IslandState.WORKING.equals(phase) && !a.headline.equals(headNow)) setHeadline(a.headline);
         if (a.hasTasks() != was.hasTasks()) {
             fillBody(a, st); // a task list appeared (or went): the body changes, and arrives
@@ -534,26 +554,40 @@ final class IslandProgress {
     void tapStop() {
         if (p.closing || !IslandState.WORKING.equals(phase) || session.isEmpty()) return;
         p.haptic(HapticFeedbackConstants.KEYBOARD_TAP);
-        phase = IslandState.SENDING;
-        stopAt = System.currentTimeMillis();
         try {
             p.startService(new Intent(p, HermesService.class).setAction(HermesService.ACTION_STOP).putExtra("session", session));
         } catch (RuntimeException e) {
-            stoppingLook(true);
+            enterStopping(true);
             stopFailed();
             return;
         }
-        stoppingLook(true);
+        enterStopping(true);
+    }
+
+    /** A stop is on its way, whoever sent it: the panel's Stop, the card's Stop seen while the panel is open, or the
+     *  card's Stop already on its way when the panel opens ({@code animate} false: the row is built that way). The same
+     *  path for all three, so each waits for the same outcome (Stopped when the turn ends, the failure line when it
+     *  fails or nothing is heard within 15 s) and no request breaks in meanwhile. */
+    void enterStopping(boolean animate) {
+        phase = IslandState.SENDING;
+        stopAt = System.currentTimeMillis();
+        stoppingLook(animate);
+        p.MAIN.removeCallbacks(stopTimeoutRun);
         p.MAIN.postDelayed(stopTimeoutRun, IslandPanel.SEND_TIMEOUT_MS);
     }
 
-    /** The row turns into Stopping... (the panel's Stop, or the card's seen while the panel is open). */
+    /** The row turns into Stopping... (only through {@link #enterStopping}). */
     void stoppingLook(boolean animate) {
         boolean move = animate && !p.reduced;
         open.setEnabled(false);
         stop.setEnabled(false);
         if (errLine.getVisibility() == View.VISIBLE) errLine.setVisibility(View.GONE);
-        fadeView(open, 0, IslandMotion.OTHERS_OUT_MS);
+        if (animate) fadeView(open, 0, IslandMotion.OTHERS_OUT_MS);
+        else { // built that way: Open chat is gone from the start
+            IslandViews.Ticker.Handle f = fades.remove(open);
+            if (f != null) f.cancel();
+            open.setAlpha(0);
+        }
         row.move(stop, IslandViews.ButtonRow.FULL, p.ticker, !move, IslandMotion.GROW_MS, IslandMotion.BACK);
         growEnd = SystemClock.uptimeMillis() + (move ? IslandMotion.GROW_MS : 0);
         stop.colours(IslandViews.FILL, IslandViews.DIM, p.ticker, p.reduced || !animate, IslandMotion.BUTTON_COLOUR_MS);
@@ -636,10 +670,7 @@ final class IslandProgress {
 
     /** Opened on a chat that is no longer at work: its reply, if one came, else nothing to show. */
     static IslandState.Done doneOnOpen(IslandState st, String session) {
-        if (st == null || st.done == null) return null;
-        String s = session == null ? "" : session;
-        IslandState.Done d = st.done;
-        boolean recent = System.currentTimeMillis() - d.at < 10 * 60_000L;
-        return recent && (s.isEmpty() || d.session.equals(s)) ? d : null;
+        IslandState.Done d = st == null ? null : st.doneOf(session);
+        return d != null && System.currentTimeMillis() - d.at < 10 * 60_000L ? d : null;
     }
 }

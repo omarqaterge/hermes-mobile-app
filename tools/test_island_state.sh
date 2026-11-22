@@ -173,12 +173,22 @@ public class IslandStateTest {
                 && "Couldn't stop Hermux. Open the chat to stop it.".equals(IslandState.STOP_FAILED) && "Watch".equals(IslandState.WATCH)
                 && "Done".equals(IslandState.DONE_TITLE), "the Progress and Done words, as in design 5.3 and 5.4");
         IslandState.Done dA = new IslandState.Done("A", "Trip", " The plan is ready. ", 9, 91, 5000);
-        IslandState ended = new IslandState(IslandState.DONE, null, null, null, null, null, 0, dA);
+        IslandState ended = new IslandState(IslandState.DONE, null, null, null, null, null, 0, Arrays.asList(dA));
         check("The plan is ready.".equals(dA.reply) && ended.doneFor("A", 1000) == dA && ended.doneFor("A", 6000) == null && ended.doneFor("B", 0) == null,
                 "a reply is this turn's when it came after the turn started, for this chat");
+        IslandState.Done dB = new IslandState.Done("B", "Other chat", "B's reply.", 2, 10, 5200);
+        IslandState.Done dA2 = new IslandState.Done("A", "Plan the trip", "Older.", 1, 5, 4000);
+        IslandState twoChats = new IslandState(IslandState.DONE, null, null, null, null, null, 0, Arrays.asList(dB, dA, dA2));
+        check(twoChats.doneFor("A", 1000) == dA && twoChats.doneFor("B", 5000) == dB && twoChats.done == dB
+                && twoChats.dones.size() == 2 && twoChats.doneOf("") == dB && twoChats.doneOf("A") == dA && twoChats.doneFor("", 0) == null,
+                "two chats finishing one after the other each keep their Done (one per chat, the newest first)");
+        java.util.List<IslandState.Done> manyDone = new java.util.ArrayList<>();
+        for (int k = 0; k < 12; k++) manyDone.add(new IslandState.Done("S" + k, "", "", 0, 0, 1000 + k));
+        check(new IslandState(IslandState.NONE, null, null, null, null, null, 0, manyDone).dones.size() == IslandState.MAX_DONE,
+                "at most MAX_DONE replies are kept");
         check(IslandState.WORKING.equals(IslandState.turnFate("A", 1000, 0, busy, 9000)), "the chat still at work: working");
         check(IslandState.DONE.equals(IslandState.turnFate("A", 1000, 0, ended, 9000)), "its reply came: done");
-        IslandState withReplyStillBusy = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(w1), 1, dA);
+        IslandState withReplyStillBusy = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(w1), 1, Arrays.asList(dA));
         check(IslandState.DONE.equals(IslandState.turnFate("A", 1000, 0, withReplyStillBusy, 9000)), "the reply before the status says it ended: done all the same");
         check(IslandState.WORKING.equals(IslandState.turnFate("A", 6000, 0, withReplyStillBusy, 9000)), "an older turn's reply doesn't end this one");
         IslandState quiet = new IslandState(IslandState.NONE, null, null, null, null, null, 0, null);
@@ -306,7 +316,7 @@ ok 'grep -q "p.MAIN.removeCallbacks(p.idleRun); // Done doesn" "$PROG"' "Done do
 ok 'grep -q "p.openChat(session, null, true, false)" "$PROG" && src "void openChat(String chat, String draft, boolean clearDone" IslandPanel | grep -q "putExtra(\"clearDone\", true)"' "Done's Open chat clears the Done chip, as the chip's own tap does"
 ok 'grep -q "p.openChat(session, null, false, true)" "$PROG" && src "void openChat(String chat, String draft, boolean clearDone" IslandPanel | grep -q "MainActivity.EXTRA_BG_VIEW"' "Watch opens the live viewer"
 FLASH=$(sed -n '/case "flash": {/,/^            }/p' "$SVC")
-ok '[ "$(grep -n "lastDone = new IslandState.Done" <<<"$FLASH" | cut -d: -f1)" -lt "$(grep -n "if (MainActivity.visible) return;" <<<"$FLASH" | head -1 | cut -d: -f1)" ] && grep -q "if (!NotifyChoice.finishes(this)) return;" <<<"$FLASH" && grep -q "unseen.put(session" <<<"$FLASH"' "the Done record is taken before the Done chip's rules, which stay as they were"
+ok '[ "$(grep -n "lastDone.put(session, new IslandState.Done" <<<"$FLASH" | cut -d: -f1)" -lt "$(grep -n "if (MainActivity.visible) return;" <<<"$FLASH" | head -1 | cut -d: -f1)" ] && grep -q "if (!NotifyChoice.finishes(this)) return;" <<<"$FLASH" && grep -q "unseen.put(session" <<<"$FLASH"' "the Done record is taken before the Done chip's rules, which stay as they were"
 ok '! grep -q "setShowWhenLocked\|FLAG_SHOW_WHEN_LOCKED\|setTurnScreenOn" "$PANEL" "$PROG" && ! sed -n "/android:name=\".IslandPanel\"/,/\/>/p" android/AndroidManifest.xml | grep -q showWhenLocked' "the panel (and the app-in-use picture in it) is never over the lock screen"
 ok 'src "void apply(IslandState st)" IslandProgress | grep -q "st.arrived()" && src "void apply(IslandState st)" IslandProgress | grep -q "p.swapToPermission(" && src "void apply(IslandState st)" IslandProgress | grep -q "p.swapTo(st.askToShow())"' "a request or question arriving during Progress or Done changes the panel in place"
 ok 'src "void leaveProgress()" IslandPanel | grep -q "prog.stop()" && src "void swapTo(IslandState.Ask a)" IslandPanel | grep -q "leaveProgress()" && src "void swapToPermission(" IslandPanel | grep -q "leaveProgress()"' "the Progress state's loops stop when a request or question takes its place"
@@ -314,4 +324,21 @@ ok 'src "void succeeded()" IslandPanel | grep -q "postDelayed(nextRun" && src "v
 ok 'src "void answerApproval(" HermesService | grep -q "choice, true);" && grep -q "choice, false);" <<<"$FROM" && src "void sendApproval(" HermesService | grep -q "if (card) confirmChip("' "only a card button's answer is confirmed on the chip"
 ok 'src "void sendAnswer(String text)" IslandPanel | grep -q "putExtra(\"panel\", true)" && src "void answerFromNotification(" HermesService | grep -q "!fromPanel) confirmChip(CONFIRM_SENT, true)"' "a card's answer to a question says Sent on the chip; the panel's doesn't"
 ok 'src "Notification statusNotification(" HermesService | sed -n 2p | grep -q "confirmUntil > System.currentTimeMillis()) return confirmNotification()" && grep -q "CONFIRM_MS = 2000" "$SVC"' "the confirmation shows for two seconds"
+# Review fixes: the task bar's motions write only to their own list and a newer list cancels them; Progress and Done
+# scroll their body; every way into Stopping is one path with its timeout; the chip's confirmation has a drawn check or
+# cross; Watch wraps its text; back-to-back changes of state cancel the earlier fade-in; the Done badge is the green
+# wash; swapping to Progress is spoken; a question with no choices opens the keyboard when swapped to in place; one Done
+# per chat; a failed stop ends Stopping in the same post; no pop-up over a panel that shows the request itself.
+TASKSET=$(sed -n '/void set(String now, Ticker t, boolean reduced, boolean animate)/,/^        }/p' "$VIEWS")
+ok 'grep -q "for (Ticker.Handle m : moving) m.cancel();" <<<"$TASKSET" && grep -q "g\[k\] = v" <<<"$TASKSET" && grep -q "h\[k\] = IslandMotion.swell(v)" <<<"$TASKSET" && grep -q "au\[k\] = v" <<<"$TASKSET" && ! grep -q "green\[k\]\|height\[k\]\|gold\[k\]" <<<"$TASKSET"' "a new task list cancels the running motions, and each writes only to its own list (no index past a shorter list)"
+ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "col.flex.add(scroll);" && src "IslandViews.Fit buildDone(" IslandProgress | grep -q "col.flex.add(scroll);"' "Progress and Done scroll their body when the panel can't fit it"
+ok '[ "$(grep -c "enterStopping(" "$PROG")" -ge 5 ] && src "void build(" IslandProgress >/dev/null; src "IslandViews.Fit build(" IslandProgress | grep -q "if (a.stopping) enterStopping(false);" && src "void update(" IslandProgress | grep -q "enterStopping(true)" && src "void enterStopping(" IslandProgress | grep -q "phase = IslandState.SENDING;" && src "void enterStopping(" IslandProgress | grep -q "postDelayed(stopTimeoutRun"' "the panel's Stop, the card's Stop seen while open and the card's Stop already on its way all enter Stopping the same way"
+ok 'src "Notification confirmNotification()" HermesService | grep -q "R.drawable.ic_stat_check : R.drawable.ic_stat_cross" && [ -f android/res/drawable/ic_stat_check.xml ] && [ -f android/res/drawable/ic_stat_cross.xml ]' "the chip's confirmation has a drawn check or cross beside the word"
+ok 'grep -q "watch.setMinimumWidth(Math.round(dp(92)))" "$PROG" && grep -q "appRow.addView(watch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT" "$PROG" && grep -q "protected void onMeasure(int ws, int hs)" "$VIEWS"' "Watch wraps its text, 92 dp at least"
+ok 'src "void swapInner(IslandViews.Fit now)" IslandPanel | grep -q "if (swapIn != null) swapIn.cancel();"' "a change of state right after another cancels the earlier fade-in"
+ok 'grep -q "b.fill.setColor(GREEN_WASH)" "$VIEWS" && ! grep -q "GREEN_SOFT" "$VIEWS"' "the Done badge is the design's green wash"
+ok 'src "void swapToProgress(" IslandPanel | grep -q "announceForAccessibility" && src "void swapTo(IslandState.Ask a)" IslandPanel | grep -q "keyboardIfTyped"' "swapping to Progress is spoken; a typed question swapped in place opens the keyboard"
+ok 'grep -q "line.setClipChildren(false); // the task count" "$PROG"' "the rolling task count is not clipped"
+ok 'src "void stopTurn(String session)" HermesService | tr -d "\n" | grep -q "if (session.equals(stopping)) stopping = null;                    noteOutcome(\"stop\", session, \"\", IslandState.Outcome.FAILED, failed);"' "a failed stop and the end of Stopping are one post"
+ok 'grep -q "if (IslandPanel.showsRequests()) return; // no popup over the island panel" "$SVC" && grep -q "if (IslandPanel.takesArrivals()) return; // no popup over the island panel" "$SVC" && grep -q "!IslandPanel.showsRequests() && needs" "$SVC"' "no pop-up drops over a panel that shows the request or changes to it"
 [ "$fails" = 0 ] && echo "source rules: ALL PASSED" || { echo "source rules: $fails FAILED"; exit 1; }

@@ -364,15 +364,18 @@ final class IslandState {
     final List<Progress> working;
     /** How many chats are at work in all (the plugin counts those it does not name). */
     final int busy;
-    /** The last turn that finished with a reply, or null. */
+    /** The last turn of each chat that finished with a reply, the newest first (at most {@link #MAX_DONE}); {@link #done}
+     *  is the newest, or null. One per chat, so two chats finishing one after the other each keep their own. */
+    final List<Done> dones;
     final Done done;
+    static final int MAX_DONE = 8;
 
     IslandState(String kind, Ask ask, Outcome outcome, Expired expired, List<Approval> approvals) {
         this(kind, ask, outcome, expired, approvals, null, 0, null);
     }
 
     IslandState(String kind, Ask ask, Outcome outcome, Expired expired, List<Approval> approvals, List<Progress> working,
-                int busy, Done done) {
+                int busy, List<Done> dones) {
         this.kind = kind == null ? NONE : kind;
         this.ask = ask;
         this.outcome = outcome;
@@ -384,7 +387,18 @@ final class IslandState {
         if (working != null) for (Progress p : working) if (p != null && w.size() < 4) w.add(p);
         this.working = Collections.unmodifiableList(w);
         this.busy = Math.max(w.size(), busy);
-        this.done = done;
+        List<Done> d = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        if (dones != null) for (Done x : dones) if (x != null && d.size() < MAX_DONE && seen.add(x.session)) d.add(x);
+        this.dones = Collections.unmodifiableList(d);
+        this.done = d.isEmpty() ? null : d.get(0);
+    }
+
+    /** The latest reply of chat {@code session} ("" = the newest of any chat), or null. */
+    Done doneOf(String session) {
+        String s = session == null ? "" : session;
+        for (Done d : dones) if (s.isEmpty() || d.session.equals(s)) return d;
+        return null;
     }
 
     // ── the Progress and Done states (design 5.3, 5.4) ──
@@ -422,8 +436,9 @@ final class IslandState {
 
     /** The reply of chat {@code session}'s turn that started at {@code since} (epoch ms), or null when none came yet. */
     Done doneFor(String session, long since) {
-        Done d = done;
-        return d != null && d.session.equals(session == null ? "" : session) && d.at >= since ? d : null;
+        if (session == null || session.isEmpty()) return null;
+        Done d = doneOf(session);
+        return d != null && d.at >= since ? d : null;
     }
 
     /** Where a turn on the panel stands (besides DONE). */
