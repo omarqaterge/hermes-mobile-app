@@ -37,8 +37,10 @@ final class IslandProgress {
     /** WORKING; SENDING while a stop is on its way; Outcome.STOPPED; DONE; ENDED (closing). */
     String phase = IslandState.WORKING;
     boolean done;
-    /** When the panel's Stop was sent (or the card's was first seen); when the panel first saw the turn stop. */
-    long stopAt, endedAt;
+    /** When the stop on its way was sent (the panel's Stop: its tap; the card's: the service's send time, however
+     *  long before the panel opened); the service's send time of the last stop the panel took in (one that failed
+     *  doesn't start Stopping again); when the panel first saw the turn stop. */
+    long stopAt, stopSeen, endedAt;
     /** When the Stop button has finished growing (uptime ms): Stopped waits for it. */
     long growEnd;
     boolean failedLine;
@@ -69,8 +71,7 @@ final class IslandProgress {
     final Runnable stopTimeoutRun = () -> {
         HermesService s = HermesService.instance;
         IslandState st = s == null ? null : s.islandState();
-        boolean heard = st != null && st.outcome != null && st.outcome.answers("stop", session, stopAt);
-        if (IslandState.SENDING.equals(phase) && !heard) stopFailed();
+        if (IslandState.SENDING.equals(phase) && IslandState.stopUnheard(session, stopAt, st)) stopFailed();
     };
     final Runnable stoppedRun = this::showStopped;
 
@@ -164,7 +165,7 @@ final class IslandProgress {
 
         grab = grabLine(col);
         p.setTitle(headline.getText());
-        if (a.stopping) enterStopping(false); // the card's Stop is already on its way
+        if (a.stopping) enterStopping(false, a.stopAt); // the card's Stop is already on its way
         return col;
     }
 
@@ -496,7 +497,8 @@ final class IslandProgress {
         IslandState.Progress was = shown;
         shown = a;
         if (a.since > 0 && a.since != since) since = a.since;
-        if (a.stopping && IslandState.WORKING.equals(phase)) enterStopping(true); // the card's Stop, tapped while open
+        if (IslandState.WORKING.equals(phase) && IslandState.newStop(a, stopSeen)) enterStopping(true, a.stopAt); // the card's Stop, tapped while open
+        else if (a.stopping) stopSeen = Math.max(stopSeen, a.stopAt); // the service's time for the panel's own Stop
         if (IslandState.WORKING.equals(phase) && !a.headline.equals(headNow)) setHeadline(a.headline);
         if (a.hasTasks() != was.hasTasks()) {
             fillBody(a, st); // a task list appeared (or went): the body changes, and arrives
@@ -557,20 +559,22 @@ final class IslandProgress {
         try {
             p.startService(new Intent(p, HermesService.class).setAction(HermesService.ACTION_STOP).putExtra("session", session));
         } catch (RuntimeException e) {
-            enterStopping(true);
+            enterStopping(true, 0);
             stopFailed();
             return;
         }
-        enterStopping(true);
+        enterStopping(true, 0);
     }
 
     /** A stop is on its way, whoever sent it: the panel's Stop, the card's Stop seen while the panel is open, or the
      *  card's Stop already on its way when the panel opens ({@code animate} false: the row is built that way). The same
      *  path for all three, so each waits for the same outcome (Stopped when the turn ends, the failure line when it
-     *  fails or nothing is heard within 15 s) and no request breaks in meanwhile. */
-    void enterStopping(boolean animate) {
+     *  fails or nothing is heard within 15 s) and no request breaks in meanwhile. {@code sentAt} is when the service
+     *  sent it (0: the panel's own Stop, sent now), so an outcome that came before the panel opened still counts. */
+    void enterStopping(boolean animate, long sentAt) {
         phase = IslandState.SENDING;
-        stopAt = System.currentTimeMillis();
+        stopAt = sentAt > 0 ? sentAt : System.currentTimeMillis();
+        stopSeen = Math.max(stopSeen, sentAt);
         stoppingLook(animate);
         p.MAIN.removeCallbacks(stopTimeoutRun);
         p.MAIN.postDelayed(stopTimeoutRun, IslandPanel.SEND_TIMEOUT_MS);

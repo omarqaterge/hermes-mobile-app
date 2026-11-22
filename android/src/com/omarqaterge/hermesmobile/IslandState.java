@@ -293,14 +293,21 @@ final class IslandState {
          *  name; tasks done and in all (dropped ones not counted). */
         final String states, current;
         final int done, total;
-        /** A stop is on its way for this chat (the panel's Stop, or the card's). */
-        final boolean stopping;
+        /** A stop is on its way for this chat (the panel's Stop, or the card's); when the service sent it (epoch ms, 0
+         *  = not known); and whether the plugin accepted it (the turn is winding down). */
+        final boolean stopping, stopOk;
+        final long stopAt;
         /** The app Hermux uses for this chat ("" for none), and a number that changes with its picture (0 = none yet). */
         final String app;
         final int picture;
 
         Progress(String session, String chat, String title, String headline, long since, int steps, String states,
                  String current, int done, int total, boolean stopping, String app, int picture) {
+            this(session, chat, title, headline, since, steps, states, current, done, total, stopping, 0, false, app, picture);
+        }
+
+        Progress(String session, String chat, String title, String headline, long since, int steps, String states,
+                 String current, int done, int total, boolean stopping, long stopAt, boolean stopOk, String app, int picture) {
             this.session = session == null ? "" : session;
             this.chat = chat == null || chat.isEmpty() ? HERMUX : chat;
             this.title = title == null ? "" : title;
@@ -314,6 +321,8 @@ final class IslandState {
             this.done = Math.max(0, done);
             this.total = Math.max(0, total);
             this.stopping = stopping;
+            this.stopAt = stopping ? Math.max(0, stopAt) : 0;
+            this.stopOk = stopping && stopOk;
             this.app = app == null ? "" : app;
             this.picture = picture;
         }
@@ -470,6 +479,26 @@ final class IslandState {
         if (o != null && o.answers("stop", session, sentAt) && Outcome.FAILED.equals(o.result)) return Outcome.FAILED;
         if (!st.atWork(session)) return Outcome.STOPPED;
         return SENDING;
+    }
+
+    /**
+     * Whether the 15 s wait for the stop of {@code session} sent at {@code sentAt} ends with the failure line: only
+     * when nothing came of it. Not when its outcome came (Stopped: the panel waits for the turn to end; a failure:
+     * {@link #stopFate} shows it), not when the service holds it as accepted, and not once the chat is no longer at
+     * work. So a stop that succeeded is never shown as failed, however long the turn takes to wind down.
+     */
+    static boolean stopUnheard(String session, long sentAt, IslandState st) {
+        if (st == null) return true;
+        if (st.outcome != null && st.outcome.answers("stop", session, sentAt)) return false;
+        Progress a = st.progressFor(session);
+        if (a == null || session == null || session.isEmpty()) return false; // the turn is over: Stopped, not a failure
+        return !a.stopOk;
+    }
+
+    /** A stop on its way for {@code a} that the panel hasn't taken in yet: sent after {@code seen}, the send time of
+     *  the last one it did (a failed stop the service still holds doesn't start Stopping again). */
+    static boolean newStop(Progress a, long seen) {
+        return a != null && a.stopping && (a.stopAt > 0 ? a.stopAt > seen : seen == 0);
     }
 
     /** What the panel changes to after the request {@code overA} or the question {@code overQ} on it was answered

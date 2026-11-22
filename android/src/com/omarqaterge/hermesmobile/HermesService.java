@@ -208,8 +208,11 @@ public class HermesService extends Service {
     JSONObject lastTodo = null;
     org.json.JSONArray lastOthers = null;
     boolean lastReview = false;
-    /** The chat whose Stop button was tapped, until Hermes reports the turn over (or the request fails). */
+    /** The chat whose Stop button was tapped, until Hermes reports the turn over (or the request fails); when the stop
+     *  was sent (epoch ms), and whether the plugin accepted it (the island panel then never calls it failed). */
     String stopping = null;
+    long stoppingAt = 0;
+    boolean stopAccepted = false;
     /** The chat whose approval answer (from the notification) is being sent; its chip says "Sending your answer…". */
     String answering = null;
     final java.util.HashMap<String, JSONObject> doneInfo = new java.util.HashMap<>();
@@ -1768,7 +1771,8 @@ public class HermesService extends Service {
         out.add(new IslandState.Progress(lastSession, IslandState.chatLine(lastTitle, lastSub), lastTitle, lastStatus,
                 workingSince, lastSteps, todo == null ? "" : todo.optString("states", ""),
                 todo == null ? "" : todo.optString("current", ""), todo == null ? 0 : todo.optInt("done", 0),
-                todo == null ? 0 : todo.optInt("total", 0), lastSession.equals(stopping), app ? bg.label : "",
+                todo == null ? 0 : todo.optInt("total", 0), lastSession.equals(stopping), stoppingAt,
+                lastSession.equals(stopping) && stopAccepted, app ? bg.label : "",
                 app && thumb != null ? System.identityHashCode(thumb) : 0));
         if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
             JSONObject o = lastOthers.optJSONObject(k);
@@ -1977,6 +1981,8 @@ public class HermesService extends Service {
         if (session == null || session.isEmpty()) return;
         synchronized (this) {
             stopping = session;
+            stoppingAt = System.currentTimeMillis();
+            stopAccepted = false;
             postStatus();
         }
         new Thread(() -> {
@@ -1994,7 +2000,12 @@ public class HermesService extends Service {
             }
             final String failed = err;
             if (failed == null) {
-                main.post(() -> noteOutcome("stop", session, "", IslandState.Outcome.STOPPED, null));
+                main.post(() -> {
+                    synchronized (HermesService.this) {
+                        if (session.equals(stopping)) stopAccepted = true; // the turn winds down: Stopping until it ends
+                    }
+                    noteOutcome("stop", session, "", IslandState.Outcome.STOPPED, null);
+                });
                 return;
             }
             // One post: the failure and the end of "Stopping…" together, so no status in between sees one without the

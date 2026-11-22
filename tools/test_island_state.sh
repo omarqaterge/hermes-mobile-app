@@ -205,6 +205,25 @@ public class IslandStateTest {
                 "an older stop's failure, or another chat's, is not this one's");
         IslandState stopOk = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 2000), null, null, Arrays.asList(w1), 1, null);
         check(IslandState.SENDING.equals(IslandState.stopFate("A", 1000, stopOk)), "the stop was taken but the turn still runs: still Stopping");
+        // The 15 s wait for a stop: the failure line only when nothing came of it (review of 78239d3: the card's Stop
+        // sent at 1000 succeeded at 2000, the panel opened at 5000 and the turn takes over 15 s to wind down).
+        IslandState.Progress wStop = new IslandState.Progress("A", "Trip", "Trip", "x", 500, 3, "", "", 0, 0, true, 1000, false, "", 0);
+        IslandState.Progress wStopOk = new IslandState.Progress("A", "Trip", "Trip", "x", 500, 3, "", "", 0, 0, true, 1000, true, "", 0);
+        check(wStop.stopAt == 1000 && !wStop.stopOk && wStopOk.stopOk
+                && new IslandState.Progress("A", "", "", "x", 0, 0, "", "", 0, 0, false, 1000, true, "", 0).stopAt == 0,
+                "a chat at work carries when its stop was sent and whether it was accepted (nothing without a stop)");
+        IslandState okBeforeOpen = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 2000), null, null, Arrays.asList(wStop), 1, null);
+        check(!IslandState.stopUnheard("A", 1000, okBeforeOpen) && IslandState.SENDING.equals(IslandState.stopFate("A", 1000, okBeforeOpen)),
+                "a stop that succeeded before the panel opened, with the turn still winding down: Stopping, never the failure");
+        IslandState okOverwritten = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("approval", "A", "r1", "allowed", "", 3000), null, null, Arrays.asList(wStopOk), 1, null);
+        check(!IslandState.stopUnheard("A", 1000, okOverwritten), "accepted, its outcome since replaced by another answer's: still no failure");
+        IslandState nothing = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(wStop), 1, null);
+        IslandState olderOk = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 900), null, null, Arrays.asList(wStop), 1, null);
+        check(IslandState.stopUnheard("A", 1000, nothing) && IslandState.stopUnheard("A", 1000, olderOk) && IslandState.stopUnheard("A", 1000, null),
+                "nothing heard of this stop in 15 s (or only an older stop's outcome): the failure line");
+        check(!IslandState.stopUnheard("A", 1000, quiet), "the turn is over: Stopped, not a failure");
+        check(IslandState.newStop(wStop, 0) && IslandState.newStop(wStop, 999) && !IslandState.newStop(wStop, 1000) && !IslandState.newStop(w1, 0),
+                "a stop the panel already took in (one that failed, still held by the service) doesn't start Stopping again");
         IslandState.Ask qA = ask("A", "Which folder?", "Trips");
         IslandState both = new IslandState(IslandState.PERMISSION, qA, null, null, Arrays.asList(r1, pd));
         IslandState onlyQ = new IslandState(IslandState.QUESTION, qA, null, null, null);
@@ -332,13 +351,14 @@ ok 'src "Notification statusNotification(" HermesService | sed -n 2p | grep -q "
 TASKSET=$(sed -n '/void set(String now, Ticker t, boolean reduced, boolean animate)/,/^        }/p' "$VIEWS")
 ok 'grep -q "for (Ticker.Handle m : moving) m.cancel();" <<<"$TASKSET" && grep -q "g\[k\] = v" <<<"$TASKSET" && grep -q "h\[k\] = IslandMotion.swell(v)" <<<"$TASKSET" && grep -q "au\[k\] = v" <<<"$TASKSET" && ! grep -q "green\[k\]\|height\[k\]\|gold\[k\]" <<<"$TASKSET"' "a new task list cancels the running motions, and each writes only to its own list (no index past a shorter list)"
 ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "col.flex.add(scroll);" && src "IslandViews.Fit buildDone(" IslandProgress | grep -q "col.flex.add(scroll);"' "Progress and Done scroll their body when the panel can't fit it"
-ok '[ "$(grep -c "enterStopping(" "$PROG")" -ge 5 ] && src "void build(" IslandProgress >/dev/null; src "IslandViews.Fit build(" IslandProgress | grep -q "if (a.stopping) enterStopping(false);" && src "void update(" IslandProgress | grep -q "enterStopping(true)" && src "void enterStopping(" IslandProgress | grep -q "phase = IslandState.SENDING;" && src "void enterStopping(" IslandProgress | grep -q "postDelayed(stopTimeoutRun"' "the panel's Stop, the card's Stop seen while open and the card's Stop already on its way all enter Stopping the same way"
+ok '[ "$(grep -c "enterStopping(" "$PROG")" -ge 5 ] && src "void build(" IslandProgress >/dev/null; src "IslandViews.Fit build(" IslandProgress | grep -q "if (a.stopping) enterStopping(false, a.stopAt);" && src "void update(" IslandProgress | grep -q "enterStopping(true, a.stopAt)" && src "void enterStopping(" IslandProgress | grep -q "phase = IslandState.SENDING;" && src "void enterStopping(" IslandProgress | grep -q "postDelayed(stopTimeoutRun"' "the panel's Stop, the card's Stop seen while open and the card's Stop already on its way all enter Stopping the same way"
 ok 'src "Notification confirmNotification()" HermesService | grep -q "R.drawable.ic_stat_check : R.drawable.ic_stat_cross" && [ -f android/res/drawable/ic_stat_check.xml ] && [ -f android/res/drawable/ic_stat_cross.xml ]' "the chip's confirmation has a drawn check or cross beside the word"
 ok 'grep -q "watch.setMinimumWidth(Math.round(dp(92)))" "$PROG" && grep -q "appRow.addView(watch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT" "$PROG" && grep -q "protected void onMeasure(int ws, int hs)" "$VIEWS"' "Watch wraps its text, 92 dp at least"
 ok 'src "void swapInner(IslandViews.Fit now)" IslandPanel | grep -q "if (swapIn != null) swapIn.cancel();"' "a change of state right after another cancels the earlier fade-in"
 ok 'grep -q "b.fill.setColor(GREEN_WASH)" "$VIEWS" && ! grep -q "GREEN_SOFT" "$VIEWS"' "the Done badge is the design's green wash"
 ok 'src "void swapToProgress(" IslandPanel | grep -q "announceForAccessibility" && src "void swapTo(IslandState.Ask a)" IslandPanel | grep -q "keyboardIfTyped"' "swapping to Progress is spoken; a typed question swapped in place opens the keyboard"
 ok 'grep -q "line.setClipChildren(false); // the task count" "$PROG"' "the rolling task count is not clipped"
+ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "enterStopping(false, a.stopAt)" && src "void update(" IslandProgress | grep -q "IslandState.newStop(a, stopSeen)) enterStopping(true, a.stopAt)" && grep -q "IslandState.stopUnheard(session, stopAt, st)) stopFailed();" "$PROG" && src "void stopTurn(String session)" HermesService | grep -q "stopAccepted = true"' "a stop counts from when it was sent, and one that succeeded is never shown as failed"
 ok 'src "void stopTurn(String session)" HermesService | tr -d "\n" | grep -q "if (session.equals(stopping)) stopping = null;                    noteOutcome(\"stop\", session, \"\", IslandState.Outcome.FAILED, failed);"' "a failed stop and the end of Stopping are one post"
 # The pop-up and the 20 s / 40 s reminders don't ask the panel (review of 78239d3: a request could run out unheard
 # behind a panel nobody looks at, or behind our own PIN screen); whether the pop-up may cover the panel is the owner's.

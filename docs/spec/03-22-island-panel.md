@@ -141,10 +141,16 @@ never over the lock screen. "Open chat" fades, "Stop" grows to the full row and 
 the headline says "Stopping…". The card's own Stop, tapped while the panel is open, shows the same, and a panel
 opened while the card's Stop is already on its way opens that way (Open chat already gone). All three enter Stopping
 by one path (`IslandProgress.enterStopping`), so each waits for the same outcome and no request breaks in meanwhile.
+A stop counts from when the service sent it (`HermesService.stoppingAt`, carried as `IslandState.Progress.stopAt`),
+not from when the panel opened, so the outcome of a card's Stop that came before the panel opened still counts.
 Then
 (`IslandState.stopFate`): when the turn is over, a drawn cross and "Stopped" on the red wash, hold 0.9 s, close; when
-the service couldn't stop it (or no word in 15 s), the two buttons come back with the red line "Couldn't stop Hermux.
-Open the chat to stop it." and the reject buzz (the service also posts its own "Couldn't stop Hermux" card).
+the service couldn't stop it, or nothing came of it in 15 s (`IslandState.stopUnheard`: no outcome since it was sent,
+and the plugin didn't accept it, `HermesService.stopAccepted`, carried as `Progress.stopOk`), the two buttons come back
+with the red line "Couldn't stop Hermux. Open the chat to stop it." and the reject buzz (the service also posts its own
+"Couldn't stop Hermux" card). A stop the plugin accepted is never shown as failed: the panel stays on "Stopping…"
+until the turn ends, however long it takes to wind down. A stop the panel already took in (`stopSeen`,
+`IslandState.newStop`) doesn't start Stopping again after its failure.
 
 **The turn ends** while the panel is open (`IslandState.turnFate`): when its reply arrives (the plugin's `flash` with
 `done`, recorded as an `IslandState.Done` whatever the Done chip's rules say, 4.3), the panel changes to Done, even if
