@@ -332,6 +332,30 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   - **Left for later:** closing a turn has no movement (the steps leave at once and the chevron turns): a leaving movement
     would keep every step mounted for its length. Needs a phone: `docs/manual-tests.md`, "A calmer chat".
 
+- **Text size from the phone and two notification switches (task 12, PR against `redesign`).** Until a size is picked in
+  Appearance → Text size (`hm.textScale` unset), the app's text scale follows Android's font size, read once at start
+  through the keyed bridge (`phoneTextScale`) and clamped to 90 to 135 % (`web/src/textscale.ts`); the first choice
+  "Phone default" (on its own line above the five sizes, `seg-text`) forgets the pick. The WebView's own text zoom stays
+  at 100 %, so only the app's `--scale` grows the text and the layout stays sound. Light theme: `--accent` #b57a10 →
+  #8c600e and `--dim` #6a6e75 → #63676e, so gold and grey text reach 4.5:1 on white, `--surface` and `--surface-2`
+  (no text on the chat, the panel, the chat's menu or any Settings page is under 4.5:1 or faded under it by opacity, with
+  glass on and off). Settings → Notifications, the eighth row (This app): When a task finishes (the Done chip, reply and
+  failed-turn cards, scheduled-job cards) and When Hermux needs me (approval and question chips, pop-ups and
+  re-alerts, the masked-prompt notification; turning it off asks first), kept by the shell (`NotifyChoice.java`,
+  preferences `notifyFinishes` and `notifyNeedsMe`; bridge `notifyChoices` and `setNotifyChoice`, which stores only the
+  two names and exactly `true` or `false`), the row Sound, vibration and the lock screen (Android's page for the app's
+  notifications, the app's own page as the fallback), and a notice with a button while Android shows none
+  (`setupFix('notify-permission')`). Off, nothing waiting is answered or dropped; the app's sheet and Needs you still
+  show it. The mapping of every notification to a switch is in spec 4.3. Checks: `39-notifications.cjs`, the end of
+  `30-settings.cjs`, `web/src/textscale.test.ts`, `web/src/notifychoice.test.ts`, `tools/test_notify_choice.sh` (in
+  `java-check.sh`); `lib.cjs` gained `fadedText`, `uicost.cjs` two moments. Three checks were reworded for the eighth row
+  (listed in the PR). Costs: docs/performance-history.md (unchanged within the rounds' spread). Needs a phone: the
+  font size driving the app and each switch silencing its notifications (`docs/manual-tests.md`).
+  - **Left for later:** the "learning" notifications (memory and skill updates) and the momentary chips other than Done
+    are under neither switch (the task names only the two kinds); they keep their own Android channel (`Learning`).
+    Light `--warn` (#9a6b00, 4.30:1 on `--surface`) and `--ok` (#1d8a56, 4.36:1 on white) are still under 4.5:1 as
+    text where they are used outside the pages task 10 fixed; no page this task checked shows them as text.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it
