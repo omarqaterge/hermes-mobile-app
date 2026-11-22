@@ -203,3 +203,13 @@ the request still runs out on time, and the card's Allow still brings up the fin
 the middle; the clock still counts and a finished task still turns green. Done's check draws in 120 ms with no pop
 and no ring. Every movement runs on the display's frame clock and only while it runs; nothing moves or
 repeats once the panel is hidden.
+
+#### Known limits
+
+The service keeps waiting requests and the last turn's reply in memory, so a restart (an app update) drops them from
+the chip and the panel. A failed answer leaves the question off the chip, as for the card's own buttons. The service's
+own "Couldn't send your answer" card drops down over the panel when a send fails. The panel follows waiting requests
+even with "When Hermux needs me" off (the chip still respects it). Home from the PIN screen (Android 8-10, or the PIN
+fallback) leaves the panel and that screen in the background until the request's deadline, when both go; nothing is
+sent. A turn that ends with no reply heard (the plugin's reply came before the panel opened, or none came) closes the
+Progress state 2 s later instead of showing Done.

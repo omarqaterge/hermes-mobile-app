@@ -361,6 +361,35 @@ screen leaves both until the deadline, when they go. Not yet on a phone.
       tap on the field and the PIN, that request is sent and the keyboard is gone from the panel. Seen on an Android
       8.0 emulator (2026-11-22).
 
+Part 3, the Progress and Done states and the links between states. Not yet on a phone.
+
+- [ ] **The working card, on a phone with Hermes.** Tap the working card's body during a turn. Expected: the panel
+      opens on the chat's live step, the arc turning, the clock counting; the headline changes in place as steps run.
+- [ ] **Task list.** A turn with a task list: the bar shows each task, the current one in gold; a finished task fills
+      green with a short swell and the next turns gold; "2 of 5 tasks" counts. A turn without one: the sweep runs.
+- [ ] **Other busy chats.** Two other chats at work: both listed under the step; with three or more, two and
+      "+N more chats".
+- [ ] **An app in use.** While Hermux uses an app for this chat (Android 14+), the working card opens the live viewer
+      as before. With the panel already open on Progress when Hermux starts using an app: the app row appears with
+      its picture, "Using X" and Watch, which opens the live viewer.
+- [ ] **Stop.** Expected: "Stopping…", then "Stopped" with the red cross, and the panel closes; the chat shows the
+      turn stopped exactly as the app's own Stop does. With Hermes unreachable: "Couldn't stop Hermux. Open the chat
+      to stop it." within 15 s.
+- [ ] **The 90 s close.** Leave Progress open without touching it. Expected: it closes after 90 s; a touch resets
+      the wait. Done stays open.
+- [ ] **Done.** Leave the panel open until the turn ends. Expected: the check pops with the ring, "Done", the first
+      lines of the reply, steps and time; Open chat opens the chat and the chip's Done goes away.
+- [ ] **Changing in place.** A permission request or a question arriving while Progress shows: the panel changes to
+      it. After answering it from the panel with another waiting: the next one takes its place.
+- [ ] **A card answer.** Allow once, Deny or a choice from a card's own button. Expected: the chip says "Allowed",
+      "Denied" or "Sent" for two seconds, then the usual state.
+- [ ] **Lock screen.** With the phone locked during a turn, the working card unlocks first; the app's picture never
+      shows on the lock screen.
+- [ ] **Battery, Progress.** Close the panel during a turn and leave the phone: no wake-ups or frames from the panel
+      (`adb shell dumpsys gfxinfo` shows no new frames for the app).
+- [ ] **Animations off, Progress and Done.** The arc stands still, the sweep's band sits in the middle, the clock
+      still counts; Done's check draws without a pop.
+
 ## Phone data for the agent (Settings → Access & privacy → Phone data)
 
 Tested 2026-11-05 on one real phone, Android 16, with the owner present:
