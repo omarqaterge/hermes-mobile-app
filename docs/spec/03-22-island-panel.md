@@ -138,7 +138,7 @@ recreates from its saved intent does not ask for the card's choice again.
 When the panel can't fit everything (landscape, a large font), the body, the app row and the stop failure line scroll
 together and the header and the buttons stay on screen; the scrolled part keeps room for the task bar's swell. While
 it scrolls, its content is cut at its edges (`MaxScroll` clips in `dispatchDraw`), so nothing in it draws over the
-buttons. When the failure line appears it is scrolled into view.
+buttons. When the failure line appears it is scrolled into view after layout without moving focus (`smoothScrollTo` from a one-shot `OnLayoutChangeListener`).
 
 **Stop** is the card's Stop: `ACTION_STOP` to the service (`HermesService.stopTurn`), nothing more, and the panel is
 never over the lock screen. "Open chat" fades, "Stop" grows to the full row and says "Stopping…" with a spinner, and

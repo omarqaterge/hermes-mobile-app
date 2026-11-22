@@ -50,9 +50,11 @@ final class IslandProgress {
     IslandViews.Clock clock, count;
     IslandViews.TaskBar bar;
     IslandViews.Sweep sweep;
-    LinearLayout body, others, appRow;
+    LinearLayout body, others, appRow, scrolled;
     /** Progress's scrolled part: the body, the app row and the failure line. */
     IslandViews.MaxScroll scroll;
+    /** One-shot listener that brings the stop failure line into view once it has been laid out. */
+    View.OnLayoutChangeListener scrollErr;
     ImageView picture;
     int pictureNow;
     IslandViews.ButtonRow row;
@@ -114,7 +116,7 @@ final class IslandProgress {
         body.setClipChildren(false);
         fillBody(a, st);
         float swellRoom = (IslandViews.TaskBar.VIEW_DP - IslandMotion.SEG_H_DP) / 2f;
-        LinearLayout scrolled = new LinearLayout(p);
+        scrolled = new LinearLayout(p);
         scrolled.setOrientation(LinearLayout.VERTICAL);
         scrolled.setClipChildren(false);
         int sr = Math.round(dp(swellRoom));
@@ -431,6 +433,8 @@ final class IslandProgress {
 
     /** The panel goes or changes state: nothing of this one runs later. */
     void stop() {
+        if (scrollErr != null && scrolled != null) scrolled.removeOnLayoutChangeListener(scrollErr);
+        scrollErr = null;
         p.MAIN.removeCallbacks(clockRun);
         p.MAIN.removeCallbacks(recheckRun);
         p.MAIN.removeCallbacks(stopTimeoutRun);
@@ -640,7 +644,17 @@ final class IslandProgress {
         fadeView(open, 1, IslandMotion.OTHERS_OUT_MS);
         errLine.setText(IslandState.STOP_FAILED);
         errLine.setVisibility(View.VISIBLE);
-        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN)); // the line is last in the scrolled part: bring it in view
+        if (scrollErr != null) scrolled.removeOnLayoutChangeListener(scrollErr);
+        scrollErr = new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
+                scrolled.removeOnLayoutChangeListener(this);
+                if (scrollErr == this) scrollErr = null;
+                scroll.smoothScrollTo(0, scrolled.getHeight());
+            }
+        };
+        scrolled.addOnLayoutChangeListener(scrollErr);
+        scrolled.requestLayout();
         p.arrive(errLine);
         if (shown != null) setHeadline(shown.headline);
         p.card.announceForAccessibility(IslandState.STOP_FAILED);
