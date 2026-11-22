@@ -197,8 +197,9 @@ released (`Fit.whenReleased`), and click handlers (`IslandPermission.tap` for ma
 `IslandProgress.tapStop`) ignore activations (blocking TalkBack and Switch Access too). Deny stays usable without waiting
 for Allow's pause, and an automatic card Allow still opens its prompt at once. Allow once and Allow this session stay held
 for a reaction pause (`IslandMotion.ALLOW_PAUSE_MS`, 320 ms) after the fade-in actually finishes (`IslandMotion.ALLOW_HOLD_MS`,
-580 ms in all, same with reduced motion), blocking both touch and activation keys (including the matching key-up, counting
-swallow only on the first key-down with repeat count 0, on `Pill`, `GuardedText`, `Fit` and `IslandPanel`), extended by `IslandMotion.ALLOW_EXTEND_MS` (200 ms) whenever a touch or activation
+580 ms in all, same with reduced motion), blocking both touch and activation keys (including repeated key-downs and the matching key-up of a held key across the
+hold boundary, counting swallow only on the first key-down with repeat count 0, on `Pill`, `GuardedText`, `Fit` and
+`IslandPanel`), extended by `IslandMotion.ALLOW_EXTEND_MS` (200 ms) whenever a touch or activation
 is swallowed during the hold (`Fit.swallowed`), capped at `IslandMotion.ALLOW_EXTEND_MAX_MS` (400 ms) past the base Allow
 deadline so repeated taps can't lock Allow out indefinitely, so a reflexive tap meant for Progress's or Done's Open chat can't land on
 Allow once or Allow this session. A permission request or a single

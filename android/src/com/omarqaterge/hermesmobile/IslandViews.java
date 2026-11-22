@@ -138,7 +138,10 @@ final class IslandViews {
                     heldKey = 0;
                     return true;
                 }
-                if (act == KeyEvent.ACTION_DOWN && heldKey == code) heldKey = 0;
+                if (act == KeyEvent.ACTION_DOWN && heldKey == code) {
+                    if (e.getRepeatCount() > 0) return true;
+                    heldKey = 0;
+                }
             }
             return super.dispatchKeyEvent(e);
         }
@@ -851,7 +854,10 @@ final class IslandViews {
                     heldKey = 0;
                     return true;
                 }
-                if (act == KeyEvent.ACTION_DOWN && heldKey == code) heldKey = 0;
+                if (act == KeyEvent.ACTION_DOWN && heldKey == code) {
+                    if (e.getRepeatCount() > 0) return true;
+                    heldKey = 0;
+                }
             }
             return super.dispatchKeyEvent(e);
         }
@@ -1516,7 +1522,10 @@ final class IslandViews {
                     heldKey = 0;
                     return true;
                 }
-                if (act == KeyEvent.ACTION_DOWN && heldKey == code) heldKey = 0;
+                if (act == KeyEvent.ACTION_DOWN && heldKey == code) {
+                    if (e.getRepeatCount() > 0) return true;
+                    heldKey = 0;
+                }
             }
             return super.dispatchKeyEvent(e);
         }

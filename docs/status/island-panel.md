@@ -20,8 +20,8 @@ into Stopping, the chip's drawn check and cross, one Done per chat. **Re-check:*
 `redesign` (see the question below); a stop counts from when it was sent and one the plugin accepted is never shown as
 failed; new content takes no touch for 260 ms after a change in place; the stop failure line scrolls with the body,
 and the scrolled part cuts its content at its edges. **Security review fixes:** monotonic change-in-place hold blocks
-touches, activation keys (including on `Pill` and `GuardedText` during the Allow pause and consuming matching key-ups,
-with swallow counted only on first key-down), focus and accessibility/click handlers until fade-in completes (Deny stays usable at once);
+touches, activation keys (including on `Pill` and `GuardedText` during the Allow pause and consuming held-key repeats and
+matching key-ups across the hold boundary, with swallow counted only on first key-down), focus and accessibility/click handlers until fade-in completes (Deny stays usable at once);
 Allow once and Allow this session wait 320 ms after fade-in finishes (580 ms minimum, same with reduced motion,
 extended by 200 ms on swallowed input, capped at +400 ms past base), and Allow once stays held while fading back in after a failed Deny; other busy
 chats in `lastOthers` carry `stoppingAt` and `stopAccepted`, `stopTurn` uses a monotonic attempt counter, skips overlapping in-flight/accepted stops (bounded by 15 s), accepts a
