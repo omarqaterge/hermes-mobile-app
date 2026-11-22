@@ -632,14 +632,58 @@ textarea {
   font-style: italic;
   opacity: 0.8;
 }
-/* a finished thought, closed: its first heading or sentence on one line */
+/* a finished thought, closed: "Thought for 12s", then its first heading or sentence on the same row while there is room */
+.reasoning-title {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
 .reasoning-line {
-  padding: 0 12px 8px 34px;
+  flex: 1;
+  min-width: 0;
   font-size: 0.78rem;
   color: var(--dim);
+  opacity: 0.85;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: left;
+}
+.reasoning-line::before {
+  content: '· ';
+}
+
+/* A finished turn's work folded into one line above its answer (turnfold.ts). */
+.turn-work-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.turn-work {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  min-height: 44px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+.turn-work:active {
+  background: var(--press);
+}
+.turn-work-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.turn-work-err {
+  color: var(--err);
 }
 
 /* tool cards */
@@ -1028,8 +1072,9 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.status-elapsed {
-  font-variant-numeric: tabular-nums;
+.status-elapsed,
+.status-tps {
+  font-variant-numeric: tabular-nums; /* the live numbers change every second: same-width figures keep them still */
 }
 .goal-sub-head {
   margin: 12px 0 4px;

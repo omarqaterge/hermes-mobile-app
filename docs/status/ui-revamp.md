@@ -309,6 +309,29 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
   - **Left for later:** the tap areas and the toast were tried in a desktop browser at phone size only; how they feel
     under a thumb, and the pages on a tablet, need a phone (`docs/manual-tests.md`, "Inner pages").
 
+- **A calmer chat (task 11, PR against `redesign`).** A finished turn's work (tool cards, runs, sub-agent groups, thoughts,
+  earlier reply parts) folds into one line above its answer, "Worked 1m 20s · 14 steps", with " · 1 failed" in `--err`
+  (`web/src/turnfold.ts`, `TurnWorkHead` in `ChatItems.tsx`, the chat view in `App.tsx`). A tap opens it to exactly what
+  showed before (with the shared row movement), another closes it; a failed step is brought to the top when it opens; the
+  choice lasts while the chat is open. The running turn never folds; one that finishes on screen folds only when its
+  work is above what the reader sees, else at the next opening. Notices, canvas and picture cards, reply parts with cards,
+  pictures or files, and the changed-files card stay in view. Find in chat, message search and the scrubber open a fold
+  first. A finished thought reads "Thought for 12s" (measured in the page while it streams; "Thought process" for
+  history) with its first line on the same row; the status line's time and speed use same-width figures. Nothing
+  moved or removed: the status line, the line under each reply, the context ring, the reply actions and the status dot
+  are where they were. Chat heights unchanged (614 / 314 px at 360x740). Costs: docs/performance-history.md (scrolling
+  the same chat content costs 41% less; a 90-frame scroll of a chat of work +9%, because a folded turn is shorter).
+  Checks: `web/src/turnfold.test.ts`, the ends of `03`, `06` and `07`; the mock gained `fail a step`, `work slowly`
+  and the stored chat `s-work`, and `uicost.cjs` the moments `openWork` and `scrollWork`.
+  - **Found:** the app never marks a tool card as failed (`tool.complete` always gives `done`; only tests make `error`
+    cards), so "failed" on the line counts failed or timed-out sub-agents, and tool cards only if a later change marks
+    them. Changing that is a change to `gateway.ts`'s event handling, left for the owner to decide.
+  - **Found:** `08-queue-and-feed.cjs` "then the saved document replaces it" and "idle label says who wrote it" fail on
+    `redesign` before this task too when `03`–`08` run together (and "no canvas polling during a turn with the panel
+    closed" when `08` runs alone); not changed here.
+  - **Left for later:** closing a turn has no movement (the steps leave at once and the chevron turns): a leaving movement
+    would keep every step mounted for its length. Needs a phone: `docs/manual-tests.md`, "A calmer chat".
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

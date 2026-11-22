@@ -369,6 +369,39 @@ because the rounds showed that the first pass after the page server starts runs 
 - Chat heights at 360x740 are unchanged: 614 px idle, 314 px with the keyboard (`31-fixed-points.cjs`).
 - Not measured: on a phone (`docs/manual-tests.md`, "Inner pages").
 
+**A calmer chat (task 11, 2026-11-22): finished turns fold to one line.** `uicost.cjs --runs 7 --motion off --glass off`,
+CPU ×4, against `redesign` before the change (a worktree of it with this branch's `uicost.cjs` and `mock.cjs`, so both
+builds measure the same moments). `uicost.cjs` gained two: a long chat of work (`s-work`: 60 finished turns, each a
+thought, three tool calls and an answer with its own thought), opened from the start and scrolled 90 frames of 40 px
+(`openWork`, `scrollWork`). The machine was busy (load about 4) and the rounds drifted: Settings pages the change does not
+touch moved by up to 15% between rounds of the same build. Alternating rounds, base / branch / base / branch:
+
+| Moment (main-thread work, ms) | base 1 | branch 1 | base 2 | branch 2 | base 3 |
+|---|---|---|---|---|---|
+| start-up | 511 | 584 | 554 | 539 | 522 |
+| opening a chat | 37 | 48 | 39 | 38 | 39 |
+| first words of a reply | 31 | 45 | 40 | 36 | 37 |
+| scrolling a long chat | 278 | 458 | 344 | 377 | 337 |
+| the same, 10 sub-agents | 355 | 618 | 562 | 486 | 446 |
+| a long chat of work, opened | 539 | 620 | 590 | 576 | 582 |
+| scrolling it | 176 | 374 | 249 | 259 | 232 |
+| opening Settings | 26 | 30 | 29 | 28 | 27 |
+
+Branch round 2 against base round 3 (run back to back): start-up +3%, opening a chat −3%, the first words of a reply −3%, opening the long chat of work
+−1%. The scrolls read 9 to 12% higher there, so they were measured again with both builds served at once and the pages
+opened in turn (base, branch, branch, base, …), which takes the drift out: 12 pages each, the same 90 frames.
+
+- **Scrolling a long chat (`s-long`, no tools):** base 354 ms, branch 353 ms (median of 12). Unchanged.
+- **Scrolling the long chat of work, 90 frames:** base 247 ms, branch 269 ms (+9%, both ranging about 190 to 320 ms). A
+  folded turn is shorter, so the same 3,600 px pass about half as many turns again and draw more earlier windows.
+- **Scrolling the long chat of work to its first turn** (until everything is drawn): base 613 frames and 2,019 ms of work,
+  branch 370 frames and 1,184 ms (−41%, median of 8). The same content costs less: closed turns draw one line instead of
+  their runs and thoughts.
+- No new timer, poll or listener. `trackThought` looks at the last item and at most one open thought per change of the
+  items. The fold line is drawn again only when its words change, so a streamed batch draws no earlier turn.
+- Chat heights at 360x740 unchanged: 614 px idle, 314 px with the keyboard (`31-fixed-points.cjs`).
+- Not measured: on a phone (`docs/manual-tests.md`, "A calmer chat").
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

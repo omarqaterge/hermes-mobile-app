@@ -101,4 +101,74 @@ module.exports = async t => {
     check(shown && atEnd && (await jump.count()) === 0, `chat: Scroll to the newest message shows when scrolled up and brings the end back (${shown}, ${atEnd})`)
     await jp.close()
   }
+
+  // ── a calmer chat (task 11): a long chat of finished work opens folded; find, a search hit and the scrubber still land ──
+  {
+    const { WEB } = require('../lib.cjs')
+    const wp = await t.browser.newPage({ viewport: { width: 360, height: 740 } })
+    await wp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-work', profile: 'default' })))
+    await wp.goto(WEB + '/')
+    await wp.getByText('worked answer 59', { exact: true }).waitFor({ timeout: 8000 })
+    const lines = wp.getByRole('button', { name: /^Worked / })
+    await lines.first().waitFor({ timeout: 3000 }).catch(() => {})
+    const n = await lines.count()
+    const answers = await wp.locator('.msg.assistant strong', { hasText: /^worked answer \d+$/ }).count()
+    // The drawn window can start inside a turn, whose line is then above it.
+    check(n >= 5 && (n === answers || n === answers - 1), `turn fold: every finished turn drawn opens as one line (${n} lines, ${answers} answers)`)
+    check((await wp.getByRole('button', { name: /^Ran / }).count()) === 0 && (await wp.getByText('Plan the steps for task 59.').count()) === 0, 'turn fold: their tool runs and thoughts are hidden')
+    check(/^Worked 1m 20s · 3 steps$/.test(((await lines.last().textContent()) || '').trim()), `turn fold: the line says how long the turn took and its steps (${await lines.last().textContent()})`)
+    // Find in chat opens the fold that holds the match (and the run inside it).
+    await wp.locator('header.topbar').getByRole('button', { name: 'Chat options' }).click()
+    await wp.getByRole('dialog').getByRole('button', { name: 'Search in chat' }).click()
+    await wp.locator('.findbar input').fill('needle 57')
+    const hit = wp.getByRole('button', { name: /^Searched needle 57/ })
+    const seen = await hit.waitFor({ timeout: 4000 }).then(() => hit.evaluate(el => {
+      let sc = el
+      while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+      const r = el.getBoundingClientRect(), v = sc.getBoundingClientRect()
+      return r.bottom > v.top && r.top < v.bottom
+    }), () => false)
+    check(seen, 'turn fold: find in chat opens the fold that holds the match and shows it')
+    await wp.getByRole('button', { name: 'Close search' }).click()
+    // The open or closed choice lasts while the chat is open: leave and come back, and every finished turn is closed again.
+    check((await wp.getByRole('button', { name: /^Worked /, expanded: true }).count()) === 1, 'turn fold: the turn find opened stays open while the chat is open')
+    await wp.evaluate(() => window.hermesOpenSession('s-8'))
+    await wp.getByText('answer s-8').waitFor({ timeout: 5000 })
+    await wp.evaluate(() => window.hermesOpenSession('s-work'))
+    await wp.getByText('worked answer 59', { exact: true }).waitFor({ timeout: 5000 })
+    await lines.first().waitFor({ timeout: 3000 }).catch(() => {})
+    check((await wp.getByRole('button', { name: /^Worked /, expanded: true }).count()) === 0 && (await lines.count()) >= 5, 'turn fold: opened again, every finished turn is closed')
+    // The scrubber still lands on the message picked.
+    const rail = wp.getByRole('slider', { name: 'Jump to a message' })
+    if (await rail.count()) {
+      const rb = await rail.boundingBox()
+      await wp.mouse.click(rb.x + rb.width / 2, rb.y + 2)
+      const first = wp.locator('.msg.user').filter({ has: wp.locator('.bubble', { hasText: /^task \d$/ }) }).first()
+      const cb = await wp.locator('.chat').boundingBox()
+      // Wait for the jump to land (earlier turns are drawn first), then measure.
+      await wp.waitForFunction(top => [...document.querySelectorAll('.msg.user .bubble')].some(b => /^task \d$/.test(b.textContent.trim()) && Math.abs(b.getBoundingClientRect().top - top) < 160), cb.y, { timeout: 4000 }).catch(() => {})
+      const qb = await first.boundingBox().catch(() => null)
+      check(!!qb && qb.y >= cb.y - 2 && qb.y <= cb.y + 140, `turn fold: the scrubber lands on an early message (${qb && Math.round(qb.y - cb.y)} px below the top)`)
+    } else check(false, 'turn fold: the scrubber shows on a long chat of work')
+    await wp.close()
+  }
+  // A search hit inside a folded turn: the chat opens there with the fold open.
+  {
+    const { WEB } = require('../lib.cjs')
+    const sp = await t.browser.newPage({ viewport: { width: 360, height: 740 } })
+    await sp.goto(WEB + '/')
+    await sp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await sp.getByRole('button', { name: /^Sessions/ }).click()
+    await sp.getByPlaceholder('Search chats').fill('needle')
+    await sp.locator('.hit-row', { hasText: 'Chat of work' }).click({ timeout: 5000 })
+    const hit = sp.getByRole('button', { name: /^Searched needle 41/ })
+    const shown = await hit.waitFor({ timeout: 6000 }).then(() => hit.evaluate(el => {
+      let sc = el
+      while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+      const r = el.getBoundingClientRect(), v = sc.getBoundingClientRect()
+      return r.bottom > v.top && r.top < v.bottom
+    }), () => false)
+    check(shown, 'turn fold: a message search hit inside a folded turn opens it and scrolls to the hit')
+    await sp.close()
+  }
 }

@@ -286,6 +286,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/cron/jobs' && req.method === 'GET') return send([{ id: 'j1', name: 'Morning brief', schedule: '0 9 * * *', prompt: 'Brief me', next_run_at: null }])
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
+    if (p === '/api/sessions/search' && /needle/.test(url.search)) return send({ results: [{ session_id: 's-work', title: 'Chat of work', snippet: '…>>>needle<<< 41', role: 'tool' }] })
     if (p === '/api/sessions/search') return send({ results: [{ session_id: 's-long', title: 'Long chat', snippet: '…>>>question<<< 17', role: 'user' }] })
     if (p === '/api/plugins/hermes-mobile/nested') {
       const s = url.searchParams.get('session') || ''
@@ -927,6 +928,20 @@ wss.on('connection', ws => {
             { role: 'user', text: 'visit question 1', row_id: 1, timestamp: 1790000000 }, { role: 'assistant', text: 'visit answer 1\n\n' + tall, timestamp: 1790000060 },
             { role: 'user', text: 'visit question 2', row_id: 3, timestamp: 1790000120 }, { role: 'assistant', text: 'visit answer 2\n\n' + tall, timestamp: 1790000180 }] })
         }
+        if (sid === 's-work') {
+          // 60 finished turns of work: a thought, three tool calls, an answer with its own thought (the app folds each).
+          const messages = []
+          for (let i = 0; i < 60; i++)
+            messages.push(
+              { role: 'user', text: `task ${i}`, row_id: i * 6 + 1, timestamp: 1790000000 + i * 600 },
+              { role: 'assistant', text: '', reasoning: `Plan the steps for task ${i}.`, row_id: i * 6 + 2 },
+              { role: 'tool', name: 'terminal', tool_call_id: `w${i}-a`, context: `ls step ${i}`, args: { command: 'ls' } },
+              { role: 'tool', name: 'read_file', tool_call_id: `w${i}-b`, context: `/root/notes-${i}.txt`, args: { path: `/root/notes-${i}.txt` } },
+              { role: 'tool', name: 'search_files', tool_call_id: `w${i}-c`, context: `needle ${i}`, args: { pattern: `needle ${i}` } },
+              { role: 'assistant', text: `**worked answer ${i}**\n\n- point a\n- point b`, reasoning: `Now answer task ${i}.`, row_id: i * 6 + 6, timestamp: 1790000000 + i * 600 + 80 }
+            )
+          return reply({ session_id: 'rt-s-work', resumed: sid, session_key: sid, info: { model: 'mock-model' }, messages })
+        }
         if (sid === 's-long') {
           // 150 turns: the app should draw only the end and load earlier turns on scroll.
           const messages = []
@@ -1028,6 +1043,28 @@ wss.on('connection', ws => {
             ['todo.updated', { todos, revision: 1 }],
             ...ending('Planned.', 2, row)
           ])
+          return
+        }
+        if (/^fail a step$/.test(params.text)) {
+          // Work with a failed step (a sub-agent that failed between two commands), then a long answer: the turn folds as
+          // it finishes, because its work has gone above the screen, and its line says "1 failed".
+          const sub = { goal: 'Fetch the page', task_count: 1, task_index: 0, subagent_id: 'sa-0-fail', child_session_id: 'mock-fail-child', delegation_id: 'deleg_fail', depth: 0, model: 'mock-model', tool_count: 0, toolsets: TOOLSETS }
+          play(sid, [
+            ...beginning('terminal', `call_fa${row}`, 'echo a', { command: 'echo a' }),
+            ['tool.complete', { tool_id: `call_fa${row}`, name: 'terminal', args: { command: 'echo a' }, duration_s: 0.4, result: { output: 'a', exit_code: 0, error: null } }],
+            ['subagent.start', { ...sub, text: 'Fetch the page' }],
+            ['subagent.complete', { ...sub, status: 'failed', summary: 'The page did not answer.', duration_seconds: 0.2 }],
+            ['tool.start', { tool_id: `call_fb${row}`, name: 'terminal', context: 'echo b', args: { command: 'echo b' } }],
+            ['tool.complete', { tool_id: `call_fb${row}`, name: 'terminal', args: { command: 'echo b' }, duration_s: 0.4, result: { output: 'b', exit_code: 0, error: null } }],
+            ...ending('Partly done.\n\n' + 'more of the answer\n\n'.repeat(40) + 'End of the long answer.', 3, row)
+          ])
+          return
+        }
+        if (/^work slowly$/.test(params.text)) {
+          // Three commands over about three seconds, then a short answer: a reader can scroll up to earlier text meanwhile.
+          const steps = [['message.start', undefined]]
+          for (const k of [0, 1, 2]) steps.push(['tool.start', { tool_id: `call_ws${row}_${k}`, name: 'terminal', context: `step ${k}`, args: { command: `echo ${k}` } }], ['tool.complete', { tool_id: `call_ws${row}_${k}`, name: 'terminal', args: { command: `echo ${k}` }, duration_s: 0.5, result: { output: String(k), exit_code: 0, error: null } }])
+          play(sid, [...steps, ...ending('Slow work done.', 3, row)], 50, 220)
           return
         }
         if (/^delegate it$/.test(params.text)) {

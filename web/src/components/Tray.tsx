@@ -348,7 +348,7 @@ export function StatusLine() {
     <div className="status-line tray-status">
       <Spinner small /> <span className="status-text">{status || 'Working…'}</span>
       {elapsed >= 3000 ? <span className="dim small status-elapsed">{fmtClock(elapsed / 1000)}</span> : null}
-      {tps ? <span className="dim small">~{tps} tok/s</span> : null}
+      {tps ? <span className="dim small status-tps">~{tps} tok/s</span> : null}
     </div>
   )
 }

@@ -202,7 +202,8 @@ html[data-motion='full'] .app:has(> .sheet-backdrop) > .stage {
    `stagger(i)` (the first ten a step apart, the rest with the tenth). Not the chat list: it opens many times a day and
    a stagger there doubled its main-thread work at 4x CPU (docs/performance-history.md). The selector ends in a class,
    never `> *`: a rule ending in `*` or a bare `:nth-child()` is tested against every element at every restyle. ── */
-.motion-in {
+.motion-in,
+.turn-reveal {
   animation: motion-row var(--motion-base) var(--spring-settle) backwards;
 }
 @keyframes motion-row {

@@ -501,3 +501,19 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
 - [ ] With one bot, no bot chips anywhere; add a second bot: the chips come back and each bot page's top bar names its bot.
 - [ ] Empty Skills, Memory, Scheduled and Library parts: each button starts the right thing.
 - [ ] On a tablet or a phone in landscape: pages and sheets keep a centred width; Light theme small text reads well.
+
+## A calmer chat (task 11, not yet on a phone)
+
+- [ ] Ask for something that takes several tools and a long answer. While it works, every step shows. When it ends while
+      you are at the bottom with the answer filling the screen, the steps fold into "Worked … · N steps" and the answer
+      does not move; with a short answer the steps stay until you open the chat again.
+- [ ] Scroll up to earlier text while a turn works: when it ends, the text you read does not move.
+- [ ] Tap a "Worked" line: the steps appear (Animations Full: they rise in; Off: at once), every step and run as before;
+      tap again to fold. Leave the chat and come back: every finished turn is folded again.
+- [ ] A turn where a sub-agent failed: the line ends "· 1 failed" in red; opening it brings the failed step to the top.
+- [ ] Find in chat for a word inside a folded tool output, a search hit from the chat list, and the scrubber on a long
+      chat: each lands on its message with the fold open.
+- [ ] A finished thought reads "Thought for 12s" with its first line on the same row, and "Thought process" in a chat
+      reopened from history. The status line's time and speed keep still as they count.
+- [ ] TalkBack reads the line as one button with its state ("expanded" / "collapsed").
+- [ ] A long chat of many folded turns opens and scrolls as smoothly as before.

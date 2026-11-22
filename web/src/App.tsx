@@ -3,14 +3,15 @@ import { openSettingsOn } from './settings-open'
 import { useModelReady } from './model-ready'
 import { appVersion, haptic, isDevtoolsBuild } from './bridge'
 import { remoteDebugStrip, useRemoteDebug } from './remotedebug'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { afterChatOpens, compressChat, connect, errText, openSessionFromNotification, reconnectNow, requestChat } from './gateway'
 import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Toast, type Todo } from './store'
-import { ItemView, ToolRunHead } from './components/ChatItems'
+import { ItemView, ToolRunHead, TurnWorkHead } from './components/ChatItems'
 import { NeedWords } from './components/SessionList'
 import { SubAgentSheet, SubGroupHead, SubGroupRows, groupProps } from './components/SubAgentsCore'
 import { stepMark, stepWord } from './toolsay'
 import { foldMap } from './fold'
+import { trackThought, turnFoldMap, turnWorks, type TurnChoice, type TurnWork } from './turnfold'
 import { subFoldMap, type SubItem } from './subagents'
 import { askUnlock, lockView } from './lockview'
 import { turnChanges } from './changes'
@@ -504,6 +505,39 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   // Runs of tool calls fold into one line; tapping it opens them (keyed by the run's first item id).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(() => new Set())
   const folds = useMemo(() => foldMap(items ?? [], openRuns), [items, openRuns])
+  // A finished turn's work folds into one line above its answer (turnfold.ts). The choice made by a tap is kept per
+  // turn while this chat stays open. A turn that finishes on screen is first drawn as it was while it ran (`settling`);
+  // before the screen is painted it folds only if all of its work is above what the reader sees (nothing visible
+  // moves), else it stays as it was until the chat is next opened (`later`).
+  const [turnOpen, setTurnOpen] = useState<{ key: string | undefined; open: ReadonlyMap<string, TurnChoice> }>(() => ({ key: sessionKey, open: new Map() }))
+  let openTurns = turnOpen.open
+  if (turnOpen.key !== sessionKey) {
+    openTurns = new Map()
+    setTurnOpen({ key: sessionKey, open: openTurns })
+  }
+  const liveTurn = useRef<string | null>(null)
+  useMemo(() => trackThought(items ?? []), [items])
+  const works = useMemo(() => turnWorks(items ?? [], running), [items, running])
+  const settling = !running && liveTurn.current && !openTurns.has(liveTurn.current) ? liveTurn.current : null
+  const turnFolds = useMemo(() => turnFoldMap(works, openTurns, settling), [works, openTurns, settling])
+  const setTurn = useCallback((key: string, open: TurnChoice) => {
+    setTurnOpen(t => {
+      const n = new Map(t.open)
+      n.set(key, open)
+      return { ...t, open: n }
+    })
+  }, [])
+  /** Opened with a failed step: that step (its run opened too) is brought to the top of the view once drawn. */
+  const showFailed = useRef(-1)
+  /** Turns opened by a tap since the chat opened: what they show arrives with the shared row movement (motion.css). */
+  const revealed = useRef(new Set<string>())
+  const toggleTurn = useCallback((w: TurnWork, wasOpen: boolean) => {
+    if (!wasOpen) {
+      revealed.current.add(w.key)
+      if (w.firstFailed >= 0) showFailed.current = w.firstFailed
+    }
+    setTurn(w.key, !wasOpen)
+  }, [setTurn])
   // A chat's sub-agents fold the same way: one line, opened by a tap (keyed by the group's first item id).
   const subFolds = useMemo(() => subFoldMap(items ?? []), [items])
   const shimmerAt = useMemo(() => Math.max(-1, ...[...subFolds].flatMap(([i, f]) => ('head' in f && f.head.running ? [i] : []))), [subFolds])
@@ -528,6 +562,12 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   }, [])
   /** A search hit inside a folded run: open the run first (its first item id), true if that was needed. */
   const unfold = (idx: number): boolean => {
+    // A finished turn's fold first (the whole turn opens), then a run inside it.
+    const w = turnFolds.hidden.has(idx) ? turnFolds.byIndex.get(idx) : undefined
+    if (w) {
+      setTurn(w.key, true)
+      return true
+    }
     const f = folds.get(idx)
     if (!f || !f.hidden || !items) return false
     for (let k = idx; k >= 0; k--) {
@@ -582,7 +622,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     const unmark = highlightWords(node, jump.terms)
     setTimeout(() => node.classList.remove('hit-flash'), 2500)
     setTimeout(unmark, 6000)
-  }, [jump, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jump, items, sessionKey, start, folds, turnFolds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // In-chat search: mark every hit in the drawn messages, centre the current message (drawing earlier turns first if
   // it is above the window) and bring its first hit into view. Scrolls only when the query or the chosen match changes.
@@ -621,7 +661,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       unmarkAll()
       unmarkCur()
     }
-  }, [find, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [find, items, sessionKey, start, folds, turnFolds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -634,6 +674,74 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   useLayoutEffect(() => {
     stick.current = true
   }, [sessionKey])
+
+  // The turn that runs on screen; once it finishes it is drawn as it was (`settling`), and here, before the screen is
+  // painted, it either folds (all its work is above what the reader sees, so nothing visible moves: the answer keeps
+  // its place) or waits for the next opening of the chat.
+  const foldAnchor = useRef<{ node: Element | null; top: number } | null>(null)
+  useLayoutEffect(() => {
+    liveTurn.current = null
+  }, [sessionKey])
+  useLayoutEffect(() => {
+    if (running) {
+      let key: string | null = null
+      for (let k = (items?.length ?? 0) - 1; k >= 0 && !key; k--) if (items![k].kind === 'user') key = items![k].id
+      liveTurn.current = key
+      return
+    }
+    const key = liveTurn.current
+    const el = scroller.current
+    if (!key || !el) return
+    liveTurn.current = null
+    const w = works.find(x => x.key === key)
+    if (!w) return
+    const first = start > 0 ? 1 : 0
+    const at = (k: number) => (k >= start ? el.children[first + k - start] : undefined)
+    // The lowest of its work that takes room (a run's folded calls are placeholders that take none).
+    let last: Element | undefined
+    for (let j = w.members.length - 1; j >= 0 && !last; j--) {
+      const node = at(w.members[j])
+      if (node && node.getClientRects().length) last = node
+    }
+    const viewTop = el.getBoundingClientRect().top + barInsets().top
+    if (last && last.getBoundingClientRect().bottom > viewTop) {
+      setTurn(key, 'later')
+      return
+    }
+    const fin = at(w.final)
+    const text = fin?.querySelector('.md') ?? fin
+    foldAnchor.current = text && !stick.current ? { node: text, top: text.getBoundingClientRect().top } : { node: null, top: 0 }
+    setTurn(key, false)
+  }, [running, items]) // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = scroller.current
+    const a = foldAnchor.current
+    foldAnchor.current = null
+    if (!el || !a) return
+    if (a.node?.isConnected) el.scrollTop += a.node.getBoundingClientRect().top - a.top
+    else if (stick.current) el.scrollTop = el.scrollHeight // a reader at the end stays at the end
+  }, [turnFolds])
+  // A turn opened with a failed step: open the run that holds it, then bring the step to the top of the view.
+  useLayoutEffect(() => {
+    const k = showFailed.current
+    const el = scroller.current
+    if (k < 0 || !el || !items) return
+    const f = folds.get(k)
+    if (f?.hidden) {
+      for (let j = k; j >= 0; j--) {
+        const h = folds.get(j)
+        if (h && 'head' in h) {
+          if (!h.open) toggleRun(items[j].id)
+          return // runs again once it is drawn
+        }
+      }
+    }
+    showFailed.current = -1
+    const node = k >= start ? el.children[(start > 0 ? 1 : 0) + k - start] : undefined
+    if (!node) return
+    stick.current = false
+    el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - barInsets().top - 8
+  }, [turnFolds, folds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A bar grew or shrank (the status bar appeared, a banner left): a reader at the end stays at the end.
   useEffect(
@@ -732,7 +840,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - barInsets().top - 8
     node.classList.add('hit-flash')
     setTimeout(() => node.classList.remove('hit-flash'), 2500)
-  }, [scrubTo, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scrubTo, items, sessionKey, start, folds, turnFolds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const opening = useStore(s => s.opening)
   const conn = useStore(s => s.conn)
@@ -762,6 +870,39 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     )
   if (!items || items.length === 0) return <Empty onPick={onPick} />
   const railShown = marks.length >= SCRUB_MIN && tall && !findOpen && !previewing
+  /** One item as it draws outside a closed turn fold (inside an open one too: exactly what it showed before). */
+  const drawItem = (it: ChatItem, g: number, mark: ReactNode, opened: boolean): ReactNode => {
+    const reveal = opened ? ' turn-reveal' : ''
+    const sub = subFolds.get(g)
+    if (sub) {
+      if (!('head' in sub)) return <div key={it.id} className="folded" />
+      const open = openSubs.has(it.id)
+      return (
+        <div key={it.id} className={`tool-run-wrap${reveal}`}>
+          {mark}
+          <SubGroupHead id={it.id} {...groupProps(sub.head)} shimmer={g === shimmerAt} open={open} onToggle={toggleSubs} />
+          {open && <SubGroupRows chat={subChat} keys={sub.head.keys} items={sub.head.members.map(m => items[m] as SubItem)} />}
+        </div>
+      )
+    }
+    const f = folds.get(g)
+    const card = changes.get(g)
+    const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, g)} busy={running || previewing} quiet={turnFolds.quiet.has(g)} />
+    if (!f) {
+      if (card) return <div key={it.id} className={`turn-end${reveal}`}>{mark}{view}<TurnChangesCard changes={card} /></div>
+      if (opened) return <div key={it.id} className="turn-reveal">{view}</div>
+      return mark ? <div key={it.id} className="visit-wrap">{mark}{view}</div> : view
+    }
+    if (!('head' in f)) return <div key={it.id} className={card ? 'turn-end' : 'folded'}>{mark}{card && <TurnChangesCard changes={card} />}</div>
+    return (
+      <div key={it.id} className={`tool-run-wrap${reveal}`}>
+        {mark}
+        <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} />
+        {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} />}
+        {card && <TurnChangesCard changes={card} />}
+      </div>
+    )
+  }
 
   return (
     <div className="chat-wrap">
@@ -783,34 +924,23 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       )}
       {items.slice(start).map((it, i) => {
         // One element per item, also when folded: search and jump find messages by child index.
-        const sub = subFolds.get(start + i)
-        if (sub) {
-          if (!('head' in sub)) return <div key={it.id} className="folded" />
-          const open = openSubs.has(it.id)
+        const g = start + i
+        const mark = g === dividerIdx ? <div className="visit-divider" role="separator">New Messages</div> : null
+        const card = changes.get(g)
+        const turn = turnFolds.heads.get(g)
+        if (turn)
           return (
-            <div key={it.id} className="tool-run-wrap">
-              <SubGroupHead id={it.id} {...groupProps(sub.head)} shimmer={start + i === shimmerAt} open={open} onToggle={toggleSubs} />
-              {open && <SubGroupRows chat={subChat} keys={sub.head.keys} items={sub.head.members.map(m => items[m] as SubItem)} />}
+            <div key={it.id} className="turn-work-wrap">
+              {mark}
+              <TurnWorkHead work={turn.work} open={turn.open} onToggle={toggleTurn} />
+              {turn.open && drawItem(it, g, null, revealed.current.has(turn.work.key))}
+              {!turn.open && card && <TurnChangesCard changes={card} />}
             </div>
           )
-        }
-        const f = folds.get(start + i)
-        const card = changes.get(start + i)
-        const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
-        const mark = start + i === dividerIdx ? <div className="visit-divider" role="separator">New Messages</div> : null
-        if (!f) {
-          if (card) return <div key={it.id} className="turn-end">{mark}{view}<TurnChangesCard changes={card} /></div>
-          return mark ? <div key={it.id} className="visit-wrap">{mark}{view}</div> : view
-        }
-        if (!('head' in f)) return <div key={it.id} className={card ? 'turn-end' : 'folded'}>{mark}{card && <TurnChangesCard changes={card} />}</div>
-        return (
-          <div key={it.id} className="tool-run-wrap">
-            {mark}
-            <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} />
-            {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} />}
-            {card && <TurnChangesCard changes={card} />}
-          </div>
-        )
+        const w = turnFolds.byIndex.get(g)
+        const opened = Boolean(w && g !== w.final && revealed.current.has(w.key) && turnFolds.heads.get(w.head)?.open)
+        if (turnFolds.hidden.has(g)) return <div key={it.id} className={card || mark ? 'turn-end' : 'folded'}>{mark}{card && <TurnChangesCard changes={card} />}</div>
+        return drawItem(it, g, mark, opened)
       })}
       <QueuedRows />
       <div className="chat-pad" />

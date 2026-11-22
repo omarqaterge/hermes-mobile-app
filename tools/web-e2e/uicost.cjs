@@ -1,5 +1,5 @@
 // What the interface costs at the moments a person feels: start-up, opening a chat, the first words of a streamed reply,
-// scrolling a long chat, the same and the chat list with ten sub-agents running, opening the chat list and scrolling it, opening a row's menu and the chat's menu, opening Settings
+// scrolling a long chat, opening and scrolling a long chat of finished turns of work, the same and the chat list with ten sub-agents running, opening the chat list and scrolling it, opening a row's menu and the chat's menu, opening Settings
 // and its pages (Behaviour, Models, Add a provider, Access & privacy, About & help: a page an older build doesn't have is
 // left out), in a
 // desktop browser with the CPU slowed down (4× by default).
@@ -199,6 +199,18 @@ async function one(browser) {
     }, 90, -40)
     await page.close()
   }
+  // A long chat of finished turns of work (each a thought, three tool calls and an answer): opening it and scrolling it.
+  {
+    const { page, work } = await open(browser, 's-work')
+    out.openWork = await timed(work, () => page.goto(WEB + '/'), () => page.getByText('worked answer 59', { exact: true }).waitFor({ timeout: 30000 }))
+    await sleep(1500)
+    out.scrollWork = await frameScroll(page, work, () => {
+      let sc = [...document.querySelectorAll('strong')].find(e => e.textContent === 'worked answer 59')
+      while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+      return sc
+    }, 90, -40)
+    await page.close()
+  }
   // The same scroll, and the chat list's, with ten sub-agents running: each reports a new step five times a second, the
   // group is open in the chat and their rows are open under the chat in the list. A build without them is left out.
   {
@@ -256,8 +268,8 @@ async function one(browser) {
     return v[Math.floor(v.length / 2)]
   }
   console.log(`median of ${runs}, CPU ×${throttle}${motion ? `, motion ${motion}` : ''}${glass ? `, glass ${glass}` : ''}:`)
-  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['scrollSubs', 'the same, 10 sub-agents'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['listScrollSubs', 'the list, 10 sub-agents'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAdd', 'opening Add a provider'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
+  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['scrollSubs', 'the same, 10 sub-agents'], ['openWork', 'a long chat of work'], ['scrollWork', 'scrolling it'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['listScrollSubs', 'the list, 10 sub-agents'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAdd', 'opening Add a provider'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
     if (!all.some(r => r[k])) continue // a page this build doesn't have
-    console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${['scroll', 'listScroll', 'scrollSubs', 'listScrollSubs'].includes(k) ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
+    console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${['scroll', 'listScroll', 'scrollSubs', 'listScrollSubs', 'scrollWork'].includes(k) ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
   }
 })()

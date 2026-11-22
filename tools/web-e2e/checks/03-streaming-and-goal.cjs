@@ -136,4 +136,47 @@ module.exports = async t => {
     check(r.pres === Math.ceil(n / 2) && r.tables === Math.ceil(n / 3), `every code block and table drawn once (${r.pres} code, ${r.tables} tables)`)
     check(r.wrapped === 1, 'Wrap set on a code block mid-stream is still set when the reply is complete')
   }
+
+  // ── a calmer chat (task 11): the running turn never folds, the status bar keeps its numbers, and a turn that finishes
+  //    while the reader is on earlier text moves nothing (it folds the next time the chat is opened) ──
+  {
+    const { WEB } = require('../lib.cjs')
+    // A stored chat of its own: new chats in the mock all share one id with the run's main page.
+    const p = await t.browser.newPage({ viewport: { width: 360, height: 740 } })
+    await p.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-97', profile: 'default' })))
+    await p.goto(WEB + '/')
+    await p.getByText('answer s-97', { exact: true }).waitFor({ timeout: 15000 })
+    const box = p.getByPlaceholder('Message Hermux')
+    const send = async text => {
+      await box.fill(text)
+      await p.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    }
+    await send('fail a step')
+    await p.getByText('End of the long answer.').waitFor({ timeout: 8000 })
+    const worked = p.getByRole('button', { name: /^Worked / })
+    await worked.first().waitFor({ timeout: 3000 }).catch(() => {})
+    check((await worked.count()) === 1, `turn fold: the first finished turn folded (${await worked.count()} lines)`)
+    await send('work slowly')
+    await p.getByRole('button', { name: /^Ran echo/ }).first().waitFor({ timeout: 4000 })
+    check((await worked.count()) === 1 && (await p.getByRole('button', { name: /^Ran echo/ }).count()) >= 1, 'turn fold: the running turn is not folded: its steps show')
+    const status = p.locator('.status-line')
+    check(await status.isVisible().catch(() => false), 'turn fold: the live status line shows while the turn runs')
+    // Read earlier text while it works: the paragraph in the middle of the screen must not move when the turn ends.
+    const mid = await p.evaluate(() => {
+      const chat = [...document.querySelectorAll('p')].find(e => e.textContent === 'End of the long answer.')
+      let sc = chat
+      while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+      sc.scrollTop = Math.max(0, sc.scrollTop - 900)
+      return true
+    })
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))) // the scroll is drawn
+    const target = p.getByText('more of the answer').nth(20)
+    const before = await target.evaluate(el => el.getBoundingClientRect().top)
+    await p.getByText('Slow work done.').waitFor({ timeout: 8000 })
+    await status.waitFor({ state: 'detached', timeout: 5000 }) // the turn has ended: the fold decision is made before that paint
+    const after = await target.evaluate(el => el.getBoundingClientRect().top)
+    check(mid && Math.abs(after - before) < 2, `turn fold: a turn that finishes while you read earlier text moves nothing (${Math.round(before)} → ${Math.round(after)})`)
+    check((await worked.count()) === 1, 'turn fold: that turn waits to fold until the chat is opened again (06 checks the reopening)')
+    await p.close()
+  }
 }
