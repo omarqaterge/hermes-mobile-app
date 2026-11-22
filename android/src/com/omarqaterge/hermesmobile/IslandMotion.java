@@ -168,9 +168,55 @@ final class IslandMotion {
     // ── changing state, and small parts ──
     static final long STATE_OUT_MS = 100, STATE_IN_MS = 180, STATE_IN_DELAY_MS = 80;
     static final float STATE_OUT_SCALE = 0.98f, STATE_IN_DY = 6;
-    /** The new content takes no touch until its fade-in ends (its delay and its fade); as long with reduced motion,
-     *  whose fade is shorter, so a tap already on its way still can't land on it. */
+    /** The new content takes no touch, key or focus until its fade-in ends (at least its delay and fade, as long with
+     *  reduced motion); Allow once and Allow this session wait ALLOW_PAUSE_MS longer after the fade finishes (at least
+     *  ALLOW_HOLD_MS in all, same with reduced motion), extended by ALLOW_EXTEND_MS if an input is swallowed during the
+     *  hold. */
     static final long STATE_TOUCH_HOLD_MS = STATE_IN_DELAY_MS + STATE_IN_MS;
+    static final long ALLOW_PAUSE_MS = 320;
+    static final long ALLOW_HOLD_MS = STATE_TOUCH_HOLD_MS + ALLOW_PAUSE_MS;
+    static final long ALLOW_EXTEND_MS = 200;
+
+    /** Monotonic hold state for content arriving in place: general input (until the fade-in finishes and at least
+     *  STATE_TOUCH_HOLD_MS) and Allow (until the fade-in finishes plus ALLOW_PAUSE_MS, at least ALLOW_HOLD_MS in all,
+     *  extended briefly when an input is swallowed during the hold). Plain Java so a JDK test can drive its clock. */
+    static final class Hold {
+        boolean fading, sawSwallow;
+        long holdUntil, baseAllowUntil, allowUntil;
+
+        void start(long now) {
+            fading = true;
+            sawSwallow = false;
+            holdUntil = now + STATE_TOUCH_HOLD_MS;
+            baseAllowUntil = now + ALLOW_HOLD_MS;
+            allowUntil = baseAllowUntil;
+        }
+
+        void fadeDone(long now) {
+            if (!fading) return;
+            fading = false;
+            baseAllowUntil = Math.max(baseAllowUntil, now + ALLOW_PAUSE_MS);
+            allowUntil = Math.max(allowUntil, sawSwallow ? baseAllowUntil + ALLOW_EXTEND_MS : baseAllowUntil);
+        }
+
+        boolean holding(long now) {
+            return fading || now < holdUntil;
+        }
+
+        boolean holdingAllow(long now) {
+            return fading || now < allowUntil;
+        }
+
+        long remaining(long now) {
+            return fading ? STATE_TOUCH_HOLD_MS : Math.max(0, holdUntil - now);
+        }
+
+        void swallowed(long now) {
+            if (!holdingAllow(now)) return;
+            sawSwallow = true;
+            allowUntil = Math.max(allowUntil, Math.max(baseAllowUntil + ALLOW_EXTEND_MS, now + ALLOW_EXTEND_MS));
+        }
+    }
     /** A line of text that changes: the old one leaves upward on IN, the new one arrives from below on OUT. */
     static final long TEXT_OUT_MS = 110, TEXT_IN_MS = 200;
     static final float TEXT_DY = 6;

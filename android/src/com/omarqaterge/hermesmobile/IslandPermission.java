@@ -46,6 +46,8 @@ final class IslandPermission {
     boolean textOpensChat;
     /** Run out: the right button is a quiet Open chat. */
     boolean allowOpensChat;
+    /** Deny failed to send and Allow once is still fading back in from opacity 0: Allow stays held until it has. */
+    boolean allowReturning;
     /** Seen above a fifth of its time while on screen, so going below it is "turning red" (one tick). */
     boolean sawAboveRed, wentRed;
     int lastSecs = -1;
@@ -53,7 +55,8 @@ final class IslandPermission {
     long growEnd;
 
     IslandViews.Badge badge;
-    TextView headline, errLine, textBtn, more;
+    TextView headline, errLine, more;
+    IslandViews.GuardedText textBtn;
     IslandViews.TimerRing ring;
     View body, grab;
     IslandViews.ButtonRow row;
@@ -200,6 +203,9 @@ final class IslandPermission {
         // Android 10+: while it is an Allow that asks for no fingerprint, no touch while another app covers any part of
         // the window. With the fingerprint asked, the system prompt (drawn above other apps, with the command) decides.
         allow.strict = () -> !allowOpensChat && shown != null && shown.allowable() && !ApprovalLock.needed(p);
+        allow.hold = () -> !allowOpensChat && shown != null && shown.allowable()
+                && (allowReturning || (p.inner != null && p.inner.holdingAllow()));
+        allow.onSwallow = () -> { if (p.inner != null) p.inner.swallowed(); };
         row.addView(deny);
         row.addView(allow);
         col.addView(row, p.margins(16, 50));
@@ -208,6 +214,9 @@ final class IslandPermission {
         // Allow this session: a text button drawn 40 dp tall with 4 dp of room above and below, all of it touchable.
         textBtn = IslandViews.guardedText(p, 14, 0, 500, IslandViews.DIM,
                 () -> !textOpensChat && shown != null && shown.allowSession && !ApprovalLock.needed(p));
+        textBtn.hold = () -> !textOpensChat && shown != null && shown.allowSession
+                && p.inner != null && p.inner.holdingAllow();
+        textBtn.onSwallow = () -> { if (p.inner != null) p.inner.swallowed(); };
         textBtn.setGravity(Gravity.CENTER);
         textBtn.setText(IslandState.ALLOW_SESSION);
         GradientDrawable tb = IslandViews.round(Color.TRANSPARENT, dp(12));
@@ -343,6 +352,15 @@ final class IslandPermission {
     void tap(String c, boolean auto) {
         if (shown == null || !IslandState.OPEN.equals(phase) || confirming || p.closing) return;
         boolean allowIt = !"deny".equals(c);
+        // Deny may stay usable at once; Allow (touch, keyboard, TalkBack) waits until the change-in-place hold (and
+        // any post-failure fade-in) has finished, extending briefly when an activation is swallowed during the hold.
+        if (!auto && allowIt) {
+            if (allowReturning) return;
+            if (p.inner != null && (p.inner.holding() || p.inner.holdingAllow())) {
+                p.inner.swallowed();
+                return;
+            }
+        }
         if (allowIt && (!shown.allowable() || !("once".equals(c) || "session".equals(c)))) return;
         if ("session".equals(c) && (!shown.allowSession || textOpensChat)) return;
         if (allowIt && shown.deadline <= System.currentTimeMillis()) { // run out: no Allow, with or without the fingerprint
@@ -414,6 +432,7 @@ final class IslandPermission {
     /** The other buttons fade out in 120 ms and Allow this session gives its room back; the tapped one grows to the
      *  full row in 320 ms on back and says Sending... with a spinner; the timer ring fades away (160 ms). */
     void resolve(String c) {
+        allowReturning = false;
         IslandViews.Pill ch = chosen(), other = ch == deny ? allow : deny;
         other.setEnabled(false);
         ch.setEnabled(false);
@@ -496,8 +515,18 @@ final class IslandPermission {
         ch.setText(isDeny ? IslandState.DENY : IslandState.ALLOW_ONCE);
         ch.plain(isDeny || !ApprovalLock.needed(p) ? IslandViews.Pill.NO_ICON : IslandViews.Pill.FINGER);
         ch.setEnabled(true);
-        other.setEnabled(true);
-        fade(other, 1, IslandMotion.OTHERS_OUT_MS, null);
+        if (isDeny) {
+            // Deny failed to send: Allow once starts at opacity 0 while Deny shrinks back; hold it until faded back in.
+            allowReturning = true;
+            other.setEnabled(false);
+            fade(other, 1, IslandMotion.OTHERS_OUT_MS, () -> {
+                allowReturning = false;
+                if (IslandState.OPEN.equals(phase) && !p.closing) other.setEnabled(true);
+            });
+        } else {
+            other.setEnabled(true);
+            fade(other, 1, IslandMotion.OTHERS_OUT_MS, null);
+        }
         stopFade(errLine);
         errLine.setText(IslandState.APPROVAL_FAILED);
         errLine.setVisibility(View.VISIBLE);
@@ -588,6 +617,7 @@ final class IslandPermission {
     /** The request is over on screen: the timer stops, and a prompt of ours still up is taken down (its answer would
      *  be for a request that no longer waits). */
     void ended() {
+        allowReturning = false;
         if (timer != null) timer.cancel();
         p.MAIN.removeCallbacks(timeoutRun);
         p.MAIN.removeCallbacks(deadlineRun);
@@ -668,6 +698,7 @@ final class IslandPermission {
 
     /** The panel goes or changes state: nothing of this one runs later. */
     void stop() {
+        allowReturning = false;
         if (timer != null) timer.cancel();
         p.MAIN.removeCallbacks(timeoutRun);
         p.MAIN.removeCallbacks(afterRun);

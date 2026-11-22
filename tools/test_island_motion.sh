@@ -89,6 +89,42 @@ public class IslandMotionTest {
         check(IslandMotion.STATE_TOUCH_HOLD_MS >= IslandMotion.STATE_IN_DELAY_MS + IslandMotion.STATE_IN_MS
                 && IslandMotion.STATE_TOUCH_HOLD_MS > IslandMotion.reduced(IslandMotion.STATE_IN_MS),
                 "a change's new content takes touches only once its fade-in ends (" + IslandMotion.STATE_TOUCH_HOLD_MS + " ms), a pause with reduced motion too");
+        check(IslandMotion.ALLOW_HOLD_MS >= 550 && IslandMotion.ALLOW_HOLD_MS <= 600
+                && IslandMotion.ALLOW_PAUSE_MS >= 290 && IslandMotion.ALLOW_EXTEND_MS >= 150,
+                "Allow once / Allow this session hold is 550-600 ms (" + IslandMotion.ALLOW_HOLD_MS + " ms), with post-fade pause " + IslandMotion.ALLOW_PAUSE_MS + " ms and swallow extension " + IslandMotion.ALLOW_EXTEND_MS + " ms");
+        // Monotonic hold state machine: anchored to fade completion, never ends a frame early, same with reduced motion, extends on swallowed input.
+        IslandMotion.Hold h0 = new IslandMotion.Hold();
+        check(!h0.holding(1000) && !h0.holdingAllow(1000), "a fresh Hold is not holding");
+        h0.start(1000);
+        check(h0.holding(1000) && h0.holding(1259) && h0.holding(1300) && h0.holdingAllow(1700),
+                "while fade-in has not completed, both general and Allow holds stay active even past nominal duration (never ends a frame early)");
+        h0.fadeDone(1270);
+        check(!h0.holding(1270) && h0.holdingAllow(1270) && h0.holdingAllow(1270 + IslandMotion.ALLOW_PAUSE_MS - 1)
+                && !h0.holdingAllow(1270 + IslandMotion.ALLOW_PAUSE_MS),
+                "once fade finishes at 270 ms, general hold ends and Allow holds for the full reaction pause after fade completion");
+        // Reduced motion: fade finishes at 120 ms, general hold still lasts STATE_TOUCH_HOLD_MS and Allow still lasts ALLOW_HOLD_MS.
+        IslandMotion.Hold hr = new IslandMotion.Hold();
+        hr.start(2000);
+        hr.fadeDone(2120);
+        check(hr.holding(2120) && hr.holding(2259) && !hr.holding(2260) && hr.remaining(2120) == IslandMotion.STATE_TOUCH_HOLD_MS - 120,
+                "reduced motion: general hold still lasts STATE_TOUCH_HOLD_MS");
+        check(hr.holdingAllow(2000 + IslandMotion.ALLOW_HOLD_MS - 1) && !hr.holdingAllow(2000 + IslandMotion.ALLOW_HOLD_MS),
+                "reduced motion: Allow hold still lasts ALLOW_HOLD_MS");
+        // Swallowed tap during fade-in and during post-fade pause extends Allow hold briefly.
+        IslandMotion.Hold hs = new IslandMotion.Hold();
+        hs.start(3000);
+        hs.swallowed(3150);
+        hs.fadeDone(3260);
+        check(hs.holdingAllow(3000 + IslandMotion.ALLOW_HOLD_MS) && hs.holdingAllow(3000 + IslandMotion.ALLOW_HOLD_MS + IslandMotion.ALLOW_EXTEND_MS - 1)
+                && !hs.holdingAllow(3000 + IslandMotion.ALLOW_HOLD_MS + IslandMotion.ALLOW_EXTEND_MS),
+                "a tap swallowed during fade-in extends Allow hold past the base deadline");
+        IslandMotion.Hold hs2 = new IslandMotion.Hold();
+        hs2.start(4000);
+        hs2.fadeDone(4260);
+        long nearEnd = 4000 + IslandMotion.ALLOW_HOLD_MS - 50;
+        hs2.swallowed(nearEnd);
+        check(hs2.holdingAllow(nearEnd + IslandMotion.ALLOW_EXTEND_MS - 1),
+                "a tap swallowed near the end of the Allow hold extends it past that tap");
         check(IslandMotion.PULSE_TIMES == 3 && IslandMotion.PULSE_MS == 1600 && IslandMotion.PULSE_SCALE == 1.55f,
                 "the Question badge pulses three times, 1.6 s each, to 155 %");
         check(IslandMotion.ANSWER_HOLD_MS == 850 && IslandMotion.CLOSED_HOLD_MS == 900 && IslandMotion.DIMMED == 0.32f,

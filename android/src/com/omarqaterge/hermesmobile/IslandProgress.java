@@ -557,7 +557,8 @@ final class IslandProgress {
     /** Stop: the same as the card's (ACTION_STOP). Open chat fades, Stop grows to the full row and says Stopping...
      *  with a spinner, the headline says Stopping... */
     void tapStop() {
-        if (p.closing || !IslandState.WORKING.equals(phase) || session.isEmpty()) return;
+        if (p.closing || !IslandState.WORKING.equals(phase) || session.isEmpty()
+                || (p.inner != null && p.inner.holding())) return;
         p.haptic(HapticFeedbackConstants.KEYBOARD_TAP);
         try {
             p.startService(new Intent(p, HermesService.class).setAction(HermesService.ACTION_STOP).putExtra("session", session));

@@ -683,6 +683,15 @@ public class IslandPanel extends Activity {
     }
 
     @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        if (inner != null && inner.holding() && IslandViews.isActivationKey(e.getKeyCode())) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN) inner.swallowed();
+            return true;
+        }
+        return super.dispatchKeyEvent(e);
+    }
+
+    @Override
     public void onBackPressed() {
         close();
     }
@@ -892,7 +901,7 @@ public class IslandPanel extends Activity {
         if (badge != null) badge.pulse(ticker, reduced);
         haptic(HapticFeedbackConstants.KEYBOARD_TAP);
         card.announceForAccessibility(IslandState.ASKS + ". " + a.question);
-        if (!firstFocus) root.post(this::keyboardIfTyped); // in place, with the window's focus already here
+        if (!firstFocus) inner.whenReleased(() -> root.post(this::keyboardIfTyped)); // in place, once focus is released
     }
 
     /** The Permission state for request {@code a}, in place of what is on screen (another request after an answer, or
@@ -967,8 +976,8 @@ public class IslandPanel extends Activity {
     final java.util.HashMap<View, Float> leavingDy = new java.util.HashMap<>();
 
     /** Puts {@code now} in place of the content on screen: the old one takes no touch and fades out while shrinking
-     *  to 98 %; the new one fades in from 6 dp lower and takes no touch until it has (STATE_TOUCH_HOLD_MS, with reduced
-     *  motion too); the height follows on resize. */
+     *  to 98 %; the new one fades in from 6 dp lower and holds touches, keys and focus until the fade-in finishes (and
+     *  Allow for a reaction pause longer, same with reduced motion); the height follows on resize. */
     void swapInner(IslandViews.Fit now) {
         // A change right after another: the earlier content's fade-in stops where it is (it would raise the opacity
         // of what is now leaving, and move the new content), and it leaves from there.
@@ -981,7 +990,7 @@ public class IslandPanel extends Activity {
         long inMs = reduced ? IslandMotion.reduced(IslandMotion.STATE_IN_MS) : IslandMotion.STATE_IN_MS;
         long delay = reduced ? 0 : IslandMotion.STATE_IN_DELAY_MS;
         float a0 = old.getAlpha();
-        old.block(); // no touch reaches the old choices while they fade
+        old.block(); // no touch, key or focus reaches the old choices while they fade
         leavingDy.put(old, innerDy); // it leaves from where it is, even mid-way through its own fade-in
         ticker.tween(0, outMs, IslandMotion.LINEAR, v -> {
             old.setAlpha((float) (a0 * (1 - v)));
@@ -995,8 +1004,8 @@ public class IslandPanel extends Activity {
             leavingDy.remove(old);
         });
         now.setAlpha(0);
-        // No touch on the new content before it is there: a tap meant for Open chat must not land on Allow once.
-        now.holdTouches(IslandMotion.STATE_TOUCH_HOLD_MS);
+        // No touch, key, focus or accessibility click on the new content before it has faded in (and longer for Allow).
+        now.beginHold();
         innerDy = reduced ? 0 : dp(IslandMotion.STATE_IN_DY);
         applyGeo();
         IslandViews.Ticker.Handle[] me = {null};
@@ -1010,6 +1019,7 @@ public class IslandPanel extends Activity {
             if (swapIn == me[0]) swapIn = null;
             innerDy = 0;
             applyGeo();
+            now.fadeDone();
         });
         swapIn = me[0];
     }
@@ -1228,7 +1238,7 @@ public class IslandPanel extends Activity {
 
     /** A choice: it turns gold with dark text in 160 ms, the rest and the field fade to 32 %, a spinner at its end. */
     void choose(View row, GradientDrawable bg, TextView t, IslandViews.Mark mark, String choice) {
-        if (!canAnswer()) return;
+        if (!canAnswer() || (inner != null && inner.holding())) return;
         haptic(HapticFeedbackConstants.KEYBOARD_TAP);
         hideKeyboard();
         t.setTypeface(IslandViews.weight(600));
@@ -1253,7 +1263,7 @@ public class IslandPanel extends Activity {
     /** Typed text: the choices fade to 32 %, the send button shows the spinner. */
     void sendTyped() {
         String text = field.getText().toString().trim();
-        if (text.isEmpty() || !canAnswer()) return;
+        if (text.isEmpty() || !canAnswer() || (inner != null && inner.holding())) return;
         haptic(HapticFeedbackConstants.KEYBOARD_TAP);
         for (View o : choiceRows) {
             o.setEnabled(false);

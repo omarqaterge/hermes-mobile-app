@@ -11,10 +11,12 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.SystemClock;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Choreographer;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -87,18 +89,50 @@ final class IslandViews {
         return style(new TextView(c), size, line, weight, colour);
     }
 
+    /** A text button that answers a permission request: ignores touches under another app's window, on Android 10+
+     *  while one covers any part of the panel's window whenever {@link #strict} holds, and while {@link #hold} holds
+     *  (reporting a swallowed press through {@link #onSwallow}). */
+    static final class GuardedText extends TextView {
+        final java.util.function.BooleanSupplier strict;
+        java.util.function.BooleanSupplier hold;
+        Runnable onSwallow;
+
+        GuardedText(Context c, java.util.function.BooleanSupplier strict) {
+            super(c);
+            this.strict = strict;
+            setFilterTouchesWhenObscured(true);
+        }
+
+        @Override
+        public boolean onFilterTouchEventForSecurity(MotionEvent e) {
+            return !(strict.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent e) {
+            java.util.function.BooleanSupplier h = hold;
+            if (h != null && h.getAsBoolean()) {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN && onSwallow != null) onSwallow.run();
+                return false;
+            }
+            return super.dispatchTouchEvent(e);
+        }
+    }
+
     /** The same text for a button that answers a permission request: it ignores touches while another app's window
      *  covers it ({@code setFilterTouchesWhenObscured}), and on Android 10+ also while one covers any part of the
      *  panel's window whenever {@code strict} says so at the touch (an Allow that asks for no fingerprint). */
-    static TextView guardedText(Context c, float size, float line, int weight, int colour, java.util.function.BooleanSupplier strict) {
-        TextView t = new TextView(c) {
-            @Override
-            public boolean onFilterTouchEventForSecurity(MotionEvent e) {
-                return !(strict.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
-            }
-        };
-        t.setFilterTouchesWhenObscured(true);
-        return style(t, size, line, weight, colour);
+    static GuardedText guardedText(Context c, float size, float line, int weight, int colour, java.util.function.BooleanSupplier strict) {
+        GuardedText t = new GuardedText(c, strict);
+        style(t, size, line, weight, colour);
+        return t;
+    }
+
+    /** Keys that activate a focused control on a keyboard, D-pad or switch device (never Back). */
+    static boolean isActivationKey(int code) {
+        return code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
+                || code == KeyEvent.KEYCODE_SPACE || code == KeyEvent.KEYCODE_DPAD_CENTER
+                || code == KeyEvent.KEYCODE_BUTTON_A;
     }
 
     /** A guarded view's touch arrived while another app's window covered part of this window (Android 10+ says so;
@@ -731,6 +765,10 @@ final class IslandViews {
          *  refused while another app covers any part of the window (Android 10+). Null for every other button (Deny,
          *  Review in Hermux, Open chat), which still refuses a touch that passes through another app's window. */
         java.util.function.BooleanSupplier strict;
+        /** Asked at each touch: true while Allow is held after a change in place or while fading back in; a swallowed
+         *  press notifies {@link #onSwallow} so the hold extends briefly. */
+        java.util.function.BooleanSupplier hold;
+        Runnable onSwallow;
 
         Pill(Context c, String text, int bg, int fg, int icon, int span) {
             super(c);
@@ -756,6 +794,16 @@ final class IslandViews {
         public boolean onFilterTouchEventForSecurity(MotionEvent e) {
             java.util.function.BooleanSupplier s = strict;
             return !(s != null && s.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent e) {
+            java.util.function.BooleanSupplier h = hold;
+            if (h != null && h.getAsBoolean()) {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN && onSwallow != null) onSwallow.run();
+                return false;
+            }
+            return super.dispatchTouchEvent(e);
         }
 
         void setText(String t) {
@@ -1293,25 +1341,83 @@ final class IslandViews {
             minFlex = Math.round(dp(c, 48));
         }
 
-        /** Content on its way out (a change of state): it takes no touch, so a tap in its last 100 ms can't answer the
-         *  new question with the old choice; the touch goes on to what lies under it (the panel). */
+        /** Content on its way out (a change of state): it takes no touch, key or focus, so an input in its last 100 ms
+         *  can't answer the new question with the old choice; the touch goes on to what lies under it (the panel). */
         boolean blocked;
-        /** Content on its way in (a change of state): it takes no touch until it has faded in, so a tap meant for what
-         *  was on screen can't land on a button that has just appeared under the finger (Allow once where Open chat
-         *  was). The touch goes on to the panel, which only moves on a drag. */
-        boolean waiting;
+        /** Content on its way in (a change of state): monotonic hold anchored to {@link #fadeDone()}, blocking touch,
+         *  activation keys and focus until the fade-in ends (and Allow for a reaction pause longer). */
+        final IslandMotion.Hold hold = new IslandMotion.Hold();
+        boolean holdFocused;
+        Runnable releaseRun;
+        final Runnable checkRelease = this::releaseIfDone;
 
-        /** Takes no touch for {@code ms} from now (see {@link #waiting}). */
-        void holdTouches(long ms) {
-            waiting = true;
-            postDelayed(() -> waiting = false, ms);
+        /** Starts the input hold for content arriving in place: monotonic clock, focus kept off its children until the
+         *  hold ends. Anchored to {@link #fadeDone()}, not a bare postDelayed. */
+        void beginHold() {
+            hold.start(SystemClock.uptimeMillis());
+            holdFocused = true;
+            View f = findFocus();
+            if (f != null) f.clearFocus();
+            setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);
+            removeCallbacks(checkRelease);
+        }
+
+        /** The fade-in has actually finished: anchors Allow's reaction pause to now and restores focus once the general
+         *  hold is also over. */
+        void fadeDone() {
+            long now = SystemClock.uptimeMillis();
+            hold.fadeDone(now);
+            long rem = hold.remaining(now);
+            removeCallbacks(checkRelease);
+            if (rem <= 0) releaseIfDone();
+            else postDelayed(checkRelease, rem);
+        }
+
+        void releaseIfDone() {
+            if (blocked) return;
+            if (holding()) {
+                long rem = hold.remaining(SystemClock.uptimeMillis());
+                if (rem > 0) postDelayed(checkRelease, rem);
+                return;
+            }
+            if (holdFocused) {
+                holdFocused = false;
+                setDescendantFocusability(FOCUS_AFTER_DESCENDANTS);
+            }
+            Runnable r = releaseRun;
+            releaseRun = null;
+            if (r != null) r.run();
+        }
+
+        /** Runs {@code r} as soon as the general hold is over (at once when not holding). */
+        void whenReleased(Runnable r) {
+            if (!holding()) r.run();
+            else releaseRun = r;
+        }
+
+        /** True while the general change-in-place hold is active (fading in, or before its monotonic deadline). */
+        boolean holding() {
+            return hold.holding(SystemClock.uptimeMillis());
+        }
+
+        /** True while Allow once / Allow this session is held (fading in, or before its post-fade reaction pause). */
+        boolean holdingAllow() {
+            return hold.holdingAllow(SystemClock.uptimeMillis());
+        }
+
+        /** Records an input swallowed during the hold, extending Allow's deadline briefly. */
+        void swallowed() {
+            hold.swallowed(SystemClock.uptimeMillis());
         }
 
         /** Stops this content taking touches: a touch already on one of its buttons is cancelled, and nothing in it can
          *  take the focus or be read out. */
         void block() {
             if (blocked) return;
-            long now = android.os.SystemClock.uptimeMillis();
+            removeCallbacks(checkRelease);
+            releaseRun = null;
+            holdFocused = false;
+            long now = SystemClock.uptimeMillis();
             MotionEvent c = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0, 0, 0);
             super.dispatchTouchEvent(c);
             c.recycle();
@@ -1323,8 +1429,30 @@ final class IslandViews {
         }
 
         @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            removeCallbacks(checkRelease);
+            releaseRun = null;
+        }
+
+        @Override
         public boolean dispatchTouchEvent(MotionEvent e) {
-            return !blocked && !waiting && super.dispatchTouchEvent(e);
+            if (blocked) return false;
+            if (holding()) {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) swallowed();
+                return false;
+            }
+            return super.dispatchTouchEvent(e);
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent e) {
+            if (blocked) return true;
+            if (holding() && isActivationKey(e.getKeyCode())) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN) swallowed();
+                return true;
+            }
+            return super.dispatchKeyEvent(e);
         }
 
         @Override

@@ -100,7 +100,9 @@ needed, only with the one-use grant the prompt filed for that request and choice
   closes.
 - **Not sent** (the POST failed, the service refused, or no word in 15 s): the two buttons come back with the red line
   "Couldn't send your answer. Try again, or open the chat." above them, and the text button becomes "Open chat" (not
-  for a phone-data or unreadable request, whose row already has "Review in Hermux" or "Open chat"). The
+  for a phone-data or unreadable request, whose row already has "Review in Hermux" or "Open chat"). When Deny failed to
+  send, Allow once starts at opacity 0 while Deny shrinks back and stays held and disabled (`allowReturning`) until its
+  fade-in finishes, so a tap meant for Deny can't hit an invisible Allow once. The
   timer runs on; another Allow asks for the fingerprint again. The red line goes as soon as the next answer is sent,
   or when the request is answered elsewhere. The service also posts its own "Couldn't send your answer" card.
 - **Run out** (the timer at zero, or the request gone within 1.5 s of its deadline): the headline changes to "This
@@ -179,10 +181,18 @@ it to that turn's Progress.
 #### Changing state
 
 While the panel is open it follows what Hermux does, in place (the old content fades out in 100 ms while shrinking to
-98 % and takes no touch; the new one fades in from 6 dp lower; the height follows). The new content takes no touch
-until its fade-in ends, 260 ms after the change (`IslandMotion.STATE_TOUCH_HOLD_MS`, `Fit.holdTouches`), the same
-with the phone's animations off: a tap meant for Progress's or Done's Open chat can't land on Allow once or "Allow this
-session" that has just appeared under the finger; the touch goes to the panel, which only moves on a drag. A permission request or a single
+98 % and takes no touch, key or focus; the new one fades in from 6 dp lower; the height follows). The new content starts
+a monotonic input hold (`IslandMotion.Hold`, `Fit.beginHold`, anchored to fade completion via `Fit.fadeDone` rather than
+a bare timer, with `Fit.holding` and `Fit.holdingAllow`): while fading in (and at least `IslandMotion.STATE_TOUCH_HOLD_MS`,
+260 ms, with reduced motion too), touches go to the panel (which only moves on a drag), activation keys (`IslandViews.isActivationKey`:
+Enter, Space, D-pad centre, Button A; never Back) are consumed in `dispatchKeyEvent`, focus stays off the new content until
+released (`Fit.whenReleased`), and click handlers (`IslandPermission.tap` for manual Allow, `IslandPanel.choose`, `sendTyped`,
+`IslandProgress.tapStop`) ignore activations (blocking TalkBack and Switch Access too). Deny stays usable without waiting
+for Allow's pause, and an automatic card Allow still opens its prompt at once. Allow once and Allow this session stay held
+for a reaction pause (`IslandMotion.ALLOW_PAUSE_MS`, 320 ms) after the fade-in actually finishes (`IslandMotion.ALLOW_HOLD_MS`,
+580 ms in all, same with reduced motion), extended by `IslandMotion.ALLOW_EXTEND_MS` (200 ms) whenever a touch or activation
+is swallowed during the hold (`Fit.swallowed`), so a reflexive tap meant for Progress's or Done's Open chat can't land on
+Allow once or Allow this session. A permission request or a single
 question arriving during Progress or Done changes it to that state, with one light tap (`IslandState.arrived`;
 during a stop on its way it waits); the turn ending changes Progress to Done. After an answer sent from the panel (a
 choice or text, Allowed or Denied), it changes to the next permission request waiting, else to a question waiting,

@@ -381,6 +381,17 @@ Part 3, the Progress and Done states and the links between states. Not yet on a 
       lines of the reply, steps and time; Open chat opens the chat and the chip's Done goes away.
 - [ ] **Changing in place.** A permission request or a question arriving while Progress shows: the panel changes to
       it. After answering it from the panel with another waiting: the next one takes its place.
+- [ ] **Change-in-place hold (keyboard and TalkBack).** With a keyboard, D-pad, Switch Access or TalkBack active on
+      Progress or Done, trigger a permission request arriving in place and press Enter/Space or activate Allow once
+      immediately during the fade-in. Expected: focus stays off the new content until the fade-in ends, activation keys
+      and accessibility clicks on Allow once / Allow this session (and on Question choices / Send / Progress Stop during
+      the fade-in) do nothing, and Back still closes the panel.
+- [ ] **Longer Allow pause on change in place (normal and reduced motion).** While tapping Open chat on Progress or
+      Done, have a permission request arrive in place and tap Allow once right as it appears (and again immediately if
+      swallowed). Expected: Allow once and Allow this session ignore taps for about 580 ms (anchored to fade-in
+      completion plus a reaction pause, extended briefly after a swallowed tap, same with Remove animations on), while
+      Deny works as soon as the request is visible. Also let Deny fail to send: Allow once stays disabled until it has
+      faded back in.
 - [ ] **A card answer.** Allow once, Deny or a choice from a card's own button. Expected: the chip says "Allowed",
       "Denied" or "Sent" for two seconds, then the usual state.
 - [ ] **Lock screen.** With the phone locked during a turn, the working card unlocks first; the app's picture never
