@@ -682,11 +682,27 @@ public class IslandPanel extends Activity {
         noSystemTransition();
     }
 
+    int heldKey;
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
-        if (inner != null && inner.holding() && IslandViews.isActivationKey(e.getKeyCode())) {
-            if (e.getAction() == KeyEvent.ACTION_DOWN) inner.swallowed();
-            return true;
+        int code = e.getKeyCode();
+        if (IslandViews.isActivationKey(code)) {
+            int act = e.getAction();
+            if (inner != null && inner.holding()) {
+                if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    heldKey = code;
+                    inner.swallowed();
+                } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                    heldKey = 0;
+                }
+                return true;
+            }
+            if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                heldKey = 0;
+                return true;
+            }
+            if (act == KeyEvent.ACTION_DOWN && heldKey == code) heldKey = 0;
         }
         return super.dispatchKeyEvent(e);
     }

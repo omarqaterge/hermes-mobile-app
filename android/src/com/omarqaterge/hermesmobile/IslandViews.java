@@ -96,6 +96,7 @@ final class IslandViews {
         final java.util.function.BooleanSupplier strict;
         java.util.function.BooleanSupplier hold;
         Runnable onSwallow;
+        int heldKey;
 
         GuardedText(Context c, java.util.function.BooleanSupplier strict) {
             super(c);
@@ -116,6 +117,30 @@ final class IslandViews {
                 return false;
             }
             return super.dispatchTouchEvent(e);
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent e) {
+            int code = e.getKeyCode();
+            if (isActivationKey(code)) {
+                int act = e.getAction();
+                java.util.function.BooleanSupplier h = hold;
+                if (h != null && h.getAsBoolean()) {
+                    if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                        heldKey = code;
+                        if (onSwallow != null) onSwallow.run();
+                    } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                        heldKey = 0;
+                    }
+                    return true;
+                }
+                if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                    heldKey = 0;
+                    return true;
+                }
+                if (act == KeyEvent.ACTION_DOWN && heldKey == code) heldKey = 0;
+            }
+            return super.dispatchKeyEvent(e);
         }
     }
 
@@ -769,6 +794,7 @@ final class IslandViews {
          *  press notifies {@link #onSwallow} so the hold extends briefly. */
         java.util.function.BooleanSupplier hold;
         Runnable onSwallow;
+        int heldKey;
 
         Pill(Context c, String text, int bg, int fg, int icon, int span) {
             super(c);
@@ -804,6 +830,30 @@ final class IslandViews {
                 return false;
             }
             return super.dispatchTouchEvent(e);
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent e) {
+            int code = e.getKeyCode();
+            if (isActivationKey(code)) {
+                int act = e.getAction();
+                java.util.function.BooleanSupplier h = hold;
+                if (h != null && h.getAsBoolean()) {
+                    if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                        heldKey = code;
+                        if (onSwallow != null) onSwallow.run();
+                    } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                        heldKey = 0;
+                    }
+                    return true;
+                }
+                if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                    heldKey = 0;
+                    return true;
+                }
+                if (act == KeyEvent.ACTION_DOWN && heldKey == code) heldKey = 0;
+            }
+            return super.dispatchKeyEvent(e);
         }
 
         void setText(String t) {
@@ -1445,12 +1495,28 @@ final class IslandViews {
             return super.dispatchTouchEvent(e);
         }
 
+        int heldKey;
+
         @Override
         public boolean dispatchKeyEvent(KeyEvent e) {
             if (blocked) return true;
-            if (holding() && isActivationKey(e.getKeyCode())) {
-                if (e.getAction() == KeyEvent.ACTION_DOWN) swallowed();
-                return true;
+            int code = e.getKeyCode();
+            if (isActivationKey(code)) {
+                int act = e.getAction();
+                if (holding()) {
+                    if (act == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                        heldKey = code;
+                        swallowed();
+                    } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                        heldKey = 0;
+                    }
+                    return true;
+                }
+                if (act == KeyEvent.ACTION_UP && heldKey == code) {
+                    heldKey = 0;
+                    return true;
+                }
+                if (act == KeyEvent.ACTION_DOWN && heldKey == code) heldKey = 0;
             }
             return super.dispatchKeyEvent(e);
         }
