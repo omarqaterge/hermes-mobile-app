@@ -75,7 +75,9 @@ e = last_status()
 check("chat title rides on the status", e.get("title") == "Fix the build", e)
 check("no steps yet", e.get("steps") == 0 and e.get("todo") is None, e)
 since = e.get("since")
-check("turn start time sent", isinstance(since, float) and abs(since - time.time()) < 5, since)
+tid_a1 = e.get("turn_id")
+check("turn start time, turn_id and proc sent", isinstance(since, float) and abs(since - time.time()) < 5
+      and isinstance(tid_a1, str) and tid_a1.startswith(plugin._PROC_ID + ":") and e.get("proc") == plugin._PROC_ID, e)
 plugin._on_pre_tool_call(tool_name="terminal", args={"command": "make"}, session_id="s-a", turn_id="s-a:1")
 plugin._on_post_tool_call(tool_name="terminal", session_id="s-a", turn_id="s-a:1")
 plugin._on_pre_tool_call(tool_name="todo_list", args={}, session_id="s-a", turn_id="s-a:1")  # its registered name
@@ -83,7 +85,7 @@ plugin._on_post_tool_call(tool_name="todo_list", result=res, session_id="s-a", t
 e = last_status()
 check("each tool call is a step, kept across 'Thinking…'", e.get("steps") == 2 and e.get("body") == "Thinking…", e)
 check("task list kept on the turn", (e.get("todo") or {}).get("states") == "dapx", e.get("todo"))
-check("same turn start", e.get("since") == since, (e.get("since"), since))
+check("same turn start and turn_id across steps", e.get("since") == since and e.get("turn_id") == tid_a1, (e.get("since"), e.get("turn_id"), tid_a1))
 
 print("an app open in the background")
 pa = plugin._phone_app()
@@ -121,24 +123,45 @@ plugin._on_stream_start(session_id="s-b", turn_id="s-b:1")
 plugin._on_pre_tool_call(tool_name="web_search", args={"query": "trains"}, session_id="s-b", turn_id="s-b:1")
 e = last_status()
 check("the chip stays on the chat that started first", e.get("session") == "s-a", e.get("session"))
-check("the other chat is listed with its title and step", e.get("others") == [
-    {"session": "s-b", "title": "Plan the trip", "text": "Searching the web: trains"}] and e.get("more") == 1, e.get("others"))
+others = e.get("others") or []
+tid_b1 = others[0].get("turn_id") if others else ""
+check("the other chat is listed with its title, step, since and distinct turn_id",
+      len(others) == 1 and others[0].get("session") == "s-b" and others[0].get("title") == "Plan the trip"
+      and others[0].get("text") == "Searching the web: trains"
+      and isinstance(others[0].get("since"), float) and others[0]["since"] > 0
+      and isinstance(tid_b1, str) and tid_b1.startswith(plugin._PROC_ID + ":") and tid_b1 != tid_a1
+      and e.get("more") == 1, others)
 check("body has no '(+1 more)' any more", "more)" not in e.get("body", ""), e.get("body"))
 
 print("the turn ends")
 plugin._last_text["s-a"] = "All fixed: the build passes."
 plugin._on_session_end(session_id="s-a", turn_id="s-a:1", completed=True)
 flash = [x for x in sent if x["kind"] == "flash"][-1]
-check("Done carries steps, duration and the reply", flash.get("steps") == 2 and flash.get("secs", -1) >= 0
-      and flash.get("reply") == "All fixed: the build passes." and flash.get("done"), flash)
+check("Done carries steps, duration, reply, turn_id and proc", flash.get("steps") == 2 and flash.get("secs", -1) >= 0
+      and flash.get("reply") == "All fixed: the build passes." and flash.get("done")
+      and flash.get("turn_id") == tid_a1 and flash.get("proc") == plugin._PROC_ID, flash)
 e = last_status()
-check("then the chip follows the other chat", e.get("session") == "s-b" and e.get("more") == 0, e)
+check("then the chip follows the other chat with the same turn_id",
+      e.get("session") == "s-b" and e.get("more") == 0 and e.get("turn_id") == tid_b1, e)
 plugin._on_session_end(session_id="s-b", turn_id=None, interrupted=True)
 plugin._on_stream_start(session_id="s-a", turn_id="s-a:2")
 e = last_status()
-check("a new turn starts from zero", e.get("steps") == 0 and e.get("todo") is None and e.get("since") != since, e)
+tid_a2 = e.get("turn_id")
+check("a new turn starts from zero with a fresh turn_id",
+      e.get("steps") == 0 and e.get("todo") is None and e.get("since") != since
+      and isinstance(tid_a2, str) and tid_a2 != tid_a1, e)
+# Back-to-back turn on a chat in others (even without session_end, a different hook turn_id mints a fresh turn_id).
+plugin._on_stream_start(session_id="s-b", turn_id="s-b:2")
+e_o1 = last_status()
+tid_b2 = (e_o1.get("others") or [{}])[0].get("turn_id", "")
+plugin._on_stream_start(session_id="s-b", turn_id="s-b:3")
+e_o2 = last_status()
+tid_b3 = (e_o2.get("others") or [{}])[0].get("turn_id", "")
+check("back-to-back turns in others get distinct turn_ids", tid_b2 and tid_b3 and tid_b2 != tid_b3, (tid_b2, tid_b3))
+plugin._on_session_end(session_id="s-b", turn_id=None, interrupted=True)
 plugin._on_session_end(session_id="s-a", turn_id=None, interrupted=True)
-check("all over → Ready", last_status().get("working") is False)
+idle_e = last_status()
+check("all over → Ready with proc", idle_e.get("working") is False and idle_e.get("proc") == plugin._PROC_ID, idle_e)
 
 print("untitled chat is looked up again")
 plugin._titles.clear()
@@ -250,8 +273,26 @@ here = types.SimpleNamespace(scope={"server": ("127.0.0.1", 9119)})
 out = asyncio.run(papi.stop(papi.Stop(session="s-a"), here))
 check("its WebSocket goes to the dashboard that got the request, with the in-process token",
       dialled and dialled[0] == "ws://127.0.0.1:9119/api/ws?token=tok", dialled)
-check("interrupts the runtime holding the chat", out == {"interrupted": "rt-2"}
-      and ("session.interrupt", {"session_id": "rt-2"}) in calls and ("session.interrupt", {"session_id": "rt-1"}) not in calls, calls)
+check("interrupts the runtime holding the chat (no active turn record: backward compatible)", out == {"interrupted": "rt-2"}
+      and ("session.interrupt", {"session_id": "rt-2"}) in calls and ("session.interrupt", {"session_id": "rt-1"}) not in calls, (out, calls))
+# With an active turn in the plugin: /stop returns its turn_id and refuses a stale turn_id without interrupting.
+plugin._on_stream_start(session_id="s-a", turn_id="s-a:stop1")
+active_tid = plugin._active_turn_id("s-a")
+calls.clear()
+out_tid = asyncio.run(papi.stop(papi.Stop(session="s-a", turn_id=active_tid), here))
+check("/stop returns the active turn_id when it matches", out_tid == {"interrupted": "rt-2", "turn_id": active_tid}
+      and ("session.interrupt", {"session_id": "rt-2"}) in calls, (out_tid, calls))
+calls.clear()
+out_old_app = asyncio.run(papi.stop(papi.Stop(session="s-a"), here))
+check("older app omitting turn_id still interrupts and receives turn_id", out_old_app == {"interrupted": "rt-2", "turn_id": active_tid}, out_old_app)
+calls.clear()
+try:
+    asyncio.run(papi.stop(papi.Stop(session="s-a", turn_id="stale-turn-id"), here))
+    check("mismatched turn_id → 409 without calling session.interrupt", False)
+except fastapi.HTTPException as ex:
+    check("mismatched turn_id → 409 without calling session.interrupt",
+          ex.status_code == 409 and ("session.interrupt", {"session_id": "rt-2"}) not in calls, (ex.status_code, calls))
+plugin._clear_status("s-a")
 try:
     asyncio.run(papi.stop(papi.Stop(session="s-gone"), here))
     check("a chat not running → 404", False)

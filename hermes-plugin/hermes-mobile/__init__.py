@@ -23,6 +23,7 @@ import json
 import math
 import os
 import re
+import secrets
 import shutil
 import stat
 import subprocess
@@ -30,6 +31,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 from pathlib import Path
 
 KEY_FILE = Path("/data/data/com.termux/files/home/.hermes-mobile/key")
@@ -72,6 +74,20 @@ REVIEW_STALE = 60  # background work that stops reporting for this long is over 
 _btw_turns: set = set()  # turn ids of /btw side questions (a fork on the same session, like the review)
 _status_dirty = threading.Event()
 _key_cache: dict = {}  # _key(): its local_auth.KeyFile reader
+_PROC_ID = f"{os.getpid()}-{secrets.token_hex(4)}"  # unique per plugin process (survives pid reuse across restarts)
+_turn_seq = 0  # monotonic per-process turn counter under _lock
+
+
+def _active_turn_id(session_id: str) -> str:
+    """The current turn id for a running chat in this process, or '' when none is active."""
+    if not session_id:
+        return ""
+    with _lock:
+        cur = _active.get(session_id)
+        return str((cur.get("turn") or {}).get("id") or "") if cur else ""
+
+
+sys.modules["hm_plugin"] = types.SimpleNamespace(_active_turn_id=_active_turn_id)
 
 
 def _profile() -> str:
@@ -426,7 +442,8 @@ def _kept_entry(pid, v, now: float):
             return None
         # Only the fields the hooks write are copied, so nothing else in the file (deep nesting too) can break the write.
         items = [{"session": it["session"], "text": it["text"], "short": it["short"], "profile": it["profile"],
-                  "review": bool(it.get("review")), "ts": it["ts"]}
+                  "review": bool(it.get("review")), "ts": it["ts"],
+                  **({"turn_id": it["turn_id"]} if _is_text(it.get("turn_id")) and 0 < len(it["turn_id"]) <= 128 else {})}
                  for it in v["items"] if _item_ok(it)] if isinstance(v.get("items"), list) else []
         working = bool(items) and _is_number(at) and now - at < 300
         raw = v.get("waiting")
@@ -452,7 +469,9 @@ def _publish_activity() -> None:
             now = time.time()
             with _lock:
                 mine = [{"session": sid, "text": v["text"], "short": v.get("short", ""), "profile": v["profile"],
-                         "review": bool(v.get("review")), "ts": v["ts"]} for sid, v in _active.items()]
+                         "review": bool(v.get("review")), "ts": v["ts"],
+                         **({"turn_id": (v.get("turn") or {}).get("id", "")} if (v.get("turn") or {}).get("id") else {})}
+                        for sid, v in _active.items()]
                 for key in [k for k, v in _waiting.items() if v["until"] <= now]:
                     del _waiting[key]
                 waits = [{f: v[f] for f in ("session", "kind", "who", "profile", "since", "until", "open", "last")}
@@ -631,21 +650,32 @@ def _pop_start(session_id):
 
 
 def _set_status(session_id: str, text: str, short: str = "Working", review: bool = False, tool: bool = False,
-                step: bool = False, unless_live: bool = False) -> None:
+                step: bool = False, unless_live: bool = False, turn_id=None) -> None:
     """unless_live: do nothing when a real (non-review) turn of this chat has a status; the check and the change
     happen under one hold of the lock, so a real turn that starts meanwhile is never replaced."""
+    global _turn_seq
     if not session_id or session_id in _subagents:
         return
     if not review and short not in ("Approve?", "Asking"):
         short = _phone_app_short(session_id) or short  # an app open in the background: the chip says "Using <app>"
+    hook_tid = str(turn_id) if turn_id else ""
     now = time.time()
     with _lock:
         prev = _active.get(session_id)
         if unless_live and prev and not prev.get("review"):
             return
-        # Per-turn progress (start time, steps taken, task list) survives each status change of the same turn;
-        # a turn starts when the session isn't active (session_end / stale expiry dropped it) or a review takes over.
-        turn = prev["turn"] if prev and bool(prev.get("review")) == review else {"since": now, "steps": 0, "todo": None}
+        # Per-turn progress (id, start time, steps taken, task list) survives each status change of the same turn;
+        # a new turn starts when the session isn't active, a review flips, or Hermes passes a different turn_id.
+        prev_turn = prev["turn"] if prev else None
+        same_turn = (prev_turn is not None and bool(prev.get("review")) == review
+                     and (not hook_tid or not prev_turn.get("hook_id") or prev_turn["hook_id"] == hook_tid))
+        if same_turn:
+            turn = prev_turn
+            if hook_tid and not turn.get("hook_id"):
+                turn["hook_id"] = hook_tid
+        else:
+            _turn_seq += 1
+            turn = {"id": f"{_PROC_ID}:{_turn_seq}", "hook_id": hook_tid, "since": now, "steps": 0, "todo": None}
         if step:
             turn["steps"] += 1
         _active[session_id] = {"text": text, "short": short, "ts": now, "profile": _profile(), "review": review,
@@ -756,11 +786,14 @@ def _status_loop() -> None:
             turn = cur.get("turn") or {}
             _post({"kind": "status", "working": True, "body": cur["text"], "short": cur.get("short", "Working"),
                    "session": sid, "profile": cur["profile"], "title": _title_for(sid), "review": bool(cur.get("review")),
+                   "proc": _PROC_ID, "turn_id": turn.get("id", ""),
                    "since": turn.get("since", 0), "steps": turn.get("steps", 0), "todo": turn.get("todo"),
-                   "others": [{"session": s, "title": _title_for(s), "text": v["text"]} for s, v in items[1:4]],
+                   "others": [{"session": s, "title": _title_for(s), "text": v["text"],
+                               "since": (v.get("turn") or {}).get("since", 0),
+                               "turn_id": (v.get("turn") or {}).get("id", "")} for s, v in items[1:4]],
                    "more": len(items) - 1})
         else:
-            _post({"kind": "status", "working": False, "body": "Ready", "profile": _profile()})
+            _post({"kind": "status", "working": False, "body": "Ready", "profile": _profile(), "proc": _PROC_ID})
         last_sent = time.time()
 
 
@@ -904,7 +937,7 @@ def _bg_status(session_id, turn_id, tool_label: str = "") -> None:
         text, short = "Learning from this chat (memory & skills)", "Learning"
     if tool_label:
         text = f"{short} · {tool_label}"
-    _set_status(session_id, text, short, review=True, unless_live=True)
+    _set_status(session_id, text, short, review=True, unless_live=True, turn_id=turn_id)
 
 
 def _bg_clear(session_id) -> None:
@@ -937,7 +970,7 @@ def _on_stream_start(session_id=None, turn_id=None, **_):
     if rev:
         _bg_status(session_id, turn_id)
         return
-    _set_status(session_id, "Thinking…", "Thinking")
+    _set_status(session_id, "Thinking…", "Thinking", turn_id=turn_id)
 
 
 def _on_stream_end(final_text=None, session_id=None, turn_id=None, finished=None, **_):
@@ -977,7 +1010,7 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
         _bg_status(session_id, turn_id, _tool_label(tool_name or "tool", args).removeprefix("Using "))
         return None
     _set_status(session_id, _tool_label(tool_name or "tool", args), _tool_short(tool_name or "tool", args),
-                tool=tool_name != "clarify", step=True)  # a question waits on the user: no reason to keep the phone awake
+                tool=tool_name != "clarify", step=True, turn_id=turn_id)  # a question waits on the user: no reason to keep the phone awake
     if tool_name == "clarify":
         q, choices, single = "", [], True
         if isinstance(args, dict):
@@ -1094,7 +1127,7 @@ def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, sess
         if _is_review(turn_id, session_id):
             _bg_status(session_id, turn_id)
         else:
-            _set_status(session_id, "Thinking…", "Thinking")
+            _set_status(session_id, "Thinking…", "Thinking", turn_id=turn_id)
     if tool_name == "clarify":
         _send("clear", session=session_id or "", what="ask")  # answered anywhere (app sheet, island, notification)
         _wait_end(session_id, "question")
@@ -1297,7 +1330,8 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
         _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])
         _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="Done", color="#2E9E5B", done=True,
               reply=_short(text or "", 300), steps=turn.get("steps", 0),
-              secs=round(time.time() - turn["since"]) if turn.get("since") else 0)
+              secs=round(time.time() - turn["since"]) if turn.get("since") else 0,
+              turn_id=turn.get("id", ""), proc=_PROC_ID)
 
 
 def _load(name: str, filename: str):
