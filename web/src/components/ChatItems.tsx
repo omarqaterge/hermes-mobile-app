@@ -13,6 +13,7 @@ import { Lightbox, Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
 import { fmtDuration, formatOutput, memoryDiff, phoneAppLabel, plainText } from '../text'
 import { runLabel, type ToolRun } from '../fold'
+import { thoughtSecs, wholeTime, workLabel, type TurnWork } from '../turnfold'
 import { commandLabel, stepMark, stepWord, thoughtLine, todoSteps, toolTitle } from '../toolsay'
 import { Spinner } from './Spinner'
 import { Linked } from './Linked'
@@ -187,18 +188,43 @@ export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }
   )
 })
 
-function Reasoning({ text, live }: { text: string; live: boolean }) {
+/** The line a finished turn's work folds into (turnfold.ts): the tools' icons, "Worked 1m 20s · 14 steps", " · 1 failed"
+ *  in the error colour, a chevron. A tap opens the turn to exactly what it showed before; another closes it. */
+export const TurnWorkHead = memo(function TurnWorkHead({ work, open, onToggle }: { work: TurnWork; open: boolean; onToggle: (w: TurnWork, wasOpen: boolean) => void }) {
+  return (
+    <button className="turn-work" aria-expanded={open} onClick={() => { haptic(); onToggle(work, open) }}>
+      <span className="tool-run-icons" aria-hidden="true">
+        {work.names.slice(0, 4).map(n => (
+          <span key={n} className="tool-icon"><Icon n={TOOL_ICONS[n] || 'tool'} /></span>
+        ))}
+      </span>
+      <span className="turn-work-label">
+        {workLabel(work)}
+        {work.failed ? <span className="turn-work-err"> · {work.failed} failed</span> : null}
+      </span>
+      <span className="chev" aria-hidden="true"><Chevron open={open} /></span>
+    </button>
+  )
+}, (a, b) =>
+  // The turns are worked out again on every streamed batch: a line whose words did not change is not drawn again.
+  a.open === b.open && a.onToggle === b.onToggle && a.work.key === b.work.key && a.work.head === b.work.head && a.work.firstFailed === b.work.firstFailed &&
+  workLabel(a.work) === workLabel(b.work) && a.work.failed === b.work.failed && a.work.names.join() === b.work.names.join())
+
+/** A reply's thought. Live: "Thinking…" and a peek at its latest line. Finished and closed: "Thought for 12s" (when the
+ *  page watched it stream, else "Thought process") with its first line after it on the same row while there is room. */
+function Reasoning({ text, live, secs }: { text: string; live: boolean; secs?: number }) {
   const [open, setOpen] = useState(false)
   if (!text.trim()) return null
   return (
     <div className={`reasoning${open ? ' open' : ''}`}>
       <button className="reasoning-head" onClick={() => setOpen(o => !o)}>
         <span className="reasoning-dot">{live ? <Spinner small /> : <Icon n="brain" size={16} />}</span>
-        {live ? 'Thinking…' : 'Thought process'}
+        <span className="reasoning-title">{live ? 'Thinking…' : secs !== undefined ? `Thought for ${wholeTime(secs)}` : 'Thought process'}</span>
+        {!live && !open ? <span className="reasoning-line" aria-hidden="true">{thoughtLine(text)}</span> : null}
         <span className="chev"><Chevron open={open} /></span>
       </button>
       <Collapse open={open}><div className="reasoning-body"><Linked text={text} /></div></Collapse>
-      {!open ? <div className={live ? 'reasoning-peek' : 'reasoning-line'}>{live ? thoughtLine(text, true) : thoughtLine(text)}</div> : null}
+      {live && !open ? <div className="reasoning-peek">{thoughtLine(text, true)}</div> : null}
     </div>
   )
 }
@@ -447,12 +473,13 @@ function SpeakBtn({ id, text }: { id: string; text: string }) {
   )
 }
 
-export const ItemView = memo(function ItemView({ item, actions = false, busy = false }: { item: ChatItem; actions?: boolean; busy?: boolean }) {
+/** `quiet`: the reply's thought is folded into its turn's line (turnfold.ts), so it is not drawn. */
+export const ItemView = memo(function ItemView({ item, actions = false, busy = false, quiet = false }: { item: ChatItem; actions?: boolean; busy?: boolean; quiet?: boolean }) {
   switch (item.kind) {
     case 'user':
       return <UserMsg item={item} actions={actions} busy={busy} />
     case 'assistant':
-      return <AssistantMsg item={item} actions={actions} busy={busy} />
+      return <AssistantMsg item={item} actions={actions} busy={busy} quiet={quiet} />
     case 'tool':
       return <ToolCard item={item} />
     case 'subagent':
@@ -466,13 +493,13 @@ export const ItemView = memo(function ItemView({ item, actions = false, busy = f
   }
 })
 
-function AssistantMsg({ item, actions, busy }: { item: Extract<ChatItem, { kind: 'assistant' }>; actions: boolean; busy: boolean }) {
+function AssistantMsg({ item, actions, busy, quiet }: { item: Extract<ChatItem, { kind: 'assistant' }>; actions: boolean; busy: boolean; quiet: boolean }) {
   const time = useTimeTap(item.streaming ? undefined : item.at)
   const tainted = useTainted() // the chat has read phone data: remote media waits for a tap, addresses are checked first
   const locked = useLocked() // over the lock screen there is no Retry (it starts a turn)
   return (
         <div className="msg assistant" onClick={time.toggle}>
-          <Reasoning text={item.reasoning} live={item.streaming && !item.text} />
+          {!quiet && <Reasoning text={item.reasoning} live={item.streaming && !item.text} secs={thoughtSecs(item.id)} />}
           {item.text && <Markdown text={item.text} streaming={item.streaming} interactive guard={tainted} />}
           {item.streaming && item.text && <span className="caret" />}
           {item.warning && <div className="warn-line"><Icon n="warning" /> {item.warning}</div>}

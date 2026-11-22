@@ -517,4 +517,68 @@ module.exports = async t => {
     check(br.length === 1 && br[0].params.session_id === 'rt-s-42' && br[0].params.count === undefined, `reply actions: Branch asks Hermes to branch the chat (${JSON.stringify(br.map(c => c.params))})`)
     await ra.close()
   }
+
+  // ── a calmer chat (task 11): a finished turn's work folds into one line above its answer; a failed step shows on it ──
+  {
+    // A stored chat of its own: new chats in the mock all share one id with the run's main page.
+    const p = await t.browser.newPage({ viewport: { width: 360, height: 740 } })
+    await p.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-98', profile: 'default' })))
+    await p.goto(WEB + '/')
+    await p.getByText('answer s-98', { exact: true }).waitFor({ timeout: 15000 })
+    const box = p.getByPlaceholder('Message Hermux')
+    await box.fill('fail a step')
+    await p.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await p.getByText('End of the long answer.').waitFor({ timeout: 8000 })
+    const line = p.getByRole('button', { name: /^Worked / })
+    await line.waitFor({ timeout: 3000 }).catch(() => {})
+    const words = ((await line.textContent().catch(() => '')) || '').trim()
+    check(/^Worked (\d+s|\d+m \d+s) · 3 steps · 1 failed$/.test(words), `turn fold: the finished turn's work is one line with its time, its steps and the failed one (${words})`)
+    const errColour = await line.getByText('· 1 failed').evaluate(el => {
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--err)'
+      document.body.append(probe)
+      const want = getComputedStyle(probe).color
+      probe.remove()
+      return getComputedStyle(el).color === want
+    }).catch(() => false)
+    check(errColour, 'turn fold: "1 failed" is in the error colour')
+    const shownCards = () => p.getByRole('button', { name: /Ran echo/ }).count()
+    check((await shownCards()) === 0 && (await p.getByRole('button', { name: /sub-agent/ }).count()) === 0, 'turn fold: while closed, its tool cards and its sub-agent line are hidden')
+    check((await p.getByRole('button', { name: /^Thought/ }).count()) === 0, "turn fold: while closed, the answer's thought is part of the line")
+    const atEnd = await p.getByText('End of the long answer.').evaluate(el => {
+      let sc = el
+      while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+      return sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80
+    })
+    check(atEnd, 'turn fold: folding as the turn finished kept a reader at the end there')
+    // The numbers and the reply's actions stay where they were.
+    const reply = p.locator('.msg.assistant', { hasText: 'End of the long answer.' })
+    for (const name of ['Copy', 'Read aloud', 'Retry', 'Branch']) check((await reply.getByRole('button', { name }).count()) === 1, `turn fold: the answer keeps its ${name} button`)
+    check(/tok\/s/.test((await reply.locator('.msg-meta').textContent().catch(() => '')) || ''), 'turn fold: the line under the answer keeps its speed')
+    // Open: exactly what showed before, the failed step first in view.
+    await line.click()
+    check((await line.getAttribute('aria-expanded')) === 'true' && (await shownCards()) === 2, `turn fold: a tap opens the turn to its steps (${await shownCards()} cards)`)
+    const failed = p.getByRole('button', { name: /sub-agent.*1 failed/ })
+    const top = await failed.evaluate(el => {
+      let sc = el
+      while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+      return Math.round(el.getBoundingClientRect().top - sc.getBoundingClientRect().top)
+    }).catch(() => -1)
+    check(top >= 0 && top <= 140, `turn fold: opened, the failed step is the first thing in view (${top} px from the top)`)
+    const thought = p.getByRole('button', { name: /^Thought for \d+s$/ })
+    check((await thought.count()) >= 1, `turn fold: opened, the answer's thought says how long it took (${await p.getByRole('button', { name: /^Thought/ }).allTextContents()})`)
+    if (await thought.count()) {
+      const row = await thought.last().evaluate(el => ({ h: el.getBoundingClientRect().height, text: el.textContent }))
+      check(row.h < 40 && row.text.includes('I have the result, now I can answer.'), `reasoning: "Thought for" and the first line share one row (${Math.round(row.h)} px, ${row.text})`)
+    }
+    // The choice is kept while the chat stays open: a later turn does not close it.
+    await box.fill('use tools')
+    await p.locator('.composer').getByRole('button', { name: 'Send' }).click()
+    await p.getByText('All four done.').waitFor({ timeout: 5000 })
+    await p.locator('.status-line').waitFor({ state: 'detached', timeout: 5000 }) // that turn has ended
+    check((await line.first().getAttribute('aria-expanded')) === 'true', 'turn fold: a turn opened by a tap stays open while the chat is open')
+    await line.first().click()
+    check((await line.first().getAttribute('aria-expanded')) === 'false' && (await shownCards()) === 0, 'turn fold: another tap closes it again')
+    await p.close()
+  }
 }
