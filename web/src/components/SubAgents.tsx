@@ -44,6 +44,8 @@ import {
 import { effortWord, firstRows, followsChat, inTreeOrder, numbersLine, runsOn } from '../subagents-view'
 import { useListShown } from './SubAgentsCore'
 import { Icon } from './icons'
+import { DrawnMark, useStepEnd } from './AgentMotion'
+import { pauseWhenHidden, stagger } from '../motion'
 import { Linked } from './Linked'
 import { plainTitle } from './Title'
 
@@ -55,14 +57,31 @@ const sameChat = (a: string | undefined, b: string): boolean => Boolean(a && (a 
 
 /** What state a sub-agent is in, as a mark: a ring while it works, a tick, a cross for what went wrong. */
 function StateMark({ state, turning }: { state: SubState; turning?: boolean }) {
+  // Seen working and then finished or failed: the ring becomes a tick (or a cross) that draws itself once.
+  const ended = useStepEnd(isLive(state), wentWrong(state))
   if (state === 'working') return <span className={`sub-ring${turning ? ' turning' : ''}`} aria-hidden="true" />
+  if (ended && (state === 'done' || wentWrong(state)))
+    return <span className={`sub-mark sub-mark-${wentWrong(state) ? 'bad' : 'ok'}`}><DrawnMark kind={wentWrong(state) ? 'failed' : 'done'} draw /></span>
   const icon = state === 'waiting' ? 'clock' : wentWrong(state) ? 'failed' : state === 'stopped' ? 'square' : 'check'
   return <span className={`sub-mark sub-mark-${wentWrong(state) ? 'bad' : 'ok'}`}><Icon n={icon} size={14} /></span>
 }
 
+/** A sub-agent's lane under its row: a hairline that carries a travelling light while it runs (only the one that moves,
+ *  `moving`) and fills once it is done (red when it went wrong). It never shows how far a sub-agent is. */
+function Lane({ state, moving }: { state: SubState; moving: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => (moving && ref.current ? pauseWhenHidden(ref.current) : undefined), [moving])
+  const cls = moving ? ' live' : state === 'done' ? ' done' : wentWrong(state) ? ' bad' : ''
+  return (
+    <span ref={ref} className={`sub-lane${cls}`} aria-hidden="true">
+      <i />
+    </span>
+  )
+}
+
 // ── in the chat ──
 /** One line for a sub-agent: its goal, what it runs on, its state; the current step under it while it runs. */
-const SubRow = memo(function SubRow({ chat, id, level, onOpen }: { chat: string; id: string; level: number; onOpen: (key: string) => void }) {
+const SubRow = memo(function SubRow({ chat, id, level, onOpen, moving = false }: { chat: string; id: string; level: number; onOpen: (key: string) => void; moving?: boolean }) {
   const a = useSubAgent(chat, id)
   if (!a) return null
   const on = runsOn(a)
@@ -78,6 +97,7 @@ const SubRow = memo(function SubRow({ chat, id, level, onOpen }: { chat: string;
         </span>
         {isLive(a.state) && a.step && <span className="sub-row-step dim">{a.step}</span>}
       </span>
+      <Lane state={a.state} moving={moving && a.state === 'working'} />
     </button>
   )
 })
@@ -94,9 +114,11 @@ export function SubGroupRows({ chat, keys, items }: { chat: string; keys: string
     if (unknown) void loadStored(chat, profileOf())
   }, [chat, unknown, s.total])
   if (locked) return null
+  // One lane moves at a time: the first that works (the others stand still until it is their turn).
+  const moving = rows.find(r => r.agent.state === 'working')?.agent.key
   return (
     <div className="sub-rows">
-      {rows.map(r => <SubRow key={r.agent.key} chat={chat} id={r.agent.key} level={r.level} onOpen={k => openSubSheet(chat, k)} />)}
+      {rows.map(r => <SubRow key={r.agent.key} chat={chat} id={r.agent.key} level={r.level} moving={r.agent.key === moving} onOpen={k => openSubSheet(chat, k)} />)}
     </div>
   )
 }
@@ -116,14 +138,14 @@ function openNestedRow(chat: string, key: string): void {
     .catch(e => toast(errText(e), 'error'))
 }
 
-const NestedRow = memo(function NestedRow({ chat, id, level, turning, chatRunning }: { chat: string; id: string; level: number; turning: boolean; chatRunning: boolean }) {
+const NestedRow = memo(function NestedRow({ chat, id, level, turning, chatRunning, arrive = -1 }: { chat: string; id: string; level: number; turning: boolean; chatRunning: boolean; arrive?: number }) {
   useSubAgentRow(chat, id) // redraws only for what the row says
   const a = getSubAgent(chat, id)
   if (!a) return null
   const state = listState(a, chatRunning)
   const side = isLive(state) ? runsOn(a, 12) : state === 'done' || state === 'ended' ? '' : STATE_WORD[state]
   return (
-    <button className="nested-row" style={{ marginLeft: 12 + Math.min(level, 5) * 14 }} aria-label={`Sub-agent: ${a.goal || 'no goal given'}, ${STATE_WORD[state]}`} onClick={() => openNestedRow(chat, a.key)}>
+    <button className={`nested-row${arrive >= 0 ? ' motion-in' : ''}`} style={{ marginLeft: 12 + Math.min(level, 5) * 14, ...(arrive >= 0 ? stagger(arrive) : null) }} aria-label={`Sub-agent: ${a.goal || 'no goal given'}, ${STATE_WORD[state]}`} onClick={() => openNestedRow(chat, a.key)}>
       <StateMark state={state} turning={turning} />
       <span className="nested-goal">{a.goal || 'Sub-agent'}</span>
       {side && <span className={`nested-side${wentWrong(state) ? ' bad' : ' dim'}`}>{side}</span>}
@@ -147,6 +169,11 @@ export function NestedRows({ chat, snapAt, only, turning }: { chat: string; snap
     if (missing > 0 || unknown > 0) void loadStored(chat, profileOf())
   }, [chat, missing, unknown])
   const memory = useRef<{ at: number; keys: string[] } | null>(null)
+  // Opened by its chat's toggle while the list was already on screen: the rows slide out from under the chat in a short
+  // stagger. Opening the list itself draws them still (the list opens many times a day: no stagger there).
+  const was = useRef({ open, shown: shown_, arrive: false })
+  const arrive = open && (was.current.open ? was.current.arrive : was.current.shown)
+  was.current = { open, shown: shown_, arrive }
   if (!open) return null
   const tree = inTreeOrder(subAgentsOf(chat))
   const shown = only ? tree.filter(r => r.agent.child && only.has(r.agent.child)) : tree
@@ -163,7 +190,7 @@ export function NestedRows({ chat, snapAt, only, turning }: { chat: string; snap
   })
   return (
     <div className="nested-rows" role="group" aria-label="Sub-agents of this chat">
-      {list.map(k => <NestedRow key={k} chat={chat} id={k} level={levels.get(k) ?? 0} turning={turning && k === firstLive} chatRunning={s.running > 0} />)}
+      {list.map((k, i) => <NestedRow key={k} chat={chat} id={k} level={levels.get(k) ?? 0} turning={turning && k === firstLive} chatRunning={s.running > 0} arrive={arrive ? i : -1} />)}
       {keys.length > list.length && (
         <button className="nested-more" onClick={() => { haptic(); setAll(true) }}>Show all {keys.length}</button>
       )}
