@@ -134,6 +134,27 @@ public class IslandMotionTest {
         check(IslandMotion.ALLOW_EXTEND_MAX_MS == 400 && hcap.holdingAllow(baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS - 1)
                 && !hcap.holdingAllow(baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS),
                 "repeated swallowed taps cap Allow's extension at base + ALLOW_EXTEND_MAX_MS (" + IslandMotion.ALLOW_EXTEND_MAX_MS + " ms) so Allow always opens");
+        // HeldKeys: tracks a set of activation keys across the hold boundary so simultaneous keys (Space + Enter) don't overwrite each other.
+        IslandMotion.HeldKeys hk = new IslandMotion.HeldKeys();
+        int[] sw = {0};
+        Runnable bump = () -> sw[0]++;
+        check(hk.onKey(62, true, false, 0, true, bump) && sw[0] == 1, "first activation key-down during hold is consumed and counts one swallow");
+        check(hk.onKey(66, true, false, 0, true, bump) && sw[0] == 2, "second simultaneous activation key-down during hold is tracked alongside the first");
+        check(hk.onKey(62, true, false, 1, true, bump) && sw[0] == 2, "key repeat during hold is consumed without counting another swallow");
+        check(hk.onKey(62, true, false, 2, false, bump) && hk.onKey(66, true, false, 1, false, bump),
+                "after hold ends, repeats of BOTH held keys are still consumed");
+        check(hk.onKey(62, false, true, 0, false, bump) && hk.onKey(66, false, true, 0, false, bump),
+                "after hold ends, matching key-ups of BOTH held keys are consumed");
+        check(!hk.onKey(62, true, false, 0, false, bump) && !hk.onKey(66, true, false, 0, false, bump),
+                "fresh presses after release pass through");
+        // Key already repeating before hold started (repeatCount > 0 on first down seen during hold) is captured without counting swallow.
+        check(hk.onKey(62, true, false, 3, true, bump) && sw[0] == 2
+                && hk.onKey(62, true, false, 4, false, bump) && hk.onKey(62, false, true, 0, false, bump)
+                && !hk.onKey(62, true, false, 0, false, bump),
+                "key already repeating before hold is captured on repeat down, does not extend swallow, and is consumed until key-up");
+        // Missed key-up: a fresh down (repeatCount == 0) after hold ends clears the stale entry and passes through.
+        check(hk.onKey(66, true, false, 0, true, bump) && !hk.onKey(66, true, false, 0, false, bump),
+                "fresh press with repeat 0 after hold ends clears a key whose key-up was missed");
         check(IslandMotion.PULSE_TIMES == 3 && IslandMotion.PULSE_MS == 1600 && IslandMotion.PULSE_SCALE == 1.55f,
                 "the Question badge pulses three times, 1.6 s each, to 155 %");
         check(IslandMotion.ANSWER_HOLD_MS == 850 && IslandMotion.CLOSED_HOLD_MS == 900 && IslandMotion.DIMMED == 0.32f,

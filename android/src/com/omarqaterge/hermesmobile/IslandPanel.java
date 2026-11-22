@@ -682,31 +682,12 @@ public class IslandPanel extends Activity {
         noSystemTransition();
     }
 
-    int heldKey;
+    final IslandMotion.HeldKeys heldKeys = new IslandMotion.HeldKeys();
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
-        int code = e.getKeyCode();
-        if (IslandViews.isActivationKey(code)) {
-            int act = e.getAction();
-            if (inner != null && inner.holding()) {
-                if (act == KeyEvent.ACTION_DOWN) {
-                    heldKey = code;
-                    if (e.getRepeatCount() == 0) inner.swallowed();
-                } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                    heldKey = 0;
-                }
-                return true;
-            }
-            if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                heldKey = 0;
-                return true;
-            }
-            if (act == KeyEvent.ACTION_DOWN && heldKey == code) {
-                if (e.getRepeatCount() > 0) return true;
-                heldKey = 0;
-            }
-        }
+        if (IslandViews.consumeHeldKey(heldKeys, e, inner != null && inner.holding(), inner != null ? inner::swallowed : null))
+            return true;
         return super.dispatchKeyEvent(e);
     }
 

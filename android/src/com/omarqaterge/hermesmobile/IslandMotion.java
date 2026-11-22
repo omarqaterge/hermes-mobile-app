@@ -222,6 +222,30 @@ final class IslandMotion {
             allowUntil = Math.min(cap, Math.max(allowUntil, Math.max(baseAllowUntil + ALLOW_EXTEND_MS, now + ALLOW_EXTEND_MS)));
         }
     }
+
+    /** Tracks activation keys pressed during an input hold as a set so several keys held at once (e.g. Space and Enter)
+     *  each have their repeats and matching key-up consumed across the hold boundary without overwriting each other. */
+    static final class HeldKeys {
+        final java.util.HashSet<Integer> keys = new java.util.HashSet<>();
+
+        boolean onKey(int code, boolean down, boolean up, int repeatCount, boolean holding, Runnable onSwallow) {
+            if (holding) {
+                if (down) {
+                    keys.add(code);
+                    if (repeatCount == 0 && onSwallow != null) onSwallow.run();
+                } else if (up) {
+                    keys.remove(code);
+                }
+                return true;
+            }
+            if (up && keys.remove(code)) return true;
+            if (down && keys.contains(code)) {
+                if (repeatCount > 0) return true;
+                keys.remove(code);
+            }
+            return false;
+        }
+    }
     /** A line of text that changes: the old one leaves upward on IN, the new one arrives from below on OUT. */
     static final long TEXT_OUT_MS = 110, TEXT_IN_MS = 200;
     static final float TEXT_DY = 6;

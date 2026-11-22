@@ -96,7 +96,7 @@ final class IslandViews {
         final java.util.function.BooleanSupplier strict;
         java.util.function.BooleanSupplier hold;
         Runnable onSwallow;
-        int heldKey;
+        final IslandMotion.HeldKeys heldKeys = new IslandMotion.HeldKeys();
 
         GuardedText(Context c, java.util.function.BooleanSupplier strict) {
             super(c);
@@ -121,28 +121,8 @@ final class IslandViews {
 
         @Override
         public boolean dispatchKeyEvent(KeyEvent e) {
-            int code = e.getKeyCode();
-            if (isActivationKey(code)) {
-                int act = e.getAction();
-                java.util.function.BooleanSupplier h = hold;
-                if (h != null && h.getAsBoolean()) {
-                    if (act == KeyEvent.ACTION_DOWN) {
-                        heldKey = code;
-                        if (e.getRepeatCount() == 0 && onSwallow != null) onSwallow.run();
-                    } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                        heldKey = 0;
-                    }
-                    return true;
-                }
-                if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                    heldKey = 0;
-                    return true;
-                }
-                if (act == KeyEvent.ACTION_DOWN && heldKey == code) {
-                    if (e.getRepeatCount() > 0) return true;
-                    heldKey = 0;
-                }
-            }
+            java.util.function.BooleanSupplier h = hold;
+            if (consumeHeldKey(heldKeys, e, h != null && h.getAsBoolean(), onSwallow)) return true;
             return super.dispatchKeyEvent(e);
         }
     }
@@ -161,6 +141,14 @@ final class IslandViews {
         return code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
                 || code == KeyEvent.KEYCODE_SPACE || code == KeyEvent.KEYCODE_DPAD_CENTER
                 || code == KeyEvent.KEYCODE_BUTTON_A;
+    }
+
+    /** Filters activation keys through a {@link IslandMotion.HeldKeys} set for a held control or panel. */
+    static boolean consumeHeldKey(IslandMotion.HeldKeys held, KeyEvent e, boolean holding, Runnable onSwallow) {
+        int code = e.getKeyCode();
+        if (!isActivationKey(code)) return false;
+        int act = e.getAction();
+        return held.onKey(code, act == KeyEvent.ACTION_DOWN, act == KeyEvent.ACTION_UP, e.getRepeatCount(), holding, onSwallow);
     }
 
     /** A guarded view's touch arrived while another app's window covered part of this window (Android 10+ says so;
@@ -797,7 +785,7 @@ final class IslandViews {
          *  press notifies {@link #onSwallow} so the hold extends briefly. */
         java.util.function.BooleanSupplier hold;
         Runnable onSwallow;
-        int heldKey;
+        final IslandMotion.HeldKeys heldKeys = new IslandMotion.HeldKeys();
 
         Pill(Context c, String text, int bg, int fg, int icon, int span) {
             super(c);
@@ -837,28 +825,8 @@ final class IslandViews {
 
         @Override
         public boolean dispatchKeyEvent(KeyEvent e) {
-            int code = e.getKeyCode();
-            if (isActivationKey(code)) {
-                int act = e.getAction();
-                java.util.function.BooleanSupplier h = hold;
-                if (h != null && h.getAsBoolean()) {
-                    if (act == KeyEvent.ACTION_DOWN) {
-                        heldKey = code;
-                        if (e.getRepeatCount() == 0 && onSwallow != null) onSwallow.run();
-                    } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                        heldKey = 0;
-                    }
-                    return true;
-                }
-                if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                    heldKey = 0;
-                    return true;
-                }
-                if (act == KeyEvent.ACTION_DOWN && heldKey == code) {
-                    if (e.getRepeatCount() > 0) return true;
-                    heldKey = 0;
-                }
-            }
+            java.util.function.BooleanSupplier h = hold;
+            if (consumeHeldKey(heldKeys, e, h != null && h.getAsBoolean(), onSwallow)) return true;
             return super.dispatchKeyEvent(e);
         }
 
@@ -1501,32 +1469,12 @@ final class IslandViews {
             return super.dispatchTouchEvent(e);
         }
 
-        int heldKey;
+        final IslandMotion.HeldKeys heldKeys = new IslandMotion.HeldKeys();
 
         @Override
         public boolean dispatchKeyEvent(KeyEvent e) {
             if (blocked) return true;
-            int code = e.getKeyCode();
-            if (isActivationKey(code)) {
-                int act = e.getAction();
-                if (holding()) {
-                    if (act == KeyEvent.ACTION_DOWN) {
-                        heldKey = code;
-                        if (e.getRepeatCount() == 0) swallowed();
-                    } else if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                        heldKey = 0;
-                    }
-                    return true;
-                }
-                if (act == KeyEvent.ACTION_UP && heldKey == code) {
-                    heldKey = 0;
-                    return true;
-                }
-                if (act == KeyEvent.ACTION_DOWN && heldKey == code) {
-                    if (e.getRepeatCount() > 0) return true;
-                    heldKey = 0;
-                }
-            }
+            if (consumeHeldKey(heldKeys, e, holding(), this::swallowed)) return true;
             return super.dispatchKeyEvent(e);
         }
 
