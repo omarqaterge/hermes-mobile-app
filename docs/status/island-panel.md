@@ -24,13 +24,14 @@ touches, activation keys (including on `Pill` and `GuardedText` during the Allow
 in an `IslandMotion.HeldKeys` set on any key-down during the hold and consuming each held key's repeats and matching
 key-up across the hold boundary, with swallow counted only on repeat count 0), focus and accessibility/click handlers until fade-in completes (Deny stays usable at once);
 Allow once and Allow this session wait 320 ms after fade-in finishes (580 ms minimum, same with reduced motion,
-extended by 200 ms on swallowed input, capped at +400 ms past base), and Allow once stays held while fading back in after a failed Deny; other busy
-chats in `lastOthers` carry `stoppingAt` and `stopAccepted`, `stopTurn` binds `stopEpisode` to the chat's turn (`since`), skips overlapping in-flight/accepted stops (13 s margin below
-the 15 s timeout plus `clearStopInFlight` advancing `stopAttempt` on timeout failure so an immediate retry always goes out
-uninterrupted), keeps the episode across retries of the same turn while `endStopEpisode` clears stop state and advances
-the episode on turn end (not working, strictly newer `since`, `done` flash, or synchronized `expireWorking`), `stopFate`
-prefers `!atWork` over a late 404/FAILED, and the stop failure line scrolls into view after layout via a one-shot `OnLayoutChangeListener`
-without moving focus.
+extended by 200 ms on swallowed input, capped at +400 ms past base), and Allow once stays held while fading back in after a failed Deny;
+Stop tracking is unified in one per-turn `IslandState.StopBook` fed by explicit plugin `turn_id` and `proc` fields on
+`status` (for both `lastSession` and every `others` entry, with `since`), `done` flashes, and `/stop` responses (with
+safe fallback for older plugins and missing turn identity): both chip and panel derive Stop state from `StopBook.view`,
+a timeout or failure restores Stop on both chip and panel immediately (with no phantom 15 s wait on reopen and late
+failures ignored), events from other chats or Hermes processes never end a turn's stop, all ad-hoc stop flags/counters
+are deleted, `stopFate` prefers `!sameTurn` over a late failure, and the stop failure line scrolls into view after layout
+via a one-shot `OnLayoutChangeListener` without moving focus.
 
 **Open question for the owner:** while the panel is open, the service's heads-up pop-up for a new request or question
 (and a request's 20 s / 40 s reminders) can drop over the panel's header. The design doesn't cover notification

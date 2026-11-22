@@ -140,34 +140,30 @@ together and the header and the buttons stay on screen; the scrolled part keeps 
 it scrolls, its content is cut at its edges (`MaxScroll` clips in `dispatchDraw`), so nothing in it draws over the
 buttons. When the failure line appears it is scrolled into view after layout without moving focus (`smoothScrollTo` from a one-shot `OnLayoutChangeListener`).
 
-**Stop** is the card's Stop: `ACTION_STOP` to the service (`HermesService.stopTurn`), nothing more, and the panel is
-never over the lock screen. "Open chat" fades, "Stop" grows to the full row and says "Stopping…" with a spinner, and
-the headline says "Stopping…". The card's own Stop, tapped while the panel is open, shows the same, and a panel
-opened while the card's Stop is already on its way opens that way (Open chat already gone). All three enter Stopping
-by one path (`IslandProgress.enterStopping`), so each waits for the same outcome and no request breaks in meanwhile.
-A stop counts from when the service sent it (`HermesService.stoppingAt`, carried as `IslandState.Progress.stopAt` for
-both the chip's chat and any other busy chat in `lastOthers`), not from when the panel opened, so the outcome of a
-card's Stop that came before the panel opened still counts. Then
-(`IslandState.stopFate`): once the turn is over (`!st.atWork(session)`, checked before any failure so an overlapping
-404 after the turn ended still reads Stopped), a drawn cross and "Stopped" on the red wash, hold 0.9 s, close; when
-the service couldn't stop it while the chat still works, or nothing came of it in 15 s (`IslandState.stopUnheard`: no
-outcome since it was sent, and the plugin didn't accept it, `HermesService.stopAccepted`, carried as `Progress.stopOk`
-for other busy chats too), the two buttons come back with the red line "Couldn't stop Hermux. Open the chat to stop it."
-and the reject buzz (the service also posts its own "Couldn't stop Hermux" card). A stop the plugin accepted is never
-shown as failed, and `stopTurn` starts no overlapping stop for a chat while one is already accepted or in flight
-(`IslandState.stopBusy`, bounded by `HermesService.STOP_IN_FLIGHT_MS`, 13 s, 2 s below `SEND_TIMEOUT_MS`, and cleared by
-`HermesService.clearStopInFlight` — which also advances `stopAttempt` so a timed-out attempt's late failure can't flash
-over an immediate retry — when the 15 s wait ends unheard): the panel
-stays on "Stopping…" until the turn ends, however long it takes to wind down. Each stop thread is tagged with monotonic
-attempt and turn-bound episode counters (`HermesService.stopAttempt`, `HermesService.stopEpisode`, tied to the chat and
-its plugin-reported turn start via `stopEpisodeSession` and `stopTurnSince`): retries of the same turn (even after a
-fast failed attempt) share the episode so a racing 200 is accepted (`IslandState.stop200Counts`), while a turn ending
-(`HermesService.endStopEpisode` on a `status` where the chat is no longer working or has a strictly newer `since` via
-`IslandState.stopTurnChanged`, on a `done` flash for that chat, or in synchronized `expireWorking`) clears `stopping`,
-`stopAccepted` and `stopInFlight` and advances `stopEpisode` so a delayed 200 from an earlier turn cannot count for a
-new turn; a failure only clears Stopping and posts FAILED when it is the latest attempt and no racing 200 was accepted
-(`IslandState.stopFailCounts`). A stop the panel already took in (`stopSeen`,
-`IslandState.newStop`) doesn't start Stopping again after its failure.
+**Stop** is the card's Stop: `ACTION_STOP` with `session` and the on-screen turn's `turn_id` to the service
+(`HermesService.stopTurn`), nothing more, and the panel is never over the lock screen. "Open chat" fades, "Stop" grows
+to the full row and says "Stopping…" with a spinner, and the headline says "Stopping…". The card's own Stop, tapped
+while the panel is open, shows the same, and a panel opened while the card's Stop is already on its way opens that way
+(Open chat already gone), waiting only the time left of the 15 s (`Progress.stopRemainingMs`, never a fresh 15 s). All
+three enter Stopping by one path (`IslandProgress.enterStopping`), so each waits for the same outcome and no request
+breaks in meanwhile. Both the chip and the panel derive their Stop state for every busy chat (including `lastOthers`)
+from one per-turn table (`IslandState.StopBook`, queried through `StopBook.view` → `IslandState.StopView`): a stop
+belongs strictly to the exact turn (`turn_id`, plus `proc`) that was on screen when Stop was tapped, and to nothing
+else. While that turn still runs, they show "Stopping…" until a matching 200 (`StopView.ACCEPTED`) or the turn's end,
+or "Couldn't stop Hermux" (`StopView.FAILED`, restoring Stop on both chip and panel) after a real failure or 15 s
+(`IslandState.STOP_TIMEOUT_MS`, driven by `HermesService.expireStopTimeouts` and `scheduleStopTimeout`). After a failure
+or timeout, Stop is always usable again, a reopened panel opens ready to Stop, and a late failure from a timed-out
+attempt is ignored. When the turn ends (`StopBook.onStatus` seeing it absent or replaced by another `turn_id` or newer
+`since` for that process, `StopBook.onDoneFlash` matching process and `turn_id`, or `StopBook.onExpireAll` in
+`expireWorking`), everything about its stop is removed; events from another chat or another Hermes process never end it.
+Then (`IslandState.stopFate`): once the turn is over (`!sameTurn`, checked before any failure so an overlapping 404 or a
+quick next turn still reads Stopped), a drawn cross and "Stopped" on the red wash, hold 0.9 s, close; when it failed
+while that turn still runs, the two buttons come back with the red line "Couldn't stop Hermux. Open the chat to stop it."
+and the reject buzz (the service also posts its own "Couldn't stop Hermux" card). A stop accepted for that turn is never
+shown as failed (`stopOk`), and `StopBook.beginStop` skips overlapping stops while one is already sending or accepted
+for that turn. With an older plugin (no `turn_id`), `StopBook` falls back safely: it accepts only the live in-flight
+attempt's 200 within 15 s when `since > 0`, and never claims a stop succeeded when turn identity is missing or unsure.
+A stop the panel already took in (`stopSeen`, `IslandState.newStop`) doesn't start Stopping again after its failure.
 
 **The turn ends** while the panel is open (`IslandState.turnFate`): when its reply arrives (the plugin's `flash` with
 `done`, recorded as an `IslandState.Done` whatever the Done chip's rules say, 4.3), the panel changes to Done, even if

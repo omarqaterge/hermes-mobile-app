@@ -30,8 +30,9 @@ import android.widget.TextView;
  */
 final class IslandProgress {
     final IslandPanel p;
-    /** The chat shown, and when its turn started (epoch ms): a reply that came after that is this turn's. */
+    /** The chat and turn shown, and when its turn started (epoch ms): a reply or stop belongs to this turn only. */
     String session = "";
+    String turnId = "";
     long since;
     IslandState.Progress shown;
     /** WORKING; SENDING while a stop is on its way; Outcome.STOPPED; DONE; ENDED (closing). */
@@ -74,11 +75,12 @@ final class IslandProgress {
     };
     final Runnable stopTimeoutRun = () -> {
         HermesService s = HermesService.instance;
-        IslandState st = s == null ? null : s.islandState();
-        if (IslandState.SENDING.equals(phase) && IslandState.stopUnheard(session, stopAt, st)) {
-            if (s != null) s.clearStopInFlight(session);
-            stopFailed();
+        if (s != null) {
+            s.expireStopTimeouts();
+            apply(s.islandState());
+            return;
         }
+        if (IslandState.SENDING.equals(phase)) stopFailed();
     };
     final Runnable stoppedRun = this::showStopped;
 
@@ -96,6 +98,7 @@ final class IslandProgress {
     IslandViews.Fit build(IslandState.Progress a, IslandState st) {
         shown = a;
         session = a.session;
+        turnId = a.turnId;
         since = a.since > 0 ? a.since : System.currentTimeMillis();
         IslandViews.Fit col = column();
         Drawable icon = p.getDrawable(R.drawable.ic_stat_hermes).mutate();
@@ -173,7 +176,7 @@ final class IslandProgress {
 
         grab = grabLine(col);
         p.setTitle(headline.getText());
-        if (a.stopping) enterStopping(false, a.stopAt); // the card's Stop is already on its way
+        if (a.stopping) enterStopping(false, a.stopAt, a.stopOk ? 0 : a.stopRemainingMs); // the card's Stop is already on its way
         return col;
     }
 
@@ -469,7 +472,7 @@ final class IslandProgress {
         }
         if (done) return;
         if (IslandState.SENDING.equals(phase)) {
-            String f = IslandState.stopFate(session, stopAt, st);
+            String f = IslandState.stopFate(session, turnId, since, stopAt, st);
             if (IslandState.Outcome.FAILED.equals(f)) {
                 stopFailed();
                 return;
@@ -480,10 +483,10 @@ final class IslandProgress {
             }
         }
         long now = System.currentTimeMillis();
-        String fate = IslandState.turnFate(session, since, endedAt, st, now);
+        String fate = IslandState.turnFate(session, turnId, since, endedAt, st, now);
         if (IslandState.DONE.equals(fate)) {
             if (IslandState.SENDING.equals(phase)) stopped();
-            else toDone(st.doneFor(session, since));
+            else toDone(st.doneFor(session, turnId, since));
             return;
         }
         if (IslandState.ENDING.equals(fate)) {
@@ -506,8 +509,15 @@ final class IslandProgress {
     void update(IslandState.Progress a, IslandState st) {
         IslandState.Progress was = shown;
         shown = a;
-        if (a.since > 0 && a.since != since) since = a.since;
-        if (IslandState.WORKING.equals(phase) && IslandState.newStop(a, stopSeen)) enterStopping(true, a.stopAt); // the card's Stop, tapped while open
+        if (!IslandState.sameTurn(turnId, since, a)) {
+            turnId = a.turnId;
+            since = a.since > 0 ? a.since : System.currentTimeMillis();
+            stopSeen = 0;
+        } else if (a.since > 0 && a.since != since) {
+            since = a.since;
+        }
+        if (IslandState.WORKING.equals(phase) && IslandState.newStop(a, stopSeen))
+            enterStopping(true, a.stopAt, a.stopOk ? 0 : a.stopRemainingMs); // the card's Stop, tapped while open
         else if (a.stopping) stopSeen = Math.max(stopSeen, a.stopAt); // the service's time for the panel's own Stop
         if (IslandState.WORKING.equals(phase) && !a.headline.equals(headNow)) setHeadline(a.headline);
         if (a.hasTasks() != was.hasTasks()) {
@@ -567,28 +577,31 @@ final class IslandProgress {
         if (p.closing || !IslandState.WORKING.equals(phase) || session.isEmpty()
                 || (p.inner != null && p.inner.holding())) return;
         p.haptic(HapticFeedbackConstants.KEYBOARD_TAP);
+        long startAt = Math.max(System.currentTimeMillis(), shown != null ? shown.stopFailedAt + 1 : 0);
         try {
-            p.startService(new Intent(p, HermesService.class).setAction(HermesService.ACTION_STOP).putExtra("session", session));
+            p.startService(new Intent(p, HermesService.class).setAction(HermesService.ACTION_STOP)
+                    .putExtra("session", session)
+                    .putExtra("turn_id", turnId));
         } catch (RuntimeException e) {
-            enterStopping(true, 0);
+            enterStopping(true, startAt, 0);
             stopFailed();
             return;
         }
-        enterStopping(true, 0);
+        enterStopping(true, startAt, IslandState.STOP_TIMEOUT_MS);
     }
 
     /** A stop is on its way, whoever sent it: the panel's Stop, the card's Stop seen while the panel is open, or the
      *  card's Stop already on its way when the panel opens ({@code animate} false: the row is built that way). The same
      *  path for all three, so each waits for the same outcome (Stopped when the turn ends, the failure line when it
      *  fails or nothing is heard within 15 s) and no request breaks in meanwhile. {@code sentAt} is when the service
-     *  sent it (0: the panel's own Stop, sent now), so an outcome that came before the panel opened still counts. */
-    void enterStopping(boolean animate, long sentAt) {
+     *  sent it (0: the panel's own Stop, sent now), and {@code timeoutMs} is the remaining wait (0 when already accepted). */
+    void enterStopping(boolean animate, long sentAt, long timeoutMs) {
         phase = IslandState.SENDING;
         stopAt = sentAt > 0 ? sentAt : System.currentTimeMillis();
         stopSeen = Math.max(stopSeen, sentAt);
         stoppingLook(animate);
         p.MAIN.removeCallbacks(stopTimeoutRun);
-        p.MAIN.postDelayed(stopTimeoutRun, IslandPanel.SEND_TIMEOUT_MS);
+        if (timeoutMs > 0) p.MAIN.postDelayed(stopTimeoutRun, timeoutMs);
     }
 
     /** The row turns into Stopping... (only through {@link #enterStopping}). */

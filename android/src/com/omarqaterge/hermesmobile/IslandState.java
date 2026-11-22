@@ -282,10 +282,318 @@ final class IslandState {
         return s.isEmpty() ? t : t + ": " + s;
     }
 
+    /** How long a Stop waits before counting as failed (same 15 s on chip and panel). */
+    static final long STOP_TIMEOUT_MS = 15_000;
+
+    /** One active turn reported in a plugin {@code status} event. */
+    static final class LiveTurn {
+        final String session, turnId;
+        final long since;
+
+        LiveTurn(String session, String turnId, long since) {
+            this.session = session == null ? "" : session;
+            this.turnId = turnId == null ? "" : turnId;
+            this.since = Math.max(0, since);
+        }
+    }
+
+    /** What both the chip and the island panel show for one chat's Stop, derived from {@link StopBook}. */
+    static final class StopView {
+        static final String IDLE = "idle", SENDING = "sending", ACCEPTED = "accepted", FAILED = "failed";
+        static final StopView NONE = new StopView(IDLE, 0, 0, 0, "");
+        final String state, reason;
+        final long sentAt, remainingMs, failedAt;
+
+        StopView(String state, long sentAt, long remainingMs, long failedAt, String reason) {
+            this.state = state == null ? IDLE : state;
+            this.sentAt = Math.max(0, sentAt);
+            this.remainingMs = Math.max(0, remainingMs);
+            this.failedAt = Math.max(0, failedAt);
+            this.reason = reason == null ? "" : reason;
+        }
+
+        boolean stopping() {
+            return SENDING.equals(state) || ACCEPTED.equals(state);
+        }
+
+        boolean accepted() {
+            return ACCEPTED.equals(state);
+        }
+
+        boolean failed() {
+            return FAILED.equals(state);
+        }
+    }
+
+    /** One stop attempt started by {@link StopBook#beginStop}: carries the exact turn it targets. */
+    static final class StopTicket {
+        final String session, turnId;
+        final long attempt;
+
+        StopTicket(String session, String turnId, long attempt) {
+            this.session = session == null ? "" : session;
+            this.turnId = turnId == null ? "" : turnId;
+            this.attempt = attempt;
+        }
+    }
+
+    /** A stop that just reached its timeout ({@link StopBook#expireTimeouts}). */
+    static final class StopTimeout {
+        final String session, turnId;
+
+        StopTimeout(String session, String turnId) {
+            this.session = session == null ? "" : session;
+            this.turnId = turnId == null ? "" : turnId;
+        }
+    }
+
+    /**
+     * Per-turn Stop state shared by the status chip and the island panel. A stop belongs to the exact turn that was on
+     * screen when Stop was tapped, and to nothing else: an answer, a failure or a timeout for one turn can never alter
+     * another turn, and a status or done flash from another chat or another Hermes process can never end it. When the
+     * turn ends, its stop record is removed. Plain Java so {@code tools/test_island_state.sh} tests it directly.
+     */
+    static final class StopBook {
+        static final int MAX_RECORDS = 16, MAX_PROCS = 16;
+        final long timeoutMs;
+        private long nextAttempt = 0;
+        private final java.util.LinkedHashMap<String, List<LiveTurn>> liveByProc = new java.util.LinkedHashMap<>();
+        private final java.util.LinkedHashMap<String, Record> records = new java.util.LinkedHashMap<>();
+
+        private static final class Record {
+            final String session, proc, turnId;
+            long since, sentAt, sentMono, failedAt, attempt;
+            String state, reason;
+
+            Record(String session, String proc, String turnId, long since, long sentAt, long sentMono, long attempt) {
+                this.session = session;
+                this.proc = proc;
+                this.turnId = turnId;
+                this.since = since;
+                this.sentAt = sentAt;
+                this.sentMono = sentMono;
+                this.attempt = attempt;
+                this.state = StopView.SENDING;
+                this.reason = "";
+            }
+        }
+
+        private static final class Found {
+            final String proc;
+            final LiveTurn turn;
+
+            Found(String proc, LiveTurn turn) {
+                this.proc = proc;
+                this.turn = turn;
+            }
+        }
+
+        StopBook() {
+            this(STOP_TIMEOUT_MS);
+        }
+
+        StopBook(long timeoutMs) {
+            this.timeoutMs = Math.max(1, timeoutMs);
+        }
+
+        private static String clean(String s) {
+            return s == null ? "" : s;
+        }
+
+        private Found findLive(String session, String requestedTurnId) {
+            // Search most recently updated processes first.
+            List<java.util.Map.Entry<String, List<LiveTurn>>> entries = new ArrayList<>(liveByProc.entrySet());
+            for (int i = entries.size() - 1; i >= 0; i--) {
+                java.util.Map.Entry<String, List<LiveTurn>> en = entries.get(i);
+                for (LiveTurn t : en.getValue()) {
+                    if (!t.session.equals(session)) continue;
+                    if (!requestedTurnId.isEmpty()) {
+                        if (requestedTurnId.equals(t.turnId)) return new Found(en.getKey(), t);
+                    } else {
+                        return new Found(en.getKey(), t);
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static boolean sameTrackedTurn(Record r, String proc, LiveTurn live) {
+            if (!r.proc.equals(proc)) return false;
+            if (!r.turnId.isEmpty() || !live.turnId.isEmpty()) return r.turnId.equals(live.turnId);
+            return !(r.since > 0 && live.since > r.since);
+        }
+
+        /** Updates the active turns reported by Hermes process {@code proc} and removes any stop record whose turn ended. */
+        void onStatus(String proc, boolean working, List<LiveTurn> activeTurns, long nowMono) {
+            String p = clean(proc);
+            List<LiveTurn> cleanTurns = new ArrayList<>();
+            java.util.HashSet<String> seen = new java.util.HashSet<>();
+            if (working && activeTurns != null) {
+                for (LiveTurn t : activeTurns) {
+                    if (t != null && !t.session.isEmpty() && seen.add(t.session)) cleanTurns.add(t);
+                }
+            }
+            if (cleanTurns.isEmpty()) {
+                liveByProc.remove(p);
+            } else {
+                liveByProc.remove(p);
+                liveByProc.put(p, cleanTurns);
+                while (liveByProc.size() > MAX_PROCS) {
+                    String oldest = liveByProc.keySet().iterator().next();
+                    liveByProc.remove(oldest);
+                    records.values().removeIf(r -> r.proc.equals(oldest));
+                }
+            }
+            java.util.Iterator<java.util.Map.Entry<String, Record>> it = records.entrySet().iterator();
+            while (it.hasNext()) {
+                Record r = it.next().getValue();
+                if (!r.proc.equals(p)) continue; // another Hermes process's status never touches this process's stops
+                if (cleanTurns.isEmpty()) {
+                    it.remove();
+                    continue;
+                }
+                LiveTurn live = null;
+                for (LiveTurn t : cleanTurns) if (t.session.equals(r.session)) { live = t; break; }
+                if (live == null || !sameTrackedTurn(r, p, live)) {
+                    it.remove();
+                } else if (r.turnId.isEmpty() && r.since == 0 && live.since > 0) {
+                    r.since = live.since; // legacy plugin: chat moved from others (no since) to lastSession (has since)
+                }
+            }
+        }
+
+        /** Handles a {@code done} flash for {@code session}: ends the turn's stop only when process and turn id match. */
+        boolean onDoneFlash(String proc, String session, String turnId) {
+            String p = clean(proc), s = clean(session), tid = clean(turnId);
+            if (s.isEmpty()) return false;
+            List<LiveTurn> list = liveByProc.get(p);
+            if (list != null) {
+                list.removeIf(t -> t.session.equals(s) && (!t.turnId.isEmpty() ? t.turnId.equals(tid) : tid.isEmpty()));
+                if (list.isEmpty()) liveByProc.remove(p);
+            }
+            Record r = records.get(s);
+            if (r == null || !r.proc.equals(p)) return false;
+            if (!r.turnId.isEmpty() ? !r.turnId.equals(tid) : !tid.isEmpty()) return false;
+            records.remove(s);
+            return true;
+        }
+
+        /** Working state expired (no heartbeat for WORKING_TTL_MS): drop every tracked turn and stop record. */
+        void onExpireAll() {
+            liveByProc.clear();
+            records.clear();
+        }
+
+        /** What both the chip and the panel show for chat {@code session} and turn {@code turnId} at {@code nowMono}. */
+        StopView view(String session, String turnId, long nowMono) {
+            String s = clean(session), tid = clean(turnId);
+            if (s.isEmpty()) return StopView.NONE;
+            Record r = records.get(s);
+            if (r == null || !r.turnId.equals(tid)) return StopView.NONE;
+            if (StopView.ACCEPTED.equals(r.state)) return new StopView(StopView.ACCEPTED, r.sentAt, 0, 0, "");
+            if (StopView.SENDING.equals(r.state)) {
+                long elapsed = Math.max(0, nowMono - r.sentMono);
+                if (elapsed >= timeoutMs) return new StopView(StopView.FAILED, r.sentAt, 0, r.sentAt + timeoutMs, "timed out");
+                return new StopView(StopView.SENDING, r.sentAt, timeoutMs - elapsed, 0, "");
+            }
+            return new StopView(StopView.FAILED, r.sentAt, 0, r.failedAt, r.reason);
+        }
+
+        /**
+         * Starts a stop for the live turn of {@code session} (matching {@code requestedTurnId} when given). Returns a
+         * {@link StopTicket} to send to {@code /stop}, or null when that turn is not live or a stop for it is already
+         * accepted or in flight. After a failure or timeout, a retry always starts a fresh attempt.
+         */
+        StopTicket beginStop(String session, String requestedTurnId, long wallNow, long monoNow) {
+            String s = clean(session), reqTid = clean(requestedTurnId);
+            if (s.isEmpty()) return null;
+            Found live = findLive(s, reqTid);
+            if (live == null) return null;
+            Record r = records.get(s);
+            if (r != null && sameTrackedTurn(r, live.proc, live.turn)) {
+                if (view(s, r.turnId, monoNow).stopping()) return null; // already accepted or in flight within timeout
+                r.state = StopView.SENDING;
+                r.sentAt = wallNow;
+                r.sentMono = monoNow;
+                r.failedAt = 0;
+                r.reason = "";
+                r.attempt = ++nextAttempt;
+                return new StopTicket(s, r.turnId, r.attempt);
+            }
+            Record nr = new Record(s, live.proc, live.turn.turnId, live.turn.since, wallNow, monoNow, ++nextAttempt);
+            records.remove(s);
+            records.put(s, nr);
+            while (records.size() > MAX_RECORDS) records.remove(records.keySet().iterator().next());
+            return new StopTicket(s, nr.turnId, nr.attempt);
+        }
+
+        /**
+         * Records a 200 answer from {@code /stop}. With a turn id, requires the response to name that exact turn
+         * (never claims a stop succeeded when unsure). With an older plugin (no turn id), accepts only the current
+         * in-flight attempt within timeout when the turn has a start time ({@code since > 0}).
+         */
+        boolean onStop200(String session, String requestedTurnId, String responseTurnId, long attempt, long nowMono) {
+            String s = clean(session), reqTid = clean(requestedTurnId), resTid = clean(responseTurnId);
+            Record r = records.get(s);
+            if (r == null) return false;
+            if (!r.turnId.isEmpty()) {
+                if (!r.turnId.equals(reqTid) || !r.turnId.equals(resTid)) return false;
+                if (StopView.ACCEPTED.equals(r.state)) return false;
+                r.state = StopView.ACCEPTED;
+                r.failedAt = 0;
+                r.reason = "";
+                return true;
+            }
+            if (!reqTid.isEmpty() || !resTid.isEmpty() || r.since <= 0) return false; // missing turn identity: never guess
+            if (!StopView.SENDING.equals(r.state) || r.attempt != attempt || nowMono - r.sentMono >= timeoutMs) return false;
+            r.state = StopView.ACCEPTED;
+            r.failedAt = 0;
+            r.reason = "";
+            return true;
+        }
+
+        /** Records a failed {@code /stop} call: only transitions the latest in-flight {@code SENDING} attempt to {@code FAILED}. */
+        boolean onStopFailed(String session, String requestedTurnId, long attempt, String reason, long wallNow, long nowMono) {
+            String s = clean(session), reqTid = clean(requestedTurnId);
+            Record r = records.get(s);
+            if (r == null || !r.turnId.equals(reqTid)) return false;
+            if (!StopView.SENDING.equals(r.state) || r.attempt != attempt) return false;
+            r.state = StopView.FAILED;
+            r.failedAt = wallNow;
+            r.reason = clean(reason);
+            return true;
+        }
+
+        /** Transitions every {@code SENDING} stop that reached {@link #timeoutMs} to {@code FAILED}, returning what timed out. */
+        List<StopTimeout> expireTimeouts(long wallNow, long nowMono) {
+            List<StopTimeout> out = new ArrayList<>();
+            for (Record r : records.values()) {
+                if (StopView.SENDING.equals(r.state) && nowMono - r.sentMono >= timeoutMs) {
+                    r.state = StopView.FAILED;
+                    r.failedAt = wallNow;
+                    r.reason = "timed out";
+                    out.add(new StopTimeout(r.session, r.turnId));
+                }
+            }
+            return out;
+        }
+
+        /** Milliseconds until the next {@code SENDING} stop times out, or -1 when none is in flight. */
+        long nextTimeoutDelayMs(long nowMono) {
+            long min = -1;
+            for (Record r : records.values()) {
+                if (!StopView.SENDING.equals(r.state)) continue;
+                long left = Math.max(0, timeoutMs - Math.max(0, nowMono - r.sentMono));
+                if (min < 0 || left < min) min = left;
+            }
+            return min;
+        }
+    }
+
     /** A chat at work, as the Progress state shows it: what it does now, its task list (if it keeps one), its clock,
      *  and whether Hermux uses an app for it. The chat the chip shows has all of it; another busy chat only its step. */
     static final class Progress {
-        final String session, chat, title, headline;
+        final String session, turnId, chat, title, headline;
         /** When the turn started (epoch ms; 0 = not known) and how many steps it took so far. */
         final long since;
         final int steps;
@@ -293,22 +601,32 @@ final class IslandState {
          *  name; tasks done and in all (dropped ones not counted). */
         final String states, current;
         final int done, total;
-        /** A stop is on its way for this chat (the panel's Stop, or the card's); when the service sent it (epoch ms, 0
-         *  = not known); and whether the plugin accepted it (the turn is winding down). */
-        final boolean stopping, stopOk;
-        final long stopAt;
+        /** Stop state for this turn derived from {@link StopBook}: whether a stop is on its way or accepted, when it
+         *  was sent (epoch ms, 0 = none), whether the plugin accepted it, how long remains before its 15 s timeout,
+         *  and whether its last attempt failed (and when). */
+        final boolean stopping, stopOk, stopFailed;
+        final long stopAt, stopRemainingMs, stopFailedAt;
         /** The app Hermux uses for this chat ("" for none), and a number that changes with its picture (0 = none yet). */
         final String app;
         final int picture;
 
         Progress(String session, String chat, String title, String headline, long since, int steps, String states,
                  String current, int done, int total, boolean stopping, String app, int picture) {
-            this(session, chat, title, headline, since, steps, states, current, done, total, stopping, 0, false, app, picture);
+            this(session, "", chat, title, headline, since, steps, states, current, done, total,
+                    stopping ? new StopView(StopView.SENDING, 0, STOP_TIMEOUT_MS, 0, "") : StopView.NONE, app, picture);
         }
 
         Progress(String session, String chat, String title, String headline, long since, int steps, String states,
                  String current, int done, int total, boolean stopping, long stopAt, boolean stopOk, String app, int picture) {
+            this(session, "", chat, title, headline, since, steps, states, current, done, total,
+                    stopping ? new StopView(stopOk ? StopView.ACCEPTED : StopView.SENDING, stopAt,
+                            stopOk ? 0 : STOP_TIMEOUT_MS, 0, "") : StopView.NONE, app, picture);
+        }
+
+        Progress(String session, String turnId, String chat, String title, String headline, long since, int steps,
+                 String states, String current, int done, int total, StopView stop, String app, int picture) {
             this.session = session == null ? "" : session;
+            this.turnId = turnId == null ? "" : turnId;
             this.chat = chat == null || chat.isEmpty() ? HERMUX : chat;
             this.title = title == null ? "" : title;
             String h = headline == null ? "" : headline.trim();
@@ -320,9 +638,13 @@ final class IslandState {
             this.current = current == null ? "" : current.trim();
             this.done = Math.max(0, done);
             this.total = Math.max(0, total);
-            this.stopping = stopping;
-            this.stopAt = stopping ? Math.max(0, stopAt) : 0;
-            this.stopOk = stopping && stopOk;
+            StopView sv = stop == null ? StopView.NONE : stop;
+            this.stopping = sv.stopping();
+            this.stopAt = this.stopping ? sv.sentAt : 0;
+            this.stopOk = sv.accepted();
+            this.stopRemainingMs = StopView.SENDING.equals(sv.state) ? sv.remainingMs : 0;
+            this.stopFailed = sv.failed();
+            this.stopFailedAt = this.stopFailed ? sv.failedAt : 0;
             this.app = app == null ? "" : app;
             this.picture = picture;
         }
@@ -333,15 +655,20 @@ final class IslandState {
         }
     }
 
-    /** The last turn that finished with a reply, for the Done state: which chat, the start of the reply, its steps and
-     *  time, when it arrived. Recorded whatever the Done chip's rules say (they decide only the chip). */
+    /** The last turn that finished with a reply, for the Done state: which chat (and turn id), the start of the reply,
+     *  its steps and time, when it arrived. Recorded whatever the Done chip's rules say (they decide only the chip). */
     static final class Done {
-        final String session, chat, reply;
+        final String session, turnId, chat, reply;
         final int steps;
         final long secs, at;
 
         Done(String session, String chat, String reply, int steps, long secs, long at) {
+            this(session, "", chat, reply, steps, secs, at);
+        }
+
+        Done(String session, String turnId, String chat, String reply, int steps, long secs, long at) {
             this.session = session == null ? "" : session;
+            this.turnId = turnId == null ? "" : turnId;
             this.chat = chat == null || chat.isEmpty() ? HERMUX : chat;
             this.reply = reply == null ? "" : reply.trim();
             this.steps = Math.max(0, steps);
@@ -443,11 +770,28 @@ final class IslandState {
         return Math.max(0, others - otherLines(shown).size());
     }
 
+    /** Whether {@code live} is still the same turn as the one shown ({@code shownTurnId}, {@code shownSince}). */
+    static boolean sameTurn(String shownTurnId, long shownSince, Progress live) {
+        if (live == null) return false;
+        String tid = shownTurnId == null ? "" : shownTurnId;
+        if (!tid.isEmpty() || !live.turnId.isEmpty()) return tid.equals(live.turnId);
+        if (shownSince > 0 && live.since > 0) return live.since <= shownSince;
+        return true;
+    }
+
     /** The reply of chat {@code session}'s turn that started at {@code since} (epoch ms), or null when none came yet. */
     Done doneFor(String session, long since) {
+        return doneFor(session, "", since);
+    }
+
+    /** The reply of chat {@code session}'s turn ({@code turnId} when known, else started at {@code since}), or null. */
+    Done doneFor(String session, String turnId, long since) {
         if (session == null || session.isEmpty()) return null;
         Done d = doneOf(session);
-        return d != null && d.at >= since ? d : null;
+        if (d == null) return null;
+        String tid = turnId == null ? "" : turnId;
+        if (!tid.isEmpty()) return tid.equals(d.turnId) ? d : null;
+        return d.at >= since ? d : null;
     }
 
     /** Where a turn on the panel stands (besides DONE). */
@@ -462,9 +806,14 @@ final class IslandState {
      * way; then ENDED: it stopped with nothing to show (stopped elsewhere, or it failed), and the panel closes.
      */
     static String turnFate(String session, long since, long endedAt, IslandState st, long now) {
+        return turnFate(session, "", since, endedAt, st, now);
+    }
+
+    /** The same, bound to {@code turnId} when the plugin sent one. */
+    static String turnFate(String session, String turnId, long since, long endedAt, IslandState st, long now) {
         if (st == null) return ENDED;
-        if (st.doneFor(session, since) != null) return DONE;
-        if (st.atWork(session)) return WORKING;
+        if (st.doneFor(session, turnId, since) != null) return DONE;
+        if (sameTurn(turnId, since, st.progressFor(session))) return WORKING;
         if (endedAt <= 0 || now - endedAt < DONE_GRACE_MS) return ENDING;
         return ENDED;
     }
@@ -475,24 +824,36 @@ final class IslandState {
      * stop it; otherwise SENDING ("Stopping...").
      */
     static String stopFate(String session, long sentAt, IslandState st) {
+        return stopFate(session, "", 0, sentAt, st);
+    }
+
+    /** The same, bound to the exact turn ({@code turnId}, {@code since}) that was on screen when Stop was tapped. */
+    static String stopFate(String session, String turnId, long since, long sentAt, IslandState st) {
         if (st == null) return SENDING;
-        if (!st.atWork(session)) return Outcome.STOPPED;
+        Progress live = st.progressFor(session);
+        if (!sameTurn(turnId, since, live)) return Outcome.STOPPED;
+        if (live.stopping) return SENDING;
         Outcome o = st.outcome;
-        if (o != null && o.answers("stop", session, sentAt) && Outcome.FAILED.equals(o.result)) return Outcome.FAILED;
+        if (o != null && o.answers("stop", session, turnId, sentAt) && Outcome.FAILED.equals(o.result)) return Outcome.FAILED;
+        if (live.stopFailed && live.stopFailedAt >= sentAt) return Outcome.FAILED;
         return SENDING;
     }
 
     /**
      * Whether the 15 s wait for the stop of {@code session} sent at {@code sentAt} ends with the failure line: only
      * when nothing came of it. Not when its outcome came (Stopped: the panel waits for the turn to end; a failure:
-     * {@link #stopFate} shows it), not when the service holds it as accepted, and not once the chat is no longer at
-     * work. So a stop that succeeded is never shown as failed, however long the turn takes to wind down.
+     * {@link #stopFate} shows it), not when the service holds it as accepted, and not once the turn is over.
      */
     static boolean stopUnheard(String session, long sentAt, IslandState st) {
+        return stopUnheard(session, "", 0, sentAt, st);
+    }
+
+    /** The same, bound to {@code turnId} and {@code since}. */
+    static boolean stopUnheard(String session, String turnId, long since, long sentAt, IslandState st) {
         if (st == null) return true;
-        if (st.outcome != null && st.outcome.answers("stop", session, sentAt)) return false;
+        if (st.outcome != null && st.outcome.answers("stop", session, turnId, sentAt)) return false;
         Progress a = st.progressFor(session);
-        if (a == null || session == null || session.isEmpty()) return false; // the turn is over: Stopped, not a failure
+        if (!sameTurn(turnId, since, a) || session == null || session.isEmpty()) return false;
         return !a.stopOk;
     }
 
@@ -500,31 +861,6 @@ final class IslandState {
      *  the last one it did (a failed stop the service still holds doesn't start Stopping again). */
     static boolean newStop(Progress a, long seen) {
         return a != null && a.stopping && (a.stopAt > 0 ? a.stopAt > seen : seen == 0);
-    }
-
-    /** Whether a new stop for {@code session} should be skipped because one for that chat is already accepted or still
-     *  in flight (within {@code timeoutMs} on a monotonic clock). */
-    static boolean stopBusy(String session, String stopping, boolean accepted, boolean inFlight, long inFlightSince, long nowMono, long timeoutMs) {
-        if (session == null || session.isEmpty() || !session.equals(stopping)) return false;
-        return accepted || (inFlight && nowMono - inFlightSince < timeoutMs);
-    }
-
-    /** Whether a status event's turn start ({@code liveSince}, ms, 0 = unknown) is strictly newer than the turn a stop
-     *  was sent for ({@code stopSince}, ms, 0 = unknown), meaning the stopped turn ended and a new turn started. */
-    static boolean stopTurnChanged(long stopSince, long liveSince) {
-        return stopSince > 0 && liveSince > stopSince;
-    }
-
-    /** Whether a 200 from a stop request for {@code session} in {@code episode} marks the chat's stop as accepted:
-     *  only for the chat and stop episode currently active (retries within one episode share it; a later turn doesn't). */
-    static boolean stop200Counts(String session, String stopping, long episode, long currentEpisode) {
-        return session != null && !session.isEmpty() && session.equals(stopping) && episode == currentEpisode;
-    }
-
-    /** Whether a failed stop attempt ({@code attempt}) for {@code session} clears Stopping and reports FAILED: only
-     *  when it is the latest attempt for that chat and no racing 200 has already been accepted. */
-    static boolean stopFailCounts(String session, String stopping, long attempt, long latestAttempt, boolean accepted) {
-        return session != null && !session.isEmpty() && session.equals(stopping) && attempt == latestAttempt && !accepted;
     }
 
     /** What the panel changes to after the request {@code overA} or the question {@code overQ} on it was answered

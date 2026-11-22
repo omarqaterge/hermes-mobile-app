@@ -197,35 +197,25 @@ public class HermesService extends Service {
         lastWorking = false;
         lastShort = "";
         lastStatus = "Ready";
-        endStopEpisode();
+        lastTurnId = "";
+        lastProc = "";
+        stops.onExpireAll();
+        main.removeCallbacks(stopTimeoutTask);
         postStatus();
         updateWake();
     }
     boolean lastWorking = false;
     String lastSub = null;
     String lastTitle = "";
+    String lastTurnId = "";
+    String lastProc = "";
     int lastSteps = 0, lastMore = 0;
     JSONObject lastTodo = null;
     org.json.JSONArray lastOthers = null;
     boolean lastReview = false;
-    /** The chat whose Stop button was tapped, until Hermes reports the turn over (or the request fails); when the stop
-     *  was sent (epoch ms), whether the plugin accepted it (the island panel then never calls it failed), monotonic
-     *  attempt and episode counters (retries in one turn share an episode; a new turn increments it so an earlier turn's
-     *  delayed 200 can't count), and whether an HTTP stop request is still in flight (bounded 2 s below the panel's 15 s
-     *  send timeout so a retry after a timeout failure always goes out). */
-    String stopping = null;
-    long stoppingAt = 0;
-    boolean stopAccepted = false;
-    long stopAttempt = 0;
-    long stopEpisode = 0;
-    /** The chat and plugin-reported turn start (ms, 0 = unknown) that {@link #stopEpisode} belongs to. Kept across a
-     *  failed attempt so retries of the same turn still accept a racing 200; cleared and advanced by
-     *  {@link #endStopEpisode} when the turn ends (status no longer working, strictly newer {@code since}, or done flash). */
-    String stopEpisodeSession = null;
-    long stopTurnSince = 0;
-    boolean stopInFlight = false;
-    long stopInFlightSince = 0;
-    static final long STOP_IN_FLIGHT_MS = IslandPanel.SEND_TIMEOUT_MS - 2_000;
+    /** Per-turn Stop state shared by the status chip and the island panel (synchronized on {@code this}). */
+    final IslandState.StopBook stops = new IslandState.StopBook();
+    final Runnable stopTimeoutTask = this::expireStopTimeouts;
     /** The chat whose approval answer (from the notification) is being sent; its chip says "Sending your answer…". */
     String answering = null;
     final java.util.HashMap<String, JSONObject> doneInfo = new java.util.HashMap<>();
@@ -368,7 +358,7 @@ public class HermesService extends Service {
             return START_STICKY;
         }
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            stopTurn(intent.getStringExtra("session"));
+            stopTurn(intent.getStringExtra("session"), intent.getStringExtra("turn_id"));
             return START_STICKY;
         }
         if (intent != null && DevTools.ACTION_OFF.equals(intent.getAction())) {
@@ -1392,27 +1382,44 @@ public class HermesService extends Service {
         switch (kind) {
             case "status": {
                 boolean working = e.optBoolean("working", false);
+                String proc = e.optString("proc", "");
+                String turnId = working ? e.optString("turn_id", "") : "";
+                double since = e.optDouble("since", 0);
+                long sinceMs = working && since > 0 ? (long) (since * 1000) : 0;
+                org.json.JSONArray others = working ? e.optJSONArray("others") : null;
+                java.util.ArrayList<IslandState.LiveTurn> liveTurns = new java.util.ArrayList<>();
+                if (working) {
+                    String liveSes = session != null && !session.isEmpty() ? session : (lastSession == null ? "" : lastSession);
+                    if (!liveSes.isEmpty()) liveTurns.add(new IslandState.LiveTurn(liveSes, turnId, sinceMs));
+                    if (others != null) for (int k = 0; k < others.length(); k++) {
+                        JSONObject o = others.optJSONObject(k);
+                        if (o == null) continue;
+                        String os = o.optString("session", "");
+                        if (os.isEmpty()) continue;
+                        double oSince = o.optDouble("since", 0);
+                        liveTurns.add(new IslandState.LiveTurn(os, o.optString("turn_id", ""), oSince > 0 ? (long) (oSince * 1000) : 0));
+                    }
+                }
+                stops.onStatus(proc, working, liveTurns, android.os.SystemClock.uptimeMillis());
+                scheduleStopTimeout();
+                // Another Hermes process going idle must not overwrite this process's active working chip or panel.
+                if (!working && lastWorking && !lastProc.isEmpty() && !proc.isEmpty() && !proc.equals(lastProc)) return;
                 if (working && workingSince == 0) workingSince = System.currentTimeMillis();
                 if (!working) workingSince = 0;
                 lastStatus = body.isEmpty() ? (working ? "Working…" : "Ready") : body;
                 lastShort = working ? e.optString("short", "Hermux") : "";
                 if (session != null && !session.isEmpty()) lastSession = session;
+                lastTurnId = turnId;
+                lastProc = working ? proc : "";
                 lastSub = profile.isEmpty() || "default".equals(profile) ? null : profile;
                 // The turn's progress for the expanded chip (plugin 0.8.36+; older plugins send none of these).
                 lastTitle = working ? e.optString("title", "") : "";
                 lastSteps = working ? e.optInt("steps", 0) : 0;
                 lastTodo = working ? e.optJSONObject("todo") : null;
-                lastOthers = working ? e.optJSONArray("others") : null;
+                lastOthers = others;
                 lastMore = working ? e.optInt("more", 0) : 0;
                 lastReview = working && e.optBoolean("review", false);
-                double since = e.optDouble("since", 0);
-                if (working && since > 0) workingSince = (long) (since * 1000);
-                long trackedSince = (working && lastSession != null && lastSession.equals(stopEpisodeSession)) ? workingSince : 0;
-                boolean turnEnded = !working
-                        || (stopEpisodeSession != null && !sessionWorking(stopEpisodeSession))
-                        || IslandState.stopTurnChanged(stopTurnSince, trackedSince);
-                if (turnEnded) endStopEpisode();
-                else if (stopTurnSince == 0 && trackedSince > 0) stopTurnSince = trackedSince;
+                if (working && sinceMs > 0) workingSince = sinceMs;
                 boolean ended = lastWorking && !working;
                 lastWorking = working;
                 if (working) flashUntil = 0; // real work beats a flash
@@ -1446,13 +1453,17 @@ public class HermesService extends Service {
             case "flash": {
                 boolean doneFlash = e.optBoolean("done", false) || e.optString("short", "").contains("Done");
                 if (doneFlash && session != null && !session.isEmpty()) {
-                    if (session.equals(stopping) || session.equals(stopEpisodeSession)) endStopEpisode();
+                    String proc = e.optString("proc", "");
+                    String turnId = e.optString("turn_id", "");
+                    boolean stopEnded = stops.onDoneFlash(proc, session, turnId);
+                    if (stopEnded) scheduleStopTimeout();
                     // The island panel's Done state, whatever the Done chip's rules below decide for the chip.
                     lastDone.remove(session); // one per chat, the newest last
-                    lastDone.put(session, new IslandState.Done(session, IslandState.chatLine(title, profile), e.optString("reply", ""),
+                    lastDone.put(session, new IslandState.Done(session, turnId, IslandState.chatLine(title, profile), e.optString("reply", ""),
                             e.optInt("steps", 0), e.optLong("secs", 0), System.currentTimeMillis()));
                     while (lastDone.size() > IslandState.MAX_DONE) lastDone.remove(lastDone.keySet().iterator().next());
-                    IslandPanel.refresh(this);
+                    if (stopEnded) postStatus();
+                    else IslandPanel.refresh(this);
                     if (MainActivity.visible) return; // the app is on screen: its own unread dots show it, no sticky chip
                     if (!NotifyChoice.finishes(this)) return; // Settings → Notifications → "When a task finishes" is off: no Done chip, no badge
                     unseen.remove(session);
@@ -1783,38 +1794,29 @@ public class HermesService extends Service {
     synchronized java.util.List<IslandState.Progress> islandWorking() {
         java.util.ArrayList<IslandState.Progress> out = new java.util.ArrayList<>();
         if (!lastWorking || lastSession == null || lastSession.isEmpty()) return out;
+        long nowMono = android.os.SystemClock.uptimeMillis();
         BgApp bg = bgApp;
         android.graphics.Bitmap thumb = bgThumb;
         JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
         boolean app = bg != null && bg.session.equals(lastSession);
-        out.add(new IslandState.Progress(lastSession, IslandState.chatLine(lastTitle, lastSub), lastTitle, lastStatus,
+        out.add(new IslandState.Progress(lastSession, lastTurnId, IslandState.chatLine(lastTitle, lastSub), lastTitle, lastStatus,
                 workingSince, lastSteps, todo == null ? "" : todo.optString("states", ""),
                 todo == null ? "" : todo.optString("current", ""), todo == null ? 0 : todo.optInt("done", 0),
-                todo == null ? 0 : todo.optInt("total", 0), lastSession.equals(stopping), stoppingAt,
-                lastSession.equals(stopping) && stopAccepted, app ? bg.label : "",
+                todo == null ? 0 : todo.optInt("total", 0), stops.view(lastSession, lastTurnId, nowMono), app ? bg.label : "",
                 app && thumb != null ? System.identityHashCode(thumb) : 0));
         if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
             JSONObject o = lastOthers.optJSONObject(k);
             String ses = o == null ? "" : o.optString("session", "");
             if (ses.isEmpty() || ses.equals(lastSession)) continue;
+            String oTurnId = o.optString("turn_id", "");
+            double oSinceSec = o.optDouble("since", 0);
+            long oSince = oSinceSec > 0 ? (long) (oSinceSec * 1000) : 0;
             boolean oapp = bg != null && bg.session.equals(ses);
-            out.add(new IslandState.Progress(ses, IslandState.chatLine(o.optString("title", ""), lastSub), o.optString("title", ""),
-                    o.optString("text", ""), 0, 0, "", "", 0, 0, ses.equals(stopping), stoppingAt,
-                    ses.equals(stopping) && stopAccepted, oapp ? bg.label : "",
+            out.add(new IslandState.Progress(ses, oTurnId, IslandState.chatLine(o.optString("title", ""), lastSub), o.optString("title", ""),
+                    o.optString("text", ""), oSince, 0, "", "", 0, 0, stops.view(ses, oTurnId, nowMono), oapp ? bg.label : "",
                     oapp && thumb != null ? System.identityHashCode(thumb) : 0));
         }
         return out;
-    }
-
-    /** Chat {@code ses} is among the chats the latest working status named (the chip's chat or in {@code lastOthers}). */
-    synchronized boolean sessionWorking(String ses) {
-        if (ses == null || ses.isEmpty()) return false;
-        if (ses.equals(lastSession)) return true;
-        if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
-            JSONObject o = lastOthers.optJSONObject(k);
-            if (o != null && ses.equals(o.optString("session", ""))) return true;
-        }
-        return false;
     }
 
     /** Every permission request waiting, as the island panel shows it, the oldest first (whatever "When Hermux needs
@@ -1924,7 +1926,7 @@ public class HermesService extends Service {
      *  the header says how many tasks/steps and the turn's running time; other busy chats; a Stop button. */
     Notification workingNotification(String text, String sub) {
         JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
-        boolean isStopping = stopping != null && stopping.equals(lastSession);
+        boolean isStopping = stops.view(lastSession, lastTurnId, android.os.SystemClock.uptimeMillis()).stopping();
         String chat = lastTitle.isEmpty() ? "Hermux" : lastTitle;
 
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder();
@@ -1989,9 +1991,11 @@ public class HermesService extends Service {
             else b.setProgress(0, 0, true);
         }
         if (!isStopping && lastSession != null && !lastSession.isEmpty()) {
-            Intent stop = new Intent(this, HermesService.class).setAction(ACTION_STOP).putExtra("session", lastSession);
+            Intent stop = new Intent(this, HermesService.class).setAction(ACTION_STOP)
+                    .putExtra("session", lastSession)
+                    .putExtra("turn_id", lastTurnId);
             b.addAction(new Notification.Action.Builder(null, colored("\u25A0 Stop", RED),
-                    PendingIntent.getService(this, ("stop:" + lastSession).hashCode(), stop,
+                    PendingIntent.getService(this, ("stop:" + lastSession + ":" + lastTurnId).hashCode(), stop,
                             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
         }
         promote(b, lastShort.isEmpty() ? "Hermux" : lastShort);
@@ -2006,94 +2010,93 @@ public class HermesService extends Service {
         return b.build();
     }
 
-    /** The stopped turn ended (not working, strictly newer turn start, done flash, or expired): clears Stopping and
-     *  advances stopEpisode so a delayed 200 from this turn can never count for a later turn. */
-    synchronized void endStopEpisode() {
-        if (stopping != null || stopEpisodeSession != null) stopEpisode++;
-        stopping = null;
-        stopEpisodeSession = null;
-        stopTurnSince = 0;
-        stopAccepted = false;
-        stopInFlight = false;
+    /** Schedules the single timeout callback for the earliest in-flight stop (none while no stop is sending). */
+    synchronized void scheduleStopTimeout() {
+        main.removeCallbacks(stopTimeoutTask);
+        long delay = stops.nextTimeoutDelayMs(android.os.SystemClock.uptimeMillis());
+        if (delay >= 0) main.postDelayed(stopTimeoutTask, delay);
     }
 
-    /** Called when the panel's 15 s stop wait ends unheard: clears in-flight and advances stopAttempt so a retry
-     *  always goes out and the timed-out attempt's late failure cannot flash over it before stopTurn runs. */
-    synchronized void clearStopInFlight(String session) {
-        if (session != null && session.equals(stopping) && !stopAccepted) {
-            stopInFlight = false;
-            stopAttempt++;
+    /** Fails any stop that reached 15 s unheard, restoring Stop on both chip and panel and posting the failure card. */
+    void expireStopTimeouts() {
+        java.util.List<IslandState.StopTimeout> timedOut;
+        synchronized (this) {
+            timedOut = stops.expireTimeouts(System.currentTimeMillis(), android.os.SystemClock.uptimeMillis());
+            scheduleStopTimeout();
+            if (timedOut.isEmpty()) return;
+            for (IslandState.StopTimeout to : timedOut)
+                noteOutcome("stop", to.session, to.turnId, IslandState.Outcome.FAILED, "timed out");
+            postStatus();
+        }
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        for (IslandState.StopTimeout to : timedOut) {
+            postGrouped(nm, tag("stop", to.session), alert(CH_ALERT, "Couldn't stop Hermux",
+                    "Open the chat to stop it (timed out)", to.session, true));
         }
     }
 
-    /** The chip's Stop button: the plugin interrupts the turn (session.interrupt, like the app's stop button).
-     *  The chip says "Stopping…" until Hermes reports the turn over; a failure is said plainly. */
-    void stopTurn(String session) {
+    /** The chip's and panel's Stop button: the plugin interrupts the exact turn on screen (session.interrupt).
+     *  Both chip and panel derive their view from {@link #stops}: "Stopping…" until a matching 200 or the turn's end,
+     *  or "Couldn't stop Hermux" (with Stop usable again) after a real failure or 15 s. */
+    void stopTurn(String session, String turnId) {
         if (session == null || session.isEmpty()) return;
-        final long attempt, episode;
+        final IslandState.StopTicket ticket;
         synchronized (this) {
-            long up = android.os.SystemClock.uptimeMillis();
-            if (IslandState.stopBusy(session, stopping, stopAccepted, stopInFlight, stopInFlightSince, up, STOP_IN_FLIGHT_MS))
-                return; // already accepted or in flight for this chat: don't start an overlapping stop
-            long liveSince = session.equals(lastSession) ? workingSince : 0;
-            if (!session.equals(stopEpisodeSession) || IslandState.stopTurnChanged(stopTurnSince, liveSince)) {
-                stopEpisode++;
-                stopEpisodeSession = session;
-                stopTurnSince = liveSince;
-            } else if (stopTurnSince == 0 && liveSince > 0) {
-                stopTurnSince = liveSince;
+            ticket = stops.beginStop(session, turnId, System.currentTimeMillis(), android.os.SystemClock.uptimeMillis());
+            if (ticket == null) {
+                postStatus(); // refresh panel in case the turn already ended or a stop is already active
+                return;
             }
-            stopping = session;
-            stoppingAt = System.currentTimeMillis();
-            stopAccepted = false;
-            stopInFlight = true;
-            stopInFlightSince = up;
-            attempt = ++stopAttempt;
-            episode = stopEpisode;
+            scheduleStopTimeout();
             postStatus();
         }
         new Thread(() -> {
             String err = null;
+            String respTurnId = "";
             try {
-                String body = new JSONObject().put("session", session).toString();
+                JSONObject req = new JSONObject().put("session", ticket.session);
+                if (!ticket.turnId.isEmpty()) req.put("turn_id", ticket.turnId);
                 String path = "/api/plugins/hermes-mobile/stop";
-                String[] res = MainActivity.rawHttp(this, "POST", path, dashboardToken(false), body, true);
+                String[] res = MainActivity.rawHttp(this, "POST", path, dashboardToken(false), req.toString(), true);
                 if ("401".equals(res[0]) || "403".equals(res[0]))
-                    res = MainActivity.rawHttp(this, "POST", path, dashboardToken(true), body, true);
+                    res = MainActivity.rawHttp(this, "POST", path, dashboardToken(true), req.toString(), true);
                 if ("404".equals(res[0])) err = "it isn't running in Hermux";
                 else if (!res[0].startsWith("2")) err = "HTTP " + res[0];
+                else if (res[1] != null && !res[1].isEmpty()) {
+                    try {
+                        respTurnId = new JSONObject(res[1]).optString("turn_id", "");
+                    } catch (Exception ignored) {
+                    }
+                }
             } catch (Exception ex) {
                 err = ex.getMessage();
             }
             final String failed = err;
+            final String gotTurnId = respTurnId;
             if (failed == null) {
                 main.post(() -> {
-                    boolean mine;
                     synchronized (HermesService.this) {
-                        mine = IslandState.stop200Counts(session, stopping, episode, stopEpisode);
-                        if (mine) {
-                            stopAccepted = true; // a 200 in the current episode is accepted even if a retry raced
-                            stopInFlight = false;
-                        }
+                        if (!stops.onStop200(ticket.session, ticket.turnId, gotTurnId, ticket.attempt,
+                                android.os.SystemClock.uptimeMillis())) return;
+                        scheduleStopTimeout();
+                        noteOutcome("stop", ticket.session, ticket.turnId, IslandState.Outcome.STOPPED, null);
+                        postStatus();
                     }
-                    if (mine) noteOutcome("stop", session, "", IslandState.Outcome.STOPPED, null);
                 });
                 return;
             }
-            // One post: the failure and the end of "Stopping…" together, so no status in between sees one without the
-            // other (the panel would show Stopping again after the failure).
+            // One post: the failure and the end of "Stopping…" together, so no status in between sees one without the other.
             main.post(() -> {
                 synchronized (HermesService.this) {
-                    if (session.equals(stopping) && stopAttempt == attempt) stopInFlight = false;
-                    if (!IslandState.stopFailCounts(session, stopping, attempt, stopAttempt, stopAccepted)) return;
-                    stopping = null;
-                    stopAccepted = false;
-                    noteOutcome("stop", session, "", IslandState.Outcome.FAILED, failed);
+                    if (!stops.onStopFailed(ticket.session, ticket.turnId, ticket.attempt, failed,
+                            System.currentTimeMillis(), android.os.SystemClock.uptimeMillis())) return;
+                    scheduleStopTimeout();
+                    noteOutcome("stop", ticket.session, ticket.turnId, IslandState.Outcome.FAILED, failed);
                     postStatus();
                 }
                 NotificationManager nm = getSystemService(NotificationManager.class);
-                postGrouped(nm, tag("stop", session), alert(CH_ALERT, "Couldn't stop Hermux",
-                        "Open the chat to stop it (" + failed + ")", session, true));
+                postGrouped(nm, tag("stop", ticket.session), alert(CH_ALERT, "Couldn't stop Hermux",
+                        "Open the chat to stop it (" + failed + ")", ticket.session, true));
             });
         }, "hermes-stop").start();
     }
