@@ -1423,8 +1423,10 @@ public class HermesService extends Service {
                 return;
             }
             case "flash": {
-                if ((e.optBoolean("done", false) || e.optString("short", "").contains("Done")) && session != null && !session.isEmpty()) {
+                boolean doneFlash = e.optBoolean("done", false) || e.optString("short", "").contains("Done");
+                if (doneFlash && session != null && !session.isEmpty()) {
                     if (MainActivity.visible) return; // the app is on screen: its own unread dots show it, no sticky chip
+                    if (!NotifyChoice.finishes(this)) return; // Settings → Notifications → "When a task finishes" is off: no Done chip, no badge
                     unseen.remove(session);
                     unseen.put(session, new String[]{title, profile});
                     // What the expanded Done chip says about the turn (in memory only; a restart shows the title alone).
@@ -1436,6 +1438,7 @@ public class HermesService extends Service {
                     postStatus();
                     return;
                 }
+                if (doneFlash && !NotifyChoice.finishes(this)) return; // nor a momentary Done chip
                 // Momentary chip: done (green) or a memory/skill update.
                 flashChip = e.optString("short", "Done");
                 flashTitle = title;
@@ -1464,6 +1467,7 @@ public class HermesService extends Service {
                 updateWake();
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
+                if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
                 Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
                 hideOnLockScreen(b, ev.optBoolean("phone_data", false));
                 // Answer right from the popup, like the in-app sheet.
@@ -1481,6 +1485,7 @@ public class HermesService extends Service {
                 main.postDelayed(expireAskTask, ASK_TTL_MS + 100); // each arrival has its own expiry check
                 postStatus();
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
+                if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
                 Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
                 // Answer in the notification; a question with choices offers them as quick replies.
                 org.json.JSONArray ch = e.optJSONArray("choices");
@@ -1496,9 +1501,11 @@ public class HermesService extends Service {
             case "reply":
             case "error":
                 if (MainActivity.visible) return;
-                Notification.Builder rb = alertBuilder(CH_REPLY, title, body, session, false);
-                if (session != null && !session.isEmpty()) rb.addAction(answerAction("reply", session, "Reply", null));
-                postGrouped(nm, tag("reply", session), badged(rb, unseen.size() + (session != null && !unseen.containsKey(session) ? 1 : 0)));
+                if (NotifyChoice.finishes(this)) { // "When a task finishes" off: no card; reading the reply aloud is its own setting
+                    Notification.Builder rb = alertBuilder(CH_REPLY, title, body, session, false);
+                    if (session != null && !session.isEmpty()) rb.addAction(answerAction("reply", session, "Reply", null));
+                    postGrouped(nm, tag("reply", session), badged(rb, unseen.size() + (session != null && !unseen.containsKey(session) ? 1 : 0)));
+                }
                 if ("reply".equals(kind)) readAloud(e, session);
                 return;
             case "learning":
@@ -1512,7 +1519,7 @@ public class HermesService extends Service {
                 postGrouped(nm, tag("learn", e.optString("id", title)), alert(CH_LEARN, title, body, session, false));
                 return;
             case "cron":
-                postGrouped(nm, tag("cron", e.optString("id", session)), alert(CH_JOBS, title, body, session, false));
+                if (NotifyChoice.finishes(this)) postGrouped(nm, tag("cron", e.optString("id", session)), alert(CH_JOBS, title, body, session, false));
                 return;
             case "clear":
                 // The clear names its chat (not the request): only that chat's entries go; one naming no chat drops them all.
@@ -1561,6 +1568,31 @@ public class HermesService extends Service {
             getSharedPreferences("hm", MODE_PRIVATE).edit().putString("unseen", a.toString()).apply();
         } catch (Exception ignored) {
         }
+    }
+
+    /** Settings → Notifications changed (NotifyChoice): the chip shows or hides a waiting approval or question at once,
+     *  and with "When Hermux needs me" off the approval and question pop-ups go. Nothing waiting is answered or dropped. */
+    static void notifyChoicesChanged() {
+        HermesService s = instance;
+        if (s != null) s.applyNotifyChoices();
+    }
+
+    synchronized void applyNotifyChoices() {
+        if (!NotifyChoice.needsMe(this)) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            try {
+                for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
+                    String t = sn.getTag();
+                    if (sn.getId() == 2 && t != null && (t.startsWith("approval:") || t.startsWith("ask:"))) {
+                        nm.cancel(t, 2);
+                        dropEmptySummary(nm, t);
+                    }
+                }
+            } catch (Exception ignored) {
+                // getActiveNotifications can fail while the service is going away
+            }
+        }
+        postStatus();
     }
 
     /** The Done chip was tapped: forget every unseen chat, whether or not it still exists. */
@@ -1726,9 +1758,13 @@ public class HermesService extends Service {
 
     Notification statusNotification(String text, String sub, boolean working) {
         boolean flash = flashUntil > System.currentTimeMillis();
-        if (flash && pendingApproval == null && pendingAsk == null) return flashNotification();
-        if (pendingApproval != null) return approvalNotification(sub);
-        if (pendingAsk != null) return askNotification(sub);
+        // "When Hermux needs me" off (NotifyChoice): a waiting approval or question is not shown on the chip (no buttons
+        // either); it stays in `pending`, so the app's sheet and Needs you still have it and nothing is answered or dropped.
+        boolean needs = NotifyChoice.needsMe(this);
+        boolean approval = needs && pendingApproval != null, ask = needs && pendingAsk != null;
+        if (flash && !approval && !ask) return flashNotification();
+        if (approval) return approvalNotification(sub);
+        if (ask) return askNotification(sub);
         if (!working && !unseen.isEmpty()) return doneNotification(sub);
         if (working) return workingNotification(text, sub);
         // Idle = a slim green card on its own channel (so it can be minimised on its own); working = the gold Live Update.
@@ -2137,7 +2173,8 @@ public class HermesService extends Service {
             // HyperOS drops the heads-up after ~5 s: pop it up again at 20 s and 40 s while unanswered.
             long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());
             long sec = elapsed / 1000;
-            if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible) {
+            boolean needs = NotifyChoice.needsMe(this);
+            if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible && needs) {
                 lastReAlert = sec;
                 reAlertApproval();
             }
@@ -2149,7 +2186,7 @@ public class HermesService extends Service {
                 if (pendingApproval != null) main.postDelayed(this::tickApproval, 1000); // another request still waits
                 return;
             }
-            postStatus();
+            if (needs) postStatus(); // the countdown on the chip; with "needs me" off the chip doesn't show it
         }
         main.postDelayed(this::tickApproval, 1000);
     }
