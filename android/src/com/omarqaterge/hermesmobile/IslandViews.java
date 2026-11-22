@@ -415,13 +415,16 @@ final class IslandViews {
     // ── pressing ──
 
     /**
-     * A pressed button shrinks to 97 % and takes its pressed colour in 80 ms; released, it returns in 260 ms on back
-     * (design 4, "Small parts"). No ripple. {@code look} gets the press (0 = up, 1 = down) to set the colour. With
-     * reduced motion nothing scales and the colour changes at once. Clicks still reach the view.
+     * A pressed button shrinks to 97 % and takes its pressed colour in 80 ms with no overshoot; released, its size
+     * returns in 260 ms on back and its colour in {@code colourBackMs} straight (design 4, "Small parts"; the
+     * prototype's release: 160 ms for a choice, 120 ms for a button). {@code scales} false keeps the size (the text
+     * buttons only change their fill, as the prototype's .ip-tbtn). No ripple. {@code look} gets the press colour
+     * (0 = up, 1 = down). With reduced motion nothing scales and the colour changes at once. Clicks still reach the
+     * view.
      */
-    static void press(View v, Ticker t, boolean reduced, DoubleConsumer look) {
-        final Ticker.Handle[] run = {null};
-        final double[] at = {0};
+    static void press(View v, Ticker t, boolean reduced, boolean scales, long colourBackMs, DoubleConsumer look) {
+        final Ticker.Handle[] run = {null, null};
+        final double[] at = {0, 0}; // the size's press, the colour's press
         v.setOnTouchListener((view, e) -> {
             int a = e.getActionMasked();
             double to;
@@ -430,20 +433,29 @@ final class IslandViews {
             else return false;
             if (!view.isEnabled()) return false;
             if (run[0] != null) run[0].cancel();
+            if (run[1] != null) run[1].cancel();
             if (reduced) {
-                at[0] = to;
+                at[1] = to;
                 look.accept(to);
                 return false;
             }
-            double from = at[0];
-            long ms = to > 0 ? IslandMotion.PRESS_MS : IslandMotion.RELEASE_MS;
-            run[0] = t.tween(0, ms, IslandMotion.BACK, p -> {
-                double q = from + (to - from) * p;
-                at[0] = q;
-                float s = (float) (1 - (1 - IslandMotion.PRESS_SCALE) * q);
-                view.setScaleX(s);
-                view.setScaleY(s);
-                look.accept(Math.max(0, Math.min(1, q)));
+            boolean down = to > 0;
+            if (scales) {
+                double from = at[0];
+                run[0] = t.tween(0, down ? IslandMotion.PRESS_MS : IslandMotion.RELEASE_MS,
+                        down ? IslandMotion.STANDARD : IslandMotion.BACK, p -> {
+                    double q = from + (to - from) * p;
+                    at[0] = q;
+                    float sc = (float) (1 - (1 - IslandMotion.PRESS_SCALE) * q);
+                    view.setScaleX(sc);
+                    view.setScaleY(sc);
+                }, null);
+            }
+            double cFrom = at[1];
+            run[1] = t.tween(0, down ? IslandMotion.PRESS_MS : colourBackMs, IslandMotion.LINEAR, p -> {
+                double q = cFrom + (to - cFrom) * p;
+                at[1] = q;
+                look.accept(q);
             }, null);
             return false;
         });
@@ -497,6 +509,30 @@ final class IslandViews {
             super(c);
             setOrientation(VERTICAL);
             minFlex = Math.round(dp(c, 48));
+        }
+
+        /** Content on its way out (a change of state): it takes no touch, so a tap in its last 100 ms can't answer the
+         *  new question with the old choice; the touch goes on to what lies under it (the new content, the panel). */
+        boolean blocked;
+
+        /** Stops this content taking touches: a touch already on one of its buttons is cancelled, and nothing in it can
+         *  take the focus or be read out. */
+        void block() {
+            if (blocked) return;
+            long now = android.os.SystemClock.uptimeMillis();
+            MotionEvent c = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0, 0, 0);
+            super.dispatchTouchEvent(c);
+            c.recycle();
+            blocked = true;
+            View f = findFocus();
+            if (f != null) f.clearFocus();
+            setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent e) {
+            return !blocked && super.dispatchTouchEvent(e);
         }
 
         @Override

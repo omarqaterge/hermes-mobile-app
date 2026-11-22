@@ -176,6 +176,8 @@ final class IslandMotion {
     static final float ROLL_FROM = 0.6f;
     /** A pressed button shrinks and brightens; released, it returns on BACK. */
     static final long PRESS_MS = 80, RELEASE_MS = 260;
+    /** Released, the pressed colour goes back straight in this long: a choice, a button (the prototype's transitions). */
+    static final long CHOICE_COLOUR_BACK_MS = 160, BUTTON_COLOUR_BACK_MS = 120;
     static final float PRESS_SCALE = 0.97f, PRESS_BRIGHTEN = 0.12f;
     /** A check or a cross, drawn as a stroke on STANDARD. */
     static final long STROKE_MS = 260;

@@ -48,6 +48,15 @@ public class IslandStateTest {
         check(IslandState.CLOSED.equals(IslandState.askFate(a, false, 0, st(null, null))), "gone with no answer of ours: closed (answered elsewhere)");
         check(IslandState.CLOSED.equals(IslandState.askFate(a, false, 0, st(ask("A", "Which file?"), null))), "replaced by a newer question: closed");
         check(IslandState.CLOSED.equals(IslandState.askFate(null, false, 0, st(a, null))), "nothing shown: closed");
+        IslandState gone = new IslandState(IslandState.NONE, null, null, new IslandState.Expired("A", "  Which folder? ", 7));
+        check(IslandState.EXPIRED.equals(IslandState.askFate(a, false, 0, gone)), "ran out of time: expired (the reject buzz), not just closed");
+        check(IslandState.CLOSED.equals(IslandState.askFate(a, false, 0, new IslandState(IslandState.NONE, null, null,
+                new IslandState.Expired("A", "Which file?", 7)))), "another question of the chat expired: this one was answered elsewhere");
+        check(IslandState.CLOSED.equals(IslandState.askFate(a, false, 0, new IslandState(IslandState.NONE, null, null,
+                new IslandState.Expired("B", "Which folder?", 7)))), "another chat's question expired: closed, quietly");
+        check(IslandState.OPEN.equals(IslandState.askFate(a, false, 0, new IslandState(IslandState.QUESTION, a, null,
+                new IslandState.Expired("A", "Which folder?", 7)))), "an expiry record never closes a question that still waits");
+        check(new IslandState.Expired("A", "", 1).is(ask("A", "")), "an empty question that expired is the one shown as Hermux has a question");
         long sent = 1000;
         check(IslandState.SENDING.equals(IslandState.askFate(a, true, sent, st(null, null))), "our answer sent, no outcome yet: sending (not closed)");
         IslandState.Outcome old = new IslandState.Outcome("ask", "A", "", "sent", "", 999);
@@ -74,3 +83,19 @@ public class IslandStateTest {
 JAVA
 javac -encoding UTF-8 -Xlint:unchecked -d "$T/out" "$T"/src/com/omarqaterge/hermesmobile/*.java
 java -cp "$T/out" com.omarqaterge.hermesmobile.IslandStateTest
+
+# Two rules of IslandPanel that a plain JDK can't run, checked in its source: content on its way out (a change of
+# state) takes no touch, so a tap there can't answer the new question with the old choice (IslandViews.Fit.block,
+# swapTo); and a question that ran out of time buzzes "reject" while one answered elsewhere stays quiet.
+fails=0
+src(){ sed -n "/$1/,/^    }/p" android/src/com/omarqaterge/hermesmobile/$2.java; }
+ok(){ if eval "$1"; then echo "PASS  $2"; else echo "FAIL  $2"; fails=$((fails+1)); fi; }
+SWAP=$(src 'void swapTo(' IslandPanel)
+FIT=$(sed -n '/static final class Fit/,/^    }/p' android/src/com/omarqaterge/hermesmobile/IslandViews.java)
+ok 'grep -q "old.block()" <<<"$SWAP"' "swapTo blocks the outgoing content's touches"
+ok 'grep -q "return !blocked && super.dispatchTouchEvent" <<<"$FIT"' "blocked content passes every touch on"
+ok 'grep -q "ACTION_CANCEL" <<<"$FIT" && grep -q "FOCUS_BLOCK_DESCENDANTS" <<<"$FIT"' "blocking cancels a touch already on it and takes its focus away"
+APPLY=$(src 'void apply(IslandState' IslandPanel)
+ok 'grep -q "EXPIRED.equals(fate)) closedElsewhere(true)" <<<"$APPLY" && grep -q "CLOSED.equals(fate)) closedElsewhere(false)" <<<"$APPLY"' "expired closes with the buzz, answered elsewhere without"
+ok 'src "void closedElsewhere(boolean" IslandPanel | grep -q "if (expired) haptic(.*REJECT"' "the buzz is the reject pattern"
+[ "$fails" = 0 ] && echo "source rules: ALL PASSED" || { echo "source rules: $fails FAILED"; exit 1; }

@@ -70,11 +70,17 @@ final class PendingAsk<T> {
 
     /** Drops what ran past its deadline plus {@code graceMs}; returns whether anything was dropped. */
     boolean expire(long now, long graceMs) {
-        boolean any = false;
+        return !expired(now, graceMs).isEmpty();
+    }
+
+    /** The same as {@link #expire}, returning the entries it dropped (oldest first), so the caller can tell which
+     *  question ran out of time. */
+    List<Entry<T>> expired(long now, long graceMs) {
+        List<Entry<T>> gone = new ArrayList<>();
         for (int i = list.size() - 1; i >= 0; i--) {
-            if (now > list.get(i).deadline + graceMs) { list.remove(i); any = true; }
+            if (now > list.get(i).deadline + graceMs) gone.add(0, list.remove(i));
         }
-        return any;
+        return gone;
     }
 
     /** The entry of this kind the chip shows now (the oldest), or null. */

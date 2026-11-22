@@ -1738,7 +1738,7 @@ public class HermesService extends Service {
                     q.optString("body", ""), choices, q.optBoolean("single", true));
         }
         String kind = IslandState.pick(needs && pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
-        return new IslandState(kind, ask, lastOutcome);
+        return new IslandState(kind, ask, lastOutcome, lastExpired);
     }
 
     /** A chat's title from what the service knows: the working chat, the other busy chats, the finished ones. */
@@ -2072,9 +2072,21 @@ public class HermesService extends Service {
         pendingAsk = q == null ? null : q.payload;
     }
 
+    /** The last question that ran out of time, for the island panel (it buzzes "reject" for that, not for a question
+     *  answered elsewhere). */
+    IslandState.Expired lastExpired;
+
+    /** pending.expire, noting the last question it dropped. */
+    synchronized boolean expirePending(long now, long graceMs) {
+        java.util.List<PendingAsk.Entry<JSONObject>> gone = pending.expired(now, graceMs);
+        for (PendingAsk.Entry<JSONObject> e : gone)
+            if (PendingAsk.ASK.equals(e.kind)) lastExpired = new IslandState.Expired(e.session, e.payload.optString("body", ""), now);
+        return !gone.isEmpty();
+    }
+
     final Runnable expireAskTask = () -> {
         synchronized (HermesService.this) {
-            if (pending.expire(System.currentTimeMillis(), 0)) {
+            if (expirePending(System.currentTimeMillis(), 0)) {
                 syncPending();
                 postStatus();
                 updateWake();

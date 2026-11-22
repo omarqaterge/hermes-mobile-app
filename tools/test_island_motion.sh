@@ -61,6 +61,12 @@ public class IslandMotionTest {
         for (double p = 0; p <= 1; p += 0.01) over = Math.max(over, IslandMotion.BACK.at(p));
         check(over > 1.05, "back overshoots a little (" + String.format("%.3f", over) + ")");
         check(IslandMotion.OUT.at(0.5) > 0.8 && IslandMotion.IN.at(0.5) < 0.4, "out arrives fast, in leaves slowly first");
+        boolean flat = true;
+        for (double p = 0; p <= 1.0001; p += 0.01) flat &= IslandMotion.STANDARD.at(p) <= 1.0000001 && IslandMotion.STANDARD.at(p) >= -1e-7;
+        check(flat, "a press goes down on standard: no overshoot below 97 %");
+        check(IslandMotion.PRESS_MS == 80 && IslandMotion.RELEASE_MS == 260 && IslandMotion.PRESS_SCALE == 0.97f
+                && IslandMotion.CHOICE_COLOUR_BACK_MS == 160 && IslandMotion.BUTTON_COLOUR_BACK_MS == 120,
+                "pressed: 97 % in 80 ms; released: size 260 ms on back, colour back in 160 ms (choice) or 120 ms (button)");
         check(near(IslandMotion.CLOSE.at(0.5), 0.25 * 0.7, 1e-9) && IslandMotion.CLOSE.at(1) == 1, "close curve: p^2 * (0.4 + 0.6p)");
 
         check(IslandMotion.PILL_W == 132 && IslandMotion.PILL_H == 34 && IslandMotion.PILL_R == 17, "the pill is 132 x 34 dp, corners 17");

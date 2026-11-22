@@ -317,6 +317,8 @@ blur, the keyboard, a failed typed send and Back. Not yet on a phone.
 - [ ] **A phone without a chip** (Android below 16): the same panel from the pinned notification's question.
 - [ ] **Battery.** Nothing moves once the panel is hidden; the blur behind it on Android 12+ does not stutter.
 - [ ] **Animations off.** With Remove animations on, the panel only fades in and out.
+- [ ] **Running out.** Leave the panel open on a question until it expires (10 minutes). Expected: the reject buzz,
+      "This question is closed", and it closes. Answered in the app instead: the same headline with no buzz.
 
 ## Phone data for the agent (Settings → Access & privacy → Phone data)
 

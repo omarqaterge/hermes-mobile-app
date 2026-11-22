@@ -12,7 +12,12 @@ three change `HermesService.java`, so they run one after the other.
 
 **Known limits:** the service keeps the open question in memory, so a restart (an app update) drops the chip and the
 panel until the next question. In part 1 a permission request arriving while the panel is open does not change it
-(part 3 does).
+(part 3 does). A failed answer leaves the question off the chip, as for the card's own buttons: the service takes
+it off when it hands the answer on and posts its own "Couldn't send your answer" card.
+
+**For part 2:** `IslandPanel.onStop` ends the panel (`finishNow`) whenever it is hidden. The fingerprint or PIN
+screen `ApprovalLock` brings up hides it too, so as written the panel would close while the user confirms an Allow.
+Part 2 must keep the panel through that screen (skip `finishNow` while its own credential request is up).
 
 **Needs a real phone:** yes. The motion and its frame rate, the blur's cost, the keyboard, TalkBack and the
 locked-phone path can only be judged on one.

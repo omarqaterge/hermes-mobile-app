@@ -40,7 +40,11 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.graphics.Rect;
+import android.graphics.drawable.InsetDrawable;
+import android.view.TouchDelegate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -101,6 +105,11 @@ public class IslandPanel extends Activity {
     IslandViews.Ticker.Handle heightRun, snapRun;
     float blurPx;
     int blurNow = -1;
+    /** The blur behind now, as a share of the full radius (what the close fades from). */
+    double blurAt;
+    /** Each row's fade-in while the panel opens, so a row dimmed meanwhile (a choice tapped, the question closed)
+     *  stops arriving and keeps its dim. */
+    final HashMap<View, IslandViews.Ticker.Handle> rowIn = new HashMap<>();
 
     // The Question state.
     IslandState.Ask ask;
@@ -118,7 +127,10 @@ public class IslandPanel extends Activity {
     EditText field;
     IslandViews.SendButton send;
     TextView openText;
+    View grab;
     IslandViews.Mark chosenMark;
+    /** The room above and below a text button's 40 dp (dp): touchable, not drawn. */
+    static final float TEXT_BUTTON_ROOM = 4;
 
     final Runnable closeRun = this::close;
     final Runnable timeoutRun = () -> {
@@ -222,6 +234,7 @@ public class IslandPanel extends Activity {
 
     /** The blur behind, as a share of its 20 dp (Android 12+, when the phone allows blur between windows). */
     void setBlur(double v) {
+        blurAt = Math.max(0, Math.min(1, v));
         if (blurPx <= 0) return;
         int r = (int) Math.round(blurPx * Math.max(0, Math.min(1, v)));
         if (r == blurNow) return;
@@ -478,13 +491,13 @@ public class IslandPanel extends Activity {
         for (int i = 0; i < rows.size(); i++) {
             View row = rows.get(i);
             row.setAlpha(0);
-            ticker.tween(IslandMotion.rowDelay(i), IslandMotion.ROW_IN_MS, IslandMotion.OUT, v -> {
+            rowIn.put(row, ticker.tween(IslandMotion.rowDelay(i), IslandMotion.ROW_IN_MS, IslandMotion.OUT, v -> {
                 float s = (float) (IslandMotion.ROW_FROM_SCALE + (1 - IslandMotion.ROW_FROM_SCALE) * v);
                 row.setAlpha((float) v);
                 row.setTranslationY((float) (dp(IslandMotion.ROW_FROM_DY) * (1 - v)));
                 row.setScaleX(s);
                 row.setScaleY(s);
-            }, null);
+            }, () -> rowIn.remove(row)));
         }
         ticker.spring(IslandMotion.OPEN_WIDTH, 0, 1, false, p -> {
             gW = (float) IslandMotion.lerp(pw, fW, p);
@@ -518,20 +531,26 @@ public class IslandPanel extends Activity {
     void close() {
         if (closing) return;
         closing = true;
+        if (!started) { // nothing on screen yet: there is nothing to shrink, it just goes
+            finishNow();
+            return;
+        }
         MAIN.removeCallbacks(closeRun);
         MAIN.removeCallbacks(timeoutRun);
         hideKeyboard();
         ticker.stopAll();
         if (reduced) {
             float a0 = card.getAlpha(), s0 = scrim.getAlpha();
+            double b0 = blurAt;
             ticker.tween(0, IslandMotion.REDUCED_MS, IslandMotion.LINEAR, v -> {
                 card.setAlpha((float) (a0 * (1 - v)));
                 scrim.setAlpha((float) (s0 * (1 - v)));
-                setBlur(1 - v);
+                setBlur(b0 * (1 - v));
             }, this::gone);
             return;
         }
         float sw = gW, sh = gH, st = gTop + gDy, sr = gR, s0 = scrim.getAlpha();
+        double b0 = blurAt; // from where it is: a close during the opening fades the blur from there, like the dim
         gDy = 0;
         float pw = dp(IslandMotion.PILL_W), ph = dp(IslandMotion.PILL_H), pr = dp(IslandMotion.PILL_R), pt = pillTop();
         View content = inner;
@@ -539,7 +558,7 @@ public class IslandPanel extends Activity {
         ticker.tween(0, IslandMotion.CLOSE_CONTENT_MS, IslandMotion.LINEAR, v -> content.setAlpha((float) (c0 * (1 - v))), null);
         ticker.tween(0, IslandMotion.CLOSE_DIM_MS, IslandMotion.LINEAR, v -> {
             scrim.setAlpha((float) (s0 * (1 - v)));
-            setBlur(1 - v);
+            setBlur(b0 * (1 - v));
         }, null);
         ticker.tween(0, IslandMotion.CLOSE_SHRINK_MS, IslandMotion.CLOSE, p -> {
             gW = (float) IslandMotion.lerp(sw, pw, p);
@@ -626,14 +645,15 @@ public class IslandPanel extends Activity {
         if (fate.equals(phase)) return;
         if (IslandState.Outcome.SENT.equals(fate)) succeeded();
         else if (IslandState.Outcome.FAILED.equals(fate)) failed();
-        else if (IslandState.CLOSED.equals(fate)) closedElsewhere();
+        else if (IslandState.EXPIRED.equals(fate)) closedElsewhere(true);
+        else if (IslandState.CLOSED.equals(fate)) closedElsewhere(false);
     }
 
     /** The old content fades out while shrinking to 98 %; the new one fades in from 6 dp lower; the height follows on
      *  resize (design 4, "Changing state"). */
     void swapTo(IslandState.Ask a) {
         MAIN.removeCallbacks(closeRun);
-        View old = inner;
+        IslandViews.Fit old = inner;
         ask = a;
         phase = IslandState.OPEN;
         rows.clear();
@@ -645,7 +665,7 @@ public class IslandPanel extends Activity {
         long inMs = reduced ? IslandMotion.reduced(IslandMotion.STATE_IN_MS) : IslandMotion.STATE_IN_MS;
         long delay = reduced ? 0 : IslandMotion.STATE_IN_DELAY_MS;
         float a0 = old.getAlpha();
-        old.setEnabled(false);
+        old.block(); // no touch reaches the old choices while they fade
         ticker.tween(0, outMs, IslandMotion.LINEAR, v -> {
             old.setAlpha((float) (a0 * (1 - v)));
             if (!reduced) {
@@ -695,7 +715,7 @@ public class IslandPanel extends Activity {
         badge = new IslandViews.Badge(this, icon);
         int bs = Math.round(dp(IslandViews.Badge.SIZE_DP)), neg = Math.round(dp(-12));
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(bs, bs);
-        blp.setMargins(neg, neg, 0, neg); // the 40 dp orb lines up with the padding; the extra room is for its ring
+        blp.setMargins(neg, neg, neg, neg); // only the 40 dp orb takes room; the 12 dp around it is for its ring
         hd.addView(badge, blp);
         LinearLayout ttl = new LinearLayout(this);
         ttl.setOrientation(LinearLayout.VERTICAL);
@@ -751,24 +771,28 @@ public class IslandPanel extends Activity {
 
             col.addView(answerField(), margins(10, 50));
             rows.add(fieldRow);
+            // The text button: drawn 40 dp tall with 4 dp of room above and below, all 48 dp of it touchable.
             openText = IslandViews.text(this, 14, 0, 500, IslandViews.DIM);
             openText.setGravity(Gravity.CENTER);
             openText.setText(IslandState.OPEN_CHAT);
             GradientDrawable ob = IslandViews.round(Color.TRANSPARENT, dp(12));
-            openText.setBackground(ob);
+            int room = Math.round(dp(TEXT_BUTTON_ROOM));
+            openText.setBackground(new InsetDrawable(ob, 0, room, 0, room));
             openText.setFilterTouchesWhenObscured(true);
             openText.setOnClickListener(v -> openChat(field.getText().toString().trim()));
-            IslandViews.press(openText, ticker, reduced, p -> ob.setColor(IslandViews.blend(Color.TRANSPARENT, IslandViews.FILL, p)));
-            col.addView(openText, margins(4, 40));
+            IslandViews.press(openText, ticker, reduced, false, IslandMotion.BUTTON_COLOUR_BACK_MS,
+                    p -> ob.setColor(IslandViews.blend(Color.TRANSPARENT, IslandViews.FILL, p)));
+            col.addView(openText, margins(0, 40 + 2 * TEXT_BUTTON_ROOM));
             rows.add(openText);
         }
 
-        View grab = new View(this);
+        grab = new View(this);
         grab.setBackground(IslandViews.round(IslandViews.GRAB, dp(2)));
         grab.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(Math.round(dp(36)), Math.round(dp(4)));
         glp.gravity = Gravity.CENTER_HORIZONTAL;
-        glp.topMargin = Math.round(dp(10));
+        // 10 dp under the last thing drawn: the text button's 4 dp of room below counts.
+        glp.topMargin = Math.round(dp(openText != null && a != null ? 10 - TEXT_BUTTON_ROOM : 10));
         col.addView(grab, glp);
         return col;
     }
@@ -799,7 +823,7 @@ public class IslandPanel extends Activity {
         FrameLayout.LayoutParams mlp = new FrameLayout.LayoutParams(ms, ms, Gravity.END | Gravity.CENTER_VERTICAL);
         mlp.rightMargin = Math.round(dp(13));
         row.addView(mark, mlp);
-        IslandViews.press(row, ticker, reduced, p -> {
+        IslandViews.press(row, ticker, reduced, true, IslandMotion.CHOICE_COLOUR_BACK_MS, p -> {
             if (row.isEnabled()) bg.setColor(IslandViews.blend(IslandViews.FILL, IslandViews.FILL_PRESSED, p));
         });
         row.setOnClickListener(v -> choose(row, bg, t, mark, choice));
@@ -837,11 +861,20 @@ public class IslandPanel extends Activity {
         send.setFilterTouchesWhenObscured(true);
         send.setClickable(true);
         send.setOnClickListener(v -> sendTyped());
-        IslandViews.press(send, ticker, reduced, p -> { });
+        IslandViews.press(send, ticker, reduced, true, IslandMotion.BUTTON_COLOUR_BACK_MS, p -> { });
         int s = Math.round(dp(40));
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(s, s);
         slp.leftMargin = Math.round(dp(8));
         fieldRow.addView(send, slp);
+        // Drawn 40 dp, touchable over 48 dp: the field's row hands a touch within 4 dp of it to the button (a touch
+        // there would otherwise start a drag of the panel).
+        fieldRow.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob2) -> {
+            Rect hit = new Rect();
+            send.getHitRect(hit);
+            int grow = Math.round(dp(4));
+            hit.inset(-grow, -grow);
+            fieldRow.setTouchDelegate(new TouchDelegate(hit, send));
+        });
         field.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence c, int a, int b, int n) {}
             @Override public void onTextChanged(CharSequence c, int a, int b, int n) {}
@@ -965,16 +998,22 @@ public class IslandPanel extends Activity {
         gold.setBackground(gb);
         gold.setFilterTouchesWhenObscured(true);
         gold.setOnClickListener(v -> openChat(sentText));
-        IslandViews.press(gold, ticker, reduced, p -> gb.setColor(IslandViews.blend(IslandViews.GOLD,
+        IslandViews.press(gold, ticker, reduced, true, IslandMotion.BUTTON_COLOUR_BACK_MS, p -> gb.setColor(IslandViews.blend(IslandViews.GOLD,
                 IslandViews.brighten(IslandViews.GOLD, IslandMotion.PRESS_BRIGHTEN), p)));
         inner.addView(gold, at, margins(16, 50));
+        if (grab != null) { // the gold button has no room below it: the grab line is 10 dp under it
+            ((LinearLayout.LayoutParams) grab.getLayoutParams()).topMargin = Math.round(dp(10));
+            grab.requestLayout();
+        }
         arrive(gold);
         card.announceForAccessibility(IslandState.ASK_FAILED);
     }
 
-    /** Answered elsewhere, expired, or replaced: "This question is closed", the choices fade, close after 900 ms. */
-    void closedElsewhere() {
+    /** Answered elsewhere, expired, or replaced: "This question is closed", the choices fade, close after 900 ms. Ran
+     *  out of time ({@code expired}): the reject buzz too (design 4, Haptics); answered elsewhere: quiet. */
+    void closedElsewhere(boolean expired) {
         phase = IslandState.CLOSED;
+        if (expired) haptic(Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.REJECT : HapticFeedbackConstants.LONG_PRESS);
         hideKeyboard();
         swapText(headline, IslandState.ASK_CLOSED);
         for (View o : choiceRows) {
@@ -1008,6 +1047,13 @@ public class IslandPanel extends Activity {
 
     void dim(View v) {
         if (v == null) return;
+        IslandViews.Ticker.Handle in = rowIn.remove(v);
+        if (in != null) { // still arriving: it stops where it is and dims from there
+            in.cancel();
+            v.setTranslationY(0);
+            v.setScaleX(1);
+            v.setScaleY(1);
+        }
         float from = v.getAlpha();
         long ms = reduced ? IslandMotion.reduced(IslandMotion.CHOSEN_MS) : IslandMotion.CHOSEN_MS;
         ticker.tween(0, ms, IslandMotion.LINEAR, p -> v.setAlpha((float) (from + (IslandMotion.DIMMED - from) * p)), null);

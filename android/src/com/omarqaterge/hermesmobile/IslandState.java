@@ -95,27 +95,52 @@ final class IslandState {
         }
     }
 
+    /** A question that ran out of time (ASK_TTL_MS) with no answer: which chat, its words as shown, when. */
+    static final class Expired {
+        final String session, question;
+        final long at;
+
+        Expired(String session, String question, long at) {
+            this.session = session == null ? "" : session;
+            this.question = new Ask(session, null, question, null, true).question; // the words as the panel shows them
+            this.at = at;
+        }
+
+        /** Whether this is the question {@code a}: same chat, same words. */
+        boolean is(Ask a) {
+            return a != null && session.equals(a.session) && question.equals(a.question);
+        }
+    }
+
     final String kind;
     /** The question waiting (the oldest, as on the chip), or null. */
     final Ask ask;
     /** The last outcome, or null. */
     final Outcome outcome;
+    /** The last question that expired, or null. */
+    final Expired expired;
 
     IslandState(String kind, Ask ask, Outcome outcome) {
+        this(kind, ask, outcome, null);
+    }
+
+    IslandState(String kind, Ask ask, Outcome outcome, Expired expired) {
         this.kind = kind == null ? NONE : kind;
         this.ask = ask;
         this.outcome = outcome;
+        this.expired = expired;
     }
 
-    /** Where a question on the panel stands. */
-    static final String OPEN = "open", SENDING = "sending", CLOSED = "closed";
+    /** Where a question on the panel stands. EXPIRED is CLOSED because it ran out of time, which the panel marks with
+     *  the reject buzz (design 4, Haptics); answered elsewhere it closes quietly. */
+    static final String OPEN = "open", SENDING = "sending", CLOSED = "closed", EXPIRED = "expired";
 
     /**
      * The fate of the question {@code shown}, given whether the panel sent an answer (at {@code sentAt}) and the
      * live state {@code now}: SENDING until the service records the outcome of that answer (Outcome.SENT or
-     * Outcome.FAILED are returned as they are), then OPEN while the same question still waits, otherwise CLOSED
-     * (answered elsewhere, expired, or replaced by a newer question from the chat). A question that vanished with no
-     * outcome of ours was answered elsewhere.
+     * Outcome.FAILED are returned as they are), then OPEN while the same question still waits, EXPIRED when the
+     * service says this very question ran out of time, otherwise CLOSED (answered elsewhere, or replaced by a newer
+     * question from the chat). A question that vanished with no outcome of ours was answered elsewhere.
      */
     static String askFate(Ask shown, boolean sent, long sentAt, IslandState now) {
         if (shown == null) return CLOSED;
@@ -126,7 +151,8 @@ final class IslandState {
             return SENDING;
         }
         Ask live = now == null ? null : now.ask;
-        return live != null && live.single && live.same(shown) ? OPEN : CLOSED;
+        if (live != null && live.single && live.same(shown)) return OPEN;
+        return now != null && now.expired != null && now.expired.is(shown) ? EXPIRED : CLOSED;
     }
 
     /** The question the panel opens on: the live one, when it is a single question. */

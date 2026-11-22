@@ -14,7 +14,7 @@ Android asks for the unlock first.
 
 **It shows the service's live state.** The panel reads `HermesService.islandState()` (an `IslandState`) when it opens
 and after every change of the chip (`IslandPanel.refresh`, from `postStatus`), never what the card's intent carried.
-Opened with no question waiting (it was answered or expired in between), it shows nothing and goes.
+Opened when the question is no longer waiting (answered or expired between the tap and the panel), it opens with the header only, the headline "This question is closed" (design 5.2, No longer open), and closes about 0.9 s later: a question that is gone can't be answered.
 
 #### The Question state
 
@@ -25,8 +25,8 @@ Opened with no question waiting (it was answered or expired in between), it show
 | Headline | "Hermux asks". |
 | Question | The question as Hermux wrote it, or "Hermux has a question" when it is empty; up to six lines, then it scrolls. |
 | Choices | One row per choice (five at most, each whole); none when Hermux gave none. A tapped row turns gold with a spinner, then a check; the others fade. |
-| Field | "Type your answer", with a round Send button inside it: quiet while the field is empty, gold with an arrow once there is text. The keyboard's Send key sends too. With no choices the field takes the focus and the keyboard opens; with choices the keyboard stays down until the field is tapped. |
-| Open chat | Opens the chat in the app, with any typed text in the composer, and closes the panel. |
+| Field | "Type your answer", with a round 40 dp Send button inside it (touchable over 48 dp): quiet while the field is empty, gold with an arrow once there is text. The keyboard's Send key sends too. With no choices the field takes the focus and the keyboard opens; with choices the keyboard stays down until the field is tapped. |
+| Open chat | A text button drawn 40 dp tall with 4 dp of room above and below, all of it touchable. Opens the chat in the app, with any typed text in the composer, and closes the panel. |
 | Grab bar | A short bar at the bottom: the panel can be dragged. |
 
 A batch of questions (`single: false`) does not open the panel: the card opens the app, as before.
@@ -38,12 +38,15 @@ card's choice buttons). The service records how it went (`HermesService.noteOutc
   about 0.85 s later. The chip goes back to the status.
 - **Failed** (the app was not running, or the answer was not delivered, or no word in 15 s, `SEND_TIMEOUT_MS`): the
   line "Couldn't send your answer. Open the chat; your text is kept." in red, and a gold Open chat button that opens
-  the chat with the typed text. The question stays open on the chip.
+  the chat with the typed text. The service has already taken the question off the chip when it handed the answer
+  on, as for the card's own buttons, and posts its own "Couldn't send your answer" card, which also opens the chat
+  with the text.
 - **Closed elsewhere** (answered in the app, expired, or replaced by a newer question while the panel is open): the
   headline changes to "This question is closed", the choices and the field fade, and the panel closes about 0.9 s
-  later. Open chat still works.
+  later. Open chat still works. When the question ran out of time (10 minutes, recorded by the service), the phone
+  also gives the reject buzz (Android 11+; older: one long tap); answered elsewhere, it stays quiet.
 
-Tapping the card again on a newer question while the panel is open changes the panel in place (`swapTo`).
+Tapping the card again on a newer question while the panel is open changes the panel in place (`swapTo`): the old content fades out in 100 ms and takes no touch meanwhile, so a late tap can't answer the new question with an old choice.
 
 #### Gestures
 
@@ -57,7 +60,10 @@ Tapping the card again on a newer question while the panel is open changes the p
 
 Opening: the pill (132 by 34 dp) widens first, then drops to the panel's height, on springs; the rows fade in one
 after the other from slightly higher and smaller; the dim and the blur come in together. Closing: the content fades,
-the panel shrinks back to the pill and the dim goes. The system's own window animations are turned off. With the
+the panel shrinks back to the pill and the dim and blur fade from where they are. Closed before the opening has
+started, it simply goes. A pressed choice or button shrinks to 97 % and takes its pressed colour in 80 ms; released,
+it springs back in 260 ms and its colour returns in 160 ms (a choice) or 120 ms (a button); the text button only
+changes its fill. The system's own window animations are turned off. With the
 phone's animations off (Developer options, or Remove animations in Accessibility), the panel only fades in and out,
 in 120 ms, with no pulse. Every movement runs on the display's frame clock and only while it runs; nothing moves or
 repeats once the panel is hidden.
