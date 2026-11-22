@@ -50,7 +50,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * The island panel (docs/design/island-panel.md): a see-through window over the current app that grows a small dark
  * panel out of the top of the screen, where the island is. Opened by the question card and its Answer button
- * (HermesService.askNotification); this part shows the Question state (design 5.2).
+ * (HermesService.askNotification), on the Question state (design 5.2), and by the permission card and its Allow
+ * buttons while the fingerprint is needed (HermesService.islandApprovalIntent), on the Permission state (design 5.1,
+ * {@link IslandPermission}).
  *
  * It shows the service's live state ({@link HermesService#islandState}), never what was in the tap: the intent says
  * only which chat and which state was tapped. {@link #refresh} hands the visible panel a new snapshot after every
@@ -61,14 +63,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class IslandPanel extends Activity {
     /** Which chat was tapped (the panel still shows the live question). */
     static final String EXTRA_SESSION = "session";
-    /** Which state was tapped: IslandState.QUESTION ("ask"). */
+    /** Which state was tapped: IslandState.QUESTION ("ask") or IslandState.PERMISSION ("approval"). */
     static final String EXTRA_KIND = "kind";
+    /** Which permission request was tapped (its request id): the panel still shows the live one. */
+    static final String EXTRA_REQUEST = "request";
+    /** The card's Allow once ("once") or Allow session ("session") opened the panel: it asks for the fingerprint at
+     *  once and then sends that answer, if the request on screen is the very one tapped. */
+    static final String EXTRA_CHOICE = "choice";
     /** An answer with no word from the service after this long counts as not sent. */
     static final long SEND_TIMEOUT_MS = 15_000;
 
     /** The panel on screen, or null. */
     static volatile IslandPanel shown;
-    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final AtomicBoolean QUEUED = new AtomicBoolean();
 
     /** Called by HermesService.postStatus (any thread): the visible panel gets a fresh snapshot, once per burst. */
@@ -111,6 +118,14 @@ public class IslandPanel extends Activity {
      *  stops arriving and keeps its dim. */
     final HashMap<View, IslandViews.Ticker.Handle> rowIn = new HashMap<>();
 
+    /** The Permission state, when the panel shows it (null on the Question state). */
+    IslandPermission perm;
+    /** Hidden (onStop) and not yet shown again: only while our own fingerprint or PIN screen covers it. */
+    boolean stopped;
+    final Runnable hiddenRun = () -> {
+        if (stopped && (perm == null || !perm.confirming)) finishNow();
+    };
+
     // The Question state.
     IslandState.Ask ask;
     String phase = IslandState.OPEN;
@@ -118,6 +133,8 @@ public class IslandPanel extends Activity {
     long sentAt;
     String sentText = "";
     final ArrayList<View> rows = new ArrayList<>();
+    /** Rows that arrive together with the row before them in the opening stagger (Allow this session with the buttons). */
+    final java.util.HashSet<View> withPrevious = new java.util.HashSet<>();
     final ArrayList<View> choiceRows = new ArrayList<>();
     IslandViews.Badge badge;
     TextView headline, errLine;
@@ -158,8 +175,18 @@ public class IslandPanel extends Activity {
         root.addView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         HermesService s = HermesService.instance;
         IslandState st = s == null ? null : s.islandState();
-        ask = st == null ? null : st.askToShow();
-        inner = buildQuestion(ask);
+        Intent in = getIntent();
+        if (IslandState.PERMISSION.equals(in.getStringExtra(EXTRA_KIND))) {
+            String ses = in.getStringExtra(EXTRA_SESSION), req = in.getStringExtra(EXTRA_REQUEST);
+            IslandState.Approval a = st == null ? null : st.approvalToShow(ses, req);
+            perm = new IslandPermission(this);
+            // the card's choice asks once: a panel Android recreated from its saved intent does not ask again
+            perm.autoChoice = state == null ? choiceFor(in, a) : null;
+            inner = perm.build(a, st == null ? 0 : st.othersWaiting(a));
+        } else {
+            ask = st == null ? null : st.askToShow();
+            inner = buildQuestion(ask);
+        }
         card.addView(inner);
         setContentView(root);
         shown = this;
@@ -480,6 +507,7 @@ public class IslandPanel extends Activity {
                 scrim.setAlpha((float) (IslandMotion.DIM_ALPHA * v));
                 setBlur(v);
             }, this::opened);
+            if (perm != null) perm.start(); // the timer and the card's Allow run with animations off too
             return;
         }
         gW = pw;
@@ -488,10 +516,12 @@ public class IslandPanel extends Activity {
         gR = pr;
         applyGeo();
         if (cScroll != null) cScroll.setClipChildren(false); // the first choice arrives from 8 dp higher
+        int step = -1;
         for (int i = 0; i < rows.size(); i++) {
             View row = rows.get(i);
+            if (step < 0 || !withPrevious.contains(row)) step++;
             row.setAlpha(0);
-            rowIn.put(row, ticker.tween(IslandMotion.rowDelay(i), IslandMotion.ROW_IN_MS, IslandMotion.OUT, v -> {
+            rowIn.put(row, ticker.tween(IslandMotion.rowDelay(step), IslandMotion.ROW_IN_MS, IslandMotion.OUT, v -> {
                 float s = (float) (IslandMotion.ROW_FROM_SCALE + (1 - IslandMotion.ROW_FROM_SCALE) * v);
                 row.setAlpha((float) v);
                 row.setTranslationY((float) (dp(IslandMotion.ROW_FROM_DY) * (1 - v)));
@@ -517,13 +547,27 @@ public class IslandPanel extends Activity {
             setBlur(v);
         }, null);
         if (badge != null && ask != null) badge.pulse(ticker, reduced);
+        if (perm != null) perm.start();
     }
 
     /** The opening is over. */
     void opened() {
         opening = false;
         if (cScroll != null) cScroll.setClipChildren(true);
-        if (ask == null) MAIN.postDelayed(closeRun, IslandMotion.CLOSED_HOLD_MS); // opened on a question that is gone
+        if (perm != null) {
+            if (perm.shown == null) MAIN.postDelayed(closeRun, IslandMotion.ELSEWHERE_HOLD_MS); // opened on a request that is gone
+        } else if (ask == null) MAIN.postDelayed(closeRun, IslandMotion.CLOSED_HOLD_MS); // opened on a question that is gone
+    }
+
+    /** The choice the card's Allow carried, when it is for the very request on screen and one the panel may send. It is
+     *  taken off the intent, so a panel made again from it (the screen turned) doesn't ask again by itself. */
+    static String choiceFor(Intent in, IslandState.Approval a) {
+        String c = in.getStringExtra(EXTRA_CHOICE);
+        in.removeExtra(EXTRA_CHOICE);
+        if (a == null || !("once".equals(c) || "session".equals(c))) return null;
+        String ses = in.getStringExtra(EXTRA_SESSION), req = in.getStringExtra(EXTRA_REQUEST);
+        boolean exact = a.session.equals(ses == null ? "" : ses) && a.request.equals(req == null ? "" : req);
+        return exact ? c : null;
     }
 
     /** Back, a tap outside, a drag up, or by itself after an answer: content fades, the panel shrinks back to the pill,
@@ -571,9 +615,11 @@ public class IslandPanel extends Activity {
 
     void finishNow() {
         ticker.stopAll();
+        if (perm != null) perm.stop();
         MAIN.removeCallbacks(openRun);
         MAIN.removeCallbacks(closeRun);
         MAIN.removeCallbacks(timeoutRun);
+        MAIN.removeCallbacks(hiddenRun);
         if (shown == this) shown = null;
         if (!isFinishing()) finishAndRemoveTask();
         noSystemTransition();
@@ -588,6 +634,9 @@ public class IslandPanel extends Activity {
     public void onWindowFocusChanged(boolean has) {
         super.onWindowFocusChanged(has);
         if (has) startOpen();
+        // Back from the PIN screen its keyboard is still up, and onActivityResult comes before the focus, when hiding
+        // it does nothing yet; the Permission state has nothing to type in, so put it away once the panel has focus.
+        if (has && perm != null && root != null) root.post(this::hideKeyboard);
         // The keyboard opens by itself only when there are no choices; with choices it waits for a tap on the field.
         if (has && firstFocus) {
             firstFocus = false;
@@ -610,34 +659,128 @@ public class IslandPanel extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (closing || sent) return;
+        if (closing) return;
         HermesService s = HermesService.instance;
-        IslandState.Ask a = s == null ? null : s.islandState().askToShow();
+        if (s == null) return;
+        IslandState st = s.islandState();
+        if (IslandState.PERMISSION.equals(intent.getStringExtra(EXTRA_KIND))) {
+            String ses = intent.getStringExtra(EXTRA_SESSION), req = intent.getStringExtra(EXTRA_REQUEST);
+            if (perm != null) {
+                String c = intent.getStringExtra(EXTRA_CHOICE);
+                intent.removeExtra(EXTRA_CHOICE); // used once, as in choiceFor
+                perm.newIntent(st, ses, req, "once".equals(c) || "session".equals(c) ? c : null);
+                return;
+            }
+            if (sent) return; // a question's answer is on its way
+            IslandState.Approval a = st.approvalToShow(ses, req);
+            if (a != null) swapToPermission(a, st, choiceFor(intent, a)); // the permission card tapped over a question
+            return;
+        }
+        if (perm != null) { // the question card tapped over a permission request on screen, while nothing is on its way
+            if (perm.confirming || !IslandState.OPEN.equals(perm.phase) && perm.shown != null) return;
+            IslandState.Ask a = st.askToShow();
+            if (a != null) swapTo(a);
+            return;
+        }
+        if (sent) return;
+        IslandState.Ask a = st.askToShow();
         if (a != null && !a.same(ask)) swapTo(a); // tapped again on a newer question: it changes in place
     }
 
-    /** Hidden (another app, the screen off): every motion stops and the panel goes; the question stays open. */
+    @Override
+    protected void onStart() {
+        super.onStart();
+        boolean was = stopped;
+        stopped = false;
+        MAIN.removeCallbacks(hiddenRun);
+        if (was && perm != null && !closing) perm.resumed();
+    }
+
+    /** Hidden (another app, the screen off): every motion stops and the panel goes; the question or request stays open.
+     *  The one exception is our own fingerprint or PIN screen (ApprovalLock, an activity on Android 8-10 and for the
+     *  screen lock): the panel waits behind it, still, and its result reaches the very request it was asked for. */
     @Override
     protected void onStop() {
         super.onStop();
-        ticker.stopAll();
-        if (!isChangingConfigurations()) finishNow();
+        stopped = true;
+        boolean behindOurPrompt = !isChangingConfigurations() && perm != null && perm.confirming && !closing;
+        // Behind our own prompt the panel comes back: what was moving ends where it was going rather than halfway.
+        if (behindOurPrompt) ticker.finishAll();
+        else ticker.stopAll();
+        if (isChangingConfigurations()) return;
+        if (behindOurPrompt) {
+            settle();
+            perm.paused();
+            return;
+        }
+        finishNow();
+    }
+
+    /** Everything that was moving jumps to where it ends (the panel is hidden behind our own prompt meanwhile). */
+    void settle() {
+        if (opening || !widthDone || !heightDone) {
+            gW = fW;
+            gH = fH;
+            gTop = fTop;
+            gR = dp(IslandMotion.PANEL_R);
+            widthDone = heightDone = true;
+            opened();
+        }
+        for (View row : rows) {
+            row.setAlpha(1);
+            row.setTranslationY(0);
+            row.setScaleX(1);
+            row.setScaleY(1);
+        }
+        rowIn.clear();
+        card.setAlpha(1);
+        scrim.setAlpha(IslandMotion.DIM_ALPHA);
+        setBlur(1);
+        applyGeo();
+    }
+
+    /** A prompt of ours ended while the panel was hidden: if it is still hidden a second later (Home from the PIN
+     *  screen), it goes. */
+    void hiddenCheck() {
+        if (!stopped) return;
+        MAIN.removeCallbacks(hiddenRun);
+        MAIN.postDelayed(hiddenRun, 1000);
+    }
+
+    /** The screen-lock screen of ApprovalLock (Android 8-10, or the PIN fallback) answers here. */
+    @Override
+    protected void onActivityResult(int req, int result, Intent data) {
+        super.onActivityResult(req, result, data);
+        if (!ApprovalLock.isOurs(req)) return;
+        // The PIN screen's keyboard can stay up over the panel; the Permission state has nothing to type in.
+        if (perm != null) {
+            InputMethodManager imm = getSystemService(InputMethodManager.class);
+            if (imm != null) imm.hideSoftInputFromWindow(getWindow().getDecorView().getWindowToken(), 0);
+        }
+        ApprovalLock.onResult(this, req, result);
     }
 
     @Override
     protected void onDestroy() {
+        ApprovalLock.activityGone(this); // a prompt of ours can't answer any more: it ends as a cancel, nothing is sent
         super.onDestroy();
         ticker.stopAll();
+        if (perm != null) perm.stop();
         MAIN.removeCallbacks(openRun);
         MAIN.removeCallbacks(closeRun);
         MAIN.removeCallbacks(timeoutRun);
+        MAIN.removeCallbacks(hiddenRun);
         if (shown == this) shown = null;
     }
 
     // ── the live state ──
 
-    /** A new snapshot from the service: the question's fate decides what changes. */
+    /** A new snapshot from the service: the question's (or the request's) fate decides what changes. */
     void apply(IslandState st) {
+        if (perm != null) {
+            perm.apply(st);
+            return;
+        }
         if (closing || ask == null) return;
         // Sent, failed and closed are final: a late word from the service changes nothing.
         if (!IslandState.OPEN.equals(phase) && !IslandState.SENDING.equals(phase)) return;
@@ -653,13 +796,45 @@ public class IslandPanel extends Activity {
      *  resize (design 4, "Changing state"). */
     void swapTo(IslandState.Ask a) {
         MAIN.removeCallbacks(closeRun);
-        IslandViews.Fit old = inner;
+        if (perm != null) perm.stop();
+        perm = null;
         ask = a;
         phase = IslandState.OPEN;
         rows.clear();
+        withPrevious.clear();
         choiceRows.clear();
         chosenMark = null;
-        inner = buildQuestion(a);
+        swapInner(buildQuestion(a));
+        if (badge != null) badge.pulse(ticker, reduced);
+        haptic(HapticFeedbackConstants.KEYBOARD_TAP);
+        card.announceForAccessibility(IslandState.ASKS + ". " + a.question);
+    }
+
+    /** The Permission state for request {@code a}, in place of what is on screen (another request after an answer, or
+     *  the permission card tapped while the panel is open); {@code choice} the card's Allow to ask for at once. */
+    void swapToPermission(IslandState.Approval a, IslandState st, String choice) {
+        MAIN.removeCallbacks(closeRun);
+        if (perm != null) perm.stop();
+        ask = null;
+        badge = null;
+        rows.clear();
+        withPrevious.clear();
+        choiceRows.clear();
+        chosenMark = null;
+        hideKeyboard();
+        perm = new IslandPermission(this);
+        perm.autoChoice = choice;
+        swapInner(perm.build(a, st.othersWaiting(a)));
+        haptic(HapticFeedbackConstants.KEYBOARD_TAP);
+        card.announceForAccessibility(a.headline() + ". " + a.what);
+        perm.start();
+    }
+
+    /** Puts {@code now} in place of the content on screen: the old one takes no touch and fades out while shrinking
+     *  to 98 %; the new one fades in from 6 dp lower; the height follows on resize. */
+    void swapInner(IslandViews.Fit now) {
+        IslandViews.Fit old = inner;
+        inner = now;
         card.addView(inner);
         long outMs = reduced ? IslandMotion.reduced(IslandMotion.STATE_OUT_MS) : IslandMotion.STATE_OUT_MS;
         long inMs = reduced ? IslandMotion.reduced(IslandMotion.STATE_IN_MS) : IslandMotion.STATE_IN_MS;
@@ -674,7 +849,6 @@ public class IslandPanel extends Activity {
                 old.setScaleY(s);
             }
         }, () -> card.removeView(old));
-        View now = inner;
         now.setAlpha(0);
         innerDy = reduced ? 0 : dp(IslandMotion.STATE_IN_DY);
         applyGeo();
@@ -688,9 +862,6 @@ public class IslandPanel extends Activity {
             innerDy = 0;
             applyGeo();
         });
-        if (badge != null) badge.pulse(ticker, reduced);
-        haptic(HapticFeedbackConstants.KEYBOARD_TAP);
-        card.announceForAccessibility(IslandState.ASKS + ". " + a.question);
     }
 
     // ── the Question state (design 5.2) ──
@@ -779,7 +950,7 @@ public class IslandPanel extends Activity {
             int room = Math.round(dp(TEXT_BUTTON_ROOM));
             openText.setBackground(new InsetDrawable(ob, 0, room, 0, room));
             openText.setFilterTouchesWhenObscured(true);
-            openText.setOnClickListener(v -> openChat(field.getText().toString().trim()));
+            openText.setOnClickListener(v -> openChat(ask != null ? ask.session : null, field.getText().toString().trim()));
             IslandViews.press(openText, ticker, reduced, false, IslandMotion.BUTTON_COLOUR_BACK_MS,
                     p -> ob.setColor(IslandViews.blend(Color.TRANSPARENT, IslandViews.FILL, p)));
             col.addView(openText, margins(0, 40 + 2 * TEXT_BUTTON_ROOM));
@@ -997,7 +1168,7 @@ public class IslandPanel extends Activity {
         GradientDrawable gb = IslandViews.round(IslandViews.GOLD, dp(17));
         gold.setBackground(gb);
         gold.setFilterTouchesWhenObscured(true);
-        gold.setOnClickListener(v -> openChat(sentText));
+        gold.setOnClickListener(v -> openChat(ask != null ? ask.session : null, sentText));
         IslandViews.press(gold, ticker, reduced, true, IslandMotion.BUTTON_COLOUR_BACK_MS, p -> gb.setColor(IslandViews.blend(IslandViews.GOLD,
                 IslandViews.brighten(IslandViews.GOLD, IslandMotion.PRESS_BRIGHTEN), p)));
         inner.addView(gold, at, margins(16, 50));
@@ -1029,12 +1200,13 @@ public class IslandPanel extends Activity {
         MAIN.postDelayed(closeRun, IslandMotion.CLOSED_HOLD_MS);
     }
 
-    /** Opens the chat (MainActivity, through IntentGate) with the text in its composer, as the old answer box did. */
-    void openChat(String draft) {
+    /** Opens the chat (MainActivity, through IntentGate) with the text in its composer, as the old answer box did; for
+     *  a permission request (Open chat, Review in Hermux) the chat's own sheet shows the request. */
+    void openChat(String chat, String draft) {
         if (closing) return;
         Intent app = IntentGate.mark(this, new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK));
-        String session = ask != null ? ask.session : getIntent().getStringExtra(EXTRA_SESSION);
+        String session = chat != null ? chat : getIntent().getStringExtra(EXTRA_SESSION);
         if (session != null && !session.isEmpty()) app.putExtra("session", session);
         if (draft != null && !draft.isEmpty()) app.putExtra("draft", draft.length() > 20000 ? draft.substring(0, 20000) : draft);
         closing = true;
@@ -1047,16 +1219,21 @@ public class IslandPanel extends Activity {
 
     void dim(View v) {
         if (v == null) return;
-        IslandViews.Ticker.Handle in = rowIn.remove(v);
-        if (in != null) { // still arriving: it stops where it is and dims from there
-            in.cancel();
-            v.setTranslationY(0);
-            v.setScaleX(1);
-            v.setScaleY(1);
-        }
+        stopArriving(v); // still arriving: it stops where it is and dims from there
         float from = v.getAlpha();
         long ms = reduced ? IslandMotion.reduced(IslandMotion.CHOSEN_MS) : IslandMotion.CHOSEN_MS;
         ticker.tween(0, ms, IslandMotion.LINEAR, p -> v.setAlpha((float) (from + (IslandMotion.DIMMED - from) * p)), null);
+    }
+
+    /** A row still in the opening stagger stops arriving: its opacity stays where it is (whatever changes it next
+     *  starts from there), its movement and size go to the end. */
+    void stopArriving(View v) {
+        IslandViews.Ticker.Handle in = v == null ? null : rowIn.remove(v);
+        if (in == null) return;
+        in.cancel();
+        v.setTranslationY(0);
+        v.setScaleX(1);
+        v.setScaleY(1);
     }
 
     /** A new line arriving: from 6 dp below in 200 ms on out (a fade only with reduced motion). */

@@ -196,6 +196,40 @@ final class IslandMotion {
     /** After the check, the panel holds this long and closes; a closed question holds CLOSED_HOLD_MS. */
     static final long ANSWER_HOLD_MS = 850, CLOSED_HOLD_MS = 900;
 
+    // ── the Permission state (design 5.1; the prototype's buildApproval and resolveRow) ──
+    /** The timer: a ring this big (dp), this thick, on a white 10 % track. */
+    static final float TIMER_DP = 44, TIMER_STROKE_DP = 3;
+    /** Below this share of the time left the timer is red: the number takes its colour, and the phone ticks once. */
+    static final double TIMER_RED = 0.2;
+    /** In the last TIMER_PULSE_UNDER_MS the ring pulses with each second: to TIMER_PULSE_SCALE and back. */
+    static final long TIMER_PULSE_UNDER_MS = 10_000, TIMER_PULSE_MS = 260;
+    static final float TIMER_PULSE_SCALE = 1.09f;
+    /** Answering: the other buttons fade in OTHERS_OUT_MS (then "Allow this session" gives its room back); the tapped
+     *  one grows to the full row in GROW_MS on BACK; the ring fades and shrinks to RING_OUT_SCALE in RING_OUT_MS on IN. */
+    static final long OTHERS_OUT_MS = 120, GROW_MS = 320, RING_OUT_MS = 160;
+    static final float RING_OUT_SCALE = 0.8f;
+    /** A button's colour changes straight in this long (busy, Allowed, Denied); its new label arrives in LABEL_IN_MS
+     *  from LABEL_FROM_DX dp to the left. */
+    static final long BUTTON_COLOUR_MS = 200, LABEL_IN_MS = 200;
+    static final float LABEL_FROM_DX = -4;
+    /** Allowed or Denied holds this long before the panel closes or moves on; a request answered elsewhere closes
+     *  after ELSEWHERE_HOLD_MS; one that ran out after EXPIRED_HOLD_MS. */
+    static final long RESULT_HOLD_MS = 900, ELSEWHERE_HOLD_MS = 900, EXPIRED_HOLD_MS = 2600;
+    /** Run out: the body fades to DIMMED, the ring to EXPIRED_RING_ALPHA; the new row arrives in EXPIRED_ROW_MS. */
+    static final float EXPIRED_RING_ALPHA = 0.35f;
+    static final long EXPIRED_ROW_MS = 200;
+    /** Two buttons side by side: the left one's share of the row, and the gap (dp). */
+    static final float SPLIT = 0.36f, SPLIT_GAP = 8;
+    /** The command block shows this many lines, then scrolls. */
+    static final int COMMAND_LINES = 4;
+
+    /** The ring's size during its pulse, p in [0, 1] (already eased): up to the peak half way, back down after. */
+    static double timerPulse(double p) {
+        double q = clamp(p, 0, 1);
+        double up = q < 0.5 ? q / 0.5 : (1 - q) / 0.5;
+        return 1 + (TIMER_PULSE_SCALE - 1) * up;
+    }
+
     // ── reduced motion ──
     /** With the phone's animations off, everything is a fade of at most this long, with no movement. */
     static final long REDUCED_MS = 120;

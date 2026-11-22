@@ -63,6 +63,17 @@ public class PendingAskTest {
         java.util.List<PendingAsk.Entry<String>> gone = p.expired(5500, 0);
         check(gone.size() == 1 && "C1".equals(gone.get(0).payload) && "ask".equals(gone.get(0).kind) && "C".equals(gone.get(0).session)
                 && p.count("ask") == 1 && "D1".equals(who(p, "ask")), "expired says which one it dropped (the island panel buzzes for that question)");
+        PendingAsk<String> q = new PendingAsk<>();
+        q.arrived("approval", "A", "r1", "A1", 9000);
+        q.arrived("ask", "A", "", "Q", 9000);
+        q.arrived("approval", "B", "r2", "B2", 9000);
+        java.util.List<PendingAsk.Entry<String>> all = q.all("approval");
+        check(all.size() == 2 && "A1".equals(all.get(0).payload) && "B2".equals(all.get(1).payload), "all: every approval, the oldest first, no question");
+        all.clear();
+        check(q.count("approval") == 2, "all is a copy: changing it changes nothing waiting");
+        check(q.find("approval", "B", "r2") != null && "B2".equals(q.find("approval", "B", "r2").payload), "find: a chat's request by its id");
+        check(q.find("approval", "B", "r1") == null && q.find("approval", "A", "") == null && q.find("ask", "B", "r2") == null,
+                "find: another request id, no id, or another kind is not it (the island panel answers only the request it showed)");
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }

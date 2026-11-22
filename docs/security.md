@@ -118,7 +118,8 @@ scanning with push protection is on, and a release is built only from a commit o
   background app host takes a new port each time it starts and answers only signed requests
   ([security model](spec/02-03-security-model.md)).
 - **Approvals follow you.** A locked phone asks you to unlock before it allows anything, and, by default, the first Allow
-  in a chat asks for your fingerprint or screen lock.
+  in a chat asks for your fingerprint or screen lock. An Allow from a notification or from the panel at the top of the
+  screen asks every time, and the app sends it only for that one request, checked again against what still waits.
 - **Updates are checked.** Release APKs are built by the public workflow in `.github/workflows/release.yml` and signed
   with a key held as a repository secret. Android asks you to confirm each install. A first download can be checked
   too: the signing certificate's fingerprint is in the README and [SECURITY.md](../SECURITY.md), and each release after

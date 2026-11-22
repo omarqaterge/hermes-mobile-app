@@ -2190,8 +2190,8 @@ public class MainActivity extends Activity {
             stt.addFromFiles(uris);
             return;
         }
-        if (req == ApprovalLock.REQ) {
-            ApprovalLock.onResult(result);
+        if (ApprovalLock.isOurs(req)) {
+            ApprovalLock.onResult(this, req, result);
             return;
         }
         if (req == REQ_DEVTOOLS) {

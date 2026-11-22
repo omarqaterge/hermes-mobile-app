@@ -1,23 +1,43 @@
 # The island panel (what opens from the status chip)
 
-**State** (2026-11-22): part 1 of 3 built, in review (branch `island-panel-part1`, against `redesign`). The question
-card and its Answer button open the panel on its Question state: choices, typed answer, Open chat, sending, sent,
-failed and closed elsewhere; opening and closing motion, dragging, reduced motion. `AnswerBox` is gone. Seen on
-Android 15 and Android 8.0 emulators; not yet on a phone.
+**State** (2026-11-22): parts 1 and 2 of 3 built. Part 1 (the Question state, `AnswerBox` removed) is merged into
+`redesign`. Part 2, the Permission state, is in review (branch `island-panel-part2`, against `redesign`): the
+permission card's body and, while the fingerprint is needed, its Allow buttons open the panel on that request, with
+the timer ring, Deny / Allow once / Allow this session, the fingerprint asked every time through
+`ApprovalLock.askOnce`, a one-use grant the service checks (`approveFromPanel`), Sending then Allowed or Denied, a
+failed send, running out, answered elsewhere, "N more waiting" and moving on to the next request, and phone-data
+requests with no Allow. The owner's decision (the card's Allow opens the panel and asks there) is recorded in
+`docs/decisions/approval-needs-fingerprint.md`. Seen on Android 15 and Android 8.0 emulators without Hermes, so the
+answer was never seen arriving and "Allowed"/"Denied" were not seen on screen.
 
-**Next:** the phone checks in `docs/manual-tests.md` ("The island panel"), including the two carried over from the
-answer box (the locked phone; choices over 80 characters). Then part 2 (the Permission state; the owner's point about
-the card's Allow for an unconfirmed chat is still open) and part 3 (Progress, Done, the links between states). All
-three change `HermesService.java`, so they run one after the other.
+**Review round 1 (2026-11-22):** the security review's findings are fixed on the branch: the screen-lock result is
+taken only by the activity whose prompt is up, with that prompt's own request code, and a cancelled prompt's screen is
+closed; two requests of one chat no longer share a notification button; with animations off the Permission state
+still starts; no Allow past the deadline; the card's choice is used once; on Android 10+ the answer buttons also
+ignore touches while another app covers part of the window.
 
-**Known limits:** the service keeps the open question in memory, so a restart (an app update) drops the chip and the
-panel until the next question. In part 1 a permission request arriving while the panel is open does not change it
-(part 3 does). A failed answer leaves the question off the chip, as for the card's own buttons: the service takes
-it off when it hands the answer on and posts its own "Couldn't send your answer" card.
+**Design round (2026-11-22):** a send that finds the request gone or run out shows that without the Sending motion;
+"N more waiting" is part of the opening stagger and "Allow this session" arrives with the buttons; the expired Open
+chat fades in on the out curve; the ring's pulse and resize, and each view's fade, replace the previous one; a failed
+Deny on phone data or an unreadable request shows no second Open chat; an empty plain line leaves no gap; the grow
+bounce stays inside the card. The panel follows every waiting request whatever "When Hermux needs me" says. Back from
+the Android 8 PIN screen its keyboard is put away once the panel has focus.
 
-**For part 2:** `IslandPanel.onStop` ends the panel (`finishNow`) whenever it is hidden. The fingerprint or PIN
-screen `ApprovalLock` brings up hides it too, so as written the panel would close while the user confirms an Allow.
-Part 2 must keep the panel through that screen (skip `finishNow` while its own credential request is up).
+**Review round 2 (2026-11-22):** the partly-covered rule (Android 10+) is only on Allow once and Allow this session,
+and only while the fingerprint is not asked; Deny, Review in Hermux and Open chat keep only the usual overlay rule. A
+recreated panel never asks for the card's choice again; Allow this session's prompt says "for this session"; the panel
+ends its prompt before its teardown; screen-lock codes are counted on their own. A fade stops a row's opening entrance,
+and behind its own prompt every motion ends where it was going (Ticker.finishAll), so the pulse and later fades play.
+
+**Next:** the phone checks in `docs/manual-tests.md` ("The island panel"), for parts 1 and 2. Then part 3 (Progress,
+Done, the links between states). It changes `HermesService.java` too, so it waits for part 2.
+
+**Known limits:** the service keeps waiting requests in memory, so a restart (an app update) drops them from the chip
+and the panel. A failed answer leaves the question off the chip, as for the card's own buttons. The service's own
+"Couldn't send your answer" card drops down over the panel when a send fails (as it did for the card's buttons). The
+panel follows waiting requests even with "When Hermux needs me" off (the chip still respects it). Home from the PIN
+screen (Android 8-10, or the PIN fallback) leaves the panel and that screen in the background until the request's
+deadline, when both go; nothing is sent.
 
 **Needs a real phone:** yes. The motion and its frame rate, the blur's cost, the keyboard, TalkBack and the
 locked-phone path can only be judged on one.

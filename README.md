@@ -143,6 +143,8 @@ against a SHA-256 inside the signed APK.
 ### What we are doing now
 
 - **Checking the newest protections on real phones,** and on Android 9 to 14, which are not yet tested.
+- **Approvals from the top of the screen:** the new panel asks for your fingerprint or screen lock every time before it
+  allows a command, never allows a read of your phone's data, and its answer counts only for the request you saw.
 - **Tightening release signing:** the signing password is moving from the build script to a CI secret.
 - **Working towards an offline local model,** so that nothing has to leave the phone at all.
 - **Keeping the written [security model](docs/spec/02-03-security-model.md) current** with every change. CI fails a

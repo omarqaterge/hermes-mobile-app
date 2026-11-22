@@ -89,6 +89,19 @@ final class PendingAsk<T> {
         return null;
     }
 
+    /** Every entry of this kind waiting, the oldest first (a copy). */
+    List<Entry<T>> all(String kind) {
+        List<Entry<T>> out = new ArrayList<>();
+        for (Entry<T> o : list) if (o.kind.equals(kind)) out.add(o);
+        return out;
+    }
+
+    /** This chat's entry of this kind with this request id, or null. */
+    Entry<T> find(String kind, String session, String id) {
+        for (Entry<T> o : list) if (o.kind.equals(kind) && o.session.equals(s(session)) && o.id.equals(s(id))) return o;
+        return null;
+    }
+
     /** How many of this kind are waiting. */
     int count(String kind) {
         int n = 0;

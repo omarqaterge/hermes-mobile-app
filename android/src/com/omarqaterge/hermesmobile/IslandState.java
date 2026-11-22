@@ -28,6 +28,53 @@ final class IslandState {
     /** At most this many choices are shown (the plugin sends five at most). */
     static final int MAX_CHOICES = 5;
 
+    // ── on-screen words of the Permission state (design 5.1) ──
+    static final String RUN_COMMAND = "Run a command?";
+    static final String READ_PHONE = "Let Hermux read your phone?";
+    static final String UNREADABLE = "Unreadable phone data request";
+    static final String DENY = "Deny";
+    static final String ALLOW_ONCE = "Allow once";
+    static final String ALLOW_SESSION = "Allow this session";
+    static final String REVIEW = "Review in Hermux";
+    static final String SENDING_LABEL = "Sending\u2026";
+    static final String ALLOWED = "Allowed";
+    static final String ALLOWED_SESSION = "Allowed for this session";
+    static final String DENIED = "Denied";
+    static final String APPROVAL_FAILED = "Couldn't send your answer. Try again, or open the chat.";
+    static final String REQUEST_EXPIRED = "This request expired";
+    static final String ANSWERED_ELSEWHERE = "Answered in the app";
+    /** The body when Hermux said nothing about the request (as the notification says). */
+    static final String A_COMMAND = "A command";
+    /** At most this many waiting requests are carried in a snapshot (the panel shows one and counts the rest). */
+    static final int MAX_APPROVALS = 16;
+    /** The timer is spoken ("N seconds left") when this many seconds are left. */
+    static final int[] SPOKEN_SECONDS = {30, 10, 5};
+    /** A request that vanishes this close to its deadline ran out of time (Hermes's own clock and ours differ a
+     *  little); earlier it was answered somewhere else. */
+    static final long EXPIRY_SLACK_MS = 1500;
+
+    /** "1 more waiting" / "N more waiting", or "" for none. */
+    static String moreWaiting(int n) {
+        return n <= 0 ? "" : n + " more waiting";
+    }
+
+    /** What TalkBack says for the timer. */
+    static String secondsLeft(int n) {
+        return n == 1 ? "1 second left" : n + " seconds left";
+    }
+
+    /** The whole seconds the timer shows for {@code leftMs} (it reads 1 until the very end, then 0). */
+    static int seconds(long leftMs) {
+        return leftMs <= 0 ? 0 : (int) ((leftMs + 999) / 1000);
+    }
+
+    /** Whether the timer, going from {@code before} to {@code now} whole seconds, says the time left out loud. */
+    static boolean speaks(int before, int now) {
+        if (now >= before) return false;
+        for (int s : SPOKEN_SECONDS) if (now <= s && before > s) return true;
+        return false;
+    }
+
     /** The state shown, by the chip's order. Done only counts when nothing is working (as on the chip). */
     static String pick(boolean approval, boolean ask, boolean working, boolean done) {
         if (approval) return PERMISSION;
@@ -74,6 +121,61 @@ final class IslandState {
         }
     }
 
+    /** One permission request waiting, as the panel shows it (never its key: the service answers with its own copy of
+     *  the request, looked up again by chat and request id). */
+    static final class Approval {
+        final String session, request, chat, what, command;
+        /** "Allow this session" is offered; a phone-data read (never allowed from the panel), and one whose text could
+         *  not be read (no Allow anywhere). */
+        final boolean allowSession, phoneData, unreadable;
+        /** When it stops waiting (epoch ms) and how long it waits in all (ms). */
+        final long deadline, total;
+
+        Approval(String session, String request, String chat, String what, String command, String body, boolean allowSession,
+                 boolean phoneData, boolean unreadable, long deadline, long total) {
+            this.session = session == null ? "" : session;
+            this.request = request == null ? "" : request;
+            this.chat = chat == null || chat.isEmpty() ? HERMUX : chat;
+            String w = what == null ? "" : what.trim(), c = command == null ? "" : command.trim();
+            this.phoneData = phoneData || unreadable;
+            this.unreadable = unreadable;
+            if (this.phoneData) c = ""; // a phone-data read shows the app's own wording, never a command
+            if (w.isEmpty() && c.isEmpty()) w = body == null || body.trim().isEmpty() ? A_COMMAND : body.trim();
+            this.what = capital(w);
+            this.command = c;
+            this.allowSession = allowSession && !this.phoneData;
+            this.deadline = deadline;
+            this.total = Math.max(1000, total);
+        }
+
+        /** The headline: a command, a phone-data read, or one that could not be read. */
+        String headline() {
+            return unreadable ? UNREADABLE : phoneData ? READ_PHONE : RUN_COMMAND;
+        }
+
+        /** The panel may send Allow for it (never a phone-data read). */
+        boolean allowable() {
+            return !phoneData;
+        }
+
+        /** The same request: same chat, same request id. */
+        boolean same(Approval o) {
+            return o != null && session.equals(o.session) && request.equals(o.request);
+        }
+
+        /** The share of its time left at {@code now} (1 = full, 0 = run out). */
+        double left(long now) {
+            return Math.max(0, Math.min(1, (deadline - now) / (double) total));
+        }
+    }
+
+    /** The first letter capitalised (the plain-words line). */
+    static String capital(String s) {
+        if (s == null || s.isEmpty()) return "";
+        int n = Character.charCount(s.codePointAt(0));
+        return s.substring(0, n).toUpperCase(java.util.Locale.ROOT) + s.substring(n);
+    }
+
     /** The last answer the service sent, or tried to: which request, what came of it, a short reason, when. */
     static final class Outcome {
         static final String ALLOWED = "allowed", DENIED = "denied", SENT = "sent", FAILED = "failed", STOPPED = "stopped";
@@ -92,6 +194,11 @@ final class IslandState {
         /** Whether this is the outcome of an answer of this kind for this chat, sent at {@code since} or later. */
         boolean answers(String kind, String session, long since) {
             return this.kind.equals(kind) && this.session.equals(session == null ? "" : session) && at >= since;
+        }
+
+        /** The same, for this very request. */
+        boolean answers(String kind, String session, String request, long since) {
+            return answers(kind, session, since) && this.request.equals(request == null ? "" : request);
         }
     }
 
@@ -119,16 +226,26 @@ final class IslandState {
     final Outcome outcome;
     /** The last question that expired, or null. */
     final Expired expired;
+    /** Every permission request waiting, the oldest first (the chip shows the first), at most MAX_APPROVALS. Carried
+     *  whatever "When Hermux needs me" says: a panel the user opened follows the live request. */
+    final List<Approval> approvals;
 
     IslandState(String kind, Ask ask, Outcome outcome) {
         this(kind, ask, outcome, null);
     }
 
     IslandState(String kind, Ask ask, Outcome outcome, Expired expired) {
+        this(kind, ask, outcome, expired, null);
+    }
+
+    IslandState(String kind, Ask ask, Outcome outcome, Expired expired, List<Approval> approvals) {
         this.kind = kind == null ? NONE : kind;
         this.ask = ask;
         this.outcome = outcome;
         this.expired = expired;
+        List<Approval> a = new ArrayList<>();
+        if (approvals != null) for (Approval x : approvals) if (x != null && a.size() < MAX_APPROVALS) a.add(x);
+        this.approvals = Collections.unmodifiableList(a);
     }
 
     /** Where a question on the panel stands. EXPIRED is CLOSED because it ran out of time, which the panel marks with
@@ -153,6 +270,59 @@ final class IslandState {
         Ask live = now == null ? null : now.ask;
         if (live != null && live.single && live.same(shown)) return OPEN;
         return now != null && now.expired != null && now.expired.is(shown) ? EXPIRED : CLOSED;
+    }
+
+    /** Where a permission request on the panel stands (besides OPEN, SENDING and the outcomes ALLOWED, DENIED and
+     *  FAILED): GONE when it was answered somewhere else. EXPIRED is shared with the Question state. */
+    static final String GONE = "gone";
+
+    /** The live request that is {@code shown}, or null when it no longer waits. */
+    Approval live(Approval shown) {
+        if (shown == null) return null;
+        for (Approval a : approvals) if (a.same(shown)) return a;
+        return null;
+    }
+
+    /** The request the panel shows: the one tapped (chat and request id) while it still waits, else the oldest. */
+    Approval approvalToShow(String session, String request) {
+        String s = session == null ? "" : session, r = request == null ? "" : request;
+        if (!s.isEmpty()) for (Approval a : approvals) if (a.session.equals(s) && (r.isEmpty() || a.request.equals(r))) return a;
+        return approvals.isEmpty() ? null : approvals.get(0);
+    }
+
+    /** How many other requests wait besides {@code shown}. */
+    int othersWaiting(Approval shown) {
+        int n = 0;
+        for (Approval a : approvals) if (!a.same(shown)) n++;
+        return n;
+    }
+
+    /** The next request to move on to after {@code done} was answered, or null. */
+    Approval next(Approval done) {
+        for (Approval a : approvals) if (!a.same(done)) return a;
+        return null;
+    }
+
+    /**
+     * The fate of the request {@code shown} at {@code now} (epoch ms), given whether the panel sent an answer (at
+     * {@code sentAt}) and the live state {@code st}: SENDING until the service records the outcome for this very
+     * request (Outcome.ALLOWED, DENIED or FAILED are returned as they are); otherwise OPEN while it still waits and
+     * time is left, EXPIRED once its time is up (or it vanished within EXPIRY_SLACK_MS of its deadline), and GONE when
+     * it vanished earlier with no answer of ours: it was answered somewhere else.
+     */
+    static String approvalFate(Approval shown, boolean sent, long sentAt, IslandState st, long now) {
+        if (shown == null) return GONE;
+        if (sent) {
+            Outcome o = st == null ? null : st.outcome;
+            if (o != null && o.answers(PERMISSION, shown.session, shown.request, sentAt)) {
+                if (Outcome.ALLOWED.equals(o.result) || Outcome.DENIED.equals(o.result)) return o.result;
+                return Outcome.FAILED;
+            }
+            return SENDING;
+        }
+        boolean waiting = st != null && st.live(shown) != null;
+        if (waiting) return now >= shown.deadline ? EXPIRED : OPEN;
+        return now >= shown.deadline - EXPIRY_SLACK_MS ? EXPIRED : GONE;
     }
 
     /** The question the panel opens on: the live one, when it is a single question. */
