@@ -214,6 +214,7 @@ module.exports = async t => {
     const sent = await haptics()
     await p.getByText('Slow work done.').waitFor({ timeout: 8000 })
     await stop(p).waitFor({ state: 'detached', timeout: 8000 }).catch(() => {})
+    // A fixed wait on purpose: a second tick would come right after the turn's end; none may arrive in it.
     await sleep(300)
     check((await haptics()) - sent === 1, `agent motion: a turn of three steps gives one tick when it finishes (${(await haptics()) - sent})`)
     await p.evaluate(() => window.hermesLockView(true))
@@ -224,6 +225,7 @@ module.exports = async t => {
     const afterSend = await haptics()
     await stop(p).waitFor({ timeout: 3000 }).catch(() => {})
     await stop(p).waitFor({ state: 'detached', timeout: 8000 }).catch(() => {})
+    // A fixed wait on purpose: no tick may arrive in it, even late.
     await sleep(300)
     check((await haptics()) === afterSend && afterSend - before <= 1, `agent motion: no tick for a turn that ends over the lock screen (${before} → ${afterSend} → ${await haptics()})`)
     await p.evaluate(() => window.hermesLockView(false))
@@ -250,6 +252,7 @@ module.exports = async t => {
     })
     await send(p, 'bench stream 9000 25')
     await p.locator('.msg.assistant.streaming').waitFor({ timeout: 8000 })
+    // A fixed wait on purpose: let the reply's first batches draw before sampling starts.
     await sleep(300)
     // How often each earlier message's component draws, sampled every frame (a new props object on its React fiber is
     // one more render); and how often the streaming reply draws, to show the sampling sees renders.
@@ -275,12 +278,14 @@ module.exports = async t => {
     await p.waitForFunction(() => document.querySelector('.msg.assistant.streaming')?.getBoundingClientRect().height > 1400, null, { timeout: 20000 }).catch(() => {})
     const chat = p.locator('.chat')
     await chat.evaluate(el => { el.scrollTop = Math.max(0, el.scrollTop - 700) })
+    // A fixed wait on purpose: the scroll settles before the reader's place is noted.
     await sleep(200)
     const read0 = await p.evaluate(() => {
       const el = document.querySelector('.chat')
       const h = document.querySelector('.msg.assistant.streaming h2, .msg.assistant.streaming p')
       return { top: el.scrollTop, line: h ? h.getBoundingClientRect().top : null }
     })
+    // A fixed wait on purpose: the place must hold while the reply streams on for this long.
     await sleep(1500)
     const read1 = await p.evaluate(() => {
       const el = document.querySelector('.chat')
@@ -341,6 +346,7 @@ module.exports = async t => {
     check(offLight && /\bworking\b/.test(offLight.cls) && !offLight.turning, `agent motion, Off: the working state still shows, as a still gold edge (${JSON.stringify(offLight)})`)
     await p.getByText('Slow work done.').waitFor({ timeout: 8000 })
     await stop(p).waitFor({ state: 'detached', timeout: 8000 }).catch(() => {})
+    // A fixed wait on purpose: the frames recorder takes the turn's last frames before it stops.
     await sleep(200)
     const mid = await p.evaluate(() => ((window.__mid.run = false), window.__mid))
     check(mid.frames > 20 && mid.worst === 0, `agent motion, Off: no element was mid-animation in any frame of the turn (${mid.frames} frames, ${JSON.stringify(mid.what)})`)
