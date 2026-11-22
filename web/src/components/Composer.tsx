@@ -22,6 +22,9 @@ import { clearQuotes, removeQuote, setQuotes, useQuotes, withQuotes } from '../q
 import { Icon } from './icons'
 import { LastSpeed, StatusLine, TrayBody } from './Tray'
 import { trayFirstSend, trayForChat, useTray } from '../tray'
+import { composerLight, noteSent } from '../agentmotion'
+import { EdgeLight } from './AgentMotion'
+import { bgForChat } from '../bgapp'
 
 const EMPTY: Attachment[] = []
 
@@ -100,6 +103,9 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
   const [attaching, setAttaching] = useState(0)
   const running = useStore(s => s.active?.running ?? false)
   const subAgentsRun = useSubAgentsRun()
+  const waiting = useStore(s => s.requests.length > 0)
+  // The background-app card above carries the travelling light while it shows; the text box's then stands still.
+  const bgHere = useStore(s => bgForChat(s.bg, s.active ? s.active.storedId : s.opening) != null)
   const model = useStore(s => s.active?.info.model ?? s.defaultModel)
   const effort = useStore(s => s.active?.info.reasoning_effort || s.defaultEffort)
   const attachments = useStore(s => s.active?.attachments ?? EMPTY)
@@ -262,6 +268,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
     setBusy(true)
     if (fromBox) setText('')
     if (fromBox && qs.length) clearQuotes()
+    noteSent() // the message lifts out of the composer as it lands in the chat (agentmotion.ts)
     try {
       await sendPrompt(full)
     } catch (err) {
@@ -442,8 +449,9 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
                 <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z" />
                 </svg>
-                <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
-                {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
+                {/* Keyed by their values: a new model or level arrives softly (agent-motion.css). */}
+                <span className="model-chip-name" key={model || ''}>{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
+                {effort && model ? <span className="model-chip-effort" key={effort}>{EFFORT_SHORT[effort] ?? effort}</span> : null}
               </button>
               <AutoButton />
               <LastSpeed />
@@ -453,6 +461,7 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
         </TrayBody>
       )}
       <div className={`composer${live !== 'off' ? ' composer-hidden' : ''}`}>
+        <EdgeLight state={composerLight(running, subAgentsRun, waiting)} still={bgHere} />
         <button className="icon-btn" aria-label="Add" onClick={() => { haptic(); setAttachMenu(true) }} disabled={offline}>
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />

@@ -8,6 +8,7 @@ import { useBackHandler } from '../backstack'
 import { lockView } from '../lockview'
 import { getState, toast, useStore } from '../store'
 import { useSheetDrag } from './useSheetDrag'
+import { EdgeLight } from './AgentMotion'
 import { Icon } from './icons'
 
 const THUMB_W = 200
@@ -45,6 +46,7 @@ export function BgApp() {
   return (
     <>
       <button className="bg-card" onClick={() => setOpen(true)} aria-label={`Using ${bg.label}. Open live view`}>
+        <EdgeLight state="working" />
         <span className="bg-thumb">{frame ? <img src={frame} alt="" draggable={false} /> : <span className="bg-thumb-empty"><Icon n="phone" /></span>}</span>
         <span className="bg-card-text">
           <span className="bg-card-title">Using {bg.label}</span>

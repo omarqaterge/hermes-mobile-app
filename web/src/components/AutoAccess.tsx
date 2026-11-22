@@ -57,7 +57,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
   const label = mode === 'auto' ? 'Auto access is on' : mode === 'full' ? 'Full access is on' : 'Auto is off'
   return (
     <>
-      <button className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermux may do without asking`} disabled={offline || !settled} onClick={() => setOpen(true)}>
+      <button key={mode} className={`auto-btn ${mode}`} aria-label={`${label}. Change how much Hermux may do without asking`} disabled={offline || !settled} onClick={() => setOpen(true)}>
         {compact ? <Icon n={mode === 'full' ? 'zap' : 'shield'} /> : mode === 'full' ? <><Icon n="zap" /> Full access</> : 'Auto'}
       </button>
       {open && <PickerSheet title="Auto: run without asking" options={OPTIONS} value={mode} onPick={v => void pick(v)} onClose={() => setOpen(false)} />}
