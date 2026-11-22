@@ -58,6 +58,11 @@ public class PendingAskTest {
         p.arrived("approval", "B", "r2", "B2", 9000);
         check(!p.expire(3999, 3000), "within the grace period nothing expires");
         check(p.expire(4001, 3000) && p.count("approval") == 1 && "B2".equals(who(p, "approval")), "past deadline + grace only the late one is dropped");
+        p.arrived("ask", "C", "", "C1", 5000);
+        p.arrived("ask", "D", "", "D1", 6000);
+        java.util.List<PendingAsk.Entry<String>> gone = p.expired(5500, 0);
+        check(gone.size() == 1 && "C1".equals(gone.get(0).payload) && "ask".equals(gone.get(0).kind) && "C".equals(gone.get(0).session)
+                && p.count("ask") == 1 && "D1".equals(who(p, "ask")), "expired says which one it dropped (the island panel buzzes for that question)");
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }

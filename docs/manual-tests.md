@@ -289,15 +289,36 @@ YouTube was seen playing in an Android 15 emulator's WebView (Chrome 124) throug
 - [ ] **The other sites on a phone.** Try one public video each from Vimeo, Dailymotion, Streamable and Loom. Vimeo answered "Unable to play video" on the emulator's WebView, with or without the shell's page and sandbox; Dailymotion answered "Forbidden" for the one test address tried. Streamable and Loom were not tried. If a site refuses every WebView, take it out of `embedOf` so its links stay links.
 - [ ] **Open.** The card's Open hands the address to the site's app or the browser, and stops the player.
 
-## Answer field on the question chip
+## The island panel
 
-- [x] (2026-11-04, 0.9.15-chiptest, Android 16: with three choices, not again with none; not from the shade.) With the
-      app in the background, have Hermux ask a question with no choices, then one with three choices. Expand the chip
-      and tap it. Expected: a box with the question, its choices and a field; a typed answer and a choice each reach
-      the chat and the chip goes back to the status. Back leaves the question open. Same from the shade.
-- [ ] Have Hermux ask a question with choices over 80 characters, after Hermes has restarted on the new plugin.
-      Expected: the box shows them whole.
-- [ ] Same with the phone locked. Expected: the unlock comes first, then the box.
+Seen on an Android 15 emulator (2026-11-22, a test build of this branch): the question card's tap opens the panel
+from the top centre, the pill widening first and then dropping; a choice and a typed answer each reach the page (with
+the page's answer stubbed) and close the panel after the check; a failed send shows the red line and the gold Open
+chat, which opens the chat with the text; a question cleared while open says "This question is closed" and closes;
+Back, a tap outside and a fast drag up close it and leave the question on the chip; a short drag springs back; with
+animations off it only fades. On an Android 8.0 emulator: the panel's layout under the status bar, the dim without
+blur, the keyboard, a failed typed send and Back. Not yet on a phone.
+
+- [ ] **On a phone, from the island.** A question answered by a choice, by typed text and through Open chat each
+      reach Hermes; the chip goes back to the status. Back, a tap outside and a drag up each close it and leave the
+      question open.
+- [ ] **Open and close 20 times over different apps.** No dropped frames, no flash of a system animation, the pill
+      starts at the top centre where the island is.
+- [ ] **Themes and sizes.** Dark and light system theme, the largest font size, landscape, a tablet or a wide window:
+      the header and the field stay in view, the rest scrolls.
+- [ ] **Locked phone.** Tap the question card on the lock screen. Expected: the unlock comes first, then the panel.
+      (Carried over from the answer box.)
+- [ ] **Long choices.** Have Hermux ask a question with choices over 80 characters, after Hermes has restarted on the
+      current plugin. Expected: the panel shows them whole. (Carried over from the answer box.)
+- [ ] **The keyboard.** With choices it stays down until the field is tapped; without, it opens by itself; Send stays
+      visible above it.
+- [ ] **TalkBack.** Every control is named; "Sent" is spoken after an answer, the closed headline when the question
+      closes.
+- [ ] **A phone without a chip** (Android below 16): the same panel from the pinned notification's question.
+- [ ] **Battery.** Nothing moves once the panel is hidden; the blur behind it on Android 12+ does not stutter.
+- [ ] **Animations off.** With Remove animations on, the panel only fades in and out.
+- [ ] **Running out.** Leave the panel open on a question until it expires (10 minutes). Expected: the reject buzz,
+      "This question is closed", and it closes. Answered in the app instead: the same headline with no buzz.
 
 ## Phone data for the agent (Settings → Access & privacy → Phone data)
 
