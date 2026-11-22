@@ -86,6 +86,9 @@ public class IslandMotionTest {
         check(IslandMotion.dragCloses(-10, -801) && !IslandMotion.dragCloses(-10, -799), "a flick faster than 800 dp/s up: it closes");
         check(!IslandMotion.dragCloses(20, 2000), "down never closes");
         check(IslandMotion.reduced(220) == 120 && IslandMotion.reduced(90) == 90, "reduced motion: at most 120 ms");
+        check(IslandMotion.STATE_TOUCH_HOLD_MS >= IslandMotion.STATE_IN_DELAY_MS + IslandMotion.STATE_IN_MS
+                && IslandMotion.STATE_TOUCH_HOLD_MS > IslandMotion.reduced(IslandMotion.STATE_IN_MS),
+                "a change's new content takes touches only once its fade-in ends (" + IslandMotion.STATE_TOUCH_HOLD_MS + " ms), a pause with reduced motion too");
         check(IslandMotion.PULSE_TIMES == 3 && IslandMotion.PULSE_MS == 1600 && IslandMotion.PULSE_SCALE == 1.55f,
                 "the Question badge pulses three times, 1.6 s each, to 155 %");
         check(IslandMotion.ANSWER_HOLD_MS == 850 && IslandMotion.CLOSED_HOLD_MS == 900 && IslandMotion.DIMMED == 0.32f,

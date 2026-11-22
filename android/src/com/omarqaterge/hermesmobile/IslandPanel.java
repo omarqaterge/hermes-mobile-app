@@ -357,7 +357,8 @@ public class IslandPanel extends Activity {
         float y = gTop + gDy - fTop;
         for (int i = 0; i < card.getChildCount(); i++) {
             View c = card.getChildAt(i);
-            c.setTranslationY(y + (c == inner ? innerDy : 0));
+            Float leaving = leavingDy.get(c);
+            c.setTranslationY(y + (c == inner ? innerDy : leaving != null ? leaving : 0));
         }
     }
 
@@ -959,11 +960,15 @@ public class IslandPanel extends Activity {
         else close();
     }
 
-    /** Puts {@code now} in place of the content on screen: the old one takes no touch and fades out while shrinking
-     *  to 98 %; the new one fades in from 6 dp lower; the height follows on resize. */
     /** The incoming content's fade-in of the latest change of state, still running or waiting for its delay. */
     IslandViews.Ticker.Handle swapIn;
+    /** Content on its way out, with the offset it had when it started leaving (a change during a fade-in): applyGeo
+     *  keeps it there, so it doesn't jump up. */
+    final java.util.HashMap<View, Float> leavingDy = new java.util.HashMap<>();
 
+    /** Puts {@code now} in place of the content on screen: the old one takes no touch and fades out while shrinking
+     *  to 98 %; the new one fades in from 6 dp lower and takes no touch until it has (STATE_TOUCH_HOLD_MS, with reduced
+     *  motion too); the height follows on resize. */
     void swapInner(IslandViews.Fit now) {
         // A change right after another: the earlier content's fade-in stops where it is (it would raise the opacity
         // of what is now leaving, and move the new content), and it leaves from there.
@@ -977,6 +982,7 @@ public class IslandPanel extends Activity {
         long delay = reduced ? 0 : IslandMotion.STATE_IN_DELAY_MS;
         float a0 = old.getAlpha();
         old.block(); // no touch reaches the old choices while they fade
+        leavingDy.put(old, innerDy); // it leaves from where it is, even mid-way through its own fade-in
         ticker.tween(0, outMs, IslandMotion.LINEAR, v -> {
             old.setAlpha((float) (a0 * (1 - v)));
             if (!reduced) {
@@ -984,8 +990,13 @@ public class IslandPanel extends Activity {
                 old.setScaleX(s);
                 old.setScaleY(s);
             }
-        }, () -> card.removeView(old));
+        }, () -> {
+            card.removeView(old);
+            leavingDy.remove(old);
+        });
         now.setAlpha(0);
+        // No touch on the new content before it is there: a tap meant for Open chat must not land on Allow once.
+        now.holdTouches(IslandMotion.STATE_TOUCH_HOLD_MS);
         innerDy = reduced ? 0 : dp(IslandMotion.STATE_IN_DY);
         applyGeo();
         IslandViews.Ticker.Handle[] me = {null};

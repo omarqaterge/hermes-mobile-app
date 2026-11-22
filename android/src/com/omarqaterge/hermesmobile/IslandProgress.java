@@ -51,6 +51,8 @@ final class IslandProgress {
     IslandViews.TaskBar bar;
     IslandViews.Sweep sweep;
     LinearLayout body, others, appRow;
+    /** Progress's scrolled part: the body, the app row and the failure line. */
+    IslandViews.MaxScroll scroll;
     ImageView picture;
     int pictureNow;
     IslandViews.ButtonRow row;
@@ -140,17 +142,18 @@ final class IslandProgress {
         scrolled.addView(appRow, p.margins(14, 0));
         setApp(a, false);
         if (appRow.getVisibility() == View.VISIBLE) p.rows.add(appRow);
-        IslandViews.MaxScroll scroll = new IslandViews.MaxScroll(p);
+
+        // The failure line, last in the scrolled part (just above the buttons), shown only when the stop failed: in
+        // the scroll, so a long line at a large font can't push Stop and Open chat off the panel.
+        errLine = IslandViews.text(p, 14, 20, 400, IslandViews.RED_TEXT);
+        errLine.setVisibility(View.GONE);
+        scrolled.addView(errLine, p.margins(14, 0));
+        scroll = new IslandViews.MaxScroll(p);
         scroll.addView(scrolled);
         LinearLayout.LayoutParams slp = p.margins(14 - swellRoom, 0);
         slp.bottomMargin = -sr;
         col.addView(scroll, slp);
         col.flex.add(scroll);
-
-        // The failure line, above the buttons, shown only when the stop failed.
-        errLine = IslandViews.text(p, 14, 20, 400, IslandViews.RED_TEXT);
-        errLine.setVisibility(View.GONE);
-        col.addView(errLine, p.margins(14, 0));
 
         // Stop (red wash, with its square) and Open chat (quiet).
         row = new IslandViews.ButtonRow(p);
@@ -379,10 +382,10 @@ final class IslandProgress {
         bd.addView(st, p.margins(d.reply.isEmpty() ? 0 : 8, 0));
         boolean hasBody = !d.reply.isEmpty() || !stats.isEmpty();
         if (hasBody) { // it scrolls when the panel can't fit it, so the header and Open chat stay put
-            IslandViews.MaxScroll scroll = new IslandViews.MaxScroll(p);
-            scroll.addView(bd);
-            col.addView(scroll, p.margins(14, 0));
-            col.flex.add(scroll);
+            IslandViews.MaxScroll bodyScroll = new IslandViews.MaxScroll(p);
+            bodyScroll.addView(bd);
+            col.addView(bodyScroll, p.margins(14, 0));
+            col.flex.add(bodyScroll);
             p.rows.add(bd);
         }
         row = new IslandViews.ButtonRow(p);
@@ -636,6 +639,7 @@ final class IslandProgress {
         fadeView(open, 1, IslandMotion.OTHERS_OUT_MS);
         errLine.setText(IslandState.STOP_FAILED);
         errLine.setVisibility(View.VISIBLE);
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN)); // the line is last in the scrolled part: bring it in view
         p.arrive(errLine);
         if (shown != null) setHeadline(shown.headline);
         p.card.announceForAccessibility(IslandState.STOP_FAILED);

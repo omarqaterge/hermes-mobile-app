@@ -1247,6 +1247,21 @@ final class IslandViews {
             return canScrollVertically(1) || canScrollVertically(-1);
         }
 
+        /** While its content is taller than it, the content is cut at its edges: it doesn't clip to its padding (a
+         *  task bar's swell, a choice arriving from above may show past them while all fits), and the panel's column
+         *  doesn't clip its children, so without this the hidden part would draw over the buttons below. */
+        @Override
+        protected void dispatchDraw(Canvas c) {
+            if (!scrolls()) {
+                super.dispatchDraw(c);
+                return;
+            }
+            int at = c.save();
+            c.clipRect(getScrollX(), getScrollY(), getScrollX() + getWidth(), getScrollY() + getHeight());
+            super.dispatchDraw(c);
+            c.restoreToCount(at);
+        }
+
         @Override
         protected void onMeasure(int w, int h) {
             super.onMeasure(w, max == Integer.MAX_VALUE ? h : MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST));
@@ -1279,8 +1294,18 @@ final class IslandViews {
         }
 
         /** Content on its way out (a change of state): it takes no touch, so a tap in its last 100 ms can't answer the
-         *  new question with the old choice; the touch goes on to what lies under it (the new content, the panel). */
+         *  new question with the old choice; the touch goes on to what lies under it (the panel). */
         boolean blocked;
+        /** Content on its way in (a change of state): it takes no touch until it has faded in, so a tap meant for what
+         *  was on screen can't land on a button that has just appeared under the finger (Allow once where Open chat
+         *  was). The touch goes on to the panel, which only moves on a drag. */
+        boolean waiting;
+
+        /** Takes no touch for {@code ms} from now (see {@link #waiting}). */
+        void holdTouches(long ms) {
+            waiting = true;
+            postDelayed(() -> waiting = false, ms);
+        }
 
         /** Stops this content taking touches: a touch already on one of its buttons is cancelled, and nothing in it can
          *  take the focus or be read out. */
@@ -1299,7 +1324,7 @@ final class IslandViews {
 
         @Override
         public boolean dispatchTouchEvent(MotionEvent e) {
-            return !blocked && super.dispatchTouchEvent(e);
+            return !blocked && !waiting && super.dispatchTouchEvent(e);
         }
 
         @Override

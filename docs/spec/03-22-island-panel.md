@@ -133,8 +133,10 @@ recreates from its saved intent does not ask for the card's choice again.
 | App in use | While Hermux uses an app for this chat: its latest picture (72 dp, corners 12 dp, the one the working card shows), "Using <app>", and a quiet "Watch" button (92 dp wide, wider when a large font needs it) that opens the chat with the live viewer (`MainActivity.EXTRA_BG_VIEW`, 3.10). The panel never shows over the lock screen, so neither does the picture. |
 | Buttons | "Stop" with a small square (red) on the left and "Open chat" (quiet) on the right, split 36 % / 64 %. Both ignore a touch through another app's window. |
 
-When the panel can't fit everything (landscape, a large font), the body and the app row scroll together and the header
-and the buttons stay on screen; the scrolled part keeps room for the task bar's swell.
+When the panel can't fit everything (landscape, a large font), the body, the app row and the stop failure line scroll
+together and the header and the buttons stay on screen; the scrolled part keeps room for the task bar's swell. While
+it scrolls, its content is cut at its edges (`MaxScroll` clips in `dispatchDraw`), so nothing in it draws over the
+buttons. When the failure line appears it is scrolled into view.
 
 **Stop** is the card's Stop: `ACTION_STOP` to the service (`HermesService.stopTurn`), nothing more, and the panel is
 never over the lock screen. "Open chat" fades, "Stop" grows to the full row and says "Stopping…" with a spinner, and
@@ -177,13 +179,16 @@ it to that turn's Progress.
 #### Changing state
 
 While the panel is open it follows what Hermux does, in place (the old content fades out in 100 ms while shrinking to
-98 % and takes no touch; the new one fades in from 6 dp lower; the height follows): a permission request or a single
+98 % and takes no touch; the new one fades in from 6 dp lower; the height follows). The new content takes no touch
+until its fade-in ends, 260 ms after the change (`IslandMotion.STATE_TOUCH_HOLD_MS`, `Fit.holdTouches`), the same
+with the phone's animations off: a tap meant for Progress's or Done's Open chat can't land on Allow once or "Allow this
+session" that has just appeared under the finger; the touch goes to the panel, which only moves on a drag. A permission request or a single
 question arriving during Progress or Done changes it to that state, with one light tap (`IslandState.arrived`;
 during a stop on its way it waits); the turn ending changes Progress to Done. After an answer sent from the panel (a
 choice or text, Allowed or Denied), it changes to the next permission request waiting, else to a question waiting,
 else it closes (`IslandPanel.nextOrClose`, `IslandState.nextAfter`). A request or question answered elsewhere, or run
 out, still closes as described above. A change right after another stops the earlier content's fade-in where it is
-(`swapIn`). Changing to Progress is spoken by TalkBack (the chat and the step); changing to a question with no choices
+(`swapIn`), and that content leaves from where it was, its offset kept (`leavingDy`). Changing to Progress is spoken by TalkBack (the chat and the step); changing to a question with no choices
 puts the cursor in its field and opens the keyboard (`keyboardIfTyped`), as opening on it does.
 
 **Pop-ups while the panel is open.** The service's pop-up for a request or question, and a request's 20 s / 40 s

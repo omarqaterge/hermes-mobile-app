@@ -168,6 +168,9 @@ final class IslandMotion {
     // ── changing state, and small parts ──
     static final long STATE_OUT_MS = 100, STATE_IN_MS = 180, STATE_IN_DELAY_MS = 80;
     static final float STATE_OUT_SCALE = 0.98f, STATE_IN_DY = 6;
+    /** The new content takes no touch until its fade-in ends (its delay and its fade); as long with reduced motion,
+     *  whose fade is shorter, so a tap already on its way still can't land on it. */
+    static final long STATE_TOUCH_HOLD_MS = STATE_IN_DELAY_MS + STATE_IN_MS;
     /** A line of text that changes: the old one leaves upward on IN, the new one arrives from below on OUT. */
     static final long TEXT_OUT_MS = 110, TEXT_IN_MS = 200;
     static final float TEXT_DY = 6;
