@@ -155,11 +155,14 @@ outcome since it was sent, and the plugin didn't accept it, `HermesService.stopA
 for other busy chats too), the two buttons come back with the red line "Couldn't stop Hermux. Open the chat to stop it."
 and the reject buzz (the service also posts its own "Couldn't stop Hermux" card). A stop the plugin accepted is never
 shown as failed, and `stopTurn` starts no overlapping stop for a chat while one is already accepted or in flight
-(`IslandState.stopBusy`, bounded by `HermesService.STOP_IN_FLIGHT_MS`, 15 s): the panel stays on "Stopping…" until the
-turn ends, however long it takes to wind down. Each stop thread is tagged with a monotonic counter
-(`HermesService.stopAttempt`): any 200 for the chat currently being stopped is accepted (`IslandState.stop200Counts`)
-even if a later retry raced with it, while a failure only clears Stopping and posts FAILED when it is the latest attempt
-and no racing 200 was accepted (`IslandState.stopFailCounts`), and `status` clears `stopping`, `stopAccepted` and
+(`IslandState.stopBusy`, bounded by `HermesService.STOP_IN_FLIGHT_MS`, 13 s, 2 s below `SEND_TIMEOUT_MS`, and cleared by
+`HermesService.clearStopInFlight` when the 15 s wait ends unheard so an immediate retry always goes out): the panel
+stays on "Stopping…" until the turn ends, however long it takes to wind down. Each stop thread is tagged with monotonic
+attempt and episode counters (`HermesService.stopAttempt`, `HermesService.stopEpisode`, incremented when starting a stop
+for a chat not already being stopped): a 200 is accepted only for the current chat and episode (`IslandState.stop200Counts`),
+so retries within one episode accept a racing 200 while a delayed 200 from an earlier turn cannot count for a new turn,
+while a failure only clears Stopping and posts FAILED when it is the latest attempt and no racing 200 was accepted
+(`IslandState.stopFailCounts`), and `status` (and synchronized `expireWorking`) clears `stopping`, `stopAccepted` and
 `stopInFlight` as soon as the stopped chat is no longer working (`HermesService.sessionWorking`). A stop the panel already took in (`stopSeen`,
 `IslandState.newStop`) doesn't start Stopping again after its failure.
 

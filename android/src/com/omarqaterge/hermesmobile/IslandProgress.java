@@ -75,7 +75,10 @@ final class IslandProgress {
     final Runnable stopTimeoutRun = () -> {
         HermesService s = HermesService.instance;
         IslandState st = s == null ? null : s.islandState();
-        if (IslandState.SENDING.equals(phase) && IslandState.stopUnheard(session, stopAt, st)) stopFailed();
+        if (IslandState.SENDING.equals(phase) && IslandState.stopUnheard(session, stopAt, st)) {
+            if (s != null) s.clearStopInFlight(session);
+            stopFailed();
+        }
     };
     final Runnable stoppedRun = this::showStopped;
 

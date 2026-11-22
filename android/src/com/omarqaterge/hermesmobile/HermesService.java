@@ -191,7 +191,7 @@ public class HermesService extends Service {
     /** No status beat for a while: Hermes (or its plugin) died mid-turn, so drop the stuck chip. */
     final Runnable expireWorkingTask = this::expireWorking;
 
-    void expireWorking() {
+    synchronized void expireWorking() {
         if (!lastWorking || System.currentTimeMillis() - lastBeat < WORKING_TTL_MS - 1000) return;
         workingSince = 0;
         lastWorking = false;
@@ -211,15 +211,18 @@ public class HermesService extends Service {
     org.json.JSONArray lastOthers = null;
     boolean lastReview = false;
     /** The chat whose Stop button was tapped, until Hermes reports the turn over (or the request fails); when the stop
-     *  was sent (epoch ms), whether the plugin accepted it (the island panel then never calls it failed), a monotonic
-     *  attempt counter, and whether an HTTP stop request is still in flight (bounded by STOP_IN_FLIGHT_MS). */
+     *  was sent (epoch ms), whether the plugin accepted it (the island panel then never calls it failed), monotonic
+     *  attempt and episode counters (retries in one turn share an episode; a new turn increments it so an earlier turn's
+     *  delayed 200 can't count), and whether an HTTP stop request is still in flight (bounded 2 s below the panel's 15 s
+     *  send timeout so a retry after a timeout failure always goes out). */
     String stopping = null;
     long stoppingAt = 0;
     boolean stopAccepted = false;
     long stopAttempt = 0;
+    long stopEpisode = 0;
     boolean stopInFlight = false;
     long stopInFlightSince = 0;
-    static final long STOP_IN_FLIGHT_MS = IslandPanel.SEND_TIMEOUT_MS;
+    static final long STOP_IN_FLIGHT_MS = IslandPanel.SEND_TIMEOUT_MS - 2_000;
     /** The chat whose approval answer (from the notification) is being sent; its chip says "Sending your answer…". */
     String answering = null;
     final java.util.HashMap<String, JSONObject> doneInfo = new java.util.HashMap<>();
@@ -1998,21 +2001,28 @@ public class HermesService extends Service {
         return b.build();
     }
 
+    /** Called when the panel's 15 s stop wait ends unheard: clears in-flight so an immediate retry always goes out. */
+    synchronized void clearStopInFlight(String session) {
+        if (session != null && session.equals(stopping) && !stopAccepted) stopInFlight = false;
+    }
+
     /** The chip's Stop button: the plugin interrupts the turn (session.interrupt, like the app's stop button).
      *  The chip says "Stopping…" until Hermes reports the turn over; a failure is said plainly. */
     void stopTurn(String session) {
         if (session == null || session.isEmpty()) return;
-        final long attempt;
+        final long attempt, episode;
         synchronized (this) {
             long up = android.os.SystemClock.uptimeMillis();
             if (IslandState.stopBusy(session, stopping, stopAccepted, stopInFlight, stopInFlightSince, up, STOP_IN_FLIGHT_MS))
                 return; // already accepted or in flight for this chat: don't start an overlapping stop
+            if (!session.equals(stopping)) stopEpisode++; // new turn or chat: an earlier turn's delayed 200 can't count
             stopping = session;
             stoppingAt = System.currentTimeMillis();
             stopAccepted = false;
             stopInFlight = true;
             stopInFlightSince = up;
             attempt = ++stopAttempt;
+            episode = stopEpisode;
             postStatus();
         }
         new Thread(() -> {
@@ -2033,9 +2043,9 @@ public class HermesService extends Service {
                 main.post(() -> {
                     boolean mine;
                     synchronized (HermesService.this) {
-                        mine = IslandState.stop200Counts(session, stopping);
+                        mine = IslandState.stop200Counts(session, stopping, episode, stopEpisode);
                         if (mine) {
-                            stopAccepted = true; // a 200 for the chat currently being stopped is accepted even if a retry raced
+                            stopAccepted = true; // a 200 in the current episode is accepted even if a retry raced
                             stopInFlight = false;
                         }
                     }

@@ -509,10 +509,10 @@ final class IslandState {
         return accepted || (inFlight && nowMono - inFlightSince < timeoutMs);
     }
 
-    /** Whether a 200 from a stop request for {@code session} marks the chat's stop as accepted: yes whenever that chat
-     *  is still the one being stopped, even if a later retry raced with it. */
-    static boolean stop200Counts(String session, String stopping) {
-        return session != null && !session.isEmpty() && session.equals(stopping);
+    /** Whether a 200 from a stop request for {@code session} in {@code episode} marks the chat's stop as accepted:
+     *  only for the chat and stop episode currently active (retries within one episode share it; a later turn doesn't). */
+    static boolean stop200Counts(String session, String stopping, long episode, long currentEpisode) {
+        return session != null && !session.isEmpty() && session.equals(stopping) && episode == currentEpisode;
     }
 
     /** Whether a failed stop attempt ({@code attempt}) for {@code session} clears Stopping and reports FAILED: only
