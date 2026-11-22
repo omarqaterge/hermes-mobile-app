@@ -10,7 +10,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { useStore } from '../store'
 import { useVoice, fmtClock } from '../voice'
 import { ctxLevel } from '../ctxring'
-import { motionLevel, pauseWhenHidden } from '../motion'
+import { motionLevel } from '../motion'
 import { dismissTrayHint, setTrayOpen, takeTrayJump, trayState, useTray } from '../tray'
 import { Spinner } from './Spinner'
 
@@ -147,8 +147,8 @@ export function TrayBody({ open, children }: { open: boolean; children: ReactNod
 }
 
 /** The handle on the top edge of the bar below the chat: a button that opens and closes the tray by a tap, a keyboard
- *  or a screen reader, or by a drag up or down. Dim at rest, gold with a shimmer while a reply runs, amber and still
- *  while Hermux waits for you; the context ring's colour when the context is nearly full. */
+ *  or a screen reader, or by a drag up or down. Dim at rest, gold and still while a reply runs (the text box's light
+ *  carries the movement), amber and still while Hermux waits for you; the context ring's colour when the context is nearly full. */
 export function TrayHandle() {
   const { mode, open, hint } = useTray()
   const live = useVoice(v => v.live)
@@ -167,8 +167,6 @@ export function TrayHandle() {
       if (els.handle === ref.current) els.handle = null
     }
   })
-  // The shimmer runs only while a reply runs, and stands still while the app is away or the handle is off screen.
-  useEffect(() => (working && ref.current ? pauseWhenHidden(ref.current) : undefined), [working])
   // A touch anywhere takes the hint away.
   useEffect(() => {
     if (!hint) return
@@ -282,9 +280,7 @@ export function TrayHandle() {
           setTrayOpen(!trayState().open)
         }}
       >
-        <span className="tray-pill" aria-hidden="true">
-          {working && <span className="tray-shine" />}
-        </span>
+        <span className="tray-pill" aria-hidden="true" />
       </button>
       {hint && (
         <div className="tray-hint" role="status">

@@ -313,25 +313,11 @@ html[data-motion='full'] .todos-head:active:not(:disabled) {
 }
 
 /* ── the composer's tray (Tray.tsx): its layer and the handle settle with the shared spring after a tap or a drag (the
-   inline translate and opacity the code sets are the start and the end); the working shimmer crosses the handle's bar
-   at the chat list shimmer's frame limit (48 steps in 2 s), by translate only; the hint arrives softly. ── */
+   inline translate and opacity the code sets are the start and the end); the hint arrives softly. The handle has no
+   shimmer: while a reply runs the text box's light moves (agent-motion.css), and two repeating things at most. ── */
 .tray-body.tray-settle,
 .tray-handle.tray-settle {
   transition: translate var(--motion-settle) var(--spring-settle), opacity var(--motion-base) var(--ease-fade);
-}
-.tray-handle.working .tray-shine {
-  animation: tray-shine 2s steps(48) infinite;
-}
-@keyframes tray-shine {
-  from {
-    translate: -100% 0;
-  }
-  to {
-    translate: 100% 0;
-  }
-}
-html:not([data-motion='full']) .tray-handle.working .tray-shine {
-  animation: none;
 }
 .tray-hint {
   animation: motion-lift var(--motion-base) var(--spring-settle) backwards;
