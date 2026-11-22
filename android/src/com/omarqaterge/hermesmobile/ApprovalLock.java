@@ -126,13 +126,19 @@ final class ApprovalLock {
         return g != null && what.equals(g[0]) && now - (Long) g[1] >= 0 && now - (Long) g[1] <= GRANT_MS;
     }
 
+    /** The island panel's prompt titles: Allow once, and Allow this session. */
+    static final String ASK_ONCE_TITLE = "Allow Hermux to run this?";
+    static final String ASK_SESSION_TITLE = "Allow Hermux to run this for this session?";
+
     /**
      * The island panel's Allow: always asks (the panel never knows the live session a confirmation is filed under, so
      * nothing on file covers it and nothing is filed there), then reports as {@link #ask} does. On "ok" it files the
-     * one-use grant {@code id} for {@code what} ({@link #grantFor}), which HermesService takes before it sends.
+     * one-use grant {@code id} for {@code what} ({@link #grantFor}), which HermesService takes before it sends. The
+     * prompt's title says what is being allowed: this once ({@link #ASK_ONCE_TITLE}) or the whole session
+     * ({@link #ASK_SESSION_TITLE}); the command is shown under it either way.
      */
-    static void askOnce(Activity a, String id, String what, String shown, Consumer<String> done) {
-        prompt(a, "", "Allow Hermux to run this?", shown, "Confirm it is you.", r -> {
+    static void askOnce(Activity a, String id, String what, String shown, boolean session, Consumer<String> done) {
+        prompt(a, "", session ? ASK_SESSION_TITLE : ASK_ONCE_TITLE, shown, "Confirm it is you.", r -> {
             if ("ok".equals(r)) fileGrant(id, what, System.currentTimeMillis());
             done.accept(r);
         });
@@ -291,9 +297,13 @@ final class ApprovalLock {
     /** The request code of the screen-lock screen up now, -1 for none. */
     private static int credentialCode = -1;
 
-    /** This prompt's request code. */
-    static int codeFor(int g) {
-        return REQ_BASE + Math.floorMod(g, REQ_SPAN);
+    /** Screen-lock screens started so far: each gets the next code. Counted apart from {@code gen}, which goes up twice
+     *  for each prompt (once as it starts, once as it ends), so all REQ_SPAN codes are used before one comes back. */
+    private static int codes;
+
+    /** The request code of the {@code n}th screen-lock screen. */
+    static int codeFor(int n) {
+        return REQ_BASE + Math.floorMod(n, REQ_SPAN);
     }
 
     /** A request code of ours (MainActivity and IslandPanel hand it to {@link #onResult}). */
@@ -311,7 +321,7 @@ final class ApprovalLock {
                 return;
             }
             credentialUp = true;
-            credentialCode = codeFor(g);
+            credentialCode = codeFor(++codes);
             a.startActivityForResult(i, credentialCode);
         } catch (Exception e) {
             credentialUp = false;
@@ -338,7 +348,7 @@ final class ApprovalLock {
         pendingActivity = a;
         int g = ++gen;
         credentialUp = true;
-        credentialCode = codeFor(g);
+        credentialCode = codeFor(++codes);
         return credentialCode;
     }
 

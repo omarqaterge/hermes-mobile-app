@@ -23,6 +23,12 @@ Deny on phone data or an unreadable request shows no second Open chat; an empty 
 bounce stays inside the card. The panel follows every waiting request whatever "When Hermux needs me" says. Back from
 the Android 8 PIN screen its keyboard is put away once the panel has focus.
 
+**Review round 2 (2026-11-22):** the partly-covered rule (Android 10+) is only on Allow once and Allow this session,
+and only while the fingerprint is not asked; Deny, Review in Hermux and Open chat keep only the usual overlay rule. A
+recreated panel never asks for the card's choice again; Allow this session's prompt says "for this session"; the panel
+ends its prompt before its teardown; screen-lock codes are counted on their own. A fade stops a row's opening entrance,
+and behind its own prompt every motion ends where it was going (Ticker.finishAll), so the pulse and later fades play.
+
 **Next:** the phone checks in `docs/manual-tests.md` ("The island panel"), for parts 1 and 2. Then part 3 (Progress,
 Done, the links between states). It changes `HermesService.java` too, so it waits for part 2.
 

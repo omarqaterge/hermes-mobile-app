@@ -98,6 +98,8 @@ public class ApprovalLockTest {
         check(older[0] == null, "a PIN typed on a cancelled prompt's screen answers nothing");
         int newCode = ApprovalLock.testCredentialPrompt(panel, r -> newer[0] = r);
         check(newCode != oldCode, "the next prompt has another code");
+        check(newCode == ApprovalLock.REQ_BASE + Math.floorMod(oldCode - ApprovalLock.REQ_BASE + 1, ApprovalLock.REQ_SPAN),
+                "each screen takes the next code, so all REQ_SPAN codes are used before one comes back");
         ApprovalLock.onResult(main, oldCode, android.app.Activity.RESULT_OK);
         ApprovalLock.onResult(panel, oldCode, android.app.Activity.RESULT_OK);
         check(newer[0] == null && older[0] == null, "a stale code, from either activity, never answers the newer prompt");

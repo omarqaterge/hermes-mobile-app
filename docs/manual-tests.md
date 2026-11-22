@@ -349,7 +349,11 @@ screen leaves both until the deadline, when they go. Not yet on a phone.
       sends that one answer, Back from it leaves the panel as it was.
 - [ ] **Another app drawing over the panel.** With a floating window over the buttons, taps on Allow do nothing.
 - [ ] **Partly covered (Android 10+).** With a small floating window (a chat bubble, a screen filter) anywhere over
-      the panel, not over the buttons: taps on Allow do nothing and Deny still works. Not tried on Android 10 or 11.
+      the panel, not over the buttons, and "Confirm approvals with fingerprint" off or no screen lock: taps on Allow
+      once and Allow this session do nothing; Deny, Review in Hermux and Open chat still work. With the fingerprint
+      asked, Allow brings up the system prompt as usual. Not tried on Android 10 or 11.
+- [ ] **Allow this session's prompt.** It says "Allow Hermux to run this for this session?" with the command;
+      Allow once says "Allow Hermux to run this?".
 - [ ] **Animations off, Permission state.** With Remove animations on: the ring still drains and the seconds change,
       TalkBack speaks at 30, 10 and 5 seconds, the request runs out on time, and the card's Allow brings up the
       fingerprint. Seen on an Android 15 emulator (2026-11-22) except TalkBack.

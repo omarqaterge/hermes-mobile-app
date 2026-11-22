@@ -180,7 +180,8 @@ public class IslandPanel extends Activity {
             String ses = in.getStringExtra(EXTRA_SESSION), req = in.getStringExtra(EXTRA_REQUEST);
             IslandState.Approval a = st == null ? null : st.approvalToShow(ses, req);
             perm = new IslandPermission(this);
-            perm.autoChoice = choiceFor(in, a);
+            // the card's choice asks once: a panel Android recreated from its saved intent does not ask again
+            perm.autoChoice = state == null ? choiceFor(in, a) : null;
             inner = perm.build(a, st == null ? 0 : st.othersWaiting(a));
         } else {
             ask = st == null ? null : st.askToShow();
@@ -702,9 +703,12 @@ public class IslandPanel extends Activity {
     protected void onStop() {
         super.onStop();
         stopped = true;
-        ticker.stopAll();
+        boolean behindOurPrompt = !isChangingConfigurations() && perm != null && perm.confirming && !closing;
+        // Behind our own prompt the panel comes back: what was moving ends where it was going rather than halfway.
+        if (behindOurPrompt) ticker.finishAll();
+        else ticker.stopAll();
         if (isChangingConfigurations()) return;
-        if (perm != null && perm.confirming && !closing) {
+        if (behindOurPrompt) {
             settle();
             perm.paused();
             return;
@@ -758,10 +762,10 @@ public class IslandPanel extends Activity {
 
     @Override
     protected void onDestroy() {
+        ApprovalLock.activityGone(this); // a prompt of ours can't answer any more: it ends as a cancel, nothing is sent
         super.onDestroy();
         ticker.stopAll();
         if (perm != null) perm.stop();
-        ApprovalLock.activityGone(this); // a prompt of ours can't answer any more: it ends as a cancel, nothing is sent
         MAIN.removeCallbacks(openRun);
         MAIN.removeCallbacks(closeRun);
         MAIN.removeCallbacks(timeoutRun);
@@ -1215,16 +1219,21 @@ public class IslandPanel extends Activity {
 
     void dim(View v) {
         if (v == null) return;
-        IslandViews.Ticker.Handle in = rowIn.remove(v);
-        if (in != null) { // still arriving: it stops where it is and dims from there
-            in.cancel();
-            v.setTranslationY(0);
-            v.setScaleX(1);
-            v.setScaleY(1);
-        }
+        stopArriving(v); // still arriving: it stops where it is and dims from there
         float from = v.getAlpha();
         long ms = reduced ? IslandMotion.reduced(IslandMotion.CHOSEN_MS) : IslandMotion.CHOSEN_MS;
         ticker.tween(0, ms, IslandMotion.LINEAR, p -> v.setAlpha((float) (from + (IslandMotion.DIMMED - from) * p)), null);
+    }
+
+    /** A row still in the opening stagger stops arriving: its opacity stays where it is (whatever changes it next
+     *  starts from there), its movement and size go to the end. */
+    void stopArriving(View v) {
+        IslandViews.Ticker.Handle in = v == null ? null : rowIn.remove(v);
+        if (in == null) return;
+        in.cancel();
+        v.setTranslationY(0);
+        v.setScaleX(1);
+        v.setScaleY(1);
     }
 
     /** A new line arriving: from 6 dp below in 200 ms on out (a fade only with reduced motion). */

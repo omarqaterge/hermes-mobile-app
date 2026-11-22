@@ -197,13 +197,17 @@ final class IslandPermission {
             if (allowOpensChat || !shown.allowable()) openChat();
             else tap("once", false);
         });
+        // Android 10+: while it is an Allow that asks for no fingerprint, no touch while another app covers any part of
+        // the window. With the fingerprint asked, the system prompt (drawn above other apps, with the command) decides.
+        allow.strict = () -> !allowOpensChat && shown != null && shown.allowable() && !ApprovalLock.needed(p);
         row.addView(deny);
         row.addView(allow);
         col.addView(row, p.margins(16, 50));
         p.rows.add(row);
 
         // Allow this session: a text button drawn 40 dp tall with 4 dp of room above and below, all of it touchable.
-        textBtn = IslandViews.guardedText(p, 14, 0, 500, IslandViews.DIM);
+        textBtn = IslandViews.guardedText(p, 14, 0, 500, IslandViews.DIM,
+                () -> !textOpensChat && shown != null && shown.allowSession && !ApprovalLock.needed(p));
         textBtn.setGravity(Gravity.CENTER);
         textBtn.setText(IslandState.ALLOW_SESSION);
         GradientDrawable tb = IslandViews.round(Color.TRANSPARENT, dp(12));
@@ -352,7 +356,8 @@ final class IslandPermission {
             String id = java.util.UUID.randomUUID().toString();
             String what = asked.command.isEmpty() ? asked.what : asked.command;
             p.MAIN.postDelayed(deadlineRun, Math.max(0, asked.deadline - System.currentTimeMillis()));
-            ApprovalLock.askOnce(p, id, ApprovalLock.grantFor(asked.session, asked.request, c), HermesService.clip(what, 200), r -> {
+            ApprovalLock.askOnce(p, id, ApprovalLock.grantFor(asked.session, asked.request, c), HermesService.clip(what, 200),
+                    "session".equals(c), r -> {
                 confirming = false;
                 p.MAIN.removeCallbacks(deadlineRun);
                 // Cancelled: nothing is sent and the panel is as it was. Answered for a request no longer on screen, or
@@ -638,13 +643,18 @@ final class IslandPermission {
         p.swapToPermission(a, st, exact ? c : null);
     }
 
-    /** The panel was hidden by our own fingerprint or PIN screen: nothing runs meanwhile. */
+    /** The panel was hidden by our own fingerprint or PIN screen: nothing runs meanwhile. IslandPanel.onStop has
+     *  already ended every motion where it was going (Ticker.finishAll); no handle of one is kept, so the next pulse,
+     *  ring change or fade starts afresh. */
     void paused() {
         if (timer != null) timer.cancel();
         if (pulseRun != null) pulseRun.cancel();
-        pulseRun = null;
-        if (ring != null && ringRun == null) {
-            ring.setScaleX(1);
+        if (ringRun != null) ringRun.cancel();
+        pulseRun = ringRun = null;
+        for (IslandViews.Ticker.Handle h : fades.values()) h.cancel();
+        fades.clear();
+        if (ring != null) {
+            ring.setScaleX(1); // only an open request has a prompt up, and its ring is at full size
             ring.setScaleY(1);
         }
     }
@@ -690,9 +700,11 @@ final class IslandPermission {
         fades.put(v, me[0]);
     }
 
+    /** Stops a fade of this view, and its opening entrance if it is still arriving (left in place, at full size). */
     void stopFade(View v) {
         IslandViews.Ticker.Handle h = fades.remove(v);
         if (h != null) h.cancel();
+        p.stopArriving(v);
     }
 
     /** The ring to this opacity and size (no size change with reduced motion); it replaces a pulse or an earlier ringTo

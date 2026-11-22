@@ -84,12 +84,13 @@ final class IslandViews {
     }
 
     /** The same text for a button that answers a permission request: it ignores touches while another app's window
-     *  covers it ({@code setFilterTouchesWhenObscured}) or, on Android 10+, any part of the panel's window. */
-    static TextView guardedText(Context c, float size, float line, int weight, int colour) {
+     *  covers it ({@code setFilterTouchesWhenObscured}), and on Android 10+ also while one covers any part of the
+     *  panel's window whenever {@code strict} says so at the touch (an Allow that asks for no fingerprint). */
+    static TextView guardedText(Context c, float size, float line, int weight, int colour, java.util.function.BooleanSupplier strict) {
         TextView t = new TextView(c) {
             @Override
             public boolean onFilterTouchEventForSecurity(MotionEvent e) {
-                return !partlyCovered(this, e) && super.onFilterTouchEventForSecurity(e);
+                return !(strict.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
             }
         };
         t.setFilterTouchesWhenObscured(true);
@@ -143,6 +144,8 @@ final class IslandViews {
             final Step step;
             double start = -1;
             boolean dead;
+            /** A tween or spring, which has an end to jump to ({@link #finishAll}); a step added by hand has none. */
+            boolean ends;
 
             Handle(Step s) {
                 step = s;
@@ -168,7 +171,7 @@ final class IslandViews {
 
         /** A curve from 0 to 1 over {@code ms} after {@code delay}; {@code on} gets the curve's value each frame. */
         Handle tween(long delay, long ms, IslandMotion.Curve curve, DoubleConsumer on, Runnable done) {
-            return add(t -> {
+            Handle h = add(t -> {
                 if (t < delay) return true;
                 double p = ms <= 0 ? 1 : Math.min(1, (t - delay) / ms);
                 on.accept(curve.at(p));
@@ -176,6 +179,8 @@ final class IslandViews {
                 if (done != null) done.run();
                 return false;
             });
+            h.ends = true;
+            return h;
         }
 
         /** A spring from {@code from} to {@code to}; with reduced motion it jumps to the end. */
@@ -185,7 +190,7 @@ final class IslandViews {
                 if (done != null) done.run();
                 return new Handle(t -> false);
             }
-            return add(t -> {
+            Handle h = add(t -> {
                 double sec = t / 1000.0;
                 if (s.done(sec)) {
                     on.accept(to);
@@ -195,7 +200,27 @@ final class IslandViews {
                 on.accept(s.at(from, to, sec));
                 return true;
             });
+            h.ends = true;
+            return h;
         }
+
+        /** Every tween and spring jumps to its end, its {@code done} included (one that starts another is ended too, a
+         *  few rounds deep), then everything stops: what was moving is left where it was going, not halfway. Steps with
+         *  no end (the timer, a spinner) just stop. */
+        void finishAll() {
+            for (int round = 0; round < FINISH_ROUNDS && !live.isEmpty(); round++) {
+                ArrayList<Handle> now = new ArrayList<>(live);
+                live.clear();
+                for (Handle h : now) {
+                    if (h.dead || !h.ends) continue;
+                    h.dead = true;
+                    h.step.frame(Double.MAX_VALUE);
+                }
+            }
+            stopAll();
+        }
+
+        static final int FINISH_ROUNDS = 8;
 
         void stopAll() {
             for (Handle h : live) h.dead = true;
@@ -624,6 +649,10 @@ final class IslandViews {
         int from, to;
         double k = 1;
         Ticker.Handle colourRun, spinRun, markRun, moveRun;
+        /** Asked at each touch: true while this button is an Allow that asks for no fingerprint, when a touch is also
+         *  refused while another app covers any part of the window (Android 10+). Null for every other button (Deny,
+         *  Review in Hermux, Open chat), which still refuses a touch that passes through another app's window. */
+        java.util.function.BooleanSupplier strict;
 
         Pill(Context c, String text, int bg, int fg, int icon, int span) {
             super(c);
@@ -643,11 +672,12 @@ final class IslandViews {
             return android.widget.Button.class.getName();
         }
 
-        /** With setFilterTouchesWhenObscured on (every answer button), also no touch while another app covers part of
-         *  the window (Android 10+). */
+        /** With setFilterTouchesWhenObscured on (every answer button) a touch through another app's window is refused;
+         *  while {@link #strict} holds, also any touch while another app covers part of the window (Android 10+). */
         @Override
         public boolean onFilterTouchEventForSecurity(MotionEvent e) {
-            return !partlyCovered(this, e) && super.onFilterTouchEventForSecurity(e);
+            java.util.function.BooleanSupplier s = strict;
+            return !(s != null && s.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
         }
 
         void setText(String t) {

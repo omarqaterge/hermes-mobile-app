@@ -70,8 +70,9 @@ otherwise the oldest one waiting (`IslandState.approvalToShow`), from the servic
 live request). Opened with none waiting, it shows the header with "Answered in the app" and closes about 0.9 s later.
 
 **Answering.** Deny is one tap and never asks. Allow once and Allow this session, while the fingerprint is needed, bring
-up the phone's own fingerprint or screen-lock prompt ("Allow Hermux to run this?", the command under it, "Confirm it is
-you.") every time (`ApprovalLock.askOnce`); the panel waits behind it, its timer still running, and a cancel sends
+up the phone's own fingerprint or screen-lock prompt every time (`ApprovalLock.askOnce`): "Allow Hermux to run this?"
+for Allow once (`ASK_ONCE_TITLE`) and "Allow Hermux to run this for this session?" for Allow this session
+(`ASK_SESSION_TITLE`), the command under it, "Confirm it is you."; the panel waits behind it, its timer still running, and a cancel sends
 nothing and leaves the panel as it was. The card's Allow opens the panel with the choice (`EXTRA_CHOICE`) and the
 prompt comes up at once, but only when the request on screen is the very one tapped. Before Android 12 that Allow
 reaches the service, which also closes the notification shade (`ACTION_CLOSE_SYSTEM_DIALOGS`, refused from Android 12)
@@ -106,8 +107,13 @@ needed, only with the one-use grant the prompt filed for that request and choice
   headline changes to "Answered in the app", the buttons fade, and the panel closes after 0.9 s.
 
 Either of the last two while the prompt is up takes the prompt down (`ApprovalLock.activityGone`); a late "ok" for a
-request no longer on screen sends nothing. Every answer button ignores touches while another app draws over it, and on Android 10+ while another app's window
-covers any part of the panel's window (`FLAG_WINDOW_IS_PARTIALLY_OBSCURED`).
+request no longer on screen sends nothing. Every answer button (Deny, Allow once, Allow this session, Review in Hermux,
+Open chat) ignores a touch that passes through another app's window (`setFilterTouchesWhenObscured`). Allow once and
+Allow this session also ignore every touch while another app's window covers any part of the panel's window (Android
+10+, `FLAG_WINDOW_IS_PARTIALLY_OBSCURED`), but only while the fingerprint is not asked (`ApprovalLock.needed` false):
+when it is asked, the system prompt, drawn above other apps and showing the command, is what confirms. Deny, Review in
+Hermux and Open chat never have that second rule, so a chat bubble or a screen filter can't stop them. A panel Android
+recreates from its saved intent does not ask for the card's choice again.
 
 #### Gestures
 
