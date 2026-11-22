@@ -11,6 +11,7 @@ import './menu.css' // the menus' shared look (ui.tsx Menu*), and the picker row
 import './subagents-core.css' // sub-agents: what shows before their lazy bundle has run
 import './settings.css' // the Settings main page: one-line rows and the attention cards
 import './pages.css' // the inner pages: centred widths, 44 px targets, empty states, the bot tag, Light contrast
+import './agent-motion.css' // the animations that show the agent at work (agentmotion.ts)
 import { applyLook } from './motion'
 import { applyTheme, savedTheme } from './theme'
 import { bootMark } from './boot'

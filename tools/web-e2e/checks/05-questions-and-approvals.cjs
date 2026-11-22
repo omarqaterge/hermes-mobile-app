@@ -316,7 +316,9 @@ module.exports = async t => {
     const heard = await row('Chat 3', group).ariaSnapshot()
     check((heard.match(/Needs you/g) || []).length === 1 && heard.indexOf('Needs you') < heard.indexOf('Chat 3'), `needs you: screen readers hear the state once, before the title (${JSON.stringify(heard)})`)
     await sleep(700) // the row's arrival is over
-    check((await running(group)) === 0, 'needs you: no shimmer on the row, though the feed lists the chat as busy')
+    // The only movement is the first row's amber ring round its dot (3.2 Agent motion, row 12): the row never shimmers.
+    const moving = await group.evaluate(el => el.getAnimations({ subtree: true }).filter(a => a.playState === 'running').map(a => ({ dot: a.effect?.target?.classList?.contains('needs-dot') && a.effect?.pseudoElement === '::after', name: a.animationName })))
+    check(moving.filter(m => !m.dot).length === 0 && moving.filter(m => m.dot).length === 1, `needs you: no shimmer on the row, though the feed lists the chat as busy; only its dot's amber ring moves (${JSON.stringify(moving)})`)
     await setMotion(page, 'off')
     check((await group.boundingBox()).y < (await panel.getByRole('heading', { name: 'Today' }).boundingBox()).y, 'needs you: the group is on top of the list')
     check(calls().filter(c => c.answer === 'srv-needs-1').length === 0, 'needs you: nothing was answered by showing it')

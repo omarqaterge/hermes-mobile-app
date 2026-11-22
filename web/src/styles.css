@@ -9,7 +9,6 @@
   --accent: #d9a441;
   --accent-2: #cd7f32;
   --accent-ink: #1a1307;
-  --shine: rgba(255, 255, 255, 0.75); /* the glint that runs over a gold mark (the tray handle while working) */
   --ok: #57c28a;
   --warn: #e0b341;
   --err: #ec6a5e;
@@ -2655,7 +2654,6 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
   --accent: #8c600e; /* 5.53:1 on white, 5.07:1 on --surface, 4.56:1 on --surface-2 (was #b57a10: 3.65, 3.34, 3.00) */
   --accent-2: #9a5f0b;
   --accent-ink: #ffffff;
-  --shine: rgba(255, 255, 255, 0.6);
   --ok: #1d8a56;
   --warn: #9a6b00;
   --err: #c9372c;
@@ -3006,13 +3004,6 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .tray-handle.waiting .tray-pill {
   background: var(--warn);
   opacity: 1;
-}
-/* The working shimmer: a light strip that crosses the bar (motion.css moves it). */
-.tray-shine {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 0%, var(--shine) 50%, transparent 100%);
-  translate: -100% 0;
 }
 .tray-hint {
   position: absolute;

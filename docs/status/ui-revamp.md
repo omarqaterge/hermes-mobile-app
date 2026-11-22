@@ -356,6 +356,30 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     Light `--warn` (#9a6b00, 4.30:1 on `--surface`) and `--ok` (#1d8a56, 4.36:1 on white) are still under 4.5:1 as
     text where they are used outside the pages task 10 fixed; no page this task checked shows them as text.
 
+- **Agent motion (task 13, PR against `redesign`).** Movement that shows the agent at work, each piece tied to a state
+  and ending with it (spec 3.2 "Agent motion" has the table): a light that travels round the text box while a turn or
+  the chat's sub-agents run (`EdgeLight`, a conic layer turning under a mask, stepped to 24 frames a second) and stands
+  still in amber while Hermux waits for an answer; a still gold glow behind the chat (`WorkGlow`, none in OLED black);
+  Send turning into Stop; the sent message lifting; the thinking orb (`ThinkOrb`); the running step's shimmer (only the
+  newest running step, `liveStep`); a green tick or a red cross that draws itself once when a step seen running ends
+  (`DrawnMark`, `useStepEnd`), with a shake for a failure; a lane per sub-agent in an opened group; the reply's actions settling; one `haptic()` per finished turn (`turnTick`: none
+  for steps, none when away or over the lock screen; no new bridge method); the Live orb's rhythm per phase; and small
+  appear and value changes (chips, queued messages, the scroll button, the model chip, the title). States in
+  `web/src/agentmotion.ts` (tests in `agentmotion.test.ts`), movement in `web/src/agent-motion.css` on the motion
+  tokens, check `40-agent-motion.cjs` (heights per frame, renders per streamed batch, Reduced, Off, OLED, the haptic).
+  `streamcost.cjs` gained `--motion`, `--glass` and frame counts. Costs: docs/performance-history.md, task 13.
+  - **Two repeating animations at most** (review): the text box's light and the newest live thing (`liveStep`: a reply's
+    orb or caret, a running step, a group's line or lanes); the tray handle has no shimmer (check 34 rewritten); the Needs
+    you ring stands still while the open chat works; nothing repeats while Hermux waits. Check 40 counts them per frame.
+  - **Left for later:** the background-tasks row (13) is not built: background tasks are not offered yet
+    (`docs/decisions/nested-chats.md`); the streaming reply (row 10) is in its still form (a fade over the newest words
+    cost 3 to 4 % of streaming work at 4x CPU); the turn fold's numbers rise rather than count;
+    sub-agent lanes show only in an opened group (no automatic opening); the Live orb has no voice level (the shell
+    reports none); text box growth, the keyboard, theme changes, skeleton to chat, chat-list reorders and nested rows
+    folding back have no new movement. The first words of a reply cost about 1.5 ms more at 4x CPU (+4 %): the movements
+    that start on Send. Needs a phone: `docs/manual-tests.md`, "Agent motion",
+    including ten minutes of work for the battery.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

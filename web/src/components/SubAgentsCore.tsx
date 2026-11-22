@@ -50,9 +50,11 @@ import { Icon } from './icons'
 import { Linked } from './Linked'
 import { plainTitle } from './Title'
 import { Chevron } from './ui'
+import { DrawnMark, useStepEnd } from './AgentMotion'
+import { pauseWhenHidden, stagger } from '../motion'
 
 export interface SubAgentUi {
-  SubGroupRows: ComponentType<{ chat: string; keys: string[]; items: SubItem[] }>
+  SubGroupRows: ComponentType<{ chat: string; keys: string[]; items: SubItem[]; still?: boolean }>
   NestedRows: ComponentType<{ chat: string; snapAt: number; only?: ReadonlySet<string>; turning: boolean }>
   SubAgentSheet: ComponentType
   css: string
@@ -88,7 +90,9 @@ export function subAgentHost(): Record<string, Record<string, unknown>> {
     'components/icons': { Icon },
     'components/Linked': { Linked },
     'components/Title': { plainTitle },
-    'components/SubAgentsCore': { useListShown }
+    'components/SubAgentsCore': { useListShown },
+    'components/AgentMotion': { DrawnMark, useStepEnd },
+    motion: { pauseWhenHidden, stagger }
   }
 }
 
@@ -135,7 +139,7 @@ function useSubAgentUi(wanted = true): SubAgentUi | null {
 
 // These stand where the real ones go and draw nothing until the bundle has run. The bundle is asked for before they are needed
 // (the group's line, the list showing, rows about to open), and what is on screen by then is final, so nothing moves.
-export function SubGroupRows(p: { chat: string; keys: string[]; items: SubItem[] }) {
+export function SubGroupRows(p: { chat: string; keys: string[]; items: SubItem[]; still?: boolean }) {
   const u = useSubAgentUi()
   return u ? <u.SubGroupRows {...p} /> : null
 }
@@ -172,8 +176,13 @@ export const SubGroupHead = memo(function SubGroupHead({
   onToggle: (id: string) => void
 }) {
   useEffect(() => void loadSubAgentUi().catch(() => {}), []) // ready before the line can be tapped
+  // A sub-agent failing on screen gives the line one short shake (agent-motion.css); a second failure shakes it again.
+  const seen = useRef(failed)
+  const shake = useRef('')
+  if (failed > seen.current) shake.current = ` step-failed-${failed % 2}`
+  seen.current = failed
   return (
-    <button className={`tool-run sub-group${running ? ' sub-group-live' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
+    <button className={`tool-run sub-group${running ? ' sub-group-live' : ''}${shake.current}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
       <Icon n="subagent" />
       <span className={`tool-run-label sub-group-words${shimmer ? ' sub-shimmer' : ''}`}>{words}</span>
       {failed > 0 && <span className="sub-group-failed">· {failed} failed</span>}

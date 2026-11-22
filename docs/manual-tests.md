@@ -563,3 +563,41 @@ Notifications (Settings → Notifications). Before each, leave the app with Home
       the page. Turning them on there and coming back removes the notice. Android 8 to 12: the button opens the page.
 - [ ] A phone with no app notification page (some makers): Sound, vibration and the lock screen opens the app's own
       App info page instead.
+
+## Agent motion (task 13, not yet on a phone)
+
+Settings → Appearance → Animations Full, glass on, unless a step says otherwise.
+
+- [ ] Send a question that takes a few tools. The message lifts out of the text box; Send turns into Stop with a small
+      turn; a gold light travels round the text box and a faint gold glow shows behind the chat (none in OLED black).
+      The header and the text box never jump in height, with the keyboard open and closed.
+- [ ] While it works, only the running step shimmers; each finished step draws a green tick before its time, once.
+      Reopen the chat: the ticks are there and nothing draws.
+- [ ] A step that fails (for example ask it to read a file that does not exist): a red cross draws and the step's line
+      shakes once.
+- [ ] While it thinks, the dot beside "Thinking…" turns; it settles when "Thought for …" shows.
+- [ ] While the reply streams the text above never moves, and
+      scrolling up while it streams keeps the text you read in place.
+- [ ] When the reply ends: the light fades, Stop turns back into Send, the reply's buttons settle in, and the phone
+      gives one light tick. A reply that ends while the phone is locked over the lock screen (Talk to Hermux) gives no
+      tick; one that ends while you are in another app gives none either.
+- [ ] An approval or a question (Auto off): the light stands still in amber until you answer, then turns gold again;
+      meanwhile nothing else moves (the running step, the sub-agent group's line and lanes stand still).
+- [ ] With the Model bar tucked away, the handle is gold and still while Hermux works; at no moment do more than two
+      things repeat (the light and one step, thought, caret or lane).
+- [ ] Ask for two sub-agents and open their group: each row has a thin lane; the working one moves, a finished one is
+      filled green and still, a failed one red; the group's line does not shimmer while open. A failed sub-agent makes
+      the group's line shake once.
+- [ ] Hermux uses an app in the background: its card above the text box carries the travelling light and the text
+      box's light stays lit and still.
+- [ ] Leave the app with Home while it works and come back: everything was still while away and runs on at once.
+- [ ] Animations Reduced: the same states show as short fades, the light is a still gold edge, nothing repeats.
+      Animations Off: every change is instant and each state still shows (the still edge, ticks, words).
+- [ ] TalkBack: Stop, Send, the ticks ("done"), the crosses ("failed") and the thinking line read as before; nothing
+      that moves is read twice.
+- [ ] **Ten minutes of work, battery.** Charge to about 80 % and unplug. Settings → Appearance: glass on, Animations
+      Full, theme Dark. Give Hermux a task that keeps it working for about ten minutes (for example "go through the
+      files in my Downloads one by one and summarise each"), keep the app open on the chat with the screen on and
+      brightness fixed, and note the battery level and Android's battery use for Hermux before and after, and whether
+      the phone grows warm. Repeat with glass off and Animations Off. Write both results in
+      `docs/performance-history.md`; the first should use at most a little more than the second.

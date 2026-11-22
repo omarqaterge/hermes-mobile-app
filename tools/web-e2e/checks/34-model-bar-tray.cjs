@@ -272,8 +272,9 @@ module.exports = async t => {
     await p.close()
   }
 
-  // ── the handle's states: dim at rest, gold with a shimmer while a reply runs, amber and still while Hermux waits for
-  //    you; the ring's colour when the context is nearly full ──
+  // ── the handle's states: dim at rest, gold and still while a reply runs (the text box's light is what moves: two
+  //    repeating things at most, 3.2 Agent motion), amber and still while Hermux waits for you; the ring's colour when the
+  //    context is nearly full ──
   {
     const p = await open({ width: 375, height: 812 }, 's-48', { 'hm.motion': 'full' })
     await p.getByText('answer s-48', { exact: true }).waitFor({ timeout: 8000 })
@@ -283,17 +284,21 @@ module.exports = async t => {
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 3000 })
     await handleIs(p, 'working')
     const work = await look(p)
-    check(work && work.colour === work.accent && work.opacity === 1 && work.moving, `tray handle: gold with a running shimmer while a reply runs (${JSON.stringify(work)})`)
+    const lightTurns = await p.evaluate(() => {
+      const l = document.querySelector('.composer .edge-light')
+      return !!l && l.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity)
+    })
+    check(work && work.colour === work.accent && work.opacity === 1 && !work.moving && lightTurns, `tray handle: gold and still while a reply runs, the text box's light moving instead (${JSON.stringify(work)}, light ${lightTurns})`)
     check((await box(p).getAttribute('placeholder')) === 'Queue or steer a follow-up…' && (await p.getByRole('button', { name: 'Stop', exact: true }).count()) === 1, 'tray handle: the placeholder and the Stop button still say a reply runs')
-    // Away: the shimmer stands still.
+    // Away: still gold and still.
     await p.evaluate(() => window.hermesPause && window.hermesPause())
     const away = await look(p)
-    check(away && !away.moving, `tray handle: the shimmer stands still while the app is away (${JSON.stringify(away)})`)
+    check(away && away.colour === away.accent && !away.moving, `tray handle: gold and still while the app is away (${JSON.stringify(away)})`)
     await p.evaluate(() => window.hermesResume && window.hermesResume())
     await p.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 8000 })
     await handleIs(p, 'working', false)
     const after = await look(p)
-    check(after && after.colour === after.dim && !after.moving, `tray handle: the shimmer ends with the reply (${JSON.stringify(after)})`)
+    check(after && after.colour === after.dim && !after.moving, `tray handle: dim and still again when the reply ends (${JSON.stringify(after)})`)
     // Waiting for you: a question from Hermux.
     await send(p, 'ask me three')
     await p.getByRole('dialog').first().waitFor({ timeout: 5000 })
