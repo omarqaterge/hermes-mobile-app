@@ -1,8 +1,8 @@
 // Settings' main page and the pages the redesign moves: Appearance (Dark / OLED black / Light theme, text size), the settings search, New
-// chats use on the Models page (one model for all bots); then the main page of task 06: its seven rows in two sections, the attention cards, each
+// chats use on the Models page (one model for all bots); then the main page of task 06: its eight rows (Notifications from task 12) in two sections, the attention cards, each
 // moved row on its new page, search landing there, Back from every page, and the rows and cards at 320 px and in Light.
 // Each control is found by its role and name, used, and its effect checked.
-const { WEB, calls, check, mock, nativeShell, settingsPage, contrast, expectIdle, openPage, pageTitle, pageHeadings, settingsSection } = require('../lib.cjs')
+const { WEB, calls, check, mock, nativeShell, settingsPage, contrast, lowContrast, fadedText, expectIdle, openPage, pageTitle, pageHeadings, settingsSection } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser } = t
@@ -103,21 +103,21 @@ module.exports = async t => {
     await p.getByRole('button', { name: 'Settings', exact: true }).click()
     await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
   }
-  const SEVEN = ['Models', 'Connectors', 'Behaviour', 'Access & privacy', 'Appearance', 'Voice', 'About & help']
+  const EIGHT = ['Models', 'Connectors', 'Behaviour', 'Access & privacy', 'Appearance', 'Voice', 'Notifications', 'About & help']
   const back = async p => {
     await p.locator('.screen').getByRole('button', { name: 'Back', exact: true }).click()
   }
   const title = p => p.locator('.screen .title').innerText()
   const card = (p, name) => p.getByRole('group', { name })
 
-  // ── the main page: seven rows in two sections, no switch, no card while all is well; Back from each page ──
+  // ── the main page: eight rows in two sections, no switch, no card while all is well; Back from each page ──
   {
     const p = await page()
     const opened = Date.now()
     await openMain(p)
     const heads = (await p.locator('.screen .set-heading').allInnerTexts()).map(h => h.toLowerCase())
     const rows = await p.locator('.screen .set-row .set-title').allInnerTexts()
-    check(JSON.stringify(heads) === '["hermux","this app"]' && JSON.stringify(rows) === JSON.stringify(SEVEN), `settings main page: seven rows in two sections, Hermux then This app (${heads.join(' | ')}: ${rows.join(', ')})`)
+    check(JSON.stringify(heads) === '["hermux","this app"]' && JSON.stringify(rows) === JSON.stringify(EIGHT), `settings main page: eight rows in two sections, Hermux then This app (${heads.join(' | ')}: ${rows.join(', ')})`)
     check((await p.locator('.screen').getByRole('switch').count()) === 0, 'settings main page: no switch on it')
     const value = name => p.getByRole('button', { name: new RegExp('^' + name) }).locator('.set-value').innerText().catch(() => '')
     const vals = { models: await value('Models'), access: await value('Access & privacy'), look: await value('Appearance'), about: await value('About & help') }
@@ -131,7 +131,7 @@ module.exports = async t => {
     await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
     check((await p.locator('.attn-card').count()) === 0, 'settings main page: no attention card while Hermux is online, has a model and the app is up to date')
     await expectIdle(p, 'settings main page')
-    for (const name of SEVEN) {
+    for (const name of EIGHT) {
       await settingsPage(p, name)
       const t = await title(p)
       await back(p)
@@ -300,7 +300,7 @@ module.exports = async t => {
     const tag = await p.addStyleTag({ content: '.screen * { letter-spacing: 2px !important }' })
     const after = await measure()
     await tag.evaluate(x => x.remove())
-    check(before.rows.length === 7 && JSON.stringify(before.rows) === JSON.stringify(after.rows) && !before.over && !after.over, `320 px: the seven rows keep one line each under a wider font and nothing is wider than the screen (${JSON.stringify(before.rows)} → ${JSON.stringify(after.rows)})`)
+    check(before.rows.length === 8 && JSON.stringify(before.rows) === JSON.stringify(after.rows) && !before.over && !after.over, `320 px: the eight rows keep one line each under a wider font and nothing is wider than the screen (${JSON.stringify(before.rows)} → ${JSON.stringify(after.rows)})`)
     const btnH = await card(p, 'Hermux is offline').getByRole('button', { name: 'Reconnect' }).evaluate(e => Math.round(e.getBoundingClientRect().height))
     check(btnH >= 44, `320 px: the card's button is at least 44 px tall (${btnH})`)
     for (const theme of ['default', 'oled', 'light']) {
@@ -319,6 +319,138 @@ module.exports = async t => {
       check(low.length === 0, `${theme}: the attention card's title, line and button reach 4.5:1 (${JSON.stringify(c.map(([n, fg, bg]) => [n, contrast(fg, bg).toFixed(2)]))})`)
     }
     await mock({ up: true })
+    await p.close()
+  }
+
+  // ── Text size follows the phone (task 12): Android's font size, read through the keyed bridge, clamped to 90 to 135 %,
+  //    until a size is picked; Phone default forgets the pick. The shell's answer is window.__fs; each call is recorded
+  //    with its key (window.__fsCalls) ──
+  {
+    const scaled = async (fs, stored) => {
+      const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+      await p.addInitScript(nativeShell)
+      await p.addInitScript(([fs, stored]) => {
+        window.__fs = fs
+        window.__fsCalls = []
+        if (stored != null && !sessionStorage.getItem('seeded')) {
+          sessionStorage.setItem('seeded', '1')
+          localStorage.setItem('hm.textScale', stored)
+        }
+        localStorage.setItem('hm.motion', 'off')
+        Object.assign(window.HermesAndroid, { phoneTextScale: key => (window.__fsCalls.push(key), key === 'K' ? window.__fs : 0) })
+      }, [fs, stored])
+      await p.goto(WEB + '/')
+      await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      return p
+    }
+    const scaleOf = p => p.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--scale')))
+    for (const [fs, want] of [[1.3, 1.3], [2, 1.35], [0.85, 0.9], [1, 1]]) {
+      const p = await scaled(fs)
+      const got = await scaleOf(p)
+      const keys = await p.evaluate(() => window.__fsCalls)
+      check(Math.abs(got - want) < 0.001 && keys.length > 0 && keys.every(k => k === 'K'), `text size: with no size picked, the phone's ${fs * 100}% font gives ${want * 100}% (${got}; asked with the key: ${JSON.stringify(keys)})`)
+      await p.close()
+    }
+    {
+      const p = await scaled(1.3, '1.2')
+      check(Math.abs((await scaleOf(p)) - 1.2) < 0.001, 'text size: a size picked earlier wins over the phone (120% with the phone at 130%)')
+      await p.close()
+    }
+    const p = await scaled(1.3)
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await settingsPage(p, 'Appearance')
+    const pressed = async name => (await p.getByRole('button', { name, exact: true }).getAttribute('aria-pressed')) === 'true'
+    const names = await p.locator('.seg-text button').allInnerTexts()
+    check(JSON.stringify(names) === '["Phone default","90%","100%","110%","120%","135%"]' && await pressed('Phone default'), `text size: Phone default is the first choice and is chosen while no size is picked (${names.join(', ')})`)
+    check((await p.locator('.screen').innerText()).includes('Phone default follows your phone’s font size (130% here).'), 'text size: the footer says the phone\'s size')
+    await p.getByRole('button', { name: '110%', exact: true }).click()
+    const picked = { kept: await p.evaluate(() => localStorage.getItem('hm.textScale')), scale: await scaleOf(p) }
+    check(picked.kept === '1.1' && Math.abs(picked.scale - 1.1) < 0.001 && await pressed('110%') && !(await pressed('Phone default')), `text size: picking 110% overrides the phone and is kept (${JSON.stringify(picked)})`)
+    await p.getByRole('button', { name: 'Phone default', exact: true }).click()
+    const back = { kept: await p.evaluate(() => localStorage.getItem('hm.textScale')), scale: await scaleOf(p) }
+    check(back.kept === null && Math.abs(back.scale - 1.3) < 0.001 && await pressed('Phone default'), `text size: Phone default forgets the size and follows the phone again (${JSON.stringify(back)})`)
+    await p.close()
+  }
+
+  // ── The largest size on a 320 px screen: the chat, the composer, the side panel, a sheet and Settings keep every
+  //    button on the screen and nothing wider than it ──
+  {
+    const p = await browser.newPage({ viewport: { width: 320, height: 640 } })
+    await p.addInitScript(() => { localStorage.setItem('hm.textScale', '1.35'); localStorage.setItem('hm.motion', 'off'); localStorage.setItem('hm.modelBar', 'open') })
+    await p.goto(WEB + '/')
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    // Buttons, switches and text boxes outside the screen's width, or cut by their own box (text wider than the box that
+    // hides it), in the part of the page `sel` names.
+    const outside = sel => p.evaluate(sel => {
+      const bad = []
+      const root = document.querySelector(sel) || document.body
+      if (document.documentElement.scrollWidth > innerWidth + 1) bad.push('page ' + document.documentElement.scrollWidth)
+      for (const e of root.querySelectorAll('button, [role="switch"], input, textarea')) {
+        const r = e.getBoundingClientRect()
+        const st = getComputedStyle(e)
+        if (!r.width || !r.height || st.visibility === 'hidden' || e.closest('[aria-hidden="true"], .chat, .drawer:not(.open)')) continue
+        if (r.right > innerWidth + 1 || r.left < -1) bad.push((e.getAttribute('aria-label') || e.textContent || e.tagName).trim().slice(0, 30) + ` ${Math.round(r.left)}..${Math.round(r.right)}`)
+        else if (e.tagName === 'BUTTON' && st.overflow === 'hidden' && st.textOverflow !== 'ellipsis' && e.scrollWidth > e.clientWidth + 1) bad.push((e.textContent || '').trim().slice(0, 30) + ' cut')
+      }
+      return bad
+    }, sel)
+    const seen = {}
+    seen.chat = await outside('body')
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('textbox', { name: 'Search chats' }).waitFor({ timeout: 5000 })
+    seen.panel = await outside('.drawer')
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    seen.settings = await outside('.screen')
+    await settingsPage(p, 'Appearance')
+    seen.appearance = await outside('.screen')
+    await p.evaluate(() => window.hermesBack())
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await p.evaluate(() => window.hermesBack())
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+    await p.locator('header').getByRole('button', { name: 'Chat options' }).click()
+    await p.locator('.sheet').first().waitFor({ timeout: 5000 })
+    seen.sheet = await outside('.sheet')
+    const bad = Object.entries(seen).filter(([, v]) => v.length)
+    check(bad.length === 0, `text size 135% at 320 px: the chat, the composer, the side panel, a sheet and Settings keep every control on the screen (${JSON.stringify(bad)})`)
+    await p.close()
+  }
+
+  // ── Light: the gold reaches 4.5:1 on white and on the surfaces, and the text on the chat, the side panel and Settings
+  //    with Appearance does too ──
+  {
+    const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await p.addInitScript(() => { localStorage.setItem('hm.theme', 'light'); localStorage.setItem('hm.motion', 'off'); localStorage.setItem('hm.glass', '0') })
+    await p.goto(WEB + '/')
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    const pairs = await p.evaluate(() => {
+      const v = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
+      const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+      return { accent: hex(v('--accent')), bg: hex(v('--bg')), surface: hex(v('--surface')), surface2: hex(v('--surface-2')), ink: hex(v('--accent-ink')) }
+    })
+    const r = { bg: contrast(pairs.accent, pairs.bg), surface: contrast(pairs.accent, pairs.surface), surface2: contrast(pairs.accent, pairs.surface2), ink: contrast(pairs.ink, pairs.accent) }
+    check(Object.values(r).every(x => x >= 4.5), `light: --accent reaches 4.5:1 as text on white, --surface and --surface-2, and under white text (${JSON.stringify(Object.fromEntries(Object.entries(r).map(([k, x]) => [k, x.toFixed(2)])))})`)
+    const low = {}
+    const faded = {}
+    const both = async (name, sel) => {
+      low[name] = await lowContrast(p, sel)
+      faded[name] = await fadedText(p, sel)
+    }
+    await both('chat', '.app > :not(.drawer):not(.drawer-backdrop)')
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('textbox', { name: 'Search chats' }).waitFor({ timeout: 5000 })
+    await both('panel', '.drawer')
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await both('settings', '.screen')
+    await settingsPage(p, 'Appearance')
+    await both('appearance', '.screen')
+    const bad = Object.entries(low).filter(([, v]) => v.length)
+    check(bad.length === 0, `light: every text on the chat, the side panel, Settings and Appearance reaches 4.5:1 (${JSON.stringify(bad)})`)
+    const dim = Object.entries(faded).filter(([, v]) => v.length)
+    check(dim.length === 0, `light: no text there is faded by opacity below 4.5:1 (${JSON.stringify(dim)})`)
     await p.close()
   }
 }

@@ -319,7 +319,7 @@ const pageTitle = (pg, name) => openPage(pg).getByRole('heading', name === undef
 const pageHeadings = (pg, name) => openPage(pg).getByRole('heading', name === undefined ? { level: 3 } : { level: 3, name })
 const settingsSection = (pg, name) => pg.getByRole('group', { name })
 
-// Settings' main page → one of its seven rows (Models, Connectors, Behaviour, Access & privacy, Appearance, Voice, About &
+// Settings' main page → one of its eight rows (Models, Connectors, Behaviour, Access & privacy, Appearance, Voice, Notifications, About &
 // help): taps the row by its role and name and waits for the page's title. Settings must be open on its main page.
 async function settingsPage(page, name) {
   await page.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click()
@@ -377,4 +377,43 @@ const lowContrast = (page, root = 'body') => page.evaluate(sel => {
   return out.slice(0, 20)
 }, root)
 
-module.exports = { hitArea, lowContrast, settingsPage, openPage, pageTitle, pageHeadings, settingsSection, openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }
+// Like lowContrast, but text made see-through by an element's opacity counts too: its colour is mixed into the background
+// by the opacity of every element above it (a dim line at 0.7 that falls under 4.5:1). Skipped: disabled controls and
+// what lies inside them, and anything hidden from screen readers. Returns [text, ratio, opacity] for each failure, at most 20.
+const fadedText = (page, root = 'body') => page.evaluate(sel => {
+  const rgb = c => (c.match(/[\d.]+/g) || []).map(Number)
+  const lum = ([r, g, b]) => [r, g, b].map(c => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((s, c, i) => s + c * [0.2126, 0.7152, 0.0722][i], 0)
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05) }
+  const solidBg = e => {
+    for (let n = e; n; n = n.parentElement) {
+      const c = rgb(getComputedStyle(n).backgroundColor)
+      if (c.length === 3 || (c.length === 4 && c[3] === 1)) return c.slice(0, 3)
+    }
+    return rgb(getComputedStyle(document.body).backgroundColor).slice(0, 3)
+  }
+  const out = []
+  for (const r of document.querySelectorAll(sel)) {
+    const walk = document.createTreeWalker(r, NodeFilter.SHOW_TEXT)
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      const e = t.parentElement
+      if (!e || !t.textContent.trim() || e.closest('svg, [aria-hidden="true"], .theme-prev, :disabled, [aria-disabled="true"]')) continue
+      const st = getComputedStyle(e)
+      const box = e.getBoundingClientRect()
+      if (!box.width || !box.height || st.visibility === 'hidden') continue
+      let op = 1
+      for (let n = e; n; n = n.parentElement) op *= Number(getComputedStyle(n).opacity)
+      if (op >= 1 || op === 0) continue
+      const bg = solidBg(e)
+      let fg = rgb(st.color)
+      const a = (fg.length === 4 ? fg[3] : 1) * op
+      fg = fg.slice(0, 3).map((c, i) => c * a + bg[i] * (1 - a))
+      const px = parseFloat(st.fontSize)
+      const large = px >= 24 || (px >= 18.66 && Number(st.fontWeight) >= 700)
+      const k = ratio(fg, bg)
+      if (k < (large ? 3 : 4.5)) out.push([t.textContent.trim().slice(0, 40), Math.round(k * 100) / 100, Math.round(op * 100) / 100])
+    }
+  }
+  return out.slice(0, 20)
+}, root)
+
+module.exports = { hitArea, lowContrast, fadedText, settingsPage, openPage, pageTitle, pageHeadings, settingsSection, openLibraryPart, addFiles, MOCK, WEB, LOG, SHOTS, calls, rpcs, sleep, check, fail, failures: () => failures, mock, png, nativeShell, motionOff, trayOpen, trayTucked, setMotion, expectIdle, menuFits, contrast }

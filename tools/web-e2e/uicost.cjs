@@ -1,6 +1,6 @@
 // What the interface costs at the moments a person feels: start-up, opening a chat, the first words of a streamed reply,
 // scrolling a long chat, opening and scrolling a long chat of finished turns of work, the same and the chat list with ten sub-agents running, opening the chat list and scrolling it, opening a row's menu and the chat's menu, opening Settings
-// and its pages (Behaviour, Models, Add a provider, Access & privacy, About & help: a page an older build doesn't have is
+// and its pages (Behaviour, Models, Add a provider, Access & privacy, About & help, Appearance, Notifications: a page an older build doesn't have is
 // left out), in a
 // desktop browser with the CPU slowed down (4× by default).
 // Needs the page and the mock running (`run.sh --serve` in another shell, with the same HM_E2E_* ports if it chose others).
@@ -162,7 +162,10 @@ async function one(browser) {
       ['pBehaviour', ['Behaviour', 'Hermux settings'], 'Retries before a fallback'],
       ['pModels', ['Models'], 'All keys'],
       ['pAccess', ['Access & privacy'], 'Auto for all chats'],
-      ['pAbout', ['About & help'], 'Last start-up']
+      ['pAbout', ['About & help'], 'Last start-up'],
+      ['pAppearance', ['Appearance'], 'Glass effects'],
+      // Task 12's page; in this browser (no Android shell) it is the one-row "Not available here" form.
+      ['pNotify', ['Notifications'], 'Notifications']
     ]
     for (const [key, rows, content] of pages) {
       const row = await page.evaluate(rows => rows.find(r => [...document.querySelectorAll('.set-title')].some(e => e.textContent === r)) || '', rows)
@@ -268,7 +271,7 @@ async function one(browser) {
     return v[Math.floor(v.length / 2)]
   }
   console.log(`median of ${runs}, CPU ×${throttle}${motion ? `, motion ${motion}` : ''}${glass ? `, glass ${glass}` : ''}:`)
-  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['scrollSubs', 'the same, 10 sub-agents'], ['openWork', 'a long chat of work'], ['scrollWork', 'scrolling it'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['listScrollSubs', 'the list, 10 sub-agents'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAdd', 'opening Add a provider'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help']]) {
+  for (const [k, name] of [['startup', 'start-up'], ['chat', 'opening a chat'], ['stream', 'first words of a reply'], ['scroll', 'scrolling a long chat'], ['scrollSubs', 'the same, 10 sub-agents'], ['openWork', 'a long chat of work'], ['scrollWork', 'scrolling it'], ['list', 'opening the chat list'], ['listScroll', 'scrolling the chat list'], ['listScrollSubs', 'the list, 10 sub-agents'], ['rowMenu', "opening a row's menu"], ['chatMenu', "opening the chat's menu"], ['settings', 'opening Settings'], ['pBehaviour', 'opening Behaviour'], ['pModels', 'opening Models'], ['pAdd', 'opening Add a provider'], ['pAccess', 'opening Access & privacy'], ['pAbout', 'opening About & help'], ['pAppearance', 'opening Appearance'], ['pNotify', 'opening Notifications']]) {
     if (!all.some(r => r[k])) continue // a page this build doesn't have
     console.log(`  ${name.padEnd(24)} ${String(med(k, 'ms')).padStart(6)} ms, main thread ${String(Math.round(med(k, 'work'))).padStart(5)} ms${['scroll', 'listScroll', 'scrollSubs', 'listScrollSubs', 'scrollWork'].includes(k) ? `, ${med(k, 'slow')} frames over 25 ms, p95 ${med(k, 'p95').toFixed(1)} ms` : ''}`)
   }
