@@ -72,3 +72,6 @@ echo "java-check: phone data chats test $(tail -1 "$OUT/pdchats.txt")"
 # The confirmed live sessions of "Confirm approvals with fingerprint" (ApprovalLock.java), with the jar checked above.
 ANDROID_ALL_JAR="$JAR" ../tools/test_approval_lock.sh > "$OUT/approvallock.txt" 2>&1 || { grep -v '^PASS' "$OUT/approvallock.txt"; echo "java-check: approval lock test FAILED"; exit 1; }
 echo "java-check: approval lock test $(tail -1 "$OUT/approvallock.txt")"
+# Settings → Notifications (NotifyChoice.java, the keyed bridge methods, what each switch gates in HermesService).
+ANDROID_ALL_JAR="$JAR" ../tools/test_notify_choice.sh > "$OUT/notifychoice.txt" 2>&1 || { grep -v '^PASS' "$OUT/notifychoice.txt"; echo "java-check: notify choice test FAILED"; exit 1; }
+echo "java-check: notify choice test $(tail -1 "$OUT/notifychoice.txt")"

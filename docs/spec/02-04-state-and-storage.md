@@ -61,7 +61,7 @@ profile. Every read is wrapped in try/catch: a missing or corrupt value gives th
 | `hm.diagPending` | `diagnostics.ts` | What Hermes's side of the diagnostic log hasn't been told yet, while it is offline: `{enabled?, clear?}`. | No |
 | `hm.devReportUrl` | `report.ts` | Development and browser tests only, in `sessionStorage`, not `localStorage`: a relay URL for a build that has none. Ignored inside the Android app. | No |
 | `hm.tasks.v1` | `tasks.ts` | Ticked task-list boxes in replies: `{<message hash>: {<box index>: bool}}`; newest 300 messages. | No |
-| `hm.textScale` | `store.ts`, `components/Settings.tsx` | Text size factor (0.9, 1, 1.1, 1.2, 1.35). | No |
+| `hm.textScale` | `textscale.ts` (read by `store.ts`), `components/Settings.tsx` | Text size factor the person picked (0.9, 1, 1.1, 1.2, 1.35; any positive number is read as before). Unset (Phone default, from task 12): the app follows Android's font size, clamped to 0.9 to 1.35. | No |
 | `hm.theme` | `theme.ts` | `default`, `oled`, `light` or `system`. | No |
 | `hm.tts` | `voice.ts` (`TTS`) | Voice settings `{engine, voice, rate, pitch}` (rate and pitch 0.5–2). | No |
 | `hm.welcomeDone` | `components/Connect.tsx` | `'1'` once the Welcome screen was finished. | No |
@@ -94,6 +94,7 @@ Owned by the Java side (4); listed here because the flows above depend on them.
 | `hermes` → `wake_at` | The next cron wake-up time, re-armed after the app restarts. |
 | `hermes` → `shizuku_*` | The Shizuku keeper's pairing, last result and whether it turned Wireless debugging on. |
 | `hm` → `unseen` | Chats that finished while you weren't looking (Done chip + badge). |
+| `hm` → `notifyFinishes`, `notifyNeedsMe` | Settings → Notifications (`NotifyChoice`, 4.3): post the Done chip, reply and scheduled-job cards; post the approval and question chips and pop-ups. Booleans, missing = on. |
 | `hm` → `bg` | The page background colour, so the next launch doesn't flash. |
 | `hm` → `readaloud` | Read-aloud mode for the service: `{global, sessions, tts}`. |
 | `voice` | `Voice.java`'s own settings (4.6). |

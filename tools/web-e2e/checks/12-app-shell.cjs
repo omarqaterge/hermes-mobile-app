@@ -734,7 +734,7 @@ module.exports = async t => {
       await p.evaluate(() => window.hermesBack())
       await sleep(200) // the page's slide-out ends before the next one opens
     }
-    const PAGES = ['Models', 'Connectors', 'Behaviour', 'Access & privacy', 'Appearance', 'Voice', 'About & help']
+    const PAGES = ['Models', 'Connectors', 'Behaviour', 'Access & privacy', 'Appearance', 'Voice', 'Notifications', 'About & help']
 
     // Footers are one sentence; the longer words sit behind "About this".
     {

@@ -72,8 +72,8 @@ These files carry the plumbing every screen uses. Screens are in 3.
   `toast` (one copy per text, at most 3 on screen, 3.5 s), the `ChatItem` kinds (`user`, `assistant`, `tool`,
   `notice`, `subagent`), the `Screen` and `Sheet` types, `hydrate` (stored transcript → items, skipping hidden rows
   and rows a resume repeats), `splitAttachments` (`@file:` / `@image:` back into chips), `addsToScreen` and
-  `closeScreen`. The initial state reads `hm.profile`, `hm.textScale`, `hm.lastSession`, `hm.outbox.v1` and the
-  cached chat.
+  `closeScreen`. The initial state reads `hm.profile`, the text scale (`initialTextScale` from `textscale.ts`:
+  `hm.textScale`, else the phone's font size), `hm.lastSession`, `hm.outbox.v1` and the cached chat.
 - `chatview.ts` — which chat the screen shows, worked out in one place from the store's `opening`, `preview` and
   `active` (3.2, "While a chat opens"): `viewKind` (`ChatViewKind`), `viewSettled`, `screenChat`, `shownItems`,
   `shownKey`, `shownTitle`. Pure functions of the state, used as `useStore` selectors.
@@ -86,6 +86,9 @@ These files carry the plumbing every screen uses. Screens are in 3.
   `done`, `takeTurnEnd` reads it once when the turn ends, and `queueGoesOn` says whether the queue sends its next
   message (only after `done`). In `gateway.ts`, `endTurn` applies `turnOver` to the chat whose turn it was and to no
   other.
+- `textscale.ts` — Appearance → Text size (3.15): `TEXT_SIZES`, `clampTextScale`, `savedTextChoice`, `phoneTextScale` (bridge `phoneTextScale`), `initialTextScale`, `chooseTextScale`. Imports nothing of the store, which reads it while it loads.
+- `notifychoice.ts` — Settings → Notifications (3.15, 4.3): `readNotifyState` and `setNotifyChoice` (bridge `notifyChoices`, `setNotifyChoice`), `notifyChoicesAvailable`, `openNotificationSettings` and `turnOnNotifications` (bridge `setupFix`), `notifySummary`, and `window.hermesNotifyChanged`, which sends `NOTIFY_CHANGED`.
+- `NotificationsPage.tsx` (in `components/`) — the Notifications page and `useNotifyState` (3.15).
 - `approval-lock.ts` — Confirm approvals with fingerprint (3.6): `approvalLockAvailable`, `approvalLockState`, `approvalNeedsConfirm`, `confirmAllow` (bridge `confirmApproval`, answered through `window.hermesApprovalConfirm`), `confirmAlways` (bridge `confirmIdentity`, for a setting that asks on every change), `setApprovalLock`, `forgetApprovalConfirm`; confirmations are keyed by the approval's live session (runtime id), at most `CONFIRMED_MAX`.
 - `chatcache.ts` — last-seen items of recent chats (`rememberChat`, `cachedChat`, `forgetChat`, `saveChatToDisk`)
   (2.2.5).

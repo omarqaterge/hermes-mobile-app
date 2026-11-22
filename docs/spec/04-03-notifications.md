@@ -28,6 +28,30 @@ Notification ids: 1 = status chip (also bridge `notify`, with a tag), 2 = every 
 
 All of them use the small icon `ic_stat_hermes` (the approval chip uses `ic_stat_shield`) and accent colour gold `#D9A441`, green `#3DBE7A`, red `#E5564B` or amber `#E8912D` as noted below.
 
+#### What the two switches cover (Settings → Notifications)
+
+The person can turn two kinds off inside the app (3.15 Notifications; `NotifyChoice.java`, preferences `notifyFinishes` and `notifyNeedsMe` in `hm`, both on by default; `NotifyChoice.finishes` and `NotifyChoice.needsMe` are read at each post, so a change applies to the next post). Off means the shell does not post that kind. Nothing is answered, dropped or delayed because of it: a waiting approval or question stays in `pending` (so `hermesIdle`, the wake lock and the expiry are unchanged) and the app's sheet and Needs you still show it. The choices never touch Android's channels. Everything not listed under a switch always posts. Every place that posts:
+
+| Where it posts | What | Covered by |
+|---|---|---|
+| `HermesService.onEvent` `flash` with `done` and a chat → the unseen list → status chip state 4 | The sticky Done chip and the icon badge | When a task finishes (off: the chat is not added to the unseen list, so no chip and no badge) |
+| `onEvent` `flash` with `done` (or "Done") and no chat → state 1 | The momentary Done chip | When a task finishes |
+| `onEvent` `flash`, any other | A momentary chip from the plugin | Always |
+| `onEvent` `reply`, `error` → `postGrouped` (`reply:<chat>`) | Reply and failed-turn cards with the Reply field | When a task finishes (off: no card; reading the reply aloud, `readAloud`, is its own setting and still runs) |
+| `onEvent` `cron` → `postGrouped` (`cron:<id>`) | A scheduled job finished or failed | When a task finishes |
+| `onEvent` `approval` → status chip state 2 (`approvalNotification`, re-posted every second by `tickApproval`) | The approval chip with Allow once, Allow session, Deny, phone-data approvals included | When Hermux needs me (off: `statusNotification` skips states 2 and 3 and `tickApproval` posts nothing; the countdown and its expiry run as before) |
+| `onEvent` `approval` → `postGrouped` (`approval:<chat>`), and `reAlertApproval` at 20 s and 40 s | The approval pop-up and its re-alerts, phone-data approvals included | When Hermux needs me |
+| `onEvent` `ask` → status chip state 3 (`askNotification`) and `postGrouped` (`ask:<chat>`) | The question chip and pop-up | When Hermux needs me |
+| `MainActivity.Bridge.notify` (tag `req-<id>`, from `gateway.ts` while the app is in the background) | "Hermux needs your input" for a masked prompt (a password, secret or code) | When Hermux needs me |
+| `onEvent` `status` → state 5 or 6; `setupNotice` and the setup step's line → id 1 | The working chip that keeps the service alive, the idle card, "Setting up" | Always (not a choice) |
+| `onEvent` `learning` → state 1 and `postGrouped` (`learn:<id>`) | Memory and skill updates | Always |
+| `stopTurn` (`stop:<chat>`), `answerApproval` and `answerFromNotification` | "Couldn't stop Hermux", "Couldn't send your answer": what happened to the person's own tap | Always |
+| `LOCAL_ALERT_ID` (12), `DASH_ALERT_ID` (13), `PLUGIN_NOTICE_ID` (14), `SHIZUKU_ID` (9) | The listener and dashboard alerts, the plugin notice, the Shizuku notice | Always |
+| `UpdateNotice` (10), `DevTools` (11), `TtsMedia` (7), `AdbPairing` (`pair`) | App update, remote debugging, reading aloud, pairing | Always |
+| `postGrouped`'s summary (3) | The group summary | With any card it groups |
+
+Turning a switch changes the chip at once (`HermesService.notifyChoicesChanged` → `applyNotifyChoices`): with When Hermux needs me off, the approval and question pop-ups showing (`approval:` and `ask:` cards) are removed and the chip re-posted without them; turned on again while one waits, the chip shows it again with its buttons, which follow the unlock and fingerprint rules below unchanged. Allow from a notification, the fingerprint rule and the locked-phone rules do not read the choice (`tools/test_notify_choice.sh` checks the sources).
+
 #### The status notification: which state shows
 
 `HermesService.statusNotification` picks one state, in this order:

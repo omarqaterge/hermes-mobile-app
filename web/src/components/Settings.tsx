@@ -38,6 +38,9 @@ import { ReportRow } from './Report'
 import { DiagRows } from './DiagRows'
 import { pluginRow, runPluginUpdate, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
+import { chooseTextScale, phoneTextScale, savedTextChoice, TEXT_SIZES } from '../textscale'
+import { NotificationsPage, useNotifyState } from './NotificationsPage'
+import { notifyChoicesAvailable, notifySummary } from '../notifychoice'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
 import { Icon, type IconName } from './icons'
 import { recheckModel, useModelReady } from '../model-ready'
@@ -804,7 +807,7 @@ function AssistantSection() {
 const THEMES: Array<{ id: Theme; label: string; bg: string; bar: string; user: string; dim: string }> = [
   { id: 'default', label: 'Default', bg: '#0e1115', bar: '#1d222a', user: '#d9a441', dim: '#3a414d' },
   { id: 'oled', label: 'OLED black', bg: '#000000', bar: '#15161a', user: '#d9a441', dim: '#2b2d33' },
-  { id: 'light', label: 'Light', bg: '#ffffff', bar: '#ebe9e2', user: '#b57a10', dim: '#d6d3c8' },
+  { id: 'light', label: 'Light', bg: '#ffffff', bar: '#ebe9e2', user: '#8c600e', dim: '#d6d3c8' },
   { id: 'system', label: 'System', bg: 'linear-gradient(135deg,#000000 50%,#ffffff 50%)', bar: '#8a8a8a', user: '#c48f1c', dim: '#777777' }
 ]
 const THEME_NAME: Record<Theme, string> = { default: 'Default', oled: 'OLED black', light: 'Light', system: 'System' }
@@ -830,8 +833,12 @@ const MODEL_BAR_SUB: Record<ModelBarMode, string> = {
 const MODEL_BAR_FOOT = 'The model, Auto, the context ring and the live status; tucked away, a new chat shows them until its first message.'
 const EFFECTS_FOOT = "Until you choose, Animations follows your phone: Off when it is set to remove animations, otherwise Full."
 
+type TextSize = number | 'phone'
+
 function AppearancePage() {
   const scale = useStore(s => s.textScale)
+  const [choice, setChoice] = useState<number | null>(savedTextChoice) // null: Phone default
+  const [phone] = useState(phoneTextScale)
   const glass = useGlass()
   const motion = useMotionLevel()
   const modelBar = useTray().mode
@@ -864,18 +871,16 @@ function AppearancePage() {
           ))}
         </div>
       </Section>
-      <Section title="Text size">
+      <Section title="Text size" footer={`Phone default follows your phone’s font size (${Math.round(phone * 100)}% here).`}>
         <div className="size-preview">The quick brown fox jumps over the lazy dog.</div>
-        <Segmented
-          options={[0.9, 1, 1.1, 1.2, 1.35].map(v => ({ value: v, label: `${Math.round(v * 100)}%` }))}
-          value={[0.9, 1, 1.1, 1.2, 1.35].find(v => Math.abs(v - scale) < 0.01) ?? 1}
+        <Segmented<TextSize>
+          className="seg-text"
+          options={[{ value: 'phone' as TextSize, label: 'Phone default' }, ...TEXT_SIZES.map(v => ({ value: v as TextSize, label: `${Math.round(v * 100)}%` }))]}
+          value={choice == null ? 'phone' : (TEXT_SIZES.find(v => Math.abs(v - scale) < 0.01) ?? 1)}
           onChange={v => {
-            setState({ textScale: v })
-            try {
-              localStorage.setItem('hm.textScale', String(v))
-            } catch {
-              /* ignore */
-            }
+            const picked = v === 'phone' ? null : v
+            setChoice(picked)
+            setState({ textScale: chooseTextScale(picked) })
           }}
         />
       </Section>
@@ -975,6 +980,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
   const model = useStore(s => s.defaultModel || s.profiles.find(p => p.name === s.profile)?.model || '')
   const [theme] = useState<Theme>(savedTheme)
   const [access] = useState<Access>(defaultAccess)
+  const notify = useNotifyState()
   const search = (
     <label className="set-search">
       <span aria-hidden="true"><Icon n="search" /></span>
@@ -1005,6 +1011,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
       <Section title="This app">
         <Row icon="palette" tone="purple" title="Appearance" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
         <Row icon="speaker" tone="teal" title="Voice" sub="Read aloud, dictation, Live mode" chevron onClick={() => go('voice')} />
+        <Row icon="bell" tone="blue" title="Notifications" value={notifyChoicesAvailable() ? notifySummary(notify) : undefined} chevron onClick={() => go('notifications')} />
         <Row icon="info" tone="gray" title="About & help" value={appVersion()} chevron onClick={() => go('about')} />
       </Section>
     </div>
@@ -1467,6 +1474,7 @@ export function SettingsScreen() {
       {page === 'config' && <ConfigTab scope={scope} setScope={setScope} />}
       {page === 'access' && <AccessPage />}
       {page === 'about' && <AboutPage />}
+      {page === 'notifications' && <NotificationsPage />}
     </ScreenShell>
   )
 }

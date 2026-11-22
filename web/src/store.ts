@@ -10,6 +10,7 @@ import type {
 import type { ConnectionState } from '@hermes/shared/json-rpc-gateway'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 import { cachedChat } from './chatcache'
+import { initialTextScale } from './textscale'
 
 export interface ActivityItem {
   session: string
@@ -199,13 +200,7 @@ const savedProfile = (() => {
   }
 })()
 
-const savedScale = (() => {
-  try {
-    return Number(localStorage.getItem('hm.textScale')) || 1
-  } catch {
-    return 1
-  }
-})()
+const savedScale = initialTextScale() // the person's size, else the phone's font size (textscale.ts)
 
 const lastOpen = (() => {
   try {

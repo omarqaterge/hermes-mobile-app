@@ -282,8 +282,30 @@ public class MainActivity extends Activity {
             phoneDataPermissionResult(results);
             return;
         }
+        if (code == REQ_NOTIFY) { // Settings → Notifications asked: the page reads the state again
+            if (web != null) web.evaluateJavascript("window.hermesNotifyChanged && window.hermesNotifyChanged()", null);
+            return;
+        }
         startHermes();
         setupChanged();
+    }
+
+    /** Request code of Settings → Notifications' "Turn on notifications" (Android 13+ only). */
+    static final int REQ_NOTIFY = 47;
+
+    /** Android shows this app's notifications at all: the permission (Android 13+) and the app-wide switch. */
+    boolean notificationsAllowed() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false;
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        return nm == null || nm.areNotificationsEnabled();
+    }
+
+    /** Android will still show its own permission dialog (13+, refused once, not "don't ask again"); otherwise only the
+     *  system page can turn notifications on. */
+    boolean notificationsCanAsk() {
+        return Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                && shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS);
     }
 
     // ---- Settings → Phone data for the agent: turning a switch on (the bridge's phoneDataSet) ----
@@ -1003,6 +1025,14 @@ public class MainActivity extends Activity {
                     i = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                             .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName());
                     break;
+                case "notify-permission":
+                    // Settings → Notifications' notice: Android's own dialog where it still asks (13+), else the system page.
+                    if (Build.VERSION.SDK_INT >= 33 && notificationsCanAsk()) {
+                        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
+                        return;
+                    }
+                    setupFix("notifications");
+                    return;
                 case "battery-app":
                     i = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()));
                     break;
@@ -1066,8 +1096,9 @@ public class MainActivity extends Activity {
             }
             startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (Exception e) {
-            // The direct battery prompt is missing on some ROMs: fall back to the app's own settings page.
-            if (what.equals("battery-app")) setupFix("app-settings");
+            // The direct battery prompt (or the app's notification page) is missing on some ROMs: fall back to the app's own
+            // settings page, which every Android has.
+            if (what.equals("battery-app") || what.equals("notifications")) setupFix("app-settings");
         }
     }
 
@@ -2759,6 +2790,31 @@ public class MainActivity extends Activity {
             RemoteGuard.allowOnce(url);
         }
 
+        /** Settings → Notifications: {"finishes","needsMe","allowed","canAsk"} (NotifyChoice.json); "" without the key. */
+        @JavascriptInterface
+        public String notifyChoices(String key) {
+            if (!ok(key)) return "";
+            return NotifyChoice.json(NotifyChoice.finishes(MainActivity.this), NotifyChoice.needsMe(MainActivity.this), notificationsAllowed(), notificationsCanAsk());
+        }
+
+        /** Sets one choice: `which` "finishes" or "needsMe", `value` exactly "true" or "false" (anything else changes
+         *  nothing and answers false). The service re-posts its chip at once. */
+        @JavascriptInterface
+        public boolean setNotifyChoice(String key, String which, String value) {
+            if (!ok(key)) return false;
+            if (!NotifyChoice.set(MainActivity.this, which, value)) return false;
+            HermesService.notifyChoicesChanged();
+            return true;
+        }
+
+        /** Android's font size (Settings → Display → Font size) as a scale, 1 = normal; 0 without the key. The page clamps it
+         *  to its own range while the person has chosen no size (Appearance → Text size → Phone default). */
+        @JavascriptInterface
+        public float phoneTextScale(String key) {
+            if (!ok(key)) return 0f;
+            return getResources().getConfiguration().fontScale;
+        }
+
         /** {"on":bool,"secure":bool}: Settings → Permissions → "Confirm approvals with fingerprint". */
         @JavascriptInterface
         public String approvalLockState(String key) {
@@ -3075,6 +3131,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void notify(String key, String title, String body, String tag) {
             if (!ok(key)) return;
+            // Only masked prompts (a password, secret or code Hermes asks for) come here: "When Hermux needs me" covers them.
+            if (!NotifyChoice.needsMe(MainActivity.this)) return;
             Intent open = IntentGate.mark(MainActivity.this, new Intent(MainActivity.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
             PendingIntent pi = PendingIntent.getActivity(MainActivity.this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             // "needs_you": the old "hermes" channel is deleted by HermesService, and posts to it were dropped.

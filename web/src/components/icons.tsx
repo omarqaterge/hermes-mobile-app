@@ -5,7 +5,7 @@
 // arrow standing in for an icon) belongs anywhere else in the interface: tools/check-no-emoji.py enforces it.
 import type { ReactNode } from 'react'
 import {
-  Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Ban, Bird, Bot, Braces, Brain, Brush, Bug, Calendar, ChartColumn,
+  Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Ban, Bell, Bird, Bot, Braces, Brain, Brush, Bug, Calendar, ChartColumn,
   Check, ChevronLeft, ChevronDown, ChevronRight, ChevronUp, CircleCheck, Circle, CircleDot, CircleHelp, CircleX, Clock, Quote, CloudDownload,
   Code, Compass, CornerLeftUp, Download, Eye, FastForward, FileText, Film, Folder, FolderOpen, GitBranch, Layers, Gauge,
   Globe, Hand, Hash, House, Image, Info, KeyRound, Link, ListChecks, Lock, LogOut, Mail, MapPin, Maximize2, Minimize2, Menu, MessageSquare,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 
 const ICONS = {
-  archive: Archive, arrowDown: ArrowDown, arrowUp: ArrowUp, sort: ArrowUpDown, external: ArrowUpRight, off: Ban, bird: Bird,
+  archive: Archive, arrowDown: ArrowDown, arrowUp: ArrowUp, sort: ArrowUpDown, external: ArrowUpRight, off: Ban, bell: Bell, bird: Bird,
   bot: Bot, json: Braces, brain: Brain, broom: Brush, bug: Bug, calendar: Calendar, chart: ChartColumn, check: Check,
   down: ChevronDown, right: ChevronRight, left: ChevronLeft, up: ChevronUp, done: CircleCheck, circle: Circle, active: CircleDot, help: CircleHelp,
   failed: CircleX, clock: Clock, quote: Quote, getModel: CloudDownload, code: Code, compass: Compass, back: CornerLeftUp,

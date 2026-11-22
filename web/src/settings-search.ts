@@ -5,7 +5,7 @@
 // (Settings → Access & privacy → Approvals).
 import { HERMES_SETTINGS } from './hermes-settings'
 
-export type SettingsPageId = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'add' | 'keys' | 'connectors' | 'hermes' | 'memory' | 'config' | 'access' | 'about'
+export type SettingsPageId = 'hub' | 'appearance' | 'voice' | 'stt' | 'models' | 'add' | 'keys' | 'connectors' | 'hermes' | 'memory' | 'config' | 'access' | 'about' | 'notifications'
 
 export interface SettingsEntry {
   /** The page to open. */
@@ -24,7 +24,7 @@ export interface SettingsEntry {
 const PAGE_NAME: Record<SettingsPageId, string> = {
   hub: 'Settings', appearance: 'Appearance', voice: 'Voice', stt: 'Speech recognition', models: 'Models', add: 'Add a provider',
   keys: 'API keys', connectors: 'Connectors', hermes: 'Behaviour', memory: 'Memory', config: 'Advanced settings',
-  access: 'Access & privacy', about: 'About & help'
+  access: 'Access & privacy', about: 'About & help', notifications: 'Notifications'
 }
 
 const e = (page: SettingsPageId, title: string, where: string, sub?: string, words?: string, find: string | null = title): SettingsEntry => ({ page, title, where, sub, words, find: find ?? undefined })
@@ -38,6 +38,7 @@ const STATIC: SettingsEntry[] = [
   // The main page: This app
   e('appearance', 'Appearance', 'Settings → This app', 'Theme, text size and effects', 'theme dark light oled font look glass animations model bar', null),
   e('voice', 'Voice', 'Settings → This app', 'Read aloud, dictation, Live mode', 'tts speech speak', null),
+  e('notifications', 'Notifications', 'Settings → This app', 'When a task finishes, when Hermux needs me', 'notify alerts sound vibration lock screen silent quiet', null),
   e('about', 'About & help', 'Settings → This app', 'Updates, help, versions', 'version info', null),
   // Models
   e('models', 'New chats use', 'Settings → Models', 'Which model each bot starts with', 'default models model bot profile'),
@@ -68,7 +69,11 @@ const STATIC: SettingsEntry[] = [
   e('about', 'Uninstall Hermux', 'About & help → Danger zone', 'Hermux, Debian, chats, Termux and the helper apps', 'remove delete backup'),
   // Appearance
   e('appearance', 'Theme', 'Appearance', 'Default, OLED black, Light or System', 'dark light oled black system colors'),
-  e('appearance', 'Text size', 'Appearance', undefined, 'font bigger larger smaller zoom'),
+  e('appearance', 'Text size', 'Appearance', 'Phone default or one of five sizes', 'font bigger larger smaller zoom phone default system accessibility'),
+  // Notifications
+  e('notifications', 'When a task finishes', 'Notifications', 'A reply, a scheduled job or a background task is done.', 'done reply cron scheduled job notify'),
+  e('notifications', 'When Hermux needs me', 'Notifications', 'An approval or a question is waiting.', 'approval question ask notify silent'),
+  e('notifications', 'Sound, vibration and the lock screen', 'Notifications', 'Android’s settings for Hermux’s notifications', 'channels sound vibrate lock screen android'),
   e('appearance', 'Glass effects', 'Appearance → Effects', 'Bars and sheets let the chat show through', 'blur translucent transparent glass solid look battery'),
   e('appearance', 'Animations', 'Appearance → Effects', 'Full, Reduced or Off', 'motion animation reduce remove movement springs battery'),
   e('appearance', 'Model bar', 'Appearance → Chat screen', 'Tucked away or Always open', 'model chip auto context ring status tray handle tucked hide show always open'),

@@ -341,9 +341,9 @@ export function SliderRow({ icon, tone, title, value, min, max, step, format, on
 
 // ── segmented choice ─────────────────────────────────────────
 
-export function Segmented<T extends string | number>({ options, value, onChange }: { options: Array<{ value: T; label: ReactNode }>; value: T; onChange: (v: T) => void }) {
+export function Segmented<T extends string | number>({ options, value, onChange, className }: { options: Array<{ value: T; label: ReactNode }>; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    <div className="seg">
+    <div className={className ? `seg ${className}` : 'seg'}>
       {options.map(o => (
         <button key={String(o.value)} className={o.value === value ? 'on' : ''} aria-pressed={o.value === value} onClick={() => { haptic(); onChange(o.value) }}>
           {o.label}

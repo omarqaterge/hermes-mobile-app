@@ -402,6 +402,36 @@ opened in turn (base, branch, branch, base, …), which takes the drift out: 12 
 - Chat heights at 360x740 unchanged: 614 px idle, 314 px with the keyboard (`31-fixed-points.cjs`).
 - Not measured: on a phone (`docs/manual-tests.md`, "A calmer chat").
 
+**Text size from the phone and the notification switches (task 12, 2026-11-22).** `uicost.cjs --runs 5 --motion off
+--glass off`, CPU ×4, against `redesign` before the change (a worktree of it with this branch's `uicost.cjs`, both
+builds served at once and measured in turn: base, branch, base, branch). `uicost.cjs` gained two moments: opening
+Appearance and opening Notifications (in this browser, with no Android shell, its one-row form; the base has no such
+page). The machine's load was about 3. Main-thread work, ms:
+
+| Moment | base 1 | branch 1 | base 2 | branch 2 |
+|---|---|---|---|---|
+| start-up | 525 | 518 | 511 | 511 |
+| opening a chat | 39 | 38 | 38 | 36 |
+| first words of a reply | 33 | 38 | 31 | 32 |
+| scrolling a long chat | 299 | 368 | 328 | 300 |
+| the same, 10 sub-agents | 479 | 417 | 453 | 382 |
+| a long chat of work | 552 | 562 | 564 | 543 |
+| opening the chat list | 23 | 21 | 21 | 21 |
+| opening a row's menu / the chat's menu | 16 / 15 | 16 / 15 | 16 / 15 | 16 / 15 |
+| opening Settings | 28 | 29 | 27 | 28 |
+| opening Behaviour | 61 | 64 | 64 | 64 |
+| opening Appearance | 14 | 14 | 13 | 13 |
+| opening Notifications | | 5 | | 5 |
+
+Branch round 2 against base round 2 (run back to back): start-up unchanged, opening a chat −5%, the first words of a
+reply +1 ms, opening Settings +1 ms (the eighth row reads the shell's state once; 28 against 27, inside the rounds'
+spread of 27 to 29), Appearance unchanged; the scrolls move by more than 5% in both directions between rounds of the
+same build and are not touched by this change. No new timer, poll or listener that runs while idle: the page reads the
+phone's font size once at start, and the Notifications page reads the shell's state when it opens, when the app comes
+back on screen and when Android answers the permission dialog. Chat heights at 360x740 unchanged: 614 px idle, 314 px
+with the keyboard (`31-fixed-points.cjs`, at the default size). Not measured: on a phone (`docs/manual-tests.md`, "Text
+size from the phone and the notification switches").
+
 ## Adding a measurement
 
 Measure the same way each time, on the phone, with the app build you are testing installed:

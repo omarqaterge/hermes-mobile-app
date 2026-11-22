@@ -517,3 +517,49 @@ phone shows, in the order a person meets them. Try each on the redesign build, t
       reopened from history. The status line's time and speed keep still as they count.
 - [ ] TalkBack reads the line as one button with its state ("expanded" / "collapsed").
 - [ ] A long chat of many folded turns opens and scrolls as smoothly as before.
+
+## Text size from the phone and the notification switches (task 12, not yet on a phone)
+
+Text size (Settings → Appearance → Text size):
+
+- [ ] In Appearance tap Phone default (it shows as chosen; it already is when no size was ever picked). Android Settings → Display → Font size: set the largest
+      size. Go back to Hermux: the app restarts its screen and every text is bigger, at most 135 % (the footer says
+      "Phone default follows your phone’s font size (135% here)."). Set the smallest: the text is 90 %. Set the default:
+      100 %.
+- [ ] With the phone at its largest font, pick 110 % in Appearance: the app shows 110 % and keeps it after a force-stop
+      and restart. Change the phone's font size again: Hermux stays at 110 %. Tap Phone default: it follows the phone
+      again at once.
+- [ ] At the phone's largest font on the narrowest phone you have (or `adb shell wm size 720x1520` and
+      `adb shell wm density 360` for about 320 dp wide; `wm size reset` and `wm density reset` after): the chat, the
+      composer with the keyboard open, the side panel, the chat's menu and every Settings page show every button whole
+      and nothing scrolls sideways.
+- [ ] Light theme: the gold words (links, chips, the Send button's colour) read clearly on white in daylight.
+
+Notifications (Settings → Notifications). Before each, leave the app with Home so it is not on screen:
+
+- [ ] **When a task finishes off.** Turn it off. Ask a question and leave the app: when the reply is done, no Done chip,
+      no reply card and no badge appear; the working chip shows while it works and goes to Ready. With read-aloud on,
+      the reply is still read aloud. A scheduled job that runs (Scheduled → a job → Run now) posts no card. Open the
+      app: the chat has its unread dot. Turn it back on: the next reply posts the Done chip and the card as before.
+- [ ] **When Hermux needs me off.** Turn it off: the app asks "Hermux will wait silently until you open the app."
+      first; Cancel keeps it on. Turn it off, ask for something that needs an approval (with Auto off) and leave the
+      app: no pop-up, no approval chip and no re-alert at 20 s and 40 s; the status chip shows the working state only.
+      Open the app within the timeout: the approval sheet is there and the chat is under Needs you; Allow works (with
+      the fingerprint prompt when "Confirm approvals with fingerprint" is on). Let one time out instead: Hermes gets
+      no answer from the phone (it times out as it does when nobody answers).
+- [ ] The same with a question (`clarify`) and with a phone-data approval (Settings → Access & privacy → Phone data on,
+      ask "who called me today"): neither posts anything; both wait in the app.
+- [ ] A masked prompt (a sudo password or a secret Hermes asks for) with the app in the background: no "Hermux needs
+      your input" while needs me is off, and it is there when the app opens.
+- [ ] While an approval chip is showing, open the app, turn needs me off, leave the app: the chip and the pop-up are
+      gone and the approval still waits in the app. Turn it back on while one waits: the chip shows it again with Allow
+      once, Allow session and Deny, and Allow from the chip still opens the app while "Confirm approvals with
+      fingerprint" is on, and on a locked phone still asks for the unlock first.
+- [ ] Sound, vibration and the lock screen opens Android's notification page for Hermux; a channel turned silent there
+      stays silent after both switches are turned off and on again.
+- [ ] Android 13+: Android Settings → Apps → Hermux → Notifications off. Settings → Notifications shows "Notifications
+      are off" and the main page's row says "Off in Android". After one refusal of Android's dialog, the button says
+      "Turn on notifications" and shows the dialog; after "Don't allow" twice it says "Open Android settings" and opens
+      the page. Turning them on there and coming back removes the notice. Android 8 to 12: the button opens the page.
+- [ ] A phone with no app notification page (some makers): Sound, vibration and the lock screen opens the app's own
+      App info page instead.
