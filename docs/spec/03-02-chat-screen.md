@@ -128,3 +128,43 @@ Initial scroll: when the divider is above the last screenful, the chat opens wit
 `web/src/activity.ts` polls the plugin's `GET /activity` while the page is visible and connected: every 3 s while the banner shows something, once 0.3 s after the open chat's turn ends (the background review starts then), otherwise on every third tick (9 s). `bannerItems` hides the open chat's own live turn (it has the status bar), but keeps its background review. When a chat drops out of the list, the session list is refreshed so its unread dot appears. The same answer's `waiting` list goes to `store.waiting` ("Needs you", 3.13); it does not make the feed poll faster. When a request leaves `store.requests`, its chat leaves `store.waiting` at once and the feed is read once more 0.3 s later.
 
 ---
+
+#### Agent motion
+
+Animations that show what Hermux is doing (`web/src/agentmotion.ts` for the states, `web/src/components/AgentMotion.tsx`
+for the shared pieces, `web/src/agent-motion.css` for the movement; owner's wish in `docs/decisions/glass-and-motion.md`,
+costs in `docs/decisions/redesign-costs-no-speed-or-battery.md`). Each starts with its state and ends the moment the state
+is over. Under Reduced every movement is a short fade and repeating ones stand still; under Off every change is instant;
+at every level the state is also told by words or a still mark. Colour means state: gold working, amber waits for you,
+green a finished step, red a failure.
+
+| # | When | What moves | Where |
+|---|---|---|---|
+| 1 | A message is sent | It lifts out of the composer and settles into the chat (`just-sent`, from `noteSent` / `justSent`); history and a reopened chat never move | `UserMsg` |
+| 2 | Hermux works on this chat (a turn or its sub-agents) | A light travels round the text box (`EdgeLight`, `composerLight` `working`); Send turns into Stop with a turn and a spring (and back); a soft, still gold glow fades in far behind the chat (`WorkGlow`, `.work-glow`, none in OLED black); with the tray open its status line opens inside it and the context ring fills smoothly; with it closed the handle is gold with its shimmer (3.4 Tray) | `Composer`, `App` |
+| 3 | Hermux waits for the person | The text box's edge stands still in amber (`waiting`), as the tray handle does; the request sheet springs up like every sheet | `Composer` |
+| 4 | Thinking | A small orb beside "Thinking…" turns and breathes (`ThinkOrb`); when the thought ends the brain mark settles in (`settled`) and the line reads "Thought for N s" | `Reasoning` in `ChatItems.tsx` |
+| 5 | A step starts | Its card slides in; the running step's words shimmer (one at a time: `liveStep`, class `step-live`, on the card or on the folded run that holds it); its ring turns (the spinners' shared tick) | `ToolCard`, `ToolRunHead` |
+| 6 | A step ends | Its mark is a green tick before its duration (`DrawnMark`); a step seen running draws it with a small pop (`useStepEnd`) | `ToolCard` |
+| 7 | A step fails | A red cross draws itself and the card's line gives one short shake (`step-failed`); a sub-agent group's line shakes when its failed count rises (`step-failed-0` / `step-failed-1`) | `ToolCard`, `SubGroupHead` |
+| 8 | Sub-agents run | In an opened group each row has a lane (`sub-lane`): the first running one carries a travelling light, a finished one fills green (red when it went wrong); the group's line stops shimmering while its rows are open. A row's ring becomes a drawn tick or cross when it ends | `SubRow`, `Lane`, `StateMark` in `SubAgents.tsx` |
+| 9 | The turn finishes on screen | Its work folds into "Worked N s · N steps" as before (3.3); that line arrives softly (`arrive`) | `TurnWorkHead` |
+| 10 | The answer streams | The newest words come out of a fade at the end of the line being written: a still gradient over the last letters of the last paragraph or list item (`.msg.assistant.streaming`), no animation; earlier text never moves and no earlier message is drawn again | `AssistantMsg` |
+| 11 | The answer is complete | Its actions settle in once (`settled`), and the phone gives one light tick (`turnTick`, the existing `haptic` bridge call): never for steps, never over the lock screen, never when the app is away or another chat opened | `AssistantMsg`, `Chat` |
+| 12 | The chat list | Working titles shimmer as before; the first Needs you row's amber dot sends out a pulsing ring while the list is open; nested rows opened by their chat's toggle slide out in a short stagger (not when the list itself opens); a running nested row's ring becomes a drawn tick | `SessionList.tsx`, `NestedRows` |
+| 14 | A canvas document is written | Its button glows as before; in the open canvas the newest line comes out of a fade (a still mask on `canvas-writing-preview`) | `Canvas.tsx` |
+| 15 | Hermux uses an app in the background | The background-app card carries the same travelling light (`EdgeLight`); the text box's light stays lit but stands still meanwhile (`EdgeLight` `still`, set by `Composer` from `bgForChat`), so one light travels | `BgApp.tsx`, `Composer` |
+| 16 | Live mode and dictation | The Live orb is gold in every phase and breathes while listening, faster while Hermux speaks, slower while it thinks (the shell reports no sound level, so it follows the phase, not the voice); Dictation's button sends out a ring (a transform and opacity, no longer a moving shadow) | `Composer` |
+| 17 | Reconnecting | The status dot pops once as the connection comes back | `Header` |
+
+Also moving, on the same tokens: attachment and quote chips, the offline queue chip, queued messages, the New Messages
+divider and the header's dots appear with a small scale and fade; the scroll button pops in; the model chip's name and
+level, the Auto button and the header's title arrive softly when their value changes (they are keyed by it); Send,
+Dictate and Live arrive with the bounce spring.
+
+Limits: at most the text box's light, the tray handle's shimmer and one running step or lane move while a turn runs; a
+repeating animation is stepped to about 24 frames a second and stands still while the app is away or its element is off
+screen (`pauseWhenHidden`); one-off movements are under half a second and change only translate, scale, rotate and
+opacity, except two small strokes drawn once (the 14 px tick or cross, the 18 px context ring's fill). No animation makes
+the header or the composer taller: the browser check samples them every frame of a turn.
+

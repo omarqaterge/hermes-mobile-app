@@ -1,0 +1,446 @@
+/* Animations that show the agent at work (spec 3.2 "Agent motion"; agentmotion.ts holds the states, components/
+   AgentMotion.tsx the shared marks). Built only from motion.css's springs, eases and lengths, so Reduced turns every
+   movement into a short fade and Off makes it instant; a repeating animation runs only under Full, only while its state
+   is true, and stands still while the app is away or the element is off screen (motion.ts pauseWhenHidden). Rules
+   (docs/decisions/redesign-costs-no-speed-or-battery.md):
+   - one-off movements change translate, scale, rotate and opacity, and are under half a second; the two exceptions are
+     small strokes drawn once (a tick or a cross, 14 px; the context ring's fill, 18 px);
+   - a repeating one is a transform or an opacity of a layer that already exists, stepped to 24 frames a second like the
+     chat list's shimmer, or a shimmer that keeps that shimmer's frame limit;
+   - while a turn runs at most these move: the text box's light, the tray handle's shimmer (tray closed), and one running
+     step: its words and, for a sub-agent, its lane (agentmotion.ts liveStep);
+   - colour means state: gold working, amber waits for you, green a finished step, red a failure. */
+
+/* ── 1. a sent message lifts out of the composer and settles into the chat (ChatItems.tsx UserMsg `just-sent`) ── */
+.msg.user.just-sent {
+  animation: agent-lift var(--motion-settle) var(--spring-settle) backwards;
+  transform-origin: 100% 100%;
+}
+@keyframes agent-lift {
+  from {
+    translate: 0 calc(var(--motion-move) * 56px);
+    scale: calc(1 - var(--motion-move) * 0.08);
+    opacity: 0;
+  }
+}
+
+/* ── 2 and 3. the light round the text box (AgentMotion.tsx EdgeLight): a conic layer that turns under a mask leaving
+   only the edge, gold while Hermux works; amber and still while it waits for you ── */
+.composer,
+.bg-card {
+  position: relative;
+}
+.edge-light {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0;
+  transition: opacity var(--motion-settle) var(--ease-fade);
+}
+.edge-light > i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 130%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 52%, var(--accent) 76%, var(--text) 84%, var(--accent) 90%, transparent 98%);
+}
+.edge-light.working,
+.edge-light.waiting {
+  opacity: 1;
+}
+html[data-motion='full'] .edge-light.working > i {
+  animation: agent-turn 4s steps(96) infinite;
+}
+@keyframes agent-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+/* Still forms: Reduced and Off show the whole edge in gold; waiting shows it in amber at every level. */
+html:not([data-motion='full']) .edge-light.working > i {
+  background: var(--accent);
+  opacity: 0.7;
+}
+.edge-light.waiting > i {
+  background: var(--warn);
+  animation: none;
+}
+/* 15. Hermux uses an app in the background: its card carries the travelling light, and the text box's stands still
+   (one light at a time; Composer.tsx sets `still`, a class rather than a :has() rule, which cost style on every
+   streamed chunk). */
+.edge-light.working.still > i {
+  animation: none;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+/* 2. the soft, still gold glow far behind a working chat (AgentMotion.tsx WorkGlow): laid out once, it only fades.
+   OLED black has none. */
+.work-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(70% 45% at 0% 78%, var(--accent), transparent 72%),
+    radial-gradient(60% 40% at 100% 26%, var(--accent), transparent 72%);
+  transition: opacity var(--motion-settle) var(--ease-fade);
+}
+.work-glow.on {
+  opacity: 0.1;
+}
+html[data-theme='light'] .work-glow.on {
+  opacity: 0.07;
+}
+html[data-theme='oled'] .work-glow {
+  display: none;
+}
+
+/* 2. Send turns into Stop with a turn and a spring; Stop turns back the same way. Every face of the round button
+   (Send, Dictate, Live) arrives with the bounce spring. */
+.send > svg {
+  animation: agent-face var(--motion-bounce) var(--spring-bounce) backwards;
+}
+.send.stop {
+  animation: agent-pop var(--motion-bounce) var(--spring-bounce) backwards;
+}
+.send.stop > .stop-square {
+  animation: agent-turn-in var(--motion-bounce) var(--spring-bounce) backwards;
+}
+@keyframes agent-face {
+  from {
+    rotate: calc(var(--motion-move) * -60deg);
+    scale: calc(1 - var(--motion-move) * 0.5);
+    opacity: 0;
+  }
+}
+@keyframes agent-turn-in {
+  from {
+    rotate: calc(var(--motion-move) * -90deg);
+    scale: calc(1 - var(--motion-move) * 0.7);
+    opacity: 0;
+  }
+}
+@keyframes agent-pop {
+  from {
+    scale: calc(1 - var(--motion-move) * 0.25);
+  }
+}
+
+/* 2. With the tray open, the status line opens inside it (where it opens today) and the context ring fills smoothly. */
+.tray .status-line {
+  animation: agent-open var(--motion-base) var(--spring-settle) backwards;
+}
+@keyframes agent-open {
+  from {
+    translate: 0 calc(var(--motion-move) * 6px);
+    opacity: 0;
+  }
+}
+.ctx-ring-fill {
+  transition: stroke-dashoffset var(--motion-settle) var(--spring-gentle), stroke var(--motion-base) var(--ease-fade);
+}
+
+/* ── 4. thinking: a small orb that turns and breathes beside "Thinking…" (AgentMotion.tsx ThinkOrb); once the thought
+   is over the brain mark settles in its place and the line reads "Thought for N s" ── */
+.think-orb {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--accent) 0 30%, transparent 62%, var(--accent));
+}
+html[data-motion='full'] .think-orb {
+  animation: agent-turn 1.6s steps(38) infinite, agent-breathe 1.6s steps(38) infinite;
+}
+@keyframes agent-breathe {
+  50% {
+    scale: 0.72;
+    opacity: 0.7;
+  }
+}
+html:not([data-motion='full']) .think-orb {
+  background: var(--accent);
+  opacity: 0.8;
+}
+.reasoning-dot.settled > svg {
+  animation: agent-settle var(--motion-bounce) var(--spring-bounce) backwards;
+}
+@keyframes agent-settle {
+  from {
+    scale: calc(1 - var(--motion-move) * 0.4);
+    opacity: 0;
+  }
+}
+
+/* ── 5. a step starts: its line slides in, its words shimmer (the running step only), its ring turns (Spinner.tsx's
+   shared tick) ── */
+.tool.tool-running,
+.tool.tool-generating {
+  animation: agent-step-in var(--motion-base) var(--spring-settle) backwards;
+}
+@keyframes agent-step-in {
+  from {
+    translate: calc(var(--motion-move) * -10px) 0;
+    opacity: 0;
+  }
+}
+html[data-motion='full'] .tool.step-live .tool-name,
+html[data-motion='full'] .tool-run.step-live .tool-run-label {
+  -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 35%, #000 50%, rgba(0, 0, 0, 0.5) 65%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: working-shimmer 2s steps(48) infinite;
+}
+
+/* ── 6 and 7. a step ends: the ring becomes a tick that draws itself with a small pop; a failed one draws a cross in
+   the error colour and its line gives one short shake (AgentMotion.tsx DrawnMark) ── */
+.drawn-mark {
+  flex: none;
+  display: block;
+}
+.drawn-mark path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.drawn-mark.done {
+  color: var(--ok);
+}
+.drawn-mark.failed {
+  color: var(--err);
+}
+.drawn-mark.draw path {
+  animation: agent-draw var(--motion-settle) var(--spring-gentle) backwards;
+}
+.drawn-mark.draw.failed path + path {
+  animation-delay: calc(var(--motion-quick) * 0.6);
+}
+.drawn-mark.draw.done {
+  animation: agent-pop-mark var(--motion-bounce) var(--spring-bounce) backwards;
+}
+@keyframes agent-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes agent-pop-mark {
+  from {
+    scale: calc(1 - var(--motion-move) * 0.55);
+  }
+}
+html[data-motion='reduced'] .drawn-mark.draw path {
+  animation-name: motion-fade;
+}
+.tool-state .drawn-mark + span {
+  margin-left: 4px;
+}
+.tool.step-failed .tool-head,
+.step-failed-0,
+.step-failed-1 {
+  animation: agent-shake var(--motion-bounce) var(--ease-fade);
+}
+.step-failed-1 {
+  animation-name: agent-shake-again; /* a second failure on the same line shakes it again */
+}
+@keyframes agent-shake {
+  20% { translate: calc(var(--motion-move) * -4px) 0; }
+  40% { translate: calc(var(--motion-move) * 4px) 0; }
+  60% { translate: calc(var(--motion-move) * -2px) 0; }
+  80% { translate: calc(var(--motion-move) * 2px) 0; }
+}
+@keyframes agent-shake-again {
+  20% { translate: calc(var(--motion-move) * -4px) 0; }
+  40% { translate: calc(var(--motion-move) * 4px) 0; }
+  60% { translate: calc(var(--motion-move) * -2px) 0; }
+  80% { translate: calc(var(--motion-move) * 2px) 0; }
+}
+
+/* ── 8. sub-agents as lanes (SubAgents.tsx SubRow): a hairline under each row; the running one that moves carries a
+   light along it, a finished one fills. The lane says that it runs, never how far it is. ── */
+.sub-row {
+  position: relative;
+}
+.sub-lane {
+  position: absolute;
+  left: 34px;
+  right: 10px;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  pointer-events: none;
+}
+.sub-lane::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--ok);
+  transform-origin: 0 50%;
+  scale: 0 1;
+  transition: scale var(--motion-settle) var(--spring-gentle);
+}
+.sub-lane.done::before {
+  scale: 1 1;
+}
+.sub-lane.bad::before {
+  background: var(--err);
+  scale: 1 1;
+}
+.sub-lane > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0;
+  translate: -100% 0;
+}
+html[data-motion='full'] .sub-lane.live > i {
+  opacity: 1;
+  animation: agent-travel 1.6s steps(38) infinite;
+}
+@keyframes agent-travel {
+  to {
+    translate: 340% 0;
+  }
+}
+html:not([data-motion='full']) .sub-lane.live {
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+/* ── 9. the turn finishes: its line arrives where its steps were ── */
+.turn-work.arrive {
+  animation: motion-row var(--motion-base) var(--spring-settle) backwards;
+}
+
+/* ── 10. the answer arrives: the newest words come out of a fade at the end of the line being written; earlier text
+   never moves (a still gradient over the last few letters, no animation and no extra rendering) ── */
+.msg.assistant.streaming > .md > p:last-child::after,
+.msg.assistant.streaming > .md > :is(ul, ol):last-child > li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 2.4em;
+  height: 1.3em;
+  margin-left: -2.4em;
+  vertical-align: text-bottom;
+  pointer-events: none;
+  opacity: 0.85;
+  background: linear-gradient(90deg, transparent, var(--bg));
+}
+
+/* ── 11. the answer is complete: its actions settle in once ── */
+.msg.assistant.settled > .msg-actions {
+  animation: motion-row var(--motion-base) var(--spring-settle) backwards;
+}
+
+/* ── 12. the chat list: an amber ring pulses out from the first Needs you row's dot while the list is open; a nested row
+   opened by its chat's toggle slides out in a short stagger ── */
+.needs-dot {
+  position: relative;
+}
+html[data-motion='full'] .drawer.open [aria-labelledby='needs-you-title'] > :first-child .needs-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--warn);
+  animation: agent-ring 1.8s steps(43) infinite;
+}
+@keyframes agent-ring {
+  from {
+    scale: 1;
+    opacity: 0.9;
+  }
+  to {
+    scale: 2.8;
+    opacity: 0;
+  }
+}
+
+/* ── 14. a canvas document being written: its newest line comes out of a fade (the button already glows) ── */
+.canvas-writing-preview {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 2.6em), rgba(0, 0, 0, 0.35));
+  mask-image: linear-gradient(180deg, #000 calc(100% - 2.6em), rgba(0, 0, 0, 0.35));
+}
+
+/* ── 16. Live mode: the orb breathes while listening and moves faster while Hermux speaks (the shell reports no sound
+   level, so it is a rhythm, not the voice itself); dictation's ring pulses out from the button. Gold, the working
+   colour, in every phase: the phase is in words beside it. ── */
+.live-dot,
+.live-listening .live-dot,
+.live-thinking .live-dot,
+.live-speaking .live-dot {
+  background: var(--accent);
+}
+.live-speaking .live-dot {
+  animation-duration: 0.7s;
+}
+.live-thinking .live-dot {
+  animation-duration: 2.4s;
+}
+.send.mic.on {
+  position: relative;
+  animation: none;
+}
+html[data-motion='full'] .send.mic.on::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--err);
+  pointer-events: none;
+  animation: agent-ring 1.2s steps(29) infinite;
+}
+
+/* ── 17. reconnecting: the status dot pops once as the connection comes back ── */
+.conn-dot.ok {
+  animation: agent-pop-mark var(--motion-bounce) var(--spring-bounce) backwards;
+}
+
+/* ── everything else that appears, leaves or changes value ── */
+.attach-row > .chip,
+.attach-row > .attach-thumb,
+.quote-row > .chip,
+.queued-chip,
+.queued-rows > .queued-msg,
+.visit-divider,
+.unread-dot.on-menu,
+.needs-dot.on-menu {
+  animation: agent-appear var(--motion-base) var(--spring-settle) backwards;
+}
+@keyframes agent-appear {
+  from {
+    scale: calc(1 - var(--motion-move) * 0.12);
+    opacity: 0;
+  }
+}
+.chat > .jump {
+  animation: agent-appear var(--motion-base) var(--spring-bounce) backwards;
+}
+.model-chip-name,
+.model-chip-effort,
+.tray .auto-btn,
+.title-btn > .title {
+  animation: agent-value var(--motion-base) var(--ease-fade) backwards;
+}
+@keyframes agent-value {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--motion-move) * 3px);
+  }
+}

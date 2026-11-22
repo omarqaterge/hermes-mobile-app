@@ -20,6 +20,22 @@ These files carry the plumbing every screen uses. Screens are in 3.
   the hooks `useMotionLevel` and `useGlass`, `lessMotion` (true when movement should be left out), `stagger` (a row's
   arrival delay), and `setAppAway` / `pauseWhenHidden`, which stop CSS animations while the app is away or an element
   is off screen (2.5). Tests in `motion.test.ts`.
+- `agentmotion.ts` — the states the agent's animations are tied to (3.2, Agent motion), each a pure function with no
+  timer: `composerLight` (`Light`: `working` while a turn or the chat's sub-agents run, `waiting` while Hermux waits for
+  the person, else none), `stepEnd` (`StepEnd`: how a step seen running ended, `done` or `failed`; null for one read
+  from history), `toolLive` (a tool card runs while `running` or `generating`), `noteSent` / `justSent` (the message the
+  composer just sent, within `SENT_WINDOW_MS`, lifts once), `turnTick` (one light tick on the phone when a turn finishes
+  on screen with an answer: same chat, page visible, not over the lock screen) and `liveStep` (the one running tool card
+  whose words shimmer: the newest of the running turn, none while a sub-agent group's line shimmers). Tests in
+  `agentmotion.test.ts`.
+- `AgentMotion.tsx` (in `components/`) — the shared pieces of those animations: `EdgeLight` (the light round the text
+  box and the background-app card: an always-present `.edge-light` whose conic layer turns under a mask while
+  `working`, amber and still while `waiting`, fading in and out, given to `pauseWhenHidden` while it turns), `WorkGlow`
+  (the still gold glow behind a working chat, `.work-glow`), `ThinkOrb` (the turning, breathing orb beside "Thinking…"),
+  `DrawnMark` (a tick or a cross that draws itself once when `draw` is set) and `useStepEnd` (`stepEnd` kept across
+  renders, so a mark draws once).
+- `agent-motion.css` — every animation of 3.2 Agent motion, on `motion.css`'s tokens only, imported by `main.tsx` after
+  `pages.css`.
 - `barinsets.ts` — the heights of the chat screen's two bars: `watchBars` measures them with a `ResizeObserver` and
   writes `--bar-top` / `--bar-bottom` on `.stage`; `barInsets()` gives them to the scroll code and `onBarInsets` tells
   a listener when they change (3.2, Bars). The `Insets` type is `{ top, bottom }`.
