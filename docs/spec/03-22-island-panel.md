@@ -156,14 +156,17 @@ for other busy chats too), the two buttons come back with the red line "Couldn't
 and the reject buzz (the service also posts its own "Couldn't stop Hermux" card). A stop the plugin accepted is never
 shown as failed, and `stopTurn` starts no overlapping stop for a chat while one is already accepted or in flight
 (`IslandState.stopBusy`, bounded by `HermesService.STOP_IN_FLIGHT_MS`, 13 s, 2 s below `SEND_TIMEOUT_MS`, and cleared by
-`HermesService.clearStopInFlight` when the 15 s wait ends unheard so an immediate retry always goes out): the panel
+`HermesService.clearStopInFlight` — which also advances `stopAttempt` so a timed-out attempt's late failure can't flash
+over an immediate retry — when the 15 s wait ends unheard): the panel
 stays on "Stopping…" until the turn ends, however long it takes to wind down. Each stop thread is tagged with monotonic
-attempt and episode counters (`HermesService.stopAttempt`, `HermesService.stopEpisode`, incremented when starting a stop
-for a chat not already being stopped): a 200 is accepted only for the current chat and episode (`IslandState.stop200Counts`),
-so retries within one episode accept a racing 200 while a delayed 200 from an earlier turn cannot count for a new turn,
-while a failure only clears Stopping and posts FAILED when it is the latest attempt and no racing 200 was accepted
-(`IslandState.stopFailCounts`), and `status` (and synchronized `expireWorking`) clears `stopping`, `stopAccepted` and
-`stopInFlight` as soon as the stopped chat is no longer working (`HermesService.sessionWorking`). A stop the panel already took in (`stopSeen`,
+attempt and turn-bound episode counters (`HermesService.stopAttempt`, `HermesService.stopEpisode`, tied to the chat and
+its plugin-reported turn start via `stopEpisodeSession` and `stopTurnSince`): retries of the same turn (even after a
+fast failed attempt) share the episode so a racing 200 is accepted (`IslandState.stop200Counts`), while a turn ending
+(`HermesService.endStopEpisode` on a `status` where the chat is no longer working or has a strictly newer `since` via
+`IslandState.stopTurnChanged`, on a `done` flash for that chat, or in synchronized `expireWorking`) clears `stopping`,
+`stopAccepted` and `stopInFlight` and advances `stopEpisode` so a delayed 200 from an earlier turn cannot count for a
+new turn; a failure only clears Stopping and posts FAILED when it is the latest attempt and no racing 200 was accepted
+(`IslandState.stopFailCounts`). A stop the panel already took in (`stopSeen`,
 `IslandState.newStop`) doesn't start Stopping again after its failure.
 
 **The turn ends** while the panel is open (`IslandState.turnFate`): when its reply arrives (the plugin's `flash` with

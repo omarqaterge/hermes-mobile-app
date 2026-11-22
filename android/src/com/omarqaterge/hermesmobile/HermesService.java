@@ -197,9 +197,7 @@ public class HermesService extends Service {
         lastWorking = false;
         lastShort = "";
         lastStatus = "Ready";
-        stopping = null;
-        stopAccepted = false;
-        stopInFlight = false;
+        endStopEpisode();
         postStatus();
         updateWake();
     }
@@ -220,6 +218,11 @@ public class HermesService extends Service {
     boolean stopAccepted = false;
     long stopAttempt = 0;
     long stopEpisode = 0;
+    /** The chat and plugin-reported turn start (ms, 0 = unknown) that {@link #stopEpisode} belongs to. Kept across a
+     *  failed attempt so retries of the same turn still accept a racing 200; cleared and advanced by
+     *  {@link #endStopEpisode} when the turn ends (status no longer working, strictly newer {@code since}, or done flash). */
+    String stopEpisodeSession = null;
+    long stopTurnSince = 0;
     boolean stopInFlight = false;
     long stopInFlightSince = 0;
     static final long STOP_IN_FLIGHT_MS = IslandPanel.SEND_TIMEOUT_MS - 2_000;
@@ -1404,11 +1407,12 @@ public class HermesService extends Service {
                 lastReview = working && e.optBoolean("review", false);
                 double since = e.optDouble("since", 0);
                 if (working && since > 0) workingSince = (long) (since * 1000);
-                if (!working || !sessionWorking(stopping)) {
-                    stopping = null;
-                    stopAccepted = false;
-                    stopInFlight = false;
-                }
+                long trackedSince = (working && lastSession != null && lastSession.equals(stopEpisodeSession)) ? workingSince : 0;
+                boolean turnEnded = !working
+                        || (stopEpisodeSession != null && !sessionWorking(stopEpisodeSession))
+                        || IslandState.stopTurnChanged(stopTurnSince, trackedSince);
+                if (turnEnded) endStopEpisode();
+                else if (stopTurnSince == 0 && trackedSince > 0) stopTurnSince = trackedSince;
                 boolean ended = lastWorking && !working;
                 lastWorking = working;
                 if (working) flashUntil = 0; // real work beats a flash
@@ -1442,6 +1446,7 @@ public class HermesService extends Service {
             case "flash": {
                 boolean doneFlash = e.optBoolean("done", false) || e.optString("short", "").contains("Done");
                 if (doneFlash && session != null && !session.isEmpty()) {
+                    if (session.equals(stopping) || session.equals(stopEpisodeSession)) endStopEpisode();
                     // The island panel's Done state, whatever the Done chip's rules below decide for the chip.
                     lastDone.remove(session); // one per chat, the newest last
                     lastDone.put(session, new IslandState.Done(session, IslandState.chatLine(title, profile), e.optString("reply", ""),
@@ -2001,9 +2006,24 @@ public class HermesService extends Service {
         return b.build();
     }
 
-    /** Called when the panel's 15 s stop wait ends unheard: clears in-flight so an immediate retry always goes out. */
+    /** The stopped turn ended (not working, strictly newer turn start, done flash, or expired): clears Stopping and
+     *  advances stopEpisode so a delayed 200 from this turn can never count for a later turn. */
+    synchronized void endStopEpisode() {
+        if (stopping != null || stopEpisodeSession != null) stopEpisode++;
+        stopping = null;
+        stopEpisodeSession = null;
+        stopTurnSince = 0;
+        stopAccepted = false;
+        stopInFlight = false;
+    }
+
+    /** Called when the panel's 15 s stop wait ends unheard: clears in-flight and advances stopAttempt so a retry
+     *  always goes out and the timed-out attempt's late failure cannot flash over it before stopTurn runs. */
     synchronized void clearStopInFlight(String session) {
-        if (session != null && session.equals(stopping) && !stopAccepted) stopInFlight = false;
+        if (session != null && session.equals(stopping) && !stopAccepted) {
+            stopInFlight = false;
+            stopAttempt++;
+        }
     }
 
     /** The chip's Stop button: the plugin interrupts the turn (session.interrupt, like the app's stop button).
@@ -2015,7 +2035,14 @@ public class HermesService extends Service {
             long up = android.os.SystemClock.uptimeMillis();
             if (IslandState.stopBusy(session, stopping, stopAccepted, stopInFlight, stopInFlightSince, up, STOP_IN_FLIGHT_MS))
                 return; // already accepted or in flight for this chat: don't start an overlapping stop
-            if (!session.equals(stopping)) stopEpisode++; // new turn or chat: an earlier turn's delayed 200 can't count
+            long liveSince = session.equals(lastSession) ? workingSince : 0;
+            if (!session.equals(stopEpisodeSession) || IslandState.stopTurnChanged(stopTurnSince, liveSince)) {
+                stopEpisode++;
+                stopEpisodeSession = session;
+                stopTurnSince = liveSince;
+            } else if (stopTurnSince == 0 && liveSince > 0) {
+                stopTurnSince = liveSince;
+            }
             stopping = session;
             stoppingAt = System.currentTimeMillis();
             stopAccepted = false;

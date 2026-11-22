@@ -509,6 +509,12 @@ final class IslandState {
         return accepted || (inFlight && nowMono - inFlightSince < timeoutMs);
     }
 
+    /** Whether a status event's turn start ({@code liveSince}, ms, 0 = unknown) is strictly newer than the turn a stop
+     *  was sent for ({@code stopSince}, ms, 0 = unknown), meaning the stopped turn ended and a new turn started. */
+    static boolean stopTurnChanged(long stopSince, long liveSince) {
+        return stopSince > 0 && liveSince > stopSince;
+    }
+
     /** Whether a 200 from a stop request for {@code session} in {@code episode} marks the chat's stop as accepted:
      *  only for the chat and stop episode currently active (retries within one episode share it; a later turn doesn't). */
     static boolean stop200Counts(String session, String stopping, long episode, long currentEpisode) {

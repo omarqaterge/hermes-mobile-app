@@ -25,11 +25,11 @@ key-down during the hold and consuming held-key repeats and matching key-ups acr
 counted only on repeat count 0), focus and accessibility/click handlers until fade-in completes (Deny stays usable at once);
 Allow once and Allow this session wait 320 ms after fade-in finishes (580 ms minimum, same with reduced motion,
 extended by 200 ms on swallowed input, capped at +400 ms past base), and Allow once stays held while fading back in after a failed Deny; other busy
-chats in `lastOthers` carry `stoppingAt` and `stopAccepted`, `stopTurn` uses monotonic attempt and stop-episode counters, skips overlapping in-flight/accepted stops (13 s margin below
-the 15 s timeout plus `clearStopInFlight` on timeout failure so an immediate retry always goes out), accepts a racing
-200 only in the current stop episode and ignores stale or post-200 failures, `stopFate` prefers `!atWork` over a late
-404/FAILED, `status` and synchronized `expireWorking` clear `stopping`, `stopAccepted` and `stopInFlight` as soon as the
-stopped chat is no longer working, and the stop failure line scrolls into view after layout via a one-shot `OnLayoutChangeListener`
+chats in `lastOthers` carry `stoppingAt` and `stopAccepted`, `stopTurn` binds `stopEpisode` to the chat's turn (`since`), skips overlapping in-flight/accepted stops (13 s margin below
+the 15 s timeout plus `clearStopInFlight` advancing `stopAttempt` on timeout failure so an immediate retry always goes out
+uninterrupted), keeps the episode across retries of the same turn while `endStopEpisode` clears stop state and advances
+the episode on turn end (not working, strictly newer `since`, `done` flash, or synchronized `expireWorking`), `stopFate`
+prefers `!atWork` over a late 404/FAILED, and the stop failure line scrolls into view after layout via a one-shot `OnLayoutChangeListener`
 without moving focus.
 
 **Open question for the owner:** while the panel is open, the service's heads-up pop-up for a new request or question
