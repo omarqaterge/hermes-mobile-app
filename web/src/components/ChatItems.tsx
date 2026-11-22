@@ -518,8 +518,8 @@ function AssistantMsg({ item, actions, busy, quiet }: { item: Extract<ChatItem, 
   const time = useTimeTap(item.streaming ? undefined : item.at)
   const tainted = useTainted() // the chat has read phone data: remote media waits for a tap, addresses are checked first
   const locked = useLocked() // over the lock screen there is no Retry (it starts a turn)
-  // A reply seen streaming: while it streams its newest words come out of a fade, and once complete its actions settle in
-  // (agent-motion.css). One read from history does neither.
+  // A reply seen streaming: `streaming` marks it while it is written, and once complete its actions settle in
+  // (agent-motion.css). One read from history does not.
   const settled = useStepEnd(item.streaming, false)
   return (
         <div className={`msg assistant${item.streaming ? ' streaming' : settled ? ' settled' : ''}`} onClick={time.toggle}>

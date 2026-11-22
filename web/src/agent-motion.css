@@ -328,20 +328,9 @@ html:not([data-motion='full']) .sub-lane.live {
   animation: motion-row var(--motion-base) var(--spring-settle) backwards;
 }
 
-/* ── 10. the answer arrives: the newest words come out of a fade at the end of the line being written; earlier text
-   never moves (a still gradient over the last few letters, no animation and no extra rendering) ── */
-.msg.assistant.streaming > .md > p:last-child::after,
-.msg.assistant.streaming > .md > :is(ul, ol):last-child > li:last-child::after {
-  content: '';
-  display: inline-block;
-  width: 2.4em;
-  height: 1.3em;
-  margin-left: -2.4em;
-  vertical-align: text-bottom;
-  pointer-events: none;
-  opacity: 0.85;
-  background: linear-gradient(90deg, transparent, var(--bg));
-}
+/* ── 10. the answer arrives: left in its still form (the existing caret). A still fade over the last letters of the line
+   being written cost 3 to 4 % more main-thread work while a long reply streamed at 4x CPU, over the 5 % budget with
+   the rest of these animations (docs/performance-history.md, task 13). ── */
 
 /* ── 11. the answer is complete: its actions settle in once ── */
 .msg.assistant.settled > .msg-actions {
