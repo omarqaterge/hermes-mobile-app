@@ -320,6 +320,35 @@ blur, the keyboard, a failed typed send and Back. Not yet on a phone.
 - [ ] **Running out.** Leave the panel open on a question until it expires (10 minutes). Expected: the reject buzz,
       "This question is closed", and it closes. Answered in the app instead: the same headline with no buzz.
 
+Part 2, the Permission state. Seen on an Android 15 emulator (2026-11-22, a test build of this branch, no Hermes, so
+every send failed): the card's body opens "Run a command?" with the ring, the command block, Deny / Allow once (with
+the fingerprint) and Allow this session; two requests show "1 more waiting"; with a PIN set, Allow once brings up the
+system prompt "Allow Hermux to run this?" with the command, a cancel leaves the panel as it was, the PIN sends (the
+service took the grant) and the failure line, the two buttons and Open chat come back; Deny sends at once with no
+prompt; the card's Allow once opens the panel with the prompt already up; a request cleared while open says "Answered
+in the app" and closes; a request left to run out says "This request expired" and closes; a phone-data request shows
+"Let Hermux read your phone?", Deny and "Review in Hermux" with no Allow. On an Android 8.0 emulator: the card's Allow
+once closes the shade and opens the panel under the PIN screen, the PIN sends for that request, and Home from the PIN
+screen leaves both until the deadline, when they go. Not yet on a phone.
+
+- [ ] **Allow once with the fingerprint, on a phone with Hermes.** Expected: the prompt, then "Sending…", then the
+      green check with "Allowed"; the command runs; the panel moves to the next request or closes.
+- [ ] **Allow this session.** Expected: the prompt, then "Allowed for this session"; the chat's later requests in that
+      session no longer ask Hermes for approval.
+- [ ] **Deny.** One tap, no prompt; the red cross with "Denied"; Hermes reports the command was denied.
+- [ ] **Cancelled fingerprint.** Nothing is sent; the panel stays as it was with the timer running.
+- [ ] **The card's Allow.** On the card, Allow once with "Confirm approvals with fingerprint" on: the panel opens on
+      that request and the prompt comes up at once.
+- [ ] **Running out.** A request with a short timeout left open: the ring turns amber then red with one tick, pulses
+      in the last 10 seconds, then "This request expired" with the reject buzz, and it closes.
+- [ ] **Answered in the app while open.** "Answered in the app"; the panel closes.
+- [ ] **Phone data.** A phone-data request: no Allow anywhere in the panel; "Review in Hermux" opens the chat, whose
+      sheet asks.
+- [ ] **TalkBack.** "30 seconds left", "10 seconds left", "5 seconds left"; every button named; the result spoken.
+- [ ] **Android 8-10 PIN screen.** On a phone without a fingerprint: the PIN screen opens over the panel, the PIN
+      sends that one answer, Back from it leaves the panel as it was.
+- [ ] **Another app drawing over the panel.** With a floating window over the buttons, taps on Allow do nothing.
+
 ## Phone data for the agent (Settings → Access & privacy → Phone data)
 
 Tested 2026-11-05 on one real phone, Android 16, with the owner present:
