@@ -468,14 +468,10 @@ final class IslandPermission {
         p.MAIN.postDelayed(afterRun, IslandMotion.RESULT_HOLD_MS);
     }
 
-    /** After the hold: another request waiting takes its place (design 4, Changing state); otherwise the panel closes. */
+    /** After the hold: another request waiting takes its place, or else a question waiting (design 4, Changing state);
+     *  otherwise the panel closes. */
     void afterResult() {
-        if (p.closing) return;
-        HermesService s = HermesService.instance;
-        IslandState st = s == null ? null : s.islandState();
-        IslandState.Approval next = st == null ? null : st.next(shown);
-        if (next != null) p.swapToPermission(next, st, null);
-        else p.close();
+        p.nextOrClose(shown, null);
     }
 
     /** Not sent: once the button has grown, the row returns to the two buttons with a red line above them, and the

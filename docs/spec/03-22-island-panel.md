@@ -1,10 +1,11 @@
 ### 3.22 The island panel
 
-**Opens from:** the status chip's question card (tap) and its Answer button, and the permission card (tap) and its
-Allow once and Allow session while "Confirm approvals with fingerprint" needs the fingerprint (4.3), outside the app.
-It is the Android activity `IslandPanel` (4.1, 4.2), not a page of the web app. The design is
-`docs/design/island-panel.md`; its motion follows `docs/design/island-panel-prototype.html`. Built so far: the panel,
-its Question state and its Permission state (`IslandPermission`); the Progress and Done states come later (plan 15).
+**Opens from:** the status chip's question card (tap) and its Answer button, the permission card (tap) and its
+Allow once and Allow session while "Confirm approvals with fingerprint" needs the fingerprint, and the working card
+(tap; while Hermux uses an app for that chat the tap opens the chat with the live viewer instead, as before) (4.3),
+outside the app. It is the Android activity `IslandPanel` (4.1, 4.2), not a page of the web app. The design is
+`docs/design/island-panel.md`; its motion follows `docs/design/island-panel-prototype.html`. It has four states: Question,
+Permission (`IslandPermission`), Progress and Done (`IslandProgress`).
 
 **What it is:** a dark panel that grows out of the top centre of the screen, where the island or the camera is, over
 whatever app is open. Behind it the app dims (black at 40 %) and, on Android 12 and later when the phone allows blur
@@ -17,6 +18,9 @@ Android asks for the unlock first.
 and after every change of the chip (`IslandPanel.refresh`, from `postStatus`), never what the card's intent carried.
 That state is whatever the service still holds, whatever "When Hermux needs me" says (the switch decides only whether
 notifications are posted): once the panel is open it follows every waiting question and permission request.
+The working card opens Progress, but a permission request or a question already waiting comes first (the chip's
+order; with "When Hermux needs me" off the chip can show the work while one waits). Opened when that chat's turn has
+already ended, it shows Done when its reply came in the last 10 minutes, and otherwise opens the chat in the app.
 Opened when the question is no longer waiting (answered or expired between the tap and the panel), it opens with the header only, the headline "This question is closed" (design 5.2, No longer open), and closes about 0.9 s later: a question that is gone can't be answered.
 
 #### The Question state
@@ -115,6 +119,58 @@ when it is asked, the system prompt, drawn above other apps and showing the comm
 Hermux and Open chat never have that second rule, so a chat bubble or a screen filter can't stop them. A panel Android
 recreates from its saved intent does not ask for the card's choice again.
 
+#### The Progress state
+
+| Part | What it shows |
+|---|---|
+| Badge | The caduceus in gold on the dark round badge, inside a turning gold arc: empty over the first 22 % of the circle, then fading in to its head, one turn every 1.4 s. |
+| Chat line | The chat's title (or "Hermux"), "· bot" for a bot that isn't `default`. |
+| Headline | The current step, live, as the chip has it ("Searching the web", "Running `ls`"), with `code` in gold monospace; "Working…" before Hermes says; "Stopping…" while a stop is on its way (the panel's or the card's). A new step replaces the old one: it leaves 6 dp upward, the new one arrives from below. |
+| Clock | On the right: the turn's running time from its start ("0:07", "1:24", then "1:02:03"), in dim tabular digits; the digits that change roll upward. Counted each second by a handler, so it also counts with animations off. |
+| Body, with a task list | The task bar: one segment per task, 6 dp high, 4 dp apart, round ends; done green, current gold with a light band crossing it every 1.6 s, to do white 12 %, dropped white 5 %. Under it the current task's name after a gold dot, and "2 of 5 tasks" on the right (`IslandState.tasks`), the number rolling. A task finishing fills green from the left in 300 ms, swells to 170 % of its height and back, and the next segment turns gold 240 ms after the fill starts; the count rolls and the name changes. |
+| Body, without one | A 4 dp line with a soft gold band sweeping across it every 1.25 s, and "7 steps so far" ("1 step so far"; nothing before the first step). |
+| Other chats | One dim line per other busy chat ("Title: step", backticks dropped; "Another chat" with no title), two at most, then "+N more chats" ("+1 more chat") for the rest the plugin counts. |
+| App in use | While Hermux uses an app for this chat: its latest picture (72 dp, corners 12 dp, the one the working card shows), "Using <app>", and a quiet "Watch" button that opens the chat with the live viewer (`MainActivity.EXTRA_BG_VIEW`, 3.10). The panel never shows over the lock screen, so neither does the picture. |
+| Buttons | "Stop" with a small square (red) on the left and "Open chat" (quiet) on the right, split 36 % / 64 %. Both ignore a touch through another app's window. |
+
+**Stop** is the card's Stop: `ACTION_STOP` to the service (`HermesService.stopTurn`), nothing more, and the panel is
+never over the lock screen. "Open chat" fades, "Stop" grows to the full row and says "Stopping…" with a spinner, and
+the headline says "Stopping…". The card's own Stop, tapped while the panel is open, shows the same. Then
+(`IslandState.stopFate`): when the turn is over, a drawn cross and "Stopped" on the red wash, hold 0.9 s, close; when
+the service couldn't stop it (or no word in 15 s), the two buttons come back with the red line "Couldn't stop Hermux.
+Open the chat to stop it." and the reject buzz (the service also posts its own "Couldn't stop Hermux" card).
+
+**The turn ends** while the panel is open (`IslandState.turnFate`): when its reply arrives (the plugin's `flash` with
+`done`, recorded as an `IslandState.Done` whatever the Done chip's rules say, 4.3), the panel changes to Done, even if
+the status hasn't said the turn is over yet. When the chat stops working with no reply, the panel waits 2 s
+(`DONE_GRACE_MS`) for it, then closes: it was stopped elsewhere or it failed, and a failure has its own notification.
+
+**Battery.** The arc, the band and the sweep run on the frame clock only while the panel is on screen; the clock's
+handler, the arc and the loops stop when the panel closes, goes or changes state. Progress closes by itself after 90 s
+without a touch (`PROGRESS_IDLE_MS`, started again by every touch on the window).
+
+#### The Done state
+
+| Part | What it shows |
+|---|---|
+| Badge | Green at 16 % with a green check: it pops in from 60 % (380 ms on back), the check draws itself (300 ms), one green ring expands to 160 % and fades (520 ms). |
+| Headline | "Done". |
+| Body | The start of the reply (three lines at most), then "9 steps · 1m 31s" in dim (`IslandState.doneStats`; a part Hermes didn't send is left out). |
+| Button | "Open chat", gold, across the row: opens the chat and clears the Done chip, as tapping the Done chip does (`clearDone`). |
+
+Done doesn't close by itself: the user is reading. The working card of a new turn, tapped while Done is open, changes
+it to that turn's Progress.
+
+#### Changing state
+
+While the panel is open it follows what Hermux does, in place (the old content fades out in 100 ms while shrinking to
+98 % and takes no touch; the new one fades in from 6 dp lower; the height follows): a permission request or a single
+question arriving during Progress or Done changes it to that state, with one light tap (`IslandState.arrived`;
+during a stop on its way it waits); the turn ending changes Progress to Done. After an answer sent from the panel (a
+choice or text, Allowed or Denied), it changes to the next permission request waiting, else to a question waiting,
+else it closes (`IslandPanel.nextOrClose`, `IslandState.nextAfter`). A request or question answered elsewhere, or run
+out, still closes as described above.
+
 #### Gestures
 
 - **Back**, a **tap outside** the panel, or a **drag up** of more than 56 dp (or a quick flick up) closes it. Each
@@ -139,5 +195,7 @@ it springs back in 260 ms and its colour returns in 160 ms (a choice) or 120 ms 
 changes its fill. The system's own window animations are turned off. With the
 phone's animations off (Developer options, or Remove animations in Accessibility), the panel only fades in and out,
 in 120 ms, with no pulse; in the Permission state the timer still drains and counts, TalkBack still speaks the seconds,
-the request still runs out on time, and the card's Allow still brings up the fingerprint at once. Every movement runs on the display's frame clock and only while it runs; nothing moves or
+the request still runs out on time, and the card's Allow still brings up the fingerprint at once. In Progress the arc is a still ring, the band crossing the current task is off and the sweep's band stands still in
+the middle; the clock still counts and a finished task still turns green. Done's check draws in 120 ms with no pop
+and no ring. Every movement runs on the display's frame clock and only while it runs; nothing moves or
 repeats once the panel is hidden.

@@ -219,6 +219,128 @@ final class IslandState {
         }
     }
 
+    // ── on-screen words of the Progress and Done states (design 5.3, 5.4) ──
+    static final String STOP = "Stop";
+    static final String STOPPING = "Stopping…";
+    static final String STOPPED = "Stopped";
+    static final String STOP_FAILED = "Couldn't stop Hermux. Open the chat to stop it.";
+    static final String WATCH = "Watch";
+    static final String DONE_TITLE = "Done";
+    /** The headline while the plugin has said nothing about the step (as the chip says). */
+    static final String WORKING_LINE = "Working…";
+    /** An other busy chat with no title (as the notification says). */
+    static final String ANOTHER_CHAT = "Another chat";
+    /** At most this many other busy chats get a line; the rest are counted ("+N more chats"). */
+    static final int OTHERS_SHOWN = 2;
+
+    /** "2 of 5 tasks". */
+    static String tasks(int done, int total) {
+        return Math.max(0, done) + " of " + Math.max(0, total) + " tasks";
+    }
+
+    /** "7 steps so far" ("1 step so far"); "" before the first step. */
+    static String stepsSoFar(int n) {
+        return n <= 0 ? "" : n == 1 ? "1 step so far" : n + " steps so far";
+    }
+
+    /** "+N more chats" ("+1 more chat"), or "" for none. */
+    static String moreChats(int n) {
+        return n <= 0 ? "" : n == 1 ? "+1 more chat" : "+" + n + " more chats";
+    }
+
+    /** "Using <app>". */
+    static String using(String app) {
+        String a = app == null ? "" : app.trim();
+        return "Using " + (a.isEmpty() ? "an app" : a);
+    }
+
+    /** The turn's running time: "0:07", "1:24", "12:05", then "1:02:03". */
+    static String clock(long secs) {
+        long s = Math.max(0, secs), h = s / 3600, m = s % 3600 / 60, r = s % 60;
+        String ss = (r < 10 ? "0" : "") + r;
+        if (h > 0) return h + ":" + (m < 10 ? "0" : "") + m + ":" + ss;
+        return m + ":" + ss;
+    }
+
+    /** How long a turn took, as the Done card says it: "45s", "2m 14s", "1h 3m". */
+    static String took(long secs) {
+        if (secs < 60) return secs + "s";
+        if (secs < 3600) return (secs / 60) + "m " + (secs % 60) + "s";
+        return (secs / 3600) + "h " + (secs % 3600 / 60) + "m";
+    }
+
+    /** The Done state's dim line: "9 steps · 1m 31s"; a part Hermes didn't send is left out; "" for neither. */
+    static String doneStats(int steps, long secs) {
+        String a = steps <= 0 ? "" : steps == 1 ? "1 step" : steps + " steps", b = secs <= 0 ? "" : took(secs);
+        return a.isEmpty() ? b : b.isEmpty() ? a : a + " · " + b;
+    }
+
+    /** One other busy chat's line: "Title: step", with the step's backticks dropped (as on the notification). */
+    static String otherLine(String title, String text) {
+        String t = title == null || title.trim().isEmpty() ? ANOTHER_CHAT : title.trim();
+        String s = text == null ? "" : text.replace("`", "").trim();
+        return s.isEmpty() ? t : t + ": " + s;
+    }
+
+    /** A chat at work, as the Progress state shows it: what it does now, its task list (if it keeps one), its clock,
+     *  and whether Hermux uses an app for it. The chat the chip shows has all of it; another busy chat only its step. */
+    static final class Progress {
+        final String session, chat, title, headline;
+        /** When the turn started (epoch ms; 0 = not known) and how many steps it took so far. */
+        final long since;
+        final int steps;
+        /** The task list: one letter per task (d done, a current, p to do, x dropped), "" for none; the current task's
+         *  name; tasks done and in all (dropped ones not counted). */
+        final String states, current;
+        final int done, total;
+        /** A stop is on its way for this chat (the panel's Stop, or the card's). */
+        final boolean stopping;
+        /** The app Hermux uses for this chat ("" for none), and a number that changes with its picture (0 = none yet). */
+        final String app;
+        final int picture;
+
+        Progress(String session, String chat, String title, String headline, long since, int steps, String states,
+                 String current, int done, int total, boolean stopping, String app, int picture) {
+            this.session = session == null ? "" : session;
+            this.chat = chat == null || chat.isEmpty() ? HERMUX : chat;
+            this.title = title == null ? "" : title;
+            String h = headline == null ? "" : headline.trim();
+            this.headline = h.isEmpty() ? WORKING_LINE : h;
+            this.since = Math.max(0, since);
+            this.steps = Math.max(0, steps);
+            String st = states == null ? "" : states.replaceAll("[^dapx]", "");
+            this.states = total > 0 ? st : "";
+            this.current = current == null ? "" : current.trim();
+            this.done = Math.max(0, done);
+            this.total = Math.max(0, total);
+            this.stopping = stopping;
+            this.app = app == null ? "" : app;
+            this.picture = picture;
+        }
+
+        /** Hermes keeps a task list for this turn: the bar, not the sweep. */
+        boolean hasTasks() {
+            return !states.isEmpty();
+        }
+    }
+
+    /** The last turn that finished with a reply, for the Done state: which chat, the start of the reply, its steps and
+     *  time, when it arrived. Recorded whatever the Done chip's rules say (they decide only the chip). */
+    static final class Done {
+        final String session, chat, reply;
+        final int steps;
+        final long secs, at;
+
+        Done(String session, String chat, String reply, int steps, long secs, long at) {
+            this.session = session == null ? "" : session;
+            this.chat = chat == null || chat.isEmpty() ? HERMUX : chat;
+            this.reply = reply == null ? "" : reply.trim();
+            this.steps = Math.max(0, steps);
+            this.secs = Math.max(0, secs);
+            this.at = at;
+        }
+    }
+
     final String kind;
     /** The question waiting (the oldest, as on the chip), or null. */
     final Ask ask;
@@ -238,7 +360,19 @@ final class IslandState {
         this(kind, ask, outcome, expired, null);
     }
 
+    /** Every chat at work, the one the chip shows first (at most four: the plugin names three others). */
+    final List<Progress> working;
+    /** How many chats are at work in all (the plugin counts those it does not name). */
+    final int busy;
+    /** The last turn that finished with a reply, or null. */
+    final Done done;
+
     IslandState(String kind, Ask ask, Outcome outcome, Expired expired, List<Approval> approvals) {
+        this(kind, ask, outcome, expired, approvals, null, 0, null);
+    }
+
+    IslandState(String kind, Ask ask, Outcome outcome, Expired expired, List<Approval> approvals, List<Progress> working,
+                int busy, Done done) {
         this.kind = kind == null ? NONE : kind;
         this.ask = ask;
         this.outcome = outcome;
@@ -246,6 +380,96 @@ final class IslandState {
         List<Approval> a = new ArrayList<>();
         if (approvals != null) for (Approval x : approvals) if (x != null && a.size() < MAX_APPROVALS) a.add(x);
         this.approvals = Collections.unmodifiableList(a);
+        List<Progress> w = new ArrayList<>();
+        if (working != null) for (Progress p : working) if (p != null && w.size() < 4) w.add(p);
+        this.working = Collections.unmodifiableList(w);
+        this.busy = Math.max(w.size(), busy);
+        this.done = done;
+    }
+
+    // ── the Progress and Done states (design 5.3, 5.4) ──
+
+    /** The chat {@code session} while it is at work ("" = the one the chip shows), or null when it isn't. */
+    Progress progressFor(String session) {
+        String s = session == null ? "" : session;
+        if (s.isEmpty()) return working.isEmpty() ? null : working.get(0);
+        for (Progress p : working) if (p.session.equals(s)) return p;
+        return null;
+    }
+
+    /** Chat {@code session} is at work (exactly that chat; an empty id never is). */
+    boolean atWork(String session) {
+        if (session == null || session.isEmpty()) return false;
+        for (Progress p : working) if (p.session.equals(session)) return true;
+        return false;
+    }
+
+    /** The other busy chats' lines under the body of {@code shown}: two at most. */
+    List<String> otherLines(Progress shown) {
+        List<String> out = new ArrayList<>();
+        for (Progress p : working) {
+            if (shown != null && p.session.equals(shown.session)) continue;
+            if (out.size() < OTHERS_SHOWN) out.add(otherLine(p.title, p.headline));
+        }
+        return out;
+    }
+
+    /** How many other busy chats have no line of their own ("+N more chats"). */
+    int moreChats(Progress shown) {
+        int others = busy - (shown != null && atWork(shown.session) ? 1 : 0);
+        return Math.max(0, others - otherLines(shown).size());
+    }
+
+    /** The reply of chat {@code session}'s turn that started at {@code since} (epoch ms), or null when none came yet. */
+    Done doneFor(String session, long since) {
+        Done d = done;
+        return d != null && d.session.equals(session == null ? "" : session) && d.at >= since ? d : null;
+    }
+
+    /** Where a turn on the panel stands (besides DONE). */
+    static final String WORKING = "working", ENDING = "ending", ENDED = "ended";
+    /** The reply comes a moment after the turn ends (or just before): this long the panel waits for it. */
+    static final long DONE_GRACE_MS = 2000;
+
+    /**
+     * The fate of the turn of chat {@code session} that started at {@code since}, at {@code now}: DONE once its reply
+     * arrived (even before the status says the turn is over); WORKING while the chat is still at work; ENDING for
+     * DONE_GRACE_MS after the panel first saw it stop ({@code endedAt}, 0 = not yet), in case the reply is on its
+     * way; then ENDED: it stopped with nothing to show (stopped elsewhere, or it failed), and the panel closes.
+     */
+    static String turnFate(String session, long since, long endedAt, IslandState st, long now) {
+        if (st == null) return ENDED;
+        if (st.doneFor(session, since) != null) return DONE;
+        if (st.atWork(session)) return WORKING;
+        if (endedAt <= 0 || now - endedAt < DONE_GRACE_MS) return ENDING;
+        return ENDED;
+    }
+
+    /**
+     * The fate of the panel's Stop for {@code session}, sent at {@code sentAt}: FAILED when the service could not stop
+     * it; Outcome.STOPPED once the turn is over (whether or not its reply came); otherwise SENDING ("Stopping...").
+     */
+    static String stopFate(String session, long sentAt, IslandState st) {
+        if (st == null) return SENDING;
+        Outcome o = st.outcome;
+        if (o != null && o.answers("stop", session, sentAt) && Outcome.FAILED.equals(o.result)) return Outcome.FAILED;
+        if (!st.atWork(session)) return Outcome.STOPPED;
+        return SENDING;
+    }
+
+    /** What the panel changes to after the request {@code overA} or the question {@code overQ} on it was answered
+     *  (here or elsewhere): another permission request still waiting, else a single question still waiting that isn't
+     *  {@code overQ}, else NONE (it closes). */
+    String nextAfter(Approval overA, Ask overQ) {
+        if (next(overA) != null) return PERMISSION;
+        Ask a = askToShow();
+        return a != null && !a.same(overQ) ? QUESTION : NONE;
+    }
+
+    /** A request or question arrived while the panel shows Progress or Done: the state it changes to, or NONE. */
+    String arrived() {
+        if (!approvals.isEmpty()) return PERMISSION;
+        return askToShow() != null ? QUESTION : NONE;
     }
 
     /** Where a question on the panel stands. EXPIRED is CLOSED because it ran out of time, which the panel marks with

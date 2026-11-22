@@ -1425,6 +1425,10 @@ public class HermesService extends Service {
             case "flash": {
                 boolean doneFlash = e.optBoolean("done", false) || e.optString("short", "").contains("Done");
                 if (doneFlash && session != null && !session.isEmpty()) {
+                    // The island panel's Done state, whatever the Done chip's rules below decide for the chip.
+                    lastDone = new IslandState.Done(session, IslandState.chatLine(title, profile), e.optString("reply", ""),
+                            e.optInt("steps", 0), e.optLong("secs", 0), System.currentTimeMillis());
+                    IslandPanel.refresh(this);
                     if (MainActivity.visible) return; // the app is on screen: its own unread dots show it, no sticky chip
                     if (!NotifyChoice.finishes(this)) return; // Settings → Notifications → "When a task finishes" is off: no Done chip, no badge
                     unseen.remove(session);
@@ -1739,7 +1743,38 @@ public class HermesService extends Service {
                     q.optString("body", ""), choices, q.optBoolean("single", true));
         }
         String kind = IslandState.pick(pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
-        return new IslandState(kind, ask, lastOutcome, lastExpired, islandApprovals());
+        java.util.List<IslandState.Progress> working = islandWorking();
+        return new IslandState(kind, ask, lastOutcome, lastExpired, islandApprovals(), working,
+                working.isEmpty() ? 0 : 1 + lastMore, lastDone);
+    }
+
+    /** The last turn that finished with a reply (its "flash" event), for the island panel's Done state. */
+    IslandState.Done lastDone;
+
+    /** Every chat at work, as the island panel's Progress state shows it: the one the chip shows (its step, task list,
+     *  clock, steps, a stop on its way, the app Hermux uses for it), then the other busy chats the plugin names. */
+    synchronized java.util.List<IslandState.Progress> islandWorking() {
+        java.util.ArrayList<IslandState.Progress> out = new java.util.ArrayList<>();
+        if (!lastWorking || lastSession == null || lastSession.isEmpty()) return out;
+        BgApp bg = bgApp;
+        android.graphics.Bitmap thumb = bgThumb;
+        JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
+        boolean app = bg != null && bg.session.equals(lastSession);
+        out.add(new IslandState.Progress(lastSession, IslandState.chatLine(lastTitle, lastSub), lastTitle, lastStatus,
+                workingSince, lastSteps, todo == null ? "" : todo.optString("states", ""),
+                todo == null ? "" : todo.optString("current", ""), todo == null ? 0 : todo.optInt("done", 0),
+                todo == null ? 0 : todo.optInt("total", 0), lastSession.equals(stopping), app ? bg.label : "",
+                app && thumb != null ? System.identityHashCode(thumb) : 0));
+        if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
+            JSONObject o = lastOthers.optJSONObject(k);
+            String ses = o == null ? "" : o.optString("session", "");
+            if (ses.isEmpty() || ses.equals(lastSession)) continue;
+            boolean oapp = bg != null && bg.session.equals(ses);
+            out.add(new IslandState.Progress(ses, IslandState.chatLine(o.optString("title", ""), lastSub), o.optString("title", ""),
+                    o.optString("text", ""), 0, 0, "", "", 0, 0, ses.equals(stopping), oapp ? bg.label : "",
+                    oapp && thumb != null ? System.identityHashCode(thumb) : 0));
+        }
+        return out;
     }
 
     /** Every permission request waiting, as the island panel shows it, the oldest first (whatever "When Hermux needs
@@ -1881,7 +1916,8 @@ public class HermesService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(true)
-                .setContentIntent(openApp(lastSession, false, bgForChip(bg)));
+                // the island panel on its Progress state; while Hermux uses an app for this chat, the live viewer as before
+                .setContentIntent(bgForChip(bg) ? openApp(lastSession, false, true) : islandIntent(lastSession, IslandState.PROGRESS));
         if (workingSince > 0) b.setWhen(workingSince).setUsesChronometer(true);
         if (!head.isEmpty()) b.setSubText(String.join(" \u00B7 ", head));
         if (Build.VERSION.SDK_INT >= 36) {
@@ -1967,9 +2003,7 @@ public class HermesService extends Service {
 
     /** "2m 14s", "45s", "1h 3m". */
     static String took(long secs) {
-        if (secs < 60) return secs + "s";
-        if (secs < 3600) return (secs / 60) + "m " + (secs % 60) + "s";
-        return (secs / 3600) + "h " + (secs % 3600 / 60) + "m";
+        return IslandState.took(secs);
     }
 
     void promote(Notification.Builder b, String chip) {

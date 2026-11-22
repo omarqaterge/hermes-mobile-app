@@ -230,6 +230,65 @@ final class IslandMotion {
         return 1 + (TIMER_PULSE_SCALE - 1) * up;
     }
 
+    // ── the Progress state (design 5.3; the prototype's buildWorking) ──
+    /** The badge's turning arc: one turn per ARC_TURN_MS; empty over the first ARC_GAP of the circle, then fading in to
+     *  solid gold at its head; a ring ARC_STROKE_DP thick whose outer edge is ARC_OUTER_DP from the badge's centre. */
+    static final long ARC_TURN_MS = 1400;
+    static final float ARC_GAP = 0.22f, ARC_STROKE_DP = 3, ARC_OUTER_DP = 21;
+    /** The task bar: segments this high and this far apart (dp), round ends. */
+    static final float SEG_H_DP = 6, SEG_GAP_DP = 4;
+    /** The current task's light band: it crosses in SHIMMER_SHARE of every SHIMMER_MS, then rests. */
+    static final long SHIMMER_MS = 1600;
+    static final double SHIMMER_SHARE = 0.6;
+    /** CSS ease-in-out: the band crossing the current task. */
+    static final Curve EASE_IN_OUT = new Bezier(0.42, 0, 0.58, 1);
+    /** Without a task list: a 4 dp line with a soft gold band (SWEEP_BAND of its width) sweeping across in SWEEP_MS. */
+    static final float SWEEP_H_DP = 4, SWEEP_BAND = 0.42f;
+    static final long SWEEP_MS = 1250;
+    static final Curve SWEEP = new Bezier(0.45, 0, 0.55, 1);
+    /** A task finishing: its segment fills green from the left in TASK_FILL_MS on STANDARD; TASK_SWELL_DELAY_MS after
+     *  the fill starts it swells to TASK_SWELL_SCALE of its height and back in TASK_SWELL_MS on BACK; TASK_NEXT_MS after
+     *  the fill starts the next segment turns gold, fading in over TASK_NEXT_IN_MS. */
+    static final long TASK_FILL_MS = 300, TASK_SWELL_MS = 420, TASK_SWELL_DELAY_MS = 220, TASK_NEXT_MS = 240, TASK_NEXT_IN_MS = 200;
+    static final float TASK_SWELL_SCALE = 1.7f;
+    /** The app in use: its picture is this big (dp), with these corners. */
+    static final float APP_PICTURE_DP = 72, APP_PICTURE_R = 12;
+    /** Stopped holds this long before the panel closes. */
+    static final long STOPPED_HOLD_MS = 900;
+    /** The Progress state closes by itself after this long without a touch (battery). */
+    static final long PROGRESS_IDLE_MS = 90_000;
+
+    /** A segment's height during its swell, p the eased time (BACK may pass 1): up to the peak half way, back after. */
+    static double swell(double p) {
+        double up = p < 0.5 ? p / 0.5 : (1 - p) / 0.5;
+        return 1 + (TASK_SWELL_SCALE - 1) * up;
+    }
+
+    /** The current task's band: where its left edge is, as a share of the segment's width (-1 = just before it, 1 =
+     *  just past it), {@code ms} into the shimmer. */
+    static double shimmerAt(double ms) {
+        double t = (ms % SHIMMER_MS) / SHIMMER_MS;
+        return -1 + 2 * EASE_IN_OUT.at(Math.min(1, t / SHIMMER_SHARE));
+    }
+
+    /** The sweep's band: where its left edge is, as a share of the line's width (from -SWEEP_BAND to 1). */
+    static double sweepAt(double ms) {
+        double t = (ms % SWEEP_MS) / SWEEP_MS;
+        return -SWEEP_BAND + (1 + SWEEP_BAND) * SWEEP.at(t);
+    }
+
+    // ── the Done state (design 5.4; the prototype's buildDone) ──
+    /** The badge pops in from DONE_POP_FROM of its size in DONE_POP_MS on BACK, after DONE_POP_DELAY_MS. */
+    static final long DONE_POP_MS = 380, DONE_POP_DELAY_MS = 80;
+    static final float DONE_POP_FROM = 0.6f;
+    /** Its check draws itself in DONE_CHECK_MS on STANDARD, after DONE_CHECK_DELAY_MS. */
+    static final long DONE_CHECK_MS = 300, DONE_CHECK_DELAY_MS = 160;
+    /** One green ring expands to DONE_RING_SCALE and fades from DONE_RING_FROM_ALPHA in DONE_RING_MS on OUT. */
+    static final long DONE_RING_MS = 520, DONE_RING_DELAY_MS = 160;
+    static final float DONE_RING_SCALE = 1.6f, DONE_RING_FROM_ALPHA = 0.9f;
+    /** The start of the reply: three lines at most. */
+    static final int REPLY_LINES = 3;
+
     // ── reduced motion ──
     /** With the phone's animations off, everything is a fade of at most this long, with no movement. */
     static final long REDUCED_MS = 120;

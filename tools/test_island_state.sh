@@ -8,7 +8,9 @@
 # session for phone data, the headline), which request the panel shows (the one tapped while it waits, else the
 # oldest), how many more wait, the next one after an answer, the timer's seconds and when it speaks, and the
 # request's fate: sending until the outcome for this very request, then allowed, denied or failed; open while it
-# waits; expired at its deadline (or vanished within the slack); gone (answered elsewhere) earlier. Needs javac 11+.
+# waits; expired at its deadline (or vanished within the slack); gone (answered elsewhere) earlier. The Progress and
+# Done states (design 5.3, 5.4): a chat at work as shown, the other busy chats, the words and numbers, and the turn's
+# and the stop's fates; what a request arriving, or the next one after an answer, changes the panel to. Needs javac 11+.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -141,6 +143,73 @@ public class IslandStateTest {
                 && "Answered in the app".equals(IslandState.ANSWERED_ELSEWHERE), "the Permission words, as in design 5.1");
         check("Couldn't send your answer. Try again, or open the chat.".equals(IslandState.APPROVAL_FAILED), "the Permission failure line, as in design 5.1");
 
+        // ── the Progress and Done states (design 5.3, 5.4) ──
+        IslandState.Progress w1 = new IslandState.Progress("A", "Trip", "Trip", "Running `ls`", 1000, 7, "ddapp", "Draft it", 2, 5, false, "", 0);
+        IslandState.Progress w2 = new IslandState.Progress("B", "Files", "Files", "Reading `notes.md`", 0, 0, "", "", 0, 0, false, "", 0);
+        IslandState.Progress w3 = new IslandState.Progress("C", "", "", "", 0, 0, "", "", 0, 0, false, "", 0);
+        IslandState.Progress w4 = new IslandState.Progress("D", "Mail", "Mail", "Thinking", 0, 0, "", "", 0, 0, false, "", 0);
+        check(w1.hasTasks() && !w2.hasTasks() && "Hermux".equals(w3.chat) && "Working\u2026".equals(w3.headline),
+                "a chat at work: the task list when there is one; Hermux and Working... when nothing was said");
+        check(!new IslandState.Progress("A", "", "", "x", 0, 0, "ddp", "", 2, 0, false, "", 0).hasTasks()
+                && "dap".equals(new IslandState.Progress("A", "", "", "x", 0, 0, "d?a!p", "", 1, 3, false, "", 0).states),
+                "a list with no tasks counted is none; letters other than d, a, p, x are dropped");
+        IslandState busy = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(w1, w2, w3, w4), 6, null);
+        check(busy.progressFor("") == w1 && busy.progressFor("B") == w2 && busy.progressFor("Z") == null,
+                "the chat shown: the one tapped, the chip's when none is named, none when it isn't at work");
+        check(busy.atWork("C") && !busy.atWork("") && !busy.atWork(null) && !busy.atWork("Z"), "at work: exactly that chat, never an empty id");
+        check(busy.otherLines(w1).equals(Arrays.asList("Files: Reading notes.md", "Another chat: Working\u2026")), "the other busy chats: two lines at most, backticks dropped, Another chat with no title");
+        check(busy.moreChats(w1) == 3 && "+3 more chats".equals(IslandState.moreChats(3)) && "+1 more chat".equals(IslandState.moreChats(1))
+                && "".equals(IslandState.moreChats(0)), "then +N more chats for the rest (the plugin counts those it doesn't name)");
+        check(busy.otherLines(w2).get(0).startsWith("Trip: Running ls") && busy.moreChats(w2) == 3, "another chat shown: the chip's chat is one of the others");
+        check("2 of 5 tasks".equals(IslandState.tasks(2, 5)) && "7 steps so far".equals(IslandState.stepsSoFar(7))
+                && "1 step so far".equals(IslandState.stepsSoFar(1)) && "".equals(IslandState.stepsSoFar(0)), "the task count and the steps, as in design 5.3");
+        check("0:07".equals(IslandState.clock(7)) && "1:24".equals(IslandState.clock(84)) && "12:05".equals(IslandState.clock(725))
+                && "1:02:03".equals(IslandState.clock(3723)) && "0:00".equals(IslandState.clock(-4)), "the running time: m:ss, then h:mm:ss");
+        check("9 steps \u00B7 1m 31s".equals(IslandState.doneStats(9, 91)) && "1 step".equals(IslandState.doneStats(1, 0))
+                && "45s".equals(IslandState.doneStats(0, 45)) && "".equals(IslandState.doneStats(0, 0)), "the Done line: 9 steps · 1m 31s, a missing part left out");
+        check("2m 14s".equals(IslandState.took(134)) && "1h 3m".equals(IslandState.took(3780)), "a turn's time, as the Done card says it");
+        check("Using Maps".equals(IslandState.using("Maps")) && "Using an app".equals(IslandState.using(" ")), "the app in use: Using <app>");
+        check("Stop".equals(IslandState.STOP) && "Stopping\u2026".equals(IslandState.STOPPING) && "Stopped".equals(IslandState.STOPPED)
+                && "Couldn't stop Hermux. Open the chat to stop it.".equals(IslandState.STOP_FAILED) && "Watch".equals(IslandState.WATCH)
+                && "Done".equals(IslandState.DONE_TITLE), "the Progress and Done words, as in design 5.3 and 5.4");
+        IslandState.Done dA = new IslandState.Done("A", "Trip", " The plan is ready. ", 9, 91, 5000);
+        IslandState ended = new IslandState(IslandState.DONE, null, null, null, null, null, 0, dA);
+        check("The plan is ready.".equals(dA.reply) && ended.doneFor("A", 1000) == dA && ended.doneFor("A", 6000) == null && ended.doneFor("B", 0) == null,
+                "a reply is this turn's when it came after the turn started, for this chat");
+        check(IslandState.WORKING.equals(IslandState.turnFate("A", 1000, 0, busy, 9000)), "the chat still at work: working");
+        check(IslandState.DONE.equals(IslandState.turnFate("A", 1000, 0, ended, 9000)), "its reply came: done");
+        IslandState withReplyStillBusy = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(w1), 1, dA);
+        check(IslandState.DONE.equals(IslandState.turnFate("A", 1000, 0, withReplyStillBusy, 9000)), "the reply before the status says it ended: done all the same");
+        check(IslandState.WORKING.equals(IslandState.turnFate("A", 6000, 0, withReplyStillBusy, 9000)), "an older turn's reply doesn't end this one");
+        IslandState quiet = new IslandState(IslandState.NONE, null, null, null, null, null, 0, null);
+        check(IslandState.ENDING.equals(IslandState.turnFate("A", 1000, 0, quiet, 9000))
+                && IslandState.ENDING.equals(IslandState.turnFate("A", 1000, 9000, quiet, 9000 + IslandState.DONE_GRACE_MS - 1)),
+                "it stopped with no reply yet: the panel waits a moment for it");
+        check(IslandState.ENDED.equals(IslandState.turnFate("A", 1000, 9000, quiet, 9000 + IslandState.DONE_GRACE_MS)), "then nothing to show (stopped elsewhere, or failed): ended, it closes");
+        check(IslandState.SENDING.equals(IslandState.stopFate("A", 1000, busy)), "a stop on its way while the chat works: Stopping");
+        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", 1000, quiet)), "the turn over after a stop: Stopped");
+        IslandState stopBad = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "failed", "HTTP 500", 2000), null, null, Arrays.asList(w1), 1, null);
+        check(IslandState.Outcome.FAILED.equals(IslandState.stopFate("A", 1000, stopBad)), "it couldn't be stopped: failed");
+        IslandState stopBad2 = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "failed", "HTTP 500", 2000), null, null, Arrays.asList(w1, w2), 2, null);
+        check(IslandState.SENDING.equals(IslandState.stopFate("A", 3000, stopBad)) && IslandState.SENDING.equals(IslandState.stopFate("B", 1000, stopBad2)),
+                "an older stop's failure, or another chat's, is not this one's");
+        IslandState stopOk = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 2000), null, null, Arrays.asList(w1), 1, null);
+        check(IslandState.SENDING.equals(IslandState.stopFate("A", 1000, stopOk)), "the stop was taken but the turn still runs: still Stopping");
+        IslandState.Ask qA = ask("A", "Which folder?", "Trips");
+        IslandState both = new IslandState(IslandState.PERMISSION, qA, null, null, Arrays.asList(r1, pd));
+        IslandState onlyQ = new IslandState(IslandState.QUESTION, qA, null, null, null);
+        check(IslandState.PERMISSION.equals(both.arrived()) && IslandState.QUESTION.equals(onlyQ.arrived()) && IslandState.NONE.equals(quiet.arrived()),
+                "arriving during Progress or Done: a permission request first, then a question");
+        check(IslandState.NONE.equals(new IslandState(IslandState.QUESTION, new IslandState.Ask("A", "", "Q", null, false), null).arrived()),
+                "a batch of questions doesn't change the panel");
+        check(IslandState.PERMISSION.equals(both.nextAfter(r1, null)) && both.next(r1) == pd, "after an answer: another request waiting");
+        check(IslandState.QUESTION.equals(new IslandState(IslandState.PERMISSION, qA, null, null, Arrays.asList(r1)).nextAfter(r1, null)),
+                "no other request: the question waiting");
+        check(IslandState.NONE.equals(onlyQ.nextAfter(null, qA)) && IslandState.NONE.equals(quiet.nextAfter(r1, qA)),
+                "the question just answered, or nothing: it closes");
+        check(new IslandState(IslandState.NONE, null, null, null, null).working.isEmpty()
+                && new IslandState(IslandState.NONE, null, null, null, null).done == null, "the older snapshots carry no work and no reply");
+
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
     }
@@ -219,4 +288,27 @@ ok 'src "void showFailed()" IslandPermission | grep -q "if (shown.allowable())"'
 ok 'src "IslandViews.Fit build(" IslandPermission | grep -q "if (!a.what.isEmpty() || a.command.isEmpty())"' "an empty plain-words line is left out"
 ok 'sed -n "/private int\[\] span(Pill p/,/^        }/p" android/src/com/omarqaterge/hermesmobile/IslandViews.java | grep -q "bounceRoom()"' "a growing button's bounce stays inside the card"
 ok '! src "synchronized IslandState islandState()" HermesService | grep -q "needsMe"' "the panel's state follows every waiting request, whatever When Hermux needs me says"
+# The Progress and Done states (IslandProgress) and the links between states: the working card opens the panel but the
+# live viewer while Hermux uses an app for that chat; Stop is the card's Stop (ACTION_STOP) and ignores touches through
+# another app's window; nothing runs once the panel is hidden; Progress closes after 90 s without a touch; Done's Open
+# chat clears the Done chip; the Done record leaves the Done chip's rules as they were; the panel is never over the
+# lock screen.
+PROG=android/src/com/omarqaterge/hermesmobile/IslandProgress.java
+PANEL=android/src/com/omarqaterge/hermesmobile/IslandPanel.java
+ok 'src "Notification workingNotification(" HermesService | grep -q "setContentIntent(bgForChip(bg) ? openApp(lastSession, false, true) : islandIntent(lastSession, IslandState.PROGRESS))"' "the working card opens the panel, or the live viewer while Hermux uses an app for that chat"
+ok 'src "void tapStop()" IslandProgress | grep -q "setAction(HermesService.ACTION_STOP).putExtra(\"session\", session)"' "the panel's Stop is the card's Stop"
+ok 'src "IslandViews.Pill pill(" IslandProgress | grep -q "setFilterTouchesWhenObscured(true)"' "Stop, Open chat and Watch ignore a touch through another app's window"
+ok 'src "void stop()" IslandProgress | grep -q "removeCallbacks(clockRun)" && src "void stop()" IslandProgress | grep -q "arcRun, shimRun, sweepRun"' "the clock's handler and every loop stop with the state"
+ok 'src "void finishNow()" IslandPanel | grep -q "prog.stop()" && src "void close()" IslandPanel | grep -q "prog.stop()" && src "protected void onDestroy()" IslandPanel | grep -q "prog.stop()"' "the Progress state stops when the panel closes, goes or is destroyed"
+ok 'src "void finishNow()" IslandPanel | grep -q "removeCallbacks(idleRun)" && src "void touched()" IslandPanel | grep -q "postDelayed(idleRun, IslandMotion.PROGRESS_IDLE_MS)"' "Progress closes after 90 s without a touch, and no timer is left once the panel goes"
+ok 'grep -q "if (e.getActionMasked() == MotionEvent.ACTION_DOWN) touched();" "$PANEL"' "every touch starts the 90 s again"
+ok 'grep -q "p.MAIN.removeCallbacks(p.idleRun); // Done doesn" "$PROG"' "Done doesn't close by itself"
+ok 'grep -q "p.openChat(session, null, true, false)" "$PROG" && src "void openChat(String chat, String draft, boolean clearDone" IslandPanel | grep -q "putExtra(\"clearDone\", true)"' "Done's Open chat clears the Done chip, as the chip's own tap does"
+ok 'grep -q "p.openChat(session, null, false, true)" "$PROG" && src "void openChat(String chat, String draft, boolean clearDone" IslandPanel | grep -q "MainActivity.EXTRA_BG_VIEW"' "Watch opens the live viewer"
+FLASH=$(sed -n '/case "flash": {/,/^            }/p' "$SVC")
+ok '[ "$(grep -n "lastDone = new IslandState.Done" <<<"$FLASH" | cut -d: -f1)" -lt "$(grep -n "if (MainActivity.visible) return;" <<<"$FLASH" | head -1 | cut -d: -f1)" ] && grep -q "if (!NotifyChoice.finishes(this)) return;" <<<"$FLASH" && grep -q "unseen.put(session" <<<"$FLASH"' "the Done record is taken before the Done chip's rules, which stay as they were"
+ok '! grep -q "setShowWhenLocked\|FLAG_SHOW_WHEN_LOCKED\|setTurnScreenOn" "$PANEL" "$PROG" && ! sed -n "/android:name=\".IslandPanel\"/,/\/>/p" android/AndroidManifest.xml | grep -q showWhenLocked' "the panel (and the app-in-use picture in it) is never over the lock screen"
+ok 'src "void apply(IslandState st)" IslandProgress | grep -q "st.arrived()" && src "void apply(IslandState st)" IslandProgress | grep -q "p.swapToPermission(" && src "void apply(IslandState st)" IslandProgress | grep -q "p.swapTo(st.askToShow())"' "a request or question arriving during Progress or Done changes the panel in place"
+ok 'src "void leaveProgress()" IslandPanel | grep -q "prog.stop()" && src "void swapTo(IslandState.Ask a)" IslandPanel | grep -q "leaveProgress()" && src "void swapToPermission(" IslandPanel | grep -q "leaveProgress()"' "the Progress state's loops stop when a request or question takes its place"
+ok 'src "void succeeded()" IslandPanel | grep -q "postDelayed(nextRun" && src "void afterResult()" IslandPermission | grep -q "p.nextOrClose(shown, null)"' "after an answer from the panel, the next request or question waiting takes its place"
 [ "$fails" = 0 ] && echo "source rules: ALL PASSED" || { echo "source rules: $fails FAILED"; exit 1; }

@@ -3,8 +3,9 @@
 # (docs/design/island-panel.md section 4) and the prototype's script (island-panel-prototype.html): the four springs
 # (start, end, overshoot, when they stop, about 400 ms to open), the named curves (ends, a known point of each, the
 # overshoot of back), the close curve, the drag rules, the reduced-motion cap, the timer colour, and the Permission
-# state's numbers (the ring, its pulse, the answer row's timings and holds, against buildApproval and resolveRow).
-# Needs javac 11+.
+# state's numbers (the ring, its pulse, the answer row's timings and holds, against buildApproval and resolveRow),
+# and the Progress and Done states' numbers (the arc, the task bar's finish, the sweep and shimmer, the done pop, against
+# buildWorking and buildDone). Needs javac 11+.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -114,6 +115,27 @@ public class IslandMotionTest {
         check(IslandMotion.BUTTON_COLOUR_MS == 200 && IslandMotion.LABEL_IN_MS == 200 && IslandMotion.LABEL_FROM_DX == -4,
                 "a button's colour changes in 200 ms; its result label arrives from 4 dp to the left in 200 ms");
         check(IslandMotion.COMMAND_LINES == 4, "the command shows four lines, then scrolls");
+
+        // ── Progress and Done (design 5.3, 5.4; the prototype's buildWorking, buildDone) ──
+        check(IslandMotion.ARC_TURN_MS == 1400 && IslandMotion.ARC_GAP == 0.22f, "the arc: one turn every 1.4 s, its tail fading out over the first 22 %");
+        check(IslandMotion.SEG_H_DP == 6 && IslandMotion.SEG_GAP_DP == 4, "the task bar: segments 6 dp high, 4 dp apart");
+        check(IslandMotion.SHIMMER_MS == 1600 && IslandMotion.SWEEP_MS == 1250 && IslandMotion.SWEEP_H_DP == 4 && IslandMotion.SWEEP_BAND == 0.42f,
+                "the band crosses the current task every 1.6 s; the sweep: a 4 dp line, a 42 % band, 1.25 s");
+        check(near(IslandMotion.shimmerAt(0), -1, 1e-9) && near(IslandMotion.shimmerAt(960), 1, 1e-9) && near(IslandMotion.shimmerAt(1500), 1, 1e-9)
+                && near(IslandMotion.shimmerAt(1600), -1, 1e-9), "the band crosses in the first 60 % of its 1.6 s and rests");
+        check(near(IslandMotion.sweepAt(0), -0.42, 1e-6) && near(IslandMotion.sweepAt(1249.999), 1, 1e-3), "the sweep runs from just before the line to its end");
+        check(IslandMotion.TASK_FILL_MS == 300 && IslandMotion.TASK_SWELL_MS == 420 && IslandMotion.TASK_SWELL_DELAY_MS == 220
+                && IslandMotion.TASK_NEXT_MS == 240 && IslandMotion.TASK_NEXT_IN_MS == 200 && IslandMotion.TASK_SWELL_SCALE == 1.7f,
+                "a task finishing: fills in 300 ms, swells to 170 % in 420 ms, the next turns gold 240 ms later");
+        check(IslandMotion.swell(0) == 1 && near(IslandMotion.swell(0.5), 1.7, 1e-6) && IslandMotion.swell(1) == 1 && IslandMotion.swell(1.1) < 1,
+                "the swell: to 170 % half way and back (the back curve may overshoot below)");
+        check(IslandMotion.APP_PICTURE_DP == 72 && IslandMotion.APP_PICTURE_R == 12, "the app's picture: 72 dp, corners 12 dp");
+        check(IslandMotion.STOPPED_HOLD_MS == 900 && IslandMotion.PROGRESS_IDLE_MS == 90_000, "Stopped holds 900 ms; Progress closes after 90 s without a touch");
+        check(IslandMotion.DONE_POP_MS == 380 && IslandMotion.DONE_POP_FROM == 0.6f && IslandMotion.DONE_POP_DELAY_MS == 80
+                && IslandMotion.DONE_CHECK_MS == 300 && IslandMotion.DONE_CHECK_DELAY_MS == 160
+                && IslandMotion.DONE_RING_MS == 520 && IslandMotion.DONE_RING_SCALE == 1.6f && IslandMotion.DONE_RING_DELAY_MS == 160,
+                "Done: the badge pops in from 60 % (380 ms), its check draws (300 ms), one ring to 160 % (520 ms)");
+        check(IslandMotion.REPLY_LINES == 3, "Done: the start of the reply, three lines at most");
 
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
