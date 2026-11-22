@@ -80,19 +80,6 @@ public class IslandPanel extends Activity {
     /** The panel on screen, or null. */
     static volatile IslandPanel shown;
 
-    /** The panel is on screen in Progress or Done, where a request or question arriving takes its place: the
-     *  service's own pop-up for it would only drop over the panel (any thread; a moment stale at worst). */
-    static boolean takesArrivals() {
-        IslandPanel p = shown;
-        return p != null && !p.closing && p.prog != null && p.prog.takesArrivals();
-    }
-
-    /** The panel is on screen with every waiting permission request in reach: in the Permission state (the others as
-     *  "N more waiting", then the next), or in Progress or Done (it changes to the request). */
-    static boolean showsRequests() {
-        IslandPanel p = shown;
-        return p != null && !p.closing && (p.perm != null || (p.prog != null && p.prog.takesArrivals()));
-    }
     static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final AtomicBoolean QUEUED = new AtomicBoolean();
 

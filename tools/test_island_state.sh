@@ -340,5 +340,8 @@ ok 'grep -q "b.fill.setColor(GREEN_WASH)" "$VIEWS" && ! grep -q "GREEN_SOFT" "$V
 ok 'src "void swapToProgress(" IslandPanel | grep -q "announceForAccessibility" && src "void swapTo(IslandState.Ask a)" IslandPanel | grep -q "keyboardIfTyped"' "swapping to Progress is spoken; a typed question swapped in place opens the keyboard"
 ok 'grep -q "line.setClipChildren(false); // the task count" "$PROG"' "the rolling task count is not clipped"
 ok 'src "void stopTurn(String session)" HermesService | tr -d "\n" | grep -q "if (session.equals(stopping)) stopping = null;                    noteOutcome(\"stop\", session, \"\", IslandState.Outcome.FAILED, failed);"' "a failed stop and the end of Stopping are one post"
-ok 'grep -q "if (IslandPanel.showsRequests()) return; // no popup over the island panel" "$SVC" && grep -q "if (IslandPanel.takesArrivals()) return; // no popup over the island panel" "$SVC" && grep -q "!IslandPanel.showsRequests() && needs" "$SVC"' "no pop-up drops over a panel that shows the request or changes to it"
+# The pop-up and the 20 s / 40 s reminders don't ask the panel (review of 78239d3: a request could run out unheard
+# behind a panel nobody looks at, or behind our own PIN screen); whether the pop-up may cover the panel is the owner's.
+APPROVAL=$(sed -n '/case "approval": {/,/^            }/p' "$SVC"); ASK=$(sed -n '/case "ask": {/,/^            }/p' "$SVC")
+ok '[ -n "$APPROVAL" ] && [ -n "$ASK" ] && ! grep -q "IslandPanel" <<<"$APPROVAL" && ! grep -q "IslandPanel" <<<"$ASK" && ! src "void tickApproval()" HermesService | grep -q "IslandPanel" && ! grep -q "static boolean showsRequests\|static boolean takesArrivals" "$PANEL"' "the pop-up and its reminders come whatever the panel shows, as on redesign"
 [ "$fails" = 0 ] && echo "source rules: ALL PASSED" || { echo "source rules: $fails FAILED"; exit 1; }

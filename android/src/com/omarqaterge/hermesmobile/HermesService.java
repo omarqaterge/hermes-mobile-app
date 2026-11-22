@@ -1473,7 +1473,6 @@ public class HermesService extends Service {
                 updateWake();
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
-                if (IslandPanel.showsRequests()) return; // no popup over the island panel: it shows the request itself
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
                 Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
                 hideOnLockScreen(b, ev.optBoolean("phone_data", false));
@@ -1492,7 +1491,6 @@ public class HermesService extends Service {
                 main.postDelayed(expireAskTask, ASK_TTL_MS + 100); // each arrival has its own expiry check
                 postStatus();
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
-                if (IslandPanel.takesArrivals()) return; // no popup over the island panel: it changes to the question
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
                 Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
                 // Answer in the notification; a question with choices offers them as quick replies.
@@ -2292,7 +2290,7 @@ public class HermesService extends Service {
             long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());
             long sec = elapsed / 1000;
             boolean needs = NotifyChoice.needsMe(this);
-            if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible && !IslandPanel.showsRequests() && needs) {
+            if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible && needs) {
                 lastReAlert = sec;
                 reAlertApproval();
             }

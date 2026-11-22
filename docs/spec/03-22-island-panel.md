@@ -180,10 +180,9 @@ out, still closes as described above. A change right after another stops the ear
 (`swapIn`). Changing to Progress is spoken by TalkBack (the chat and the step); changing to a question with no choices
 puts the cursor in its field and opens the keyboard (`keyboardIfTyped`), as opening on it does.
 
-**No pop-up over the panel.** While the panel shows Progress or Done (`IslandPanel.takesArrivals`), a question or
-request that arrives gets no pop-up from the service: the panel changes to it. While it shows the Permission state or
-Progress or Done (`showsRequests`), a new request gets no pop-up and no 20 s / 40 s re-alert. The chip, and the
-pinned notification below Android 16, still carry it.
+**Pop-ups while the panel is open.** The service's pop-up for a request or question, and a request's 20 s / 40 s
+re-alerts, come as they do with the panel closed (4.3): the panel doesn't change them. The pop-up can drop over the
+panel's header; whether it should is an open question for the owner (`docs/status/island-panel.md`).
 
 **A card answer is confirmed on the chip.** After an answer from a card button (Allow once, Allow session, Deny, a
 choice, the Answer field of the pop-up), the chip says "Allowed", "Denied" or "Sent" for two seconds beside a drawn check or cross (4.3); an

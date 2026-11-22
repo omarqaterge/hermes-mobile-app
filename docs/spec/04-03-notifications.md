@@ -40,8 +40,8 @@ The person can turn two kinds off inside the app (3.15 Notifications; `NotifyCho
 | `onEvent` `reply`, `error` → `postGrouped` (`reply:<chat>`) | Reply and failed-turn cards with the Reply field | When a task finishes (off: no card; reading the reply aloud, `readAloud`, is its own setting and still runs) |
 | `onEvent` `cron` → `postGrouped` (`cron:<id>`) | A scheduled job finished or failed | When a task finishes |
 | `onEvent` `approval` → status chip state 2 (`approvalNotification`, re-posted every second by `tickApproval`) | The approval chip with Allow once, Allow session, Deny, phone-data approvals included | When Hermux needs me (off: `statusNotification` skips states 2 and 3 and `tickApproval` posts nothing; the countdown and its expiry run as before) |
-| `onEvent` `approval` → `postGrouped` (`approval:<chat>`), and `reAlertApproval` at 20 s and 40 s | The approval pop-up and its re-alerts, phone-data approvals included; neither while the island panel shows the request itself (`IslandPanel.showsRequests`, 3.22) | When Hermux needs me |
-| `onEvent` `ask` → status chip state 3 (`askNotification`) and `postGrouped` (`ask:<chat>`) | The question chip and pop-up; no pop-up while the island panel is on Progress or Done, which changes to the question (`IslandPanel.takesArrivals`) | When Hermux needs me |
+| `onEvent` `approval` → `postGrouped` (`approval:<chat>`), and `reAlertApproval` at 20 s and 40 s | The approval pop-up and its re-alerts, phone-data approvals included | When Hermux needs me |
+| `onEvent` `ask` → status chip state 3 (`askNotification`) and `postGrouped` (`ask:<chat>`) | The question chip and pop-up | When Hermux needs me |
 | `MainActivity.Bridge.notify` (tag `req-<id>`, from `gateway.ts` while the app is in the background) | "Hermux needs your input" for a masked prompt (a password, secret or code) | When Hermux needs me |
 | `onEvent` `status` → state 5 or 6; `setupNotice` and the setup step's line → id 1 | The working chip that keeps the service alive, the idle card, "Setting up" | Always (not a choice) |
 | `onEvent` `learning` → state 1 and `postGrouped` (`learn:<id>`) | Memory and skill updates | Always |
