@@ -237,6 +237,7 @@ public class HermesService extends Service {
     static final String ACTION_WAKE = "com.omarqaterge.hermesmobile.WAKE";
     static final String ACTION_STOP = "com.omarqaterge.hermesmobile.STOP";
     static final String REMOTE_TEXT = "text";
+    static final String EXTRA_DISMISSING = "hm_dismissing";
     static final int SUMMARY_ID = 3;
     final Handler main = new Handler(Looper.getMainLooper());
 
@@ -1544,7 +1545,7 @@ public class HermesService extends Service {
                 if (NotifyChoice.finishes(this)) { // "When a task finishes" off: no card; reading the reply aloud is its own setting
                     Notification.Builder rb = alertBuilder(CH_REPLY, title, body, session, false);
                     if (session != null && !session.isEmpty()) rb.addAction(answerAction("reply", session, "Reply", null));
-                    postGrouped(nm, tag("reply", session), badged(rb, unseen.size() + (session != null && !unseen.containsKey(session) ? 1 : 0)));
+                    postGrouped(nm, tag("reply", session), badged(rb, BadgePlan.initialReplyCount(kind)));
                 }
                 if ("reply".equals(kind)) readAloud(e, session);
                 return;
@@ -1705,44 +1706,72 @@ public class HermesService extends Service {
         postStatus();
     }
 
-    /** App-icon badge number = unseen chats. Isolated so it can be adapted per launcher. Stock Android shows only a
-     *  dot (from any badging notification); HyperOS shows a number taken from setNumber / Xiaomi's message count.
-     *  Every reply notification and the group summary carry the current count; this refreshes the ones on display. */
+    /** App-icon badge number = unseen chats. Launchers (AOSP Launcher3 and HyperOS) sum active child notifications,
+     *  so BadgePlan assigns each active reply card 1 (or puts any dismissed cards' count on the newest remaining card)
+     *  so the sum equals unseen.size(), cancels reply cards when unseen drops to 0, and keeps non-reply cards and the
+     *  group summary at 0 with BADGE_ICON_NONE. */
     int badgeCount = -1;
 
     void updateBadge() {
         int n = unseen.size();
-        if (n == badgeCount) return;
         badgeCount = n;
         try {
             NotificationManager nm = getSystemService(NotificationManager.class);
+            java.util.ArrayList<android.service.notification.StatusBarNotification> replies = new java.util.ArrayList<>();
+            android.service.notification.StatusBarNotification summary = null;
             for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
                 String t = sn.getTag();
-                boolean reply = sn.getId() == 2 && t != null && t.startsWith("reply:");
-                if (!reply && sn.getId() != SUMMARY_ID) continue;
-                // Nothing unseen any more (Clear, or every chat opened): HyperOS reads number 0 as "no number"
-                // and counts the cards still showing instead (phone-tested: badge 1), so drop the reply cards.
-                if (n == 0 && reply) {
-                    nm.cancel(t, 2);
-                    dropEmptySummary(nm, t);
-                    continue;
-                }
-                if (n == 0) continue;
+                if (sn.getId() == 2 && BadgePlan.isReplyTag(t)) replies.add(sn);
+                else if (sn.getId() == SUMMARY_ID) summary = sn;
+            }
+            replies.sort((a, b) -> Long.compare(a.getPostTime(), b.getPostTime()));
+            java.util.ArrayList<String> activeTags = new java.util.ArrayList<>(replies.size());
+            java.util.HashMap<String, android.service.notification.StatusBarNotification> byTag = new java.util.HashMap<>();
+            for (android.service.notification.StatusBarNotification sn : replies) {
+                activeTags.add(sn.getTag());
+                byTag.put(sn.getTag(), sn);
+            }
+            BadgePlan.Plan plan = BadgePlan.plan(n, unseen.keySet(), activeTags);
+            for (String t : plan.cancelTags) {
+                nm.cancel(t, 2);
+                dropEmptySummary(nm, t);
+            }
+            for (java.util.Map.Entry<String, Integer> en : plan.counts.entrySet()) {
+                android.service.notification.StatusBarNotification sn = byTag.get(en.getKey());
+                int want = en.getValue();
+                if (sn == null || sn.getNotification().number == want) continue;
                 Notification.Builder b = Notification.Builder.recoverBuilder(this, sn.getNotification()).setOnlyAlertOnce(true);
-                nm.notify(t, sn.getId(), badged(b, n));
+                nm.notify(en.getKey(), 2, badged(b, want));
+            }
+            if (summary != null && summary.getNotification().number != 0) {
+                boolean stillActive = false;
+                for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
+                    if (sn.getId() == SUMMARY_ID) {
+                        stillActive = true;
+                        break;
+                    }
+                }
+                if (stillActive) {
+                    Notification.Builder b = Notification.Builder.recoverBuilder(this, summary.getNotification()).setOnlyAlertOnce(true);
+                    nm.notify(SUMMARY_ID, badged(b, 0));
+                }
             }
         } catch (Exception ignored) {
         }
     }
 
-    /** Builds with the badge number set: setNumber, plus Xiaomi's own count by reflection (no-op elsewhere). */
+    /** Builds with the badge count set: setNumber (plus BADGE_ICON_NONE when 0) and Xiaomi's own messageCount by
+     *  reflection (no-op elsewhere). Setting 0 on non-badging cards prevents HyperOS from defaulting them to 1. */
     Notification badged(Notification.Builder b, int n) {
-        Notification note = b.setNumber(n).build();
+        int count = Math.max(0, n);
+        b.setNumber(count);
+        if (count == 0) b.setBadgeIconType(Notification.BADGE_ICON_NONE);
+        Notification note = b.build();
         try {
             java.lang.reflect.Field f = Notification.class.getDeclaredField("extraNotification");
             f.setAccessible(true);
             Object extra = f.get(note);
-            if (extra != null) extra.getClass().getDeclaredMethod("setMessageCount", int.class).invoke(extra, n);
+            if (extra != null) extra.getClass().getDeclaredMethod("setMessageCount", int.class).invoke(extra, count);
         } catch (Throwable ignored) {
         }
         return note;
@@ -1859,7 +1888,7 @@ public class HermesService extends Service {
                 .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
                 .setAutoCancel(true)
                 .setContentIntent(openApp(null));
-        nm.notify(SUMMARY_ID, badged(sum, unseen.size()));
+        nm.notify(SUMMARY_ID, badged(sum, 0));
     }
 
     void dropEmptySummary(NotificationManager nm, String gone) {
@@ -2489,7 +2518,8 @@ public class HermesService extends Service {
     }
 
     Notification alert(String channel, String title, String body, String session, boolean urgent) {
-        return alertBuilder(channel, title, body, session, urgent).build();
+        Notification.Builder b = alertBuilder(channel, title, body, session, urgent);
+        return CH_LEARN.equals(channel) || CH_JOBS.equals(channel) ? badged(b, 0) : b.build();
     }
 
     Notification.Action approveAction(JSONObject e, String choice, String label) {
@@ -2730,10 +2760,44 @@ public class HermesService extends Service {
         return unlockFirst(new Notification.Action.Builder(null, label, pi).addRemoteInput(ri.build()).setAllowGeneratedReplies(false)).build();
     }
 
+    /** Replaces a RemoteInput card without its text field so Android / HyperOS exits the active inline-reply
+     *  state and dismisses the card cleanly, then removes it (only if still our placeholder) and any empty summary. */
+    void dismissAnsweredCard(NotificationManager nm, String tag, String channel, String session) {
+        Notification.Builder b = new Notification.Builder(this, channel)
+                .setSmallIcon(R.drawable.ic_stat_hermes)
+                .setColor(GOLD)
+                .setContentTitle("Sent")
+                .setContentText("")
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(true)
+                .setGroup(GROUP)
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                .setTimeoutAfter(1)
+                .setContentIntent(openApp(session));
+        Bundle ex = new Bundle();
+        ex.putBoolean(EXTRA_DISMISSING, true);
+        b.addExtras(ex);
+        nm.notify(tag, 2, badged(b, 0));
+        main.postDelayed(() -> {
+            try {
+                for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
+                    if (sn.getId() == 2 && tag.equals(sn.getTag())) {
+                        Bundle snEx = sn.getNotification().extras;
+                        if (snEx != null && snEx.getBoolean(EXTRA_DISMISSING, false)) nm.cancel(tag, 2);
+                        break;
+                    }
+                }
+                dropEmptySummary(nm, tag);
+            } catch (Exception ignored) {
+            }
+        }, 300);
+    }
+
     /** Hand a typed answer to the app's page (it holds the connection Hermes asked on). If the app isn't
      *  running, say so and offer to open the chat with the text already in the composer. */
     void answerFromNotification(Intent i) {
         Bundle res = android.app.RemoteInput.getResultsFromIntent(i);
+        boolean fromRemoteInput = res != null;
         CharSequence cs = res == null ? null : res.getCharSequence(REMOTE_TEXT);
         String typed = cs == null ? "" : cs.toString().trim();
         final String text = typed.isEmpty() && i.hasExtra("text") ? i.getStringExtra("text").trim() : typed; // a choice button
@@ -2741,6 +2805,7 @@ public class HermesService extends Service {
         String session = i.getStringExtra("session");
         boolean fromPanel = i.getBooleanExtra("panel", false); // the island panel shows its own check
         String t = tag("ask".equals(kind) ? "ask" : "reply", session);
+        String ch = "ask".equals(kind) ? CH_ALERT : CH_REPLY;
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (!text.isEmpty() && openToUnlock(session, text, "answer " + kind)) return;
         if ("ask".equals(kind) && !text.isEmpty() && pending.answered(PendingAsk.ASK, session, "")) {
@@ -2748,16 +2813,22 @@ public class HermesService extends Service {
             postStatus();
         }
         if (text.isEmpty()) {
-            nm.cancel(t, 2);
-            dropEmptySummary(nm, t);
+            if (fromRemoteInput) dismissAnsweredCard(nm, t, ch, session);
+            else {
+                nm.cancel(t, 2);
+                dropEmptySummary(nm, t);
+            }
             return;
         }
         MainActivity a = MainActivity.current;
         java.util.function.Consumer<Boolean> done = ok -> {
             noteOutcome(kind, session, "", ok ? IslandState.Outcome.SENT : IslandState.Outcome.FAILED, ok ? "" : (a == null ? "app not running" : "not delivered"));
             if (ok) {
-                nm.cancel(t, 2);
-                dropEmptySummary(nm, t);
+                if (fromRemoteInput) dismissAnsweredCard(nm, t, ch, session);
+                else {
+                    nm.cancel(t, 2);
+                    dropEmptySummary(nm, t);
+                }
                 if ("ask".equals(kind) && !fromPanel) confirmChip(CONFIRM_SENT, true); // a card's answer: the chip says Sent
                 return;
             }

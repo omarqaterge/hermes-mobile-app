@@ -75,3 +75,6 @@ echo "java-check: approval lock test $(tail -1 "$OUT/approvallock.txt")"
 # Settings → Notifications (NotifyChoice.java, the keyed bridge methods, what each switch gates in HermesService).
 ANDROID_ALL_JAR="$JAR" ../tools/test_notify_choice.sh > "$OUT/notifychoice.txt" 2>&1 || { grep -v '^PASS' "$OUT/notifychoice.txt"; echo "java-check: notify choice test FAILED"; exit 1; }
 echo "java-check: notify choice test $(tail -1 "$OUT/notifychoice.txt")"
+# App-icon badge count plan (BadgePlan.java) and RemoteInput card dismissal in HermesService.
+../tools/test_badge_and_reply.sh > "$OUT/badge.txt" 2>&1 || { grep -v '^PASS' "$OUT/badge.txt"; echo "java-check: badge and reply test FAILED"; exit 1; }
+echo "java-check: badge and reply test $(tail -1 "$OUT/badge.txt")"
